@@ -114,6 +114,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
 
+		// SLA Policies
+		SLA: handler.NewSLAHandler(svc.SLA, v, log),
+
 		// Suppressions
 		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),
 

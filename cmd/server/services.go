@@ -117,6 +117,9 @@ type Services struct {
 	// Module Service (OSS - all modules enabled)
 	Module *app.ModuleService
 
+	// SLA
+	SLA *app.SLAService
+
 	// AI Triage
 	AITriage *app.AITriageService
 
@@ -210,6 +213,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize dashboard service
 	s.Dashboard = app.NewDashboardService(repos.Dashboard, log)
+
+	// Initialize SLA service
+	s.SLA = app.NewSLAService(repos.SLA, log)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
