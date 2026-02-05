@@ -116,19 +116,19 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/bootstrap-admin ./cmd/bootstrap-admin
 
       - name: Upload API artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: api-linux-amd64
           path: bin/exploop
 
       - name: Upload Admin CLI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: exploop-admin-linux-amd64
           path: bin/exploop-admin
 
       - name: Upload Bootstrap Admin artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bootstrap-admin-linux-amd64
           path: bin/bootstrap-admin
