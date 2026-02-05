@@ -104,6 +104,10 @@ type Repositories struct {
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
 
+	// API Keys & Webhooks
+	APIKey  *postgres.APIKeyRepository
+	Webhook *postgres.WebhookRepository
+
 	// Licensing (modules from database)
 	Module *postgres.ModuleRepository
 }
@@ -208,6 +212,10 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Target Mappings
 		TargetMapping: postgres.NewTargetMappingRepository(db),
+
+		// API Keys & Webhooks
+		APIKey:  postgres.NewAPIKeyRepository(db),
+		Webhook: postgres.NewWebhookRepository(db),
 
 		// Licensing (modules from database)
 		Module: postgres.NewModuleRepository(db),

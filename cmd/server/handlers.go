@@ -117,6 +117,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// SLA Policies
 		SLA: handler.NewSLAHandler(svc.SLA, v, log),
 
+		// API Keys & Webhooks
+		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
+		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),
+
 		// Suppressions
 		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),
 

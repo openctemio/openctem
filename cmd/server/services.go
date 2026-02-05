@@ -120,6 +120,10 @@ type Services struct {
 	// SLA
 	SLA *app.SLAService
 
+	// API Keys & Webhooks
+	APIKey  *app.APIKeyService
+	Webhook *app.WebhookService
+
 	// AI Triage
 	AITriage *app.AITriageService
 
@@ -216,6 +220,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize SLA service
 	s.SLA = app.NewSLAService(repos.SLA, log)
+
+	// Initialize API Key & Webhook services
+	s.APIKey = app.NewAPIKeyService(repos.APIKey, log)
+	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)

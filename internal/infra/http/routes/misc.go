@@ -273,3 +273,52 @@ func registerWebSocketRoutes(
 		r.GET("/", h.ServeWS)
 	}, tenantMiddlewares...)
 }
+
+// registerAPIKeyRoutes registers API key management routes.
+func registerAPIKeyRoutes(
+	router Router,
+	h *handler.APIKeyHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleService *app.ModuleService,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	if moduleService != nil {
+		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleAPIKeys))
+	}
+
+	router.Group("/api/v1/api-keys", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.APIKeysRead))
+		r.POST("/", h.Create, middleware.Require(permission.APIKeysWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.APIKeysRead))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.APIKeysDelete))
+		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.APIKeysWrite))
+	}, tenantMiddlewares...)
+}
+
+// registerWebhookRoutes registers webhook management routes.
+func registerWebhookRoutes(
+	router Router,
+	h *handler.WebhookHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleService *app.ModuleService,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	if moduleService != nil {
+		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleWebhooks))
+	}
+
+	router.Group("/api/v1/webhooks", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.WebhooksRead))
+		r.POST("/", h.Create, middleware.Require(permission.WebhooksWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.WebhooksRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.WebhooksWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.WebhooksDelete))
+		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.WebhooksWrite))
+		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.WebhooksWrite))
+		r.GET("/{id}/deliveries", h.ListDeliveries, middleware.Require(permission.WebhooksRead))
+	}, tenantMiddlewares...)
+}

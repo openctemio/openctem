@@ -81,6 +81,10 @@ type Handlers struct {
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
 
+	// API Keys & Webhooks
+	APIKey  *handler.APIKeyHandler  // nil if not initialized (no database)
+	Webhook *handler.WebhookHandler // nil if not initialized (no database)
+
 	// Notification handlers
 	NotificationOutbox *handler.NotificationOutboxHandler // nil if not initialized (no database)
 
@@ -394,6 +398,16 @@ func Register(
 	// Role routes (Access Control - tenant from JWT token)
 	if h.Role != nil {
 		registerRoleRoutes(router, h.Role, authMiddleware, userSync)
+	}
+
+	// API Key routes (tenant from JWT token)
+	if h.APIKey != nil {
+		registerAPIKeyRoutes(router, h.APIKey, authMiddleware, userSync, moduleService)
+	}
+
+	// Webhook routes (tenant from JWT token)
+	if h.Webhook != nil {
+		registerWebhookRoutes(router, h.Webhook, authMiddleware, userSync, moduleService)
 	}
 
 	// Notification Outbox routes (tenant from JWT token)
