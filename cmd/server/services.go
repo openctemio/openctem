@@ -45,11 +45,12 @@ type Services struct {
 	Tenant *app.TenantService
 
 	// Assets
-	Asset         *app.AssetService
-	AssetGroup    *app.AssetGroupService
-	AssetType     *app.AssetTypeService
-	Scope         *app.ScopeService
-	AttackSurface *app.AttackSurfaceService
+	Asset             *app.AssetService
+	AssetGroup        *app.AssetGroupService
+	AssetType         *app.AssetTypeService
+	AssetRelationship *app.AssetRelationshipService
+	Scope             *app.ScopeService
+	AttackSurface     *app.AttackSurfaceService
 
 	// Configuration (read-only system config)
 	FindingSource      *app.FindingSourceService
@@ -176,6 +177,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = app.NewScopeService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
 	s.AttackSurface = app.NewAttackSurfaceService(repos.Asset, log)
+	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 
 	// Initialize finding source service (read-only system configuration)
 	s.FindingSource = app.NewFindingSourceService(repos.FindingSource, repos.FindingSourceCat, log)

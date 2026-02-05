@@ -70,6 +70,7 @@ type Handlers struct {
 	// CTEM Discovery handlers
 	AssetService      *handler.AssetServiceHandler      // nil if not initialized (no database)
 	AssetStateHistory *handler.AssetStateHistoryHandler // nil if not initialized (no database)
+	AssetRelationship *handler.AssetRelationshipHandler // nil if not initialized (no database)
 
 	// Access Control handlers
 	Group         *handler.GroupHandler         // nil if not initialized (no database)
@@ -191,6 +192,11 @@ func Register(
 	// Asset State History routes (CTEM Discovery - shadow IT detection, audit)
 	if h.AssetStateHistory != nil {
 		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync, moduleService)
+	}
+
+	// Asset Relationship routes (CTEM Discovery - attack surface topology graph)
+	if h.AssetRelationship != nil {
+		registerAssetRelationshipRoutes(router, h.AssetRelationship, authMiddleware, userSync, moduleService)
 	}
 
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)

@@ -257,10 +257,10 @@ func (r *ScannerTemplateRepository) Update(ctx context.Context, t *scannertempla
 	return nil
 }
 
-// Delete deletes a scanner template.
-func (r *ScannerTemplateRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM scanner_templates WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes a scanner template (tenant-scoped).
+func (r *ScannerTemplateRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM scanner_templates WHERE id = $1 AND tenant_id = $2"
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete scanner template: %w", err)
 	}

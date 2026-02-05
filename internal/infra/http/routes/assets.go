@@ -369,6 +369,38 @@ func registerAssetServiceRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerAssetRelationshipRoutes registers asset relationship endpoints.
+// Relationships are directed graph edges between assets (CMDB patterns).
+// Part of the CTEM Discovery phase for mapping attack surface topology.
+func registerAssetRelationshipRoutes(
+	router Router,
+	h *handler.AssetRelationshipHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleService *app.ModuleService,
+) {
+	// Build tenant middleware chain from JWT token
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	// Add module check middleware - relationships require assets module
+	if moduleService != nil {
+		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleAssets))
+	}
+
+	// Asset-scoped relationship routes
+	router.Group("/api/v1/assets/{id}/relationships", func(r Router) {
+		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
+		r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+
+	// Standalone relationship routes (direct CRUD by relationship ID)
+	router.Group("/api/v1/relationships", func(r Router) {
+		r.GET("/{relationshipId}", h.Get, middleware.Require(permission.AssetsRead))
+		r.PUT("/{relationshipId}", h.Update, middleware.Require(permission.AssetsWrite))
+		r.DELETE("/{relationshipId}", h.Delete, middleware.Require(permission.AssetsDelete))
+	}, tenantMiddlewares...)
+}
+
 // registerAssetStateHistoryRoutes registers asset state history endpoints.
 // State history tracks changes for audit, compliance, and shadow IT detection.
 // Part of the CTEM Discovery phase.

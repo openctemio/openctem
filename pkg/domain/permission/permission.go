@@ -38,6 +38,10 @@ const (
 
 	// Audit log permissions
 	AuditRead Permission = "audit:read"
+
+	// Settings permissions (settings:*)
+	SettingsRead  Permission = "settings:read"
+	SettingsWrite Permission = "settings:write"
 )
 
 // =============================================================================
@@ -49,6 +53,10 @@ const (
 	AssetsRead   Permission = "assets:read"
 	AssetsWrite  Permission = "assets:write"
 	AssetsDelete Permission = "assets:delete"
+
+	// Asset import/export
+	AssetsImport Permission = "assets:import"
+	AssetsExport Permission = "assets:export"
 
 	// Asset Groups permissions (assets:groups:*)
 	AssetGroupsRead   Permission = "assets:groups:read"
@@ -71,9 +79,20 @@ const (
 
 const (
 	// Finding permissions (findings:*)
-	FindingsRead   Permission = "findings:read"
-	FindingsWrite  Permission = "findings:write"
-	FindingsDelete Permission = "findings:delete"
+	FindingsRead       Permission = "findings:read"
+	FindingsWrite      Permission = "findings:write"
+	FindingsDelete     Permission = "findings:delete"
+	FindingsAssign     Permission = "findings:assign"
+	FindingsTriage     Permission = "findings:triage"
+	FindingsStatus     Permission = "findings:status"
+	FindingsExport     Permission = "findings:export"
+	FindingsBulkUpdate Permission = "findings:bulk_update"
+
+	// Exposure permissions (findings:exposures:*)
+	ExposuresRead   Permission = "findings:exposures:read"
+	ExposuresWrite  Permission = "findings:exposures:write"
+	ExposuresDelete Permission = "findings:exposures:delete"
+	ExposuresTriage Permission = "findings:exposures:triage"
 
 	// Suppression permissions (findings:suppressions:*)
 	SuppressionsRead    Permission = "findings:suppressions:read"
@@ -139,11 +158,6 @@ const (
 	ScannerTemplatesRead   Permission = "scans:templates:read"
 	ScannerTemplatesWrite  Permission = "scans:templates:write"
 	ScannerTemplatesDelete Permission = "scans:templates:delete"
-
-	// Template Source permissions (scans:sources:*)
-	TemplateSourcesRead   Permission = "scans:sources:read"
-	TemplateSourcesWrite  Permission = "scans:sources:write"
-	TemplateSourcesDelete Permission = "scans:sources:delete"
 
 	// Secret Store permissions (scans:secret_store:*)
 	SecretStoreRead   Permission = "scans:secret_store:read"
@@ -289,6 +303,26 @@ const (
 )
 
 // =============================================================================
+// THREAT INTELLIGENCE MODULE
+// =============================================================================
+
+const (
+	// Threat Intel permissions (threat_intel:*)
+	ThreatIntelRead  Permission = "threat_intel:read"
+	ThreatIntelWrite Permission = "threat_intel:write"
+)
+
+// =============================================================================
+// AI TRIAGE MODULE
+// =============================================================================
+
+const (
+	// AI Triage permissions (ai_triage:*)
+	AITriageRead    Permission = "ai_triage:read"
+	AITriageTrigger Permission = "ai_triage:trigger"
+)
+
+// =============================================================================
 // LEGACY ALIASES (for backward compatibility in code)
 // These map to new standardized permissions but keep old constant names
 // =============================================================================
@@ -306,6 +340,11 @@ const (
 
 	// GroupsPermissions is an alias for GroupsWrite (team:groups:write)
 	GroupsPermissions Permission = "team:groups:write"
+
+	// TemplateSources are aliases for Sources (same permission strings)
+	TemplateSourcesRead   Permission = "scans:sources:read"
+	TemplateSourcesWrite  Permission = "scans:sources:write"
+	TemplateSourcesDelete Permission = "scans:sources:delete"
 )
 
 // AllPermissions returns all defined permissions.
@@ -315,14 +354,17 @@ func AllPermissions() []Permission {
 		// Core
 		DashboardRead,
 		AuditRead,
+		SettingsRead, SettingsWrite,
 
 		// Assets module
-		AssetsRead, AssetsWrite, AssetsDelete,
+		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
 		ComponentsRead, ComponentsWrite, ComponentsDelete,
 
 		// Findings module
 		FindingsRead, FindingsWrite, FindingsDelete,
+		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate,
+		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
 		CredentialsRead, CredentialsWrite,
@@ -371,6 +413,12 @@ func AllPermissions() []Permission {
 
 		// Reports module
 		ReportsRead, ReportsWrite,
+
+		// Threat Intel module
+		ThreatIntelRead, ThreatIntelWrite,
+
+		// AI Triage module
+		AITriageRead, AITriageTrigger,
 	}
 }
 
