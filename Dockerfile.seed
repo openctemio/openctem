@@ -26,7 +26,7 @@
 # =============================================================================
 
 # trivy:ignore:AVD-DS-0002 - One-time seed container, exits immediately after seeding
-FROM public.ecr.aws/docker/library/postgres:17-alpine
+FROM public.ecr.aws/docker/library/postgres:18-alpine
 
 # Copy seed files
 COPY migrations/seed /seed
