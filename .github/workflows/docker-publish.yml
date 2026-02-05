@@ -223,28 +223,28 @@ jobs:
     needs: [prepare, build]
     steps:
       - name: Download API digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: /tmp/digests/api
           pattern: digests-api-*
           merge-multiple: true
 
       - name: Download Migrations digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: /tmp/digests/migrations
           pattern: digests-migrations-*
           merge-multiple: true
 
       - name: Download Seed digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: /tmp/digests/seed
           pattern: digests-seed-*
           merge-multiple: true
 
       - name: Download Admin CLI digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: /tmp/digests/admin-cli
           pattern: digests-admin-cli-*
