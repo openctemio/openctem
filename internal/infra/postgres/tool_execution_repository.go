@@ -95,7 +95,7 @@ func (r *ToolExecutionRepository) GetByID(ctx context.Context, id shared.ID) (*t
 		errorMessage  sql.NullString
 		startedAt     time.Time
 		completedAt   sql.NullTime
-		durationMs    int
+		durationMs    sql.NullInt64
 		createdAt     time.Time
 	)
 
@@ -191,7 +191,7 @@ func (r *ToolExecutionRepository) List(
 			errorMessage  sql.NullString
 			startedAt     time.Time
 			completedAt   sql.NullTime
-			durationMs    int
+			durationMs    sql.NullInt64
 			createdAt     time.Time
 		)
 
@@ -394,7 +394,7 @@ func rowToToolExecution(
 	errorMessage sql.NullString,
 	startedAt time.Time,
 	completedAt sql.NullTime,
-	durationMs int,
+	durationMs sql.NullInt64,
 	createdAt time.Time,
 ) (*tool.ToolExecution, error) {
 	id, err := shared.IDFromString(execID)
@@ -441,7 +441,7 @@ func rowToToolExecution(
 		ErrorMessage:  errorMessage.String,
 		StartedAt:     startedAt,
 		CompletedAt:   timePtrFromNullTime(completedAt),
-		DurationMs:    durationMs,
+		DurationMs:    int(durationMs.Int64),
 		CreatedAt:     createdAt,
 	}
 

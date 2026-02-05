@@ -339,7 +339,8 @@ func (r *WebhookRepository) ListDeliveries(ctx context.Context, filter webhook.D
 func (r *WebhookRepository) scanWebhook(row *sql.Row) (*webhook.Webhook, error) {
 	var (
 		id, tenantID          string
-		name, description     string
+		name                  string
+		description           sql.NullString
 		url                   string
 		secretEncrypted       []byte
 		eventTypes            pq.StringArray
@@ -370,7 +371,7 @@ func (r *WebhookRepository) scanWebhook(row *sql.Row) (*webhook.Webhook, error) 
 		return nil, fmt.Errorf("scan webhook: %w", err)
 	}
 
-	return r.reconstructWebhook(id, tenantID, name, description, url, secretEncrypted,
+	return r.reconstructWebhook(id, tenantID, name, description.String, url, secretEncrypted,
 		[]string(eventTypes), severityThreshold, []string(assetGroupIDs), []string(tags),
 		status, maxRetries, retryIntervalSeconds,
 		totalSent, totalFailed, lastSentAt, lastError, lastErrorAt,
@@ -380,7 +381,8 @@ func (r *WebhookRepository) scanWebhook(row *sql.Row) (*webhook.Webhook, error) 
 func (r *WebhookRepository) scanWebhookRow(rows *sql.Rows) (*webhook.Webhook, error) {
 	var (
 		id, tenantID          string
-		name, description     string
+		name                  string
+		description           sql.NullString
 		url                   string
 		secretEncrypted       []byte
 		eventTypes            pq.StringArray
@@ -408,7 +410,7 @@ func (r *WebhookRepository) scanWebhookRow(rows *sql.Rows) (*webhook.Webhook, er
 		return nil, fmt.Errorf("scan webhook row: %w", err)
 	}
 
-	return r.reconstructWebhook(id, tenantID, name, description, url, secretEncrypted,
+	return r.reconstructWebhook(id, tenantID, name, description.String, url, secretEncrypted,
 		[]string(eventTypes), severityThreshold, []string(assetGroupIDs), []string(tags),
 		status, maxRetries, retryIntervalSeconds,
 		totalSent, totalFailed, lastSentAt, lastError, lastErrorAt,

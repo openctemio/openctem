@@ -407,7 +407,8 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 	var tenants []*tenant.TenantWithRole
 	for rows.Next() {
 		var (
-			idStr, name, slug, createdBy string
+			idStr, name, slug            string
+			createdBy                    sql.NullString
 			description, logoURL         sql.NullString
 			settingsJSON                 []byte
 			createdAt, updatedAt         time.Time
@@ -433,7 +434,7 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 
 		t := tenant.Reconstitute(
 			id, name, slug, description.String, logoURL.String,
-			settings, createdBy, createdAt, updatedAt,
+			settings, createdBy.String, createdAt, updatedAt,
 		)
 
 		tenants = append(tenants, &tenant.TenantWithRole{
@@ -1034,8 +1035,9 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 
 func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 	var (
-		idStr, name, slug, createdBy string
-		description, logoURL         sql.NullString
+		idStr, name, slug string
+		createdBy         sql.NullString
+		description, logoURL sql.NullString
 		settingsJSON                 []byte
 		createdAt, updatedAt         time.Time
 	)
@@ -1057,7 +1059,7 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 
 	return tenant.Reconstitute(
 		id, name, slug, description.String, logoURL.String,
-		settings, createdBy, createdAt, updatedAt,
+		settings, createdBy.String, createdAt, updatedAt,
 	), nil
 }
 

@@ -276,7 +276,8 @@ func (r *APIKeyRepository) scanAPIKey(row *sql.Row) (*apikey.APIKey, error) {
 	var (
 		id, tenantID             string
 		userID, createdBy        sql.NullString
-		name, description        string
+		name                     string
+		description              sql.NullString
 		keyHash, keyPrefix       string
 		scopes                   pq.StringArray
 		rateLimit                int
@@ -302,7 +303,7 @@ func (r *APIKeyRepository) scanAPIKey(row *sql.Row) (*apikey.APIKey, error) {
 		return nil, fmt.Errorf("scan api key: %w", err)
 	}
 
-	return r.reconstruct(id, tenantID, userID, name, description,
+	return r.reconstruct(id, tenantID, userID, name, description.String,
 		keyHash, keyPrefix, []string(scopes), rateLimit, status,
 		expiresAt, lastUsedAt, lastUsedIP, useCount,
 		createdBy, createdAt, updatedAt, revokedAt, revokedBy)
@@ -312,7 +313,8 @@ func (r *APIKeyRepository) scanAPIKeyRow(rows *sql.Rows) (*apikey.APIKey, error)
 	var (
 		id, tenantID             string
 		userID, createdBy        sql.NullString
-		name, description        string
+		name                     string
+		description              sql.NullString
 		keyHash, keyPrefix       string
 		scopes                   pq.StringArray
 		rateLimit                int
@@ -335,7 +337,7 @@ func (r *APIKeyRepository) scanAPIKeyRow(rows *sql.Rows) (*apikey.APIKey, error)
 		return nil, fmt.Errorf("scan api key row: %w", err)
 	}
 
-	return r.reconstruct(id, tenantID, userID, name, description,
+	return r.reconstruct(id, tenantID, userID, name, description.String,
 		keyHash, keyPrefix, []string(scopes), rateLimit, status,
 		expiresAt, lastUsedAt, lastUsedIP, useCount,
 		createdBy, createdAt, updatedAt, revokedAt, revokedBy)

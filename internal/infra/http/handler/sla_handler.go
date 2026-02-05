@@ -130,9 +130,9 @@ func (h *SLAHandler) handleValidationError(w http.ResponseWriter, err error) {
 // handleServiceError converts service errors to API errors.
 func (h *SLAHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, shared.ErrNotFound):
+	case errors.Is(err, shared.ErrNotFound) || errors.Is(err, sla.ErrNotFound):
 		apierror.NotFound("SLA Policy").WriteJSON(w)
-	case errors.Is(err, shared.ErrAlreadyExists):
+	case errors.Is(err, shared.ErrAlreadyExists) || errors.Is(err, sla.ErrAlreadyExists):
 		apierror.Conflict("SLA Policy already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)

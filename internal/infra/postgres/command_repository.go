@@ -375,6 +375,8 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		dispatchAttempts    int
 	)
 
+	var errorMessage sql.NullString
+
 	err := row.Scan(
 		&id,
 		&tenantID,
@@ -383,7 +385,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		&priority,
 		&payload,
 		&status,
-		&cmd.ErrorMessage,
+		&errorMessage,
 		&cmd.CreatedAt,
 		&expiresAt,
 		&acknowledgedAt,
@@ -416,6 +418,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 	cmd.Priority = command.CommandPriority(priority)
 	cmd.Status = command.CommandStatus(status)
 	cmd.Payload = payload
+	cmd.ErrorMessage = errorMessage.String
 	cmd.IsPlatformJob = isPlatformJob
 	cmd.QueuePriority = queuePriority
 	cmd.DispatchAttempts = dispatchAttempts
@@ -512,6 +515,8 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		dispatchAttempts    int
 	)
 
+	var errorMessage sql.NullString
+
 	err := rows.Scan(
 		&id,
 		&tenantID,
@@ -520,7 +525,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		&priority,
 		&payload,
 		&status,
-		&cmd.ErrorMessage,
+		&errorMessage,
 		&cmd.CreatedAt,
 		&expiresAt,
 		&acknowledgedAt,
@@ -550,6 +555,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 	cmd.Priority = command.CommandPriority(priority)
 	cmd.Status = command.CommandStatus(status)
 	cmd.Payload = payload
+	cmd.ErrorMessage = errorMessage.String
 	cmd.IsPlatformJob = isPlatformJob
 	cmd.QueuePriority = queuePriority
 	cmd.DispatchAttempts = dispatchAttempts

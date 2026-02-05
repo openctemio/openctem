@@ -812,7 +812,7 @@ func (r *SyncStatusRepository) scanSyncStatus(row *sql.Row) (*threatintel.SyncSt
 		lastSyncStatus    string
 		lastSyncError     sql.NullString
 		recordsSynced     int
-		syncDurationMs    int
+		syncDurationMs    sql.NullInt64
 		nextSyncAt        sql.NullTime
 		syncIntervalHours int
 		isEnabled         bool
@@ -843,6 +843,11 @@ func (r *SyncStatusRepository) scanSyncStatus(row *sql.Row) (*threatintel.SyncSt
 
 	syncState, _ := threatintel.ParseSyncState(lastSyncStatus)
 
+	var durationMs int
+	if syncDurationMs.Valid {
+		durationMs = int(syncDurationMs.Int64)
+	}
+
 	var metadata map[string]any
 	if len(metadataJSON) > 0 {
 		if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
@@ -860,7 +865,7 @@ func (r *SyncStatusRepository) scanSyncStatus(row *sql.Row) (*threatintel.SyncSt
 		syncState,
 		lastSyncError.String,
 		recordsSynced,
-		syncDurationMs,
+		durationMs,
 		nextSyncTime,
 		syncIntervalHours,
 		isEnabled,
@@ -880,7 +885,7 @@ func (r *SyncStatusRepository) scanSyncStatuses(rows *sql.Rows) ([]*threatintel.
 			lastSyncStatus    string
 			lastSyncError     sql.NullString
 			recordsSynced     int
-			syncDurationMs    int
+			syncDurationMs    sql.NullInt64
 			nextSyncAt        sql.NullTime
 			syncIntervalHours int
 			isEnabled         bool
@@ -908,6 +913,11 @@ func (r *SyncStatusRepository) scanSyncStatuses(rows *sql.Rows) ([]*threatintel.
 
 		syncState, _ := threatintel.ParseSyncState(lastSyncStatus)
 
+		var durationMs int
+		if syncDurationMs.Valid {
+			durationMs = int(syncDurationMs.Int64)
+		}
+
 		var metadata map[string]any
 		if len(metadataJSON) > 0 {
 			if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
@@ -925,7 +935,7 @@ func (r *SyncStatusRepository) scanSyncStatuses(rows *sql.Rows) ([]*threatintel.
 			syncState,
 			lastSyncError.String,
 			recordsSynced,
-			syncDurationMs,
+			durationMs,
 			nextSyncTime,
 			syncIntervalHours,
 			isEnabled,
