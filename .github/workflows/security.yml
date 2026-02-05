@@ -1,0 +1,288 @@
+# =============================================================================
+# Security Scanning with Rediver Agent
+# =============================================================================
+# Parallel security scanning using Rediver Agent
+#
+# Jobs run in parallel for faster feedback:
+#   - SAST: Semgrep (dataflow/taint tracking for Go)
+#   - Secrets: Gitleaks (credential detection)
+#   - SCA: Trivy (dependency vulnerabilities)
+#   - Go Vuln: govulncheck (Go-specific CVEs)
+#   - License: go-licenses (compliance check)
+#   - Container: Trivy image scan (main branch only)
+# =============================================================================
+
+name: Security
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run every Monday at 00:00 UTC
+    - cron: "0 0 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  pull-requests: write
+
+jobs:
+  # ============================================
+  # SAST - Semgrep (Code Analysis)
+  # ============================================
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Semgrep
+        uses: docker://exploopio/agent:semgrep
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_URL: ${{ secrets.EXPLOOP_API_URL }}
+          API_KEY: ${{ secrets.EXPLOOP_API_KEY }}
+          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+        with:
+          args: >-
+            -tool semgrep
+            -target .
+            -push
+            -comments
+            -output-format sarif
+            -output /github/workspace/semgrep-results.sarif
+            -verbose
+
+      - name: Fix SARIF permissions
+        if: always()
+        run: |
+          if [ -f semgrep-results.sarif ]; then
+            sudo chown $(id -u):$(id -g) semgrep-results.sarif
+          fi
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep-results.sarif
+          category: sast
+        continue-on-error: true
+
+  # ============================================
+  # Secrets - Gitleaks (Credential Detection)
+  # ============================================
+  secrets:
+    name: Secrets (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: docker://exploopio/agent:gitleaks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_URL: ${{ secrets.EXPLOOP_API_URL }}
+          API_KEY: ${{ secrets.EXPLOOP_API_KEY }}
+          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+        with:
+          args: >-
+            -tool gitleaks
+            -target .
+            -push
+            -comments
+            -output-format sarif
+            -output /github/workspace/gitleaks-results.sarif
+            -verbose
+
+      - name: Fix SARIF permissions
+        if: always()
+        run: |
+          if [ -f gitleaks-results.sarif ]; then
+            sudo chown $(id -u):$(id -g) gitleaks-results.sarif
+          fi
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: gitleaks-results.sarif
+          category: secrets
+        continue-on-error: true
+
+  # ============================================
+  # SCA - Trivy (Dependency Vulnerabilities)
+  # ============================================
+  sca:
+    name: SCA (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy
+        uses: docker://exploopio/agent:trivy
+        env:
+          API_URL: ${{ secrets.EXPLOOP_API_URL }}
+          API_KEY: ${{ secrets.EXPLOOP_API_KEY }}
+          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+        with:
+          args: >-
+            -tool trivy-fs
+            -target .
+            -push
+            -output-format sarif
+            -output /github/workspace/trivy-results.sarif
+
+      - name: Fix SARIF for GitHub Code Scanning
+        if: always()
+        run: |
+          if [ -f trivy-results.sarif ]; then
+            sudo chown $(id -u):$(id -g) trivy-results.sarif
+            # Fix SARIF issues that cause GitHub Code Scanning to reject the file:
+            # 1. Add missing 'message' field to results (required by GitHub)
+            # 2. Add missing 'locations' to results
+            jq '
+              .runs[].results = [
+                .runs[].results[] |
+                # Fix missing message - use ruleId or default text
+                if .message == null or .message.text == null or .message.text == "" then
+                  .message = {"text": (.ruleId // "Security vulnerability detected")}
+                else . end |
+                # Fix missing locations
+                if .locations == null or .locations == [] then
+                  .locations = [{"physicalLocation": {"artifactLocation": {"uri": "go.mod"}, "region": {"startLine": 1}}}]
+                else . end
+              ]
+            ' trivy-results.sarif > trivy-results-fixed.sarif && mv trivy-results-fixed.sarif trivy-results.sarif || echo "Warning: Could not fix SARIF"
+          fi
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: sca
+        continue-on-error: true
+
+  # ============================================
+  # Go Vulnerability Check
+  # ============================================
+  govulncheck:
+    name: Go Vulnerability Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  # ============================================
+  # License Compliance Check
+  # ============================================
+  license-check:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Install go-licenses
+        run: go install github.com/google/go-licenses@latest
+
+      - name: Check licenses
+        run: |
+          go-licenses check ./... --disallowed_types=forbidden,restricted || true
+        continue-on-error: true
+
+  # ============================================
+  # Docker Image Scan (on main branch)
+  # ============================================
+  docker-scan:
+    name: Container Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: exploop-api:scan
+
+      - name: Run Trivy image scan
+        uses: docker://exploopio/agent:trivy
+        env:
+          API_URL: ${{ secrets.EXPLOOP_API_URL }}
+          API_KEY: ${{ secrets.EXPLOOP_API_KEY }}
+          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+        with:
+          args: >-
+            -tool trivy-image
+            -target exploop-api:scan
+            -push
+            -output-format sarif
+            -output /github/workspace/trivy-docker-results.sarif
+            -verbose
+
+      - name: Fix SARIF for GitHub Code Scanning
+        if: always()
+        run: |
+          if [ -f trivy-docker-results.sarif ]; then
+            sudo chown $(id -u):$(id -g) trivy-docker-results.sarif
+            # Fix SARIF issues that cause GitHub Code Scanning to reject the file:
+            # 1. Add missing 'message' field to results (required by GitHub)
+            # 2. Add missing 'locations' to results
+            jq '
+              .runs[].results = [
+                .runs[].results[] |
+                # Fix missing message - use ruleId or default text
+                if .message == null or .message.text == null or .message.text == "" then
+                  .message = {"text": (.ruleId // "Security vulnerability detected")}
+                else . end |
+                # Fix missing locations
+                if .locations == null or .locations == [] then
+                  .locations = [{"physicalLocation": {"artifactLocation": {"uri": "Dockerfile"}, "region": {"startLine": 1}}}]
+                else . end
+              ]
+            ' trivy-docker-results.sarif > trivy-docker-results-fixed.sarif && mv trivy-docker-results-fixed.sarif trivy-docker-results.sarif || echo "Warning: Could not fix SARIF"
+          fi
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-docker-results.sarif
+          category: container
+        continue-on-error: true

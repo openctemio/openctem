@@ -1,0 +1,340 @@
+name: Docker Publish
+
+on:
+  push:
+    tags:
+      - "v*" # Trigger on version tags (v0.1.0, v1.0.0, etc.)
+  workflow_dispatch: # Manual trigger
+    inputs:
+      version:
+        description: "Version tag (e.g., v0.1.1, v0.1.1-staging)"
+        required: true
+        type: string
+      environment:
+        description: "Environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+env:
+  REGISTRY: docker.io
+  API_IMAGE: exploopio/api
+  MIGRATIONS_IMAGE: exploopio/migrations
+  SEED_IMAGE: exploopio/seed
+  ADMIN_CLI_IMAGE: exploopio/admin-cli
+
+jobs:
+  # ============================================
+  # Prepare - Set build variables
+  # ============================================
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.VERSION }}
+      environment: ${{ steps.vars.outputs.ENVIRONMENT }}
+      api_tags: ${{ steps.vars.outputs.API_TAGS }}
+      migrations_tags: ${{ steps.vars.outputs.MIGRATIONS_TAGS }}
+      seed_tags: ${{ steps.vars.outputs.SEED_TAGS }}
+      admin_cli_tags: ${{ steps.vars.outputs.ADMIN_CLI_TAGS }}
+    steps:
+      - name: Set build variables
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+            if [[ "$VERSION" == *"-staging"* ]]; then
+              ENVIRONMENT="staging"
+            else
+              ENVIRONMENT="production"
+            fi
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_OUTPUT
+
+          if [ "$ENVIRONMENT" = "staging" ]; then
+            if [[ "$VERSION" != *"-staging"* ]]; then
+              VERSION="${VERSION}-staging"
+            fi
+            echo "API_TAGS=${{ env.API_IMAGE }}:${VERSION},${{ env.API_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
+            echo "MIGRATIONS_TAGS=${{ env.MIGRATIONS_IMAGE }}:${VERSION},${{ env.MIGRATIONS_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
+            echo "SEED_TAGS=${{ env.SEED_IMAGE }}:${VERSION},${{ env.SEED_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
+            echo "ADMIN_CLI_TAGS=${{ env.ADMIN_CLI_IMAGE }}:${VERSION},${{ env.ADMIN_CLI_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
+          else
+            echo "API_TAGS=${{ env.API_IMAGE }}:${VERSION},${{ env.API_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            echo "MIGRATIONS_TAGS=${{ env.MIGRATIONS_IMAGE }}:${VERSION},${{ env.MIGRATIONS_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            echo "SEED_TAGS=${{ env.SEED_IMAGE }}:${VERSION},${{ env.SEED_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            echo "ADMIN_CLI_TAGS=${{ env.ADMIN_CLI_IMAGE }}:${VERSION},${{ env.ADMIN_CLI_IMAGE }}:latest" >> $GITHUB_OUTPUT
+          fi
+
+  # ============================================
+  # Build - Parallel builds for each platform
+  # ============================================
+  # Using native runners for each architecture eliminates QEMU emulation overhead
+  # arm64 builds on native ARM runners are 3-5x faster than QEMU emulation
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: [prepare]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Build API image
+      - name: Build and push API by digest
+        id: build-api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: production
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.API_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=${{ env.API_IMAGE }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.API_IMAGE }}:buildcache-${{ matrix.arch }},mode=max
+          provenance: false
+          sbom: false
+
+      # Build Migrations image
+      - name: Build and push Migrations by digest
+        id: build-migrations
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.migrations
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.MIGRATIONS_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=${{ env.MIGRATIONS_IMAGE }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.MIGRATIONS_IMAGE }}:buildcache-${{ matrix.arch }},mode=max
+          provenance: false
+          sbom: false
+
+      # Build Seed image
+      - name: Build and push Seed by digest
+        id: build-seed
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.seed
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.SEED_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=${{ env.SEED_IMAGE }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.SEED_IMAGE }}:buildcache-${{ matrix.arch }},mode=max
+          provenance: false
+          sbom: false
+
+      # Build Admin CLI image
+      - name: Build and push Admin CLI by digest
+        id: build-admin-cli
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.admin-cli
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.ADMIN_CLI_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=${{ env.ADMIN_CLI_IMAGE }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.ADMIN_CLI_IMAGE }}:buildcache-${{ matrix.arch }},mode=max
+          provenance: false
+          sbom: false
+
+      - name: Export digests
+        run: |
+          mkdir -p /tmp/digests/api /tmp/digests/migrations /tmp/digests/seed /tmp/digests/admin-cli
+
+          api_digest="${{ steps.build-api.outputs.digest }}"
+          touch "/tmp/digests/api/${api_digest#sha256:}"
+
+          migrations_digest="${{ steps.build-migrations.outputs.digest }}"
+          touch "/tmp/digests/migrations/${migrations_digest#sha256:}"
+
+          seed_digest="${{ steps.build-seed.outputs.digest }}"
+          touch "/tmp/digests/seed/${seed_digest#sha256:}"
+
+          admin_cli_digest="${{ steps.build-admin-cli.outputs.digest }}"
+          touch "/tmp/digests/admin-cli/${admin_cli_digest#sha256:}"
+
+      - name: Upload API digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-api-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/api/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Migrations digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-migrations-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/migrations/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Seed digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-seed-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/seed/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Admin CLI digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-admin-cli-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/admin-cli/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ============================================
+  # Merge - Create multi-platform manifests
+  # ============================================
+  merge:
+    name: Merge Manifests
+    runs-on: ubuntu-latest
+    needs: [prepare, build]
+    steps:
+      - name: Download API digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests/api
+          pattern: digests-api-*
+          merge-multiple: true
+
+      - name: Download Migrations digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests/migrations
+          pattern: digests-migrations-*
+          merge-multiple: true
+
+      - name: Download Seed digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests/seed
+          pattern: digests-seed-*
+          merge-multiple: true
+
+      - name: Download Admin CLI digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests/admin-cli
+          pattern: digests-admin-cli-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Create API manifest
+      - name: Create API manifest and push
+        working-directory: /tmp/digests/api
+        run: |
+          TAGS="${{ needs.prepare.outputs.api_tags }}"
+          TAG_ARGS=""
+          for tag in ${TAGS//,/ }; do
+            TAG_ARGS="$TAG_ARGS -t $tag"
+          done
+
+          docker buildx imagetools create $TAG_ARGS \
+            $(printf '${{ env.API_IMAGE }}@sha256:%s ' *)
+
+      # Create Migrations manifest
+      - name: Create Migrations manifest and push
+        working-directory: /tmp/digests/migrations
+        run: |
+          TAGS="${{ needs.prepare.outputs.migrations_tags }}"
+          TAG_ARGS=""
+          for tag in ${TAGS//,/ }; do
+            TAG_ARGS="$TAG_ARGS -t $tag"
+          done
+
+          docker buildx imagetools create $TAG_ARGS \
+            $(printf '${{ env.MIGRATIONS_IMAGE }}@sha256:%s ' *)
+
+      # Create Seed manifest
+      - name: Create Seed manifest and push
+        working-directory: /tmp/digests/seed
+        run: |
+          TAGS="${{ needs.prepare.outputs.seed_tags }}"
+          TAG_ARGS=""
+          for tag in ${TAGS//,/ }; do
+            TAG_ARGS="$TAG_ARGS -t $tag"
+          done
+
+          docker buildx imagetools create $TAG_ARGS \
+            $(printf '${{ env.SEED_IMAGE }}@sha256:%s ' *)
+
+      # Create Admin CLI manifest
+      - name: Create Admin CLI manifest and push
+        working-directory: /tmp/digests/admin-cli
+        run: |
+          TAGS="${{ needs.prepare.outputs.admin_cli_tags }}"
+          TAG_ARGS=""
+          for tag in ${TAGS//,/ }; do
+            TAG_ARGS="$TAG_ARGS -t $tag"
+          done
+
+          docker buildx imagetools create $TAG_ARGS \
+            $(printf '${{ env.ADMIN_CLI_IMAGE }}@sha256:%s ' *)
+
+      - name: Generate build summary
+        run: |
+          echo "## Docker Images Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ needs.prepare.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`${{ needs.prepare.outputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** \`linux/amd64, linux/arm64\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### API Image" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.prepare.outputs.api_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Migrations Image" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.prepare.outputs.migrations_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Seed Image" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.prepare.outputs.seed_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Admin CLI Image" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.prepare.outputs.admin_cli_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,74 @@
+# =============================================================================
+# Admin CLI Dockerfile
+# Builds exploop-admin and bootstrap-admin CLI tools
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Builder stage
+# -----------------------------------------------------------------------------
+FROM public.ecr.aws/docker/library/golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies
+RUN apk add --no-cache git ca-certificates tzdata
+
+# Set GOPRIVATE for private modules
+ENV GOPRIVATE=github.com/exploopio/*
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG VERSION=dev
+
+# Disable workspace mode (GOWORK=off) to build standalone
+ENV GOWORK=off
+
+# Build exploop-admin CLI
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath \
+    -ldflags="-s -w -X main.Version=${VERSION}" \
+    -o /out/exploop-admin \
+    ./cmd/exploop-admin
+
+# Build bootstrap-admin CLI
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath \
+    -ldflags="-s -w" \
+    -o /out/bootstrap-admin \
+    ./cmd/bootstrap-admin
+
+# -----------------------------------------------------------------------------
+# Production stage - Minimal distroless image
+# -----------------------------------------------------------------------------
+FROM gcr.io/distroless/static-debian12:nonroot AS production
+
+LABEL org.opencontainers.image.title="Rediver Admin CLI"
+LABEL org.opencontainers.image.description="kubectl-style CLI for Rediver platform administration"
+LABEL org.opencontainers.image.source="https://github.com/exploopio/api"
+
+# Copy binaries
+COPY --from=builder /out/exploop-admin /usr/local/bin/exploop-admin
+COPY --from=builder /out/bootstrap-admin /usr/local/bin/bootstrap-admin
+
+# Copy timezone data and CA certs
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+# Run as non-root user (65532 is the nonroot user in distroless)
+USER 65532:65532
+
+# CLI tools are short-lived, disable HEALTHCHECK
+HEALTHCHECK NONE
+
+# Default to exploop-admin
+ENTRYPOINT ["/usr/local/bin/exploop-admin"]
+CMD ["--help"]

@@ -1,0 +1,67 @@
+# Gitleaks configuration for Rediver API
+# https://github.com/gitleaks/gitleaks
+
+[extend]
+# Use the default gitleaks config as a base
+useDefault = true
+
+[allowlist]
+description = "Allowlist for Rediver API"
+paths = [
+    # Test files with fake credentials
+    '''.*_test\.go$''',
+    '''.*\.test\.go$''',
+    # Documentation
+    '''.*\.md$''',
+    # Example/template files
+    '''.*\.example$''',
+    '''.*\.sample$''',
+    # Generated files
+    '''vendor/.*''',
+    '''node_modules/.*''',
+    '''\.git/.*''',
+    # Development scripts (contains placeholder credentials for local dev)
+    '''scripts/.*''',
+    '''api/scripts/.*''',
+    '''.*/scripts/.*''',
+]
+
+# Regexes for allowed secrets (e.g., placeholder values)
+regexes = [
+    # Common placeholder patterns
+    '''(?i)your[-_]?(api[-_]?key|secret|token|password)''',
+    '''(?i)(example|sample|test|fake|dummy|placeholder)''',
+    '''xxx+''',
+    '''000+''',
+    '''changeme''',
+    '''<.*>''',
+    '''\$\{.*\}''',
+    # GitHub Personal Access Token placeholder (ghp_xxxx...)
+    '''ghp_x{10,}''',
+]
+
+# Allow specific commits (use sparingly)
+commits = []
+
+# Additional rules
+[[rules]]
+id = "internal-token"
+description = "Internal API key/token pattern"
+regex = '''(API_KEY|API_TOKEN)\s*=\s*["']?([a-zA-Z0-9_-]{20,})["']?'''
+entropy = 3.5
+secretGroup = 2
+allowlist = { regexes = ['''(test|example|placeholder|changeme|your-api-key)'''] }
+
+[[rules]]
+id = "postgresql-connection-string"
+description = "PostgreSQL connection string"
+regex = '''postgres(ql)?://[^:]+:[^@]+@[^/]+/\w+'''
+entropy = 0
+allowlist = { regexes = ['''postgres(ql)?://(user|username|test|admin|rediver):(pass|password|secret|changeme|rediver)@(localhost|127\.0\.0\.1|db|postgres|host)[:\d]*/'''] }
+
+[[rules]]
+id = "redis-connection-string"
+description = "Redis connection string"
+regex = '''redis://[^:]*:[^@]+@[^/]+'''
+entropy = 0
+allowlist = { regexes = ['''redis://[^:]*:(password|secret)@(localhost|127\.0\.0\.1|redis)'''] }

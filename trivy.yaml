@@ -1,0 +1,21 @@
+# Trivy Configuration
+# https://aquasecurity.github.io/trivy/latest/docs/configuration/
+
+secret:
+  # Exclude patterns that are placeholder/example values
+  allow-rules:
+    # GitHub Personal Access Token placeholder (ghp_xxx...)
+    - id: github-pat-placeholder
+      description: "Ignore GitHub PAT placeholder pattern in examples"
+      match: "ghp_x{20,}"
+
+    # Generic placeholder patterns
+    - id: placeholder-asterisks
+      description: "Ignore asterisk placeholder patterns"
+      match: "\\*{10,}"
+
+# Skip misconfigurations for job containers (run once and exit)
+misconfiguration:
+  scanners:
+    - dockerfile
+  skip-check-update: true

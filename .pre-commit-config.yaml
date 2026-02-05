@@ -1,0 +1,137 @@
+# =============================================================================
+# PRE-COMMIT HOOKS CONFIGURATION
+# =============================================================================
+# Security-focused pre-commit hooks for Rediver API
+# Install: make pre-commit-install
+# Run manually: make pre-commit-run
+# Docs: https://pre-commit.com/
+# =============================================================================
+
+# Use minimum pre-commit version
+minimum_pre_commit_version: "3.0.0"
+
+repos:
+  # ==========================================================================
+  # Git & File Checks
+  # ==========================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Prevent secrets from being committed
+      - id: detect-private-key
+        name: Detect Private Keys
+        exclude: migrations/seed/seed_comprehensive\.sql$
+
+      # Check for debug statements
+      - id: check-added-large-files
+        name: Check Large Files
+        args: ['--maxkb=1000']
+
+      # Validate file formats
+      - id: check-yaml
+        name: Check YAML
+        args: ['--unsafe']
+      - id: check-json
+        name: Check JSON
+      - id: check-toml
+        name: Check TOML
+
+      # General best practices
+      - id: end-of-file-fixer
+        name: Fix End of Files
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+      - id: check-merge-conflict
+        name: Check Merge Conflicts
+      - id: check-case-conflict
+        name: Check Case Conflicts
+
+  # ==========================================================================
+  # SECRET LEAK DETECTION - Gitleaks
+  # ==========================================================================
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: Gitleaks - Detect Secrets
+        description: Detect hardcoded secrets, passwords, API keys
+        args:
+          - --config=.gitleaks.toml
+          - --verbose
+
+  # ==========================================================================
+  # GO CODE SECURITY & QUALITY
+  # ==========================================================================
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        name: Go Format
+      - id: go-imports
+        name: Go Imports
+
+  # Golangci-lint with security rules (gosec) - includes vet, build checks
+  # Using local hook to ensure correct Go version compatibility
+  # TEMPORARILY DISABLED: golangci-lint built with Go 1.24 but project uses Go 1.25
+  # TODO: Re-enable when golangci-lint supports Go 1.25
+  # - repo: local
+  #   hooks:
+  #     - id: golangci-lint
+  #       name: Golangci-lint (includes gosec)
+  #       entry: bash -c 'GOWORK=off golangci-lint run --config=.golangci.yml --timeout=5m'
+  #       language: system
+  #       types: [go]
+  #       pass_filenames: false
+
+  # ==========================================================================
+  # VULNERABILITY SCANNING - Trivy
+  # ==========================================================================
+  - repo: local
+    hooks:
+      - id: trivy-fs
+        name: Trivy - Vulnerability & Secret Scan
+        entry: trivy
+        args:
+          - fs
+          - --exit-code=1
+          - --severity=CRITICAL,HIGH
+          - --scanners=vuln,secret,misconfig
+          - --config=trivy.yaml
+          - --skip-dirs=.git,vendor,tmp
+          - --skip-files=Dockerfile.seed
+          - --skip-files=Dockerfile.migrations
+          - --skip-files=migrations/seed/seed_comprehensive.sql
+          - "."
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # ==========================================================================
+  # INFRASTRUCTURE AS CODE (IaC) SECURITY - Checkov
+  # ==========================================================================
+  - repo: https://github.com/bridgecrewio/checkov
+    rev: 3.2.325
+    hooks:
+      - id: checkov
+        name: Checkov - IaC Security Scan
+        args:
+          - --framework=dockerfile
+          - --quiet
+          - --compact
+        files: Dockerfile.*$
+
+  # ==========================================================================
+  # DOCKERFILE BEST PRACTICES - Hadolint
+  # ==========================================================================
+  - repo: local
+    hooks:
+      - id: hadolint
+        name: Hadolint - Dockerfile Linter
+        entry: hadolint
+        language: system
+        files: Dockerfile.*$
+        args:
+          - --ignore=DL3008  # Pin versions in apt-get
+          - --ignore=DL3018  # Pin versions in apk add
+          - --ignore=DL3059  # Multiple consecutive RUN (handled with comments)
+          - --ignore=DL3062  # Pin versions in go install (we pin them)

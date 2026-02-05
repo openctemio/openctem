@@ -1,0 +1,48 @@
+# =============================================================================
+# Dockerfile for Database Migrations
+# =============================================================================
+# Lightweight image containing only migration files and the migrate tool.
+# Used by docker-compose to run database migrations independently.
+#
+# Build:
+#   docker build -f Dockerfile.migrations -t exploopio/migrations:v0.1.0 .
+#
+# Usage:
+#   docker run --rm exploopio/migrations:v0.1.0 \
+#     -path=/migrations \
+#     -database "postgres://user:pass@host:5432/db?sslmode=disable" \
+#     up
+#
+# Commands:
+#   up     - Apply all pending migrations
+#   down   - Rollback last migration
+#   drop   - Drop all tables
+#   force N - Set version to N without running migration
+#   version - Show current version
+#
+# checkov:skip=CKV_DOCKER_2: One-time migration container, no healthcheck needed
+# checkov:skip=CKV_DOCKER_3: One-time container runs as root for file access
+# =============================================================================
+
+# trivy:ignore:AVD-DS-0002 - One-time migration container, exits after running
+FROM public.ecr.aws/docker/library/alpine:3.20
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates
+
+# Install migrate tool from GitHub releases to avoid Docker Hub
+# Supports both amd64 and arm64 architectures
+ENV MIGRATE_VERSION=v4.17.0
+ARG TARGETARCH
+# hadolint ignore=DL3047,DL4006
+RUN ARCH="${TARGETARCH:-amd64}" && \
+    wget -q -O - "https://github.com/golang-migrate/migrate/releases/download/${MIGRATE_VERSION}/migrate.linux-${ARCH}.tar.gz" | tar xvz && \
+    mv migrate /usr/local/bin/migrate && \
+    chmod +x /usr/local/bin/migrate
+
+# Copy migration files
+COPY migrations /migrations
+
+# Default: show help
+ENTRYPOINT ["migrate"]
+CMD ["-help"]

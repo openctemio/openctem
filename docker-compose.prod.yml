@@ -1,0 +1,209 @@
+# =============================================================================
+# Docker Compose - Production Environment
+# =============================================================================
+# Option 1: Pull from Docker Hub (recommended for deployment):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Option 2: Build locally:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+#
+# With specific version:
+#   API_VERSION=v1.0.0 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Required environment variables (set in .env or shell):
+#   - DB_PASSWORD          (database password)
+#   - REDIS_PASSWORD       (redis password)
+#   - AUTH_JWT_SECRET      (JWT signing secret, min 64 chars)
+#   - APP_ENCRYPTION_KEY   (encryption key for credentials, hex 64 chars or base64 44 chars)
+#   - CORS_ALLOWED_ORIGINS (allowed origins for CORS)
+#
+# Optional (for OIDC/Keycloak auth):
+#   - KEYCLOAK_BASE_URL
+#   - KEYCLOAK_REALM
+#
+# Security Features:
+#   - Database/Redis NOT exposed externally
+#   - no-new-privileges on all containers
+#   - read_only filesystem for API
+#   - Resource limits enforced
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # API Application (Production)
+  # ---------------------------------------------------------------------------
+  app:
+    # Pull from Docker Hub by default, build locally if --build flag is used
+    image: exploopio/api:${API_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "8080:8080" # HTTP API
+      - "9090:9090" # gRPC
+    environment:
+      # Application
+      APP_NAME: exploop
+      APP_ENV: production
+      APP_DEBUG: "false"
+      # Server
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      SERVER_REQUEST_TIMEOUT: ${SERVER_REQUEST_TIMEOUT:-30s}
+      GRPC_PORT: 9090
+      # Database
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-exploop}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_NAME: ${DB_NAME:-exploop}
+      DB_SSLMODE: ${DB_SSLMODE:-require}
+      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-50}
+      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-10}
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-50}
+      REDIS_TLS_ENABLED: ${REDIS_TLS_ENABLED:-false}
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      # Authentication
+      AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required}
+      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-api}
+      AUTH_ACCESS_TOKEN_DURATION: ${AUTH_ACCESS_TOKEN_DURATION:-15m}
+      AUTH_REFRESH_TOKEN_DURATION: ${AUTH_REFRESH_TOKEN_DURATION:-168h}
+      AUTH_SESSION_DURATION: ${AUTH_SESSION_DURATION:-720h}
+      AUTH_PASSWORD_MIN_LENGTH: ${AUTH_PASSWORD_MIN_LENGTH:-8}
+      AUTH_PASSWORD_REQUIRE_UPPERCASE: ${AUTH_PASSWORD_REQUIRE_UPPERCASE:-true}
+      AUTH_PASSWORD_REQUIRE_LOWERCASE: ${AUTH_PASSWORD_REQUIRE_LOWERCASE:-true}
+      AUTH_PASSWORD_REQUIRE_NUMBER: ${AUTH_PASSWORD_REQUIRE_NUMBER:-true}
+      AUTH_PASSWORD_REQUIRE_SPECIAL: ${AUTH_PASSWORD_REQUIRE_SPECIAL:-true}
+      AUTH_MAX_LOGIN_ATTEMPTS: ${AUTH_MAX_LOGIN_ATTEMPTS:-5}
+      AUTH_LOCKOUT_DURATION: ${AUTH_LOCKOUT_DURATION:-15m}
+      AUTH_MAX_ACTIVE_SESSIONS: ${AUTH_MAX_ACTIVE_SESSIONS:-10}
+      AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-false}
+      AUTH_REQUIRE_EMAIL_VERIFICATION: ${AUTH_REQUIRE_EMAIL_VERIFICATION:-true}
+      # Keycloak (optional - only for oidc or hybrid auth)
+      KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
+      KEYCLOAK_JWKS_REFRESH_INTERVAL: ${KEYCLOAK_JWKS_REFRESH_INTERVAL:-1h}
+      # CORS
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required}
+      CORS_ALLOWED_METHODS: ${CORS_ALLOWED_METHODS:-GET,POST,PUT,DELETE,OPTIONS,PATCH}
+      CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS:-Accept,Authorization,Content-Type,X-Request-ID}
+      # Rate Limiting
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-100}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-200}
+      # Encryption (required in production)
+      # Generate with: openssl rand -hex 32
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required}
+      # SMTP (optional)
+      SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@exploop.io}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Rediver}
+      SMTP_TLS: ${SMTP_TLS:-true}
+      SMTP_BASE_URL: ${SMTP_BASE_URL:-}
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: always
+    # Security hardening
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=100M
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Override (Production)
+  # ---------------------------------------------------------------------------
+  postgres:
+    # Override base - no external ports in production
+    ports: []
+    expose:
+      - "5432"
+    environment:
+      POSTGRES_USER: ${DB_USER:-exploop}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-exploop}
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Redis Override (Production)
+  # ---------------------------------------------------------------------------
+  redis:
+    # Override base - no external ports in production
+    ports: []
+    expose:
+      - "6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    healthcheck:
+      test: [ "CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"

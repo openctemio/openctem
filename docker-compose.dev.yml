@@ -1,0 +1,131 @@
+# =============================================================================
+# Docker Compose - Development Environment
+# =============================================================================
+# Development environment with hot reload and debug support.
+#
+# Uses: Dockerfile -> target: development
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Features:
+#   - Hot reload with Air
+#   - Delve debugger on port 2345
+#   - Source code mounted as volume
+#   - Debug logging enabled
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # API Application (Development)
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    restart: on-failure
+    ports:
+      - "8080:8080" # HTTP API
+      - "9090:9090" # gRPC
+      - "2345:2345" # Delve debugger
+    environment:
+      # Application
+      APP_NAME: exploop
+      APP_ENV: development
+      APP_DEBUG: "true"
+      # Server
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      SERVER_REQUEST_TIMEOUT: 30s
+      GRPC_PORT: 9090
+      # Database
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-exploop}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      DB_NAME: ${DB_NAME:-exploop}
+      DB_SSLMODE: disable
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_TLS_ENABLED: "false"
+      # Logging
+      LOG_LEVEL: debug
+      LOG_FORMAT: text
+      # Authentication - Local auth for development
+      AUTH_PROVIDER: local
+      AUTH_JWT_SECRET: this-is-a-development-secret-key-at-least-64-characters-long-for-security
+      AUTH_JWT_ISSUER: api
+      AUTH_ACCESS_TOKEN_DURATION: 15m
+      AUTH_REFRESH_TOKEN_DURATION: 168h
+      AUTH_SESSION_DURATION: 720h
+      AUTH_PASSWORD_MIN_LENGTH: "8"
+      AUTH_PASSWORD_REQUIRE_UPPERCASE: "true"
+      AUTH_PASSWORD_REQUIRE_LOWERCASE: "true"
+      AUTH_PASSWORD_REQUIRE_NUMBER: "true"
+      AUTH_PASSWORD_REQUIRE_SPECIAL: "false"
+      AUTH_MAX_LOGIN_ATTEMPTS: "5"
+      AUTH_LOCKOUT_DURATION: 15m
+      AUTH_MAX_ACTIVE_SESSIONS: "10"
+      AUTH_ALLOW_REGISTRATION: "true"
+      AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
+      # Keycloak (optional - for hybrid mode)
+      # KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-http://localhost:8180}
+      # KEYCLOAK_REALM: ${KEYCLOAK_REALM:-exploop}
+      # KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-api}
+      # CORS (allow all in dev)
+      CORS_ALLOWED_ORIGINS: "*"
+      # Rate Limiting
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_RPS: "100"
+      RATE_LIMIT_BURST: "200"
+      # Encryption (optional in dev - credentials stored in plaintext if not set)
+      # Generate with: openssl rand -hex 32
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      # SMTP (optional - use env vars from host)
+      SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@exploop.io}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Rediver}
+      SMTP_TLS: ${SMTP_TLS:-true}
+      SMTP_SKIP_VERIFY: ${SMTP_SKIP_VERIFY:-false}
+      SMTP_BASE_URL: ${SMTP_BASE_URL:-http://localhost:3000}
+      # AI Triage (optional - provide at least one LLM API key)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AI_PLATFORM_PROVIDER: ${AI_PLATFORM_PROVIDER:-gemini}
+      AI_PLATFORM_MODEL: ${AI_PLATFORM_MODEL:-gemini-1.5-flash}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-120}
+      AI_MAX_TOKENS: ${AI_MAX_TOKENS:-2000}
+      AI_TEMPERATURE: ${AI_TEMPERATURE:-0.1}
+    volumes:
+      # Mount source code for hot reload
+      - ./:/app
+      # Preserve go modules cache
+      - go-mod-cache:/go/pkg/mod
+      # Preserve build cache
+      - go-build-cache:/root/.cache/go-build
+      # Mount SDK source
+      - ../sdk:/app/sdk
+      # Mount Docker-specific go.work (paths adjusted for container)
+      - ./go.work.docker:/app/go.work
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  go-mod-cache:
+    driver: local
+  go-build-cache:
+    driver: local

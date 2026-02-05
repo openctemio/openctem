@@ -1,0 +1,82 @@
+# =============================================================================
+# Docker Ignore - Exclude files from build context
+# =============================================================================
+
+# Git
+.git
+.gitignore
+.gitkeep
+
+# Documentation
+docs/
+*.md
+!README.md
+LICENSE
+
+# IDE & Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Build cache (handled by Docker layer caching)
+.cache/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Docker files (not needed in build context for app)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Development tools config
+.air.toml
+.golangci.yml
+.pre-commit-config.yaml
+
+# Test files
+tests/
+*_test.go
+testdata/
+
+# Deploy configs
+deploy/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# Scripts (not needed in production image)
+scripts/
+!scripts/dev-entrypoint.sh
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+tmp/

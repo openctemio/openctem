@@ -1,0 +1,228 @@
+# =============================================================================
+# GOLANGCI-LINT CONFIGURATION (v1.x)
+# =============================================================================
+# Docs: https://golangci-lint.run/usage/configuration/
+# =============================================================================
+
+run:
+  timeout: 5m
+  tests: true
+  go: "1.25"
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  sort-results: true
+
+# =============================================================================
+# LINTERS
+# =============================================================================
+
+linters:
+  disable-all: true
+  enable:
+    # Bugs & Errors
+    - errcheck
+    - gosec
+    - staticcheck
+    - govet
+
+    # Performance
+    - bodyclose
+    - noctx
+    - prealloc
+
+    # Code Style
+    - goimports
+    - misspell
+    - unconvert
+    - unused
+    - whitespace
+
+    # Code Complexity
+    - cyclop
+    - funlen
+    - nestif
+    - gocognit
+
+    # Code Quality
+    - dupl
+    - goconst
+    - gocritic
+
+    # Error Handling
+    - errorlint
+    - nilerr
+
+    # SQL
+    - sqlclosecheck
+    - rowserrcheck
+
+# =============================================================================
+# LINTER SETTINGS
+# =============================================================================
+
+linters-settings:
+  errcheck:
+    check-type-assertions: false
+    check-blank: false
+    exclude-functions:
+      - io.Copy
+      - io.WriteTo
+      - (io.Closer).Close
+      - (*os.File).Close
+      - (net/http.ResponseWriter).Write
+      - (*encoding/json.Encoder).Encode
+      - (*database/sql.Rows).Close
+      - encoding/json.Marshal
+      - encoding/json.MarshalIndent
+
+  gosec:
+    excludes:
+      - G104 # Ignore unhandled errors (covered by errcheck)
+      - G101 # Ignore "hardcoded credentials" false positives for column names and templates
+      - G402 # Allow InsecureSkipVerify for configurable TLS
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+      - shadow
+
+  cyclop:
+    # Increased to 30 for enterprise application complexity
+    # Service layer functions (Login, UpdateAsset, etc.) have many validation branches
+    max-complexity: 30
+    skip-tests: true
+
+  gocognit:
+    # Increased to 50 for enterprise application complexity
+    # Main functions, orchestration code, and parsers often have complex control flow
+    min-complexity: 50
+
+  funlen:
+    # Increased for enterprise service layer functions
+    # Auth, orchestration, and main() functions often have many steps
+    lines: 350
+    statements: 200
+    ignore-comments: true
+
+  nestif:
+    # Increased to 12 for complex business logic
+    # Auth and session handling often requires nested conditionals
+    min-complexity: 12
+
+  dupl:
+    # Increased to 300 for handler and repository patterns
+    # CRUD handlers and repository List() methods often have similar structure
+    threshold: 300
+
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+    ignore-tests: true
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+    disabled-checks:
+      - hugeParam
+      - rangeValCopy
+      - exitAfterDefer
+
+  errorlint:
+    comparison: true
+    asserts: true
+    errorf: false
+
+  goimports:
+    local-prefixes: github.com/exploopio/exploop
+
+  misspell:
+    locale: US
+    ignore-words:
+      - exploop
+      - cancelled
+
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+
+# =============================================================================
+# ISSUES
+# =============================================================================
+
+issues:
+  exclude-use-default: true
+
+  exclude-rules:
+    # Exclude from test files
+    - path: _test\.go
+      linters:
+        - dupl
+        - funlen
+        - gocognit
+        - goconst
+        - gosec
+        - errcheck
+        - bodyclose
+        - gocritic
+        - prealloc
+        - errorlint
+
+    # Exclude from main.go
+    - path: cmd/.*/main\.go
+      linters:
+        - gochecknoinits
+        - gochecknoglobals
+
+    # Exclude from mock files
+    - path: mock_.*\.go
+      linters:
+        - errcheck
+        - dupl
+
+    - path: internal/mocks/
+      linters:
+        - errcheck
+        - dupl
+
+    # Exclude from tests directory
+    - path: tests/
+      linters:
+        - errorlint
+        - errcheck
+        - dupl
+
+  exclude-dirs:
+    - vendor
+    - third_party
+    - testdata
+    - internal/infra/grpc/pb
+    - internal/mocks
+
+  max-issues-per-linter: 50
+  max-same-issues: 5
+
+# =============================================================================
+# SEVERITY
+# =============================================================================
+
+severity:
+  default-severity: warning
+  case-sensitive: false
+  rules:
+    - linters:
+        - gosec
+        - staticcheck
+      severity: error
+    - linters:
+        - dupl
+        - funlen
+        - gocognit
+        - cyclop
+      severity: warning

@@ -1,0 +1,35 @@
+# =============================================================================
+# Dockerfile for Database Seeding
+# =============================================================================
+# Lightweight image containing seed SQL files for initializing database data.
+# Used by docker-compose to seed the database with required or test data.
+#
+# Build:
+#   docker build -f Dockerfile.seed -t exploopio/seed:v0.1.0 .
+#
+# Usage:
+#   # Seed required data
+#   docker run --rm -e PGHOST=postgres -e PGUSER=rediver -e PGPASSWORD=secret -e PGDATABASE=rediver \
+#     exploopio/seed:v0.1.0 psql -f /seed/seed_required.sql
+#
+#   # Seed test data
+#   docker run --rm -e PGHOST=postgres -e PGUSER=rediver -e PGPASSWORD=secret -e PGDATABASE=rediver \
+#     exploopio/seed:v0.1.0 psql -f /seed/seed_test.sql
+#
+# Seed Files:
+#   - seed_required.sql      - Required data (roles, permissions, default settings)
+#   - seed_test.sql          - Test/demo data (test users, sample assets)
+#   - seed_vnsecurity_assets.sql - VNSecurity specific assets
+#
+# checkov:skip=CKV_DOCKER_2: One-time seed container, no healthcheck needed
+# checkov:skip=CKV_DOCKER_3: One-time container runs as root for postgres access
+# =============================================================================
+
+# trivy:ignore:AVD-DS-0002 - One-time seed container, exits immediately after seeding
+FROM public.ecr.aws/docker/library/postgres:17-alpine
+
+# Copy seed files
+COPY migrations/seed /seed
+
+# Default: show available seed files
+CMD ["sh", "-c", "echo 'Available seed files:' && ls -la /seed/*.sql"]
