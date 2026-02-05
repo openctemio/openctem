@@ -183,7 +183,7 @@ jobs:
           touch "/tmp/digests/admin-cli/${admin_cli_digest#sha256:}"
 
       - name: Upload API digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: digests-api-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           path: /tmp/digests/api/*
@@ -191,7 +191,7 @@ jobs:
           retention-days: 1
 
       - name: Upload Migrations digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: digests-migrations-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           path: /tmp/digests/migrations/*
@@ -199,7 +199,7 @@ jobs:
           retention-days: 1
 
       - name: Upload Seed digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: digests-seed-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           path: /tmp/digests/seed/*
@@ -207,7 +207,7 @@ jobs:
           retention-days: 1
 
       - name: Upload Admin CLI digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: digests-admin-cli-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           path: /tmp/digests/admin-cli/*
