@@ -5,15 +5,19 @@
 
 -- Tool Categories
 CREATE TABLE IF NOT EXISTS tool_categories (
-    id VARCHAR(50) PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    name VARCHAR(50) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
     description TEXT,
-    icon VARCHAR(50),
-    display_order INTEGER DEFAULT 0,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    icon VARCHAR(50) DEFAULT 'folder',
+    color VARCHAR(20) DEFAULT 'gray',
+    is_builtin BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT unique_tool_category_name UNIQUE NULLS NOT DISTINCT (tenant_id, name)
 );
 
 COMMENT ON TABLE tool_categories IS 'Categories for organizing security tools';
@@ -26,7 +30,7 @@ CREATE TABLE IF NOT EXISTS tools (
     display_name VARCHAR(100) NOT NULL,
     description TEXT,
     logo_url VARCHAR(500),
-    category_id VARCHAR(50) REFERENCES tool_categories(id) ON DELETE SET NULL,
+    category_id UUID REFERENCES tool_categories(id) ON DELETE SET NULL,
     install_method VARCHAR(20),
     install_cmd TEXT,
     update_cmd TEXT,

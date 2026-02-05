@@ -94,15 +94,16 @@ COMMENT ON COLUMN assets.is_internet_accessible IS 'CTEM: True if asset is acces
 COMMENT ON COLUMN assets.exposure_changed_at IS 'CTEM: When the exposure level last changed';
 COMMENT ON COLUMN assets.last_exposure_level IS 'CTEM: Previous exposure level before change';
 
--- Asset Owners (Group ownership of assets)
+-- Asset Owners (Group/User ownership of assets)
 CREATE TABLE IF NOT EXISTS asset_owners (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     ownership_type VARCHAR(50) DEFAULT 'primary',
     assigned_at TIMESTAMPTZ DEFAULT NOW(),
     assigned_by UUID REFERENCES users(id),
 
-    PRIMARY KEY (asset_id, group_id),
     CONSTRAINT chk_ownership_type CHECK (ownership_type IN ('primary', 'secondary', 'stakeholder', 'informed'))
 );
 

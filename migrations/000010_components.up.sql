@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS asset_components (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    component_id UUID,
     branch_id UUID REFERENCES repository_branches(id) ON DELETE SET NULL,
+    path VARCHAR(1000),
     name VARCHAR(255) NOT NULL,
     version VARCHAR(100),
     ecosystem VARCHAR(50) NOT NULL,
@@ -59,7 +61,7 @@ CREATE TABLE IF NOT EXISTS licenses (
     is_fsf_libre BOOLEAN DEFAULT FALSE,
     is_deprecated BOOLEAN DEFAULT FALSE,
     category VARCHAR(50),
-    risk_level VARCHAR(20) DEFAULT 'unknown',
+    risk VARCHAR(20) DEFAULT 'unknown',
     description TEXT,
     permissions TEXT[],
     conditions TEXT[],
@@ -67,7 +69,7 @@ CREATE TABLE IF NOT EXISTS licenses (
     created_at TIMESTAMPTZ DEFAULT NOW(),
 
     CONSTRAINT chk_license_category CHECK (category IN ('permissive', 'copyleft', 'weak_copyleft', 'proprietary', 'public_domain', 'unknown')),
-    CONSTRAINT chk_license_risk CHECK (risk_level IN ('low', 'medium', 'high', 'critical', 'unknown'))
+    CONSTRAINT chk_license_risk CHECK (risk IN ('low', 'medium', 'high', 'critical', 'unknown'))
 );
 
 COMMENT ON TABLE licenses IS 'Software license definitions for compliance';

@@ -8,7 +8,7 @@
 -- - SARIF 2.1.0 fields for scanner compatibility
 -- - Type-specific fields (secret, compliance, web3, misconfiguration)
 -- - ASVS fields for secure coding standards
--- Note: SLA fields removed (enterprise feature)
+-- SLA fields included for tracking remediation timelines
 -- =============================================================================
 
 -- Findings (Vulnerability instances in assets)
@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS findings (
     resolved_at TIMESTAMPTZ,
     resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
     acceptance_expires_at TIMESTAMPTZ,
+
+    -- SLA Tracking
+    sla_deadline TIMESTAMPTZ,
+    sla_status VARCHAR(20) DEFAULT 'not_applicable',
 
     -- Scan Info
     scan_id VARCHAR(100),
@@ -210,6 +214,9 @@ CREATE TABLE IF NOT EXISTS findings (
     CONSTRAINT chk_finding_type CHECK (finding_type IS NULL OR finding_type IN ('vulnerability', 'secret', 'misconfiguration', 'compliance', 'web3')),
     CONSTRAINT chk_findings_cvss_score CHECK (cvss_score IS NULL OR (cvss_score >= 0 AND cvss_score <= 10)),
 
+    -- SLA constraints
+    CONSTRAINT chk_findings_sla_status CHECK (sla_status IN ('on_track', 'warning', 'overdue', 'exceeded', 'not_applicable')),
+
     -- CTEM constraints
     CONSTRAINT chk_exposure_vector CHECK (exposure_vector IN ('network', 'local', 'physical', 'adjacent_net', 'unknown')),
     CONSTRAINT chk_remediation_type CHECK (remediation_type IS NULL OR remediation_type IN ('patch', 'upgrade', 'workaround', 'config_change', 'mitigate', 'accept_risk')),
@@ -268,6 +275,8 @@ CREATE TABLE IF NOT EXISTS finding_activities (
     actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
     actor_name VARCHAR(255),
     changes JSONB DEFAULT '{}',
+    source VARCHAR(50),
+    source_metadata JSONB,
     message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 

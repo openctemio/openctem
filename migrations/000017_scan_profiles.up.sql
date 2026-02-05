@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS scan_sessions (
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     duration_ms BIGINT,
+    scan_profile_id UUID REFERENCES scan_profiles(id) ON DELETE SET NULL,
     quality_gate_result JSONB,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
