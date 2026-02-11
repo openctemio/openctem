@@ -113,7 +113,7 @@ ENTRYPOINT ["./server"]
 
 ## SDK Module Setup
 
-The API depends on the SDK module (`github.com/openctemio/sdk`).
+The API depends on the SDK module (`github.com/openctemio/sdk-go`).
 
 ### Development (Local SDK)
 
@@ -142,7 +142,7 @@ In production, SDK is fetched from GitHub as a released module:
 
 ```go
 // go.mod
-require github.com/openctemio/sdk v0.1.0
+require github.com/openctemio/sdk-go v0.1.0
 ```
 
 > **Note**: SDK must be released on GitHub with proper version tag (e.g., `v0.1.0`) before production builds work.

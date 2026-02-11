@@ -1264,7 +1264,7 @@ func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID
 	}
 
 	// 2. Try to find by name matching the repo name
-	// This handles agent-created assets with names like "github.com/openctemio/sdk"
+	// This handles agent-created assets with names like "github.com/openctemio/sdk-go"
 	if !tenantID.IsZero() {
 		existing, err := s.repo.GetByName(ctx, tenantID, repoName)
 		if err == nil && existing != nil && existing.Type() == asset.AssetTypeRepository {

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/sdk/pkg/shared/fingerprint"
-	"github.com/openctemio/sdk/pkg/shared/severity"
+	"github.com/openctemio/sdk-go/pkg/shared/fingerprint"
+	"github.com/openctemio/sdk-go/pkg/shared/severity"
 
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -16,7 +16,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/sdk/pkg/ctis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // FindingCreatedCallback is called when findings are created during ingestion.

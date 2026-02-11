@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/sdk/pkg/ctis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

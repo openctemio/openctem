@@ -3,7 +3,7 @@ package ingest
 import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/sdk/pkg/ctis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // ConvertCTISDataFlowToFindingDataFlows converts a CTIS DataFlow to domain FindingDataFlow and FindingFlowLocations.

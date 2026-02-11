@@ -8,7 +8,7 @@ import (
 
 	"github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/sdk/pkg/ctis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // ComponentProcessor handles batch processing of dependencies/components during ingestion.

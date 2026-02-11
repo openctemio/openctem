@@ -421,7 +421,7 @@ import (
     "slices"
 
     "github.com/openctemio/api/internal/domain/agent"
-    "github.com/openctemio/sdk/pkg/ctis"
+    "github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // CapabilityFilter filters report data based on agent's effective capabilities

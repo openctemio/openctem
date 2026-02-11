@@ -17,8 +17,8 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/sdk/pkg/chunk"
-	"github.com/openctemio/sdk/pkg/ctis"
+	"github.com/openctemio/sdk-go/pkg/chunk"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // contextKey is a custom type for context keys.

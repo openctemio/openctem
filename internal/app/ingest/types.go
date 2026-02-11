@@ -2,7 +2,7 @@
 package ingest
 
 import (
-	"github.com/openctemio/sdk/pkg/ctis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // =============================================================================
