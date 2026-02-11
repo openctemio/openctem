@@ -14,8 +14,8 @@
 #
 # Examples:
 #   ./test_agent_analytics.sh
-#   ./test_agent_analytics.sh radm_xxx 24432599-c9fe-49c2-98fe-b13359bd5f9a
-#   ADMIN_API_KEY=radm_xxx AGENT_ID=xxx ./test_agent_analytics.sh
+#   ./test_agent_analytics.sh oc-admin-xxx 24432599-c9fe-49c2-98fe-b13359bd5f9a
+#   ADMIN_API_KEY=oc-admin-xxx AGENT_ID=xxx ./test_agent_analytics.sh
 # =============================================================================
 
 # Don't use set -e because ((PASSED++)) returns 1 when PASSED=0
@@ -28,7 +28,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-ADMIN_KEY="${1:-${ADMIN_API_KEY:-radm_3f5469793dcf2637f7eaa9fe17d97012}}"
+ADMIN_KEY="${1:-${ADMIN_API_KEY:-oc-admin-3f5469793dcf2637f7eaa9fe17d97012}}"
 AGENT_ID="${2:-${AGENT_ID:-24432599-c9fe-49c2-98fe-b13359bd5f9a}}"
 API_URL="${3:-${API_URL:-http://localhost:8080}}"
 

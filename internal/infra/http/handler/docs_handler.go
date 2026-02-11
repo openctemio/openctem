@@ -103,8 +103,8 @@ const scalarHTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Exploop API Documentation</title>
-  <meta name="description" content="Exploop Security Platform API Documentation">
+  <title>OpenCTEM API Documentation</title>
+  <meta name="description" content="OpenCTEM Security Platform API Documentation">
   <style>
     body {
       margin: 0;
@@ -132,7 +132,7 @@ const scalarHTML = `<!DOCTYPE html>
         "url": "{{SPEC_URL}}"
       },
       "metaData": {
-        "title": "Exploop API",
+        "title": "OpenCTEM API",
         "description": "Security Platform API"
       }
     }'

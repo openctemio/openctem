@@ -2,7 +2,7 @@
 package ingest
 
 import (
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk/pkg/ctis"
 )
 
 // =============================================================================
@@ -57,9 +57,9 @@ const (
 )
 
 // Input represents the unified input for ingestion.
-// All formats (EIS, SARIF, Recon, etc.) are converted to this via adapters.
+// All formats (CTIS, SARIF, Recon, etc.) are converted to this via adapters.
 type Input struct {
-	Report *eis.Report
+	Report *ctis.Report
 
 	// CoverageType indicates the scan coverage level.
 	// Auto-resolve is only enabled for full scans on default branch.
@@ -69,12 +69,12 @@ type Input struct {
 	// BranchInfo provides git branch context for branch-aware lifecycle.
 	// Auto-resolve only applies when IsDefaultBranch=true and CoverageType=full.
 	// If nil, branch info is read from Report.Metadata.Branch.
-	BranchInfo *eis.BranchInfo
+	BranchInfo *ctis.BranchInfo
 }
 
 // GetBranchInfo returns branch info from Input or Report metadata.
 // Input.BranchInfo takes precedence over Report.Metadata.Branch.
-func (i Input) GetBranchInfo() *eis.BranchInfo {
+func (i Input) GetBranchInfo() *ctis.BranchInfo {
 	if i.BranchInfo != nil {
 		return i.BranchInfo
 	}

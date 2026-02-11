@@ -156,9 +156,9 @@ const (
 	ModuleScans     = "scans"
 
 	// Discovery
-	ModuleCredentials    = "credentials"
-	ModuleComponents     = "components"
-	ModuleBranches       = "branches"
+	ModuleCredentials     = "credentials"
+	ModuleComponents      = "components"
+	ModuleBranches        = "branches"
 	ModuleVulnerabilities = "vulnerabilities"
 
 	// Prioritization
@@ -180,14 +180,14 @@ const (
 	ModuleAudit   = "audit"
 
 	// Settings
-	ModuleIntegrations        = "integrations"
-	ModuleAgents              = "agents"
-	ModuleTeam                = "team"
-	ModuleGroups              = "groups"
-	ModuleRoles               = "roles"
-	ModuleSettings            = "settings"
-	ModuleAPIKeys             = "api_keys"
-	ModuleWebhooks            = "webhooks"
+	ModuleIntegrations         = "integrations"
+	ModuleAgents               = "agents"
+	ModuleTeam                 = "team"
+	ModuleGroups               = "groups"
+	ModuleRoles                = "roles"
+	ModuleSettings             = "settings"
+	ModuleAPIKeys              = "api_keys"
+	ModuleWebhooks             = "webhooks"
 	ModuleNotificationSettings = "notification_settings"
 
 	// Data
@@ -328,7 +328,6 @@ func FilterModulesByPermissions(modules []*Module, userPermissions []string, isA
 
 	return filtered
 }
-
 
 // FilterModuleIDsByPermissions filters module IDs based on user's permissions.
 func FilterModuleIDsByPermissions(moduleIDs []string, userPermissions []string, isAdmin bool) []string {

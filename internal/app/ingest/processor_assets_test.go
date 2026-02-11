@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk/pkg/ctis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,16 +12,16 @@ import (
 func TestCreateAssetFromMetadata_Priority1_BranchInfo(t *testing.T) {
 	p := &AssetProcessor{}
 
-	report := &eis.Report{
-		Metadata: eis.ReportMetadata{
-			Branch: &eis.BranchInfo{
+	report := &ctis.Report{
+		Metadata: ctis.ReportMetadata{
+			Branch: &ctis.BranchInfo{
 				RepositoryURL:   "github.com/org/repo",
 				Name:            "main",
 				CommitSHA:       "abc123",
 				IsDefaultBranch: true,
 			},
 		},
-		Findings: []eis.Finding{
+		Findings: []ctis.Finding{
 			{Title: "test finding"},
 		},
 	}
@@ -30,7 +30,7 @@ func TestCreateAssetFromMetadata_Priority1_BranchInfo(t *testing.T) {
 
 	require.NotNil(t, asset)
 	assert.Equal(t, "github.com/org/repo", asset.Value)
-	assert.Equal(t, eis.AssetTypeRepository, asset.Type)
+	assert.Equal(t, ctis.AssetTypeRepository, asset.Type)
 	assert.Equal(t, "branch_info", asset.Properties["source"])
 	assert.Equal(t, true, asset.Properties["auto_created"])
 	assert.Equal(t, "main", asset.Properties["branch"])
@@ -42,8 +42,8 @@ func TestCreateAssetFromMetadata_Priority1_BranchInfo(t *testing.T) {
 func TestCreateAssetFromMetadata_Priority2_UniqueFindingValue(t *testing.T) {
 	p := &AssetProcessor{}
 
-	report := &eis.Report{
-		Findings: []eis.Finding{
+	report := &ctis.Report{
+		Findings: []ctis.Finding{
 			{Title: "finding 1", AssetValue: "github.com/myorg/myrepo"},
 			{Title: "finding 2", AssetValue: "github.com/myorg/myrepo"},
 			{Title: "finding 3", AssetValue: "github.com/myorg/myrepo"},
@@ -54,7 +54,7 @@ func TestCreateAssetFromMetadata_Priority2_UniqueFindingValue(t *testing.T) {
 
 	require.NotNil(t, asset)
 	assert.Equal(t, "github.com/myorg/myrepo", asset.Value)
-	assert.Equal(t, eis.AssetTypeRepository, asset.Type)
+	assert.Equal(t, ctis.AssetTypeRepository, asset.Type)
 	assert.Equal(t, "finding_asset_value", asset.Properties["source"])
 	assert.Equal(t, 3, asset.Properties["finding_count"])
 }
@@ -63,8 +63,8 @@ func TestCreateAssetFromMetadata_Priority2_UniqueFindingValue(t *testing.T) {
 func TestCreateAssetFromMetadata_Priority2_MultipleDifferentValues(t *testing.T) {
 	p := &AssetProcessor{}
 
-	report := &eis.Report{
-		Findings: []eis.Finding{
+	report := &ctis.Report{
+		Findings: []ctis.Finding{
 			{Title: "finding 1", AssetValue: "github.com/org1/repo1"},
 			{Title: "finding 2", AssetValue: "github.com/org2/repo2"},
 		},
@@ -76,7 +76,7 @@ func TestCreateAssetFromMetadata_Priority2_MultipleDifferentValues(t *testing.T)
 
 	// With no tool/scan_id, still creates emergency fallback to prevent orphaned findings
 	require.NotNil(t, asset)
-	assert.Equal(t, eis.AssetTypeUnclassified, asset.Type)
+	assert.Equal(t, ctis.AssetTypeUnclassified, asset.Type)
 	assert.Equal(t, "emergency_fallback", asset.Properties["source"])
 }
 
@@ -84,12 +84,12 @@ func TestCreateAssetFromMetadata_Priority2_MultipleDifferentValues(t *testing.T)
 func TestCreateAssetFromMetadata_Priority2_WithExplicitType(t *testing.T) {
 	p := &AssetProcessor{}
 
-	report := &eis.Report{
-		Findings: []eis.Finding{
+	report := &ctis.Report{
+		Findings: []ctis.Finding{
 			{
 				Title:      "finding 1",
 				AssetValue: "api.example.com",
-				AssetType:  eis.AssetTypeDomain,
+				AssetType:  ctis.AssetTypeDomain,
 			},
 		},
 	}
@@ -98,7 +98,7 @@ func TestCreateAssetFromMetadata_Priority2_WithExplicitType(t *testing.T) {
 
 	require.NotNil(t, asset)
 	assert.Equal(t, "api.example.com", asset.Value)
-	assert.Equal(t, eis.AssetTypeDomain, asset.Type)
+	assert.Equal(t, ctis.AssetTypeDomain, asset.Type)
 }
 
 // TestCreateAssetFromMetadata_Priority3_Scope tests Priority 3: Scope information
@@ -108,26 +108,26 @@ func TestCreateAssetFromMetadata_Priority3_Scope(t *testing.T) {
 	testCases := []struct {
 		name         string
 		scopeType    string
-		expectedType eis.AssetType
+		expectedType ctis.AssetType
 	}{
-		{"repository", "repository", eis.AssetTypeRepository},
-		{"domain", "domain", eis.AssetTypeDomain},
-		{"ip_address", "ip_address", eis.AssetTypeIPAddress},
-		{"container", "container", eis.AssetTypeContainer},
-		{"cloud_account", "cloud_account", eis.AssetTypeCloudAccount},
-		{"unknown", "unknown_type", eis.AssetTypeUnclassified},
+		{"repository", "repository", ctis.AssetTypeRepository},
+		{"domain", "domain", ctis.AssetTypeDomain},
+		{"ip_address", "ip_address", ctis.AssetTypeIPAddress},
+		{"container", "container", ctis.AssetTypeContainer},
+		{"cloud_account", "cloud_account", ctis.AssetTypeCloudAccount},
+		{"unknown", "unknown_type", ctis.AssetTypeUnclassified},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			report := &eis.Report{
-				Metadata: eis.ReportMetadata{
-					Scope: &eis.Scope{
+			report := &ctis.Report{
+				Metadata: ctis.ReportMetadata{
+					Scope: &ctis.Scope{
 						Name: "test-scope",
 						Type: tc.scopeType,
 					},
 				},
-				Findings: []eis.Finding{{Title: "test"}},
+				Findings: []ctis.Finding{{Title: "test"}},
 			}
 
 			asset := p.createAssetFromMetadata(report)
@@ -168,11 +168,11 @@ func TestCreateAssetFromMetadata_Priority4_PathInference_GitHost(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			report := &eis.Report{
-				Findings: []eis.Finding{
+			report := &ctis.Report{
+				Findings: []ctis.Finding{
 					{
 						Title: "test finding",
-						Location: &eis.FindingLocation{
+						Location: &ctis.FindingLocation{
 							Path: tc.path,
 						},
 					},
@@ -183,7 +183,7 @@ func TestCreateAssetFromMetadata_Priority4_PathInference_GitHost(t *testing.T) {
 
 			require.NotNil(t, asset)
 			assert.Equal(t, tc.expectedURL, asset.Value)
-			assert.Equal(t, eis.AssetTypeRepository, asset.Type)
+			assert.Equal(t, ctis.AssetTypeRepository, asset.Type)
 			assert.Equal(t, "path_inference", asset.Properties["source"])
 			assert.Equal(t, "git_host_url", asset.Properties["pattern"])
 		})
@@ -194,11 +194,11 @@ func TestCreateAssetFromMetadata_Priority4_PathInference_GitHost(t *testing.T) {
 func TestCreateAssetFromMetadata_Priority4_PathInference_CommonPrefix(t *testing.T) {
 	p := &AssetProcessor{}
 
-	report := &eis.Report{
-		Findings: []eis.Finding{
-			{Title: "finding 1", Location: &eis.FindingLocation{Path: "/home/user/myproject/src/main.go"}},
-			{Title: "finding 2", Location: &eis.FindingLocation{Path: "/home/user/myproject/pkg/utils.go"}},
-			{Title: "finding 3", Location: &eis.FindingLocation{Path: "/home/user/myproject/internal/handler.go"}},
+	report := &ctis.Report{
+		Findings: []ctis.Finding{
+			{Title: "finding 1", Location: &ctis.FindingLocation{Path: "/home/user/myproject/src/main.go"}},
+			{Title: "finding 2", Location: &ctis.FindingLocation{Path: "/home/user/myproject/pkg/utils.go"}},
+			{Title: "finding 3", Location: &ctis.FindingLocation{Path: "/home/user/myproject/internal/handler.go"}},
 		},
 	}
 
@@ -206,7 +206,7 @@ func TestCreateAssetFromMetadata_Priority4_PathInference_CommonPrefix(t *testing
 
 	require.NotNil(t, asset)
 	assert.Equal(t, "myproject", asset.Value)
-	assert.Equal(t, eis.AssetTypeRepository, asset.Type)
+	assert.Equal(t, ctis.AssetTypeRepository, asset.Type)
 	assert.Equal(t, "path_inference", asset.Properties["source"])
 	assert.Equal(t, "common_prefix", asset.Properties["pattern"])
 }
@@ -215,15 +215,15 @@ func TestCreateAssetFromMetadata_Priority4_PathInference_CommonPrefix(t *testing
 func TestCreateAssetFromMetadata_Priority5_ToolFallback(t *testing.T) {
 	p := &AssetProcessor{}
 
-	report := &eis.Report{
-		Metadata: eis.ReportMetadata{
+	report := &ctis.Report{
+		Metadata: ctis.ReportMetadata{
 			ID: "scan-123",
 		},
-		Tool: &eis.Tool{
+		Tool: &ctis.Tool{
 			Name:    "semgrep",
 			Version: "1.50.0",
 		},
-		Findings: []eis.Finding{
+		Findings: []ctis.Finding{
 			{Title: "test finding"},
 		},
 	}
@@ -232,7 +232,7 @@ func TestCreateAssetFromMetadata_Priority5_ToolFallback(t *testing.T) {
 
 	require.NotNil(t, asset)
 	assert.Equal(t, "scan:semgrep:scan-123", asset.Value)
-	assert.Equal(t, eis.AssetTypeUnclassified, asset.Type)
+	assert.Equal(t, ctis.AssetTypeUnclassified, asset.Type)
 	assert.Equal(t, "tool_fallback", asset.Properties["source"])
 	assert.Equal(t, "semgrep", asset.Properties["tool_name"])
 	assert.Equal(t, "scan-123", asset.Properties["scan_id"])
@@ -242,11 +242,11 @@ func TestCreateAssetFromMetadata_Priority5_ToolFallback(t *testing.T) {
 func TestCreateAssetFromMetadata_Priority5_ToolFallback_NoScanID(t *testing.T) {
 	p := &AssetProcessor{}
 
-	report := &eis.Report{
-		Tool: &eis.Tool{
+	report := &ctis.Report{
+		Tool: &ctis.Tool{
 			Name: "codeql",
 		},
-		Findings: []eis.Finding{
+		Findings: []ctis.Finding{
 			{Title: "test finding"},
 		},
 	}
@@ -262,8 +262,8 @@ func TestCreateAssetFromMetadata_Priority5_ToolFallback_NoScanID(t *testing.T) {
 func TestCreateAssetFromMetadata_NoContext(t *testing.T) {
 	p := &AssetProcessor{}
 
-	report := &eis.Report{
-		Findings: []eis.Finding{
+	report := &ctis.Report{
+		Findings: []ctis.Finding{
 			{Title: "test finding"},
 		},
 	}
@@ -272,7 +272,7 @@ func TestCreateAssetFromMetadata_NoContext(t *testing.T) {
 
 	// No tool means emergency fallback is used to prevent orphaned findings
 	require.NotNil(t, asset)
-	assert.Equal(t, eis.AssetTypeUnclassified, asset.Type)
+	assert.Equal(t, ctis.AssetTypeUnclassified, asset.Type)
 	assert.Equal(t, "emergency_fallback", asset.Properties["source"])
 }
 
@@ -281,26 +281,26 @@ func TestCreateAssetFromMetadata_PriorityOrder(t *testing.T) {
 	p := &AssetProcessor{}
 
 	// Report with all priorities available
-	report := &eis.Report{
-		Metadata: eis.ReportMetadata{
+	report := &ctis.Report{
+		Metadata: ctis.ReportMetadata{
 			ID: "scan-123",
-			Branch: &eis.BranchInfo{
+			Branch: &ctis.BranchInfo{
 				RepositoryURL: "github.com/priority1/repo",
 				Name:          "main",
 			},
-			Scope: &eis.Scope{
+			Scope: &ctis.Scope{
 				Name: "priority3-scope",
 				Type: "repository",
 			},
 		},
-		Tool: &eis.Tool{
+		Tool: &ctis.Tool{
 			Name: "semgrep",
 		},
-		Findings: []eis.Finding{
+		Findings: []ctis.Finding{
 			{
 				Title:      "finding",
 				AssetValue: "github.com/priority2/repo",
-				Location: &eis.FindingLocation{
+				Location: &ctis.FindingLocation{
 					Path: "github.com/priority4/repo/src/main.go",
 				},
 			},

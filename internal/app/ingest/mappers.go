@@ -6,7 +6,7 @@ import (
 
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk/pkg/ctis"
 	"github.com/openctemio/sdk/pkg/shared/severity"
 )
 
@@ -14,91 +14,91 @@ import (
 // Asset Type Mapping
 // =============================================================================
 
-// mapEISAssetType maps EIS asset type to domain asset type.
+// mapCTISAssetType maps CTIS asset type to domain asset type.
 //
 //nolint:cyclop // Type mapping switch requires a case per asset type
-func mapEISAssetType(eisType eis.AssetType) asset.AssetType {
-	switch eisType {
+func mapCTISAssetType(ctisType ctis.AssetType) asset.AssetType {
+	switch ctisType {
 	// Discovery / External Attack Surface
-	case eis.AssetTypeDomain:
+	case ctis.AssetTypeDomain:
 		return asset.AssetTypeDomain
-	case eis.AssetTypeSubdomain:
+	case ctis.AssetTypeSubdomain:
 		return asset.AssetTypeSubdomain
-	case eis.AssetTypeIPAddress:
+	case ctis.AssetTypeIPAddress:
 		return asset.AssetTypeIPAddress
-	case eis.AssetTypeCertificate:
+	case ctis.AssetTypeCertificate:
 		return asset.AssetTypeCertificate
 
 	// Applications
-	case eis.AssetTypeWebsite:
+	case ctis.AssetTypeWebsite:
 		return asset.AssetTypeWebsite
-	case eis.AssetTypeWebApplication:
+	case ctis.AssetTypeWebApplication:
 		return asset.AssetTypeWebApplication
-	case eis.AssetTypeAPI:
+	case ctis.AssetTypeAPI:
 		return asset.AssetTypeAPI
-	case eis.AssetTypeMobileApp:
+	case ctis.AssetTypeMobileApp:
 		return asset.AssetTypeMobileApp
-	case eis.AssetTypeService:
+	case ctis.AssetTypeService:
 		return asset.AssetTypeService
 
 	// Code / Repository
-	case eis.AssetTypeRepository:
+	case ctis.AssetTypeRepository:
 		return asset.AssetTypeRepository
 
 	// Cloud
-	case eis.AssetTypeCloudAccount:
+	case ctis.AssetTypeCloudAccount:
 		return asset.AssetTypeCloudAccount
-	case eis.AssetTypeCompute:
+	case ctis.AssetTypeCompute:
 		return asset.AssetTypeCompute
-	case eis.AssetTypeStorage:
+	case ctis.AssetTypeStorage:
 		return asset.AssetTypeStorage
-	case eis.AssetTypeDatabase:
+	case ctis.AssetTypeDatabase:
 		return asset.AssetTypeDatabase
-	case eis.AssetTypeServerless:
+	case ctis.AssetTypeServerless:
 		return asset.AssetTypeServerless
-	case eis.AssetTypeContainerRegistry:
+	case ctis.AssetTypeContainerRegistry:
 		return asset.AssetTypeContainerRegistry
 
 	// Infrastructure
-	case eis.AssetTypeHost:
+	case ctis.AssetTypeHost:
 		return asset.AssetTypeHost
-	case eis.AssetTypeServer:
+	case ctis.AssetTypeServer:
 		return asset.AssetTypeServer
-	case eis.AssetTypeContainer:
+	case ctis.AssetTypeContainer:
 		return asset.AssetTypeContainer
-	case eis.AssetTypeKubernetes:
+	case ctis.AssetTypeKubernetes:
 		return asset.AssetTypeKubernetesCluster
-	case eis.AssetTypeKubernetesCluster:
+	case ctis.AssetTypeKubernetesCluster:
 		return asset.AssetTypeKubernetesCluster
-	case eis.AssetTypeKubernetesNamespace:
+	case ctis.AssetTypeKubernetesNamespace:
 		return asset.AssetTypeKubernetesNamespace
 
 	// Network
-	case eis.AssetTypeNetwork:
+	case ctis.AssetTypeNetwork:
 		return asset.AssetTypeNetwork
-	case eis.AssetTypeVPC:
+	case ctis.AssetTypeVPC:
 		return asset.AssetTypeVPC
-	case eis.AssetTypeSubnet:
+	case ctis.AssetTypeSubnet:
 		return asset.AssetTypeSubnet
-	case eis.AssetTypeLoadBalancer:
+	case ctis.AssetTypeLoadBalancer:
 		return asset.AssetTypeLoadBalancer
-	case eis.AssetTypeFirewall:
+	case ctis.AssetTypeFirewall:
 		return asset.AssetTypeFirewall
 
 	// Identity / IAM
-	case eis.AssetTypeIAMUser:
+	case ctis.AssetTypeIAMUser:
 		return asset.AssetTypeIAMUser
-	case eis.AssetTypeIAMRole:
+	case ctis.AssetTypeIAMRole:
 		return asset.AssetTypeIAMRole
-	case eis.AssetTypeServiceAccount:
+	case ctis.AssetTypeServiceAccount:
 		return asset.AssetTypeServiceAccount
 
 	// Recon-discovered
-	case eis.AssetTypeHTTPService:
+	case ctis.AssetTypeHTTPService:
 		return asset.AssetTypeHTTPService
-	case eis.AssetTypeOpenPort:
+	case ctis.AssetTypeOpenPort:
 		return asset.AssetTypeOpenPort
-	case eis.AssetTypeDiscoveredURL:
+	case ctis.AssetTypeDiscoveredURL:
 		return asset.AssetTypeDiscoveredURL
 
 	default:
@@ -110,16 +110,16 @@ func mapEISAssetType(eisType eis.AssetType) asset.AssetType {
 // Criticality Mapping
 // =============================================================================
 
-// mapEISCriticality maps EIS criticality to domain criticality.
-func mapEISCriticality(eisCrit eis.Criticality) asset.Criticality {
-	switch eisCrit {
-	case eis.CriticalityCritical:
+// mapCTISCriticality maps CTIS criticality to domain criticality.
+func mapCTISCriticality(ctisCrit ctis.Criticality) asset.Criticality {
+	switch ctisCrit {
+	case ctis.CriticalityCritical:
 		return asset.CriticalityCritical
-	case eis.CriticalityHigh:
+	case ctis.CriticalityHigh:
 		return asset.CriticalityHigh
-	case eis.CriticalityMedium:
+	case ctis.CriticalityMedium:
 		return asset.CriticalityMedium
-	case eis.CriticalityLow:
+	case ctis.CriticalityLow:
 		return asset.CriticalityLow
 	default:
 		return asset.CriticalityMedium
@@ -198,8 +198,8 @@ func detectFindingSource(toolName string, capabilities []string) vulnerability.F
 // Property Builders
 // =============================================================================
 
-// buildDomainProperties builds properties from EIS DomainTechnical.
-func buildDomainProperties(domain *eis.DomainTechnical) map[string]any {
+// buildDomainProperties builds properties from CTIS DomainTechnical.
+func buildDomainProperties(domain *ctis.DomainTechnical) map[string]any {
 	props := make(map[string]any)
 
 	if domain.Registrar != "" {
@@ -233,8 +233,8 @@ func buildDomainProperties(domain *eis.DomainTechnical) map[string]any {
 	return props
 }
 
-// buildIPAddressProperties builds properties from EIS IPAddressTechnical.
-func buildIPAddressProperties(ip *eis.IPAddressTechnical) map[string]any {
+// buildIPAddressProperties builds properties from CTIS IPAddressTechnical.
+func buildIPAddressProperties(ip *ctis.IPAddressTechnical) map[string]any {
 	props := make(map[string]any)
 
 	if ip.Version != 0 {
@@ -287,8 +287,8 @@ func buildIPAddressProperties(ip *eis.IPAddressTechnical) map[string]any {
 	return props
 }
 
-// buildServiceProperties builds properties from EIS ServiceTechnical.
-func buildServiceProperties(svc *eis.ServiceTechnical) map[string]any {
+// buildServiceProperties builds properties from CTIS ServiceTechnical.
+func buildServiceProperties(svc *ctis.ServiceTechnical) map[string]any {
 	props := make(map[string]any)
 
 	if svc.Name != "" {
@@ -320,8 +320,8 @@ func buildServiceProperties(svc *eis.ServiceTechnical) map[string]any {
 	return props
 }
 
-// buildCertificateProperties builds properties from EIS CertificateTechnical.
-func buildCertificateProperties(cert *eis.CertificateTechnical) map[string]any {
+// buildCertificateProperties builds properties from CTIS CertificateTechnical.
+func buildCertificateProperties(cert *ctis.CertificateTechnical) map[string]any {
 	props := make(map[string]any)
 
 	if cert.SerialNumber != "" {

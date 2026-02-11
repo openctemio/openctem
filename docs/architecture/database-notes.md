@@ -40,8 +40,8 @@ When assets are created from agents (e.g., Semgrep), the identifier format may d
 
 | Source | Identifier Format | Example |
 |--------|------------------|---------|
-| Semgrep Agent | `github.com-org/repo` | `github.com-exploop/exploopio/sdk` |
-| SCM Import | `org/repo` | `exploopio/sdk` |
+| Semgrep Agent | `github.com-org/repo` | `github.com-openctem/openctemio/sdk` |
+| SCM Import | `org/repo` | `openctemio/sdk` |
 
 **Normalization logic:** `internal/app/ingest_service.go` - `normalizeRepositoryIdentifier()`
 

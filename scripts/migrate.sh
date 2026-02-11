@@ -21,9 +21,9 @@ fi
 # Default values (no default password for security)
 DB_HOST=${DB_HOST:-localhost}
 DB_PORT=${DB_PORT:-5432}
-DB_USER=${DB_USER:-exploop}
+DB_USER=${DB_USER:-openctem}
 # DB_PASSWORD is required, no default
-DB_NAME=${DB_NAME:-exploop}
+DB_NAME=${DB_NAME:-openctem}
 DB_SSLMODE=${DB_SSLMODE:-disable}
 MIGRATIONS_DIR=${MIGRATIONS_DIR:-migrations}
 

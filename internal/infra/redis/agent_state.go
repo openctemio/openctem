@@ -566,7 +566,6 @@ func (s *AgentStateStore) IncrementQueueStat(ctx context.Context, field string, 
 	return nil
 }
 
-
 // hasAllCapabilities checks if agent has all required capabilities.
 func hasAllCapabilities(agentCaps, required []string) bool {
 	if len(required) == 0 {

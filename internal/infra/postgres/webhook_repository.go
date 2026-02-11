@@ -338,23 +338,23 @@ func (r *WebhookRepository) ListDeliveries(ctx context.Context, filter webhook.D
 
 func (r *WebhookRepository) scanWebhook(row *sql.Row) (*webhook.Webhook, error) {
 	var (
-		id, tenantID          string
-		name                  string
-		description           sql.NullString
-		url                   string
-		secretEncrypted       []byte
-		eventTypes            pq.StringArray
-		severityThreshold     string
-		assetGroupIDs, tags   pq.StringArray
-		status                string
-		maxRetries            int
-		retryIntervalSeconds  int
+		id, tenantID           string
+		name                   string
+		description            sql.NullString
+		url                    string
+		secretEncrypted        []byte
+		eventTypes             pq.StringArray
+		severityThreshold      string
+		assetGroupIDs, tags    pq.StringArray
+		status                 string
+		maxRetries             int
+		retryIntervalSeconds   int
 		totalSent, totalFailed int
-		lastSentAt            sql.NullTime
-		lastError             sql.NullString
-		lastErrorAt           sql.NullTime
-		createdBy             sql.NullString
-		createdAt, updatedAt  time.Time
+		lastSentAt             sql.NullTime
+		lastError              sql.NullString
+		lastErrorAt            sql.NullTime
+		createdBy              sql.NullString
+		createdAt, updatedAt   time.Time
 	)
 
 	err := row.Scan(
@@ -380,23 +380,23 @@ func (r *WebhookRepository) scanWebhook(row *sql.Row) (*webhook.Webhook, error) 
 
 func (r *WebhookRepository) scanWebhookRow(rows *sql.Rows) (*webhook.Webhook, error) {
 	var (
-		id, tenantID          string
-		name                  string
-		description           sql.NullString
-		url                   string
-		secretEncrypted       []byte
-		eventTypes            pq.StringArray
-		severityThreshold     string
-		assetGroupIDs, tags   pq.StringArray
-		status                string
-		maxRetries            int
-		retryIntervalSeconds  int
+		id, tenantID           string
+		name                   string
+		description            sql.NullString
+		url                    string
+		secretEncrypted        []byte
+		eventTypes             pq.StringArray
+		severityThreshold      string
+		assetGroupIDs, tags    pq.StringArray
+		status                 string
+		maxRetries             int
+		retryIntervalSeconds   int
 		totalSent, totalFailed int
-		lastSentAt            sql.NullTime
-		lastError             sql.NullString
-		lastErrorAt           sql.NullTime
-		createdBy             sql.NullString
-		createdAt, updatedAt  time.Time
+		lastSentAt             sql.NullTime
+		lastError              sql.NullString
+		lastErrorAt            sql.NullTime
+		createdBy              sql.NullString
+		createdAt, updatedAt   time.Time
 	)
 
 	err := rows.Scan(
@@ -468,20 +468,20 @@ func (r *WebhookRepository) reconstructWebhook(
 
 func (r *WebhookRepository) scanDeliveryRow(rows *sql.Rows) (*webhook.Delivery, error) {
 	var (
-		id, webhookID     string
-		eventID           sql.NullString
-		eventType         string
-		payloadJSON       []byte
-		status            string
-		responseCode      sql.NullInt32
-		responseBody      sql.NullString
-		responseHeaders   []byte
-		attempt           int
-		nextRetryAt       sql.NullTime
-		errorMessage      sql.NullString
-		createdAt         time.Time
-		deliveredAt       sql.NullTime
-		durationMs        sql.NullInt32
+		id, webhookID   string
+		eventID         sql.NullString
+		eventType       string
+		payloadJSON     []byte
+		status          string
+		responseCode    sql.NullInt32
+		responseBody    sql.NullString
+		responseHeaders []byte
+		attempt         int
+		nextRetryAt     sql.NullTime
+		errorMessage    sql.NullString
+		createdAt       time.Time
+		deliveredAt     sql.NullTime
+		durationMs      sql.NullInt32
 	)
 
 	err := rows.Scan(

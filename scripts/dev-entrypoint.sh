@@ -21,7 +21,7 @@ wait_for_db() {
     retries=0
 
     while [ $retries -lt $max_retries ]; do
-        if pg_isready -h "${DB_HOST:-postgres}" -p "${DB_PORT:-5432}" -U "${DB_USER:-exploop}" > /dev/null 2>&1; then
+        if pg_isready -h "${DB_HOST:-postgres}" -p "${DB_PORT:-5432}" -U "${DB_USER:-openctem}" > /dev/null 2>&1; then
             echo "Database is ready!"
             return 0
         fi
@@ -39,7 +39,7 @@ run_migrations() {
     echo "Running database migrations..."
 
     # Build database URL
-    DB_URL="postgres://${DB_USER:-exploop}:${DB_PASSWORD:-secret}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-exploop}?sslmode=${DB_SSLMODE:-disable}"
+    DB_URL="postgres://${DB_USER:-openctem}:${DB_PASSWORD:-secret}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-openctem}?sslmode=${DB_SSLMODE:-disable}"
 
     # Check if migrate command exists
     if command -v migrate > /dev/null 2>&1; then
@@ -55,7 +55,7 @@ run_migrations() {
 # Main
 main() {
     # Clean old binary and Go build cache to ensure fresh build
-    rm -rf /app/tmp/exploop 2>/dev/null || true
+    rm -rf /app/tmp/openctem 2>/dev/null || true
     go clean -cache 2>/dev/null || true
 
     # Wait for database

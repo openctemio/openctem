@@ -1,4 +1,4 @@
-# Rediver Asset Schema (RAS)
+# CTEM Asset Schema (CTAS)
 
 > **Version**: 1.0
 > **Last Updated**: 2024-01-16
@@ -6,7 +6,7 @@
 
 ## Overview
 
-Rediver Asset Schema (RAS) is a standardized JSON format for asset ingestion, inspired by industry standards like SARIF (for static analysis) and CycloneDX (for SBOM).
+CTEM Asset Schema (CTAS) is a standardized JSON format for asset ingestion, inspired by industry standards like SARIF (for static analysis) and CycloneDX (for SBOM).
 
 ## Design Goals
 
@@ -18,7 +18,7 @@ Rediver Asset Schema (RAS) is a standardized JSON format for asset ingestion, in
 ## Schema Structure
 
 ```
-RAS Document
+CTAS Document
 ├── version          # Schema version
 ├── metadata         # Source info, timestamp
 │   ├── source       # Who sent this data
@@ -38,7 +38,7 @@ RAS Document
 
 ```json
 {
-  "$schema": "https://exploop.io/schemas/ras/v1.0.json",
+  "$schema": "https://openctem.io/schemas/ctas/v1.0.json",
   "version": "1.0",
   "metadata": { ... },
   "assets": [ ... ]
@@ -279,7 +279,7 @@ RAS Document
 ```bash
 # Validate with ajv-cli
 npm install -g ajv-cli
-ajv validate -s ras-v1.0.schema.json -d assets.json
+ajv validate -s ctas-v1.0.schema.json -d assets.json
 ```
 
 ### Validation Errors
@@ -304,25 +304,25 @@ ajv validate -s ras-v1.0.schema.json -d assets.json
 
 ```
 POST /api/v1/ingest
-Content-Type: application/vnd.exploop.asset+json; version=1.0
+Content-Type: application/vnd.openctem.asset+json; version=1.0
 
-{ RAS document }
+{ CTAS document }
 ```
 
 ### Alternative (with query param)
 
 ```
-POST /api/v1/ingest?schema=ras&version=1.0
+POST /api/v1/ingest?schema=ctas&version=1.0
 Content-Type: application/json
 
-{ RAS document }
+{ CTAS document }
 ```
 
 ## Example: Complete Document
 
 ```json
 {
-  "$schema": "https://exploop.io/schemas/ras/v1.0.json",
+  "$schema": "https://openctem.io/schemas/ctas/v1.0.json",
   "version": "1.0",
 
   "metadata": {

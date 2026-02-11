@@ -1,7 +1,7 @@
 # =============================================================================
-# Security Scanning with Rediver Agent
+# Security Scanning with OpenCTEM Agent
 # =============================================================================
-# Parallel security scanning using Rediver Agent
+# Parallel security scanning using OpenCTEM Agent
 #
 # Jobs run in parallel for faster feedback:
 #   - SAST: Semgrep (dataflow/taint tracking for Go)
@@ -43,12 +43,12 @@ jobs:
           fetch-depth: 0
 
       - name: Run Semgrep
-        uses: docker://exploopio/agent:semgrep
+        uses: docker://openctemio/agent:semgrep
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          API_URL: ${{ secrets.EXPLOOP_API_URL }}
-          API_KEY: ${{ secrets.EXPLOOP_API_KEY }}
-          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+          API_URL: ${{ secrets.OPENCTEM_API_URL }}
+          API_KEY: ${{ secrets.OPENCTEM_API_KEY }}
+          AGENT_ID: ${{ secrets.OPENCTEM_AGENT_ID }}
         with:
           args: >-
             -tool semgrep
@@ -87,12 +87,12 @@ jobs:
           fetch-depth: 0
 
       - name: Run Gitleaks
-        uses: docker://exploopio/agent:gitleaks
+        uses: docker://openctemio/agent:gitleaks
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          API_URL: ${{ secrets.EXPLOOP_API_URL }}
-          API_KEY: ${{ secrets.EXPLOOP_API_KEY }}
-          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+          API_URL: ${{ secrets.OPENCTEM_API_URL }}
+          API_KEY: ${{ secrets.OPENCTEM_API_KEY }}
+          AGENT_ID: ${{ secrets.OPENCTEM_AGENT_ID }}
         with:
           args: >-
             -tool gitleaks
@@ -129,11 +129,11 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Run Trivy
-        uses: docker://exploopio/agent:trivy
+        uses: docker://openctemio/agent:trivy
         env:
-          API_URL: ${{ secrets.EXPLOOP_API_URL }}
-          API_KEY: ${{ secrets.EXPLOOP_API_KEY }}
-          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+          API_URL: ${{ secrets.OPENCTEM_API_URL }}
+          API_KEY: ${{ secrets.OPENCTEM_API_KEY }}
+          AGENT_ID: ${{ secrets.OPENCTEM_AGENT_ID }}
         with:
           args: >-
             -tool trivy-fs
@@ -239,18 +239,18 @@ jobs:
           context: .
           push: false
           load: true
-          tags: exploop-api:scan
+          tags: openctem-api:scan
 
       - name: Run Trivy image scan
-        uses: docker://exploopio/agent:trivy
+        uses: docker://openctemio/agent:trivy
         env:
-          API_URL: ${{ secrets.EXPLOOP_API_URL }}
-          API_KEY: ${{ secrets.EXPLOOP_API_KEY }}
-          AGENT_ID: ${{ secrets.REDIVER_AGENT_ID }}
+          API_URL: ${{ secrets.OPENCTEM_API_URL }}
+          API_KEY: ${{ secrets.OPENCTEM_API_KEY }}
+          AGENT_ID: ${{ secrets.OPENCTEM_AGENT_ID }}
         with:
           args: >-
             -tool trivy-image
-            -target exploop-api:scan
+            -target openctem-api:scan
             -push
             -output-format sarif
             -output /github/workspace/trivy-docker-results.sarif

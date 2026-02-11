@@ -151,18 +151,21 @@ func (w *Webhook) UpdatedAt() time.Time      { return w.updatedAt }
 
 // --- Setters ---
 
-func (w *Webhook) SetName(name string)        { w.name = name; w.updatedAt = time.Now() }
-func (w *Webhook) SetDescription(desc string)  { w.description = desc; w.updatedAt = time.Now() }
-func (w *Webhook) SetURL(url string)           { w.url = url; w.updatedAt = time.Now() }
-func (w *Webhook) SetSecret(secret []byte)     { w.secretEncrypted = secret; w.updatedAt = time.Now() }
+func (w *Webhook) SetName(name string)          { w.name = name; w.updatedAt = time.Now() }
+func (w *Webhook) SetDescription(desc string)   { w.description = desc; w.updatedAt = time.Now() }
+func (w *Webhook) SetURL(url string)            { w.url = url; w.updatedAt = time.Now() }
+func (w *Webhook) SetSecret(secret []byte)      { w.secretEncrypted = secret; w.updatedAt = time.Now() }
 func (w *Webhook) SetEventTypes(types []string) { w.eventTypes = types; w.updatedAt = time.Now() }
 func (w *Webhook) SetSeverityThreshold(s string) {
 	w.severityThreshold = s
 	w.updatedAt = time.Now()
 }
-func (w *Webhook) SetMaxRetries(n int)           { w.maxRetries = n; w.updatedAt = time.Now() }
-func (w *Webhook) SetRetryIntervalSeconds(n int) { w.retryIntervalSeconds = n; w.updatedAt = time.Now() }
-func (w *Webhook) SetCreatedBy(id ID)            { w.createdBy = &id }
+func (w *Webhook) SetMaxRetries(n int) { w.maxRetries = n; w.updatedAt = time.Now() }
+func (w *Webhook) SetRetryIntervalSeconds(n int) {
+	w.retryIntervalSeconds = n
+	w.updatedAt = time.Now()
+}
+func (w *Webhook) SetCreatedBy(id ID) { w.createdBy = &id }
 
 // Enable enables the webhook.
 func (w *Webhook) Enable() {

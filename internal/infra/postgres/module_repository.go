@@ -171,16 +171,16 @@ func (r *ModuleRepository) GetSubModules(ctx context.Context, parentModuleID str
 	modules := make([]*module.Module, 0)
 	for rows.Next() {
 		var (
-			id             string
-			slug           string
-			name           string
-			description    sql.NullString
-			icon           sql.NullString
-			category       string
-			displayOrder   int
-			isActive       bool
-			releaseStatus  string
-			parentID       sql.NullString
+			id            string
+			slug          string
+			name          string
+			description   sql.NullString
+			icon          sql.NullString
+			category      string
+			displayOrder  int
+			isActive      bool
+			releaseStatus string
+			parentID      sql.NullString
 		)
 
 		if err := rows.Scan(

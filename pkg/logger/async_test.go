@@ -30,7 +30,7 @@ func TestAsyncHandler_Disabled(t *testing.T) {
 }
 
 func TestAsyncHandler_Basic(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -58,7 +58,7 @@ func TestAsyncHandler_Basic(t *testing.T) {
 }
 
 func TestAsyncHandler_Close(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -84,7 +84,7 @@ func TestAsyncHandler_Close(t *testing.T) {
 }
 
 func TestAsyncHandler_CloseMultipleTimes(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -103,7 +103,7 @@ func TestAsyncHandler_CloseMultipleTimes(t *testing.T) {
 }
 
 func TestAsyncHandler_Flush(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -134,7 +134,7 @@ func TestAsyncHandler_Flush(t *testing.T) {
 }
 
 func TestAsyncHandler_DropOnFull(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	var dropCount atomic.Int32
@@ -164,7 +164,7 @@ func TestAsyncHandler_DropOnFull(t *testing.T) {
 }
 
 func TestAsyncHandler_BlockOnFull(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -192,7 +192,7 @@ func TestAsyncHandler_BlockOnFull(t *testing.T) {
 }
 
 func TestAsyncHandler_WithAttrs(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -224,7 +224,7 @@ func TestAsyncHandler_WithAttrs(t *testing.T) {
 }
 
 func TestAsyncHandler_WithGroup(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -253,9 +253,8 @@ func TestAsyncHandler_WithGroup(t *testing.T) {
 }
 
 func TestAsyncHandler_Concurrent(t *testing.T) {
-	var buf bytes.Buffer
-	var mu sync.Mutex
-	baseHandler := slog.NewJSONHandler(&safeWriter{Writer: &buf, mu: &mu}, nil)
+	var buf safeBuffer
+	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
 		Enabled:       true,
@@ -280,29 +279,33 @@ func TestAsyncHandler_Concurrent(t *testing.T) {
 	wg.Wait()
 	handler.Close() // Ensure all flushed
 
-	mu.Lock()
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
-	mu.Unlock()
-
 	if len(lines) != 1000 {
 		t.Errorf("expected 1000 concurrent logs, got %d", len(lines))
 	}
 }
 
-// safeWriter is a thread-safe writer for testing
-type safeWriter struct {
-	Writer *bytes.Buffer
-	mu     *sync.Mutex
+// safeBuffer is a thread-safe bytes.Buffer for testing async handlers.
+type safeBuffer struct {
+	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
-func (w *safeWriter) Write(p []byte) (n int, err error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.Writer.Write(p)
+func (b *safeBuffer) Write(p []byte) (n int, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
 }
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 
 func TestAsyncHandler_RecordCloning(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -330,7 +333,7 @@ func TestAsyncHandler_RecordCloning(t *testing.T) {
 }
 
 func TestAsyncHandler_WithAttrsAndClose(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -358,7 +361,7 @@ func TestAsyncHandler_WithAttrsAndClose(t *testing.T) {
 }
 
 func TestAsyncWriter_Basic(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 
 	writer := NewAsyncWriter(&buf, AsyncConfig{
 		Enabled:       true,
@@ -396,7 +399,7 @@ func TestAsyncWriter_Disabled(t *testing.T) {
 }
 
 func TestAsyncHandler_Enabled(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -412,7 +415,7 @@ func TestAsyncHandler_Enabled(t *testing.T) {
 }
 
 func BenchmarkAsyncHandler_Enabled(b *testing.B) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{
@@ -431,7 +434,7 @@ func BenchmarkAsyncHandler_Enabled(b *testing.B) {
 }
 
 func BenchmarkAsyncHandler_Disabled(b *testing.B) {
-	var buf bytes.Buffer
+	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)
 
 	handler := NewAsyncHandler(baseHandler, AsyncConfig{

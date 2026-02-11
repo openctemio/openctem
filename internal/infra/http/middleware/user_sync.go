@@ -51,32 +51,32 @@ func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handle
 				}
 
 				// Get user from local JWT claims
-			// NOTE: For local auth, we do NOT auto-create users from JWT tokens.
-			// Users MUST register through /api/v1/auth/register first.
-			localUser, err := userService.GetOrCreateFromLocalToken(ctx, userID, localClaims.Email, localClaims.Name)
-			if err != nil {
-				// Check if this is a "user not found" error (user hasn't registered)
-				if shared.IsNotFound(err) {
-					log.Warn("unregistered user attempted access with valid JWT",
+				// NOTE: For local auth, we do NOT auto-create users from JWT tokens.
+				// Users MUST register through /api/v1/auth/register first.
+				localUser, err := userService.GetOrCreateFromLocalToken(ctx, userID, localClaims.Email, localClaims.Name)
+				if err != nil {
+					// Check if this is a "user not found" error (user hasn't registered)
+					if shared.IsNotFound(err) {
+						log.Warn("unregistered user attempted access with valid JWT",
+							"user_id", userID,
+							"email", localClaims.Email,
+							"error", err,
+						)
+						// Return 401 - user must register first
+						http.Error(w, "User not registered. Please register at /api/v1/auth/register", http.StatusUnauthorized)
+						return
+					}
+
+					// Other errors - log and continue
+					log.Warn("failed to get local user",
+						"error", err,
 						"user_id", userID,
 						"email", localClaims.Email,
-						"error", err,
 					)
-					// Return 401 - user must register first
-					http.Error(w, "User not registered. Please register at /api/v1/auth/register", http.StatusUnauthorized)
+					// Continue without local user - endpoint may still work
+					next.ServeHTTP(w, r)
 					return
 				}
-
-				// Other errors - log and continue
-				log.Warn("failed to get local user",
-					"error", err,
-					"user_id", userID,
-					"email", localClaims.Email,
-				)
-				// Continue without local user - endpoint may still work
-				next.ServeHTTP(w, r)
-				return
-			}
 
 				// Add local user to context and continue
 				ctx = context.WithValue(ctx, LocalUserKey, localUser)

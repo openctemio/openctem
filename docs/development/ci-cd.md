@@ -113,9 +113,9 @@ build (linux/arm64) ────────────────────
 
 | Image | Description |
 |-------|-------------|
-| `exploopio/api` | Main API server |
-| `exploopio/migrations` | Database migrations runner |
-| `exploopio/seed` | Database seeding utility |
+| `openctemio/api` | Main API server |
+| `openctemio/migrations` | Database migrations runner |
+| `openctemio/seed` | Database seeding utility |
 
 ### Manual Trigger
 

@@ -1242,7 +1242,7 @@ func (s *AssetService) RecordRepositoryScan(ctx context.Context, assetID string)
 // findMatchingRepositoryAsset tries to find an existing asset that matches the repository.
 // This handles cases where an agent created an asset before SCM sync.
 func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID shared.ID, input CreateRepositoryAssetInput) *asset.Asset {
-	// Extract repo name from FullName (e.g., "sdk" from "exploopio/sdk")
+	// Extract repo name from FullName (e.g., "sdk" from "openctemio/sdk")
 	repoName := input.Name
 	if input.FullName != "" {
 		parts := strings.Split(input.FullName, "/")
@@ -1255,7 +1255,7 @@ func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID
 		provider = asset.ParseProvider(input.Provider)
 	}
 
-	// 1. Try to find by external_id matching FullName (e.g., "exploopio/sdk")
+	// 1. Try to find by external_id matching FullName (e.g., "openctemio/sdk")
 	if input.FullName != "" && !tenantID.IsZero() {
 		existing, err := s.repo.GetByExternalID(ctx, tenantID, provider, input.FullName)
 		if err == nil && existing != nil {
@@ -1264,7 +1264,7 @@ func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID
 	}
 
 	// 2. Try to find by name matching the repo name
-	// This handles agent-created assets with names like "github.com-exploop/exploopio/sdk"
+	// This handles agent-created assets with names like "github.com/openctemio/sdk"
 	if !tenantID.IsZero() {
 		existing, err := s.repo.GetByName(ctx, tenantID, repoName)
 		if err == nil && existing != nil && existing.Type() == asset.AssetTypeRepository {
@@ -1281,7 +1281,7 @@ func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID
 	}
 
 	// 4. Try to find by external_id containing the repo name
-	// This handles agent-created assets with external_id like "exploop/exploopio/sdk"
+	// This handles agent-created assets with external_id like "openctemio/openctemio/sdk"
 	if input.FullName != "" && !tenantID.IsZero() {
 		existing, err := s.repo.GetByExternalID(ctx, tenantID, provider, repoName)
 		if err == nil && existing != nil {
@@ -1290,8 +1290,8 @@ func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID
 	}
 
 	// 5. Try to find repository asset by full name (org/repo pattern) - MORE PRECISE
-	// This handles agent-created assets like "github.com-xxx/exploopio/sdk"
-	// matching FullName "exploopio/sdk"
+	// This handles agent-created assets like "github.com-xxx/openctemio/sdk"
+	// matching FullName "openctemio/sdk"
 	if input.FullName != "" && !tenantID.IsZero() {
 		existing, err := s.repo.FindRepositoryByFullName(ctx, tenantID, input.FullName)
 		if err == nil && existing != nil {

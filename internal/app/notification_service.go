@@ -8,11 +8,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	notificationclient "github.com/openctemio/api/internal/infra/notification"
 	"github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/notification"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/google/uuid"
 )
 
 // Status constants for notification results.

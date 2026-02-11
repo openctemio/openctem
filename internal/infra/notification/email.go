@@ -113,7 +113,7 @@ func (c *EmailClient) Send(ctx context.Context, msg Message) (*SendResult, error
 // TestConnection tests the SMTP configuration.
 func (c *EmailClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	testMsg := Message{
-		Title:    "Exploop.io Test Notification",
+		Title:    "OpenCTEM Test Notification",
 		Body:     "This is a test notification to verify your email integration is working correctly.",
 		Severity: "low",
 	}
@@ -296,7 +296,7 @@ const emailHTMLTemplate = `<!DOCTYPE html>
         </div>
         <div class="footer">
             {{if .FooterText}}{{.FooterText}}<br>{{end}}
-            Sent by <a href="https://exploop.io">Exploop.io</a> at {{.Timestamp}}
+            Sent by <a href="https://openctem.io">OpenCTEM</a> at {{.Timestamp}}
         </div>
     </div>
 </body>

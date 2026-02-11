@@ -98,11 +98,8 @@ const (
 	// This provides cryptographic-grade entropy for API keys.
 	APIKeyLength = 32
 
-	// APIKeyPrefix is the prefix for admin API keys (new format).
-	APIKeyPrefix = "exp-admin-"
-
-	// APIKeyPrefixLegacy is the legacy prefix used by bootstrap-admin tool.
-	APIKeyPrefixLegacy = "radm_"
+	// APIKeyPrefix is the prefix for admin API keys.
+	APIKeyPrefix = "oc-admin-"
 
 	// BcryptCost is the bcrypt cost factor for API key hashing.
 	// Cost of 12 provides good security while keeping auth under 1 second.
@@ -116,7 +113,7 @@ type AdminUser struct {
 	email        string
 	name         string
 	apiKeyHash   string // bcrypt hash - NEVER exposed via getter
-	apiKeyPrefix string // First chars for identification (exp-admin-xxx)
+	apiKeyPrefix string // First chars for identification (oc-admin-xxx)
 	role         AdminRole
 	isActive     bool
 	lastUsedAt   *time.Time
@@ -489,7 +486,7 @@ func generateAPIKey() (string, string, string, error) {
 		return "", "", "", shared.NewDomainError("INTERNAL", "failed to hash API key", shared.ErrInternal)
 	}
 
-	// Prefix for identification (exp-admin- + first 8 hex chars)
+	// Prefix for identification (oc-admin- + first 8 hex chars)
 	prefix := rawKey[:len(APIKeyPrefix)+8]
 
 	return rawKey, string(hashBytes), prefix, nil
@@ -497,23 +494,12 @@ func generateAPIKey() (string, string, string, error) {
 
 // ExtractAPIKeyPrefix extracts the prefix from a raw API key for lookup.
 // Returns empty string if the key format is invalid.
-// Supports both new format (exp-admin-xxx) and legacy format (radm_xxx).
 func ExtractAPIKeyPrefix(rawKey string) string {
-	// Check new format first
 	if strings.HasPrefix(rawKey, APIKeyPrefix) {
 		if len(rawKey) < len(APIKeyPrefix)+8 {
 			return ""
 		}
 		return rawKey[:len(APIKeyPrefix)+8]
-	}
-
-	// Check legacy format (radm_xxx)
-	if strings.HasPrefix(rawKey, APIKeyPrefixLegacy) {
-		if len(rawKey) < len(APIKeyPrefixLegacy)+3 {
-			return ""
-		}
-		// Legacy prefix stored as "radm_260..." (first 8 chars + "...")
-		return rawKey[:8] + "..."
 	}
 
 	return ""

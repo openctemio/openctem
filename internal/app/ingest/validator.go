@@ -6,7 +6,7 @@ import (
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/validator"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk/pkg/ctis"
 )
 
 // Validator validates ingest inputs.
@@ -21,8 +21,8 @@ func NewValidator() *Validator {
 	}
 }
 
-// ValidateReport validates a EIS report.
-func (v *Validator) ValidateReport(report *eis.Report) error {
+// ValidateReport validates a CTIS report.
+func (v *Validator) ValidateReport(report *ctis.Report) error {
 	if len(report.Assets) > MaxAssetsPerReport {
 		return shared.NewDomainError("PAYLOAD_TOO_LARGE",
 			fmt.Sprintf("report contains %d assets, maximum is %d", len(report.Assets), MaxAssetsPerReport), nil)

@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/openctemio/api/pkg/domain/notification"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
-	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
 // NotificationOutboxRepository implements the notification.OutboxRepository interface.

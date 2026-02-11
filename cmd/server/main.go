@@ -20,14 +20,14 @@ import (
 	"github.com/openctemio/api/pkg/validator"
 )
 
-// @title           Exploop API
+// @title           OpenCTEM API
 // @version         1.0
 // @description     Unified Continuous Threat Exposure Management (CTEM) Platform API
-// @termsOfService  https://exploop.io/terms/
+// @termsOfService  https://openctem.io/terms/
 
-// @contact.name   Exploop Team
-// @contact.url    https://github.com/exploopio/exploop
-// @contact.email  support@exploop.io
+// @contact.name   OpenCTEM Team
+// @contact.url    https://github.com/openctemio/openctem
+// @contact.email  support@openctem.io
 
 // @license.name  MIT
 // @license.url   https://opensource.org/licenses/MIT

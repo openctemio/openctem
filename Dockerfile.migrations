@@ -5,10 +5,10 @@
 # Used by docker-compose to run database migrations independently.
 #
 # Build:
-#   docker build -f Dockerfile.migrations -t exploopio/migrations:v0.1.0 .
+#   docker build -f Dockerfile.migrations -t openctemio/migrations:v0.1.0 .
 #
 # Usage:
-#   docker run --rm exploopio/migrations:v0.1.0 \
+#   docker run --rm openctemio/migrations:v0.1.0 \
 #     -path=/migrations \
 #     -database "postgres://user:pass@host:5432/db?sslmode=disable" \
 #     up

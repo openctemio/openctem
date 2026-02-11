@@ -1,6 +1,6 @@
 # Makefile Commands Guide
 
-This document provides a comprehensive guide to using Makefile commands for the Rediver API project.
+This document provides a comprehensive guide to using Makefile commands for the OpenCTEM API project.
 
 ## Quick Start
 
@@ -200,7 +200,7 @@ Database configuration is loaded from `.env` file:
 - `DB_PORT` - Database port (default: 5432)
 - `DB_USER` - Database user
 - `DB_PASSWORD` - Database password
-- `DB_NAME` - Database name (default:.exploop)
+- `DB_NAME` - Database name (default: openctem)
 
 ## Troubleshooting
 

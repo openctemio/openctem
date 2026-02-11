@@ -21,7 +21,7 @@ type SubModuleChecker interface {
 }
 
 // RequireModule creates a middleware that checks if the tenant has access to the specified module.
-// If the tenant doesn't have the module enabled in their subscription plan, returns 403 Forbidden.
+// If the tenant doesn't have the module enabled, returns 403 Forbidden.
 //
 // This middleware should be used AFTER authentication and RequireTenant() middleware,
 // as it requires the tenant ID to be present in the context.

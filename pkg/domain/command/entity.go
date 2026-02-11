@@ -16,7 +16,7 @@ const (
 	AuthTokenLength = 32
 
 	// AuthTokenPrefix is the prefix for auth tokens
-	AuthTokenPrefix = "exp-ct-"
+	AuthTokenPrefix = "oc-cmd-"
 
 	// DefaultAuthTokenTTL is the default time-to-live for auth tokens (24 hours)
 	DefaultAuthTokenTTL = 24 * time.Hour

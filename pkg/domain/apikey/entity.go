@@ -109,16 +109,16 @@ func Reconstruct(
 
 // --- Getters ---
 
-func (k *APIKey) ID() ID              { return k.id }
-func (k *APIKey) TenantID() ID        { return k.tenantID }
-func (k *APIKey) UserID() *ID         { return k.userID }
-func (k *APIKey) Name() string        { return k.name }
-func (k *APIKey) Description() string { return k.description }
-func (k *APIKey) KeyHash() string     { return k.keyHash }
-func (k *APIKey) KeyPrefix() string   { return k.keyPrefix }
-func (k *APIKey) Scopes() []string    { return k.scopes }
-func (k *APIKey) RateLimit() int      { return k.rateLimit }
-func (k *APIKey) Status() Status      { return k.status }
+func (k *APIKey) ID() ID                 { return k.id }
+func (k *APIKey) TenantID() ID           { return k.tenantID }
+func (k *APIKey) UserID() *ID            { return k.userID }
+func (k *APIKey) Name() string           { return k.name }
+func (k *APIKey) Description() string    { return k.description }
+func (k *APIKey) KeyHash() string        { return k.keyHash }
+func (k *APIKey) KeyPrefix() string      { return k.keyPrefix }
+func (k *APIKey) Scopes() []string       { return k.scopes }
+func (k *APIKey) RateLimit() int         { return k.rateLimit }
+func (k *APIKey) Status() Status         { return k.status }
 func (k *APIKey) ExpiresAt() *time.Time  { return k.expiresAt }
 func (k *APIKey) LastUsedAt() *time.Time { return k.lastUsedAt }
 func (k *APIKey) LastUsedIP() string     { return k.lastUsedIP }
@@ -187,6 +187,6 @@ func (k *APIKey) IsActive() bool {
 // --- Errors ---
 
 var (
-	ErrAPIKeyNotFound    = fmt.Errorf("%w: api key not found", shared.ErrNotFound)
-	ErrAPIKeyNameExists  = fmt.Errorf("%w: api key name already exists", shared.ErrAlreadyExists)
+	ErrAPIKeyNotFound   = fmt.Errorf("%w: api key not found", shared.ErrNotFound)
+	ErrAPIKeyNameExists = fmt.Errorf("%w: api key name already exists", shared.ErrAlreadyExists)
 )

@@ -84,20 +84,20 @@ type WebhookResponse struct {
 
 // DeliveryResponse represents a webhook delivery in the response.
 type DeliveryResponse struct {
-	ID              string         `json:"id"`
-	WebhookID       string         `json:"webhook_id"`
-	EventID         string         `json:"event_id,omitempty"`
-	EventType       string         `json:"event_type"`
-	Payload         map[string]any `json:"payload,omitempty"`
-	Status          string         `json:"status"`
-	ResponseCode    *int           `json:"response_code,omitempty"`
-	ResponseBody    string         `json:"response_body,omitempty"`
-	Attempt         int            `json:"attempt"`
-	NextRetryAt     *time.Time     `json:"next_retry_at,omitempty"`
-	ErrorMessage    string         `json:"error_message,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	DeliveredAt     *time.Time     `json:"delivered_at,omitempty"`
-	DurationMs      *int           `json:"duration_ms,omitempty"`
+	ID           string         `json:"id"`
+	WebhookID    string         `json:"webhook_id"`
+	EventID      string         `json:"event_id,omitempty"`
+	EventType    string         `json:"event_type"`
+	Payload      map[string]any `json:"payload,omitempty"`
+	Status       string         `json:"status"`
+	ResponseCode *int           `json:"response_code,omitempty"`
+	ResponseBody string         `json:"response_body,omitempty"`
+	Attempt      int            `json:"attempt"`
+	NextRetryAt  *time.Time     `json:"next_retry_at,omitempty"`
+	ErrorMessage string         `json:"error_message,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
+	DeliveredAt  *time.Time     `json:"delivered_at,omitempty"`
+	DurationMs   *int           `json:"duration_ms,omitempty"`
 }
 
 // --- Handlers ---

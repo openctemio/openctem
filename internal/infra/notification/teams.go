@@ -128,7 +128,7 @@ func (c *TeamsClient) Send(ctx context.Context, msg Message) (*SendResult, error
 // TestConnection tests the Teams webhook configuration.
 func (c *TeamsClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	testMsg := Message{
-		Title:    "Exploop.io Test Notification",
+		Title:    "OpenCTEM.io Test Notification",
 		Body:     "This is a test notification to verify your Microsoft Teams integration is working correctly.",
 		Severity: "low",
 	}

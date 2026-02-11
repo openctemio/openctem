@@ -15,7 +15,7 @@ import (
 // - Write (POST, PUT): assets:write permission
 // - Delete (DELETE): assets:delete permission
 //
-// Module check: Requires "assets" module to be enabled in tenant's subscription plan.
+// Module check: Requires "assets" module to be enabled for the tenant.
 //
 //nolint:dupl // Route registration functions naturally have similar structure
 func registerAssetRoutes(
@@ -29,7 +29,7 @@ func registerAssetRoutes(
 	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	// Add module check middleware if licensing service is available
-	// This ensures tenant has "assets" module enabled in their subscription plan
+	// This ensures tenant has "assets" module enabled
 	if moduleService != nil {
 		middlewares = append(middlewares, middleware.RequireModule(moduleService, module.ModuleAssets))
 	}

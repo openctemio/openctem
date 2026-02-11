@@ -43,7 +43,7 @@ WORKDIR /app
 RUN apk add --no-cache git ca-certificates tzdata
 
 # Set GOPRIVATE for private modules (SDK is private on GitHub)
-ENV GOPRIVATE=github.com/exploopio/*
+ENV GOPRIVATE=github.com/openctemio/*
 
 # Copy go mod files (context is api/ folder)
 COPY go.mod go.sum ./
@@ -88,8 +88,8 @@ WORKDIR /app
 RUN apk --no-cache add ca-certificates tzdata
 
 # Create non-root user
-RUN addgroup -g 1000 -S rediver && \
-    adduser -u 1000 -S rediver -G rediver
+RUN addgroup -g 1000 -S openctem && \
+    adduser -u 1000 -S openctem -G openctem
 
 # Copy binaries from builder
 COPY --from=builder /app/bin/server .
@@ -99,10 +99,10 @@ COPY --from=builder /app/bin/bootstrap-admin .
 COPY --from=builder /app/migrations ./migrations
 
 # Change ownership
-RUN chown -R rediver:rediver /app
+RUN chown -R openctem:openctem /app
 
 # Switch to non-root user
-USER rediver
+USER openctem
 
 # Expose ports
 EXPOSE 8080 9090

@@ -11,7 +11,7 @@
 #   DB_URL=postgres://... ./scripts/dev-setup-admin.sh
 #
 # Environment variables:
-#   DB_URL       - Database connection string (default: postgres://exploop:exploop@localhost:5432/exploop?sslmode=disable)
+#   DB_URL       - Database connection string (default: postgres://openctem:openctem@localhost:5432/openctem?sslmode=disable)
 #   ADMIN_EMAIL  - Admin email (default: admin@localhost)
 #   ADMIN_ROLE   - Admin role: super_admin, ops_admin, viewer (default: super_admin)
 #   ADMIN_NAME   - Admin name (default: derived from email)
@@ -28,7 +28,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-DB_URL="${DB_URL:-postgres://exploop:exploop@localhost:5432/exploop?sslmode=disable}"
+DB_URL="${DB_URL:-postgres://openctem:openctem@localhost:5432/openctem?sslmode=disable}"
 ADMIN_EMAIL="${1:-${ADMIN_EMAIL:-admin@localhost}}"
 ADMIN_ROLE="${2:-${ADMIN_ROLE:-super_admin}}"
 ADMIN_NAME="${ADMIN_NAME:-}"
@@ -39,7 +39,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 API_DIR="$PROJECT_ROOT/api"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Rediver Admin Setup (Development)${NC}"
+echo -e "${BLUE}  OpenCTEM Admin Setup (Development)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -97,12 +97,12 @@ echo "   - Open http://localhost:3001"
 echo "   - Enter the API key in the login form"
 echo ""
 echo "3. To use with curl:"
-echo "   export ADMIN_API_KEY='exp-admin-...'"
+echo "   export ADMIN_API_KEY='oc-admin-...'"
 echo "   curl -H 'X-Admin-API-Key: \$ADMIN_API_KEY' \\"
 echo "     http://localhost:8080/api/v1/admin/auth/validate"
 echo ""
 echo "4. To use with Admin CLI:"
-echo "   export REDIVER_API_URL=http://localhost:8080"
-echo "   export EXPLOOP_API_KEY='exp-admin-...'"
-echo "   exploop-admin get agents"
+echo "   export OPENCTEM_API_URL=http://localhost:8080"
+echo "   export OPENCTEM_API_KEY='oc-admin-...'"
+echo "   openctem-admin get agents"
 echo ""

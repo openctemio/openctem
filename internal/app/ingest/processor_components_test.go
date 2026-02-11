@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk/pkg/ctis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -136,8 +136,8 @@ func TestComponentProcessor_ProcessBatch_WithLicenses(t *testing.T) {
 		"asset-1": assetID,
 	}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:         "lodash",
 				Version:      "4.17.21",
@@ -189,8 +189,8 @@ func TestComponentProcessor_ProcessBatch_NoAsset(t *testing.T) {
 	tenantID := shared.NewID()
 	assetMap := map[string]shared.ID{} // Empty - no assets
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:      "lodash",
 				Version:   "4.17.21",
@@ -224,8 +224,8 @@ func TestComponentProcessor_ProcessBatch_LicenseLinkingError(t *testing.T) {
 		"asset-1": assetID,
 	}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:      "lodash",
 				Version:   "4.17.21",
@@ -267,8 +267,8 @@ func TestComponentProcessor_ProcessBatch_EmptyDependencies(t *testing.T) {
 	assetID := shared.NewID()
 	assetMap := map[string]shared.ID{"asset-1": assetID}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{}, // Empty
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{}, // Empty
 	}
 
 	output := &Output{}
@@ -300,8 +300,8 @@ func TestComponentProcessor_ProcessBatch_ComponentAlreadyExists(t *testing.T) {
 
 	assetMap := map[string]shared.ID{"asset-1": assetID}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:         "lodash",
 				Version:      "4.17.21",
@@ -353,8 +353,8 @@ func TestComponentProcessor_ProcessBatch_SameComponentDifferentPath(t *testing.T
 
 	assetMap := map[string]shared.ID{"asset-1": assetID}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:         "lodash",
 				Version:      "4.17.21",
@@ -417,8 +417,8 @@ func TestComponentProcessor_ProcessBatch_TransitiveDepthCalculation(t *testing.T
 
 	assetMap := map[string]shared.ID{"asset-1": assetID}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:         "express",
 				Version:      "4.18.0",
@@ -493,8 +493,8 @@ func TestComponentProcessor_ProcessBatch_DeepTransitiveChain(t *testing.T) {
 
 	assetMap := map[string]shared.ID{"asset-1": assetID}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{Name: "A", Version: "1.0.0", Ecosystem: "npm", PURL: "pkg:npm/A@1.0.0", Relationship: "direct"},
 			{Name: "B", Version: "1.0.0", Ecosystem: "npm", PURL: "pkg:npm/B@1.0.0", Relationship: "transitive", DependsOn: []string{"pkg:npm/A@1.0.0"}},
 			{Name: "C", Version: "1.0.0", Ecosystem: "npm", PURL: "pkg:npm/C@1.0.0", Relationship: "transitive", DependsOn: []string{"pkg:npm/B@1.0.0"}},
@@ -510,15 +510,25 @@ func TestComponentProcessor_ProcessBatch_DeepTransitiveChain(t *testing.T) {
 	mockRepo.On("Upsert", mock.Anything, mock.MatchedBy(func(c *component.Component) bool { return c.Name() == "C" })).Return(idC, nil)
 	mockRepo.On("Upsert", mock.Anything, mock.MatchedBy(func(c *component.Component) bool { return c.Name() == "D" })).Return(idD, nil)
 
-	// Track depths
+	// Track depths from Pass 2 (LinkAsset) - direct gets depth=1, transitive gets depth=2
 	depths := make(map[shared.ID]int)
+	assetDepToComp := make(map[shared.ID]shared.ID) // assetDep ID → component ID
 	mockRepo.On("LinkAsset", mock.Anything, mock.MatchedBy(func(dep *component.AssetDependency) bool {
 		depths[dep.ComponentID()] = dep.Depth()
+		assetDepToComp[dep.ID()] = dep.ComponentID()
 		return true
 	})).Return(nil).Times(4)
 
-	// Mock UpdateAssetDependencyParent for transitive dependency updates
-	mockRepo.On("UpdateAssetDependencyParent", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	// Capture FINAL depths from Pass 3 (UpdateAssetDependencyParent)
+	mockRepo.On("UpdateAssetDependencyParent", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			assetDepID := args.Get(1).(shared.ID)
+			depth := args.Get(3).(int)
+			if compID, ok := assetDepToComp[assetDepID]; ok {
+				depths[compID] = depth
+			}
+		}).
+		Return(nil).Maybe()
 
 	// Execute
 	err := processor.ProcessBatch(context.Background(), tenantID, report, assetMap, output)
@@ -547,8 +557,8 @@ func TestComponentProcessor_ProcessBatch_TransitiveWithoutParent(t *testing.T) {
 
 	assetMap := map[string]shared.ID{"asset-1": assetID}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:         "orphan-lib",
 				Version:      "1.0.0",
@@ -590,12 +600,12 @@ func TestComponentProcessor_BuildDependencyKeys(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		dep      *eis.Dependency
+		dep      *ctis.Dependency
 		expected []string
 	}{
 		{
 			name: "full PURL + name + version",
-			dep: &eis.Dependency{
+			dep: &ctis.Dependency{
 				Name:    "lodash",
 				Version: "4.17.21",
 				PURL:    "pkg:npm/lodash@4.17.21",
@@ -608,7 +618,7 @@ func TestComponentProcessor_BuildDependencyKeys(t *testing.T) {
 		},
 		{
 			name: "with ID different from name",
-			dep: &eis.Dependency{
+			dep: &ctis.Dependency{
 				ID:      "npm:lodash:4.17.21",
 				Name:    "lodash",
 				Version: "4.17.21",
@@ -623,7 +633,7 @@ func TestComponentProcessor_BuildDependencyKeys(t *testing.T) {
 		},
 		{
 			name: "no PURL",
-			dep: &eis.Dependency{
+			dep: &ctis.Dependency{
 				Name:    "lodash",
 				Version: "4.17.21",
 			},
@@ -737,8 +747,8 @@ func TestComponentProcessor_ProcessBatch_DuplicateLinkIgnored(t *testing.T) {
 
 	assetMap := map[string]shared.ID{"asset-1": assetID}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:         "lodash",
 				Version:      "4.17.21",
@@ -799,8 +809,8 @@ func TestComponentProcessor_ProcessBatch_ParentFromPreviousScan(t *testing.T) {
 	assetMap := map[string]shared.ID{"asset-1": assetID}
 
 	// Current scan only sends child, not parent
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:         "body-parser",
 				Version:      "1.20.0",
@@ -837,24 +847,28 @@ func TestComponentProcessor_ProcessBatch_ParentFromPreviousScan(t *testing.T) {
 	mockRepo.On("GetExistingDependencyByPURL", mock.Anything, assetID, "pkg:npm/express@4.18.0").
 		Return(parentDep, nil)
 
-	// Capture the depth set on the child
-	var capturedDepth int
-	var capturedParentID *shared.ID
+	// Pass 2: LinkAsset captures initial depth (transitive defaults to 2, no parent yet)
 	mockRepo.On("LinkAsset", mock.Anything, mock.MatchedBy(func(dep *component.AssetDependency) bool {
-		capturedDepth = dep.Depth()
-		capturedParentID = dep.ParentComponentID()
 		return dep.ComponentID() == childComponentID
 	})).Return(nil)
 
-	// Mock UpdateAssetDependencyParent for transitive dependency updates
-	mockRepo.On("UpdateAssetDependencyParent", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	// Pass 3: Capture parent ID and final depth from UpdateAssetDependencyParent
+	var capturedParentID *shared.ID
+	var capturedFinalDepth int
+	mockRepo.On("UpdateAssetDependencyParent", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			parentID := args.Get(2).(shared.ID)
+			capturedParentID = &parentID
+			capturedFinalDepth = args.Get(3).(int)
+		}).
+		Return(nil).Maybe()
 
 	// Execute
 	err := processor.ProcessBatch(context.Background(), tenantID, report, assetMap, output)
 
 	// Assert
 	require.NoError(t, err)
-	assert.Equal(t, 2, capturedDepth, "child should have depth 2 (parent depth 1 + 1)")
+	assert.Equal(t, 2, capturedFinalDepth, "child should have depth 2 (parent depth 1 + 1)")
 	assert.NotNil(t, capturedParentID, "parent component ID should be set")
 	assert.Equal(t, parentAssetDepID, *capturedParentID, "parent should be the one from DB")
 	assert.Equal(t, 1, output.DependenciesLinked)
@@ -876,8 +890,8 @@ func TestComponentProcessor_ProcessBatch_ParentNotFoundAnywhere(t *testing.T) {
 
 	assetMap := map[string]shared.ID{"asset-1": assetID}
 
-	report := &eis.Report{
-		Dependencies: []eis.Dependency{
+	report := &ctis.Report{
+		Dependencies: []ctis.Dependency{
 			{
 				Name:         "orphan-lib",
 				Version:      "1.0.0",

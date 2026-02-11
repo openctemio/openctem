@@ -450,7 +450,7 @@ func RequireOwner() func(http.Handler) http.Handler {
 
 // IsPlatformAdmin checks if the user has platform admin privileges.
 // Platform admins can manage platform-wide resources like platform agents.
-// This is typically granted to Exploop staff or system administrators.
+// This is typically granted to OpenCTEM staff or system administrators.
 //
 // Platform admin is determined by:
 // 1. Having "platform_admin" role in RealmAccess (for OIDC/Keycloak)
@@ -480,8 +480,8 @@ func IsPlatformAdmin(ctx context.Context) bool {
 }
 
 // RequirePlatformAdmin creates a middleware that requires platform admin access.
-// Platform admins can manage Exploop's shared infrastructure like platform agents.
-// This is for Exploop operators, not regular tenant admins.
+// Platform admins can manage OpenCTEM's shared infrastructure like platform agents.
+// This is for OpenCTEM operators, not regular tenant admins.
 func RequirePlatformAdmin() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

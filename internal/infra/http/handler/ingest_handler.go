@@ -10,15 +10,15 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/sdk/pkg/chunk"
-	"github.com/openctemio/sdk/pkg/eis"
-	"github.com/google/uuid"
-	"github.com/klauspost/compress/zstd"
+	"github.com/openctemio/sdk/pkg/ctis"
 )
 
 // contextKey is a custom type for context keys.
@@ -27,7 +27,7 @@ type contextKey string
 const agentContextKey contextKey = "agent"
 
 // IngestHandler handles ingestion-related HTTP requests.
-// It supports EIS, SARIF, and Recon formats.
+// It supports CTIS, SARIF, and Recon formats.
 type IngestHandler struct {
 	ingestService *ingest.Service
 	agentService  *app.AgentService
@@ -62,9 +62,9 @@ type IngestResponse struct {
 	Errors          []string `json:"errors,omitempty"`
 }
 
-// EISIngestRequest represents the request body for EIS ingestion.
-type EISIngestRequest struct {
-	Report eis.Report `json:"report"`
+// CTISIngestRequest represents the request body for CTIS ingestion.
+type CTISIngestRequest struct {
+	Report ctis.Report `json:"report"`
 }
 
 // ReconIngestRequest represents reconnaissance scan results to ingest.
@@ -248,23 +248,23 @@ func SourceFromContext(ctx context.Context) *agent.Agent {
 }
 
 // =============================================================================
-// EIS Ingestion Endpoint
+// CTIS Ingestion Endpoint
 // =============================================================================
 
-// IngestEIS handles POST /api/v1/agent/ingest/eis
-// @Summary      Ingest EIS report
-// @Description  Ingest a full EIS (Exploop Interchange Schema) report containing assets and findings
+// IngestCTIS handles POST /api/v1/agent/ingest/ctis
+// @Summary      Ingest CTIS report
+// @Description  Ingest a full CTIS (CTEM Ingest Schema) report containing assets and findings
 // @Tags         Agent
 // @Accept       json
 // @Produce      json
-// @Param        request  body      EISIngestRequest  true  "EIS report"
+// @Param        request  body      CTISIngestRequest  true  "CTIS report"
 // @Success      201  {object}  IngestResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     ApiKeyAuth
-// @Router       /agent/ingest/ris [post]
-func (h *IngestHandler) IngestEIS(w http.ResponseWriter, r *http.Request) {
+// @Router       /agent/ingest/ctis [post]
+func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
@@ -279,16 +279,16 @@ func (h *IngestHandler) IngestEIS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var report eis.Report
+	var report ctis.Report
 
 	// Try wrapped format first: { "report": { ... } }
-	var req EISIngestRequest
+	var req CTISIngestRequest
 	if err := json.Unmarshal(bodyBytes, &req); err == nil && req.Report.Version != "" {
 		report = req.Report
 	} else {
 		// Try flat format (SDK format): { "version": ..., "metadata": ..., ... }
 		if err := json.Unmarshal(bodyBytes, &report); err != nil {
-			h.logger.Debug("failed to parse EIS ingest request", "error", err)
+			h.logger.Debug("failed to parse CTIS ingest request", "error", err)
 			apierror.BadRequest("Invalid JSON request body").WriteJSON(w)
 			return
 		}
@@ -305,7 +305,7 @@ func (h *IngestHandler) IngestEIS(w http.ResponseWriter, r *http.Request) {
 
 	output, err := h.ingestService.Ingest(r.Context(), agt, input)
 	if err != nil {
-		h.logger.Error("EIS ingestion failed", "error", err)
+		h.logger.Error("CTIS ingestion failed", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
@@ -424,8 +424,8 @@ func (h *IngestHandler) IngestReconReport(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Convert recon request to EIS input
-	reconInput := h.buildReconToEISInput(&req)
+	// Convert recon request to CTIS input
+	reconInput := h.buildReconToCTISInput(&req)
 
 	output, err := h.ingestService.IngestRecon(r.Context(), agt, reconInput)
 	if err != nil {
@@ -567,8 +567,8 @@ func (h *IngestHandler) CheckFingerprints(w http.ResponseWriter, r *http.Request
 // =============================================================================
 
 // IngestChunk handles POST /api/v1/agent/ingest/chunk
-// @Summary      Ingest EIS report chunk
-// @Description  Ingest a single chunk of a large EIS report. Used for reports that exceed single upload limits.
+// @Summary      Ingest CTIS report chunk
+// @Description  Ingest a single chunk of a large CTIS report. Used for reports that exceed single upload limits.
 // @Tags         Agent
 // @Accept       json
 // @Produce      json
@@ -699,8 +699,8 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build EIS report from chunk data
-	report := &eis.Report{
+	// Build CTIS report from chunk data
+	report := &ctis.Report{
 		Version:  "1.0",
 		Assets:   chunkData.Assets,
 		Findings: chunkData.Findings,
@@ -796,9 +796,9 @@ func extractAPIKey(r *http.Request) string {
 	return ""
 }
 
-// buildReconToEISInput converts handler request to EIS input.
-func (h *IngestHandler) buildReconToEISInput(req *ReconIngestRequest) *eis.ReconToEISInput {
-	risInput := &eis.ReconToEISInput{
+// buildReconToCTISInput converts handler request to CTIS input.
+func (h *IngestHandler) buildReconToCTISInput(req *ReconIngestRequest) *ctis.ReconToCTISInput {
+	ctisInput := &ctis.ReconToCTISInput{
 		ScannerName:    req.ScannerName,
 		ScannerVersion: req.ScannerVersion,
 		ReconType:      req.ReconType,
@@ -810,7 +810,7 @@ func (h *IngestHandler) buildReconToEISInput(req *ReconIngestRequest) *eis.Recon
 
 	// Convert subdomains
 	for _, sub := range req.Subdomains {
-		risInput.Subdomains = append(risInput.Subdomains, eis.SubdomainInput{
+		ctisInput.Subdomains = append(ctisInput.Subdomains, ctis.SubdomainInput{
 			Host:   sub.Host,
 			Domain: sub.Domain,
 			Source: sub.Source,
@@ -820,7 +820,7 @@ func (h *IngestHandler) buildReconToEISInput(req *ReconIngestRequest) *eis.Recon
 
 	// Convert DNS records
 	for _, rec := range req.DNSRecords {
-		risInput.DNSRecords = append(risInput.DNSRecords, eis.DNSRecordInput{
+		ctisInput.DNSRecords = append(ctisInput.DNSRecords, ctis.DNSRecordInput{
 			Host:       rec.Host,
 			RecordType: rec.RecordType,
 			Values:     rec.Values,
@@ -832,7 +832,7 @@ func (h *IngestHandler) buildReconToEISInput(req *ReconIngestRequest) *eis.Recon
 
 	// Convert open ports
 	for _, port := range req.OpenPorts {
-		risInput.OpenPorts = append(risInput.OpenPorts, eis.OpenPortInput{
+		ctisInput.OpenPorts = append(ctisInput.OpenPorts, ctis.OpenPortInput{
 			Host:     port.Host,
 			IP:       port.IP,
 			Port:     port.Port,
@@ -845,7 +845,7 @@ func (h *IngestHandler) buildReconToEISInput(req *ReconIngestRequest) *eis.Recon
 
 	// Convert live hosts
 	for _, host := range req.LiveHosts {
-		risInput.LiveHosts = append(risInput.LiveHosts, eis.LiveHostInput{
+		ctisInput.LiveHosts = append(ctisInput.LiveHosts, ctis.LiveHostInput{
 			URL:           host.URL,
 			Host:          host.Host,
 			IP:            host.IP,
@@ -866,7 +866,7 @@ func (h *IngestHandler) buildReconToEISInput(req *ReconIngestRequest) *eis.Recon
 
 	// Convert discovered URLs
 	for _, url := range req.URLs {
-		risInput.URLs = append(risInput.URLs, eis.DiscoveredURLInput{
+		ctisInput.URLs = append(ctisInput.URLs, ctis.DiscoveredURLInput{
 			URL:        url.URL,
 			Method:     url.Method,
 			Source:     url.Source,
@@ -878,5 +878,5 @@ func (h *IngestHandler) buildReconToEISInput(req *ReconIngestRequest) *eis.Recon
 		})
 	}
 
-	return risInput
+	return ctisInput
 }

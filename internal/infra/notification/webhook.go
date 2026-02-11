@@ -72,7 +72,7 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Exploop.io-Notification/1.0")
+	req.Header.Set("User-Agent", "OpenCTEM-Notification/1.0")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -102,7 +102,7 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 // TestConnection tests the webhook configuration.
 func (c *WebhookClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	testMsg := Message{
-		Title:    "Exploop.io Test Notification",
+		Title:    "OpenCTEM Test Notification",
 		Body:     "This is a test notification to verify your webhook integration is working correctly.",
 		Severity: "low",
 	}
@@ -137,6 +137,6 @@ func (c *WebhookClient) buildPayload(msg Message) WebhookPayload {
 		Color:       color,
 		FooterText:  msg.FooterText,
 		Attachments: attachments,
-		Source:      "exploop.io",
+		Source:      "openctem.io",
 	}
 }

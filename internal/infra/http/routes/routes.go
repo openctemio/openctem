@@ -48,7 +48,7 @@ type Handlers struct {
 	AttackSurface   *handler.AttackSurfaceHandler   // nil if not initialized (no database)
 	Docs            *handler.DocsHandler            // API documentation handler
 	Command         *handler.CommandHandler         // nil if not initialized (no database)
-	Ingest          *handler.IngestHandler          // nil if not initialized (no database) - unified ingestion (EIS, SARIF, Recon)
+	Ingest          *handler.IngestHandler          // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
 	Agent           *handler.AgentHandler           // nil if not initialized (no database)
 	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
 	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
@@ -423,7 +423,7 @@ func Register(
 	// ==========================================================================
 	// Platform Admin Routes (separate from tenant routes)
 	// ==========================================================================
-	// These routes are for Exploop platform administrators only.
+	// These routes are for OpenCTEM platform administrators only.
 	// They manage shared infrastructure that serves all tenants.
 	registerAdminRoutes(router, h, authMiddleware, userSync)
 

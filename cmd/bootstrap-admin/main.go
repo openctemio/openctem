@@ -183,26 +183,26 @@ func main() {
 	fmt.Printf("  %s\n", adminAPIKey)
 	fmt.Println()
 	fmt.Println("Configure the CLI:")
-	fmt.Println("  export EXPLOOP_API_KEY=" + adminAPIKey)
-	fmt.Println("  export EXPLOOP_API_URL=https://your-api-url")
+	fmt.Println("  export OPENCTEM_API_KEY=" + adminAPIKey)
+	fmt.Println("  export OPENCTEM_API_URL=https://your-api-url")
 	fmt.Println()
 	fmt.Println("  # Or save to config file:")
-	fmt.Println("  exploop-admin config set-context prod --api-url=https://your-api-url --api-key=" + adminAPIKey)
-	fmt.Println("  exploop-admin config use-context prod")
+	fmt.Println("  openctem-admin config set-context prod --api-url=https://your-api-url --api-key=" + adminAPIKey)
+	fmt.Println("  openctem-admin config use-context prod")
 	fmt.Println()
 	fmt.Println("Test the connection:")
-	fmt.Println("  exploop-admin cluster-info")
+	fmt.Println("  openctem-admin cluster-info")
 }
 
 // generateAPIKey generates a secure random API key
 func generateAPIKey() string {
-	// Format: radm_<32 random hex chars>
-	// Total: 37 chars
+	// Format: oc-admin-<32 random hex chars>
+	// Total: 41 chars
 	bytes := make([]byte, 16)
 	if _, err := rand.Read(bytes); err != nil {
 		fatal("Error generating random key: %v", err)
 	}
-	return "radm_" + hex.EncodeToString(bytes)
+	return "oc-admin-" + hex.EncodeToString(bytes)
 }
 
 func fatal(format string, args ...interface{}) {

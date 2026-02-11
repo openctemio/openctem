@@ -17,7 +17,7 @@ API_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$API_DIR"
 
 echo "========================================"
-echo "RediverIO Security Tests"
+echo "OpenCTEM Security Tests"
 echo "========================================"
 echo ""
 

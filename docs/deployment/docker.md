@@ -2,7 +2,7 @@
 
 ## Overview
 
-Rediver uses a **single Dockerfile with multiple build targets**:
+OpenCTEM uses a **single Dockerfile with multiple build targets**:
 
 ```
 Dockerfile
@@ -49,7 +49,7 @@ Features:
 export DB_PASSWORD=your_secure_password
 export REDIS_PASSWORD=your_redis_password
 export KEYCLOAK_BASE_URL=https://keycloak.example.com
-export KEYCLOAK_REALM.exploop
+export KEYCLOAK_REALM=openctem
 export CORS_ALLOWED_ORIGINS=https://app.example.com
 
 make docker-prod
@@ -101,9 +101,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/bin/server ./cmd/
 # =============================================================================
 FROM alpine:3.20 AS production
 WORKDIR /app
-RUN addgroup -g 1000 -S.exploop && adduser -u 1000 -S.exploop -G.exploop
+RUN addgroup -g 1000 -S openctem && adduser -u 1000 -S openctem -G openctem
 COPY --from=builder /app/bin/server .
-USER.exploop
+USER openctem
 EXPOSE 8080 9090
 HEALTHCHECK CMD wget --spider http://localhost:8080/health || exit 1
 ENTRYPOINT ["./server"]
@@ -113,7 +113,7 @@ ENTRYPOINT ["./server"]
 
 ## SDK Module Setup
 
-The API depends on the SDK module (`github.com/exploopio/sdk`).
+The API depends on the SDK module (`github.com/openctemio/sdk`).
 
 ### Development (Local SDK)
 
@@ -142,7 +142,7 @@ In production, SDK is fetched from GitHub as a released module:
 
 ```go
 // go.mod
-require github.com/exploopio/sdk v0.1.0
+require github.com/openctemio/sdk v0.1.0
 ```
 
 > **Note**: SDK must be released on GitHub with proper version tag (e.g., `v0.1.0`) before production builds work.
@@ -202,8 +202,8 @@ make docker-migrate-version
 
 ```bash
 # Build specific target
-docker build --target development -t.exploop:dev .
-docker build --target production -t.exploop:latest .
+docker build --target development -t openctem:dev .
+docker build --target production -t openctem:latest .
 
 # Using Makefile
 make docker-build       # Production image
@@ -296,14 +296,14 @@ export REDIS_PASSWORD=redis_password
 
 # Keycloak Authentication (external)
 export KEYCLOAK_BASE_URL=https://keycloak.example.com
-export KEYCLOAK_REALM.exploop
+export KEYCLOAK_REALM=openctem
 export KEYCLOAK_CLIENT_ID=api  # Optional
 
 # CORS
 export CORS_ALLOWED_ORIGINS=https://app.example.com
 
 # Optional
-export DB_USER.exploop
+export DB_USER=openctem
 export SERVER_REQUEST_TIMEOUT=30s
 ```
 
@@ -342,7 +342,7 @@ VS Code `launch.json`:
 curl http://localhost:8080/health
 
 # PostgreSQL (use docker compose exec with service name)
-docker compose exec postgres pg_isready -U.exploop
+docker compose exec postgres pg_isready -U openctem
 
 # Redis (use docker compose exec with service name)
 docker compose exec redis redis-cli ping
@@ -372,7 +372,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache
 
 ```bash
 # Check image sizes
-docker images.exploop
+docker images openctem
 
 # Production should be ~15-20MB
 # Development will be larger (~500MB+)

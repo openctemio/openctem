@@ -5,7 +5,7 @@
 
 ## Overview
 
-Exploop's scan orchestration system manages the complete lifecycle of security scans, from scheduling through execution to results collection. The system uses a distributed agent architecture with pipeline-based workflow orchestration.
+OpenCTEM's scan orchestration system manages the complete lifecycle of security scans, from scheduling through execution to results collection. The system uses a distributed agent architecture with pipeline-based workflow orchestration.
 
 ## System Components
 
@@ -396,7 +396,7 @@ POST   /api/v1/agent/commands/{id}/fail      # Report failure
 
 #### Module Gating for Agent Routes
 
-Agent ingest routes are gated by the tenant's subscription plan modules:
+Agent ingest routes are gated by the tenant's enabled modules:
 
 | Endpoint | Module Required | Notes |
 |----------|-----------------|-------|

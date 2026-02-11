@@ -10,18 +10,18 @@ import (
 
 // ListAuditLogsFilter represents filters for listing audit logs.
 type ListAuditLogsFilter struct {
-	TenantID     string   `json:"tenant_id"`
-	UserIDs      []string `json:"user_ids"`
-	Actions      []string `json:"actions"`
-	ResourceType []string `json:"resource_type"`
-	ResourceID   string   `json:"resource_id"`
-	Status       []string `json:"status"`
+	TenantID     string     `json:"tenant_id"`
+	UserIDs      []string   `json:"user_ids"`
+	Actions      []string   `json:"actions"`
+	ResourceType []string   `json:"resource_type"`
+	ResourceID   string     `json:"resource_id"`
+	Status       []string   `json:"status"`
 	DateFrom     *time.Time `json:"date_from"`
 	DateTo       *time.Time `json:"date_to"`
-	Page         int      `json:"page"`
-	PerPage      int      `json:"per_page"`
-	SortBy       string   `json:"sort_by"`
-	SortOrder    string   `json:"sort_order"`
+	Page         int        `json:"page"`
+	PerPage      int        `json:"per_page"`
+	SortBy       string     `json:"sort_by"`
+	SortOrder    string     `json:"sort_order"`
 }
 
 // AuditService defines the interface for audit logging operations.
@@ -63,8 +63,8 @@ type AuditServiceEnterprise interface {
 
 // AuditRetentionPolicy represents an audit log retention policy.
 type AuditRetentionPolicy struct {
-	RetentionDays    int  `json:"retention_days"`
-	CompressAfterDays int  `json:"compress_after_days"`
-	ArchiveEnabled   bool `json:"archive_enabled"`
-	ArchiveLocation  string `json:"archive_location"`
+	RetentionDays     int    `json:"retention_days"`
+	CompressAfterDays int    `json:"compress_after_days"`
+	ArchiveEnabled    bool   `json:"archive_enabled"`
+	ArchiveLocation   string `json:"archive_location"`
 }

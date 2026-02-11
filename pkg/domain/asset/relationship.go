@@ -18,12 +18,12 @@ type RelationshipType string
 
 const (
 	// Attack Surface Mapping
-	RelTypeRunsOn      RelationshipType = "runs_on"
-	RelTypeDeployedTo  RelationshipType = "deployed_to"
-	RelTypeContains    RelationshipType = "contains"
-	RelTypeExposes     RelationshipType = "exposes"
-	RelTypeMemberOf    RelationshipType = "member_of"
-	RelTypeResolvesTo  RelationshipType = "resolves_to"
+	RelTypeRunsOn     RelationshipType = "runs_on"
+	RelTypeDeployedTo RelationshipType = "deployed_to"
+	RelTypeContains   RelationshipType = "contains"
+	RelTypeExposes    RelationshipType = "exposes"
+	RelTypeMemberOf   RelationshipType = "member_of"
+	RelTypeResolvesTo RelationshipType = "resolves_to"
 
 	// Attack Path Analysis
 	RelTypeDependsOn       RelationshipType = "depends_on"

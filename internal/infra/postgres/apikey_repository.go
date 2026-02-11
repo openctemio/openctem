@@ -274,20 +274,20 @@ func (r *APIKeyRepository) Delete(ctx context.Context, id, tenantID apikey.ID) e
 
 func (r *APIKeyRepository) scanAPIKey(row *sql.Row) (*apikey.APIKey, error) {
 	var (
-		id, tenantID             string
-		userID, createdBy        sql.NullString
-		name                     string
-		description              sql.NullString
-		keyHash, keyPrefix       string
-		scopes                   pq.StringArray
-		rateLimit                int
-		status                   string
-		expiresAt, lastUsedAt    sql.NullTime
-		lastUsedIP               sql.NullString
-		useCount                 int64
-		createdAt, updatedAt     time.Time
-		revokedAt                sql.NullTime
-		revokedBy                sql.NullString
+		id, tenantID          string
+		userID, createdBy     sql.NullString
+		name                  string
+		description           sql.NullString
+		keyHash, keyPrefix    string
+		scopes                pq.StringArray
+		rateLimit             int
+		status                string
+		expiresAt, lastUsedAt sql.NullTime
+		lastUsedIP            sql.NullString
+		useCount              int64
+		createdAt, updatedAt  time.Time
+		revokedAt             sql.NullTime
+		revokedBy             sql.NullString
 	)
 
 	err := row.Scan(
@@ -311,20 +311,20 @@ func (r *APIKeyRepository) scanAPIKey(row *sql.Row) (*apikey.APIKey, error) {
 
 func (r *APIKeyRepository) scanAPIKeyRow(rows *sql.Rows) (*apikey.APIKey, error) {
 	var (
-		id, tenantID             string
-		userID, createdBy        sql.NullString
-		name                     string
-		description              sql.NullString
-		keyHash, keyPrefix       string
-		scopes                   pq.StringArray
-		rateLimit                int
-		status                   string
-		expiresAt, lastUsedAt    sql.NullTime
-		lastUsedIP               sql.NullString
-		useCount                 int64
-		createdAt, updatedAt     time.Time
-		revokedAt                sql.NullTime
-		revokedBy                sql.NullString
+		id, tenantID          string
+		userID, createdBy     sql.NullString
+		name                  string
+		description           sql.NullString
+		keyHash, keyPrefix    string
+		scopes                pq.StringArray
+		rateLimit             int
+		status                string
+		expiresAt, lastUsedAt sql.NullTime
+		lastUsedIP            sql.NullString
+		useCount              int64
+		createdAt, updatedAt  time.Time
+		revokedAt             sql.NullTime
+		revokedBy             sql.NullString
 	)
 
 	err := rows.Scan(

@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/workflow"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/google/uuid"
 )
 
 // ActionHandler defines the interface for workflow action handlers.

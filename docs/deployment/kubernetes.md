@@ -14,20 +14,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name:.exploop
+  name: openctem
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app:.exploop
+      app: openctem
   template:
     metadata:
       labels:
-        app:.exploop
+        app: openctem
     spec:
       containers:
-        - name:.exploop
-          image:.exploop:latest
+        - name: openctem
+          image: openctem:latest
           ports:
             - containerPort: 8080
           env:
@@ -45,10 +45,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name:.exploop
+  name: openctem
 spec:
   selector:
-    app:.exploop
+    app: openctem
   ports:
     - port: 80
       targetPort: 8080
@@ -62,8 +62,8 @@ spec:
 kubectl apply -f k8s/
 
 # Check status
-kubectl get pods -l app.exploop
+kubectl get pods -l app=openctem
 
 # View logs
-kubectl logs -f deployment.exploop
+kubectl logs -f deployment/openctem
 ```

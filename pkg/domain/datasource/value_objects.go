@@ -202,10 +202,10 @@ func ParseCapabilities(ss []string) Capabilities {
 
 const (
 	// APIKeyPrefixLive is the prefix for live/production API keys.
-	APIKeyPrefixLive = "rs_live_"
+	APIKeyPrefixLive = "oc_live_"
 
 	// APIKeyPrefixTest is the prefix for test/development API keys.
-	APIKeyPrefixTest = "rs_test_"
+	APIKeyPrefixTest = "oc_test_"
 )
 
 // GenerateAPIKeyPrefix generates the visible prefix for an API key.

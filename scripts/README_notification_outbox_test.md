@@ -40,7 +40,7 @@ curl -X POST http://localhost:8080/api/v1/auth/token \
 
 ### Cách 2: Copy từ UI
 
-1. Đăng nhập vào Rediver UI
+1. Đăng nhập vào OpenCTEM UI
 2. Mở Developer Tools (F12)
 3. Vào tab Network
 4. Thực hiện một request API
@@ -61,7 +61,7 @@ curl -X POST http://localhost:8080/api/v1/auth/token \
 ./scripts/test_notification_outbox.sh eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 # Chạy với API URL khác (mặc định là localhost:8080)
-API_URL=https://api.exploop.io ./scripts/test_notification_outbox.sh eyJhbGciOiJIUzI1...
+API_URL=https://api.openctem.io ./scripts/test_notification_outbox.sh eyJhbGciOiJIUzI1...
 ```
 
 ## Các bước Script thực hiện

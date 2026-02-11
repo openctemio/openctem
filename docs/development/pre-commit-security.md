@@ -1,6 +1,6 @@
 # Pre-commit Security Hooks
 
-Hướng dẫn cấu hình và sử dụng pre-commit hooks bảo mật cho Rediver API.
+Hướng dẫn cấu hình và sử dụng pre-commit hooks bảo mật cho OpenCTEM API.
 
 ## Cài đặt
 

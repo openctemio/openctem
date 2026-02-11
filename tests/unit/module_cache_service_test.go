@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/module"
-	"github.com/google/uuid"
 )
 
 // =============================================================================
@@ -124,9 +124,9 @@ func (m *MockModuleCache) DeleteCalls() int {
 // MockModuleCacheRepository implements app.ModuleCacheRepository for testing.
 type MockModuleCacheRepository struct {
 	mu                  sync.RWMutex
-	planModules         map[string][]string          // tenantID -> moduleIDs
+	planModules         map[string][]string       // tenantID -> moduleIDs
 	modules             map[string]*module.Module // moduleID -> module
-	eventTypes          map[string][]string          // moduleID -> eventTypes
+	eventTypes          map[string][]string       // moduleID -> eventTypes
 	getPlanModulesErr   error
 	getModulesErr       error
 	getEventTypesErr    error

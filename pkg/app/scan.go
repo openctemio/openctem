@@ -10,13 +10,13 @@ import (
 
 // CreateScanInput represents the input for creating a scan.
 type CreateScanInput struct {
-	TenantID     string   `json:"tenant_id" validate:"required,uuid"`
-	Name         string   `json:"name" validate:"required,min=1,max=255"`
-	Description  string   `json:"description" validate:"max=1000"`
-	ToolID       string   `json:"tool_id" validate:"required,uuid"`
-	AssetGroupID string   `json:"asset_group_id" validate:"omitempty,uuid"`
-	AssetIDs     []string `json:"asset_ids" validate:"omitempty,dive,uuid"`
-	Schedule     string   `json:"schedule" validate:"omitempty,cron"`
+	TenantID     string         `json:"tenant_id" validate:"required,uuid"`
+	Name         string         `json:"name" validate:"required,min=1,max=255"`
+	Description  string         `json:"description" validate:"max=1000"`
+	ToolID       string         `json:"tool_id" validate:"required,uuid"`
+	AssetGroupID string         `json:"asset_group_id" validate:"omitempty,uuid"`
+	AssetIDs     []string       `json:"asset_ids" validate:"omitempty,dive,uuid"`
+	Schedule     string         `json:"schedule" validate:"omitempty,cron"`
 	Parameters   map[string]any `json:"parameters"`
 }
 

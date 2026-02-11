@@ -18,12 +18,12 @@ import (
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk/pkg/ctis"
 )
 
 // Service handles ingestion of assets and findings from various formats.
-// This is the unified service that uses EIS as the internal format.
-// Supported input formats: EIS (native), SARIF (via SDK converter), Recon (via SDK converter).
+// This is the unified service that uses CTIS as the internal format.
+// Supported input formats: CTIS (native), SARIF (via SDK converter), Recon (via SDK converter).
 type Service struct {
 	assetProcessor     *AssetProcessor
 	findingProcessor   *FindingProcessor
@@ -101,7 +101,7 @@ func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 // Main Ingestion Methods
 // =============================================================================
 
-// Ingest processes a EIS report from an agent.
+// Ingest processes a CTIS report from an agent.
 // This is the main entry point for all ingestion.
 func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*Output, error) {
 	// Validate agent context
@@ -273,8 +273,8 @@ func (s *Service) IngestSARIF(ctx context.Context, agt *agent.Agent, sarifData [
 		"agent_id", agt.ID.String(),
 	)
 
-	// Convert SARIF to EIS using SDK
-	report, err := eis.FromSARIF(sarifData, nil)
+	// Convert SARIF to CTIS using SDK
+	report, err := ctis.FromSARIF(sarifData, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse SARIF: %w", err)
 	}
@@ -284,15 +284,15 @@ func (s *Service) IngestSARIF(ctx context.Context, agt *agent.Agent, sarifData [
 }
 
 // IngestRecon processes recon data and ingests it.
-func (s *Service) IngestRecon(ctx context.Context, agt *agent.Agent, reconInput *eis.ReconToEISInput) (*Output, error) {
+func (s *Service) IngestRecon(ctx context.Context, agt *agent.Agent, reconInput *ctis.ReconToCTISInput) (*Output, error) {
 	s.logger.Info("ingesting recon data",
 		"agent_id", agt.ID.String(),
 	)
 
-	// Convert Recon to EIS using SDK
-	opts := eis.DefaultReconConverterOptions()
+	// Convert Recon to CTIS using SDK
+	opts := ctis.DefaultReconConverterOptions()
 	opts.DiscoverySource = "agent"
-	report, err := eis.ConvertReconToEIS(reconInput, opts)
+	report, err := ctis.ConvertReconToCTIS(reconInput, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert recon data: %w", err)
 	}
@@ -369,7 +369,7 @@ func (s *Service) updateAgentStatsAsync(agentID shared.ID, output *Output) {
 
 // createIngestAuditLog creates an audit log entry for the ingestion result.
 // This provides visibility for debugging when ingestion has issues.
-func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, tenantID shared.ID, report *eis.Report, output *Output) {
+func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, tenantID shared.ID, report *ctis.Report, output *Output) {
 	if s.auditRepo == nil {
 		return
 	}
@@ -493,11 +493,11 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, te
 // Utility Functions
 // =============================================================================
 
-// UnmarshalReport parses a EIS report from JSON bytes.
-func UnmarshalReport(data []byte) (*eis.Report, error) {
-	var report eis.Report
+// UnmarshalReport parses a CTIS report from JSON bytes.
+func UnmarshalReport(data []byte) (*ctis.Report, error) {
+	var report ctis.Report
 	if err := json.Unmarshal(data, &report); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal EIS report: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal CTIS report: %w", err)
 	}
 	return &report, nil
 }

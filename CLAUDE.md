@@ -1,10 +1,10 @@
 # API Project - Claude AI Assistant Guidelines
 
-> Essential coding standards and patterns for the Exploop API (Go backend).
+> Essential coding standards and patterns for the OpenCTEM API (Go backend).
 
 ## Project Context
 
-This is the **API** sub-project of the Exploop Platform workspace. For workspace-level guidelines, see [`../CLAUDE.MD`](../CLAUDE.MD).
+This is the **API** sub-project of the OpenCTEM Platform workspace. For workspace-level guidelines, see [`../CLAUDE.MD`](../CLAUDE.MD).
 
 **Related Projects:**
 
@@ -1042,7 +1042,7 @@ s.logAudit(ctx, actx, event)
 
 ## 3-Layer Access Control
 
-Exploop implements a 3-layer access control architecture:
+OpenCTEM implements a 3-layer access control architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1532,7 +1532,7 @@ make test
 
 ## Platform Agents Architecture (v3.2)
 
-Platform Agents are Exploop-managed agents running on Exploop infrastructure, shared across all tenants. Supports users who cannot deploy their own agents.
+Platform Agents are OpenCTEM-managed agents running on OpenCTEM infrastructure, shared across all tenants. Supports users who cannot deploy their own agents.
 
 ### Key Components
 
@@ -1750,11 +1750,11 @@ apiKey := r.Header.Get("X-API-Key")     // Custom header
 
 ```go
 // BAD - Token in URL
-POST /api/v1/register?token=rdv-bt-secret123
+POST /api/v1/register?token=oc-bt-secret123
 
 // GOOD - Token in request body (POST)
 POST /api/v1/register
-{"bootstrap_token": "rdv-bt-secret123"}
+{"bootstrap_token": "oc-bt-secret123"}
 ```
 
 ---
@@ -2076,7 +2076,7 @@ tools.supported_targets TEXT[]  -- e.g., ["url", "domain", "ip"]
 
 - RFC: `docs/_internal/rfcs/2026-02-02-asset-types-cleanup.md`
 - Migrations: `000151_asset_types_cleanup.sql`, `000152_target_asset_type_mappings.sql`
-- Schema: `schemas/eis/v1/asset.json` (AssetType enum)
+- Schema: `schemas/ctis/v1/asset.json` (AssetType enum)
 
 ---
 

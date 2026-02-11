@@ -209,21 +209,21 @@ func (h *APIKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 func toAPIKeyResponse(k *apikey.APIKey) APIKeyResponse {
 	resp := APIKeyResponse{
-		ID:         k.ID().String(),
-		TenantID:   k.TenantID().String(),
-		Name:       k.Name(),
+		ID:          k.ID().String(),
+		TenantID:    k.TenantID().String(),
+		Name:        k.Name(),
 		Description: k.Description(),
-		KeyPrefix:  k.KeyPrefix(),
-		Scopes:     k.Scopes(),
-		RateLimit:  k.RateLimit(),
-		Status:     string(k.Status()),
-		ExpiresAt:  k.ExpiresAt(),
-		LastUsedAt: k.LastUsedAt(),
-		LastUsedIP: k.LastUsedIP(),
-		UseCount:   k.UseCount(),
-		CreatedAt:  k.CreatedAt(),
-		UpdatedAt:  k.UpdatedAt(),
-		RevokedAt:  k.RevokedAt(),
+		KeyPrefix:   k.KeyPrefix(),
+		Scopes:      k.Scopes(),
+		RateLimit:   k.RateLimit(),
+		Status:      string(k.Status()),
+		ExpiresAt:   k.ExpiresAt(),
+		LastUsedAt:  k.LastUsedAt(),
+		LastUsedIP:  k.LastUsedIP(),
+		UseCount:    k.UseCount(),
+		CreatedAt:   k.CreatedAt(),
+		UpdatedAt:   k.UpdatedAt(),
+		RevokedAt:   k.RevokedAt(),
 	}
 
 	if k.UserID() != nil {

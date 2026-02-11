@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document describes the industry-aligned design for component relationship tracking in Exploop, based on analysis of leading SBOM and dependency management systems.
+This document describes the industry-aligned design for component relationship tracking in OpenCTEM, based on analysis of leading SBOM and dependency management systems.
 
 ## Industry Comparison
 
@@ -13,7 +13,7 @@ This document describes the industry-aligned design for component relationship t
 | **Dependency-Track** | Direct (via PURL) | Parent chains | Yes | Yes |
 | **GitHub Dep Graph** | Direct | "Show paths" | Yes | Yes |
 | **Snyk** | Direct | dependency_path | Yes | Yes |
-| **Exploop** | Direct (components.id) | parent_component_id | Single | depth column |
+| **OpenCTEM** | Direct (components.id) | parent_component_id | Single | depth column |
 
 ## Data Model
 

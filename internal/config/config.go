@@ -228,7 +228,7 @@ type SMTPConfig struct {
 	TLS        bool
 	SkipVerify bool
 	Enabled    bool
-	BaseURL    string // Frontend base URL for email links (e.g., https://app.exploop.io)
+	BaseURL    string // Frontend base URL for email links (e.g., https://app.openctem.io)
 	Timeout    time.Duration
 }
 
@@ -408,7 +408,7 @@ func (c *AITriageConfig) IsConfigured() bool {
 func Load() (*Config, error) {
 	cfg := &Config{
 		App: AppConfig{
-			Name:  getEnv("APP_NAME", "exploop"),
+			Name:  getEnv("APP_NAME", "openctem"),
 			Env:   getEnv("APP_ENV", "development"),
 			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
 		},
@@ -427,9 +427,9 @@ func Load() (*Config, error) {
 		Database: DatabaseConfig{
 			Host:            getEnv("DB_HOST", "localhost"),
 			Port:            getEnvInt("DB_PORT", 5432),
-			User:            getEnv("DB_USER", "exploop"),
+			User:            getEnv("DB_USER", "openctem"),
 			Password:        getEnv("DB_PASSWORD", "secret"),
-			Name:            getEnv("DB_NAME", "exploop"),
+			Name:            getEnv("DB_NAME", "openctem"),
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
@@ -489,7 +489,7 @@ func Load() (*Config, error) {
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),
-			Realm:               getEnv("KEYCLOAK_REALM", "exploop"),
+			Realm:               getEnv("KEYCLOAK_REALM", "openctem"),
 			ClientID:            getEnv("KEYCLOAK_CLIENT_ID", ""),
 			JWKSRefreshInterval: getEnvDuration("KEYCLOAK_JWKS_REFRESH_INTERVAL", 1*time.Hour),
 			HTTPTimeout:         getEnvDuration("KEYCLOAK_HTTP_TIMEOUT", 10*time.Second),
@@ -513,7 +513,7 @@ func Load() (*Config, error) {
 			User:       getEnv("SMTP_USER", ""),
 			Password:   getEnv("SMTP_PASSWORD", ""),
 			From:       getEnv("SMTP_FROM", ""),
-			FromName:   getEnv("SMTP_FROM_NAME", "Exploop"),
+			FromName:   getEnv("SMTP_FROM_NAME", "OpenCTEM"),
 			TLS:        getEnvBool("SMTP_TLS", true),
 			SkipVerify: getEnvBool("SMTP_SKIP_VERIFY", false),
 			BaseURL:    getEnv("SMTP_BASE_URL", "http://localhost:3000"), // Frontend URL for email links
@@ -832,7 +832,7 @@ func (c *Config) validateProductionKeycloak() error {
 	if c.Keycloak.BaseURL == "" || c.Keycloak.BaseURL == "http://localhost:8080" {
 		return fmt.Errorf("KEYCLOAK_BASE_URL must be set in production")
 	}
-	if c.Keycloak.Realm == "" || c.Keycloak.Realm == "exploop" {
+	if c.Keycloak.Realm == "" || c.Keycloak.Realm == "openctem" {
 		return fmt.Errorf("KEYCLOAK_REALM must be set in production")
 	}
 	// Ensure HTTPS in production

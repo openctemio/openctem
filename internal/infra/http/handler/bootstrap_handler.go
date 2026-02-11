@@ -19,7 +19,7 @@ import (
 type BootstrapHandler struct {
 	permCacheSvc   *app.PermissionCacheService
 	permVersionSvc *app.PermissionVersionService
-	moduleSvc   *app.ModuleService
+	moduleSvc      *app.ModuleService
 	logger         *logger.Logger
 }
 
@@ -33,7 +33,7 @@ func NewBootstrapHandler(
 	return &BootstrapHandler{
 		permCacheSvc:   permCacheSvc,
 		permVersionSvc: permVersionSvc,
-		moduleSvc:   moduleSvc,
+		moduleSvc:      moduleSvc,
 		logger:         log,
 	}
 }
@@ -44,7 +44,7 @@ func NewBootstrapHandler(
 
 // BootstrapResponse combines all initial data needed after login.
 type BootstrapResponse struct {
-	Permissions BootstrapPermissions  `json:"permissions"`
+	Permissions BootstrapPermissions   `json:"permissions"`
 	Modules     *TenantModulesResponse `json:"modules,omitempty"`
 }
 
@@ -56,12 +56,12 @@ type BootstrapPermissions struct {
 
 // TenantModulesResponse represents the modules available to a tenant.
 type TenantModulesResponse struct {
-	ModuleIDs           []string                            `json:"module_ids"`
-	Modules             []LicensingModuleResponse           `json:"modules"`
+	ModuleIDs           []string                             `json:"module_ids"`
+	Modules             []LicensingModuleResponse            `json:"modules"`
 	SubModules          map[string][]LicensingModuleResponse `json:"sub_modules,omitempty"`
-	EventTypes          []string                            `json:"event_types,omitempty"`
-	ComingSoonModuleIDs []string                            `json:"coming_soon_module_ids,omitempty"`
-	BetaModuleIDs       []string                            `json:"beta_module_ids,omitempty"`
+	EventTypes          []string                             `json:"event_types,omitempty"`
+	ComingSoonModuleIDs []string                             `json:"coming_soon_module_ids,omitempty"`
+	BetaModuleIDs       []string                             `json:"beta_module_ids,omitempty"`
 }
 
 // LicensingModuleResponse represents a module in the response.

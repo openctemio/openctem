@@ -8,7 +8,7 @@ import (
 
 	"github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk/pkg/ctis"
 )
 
 // ComponentProcessor handles batch processing of dependencies/components during ingestion.
@@ -36,7 +36,7 @@ type ComponentOutput struct {
 	Warnings           []string
 }
 
-// ProcessBatch processes all dependencies from an EIS report.
+// ProcessBatch processes all dependencies from a CTIS report.
 // It creates/updates global components and links them to assets.
 // Three-pass approach to handle foreign key constraints:
 // 1. Pass 1: Create all global components and collect their IDs
@@ -45,7 +45,7 @@ type ComponentOutput struct {
 func (p *ComponentProcessor) ProcessBatch(
 	ctx context.Context,
 	tenantID shared.ID,
-	report *eis.Report,
+	report *ctis.Report,
 	assetMap map[string]shared.ID,
 	output *Output,
 ) error {
@@ -196,7 +196,7 @@ func (p *ComponentProcessor) ProcessBatch(
 // buildDependencyKeys creates multiple lookup keys for a dependency.
 // This allows matching DependsOn values in various formats that scanners might provide.
 // Returns keys in order of preference: PURL, name@version, name, ID
-func (p *ComponentProcessor) buildDependencyKeys(dep *eis.Dependency) []string {
+func (p *ComponentProcessor) buildDependencyKeys(dep *ctis.Dependency) []string {
 	keys := make([]string, 0, 4)
 
 	// Primary key: PURL (most specific)
@@ -288,7 +288,7 @@ func (p *ComponentProcessor) findParentInDB(
 // Returns the component ID.
 func (p *ComponentProcessor) createOrUpdateComponent(
 	ctx context.Context,
-	dep *eis.Dependency,
+	dep *ctis.Dependency,
 	output *ComponentOutput,
 ) (shared.ID, error) {
 	// Step 1: Parse ecosystem
@@ -349,7 +349,7 @@ func (p *ComponentProcessor) linkDependencyToAssetWithoutParent(
 	tenantID shared.ID,
 	assetID shared.ID,
 	compID shared.ID,
-	dep *eis.Dependency,
+	dep *ctis.Dependency,
 	output *ComponentOutput,
 ) (shared.ID, int, error) {
 	// Parse dependency type

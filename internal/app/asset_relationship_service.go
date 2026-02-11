@@ -31,24 +31,24 @@ func NewAssetRelationshipService(
 
 // CreateRelationshipInput represents the input for creating a relationship.
 type CreateRelationshipInput struct {
-	TenantID      string   `validate:"required,uuid"`
-	SourceAssetID string   `validate:"required,uuid"`
-	TargetAssetID string   `validate:"required,uuid"`
-	Type          string   `validate:"required"`
-	Description   string   `validate:"max=1000"`
-	Confidence    string   `validate:"omitempty"`
-	DiscoveryMethod string `validate:"omitempty"`
-	ImpactWeight  *int     `validate:"omitempty,min=1,max=10"`
-	Tags          []string `validate:"omitempty,max=20,dive,max=50"`
+	TenantID        string   `validate:"required,uuid"`
+	SourceAssetID   string   `validate:"required,uuid"`
+	TargetAssetID   string   `validate:"required,uuid"`
+	Type            string   `validate:"required"`
+	Description     string   `validate:"max=1000"`
+	Confidence      string   `validate:"omitempty"`
+	DiscoveryMethod string   `validate:"omitempty"`
+	ImpactWeight    *int     `validate:"omitempty,min=1,max=10"`
+	Tags            []string `validate:"omitempty,max=20,dive,max=50"`
 }
 
 // UpdateRelationshipInput represents the input for updating a relationship.
 type UpdateRelationshipInput struct {
-	Description     *string  `json:"description" validate:"omitempty,max=1000"`
-	Confidence      *string  `json:"confidence" validate:"omitempty"`
-	ImpactWeight    *int     `json:"impact_weight" validate:"omitempty,min=1,max=10"`
-	Tags            []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
-	MarkVerified    bool     `json:"mark_verified"`
+	Description  *string  `json:"description" validate:"omitempty,max=1000"`
+	Confidence   *string  `json:"confidence" validate:"omitempty"`
+	ImpactWeight *int     `json:"impact_weight" validate:"omitempty,min=1,max=10"`
+	Tags         []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+	MarkVerified bool     `json:"mark_verified"`
 }
 
 // CreateRelationship creates a new relationship between two assets.
