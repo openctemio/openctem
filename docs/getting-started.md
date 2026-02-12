@@ -11,8 +11,8 @@
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/exploopio.exploop.git
-cd.exploop
+git clone https://github.com/openctemio/openctem.git
+cd openctem
 ```
 
 ### 2. Setup Environment
@@ -97,7 +97,7 @@ Key environment variables (see `.env.example` for full list):
 
 ```env
 # Application
-APP_NAME.exploop
+APP_NAME=openctem
 APP_ENV=development          # development | production
 
 # Server
@@ -107,9 +107,9 @@ SERVER_PORT=8080
 # Database
 DB_HOST=localhost
 DB_PORT=5432
-DB_USER.exploop
+DB_USER=openctem
 DB_PASSWORD=secret
-DB_NAME.exploop
+DB_NAME=openctem
 DB_SSLMODE=disable
 
 # Redis
@@ -122,7 +122,7 @@ LOG_FORMAT=text              # text | json
 
 # Keycloak Authentication
 KEYCLOAK_BASE_URL=http://localhost:8080
-KEYCLOAK_REALM.exploop
+KEYCLOAK_REALM=openctem
 KEYCLOAK_CLIENT_ID=api
 
 # CORS
@@ -134,7 +134,7 @@ CORS_ALLOWED_ORIGINS=*       # Use specific origins in production
 ## Project Structure Overview
 
 ```
-exploop/
+openctem/
 ├── cmd/server/main.go       # Entry point
 ├── internal/
 │   ├── domain/              # Business logic (no external deps)

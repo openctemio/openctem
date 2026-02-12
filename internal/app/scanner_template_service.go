@@ -269,7 +269,7 @@ func (s *ScannerTemplateService) DeleteTemplate(ctx context.Context, tenantID, t
 		return err
 	}
 
-	return s.repo.Delete(ctx, template.ID)
+	return s.repo.Delete(ctx, tid, template.ID)
 }
 
 // ValidateTemplateInput represents the input for validating template content.

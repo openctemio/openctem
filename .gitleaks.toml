@@ -1,4 +1,4 @@
-# Gitleaks configuration for Rediver API
+# Gitleaks configuration for OpenCTEM API
 # https://github.com/gitleaks/gitleaks
 
 [extend]
@@ -6,7 +6,7 @@
 useDefault = true
 
 [allowlist]
-description = "Allowlist for Rediver API"
+description = "Allowlist for OpenCTEM API"
 paths = [
     # Test files with fake credentials
     '''.*_test\.go$''',
@@ -57,7 +57,7 @@ id = "postgresql-connection-string"
 description = "PostgreSQL connection string"
 regex = '''postgres(ql)?://[^:]+:[^@]+@[^/]+/\w+'''
 entropy = 0
-allowlist = { regexes = ['''postgres(ql)?://(user|username|test|admin|rediver):(pass|password|secret|changeme|rediver)@(localhost|127\.0\.0\.1|db|postgres|host)[:\d]*/'''] }
+allowlist = { regexes = ['''postgres(ql)?://(user|username|test|admin|openctem):(pass|password|secret|changeme|openctem)@(localhost|127\.0\.0\.1|db|postgres|host)[:\d]*/'''] }
 
 [[rules]]
 id = "redis-connection-string"

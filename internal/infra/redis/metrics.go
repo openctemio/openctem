@@ -36,7 +36,7 @@ type Metrics struct {
 var DefaultMetrics *Metrics
 
 func init() {
-	DefaultMetrics = NewMetrics("exploop")
+	DefaultMetrics = NewMetrics("openctem")
 }
 
 // NewMetrics creates a new Metrics instance with the given namespace.

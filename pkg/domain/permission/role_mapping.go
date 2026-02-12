@@ -15,12 +15,15 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Core
 		DashboardRead,
 		AuditRead,
+		SettingsRead, SettingsWrite,
 		// Assets
-		AssetsRead, AssetsWrite, AssetsDelete,
+		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
 		ComponentsRead, ComponentsWrite, ComponentsDelete,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
+		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate,
+		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
 		CredentialsRead, CredentialsWrite,
@@ -61,18 +64,25 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ValidationRead, ValidationWrite,
 		// Reports
 		ReportsRead, ReportsWrite,
+		// Threat Intel
+		ThreatIntelRead, ThreatIntelWrite,
+		// AI Triage
+		AITriageRead, AITriageTrigger,
 	},
 
 	tenant.RoleAdmin: {
 		// Core
 		DashboardRead,
 		AuditRead,
+		SettingsRead, SettingsWrite,
 		// Assets
-		AssetsRead, AssetsWrite, AssetsDelete,
+		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
 		ComponentsRead, ComponentsWrite, ComponentsDelete,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
+		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate,
+		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
 		CredentialsRead, CredentialsWrite,
@@ -113,18 +123,25 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ValidationRead, ValidationWrite,
 		// Reports
 		ReportsRead, ReportsWrite,
+		// Threat Intel
+		ThreatIntelRead, ThreatIntelWrite,
+		// AI Triage
+		AITriageRead, AITriageTrigger,
 	},
 
 	tenant.RoleMember: {
 		// Core
 		DashboardRead,
 		AuditRead,
+		SettingsRead,
 		// Assets (read + write, no delete)
 		AssetsRead, AssetsWrite,
 		AssetGroupsRead, AssetGroupsWrite,
 		ComponentsRead, ComponentsWrite,
 		// Findings (read + write, no delete)
 		FindingsRead, FindingsWrite,
+		FindingsTriage, FindingsStatus,
+		ExposuresRead, ExposuresWrite,
 		SuppressionsRead,
 		VulnerabilitiesRead,
 		CredentialsRead,
@@ -164,18 +181,24 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ValidationRead, ValidationWrite,
 		// Reports (read + write)
 		ReportsRead, ReportsWrite,
+		// Threat Intel (read only)
+		ThreatIntelRead,
+		// AI Triage
+		AITriageRead, AITriageTrigger,
 	},
 
 	tenant.RoleViewer: {
 		// Core
 		DashboardRead,
 		AuditRead,
+		SettingsRead,
 		// Assets (read only)
 		AssetsRead,
 		AssetGroupsRead,
 		ComponentsRead,
 		// Findings (read only)
 		FindingsRead,
+		ExposuresRead,
 		SuppressionsRead,
 		VulnerabilitiesRead,
 		CredentialsRead,
@@ -215,6 +238,10 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ValidationRead,
 		// Reports (read only)
 		ReportsRead,
+		// Threat Intel (read only)
+		ThreatIntelRead,
+		// AI Triage (read only)
+		AITriageRead,
 	},
 }
 

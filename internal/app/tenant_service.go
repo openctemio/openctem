@@ -84,7 +84,6 @@ func WithUserInfoProvider(provider UserInfoProvider) TenantServiceOption {
 	}
 }
 
-
 // WithTenantPermissionCacheService sets the permission cache service for TenantService.
 // This enables immediate cache invalidation when members are removed.
 func WithTenantPermissionCacheService(svc *PermissionCacheService) TenantServiceOption {
@@ -190,7 +189,6 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 
 	return t, nil
 }
-
 
 // GetTenant retrieves a tenant by ID.
 func (s *TenantService) GetTenant(ctx context.Context, tenantID string) (*tenant.Tenant, error) {

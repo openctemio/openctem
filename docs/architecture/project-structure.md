@@ -1,11 +1,11 @@
 # Project Structure
 
-Complete file structure for the Rediver project.
+Complete file structure for the OpenCTEM project.
 
 ## Root Structure
 
 ```
-exploop/
+openctem/
 ├── cmd/                    # Application entry points
 ├── api/                    # API definitions (OpenAPI)
 ├── internal/               # Private application code

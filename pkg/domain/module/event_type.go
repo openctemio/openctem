@@ -136,4 +136,3 @@ func GetDefaultEventTypeIDs(eventTypes []*EventType) []string {
 	}
 	return result
 }
-

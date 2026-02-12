@@ -100,7 +100,7 @@ func (t *Tenant) LogoURL() string {
 	return t.logoURL
 }
 
-// Plan returns the tenant's subscription plan.
+// Plan returns the tenant's module configuration.
 // In OSS edition, all tenants have the free plan with unlimited access.
 func (t *Tenant) Plan() Plan {
 	return PlanFree
@@ -163,7 +163,7 @@ func (t *Tenant) UpdateSlug(slug string) error {
 	return nil
 }
 
-// UpdatePlan updates the tenant's subscription plan.
+// UpdatePlan updates the tenant's module configuration.
 // In OSS edition, this is a no-op as all tenants have unlimited access.
 func (t *Tenant) UpdatePlan(_ Plan) error {
 	return nil

@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // AssetProcessor handles batch asset processing.
@@ -38,7 +38,7 @@ func (p *AssetProcessor) SetRepositoryExtensionRepository(repo asset.RepositoryE
 }
 
 // ProcessBatch processes all assets using batch operations.
-// Returns a map of asset ID (from EIS) -> domain asset ID for finding association.
+// Returns a map of asset ID (from CTIS) -> domain asset ID for finding association.
 //
 // If no explicit assets are provided in the report but findings exist,
 // it will attempt to auto-create an asset using a priority chain:
@@ -50,7 +50,7 @@ func (p *AssetProcessor) SetRepositoryExtensionRepository(repo asset.RepositoryE
 func (p *AssetProcessor) ProcessBatch(
 	ctx context.Context,
 	tenantID shared.ID,
-	report *eis.Report,
+	report *ctis.Report,
 	output *Output,
 ) (map[string]shared.ID, error) {
 	assetMap := make(map[string]shared.ID)
@@ -94,13 +94,13 @@ func (p *AssetProcessor) ProcessBatch(
 	// Step 1: Collect all asset names for batch lookup
 	names := make([]string, 0, len(report.Assets))
 	for i := range report.Assets {
-		risAsset := &report.Assets[i]
-		name := getAssetName(risAsset)
+		ctisAsset := &report.Assets[i]
+		name := getAssetName(ctisAsset)
 		if name == "" {
 			p.logger.Warn("asset has no name/value",
 				"asset_index", i,
-				"asset_id", risAsset.ID,
-				"asset_type", risAsset.Type,
+				"asset_id", ctisAsset.ID,
+				"asset_type", ctisAsset.Type,
 			)
 			addError(output, fmt.Sprintf("asset %d: name/value is required", i))
 			continue
@@ -129,26 +129,26 @@ func (p *AssetProcessor) ProcessBatch(
 	updateAssets := make([]*asset.Asset, 0)
 
 	for i := range report.Assets {
-		risAsset := &report.Assets[i]
-		name := getAssetName(risAsset)
+		ctisAsset := &report.Assets[i]
+		name := getAssetName(ctisAsset)
 		if name == "" {
 			continue
 		}
 
 		if existing, ok := existingMap[name]; ok {
 			// Update existing asset
-			p.mergeRISIntoAsset(existing, risAsset, report.Tool)
+			p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
 			updateAssets = append(updateAssets, existing)
-			assetMap[risAsset.ID] = existing.ID()
+			assetMap[ctisAsset.ID] = existing.ID()
 		} else {
 			// Create new asset
-			newAsset, err := p.createAssetFromEIS(tenantID, risAsset, report.Tool)
+			newAsset, err := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
 			if err != nil {
-				addError(output, fmt.Sprintf("asset %s (%s): %v", risAsset.ID, name, err))
+				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, name, err))
 				continue
 			}
 			newAssets = append(newAssets, newAsset)
-			assetMap[risAsset.ID] = newAsset.ID()
+			assetMap[ctisAsset.ID] = newAsset.ID()
 			// Also add to existing map to handle duplicates in same batch
 			existingMap[name] = newAsset
 		}
@@ -170,12 +170,12 @@ func (p *AssetProcessor) ProcessBatch(
 	// Step 5: Create/update repository extensions for repository assets
 	if p.repoExtRepo != nil {
 		for i := range report.Assets {
-			risAsset := &report.Assets[i]
-			if risAsset.Type != eis.AssetTypeRepository {
+			ctisAsset := &report.Assets[i]
+			if ctisAsset.Type != ctis.AssetTypeRepository {
 				continue
 			}
 
-			name := getAssetName(risAsset)
+			name := getAssetName(ctisAsset)
 			if name == "" {
 				continue
 			}
@@ -279,15 +279,15 @@ func deriveWebURLFromAssetName(name string) string {
 	return ""
 }
 
-// getAssetName extracts the name from a EIS asset.
-func getAssetName(risAsset *eis.Asset) string {
-	if risAsset.Name != "" {
-		return risAsset.Name
+// getAssetName extracts the name from a CTIS asset.
+func getAssetName(ctisAsset *ctis.Asset) string {
+	if ctisAsset.Name != "" {
+		return ctisAsset.Name
 	}
-	return risAsset.Value
+	return ctisAsset.Value
 }
 
-// createAssetFromMetadata creates a EIS asset from report metadata using a priority chain.
+// createAssetFromMetadata creates a CTIS asset from report metadata using a priority chain.
 // This ensures findings are never orphaned due to missing asset context.
 //
 // Priority chain:
@@ -299,7 +299,7 @@ func getAssetName(risAsset *eis.Asset) string {
 //  6. Emergency fallback - Uses scan_id alone or generates UUID (ensures findings are NEVER orphaned)
 //
 // This function should NEVER return nil when there are findings to process.
-func (p *AssetProcessor) createAssetFromMetadata(report *eis.Report) *eis.Asset {
+func (p *AssetProcessor) createAssetFromMetadata(report *ctis.Report) *ctis.Asset {
 	// Priority 1: BranchInfo.RepositoryURL (most reliable for CI/CD scans)
 	if asset := p.createAssetFromBranchInfo(report); asset != nil {
 		return asset
@@ -332,19 +332,19 @@ func (p *AssetProcessor) createAssetFromMetadata(report *eis.Report) *eis.Asset 
 
 // createAssetFromBranchInfo creates asset from BranchInfo.RepositoryURL.
 // This is the most reliable source for CI/CD scans.
-func (p *AssetProcessor) createAssetFromBranchInfo(report *eis.Report) *eis.Asset {
+func (p *AssetProcessor) createAssetFromBranchInfo(report *ctis.Report) *ctis.Asset {
 	if report.Metadata.Branch == nil || report.Metadata.Branch.RepositoryURL == "" {
 		return nil
 	}
 
 	repoURL := report.Metadata.Branch.RepositoryURL
-	return &eis.Asset{
+	return &ctis.Asset{
 		ID:          "auto-asset-1",
-		Type:        eis.AssetTypeRepository,
+		Type:        ctis.AssetTypeRepository,
 		Value:       repoURL,
 		Name:        repoURL,
-		Criticality: eis.CriticalityHigh,
-		Properties: eis.Properties{
+		Criticality: ctis.CriticalityHigh,
+		Properties: ctis.Properties{
 			"auto_created":   true,
 			"source":         "branch_info",
 			"commit_sha":     report.Metadata.Branch.CommitSHA,
@@ -357,10 +357,10 @@ func (p *AssetProcessor) createAssetFromBranchInfo(report *eis.Report) *eis.Asse
 // createAssetFromFindingValues creates asset from findings' AssetValue.
 // Only creates asset if ALL findings with AssetValue reference the SAME asset.
 // This prevents incorrect asset creation when findings span multiple repos.
-func (p *AssetProcessor) createAssetFromFindingValues(report *eis.Report) *eis.Asset {
+func (p *AssetProcessor) createAssetFromFindingValues(report *ctis.Report) *ctis.Asset {
 	// Collect unique asset values from ALL findings
 	type assetInfo struct {
-		assetType eis.AssetType
+		assetType ctis.AssetType
 		count     int
 	}
 	assetSet := make(map[string]*assetInfo)
@@ -374,7 +374,7 @@ func (p *AssetProcessor) createAssetFromFindingValues(report *eis.Report) *eis.A
 		} else {
 			assetType := finding.AssetType
 			if assetType == "" {
-				assetType = eis.AssetTypeRepository
+				assetType = ctis.AssetTypeRepository
 			}
 			assetSet[finding.AssetValue] = &assetInfo{assetType: assetType, count: 1}
 		}
@@ -410,13 +410,13 @@ func (p *AssetProcessor) createAssetFromFindingValues(report *eis.Report) *eis.A
 				"finding_count", info.count,
 			)
 		}
-		return &eis.Asset{
+		return &ctis.Asset{
 			ID:          "auto-asset-1",
 			Type:        info.assetType,
 			Value:       sanitizedValue,
 			Name:        sanitizedValue,
-			Criticality: eis.CriticalityHigh,
-			Properties: eis.Properties{
+			Criticality: ctis.CriticalityHigh,
+			Properties: ctis.Properties{
 				"auto_created":  true,
 				"source":        "finding_asset_value",
 				"finding_count": info.count,
@@ -428,32 +428,32 @@ func (p *AssetProcessor) createAssetFromFindingValues(report *eis.Report) *eis.A
 }
 
 // createAssetFromScope creates asset from report metadata Scope.
-func (p *AssetProcessor) createAssetFromScope(report *eis.Report) *eis.Asset {
+func (p *AssetProcessor) createAssetFromScope(report *ctis.Report) *ctis.Asset {
 	if report.Metadata.Scope == nil || report.Metadata.Scope.Name == "" {
 		return nil
 	}
 
-	scopeType := eis.AssetTypeUnclassified
+	scopeType := ctis.AssetTypeUnclassified
 	switch report.Metadata.Scope.Type {
 	case "repository":
-		scopeType = eis.AssetTypeRepository
+		scopeType = ctis.AssetTypeRepository
 	case "domain":
-		scopeType = eis.AssetTypeDomain
+		scopeType = ctis.AssetTypeDomain
 	case "ip_address":
-		scopeType = eis.AssetTypeIPAddress
+		scopeType = ctis.AssetTypeIPAddress
 	case "container":
-		scopeType = eis.AssetTypeContainer
+		scopeType = ctis.AssetTypeContainer
 	case "cloud_account":
-		scopeType = eis.AssetTypeCloudAccount
+		scopeType = ctis.AssetTypeCloudAccount
 	}
 
-	return &eis.Asset{
+	return &ctis.Asset{
 		ID:          "auto-asset-1",
 		Type:        scopeType,
 		Value:       report.Metadata.Scope.Name,
 		Name:        report.Metadata.Scope.Name,
-		Criticality: eis.CriticalityMedium,
-		Properties: eis.Properties{
+		Criticality: ctis.CriticalityMedium,
+		Properties: ctis.Properties{
 			"auto_created": true,
 			"source":       "scope",
 			"scope_type":   report.Metadata.Scope.Type,
@@ -468,7 +468,7 @@ func (p *AssetProcessor) createAssetFromScope(report *eis.Report) *eis.Asset {
 //   - bitbucket.org/org/repo/path/to/file.go
 //
 // Also detects common project root patterns when paths share a common prefix.
-func (p *AssetProcessor) createAssetFromPathInference(report *eis.Report) *eis.Asset {
+func (p *AssetProcessor) createAssetFromPathInference(report *ctis.Report) *ctis.Asset {
 	if len(report.Findings) == 0 {
 		return nil
 	}
@@ -515,13 +515,13 @@ func (p *AssetProcessor) createAssetFromPathInference(report *eis.Report) *eis.A
 					"source_path", path,
 				)
 			}
-			return &eis.Asset{
+			return &ctis.Asset{
 				ID:          "auto-asset-1",
-				Type:        eis.AssetTypeRepository,
+				Type:        ctis.AssetTypeRepository,
 				Value:       repoURL,
 				Name:        repoURL,
-				Criticality: eis.CriticalityHigh,
-				Properties: eis.Properties{
+				Criticality: ctis.CriticalityHigh,
+				Properties: ctis.Properties{
 					"auto_created": true,
 					"source":       "path_inference",
 					"pattern":      "git_host_url",
@@ -558,13 +558,13 @@ func (p *AssetProcessor) createAssetFromPathInference(report *eis.Report) *eis.A
 						"path_count", len(paths),
 					)
 				}
-				return &eis.Asset{
+				return &ctis.Asset{
 					ID:          "auto-asset-1",
-					Type:        eis.AssetTypeRepository,
+					Type:        ctis.AssetTypeRepository,
 					Value:       projectName,
 					Name:        projectName,
-					Criticality: eis.CriticalityMedium,
-					Properties: eis.Properties{
+					Criticality: ctis.CriticalityMedium,
+					Properties: ctis.Properties{
 						"auto_created":  true,
 						"source":        "path_inference",
 						"pattern":       "common_prefix",
@@ -580,7 +580,7 @@ func (p *AssetProcessor) createAssetFromPathInference(report *eis.Report) *eis.A
 
 // createAssetFromToolFallback creates a pseudo-asset from tool name and scan ID.
 // This is the last resort to ensure findings are never orphaned.
-func (p *AssetProcessor) createAssetFromToolFallback(report *eis.Report) *eis.Asset {
+func (p *AssetProcessor) createAssetFromToolFallback(report *ctis.Report) *ctis.Asset {
 	// Need at least tool name to create meaningful fallback
 	if report.Tool == nil || report.Tool.Name == "" {
 		return nil
@@ -603,13 +603,13 @@ func (p *AssetProcessor) createAssetFromToolFallback(report *eis.Report) *eis.As
 		)
 	}
 
-	return &eis.Asset{
+	return &ctis.Asset{
 		ID:          "auto-asset-1",
-		Type:        eis.AssetTypeUnclassified,
+		Type:        ctis.AssetTypeUnclassified,
 		Value:       assetName,
 		Name:        assetName,
-		Criticality: eis.CriticalityMedium,
-		Properties: eis.Properties{
+		Criticality: ctis.CriticalityMedium,
+		Properties: ctis.Properties{
 			"auto_created": true,
 			"source":       "tool_fallback",
 			"tool_name":    toolName,
@@ -621,7 +621,7 @@ func (p *AssetProcessor) createAssetFromToolFallback(report *eis.Report) *eis.As
 // createAssetFromEmergencyFallback creates a pseudo-asset when all other methods fail.
 // This is the absolute last resort to ensure findings are NEVER orphaned.
 // Uses scan_id if available, otherwise generates a timestamp-based ID.
-func (p *AssetProcessor) createAssetFromEmergencyFallback(report *eis.Report) *eis.Asset {
+func (p *AssetProcessor) createAssetFromEmergencyFallback(report *ctis.Report) *ctis.Asset {
 	// Try to use scan ID
 	scanID := report.Metadata.ID
 	if scanID == "" {
@@ -646,13 +646,13 @@ func (p *AssetProcessor) createAssetFromEmergencyFallback(report *eis.Report) *e
 		)
 	}
 
-	return &eis.Asset{
+	return &ctis.Asset{
 		ID:          "auto-asset-1",
-		Type:        eis.AssetTypeUnclassified,
+		Type:        ctis.AssetTypeUnclassified,
 		Value:       assetName,
 		Name:        assetName,
-		Criticality: eis.CriticalityLow, // Low criticality since we have no context
-		Properties: eis.Properties{
+		Criticality: ctis.CriticalityLow, // Low criticality since we have no context
+		Properties: ctis.Properties{
 			"auto_created":   true,
 			"source":         "emergency_fallback",
 			"scan_id":        scanID,
@@ -688,16 +688,16 @@ func findCommonPathPrefix(paths []string) string {
 	return prefix
 }
 
-// createAssetFromEIS creates a new domain Asset from a EIS Asset.
-func (p *AssetProcessor) createAssetFromEIS(
+// createAssetFromCTIS creates a new domain Asset from a CTIS Asset.
+func (p *AssetProcessor) createAssetFromCTIS(
 	tenantID shared.ID,
-	risAsset *eis.Asset,
-	tool *eis.Tool,
+	ctisAsset *ctis.Asset,
+	tool *ctis.Tool,
 ) (*asset.Asset, error) {
-	assetType := mapEISAssetType(risAsset.Type)
-	criticality := mapEISCriticality(risAsset.Criticality)
+	assetType := mapCTISAssetType(ctisAsset.Type)
+	criticality := mapCTISCriticality(ctisAsset.Criticality)
 
-	name := getAssetName(risAsset)
+	name := getAssetName(ctisAsset)
 	if name == "" {
 		return nil, fmt.Errorf("asset name/value is required")
 	}
@@ -708,7 +708,7 @@ func (p *AssetProcessor) createAssetFromEIS(
 		p.logger.Warn("asset name truncated",
 			"original_length", len(name),
 			"max_length", maxNameLength,
-			"asset_id", risAsset.ID,
+			"asset_id", ctisAsset.ID,
 		)
 		name = name[:maxNameLength]
 	}
@@ -722,13 +722,13 @@ func (p *AssetProcessor) createAssetFromEIS(
 
 	// Set description (with length limit) - log if truncated
 	const maxDescLength = 4096
-	if risAsset.Description != "" {
-		desc := risAsset.Description
+	if ctisAsset.Description != "" {
+		desc := ctisAsset.Description
 		if len(desc) > maxDescLength {
 			p.logger.Warn("asset description truncated",
 				"original_length", len(desc),
 				"max_length", maxDescLength,
-				"asset_id", risAsset.ID,
+				"asset_id", ctisAsset.ID,
 			)
 			desc = desc[:maxDescLength]
 		}
@@ -736,12 +736,12 @@ func (p *AssetProcessor) createAssetFromEIS(
 	}
 
 	// Set tags (with limit) - log if truncated
-	tags := risAsset.Tags
+	tags := ctisAsset.Tags
 	if len(tags) > MaxTagsPerAsset {
 		p.logger.Warn("asset tags truncated",
 			"original_count", len(tags),
 			"max_count", MaxTagsPerAsset,
-			"asset_id", risAsset.ID,
+			"asset_id", ctisAsset.ID,
 		)
 		tags = tags[:MaxTagsPerAsset]
 	}
@@ -755,14 +755,14 @@ func (p *AssetProcessor) createAssetFromEIS(
 	if tool != nil {
 		discoveryTool = tool.Name
 	}
-	if source, ok := risAsset.Properties["discovery_source"].(string); ok {
+	if source, ok := ctisAsset.Properties["discovery_source"].(string); ok {
 		discoverySource = source
 	}
-	if toolName, ok := risAsset.Properties["discovery_tool"].(string); ok {
+	if toolName, ok := ctisAsset.Properties["discovery_tool"].(string); ok {
 		discoveryTool = toolName
 	}
 
-	discoveredAt := risAsset.DiscoveredAt
+	discoveredAt := ctisAsset.DiscoveredAt
 	if discoveredAt == nil {
 		now := time.Now()
 		discoveredAt = &now
@@ -770,25 +770,25 @@ func (p *AssetProcessor) createAssetFromEIS(
 	newAsset.SetDiscoveryInfo(discoverySource, discoveryTool, discoveredAt)
 
 	// Build and set properties (with validation)
-	properties := p.buildPropertiesFromEIS(risAsset)
+	properties := p.buildPropertiesFromCTIS(ctisAsset)
 	newAsset.SetProperties(properties)
 
 	return newAsset, nil
 }
 
-// mergeRISIntoAsset merges EIS data into an existing asset.
-func (p *AssetProcessor) mergeRISIntoAsset(existing *asset.Asset, risAsset *eis.Asset, tool *eis.Tool) {
+// mergeCTISIntoAsset merges CTIS data into an existing asset.
+func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool) {
 	// Mark as seen
 	existing.MarkSeen()
 
 	// Merge tags
-	for _, tag := range risAsset.Tags {
+	for _, tag := range ctisAsset.Tags {
 		existing.AddTag(tag)
 	}
 
 	// Merge properties using deep merge
 	existingProps := existing.Properties()
-	newProps := p.buildPropertiesFromEIS(risAsset)
+	newProps := p.buildPropertiesFromCTIS(ctisAsset)
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
 	existing.SetProperties(mergedProps)
 
@@ -798,13 +798,13 @@ func (p *AssetProcessor) mergeRISIntoAsset(existing *asset.Asset, risAsset *eis.
 	}
 }
 
-// buildPropertiesFromEIS builds the properties JSONB from EIS Asset.
-func (p *AssetProcessor) buildPropertiesFromEIS(risAsset *eis.Asset) map[string]any {
+// buildPropertiesFromCTIS builds the properties JSONB from CTIS Asset.
+func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[string]any {
 	props := make(map[string]any)
 
-	// Copy EIS properties (with validation)
+	// Copy CTIS properties (with validation)
 	propCount := 0
-	for k, v := range risAsset.Properties {
+	for k, v := range ctisAsset.Properties {
 		if propCount >= MaxPropertiesPerAsset {
 			break
 		}
@@ -824,26 +824,26 @@ func (p *AssetProcessor) buildPropertiesFromEIS(risAsset *eis.Asset) map[string]
 	}
 
 	// Add technical details based on asset type
-	if risAsset.Technical != nil {
-		if risAsset.Technical.Domain != nil {
-			props["domain"] = buildDomainProperties(risAsset.Technical.Domain)
+	if ctisAsset.Technical != nil {
+		if ctisAsset.Technical.Domain != nil {
+			props["domain"] = buildDomainProperties(ctisAsset.Technical.Domain)
 		}
-		if risAsset.Technical.IPAddress != nil {
-			props["ip_address"] = buildIPAddressProperties(risAsset.Technical.IPAddress)
+		if ctisAsset.Technical.IPAddress != nil {
+			props["ip_address"] = buildIPAddressProperties(ctisAsset.Technical.IPAddress)
 		}
-		if risAsset.Technical.Service != nil {
-			props["service"] = buildServiceProperties(risAsset.Technical.Service)
+		if ctisAsset.Technical.Service != nil {
+			props["service"] = buildServiceProperties(ctisAsset.Technical.Service)
 		}
-		if risAsset.Technical.Certificate != nil {
-			props["certificate"] = buildCertificateProperties(risAsset.Technical.Certificate)
+		if ctisAsset.Technical.Certificate != nil {
+			props["certificate"] = buildCertificateProperties(ctisAsset.Technical.Certificate)
 		}
 	}
 
 	// Validate properties based on asset type
-	if errs := p.propsValidator.ValidateProperties(string(risAsset.Type), props); errs != nil {
+	if errs := p.propsValidator.ValidateProperties(string(ctisAsset.Type), props); errs != nil {
 		p.logger.Warn("properties validation errors",
-			"asset_type", risAsset.Type,
-			"asset_value", risAsset.Value,
+			"asset_type", ctisAsset.Type,
+			"asset_value", ctisAsset.Value,
 			"errors", errs.Error(),
 		)
 	}

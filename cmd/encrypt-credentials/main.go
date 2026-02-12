@@ -19,8 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/crypto"
 	_ "github.com/lib/pq"
+
+	"github.com/openctemio/api/pkg/crypto"
 )
 
 func main() {

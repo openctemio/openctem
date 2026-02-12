@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     completed_at TIMESTAMPTZ,
     error_message TEXT,
     filtering_result JSONB,
+    scan_profile_id UUID REFERENCES scan_profiles(id) ON DELETE SET NULL,
     quality_gate_result JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 

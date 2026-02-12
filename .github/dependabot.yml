@@ -1,4 +1,4 @@
-# Dependabot configuration for Rediver API
+# Dependabot configuration for OpenCTEM API
 # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
@@ -13,7 +13,7 @@ updates:
       timezone: "Asia/Ho_Chi_Minh"
     open-pull-requests-limit: 10
     reviewers:
-      - "exploopio/security"
+      - "openctemio/security"
     labels:
       - "dependencies"
       - "go"
@@ -43,7 +43,7 @@ updates:
       timezone: "Asia/Ho_Chi_Minh"
     open-pull-requests-limit: 5
     reviewers:
-      - "exploopio/security"
+      - "openctemio/security"
     labels:
       - "dependencies"
       - "github-actions"
@@ -60,7 +60,7 @@ updates:
       timezone: "Asia/Ho_Chi_Minh"
     open-pull-requests-limit: 3
     reviewers:
-      - "exploopio/security"
+      - "openctemio/security"
     labels:
       - "dependencies"
       - "docker"

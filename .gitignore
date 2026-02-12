@@ -66,3 +66,8 @@ load.test
 cmd/server/server
 
 vendor
+go.mod.docker
+go.sum.docker
+go.work.docker
+go.work.sum.docker
+go.work.*

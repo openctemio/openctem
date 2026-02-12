@@ -420,8 +420,8 @@ import (
     "context"
     "slices"
 
-    "github.com/exploopio/api/internal/domain/agent"
-    "github.com/exploopio/sdk/pkg/eis"
+    "github.com/openctemio/api/internal/domain/agent"
+    "github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // CapabilityFilter filters report data based on agent's effective capabilities
@@ -431,8 +431,8 @@ type CapabilityFilter struct {
 
 // FilterResult contains the result of filtering
 type FilterResult struct {
-    AcceptedFindings  []*eis.Finding
-    RejectedFindings  []*eis.Finding
+    AcceptedFindings  []*ctis.Finding
+    RejectedFindings  []*ctis.Finding
     RejectedByCapability map[string]int // capability -> count rejected
     Warnings          []string
 }
@@ -441,7 +441,7 @@ type FilterResult struct {
 func (f *CapabilityFilter) FilterReport(
     ctx context.Context,
     agent *agent.Agent,
-    report *eis.Report,
+    report *ctis.Report,
 ) (*FilterResult, error) {
     result := &FilterResult{
         RejectedByCapability: make(map[string]int),
@@ -489,7 +489,7 @@ func (f *CapabilityFilter) FilterReport(
 }
 
 // getRequiredCapability determines what capability is required for a finding
-func (f *CapabilityFilter) getRequiredCapability(finding *eis.Finding) string {
+func (f *CapabilityFilter) getRequiredCapability(finding *ctis.Finding) string {
     // Priority 1: Explicit capability in finding metadata
     if finding.Metadata != nil && finding.Metadata.Capability != "" {
         return finding.Metadata.Capability
@@ -497,21 +497,21 @@ func (f *CapabilityFilter) getRequiredCapability(finding *eis.Finding) string {
 
     // Priority 2: Derive from finding type
     switch finding.Type {
-    case eis.FindingTypeSAST, eis.FindingTypeCodeQuality:
+    case ctis.FindingTypeSAST, ctis.FindingTypeCodeQuality:
         return "sast"
-    case eis.FindingTypeSCA, eis.FindingTypeDependency, eis.FindingTypeLicense:
+    case ctis.FindingTypeSCA, ctis.FindingTypeDependency, ctis.FindingTypeLicense:
         return "sca"
-    case eis.FindingTypeSecret, eis.FindingTypeCredential:
+    case ctis.FindingTypeSecret, ctis.FindingTypeCredential:
         return "secrets"
-    case eis.FindingTypeIaC, eis.FindingTypeMisconfiguration:
+    case ctis.FindingTypeIaC, ctis.FindingTypeMisconfiguration:
         return "iac"
-    case eis.FindingTypeDAST, eis.FindingTypeVulnerability:
+    case ctis.FindingTypeDAST, ctis.FindingTypeVulnerability:
         return "dast"
-    case eis.FindingTypeContainer, eis.FindingTypeImage:
+    case ctis.FindingTypeContainer, ctis.FindingTypeImage:
         return "container"
-    case eis.FindingTypeInfra, eis.FindingTypeNetwork:
+    case ctis.FindingTypeInfra, ctis.FindingTypeNetwork:
         return "infra"
-    case eis.FindingTypeAPI:
+    case ctis.FindingTypeAPI:
         return "api"
     default:
         // Unknown type - use tool name to derive capability
@@ -578,7 +578,7 @@ func (s *IngestService) Ingest(
     }
 
     // Create filtered report with only accepted findings
-    filteredReport := &eis.Report{
+    filteredReport := &ctis.Report{
         Metadata: input.Report.Metadata,
         Assets:   input.Report.Assets,
         Findings: filterResult.AcceptedFindings, // Only accepted findings
@@ -1619,7 +1619,7 @@ Admin creates:                     Attacker/Misconfiguration:
 ┌─────────────────────┐            ┌─────────────────────┐
 │ Agent: prod-daemon  │            │ Uses same API key   │
 │ Mode: daemon        │───────────▶│ Runs as: runner     │
-│ API Key: exp-ak-xxx │            │ In CI/CD pipeline   │
+│ API Key: oc-ak-xxx  │            │ In CI/CD pipeline   │
 └─────────────────────┘            └─────────────────────┘
                                             │
                                             ▼
@@ -1866,7 +1866,7 @@ func (a *Agent) SendHeartbeat(ctx context.Context) (*HeartbeatResponse, error) {
 Timeline:
 ─────────────────────────────────────────────────────────────────────────
 T=0    Attacker gets daemon agent's API key
-       Runs: agent -standalone -api-key exp-ak-xxxx -tool semgrep
+       Runs: agent -standalone -api-key oc-ak-xxxx -tool semgrep
 
 T=1s   Agent sends heartbeat:
        {
@@ -1892,7 +1892,7 @@ Result: Attack blocked, agent cannot operate
 Timeline:
 ─────────────────────────────────────────────────────────────────────────
 T=0    Someone misconfigures: runs runner agent in daemon mode
-       Runs: agent -daemon -api-key exp-ak-yyyy
+       Runs: agent -daemon -api-key oc-ak-yyyy
 
 T=1s   Agent sends heartbeat:
        {

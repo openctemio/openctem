@@ -1394,7 +1394,6 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 	severity, _ := vulnerability.ParseSeverity(row.severity)
 	status, _ := vulnerability.ParseFindingStatus(row.status)
 
-
 	var meta map[string]any
 	if len(row.metadata) > 0 {
 		if err := json.Unmarshal(row.metadata, &meta); err != nil {

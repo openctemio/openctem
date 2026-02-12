@@ -1,8 +1,8 @@
-# Rediver API
+# OpenCTEM API
 
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/Docker-Hub-2496ED?logo=docker)](https://hub.docker.com/r/exploopio/api)
+[![Docker](https://img.shields.io/badge/Docker-Hub-2496ED?logo=docker)](https://hub.docker.com/r/openctemio/api)
 
 Unified Exposure Management platform built with Clean Architecture in Go.
 
@@ -10,12 +10,12 @@ Unified Exposure Management platform built with Clean Architecture in Go.
 
 | Guide | Description |
 |-------|-------------|
-| [Getting Started](https://docs.exploop.io/docs/getting-started) | Quick start guide |
-| [API Reference](https://docs.exploop.io/docs/api/reference) | Complete API endpoints |
-| [Authentication](https://docs.exploop.io/docs/guides/authentication) | JWT & OIDC auth flow |
-| [Permissions](https://docs.exploop.io/docs/guides/permissions) | Role-based access control |
-| [Architecture](https://docs.exploop.io/docs/architecture/overview) | System design |
-| [Configuration](https://docs.exploop.io/docs/operations/configuration) | Environment variables |
+| [Getting Started](https://docs.openctem.io/docs/getting-started) | Quick start guide |
+| [API Reference](https://docs.openctem.io/docs/api/reference) | Complete API endpoints |
+| [Authentication](https://docs.openctem.io/docs/guides/authentication) | JWT & OIDC auth flow |
+| [Permissions](https://docs.openctem.io/docs/guides/permissions) | Role-based access control |
+| [Architecture](https://docs.openctem.io/docs/architecture/overview) | System design |
+| [Configuration](https://docs.openctem.io/docs/operations/configuration) | Environment variables |
 
 ## Features
 
@@ -44,7 +44,7 @@ Unified Exposure Management platform built with Clean Architecture in Go.
 ## Project Structure
 
 ```
-exploop/
+openctem/
 ├── cmd/server/              # Application entry point
 ├── internal/
 │   ├── domain/              # Core business logic (entities, value objects)
@@ -81,7 +81,7 @@ exploop/
 
 ```bash
 # Clone
-git clone https://github.com/exploopio/api.git
+git clone https://github.com/openctemio/api.git
 cd api
 
 # Setup environment
@@ -190,7 +190,7 @@ make migrate-down   # Rollback migration
 # Security & Pre-commit
 make pre-commit-install  # Install pre-commit hooks
 make pre-commit-run      # Run all security checks
-make security-scan       # Full security scan with Rediver Agent (semgrep + gitleaks + trivy)
+make security-scan       # Full security scan with OpenCTEM Agent (semgrep + gitleaks + trivy)
 make gitleaks            # Run secret detection only
 ```
 
@@ -256,7 +256,7 @@ Access documentation at: `http://localhost:8080/docs`
 
 ## 💖 Support
 
-If you find Rediver useful, please consider supporting the project:
+If you find OpenCTEM useful, please consider supporting the project:
 
 **BSC Network (BEP-20):**
 ```

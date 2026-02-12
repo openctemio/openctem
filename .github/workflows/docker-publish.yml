@@ -21,10 +21,10 @@ on:
 
 env:
   REGISTRY: docker.io
-  API_IMAGE: exploopio/api
-  MIGRATIONS_IMAGE: exploopio/migrations
-  SEED_IMAGE: exploopio/seed
-  ADMIN_CLI_IMAGE: exploopio/admin-cli
+  API_IMAGE: openctemio/api
+  MIGRATIONS_IMAGE: openctemio/migrations
+  SEED_IMAGE: openctemio/seed
+  ADMIN_CLI_IMAGE: openctemio/admin-cli
 
 jobs:
   # ============================================

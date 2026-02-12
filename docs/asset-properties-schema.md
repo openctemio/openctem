@@ -700,7 +700,7 @@ Properties are validated at multiple layers:
 The SDK defines typed Go structs (`AssetTechnical`, `DomainTechnical`, etc.) that
 are serialized to JSON and stored in the `properties` JSONB field.
 
-See: `sdk/pkg/ris/types.go` for the canonical type definitions.
+See: `sdk/pkg/ctis/types.go` for the canonical type definitions.
 
 ### 2. Properties Validator
 The API includes a `PropertiesValidator` that validates properties based on asset type.

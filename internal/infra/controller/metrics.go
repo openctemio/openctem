@@ -20,7 +20,7 @@ type PrometheusMetrics struct {
 // NewPrometheusMetrics creates a new PrometheusMetrics.
 func NewPrometheusMetrics(namespace string) *PrometheusMetrics {
 	if namespace == "" {
-		namespace = "exploop"
+		namespace = "openctem"
 	}
 
 	return &PrometheusMetrics{

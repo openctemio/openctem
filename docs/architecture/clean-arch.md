@@ -220,7 +220,7 @@ Hexagonal / Ports & Adapters
     ├── common.pb.go
     ├── asset.pb.go
     ├── exposure.pb.go
-    └──.exploop_grpc.pb.go
+    └──openctem_grpc.pb.go
 ```
 
 ### ws/ (WebSocket)

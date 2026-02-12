@@ -6,7 +6,7 @@ import (
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // =============================================================================
@@ -21,33 +21,33 @@ import (
 func TestFindingProcessing_NoAssetInReport(t *testing.T) {
 	t.Run("FindingsSkippedWhenNoAsset", func(t *testing.T) {
 		// Simulate a report with findings but no assets
-		report := &eis.Report{
+		report := &ctis.Report{
 			Version: "1.0.0",
-			Metadata: eis.ReportMetadata{
+			Metadata: ctis.ReportMetadata{
 				ID:        "scan-001",
 				Timestamp: time.Now(),
 				// No Scope - nothing to auto-create from
 			},
-			Tool: &eis.Tool{
+			Tool: &ctis.Tool{
 				Name:    "semgrep",
 				Version: "1.0.0",
 			},
-			Assets: []eis.Asset{}, // EMPTY - no assets
-			Findings: []eis.Finding{
+			Assets: []ctis.Asset{}, // EMPTY - no assets
+			Findings: []ctis.Finding{
 				{
 					ID:          "finding-001",
-					Type:        eis.FindingTypeVulnerability,
+					Type:        ctis.FindingTypeVulnerability,
 					Title:       "SQL Injection",
-					Severity:    eis.SeverityCritical,
+					Severity:    ctis.SeverityCritical,
 					RuleID:      "sql-injection-001",
 					Description: "Possible SQL injection",
 					// AssetRef is empty - no target asset
 				},
 				{
 					ID:       "finding-002",
-					Type:     eis.FindingTypeVulnerability,
+					Type:     ctis.FindingTypeVulnerability,
 					Title:    "XSS Vulnerability",
-					Severity: eis.SeverityHigh,
+					Severity: ctis.SeverityHigh,
 					RuleID:   "xss-001",
 					// AssetRef is empty - no target asset
 				},
@@ -104,15 +104,15 @@ func TestFindingProcessing_NoAssetInReport(t *testing.T) {
 	})
 
 	t.Run("SingleFindingSkippedNoAsset", func(t *testing.T) {
-		report := &eis.Report{
+		report := &ctis.Report{
 			Version: "1.0.0",
-			Metadata: eis.ReportMetadata{
+			Metadata: ctis.ReportMetadata{
 				ID:        "scan-002",
 				Timestamp: time.Now(),
 			},
-			Tool:     &eis.Tool{Name: "trivy"},
-			Assets:   []eis.Asset{},
-			Findings: []eis.Finding{{ID: "f1", Title: "CVE-2024-1234"}},
+			Tool:     &ctis.Tool{Name: "trivy"},
+			Assets:   []ctis.Asset{},
+			Findings: []ctis.Finding{{ID: "f1", Title: "CVE-2024-1234"}},
 		}
 
 		// Use report fields to avoid unused write warnings
@@ -156,7 +156,7 @@ func TestFindingProcessing_AssetRefNotInMap(t *testing.T) {
 		}
 
 		// Finding references a DIFFERENT asset
-		finding := eis.Finding{
+		finding := ctis.Finding{
 			ID:       "finding-001",
 			AssetRef: "asset-999", // NOT in assetMap
 			Title:    "SQL Injection",
@@ -192,7 +192,7 @@ func TestFindingProcessing_AssetRefNotInMap(t *testing.T) {
 		}
 
 		// Finding with no AssetRef (when multiple assets exist)
-		finding := eis.Finding{
+		finding := ctis.Finding{
 			ID:    "finding-001",
 			Title: "Vulnerability without asset reference",
 			// AssetRef is EMPTY
@@ -244,7 +244,7 @@ func TestFindingProcessing_SingleAssetDefaultFallback(t *testing.T) {
 		}
 
 		// Finding with no AssetRef
-		finding := eis.Finding{
+		finding := ctis.Finding{
 			ID:    "finding-001",
 			Title: "SQL Injection",
 			// AssetRef is EMPTY
@@ -287,7 +287,7 @@ func TestFindingProcessing_SingleAssetDefaultFallback(t *testing.T) {
 		}
 
 		// Finding with explicit AssetRef
-		finding := eis.Finding{
+		finding := ctis.Finding{
 			ID:       "finding-001",
 			AssetRef: "explicit-repo",
 			Title:    "SQL Injection",
@@ -318,19 +318,19 @@ func TestFindingProcessing_SingleAssetDefaultFallback(t *testing.T) {
 func TestFindingProcessing_AutoAssetCreation(t *testing.T) {
 	t.Run("AutoCreateFromScope", func(t *testing.T) {
 		// Simulate report with scope but no explicit assets
-		report := &eis.Report{
+		report := &ctis.Report{
 			Version: "1.0.0",
-			Metadata: eis.ReportMetadata{
+			Metadata: ctis.ReportMetadata{
 				ID:        "scan-001",
 				Timestamp: time.Now(),
-				Scope: &eis.Scope{
+				Scope: &ctis.Scope{
 					Name: "my-repository",
 					Type: "repository",
 				},
 			},
-			Tool:   &eis.Tool{Name: "semgrep"},
-			Assets: []eis.Asset{}, // Empty initially
-			Findings: []eis.Finding{
+			Tool:   &ctis.Tool{Name: "semgrep"},
+			Assets: []ctis.Asset{}, // Empty initially
+			Findings: []ctis.Finding{
 				{ID: "f1", Title: "SQL Injection"},
 			},
 		}
@@ -344,11 +344,11 @@ func TestFindingProcessing_AutoAssetCreation(t *testing.T) {
 		// This is similar to what AssetProcessor.createAssetFromMetadata() does
 		if len(report.Assets) == 0 && len(report.Findings) > 0 {
 			if report.Metadata.Scope != nil && report.Metadata.Scope.Name != "" {
-				autoAsset := eis.Asset{
+				autoAsset := ctis.Asset{
 					ID:    "auto-" + report.Metadata.Scope.Name,
-					Type:  eis.AssetType(report.Metadata.Scope.Type),
+					Type:  ctis.AssetType(report.Metadata.Scope.Type),
 					Value: report.Metadata.Scope.Name,
-					Properties: eis.Properties{
+					Properties: ctis.Properties{
 						"auto_created": true,
 						"source":       "scope",
 					},
@@ -376,16 +376,16 @@ func TestFindingProcessing_AutoAssetCreation(t *testing.T) {
 
 	t.Run("AutoCreateFromFindingAssetValue", func(t *testing.T) {
 		// Simulate report with finding that has asset value
-		report := &eis.Report{
+		report := &ctis.Report{
 			Version: "1.0.0",
-			Metadata: eis.ReportMetadata{
+			Metadata: ctis.ReportMetadata{
 				ID:        "scan-001",
 				Timestamp: time.Now(),
 				// No Scope
 			},
-			Tool:   &eis.Tool{Name: "gitleaks"},
-			Assets: []eis.Asset{},
-			Findings: []eis.Finding{
+			Tool:   &ctis.Tool{Name: "gitleaks"},
+			Assets: []ctis.Asset{},
+			Findings: []ctis.Finding{
 				{
 					ID:         "f1",
 					Title:      "AWS Key Exposed",
@@ -406,11 +406,11 @@ func TestFindingProcessing_AutoAssetCreation(t *testing.T) {
 				// Fall back to first finding's AssetValue
 				firstFinding := report.Findings[0]
 				if firstFinding.AssetValue != "" {
-					autoAsset := eis.Asset{
+					autoAsset := ctis.Asset{
 						ID:    "auto-" + firstFinding.AssetValue,
-						Type:  eis.AssetTypeRepository, // Default type
+						Type:  ctis.AssetTypeRepository, // Default type
 						Value: firstFinding.AssetValue,
-						Properties: eis.Properties{
+						Properties: ctis.Properties{
 							"auto_created": true,
 							"source":       "finding_asset_value",
 						},
@@ -432,16 +432,16 @@ func TestFindingProcessing_AutoAssetCreation(t *testing.T) {
 
 	t.Run("NoAutoCreateWhenNoMetadata", func(t *testing.T) {
 		// Report with no metadata for auto-creation
-		report := &eis.Report{
+		report := &ctis.Report{
 			Version: "1.0.0",
-			Metadata: eis.ReportMetadata{
+			Metadata: ctis.ReportMetadata{
 				ID:        "scan-001",
 				Timestamp: time.Now(),
 				// No Scope
 			},
-			Tool:   &eis.Tool{Name: "unknown-tool"},
-			Assets: []eis.Asset{},
-			Findings: []eis.Finding{
+			Tool:   &ctis.Tool{Name: "unknown-tool"},
+			Assets: []ctis.Asset{},
+			Findings: []ctis.Finding{
 				{
 					ID:    "f1",
 					Title: "Generic Finding",
@@ -491,14 +491,14 @@ func TestFindingProcessing_PartialAssetMatch(t *testing.T) {
 			"repo-2": asset2ID,
 		}
 
-		findings := []eis.Finding{
+		findings := []ctis.Finding{
 			{ID: "f1", AssetRef: "repo-1", Title: "Finding for repo-1"},    // Valid
 			{ID: "f2", AssetRef: "repo-999", Title: "Finding for unknown"}, // Invalid
 			{ID: "f3", AssetRef: "repo-2", Title: "Finding for repo-2"},    // Valid
 			{ID: "f4", AssetRef: "", Title: "Finding with no ref"},         // Invalid (multi-asset, no default)
 		}
 
-		var validFindings []eis.Finding
+		var validFindings []ctis.Finding
 		var skippedCount int
 		var errors []string
 
@@ -676,7 +676,7 @@ func TestFindingProcessing_EmptyReportHandling(t *testing.T) {
 			"my-repo": assetID,
 		}
 
-		findings := []eis.Finding{} // EMPTY
+		findings := []ctis.Finding{} // EMPTY
 
 		processedCount := 0
 		for _, finding := range findings {
@@ -699,7 +699,7 @@ func TestFindingProcessing_EmptyReportHandling(t *testing.T) {
 	t.Run("NilReportSafeHandling", func(t *testing.T) {
 		// Simulate nil-safe handling - this tests that our nil-check logic works correctly
 		// The getFindingCount helper simulates how the processor safely handles nil reports
-		getFindingCount := func(r *eis.Report) int {
+		getFindingCount := func(r *ctis.Report) int {
 			if r == nil {
 				return 0
 			}
@@ -712,13 +712,13 @@ func TestFindingProcessing_EmptyReportHandling(t *testing.T) {
 		}
 
 		// Test with empty report
-		if count := getFindingCount(&eis.Report{}); count != 0 {
+		if count := getFindingCount(&ctis.Report{}); count != 0 {
 			t.Errorf("Empty report should result in 0 findings, got %d", count)
 		}
 
 		// Test with report containing findings
-		reportWithFindings := &eis.Report{
-			Findings: []eis.Finding{{ID: "f1"}},
+		reportWithFindings := &ctis.Report{
+			Findings: []ctis.Finding{{ID: "f1"}},
 		}
 		if count := getFindingCount(reportWithFindings); count != 1 {
 			t.Errorf("Report with 1 finding should return 1, got %d", count)
@@ -738,7 +738,7 @@ func TestFindingProcessing_AssetDeletionScenario(t *testing.T) {
 			// "deleted-repo" is NOT in the map
 		}
 
-		findings := []eis.Finding{
+		findings := []ctis.Finding{
 			{ID: "f1", AssetRef: "active-repo", Title: "Finding 1"},  // Valid
 			{ID: "f2", AssetRef: "deleted-repo", Title: "Finding 2"}, // Invalid - asset deleted
 		}
@@ -772,7 +772,7 @@ func TestFindingProcessing_ConcurrentAssetCreation(t *testing.T) {
 		assetMap := make(map[string]shared.ID)
 
 		// Simulate batch processing where assets are created first
-		assetsToCreate := []eis.Asset{
+		assetsToCreate := []ctis.Asset{
 			{ID: "repo-1", Value: "github.com/org/repo1"},
 		}
 
@@ -782,7 +782,7 @@ func TestFindingProcessing_ConcurrentAssetCreation(t *testing.T) {
 		}
 
 		// Finding processing phase - all findings should now find the asset
-		findings := []eis.Finding{
+		findings := []ctis.Finding{
 			{ID: "f1", AssetRef: "repo-1", Title: "Finding 1"},
 			{ID: "f2", AssetRef: "repo-1", Title: "Finding 2"},
 			{ID: "f3", AssetRef: "repo-1", Title: "Finding 3"},

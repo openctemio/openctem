@@ -1,4 +1,4 @@
-// Package licensing provides domain models for subscription plans and module.
+// Package module provides domain models for tenant modules and access control.
 package module
 
 import (
@@ -20,7 +20,7 @@ func NewID() ID {
 	return uuid.New()
 }
 
-// Plan represents a subscription plan/tier.
+// Plan represents a tenant's module configuration.
 type Plan struct {
 	id          ID
 	slug        string

@@ -15,8 +15,8 @@ set -e
 
 # Configuration
 DOCKER_CONTAINER="${DOCKER_CONTAINER:-api-postgres-1}"
-DB_USER="${DB_USER:-exploop}"
-DB_NAME="${DB_NAME:-exploop}"
+DB_USER="${DB_USER:-openctem}"
+DB_NAME="${DB_NAME:-openctem}"
 
 TENANT_ID="${1:-}"
 USE_DOCKER=false
@@ -58,7 +58,7 @@ fi
 if [ "$USE_DOCKER" = true ]; then
     if ! docker ps --format '{{.Names}}' | grep -q "^${DOCKER_CONTAINER}$"; then
         # Try alternative container name
-        DOCKER_CONTAINER="exploopio-api-postgres-1"
+        DOCKER_CONTAINER="openctemio-api-postgres-1"
         if ! docker ps --format '{{.Names}}' | grep -q "^${DOCKER_CONTAINER}$"; then
             # Try to find any postgres container
             DOCKER_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E 'postgres' | head -1)
@@ -82,8 +82,8 @@ if [ -z "$TENANT_ID" ]; then
     echo ""
     echo "Environment variables:"
     echo "  DOCKER_CONTAINER - Docker container name (default: api-postgres-1)"
-    echo "  DB_USER          - Database user (default: exploop)"
-    echo "  DB_NAME          - Database name (default: exploop)"
+    echo "  DB_USER          - Database user (default: openctem)"
+    echo "  DB_NAME          - Database name (default: openctem)"
     echo "  DB_PASSWORD      - Database password (default: secret)"
     echo "  DB_HOST          - Database host (default: localhost)"
     echo "  DB_PORT          - Database port (default: 5432)"

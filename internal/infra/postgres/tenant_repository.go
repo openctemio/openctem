@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/lib/pq"
 )
 
 // TenantRepository implements tenant.Repository using PostgreSQL.
@@ -407,12 +407,13 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 	var tenants []*tenant.TenantWithRole
 	for rows.Next() {
 		var (
-			idStr, name, slug, createdBy string
-			description, logoURL         sql.NullString
-			settingsJSON                 []byte
-			createdAt, updatedAt         time.Time
-			roleStr                      string
-			joinedAt                     time.Time
+			idStr, name, slug    string
+			createdBy            sql.NullString
+			description, logoURL sql.NullString
+			settingsJSON         []byte
+			createdAt, updatedAt time.Time
+			roleStr              string
+			joinedAt             time.Time
 		)
 
 		err := rows.Scan(
@@ -433,7 +434,7 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 
 		t := tenant.Reconstitute(
 			id, name, slug, description.String, logoURL.String,
-			settings, createdBy, createdAt, updatedAt,
+			settings, createdBy.String, createdAt, updatedAt,
 		)
 
 		tenants = append(tenants, &tenant.TenantWithRole{
@@ -1034,10 +1035,11 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 
 func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 	var (
-		idStr, name, slug, createdBy string
-		description, logoURL         sql.NullString
-		settingsJSON                 []byte
-		createdAt, updatedAt         time.Time
+		idStr, name, slug    string
+		createdBy            sql.NullString
+		description, logoURL sql.NullString
+		settingsJSON         []byte
+		createdAt, updatedAt time.Time
 	)
 
 	err := row.Scan(&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt)
@@ -1057,7 +1059,7 @@ func (r *TenantRepository) scanTenant(row *sql.Row) (*tenant.Tenant, error) {
 
 	return tenant.Reconstitute(
 		id, name, slug, description.String, logoURL.String,
-		settings, createdBy, createdAt, updatedAt,
+		settings, createdBy.String, createdAt, updatedAt,
 	), nil
 }
 

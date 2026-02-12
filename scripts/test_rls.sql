@@ -2,7 +2,7 @@
 -- RLS (Row Level Security) Test Script
 -- =============================================================================
 -- Run this script to verify tenant isolation is working correctly.
--- Usage: psql -U exploop -d exploop -f scripts/test_rls.sql
+-- Usage: psql -U openctem -d openctem -f scripts/test_rls.sql
 -- =============================================================================
 
 \echo '=============================================='
@@ -25,7 +25,7 @@ BEGIN
 END
 $$;
 
-GRANT CONNECT ON DATABASE exploop TO rls_test_user;
+GRANT CONNECT ON DATABASE openctem TO rls_test_user;
 GRANT USAGE ON SCHEMA public TO rls_test_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO rls_test_user;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO rls_test_user;
@@ -129,7 +129,7 @@ LIMIT 1 \gset test_
 \echo '=============================================='
 \echo ''
 
-\c exploop rls_test_user
+\c openctem rls_test_user
 
 -- TEST 5: No tenant context
 \echo '>>> TEST 5: No Tenant Context (should return 0)'
@@ -252,4 +252,4 @@ $$;
 \echo '=============================================='
 
 -- Switch back to superuser
-\c exploop exploop
+\c openctem openctem

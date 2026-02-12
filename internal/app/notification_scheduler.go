@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/logger"
 	"github.com/google/uuid"
+	"github.com/openctemio/api/pkg/logger"
 )
 
 // NotificationSchedulerConfig holds configuration for the notification scheduler.

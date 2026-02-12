@@ -147,7 +147,15 @@ func (h *ThreatIntelHandler) SetSyncEnabled(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	status, _ := h.service.GetSyncStatus(ctx, source)
+	status, err := h.service.GetSyncStatus(ctx, source)
+	if err != nil {
+		if errors.Is(err, threatintel.ErrSyncStatusNotFound) {
+			apierror.NotFound("sync status").WriteJSON(w)
+			return
+		}
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(status))
 }
 

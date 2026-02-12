@@ -4,7 +4,7 @@ package routes
 // Platform Admin Routes
 // =============================================================================
 //
-// These routes are for Exploop platform administrators only.
+// These routes are for OpenCTEM platform administrators only.
 // They manage shared infrastructure that serves all tenants.
 //
 // All admin routes use API Key authentication via X-Admin-API-Key header.

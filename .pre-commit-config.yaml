@@ -1,7 +1,7 @@
 # =============================================================================
 # PRE-COMMIT HOOKS CONFIGURATION
 # =============================================================================
-# Security-focused pre-commit hooks for Rediver API
+# Security-focused pre-commit hooks for OpenCTEM API
 # Install: make pre-commit-install
 # Run manually: make pre-commit-run
 # Docs: https://pre-commit.com/

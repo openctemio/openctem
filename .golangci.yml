@@ -139,12 +139,12 @@ linters-settings:
     errorf: false
 
   goimports:
-    local-prefixes: github.com/exploopio/exploop
+    local-prefixes: github.com/openctemio/openctem
 
   misspell:
     locale: US
     ignore-words:
-      - exploop
+      - openctem
       - cancelled
 
   prealloc:

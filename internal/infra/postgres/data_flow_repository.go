@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lib/pq"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/pagination"
-	"github.com/lib/pq"
 )
 
 // DataFlowRepository implements vulnerability.DataFlowRepository using PostgreSQL.

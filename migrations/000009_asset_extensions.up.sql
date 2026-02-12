@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS asset_services (
     asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
     port INTEGER NOT NULL,
     protocol VARCHAR(10) NOT NULL DEFAULT 'tcp',
-    service_name VARCHAR(100),
+    name VARCHAR(100),
     service_type VARCHAR(50) NOT NULL DEFAULT 'other',
     product VARCHAR(255),
     version VARCHAR(100),
@@ -101,8 +101,7 @@ CREATE TABLE IF NOT EXISTS asset_services (
     -- Discovery
     discovery_source VARCHAR(100),
     discovered_at TIMESTAMPTZ DEFAULT NOW(),
-    first_seen TIMESTAMPTZ DEFAULT NOW(),
-    last_seen TIMESTAMPTZ DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ DEFAULT NOW(),
 
     -- Risk
     finding_count INTEGER DEFAULT 0,
@@ -152,11 +151,13 @@ CREATE TABLE IF NOT EXISTS asset_state_history (
 
     -- Context
     reason TEXT,
+    metadata JSONB DEFAULT '{}',
     source VARCHAR(50),  -- scan, manual, integration, system
 
     -- Audit
     changed_by UUID REFERENCES users(id) ON DELETE SET NULL,
     changed_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT chk_change_type CHECK (change_type IN (
         'appeared', 'disappeared', 'recovered',
@@ -202,7 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_asset_services_state ON asset_services(state);
 CREATE INDEX IF NOT EXISTS idx_asset_services_type ON asset_services(service_type);
 CREATE INDEX IF NOT EXISTS idx_asset_services_product ON asset_services(product) WHERE product IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_asset_services_public ON asset_services(tenant_id) WHERE is_public = true;
-CREATE INDEX IF NOT EXISTS idx_asset_services_last_seen ON asset_services(last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_asset_services_last_seen ON asset_services(last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_asset_services_risk ON asset_services(risk_score DESC) WHERE risk_score > 0;
 CREATE INDEX IF NOT EXISTS idx_asset_services_tenant_type ON asset_services(tenant_id, service_type);
 CREATE INDEX IF NOT EXISTS idx_asset_services_active_public ON asset_services(tenant_id, asset_id)

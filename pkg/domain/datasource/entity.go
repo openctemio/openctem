@@ -26,7 +26,7 @@ type DataSource struct {
 
 	// Authentication (for push sources)
 	apiKeyHash   string // Hashed API key
-	apiKeyPrefix string // First 12 chars for identification (e.g., "rs_live_xxxx")
+	apiKeyPrefix string // First 12 chars for identification (e.g., "oc_live_xxxx")
 
 	// Status tracking
 	status           SourceStatus

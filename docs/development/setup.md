@@ -12,8 +12,8 @@
 
 ```bash
 # 1. Clone
-git clone https://github.com/exploopio.exploop.git
-cd.exploop
+git clone https://github.com/openctemio/openctem.git
+cd openctem
 
 # 2. Setup env
 cp .env.example .env
@@ -27,8 +27,8 @@ make docker-dev
 
 ```bash
 # 1. Clone
-git clone https://github.com/exploopio.exploop.git
-cd.exploop
+git clone https://github.com/openctemio/openctem.git
+cd openctem
 
 # 2. Install tools
 make install-tools
@@ -73,7 +73,7 @@ Key variables (see `.env.example` for full list):
 
 ```env
 # Application
-APP_NAME.exploop
+APP_NAME=openctem
 APP_ENV=development
 APP_DEBUG=true
 
@@ -84,9 +84,9 @@ SERVER_PORT=8080
 # Database
 DB_HOST=localhost
 DB_PORT=5432
-DB_USER.exploop
+DB_USER=openctem
 DB_PASSWORD=secret
-DB_NAME.exploop
+DB_NAME=openctem
 DB_SSLMODE=disable
 
 # Redis
@@ -150,7 +150,7 @@ make proto            # Generate protobuf (if using gRPC)
 This project uses a Go workspace for local development with shared SDK:
 
 ```
-exploopio/
+openctemio/
 ├── go.work          # Go workspace file
 ├── api/             # API service (this repo)
 ├── sdk/             # Shared SDK module
@@ -226,7 +226,7 @@ Recommended settings (`.vscode/settings.json`):
 ## Project Structure
 
 ```
-exploop/
+openctem/
 ├── cmd/server/          # Entry point
 ├── internal/
 │   ├── domain/          # Business logic (entities, interfaces)
@@ -317,7 +317,7 @@ Ensure Air is configured with polling (for Docker on macOS/Windows):
 
 1. Check if PostgreSQL is running: `docker compose ps`
 2. Verify environment variables match docker-compose
-3. Try connecting directly: `psql -h localhost -U.exploop -d.exploop`
+3. Try connecting directly: `psql -h localhost -U openctem -d openctem`
 
 ### Linter errors
 

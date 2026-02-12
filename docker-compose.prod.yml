@@ -34,7 +34,7 @@ services:
   # ---------------------------------------------------------------------------
   app:
     # Pull from Docker Hub by default, build locally if --build flag is used
-    image: exploopio/api:${API_VERSION:-latest}
+    image: openctemio/api:${API_VERSION:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -44,7 +44,7 @@ services:
       - "9090:9090" # gRPC
     environment:
       # Application
-      APP_NAME: exploop
+      APP_NAME: openctem
       APP_ENV: production
       APP_DEBUG: "false"
       # Server
@@ -55,9 +55,9 @@ services:
       # Database
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: ${DB_USER:-exploop}
+      DB_USER: ${DB_USER:-openctem}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-      DB_NAME: ${DB_NAME:-exploop}
+      DB_NAME: ${DB_NAME:-openctem}
       DB_SSLMODE: ${DB_SSLMODE:-require}
       DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-50}
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-10}
@@ -109,8 +109,8 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-noreply@exploop.io}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Rediver}
+      SMTP_FROM: ${SMTP_FROM:-noreply@openctem.io}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-OpenCTEM}
       SMTP_TLS: ${SMTP_TLS:-true}
       SMTP_BASE_URL: ${SMTP_BASE_URL:-}
     healthcheck:
@@ -156,9 +156,9 @@ services:
     expose:
       - "5432"
     environment:
-      POSTGRES_USER: ${DB_USER:-exploop}
+      POSTGRES_USER: ${DB_USER:-openctem}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-      POSTGRES_DB: ${DB_NAME:-exploop}
+      POSTGRES_DB: ${DB_NAME:-openctem}
     restart: always
     security_opt:
       - no-new-privileges:true

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/sdk/pkg/shared/fingerprint"
-	"github.com/openctemio/sdk/pkg/shared/severity"
+	"github.com/openctemio/sdk-go/pkg/shared/fingerprint"
+	"github.com/openctemio/sdk-go/pkg/shared/severity"
 
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -16,7 +16,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // FindingCreatedCallback is called when findings are created during ingestion.
@@ -65,7 +65,7 @@ func (p *FindingProcessor) ProcessBatch(
 	ctx context.Context,
 	agt *agent.Agent,
 	tenantID shared.ID,
-	report *eis.Report,
+	report *ctis.Report,
 	assetMap map[string]shared.ID,
 	tenantRules branch.BranchTypeRules,
 	output *Output,
@@ -81,7 +81,7 @@ func (p *FindingProcessor) ProcessBatch(
 	// Step 1: Pre-process findings to collect fingerprints
 	type findingMeta struct {
 		index       int
-		finding     eis.Finding
+		finding     ctis.Finding
 		assetID     shared.ID
 		branchID    *shared.ID // FK to asset_branches
 		fingerprint string
@@ -125,17 +125,17 @@ func (p *FindingProcessor) ProcessBatch(
 		p.logger.Warn("asset map is empty - all findings will be skipped")
 	}
 
-	for i, eisFinding := range report.Findings {
+	for i, ctisFinding := range report.Findings {
 		// Determine target asset
 		var targetAssetID shared.ID
-		if eisFinding.AssetRef != "" {
+		if ctisFinding.AssetRef != "" {
 			// Try to find by asset reference
-			if id, ok := assetMap[eisFinding.AssetRef]; ok {
+			if id, ok := assetMap[ctisFinding.AssetRef]; ok {
 				targetAssetID = id
 			} else {
 				p.logger.Debug("finding AssetRef not found in assetMap",
 					"finding_index", i,
-					"asset_ref", eisFinding.AssetRef,
+					"asset_ref", ctisFinding.AssetRef,
 				)
 			}
 		}
@@ -147,7 +147,7 @@ func (p *FindingProcessor) ProcessBatch(
 		if targetAssetID.IsZero() {
 			p.logger.Warn("finding skipped: no target asset",
 				"finding_index", i,
-				"asset_ref", eisFinding.AssetRef,
+				"asset_ref", ctisFinding.AssetRef,
 				"default_asset_available", !defaultAssetID.IsZero(),
 				"asset_map_size", len(assetMap),
 			)
@@ -157,7 +157,7 @@ func (p *FindingProcessor) ProcessBatch(
 		}
 
 		// Generate fingerprint
-		fp := generateFindingFingerprint(targetAssetID, &eisFinding, report.Tool)
+		fp := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
 
 		// Get branch ID for this asset (if available)
 		var branchID *shared.ID
@@ -167,7 +167,7 @@ func (p *FindingProcessor) ProcessBatch(
 
 		validFindings = append(validFindings, findingMeta{
 			index:       i,
-			finding:     eisFinding,
+			finding:     ctisFinding,
 			assetID:     targetAssetID,
 			branchID:    branchID,
 			fingerprint: fp,
@@ -361,33 +361,33 @@ func (p *FindingProcessor) CheckFingerprints(
 	return existing, missing, nil
 }
 
-// generateFindingFingerprint generates a fingerprint for a EIS finding.
+// generateFindingFingerprint generates a fingerprint for a CTIS finding.
 // The fingerprint includes assetID to ensure findings are unique per-asset.
 // This prevents the same vulnerability on different assets from being deduplicated incorrectly.
-func generateFindingFingerprint(assetID shared.ID, eisFinding *eis.Finding, tool *eis.Tool) string {
+func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, tool *ctis.Tool) string {
 	// Generate base fingerprint
 	var baseFingerprint string
 
-	if eisFinding.Fingerprint != "" && isValidFingerprint(eisFinding.Fingerprint) {
+	if ctisFinding.Fingerprint != "" && isValidFingerprint(ctisFinding.Fingerprint) {
 		// Use provided fingerprint as base (only if valid hash-like string)
-		baseFingerprint = eisFinding.Fingerprint
+		baseFingerprint = ctisFinding.Fingerprint
 	} else {
 		// Generate using SDK fingerprint package
 		input := fingerprint.Input{
-			RuleID:  eisFinding.RuleID,
-			Message: eisFinding.Title,
+			RuleID:  ctisFinding.RuleID,
+			Message: ctisFinding.Title,
 		}
 
 		// Set location if available
-		if eisFinding.Location != nil {
-			input.FilePath = eisFinding.Location.Path
-			input.StartLine = eisFinding.Location.StartLine
-			input.EndLine = eisFinding.Location.EndLine
+		if ctisFinding.Location != nil {
+			input.FilePath = ctisFinding.Location.Path
+			input.StartLine = ctisFinding.Location.StartLine
+			input.EndLine = ctisFinding.Location.EndLine
 		}
 
 		// Add CVE for SCA findings
-		if eisFinding.Vulnerability != nil && eisFinding.Vulnerability.CVEID != "" {
-			input.VulnerabilityID = eisFinding.Vulnerability.CVEID
+		if ctisFinding.Vulnerability != nil && ctisFinding.Vulnerability.CVEID != "" {
+			input.VulnerabilityID = ctisFinding.Vulnerability.CVEID
 		}
 
 		baseFingerprint = fingerprint.Generate(input)
@@ -398,21 +398,21 @@ func generateFindingFingerprint(assetID shared.ID, eisFinding *eis.Finding, tool
 	return createCompositeFingerprint(assetID.String(), baseFingerprint)
 }
 
-// buildFinding creates a Finding domain entity from a EIS finding.
+// buildFinding creates a Finding domain entity from a CTIS finding.
 func (p *FindingProcessor) buildFinding(
 	ctx context.Context,
 	tenantID shared.ID,
 	assetID shared.ID,
 	branchID *shared.ID,
 	agentID shared.ID,
-	report *eis.Report,
-	eisFinding *eis.Finding,
+	report *ctis.Report,
+	ctisFinding *ctis.Finding,
 	fp string,
 ) (*vulnerability.Finding, error) {
 	// Map severity
 	sev := vulnerability.SeverityMedium
-	if eisFinding.Severity != "" {
-		parsed := severity.FromString(string(eisFinding.Severity))
+	if ctisFinding.Severity != "" {
+		parsed := severity.FromString(string(ctisFinding.Severity))
 		sev = mapSDKSeverity(parsed)
 	}
 
@@ -428,11 +428,11 @@ func (p *FindingProcessor) buildFinding(
 
 	// Determine message: prefer Message field, fallback to Description, then Title
 	// Message is the primary human-readable text displayed for the finding
-	message := eisFinding.Title
-	if eisFinding.Message != "" {
-		message = eisFinding.Message
-	} else if eisFinding.Description != "" {
-		message = eisFinding.Description
+	message := ctisFinding.Title
+	if ctisFinding.Message != "" {
+		message = ctisFinding.Message
+	} else if ctisFinding.Description != "" {
+		message = ctisFinding.Description
 	}
 
 	// Create finding with proper message
@@ -460,75 +460,75 @@ func (p *FindingProcessor) buildFinding(
 	}
 
 	// Set basic fields
-	p.setFindingBasicFields(f, eisFinding)
+	p.setFindingBasicFields(f, ctisFinding)
 
 	// Set location and branch info
-	p.setFindingLocationFields(f, eisFinding, report)
+	p.setFindingLocationFields(f, ctisFinding, report)
 
 	// Set classification (CVE/CWE/OWASP/CVSS)
-	p.setFindingClassification(f, eisFinding)
+	p.setFindingClassification(f, ctisFinding)
 
 	// Set tags
-	if len(eisFinding.Tags) > 0 {
-		f.SetTags(eisFinding.Tags)
+	if len(ctisFinding.Tags) > 0 {
+		f.SetTags(ctisFinding.Tags)
 	}
 
 	// Set SARIF 2.1.0 fields
-	p.setFindingSARIFFields(f, eisFinding)
+	p.setFindingSARIFFields(f, ctisFinding)
 
 	// Set CTEM fields (exposure, remediation, business impact)
-	p.setFindingCTEMFields(f, eisFinding)
+	p.setFindingCTEMFields(f, ctisFinding)
 
 	// Set finding type and specialized fields
-	p.setFindingTypeAndSpecializedFields(f, eisFinding)
+	p.setFindingTypeAndSpecializedFields(f, ctisFinding)
 
 	// Link to component via PURL (for SCA findings)
-	p.linkFindingToComponent(ctx, f, eisFinding)
+	p.linkFindingToComponent(ctx, f, ctisFinding)
 
 	return f, nil
 }
 
 // setFindingBasicFields sets basic fields like rule ID, name, description, title.
-func (p *FindingProcessor) setFindingBasicFields(f *vulnerability.Finding, eisFinding *eis.Finding) {
-	if eisFinding.RuleID != "" {
-		f.SetRuleID(eisFinding.RuleID)
+func (p *FindingProcessor) setFindingBasicFields(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	if ctisFinding.RuleID != "" {
+		f.SetRuleID(ctisFinding.RuleID)
 	}
-	if eisFinding.RuleName != "" {
-		f.SetRuleName(eisFinding.RuleName)
+	if ctisFinding.RuleName != "" {
+		f.SetRuleName(ctisFinding.RuleName)
 	}
-	if eisFinding.Description != "" {
-		f.SetDescription(eisFinding.Description)
+	if ctisFinding.Description != "" {
+		f.SetDescription(ctisFinding.Description)
 	}
-	if eisFinding.Remediation != nil {
+	if ctisFinding.Remediation != nil {
 		// Set legacy fields for backward compatibility
-		if eisFinding.Remediation.Recommendation != "" {
-			f.SetRecommendation(eisFinding.Remediation.Recommendation)
+		if ctisFinding.Remediation.Recommendation != "" {
+			f.SetRecommendation(ctisFinding.Remediation.Recommendation)
 		}
 		// Set auto-fix code (from Semgrep native JSON)
-		if eisFinding.Remediation.FixCode != "" {
-			f.SetFixCode(eisFinding.Remediation.FixCode)
+		if ctisFinding.Remediation.FixCode != "" {
+			f.SetFixCode(ctisFinding.Remediation.FixCode)
 		}
 		// Set fix regex pattern (from Semgrep native JSON)
 		var fixRegex *vulnerability.FixRegex
-		if eisFinding.Remediation.FixRegex != nil {
+		if ctisFinding.Remediation.FixRegex != nil {
 			fixRegex = &vulnerability.FixRegex{
-				Regex:       eisFinding.Remediation.FixRegex.Regex,
-				Replacement: eisFinding.Remediation.FixRegex.Replacement,
-				Count:       eisFinding.Remediation.FixRegex.Count,
+				Regex:       ctisFinding.Remediation.FixRegex.Regex,
+				Replacement: ctisFinding.Remediation.FixRegex.Replacement,
+				Count:       ctisFinding.Remediation.FixRegex.Count,
 			}
 			f.SetFixRegex(fixRegex)
 		}
 
 		// Create consolidated remediation JSONB object
 		remediation := &vulnerability.FindingRemediation{
-			Recommendation: eisFinding.Remediation.Recommendation,
-			FixCode:        eisFinding.Remediation.FixCode,
+			Recommendation: ctisFinding.Remediation.Recommendation,
+			FixCode:        ctisFinding.Remediation.FixCode,
 			FixRegex:       fixRegex,
-			Steps:          eisFinding.Remediation.Steps,
-			References:     eisFinding.Remediation.References,
-			Effort:         eisFinding.Remediation.Effort,
-			FixAvailable:   eisFinding.Remediation.FixCode != "" || fixRegex != nil,
-			AutoFixable:    eisFinding.Remediation.FixCode != "" || fixRegex != nil,
+			Steps:          ctisFinding.Remediation.Steps,
+			References:     ctisFinding.Remediation.References,
+			Effort:         ctisFinding.Remediation.Effort,
+			FixAvailable:   ctisFinding.Remediation.FixCode != "" || fixRegex != nil,
+			AutoFixable:    ctisFinding.Remediation.FixCode != "" || fixRegex != nil,
 		}
 		if !remediation.IsEmpty() {
 			f.SetRemediation(remediation)
@@ -536,73 +536,73 @@ func (p *FindingProcessor) setFindingBasicFields(f *vulnerability.Finding, eisFi
 	}
 
 	// Set title: prefer RuleName (short identifier) over full Title
-	if eisFinding.RuleName != "" {
-		f.SetTitle(eisFinding.RuleName)
-	} else if eisFinding.Title != "" {
-		f.SetTitle(eisFinding.Title)
+	if ctisFinding.RuleName != "" {
+		f.SetTitle(ctisFinding.RuleName)
+	} else if ctisFinding.Title != "" {
+		f.SetTitle(ctisFinding.Title)
 	}
 }
 
 // setFindingLocationFields sets location and branch info.
-func (p *FindingProcessor) setFindingLocationFields(f *vulnerability.Finding, eisFinding *eis.Finding, report *eis.Report) {
+func (p *FindingProcessor) setFindingLocationFields(f *vulnerability.Finding, ctisFinding *ctis.Finding, report *ctis.Report) {
 	// Set location
-	if eisFinding.Location != nil && eisFinding.Location.Path != "" {
+	if ctisFinding.Location != nil && ctisFinding.Location.Path != "" {
 		f.SetLocation(
-			eisFinding.Location.Path,
-			eisFinding.Location.StartLine,
-			eisFinding.Location.EndLine,
-			eisFinding.Location.StartColumn,
-			eisFinding.Location.EndColumn,
+			ctisFinding.Location.Path,
+			ctisFinding.Location.StartLine,
+			ctisFinding.Location.EndLine,
+			ctisFinding.Location.StartColumn,
+			ctisFinding.Location.EndColumn,
 		)
-		if eisFinding.Location.Snippet != "" {
-			f.SetSnippet(eisFinding.Location.Snippet)
+		if ctisFinding.Location.Snippet != "" {
+			f.SetSnippet(ctisFinding.Location.Snippet)
 		}
 		// Set context snippet for better code understanding
-		if eisFinding.Location.ContextSnippet != "" {
-			f.SetContextSnippet(eisFinding.Location.ContextSnippet)
-			f.SetContextStartLine(eisFinding.Location.ContextStartLine)
+		if ctisFinding.Location.ContextSnippet != "" {
+			f.SetContextSnippet(ctisFinding.Location.ContextSnippet)
+			f.SetContextStartLine(ctisFinding.Location.ContextStartLine)
 		}
 	}
 
 	// Set branch info from report metadata or finding location
 	if report.Metadata.Branch != nil {
 		f.SetBranchInfo(report.Metadata.Branch.Name, report.Metadata.Branch.CommitSHA)
-	} else if eisFinding.Location != nil && eisFinding.Location.Branch != "" {
-		f.SetFirstDetectedBranch(eisFinding.Location.Branch)
-		f.SetLastSeenBranch(eisFinding.Location.Branch)
-		if eisFinding.Location.CommitSHA != "" {
-			f.SetFirstDetectedCommit(eisFinding.Location.CommitSHA)
-			f.SetLastSeenCommit(eisFinding.Location.CommitSHA)
+	} else if ctisFinding.Location != nil && ctisFinding.Location.Branch != "" {
+		f.SetFirstDetectedBranch(ctisFinding.Location.Branch)
+		f.SetLastSeenBranch(ctisFinding.Location.Branch)
+		if ctisFinding.Location.CommitSHA != "" {
+			f.SetFirstDetectedCommit(ctisFinding.Location.CommitSHA)
+			f.SetLastSeenCommit(ctisFinding.Location.CommitSHA)
 		}
 	}
 }
 
 // setFindingClassification sets CVE/CWE/OWASP/CVSS classification.
-func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, eisFinding *eis.Finding) {
-	if eisFinding.Vulnerability == nil {
+func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	if ctisFinding.Vulnerability == nil {
 		return
 	}
 
-	cveID := eisFinding.Vulnerability.CVEID
+	cveID := ctisFinding.Vulnerability.CVEID
 	var cvssScore *float64
-	if eisFinding.Vulnerability.CVSSScore > 0 {
-		score := eisFinding.Vulnerability.CVSSScore
+	if ctisFinding.Vulnerability.CVSSScore > 0 {
+		score := ctisFinding.Vulnerability.CVSSScore
 		cvssScore = &score
 	}
-	cvssVector := eisFinding.Vulnerability.CVSSVector
+	cvssVector := ctisFinding.Vulnerability.CVSSVector
 
 	// Collect CWE IDs
 	var cweIDs []string
-	if len(eisFinding.Vulnerability.CWEIDs) > 0 {
-		cweIDs = eisFinding.Vulnerability.CWEIDs
-	} else if eisFinding.Vulnerability.CWEID != "" {
-		cweIDs = []string{eisFinding.Vulnerability.CWEID}
+	if len(ctisFinding.Vulnerability.CWEIDs) > 0 {
+		cweIDs = ctisFinding.Vulnerability.CWEIDs
+	} else if ctisFinding.Vulnerability.CWEID != "" {
+		cweIDs = []string{ctisFinding.Vulnerability.CWEID}
 	}
 
 	// Collect OWASP IDs
 	var owaspIDs []string
-	if len(eisFinding.Vulnerability.OWASPIDs) > 0 {
-		owaspIDs = eisFinding.Vulnerability.OWASPIDs
+	if len(ctisFinding.Vulnerability.OWASPIDs) > 0 {
+		owaspIDs = ctisFinding.Vulnerability.OWASPIDs
 	}
 
 	if cveID != "" || cvssScore != nil || len(cweIDs) > 0 || len(owaspIDs) > 0 {
@@ -612,8 +612,8 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ei
 	}
 
 	// Set ASVS (Application Security Verification Standard) compliance info
-	if eisFinding.Vulnerability.ASVS != nil {
-		asvs := eisFinding.Vulnerability.ASVS
+	if ctisFinding.Vulnerability.ASVS != nil {
+		asvs := ctisFinding.Vulnerability.ASVS
 		if asvs.Section != "" {
 			f.SetASVSSection(asvs.Section)
 		}
@@ -631,36 +631,36 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ei
 }
 
 // setFindingTypeAndSpecializedFields sets the finding type discriminator and specialized fields.
-func (p *FindingProcessor) setFindingTypeAndSpecializedFields(f *vulnerability.Finding, eisFinding *eis.Finding) {
-	// Determine finding type from EIS type or source
-	findingType := p.inferFindingType(f.Source(), eisFinding)
+func (p *FindingProcessor) setFindingTypeAndSpecializedFields(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	// Determine finding type from CTIS type or source
+	findingType := p.inferFindingType(f.Source(), ctisFinding)
 	f.SetFindingType(findingType)
 
 	// Set specialized fields based on finding type
 	switch findingType {
 	case vulnerability.FindingTypeSecret:
-		p.setSecretFields(f, eisFinding)
+		p.setSecretFields(f, ctisFinding)
 	case vulnerability.FindingTypeCompliance:
-		p.setComplianceFields(f, eisFinding)
+		p.setComplianceFields(f, ctisFinding)
 	case vulnerability.FindingTypeWeb3:
-		p.setWeb3Fields(f, eisFinding)
+		p.setWeb3Fields(f, ctisFinding)
 	case vulnerability.FindingTypeMisconfiguration:
-		p.setMisconfigFields(f, eisFinding)
+		p.setMisconfigFields(f, ctisFinding)
 	}
 }
 
-// inferFindingType determines the FindingType based on source and EIS finding data.
-func (p *FindingProcessor) inferFindingType(source vulnerability.FindingSource, eisFinding *eis.Finding) vulnerability.FindingType {
-	// First, check if EIS finding has explicit type
-	if eisFinding.Type != "" {
-		switch eisFinding.Type {
-		case eis.FindingTypeVulnerability:
+// inferFindingType determines the FindingType based on source and CTIS finding data.
+func (p *FindingProcessor) inferFindingType(source vulnerability.FindingSource, ctisFinding *ctis.Finding) vulnerability.FindingType {
+	// First, check if CTIS finding has explicit type
+	if ctisFinding.Type != "" {
+		switch ctisFinding.Type {
+		case ctis.FindingTypeVulnerability:
 			return vulnerability.FindingTypeVulnerability
-		case eis.FindingTypeSecret:
+		case ctis.FindingTypeSecret:
 			return vulnerability.FindingTypeSecret
-		case eis.FindingTypeMisconfiguration:
+		case ctis.FindingTypeMisconfiguration:
 			return vulnerability.FindingTypeMisconfiguration
-		case eis.FindingTypeCompliance:
+		case ctis.FindingTypeCompliance:
 			return vulnerability.FindingTypeCompliance
 		}
 	}
@@ -674,17 +674,17 @@ func (p *FindingProcessor) inferFindingType(source vulnerability.FindingSource, 
 	}
 
 	// Check for compliance finding (has compliance details)
-	if eisFinding.Compliance != nil && eisFinding.Compliance.Framework != "" {
+	if ctisFinding.Compliance != nil && ctisFinding.Compliance.Framework != "" {
 		return vulnerability.FindingTypeCompliance
 	}
 
 	// Check for Web3 finding
-	if eisFinding.Web3 != nil && (eisFinding.Web3.Chain != "" || eisFinding.Web3.SWCID != "") {
+	if ctisFinding.Web3 != nil && (ctisFinding.Web3.Chain != "" || ctisFinding.Web3.SWCID != "") {
 		return vulnerability.FindingTypeWeb3
 	}
 
 	// Check for misconfiguration finding
-	if eisFinding.Misconfiguration != nil && eisFinding.Misconfiguration.PolicyID != "" {
+	if ctisFinding.Misconfiguration != nil && ctisFinding.Misconfiguration.PolicyID != "" {
 		return vulnerability.FindingTypeMisconfiguration
 	}
 
@@ -693,266 +693,266 @@ func (p *FindingProcessor) inferFindingType(source vulnerability.FindingSource, 
 }
 
 // setSecretFields sets secret-specific fields on a finding.
-func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, eisFinding *eis.Finding) {
-	if eisFinding.Secret == nil {
+func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	if ctisFinding.Secret == nil {
 		return
 	}
 
-	if eisFinding.Secret.SecretType != "" {
-		f.SetSecretType(eisFinding.Secret.SecretType)
+	if ctisFinding.Secret.SecretType != "" {
+		f.SetSecretType(ctisFinding.Secret.SecretType)
 	}
-	if eisFinding.Secret.Service != "" {
-		f.SetSecretService(eisFinding.Secret.Service)
+	if ctisFinding.Secret.Service != "" {
+		f.SetSecretService(ctisFinding.Secret.Service)
 	}
-	if eisFinding.Secret.Valid != nil {
-		f.SetSecretValid(eisFinding.Secret.Valid)
+	if ctisFinding.Secret.Valid != nil {
+		f.SetSecretValid(ctisFinding.Secret.Valid)
 	}
-	if eisFinding.Secret.Revoked {
+	if ctisFinding.Secret.Revoked {
 		revoked := true
 		f.SetSecretRevoked(&revoked)
 	}
-	if eisFinding.Secret.Entropy > 0 {
-		entropy := eisFinding.Secret.Entropy
+	if ctisFinding.Secret.Entropy > 0 {
+		entropy := ctisFinding.Secret.Entropy
 		f.SetSecretEntropy(&entropy)
 	}
 	// Extended secret fields
-	if eisFinding.Secret.ExpiresAt != nil {
-		f.SetSecretExpiresAt(eisFinding.Secret.ExpiresAt)
+	if ctisFinding.Secret.ExpiresAt != nil {
+		f.SetSecretExpiresAt(ctisFinding.Secret.ExpiresAt)
 	}
-	if eisFinding.Secret.VerifiedAt != nil {
-		f.SetSecretVerifiedAt(eisFinding.Secret.VerifiedAt)
+	if ctisFinding.Secret.VerifiedAt != nil {
+		f.SetSecretVerifiedAt(ctisFinding.Secret.VerifiedAt)
 	}
-	if eisFinding.Secret.RotationDueAt != nil {
-		f.SetSecretRotationDueAt(eisFinding.Secret.RotationDueAt)
+	if ctisFinding.Secret.RotationDueAt != nil {
+		f.SetSecretRotationDueAt(ctisFinding.Secret.RotationDueAt)
 	}
-	if eisFinding.Secret.AgeInDays > 0 {
-		f.SetSecretAgeInDays(eisFinding.Secret.AgeInDays)
+	if ctisFinding.Secret.AgeInDays > 0 {
+		f.SetSecretAgeInDays(ctisFinding.Secret.AgeInDays)
 	}
-	if len(eisFinding.Secret.Scopes) > 0 {
-		f.SetSecretScopes(eisFinding.Secret.Scopes)
+	if len(ctisFinding.Secret.Scopes) > 0 {
+		f.SetSecretScopes(ctisFinding.Secret.Scopes)
 	}
-	if eisFinding.Secret.MaskedValue != "" {
-		f.SetSecretMaskedValue(eisFinding.Secret.MaskedValue)
+	if ctisFinding.Secret.MaskedValue != "" {
+		f.SetSecretMaskedValue(ctisFinding.Secret.MaskedValue)
 	}
-	if eisFinding.Secret.InHistoryOnly {
+	if ctisFinding.Secret.InHistoryOnly {
 		f.SetSecretInHistoryOnly(true)
 	}
-	if eisFinding.Secret.CommitCount > 0 {
-		f.SetSecretCommitCount(eisFinding.Secret.CommitCount)
+	if ctisFinding.Secret.CommitCount > 0 {
+		f.SetSecretCommitCount(ctisFinding.Secret.CommitCount)
 	}
 }
 
 // setComplianceFields sets compliance-specific fields on a finding.
-func (p *FindingProcessor) setComplianceFields(f *vulnerability.Finding, eisFinding *eis.Finding) {
-	if eisFinding.Compliance == nil {
+func (p *FindingProcessor) setComplianceFields(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	if ctisFinding.Compliance == nil {
 		return
 	}
 
-	if eisFinding.Compliance.Framework != "" {
-		f.SetComplianceFramework(eisFinding.Compliance.Framework)
+	if ctisFinding.Compliance.Framework != "" {
+		f.SetComplianceFramework(ctisFinding.Compliance.Framework)
 	}
-	if eisFinding.Compliance.FrameworkVersion != "" {
-		f.SetComplianceFrameworkVersion(eisFinding.Compliance.FrameworkVersion)
+	if ctisFinding.Compliance.FrameworkVersion != "" {
+		f.SetComplianceFrameworkVersion(ctisFinding.Compliance.FrameworkVersion)
 	}
-	if eisFinding.Compliance.ControlID != "" {
-		f.SetComplianceControlID(eisFinding.Compliance.ControlID)
+	if ctisFinding.Compliance.ControlID != "" {
+		f.SetComplianceControlID(ctisFinding.Compliance.ControlID)
 	}
-	if eisFinding.Compliance.ControlName != "" {
-		f.SetComplianceControlName(eisFinding.Compliance.ControlName)
+	if ctisFinding.Compliance.ControlName != "" {
+		f.SetComplianceControlName(ctisFinding.Compliance.ControlName)
 	}
-	if eisFinding.Compliance.ControlDescription != "" {
-		f.SetComplianceControlDescription(eisFinding.Compliance.ControlDescription)
+	if ctisFinding.Compliance.ControlDescription != "" {
+		f.SetComplianceControlDescription(ctisFinding.Compliance.ControlDescription)
 	}
-	if eisFinding.Compliance.Result != "" {
-		f.SetComplianceResult(eisFinding.Compliance.Result)
+	if ctisFinding.Compliance.Result != "" {
+		f.SetComplianceResult(ctisFinding.Compliance.Result)
 	}
 }
 
 // setWeb3Fields sets Web3-specific fields on a finding.
-func (p *FindingProcessor) setWeb3Fields(f *vulnerability.Finding, eisFinding *eis.Finding) {
-	if eisFinding.Web3 == nil {
+func (p *FindingProcessor) setWeb3Fields(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	if ctisFinding.Web3 == nil {
 		return
 	}
 
-	if eisFinding.Web3.Chain != "" {
-		f.SetWeb3Chain(eisFinding.Web3.Chain)
+	if ctisFinding.Web3.Chain != "" {
+		f.SetWeb3Chain(ctisFinding.Web3.Chain)
 	}
-	if eisFinding.Web3.ChainID > 0 {
-		f.SetWeb3ChainID(eisFinding.Web3.ChainID)
+	if ctisFinding.Web3.ChainID > 0 {
+		f.SetWeb3ChainID(ctisFinding.Web3.ChainID)
 	}
-	if eisFinding.Web3.ContractAddress != "" {
-		f.SetWeb3ContractAddress(eisFinding.Web3.ContractAddress)
+	if ctisFinding.Web3.ContractAddress != "" {
+		f.SetWeb3ContractAddress(ctisFinding.Web3.ContractAddress)
 	}
-	if eisFinding.Web3.SWCID != "" {
-		f.SetWeb3SWCID(eisFinding.Web3.SWCID)
+	if ctisFinding.Web3.SWCID != "" {
+		f.SetWeb3SWCID(ctisFinding.Web3.SWCID)
 	}
-	if eisFinding.Web3.FunctionSignature != "" {
-		f.SetWeb3FunctionSignature(eisFinding.Web3.FunctionSignature)
+	if ctisFinding.Web3.FunctionSignature != "" {
+		f.SetWeb3FunctionSignature(ctisFinding.Web3.FunctionSignature)
 	}
-	if eisFinding.Web3.FunctionSelector != "" {
-		f.SetWeb3FunctionSelector(eisFinding.Web3.FunctionSelector)
+	if ctisFinding.Web3.FunctionSelector != "" {
+		f.SetWeb3FunctionSelector(ctisFinding.Web3.FunctionSelector)
 	}
-	if eisFinding.Web3.BytecodeOffset > 0 {
-		f.SetWeb3BytecodeOffset(eisFinding.Web3.BytecodeOffset)
+	if ctisFinding.Web3.BytecodeOffset > 0 {
+		f.SetWeb3BytecodeOffset(ctisFinding.Web3.BytecodeOffset)
 	}
-	// RelatedTxHashes available in EIS but not mapped to domain yet
+	// RelatedTxHashes available in CTIS but not mapped to domain yet
 }
 
 // setMisconfigFields sets misconfiguration-specific fields on a finding.
-func (p *FindingProcessor) setMisconfigFields(f *vulnerability.Finding, eisFinding *eis.Finding) {
-	if eisFinding.Misconfiguration == nil {
+func (p *FindingProcessor) setMisconfigFields(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
+	if ctisFinding.Misconfiguration == nil {
 		return
 	}
 
-	if eisFinding.Misconfiguration.PolicyID != "" {
-		f.SetMisconfigPolicyID(eisFinding.Misconfiguration.PolicyID)
+	if ctisFinding.Misconfiguration.PolicyID != "" {
+		f.SetMisconfigPolicyID(ctisFinding.Misconfiguration.PolicyID)
 	}
-	if eisFinding.Misconfiguration.PolicyName != "" {
-		f.SetMisconfigPolicyName(eisFinding.Misconfiguration.PolicyName)
+	if ctisFinding.Misconfiguration.PolicyName != "" {
+		f.SetMisconfigPolicyName(ctisFinding.Misconfiguration.PolicyName)
 	}
-	if eisFinding.Misconfiguration.ResourceType != "" {
-		f.SetMisconfigResourceType(eisFinding.Misconfiguration.ResourceType)
+	if ctisFinding.Misconfiguration.ResourceType != "" {
+		f.SetMisconfigResourceType(ctisFinding.Misconfiguration.ResourceType)
 	}
-	if eisFinding.Misconfiguration.ResourceName != "" {
-		f.SetMisconfigResourceName(eisFinding.Misconfiguration.ResourceName)
+	if ctisFinding.Misconfiguration.ResourceName != "" {
+		f.SetMisconfigResourceName(ctisFinding.Misconfiguration.ResourceName)
 	}
-	// ResourcePath not available in EIS types, use Location path instead
-	if eisFinding.Location != nil && eisFinding.Location.Path != "" {
-		f.SetMisconfigResourcePath(eisFinding.Location.Path)
+	// ResourcePath not available in CTIS types, use Location path instead
+	if ctisFinding.Location != nil && ctisFinding.Location.Path != "" {
+		f.SetMisconfigResourcePath(ctisFinding.Location.Path)
 	}
-	if eisFinding.Misconfiguration.Expected != "" {
-		f.SetMisconfigExpected(eisFinding.Misconfiguration.Expected)
+	if ctisFinding.Misconfiguration.Expected != "" {
+		f.SetMisconfigExpected(ctisFinding.Misconfiguration.Expected)
 	}
-	if eisFinding.Misconfiguration.Actual != "" {
-		f.SetMisconfigActual(eisFinding.Misconfiguration.Actual)
+	if ctisFinding.Misconfiguration.Actual != "" {
+		f.SetMisconfigActual(ctisFinding.Misconfiguration.Actual)
 	}
-	if eisFinding.Misconfiguration.Cause != "" {
-		f.SetMisconfigCause(eisFinding.Misconfiguration.Cause)
+	if ctisFinding.Misconfiguration.Cause != "" {
+		f.SetMisconfigCause(ctisFinding.Misconfiguration.Cause)
 	}
 }
 
 // setFindingSARIFFields sets SARIF 2.1.0 extended fields on a finding.
-func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, eisFinding *eis.Finding) {
+func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
 	// Risk assessment fields
-	if eisFinding.Confidence > 0 {
-		confidence := eisFinding.Confidence
+	if ctisFinding.Confidence > 0 {
+		confidence := ctisFinding.Confidence
 		_ = f.SetConfidence(&confidence)
 	}
-	if eisFinding.Impact != "" {
+	if ctisFinding.Impact != "" {
 		// Normalize to lowercase (DB constraint requires lowercase: critical, high, medium, low)
-		f.SetImpact(strings.ToLower(eisFinding.Impact))
+		f.SetImpact(strings.ToLower(ctisFinding.Impact))
 	}
-	if eisFinding.Likelihood != "" {
+	if ctisFinding.Likelihood != "" {
 		// Normalize to lowercase (DB constraint requires lowercase: high, medium, low)
-		f.SetLikelihood(strings.ToLower(eisFinding.Likelihood))
+		f.SetLikelihood(strings.ToLower(ctisFinding.Likelihood))
 	}
-	if len(eisFinding.VulnerabilityClass) > 0 {
-		f.SetVulnerabilityClass(eisFinding.VulnerabilityClass)
+	if len(ctisFinding.VulnerabilityClass) > 0 {
+		f.SetVulnerabilityClass(ctisFinding.VulnerabilityClass)
 	}
-	if len(eisFinding.Subcategory) > 0 {
-		f.SetSubcategory(eisFinding.Subcategory)
+	if len(ctisFinding.Subcategory) > 0 {
+		f.SetSubcategory(ctisFinding.Subcategory)
 	}
 
 	// SARIF core fields
-	if eisFinding.BaselineState != "" {
-		f.SetBaselineState(eisFinding.BaselineState)
+	if ctisFinding.BaselineState != "" {
+		f.SetBaselineState(ctisFinding.BaselineState)
 	}
-	if eisFinding.Kind != "" {
-		f.SetKind(eisFinding.Kind)
+	if ctisFinding.Kind != "" {
+		f.SetKind(ctisFinding.Kind)
 	}
-	if eisFinding.Rank > 0 {
-		rank := eisFinding.Rank
+	if ctisFinding.Rank > 0 {
+		rank := ctisFinding.Rank
 		_ = f.SetRank(&rank)
 	}
-	if eisFinding.OccurrenceCount > 0 {
-		f.SetOccurrenceCount(eisFinding.OccurrenceCount)
+	if ctisFinding.OccurrenceCount > 0 {
+		f.SetOccurrenceCount(ctisFinding.OccurrenceCount)
 	}
-	if eisFinding.CorrelationID != "" {
-		f.SetCorrelationID(eisFinding.CorrelationID)
+	if ctisFinding.CorrelationID != "" {
+		f.SetCorrelationID(ctisFinding.CorrelationID)
 	}
 
 	// SARIF extended fields
-	if len(eisFinding.PartialFingerprints) > 0 {
-		f.SetPartialFingerprints(eisFinding.PartialFingerprints)
+	if len(ctisFinding.PartialFingerprints) > 0 {
+		f.SetPartialFingerprints(ctisFinding.PartialFingerprints)
 	}
-	if len(eisFinding.RelatedLocations) > 0 {
-		relLocs := make([]vulnerability.FindingLocation, 0, len(eisFinding.RelatedLocations))
-		for _, loc := range eisFinding.RelatedLocations {
-			relLocs = append(relLocs, mapEISLocationToDomain(loc))
+	if len(ctisFinding.RelatedLocations) > 0 {
+		relLocs := make([]vulnerability.FindingLocation, 0, len(ctisFinding.RelatedLocations))
+		for _, loc := range ctisFinding.RelatedLocations {
+			relLocs = append(relLocs, mapCTISLocationToDomain(loc))
 		}
 		f.SetRelatedLocations(relLocs)
 	}
-	if len(eisFinding.Stacks) > 0 {
-		stacks := make([]vulnerability.StackTrace, 0, len(eisFinding.Stacks))
-		for _, st := range eisFinding.Stacks {
-			stacks = append(stacks, mapEISStackTraceToDomain(st))
+	if len(ctisFinding.Stacks) > 0 {
+		stacks := make([]vulnerability.StackTrace, 0, len(ctisFinding.Stacks))
+		for _, st := range ctisFinding.Stacks {
+			stacks = append(stacks, mapCTISStackTraceToDomain(st))
 		}
 		f.SetStacks(stacks)
 	}
-	if len(eisFinding.Attachments) > 0 {
-		atts := make([]vulnerability.Attachment, 0, len(eisFinding.Attachments))
-		for _, att := range eisFinding.Attachments {
-			atts = append(atts, mapEISAttachmentToDomain(att))
+	if len(ctisFinding.Attachments) > 0 {
+		atts := make([]vulnerability.Attachment, 0, len(ctisFinding.Attachments))
+		for _, att := range ctisFinding.Attachments {
+			atts = append(atts, mapCTISAttachmentToDomain(att))
 		}
 		f.SetAttachments(atts)
 	}
-	if len(eisFinding.WorkItemURIs) > 0 {
-		f.SetWorkItemURIs(eisFinding.WorkItemURIs)
+	if len(ctisFinding.WorkItemURIs) > 0 {
+		f.SetWorkItemURIs(ctisFinding.WorkItemURIs)
 	}
-	if eisFinding.HostedViewerURI != "" {
-		f.SetHostedViewerURI(eisFinding.HostedViewerURI)
+	if ctisFinding.HostedViewerURI != "" {
+		f.SetHostedViewerURI(ctisFinding.HostedViewerURI)
 	}
 
 	// Data flow (taint tracking)
-	if eisFinding.DataFlow != nil {
-		domainFlow := mapEISDataFlowToDomain(eisFinding.DataFlow)
+	if ctisFinding.DataFlow != nil {
+		domainFlow := mapCTISDataFlowToDomain(ctisFinding.DataFlow)
 		f.SetDataFlows([]vulnerability.DataFlow{domainFlow})
 	}
 }
 
 // setFindingCTEMFields sets CTEM-related fields on a finding.
-func (p *FindingProcessor) setFindingCTEMFields(f *vulnerability.Finding, eisFinding *eis.Finding) {
+func (p *FindingProcessor) setFindingCTEMFields(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
 	// Exposure fields
-	if eisFinding.Exposure != nil {
-		if eisFinding.Exposure.Vector != "" {
-			_ = f.SetExposureVector(vulnerability.ExposureVector(eisFinding.Exposure.Vector))
+	if ctisFinding.Exposure != nil {
+		if ctisFinding.Exposure.Vector != "" {
+			_ = f.SetExposureVector(vulnerability.ExposureVector(ctisFinding.Exposure.Vector))
 		}
-		f.SetNetworkAccessible(eisFinding.Exposure.IsNetworkAccessible)
-		f.SetInternetAccessible(eisFinding.Exposure.IsInternetAccessible)
-		if eisFinding.Exposure.AttackPrerequisites != "" {
-			f.SetAttackPrerequisites(eisFinding.Exposure.AttackPrerequisites)
+		f.SetNetworkAccessible(ctisFinding.Exposure.IsNetworkAccessible)
+		f.SetInternetAccessible(ctisFinding.Exposure.IsInternetAccessible)
+		if ctisFinding.Exposure.AttackPrerequisites != "" {
+			f.SetAttackPrerequisites(ctisFinding.Exposure.AttackPrerequisites)
 		}
 	}
 
 	// Remediation context fields
-	if eisFinding.RemediationContext != nil {
-		if eisFinding.RemediationContext.Type != "" {
-			_ = f.SetRemediationType(vulnerability.RemediationType(eisFinding.RemediationContext.Type))
+	if ctisFinding.RemediationContext != nil {
+		if ctisFinding.RemediationContext.Type != "" {
+			_ = f.SetRemediationType(vulnerability.RemediationType(ctisFinding.RemediationContext.Type))
 		}
-		if eisFinding.RemediationContext.EstimatedMinutes > 0 {
-			estTime := eisFinding.RemediationContext.EstimatedMinutes
+		if ctisFinding.RemediationContext.EstimatedMinutes > 0 {
+			estTime := ctisFinding.RemediationContext.EstimatedMinutes
 			f.SetEstimatedFixTime(&estTime)
 		}
-		if eisFinding.RemediationContext.Complexity != "" {
-			_ = f.SetFixComplexity(vulnerability.FixComplexity(eisFinding.RemediationContext.Complexity))
+		if ctisFinding.RemediationContext.Complexity != "" {
+			_ = f.SetFixComplexity(vulnerability.FixComplexity(ctisFinding.RemediationContext.Complexity))
 		}
-		f.SetRemedyAvailable(eisFinding.RemediationContext.RemedyAvailable)
+		f.SetRemedyAvailable(ctisFinding.RemediationContext.RemedyAvailable)
 	}
 
 	// Business impact fields
-	if eisFinding.BusinessImpact != nil {
-		if eisFinding.BusinessImpact.DataExposureRisk != "" {
-			_ = f.SetDataExposureRisk(vulnerability.DataExposureRisk(eisFinding.BusinessImpact.DataExposureRisk))
+	if ctisFinding.BusinessImpact != nil {
+		if ctisFinding.BusinessImpact.DataExposureRisk != "" {
+			_ = f.SetDataExposureRisk(vulnerability.DataExposureRisk(ctisFinding.BusinessImpact.DataExposureRisk))
 		}
-		f.SetReputationalImpact(eisFinding.BusinessImpact.ReputationalImpact)
-		if len(eisFinding.BusinessImpact.ComplianceImpact) > 0 {
-			f.SetComplianceImpact(eisFinding.BusinessImpact.ComplianceImpact)
+		f.SetReputationalImpact(ctisFinding.BusinessImpact.ReputationalImpact)
+		if len(ctisFinding.BusinessImpact.ComplianceImpact) > 0 {
+			f.SetComplianceImpact(ctisFinding.BusinessImpact.ComplianceImpact)
 		}
 	}
 }
 
-// mapEISLocationToDomain converts a EIS FindingLocation to a domain FindingLocation.
-func mapEISLocationToDomain(loc *eis.FindingLocation) vulnerability.FindingLocation {
+// mapCTISLocationToDomain converts a CTIS FindingLocation to a domain FindingLocation.
+func mapCTISLocationToDomain(loc *ctis.FindingLocation) vulnerability.FindingLocation {
 	if loc == nil {
 		return vulnerability.FindingLocation{}
 	}
@@ -977,8 +977,8 @@ func mapEISLocationToDomain(loc *eis.FindingLocation) vulnerability.FindingLocat
 	return result
 }
 
-// mapEISStackTraceToDomain converts a EIS StackTrace to a domain StackTrace.
-func mapEISStackTraceToDomain(st *eis.StackTrace) vulnerability.StackTrace {
+// mapCTISStackTraceToDomain converts a CTIS StackTrace to a domain StackTrace.
+func mapCTISStackTraceToDomain(st *ctis.StackTrace) vulnerability.StackTrace {
 	if st == nil {
 		return vulnerability.StackTrace{}
 	}
@@ -994,7 +994,7 @@ func mapEISStackTraceToDomain(st *eis.StackTrace) vulnerability.StackTrace {
 				Parameters: frame.Parameters,
 			}
 			if frame.Location != nil {
-				loc := mapEISLocationToDomain(frame.Location)
+				loc := mapCTISLocationToDomain(frame.Location)
 				domainFrame.Location = &loc
 			}
 			result.Frames = append(result.Frames, domainFrame)
@@ -1003,8 +1003,8 @@ func mapEISStackTraceToDomain(st *eis.StackTrace) vulnerability.StackTrace {
 	return result
 }
 
-// mapEISAttachmentToDomain converts a EIS Attachment to a domain Attachment.
-func mapEISAttachmentToDomain(att *eis.Attachment) vulnerability.Attachment {
+// mapCTISAttachmentToDomain converts a CTIS Attachment to a domain Attachment.
+func mapCTISAttachmentToDomain(att *ctis.Attachment) vulnerability.Attachment {
 	if att == nil {
 		return vulnerability.Attachment{}
 	}
@@ -1020,7 +1020,7 @@ func mapEISAttachmentToDomain(att *eis.Attachment) vulnerability.Attachment {
 	if len(att.Regions) > 0 {
 		result.Regions = make([]vulnerability.FindingLocation, 0, len(att.Regions))
 		for _, reg := range att.Regions {
-			result.Regions = append(result.Regions, mapEISLocationToDomain(reg))
+			result.Regions = append(result.Regions, mapCTISLocationToDomain(reg))
 		}
 	}
 	return result
@@ -1031,7 +1031,7 @@ func mapEISAttachmentToDomain(att *eis.Attachment) vulnerability.Attachment {
 // If branch info is not available or branchRepo is nil, returns empty map.
 // tenantRules provides per-tenant branch type detection rules (fallback chain).
 // Note: Only creates branches for assets with repository type (repository, code_repo).
-func (p *FindingProcessor) resolveBranches(ctx context.Context, tenantID shared.ID, report *eis.Report, assetMap map[string]shared.ID, tenantRules branch.BranchTypeRules) map[shared.ID]shared.ID {
+func (p *FindingProcessor) resolveBranches(ctx context.Context, tenantID shared.ID, report *ctis.Report, assetMap map[string]shared.ID, tenantRules branch.BranchTypeRules) map[shared.ID]shared.ID {
 	branchMap := make(map[shared.ID]shared.ID)
 
 	// Skip if no branch repo or no branch info
@@ -1093,7 +1093,7 @@ func (p *FindingProcessor) resolveBranches(ctx context.Context, tenantID shared.
 // Uses a retry pattern to handle race conditions when multiple concurrent scans
 // try to create the same branch simultaneously.
 // assetRules and tenantRules provide the configurable branch type detection fallback chain.
-func (p *FindingProcessor) getOrCreateBranch(ctx context.Context, repositoryID shared.ID, branchInfo *eis.BranchInfo, assetRules, tenantRules branch.BranchTypeRules) (*shared.ID, error) {
+func (p *FindingProcessor) getOrCreateBranch(ctx context.Context, repositoryID shared.ID, branchInfo *ctis.BranchInfo, assetRules, tenantRules branch.BranchTypeRules) (*shared.ID, error) {
 	// Try to find existing branch by name
 	existingBranch, err := p.branchRepo.GetByName(ctx, repositoryID, branchInfo.Name)
 	if err == nil && existingBranch != nil {
@@ -1166,10 +1166,10 @@ func (p *FindingProcessor) getOrCreateBranch(ctx context.Context, repositoryID s
 	return &id, nil
 }
 
-// mapEISDataFlowToDomain converts a EIS DataFlow to a domain DataFlow value object.
-// EIS format: sources/intermediates/sinks arrays with DataFlowLocation
+// mapCTISDataFlowToDomain converts a CTIS DataFlow to a domain DataFlow value object.
+// CTIS format: sources/intermediates/sinks arrays with DataFlowLocation
 // Domain format: single Steps array with DataFlowStep (each step has LocationType)
-func mapEISDataFlowToDomain(df *eis.DataFlow) vulnerability.DataFlow {
+func mapCTISDataFlowToDomain(df *ctis.DataFlow) vulnerability.DataFlow {
 	if df == nil {
 		return vulnerability.DataFlow{}
 	}
@@ -1181,19 +1181,19 @@ func mapEISDataFlowToDomain(df *eis.DataFlow) vulnerability.DataFlow {
 
 	// Add sources
 	for _, loc := range df.Sources {
-		steps = append(steps, mapEISDataFlowLocationToStep(loc, vulnerability.LocationTypeSource, stepIndex))
+		steps = append(steps, mapCTISDataFlowLocationToStep(loc, vulnerability.LocationTypeSource, stepIndex))
 		stepIndex++
 	}
 
 	// Add intermediates
 	for _, loc := range df.Intermediates {
-		steps = append(steps, mapEISDataFlowLocationToStep(loc, vulnerability.LocationTypeIntermediate, stepIndex))
+		steps = append(steps, mapCTISDataFlowLocationToStep(loc, vulnerability.LocationTypeIntermediate, stepIndex))
 		stepIndex++
 	}
 
 	// Add sinks
 	for _, loc := range df.Sinks {
-		steps = append(steps, mapEISDataFlowLocationToStep(loc, vulnerability.LocationTypeSink, stepIndex))
+		steps = append(steps, mapCTISDataFlowLocationToStep(loc, vulnerability.LocationTypeSink, stepIndex))
 		stepIndex++
 	}
 
@@ -1204,9 +1204,9 @@ func mapEISDataFlowToDomain(df *eis.DataFlow) vulnerability.DataFlow {
 	}
 }
 
-// mapEISDataFlowLocationToStep converts a EIS DataFlowLocation to a domain DataFlowStep.
-// Note: Uses only fields available in SDK v0.4.6 (Path, Line, Column, Content, Label, Index).
-func mapEISDataFlowLocationToStep(loc eis.DataFlowLocation, locationType string, stepIndex int) vulnerability.DataFlowStep {
+// mapCTISDataFlowLocationToStep converts a CTIS DataFlowLocation to a domain DataFlowStep.
+// Note: Uses only fields available in the SDK (Path, Line, Column, Content, Label, Index).
+func mapCTISDataFlowLocationToStep(loc ctis.DataFlowLocation, locationType string, stepIndex int) vulnerability.DataFlowStep {
 	return vulnerability.DataFlowStep{
 		Index:        stepIndex,
 		LocationType: locationType,
@@ -1355,7 +1355,7 @@ func isValidFingerprint(fp string) bool {
 
 // linkFindingToComponent looks up a component by PURL and links it to the finding.
 // This is used for SCA findings where the vulnerability is in a specific package.
-func (p *FindingProcessor) linkFindingToComponent(ctx context.Context, f *vulnerability.Finding, eisFinding *eis.Finding) {
+func (p *FindingProcessor) linkFindingToComponent(ctx context.Context, f *vulnerability.Finding, ctisFinding *ctis.Finding) {
 	// Skip if no component repository configured
 	if p.compRepo == nil {
 		return
@@ -1363,8 +1363,8 @@ func (p *FindingProcessor) linkFindingToComponent(ctx context.Context, f *vulner
 
 	// Get PURL from vulnerability details
 	var purl string
-	if eisFinding.Vulnerability != nil && eisFinding.Vulnerability.PURL != "" {
-		purl = eisFinding.Vulnerability.PURL
+	if ctisFinding.Vulnerability != nil && ctisFinding.Vulnerability.PURL != "" {
+		purl = ctisFinding.Vulnerability.PURL
 	}
 
 	if purl == "" {

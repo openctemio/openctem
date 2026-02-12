@@ -7,12 +7,12 @@ tmp_dir = "tmp"
 
 [build]
   # Binary output
-  bin = "./tmp/rediver"
+  bin = "./tmp/openctem"
 
-  full_bin = "sh -lc 'while true; do ./tmp/rediver; code=$?; echo \"[air] app exited ($code) - restarting\"; sleep 1; done'"
+  full_bin = "sh -lc 'while true; do ./tmp/openctem; code=$?; echo \"[air] app exited ($code) - restarting\"; sleep 1; done'"
 
   # Build command
-  cmd = "go build -buildvcs=false -o ./tmp/rediver ./cmd/server"
+  cmd = "go build -buildvcs=false -o ./tmp/openctem ./cmd/server"
 
   # Build delay after file change (milliseconds)
   delay = 1000

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Rediver's notification system provides real-time alerts when security findings are detected. It supports multiple providers (Slack, Teams, Telegram, Email, Webhook) with severity filtering, event routing, and full audit history.
+OpenCTEM's notification system provides real-time alerts when security findings are detected. It supports multiple providers (Slack, Teams, Telegram, Email, Webhook) with severity filtering, event routing, and full audit history.
 
 ## Tech Stack
 

@@ -3,8 +3,8 @@ package notification
 import (
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/google/uuid"
+	"github.com/openctemio/api/pkg/domain/shared"
 )
 
 // =============================================================================

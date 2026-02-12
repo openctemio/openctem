@@ -5,16 +5,16 @@
 # Used by docker-compose to seed the database with required or test data.
 #
 # Build:
-#   docker build -f Dockerfile.seed -t exploopio/seed:v0.1.0 .
+#   docker build -f Dockerfile.seed -t openctemio/seed:v0.1.0 .
 #
 # Usage:
 #   # Seed required data
-#   docker run --rm -e PGHOST=postgres -e PGUSER=rediver -e PGPASSWORD=secret -e PGDATABASE=rediver \
-#     exploopio/seed:v0.1.0 psql -f /seed/seed_required.sql
+#   docker run --rm -e PGHOST=postgres -e PGUSER=openctem -e PGPASSWORD=secret -e PGDATABASE=openctem \
+#     openctemio/seed:v0.1.0 psql -f /seed/seed_required.sql
 #
 #   # Seed test data
-#   docker run --rm -e PGHOST=postgres -e PGUSER=rediver -e PGPASSWORD=secret -e PGDATABASE=rediver \
-#     exploopio/seed:v0.1.0 psql -f /seed/seed_test.sql
+#   docker run --rm -e PGHOST=postgres -e PGUSER=openctem -e PGPASSWORD=secret -e PGDATABASE=openctem \
+#     openctemio/seed:v0.1.0 psql -f /seed/seed_test.sql
 #
 # Seed Files:
 #   - seed_required.sql      - Required data (roles, permissions, default settings)

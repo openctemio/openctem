@@ -1,6 +1,6 @@
 package tenant
 
-// Plan represents a tenant's subscription plan.
+// Plan represents a tenant's module configuration.
 // In OSS edition, all tenants have unlimited access.
 type Plan string
 

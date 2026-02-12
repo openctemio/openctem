@@ -38,8 +38,8 @@ type Repository interface {
 	// Update updates a scanner template.
 	Update(ctx context.Context, template *ScannerTemplate) error
 
-	// Delete deletes a scanner template.
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete deletes a scanner template (tenant-scoped).
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// CountByTenant counts the number of templates for a tenant.
 	CountByTenant(ctx context.Context, tenantID shared.ID) (int64, error)

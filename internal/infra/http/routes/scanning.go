@@ -72,20 +72,20 @@ func registerAgentRoutes(
 		r.POST("/heartbeat", ingestHandler.Heartbeat)
 
 		// Ingest findings/assets - requires "scans" module
-		// Supported formats: EIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
+		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
 		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
 		if scansModuleMiddleware != nil {
-			r.POST("/ingest", ingestHandler.IngestEIS, decompressMiddleware, scansModuleMiddleware) // Default: EIS format
+			r.POST("/ingest", ingestHandler.IngestCTIS, decompressMiddleware, scansModuleMiddleware) // Default: CTIS format
 			r.POST("/ingest/check", ingestHandler.CheckFingerprints, decompressMiddleware, scansModuleMiddleware)
 			r.POST("/ingest/sarif", ingestHandler.IngestSARIF, decompressMiddleware, scansModuleMiddleware)
-			r.POST("/ingest/eis", ingestHandler.IngestEIS, decompressMiddleware, scansModuleMiddleware)
+			r.POST("/ingest/ctis", ingestHandler.IngestCTIS, decompressMiddleware, scansModuleMiddleware)
 			r.POST("/ingest/recon", ingestHandler.IngestReconReport, decompressMiddleware, scansModuleMiddleware)
 			r.POST("/ingest/chunk", ingestHandler.IngestChunk, decompressMiddleware, scansModuleMiddleware)
 		} else {
-			r.POST("/ingest", ingestHandler.IngestEIS, decompressMiddleware) // Default: EIS format
+			r.POST("/ingest", ingestHandler.IngestCTIS, decompressMiddleware) // Default: CTIS format
 			r.POST("/ingest/check", ingestHandler.CheckFingerprints, decompressMiddleware)
 			r.POST("/ingest/sarif", ingestHandler.IngestSARIF, decompressMiddleware)
-			r.POST("/ingest/eis", ingestHandler.IngestEIS, decompressMiddleware)
+			r.POST("/ingest/ctis", ingestHandler.IngestCTIS, decompressMiddleware)
 			r.POST("/ingest/recon", ingestHandler.IngestReconReport, decompressMiddleware)
 			r.POST("/ingest/chunk", ingestHandler.IngestChunk, decompressMiddleware)
 		}

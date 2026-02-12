@@ -712,7 +712,7 @@ Scans bind asset groups with scanners/workflows and schedules to automate securi
 
 ### Platform Agents (v3.2)
 
-Platform agents are Rediver-managed shared scanning infrastructure. Unlike tenant agents, platform agents are centrally managed and can process jobs from multiple tenants.
+Platform agents are OpenCTEM-managed shared scanning infrastructure. Unlike tenant agents, platform agents are centrally managed and can process jobs from multiple tenants.
 
 #### Agent Registration (Public)
 

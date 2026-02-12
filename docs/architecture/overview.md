@@ -18,7 +18,7 @@
 
 ```
                                     ┌─────────────────────────────────────┐
-┌──────────────┐                    │        Rediver Control Plane        │
+┌──────────────┐                    │       OpenCTEM Control Plane        │
 │   Clients    │                    ├─────────────────────────────────────┤
 ├──────────────┤                    │  HTTP API (REST)                    │
 │  Web App     │───────────────────▶│  - /api/v1/agents/*                 │
@@ -50,7 +50,7 @@
 │          └───────────────────┴───────────────────┴───────────────────┘             │
 │                                         │                                          │
 │                            ┌────────────▼────────────┐                             │
-│                            │   Exploop SDK (Go)      │                             │
+│                            │   OpenCTEM SDK (Go)     │                             │
 │                            │   - API key auth        │                             │
 │                            │   - Task polling        │                             │
 │                            │   - Finding submission  │                             │
@@ -60,9 +60,9 @@
 
 ## Distributed Agent Architecture
 
-Rediver uses a distributed agent model where:
+OpenCTEM uses a distributed agent model where:
 - **Control Plane** (this server) manages agents, pipelines, and findings
-- **Agents** run on tenant infrastructure using the Exploop SDK
+- **Agents** run on tenant infrastructure using the OpenCTEM SDK
 - **Agents poll** for tasks based on their capabilities
 - **Data flows** from agents back to the control plane via REST API
 
@@ -111,7 +111,7 @@ Pipeline Run
 
 ## Multi-Tenant Architecture
 
-Rediver uses a multi-tenant SaaS model where:
+OpenCTEM uses a multi-tenant SaaS model where:
 - Users authenticate via Keycloak
 - Users can belong to multiple **Teams** (displayed in UI)
 - Teams are called **Tenants** in code/database
@@ -244,7 +244,7 @@ POST   /api/v1/tenants/{tenant}/assets
 ## Project Structure
 
 ```
-exploop/
+openctem/
 ├── cmd/server/              # Application entry point
 ├── internal/
 │   ├── domain/              # Core business logic

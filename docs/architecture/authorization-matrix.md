@@ -1,6 +1,6 @@
 # Authorization Matrix
 
-This document describes the complete authorization model for the Rediver API.
+This document describes the complete authorization model for the OpenCTEM API.
 
 ## Overview
 

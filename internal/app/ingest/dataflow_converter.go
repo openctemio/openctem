@@ -3,29 +3,29 @@ package ingest
 import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
-// ConvertRISDataFlowToFindingDataFlows converts a EIS DataFlow to domain FindingDataFlow and FindingFlowLocations.
-// This function bridges the gap between the EIS input schema and the domain entities.
+// ConvertCTISDataFlowToFindingDataFlows converts a CTIS DataFlow to domain FindingDataFlow and FindingFlowLocations.
+// This function bridges the gap between the CTIS input schema and the domain entities.
 //
 // Returns:
 // - flows: slice of FindingDataFlow (usually 1, but could be more for complex flows)
 // - locations: slice of FindingFlowLocation for all flows
 // - error: if validation fails
-func ConvertRISDataFlowToFindingDataFlows(
+func ConvertCTISDataFlowToFindingDataFlows(
 	findingID shared.ID,
-	eisDataFlow *eis.DataFlow,
+	ctisDataFlow *ctis.DataFlow,
 ) ([]*vulnerability.FindingDataFlow, []*vulnerability.FindingFlowLocation, error) {
-	if eisDataFlow == nil {
+	if ctisDataFlow == nil {
 		return nil, nil, nil
 	}
 
-	// Create the main FindingDataFlow from EIS DataFlow
+	// Create the main FindingDataFlow from CTIS DataFlow
 	flow, err := vulnerability.NewFindingDataFlow(
 		findingID,
 		0, // flowIndex (first flow)
-		eisDataFlow.Summary,
+		ctisDataFlow.Summary,
 		"essential",
 	)
 	if err != nil {
@@ -33,14 +33,14 @@ func ConvertRISDataFlowToFindingDataFlows(
 	}
 
 	// Pre-allocate locations slice
-	totalLocations := len(eisDataFlow.Sources) + len(eisDataFlow.Intermediates) +
-		len(eisDataFlow.Sanitizers) + len(eisDataFlow.Sinks)
+	totalLocations := len(ctisDataFlow.Sources) + len(ctisDataFlow.Intermediates) +
+		len(ctisDataFlow.Sanitizers) + len(ctisDataFlow.Sinks)
 	locations := make([]*vulnerability.FindingFlowLocation, 0, totalLocations)
 	stepIndex := 0
 
 	// Convert sources
-	for _, src := range eisDataFlow.Sources {
-		loc, err := convertRISLocationToDomain(flow.ID(), stepIndex, vulnerability.LocationTypeSource, src)
+	for _, src := range ctisDataFlow.Sources {
+		loc, err := convertCTISLocationToDomain(flow.ID(), stepIndex, vulnerability.LocationTypeSource, src)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -49,8 +49,8 @@ func ConvertRISDataFlowToFindingDataFlows(
 	}
 
 	// Convert intermediates
-	for _, inter := range eisDataFlow.Intermediates {
-		loc, err := convertRISLocationToDomain(flow.ID(), stepIndex, vulnerability.LocationTypeIntermediate, inter)
+	for _, inter := range ctisDataFlow.Intermediates {
+		loc, err := convertCTISLocationToDomain(flow.ID(), stepIndex, vulnerability.LocationTypeIntermediate, inter)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -59,8 +59,8 @@ func ConvertRISDataFlowToFindingDataFlows(
 	}
 
 	// Convert sanitizers
-	for _, san := range eisDataFlow.Sanitizers {
-		loc, err := convertRISLocationToDomain(flow.ID(), stepIndex, vulnerability.LocationTypeSanitizer, san)
+	for _, san := range ctisDataFlow.Sanitizers {
+		loc, err := convertCTISLocationToDomain(flow.ID(), stepIndex, vulnerability.LocationTypeSanitizer, san)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -69,8 +69,8 @@ func ConvertRISDataFlowToFindingDataFlows(
 	}
 
 	// Convert sinks
-	for _, sink := range eisDataFlow.Sinks {
-		loc, err := convertRISLocationToDomain(flow.ID(), stepIndex, vulnerability.LocationTypeSink, sink)
+	for _, sink := range ctisDataFlow.Sinks {
+		loc, err := convertCTISLocationToDomain(flow.ID(), stepIndex, vulnerability.LocationTypeSink, sink)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -81,12 +81,12 @@ func ConvertRISDataFlowToFindingDataFlows(
 	return []*vulnerability.FindingDataFlow{flow}, locations, nil
 }
 
-// convertRISLocationToDomain converts a EIS DataFlowLocation to a domain FindingFlowLocation.
-func convertRISLocationToDomain(
+// convertCTISLocationToDomain converts a CTIS DataFlowLocation to a domain FindingFlowLocation.
+func convertCTISLocationToDomain(
 	dataFlowID shared.ID,
 	stepIndex int,
 	locType string,
-	eisLoc eis.DataFlowLocation,
+	ctisLoc ctis.DataFlowLocation,
 ) (*vulnerability.FindingFlowLocation, error) {
 	loc, err := vulnerability.NewFindingFlowLocation(dataFlowID, stepIndex, locType)
 	if err != nil {
@@ -95,36 +95,36 @@ func convertRISLocationToDomain(
 
 	// Set physical location
 	loc.SetPhysicalLocation(
-		eisLoc.Path,
-		eisLoc.Line,
-		eisLoc.EndLine,
-		eisLoc.Column,
-		eisLoc.EndColumn,
-		eisLoc.Content,
+		ctisLoc.Path,
+		ctisLoc.Line,
+		ctisLoc.EndLine,
+		ctisLoc.Column,
+		ctisLoc.EndColumn,
+		ctisLoc.Content,
 	)
 
 	// Set logical location
 	loc.SetLogicalLocation(
-		eisLoc.Function,
-		eisLoc.Class,
+		ctisLoc.Function,
+		ctisLoc.Class,
 		"", // FQN will be computed if needed
-		eisLoc.Module,
+		ctisLoc.Module,
 	)
 
 	// Set context
-	loc.SetContext(eisLoc.Label, eisLoc.Notes, 0, "essential")
+	loc.SetContext(ctisLoc.Label, ctisLoc.Notes, 0, "essential")
 
 	return loc, nil
 }
 
-// ConvertSARIFCodeFlowsToEISDataFlows converts SARIF codeFlows to EIS DataFlow structures.
+// ConvertSARIFCodeFlowsToCTISDataFlows converts SARIF codeFlows to CTIS DataFlow structures.
 // This is useful when ingesting SARIF reports that contain dataflow information.
 //
 // SARIF codeFlow structure:
 // - codeFlows[].threadFlows[].locations[].location
 //
-// This function flattens SARIF's nested structure into the simpler EIS DataFlow format.
-func ConvertSARIFCodeFlowsToEISDataFlows(codeFlows any) []*eis.DataFlow {
+// This function flattens SARIF's nested structure into the simpler CTIS DataFlow format.
+func ConvertSARIFCodeFlowsToCTISDataFlows(codeFlows any) []*ctis.DataFlow {
 	if codeFlows == nil {
 		return nil
 	}
@@ -136,7 +136,7 @@ func ConvertSARIFCodeFlowsToEISDataFlows(codeFlows any) []*eis.DataFlow {
 		return nil
 	}
 
-	result := make([]*eis.DataFlow, 0, len(flows))
+	result := make([]*ctis.DataFlow, 0, len(flows))
 
 	for _, cf := range flows {
 		codeFlow, ok := cf.(map[string]any)
@@ -153,8 +153,8 @@ func ConvertSARIFCodeFlowsToEISDataFlows(codeFlows any) []*eis.DataFlow {
 	return result
 }
 
-// convertCodeFlowToDataFlow converts a single SARIF codeFlow to a EIS DataFlow.
-func convertCodeFlowToDataFlow(codeFlow map[string]any) *eis.DataFlow {
+// convertCodeFlowToDataFlow converts a single SARIF codeFlow to a CTIS DataFlow.
+func convertCodeFlowToDataFlow(codeFlow map[string]any) *ctis.DataFlow {
 	// Get threadFlows
 	threadFlows, ok := codeFlow["threadFlows"].([]any)
 	if !ok || len(threadFlows) == 0 {
@@ -172,7 +172,7 @@ func convertCodeFlowToDataFlow(codeFlow map[string]any) *eis.DataFlow {
 		return nil
 	}
 
-	df := &eis.DataFlow{
+	df := &ctis.DataFlow{
 		Tainted: true, // Default tainted unless marked otherwise
 	}
 
@@ -182,21 +182,21 @@ func convertCodeFlowToDataFlow(codeFlow map[string]any) *eis.DataFlow {
 			continue
 		}
 
-		eisLoc := extractSARIFLocation(tfl)
-		eisLoc.Index = i
+		ctisLoc := extractSARIFLocation(tfl)
+		ctisLoc.Index = i
 
 		// Determine location type based on position
 		switch {
 		case i == 0:
-			eisLoc.Type = eis.DataFlowLocationSource
-			eisLoc.TaintState = "tainted"
-			df.Sources = append(df.Sources, eisLoc)
+			ctisLoc.Type = ctis.DataFlowLocationSource
+			ctisLoc.TaintState = "tainted"
+			df.Sources = append(df.Sources, ctisLoc)
 		case i == len(locations)-1:
-			eisLoc.Type = eis.DataFlowLocationSink
-			df.Sinks = append(df.Sinks, eisLoc)
+			ctisLoc.Type = ctis.DataFlowLocationSink
+			df.Sinks = append(df.Sinks, ctisLoc)
 		default:
-			eisLoc.Type = eis.DataFlowLocationPropagator
-			df.Intermediates = append(df.Intermediates, eisLoc)
+			ctisLoc.Type = ctis.DataFlowLocationPropagator
+			df.Intermediates = append(df.Intermediates, ctisLoc)
 		}
 	}
 
@@ -207,8 +207,8 @@ func convertCodeFlowToDataFlow(codeFlow map[string]any) *eis.DataFlow {
 }
 
 // extractSARIFLocation extracts location information from a SARIF threadFlowLocation.
-func extractSARIFLocation(tfl map[string]any) eis.DataFlowLocation {
-	loc := eis.DataFlowLocation{}
+func extractSARIFLocation(tfl map[string]any) ctis.DataFlowLocation {
+	loc := ctis.DataFlowLocation{}
 
 	// Get nested location object
 	location, ok := tfl["location"].(map[string]any)
@@ -238,7 +238,7 @@ func extractSARIFLocation(tfl map[string]any) eis.DataFlowLocation {
 }
 
 // extractPhysicalLocation extracts physical location from SARIF location object.
-func extractPhysicalLocation(location map[string]any, loc *eis.DataFlowLocation) {
+func extractPhysicalLocation(location map[string]any, loc *ctis.DataFlowLocation) {
 	physLoc, ok := location["physicalLocation"].(map[string]any)
 	if !ok {
 		return
@@ -256,7 +256,7 @@ func extractPhysicalLocation(location map[string]any, loc *eis.DataFlowLocation)
 }
 
 // extractRegion extracts region information from SARIF physical location.
-func extractRegion(physLoc map[string]any, loc *eis.DataFlowLocation) {
+func extractRegion(physLoc map[string]any, loc *ctis.DataFlowLocation) {
 	region, ok := physLoc["region"].(map[string]any)
 	if !ok {
 		return
@@ -282,7 +282,7 @@ func extractRegion(physLoc map[string]any, loc *eis.DataFlowLocation) {
 }
 
 // extractLogicalLocation extracts logical location from SARIF location object.
-func extractLogicalLocation(location map[string]any, loc *eis.DataFlowLocation) {
+func extractLogicalLocation(location map[string]any, loc *ctis.DataFlowLocation) {
 	logicalLocs, ok := location["logicalLocations"].([]any)
 	if !ok || len(logicalLocs) == 0 {
 		return

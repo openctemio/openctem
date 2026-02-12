@@ -75,9 +75,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
 
-		// CTEM Discovery - Network Services & State History
+		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:      handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
 		AssetStateHistory: handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
+		AssetRelationship: handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:    vulnHandler,
@@ -112,6 +113,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
+
+		// SLA Policies
+		SLA: handler.NewSLAHandler(svc.SLA, v, log),
+
+		// API Keys & Webhooks
+		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
+		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),
 
 		// Suppressions
 		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),

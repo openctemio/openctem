@@ -38,7 +38,7 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: exploop
+          POSTGRES_USER: openctem
           POSTGRES_PASSWORD: secret
           POSTGRES_DB: app_test
         ports:
@@ -77,7 +77,7 @@ jobs:
         env:
           DB_HOST: localhost
           DB_PORT: 5432
-          DB_USER: exploop
+          DB_USER: openctem
           DB_PASSWORD: secret
           DB_NAME: app_test
           REDIS_HOST: localhost
@@ -105,11 +105,11 @@ jobs:
 
       - name: Build API Server
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/exploop ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/openctem ./cmd/server
 
       - name: Build Admin CLI
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/exploop-admin ./cmd/exploop-admin
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/openctem-admin ./cmd/openctem-admin
 
       - name: Build Bootstrap Admin
         run: |
@@ -119,13 +119,13 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: api-linux-amd64
-          path: bin/exploop
+          path: bin/openctem
 
       - name: Upload Admin CLI artifact
         uses: actions/upload-artifact@v6
         with:
-          name: exploop-admin-linux-amd64
-          path: bin/exploop-admin
+          name: openctem-admin-linux-amd64
+          path: bin/openctem-admin
 
       - name: Upload Bootstrap Admin artifact
         uses: actions/upload-artifact@v6
@@ -150,6 +150,6 @@ jobs:
         with:
           context: .
           push: false
-          tags: exploop:${{ github.sha }}
+          tags: openctem:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -1,4 +1,4 @@
-// Package redis provides production-ready Redis integration for the Exploop application.
+// Package redis provides production-ready Redis integration for the OpenCTEM application.
 //
 // # Overview
 //

@@ -45,11 +45,12 @@ type Services struct {
 	Tenant *app.TenantService
 
 	// Assets
-	Asset         *app.AssetService
-	AssetGroup    *app.AssetGroupService
-	AssetType     *app.AssetTypeService
-	Scope         *app.ScopeService
-	AttackSurface *app.AttackSurfaceService
+	Asset             *app.AssetService
+	AssetGroup        *app.AssetGroupService
+	AssetType         *app.AssetTypeService
+	AssetRelationship *app.AssetRelationshipService
+	Scope             *app.ScopeService
+	AttackSurface     *app.AttackSurfaceService
 
 	// Configuration (read-only system config)
 	FindingSource      *app.FindingSourceService
@@ -116,6 +117,13 @@ type Services struct {
 	// Module Service (OSS - all modules enabled)
 	Module *app.ModuleService
 
+	// SLA
+	SLA *app.SLAService
+
+	// API Keys & Webhooks
+	APIKey  *app.APIKeyService
+	Webhook *app.WebhookService
+
 	// AI Triage
 	AITriage *app.AITriageService
 
@@ -176,6 +184,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = app.NewScopeService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
 	s.AttackSurface = app.NewAttackSurfaceService(repos.Asset, log)
+	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 
 	// Initialize finding source service (read-only system configuration)
 	s.FindingSource = app.NewFindingSourceService(repos.FindingSource, repos.FindingSourceCat, log)
@@ -208,6 +217,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize dashboard service
 	s.Dashboard = app.NewDashboardService(repos.Dashboard, log)
+
+	// Initialize SLA service
+	s.SLA = app.NewSLAService(repos.SLA, log)
+
+	// Initialize API Key & Webhook services
+	s.APIKey = app.NewAPIKeyService(repos.APIKey, log)
+	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)

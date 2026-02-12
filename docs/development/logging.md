@@ -2,7 +2,7 @@
 
 ## Overview
 
-Rediver uses Go's standard library `log/slog` for structured logging. The logger is configured in `pkg/logger/` and supports:
+OpenCTEM uses Go's standard library `log/slog` for structured logging. The logger is configured in `pkg/logger/` and supports:
 
 - **Structured logging** with key-value pairs
 - **Log level filtering** (debug, info, warn, error)
@@ -129,7 +129,7 @@ log.Info("user login", "password", "secret123")
 ### Basic Usage
 
 ```go
-import "github.com/exploopio/api/pkg/logger"
+import "github.com/openctemio/api/pkg/logger"
 
 log := logger.NewProduction()
 
@@ -207,7 +207,7 @@ log.WithFields(map[string]any{
 If you need to track how many logs are being dropped by sampling:
 
 ```go
-import "github.com/exploopio/api/pkg/logger"
+import "github.com/openctemio/api/pkg/logger"
 
 counter := logger.NewDroppedLogsCounter()
 

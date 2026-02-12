@@ -2,7 +2,7 @@
 
 ## Overview
 
-Rediver uses [golang-migrate](https://github.com/golang-migrate/migrate) for database migrations. Migration files are stored in the `migrations/` directory.
+OpenCTEM uses [golang-migrate](https://github.com/golang-migrate/migrate) for database migrations. Migration files are stored in the `migrations/` directory.
 
 ## Prerequisites
 
@@ -45,7 +45,7 @@ The migration structure follows these principles:
 Seed data is split into two categories:
 
 1. **Required data** (`seed_required.sql`): Essential data the system needs to function
-   - Currently empty - Rediver creates all data dynamically
+   - Currently empty - OpenCTEM creates all data dynamically
    - Add system configurations, default roles, etc. if needed
 
 2. **Test data** (`seed_test.sql`): Development/testing data
@@ -252,7 +252,7 @@ Configure via `.env` file or environment:
 | `DB_PORT` | Database port | 5432 |
 | `DB_USER` | Database user | (required) |
 | `DB_PASSWORD` | Database password | (required) |
-| `DB_NAME` | Database name |.exploop |
+| `DB_NAME` | Database name | openctem |
 | `DB_SSLMODE` | SSL mode | disable |
 
 ## Troubleshooting
@@ -298,7 +298,7 @@ When using `seed_test.sql`, all users have:
 - **Hash**: `$2a$12$lAqs23AmzWlMNDCUaUuuceAWEw/EzF25N/oLnSfa1gUldIRllsqHG`
 
 Test accounts:
-- `admin@exploop.io` - Admin user
+- `admin@openctem.io` - Admin user
 - `nguyen.an@techviet.vn` - Regular user
 - (see `seed_test.sql` for full list)
 

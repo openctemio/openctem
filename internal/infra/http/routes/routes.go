@@ -48,7 +48,7 @@ type Handlers struct {
 	AttackSurface   *handler.AttackSurfaceHandler   // nil if not initialized (no database)
 	Docs            *handler.DocsHandler            // API documentation handler
 	Command         *handler.CommandHandler         // nil if not initialized (no database)
-	Ingest          *handler.IngestHandler          // nil if not initialized (no database) - unified ingestion (EIS, SARIF, Recon)
+	Ingest          *handler.IngestHandler          // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
 	Agent           *handler.AgentHandler           // nil if not initialized (no database)
 	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
 	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
@@ -70,6 +70,7 @@ type Handlers struct {
 	// CTEM Discovery handlers
 	AssetService      *handler.AssetServiceHandler      // nil if not initialized (no database)
 	AssetStateHistory *handler.AssetStateHistoryHandler // nil if not initialized (no database)
+	AssetRelationship *handler.AssetRelationshipHandler // nil if not initialized (no database)
 
 	// Access Control handlers
 	Group         *handler.GroupHandler         // nil if not initialized (no database)
@@ -79,6 +80,10 @@ type Handlers struct {
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
+
+	// API Keys & Webhooks
+	APIKey  *handler.APIKeyHandler  // nil if not initialized (no database)
+	Webhook *handler.WebhookHandler // nil if not initialized (no database)
 
 	// Notification handlers
 	NotificationOutbox *handler.NotificationOutboxHandler // nil if not initialized (no database)
@@ -191,6 +196,11 @@ func Register(
 	// Asset State History routes (CTEM Discovery - shadow IT detection, audit)
 	if h.AssetStateHistory != nil {
 		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync, moduleService)
+	}
+
+	// Asset Relationship routes (CTEM Discovery - attack surface topology graph)
+	if h.AssetRelationship != nil {
+		registerAssetRelationshipRoutes(router, h.AssetRelationship, authMiddleware, userSync, moduleService)
 	}
 
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
@@ -390,6 +400,16 @@ func Register(
 		registerRoleRoutes(router, h.Role, authMiddleware, userSync)
 	}
 
+	// API Key routes (tenant from JWT token)
+	if h.APIKey != nil {
+		registerAPIKeyRoutes(router, h.APIKey, authMiddleware, userSync, moduleService)
+	}
+
+	// Webhook routes (tenant from JWT token)
+	if h.Webhook != nil {
+		registerWebhookRoutes(router, h.Webhook, authMiddleware, userSync, moduleService)
+	}
+
 	// Notification Outbox routes (tenant from JWT token)
 	if h.NotificationOutbox != nil {
 		registerNotificationOutboxRoutes(router, h.NotificationOutbox, authMiddleware, userSync)
@@ -403,7 +423,7 @@ func Register(
 	// ==========================================================================
 	// Platform Admin Routes (separate from tenant routes)
 	// ==========================================================================
-	// These routes are for Exploop platform administrators only.
+	// These routes are for OpenCTEM platform administrators only.
 	// They manage shared infrastructure that serves all tenants.
 	registerAdminRoutes(router, h, authMiddleware, userSync)
 

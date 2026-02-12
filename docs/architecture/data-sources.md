@@ -6,7 +6,7 @@
 
 ## Overview
 
-Data Sources is the system for tracking where assets and findings come from in Rediver. It supports multiple collection methods (pull and push) and tracks the provenance of every asset.
+Data Sources is the system for tracking where assets and findings come from in OpenCTEM. It supports multiple collection methods (pull and push) and tracks the provenance of every asset.
 
 ## Key Concepts
 
@@ -33,7 +33,7 @@ Data Sources is the system for tracking where assets and findings come from in R
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        REDIVER SERVER                            │
+│                        OPENCTEM SERVER                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌──────────────────┐         ┌─────────────────────────────┐   │
@@ -85,7 +85,7 @@ CREATE TABLE data_sources (
 
     -- Authentication
     api_key_hash VARCHAR(255),         -- Hashed API key
-    api_key_prefix VARCHAR(12),        -- "rs_live_xxxx"
+    api_key_prefix VARCHAR(12),        -- "oc_live_xxxx"
 
     -- Status
     status source_status NOT NULL,     -- pending/active/inactive/error/disabled
@@ -245,7 +245,7 @@ GET    /api/v1/assets/{id}/sources          # All sources for asset
 
 ### For Collectors/Scanners (Push)
 - API key generated on registration
-- Format: `rs_live_xxxxxxxxxxxxxxxxxxxx`
+- Format: `oc_live_xxxxxxxxxxxxxxxxxxxx`
 - Stored as hash, prefix shown for identification
 - Sent via `Authorization: Bearer <key>` header
 
@@ -272,13 +272,13 @@ GET    /api/v1/assets/{id}/sources          # All sources for asset
 | inactive | active | Heartbeat received |
 | * | disabled | Manual disable |
 
-## Rediver Ingest Schema (RIS)
+## CTEM Ingest Schema (CTIS)
 
-RIS is the standard format for pushing data to Rediver. It provides a unified way for collectors and scanners to submit assets and findings.
+CTIS is the standard format for pushing data to OpenCTEM. It provides a unified way for collectors and scanners to submit assets and findings.
 
 ### Package Location
 ```
-pkg/parsers/ris/
+pkg/parsers/ctis/
 ├── doc.go       # Package documentation
 ├── types.go     # Data structures
 ├── parser.go    # Parser implementation
@@ -287,17 +287,17 @@ pkg/parsers/ris/
 
 ### Basic Usage
 ```go
-import "github.com/exploopio/api/pkg/parsers/ris"
+import "github.com/openctemio/api/pkg/parsers/ctis"
 
-// Parse RIS report
-parser := ris.NewParser(nil)
+// Parse CTIS report
+parser := ctis.NewParser(nil)
 report, err := parser.ParseFile("scan-results.json")
 
 // Or convert from SARIF
 sarifLog, _ := sarif.NewParser(nil).ParseFile("sast-results.sarif")
-risReport := ris.FromSARIF(sarifLog, &ris.SARIFConvertOptions{
+ctisReport := ctis.FromSARIF(sarifLog, &ctis.SARIFConvertOptions{
     AssetValue: "github.com/org/repo",
-    AssetType:  ris.AssetTypeRepository,
+    AssetType:  ctis.AssetTypeRepository,
 })
 ```
 
@@ -338,22 +338,22 @@ risReport := ris.FromSARIF(sarifLog, &ris.SARIFConvertOptions{
 ```
 
 ### Supported Formats
-RIS supports conversion from:
+CTIS supports conversion from:
 - **SARIF** - SAST results (Semgrep, CodeQL, etc.)
-- **Direct RIS** - Native format for custom collectors
+- **Direct CTIS** - Native format for custom collectors
 
 ### Building Reports Programmatically
 ```go
-report := ris.NewReportBuilder().
+report := ctis.NewReportBuilder().
     WithTool("my-collector", "1.0.0").
     WithToolCapabilities("domain", "ip_address").
     AddAsset(
-        ris.NewAssetBuilder(ris.AssetTypeDomain, "example.com").
-            WithCriticality(ris.CriticalityHigh).
+        ctis.NewAssetBuilder(ctis.AssetTypeDomain, "example.com").
+            WithCriticality(ctis.CriticalityHigh).
             Build(),
     ).
     AddFinding(
-        ris.NewFindingBuilder(ris.FindingTypeVulnerability, "Open Port 22", ris.SeverityMedium).
+        ctis.NewFindingBuilder(ctis.FindingTypeVulnerability, "Open Port 22", ctis.SeverityMedium).
             WithDescription("SSH port is publicly accessible").
             Build(),
     ).
@@ -411,7 +411,7 @@ The same vulnerability can be reported by multiple scanners:
 
 ## Web3 Support
 
-RIS fully supports Web3 assets and smart contract vulnerabilities.
+CTIS fully supports Web3 assets and smart contract vulnerabilities.
 
 ### Web3 Asset Types
 
@@ -446,7 +446,7 @@ Based on [SWC Registry](https://swcregistry.io/) and DeFi-specific vulnerabiliti
 
 ### Web3 Scanner Integration
 
-RIS automatically detects Web3 security tools:
+CTIS automatically detects Web3 security tools:
 - **Slither** (Trail of Bits)
 - **Mythril** (ConsenSys)
 - **Securify** (ETH Zurich)
@@ -547,13 +547,13 @@ Official JSON schemas are available at:
 
 | Schema | URL |
 |--------|-----|
-| Report | `https://schemas.exploop.io/ris/v1/report.json` |
-| Asset | `https://schemas.exploop.io/ris/v1/asset.json` |
-| Finding | `https://schemas.exploop.io/ris/v1/finding.json` |
-| Web3 Asset | `https://schemas.exploop.io/ris/v1/web3-asset.json` |
-| Web3 Finding | `https://schemas.exploop.io/ris/v1/web3-finding.json` |
+| Report | `https://schemas.openctem.io/ctis/v1/report.json` |
+| Asset | `https://schemas.openctem.io/ctis/v1/asset.json` |
+| Finding | `https://schemas.openctem.io/ctis/v1/finding.json` |
+| Web3 Asset | `https://schemas.openctem.io/ctis/v1/web3-asset.json` |
+| Web3 Finding | `https://schemas.openctem.io/ctis/v1/web3-finding.json` |
 
-Repository: [github.com/exploopio/schemas](https://github.com/exploopio/schemas)
+Repository: [github.com/openctemio/schemas](https://github.com/openctemio/schemas)
 
 ## Future Enhancements
 
@@ -570,5 +570,5 @@ Repository: [github.com/exploopio/schemas](https://github.com/exploopio/schemas)
 - [Asset Types](./asset-types.md)
 - [Ingestion API](../api/ingestion.md)
 - [Asset Schema](./asset-schema.md)
-- [Building Ingestion Tools](https://docs.exploop.io/guides/building-ingestion-tools)
-- [RIS JSON Schemas](https://github.com/exploopio/schemas)
+- [Building Ingestion Tools](https://docs.openctem.io/guides/building-ingestion-tools)
+- [CTIS JSON Schemas](https://github.com/openctemio/schemas)

@@ -9,13 +9,13 @@ import (
 
 // SendNotificationInput represents the input for sending a notification.
 type SendNotificationInput struct {
-	TenantID      string   `json:"tenant_id" validate:"required,uuid"`
-	IntegrationID string   `json:"integration_id" validate:"required,uuid"`
-	Title         string   `json:"title" validate:"required,max=500"`
-	Body          string   `json:"body" validate:"max=10000"`
-	Severity      string   `json:"severity" validate:"omitempty,severity"`
-	URL           string   `json:"url" validate:"omitempty,url"`
-	EventType     string   `json:"event_type" validate:"omitempty"`
+	TenantID      string `json:"tenant_id" validate:"required,uuid"`
+	IntegrationID string `json:"integration_id" validate:"required,uuid"`
+	Title         string `json:"title" validate:"required,max=500"`
+	Body          string `json:"body" validate:"max=10000"`
+	Severity      string `json:"severity" validate:"omitempty,severity"`
+	URL           string `json:"url" validate:"omitempty,url"`
+	EventType     string `json:"event_type" validate:"omitempty"`
 }
 
 // BroadcastNotificationInput represents the input for broadcasting a notification.

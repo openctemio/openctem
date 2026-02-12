@@ -14,7 +14,7 @@
 ## 1. Agent SDK Analysis
 
 ### What Works ✅
-- EIS `Dependency` struct includes `DependsOn []string` field
+- CTIS `Dependency` struct includes `DependsOn []string` field
 - `Relationship` field supports "direct", "indirect", "transit"
 - PURL and ecosystem correctly captured
 - Two-pass approach in processor handles parent lookup
@@ -23,13 +23,13 @@
 
 | Issue | Severity | Description |
 |-------|----------|-------------|
-| **No depth in EIS** | HIGH | SDK doesn't calculate or send depth |
+| **No depth in CTIS** | HIGH | SDK doesn't calculate or send depth |
 | **DependsOn format varies** | HIGH | Scanner provides IDs, we lookup by PURL - mismatch risk |
 | **No metrics in response** | MEDIUM | IngestResponse missing DependenciesCreated/Updated |
 
 ### Code Location
-- `/home/ubuntu/exploopio/sdk/pkg/eis/dependency_types.go`
-- `/home/ubuntu/exploopio/sdk/pkg/scanners/trivy/parser.go`
+- `/home/ubuntu/projects/openctemio/sdk/pkg/ctis/dependency_types.go`
+- `/home/ubuntu/projects/openctemio/sdk/pkg/scanners/trivy/parser.go`
 
 ---
 
@@ -89,8 +89,8 @@ Actual:
 | **No depth filtering** | LOW | Cannot query `?depth=1` for direct only |
 
 ### Handler Code Location
-- `/home/ubuntu/exploopio/api/internal/infra/http/handler/component_handler.go` (lines 34-54)
-- `/home/ubuntu/exploopio/api/internal/infra/http/handler/vulnerability_handler.go` (lines 224-320)
+- `/home/ubuntu/projects/openctemio/api/internal/infra/http/handler/component_handler.go` (lines 34-54)
+- `/home/ubuntu/projects/openctemio/api/internal/infra/http/handler/vulnerability_handler.go` (lines 224-320)
 
 ---
 
@@ -110,8 +110,8 @@ Actual:
 | **No component-finding link** | MEDIUM | Findings and components are siloed |
 
 ### UI Files
-- `/home/ubuntu/exploopio/ui/src/features/components/components/component-table.tsx`
-- `/home/ubuntu/exploopio/ui/src/features/components/types/component.types.ts`
+- `/home/ubuntu/projects/openctemio/ui/src/features/components/components/component-table.tsx`
+- `/home/ubuntu/projects/openctemio/ui/src/features/components/types/component.types.ts`
 
 ---
 

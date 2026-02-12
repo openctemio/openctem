@@ -496,7 +496,7 @@ func generateAgentAPIKey() (key, hash, prefix string, err error) {
 		return "", "", "", err
 	}
 
-	key = "rda_" + hex.EncodeToString(keyBytes) // rda = exploop agent
+	key = "rda_" + hex.EncodeToString(keyBytes) // rda = openctem agent
 	hash = hashAgentAPIKey(key)
 	prefix = key[:12] // "rda_" + first 8 hex chars
 

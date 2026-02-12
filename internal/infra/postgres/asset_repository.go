@@ -161,7 +161,7 @@ func (r *AssetRepository) FindRepositoryByRepoName(ctx context.Context, tenantID
 // This is more precise than FindRepositoryByRepoName as it considers the organization.
 func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID shared.ID, fullName string) (*asset.Asset, error) {
 	// Search for repository assets where name or external_id contains the full name pattern
-	// e.g., "github.com-exploop/exploopio/sdk" should match fullName "exploopio/sdk"
+	// e.g., "github.com/openctemio/sdk-go" should match fullName "openctemio/sdk"
 	query := r.selectQuery() + `
 		WHERE a.tenant_id = $1
 		AND a.asset_type IN ('repository', 'code_repo')
@@ -175,7 +175,7 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 	`
 
 	// Match names that end with the fullName pattern
-	namePattern := "%/" + fullName // matches "github.com-exploop/exploopio/sdk" for "exploopio/sdk"
+	namePattern := "%/" + fullName // matches "github.com/openctemio/sdk-go" for "openctemio/sdk"
 	externalIdPattern := "%/" + fullName
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), namePattern, fullName, externalIdPattern)

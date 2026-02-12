@@ -1,6 +1,6 @@
 # =============================================================================
 # Admin CLI Dockerfile
-# Builds exploop-admin and bootstrap-admin CLI tools
+# Builds openctem-admin and bootstrap-admin CLI tools
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -14,7 +14,7 @@ WORKDIR /app
 RUN apk add --no-cache git ca-certificates tzdata
 
 # Set GOPRIVATE for private modules
-ENV GOPRIVATE=github.com/exploopio/*
+ENV GOPRIVATE=github.com/openctemio/*
 
 # Copy go mod files
 COPY go.mod go.sum ./
@@ -32,12 +32,12 @@ ARG VERSION=dev
 # Disable workspace mode (GOWORK=off) to build standalone
 ENV GOWORK=off
 
-# Build exploop-admin CLI
+# Build openctem-admin CLI
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \
     -ldflags="-s -w -X main.Version=${VERSION}" \
-    -o /out/exploop-admin \
-    ./cmd/exploop-admin
+    -o /out/openctem-admin \
+    ./cmd/openctem-admin
 
 # Build bootstrap-admin CLI
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
@@ -51,12 +51,12 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 # -----------------------------------------------------------------------------
 FROM gcr.io/distroless/static-debian12:nonroot AS production
 
-LABEL org.opencontainers.image.title="Rediver Admin CLI"
-LABEL org.opencontainers.image.description="kubectl-style CLI for Rediver platform administration"
-LABEL org.opencontainers.image.source="https://github.com/exploopio/api"
+LABEL org.opencontainers.image.title="OpenCTEM Admin CLI"
+LABEL org.opencontainers.image.description="kubectl-style CLI for OpenCTEM platform administration"
+LABEL org.opencontainers.image.source="https://github.com/openctemio/api"
 
 # Copy binaries
-COPY --from=builder /out/exploop-admin /usr/local/bin/exploop-admin
+COPY --from=builder /out/openctem-admin /usr/local/bin/openctem-admin
 COPY --from=builder /out/bootstrap-admin /usr/local/bin/bootstrap-admin
 
 # Copy timezone data and CA certs
@@ -69,6 +69,6 @@ USER 65532:65532
 # CLI tools are short-lived, disable HEALTHCHECK
 HEALTHCHECK NONE
 
-# Default to exploop-admin
-ENTRYPOINT ["/usr/local/bin/exploop-admin"]
+# Default to openctem-admin
+ENTRYPOINT ["/usr/local/bin/openctem-admin"]
 CMD ["--help"]

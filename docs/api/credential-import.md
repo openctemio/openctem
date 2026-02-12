@@ -29,7 +29,7 @@ The Credential Import API allows you to:
 |--------|----------|-------------|-----------------|
 | POST | `/api/v1/agent/credentials/ingest` | Ingest credentials from agents | `credentials` |
 
-> **Module Gating:** Agent ingest routes require the tenant to have the corresponding module enabled in their subscription plan. If the module is not enabled, the API returns `403 MODULE_NOT_ENABLED`.
+> **Module Gating:** Agent ingest routes require the tenant to have the corresponding module enabled. If the module is not enabled, the API returns `403 MODULE_NOT_ENABLED`.
 
 ---
 
@@ -379,7 +379,7 @@ The request body is the same as the JSON import endpoint.
 import requests
 
 API_KEY = "your-agent-api-key"
-API_URL = "https://api.exploop.io/api/v1/agent/credentials/ingest"
+API_URL = "https://api.openctem.io/api/v1/agent/credentials/ingest"
 
 credentials = {
     "credentials": [

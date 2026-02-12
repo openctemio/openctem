@@ -172,12 +172,20 @@ func (r *ComponentRepository) LinkLicenses(ctx context.Context, componentID shar
 }
 
 // LinkAsset creates a record in asset_components table.
+// Uses a subquery to pull name/version/ecosystem/purl from the global components table.
 func (r *ComponentRepository) LinkAsset(ctx context.Context, dep *component.AssetDependency) error {
 	query := `
 		INSERT INTO asset_components (
-			id, tenant_id, asset_id, component_id, path, dependency_type, manifest_file, parent_component_id, depth, created_at, updated_at
+			id, tenant_id, asset_id, component_id, path,
+			name, version, ecosystem, purl,
+			dependency_type, manifest_file, parent_component_id, depth,
+			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		SELECT $1, $2, $3, $4, $5,
+			   c.name, c.version, c.ecosystem, c.purl,
+			   $6, $7, $8, $9,
+			   $10, $11
+		FROM components c WHERE c.id = $4
 		ON CONFLICT (asset_id, component_id, path) DO UPDATE SET
 			dependency_type = EXCLUDED.dependency_type,
 			parent_component_id = EXCLUDED.parent_component_id,

@@ -487,6 +487,7 @@ func (r *WorkflowRunRepository) scanRun(row *sql.Row) (*workflow.Run, error) {
 		triggeredBy sql.NullString
 	)
 
+	var errorMessage sql.NullString
 	err := row.Scan(
 		&id,
 		&workflowID,
@@ -494,7 +495,7 @@ func (r *WorkflowRunRepository) scanRun(row *sql.Row) (*workflow.Run, error) {
 		&triggerType,
 		&triggerData,
 		&status,
-		&run.ErrorMessage,
+		&errorMessage,
 		&context,
 		&run.TotalNodes,
 		&run.CompletedNodes,
@@ -517,6 +518,7 @@ func (r *WorkflowRunRepository) scanRun(row *sql.Row) (*workflow.Run, error) {
 	run.TenantID, _ = shared.IDFromString(tenantID)
 	run.TriggerType = workflow.TriggerType(triggerType)
 	run.Status = workflow.RunStatus(status)
+	run.ErrorMessage = errorMessage.String
 
 	if len(triggerData) > 0 {
 		_ = json.Unmarshal(triggerData, &run.TriggerData)
@@ -545,6 +547,7 @@ func (r *WorkflowRunRepository) scanRunFromRows(rows *sql.Rows) (*workflow.Run, 
 		triggeredBy sql.NullString
 	)
 
+	var errorMessage sql.NullString
 	err := rows.Scan(
 		&id,
 		&workflowID,
@@ -552,7 +555,7 @@ func (r *WorkflowRunRepository) scanRunFromRows(rows *sql.Rows) (*workflow.Run, 
 		&triggerType,
 		&triggerData,
 		&status,
-		&run.ErrorMessage,
+		&errorMessage,
 		&context,
 		&run.TotalNodes,
 		&run.CompletedNodes,
@@ -572,6 +575,7 @@ func (r *WorkflowRunRepository) scanRunFromRows(rows *sql.Rows) (*workflow.Run, 
 	run.TenantID, _ = shared.IDFromString(tenantID)
 	run.TriggerType = workflow.TriggerType(triggerType)
 	run.Status = workflow.RunStatus(status)
+	run.ErrorMessage = errorMessage.String
 
 	if len(triggerData) > 0 {
 		_ = json.Unmarshal(triggerData, &run.TriggerData)
@@ -602,6 +606,7 @@ func scanNodeRun(rows *sql.Rows) (*workflow.NodeRun, error) {
 		conditionResult sql.NullBool
 	)
 
+	var errorMessage sql.NullString
 	err := rows.Scan(
 		&id,
 		&workflowRunID,
@@ -609,7 +614,7 @@ func scanNodeRun(rows *sql.Rows) (*workflow.NodeRun, error) {
 		&nr.NodeKey,
 		&nodeType,
 		&status,
-		&nr.ErrorMessage,
+		&errorMessage,
 		&errorCode,
 		&input,
 		&output,
@@ -628,6 +633,7 @@ func scanNodeRun(rows *sql.Rows) (*workflow.NodeRun, error) {
 	nr.NodeID, _ = shared.IDFromString(nodeID)
 	nr.NodeType = workflow.NodeType(nodeType)
 	nr.Status = workflow.NodeRunStatus(status)
+	nr.ErrorMessage = errorMessage.String
 
 	if errorCode.Valid {
 		nr.ErrorCode = errorCode.String

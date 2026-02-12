@@ -157,10 +157,9 @@ type Agent struct {
 	StatusMessage string
 
 	// Platform agent flag (SaaS model)
-	// Platform agents are managed by Exploop and don't count towards tenant's agent limit.
+	// Platform agents are managed by OpenCTEM and don't count towards tenant's agent limit.
 	// Tenants can use platform agents for their scans without provisioning their own.
 	IsPlatformAgent bool
-
 
 	// API key for authentication
 	APIKeyHash   string
@@ -245,7 +244,6 @@ func NewAgent(
 		UpdatedAt:       now,
 	}, nil
 }
-
 
 // SetAPIKey sets the hashed API key and prefix.
 func (a *Agent) SetAPIKey(hash, prefix string) {

@@ -113,7 +113,7 @@ Inbound: TCP 6379 from app-security-group only
 Create dedicated user for the application:
 
 ```redis
-ACL SETUSER.exploop on >strongpassword .exploop:* +@all -@dangerous
+ACL SETUSER openctem on >strongpassword openctem:* +@all -@dangerous
 ```
 
 ## High Availability
@@ -171,7 +171,7 @@ The Redis package exports metrics automatically. Ensure your application exposes
 ```go
 import (
     "github.com/prometheus/client_golang/prometheus/promhttp"
-    "github.com/exploopio/api/internal/infra/redis"
+    "github.com/openctemio/api/internal/infra/redis"
 )
 
 // Start pool stats collector

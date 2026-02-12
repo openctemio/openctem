@@ -363,7 +363,7 @@ func setupCommandTestDB(t *testing.T) *sql.DB {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://exploop@localhost:5432/exploop?sslmode=disable"
+		dbURL = "postgres://openctem@localhost:5432/openctem?sslmode=disable"
 	}
 
 	db, err := sql.Open("postgres", dbURL)

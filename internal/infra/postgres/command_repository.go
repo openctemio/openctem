@@ -350,30 +350,32 @@ func (r *CommandRepository) buildWhereClause(filter command.Filter) (string, []a
 func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) {
 	cmd := &command.Command{}
 	var (
-		id                  string
-		tenantID            string
-		agentID             sql.NullString
-		cmdType             string
-		priority            string
-		payload             []byte
-		status              string
-		expiresAt           sql.NullTime
-		acknowledgedAt      sql.NullTime
-		startedAt           sql.NullTime
-		completedAt         sql.NullTime
-		result              []byte
-		scheduledAt         sql.NullTime
-		scheduleID          sql.NullString
-		stepRunID           sql.NullString
-		isPlatformJob       bool
-		platformAgentID     sql.NullString
-		authTokenHash       sql.NullString
-		authTokenPrefix     sql.NullString
-		authTokenExpiresAt  sql.NullTime
-		queuePriority       int
-		queuedAt            sql.NullTime
-		dispatchAttempts    int
+		id                 string
+		tenantID           string
+		agentID            sql.NullString
+		cmdType            string
+		priority           string
+		payload            []byte
+		status             string
+		expiresAt          sql.NullTime
+		acknowledgedAt     sql.NullTime
+		startedAt          sql.NullTime
+		completedAt        sql.NullTime
+		result             []byte
+		scheduledAt        sql.NullTime
+		scheduleID         sql.NullString
+		stepRunID          sql.NullString
+		isPlatformJob      bool
+		platformAgentID    sql.NullString
+		authTokenHash      sql.NullString
+		authTokenPrefix    sql.NullString
+		authTokenExpiresAt sql.NullTime
+		queuePriority      int
+		queuedAt           sql.NullTime
+		dispatchAttempts   int
 	)
+
+	var errorMessage sql.NullString
 
 	err := row.Scan(
 		&id,
@@ -383,7 +385,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		&priority,
 		&payload,
 		&status,
-		&cmd.ErrorMessage,
+		&errorMessage,
 		&cmd.CreatedAt,
 		&expiresAt,
 		&acknowledgedAt,
@@ -416,6 +418,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 	cmd.Priority = command.CommandPriority(priority)
 	cmd.Status = command.CommandStatus(status)
 	cmd.Payload = payload
+	cmd.ErrorMessage = errorMessage.String
 	cmd.IsPlatformJob = isPlatformJob
 	cmd.QueuePriority = queuePriority
 	cmd.DispatchAttempts = dispatchAttempts
@@ -487,30 +490,32 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Command, error) {
 	cmd := &command.Command{}
 	var (
-		id                  string
-		tenantID            string
-		agentID             sql.NullString
-		cmdType             string
-		priority            string
-		payload             []byte
-		status              string
-		expiresAt           sql.NullTime
-		acknowledgedAt      sql.NullTime
-		startedAt           sql.NullTime
-		completedAt         sql.NullTime
-		result              []byte
-		scheduledAt         sql.NullTime
-		scheduleID          sql.NullString
-		stepRunID           sql.NullString
-		isPlatformJob       bool
-		platformAgentID     sql.NullString
-		authTokenHash       sql.NullString
-		authTokenPrefix     sql.NullString
-		authTokenExpiresAt  sql.NullTime
-		queuePriority       int
-		queuedAt            sql.NullTime
-		dispatchAttempts    int
+		id                 string
+		tenantID           string
+		agentID            sql.NullString
+		cmdType            string
+		priority           string
+		payload            []byte
+		status             string
+		expiresAt          sql.NullTime
+		acknowledgedAt     sql.NullTime
+		startedAt          sql.NullTime
+		completedAt        sql.NullTime
+		result             []byte
+		scheduledAt        sql.NullTime
+		scheduleID         sql.NullString
+		stepRunID          sql.NullString
+		isPlatformJob      bool
+		platformAgentID    sql.NullString
+		authTokenHash      sql.NullString
+		authTokenPrefix    sql.NullString
+		authTokenExpiresAt sql.NullTime
+		queuePriority      int
+		queuedAt           sql.NullTime
+		dispatchAttempts   int
 	)
+
+	var errorMessage sql.NullString
 
 	err := rows.Scan(
 		&id,
@@ -520,7 +525,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		&priority,
 		&payload,
 		&status,
-		&cmd.ErrorMessage,
+		&errorMessage,
 		&cmd.CreatedAt,
 		&expiresAt,
 		&acknowledgedAt,
@@ -550,6 +555,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 	cmd.Priority = command.CommandPriority(priority)
 	cmd.Status = command.CommandStatus(status)
 	cmd.Payload = payload
+	cmd.ErrorMessage = errorMessage.String
 	cmd.IsPlatformJob = isPlatformJob
 	cmd.QueuePriority = queuePriority
 	cmd.DispatchAttempts = dispatchAttempts

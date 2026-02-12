@@ -209,7 +209,7 @@ func (m *MockScannerTemplateRepo) Update(ctx context.Context, template *scannert
 	return nil
 }
 
-func (m *MockScannerTemplateRepo) Delete(ctx context.Context, id shared.ID) error {
+func (m *MockScannerTemplateRepo) Delete(ctx context.Context, tenantID, id shared.ID) error {
 	delete(m.templates, id.String())
 	return nil
 }

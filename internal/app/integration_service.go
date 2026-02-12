@@ -1964,7 +1964,7 @@ func (s *IntegrationService) SendNotification(ctx context.Context, input SendNot
 		Severity:   input.Severity,
 		URL:        input.URL,
 		Fields:     input.Fields,
-		FooterText: "Sent via Exploop.io",
+		FooterText: "Sent via OpenCTEM.io",
 	}
 
 	// Send notification

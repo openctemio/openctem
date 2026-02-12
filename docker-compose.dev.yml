@@ -29,7 +29,7 @@ services:
       - "2345:2345" # Delve debugger
     environment:
       # Application
-      APP_NAME: exploop
+      APP_NAME: openctem
       APP_ENV: development
       APP_DEBUG: "true"
       # Server
@@ -40,9 +40,9 @@ services:
       # Database
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: ${DB_USER:-exploop}
+      DB_USER: ${DB_USER:-openctem}
       DB_PASSWORD: ${DB_PASSWORD:-secret}
-      DB_NAME: ${DB_NAME:-exploop}
+      DB_NAME: ${DB_NAME:-openctem}
       DB_SSLMODE: disable
       # Redis
       REDIS_HOST: redis
@@ -71,7 +71,7 @@ services:
       AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
       # Keycloak (optional - for hybrid mode)
       # KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-http://localhost:8180}
-      # KEYCLOAK_REALM: ${KEYCLOAK_REALM:-exploop}
+      # KEYCLOAK_REALM: ${KEYCLOAK_REALM:-openctem}
       # KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-api}
       # CORS (allow all in dev)
       CORS_ALLOWED_ORIGINS: "*"
@@ -88,8 +88,8 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-noreply@exploop.io}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Rediver}
+      SMTP_FROM: ${SMTP_FROM:-noreply@openctem.io}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-OpenCTEM}
       SMTP_TLS: ${SMTP_TLS:-true}
       SMTP_SKIP_VERIFY: ${SMTP_SKIP_VERIFY:-false}
       SMTP_BASE_URL: ${SMTP_BASE_URL:-http://localhost:3000}

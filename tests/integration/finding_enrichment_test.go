@@ -7,7 +7,7 @@ import (
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // =============================================================================
@@ -687,31 +687,31 @@ func TestEnrichment_EdgeCases(t *testing.T) {
 	})
 }
 
-// TestEnrichment_RISToFindingWorkflow tests the full EIS → Finding workflow.
-func TestEnrichment_RISToFindingWorkflow(t *testing.T) {
+// TestEnrichment_CTISToFindingWorkflow tests the full CTIS → Finding workflow.
+func TestEnrichment_CTISToFindingWorkflow(t *testing.T) {
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
 
-	// Simulate EIS finding from scanner
-	risFinding := &eis.Finding{
+	// Simulate CTIS finding from scanner
+	ctisFinding := &ctis.Finding{
 		ID:          "scan-001-finding-001",
-		Type:        eis.FindingTypeVulnerability,
+		Type:        ctis.FindingTypeVulnerability,
 		Title:       "Command Injection in shell execution",
 		Description: "User input passed directly to shell command",
-		Severity:    eis.SeverityCritical,
+		Severity:    ctis.SeverityCritical,
 		Confidence:  95,
 		Impact:      "HIGH",
 		Likelihood:  "HIGH",
 		RuleID:      "go.lang.security.audit.command-injection",
 		RuleName:    "Command Injection",
 		Fingerprint: "unique-fp-001",
-		Vulnerability: &eis.VulnerabilityDetails{
+		Vulnerability: &ctis.VulnerabilityDetails{
 			CVSSScore:  9.8,
 			CVSSVector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
 			CWEIDs:     []string{"CWE-78", "CWE-77"},
 			OWASPIDs:   []string{"A03:2021"},
 		},
-		Location: &eis.FindingLocation{
+		Location: &ctis.FindingLocation{
 			Path:        "/app/executor.go",
 			StartLine:   88,
 			EndLine:     92,
@@ -722,60 +722,60 @@ func TestEnrichment_RISToFindingWorkflow(t *testing.T) {
 		Tags: []string{"command-injection", "shell", "critical"},
 	}
 
-	// Verify EIS fields are populated correctly
-	if risFinding.ID != "scan-001-finding-001" {
-		t.Error("EIS ID should be set")
+	// Verify CTIS fields are populated correctly
+	if ctisFinding.ID != "scan-001-finding-001" {
+		t.Error("CTIS ID should be set")
 	}
-	if risFinding.Confidence != 95 {
-		t.Error("EIS Confidence should be 95")
+	if ctisFinding.Confidence != 95 {
+		t.Error("CTIS Confidence should be 95")
 	}
-	if risFinding.Impact != "HIGH" {
-		t.Error("EIS Impact should be HIGH")
+	if ctisFinding.Impact != "HIGH" {
+		t.Error("CTIS Impact should be HIGH")
 	}
-	if risFinding.Likelihood != "HIGH" {
-		t.Error("EIS Likelihood should be HIGH")
+	if ctisFinding.Likelihood != "HIGH" {
+		t.Error("CTIS Likelihood should be HIGH")
 	}
 
-	// Create domain finding from EIS
+	// Create domain finding from CTIS
 	finding, err := vulnerability.NewFinding(
 		tenantID,
 		assetID,
 		vulnerability.FindingSourceSAST,
 		"semgrep",
-		vulnerability.Severity(risFinding.Severity),
-		risFinding.Title,
+		vulnerability.Severity(ctisFinding.Severity),
+		ctisFinding.Title,
 	)
 	if err != nil {
 		t.Fatalf("Failed to create finding: %v", err)
 	}
 
-	// Map EIS fields to domain
-	finding.SetFindingType(vulnerability.FindingType(risFinding.Type))
-	finding.SetRuleID(risFinding.RuleID)
-	finding.SetRuleName(risFinding.RuleName)
-	finding.SetDescription(risFinding.Description)
-	finding.SetFingerprint(risFinding.Fingerprint)
-	finding.SetTags(risFinding.Tags)
+	// Map CTIS fields to domain
+	finding.SetFindingType(vulnerability.FindingType(ctisFinding.Type))
+	finding.SetRuleID(ctisFinding.RuleID)
+	finding.SetRuleName(ctisFinding.RuleName)
+	finding.SetDescription(ctisFinding.Description)
+	finding.SetFingerprint(ctisFinding.Fingerprint)
+	finding.SetTags(ctisFinding.Tags)
 
-	if risFinding.Location != nil {
+	if ctisFinding.Location != nil {
 		finding.SetLocation(
-			risFinding.Location.Path,
-			risFinding.Location.StartLine,
-			risFinding.Location.EndLine,
-			risFinding.Location.StartColumn,
-			risFinding.Location.EndColumn,
+			ctisFinding.Location.Path,
+			ctisFinding.Location.StartLine,
+			ctisFinding.Location.EndLine,
+			ctisFinding.Location.StartColumn,
+			ctisFinding.Location.EndColumn,
 		)
-		finding.SetSnippet(risFinding.Location.Snippet)
+		finding.SetSnippet(ctisFinding.Location.Snippet)
 	}
 
-	if risFinding.Vulnerability != nil {
-		cvss := risFinding.Vulnerability.CVSSScore
+	if ctisFinding.Vulnerability != nil {
+		cvss := ctisFinding.Vulnerability.CVSSScore
 		err = finding.SetClassification(
-			risFinding.Vulnerability.CVEID,
+			ctisFinding.Vulnerability.CVEID,
 			&cvss,
-			risFinding.Vulnerability.CVSSVector,
-			risFinding.Vulnerability.CWEIDs,
-			risFinding.Vulnerability.OWASPIDs,
+			ctisFinding.Vulnerability.CVSSVector,
+			ctisFinding.Vulnerability.CWEIDs,
+			ctisFinding.Vulnerability.OWASPIDs,
 		)
 		if err != nil {
 			t.Fatalf("Failed to set classification: %v", err)

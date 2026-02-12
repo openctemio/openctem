@@ -5,15 +5,19 @@
 
 -- Tool Categories
 CREATE TABLE IF NOT EXISTS tool_categories (
-    id VARCHAR(50) PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    name VARCHAR(50) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
     description TEXT,
-    icon VARCHAR(50),
-    display_order INTEGER DEFAULT 0,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    icon VARCHAR(50) DEFAULT 'folder',
+    color VARCHAR(20) DEFAULT 'gray',
+    is_builtin BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT unique_tool_category_name UNIQUE NULLS NOT DISTINCT (tenant_id, name)
 );
 
 COMMENT ON TABLE tool_categories IS 'Categories for organizing security tools';
@@ -26,7 +30,7 @@ CREATE TABLE IF NOT EXISTS tools (
     display_name VARCHAR(100) NOT NULL,
     description TEXT,
     logo_url VARCHAR(500),
-    category_id VARCHAR(50) REFERENCES tool_categories(id) ON DELETE SET NULL,
+    category_id UUID REFERENCES tool_categories(id) ON DELETE SET NULL,
     install_method VARCHAR(20),
     install_cmd TEXT,
     update_cmd TEXT,
@@ -91,8 +95,7 @@ COMMENT ON TABLE tenant_tool_configs IS 'Tenant-specific tool configuration over
 -- =============================================================================
 
 -- Tool categories indexes
-CREATE INDEX IF NOT EXISTS idx_tool_categories_active ON tool_categories(is_active) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_tool_categories_order ON tool_categories(display_order);
+CREATE INDEX IF NOT EXISTS idx_tool_categories_order ON tool_categories(sort_order);
 
 -- Tools indexes
 CREATE INDEX IF NOT EXISTS idx_tools_tenant ON tools(tenant_id);
@@ -119,36 +122,36 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tools_builtin_name_unique ON tools(name) W
 -- Seed Tool Categories
 -- =============================================================================
 
-INSERT INTO tool_categories (id, name, display_name, description, icon, display_order) VALUES
-    ('sast', 'sast', 'SAST', 'Static Application Security Testing', 'Code', 1),
-    ('sca', 'sca', 'SCA', 'Software Composition Analysis', 'Package', 2),
-    ('dast', 'dast', 'DAST', 'Dynamic Application Security Testing', 'Globe', 3),
-    ('secrets', 'secrets', 'Secret Detection', 'Credential and secret scanning', 'Key', 4),
-    ('iac', 'iac', 'IaC Security', 'Infrastructure as Code scanning', 'Cloud', 5),
-    ('container', 'container', 'Container Security', 'Container and image scanning', 'Box', 6),
-    ('recon', 'recon', 'Reconnaissance', 'Asset discovery and enumeration', 'Search', 7),
-    ('network', 'network', 'Network Security', 'Network vulnerability scanning', 'Network', 8)
+INSERT INTO tool_categories (id, name, display_name, description, icon, sort_order) VALUES
+    ('00000000-0000-0000-0000-000000000201', 'sast', 'SAST', 'Static Application Security Testing', 'Code', 1),
+    ('00000000-0000-0000-0000-000000000202', 'sca', 'SCA', 'Software Composition Analysis', 'Package', 2),
+    ('00000000-0000-0000-0000-000000000203', 'dast', 'DAST', 'Dynamic Application Security Testing', 'Globe', 3),
+    ('00000000-0000-0000-0000-000000000204', 'secrets', 'Secret Detection', 'Credential and secret scanning', 'Key', 4),
+    ('00000000-0000-0000-0000-000000000205', 'iac', 'IaC Security', 'Infrastructure as Code scanning', 'Cloud', 5),
+    ('00000000-0000-0000-0000-000000000206', 'container', 'Container Security', 'Container and image scanning', 'Box', 6),
+    ('00000000-0000-0000-0000-000000000207', 'recon', 'Reconnaissance', 'Asset discovery and enumeration', 'Search', 7),
+    ('00000000-0000-0000-0000-000000000208', 'network', 'Network Security', 'Network vulnerability scanning', 'Network', 8)
 ON CONFLICT (id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     description = EXCLUDED.description,
     icon = EXCLUDED.icon,
-    display_order = EXCLUDED.display_order;
+    sort_order = EXCLUDED.sort_order;
 
 -- =============================================================================
 -- Seed Core Tools
 -- =============================================================================
 
 INSERT INTO tools (id, name, display_name, description, category_id, install_method, capabilities, supported_targets, output_formats, is_builtin) VALUES
-    ('00000000-0000-0000-0000-000000000101', 'semgrep', 'Semgrep', 'Fast, lightweight static analysis for security', 'sast', 'pip', ARRAY['sast', 'security_analysis'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
-    ('00000000-0000-0000-0000-000000000102', 'trivy', 'Trivy', 'Comprehensive vulnerability scanner', 'sca', 'binary', ARRAY['sca', 'container', 'iac'], ARRAY['file', 'repository', 'container'], ARRAY['json', 'sarif'], TRUE),
-    ('00000000-0000-0000-0000-000000000103', 'gitleaks', 'Gitleaks', 'Secret detection in git repositories', 'secrets', 'go', ARRAY['secrets'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
-    ('00000000-0000-0000-0000-000000000104', 'nuclei', 'Nuclei', 'Fast vulnerability scanner', 'dast', 'go', ARRAY['dast', 'recon'], ARRAY['url', 'domain', 'ip'], ARRAY['json', 'sarif'], TRUE),
-    ('00000000-0000-0000-0000-000000000105', 'checkov', 'Checkov', 'Infrastructure as Code security scanner', 'iac', 'pip', ARRAY['iac', 'security_analysis'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
-    ('00000000-0000-0000-0000-000000000106', 'grype', 'Grype', 'Vulnerability scanner for container images', 'sca', 'binary', ARRAY['sca', 'container'], ARRAY['container', 'file'], ARRAY['json', 'sarif'], TRUE),
-    ('00000000-0000-0000-0000-000000000107', 'osv-scanner', 'OSV Scanner', 'Vulnerability scanner using OSV database', 'sca', 'go', ARRAY['sca'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
-    ('00000000-0000-0000-0000-000000000108', 'trufflehog', 'TruffleHog', 'Secret and credential scanner', 'secrets', 'go', ARRAY['secrets'], ARRAY['file', 'repository'], ARRAY['json'], TRUE),
-    ('00000000-0000-0000-0000-000000000109', 'kics', 'KICS', 'Infrastructure as Code scanner by Checkmarx', 'iac', 'docker', ARRAY['iac'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
-    ('00000000-0000-0000-0000-000000000110', 'zap', 'OWASP ZAP', 'Web application security scanner', 'dast', 'docker', ARRAY['dast'], ARRAY['url'], ARRAY['json', 'sarif'], TRUE)
+    ('00000000-0000-0000-0000-000000000101', 'semgrep', 'Semgrep', 'Fast, lightweight static analysis for security', '00000000-0000-0000-0000-000000000201', 'pip', ARRAY['sast', 'security_analysis'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
+    ('00000000-0000-0000-0000-000000000102', 'trivy', 'Trivy', 'Comprehensive vulnerability scanner', '00000000-0000-0000-0000-000000000202', 'binary', ARRAY['sca', 'container', 'iac'], ARRAY['file', 'repository', 'container'], ARRAY['json', 'sarif'], TRUE),
+    ('00000000-0000-0000-0000-000000000103', 'gitleaks', 'Gitleaks', 'Secret detection in git repositories', '00000000-0000-0000-0000-000000000204', 'go', ARRAY['secrets'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
+    ('00000000-0000-0000-0000-000000000104', 'nuclei', 'Nuclei', 'Fast vulnerability scanner', '00000000-0000-0000-0000-000000000203', 'go', ARRAY['dast', 'recon'], ARRAY['url', 'domain', 'ip'], ARRAY['json', 'sarif'], TRUE),
+    ('00000000-0000-0000-0000-000000000105', 'checkov', 'Checkov', 'Infrastructure as Code security scanner', '00000000-0000-0000-0000-000000000205', 'pip', ARRAY['iac', 'security_analysis'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
+    ('00000000-0000-0000-0000-000000000106', 'grype', 'Grype', 'Vulnerability scanner for container images', '00000000-0000-0000-0000-000000000202', 'binary', ARRAY['sca', 'container'], ARRAY['container', 'file'], ARRAY['json', 'sarif'], TRUE),
+    ('00000000-0000-0000-0000-000000000107', 'osv-scanner', 'OSV Scanner', 'Vulnerability scanner using OSV database', '00000000-0000-0000-0000-000000000202', 'go', ARRAY['sca'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
+    ('00000000-0000-0000-0000-000000000108', 'trufflehog', 'TruffleHog', 'Secret and credential scanner', '00000000-0000-0000-0000-000000000204', 'go', ARRAY['secrets'], ARRAY['file', 'repository'], ARRAY['json'], TRUE),
+    ('00000000-0000-0000-0000-000000000109', 'kics', 'KICS', 'Infrastructure as Code scanner by Checkmarx', '00000000-0000-0000-0000-000000000205', 'docker', ARRAY['iac'], ARRAY['file', 'repository'], ARRAY['json', 'sarif'], TRUE),
+    ('00000000-0000-0000-0000-000000000110', 'zap', 'OWASP ZAP', 'Web application security scanner', '00000000-0000-0000-0000-000000000203', 'docker', ARRAY['dast'], ARRAY['url'], ARRAY['json', 'sarif'], TRUE)
 ON CONFLICT (name) WHERE tenant_id IS NULL DO UPDATE SET
     display_name = EXCLUDED.display_name,
     description = EXCLUDED.description,

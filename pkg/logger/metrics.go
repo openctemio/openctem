@@ -13,7 +13,7 @@ var (
 	// logsDroppedTotal counts logs dropped by sampling
 	logsDroppedTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: "exploop",
+			Namespace: "openctem",
 			Subsystem: "logger",
 			Name:      "logs_dropped_total",
 			Help:      "Total number of logs dropped by sampling",
@@ -24,7 +24,7 @@ var (
 	// logsProcessedTotal counts all logs processed (before sampling)
 	logsProcessedTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: "exploop",
+			Namespace: "openctem",
 			Subsystem: "logger",
 			Name:      "logs_processed_total",
 			Help:      "Total number of logs processed (before sampling)",
@@ -35,7 +35,7 @@ var (
 	// samplingCounterSize tracks the number of unique log keys in the sampling counter
 	samplingCounterSize = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Namespace: "exploop",
+			Namespace: "openctem",
 			Subsystem: "logger",
 			Name:      "sampling_counter_size",
 			Help:      "Number of unique log message keys in the sampling counter",

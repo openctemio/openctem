@@ -8,7 +8,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/sdk/pkg/eis"
+	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
 // =============================================================================
@@ -84,13 +84,13 @@ func (m *MockFindingRepositoryForIngest) GetAll() []*vulnerability.Finding {
 // =============================================================================
 
 func TestIngestFinding_SemgrepFieldMapping(t *testing.T) {
-	// Create a EIS finding that simulates parsed semgrep output
-	risFinding := &eis.Finding{
+	// Create a CTIS finding that simulates parsed semgrep output
+	ctisFinding := &ctis.Finding{
 		ID:                 "finding-1",
-		Type:               eis.FindingTypeVulnerability,
+		Type:               ctis.FindingTypeVulnerability,
 		Title:              "SQL Injection at /app/db.go:42",
 		Description:        "User input flows directly to SQL query without sanitization",
-		Severity:           eis.SeverityCritical,
+		Severity:           ctis.SeverityCritical,
 		Confidence:         90,
 		Impact:             "HIGH",
 		Likelihood:         "MEDIUM",
@@ -100,11 +100,11 @@ func TestIngestFinding_SemgrepFieldMapping(t *testing.T) {
 		RuleID:             "go.lang.security.audit.sqli.taint-sql-string-format",
 		RuleName:           "Tainted SQL String Format",
 		Fingerprint:        "abc123fingerprint",
-		Vulnerability: &eis.VulnerabilityDetails{
+		Vulnerability: &ctis.VulnerabilityDetails{
 			CWEIDs:   []string{"CWE-89"},
 			OWASPIDs: []string{"A01:2017 - Injection", "A03:2021 - Injection"},
 		},
-		Location: &eis.FindingLocation{
+		Location: &ctis.FindingLocation{
 			Path:        "/app/db.go",
 			StartLine:   42,
 			EndLine:     42,
@@ -121,54 +121,54 @@ func TestIngestFinding_SemgrepFieldMapping(t *testing.T) {
 
 	// Test field presence
 	t.Run("AllFieldsPresent", func(t *testing.T) {
-		if risFinding.Title == "" {
+		if ctisFinding.Title == "" {
 			t.Error("Title should not be empty")
 		}
-		if risFinding.Description == "" {
+		if ctisFinding.Description == "" {
 			t.Error("Description should not be empty")
 		}
-		if risFinding.Impact == "" {
+		if ctisFinding.Impact == "" {
 			t.Error("Impact should not be empty")
 		}
-		if risFinding.Likelihood == "" {
+		if ctisFinding.Likelihood == "" {
 			t.Error("Likelihood should not be empty")
 		}
-		if len(risFinding.VulnerabilityClass) == 0 {
+		if len(ctisFinding.VulnerabilityClass) == 0 {
 			t.Error("VulnerabilityClass should not be empty")
 		}
-		if len(risFinding.Subcategory) == 0 {
+		if len(ctisFinding.Subcategory) == 0 {
 			t.Error("Subcategory should not be empty")
 		}
-		if risFinding.Vulnerability == nil {
+		if ctisFinding.Vulnerability == nil {
 			t.Fatal("Vulnerability details should not be nil")
 		}
-		if len(risFinding.Vulnerability.CWEIDs) == 0 {
+		if len(ctisFinding.Vulnerability.CWEIDs) == 0 {
 			t.Error("CWEIDs should not be empty")
 		}
-		if len(risFinding.Vulnerability.OWASPIDs) == 0 {
+		if len(ctisFinding.Vulnerability.OWASPIDs) == 0 {
 			t.Error("OWASPIDs should not be empty")
 		}
 	})
 
 	// Test severity mapping
 	t.Run("SeverityMapping", func(t *testing.T) {
-		if risFinding.Severity != eis.SeverityCritical {
-			t.Errorf("Expected severity critical, got %s", risFinding.Severity)
+		if ctisFinding.Severity != ctis.SeverityCritical {
+			t.Errorf("Expected severity critical, got %s", ctisFinding.Severity)
 		}
 	})
 
 	// Test location mapping
 	t.Run("LocationMapping", func(t *testing.T) {
-		if risFinding.Location == nil {
+		if ctisFinding.Location == nil {
 			t.Fatal("Location should not be nil")
 		}
-		if risFinding.Location.Path != "/app/db.go" {
-			t.Errorf("Expected path /app/db.go, got %s", risFinding.Location.Path)
+		if ctisFinding.Location.Path != "/app/db.go" {
+			t.Errorf("Expected path /app/db.go, got %s", ctisFinding.Location.Path)
 		}
-		if risFinding.Location.StartLine != 42 {
-			t.Errorf("Expected start line 42, got %d", risFinding.Location.StartLine)
+		if ctisFinding.Location.StartLine != 42 {
+			t.Errorf("Expected start line 42, got %d", ctisFinding.Location.StartLine)
 		}
-		if risFinding.Location.Snippet == "" {
+		if ctisFinding.Location.Snippet == "" {
 			t.Error("Snippet should not be empty")
 		}
 	})
@@ -371,37 +371,37 @@ func TestIngestFinding_BranchAwareLifecycle(t *testing.T) {
 }
 
 // =============================================================================
-// Test: Full EIS Report Processing
+// Test: Full CTIS Report Processing
 // =============================================================================
 
-func TestIngestFinding_FullRISReportProcessing(t *testing.T) {
-	// Create a complete EIS report
-	report := &eis.Report{
-		Metadata: eis.ReportMetadata{
+func TestIngestFinding_FullCTISReportProcessing(t *testing.T) {
+	// Create a complete CTIS report
+	report := &ctis.Report{
+		Metadata: ctis.ReportMetadata{
 			ID:         "scan-001",
 			Timestamp:  time.Now(),
 			SourceType: "scanner",
 		},
-		Tool: &eis.Tool{
+		Tool: &ctis.Tool{
 			Name:    "semgrep",
 			Version: "1.50.0",
 			Vendor:  "Semgrep Inc.",
 		},
-		Assets: []eis.Asset{
+		Assets: []ctis.Asset{
 			{
 				ID:    "asset-1",
-				Type:  eis.AssetTypeRepository,
+				Type:  ctis.AssetTypeRepository,
 				Value: "github.com/example/repo",
 				Name:  "example-repo",
 			},
 		},
-		Findings: []eis.Finding{
+		Findings: []ctis.Finding{
 			{
 				ID:                 "finding-1",
-				Type:               eis.FindingTypeVulnerability,
+				Type:               ctis.FindingTypeVulnerability,
 				Title:              "SQL Injection at db.go:42",
 				Description:        "Tainted data flows to SQL query",
-				Severity:           eis.SeverityCritical,
+				Severity:           ctis.SeverityCritical,
 				Confidence:         90,
 				Impact:             "HIGH",
 				Likelihood:         "MEDIUM",
@@ -412,11 +412,11 @@ func TestIngestFinding_FullRISReportProcessing(t *testing.T) {
 				RuleName:           "SQL Injection",
 				AssetRef:           "asset-1",
 				Fingerprint:        "fp-sqli-001",
-				Vulnerability: &eis.VulnerabilityDetails{
+				Vulnerability: &ctis.VulnerabilityDetails{
 					CWEIDs:   []string{"CWE-89"},
 					OWASPIDs: []string{"A03:2021"},
 				},
-				Location: &eis.FindingLocation{
+				Location: &ctis.FindingLocation{
 					Path:      "db.go",
 					StartLine: 42,
 					EndLine:   42,
@@ -424,10 +424,10 @@ func TestIngestFinding_FullRISReportProcessing(t *testing.T) {
 			},
 			{
 				ID:                 "finding-2",
-				Type:               eis.FindingTypeVulnerability,
+				Type:               ctis.FindingTypeVulnerability,
 				Title:              "XSS at template.go:100",
 				Description:        "User input rendered without escaping",
-				Severity:           eis.SeverityHigh,
+				Severity:           ctis.SeverityHigh,
 				Confidence:         85,
 				Impact:             "MEDIUM",
 				Likelihood:         "HIGH",
@@ -438,11 +438,11 @@ func TestIngestFinding_FullRISReportProcessing(t *testing.T) {
 				RuleName:           "XSS",
 				AssetRef:           "asset-1",
 				Fingerprint:        "fp-xss-001",
-				Vulnerability: &eis.VulnerabilityDetails{
+				Vulnerability: &ctis.VulnerabilityDetails{
 					CWEIDs:   []string{"CWE-79"},
 					OWASPIDs: []string{"A03:2021", "A07:2017"},
 				},
-				Location: &eis.FindingLocation{
+				Location: &ctis.FindingLocation{
 					Path:      "template.go",
 					StartLine: 100,
 					EndLine:   100,
@@ -500,16 +500,16 @@ func TestIngestFinding_FullRISReportProcessing(t *testing.T) {
 	})
 
 	t.Run("SeverityDistribution", func(t *testing.T) {
-		severityCounts := make(map[eis.Severity]int)
+		severityCounts := make(map[ctis.Severity]int)
 		for _, f := range report.Findings {
 			severityCounts[f.Severity]++
 		}
 
-		if severityCounts[eis.SeverityCritical] != 1 {
-			t.Errorf("Expected 1 critical finding, got %d", severityCounts[eis.SeverityCritical])
+		if severityCounts[ctis.SeverityCritical] != 1 {
+			t.Errorf("Expected 1 critical finding, got %d", severityCounts[ctis.SeverityCritical])
 		}
-		if severityCounts[eis.SeverityHigh] != 1 {
-			t.Errorf("Expected 1 high finding, got %d", severityCounts[eis.SeverityHigh])
+		if severityCounts[ctis.SeverityHigh] != 1 {
+			t.Errorf("Expected 1 high finding, got %d", severityCounts[ctis.SeverityHigh])
 		}
 	})
 }

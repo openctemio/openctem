@@ -1,7 +1,7 @@
 .PHONY: all build run test lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required seed-test docker-seed-required docker-seed-test docker-seed-vnsecurity docker-seed-all db-setup db-setup-dev
 
 # Variables
-APP_NAME := rediver
+APP_NAME := openctem
 BUILD_DIR := bin
 MAIN_PATH := cmd/server/main.go
 COMPOSE_BASE := docker-compose.yml
@@ -19,7 +19,7 @@ DB_HOST ?= localhost
 DB_PORT ?= 5432
 DB_USER ?=
 DB_PASSWORD ?=
-DB_NAME ?= rediver
+DB_NAME ?= openctem
 DB_SSLMODE ?= disable
 DATABASE_URL ?= postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
 

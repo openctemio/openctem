@@ -9,7 +9,7 @@
 
 ## Reporting a Vulnerability
 
-We take security seriously at Rediver. If you discover a security vulnerability, please follow these steps:
+We take security seriously at OpenCTEM. If you discover a security vulnerability, please follow these steps:
 
 ### DO NOT
 
@@ -19,14 +19,14 @@ We take security seriously at Rediver. If you discover a security vulnerability,
 
 ### DO
 
-1. **Email us directly** at security@exploop.io with:
+1. **Email us directly** at security@openctem.io with:
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
    - Suggested fix (if any)
 
 2. **Use our bug bounty program** (if available) through:
-   - [HackerOne](https://hackerone.com.exploopio) (coming soon)
+   - [HackerOne](https://hackerone.com.openctemio) (coming soon)
 
 ### What to expect
 
@@ -88,5 +88,5 @@ We aim to comply with:
 
 ## Contact
 
-- Security Team: security@exploop.io
-- General Issues: https://github.com/exploopio/api/issues
+- Security Team: security@openctem.io
+- General Issues: https://github.com/openctemio/api/issues

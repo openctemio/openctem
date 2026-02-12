@@ -20,7 +20,7 @@ export const options = {
 
 const BASE_URL = __ENV.API_URL || 'http://localhost:8080/api/v1';
 const TEST_USER = {
-    email: __ENV.TEST_EMAIL || 'admin@rediver.io',
+    email: __ENV.TEST_EMAIL || 'admin@openctem.io',
     password: __ENV.TEST_PASSWORD || 'password123',
 };
 

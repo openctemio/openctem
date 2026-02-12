@@ -40,7 +40,7 @@ SEND_RESPONSE=$(curl -s -X POST "$API_URL/api/v1/integrations/$INTEGRATION_ID/se
         "title": "Test: Notification History Verification",
         "body": "This notification tests if history is being saved correctly.",
         "severity": "high",
-        "url": "https://test.exploop.io/verification"
+        "url": "https://test.openctem.io/verification"
     }')
 
 echo "Response: $SEND_RESPONSE"

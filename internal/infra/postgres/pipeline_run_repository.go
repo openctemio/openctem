@@ -535,6 +535,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		qualityGateResult []byte
 	)
 
+	var triggeredBy, errorMessage sql.NullString
 	err := row.Scan(
 		&id,
 		&pipelineID,
@@ -542,7 +543,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		&assetID,
 		&scanID,
 		&triggerType,
-		&run.TriggeredBy,
+		&triggeredBy,
 		&status,
 		&context,
 		&run.TotalSteps,
@@ -552,7 +553,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		&run.TotalFindings,
 		&startedAt,
 		&completedAt,
-		&run.ErrorMessage,
+		&errorMessage,
 		&scanProfileID,
 		&qualityGateResult,
 		&run.CreatedAt,
@@ -570,6 +571,8 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 	run.TenantID, _ = shared.IDFromString(tenantID)
 	run.TriggerType = pipeline.TriggerType(triggerType)
 	run.Status = pipeline.RunStatus(status)
+	run.TriggeredBy = triggeredBy.String
+	run.ErrorMessage = errorMessage.String
 
 	if assetID.Valid {
 		aid, _ := shared.IDFromString(assetID.String)
@@ -624,6 +627,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		qualityGateResult []byte
 	)
 
+	var triggeredBy, errorMessage sql.NullString
 	err := rows.Scan(
 		&id,
 		&pipelineID,
@@ -631,7 +635,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		&assetID,
 		&scanID,
 		&triggerType,
-		&run.TriggeredBy,
+		&triggeredBy,
 		&status,
 		&context,
 		&run.TotalSteps,
@@ -641,7 +645,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		&run.TotalFindings,
 		&startedAt,
 		&completedAt,
-		&run.ErrorMessage,
+		&errorMessage,
 		&scanProfileID,
 		&qualityGateResult,
 		&run.CreatedAt,
@@ -656,6 +660,8 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 	run.TenantID, _ = shared.IDFromString(tenantID)
 	run.TriggerType = pipeline.TriggerType(triggerType)
 	run.Status = pipeline.RunStatus(status)
+	run.TriggeredBy = triggeredBy.String
+	run.ErrorMessage = errorMessage.String
 
 	if assetID.Valid {
 		aid, _ := shared.IDFromString(assetID.String)
@@ -1074,6 +1080,8 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		completedAt     sql.NullTime
 	)
 
+	var skipReason, errorMessage, errorCode sql.NullString
+
 	err := rows.Scan(
 		&id,
 		&pipelineRunID,
@@ -1085,7 +1093,7 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		&commandID,
 		&sr.ConditionEvaluated,
 		&conditionResult,
-		&sr.SkipReason,
+		&skipReason,
 		&sr.FindingsCount,
 		&output,
 		&sr.Attempt,
@@ -1093,8 +1101,8 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		&queuedAt,
 		&startedAt,
 		&completedAt,
-		&sr.ErrorMessage,
-		&sr.ErrorCode,
+		&errorMessage,
+		&errorCode,
 		&sr.CreatedAt,
 	)
 
@@ -1106,6 +1114,9 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 	sr.PipelineRunID, _ = shared.IDFromString(pipelineRunID)
 	sr.StepID, _ = shared.IDFromString(stepID)
 	sr.Status = pipeline.StepRunStatus(status)
+	sr.SkipReason = skipReason.String
+	sr.ErrorMessage = errorMessage.String
+	sr.ErrorCode = errorCode.String
 
 	if agentID.Valid {
 		wid, _ := shared.IDFromString(agentID.String)

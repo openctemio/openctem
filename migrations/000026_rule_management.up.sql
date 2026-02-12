@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS rules (
     -- Metadata
     description TEXT,
     recommendation TEXT,
-    reference_urls TEXT[] DEFAULT '{}',
+    "references" TEXT[] DEFAULT '{}',
     cwe_ids TEXT[] DEFAULT '{}',
     owasp_ids TEXT[] DEFAULT '{}',
 

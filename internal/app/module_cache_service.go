@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/google/uuid"
 )
 
 // ModuleCacheRepository defines the repository methods needed by ModuleCacheService.
@@ -24,7 +24,7 @@ type ModuleCacheRepository interface {
 // On cache miss, modules are fetched from the database.
 //
 // Key format: tenant_modules:{tenant_id} → JSON array of module data
-// Cache is invalidated when tenant's subscription plan changes.
+// Cache is invalidated when tenant's module configuration changes.
 type ModuleCacheService struct {
 	cache  *redis.Cache[CachedTenantModules]
 	repo   ModuleCacheRepository
@@ -82,7 +82,7 @@ func NewModuleCacheService(
 // Uses TTL-based caching (5 min) + explicit invalidation on plan changes.
 // No extra DB queries on cache hit - relies on:
 // 1. TTL expiration for natural refresh
-// 2. Explicit Invalidate() call when plan changes (see LicensingService.UpdateTenantPlan)
+// 2. Explicit Invalidate() call when module configuration changes (see ModuleService.UpdateTenantModules)
 func (s *ModuleCacheService) GetTenantModules(ctx context.Context, tenantID string) (*CachedTenantModules, error) {
 	if tenantID == "" {
 		return &CachedTenantModules{
@@ -225,7 +225,7 @@ func (s *ModuleCacheService) loadFromDatabase(ctx context.Context, tenantID stri
 }
 
 // Invalidate removes the cached modules for a tenant.
-// Called when tenant's subscription plan changes.
+// Called when tenant's module configuration changes.
 // Returns error if cache invalidation fails after retries.
 // Callers should log errors but typically should not fail the operation
 // since DB transaction has already committed.

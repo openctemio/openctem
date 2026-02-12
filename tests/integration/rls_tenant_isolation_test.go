@@ -311,7 +311,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		// Try common local development configurations
-		dbURL = "postgres://exploop@localhost:5432/exploop?sslmode=disable"
+		dbURL = "postgres://openctem@localhost:5432/openctem?sslmode=disable"
 	}
 
 	db, err := sql.Open("postgres", dbURL)
@@ -335,7 +335,7 @@ func setupRLSTestDB(t *testing.T) *sql.DB {
 	// Connect as non-superuser for RLS testing
 	dbURL := os.Getenv("DATABASE_URL_RLS_TEST")
 	if dbURL == "" {
-		dbURL = "postgres://rls_test_user:test_password_123@localhost:5432/exploop?sslmode=disable"
+		dbURL = "postgres://rls_test_user:test_password_123@localhost:5432/openctem?sslmode=disable"
 	}
 
 	db, err := sql.Open("postgres", dbURL)

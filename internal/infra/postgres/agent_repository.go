@@ -867,6 +867,7 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 
 	return a, nil
 }
+
 // ==========================================================================
 // Tool Availability Methods
 // ==========================================================================

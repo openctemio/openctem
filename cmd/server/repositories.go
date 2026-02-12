@@ -23,6 +23,7 @@ type Repositories struct {
 	ScopeSchedule     *postgres.ScopeScheduleRepository
 	AssetService      *postgres.AssetServiceRepository      // CTEM: Network services on assets
 	AssetStateHistory *postgres.AssetStateHistoryRepository // CTEM: State change audit log
+	AssetRelationship *postgres.AssetRelationshipRepository // CTEM: Asset topology graph
 
 	// Vulnerabilities & Findings
 	Vulnerability    *postgres.VulnerabilityRepository
@@ -103,6 +104,10 @@ type Repositories struct {
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
 
+	// API Keys & Webhooks
+	APIKey  *postgres.APIKeyRepository
+	Webhook *postgres.WebhookRepository
+
 	// Licensing (modules from database)
 	Module *postgres.ModuleRepository
 }
@@ -127,6 +132,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		ScopeSchedule:     postgres.NewScopeScheduleRepository(db),
 		AssetService:      postgres.NewAssetServiceRepository(db),      // CTEM: Network services
 		AssetStateHistory: postgres.NewAssetStateHistoryRepository(db), // CTEM: State change audit
+		AssetRelationship: postgres.NewAssetRelationshipRepository(db), // CTEM: Asset topology graph
 
 		// Vulnerabilities & Findings
 		Vulnerability:    postgres.NewVulnerabilityRepository(db),
@@ -206,6 +212,10 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Target Mappings
 		TargetMapping: postgres.NewTargetMappingRepository(db),
+
+		// API Keys & Webhooks
+		APIKey:  postgres.NewAPIKeyRepository(db),
+		Webhook: postgres.NewWebhookRepository(db),
 
 		// Licensing (modules from database)
 		Module: postgres.NewModuleRepository(db),
