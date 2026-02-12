@@ -203,7 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_asset_services_state ON asset_services(state);
 CREATE INDEX IF NOT EXISTS idx_asset_services_type ON asset_services(service_type);
 CREATE INDEX IF NOT EXISTS idx_asset_services_product ON asset_services(product) WHERE product IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_asset_services_public ON asset_services(tenant_id) WHERE is_public = true;
-CREATE INDEX IF NOT EXISTS idx_asset_services_last_seen ON asset_services(last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_asset_services_last_seen ON asset_services(last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_asset_services_risk ON asset_services(risk_score DESC) WHERE risk_score > 0;
 CREATE INDEX IF NOT EXISTS idx_asset_services_tenant_type ON asset_services(tenant_id, service_type);
 CREATE INDEX IF NOT EXISTS idx_asset_services_active_public ON asset_services(tenant_id, asset_id)
