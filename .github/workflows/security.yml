@@ -34,7 +34,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.25.7'
           cache: true
 
       - name: Build
@@ -58,7 +58,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.25.7'
           cache: true
 
       - name: Install govulncheck
@@ -129,7 +129,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.25.7'
           cache: true
 
       - name: Run Snyk to check for vulnerabilities
@@ -153,7 +153,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.25.7'
           cache: true
 
       - name: Install go-licenses
