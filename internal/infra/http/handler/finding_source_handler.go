@@ -176,7 +176,7 @@ func (h *FindingSourceHandler) handleServiceError(w http.ResponseWriter, err err
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /config/finding-sources/categories [get]
-func (h *FindingSourceHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
+func (h *FindingSourceHandler) ListCategories(w http.ResponseWriter, r *http.Request) { //nolint:dupl // Similar to AssetTypeHandler.ListCategories but different types
 	query := r.URL.Query()
 	activeOnly := query.Get("active_only") == queryParamTrue
 

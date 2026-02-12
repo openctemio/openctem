@@ -240,7 +240,7 @@ func (s *Service) ValidateToolReferences(ctx context.Context, template *pipeline
 
 	var missingTools []string
 	var inactiveTools []string
-	var stepsWithoutExecutor []string
+	stepsWithoutExecutor := make([]string, 0, len(template.Steps))
 	var stepsWithNoMatchingCapabilities []string
 
 	for _, step := range template.Steps {

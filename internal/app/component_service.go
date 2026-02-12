@@ -65,10 +65,14 @@ func (s *ComponentService) CreateComponent(ctx context.Context, input CreateComp
 	}
 
 	if input.PackageManager != "" {
-		c.SetMetadata("package_manager", input.PackageManager)
+		if err := c.SetMetadata("package_manager", input.PackageManager); err != nil {
+			return nil, fmt.Errorf("failed to set package_manager metadata: %w", err)
+		}
 	}
 	if input.Namespace != "" {
-		c.SetMetadata("namespace", input.Namespace)
+		if err := c.SetMetadata("namespace", input.Namespace); err != nil {
+			return nil, fmt.Errorf("failed to set namespace metadata: %w", err)
+		}
 	}
 	if input.License != "" {
 		c.UpdateLicense(input.License)

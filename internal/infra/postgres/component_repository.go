@@ -752,6 +752,10 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 		stats.LicenseRisks[risk] = count
 	}
 
+	if err := riskRows.Err(); err != nil {
+		return stats, fmt.Errorf("iterate license risks: %w", err)
+	}
+
 	return stats, nil
 }
 

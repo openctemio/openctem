@@ -35,10 +35,10 @@ func NewTriageOutputValidator() *TriageOutputValidator {
 		maxSteps:               20,
 		maxRelatedItems:        50,
 		validSeverities: map[string]bool{
-			"critical": true, "high": true, "medium": true, "low": true, "info": true,
+			"critical": true, "high": true, riskLevelMedium: true, "low": true, "info": true,
 		},
 		validExploitabilities: map[string]bool{
-			"high": true, "medium": true, "low": true, "theoretical": true,
+			"high": true, riskLevelMedium: true, "low": true, "theoretical": true,
 		},
 	}
 }
@@ -60,11 +60,11 @@ func (v *TriageOutputValidator) ValidateAndSanitize(content string) (*aitriage.T
 	if severity, ok := raw["severity_assessment"].(string); ok {
 		severity = strings.ToLower(strings.TrimSpace(severity))
 		if !v.validSeverities[severity] {
-			severity = "medium" // Default to medium if invalid
+			severity = riskLevelMedium // Default to medium if invalid
 		}
 		analysis.SeverityAssessment = severity
 	} else {
-		analysis.SeverityAssessment = "medium"
+		analysis.SeverityAssessment = riskLevelMedium
 	}
 
 	// Validate severity_justification (sanitize and truncate)
@@ -87,7 +87,7 @@ func (v *TriageOutputValidator) ValidateAndSanitize(content string) (*aitriage.T
 	if exploitability, ok := raw["exploitability"].(string); ok {
 		exploitability = strings.ToLower(strings.TrimSpace(exploitability))
 		if !v.validExploitabilities[exploitability] {
-			exploitability = "medium"
+			exploitability = riskLevelMedium
 		}
 		analysis.Exploitability = aitriage.Exploitability(exploitability)
 	}
@@ -175,7 +175,7 @@ func (v *TriageOutputValidator) sanitizeText(text string, maxLen int) string {
 func (v *TriageOutputValidator) validateRemediationSteps(steps []any) []aitriage.RemediationStep {
 	result := make([]aitriage.RemediationStep, 0, len(steps))
 
-	validEfforts := map[string]bool{"low": true, "medium": true, "high": true}
+	validEfforts := map[string]bool{"low": true, riskLevelMedium: true, "high": true}
 
 	for i, s := range steps {
 		if i >= v.maxSteps {
@@ -204,7 +204,7 @@ func (v *TriageOutputValidator) validateRemediationSteps(steps []any) []aitriage
 			if validEfforts[effort] {
 				step.Effort = effort
 			} else {
-				step.Effort = "medium"
+				step.Effort = riskLevelMedium
 			}
 		}
 

@@ -163,7 +163,6 @@ func registerAgentManagementRoutes(
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AgentsDelete))
-
 	}, tenantMiddlewares...)
 }
 

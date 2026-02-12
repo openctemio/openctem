@@ -61,6 +61,8 @@ func (p *FindingProcessor) SetFindingCreatedCallback(callback FindingCreatedCall
 }
 
 // ProcessBatch processes all findings using batch operations.
+//
+//nolint:gocognit,nestif,cyclop // Batch ingestion inherently requires complex control flow
 func (p *FindingProcessor) ProcessBatch(
 	ctx context.Context,
 	agt *agent.Agent,

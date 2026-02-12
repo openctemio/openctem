@@ -157,7 +157,7 @@ func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apik
 	result.Page = filter.Page
 
 	// Sort
-	orderBy := "created_at DESC"
+	orderBy := defaultSortOrder
 	if filter.SortBy != "" {
 		validFields := map[string]bool{"name": true, "status": true, "created_at": true, "last_used_at": true, "expires_at": true}
 		if validFields[filter.SortBy] {

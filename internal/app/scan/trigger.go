@@ -569,84 +569,105 @@ func (s *Service) calculateInitialPriority(priority command.CommandPriority) int
 // validateToolsAtTriggerTime validates that all tools required by the scan are still available.
 // This catches cases where tools have been disabled or removed between scan creation and trigger.
 func (s *Service) validateToolsAtTriggerTime(ctx context.Context, sc *scan.Scan) error {
-	if sc.ScanType == scan.ScanTypeSingle {
-		// For single scans, validate the scanner tool
-		if sc.ScannerName != "" {
-			tool, err := s.toolRepo.GetByName(ctx, sc.ScannerName)
-			if err != nil {
-				return shared.NewDomainError(
-					"TOOL_NOT_FOUND",
-					fmt.Sprintf("Scanner '%s' is no longer available. Please update scan configuration.", sc.ScannerName),
-					shared.ErrValidation,
-				)
-			}
-			if !tool.IsActive {
-				return shared.NewDomainError(
-					"TOOL_DISABLED",
-					fmt.Sprintf("Scanner '%s' is currently disabled. Please enable it or use a different scanner.", sc.ScannerName),
-					shared.ErrValidation,
-				)
-			}
+	switch sc.ScanType {
+	case scan.ScanTypeSingle:
+		return s.validateSingleScanTool(ctx, sc.ScannerName)
+	case scan.ScanTypeWorkflow:
+		return s.validateWorkflowStepTools(ctx, sc)
+	}
+	return nil
+}
+
+// validateSingleScanTool checks that the scanner tool is available and active.
+func (s *Service) validateSingleScanTool(ctx context.Context, scannerName string) error {
+	if scannerName == "" {
+		return nil
+	}
+
+	tool, err := s.toolRepo.GetByName(ctx, scannerName)
+	if err != nil {
+		return shared.NewDomainError(
+			"TOOL_NOT_FOUND",
+			fmt.Sprintf("Scanner '%s' is no longer available. Please update scan configuration.", scannerName),
+			shared.ErrValidation,
+		)
+	}
+	if !tool.IsActive {
+		return shared.NewDomainError(
+			"TOOL_DISABLED",
+			fmt.Sprintf("Scanner '%s' is currently disabled. Please enable it or use a different scanner.", scannerName),
+			shared.ErrValidation,
+		)
+	}
+
+	return nil
+}
+
+// validateWorkflowStepTools validates all tools required by workflow pipeline steps.
+func (s *Service) validateWorkflowStepTools(ctx context.Context, sc *scan.Scan) error {
+	if sc.PipelineID == nil {
+		return shared.NewDomainError(
+			"PIPELINE_NOT_SET",
+			"Workflow scan has no pipeline configured",
+			shared.ErrValidation,
+		)
+	}
+
+	steps, err := s.stepRepo.GetByPipelineID(ctx, *sc.PipelineID)
+	if err != nil {
+		return fmt.Errorf("failed to get pipeline steps: %w", err)
+	}
+
+	for _, step := range steps {
+		if err := s.validateStepTool(ctx, sc.TenantID, step); err != nil {
+			return err
 		}
-	} else if sc.ScanType == scan.ScanTypeWorkflow {
-		// For workflow scans, validate all step tools
-		if sc.PipelineID == nil {
+	}
+
+	return nil
+}
+
+// validateStepTool validates a single pipeline step's tool configuration.
+func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step *pipeline.Step) error {
+	switch {
+	case step.Tool != "":
+		tool, err := s.toolRepo.GetByName(ctx, step.Tool)
+		if err != nil {
 			return shared.NewDomainError(
-				"PIPELINE_NOT_SET",
-				"Workflow scan has no pipeline configured",
+				"TOOL_NOT_FOUND",
+				fmt.Sprintf("Tool '%s' used by step '%s' is no longer available. Please update the pipeline.", step.Tool, step.StepKey),
 				shared.ErrValidation,
 			)
 		}
-
-		steps, err := s.stepRepo.GetByPipelineID(ctx, *sc.PipelineID)
-		if err != nil {
-			return fmt.Errorf("failed to get pipeline steps: %w", err)
+		if !tool.IsActive {
+			return shared.NewDomainError(
+				"TOOL_DISABLED",
+				fmt.Sprintf("Tool '%s' used by step '%s' is currently disabled. Please enable it or use a different tool.", step.Tool, step.StepKey),
+				shared.ErrValidation,
+			)
 		}
-
-		for _, step := range steps {
-			// Check if step has tool specified
-			if step.Tool != "" {
-				tool, err := s.toolRepo.GetByName(ctx, step.Tool)
-				if err != nil {
-					return shared.NewDomainError(
-						"TOOL_NOT_FOUND",
-						fmt.Sprintf("Tool '%s' used by step '%s' is no longer available. Please update the pipeline.", step.Tool, step.StepKey),
-						shared.ErrValidation,
-					)
-				}
-				if !tool.IsActive {
-					return shared.NewDomainError(
-						"TOOL_DISABLED",
-						fmt.Sprintf("Tool '%s' used by step '%s' is currently disabled. Please enable it or use a different tool.", step.Tool, step.StepKey),
-						shared.ErrValidation,
-					)
-				}
-			} else if len(step.Capabilities) > 0 {
-				// Step has capabilities but no tool - find matching tool
-				matchingTool, err := s.toolRepo.FindByCapabilities(ctx, sc.TenantID, step.Capabilities)
-				if err != nil || matchingTool == nil {
-					return shared.NewDomainError(
-						"NO_MATCHING_TOOL",
-						fmt.Sprintf("No active tool found for step '%s' with capabilities %v. Please configure a tool for this step.", step.StepKey, step.Capabilities),
-						shared.ErrValidation,
-					)
-				}
-				if !matchingTool.IsActive {
-					return shared.NewDomainError(
-						"TOOL_DISABLED",
-						fmt.Sprintf("Tool '%s' matching step '%s' capabilities is disabled.", matchingTool.Name, step.StepKey),
-						shared.ErrValidation,
-					)
-				}
-			} else {
-				// Step has neither tool nor capabilities - invalid
-				return shared.NewDomainError(
-					"STEP_INVALID",
-					fmt.Sprintf("Step '%s' has no tool or capabilities configured. Please edit the pipeline and configure a scanner for this step.", step.StepKey),
-					shared.ErrValidation,
-				)
-			}
+	case len(step.Capabilities) > 0:
+		matchingTool, err := s.toolRepo.FindByCapabilities(ctx, tenantID, step.Capabilities)
+		if err != nil || matchingTool == nil {
+			return shared.NewDomainError(
+				"NO_MATCHING_TOOL",
+				fmt.Sprintf("No active tool found for step '%s' with capabilities %v. Please configure a tool for this step.", step.StepKey, step.Capabilities),
+				shared.ErrValidation,
+			)
 		}
+		if !matchingTool.IsActive {
+			return shared.NewDomainError(
+				"TOOL_DISABLED",
+				fmt.Sprintf("Tool '%s' matching step '%s' capabilities is disabled.", matchingTool.Name, step.StepKey),
+				shared.ErrValidation,
+			)
+		}
+	default:
+		return shared.NewDomainError(
+			"STEP_INVALID",
+			fmt.Sprintf("Step '%s' has no tool or capabilities configured. Please edit the pipeline and configure a scanner for this step.", step.StepKey),
+			shared.ErrValidation,
+		)
 	}
 
 	return nil

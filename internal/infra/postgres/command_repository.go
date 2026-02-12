@@ -1001,7 +1001,7 @@ func (r *CommandRepository) GetPlatformJobsByAgent(ctx context.Context, agentID 
 		args = append(args, string(*status))
 	}
 
-	query += " ORDER BY created_at DESC"
+	query += orderByCreatedAtDesc
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {

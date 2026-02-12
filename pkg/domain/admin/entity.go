@@ -94,9 +94,10 @@ func (r AdminRole) CanCancelJobs() bool {
 // =============================================================================
 
 const (
-	// APIKeyLength is the length of generated API keys in bytes (32 bytes = 256 bits).
-	// This provides cryptographic-grade entropy for API keys.
-	APIKeyLength = 32
+	// APIKeyLength is the length of generated API keys in bytes (31 bytes = 248 bits).
+	// Combined with "oc-admin-" prefix (9 bytes), total is 71 bytes which fits
+	// within bcrypt's 72-byte input limit (Go 1.24+ enforces this strictly).
+	APIKeyLength = 31
 
 	// APIKeyPrefix is the prefix for admin API keys.
 	APIKeyPrefix = "oc-admin-"
