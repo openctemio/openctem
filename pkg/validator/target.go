@@ -20,6 +20,8 @@ const (
 	TargetTypeURL      TargetType = "url"
 	TargetTypeHostPort TargetType = "host_port"
 	TargetTypeUnknown  TargetType = "unknown"
+
+	errLocalhostNotAllowed = "localhost addresses are not allowed"
 )
 
 // ValidatedTarget represents a validated and classified target.
@@ -219,7 +221,7 @@ func (v *TargetValidator) validateURL(target string) ValidatedTarget {
 
 	// Check for localhost hostname (not just IP)
 	if !v.allowLocalhost && isLocalhostHostname(host) {
-		result.Error = "localhost addresses are not allowed"
+		result.Error = errLocalhostNotAllowed
 		return result
 	}
 
@@ -291,7 +293,7 @@ func (v *TargetValidator) validateHostPort(original, host, portStr string) Valid
 
 	// Check for localhost hostname
 	if !v.allowLocalhost && isLocalhostHostname(host) {
-		result.Error = "localhost addresses are not allowed"
+		result.Error = errLocalhostNotAllowed
 		return result
 	}
 
@@ -381,7 +383,7 @@ func (v *TargetValidator) isIPAllowed(ip net.IP) bool {
 // getIPBlockedReason returns the reason why an IP is blocked.
 func (v *TargetValidator) getIPBlockedReason(ip net.IP) string {
 	if isLocalhostIP(ip) {
-		return "localhost addresses are not allowed"
+		return errLocalhostNotAllowed
 	}
 	if isInternalIP(ip) {
 		return "internal IP addresses are not allowed (SSRF protection)"

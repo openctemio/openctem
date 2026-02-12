@@ -175,6 +175,8 @@ func (r *FindingSourceCategoryRepository) Delete(ctx context.Context, id shared.
 }
 
 // List lists categories with pagination.
+//
+//nolint:dupl // Similar to AssetTypeCategoryRepository.List but different table and types
 func (r *FindingSourceCategoryRepository) List(
 	ctx context.Context,
 	filter findingsource.CategoryFilter,
@@ -365,6 +367,8 @@ func (r *FindingSourceRepository) GetByCode(ctx context.Context, code string) (*
 }
 
 // List lists finding sources with filtering and pagination.
+//
+//nolint:dupl // Similar to AssetTypeRepository.List but different table and types
 func (r *FindingSourceRepository) List(
 	ctx context.Context,
 	filter findingsource.Filter,

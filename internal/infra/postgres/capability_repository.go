@@ -549,6 +549,9 @@ func (r *CapabilityRepository) GetUsageStats(ctx context.Context, capabilityID s
 		}
 		stats.ToolNames = append(stats.ToolNames, toolName)
 	}
+	if err := toolRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
 	stats.ToolCount = len(stats.ToolNames)
 
 	// Count agents with this capability (via array)
@@ -570,6 +573,9 @@ func (r *CapabilityRepository) GetUsageStats(ctx context.Context, capabilityID s
 			return nil, fmt.Errorf("failed to scan agent name: %w", err)
 		}
 		stats.AgentNames = append(stats.AgentNames, agentName)
+	}
+	if err := agentRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 	stats.AgentCount = len(stats.AgentNames)
 
@@ -619,6 +625,9 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 		nameToID[name] = id
 		capNames = append(capNames, name)
 	}
+	if err := nameRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
 
 	// Query 2: Count tools for each capability (single GROUP BY query)
 	toolQuery := `
@@ -645,6 +654,9 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 		if stats, ok := result[id]; ok {
 			stats.ToolCount = count
 		}
+	}
+	if err := toolRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 
 	// Query 3: Count agents for ALL capability names in SINGLE query using UNNEST
@@ -681,6 +693,9 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 					stats.AgentCount = count
 				}
 			}
+		}
+		if err := agentRows.Err(); err != nil {
+			return nil, fmt.Errorf("iterate rows: %w", err)
 		}
 	}
 

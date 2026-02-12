@@ -196,7 +196,7 @@ func (r *Runner) runMigration(ctx context.Context, version, direction string) er
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Execute migration
 	if _, err := tx.ExecContext(ctx, string(content)); err != nil {
@@ -244,7 +244,7 @@ func (r *Runner) scanMigrationFiles() ([]string, error) {
 		return nil, err
 	}
 
-	var result []string
+	result := make([]string, 0, len(versions))
 	for v := range versions {
 		result = append(result, v)
 	}

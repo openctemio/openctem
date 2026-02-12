@@ -1003,5 +1003,9 @@ func (r *PipelineStepRepository) FindPipelineIDsByToolName(ctx context.Context, 
 		pipelineIDs = append(pipelineIDs, id)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pipeline ids: %w", err)
+	}
+
 	return pipelineIDs, nil
 }

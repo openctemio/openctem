@@ -336,7 +336,7 @@ func (h *Hub) GetClientsByTenant(tenantID string) []*Client {
 func (h *Hub) BroadcastToTenant(tenantID string, msg *Message) {
 	clients := h.GetClientsByTenant(tenantID)
 	for _, client := range clients {
-		client.SendMessage(msg)
+		_ = client.SendMessage(msg)
 	}
 }
 

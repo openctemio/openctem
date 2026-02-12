@@ -243,7 +243,9 @@ func (t *Template) detectCircularDependencies() error {
 					break
 				}
 			}
-			cyclePath := append(currentPath[cycleStart:], key)
+			cyclePath := make([]string, len(currentPath[cycleStart:])+1)
+			copy(cyclePath, currentPath[cycleStart:])
+			cyclePath[len(cyclePath)-1] = key
 			return shared.NewDomainError("VALIDATION",
 				"circular dependency detected: "+joinStepKeys(cyclePath, " → "),
 				shared.ErrValidation)

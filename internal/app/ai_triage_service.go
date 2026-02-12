@@ -29,6 +29,8 @@ var (
 
 // categorizeError returns a user-friendly error message based on the error type.
 // SECURITY: This function maps internal errors to safe external messages.
+//
+//nolint:cyclop // Switch/case for error categorization is naturally branchy.
 func categorizeError(err error) string {
 	if err == nil {
 		return "Unknown error occurred"
@@ -788,7 +790,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		if err != nil {
 			response.Jobs = append(response.Jobs, BulkTriageJob{
 				FindingID: findingIDStr,
-				Status:    "failed",
+				Status:    notificationStatusFailed,
 				Error:     "invalid finding id",
 			})
 			response.Failed++
@@ -814,7 +816,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 
 		// Check if finding exists (from batch result)
 		if !existsMap[findingID] {
-			job.Status = "failed"
+			job.Status = notificationStatusFailed
 			job.Error = "finding not found"
 			response.Jobs = append(response.Jobs, job)
 			response.Failed++
@@ -824,7 +826,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		// Create triage result
 		result, err := aitriage.NewTriageResult(tenantID, findingID, aitriage.TriageTypeBulk, userID)
 		if err != nil {
-			job.Status = "failed"
+			job.Status = notificationStatusFailed
 			job.Error = "failed to create triage job"
 			response.Jobs = append(response.Jobs, job)
 			response.Failed++
@@ -832,7 +834,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		}
 
 		if err := s.triageRepo.Create(ctx, result); err != nil {
-			job.Status = "failed"
+			job.Status = notificationStatusFailed
 			job.Error = "failed to save triage job"
 			response.Jobs = append(response.Jobs, job)
 			response.Failed++
@@ -841,7 +843,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 
 		// Enqueue for processing
 		if err := s.enqueueTriageJob(ctx, result.ID(), tenantID, findingID, 0); err != nil {
-			job.Status = "failed"
+			job.Status = notificationStatusFailed
 			job.Error = "failed to enqueue job"
 			_ = result.MarkFailed("failed to enqueue job: " + err.Error())
 			_ = s.triageRepo.Update(ctx, result)
@@ -893,9 +895,8 @@ func (s *AITriageService) ShouldAutoTriage(ctx context.Context, tenantID shared.
 	}
 
 	// Check if severity matches
-	severityLower := strings.ToLower(severity)
 	for _, s := range aiSettings.AutoTriageSeverities {
-		if strings.ToLower(s) == severityLower {
+		if strings.EqualFold(s, severity) {
 			return true, nil
 		}
 	}
@@ -952,27 +953,35 @@ func (s *AITriageService) toTriageResultResponse(r *aitriage.TriageResult) *Tria
 	}
 }
 
+// Risk level constants for AI triage scoring.
+const (
+	riskLevelCritical = "critical"
+	riskLevelHigh     = "high"
+	riskLevelMedium   = "medium"
+	riskLevelLow      = "low"
+)
+
 func (s *AITriageService) getRiskLevel(score float64) string {
 	switch {
 	case score >= 70:
-		return "critical"
+		return riskLevelCritical
 	case score >= 50:
-		return "high"
+		return riskLevelHigh
 	case score >= 30:
-		return "medium"
+		return riskLevelMedium
 	default:
-		return "low"
+		return riskLevelLow
 	}
 }
 
 func (s *AITriageService) getConfidence(fpLikelihood float64) string {
 	switch {
 	case fpLikelihood > 0.5:
-		return "low"
+		return riskLevelLow
 	case fpLikelihood > 0.2:
-		return "medium"
+		return riskLevelMedium
 	default:
-		return "high"
+		return riskLevelHigh
 	}
 }
 

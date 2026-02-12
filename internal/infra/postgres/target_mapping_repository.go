@@ -247,6 +247,10 @@ func (r *TargetMappingRepository) List(ctx context.Context, filter tool.TargetMa
 		items = append(items, &m)
 	}
 
+	if err := rows.Err(); err != nil {
+		return result, fmt.Errorf("iterate target mappings: %w", err)
+	}
+
 	return pagination.NewResult(items, total, page), nil
 }
 
@@ -279,6 +283,10 @@ func (r *TargetMappingRepository) GetAssetTypesForTargets(ctx context.Context, t
 		assetTypes = append(assetTypes, asset.AssetType(assetTypeStr))
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate asset types: %w", err)
+	}
+
 	return assetTypes, nil
 }
 
@@ -305,6 +313,10 @@ func (r *TargetMappingRepository) GetTargetsForAssetType(ctx context.Context, as
 			return nil, fmt.Errorf("failed to scan target type: %w", err)
 		}
 		targets = append(targets, target)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate target types: %w", err)
 	}
 
 	return targets, nil
@@ -371,6 +383,10 @@ func (r *TargetMappingRepository) GetIncompatibleAssetTypes(ctx context.Context,
 		compatibleSet[assetTypeStr] = true
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate compatible types: %w", err)
+	}
+
 	// Return types not in compatible set
 	var incompatible []asset.AssetType
 	for _, at := range assetTypes {
@@ -417,6 +433,10 @@ func (r *TargetMappingRepository) GetCompatibleAssetTypes(ctx context.Context, t
 			return nil, fmt.Errorf("failed to scan compatible type: %w", err)
 		}
 		compatible = append(compatible, asset.AssetType(assetTypeStr))
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate compatible types: %w", err)
 	}
 
 	return compatible, nil

@@ -175,9 +175,9 @@ func (c *Client) ReadPump() {
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
@@ -220,10 +220,10 @@ func (c *Client) WritePump() {
 	for {
 		select {
 		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// Hub closed the channel
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -233,7 +233,7 @@ func (c *Client) WritePump() {
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -288,7 +288,7 @@ func (c *Client) handleSubscribe(msg *Message) {
 	response := NewMessage(MessageTypeSubscribed).
 		WithChannel(req.Channel).
 		WithRequestID(req.RequestID)
-	c.SendMessage(response)
+	_ = c.SendMessage(response)
 }
 
 // handleUnsubscribe processes unsubscribe requests.
@@ -317,13 +317,13 @@ func (c *Client) handleUnsubscribe(msg *Message) {
 	response := NewMessage(MessageTypeUnsubscribed).
 		WithChannel(req.Channel).
 		WithRequestID(req.RequestID)
-	c.SendMessage(response)
+	_ = c.SendMessage(response)
 }
 
 // handlePing processes ping messages.
 func (c *Client) handlePing(msg *Message) {
 	response := NewMessage(MessageTypePong)
-	c.SendMessage(response)
+	_ = c.SendMessage(response)
 }
 
 // sendError sends an error message to the client.
@@ -336,5 +336,5 @@ func (c *Client) sendErrorWithRequestID(code, message, requestID string) {
 	errMsg := NewMessage(MessageTypeError).
 		WithData(ErrorData{Code: code, Message: message}).
 		WithRequestID(requestID)
-	c.SendMessage(errMsg)
+	_ = c.SendMessage(errMsg)
 }

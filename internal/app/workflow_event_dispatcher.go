@@ -20,9 +20,6 @@ const (
 
 	// dispatchTimeout is the maximum time allowed for dispatching workflow events.
 	dispatchTimeout = 60 * time.Second
-
-	// maxConcurrentWorkflows limits concurrent workflow triggers to prevent overload.
-	maxConcurrentWorkflows = 10
 )
 
 // WorkflowEventDispatcher dispatches events to matching workflows.

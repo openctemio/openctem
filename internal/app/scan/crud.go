@@ -49,8 +49,6 @@ type CreateScanResult struct {
 }
 
 // CreateScan creates a new scan.
-//
-//nolint:cyclop // Scan creation requires validation of many input fields
 func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.Scan, error) {
 	s.logger.Info("creating scan", "name", input.Name, "tenant_id", input.TenantID)
 
@@ -59,35 +57,9 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	// Validate tags format (only alphanumeric, dash, underscore allowed)
-	if s.securityValidator != nil && len(input.Tags) > 0 {
-		result := s.securityValidator.ValidateIdentifiers(input.Tags, 50, "tags")
-		if !result.Valid {
-			s.logger.Warn("tags validation failed", "tenant_id", input.TenantID, "errors", result.Errors)
-			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, result.Errors[0].Message)
-		}
-	}
-
-	// Security validation: validate scanner config
-	if s.securityValidator != nil && input.ScannerConfig != nil {
-		result := s.securityValidator.ValidateScannerConfig(ctx, tenantID, input.ScannerConfig)
-		if !result.Valid {
-			s.logger.Warn("scanner config validation failed",
-				"tenant_id", input.TenantID,
-				"errors", result.Errors)
-			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, result.Errors[0].Message)
-		}
-	}
-
-	// Security validation: validate cron expression
-	if s.securityValidator != nil && input.ScheduleCron != "" {
-		if err := s.securityValidator.ValidateCronExpression(input.ScheduleCron); err != nil {
-			s.logger.Warn("cron expression validation failed",
-				"tenant_id", input.TenantID,
-				"cron", input.ScheduleCron,
-				"error", err)
-			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
-		}
+	// Security validations
+	if err := s.validateScanSecurityInputs(ctx, tenantID, input); err != nil {
+		return nil, err
 	}
 
 	// Validate: must have either asset_group_id/asset_group_ids or targets
@@ -98,96 +70,15 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 
 	// Validate and sanitize targets if provided (SECURITY: SSRF protection)
-	var validatedTargets []string
-	if hasTargets {
-		targetValidator := validator.NewTargetValidator(
-			validator.WithAllowInternalIPs(false), // Block internal IPs (SSRF protection)
-			validator.WithAllowLocalhost(false),   // Block localhost
-			validator.WithMaxTargets(1000),        // Limit number of targets
-		)
-		validationResult := targetValidator.ValidateTargets(input.Targets)
-
-		if validationResult.HasErrors {
-			// Log security event for blocked IPs
-			if len(validationResult.BlockedIPs) > 0 {
-				s.logger.Warn("SECURITY: blocked internal/localhost targets",
-					"tenant_id", input.TenantID,
-					"blocked_ips", validationResult.BlockedIPs)
-			}
-
-			// Return first error message
-			if len(validationResult.Invalid) > 0 {
-				firstError := validationResult.Invalid[0]
-				return nil, fmt.Errorf("%w: invalid target '%s': %s",
-					shared.ErrValidation, firstError.Original, firstError.Error)
-			}
-			return nil, fmt.Errorf("%w: invalid targets provided", shared.ErrValidation)
-		}
-
-		validatedTargets = validationResult.GetValidTargetStrings()
-		if len(validatedTargets) == 0 {
-			return nil, fmt.Errorf("%w: no valid targets provided", shared.ErrValidation)
-		}
-
-		s.logger.Info("targets validated",
-			"tenant_id", input.TenantID,
-			"total", validationResult.TotalCount,
-			"valid", validationResult.ValidCount)
+	validatedTargets, err := s.validateScanTargets(input)
+	if err != nil {
+		return nil, err
 	}
 
-	// Parse and validate asset_group_id/asset_group_ids if provided
-	var assetGroupID shared.ID
-	var assetGroupIDs []shared.ID
-	if hasAssetGroup {
-		// Validate primary asset_group_id if provided
-		if input.AssetGroupID != "" {
-			var err error
-			assetGroupID, err = shared.IDFromString(input.AssetGroupID)
-			if err != nil {
-				return nil, fmt.Errorf("%w: invalid asset_group_id", shared.ErrValidation)
-			}
-
-			// Verify asset group exists AND belongs to tenant
-			ag, err := s.assetGroupRepo.GetByID(ctx, assetGroupID)
-			if err != nil {
-				return nil, fmt.Errorf("asset group not found: %w", err)
-			}
-			if ag.TenantID() != tenantID {
-				s.logger.Warn("SECURITY: cross-tenant asset group access attempt",
-					"tenant_id", input.TenantID,
-					"asset_group_tenant_id", ag.TenantID().String())
-				return nil, fmt.Errorf("%w: asset group not found", shared.ErrNotFound)
-			}
-		}
-
-		// Validate multiple asset_group_ids if provided
-		if len(input.AssetGroupIDs) > 0 {
-			assetGroupIDs = make([]shared.ID, 0, len(input.AssetGroupIDs))
-			for _, idStr := range input.AssetGroupIDs {
-				id, err := shared.IDFromString(idStr)
-				if err != nil {
-					return nil, fmt.Errorf("%w: invalid asset_group_id in list: %s", shared.ErrValidation, idStr)
-				}
-
-				// Verify each asset group exists AND belongs to tenant
-				ag, err := s.assetGroupRepo.GetByID(ctx, id)
-				if err != nil {
-					return nil, fmt.Errorf("asset group not found: %s", idStr)
-				}
-				if ag.TenantID() != tenantID {
-					s.logger.Warn("SECURITY: cross-tenant asset group access attempt",
-						"tenant_id", input.TenantID,
-						"asset_group_tenant_id", ag.TenantID().String())
-					return nil, fmt.Errorf("%w: asset group not found", shared.ErrNotFound)
-				}
-				assetGroupIDs = append(assetGroupIDs, id)
-			}
-
-			// If no primary asset_group_id was set, use the first from the list
-			if assetGroupID.IsZero() && len(assetGroupIDs) > 0 {
-				assetGroupID = assetGroupIDs[0]
-			}
-		}
+	// Parse and validate asset groups
+	assetGroupID, assetGroupIDs, err := s.validateScanAssetGroups(ctx, tenantID, input)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse scan type
@@ -196,113 +87,20 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, fmt.Errorf("%w: invalid scan_type", shared.ErrValidation)
 	}
 
-	// Create scan - use validated targets if no asset group
-	var sc *scan.Scan
-	if len(validatedTargets) > 0 && !hasAssetGroup {
-		// Create scan with direct targets (no asset group)
-		sc, err = scan.NewScanWithTargets(tenantID, input.Name, validatedTargets, scanType)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Create scan with asset group (existing path)
-		sc, err = scan.NewScan(tenantID, input.Name, assetGroupID, scanType)
-		if err != nil {
-			return nil, err
-		}
-		// If we have both asset_group and targets, add validated targets too
-		if len(validatedTargets) > 0 {
-			sc.SetTargets(validatedTargets)
-		}
+	// Create scan entity
+	sc, err := s.createScanEntity(tenantID, input.Name, scanType, assetGroupID, assetGroupIDs, validatedTargets, hasAssetGroup)
+	if err != nil {
+		return nil, err
 	}
-
-	// Set multiple asset group IDs if provided
-	if len(assetGroupIDs) > 0 {
-		sc.SetAssetGroupIDs(assetGroupIDs)
-	}
-
 	sc.Description = input.Description
 
-	// Set workflow or single scanner
-	if scanType == scan.ScanTypeWorkflow {
-		if input.PipelineID == "" {
-			return nil, fmt.Errorf("%w: pipeline_id is required for workflow type", shared.ErrValidation)
-		}
-		pipelineID, err := shared.IDFromString(input.PipelineID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid pipeline_id", shared.ErrValidation)
-		}
-		// Verify pipeline exists
-		pipelineTemplate, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, pipelineID)
-		if err != nil {
-			return nil, fmt.Errorf("pipeline not found: %w", err)
-		}
-
-		// Validate all pipeline steps have valid tools
-		steps, err := s.stepRepo.GetByPipelineID(ctx, pipelineTemplate.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get pipeline steps: %w", err)
-		}
-		for _, step := range steps {
-			if step.Tool != "" {
-				stepTool, err := s.toolRepo.GetByName(ctx, step.Tool)
-				if err != nil || stepTool == nil {
-					return nil, fmt.Errorf("%w: pipeline step '%s' uses tool '%s' which is not found",
-						shared.ErrValidation, step.StepKey, step.Tool)
-				}
-				if !stepTool.IsActive {
-					return nil, fmt.Errorf("%w: pipeline step '%s' uses tool '%s' which is disabled",
-						shared.ErrValidation, step.StepKey, step.Tool)
-				}
-			}
-		}
-
-		if err := sc.SetWorkflow(pipelineID); err != nil {
-			return nil, err
-		}
-	} else {
-		if input.ScannerName == "" {
-			return nil, fmt.Errorf("%w: scanner_name is required for single type", shared.ErrValidation)
-		}
-
-		// Validate tool exists and is active
-		scannerTool, err := s.toolRepo.GetByName(ctx, input.ScannerName)
-		if err != nil || scannerTool == nil {
-			return nil, fmt.Errorf("%w: scanner '%s' not found in tool registry", shared.ErrValidation, input.ScannerName)
-		}
-		if !scannerTool.IsActive {
-			return nil, fmt.Errorf("%w: scanner '%s' is disabled", shared.ErrValidation, input.ScannerName)
-		}
-
-		targetsPerJob := max(input.TargetsPerJob, 1)
-		if err := sc.SetSingleScanner(input.ScannerName, input.ScannerConfig, targetsPerJob); err != nil {
-			return nil, err
-		}
+	// Configure scan type (workflow or single scanner)
+	if err := s.configureScanType(ctx, sc, tenantID, scanType, input); err != nil {
+		return nil, err
 	}
 
-	// Set schedule
-	scheduleType := scan.ScheduleType(input.ScheduleType)
-	if scheduleType == "" {
-		scheduleType = scan.ScheduleManual
-	}
-	timezone := input.Timezone
-	if timezone == "" {
-		timezone = "UTC"
-	}
-
-	// Validate timezone is a valid IANA timezone
-	if err := validateTimezone(timezone); err != nil {
-		return nil, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
-	}
-
-	// Additional cron validation: ensure cron can be parsed by the scheduler
-	if scheduleType == scan.ScheduleCrontab && input.ScheduleCron != "" {
-		if err := validateCronParseable(input.ScheduleCron); err != nil {
-			return nil, fmt.Errorf("%w: invalid cron expression: %s", shared.ErrValidation, err.Error())
-		}
-	}
-
-	if err := sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone); err != nil {
+	// Configure schedule
+	if err := s.configureScanSchedule(sc, input); err != nil {
 		return nil, err
 	}
 
@@ -312,24 +110,8 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 	sc.SetRunOnTenantRunner(input.TenantRunner)
 
-	// Check agent availability - log warning if no agents available
-	// We allow scan creation even without agents so scans can be scheduled
-	// and executed when an agent comes online
-	toolToCheck := input.ScannerName
-	if scanType == scan.ScanTypeWorkflow {
-		// For workflow scans, we just check general agent availability
-		// Each step will be checked when scheduled
-		toolToCheck = ""
-	}
-	agentAvail := s.agentSelector.CheckAgentAvailability(ctx, tenantID, toolToCheck, input.TenantRunner)
-	if !agentAvail.Available {
-		s.logger.Warn("no agent available for scan",
-			"tenant_id", tenantID.String(),
-			"tool", toolToCheck,
-			"message", agentAvail.Message,
-		)
-		// Don't block scan creation - allow scheduling for when agent comes online
-	}
+	// Check agent availability (non-blocking warning)
+	s.checkScanAgentAvailability(ctx, tenantID, scanType, input)
 
 	// Set agent preference
 	if input.AgentPreference != "" {
@@ -361,6 +143,268 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	return sc, nil
 }
 
+// validateScanSecurityInputs validates tags, scanner config, and cron expression.
+func (s *Service) validateScanSecurityInputs(ctx context.Context, tenantID shared.ID, input CreateScanInput) error {
+	if s.securityValidator == nil {
+		return nil
+	}
+
+	if len(input.Tags) > 0 {
+		result := s.securityValidator.ValidateIdentifiers(input.Tags, 50, "tags")
+		if !result.Valid {
+			s.logger.Warn("tags validation failed", "tenant_id", input.TenantID, "errors", result.Errors)
+			return fmt.Errorf("%w: %s", shared.ErrValidation, result.Errors[0].Message)
+		}
+	}
+
+	if input.ScannerConfig != nil {
+		result := s.securityValidator.ValidateScannerConfig(ctx, tenantID, input.ScannerConfig)
+		if !result.Valid {
+			s.logger.Warn("scanner config validation failed",
+				"tenant_id", input.TenantID,
+				"errors", result.Errors)
+			return fmt.Errorf("%w: %s", shared.ErrValidation, result.Errors[0].Message)
+		}
+	}
+
+	if input.ScheduleCron != "" {
+		if err := s.securityValidator.ValidateCronExpression(input.ScheduleCron); err != nil {
+			s.logger.Warn("cron expression validation failed",
+				"tenant_id", input.TenantID,
+				"cron", input.ScheduleCron,
+				"error", err)
+			return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+		}
+	}
+
+	return nil
+}
+
+// validateScanTargets validates and sanitizes scan targets with SSRF protection.
+func (s *Service) validateScanTargets(input CreateScanInput) ([]string, error) {
+	if len(input.Targets) == 0 {
+		return nil, nil
+	}
+
+	targetValidator := validator.NewTargetValidator(
+		validator.WithAllowInternalIPs(false),
+		validator.WithAllowLocalhost(false),
+		validator.WithMaxTargets(1000),
+	)
+	result := targetValidator.ValidateTargets(input.Targets)
+
+	if result.HasErrors {
+		if len(result.BlockedIPs) > 0 {
+			s.logger.Warn("SECURITY: blocked internal/localhost targets",
+				"tenant_id", input.TenantID,
+				"blocked_ips", result.BlockedIPs)
+		}
+		if len(result.Invalid) > 0 {
+			firstError := result.Invalid[0]
+			return nil, fmt.Errorf("%w: invalid target '%s': %s",
+				shared.ErrValidation, firstError.Original, firstError.Error)
+		}
+		return nil, fmt.Errorf("%w: invalid targets provided", shared.ErrValidation)
+	}
+
+	validated := result.GetValidTargetStrings()
+	if len(validated) == 0 {
+		return nil, fmt.Errorf("%w: no valid targets provided", shared.ErrValidation)
+	}
+
+	s.logger.Info("targets validated",
+		"tenant_id", input.TenantID,
+		"total", result.TotalCount,
+		"valid", result.ValidCount)
+
+	return validated, nil
+}
+
+// validateScanAssetGroup validates a single asset group ID belongs to the tenant.
+func (s *Service) validateScanAssetGroup(ctx context.Context, tenantID shared.ID, tenantIDStr, idStr string) (shared.ID, error) {
+	id, err := shared.IDFromString(idStr)
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("%w: invalid asset_group_id", shared.ErrValidation)
+	}
+
+	ag, err := s.assetGroupRepo.GetByID(ctx, id)
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("asset group not found: %w", err)
+	}
+	if ag.TenantID() != tenantID {
+		s.logger.Warn("SECURITY: cross-tenant asset group access attempt",
+			"tenant_id", tenantIDStr,
+			"asset_group_tenant_id", ag.TenantID().String())
+		return shared.ID{}, fmt.Errorf("%w: asset group not found", shared.ErrNotFound)
+	}
+
+	return id, nil
+}
+
+// validateScanAssetGroups validates all asset group IDs.
+func (s *Service) validateScanAssetGroups(ctx context.Context, tenantID shared.ID, input CreateScanInput) (shared.ID, []shared.ID, error) {
+	hasAssetGroup := input.AssetGroupID != "" || len(input.AssetGroupIDs) > 0
+	if !hasAssetGroup {
+		return shared.ID{}, nil, nil
+	}
+
+	var assetGroupID shared.ID
+	if input.AssetGroupID != "" {
+		id, err := s.validateScanAssetGroup(ctx, tenantID, input.TenantID, input.AssetGroupID)
+		if err != nil {
+			return shared.ID{}, nil, err
+		}
+		assetGroupID = id
+	}
+
+	var assetGroupIDs []shared.ID
+	if len(input.AssetGroupIDs) > 0 {
+		assetGroupIDs = make([]shared.ID, 0, len(input.AssetGroupIDs))
+		for _, idStr := range input.AssetGroupIDs {
+			id, err := s.validateScanAssetGroup(ctx, tenantID, input.TenantID, idStr)
+			if err != nil {
+				return shared.ID{}, nil, err
+			}
+			assetGroupIDs = append(assetGroupIDs, id)
+		}
+		if assetGroupID.IsZero() && len(assetGroupIDs) > 0 {
+			assetGroupID = assetGroupIDs[0]
+		}
+	}
+
+	return assetGroupID, assetGroupIDs, nil
+}
+
+// createScanEntity creates the scan domain entity based on targets vs asset groups.
+func (s *Service) createScanEntity(
+	tenantID shared.ID, name string, scanType scan.ScanType,
+	assetGroupID shared.ID, assetGroupIDs []shared.ID,
+	validatedTargets []string, hasAssetGroup bool,
+) (*scan.Scan, error) {
+	var sc *scan.Scan
+	var err error
+
+	if len(validatedTargets) > 0 && !hasAssetGroup {
+		sc, err = scan.NewScanWithTargets(tenantID, name, validatedTargets, scanType)
+	} else {
+		sc, err = scan.NewScan(tenantID, name, assetGroupID, scanType)
+		if err == nil && len(validatedTargets) > 0 {
+			sc.SetTargets(validatedTargets)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if len(assetGroupIDs) > 0 {
+		sc.SetAssetGroupIDs(assetGroupIDs)
+	}
+
+	return sc, nil
+}
+
+// configureScanType sets up workflow pipeline or single scanner configuration.
+func (s *Service) configureScanType(ctx context.Context, sc *scan.Scan, tenantID shared.ID, scanType scan.ScanType, input CreateScanInput) error {
+	if scanType == scan.ScanTypeWorkflow {
+		return s.configureWorkflowScan(ctx, sc, tenantID, input.PipelineID)
+	}
+	return s.configureSingleScan(ctx, sc, input.ScannerName, input.ScannerConfig, input.TargetsPerJob)
+}
+
+// configureWorkflowScan validates and sets up a workflow scan with a pipeline.
+func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tenantID shared.ID, pipelineIDStr string) error {
+	if pipelineIDStr == "" {
+		return fmt.Errorf("%w: pipeline_id is required for workflow type", shared.ErrValidation)
+	}
+	pipelineID, err := shared.IDFromString(pipelineIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid pipeline_id", shared.ErrValidation)
+	}
+
+	pipelineTemplate, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, pipelineID)
+	if err != nil {
+		return fmt.Errorf("pipeline not found: %w", err)
+	}
+
+	steps, err := s.stepRepo.GetByPipelineID(ctx, pipelineTemplate.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get pipeline steps: %w", err)
+	}
+	for _, step := range steps {
+		if step.Tool != "" {
+			stepTool, err := s.toolRepo.GetByName(ctx, step.Tool)
+			if err != nil || stepTool == nil {
+				return fmt.Errorf("%w: pipeline step '%s' uses tool '%s' which is not found",
+					shared.ErrValidation, step.StepKey, step.Tool)
+			}
+			if !stepTool.IsActive {
+				return fmt.Errorf("%w: pipeline step '%s' uses tool '%s' which is disabled",
+					shared.ErrValidation, step.StepKey, step.Tool)
+			}
+		}
+	}
+
+	return sc.SetWorkflow(pipelineID)
+}
+
+// configureSingleScan validates and sets up a single scanner scan.
+func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scannerName string, scannerConfig map[string]any, targetsPerJob int) error {
+	if scannerName == "" {
+		return fmt.Errorf("%w: scanner_name is required for single type", shared.ErrValidation)
+	}
+
+	scannerTool, err := s.toolRepo.GetByName(ctx, scannerName)
+	if err != nil || scannerTool == nil {
+		return fmt.Errorf("%w: scanner '%s' not found in tool registry", shared.ErrValidation, scannerName)
+	}
+	if !scannerTool.IsActive {
+		return fmt.Errorf("%w: scanner '%s' is disabled", shared.ErrValidation, scannerName)
+	}
+
+	tpj := max(targetsPerJob, 1)
+	return sc.SetSingleScanner(scannerName, scannerConfig, tpj)
+}
+
+// configureScanSchedule validates and sets the scan schedule.
+func (s *Service) configureScanSchedule(sc *scan.Scan, input CreateScanInput) error {
+	scheduleType := scan.ScheduleType(input.ScheduleType)
+	if scheduleType == "" {
+		scheduleType = scan.ScheduleManual
+	}
+	timezone := input.Timezone
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	if err := validateTimezone(timezone); err != nil {
+		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	}
+
+	if scheduleType == scan.ScheduleCrontab && input.ScheduleCron != "" {
+		if err := validateCronParseable(input.ScheduleCron); err != nil {
+			return fmt.Errorf("%w: invalid cron expression: %s", shared.ErrValidation, err.Error())
+		}
+	}
+
+	return sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone)
+}
+
+// checkScanAgentAvailability logs a warning if no agents are available for the scan.
+func (s *Service) checkScanAgentAvailability(ctx context.Context, tenantID shared.ID, scanType scan.ScanType, input CreateScanInput) {
+	toolToCheck := input.ScannerName
+	if scanType == scan.ScanTypeWorkflow {
+		toolToCheck = ""
+	}
+	agentAvail := s.agentSelector.CheckAgentAvailability(ctx, tenantID, toolToCheck, input.TenantRunner)
+	if !agentAvail.Available {
+		s.logger.Warn("no agent available for scan",
+			"tenant_id", tenantID.String(),
+			"tool", toolToCheck,
+			"message", agentAvail.Message,
+		)
+	}
+}
+
 // PreviewScanCompatibility checks asset-scanner compatibility for a scan configuration.
 // This is called before scan creation to show warnings about incompatible assets.
 // Returns nil if no warning needed (100% compatible or no asset groups).
@@ -382,7 +426,7 @@ func (s *Service) PreviewScanCompatibility(
 	// Get tool's supported targets
 	scannerTool, err := s.toolRepo.GetByName(ctx, scannerName)
 	if err != nil || scannerTool == nil {
-		return nil, nil // Tool not found, skip compatibility check
+		return nil, nil //nolint:nilerr // Tool not found is expected; skip compatibility check.
 	}
 
 	// Skip if tool has no supported_targets defined (scans all)

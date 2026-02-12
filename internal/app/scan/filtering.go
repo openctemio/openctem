@@ -164,12 +164,13 @@ func (s *AssetFilterService) PreviewCompatibility(
 	var compatibleTypesList, incompatibleTypesList []string
 
 	for assetType, count := range totalCounts {
-		if assetType == string(asset.AssetTypeUnclassified) {
+		switch {
+		case assetType == string(asset.AssetTypeUnclassified):
 			unclassifiedCount += count
-		} else if compatibleSet[assetType] {
+		case compatibleSet[assetType]:
 			compatibleCount += count
 			compatibleTypesList = append(compatibleTypesList, assetType)
-		} else {
+		default:
 			incompatibleCount += count
 			incompatibleTypesList = append(incompatibleTypesList, assetType)
 		}
@@ -264,7 +265,8 @@ func (s *AssetFilterService) FilterAssetsForScan(
 	for assetType, count := range assetTypeCounts {
 		intCount := int(count)
 
-		if assetType == string(asset.AssetTypeUnclassified) {
+		switch {
+		case assetType == string(asset.AssetTypeUnclassified):
 			result.UnclassifiedAssets += intCount
 			result.SkippedAssets += intCount
 			result.SkippedByType[assetType] = intCount
@@ -273,10 +275,10 @@ func (s *AssetFilterService) FilterAssetsForScan(
 				Count:     intCount,
 				Reason:    "Unclassified assets cannot be matched to scanner targets",
 			})
-		} else if compatibleSet[assetType] {
+		case compatibleSet[assetType]:
 			result.ScannedAssets += intCount
 			result.ScannedByType[assetType] = intCount
-		} else {
+		default:
 			result.SkippedAssets += intCount
 			result.SkippedByType[assetType] = intCount
 			result.SkipReasons = append(result.SkipReasons, SkipReason{

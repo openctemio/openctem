@@ -175,6 +175,8 @@ func (r *AssetTypeCategoryRepository) Delete(ctx context.Context, id shared.ID) 
 }
 
 // List lists categories with pagination.
+//
+//nolint:dupl // Similar to FindingSourceCategoryRepository.List but different table and types
 func (r *AssetTypeCategoryRepository) List(
 	ctx context.Context,
 	filter assettype.CategoryFilter,
@@ -378,6 +380,8 @@ func (r *AssetTypeRepository) GetByCode(ctx context.Context, code string) (*asse
 }
 
 // List lists asset types with filtering and pagination.
+//
+//nolint:dupl // Similar to FindingSourceRepository.List but different table and types
 func (r *AssetTypeRepository) List(
 	ctx context.Context,
 	filter assettype.Filter,

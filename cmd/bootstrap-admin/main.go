@@ -166,7 +166,7 @@ func main() {
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO admin_users (id, email, name, role, api_key_hash, api_key_prefix, is_active, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, adminID, adminEmail, adminName, adminRole, string(hashedKey), adminAPIKey[:8]+"...", true, now, now)
+	`, adminID, adminEmail, adminName, adminRole, string(hashedKey), extractPrefix(adminAPIKey), true, now, now)
 	if err != nil {
 		fatal("Error creating admin: %v", err)
 	}
@@ -192,6 +192,18 @@ func main() {
 	fmt.Println()
 	fmt.Println("Test the connection:")
 	fmt.Println("  openctem-admin cluster-info")
+}
+
+// extractPrefix extracts the lookup prefix from an API key.
+// Must match the prefix format used by admin.ExtractAPIKeyPrefix:
+// "oc-admin-" (9 chars) + first 8 hex chars = 17 chars total.
+func extractPrefix(apiKey string) string {
+	const prefix = "oc-admin-"
+	prefixLen := len(prefix) + 8
+	if len(apiKey) >= prefixLen {
+		return apiKey[:prefixLen]
+	}
+	return apiKey
 }
 
 // generateAPIKey generates a secure random API key

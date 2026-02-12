@@ -303,7 +303,6 @@ func (b *safeBuffer) String() string {
 	return b.buf.String()
 }
 
-
 func TestAsyncHandler_RecordCloning(t *testing.T) {
 	var buf safeBuffer
 	baseHandler := slog.NewJSONHandler(&buf, nil)

@@ -103,6 +103,8 @@ func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 
 // Ingest processes a CTIS report from an agent.
 // This is the main entry point for all ingestion.
+//
+//nolint:cyclop // Ingestion dispatches to multiple processors with validation
 func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*Output, error) {
 	// Validate agent context
 	if err := s.validateAgent(agt); err != nil {

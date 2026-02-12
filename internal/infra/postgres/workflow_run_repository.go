@@ -318,7 +318,7 @@ func (r *WorkflowRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Lock the workflow row to serialize concurrent triggers for the same workflow
 	// This prevents race conditions where multiple triggers check limits simultaneously

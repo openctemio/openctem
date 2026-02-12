@@ -13,9 +13,8 @@ import (
 
 // ComponentProcessor handles batch processing of dependencies/components during ingestion.
 type ComponentProcessor struct {
-	repo    component.Repository
-	logger  *slog.Logger
-	verbose bool
+	repo   component.Repository
+	logger *slog.Logger
 }
 
 // NewComponentProcessor creates a new component processor.

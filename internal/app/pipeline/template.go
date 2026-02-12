@@ -294,7 +294,8 @@ func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput)
 	// Track activation/deactivation for audit
 	var activationChange string
 	if input.IsActive != nil {
-		if *input.IsActive && !t.IsActive {
+		switch {
+		case *input.IsActive && !t.IsActive:
 			// Activating the template - validate tool references first
 			// Get template with steps for validation
 			templateWithSteps, err := s.templateRepo.GetWithSteps(ctx, t.ID)
@@ -306,10 +307,10 @@ func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput)
 			}
 			t.Activate()
 			activationChange = activationChangeActivated
-		} else if *input.IsActive {
+		case *input.IsActive:
 			// Already active, just confirm
 			t.Activate()
-		} else {
+		default:
 			t.Deactivate()
 			activationChange = activationChangeDeactivated
 		}

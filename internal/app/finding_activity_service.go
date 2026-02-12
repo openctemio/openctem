@@ -189,53 +189,7 @@ func (s *FindingActivityService) RecordActivity(ctx context.Context, input Recor
 
 	// Broadcast real-time event via WebSocket
 	if s.broadcaster != nil {
-		var actorIDStr *string
-		var actorName, actorEmail string
-
-		// Enrich actor info from cache or user repository
-		if activity.ActorID() != nil {
-			actorID := *activity.ActorID()
-			str := actorID.String()
-			actorIDStr = &str
-
-			// Try cache first to reduce database queries
-			if s.userCache != nil {
-				actorName, actorEmail, _ = s.userCache.get(actorID)
-			}
-
-			// Cache miss - look up from database
-			if actorName == "" && s.userRepo != nil {
-				if u, err := s.userRepo.GetByID(ctx, actorID); err == nil && u != nil {
-					actorName = u.Name()
-					actorEmail = u.Email()
-					// Store in cache for future lookups
-					if s.userCache != nil {
-						s.userCache.set(actorID, actorName, actorEmail)
-					}
-				}
-			}
-		}
-
-		// Event structure matches frontend WSActivityEvent
-		event := map[string]any{
-			"type": "activity_created",
-			"activity": map[string]any{
-				"id":            activity.ID().String(),
-				"finding_id":    activity.FindingID().String(),
-				"tenant_id":     activity.TenantID().String(),
-				"activity_type": string(activity.ActivityType()),
-				"actor_id":      actorIDStr,
-				"actor_type":    string(activity.ActorType()),
-				"actor_name":    actorName,
-				"actor_email":   actorEmail,
-				"changes":       activity.Changes(),
-				"created_at":    activity.CreatedAt().Format("2006-01-02T15:04:05.000Z"),
-			},
-		}
-
-		// Channel format: "finding:{finding_id}"
-		channel := fmt.Sprintf("finding:%s", activity.FindingID().String())
-		s.broadcaster.BroadcastActivity(channel, event, activity.TenantID().String())
+		s.broadcastActivityEvent(ctx, activity)
 	}
 
 	return activity, nil
@@ -526,4 +480,55 @@ func (s *FindingActivityService) CountActivities(ctx context.Context, tenantID, 
 	}
 
 	return s.activityRepo.CountByFinding(ctx, fid, tid, filter)
+}
+
+// resolveActorInfo looks up actor name and email from cache or database.
+func (s *FindingActivityService) resolveActorInfo(ctx context.Context, actorID *shared.ID) (*string, string, string) {
+	if actorID == nil {
+		return nil, "", ""
+	}
+
+	id := *actorID
+	str := id.String()
+	var name, email string
+
+	if s.userCache != nil {
+		name, email, _ = s.userCache.get(id)
+	}
+
+	if name == "" && s.userRepo != nil {
+		if u, err := s.userRepo.GetByID(ctx, id); err == nil && u != nil {
+			name = u.Name()
+			email = u.Email()
+			if s.userCache != nil {
+				s.userCache.set(id, name, email)
+			}
+		}
+	}
+
+	return &str, name, email
+}
+
+// broadcastActivityEvent sends a real-time WebSocket event for a finding activity.
+func (s *FindingActivityService) broadcastActivityEvent(ctx context.Context, activity *vulnerability.FindingActivity) {
+	actorIDStr, actorName, actorEmail := s.resolveActorInfo(ctx, activity.ActorID())
+
+	event := map[string]any{
+		"type": "activity_created",
+		"activity": map[string]any{
+			"id":            activity.ID().String(),
+			"finding_id":    activity.FindingID().String(),
+			"tenant_id":     activity.TenantID().String(),
+			"activity_type": string(activity.ActivityType()),
+			"actor_id":      actorIDStr,
+			"actor_type":    string(activity.ActorType()),
+			"actor_name":    actorName,
+			"actor_email":   actorEmail,
+			"changes":       activity.Changes(),
+			"created_at":    activity.CreatedAt().Format("2006-01-02T15:04:05.000Z"),
+		},
+	}
+
+	channel := fmt.Sprintf("finding:%s", activity.FindingID().String())
+	s.broadcaster.BroadcastActivity(channel, event, activity.TenantID().String())
 }

@@ -81,6 +81,5 @@ func registerAdminRoutes(
 				}
 			}, adminAPIKeyMiddlewares...)
 		}
-
 	}
 }

@@ -566,44 +566,6 @@ func (s *AgentStateStore) IncrementQueueStat(ctx context.Context, field string, 
 	return nil
 }
 
-// hasAllCapabilities checks if agent has all required capabilities.
-func hasAllCapabilities(agentCaps, required []string) bool {
-	if len(required) == 0 {
-		return true
-	}
-
-	capSet := make(map[string]bool)
-	for _, c := range agentCaps {
-		capSet[c] = true
-	}
-
-	for _, r := range required {
-		if !capSet[r] {
-			return false
-		}
-	}
-	return true
-}
-
-// hasAllTools checks if agent has all required tools.
-func hasAllTools(agentTools, required []string) bool {
-	if len(required) == 0 {
-		return true
-	}
-
-	toolSet := make(map[string]bool)
-	for _, t := range agentTools {
-		toolSet[t] = true
-	}
-
-	for _, r := range required {
-		if !toolSet[r] {
-			return false
-		}
-	}
-	return true
-}
-
 // =============================================================================
 // Cleanup
 // =============================================================================
