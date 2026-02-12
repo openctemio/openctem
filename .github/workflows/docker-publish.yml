@@ -20,15 +20,16 @@ on:
         default: staging
 
 env:
-  REGISTRY: docker.io
-  API_IMAGE: openctemio/api
-  MIGRATIONS_IMAGE: openctemio/migrations
-  SEED_IMAGE: openctemio/seed
-  ADMIN_CLI_IMAGE: openctemio/admin-cli
-  GHCR_API_IMAGE: ghcr.io/openctemio/api
-  GHCR_MIGRATIONS_IMAGE: ghcr.io/openctemio/migrations
-  GHCR_SEED_IMAGE: ghcr.io/openctemio/seed
-  GHCR_ADMIN_CLI_IMAGE: ghcr.io/openctemio/admin-cli
+  # Primary registry (GHCR - always available via GITHUB_TOKEN)
+  API_IMAGE: ghcr.io/openctemio/api
+  MIGRATIONS_IMAGE: ghcr.io/openctemio/migrations
+  SEED_IMAGE: ghcr.io/openctemio/seed
+  ADMIN_CLI_IMAGE: ghcr.io/openctemio/admin-cli
+  # Secondary registry (Docker Hub - optional, requires DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets)
+  DH_API_IMAGE: openctemio/api
+  DH_MIGRATIONS_IMAGE: openctemio/migrations
+  DH_SEED_IMAGE: openctemio/seed
+  DH_ADMIN_CLI_IMAGE: openctemio/admin-cli
 
 jobs:
   # ============================================
@@ -40,15 +41,29 @@ jobs:
     outputs:
       version: ${{ steps.vars.outputs.VERSION }}
       environment: ${{ steps.vars.outputs.ENVIRONMENT }}
+      has_dockerhub: ${{ steps.check.outputs.HAS_DOCKERHUB }}
       api_tags: ${{ steps.vars.outputs.API_TAGS }}
       migrations_tags: ${{ steps.vars.outputs.MIGRATIONS_TAGS }}
       seed_tags: ${{ steps.vars.outputs.SEED_TAGS }}
       admin_cli_tags: ${{ steps.vars.outputs.ADMIN_CLI_TAGS }}
-      ghcr_api_tags: ${{ steps.vars.outputs.GHCR_API_TAGS }}
-      ghcr_migrations_tags: ${{ steps.vars.outputs.GHCR_MIGRATIONS_TAGS }}
-      ghcr_seed_tags: ${{ steps.vars.outputs.GHCR_SEED_TAGS }}
-      ghcr_admin_cli_tags: ${{ steps.vars.outputs.GHCR_ADMIN_CLI_TAGS }}
+      dh_api_tags: ${{ steps.vars.outputs.DH_API_TAGS }}
+      dh_migrations_tags: ${{ steps.vars.outputs.DH_MIGRATIONS_TAGS }}
+      dh_seed_tags: ${{ steps.vars.outputs.DH_SEED_TAGS }}
+      dh_admin_cli_tags: ${{ steps.vars.outputs.DH_ADMIN_CLI_TAGS }}
     steps:
+      - name: Check Docker Hub credentials
+        id: check
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ]; then
+            echo "HAS_DOCKERHUB=true" >> $GITHUB_OUTPUT
+            echo "::notice::Docker Hub credentials found - will mirror to Docker Hub"
+          else
+            echo "HAS_DOCKERHUB=false" >> $GITHUB_OUTPUT
+            echo "::notice::No Docker Hub credentials - publishing to GHCR only"
+          fi
+
       - name: Set build variables
         id: vars
         run: |
@@ -71,23 +86,27 @@ jobs:
             if [[ "$VERSION" != *"-staging"* ]]; then
               VERSION="${VERSION}-staging"
             fi
+            # GHCR tags (primary)
             echo "API_TAGS=${{ env.API_IMAGE }}:${VERSION},${{ env.API_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
             echo "MIGRATIONS_TAGS=${{ env.MIGRATIONS_IMAGE }}:${VERSION},${{ env.MIGRATIONS_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
             echo "SEED_TAGS=${{ env.SEED_IMAGE }}:${VERSION},${{ env.SEED_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
             echo "ADMIN_CLI_TAGS=${{ env.ADMIN_CLI_IMAGE }}:${VERSION},${{ env.ADMIN_CLI_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
-            echo "GHCR_API_TAGS=${{ env.GHCR_API_IMAGE }}:${VERSION},${{ env.GHCR_API_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
-            echo "GHCR_MIGRATIONS_TAGS=${{ env.GHCR_MIGRATIONS_IMAGE }}:${VERSION},${{ env.GHCR_MIGRATIONS_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
-            echo "GHCR_SEED_TAGS=${{ env.GHCR_SEED_IMAGE }}:${VERSION},${{ env.GHCR_SEED_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
-            echo "GHCR_ADMIN_CLI_TAGS=${{ env.GHCR_ADMIN_CLI_IMAGE }}:${VERSION},${{ env.GHCR_ADMIN_CLI_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
+            # Docker Hub tags (secondary)
+            echo "DH_API_TAGS=${{ env.DH_API_IMAGE }}:${VERSION},${{ env.DH_API_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
+            echo "DH_MIGRATIONS_TAGS=${{ env.DH_MIGRATIONS_IMAGE }}:${VERSION},${{ env.DH_MIGRATIONS_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
+            echo "DH_SEED_TAGS=${{ env.DH_SEED_IMAGE }}:${VERSION},${{ env.DH_SEED_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
+            echo "DH_ADMIN_CLI_TAGS=${{ env.DH_ADMIN_CLI_IMAGE }}:${VERSION},${{ env.DH_ADMIN_CLI_IMAGE }}:staging-latest" >> $GITHUB_OUTPUT
           else
+            # GHCR tags (primary)
             echo "API_TAGS=${{ env.API_IMAGE }}:${VERSION},${{ env.API_IMAGE }}:latest" >> $GITHUB_OUTPUT
             echo "MIGRATIONS_TAGS=${{ env.MIGRATIONS_IMAGE }}:${VERSION},${{ env.MIGRATIONS_IMAGE }}:latest" >> $GITHUB_OUTPUT
             echo "SEED_TAGS=${{ env.SEED_IMAGE }}:${VERSION},${{ env.SEED_IMAGE }}:latest" >> $GITHUB_OUTPUT
             echo "ADMIN_CLI_TAGS=${{ env.ADMIN_CLI_IMAGE }}:${VERSION},${{ env.ADMIN_CLI_IMAGE }}:latest" >> $GITHUB_OUTPUT
-            echo "GHCR_API_TAGS=${{ env.GHCR_API_IMAGE }}:${VERSION},${{ env.GHCR_API_IMAGE }}:latest" >> $GITHUB_OUTPUT
-            echo "GHCR_MIGRATIONS_TAGS=${{ env.GHCR_MIGRATIONS_IMAGE }}:${VERSION},${{ env.GHCR_MIGRATIONS_IMAGE }}:latest" >> $GITHUB_OUTPUT
-            echo "GHCR_SEED_TAGS=${{ env.GHCR_SEED_IMAGE }}:${VERSION},${{ env.GHCR_SEED_IMAGE }}:latest" >> $GITHUB_OUTPUT
-            echo "GHCR_ADMIN_CLI_TAGS=${{ env.GHCR_ADMIN_CLI_IMAGE }}:${VERSION},${{ env.GHCR_ADMIN_CLI_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            # Docker Hub tags (secondary)
+            echo "DH_API_TAGS=${{ env.DH_API_IMAGE }}:${VERSION},${{ env.DH_API_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            echo "DH_MIGRATIONS_TAGS=${{ env.DH_MIGRATIONS_IMAGE }}:${VERSION},${{ env.DH_MIGRATIONS_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            echo "DH_SEED_TAGS=${{ env.DH_SEED_IMAGE }}:${VERSION},${{ env.DH_SEED_IMAGE }}:latest" >> $GITHUB_OUTPUT
+            echo "DH_ADMIN_CLI_TAGS=${{ env.DH_ADMIN_CLI_IMAGE }}:${VERSION},${{ env.DH_ADMIN_CLI_IMAGE }}:latest" >> $GITHUB_OUTPUT
           fi
 
   # ============================================
@@ -119,11 +138,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Build API image
       - name: Build and push API by digest
@@ -231,12 +251,15 @@ jobs:
           retention-days: 1
 
   # ============================================
-  # Merge - Create multi-platform manifests
+  # Merge - Create multi-platform manifests on GHCR
   # ============================================
   merge:
     name: Merge Manifests
     runs-on: ubuntu-latest
     needs: [prepare, build]
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Download API digests
         uses: actions/download-artifact@v7
@@ -269,11 +292,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Create API manifest
       - name: Create API manifest and push
@@ -329,7 +353,7 @@ jobs:
 
       - name: Generate build summary
         run: |
-          echo "## Docker Hub Images Published" >> $GITHUB_STEP_SUMMARY
+          echo "## GHCR Images Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`${{ needs.prepare.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** \`${{ needs.prepare.outputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
@@ -356,24 +380,18 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
   # ============================================
-  # Mirror to GHCR - Copy multi-arch manifests
+  # Mirror to Docker Hub (optional)
   # ============================================
-  mirror-to-ghcr:
-    name: Mirror to GHCR
+  # Only runs if DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets are configured.
+  # Uses crane to copy multi-arch manifests from GHCR to Docker Hub.
+  mirror-to-dockerhub:
+    name: Mirror to Docker Hub
     runs-on: ubuntu-latest
     needs: [prepare, merge]
-    permissions:
-      contents: read
-      packages: write
+    if: needs.prepare.outputs.has_dockerhub == 'true'
     steps:
       - name: Install crane
         uses: imjasonh/setup-crane@v0.4
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -382,70 +400,76 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Mirror API image to GHCR
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Mirror API image to Docker Hub
         run: |
-          DOCKER_TAGS="${{ needs.prepare.outputs.api_tags }}"
-          GHCR_TAGS="${{ needs.prepare.outputs.ghcr_api_tags }}"
-          IFS=',' read -ra SRC <<< "$DOCKER_TAGS"
-          IFS=',' read -ra DST <<< "$GHCR_TAGS"
+          GHCR_TAGS="${{ needs.prepare.outputs.api_tags }}"
+          DH_TAGS="${{ needs.prepare.outputs.dh_api_tags }}"
+          IFS=',' read -ra SRC <<< "$GHCR_TAGS"
+          IFS=',' read -ra DST <<< "$DH_TAGS"
           for i in "${!SRC[@]}"; do
             echo "Copying ${SRC[$i]} -> ${DST[$i]}"
             crane copy "${SRC[$i]}" "${DST[$i]}"
           done
 
-      - name: Mirror Migrations image to GHCR
+      - name: Mirror Migrations image to Docker Hub
         run: |
-          DOCKER_TAGS="${{ needs.prepare.outputs.migrations_tags }}"
-          GHCR_TAGS="${{ needs.prepare.outputs.ghcr_migrations_tags }}"
-          IFS=',' read -ra SRC <<< "$DOCKER_TAGS"
-          IFS=',' read -ra DST <<< "$GHCR_TAGS"
+          GHCR_TAGS="${{ needs.prepare.outputs.migrations_tags }}"
+          DH_TAGS="${{ needs.prepare.outputs.dh_migrations_tags }}"
+          IFS=',' read -ra SRC <<< "$GHCR_TAGS"
+          IFS=',' read -ra DST <<< "$DH_TAGS"
           for i in "${!SRC[@]}"; do
             echo "Copying ${SRC[$i]} -> ${DST[$i]}"
             crane copy "${SRC[$i]}" "${DST[$i]}"
           done
 
-      - name: Mirror Seed image to GHCR
+      - name: Mirror Seed image to Docker Hub
         run: |
-          DOCKER_TAGS="${{ needs.prepare.outputs.seed_tags }}"
-          GHCR_TAGS="${{ needs.prepare.outputs.ghcr_seed_tags }}"
-          IFS=',' read -ra SRC <<< "$DOCKER_TAGS"
-          IFS=',' read -ra DST <<< "$GHCR_TAGS"
+          GHCR_TAGS="${{ needs.prepare.outputs.seed_tags }}"
+          DH_TAGS="${{ needs.prepare.outputs.dh_seed_tags }}"
+          IFS=',' read -ra SRC <<< "$GHCR_TAGS"
+          IFS=',' read -ra DST <<< "$DH_TAGS"
           for i in "${!SRC[@]}"; do
             echo "Copying ${SRC[$i]} -> ${DST[$i]}"
             crane copy "${SRC[$i]}" "${DST[$i]}"
           done
 
-      - name: Mirror Admin CLI image to GHCR
+      - name: Mirror Admin CLI image to Docker Hub
         run: |
-          DOCKER_TAGS="${{ needs.prepare.outputs.admin_cli_tags }}"
-          GHCR_TAGS="${{ needs.prepare.outputs.ghcr_admin_cli_tags }}"
-          IFS=',' read -ra SRC <<< "$DOCKER_TAGS"
-          IFS=',' read -ra DST <<< "$GHCR_TAGS"
+          GHCR_TAGS="${{ needs.prepare.outputs.admin_cli_tags }}"
+          DH_TAGS="${{ needs.prepare.outputs.dh_admin_cli_tags }}"
+          IFS=',' read -ra SRC <<< "$GHCR_TAGS"
+          IFS=',' read -ra DST <<< "$DH_TAGS"
           for i in "${!SRC[@]}"; do
             echo "Copying ${SRC[$i]} -> ${DST[$i]}"
             crane copy "${SRC[$i]}" "${DST[$i]}"
           done
 
-      - name: Generate GHCR summary
+      - name: Generate Docker Hub summary
         run: |
-          echo "## GHCR Images Mirrored" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Hub Images Mirrored" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### API Image" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ needs.prepare.outputs.ghcr_api_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.prepare.outputs.dh_api_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Migrations Image" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ needs.prepare.outputs.ghcr_migrations_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.prepare.outputs.dh_migrations_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Seed Image" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ needs.prepare.outputs.ghcr_seed_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.prepare.outputs.dh_seed_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Admin CLI Image" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ needs.prepare.outputs.ghcr_admin_cli_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.prepare.outputs.dh_admin_cli_tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
