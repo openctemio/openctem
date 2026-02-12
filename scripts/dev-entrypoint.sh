@@ -54,9 +54,12 @@ run_migrations() {
 
 # Main
 main() {
-    # Clean old binary and Go build cache to ensure fresh build
+    # Clean old binary to ensure fresh build
     rm -rf /app/tmp/openctem 2>/dev/null || true
-    go clean -cache 2>/dev/null || true
+
+    # Ensure go dependencies are in sync (go.mod.docker may differ from go.sum)
+    echo "Syncing Go dependencies..."
+    go mod download 2>/dev/null || go mod tidy 2>/dev/null || true
 
     # Wait for database
     wait_for_db
