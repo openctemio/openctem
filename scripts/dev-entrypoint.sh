@@ -57,7 +57,20 @@ main() {
     # Clean old binary to ensure fresh build
     rm -rf /app/tmp/openctem 2>/dev/null || true
 
-    # Ensure go dependencies are in sync (go.mod.docker may differ from go.sum)
+    # Create go.work for local SDK development
+    if [ -d "/app/sdk-go" ]; then
+        echo "Creating go.work for local SDK..."
+        cat > /app/go.work <<GOWORK
+go $(grep '^go ' /app/go.mod | awk '{print $2}')
+
+use (
+	.
+	./sdk-go
+)
+GOWORK
+    fi
+
+    # Ensure go dependencies are in sync
     echo "Syncing Go dependencies..."
     go mod download 2>/dev/null || go mod tidy 2>/dev/null || true
 
