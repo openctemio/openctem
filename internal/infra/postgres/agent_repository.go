@@ -619,6 +619,11 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 		hostname         sql.NullString
 		ipAddress        sql.NullString
 		region           sql.NullString
+		diskReadMBPS     sql.NullFloat64
+		diskWriteMBPS    sql.NullFloat64
+		networkRxMBPS    sql.NullFloat64
+		networkTxMBPS    sql.NullFloat64
+		loadScore        sql.NullFloat64
 		metricsUpdatedAt sql.NullTime
 		lastSeenAt       sql.NullTime
 		lastOfflineAt    sql.NullTime
@@ -652,11 +657,11 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 		&a.MaxConcurrentJobs,
 		&a.CurrentJobs,
 		&region,
-		&a.DiskReadMBPS,
-		&a.DiskWriteMBPS,
-		&a.NetworkRxMBPS,
-		&a.NetworkTxMBPS,
-		&a.LoadScore,
+		&diskReadMBPS,
+		&diskWriteMBPS,
+		&networkRxMBPS,
+		&networkTxMBPS,
+		&loadScore,
 		&metricsUpdatedAt,
 		&lastSeenAt,
 		&lastOfflineAt,
@@ -708,6 +713,21 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 	if region.Valid {
 		a.Region = region.String
 	}
+	if diskReadMBPS.Valid {
+		a.DiskReadMBPS = diskReadMBPS.Float64
+	}
+	if diskWriteMBPS.Valid {
+		a.DiskWriteMBPS = diskWriteMBPS.Float64
+	}
+	if networkRxMBPS.Valid {
+		a.NetworkRxMBPS = networkRxMBPS.Float64
+	}
+	if networkTxMBPS.Valid {
+		a.NetworkTxMBPS = networkTxMBPS.Float64
+	}
+	if loadScore.Valid {
+		a.LoadScore = loadScore.Float64
+	}
 	if metricsUpdatedAt.Valid {
 		a.MetricsUpdatedAt = &metricsUpdatedAt.Time
 	}
@@ -756,6 +776,11 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 		hostname         sql.NullString
 		ipAddress        sql.NullString
 		region           sql.NullString
+		diskReadMBPS     sql.NullFloat64
+		diskWriteMBPS    sql.NullFloat64
+		networkRxMBPS    sql.NullFloat64
+		networkTxMBPS    sql.NullFloat64
+		loadScore        sql.NullFloat64
 		metricsUpdatedAt sql.NullTime
 		lastSeenAt       sql.NullTime
 		lastOfflineAt    sql.NullTime
@@ -789,11 +814,11 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 		&a.MaxConcurrentJobs,
 		&a.CurrentJobs,
 		&region,
-		&a.DiskReadMBPS,
-		&a.DiskWriteMBPS,
-		&a.NetworkRxMBPS,
-		&a.NetworkTxMBPS,
-		&a.LoadScore,
+		&diskReadMBPS,
+		&diskWriteMBPS,
+		&networkRxMBPS,
+		&networkTxMBPS,
+		&loadScore,
 		&metricsUpdatedAt,
 		&lastSeenAt,
 		&lastOfflineAt,
@@ -841,6 +866,21 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 	}
 	if region.Valid {
 		a.Region = region.String
+	}
+	if diskReadMBPS.Valid {
+		a.DiskReadMBPS = diskReadMBPS.Float64
+	}
+	if diskWriteMBPS.Valid {
+		a.DiskWriteMBPS = diskWriteMBPS.Float64
+	}
+	if networkRxMBPS.Valid {
+		a.NetworkRxMBPS = networkRxMBPS.Float64
+	}
+	if networkTxMBPS.Valid {
+		a.NetworkTxMBPS = networkTxMBPS.Float64
+	}
+	if loadScore.Valid {
+		a.LoadScore = loadScore.Float64
 	}
 	if metricsUpdatedAt.Valid {
 		a.MetricsUpdatedAt = &metricsUpdatedAt.Time
