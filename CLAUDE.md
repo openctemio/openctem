@@ -1669,11 +1669,11 @@ POST /api/v1/platform-jobs/{id}/cancel # Cancel job
 
 ---
 
-## Security Checklist (Bắt buộc cho public endpoints)
+## Security Checklist (Required for public endpoints)
 
 ### 1. Rate Limiting cho Public Endpoints
 
-**Mọi public endpoint (không yêu cầu auth) PHẢI có rate limiting:**
+**Every public endpoint (not requiring auth) MUST have rate limiting:**
 
 ```go
 // BAD - Public endpoint without rate limiting
@@ -1687,9 +1687,9 @@ router.Group("/api/v1/platform", func(r Router) {
 }, middleware.RateLimit(10, time.Minute)) // ✅ 10 req/min per IP
 ```
 
-### 2. Generic Error Messages (Tránh Information Disclosure)
+### 2. Generic Error Messages (Avoid Information Disclosure)
 
-**KHÔNG BAO GIỜ expose trạng thái nội bộ qua error messages:**
+**NEVER expose internal state through error messages:**
 
 ```go
 // BAD - Leaks token state (expired, exhausted, revoked)
@@ -1700,19 +1700,19 @@ if err := token.CanBeUsed(); err != nil {
 // GOOD - Generic error, log details internally
 if err := token.CanBeUsed(); err != nil {
     apierror.Unauthorized("Invalid or expired token").WriteJSON(w)
-    h.logger.Warn("token validation failed", "reason", err.Error()) // Log chi tiết
+    h.logger.Warn("token validation failed", "reason", err.Error()) // Log details
 }
 ```
 
-**Patterns to avoid (sẽ bị attackers exploit):**
+**Patterns to avoid (will be exploited by attackers):**
 | BAD Message | Attack Vector |
 |-------------|---------------|
-| "token has expired" | Attacker biết token từng valid |
-| "token usage limit reached" | Attacker biết max_uses |
-| "agent not found" | Attacker enumerate agent IDs |
+| "token has expired" | Attacker knows the token was once valid |
+| "token usage limit reached" | Attacker knows max_uses |
+| "agent not found" | Attacker can enumerate agent IDs |
 | "user not found" vs "invalid password" | User enumeration |
 
-**Generic messages cho authentication:**
+**Generic messages for authentication:**
 
 ```go
 // All auth failures should return same message
@@ -1721,7 +1721,7 @@ apierror.Unauthorized("Invalid credentials").WriteJSON(w)
 
 ### 3. Constant-Time Comparison cho Secrets
 
-**Sử dụng `crypto/subtle` cho so sánh sensitive data:**
+**Use `crypto/subtle` for comparing sensitive data:**
 
 ```go
 import "crypto/subtle"
@@ -1733,9 +1733,9 @@ if providedHash == storedHash { ... }
 if subtle.ConstantTimeCompare([]byte(providedHash), []byte(storedHash)) == 1 { ... }
 ```
 
-> **Note:** SDK cũng có `credentials.SecureCompare()` function implement constant-time comparison.
+> **Note:** The SDK also has a `credentials.SecureCompare()` function that implements constant-time comparison.
 
-### 4. API Keys KHÔNG được trong Query Parameters
+### 4. API Keys MUST NOT be in Query Parameters
 
 ```go
 // BAD - API key in URL (logged by proxies, browsers)
@@ -1746,7 +1746,7 @@ apiKey := r.Header.Get("Authorization") // Bearer token
 apiKey := r.Header.Get("X-API-Key")     // Custom header
 ```
 
-### 5. Sensitive Data trong Request Body (không phải URL)
+### 5. Sensitive Data in Request Body (not URL)
 
 ```go
 // BAD - Token in URL
@@ -1761,22 +1761,22 @@ POST /api/v1/register
 
 ## Common Mistakes to Avoid (Lessons Learned)
 
-### 1. Type Name Conflicts trong Handler Package
+### 1. Type Name Conflicts in Handler Package
 
-**Khi tạo handler mới, kiểm tra type names không conflict với handlers khác:**
+**When creating a new handler, check that type names do not conflict with other handlers:**
 
 ```go
-// BAD - RegisterRequest đã tồn tại trong local_auth_handler.go
+// BAD - RegisterRequest already exists in local_auth_handler.go
 type RegisterRequest struct { ... }
 
-// GOOD - Prefix với domain
+// GOOD - Prefix with domain
 type PlatformRegisterRequest struct { ... }
 type LocalAuthRegisterRequest struct { ... }
 ```
 
 ### 2. Missing Bounds Validation
 
-**Luôn validate upper/lower bounds cho numeric fields:**
+**Always validate upper/lower bounds for numeric fields:**
 
 ```go
 // BAD - No bounds check
@@ -1790,7 +1790,7 @@ if req.LeaseDurationSeconds < 10 || req.LeaseDurationSeconds > 300 {
 
 ### 3. Handler Defaults vs Service Defaults
 
-**Defaults nên ở service layer, không phải handler:**
+**Defaults should be in the service layer, not the handler:**
 
 ```go
 // BAD - Handler sets defaults (hard to test, duplicated logic)
@@ -1810,7 +1810,7 @@ func (s *Service) Process(input Input) {
 
 ### 4. Transaction Boundaries
 
-**Operations trên multiple entities phải trong cùng transaction:**
+**Operations on multiple entities must be within the same transaction:**
 
 ```go
 // BAD - Separate operations, inconsistent state possible
@@ -1827,7 +1827,7 @@ tx.Commit()
 
 ### 5. Context Extraction Duplication
 
-**Tạo helper function thay vì copy-paste:**
+**Create a helper function instead of copy-pasting:**
 
 ```go
 // BAD - Copy-paste in every handler method
@@ -1849,7 +1849,7 @@ func (h *Handler) requireAgent(r *http.Request) (*agent.Agent, error) {
 
 ### 6. Scan Method Duplication
 
-**Khi cần scan từ cả Row và Rows, tạo shared helper:**
+**When you need to scan from both Row and Rows, create a shared helper:**
 
 ```go
 // BAD - 95% duplicate code
@@ -1888,7 +1888,7 @@ if err != nil {
 
 ### 8. Consolidate Authentication Errors (Anti-Enumeration)
 
-**Middleware auth failures phải return cùng một error message:**
+**Middleware auth failures must return the same error message:**
 
 ```go
 // BAD - Different errors for different failures (attackers can enumerate)
@@ -1916,15 +1916,15 @@ if agt.Status != agent.AgentStatusActive {
 
 ### 9. Multiple Registration Endpoints - Same Security Controls
 
-**Khi có nhiều endpoints cùng chức năng, đảm bảo tất cả đều có cùng security controls:**
+**When there are multiple endpoints with the same functionality, ensure all have the same security controls:**
 
 ```go
-// Codebase có 2 registration endpoints:
+// The codebase has 2 registration endpoints:
 // 1. /api/v1/platform-agents/register (PlatformAgentHandler.RegisterAgent)
 // 2. /api/v1/platform/register (PlatformRegisterHandler.Register)
 
-// Cả hai PHẢI có:
-// - Rate limiting (cùng rate limiter instance)
+// Both MUST have:
+// - Rate limiting (same rate limiter instance)
 // - Generic error messages
 // - Bootstrap token validation
 
@@ -1937,7 +1937,7 @@ registerPlatformCommunicationRoutes(router, platformH, registerH, platformRegRat
 
 ### 10. Switch Case Consolidation for Similar Error Types
 
-**Gộp các error cases có cùng response để tránh code linting issues:**
+**Consolidate error cases with the same response to avoid code linting issues:**
 
 ```go
 // BAD - Repetitive cases with same response
@@ -1961,14 +1961,14 @@ case errors.Is(err, agent.ErrBootstrapTokenInvalid),
 
 ## SDK Security Notes
 
-> SDK có security features (v1.1+). Xem `../sdk/docs/SECURITY.md` cho chi tiết.
+> The SDK has security features (v1.1+). See `../sdk/docs/SECURITY.md` for details.
 
-**Key points khi làm việc với SDK:**
+**Key points when working with the SDK:**
 
-- SDK validates jobs client-side, nhưng **API là authoritative validator**
-- SDK dùng `credentials.SecureCompare()` - API cũng nên dùng constant-time comparison
-- SDK validates JWT `tenant_id` claim - API là source of truth
-- Server phải validate templates trước khi send tới agents (path traversal protection)
+- SDK validates jobs client-side, but **the API is the authoritative validator**
+- SDK uses `credentials.SecureCompare()` - the API should also use constant-time comparison
+- SDK validates JWT `tenant_id` claim - the API is the source of truth
+- The server must validate templates before sending to agents (path traversal protection)
 
 ---
 

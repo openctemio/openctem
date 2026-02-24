@@ -45,7 +45,7 @@ Agent sends heartbeat every 60s
 
 ### Decision: Hybrid Approach (Redis + Database for State Changes)
 
-Sau khi phân tích, chúng ta cần **Hybrid approach** để vừa tối ưu performance vừa đảm bảo có thể query lịch sử online/offline:
+After analysis, we need a **Hybrid approach** to both optimize performance and ensure the ability to query online/offline history:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -81,19 +81,19 @@ Sau khi phân tích, chúng ta cần **Hybrid approach** để vừa tối ưu p
 | Agent config | Database | Rarely | Static, admin-controlled |
 | Agent status | Database | Rarely | Administrative action |
 
-> **Note**: Schema đã được đơn giản hóa từ 3 timestamps (last_seen_at, last_online_at, last_offline_at) xuống còn 2. `last_seen_at` đóng vai trò "last online time" vì nó được cập nhật với mỗi heartbeat thành công.
+> **Note**: Schema has been simplified from 3 timestamps (last_seen_at, last_online_at, last_offline_at) down to 2. `last_seen_at` serves as the "last online time" since it is updated with each successful heartbeat.
 
 ### Why Hybrid? The Admin Query Problem
 
-**Với Redis-only, admin KHÔNG THỂ trả lời:**
-- "Agent X offline lúc nào?" → ❌ Dữ liệu mất sau 2 phút
-- "Agent X online lần cuối khi nào?" → ❌ Chỉ biết nếu đang online
-- "Thời gian uptime của agent?" → ❌ Không có lịch sử
+**With Redis-only, admins CANNOT answer:**
+- "When did Agent X go offline?" -> Data is lost after 2 minutes
+- "When was Agent X last online?" -> Only known if currently online
+- "What is the agent's uptime?" -> No history available
 
-**Với Hybrid approach:**
-- "Agent X offline lúc nào?" → ✅ `SELECT last_offline_at FROM agents WHERE id = X`
-- "Agent X online lần cuối khi nào?" → ✅ `SELECT last_online_at FROM agents WHERE id = X`
-- "Thời gian uptime?" → ✅ `last_offline_at - last_online_at`
+**With Hybrid approach:**
+- "When did Agent X go offline?" -> `SELECT last_offline_at FROM agents WHERE id = X`
+- "When was Agent X last online?" -> `SELECT last_online_at FROM agents WHERE id = X`
+- "What is the uptime?" -> `last_offline_at - last_online_at`
 
 ### Database Schema for Online Tracking
 
@@ -296,7 +296,7 @@ Agent sends heartbeat every 60s
 │ HOT PATH: Redis only (99.9% of heartbeats)                      │
 │ COLD PATH: DB write only on state change (0.1%)                 │
 │                                                                  │
-│ ⚠️  KHÔNG audit log mỗi heartbeat - chỉ log state changes!      │
+│ ⚠️  Do NOT audit log every heartbeat - only log state changes!    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -924,25 +924,25 @@ WHERE last_online_at > last_offline_at  -- Came online after last going offline
 
 ## Audit Log Policy for Agents
 
-### Nguyên tắc: Chỉ log events quan trọng, KHÔNG log mỗi heartbeat
+### Principle: Only log important events, do NOT log every heartbeat
 
-**Vấn đề nếu log mỗi heartbeat:**
+**Problem if logging every heartbeat:**
 ```
-1000 agents × 1 heartbeat/min × 60 min × 24 hours = 1,440,000 audit logs/day
-→ Database phình to, queries chậm, storage cost cao
+1000 agents x 1 heartbeat/min x 60 min x 24 hours = 1,440,000 audit logs/day
+-> Database bloat, slow queries, high storage cost
 ```
 
 ### Audit Log Matrix
 
-| Event | Audit Log? | Lý do |
-|-------|------------|-------|
-| Mỗi heartbeat | ❌ **KHÔNG** | Quá nhiều, không có giá trị debug |
-| Agent comes online | ✅ Có | State change quan trọng, debug connection issues |
-| Agent goes offline | ✅ Có | State change quan trọng, detect failures |
-| Agent error/failure | ✅ Có | Debug, troubleshooting |
-| Agent capability drift | ✅ Có | Security concern |
-| Agent version change | ✅ Có | Tracking deployments |
-| Agent created/deleted | ✅ Có | Admin action audit |
+| Event | Audit Log? | Reason |
+|-------|------------|--------|
+| Every heartbeat | ❌ **NO** | Too many, no debug value |
+| Agent comes online | ✅ Yes | Important state change, debug connection issues |
+| Agent goes offline | ✅ Yes | Important state change, detect failures |
+| Agent error/failure | ✅ Yes | Debug, troubleshooting |
+| Agent capability drift | ✅ Yes | Security concern |
+| Agent version change | ✅ Yes | Tracking deployments |
+| Agent created/deleted | ✅ Yes | Admin action audit |
 
 ### Audit Log Frequency Comparison
 
@@ -952,10 +952,10 @@ WHERE last_online_at > last_offline_at  -- Came online after last going offline
 | Log state changes only | ~2,000-5,000 | ~200MB |
 | **Reduction** | **99.7%** | **99.6%** |
 
-### Khi nào cần Audit Log cho Agent?
+### When Should Agents Have Audit Logs?
 
 ```go
-// ✅ CÓ Audit Log - State transitions và errors
+// ✅ WITH Audit Log - State transitions and errors
 func (s *PlatformAgentService) handleAgentCameOnline(...) {
     s.auditService.LogAgentConnected(...)  // 1 log per session
 }
@@ -968,7 +968,7 @@ func (s *PlatformAgentService) handleHeartbeatError(...) {
     s.auditService.LogAgentError(...)  // Only on errors
 }
 
-// ❌ KHÔNG Audit Log - Regular heartbeats
+// ❌ NO Audit Log - Regular heartbeats
 func (s *PlatformAgentService) RecordHeartbeat(...) {
     // Redis operations only
     // NO audit log here - would be 1M+ logs/day
@@ -977,15 +977,15 @@ func (s *PlatformAgentService) RecordHeartbeat(...) {
 
 ### Debug Agent Issues Without Audit Logs
 
-Thay vì audit log mỗi heartbeat, sử dụng:
+Instead of audit logging every heartbeat, use:
 
 1. **Redis real-time state** - Query current status
-2. **Structured logs** - Application logs với log level debug
+2. **Structured logs** - Application logs with debug log level
 3. **Metrics/Prometheus** - Heartbeat latency, success rate
-4. **last_seen_at in DB** - Khi agent offline
+4. **last_seen_at in DB** - When agent goes offline
 
 ```go
-// Debug query: Tìm agents có vấn đề
+// Debug query: Find agents with issues
 // Option 1: Redis (real-time)
 staleAgents := agentState.GetAgentsOlderThan(ctx, 90*time.Second)
 

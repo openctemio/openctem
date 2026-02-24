@@ -1,16 +1,16 @@
 # Component-Dependency System: Comprehensive Review
 
-## Đánh giá từ góc độ PM/TechLead/BA
+## Assessment from PM/TechLead/BA Perspective
 
-### 1. Tổng quan Implementation
+### 1. Implementation Overview
 
-| Thành phần | Status | Đánh giá |
-|------------|--------|----------|
-| **Database Schema** | ✅ Hoàn thành | Migration 133 + 134 aligned với industry standards |
-| **Depth Calculation** | ✅ Hoàn thành | `parentDepth + 1` thay vì hardcoded `2` |
-| **Parent Tracking** | ✅ Hoàn thành | `parent_component_id` cho dependency tree |
-| **API Response** | ✅ Hoàn thành | DTOs có `depth`, `parent_component_id`, `is_direct` |
-| **Multiple Key Matching** | ✅ Hoàn thành | PURL, name@version, name, ID formats |
+| Component | Status | Assessment |
+|-----------|--------|------------|
+| **Database Schema** | ✅ Complete | Migration 133 + 134 aligned with industry standards |
+| **Depth Calculation** | ✅ Complete | `parentDepth + 1` instead of hardcoded `2` |
+| **Parent Tracking** | ✅ Complete | `parent_component_id` for dependency tree |
+| **API Response** | ✅ Complete | DTOs include `depth`, `parent_component_id`, `is_direct` |
+| **Multiple Key Matching** | ✅ Complete | PURL, name@version, name, ID formats |
 
 ### 2. Industry Alignment Score
 
@@ -20,7 +20,7 @@
 | **SPDX 3.0** | ⭐⭐⭐⭐⭐ | Direct relationships, PURL-based |
 | **Dependency-Track** | ⭐⭐⭐⭐⭐ | Parent chains, depth tracking |
 | **GitHub Dep Graph** | ⭐⭐⭐⭐☆ | Depth yes, but single parent only |
-| **Snyk** | ⭐⭐⭐⭐☆ | dependency_path (chúng ta chỉ có parent) |
+| **Snyk** | ⭐⭐⭐⭐☆ | dependency_path (we only have parent) |
 
 ### 3. Missing Features (Backlog)
 
@@ -33,7 +33,7 @@
 
 ---
 
-## Đánh giá từ góc độ Security Expert
+## Assessment from Security Expert Perspective
 
 ### 1. SQL Injection Analysis
 
@@ -44,7 +44,7 @@
 | Dynamic IN clause | `finding_repository.go:1631` | ✅ SAFE | Indexed placeholders |
 | Array parameters | `finding_repository.go:834` | ✅ SAFE | `pq.Array()` wrapper |
 
-**Kết luận:** Không có SQL injection vulnerabilities.
+**Conclusion:** No SQL injection vulnerabilities found.
 
 ### 2. Authorization & Access Control
 
@@ -82,8 +82,8 @@ var validLicensePattern = regexp.MustCompile(`^[a-zA-Z0-9\-_.+()]+$`)
 | Issue | Severity | Description | Recommendation |
 |-------|----------|-------------|----------------|
 | **Circular dependency check** | LOW | DB constraint exists but no app-level validation | Add domain validation |
-| **Metadata size limit** | MEDIUM | JSONB `metadata` không có size limit | Add max size check |
-| **License regex bypass** | LOW | Pattern quá permissive cho một số edge cases | Review regex pattern |
+| **Metadata size limit** | MEDIUM | JSONB `metadata` has no size limit | Add max size check |
+| **License regex bypass** | LOW | Pattern is too permissive for some edge cases | Review regex pattern |
 
 ### 5. Recommendations
 
@@ -117,7 +117,7 @@ func (d *AssetDependency) SetParentComponentID(parentID *shared.ID) error {
 
 ---
 
-## Đánh giá Database Query Performance
+## Database Query Performance Assessment
 
 ### 1. Query Analysis
 

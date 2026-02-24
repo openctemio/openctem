@@ -1,21 +1,21 @@
 # Component Ingestion: Edge Cases Analysis
 
-## Câu hỏi gốc
+## Original Question
 
-> Agent gửi lên dependencies cho 1 asset nhưng component đã có từ trước (từ asset khác),
-> nhưng asset chưa có component đó thì đang thực hiện như thế nào?
+> An agent sends dependencies for an asset, but the component already exists (from another asset),
+> and the asset does not yet have that component -- how is this currently handled?
 
-## Kết luận: Flow Hiện tại ĐÃ ĐÚNG ✅
+## Conclusion: Current Flow is CORRECT ✅
 
-### Flow chi tiết
+### Detailed Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ SCENARIO: Agent gửi lodash@4.17.21 cho Asset B                              │
-│           Component lodash@4.17.21 đã tồn tại từ Asset A                    │
+│ SCENARIO: Agent sends lodash@4.17.21 for Asset B                             │
+│           Component lodash@4.17.21 already exists from Asset A               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│ State trước khi ingest:                                                     │
+│ State before ingest:                                                        │
 │   components: [ { id: "abc123", purl: "pkg:npm/lodash@4.17.21" } ]         │
 │   asset_components: [ { asset_id: A, component_id: "abc123" } ]            │
 │                                                                             │
@@ -28,7 +28,7 @@
 │         updated_at = NOW()                                                 │
 │     RETURNING id                                                           │
 │                                                                             │
-│   Result: id = "abc123" (ID CŨ được trả về, không phải new-uuid)           │
+│   Result: id = "abc123" (OLD ID returned, not new-uuid)                    │
 │                                                                             │
 │ Step 2: repo.LinkAsset(assetDep)                                           │
 │   assetDep = { asset_id: B, component_id: "abc123", ... }                  │
@@ -38,13 +38,13 @@
 │     VALUES ('link-uuid', 'B', 'abc123', ...)                               │
 │     ON CONFLICT (asset_id, component_id, path) DO UPDATE SET ...           │
 │                                                                             │
-│   Result: Tạo link mới giữa Asset B và Component abc123                    │
+│   Result: Creates new link between Asset B and Component abc123             │
 │                                                                             │
-│ State sau khi ingest:                                                       │
-│   components: [ { id: "abc123", purl: "pkg:npm/lodash@4.17.21" } ] ← KHÔNG ĐỔI│
+│ State after ingest:                                                         │
+│   components: [ { id: "abc123", purl: "pkg:npm/lodash@4.17.21" } ] ← UNCHANGED│
 │   asset_components: [                                                       │
 │     { asset_id: A, component_id: "abc123" },                               │
-│     { asset_id: B, component_id: "abc123" }  ← MỚI                         │
+│     { asset_id: B, component_id: "abc123" }  ← NEW                         │
 │   ]                                                                         │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -52,7 +52,7 @@
 
 ## Edge Cases Analysis
 
-### Edge Case 1: Component đã tồn tại, Asset chưa có
+### Edge Case 1: Component already exists, Asset does not have it
 **Status:** ✅ Handled correctly
 
 | Step | Action | Result |
@@ -60,7 +60,7 @@
 | Upsert | `ON CONFLICT (purl) DO UPDATE` | Update metadata, return existing ID |
 | LinkAsset | INSERT new row | Create asset_components link |
 
-### Edge Case 2: Component đã tồn tại, Asset đã có component
+### Edge Case 2: Component already exists, Asset already has the component
 **Status:** ✅ Handled correctly
 
 | Step | Action | Result |
@@ -68,7 +68,7 @@
 | Upsert | `ON CONFLICT (purl) DO UPDATE` | Update metadata, return existing ID |
 | LinkAsset | `ON CONFLICT (asset_id, component_id, path) DO UPDATE` | Update dependency_type, depth |
 
-### Edge Case 3: Component mới, Asset mới
+### Edge Case 3: New component, new asset
 **Status:** ✅ Handled correctly
 
 | Step | Action | Result |
@@ -95,16 +95,16 @@ ON CONFLICT (purl) DO UPDATE SET
     metadata = components.metadata || EXCLUDED.metadata  -- JSONB merge
 ```
 
-Metadata được merge, không overwrite. Thông tin mới được thêm vào, thông tin cũ giữ nguyên.
+Metadata is merged, not overwritten. New information is added, and existing information is preserved.
 
-### Edge Case 5b: Rescan với child mới phụ thuộc parent từ scan trước
+### Edge Case 5b: Rescan with new child depending on parent from previous scan
 **Status:** ✅ FIXED (Hybrid approach implemented)
 
 **Scenario:**
 ```
-Scan 1: express@4.18.0 (direct, depth=1) được tạo
-Scan 2: Chỉ gửi body-parser@1.20.0 (transitive, depends_on: express)
-        express KHÔNG được gửi lại trong batch
+Scan 1: express@4.18.0 (direct, depth=1) was created
+Scan 2: Only sends body-parser@1.20.0 (transitive, depends_on: express)
+        express is NOT resent in the batch
 ```
 
 **Solution:** Hybrid approach - In-memory lookup first, DB fallback second
@@ -121,24 +121,24 @@ if !found {
 ```
 
 **Flow:**
-1. `findParentInMaps()` - O(1) lookup trong in-memory maps
-2. Nếu không tìm thấy → `findParentInDB()` - Query `asset_components` by PURL
-3. Nếu vẫn không tìm thấy → depth = 2 (default), parent_component_id = NULL
+1. `findParentInMaps()` - O(1) lookup in in-memory maps
+2. If not found -> `findParentInDB()` - Query `asset_components` by PURL
+3. If still not found -> depth = 2 (default), parent_component_id = NULL
 
 **Benefits:**
-- ✅ Không yêu cầu agent gửi full tree mỗi lần scan
-- ✅ Performance tối ưu (DB query chỉ khi cần)
-- ✅ Backward compatible với agent cũ
+- Does not require the agent to send the full tree on every scan
+- Optimized performance (DB query only when needed)
+- Backward compatible with older agents
 
-### Edge Case 6: PURL không có, chỉ có name+version
+### Edge Case 6: No PURL provided, only name+version
 **Status:** ✅ FIXED
 
 ```go
-// NewComponent tự động build PURL
+// NewComponent automatically builds PURL
 c.purl = BuildPURL(ecosystem, "", name, version)
 // Result: "pkg:npm/lodash@4.17.21"
 
-// Nếu agent gửi PURL, nó sẽ override PURL generated
+// If the agent sends a PURL, it will override the generated PURL
 if dep.PURL != "" {
     comp.SetPURL(dep.PURL)  // Override with agent's PURL
 }
@@ -165,7 +165,7 @@ ON CONFLICT (purl) DO UPDATE SET
 ### Edge Case 8: License conflict
 **Status:** ✅ Handled correctly
 
-Licenses được link qua `component_licenses` table, không overwrite.
+Licenses are linked via the `component_licenses` table, not overwritten.
 ```go
 // Link licenses to component (additive, not replace)
 linked, err := p.repo.LinkLicenses(ctx, compID, dep.Licenses)
@@ -173,7 +173,7 @@ linked, err := p.repo.LinkLicenses(ctx, compID, dep.Licenses)
 
 ## Minor Issue Found
 
-### Issue: ComponentsCreated vs ComponentsUpdated tracking sai
+### Issue: ComponentsCreated vs ComponentsUpdated tracking is misleading
 
 ```go
 // processor_components.go:250-255
@@ -184,23 +184,23 @@ if comp.ID() == compID {
 }
 ```
 
-**Problem:** Logic này ĐÚNG nhưng confusing:
-- `comp.ID()` = UUID mới tạo trong `NewComponent()`
-- `compID` = UUID trả về từ DB
+**Problem:** The logic is CORRECT but confusing:
+- `comp.ID()` = UUID newly created in `NewComponent()`
+- `compID` = UUID returned from DB
 
-Khi INSERT thành công (component mới):
-- DB dùng UUID mới → `RETURNING id` trả về UUID mới
-- `comp.ID() == compID` → TRUE → `ComponentsCreated++` ✅
+When INSERT succeeds (new component):
+- DB uses the new UUID -> `RETURNING id` returns the new UUID
+- `comp.ID() == compID` -> TRUE -> `ComponentsCreated++` ✅
 
-Khi UPDATE (component đã có):
-- DB dùng UUID cũ → `RETURNING id` trả về UUID cũ
-- `comp.ID() != compID` → FALSE → `ComponentsUpdated++` ✅
+When UPDATE occurs (existing component):
+- DB uses the old UUID -> `RETURNING id` returns the old UUID
+- `comp.ID() != compID` -> FALSE -> `ComponentsUpdated++` ✅
 
-**Conclusion:** Logic đúng, nhưng có thể thêm comment để clarify.
+**Conclusion:** Logic is correct, but a comment could be added to clarify.
 
 ## Recommendations
 
-### 1. ~~Không update vulnerability_count từ agent~~ ✅ IMPLEMENTED
+### 1. ~~Do not update vulnerability_count from agent~~ ✅ IMPLEMENTED
 
 ```sql
 -- Fixed: vulnerability_count removed from UPDATE clause
@@ -249,4 +249,4 @@ if comp.ID() == compID {
 | Vulnerability count | ✅ | Fixed: Not updated from agent (managed by background job) |
 | PURL handling | ✅ | Fixed: Agent's PURL preferred over generated PURL |
 
-**Overall:** Flow hoạt động đúng. Cả 2 improvements đã được implement.
+**Overall:** The flow works correctly. Both improvements have been implemented.

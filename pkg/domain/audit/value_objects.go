@@ -238,6 +238,7 @@ func (a Action) IsValid() bool {
 		ActionAgentCreated, ActionAgentUpdated, ActionAgentDeleted,
 		ActionAgentActivated, ActionAgentDeactivated, ActionAgentRevoked,
 		ActionAgentKeyRegenerated, ActionAgentConnected, ActionAgentDisconnected,
+		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
 		ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
@@ -442,6 +443,7 @@ func SeverityForAction(a Action) Severity {
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionAgentDeactivated, ActionAgentKeyRegenerated,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
+		ActionCredentialDeleted,
 		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled:
 		return SeverityHigh
 
@@ -454,6 +456,7 @@ func SeverityForAction(a Action) Severity {
 		ActionRoleCreated, ActionRoleUpdated,
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted,
 		ActionScanConfigCreated, ActionScanConfigTriggered,
+		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialAccessed,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,

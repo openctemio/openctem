@@ -241,7 +241,7 @@ func TestModuleCacheService_GetTenantModules_EmptyTenantID(t *testing.T) {
 	cache := NewMockModuleCache()
 	repo := NewMockModuleCacheRepository()
 
-	// Test với tenantID rỗng
+	// Test with empty tenantID
 	result, err := getTenantModulesHelper(cache, repo, "")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)

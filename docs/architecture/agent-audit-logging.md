@@ -6,8 +6,8 @@ This document describes the comprehensive audit logging architecture for Platfor
 
 **Core Principle**: "Log state changes and errors only - NOT every heartbeat"
 
-> ⚠️ **QUAN TRỌNG**: Audit log chỉ dùng cho state changes và errors, KHÔNG log mỗi heartbeat.
-> Xem [Agent Heartbeat Optimization](./agent-heartbeat-optimization.md) để hiểu tại sao.
+> ⚠️ **IMPORTANT**: Audit logs are only used for state changes and errors, NOT for every heartbeat.
+> See [Agent Heartbeat Optimization](./agent-heartbeat-optimization.md) to understand why.
 
 ## Problem Statement
 
@@ -381,18 +381,18 @@ func (s *PlatformAgentService) RegisterAgentWithToken(
 
 ### Heartbeat Audit Logging Policy
 
-> ⚠️ **QUAN TRỌNG**: KHÔNG audit log mỗi heartbeat!
+> ⚠️ **IMPORTANT**: Do NOT audit log every heartbeat!
 >
-> **Lý do**: 1000 agents × 1 heartbeat/min × 60 min × 24 hours = **1,440,000 audit logs/day**
-> → Database phình to, queries chậm, storage cost cao
+> **Reason**: 1000 agents x 1 heartbeat/min x 60 min x 24 hours = **1,440,000 audit logs/day**
+> -> Database bloat, slow queries, high storage cost
 
-**Chỉ audit log khi:**
+**Only audit log when:**
 1. Agent **comes online** (first heartbeat after being offline)
 2. Agent **goes offline** (heartbeat timeout)
 3. Agent **errors** (authentication failure, validation error)
 
 ```go
-// RecordHeartbeat - CHỈ audit log khi state thay đổi
+// RecordHeartbeat - ONLY audit log on state changes
 func (s *PlatformAgentService) RecordHeartbeat(ctx context.Context, input HeartbeatInput) error {
     agentID, err := shared.IDFromString(input.AgentID)
     if err != nil {
@@ -404,7 +404,7 @@ func (s *PlatformAgentService) RecordHeartbeat(ctx context.Context, input Heartb
 
     // ... Redis operations (hot path, NO audit log) ...
 
-    // ✅ CHỈ audit log khi agent CHUYỂN TRẠNG THÁI từ offline → online
+    // ✅ ONLY audit log when agent TRANSITIONS STATE from offline -> online
     if !wasOnline {
         auditCtx := AuditContext{
             TenantID:   SystemTenantID.String(),
@@ -413,7 +413,7 @@ func (s *PlatformAgentService) RecordHeartbeat(ctx context.Context, input Heartb
             ActorIP:    input.IPAddress,
         }
 
-        // 1 audit log per SESSION, không phải per heartbeat
+        // 1 audit log per SESSION, not per heartbeat
         if err := s.auditService.LogAgentConnected(
             ctx, auditCtx,
             agentID.String(), agentName, input.IPAddress,
@@ -422,8 +422,8 @@ func (s *PlatformAgentService) RecordHeartbeat(ctx context.Context, input Heartb
         }
     }
 
-    // ❌ KHÔNG có audit log cho regular heartbeats!
-    // Thay vào đó, sử dụng structured logging cho debug:
+    // ❌ NO audit log for regular heartbeats!
+    // Instead, use structured logging for debug:
     s.logger.Debug("heartbeat received",
         "agent_id", agentID,
         "ip", input.IPAddress,
@@ -438,7 +438,7 @@ func (s *PlatformAgentService) RecordHeartbeat(ctx context.Context, input Heartb
 
 | Event | Audit Log | Frequency |
 |-------|-----------|-----------|
-| Regular heartbeat (every 60s) | ❌ KHÔNG | - |
+| Regular heartbeat (every 60s) | ❌ NO | - |
 | Agent comes online | ✅ `agent.connected` | 1 per session |
 | Agent goes offline | ✅ `agent.disconnected` | 1 per session |
 | Heartbeat auth error | ✅ `agent.auth_failed` | On error only |

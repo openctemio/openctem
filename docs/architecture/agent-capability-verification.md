@@ -867,7 +867,7 @@ func (c *Client) SendHeartbeat(ctx context.Context) (*HeartbeatResponse, error) 
 
 ### Overview
 
-Hot reload cho phép agent detect tools mới được cài đặt mà không cần restart. Đây là tính năng quan trọng cho daemon agents chạy liên tục.
+Hot reload allows agents to detect newly installed tools without requiring a restart. This is an important feature for daemon agents running continuously.
 
 ### Architecture
 
@@ -1608,7 +1608,7 @@ platform:
 
 ### Problem: Mode Mismatch Attack
 
-Một agent được tạo với `execution_mode: daemon` có thể bị sử dụng sai:
+An agent created with `execution_mode: daemon` can be misused:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐

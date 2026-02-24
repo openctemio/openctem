@@ -1,23 +1,23 @@
-# Hướng dẫn sử dụng Test Script Notification Outbox
+# Notification Outbox Test Script Guide
 
-## Tổng quan
+## Overview
 
-Script `test_notification_outbox.sh` dùng để kiểm tra các API endpoint Notification Outbox của tenant. Script này giúp tenant giám sát và quản lý hàng đợi gửi thông báo của mình.
+The script `test_notification_outbox.sh` is used to test the Notification Outbox API endpoints for a tenant. This script helps tenants monitor and manage their notification sending queue.
 
-> **Note**: API này là tenant-scoped. Tenant chỉ có thể xem và quản lý các notification của chính mình.
+> **Note**: This API is tenant-scoped. A tenant can only view and manage its own notifications.
 
-## Yêu cầu
+## Requirements
 
-1. **Server API đang chạy** tại `http://localhost:8080` (hoặc URL khác)
-2. **Access Token** tenant-scoped với quyền `integrations:notifications:read`
-3. **curl** và **python3** đã được cài đặt
+1. **API server running** at `http://localhost:8080` (or another URL)
+2. **Access Token** tenant-scoped with `integrations:notifications:read` permission
+3. **curl** and **python3** installed
 
-## Cách lấy Access Token
+## How to Get an Access Token
 
-### Cách 1: Đăng nhập qua API
+### Method 1: Log in via API
 
 ```bash
-# Đăng nhập
+# Log in
 curl -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
@@ -25,8 +25,8 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
     "password": "your_password"
   }'
 
-# Response sẽ chứa refresh_token
-# Dùng refresh_token để lấy access_token cho tenant cụ thể
+# The response will contain a refresh_token
+# Use the refresh_token to get an access_token for a specific tenant
 
 curl -X POST http://localhost:8080/api/v1/auth/token \
   -H "Content-Type: application/json" \
@@ -35,44 +35,44 @@ curl -X POST http://localhost:8080/api/v1/auth/token \
     "tenant_id": "your-tenant-id"
   }'
 
-# Lấy access_token từ response
+# Get the access_token from the response
 ```
 
-### Cách 2: Copy từ UI
+### Method 2: Copy from UI
 
-1. Đăng nhập vào OpenCTEM UI
-2. Mở Developer Tools (F12)
-3. Vào tab Network
-4. Thực hiện một request API
-5. Copy giá trị `Authorization` header (bỏ phần "Bearer ")
+1. Log in to the OpenCTEM UI
+2. Open Developer Tools (F12)
+3. Go to the Network tab
+4. Make an API request
+5. Copy the `Authorization` header value (remove the "Bearer " prefix)
 
-## Cách chạy Script
+## How to Run the Script
 
-### Cú pháp cơ bản
+### Basic syntax
 
 ```bash
 ./scripts/test_notification_outbox.sh <access_token>
 ```
 
-### Ví dụ
+### Examples
 
 ```bash
-# Chạy với token
+# Run with a token
 ./scripts/test_notification_outbox.sh eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
-# Chạy với API URL khác (mặc định là localhost:8080)
+# Run with a different API URL (default is localhost:8080)
 API_URL=https://api.openctem.io ./scripts/test_notification_outbox.sh eyJhbGciOiJIUzI1...
 ```
 
-## Các bước Script thực hiện
+## Steps the Script Performs
 
-### 1. Lấy thống kê Outbox
+### 1. Get Outbox Statistics
 
 ```
 GET /api/v1/notification-outbox/stats
 ```
 
-Kết quả ví dụ:
+Example result:
 ```json
 {
   "pending": 10,
@@ -84,144 +84,144 @@ Kết quả ví dụ:
 }
 ```
 
-### 2. Liệt kê các entry
+### 2. List entries
 
 ```
 GET /api/v1/notification-outbox?page=1&page_size=5
 ```
 
-### 3. Lọc theo trạng thái pending
+### 3. Filter by pending status
 
 ```
 GET /api/v1/notification-outbox?status=pending&page_size=5
 ```
 
-### 4. Lọc theo trạng thái failed
+### 4. Filter by failed status
 
 ```
 GET /api/v1/notification-outbox?status=failed&page_size=5
 ```
 
-### 5. Retry entry thất bại (nếu có)
+### 5. Retry a failed entry (if any)
 
 ```
 POST /api/v1/notification-outbox/{id}/retry
 ```
 
-### 6. Lấy chi tiết một entry
+### 6. Get details of an entry
 
 ```
 GET /api/v1/notification-outbox/{id}
 ```
 
-## Đọc kết quả
+## Reading Results
 
 ### HTTP Status Codes
 
-| Code | Ý nghĩa |
+| Code | Meaning |
 |------|---------|
-| 200 | Thành công |
-| 400 | Request không hợp lệ |
-| 401 | Chưa đăng nhập |
-| 403 | Không có quyền admin |
-| 404 | Không tìm thấy entry |
-| 500 | Lỗi server |
+| 200 | Success |
+| 400 | Invalid request |
+| 401 | Not authenticated |
+| 403 | No admin permission |
+| 404 | Entry not found |
+| 500 | Server error |
 
-### Trạng thái Entry
+### Entry Status
 
-| Status | Ý nghĩa |
+| Status | Meaning |
 |--------|---------|
-| `pending` | Đang chờ xử lý |
-| `processing` | Đang được worker xử lý |
-| `completed` | Đã gửi thành công |
-| `failed` | Thất bại, sẽ retry tự động |
-| `dead` | Thất bại vĩnh viễn, cần can thiệp thủ công |
+| `pending` | Waiting to be processed |
+| `processing` | Currently being processed by a worker |
+| `completed` | Successfully sent |
+| `failed` | Failed, will be retried automatically |
+| `dead` | Permanently failed, requires manual intervention |
 
 ## Troubleshooting
 
-### Lỗi 401 Unauthorized
+### 401 Unauthorized Error
 
 ```
-Token không hợp lệ hoặc đã hết hạn
-→ Lấy token mới
+Token is invalid or has expired
+-> Get a new token
 ```
 
-### Lỗi 403 Forbidden
+### 403 Forbidden Error
 
 ```
-Tài khoản không có quyền notifications
-→ Cần có quyền integrations:notifications:read
-→ Hoặc dùng tài khoản owner/admin
+Account does not have notification permissions
+-> Requires integrations:notifications:read permission
+-> Or use an owner/admin account
 ```
 
-### Lỗi connection refused
+### Connection refused Error
 
 ```
-Server chưa chạy hoặc sai URL
-→ Kiểm tra server đang chạy
-→ Kiểm tra biến API_URL
+Server is not running or wrong URL
+-> Check that the server is running
+-> Check the API_URL variable
 ```
 
-### Không có dữ liệu
+### No data
 
 ```
-Outbox trống
-→ Tạo finding hoặc exposure mới để trigger notification
+Outbox is empty
+-> Create a new finding or exposure to trigger a notification
 ```
 
-## Sử dụng API thủ công
+## Manual API Usage
 
-### Lấy thống kê
+### Get statistics
 
 ```bash
 curl -X GET "http://localhost:8080/api/v1/notification-outbox/stats" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### Lọc theo status
+### Filter by status
 
 ```bash
-# Tenant được xác định tự động từ JWT token
-# Không cần truyền tenant_id parameter
+# Tenant is automatically determined from the JWT token
+# No need to pass a tenant_id parameter
 curl -X GET "http://localhost:8080/api/v1/notification-outbox?status=failed" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### Retry một entry
+### Retry an entry
 
 ```bash
 curl -X POST "http://localhost:8080/api/v1/notification-outbox/entry-id-here/retry" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### Xóa entry
+### Delete an entry
 
 ```bash
 curl -X DELETE "http://localhost:8080/api/v1/notification-outbox/entry-id-here" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-## Các endpoint có sẵn
+## Available Endpoints
 
-| Method | Endpoint | Mô tả |
-|--------|----------|-------|
-| GET | `/api/v1/notification-outbox` | Liệt kê entries |
-| GET | `/api/v1/notification-outbox/stats` | Thống kê |
-| GET | `/api/v1/notification-outbox/{id}` | Chi tiết entry |
-| POST | `/api/v1/notification-outbox/{id}/retry` | Retry entry failed/dead |
-| DELETE | `/api/v1/notification-outbox/{id}` | Xóa entry |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/notification-outbox` | List entries |
+| GET | `/api/v1/notification-outbox/stats` | Statistics |
+| GET | `/api/v1/notification-outbox/{id}` | Entry details |
+| POST | `/api/v1/notification-outbox/{id}/retry` | Retry failed/dead entry |
+| DELETE | `/api/v1/notification-outbox/{id}` | Delete entry |
 
-## Query Parameters cho List API
+## Query Parameters for List API
 
-| Parameter | Kiểu | Mô tả |
-|-----------|------|-------|
-| `status` | string | Lọc theo status: pending, processing, completed, failed, dead |
-| `page` | int | Số trang (mặc định: 1) |
-| `page_size` | int | Số items/trang (mặc định: 20, max: 100) |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | string | Filter by status: pending, processing, completed, failed, dead |
+| `page` | int | Page number (default: 1) |
+| `page_size` | int | Items per page (default: 20, max: 100) |
 
-> **Note**: `tenant_id` không còn cần thiết vì API tự động lọc theo tenant từ JWT token.
+> **Note**: `tenant_id` is no longer needed because the API automatically filters by tenant from the JWT token.
 
-## Ví dụ Output
+## Example Output
 
 ```
 ==========================================
@@ -263,6 +263,6 @@ Test completed
 
 ---
 
-**Tài liệu liên quan:**
+**Related documentation:**
 - [Notification Outbox Pattern](../../docs/architecture/notification-outbox-pattern.md)
 - [API CLAUDE.md](../CLAUDE.md)
