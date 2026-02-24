@@ -13,7 +13,7 @@ const (
 	StatusActive   SubscriptionStatus = "active"
 	StatusTrial    SubscriptionStatus = "trial"
 	StatusPastDue  SubscriptionStatus = "past_due"
-	StatusCanceled SubscriptionStatus = "cancelled"
+	StatusCanceled SubscriptionStatus = "canceled"
 	StatusExpired  SubscriptionStatus = "expired"
 )
 

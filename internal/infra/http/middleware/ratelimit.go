@@ -137,11 +137,13 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
 
 			if !limiter.Allow() {
-				rl.log.Warn("rate limit exceeded",
-					"ip", ip,
-					"path", r.URL.Path,
-					"request_id", GetRequestID(r.Context()),
-				)
+				if rl.log != nil {
+					rl.log.Warn("rate limit exceeded",
+						"ip", ip,
+						"path", r.URL.Path,
+						"request_id", GetRequestID(r.Context()),
+					)
+				}
 
 				// Update remaining to 0 since we're rate limited
 				w.Header().Set("X-RateLimit-Remaining", "0")

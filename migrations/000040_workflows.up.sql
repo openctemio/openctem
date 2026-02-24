@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     triggered_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT chk_run_status CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled'))
+    CONSTRAINT chk_run_status CHECK (status IN ('pending', 'running', 'completed', 'failed', 'canceled'))
 );
 
 COMMENT ON TABLE workflow_runs IS 'Execution instances of workflows';

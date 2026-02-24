@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS tool_executions (
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT chk_tool_executions_status CHECK (status IN ('pending', 'running', 'completed', 'failed', 'timeout', 'cancelled'))
+    CONSTRAINT chk_tool_executions_status CHECK (status IN ('pending', 'running', 'completed', 'failed', 'timeout', 'canceled'))
 );
 
 COMMENT ON TABLE tool_executions IS 'Tool execution history for analytics and debugging';

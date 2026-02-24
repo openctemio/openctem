@@ -237,7 +237,7 @@ func (r *AdminRepository) AuthenticateByAPIKey(ctx context.Context, rawKey strin
 		a.RecordFailedLogin("")
 		// Update in database (async to not block response)
 		go func() {
-			// Use a new context since the original may be cancelled
+			// Use a new context since the original may be canceled
 			updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			_ = r.Update(updateCtx, a)

@@ -33,9 +33,13 @@ func ParseID(s string) (ID, error) {
 	return ID(id), nil
 }
 
-// NewID generates a new random role ID.
+// NewID generates a new time-sortable role ID (UUID v7).
 func NewID() ID {
-	return ID(uuid.New())
+	id, err := uuid.NewV7()
+	if err != nil {
+		return ID(uuid.New())
+	}
+	return ID(id)
 }
 
 // MustParseID parses a string to a role ID, panics on error.

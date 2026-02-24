@@ -161,7 +161,7 @@ const (
 	ActionPipelineRunTriggered        Action = "pipeline_run.triggered"
 	ActionPipelineRunCompleted        Action = "pipeline_run.completed"
 	ActionPipelineRunFailed           Action = "pipeline_run.failed"
-	ActionPipelineRunCancelled        Action = "pipeline_run.cancelled"
+	ActionPipelineRunCanceled         Action = "pipeline_run.canceled"
 
 	// Scan config actions
 	ActionScanConfigCreated   Action = "scan_config.created"
@@ -185,7 +185,7 @@ const (
 	ActionWorkflowRunTriggered Action = "workflow_run.triggered"
 	ActionWorkflowRunCompleted Action = "workflow_run.completed"
 	ActionWorkflowRunFailed    Action = "workflow_run.failed"
-	ActionWorkflowRunCancelled Action = "workflow_run.cancelled"
+	ActionWorkflowRunCanceled Action = "workflow_run.canceled"
 
 	// Rule actions
 	ActionRuleSourceCreated   Action = "rule_source.created"
@@ -250,13 +250,13 @@ func (a Action) IsValid() bool {
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineTemplateDeleted,
 		ActionPipelineTemplateActivated, ActionPipelineTemplateDeactivated,
 		ActionPipelineStepCreated, ActionPipelineStepUpdated, ActionPipelineStepDeleted,
-		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunFailed, ActionPipelineRunCancelled,
+		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionWorkflowCreated, ActionWorkflowUpdated, ActionWorkflowDeleted,
 		ActionWorkflowActivated, ActionWorkflowDeactivated,
-		ActionWorkflowRunTriggered, ActionWorkflowRunCompleted, ActionWorkflowRunFailed, ActionWorkflowRunCancelled,
+		ActionWorkflowRunTriggered, ActionWorkflowRunCompleted, ActionWorkflowRunFailed, ActionWorkflowRunCanceled,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
@@ -442,7 +442,7 @@ func SeverityForAction(a Action) Severity {
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionAgentDeactivated, ActionAgentKeyRegenerated,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
-		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCancelled:
+		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled:
 		return SeverityHigh
 
 	// Medium - important changes

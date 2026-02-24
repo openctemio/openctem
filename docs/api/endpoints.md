@@ -579,7 +579,7 @@ Pipelines orchestrate multi-step security scan workflows.
 | `running` | Currently executing |
 | `completed` | Finished successfully |
 | `failed` | Failed with error |
-| `cancelled` | Cancelled by user |
+| `canceled` | Canceled by user |
 | `timeout` | Exceeded timeout |
 
 ---

@@ -55,8 +55,8 @@ CREATE TABLE IF NOT EXISTS agents (
     CONSTRAINT chk_agents_type CHECK (type IN ('worker', 'agent', 'scanner', 'collector', 'platform', 'runner', 'sensor')),
     CONSTRAINT chk_agents_tier CHECK (tier IS NULL OR tier IN ('shared', 'dedicated', 'premium')),
     CONSTRAINT chk_agents_execution_mode CHECK (execution_mode IN ('standalone', 'daemon')),
-    CONSTRAINT chk_agents_status CHECK (status IN ('pending', 'active', 'inactive', 'error', 'revoked')),
-    CONSTRAINT chk_agents_health CHECK (health IN ('healthy', 'degraded', 'unhealthy', 'unknown'))
+    CONSTRAINT chk_agents_status CHECK (status IN ('active', 'disabled', 'revoked')),
+    CONSTRAINT chk_agents_health CHECK (health IN ('unknown', 'online', 'offline', 'error'))
 );
 
 COMMENT ON TABLE agents IS 'Security scanning agents (workers)';
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS commands (
 
     CONSTRAINT chk_command_type CHECK (type IN ('scan', 'collect', 'health_check', 'config_update', 'cancel', 'template_sync', 'update_tools', 'run_tool')),
     CONSTRAINT chk_command_priority CHECK (priority IN ('low', 'normal', 'high', 'critical')),
-    CONSTRAINT chk_command_status CHECK (status IN ('pending', 'acknowledged', 'running', 'completed', 'failed', 'cancelled', 'expired'))
+    CONSTRAINT chk_command_status CHECK (status IN ('pending', 'acknowledged', 'running', 'completed', 'failed', 'canceled', 'expired'))
 );
 
 COMMENT ON TABLE commands IS 'Task queue for agent commands';

@@ -815,10 +815,10 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 		return err
 	}
 
-	// Audit log: run cancelled
+	// Audit log: run canceled
 	s.logAudit(ctx, AuditContext{TenantID: tenantID},
-		NewSuccessEvent(audit.ActionPipelineRunCancelled, audit.ResourceTypePipelineRun, runID).
-			WithMessage("Pipeline run cancelled"))
+		NewSuccessEvent(audit.ActionPipelineRunCanceled, audit.ResourceTypePipelineRun, runID).
+			WithMessage("Pipeline run canceled"))
 
 	return nil
 }

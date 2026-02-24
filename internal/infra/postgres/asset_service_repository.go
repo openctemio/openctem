@@ -675,9 +675,10 @@ func (r *AssetServiceRepository) selectQuery() string {
 
 func (r *AssetServiceRepository) scanService(row *sql.Row) (*asset.AssetService, error) {
 	var (
-		id, tenantID, assetID         string
-		name, protocol, serviceType   string
-		port                          int
+		id, tenantID, assetID       string
+		name                        sql.NullString
+		protocol, serviceType       string
+		port                        int
 		product, version, banner, cpe sql.NullString
 		isPublic                      bool
 		exposure                      string
@@ -724,9 +725,10 @@ func (r *AssetServiceRepository) scanServices(rows *sql.Rows) ([]*asset.AssetSer
 
 	for rows.Next() {
 		var (
-			id, tenantID, assetID         string
-			name, protocol, serviceType   string
-			port                          int
+			id, tenantID, assetID       string
+			name                        sql.NullString
+			protocol, serviceType       string
+			port                        int
 			product, version, banner, cpe sql.NullString
 			isPublic                      bool
 			exposure                      string
@@ -775,7 +777,7 @@ func (r *AssetServiceRepository) scanServices(rows *sql.Rows) ([]*asset.AssetSer
 
 func (r *AssetServiceRepository) reconstituteService(
 	id, tenantID, assetID string,
-	name, protocol string, port int, serviceType string,
+	name sql.NullString, protocol string, port int, serviceType string,
 	product, version, banner, cpe sql.NullString,
 	isPublic bool, exposure string, tlsEnabled bool, tlsVersion sql.NullString,
 	discoverySource sql.NullString, discoveredAt, lastSeenAt sql.NullTime,
@@ -801,7 +803,7 @@ func (r *AssetServiceRepository) reconstituteService(
 		parsedID,
 		parsedTenantID,
 		parsedAssetID,
-		name,
+		nullStringValue(name),
 		asset.Protocol(protocol),
 		port,
 		asset.ServiceType(serviceType),

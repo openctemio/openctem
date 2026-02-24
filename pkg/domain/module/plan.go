@@ -15,9 +15,13 @@ func ParseID(s string) (ID, error) {
 	return uuid.Parse(s)
 }
 
-// NewID generates a new licensing ID.
+// NewID generates a new time-sortable licensing ID (UUID v7).
 func NewID() ID {
-	return uuid.New()
+	id, err := uuid.NewV7()
+	if err != nil {
+		return uuid.New()
+	}
+	return id
 }
 
 // Plan represents a tenant's module configuration.

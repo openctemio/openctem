@@ -613,6 +613,8 @@ func scanStep(rows *sql.Rows) (*pipeline.Step, error) {
 		conditionType sql.NullString
 		conditionVal  sql.NullString
 		tool          sql.NullString
+		uiPosX        sql.NullFloat64
+		uiPosY        sql.NullFloat64
 	)
 
 	err := rows.Scan(
@@ -622,8 +624,8 @@ func scanStep(rows *sql.Rows) (*pipeline.Step, error) {
 		&s.Name,
 		&s.Description,
 		&s.StepOrder,
-		&s.UIPosition.X,
-		&s.UIPosition.Y,
+		&uiPosX,
+		&uiPosY,
 		&tool,
 		&capabilities,
 		&config,
@@ -644,6 +646,12 @@ func scanStep(rows *sql.Rows) (*pipeline.Step, error) {
 	s.PipelineID, _ = shared.IDFromString(pipelineID)
 	s.Capabilities = capabilities
 	s.DependsOn = dependsOn
+	if uiPosX.Valid {
+		s.UIPosition.X = uiPosX.Float64
+	}
+	if uiPosY.Valid {
+		s.UIPosition.Y = uiPosY.Float64
+	}
 	if tool.Valid {
 		s.Tool = tool.String
 	}

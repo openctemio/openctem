@@ -769,8 +769,8 @@ func (s *WorkflowService) CancelRun(ctx context.Context, tenantID, userID, runID
 
 	// Audit log
 	s.logAudit(ctx, AuditContext{TenantID: tenantID.String(), ActorID: userID.String()},
-		NewSuccessEvent(audit.ActionWorkflowRunCancelled, audit.ResourceTypeWorkflowRun, runID.String()).
-			WithMessage("Workflow run cancelled"))
+		NewSuccessEvent(audit.ActionWorkflowRunCanceled, audit.ResourceTypeWorkflowRun, runID.String()).
+			WithMessage("Workflow run canceled"))
 
 	return nil
 }

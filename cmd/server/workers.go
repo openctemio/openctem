@@ -134,6 +134,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	w.ControllerManager.Register(controller.NewDataExpirationController(
+		repos.Suppression,
+		repos.ScopeExcl,
+		repos.Audit,
+		&controller.DataExpirationControllerConfig{
+			Interval:           1 * time.Hour,
+			AuditRetentionDays: 365,
+			Logger:             log.With("controller", "data-expiration"),
+		},
+	))
+
 	return w, nil
 }
 

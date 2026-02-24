@@ -313,7 +313,7 @@ func (r *PipelineRunRepository) UpdateStatus(ctx context.Context, id shared.ID, 
 	query := `
 		UPDATE pipeline_runs
 		SET status = $2, error_message = $3,
-		    completed_at = CASE WHEN $2 IN ('completed', 'failed', 'cancelled', 'timeout') THEN NOW() ELSE completed_at END
+		    completed_at = CASE WHEN $2 IN ('completed', 'failed', 'canceled', 'timeout') THEN NOW() ELSE completed_at END
 		WHERE id = $1
 	`
 	_, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage)
@@ -964,7 +964,7 @@ func (r *StepRunRepository) UpdateStatus(ctx context.Context, id shared.ID, stat
 	query := `
 		UPDATE step_runs
 		SET status = $2, error_message = $3, error_code = $4,
-		    completed_at = CASE WHEN $2 IN ('completed', 'failed', 'skipped', 'cancelled', 'timeout') THEN NOW() ELSE completed_at END
+		    completed_at = CASE WHEN $2 IN ('completed', 'failed', 'skipped', 'canceled', 'timeout') THEN NOW() ELSE completed_at END
 		WHERE id = $1
 	`
 	_, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage, errorCode)
