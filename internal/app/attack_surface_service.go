@@ -191,7 +191,7 @@ func (s *AttackSurfaceService) getAssetBreakdown(ctx context.Context, tenantID s
 		asset.AssetTypeService,
 		asset.AssetTypeRepository,
 		asset.AssetTypeCloudAccount,
-		asset.AssetTypeServer,
+		asset.AssetTypeHost,
 	}
 
 	breakdown := make([]AssetTypeBreakdown, 0, len(assetTypes))

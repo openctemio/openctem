@@ -37,7 +37,7 @@ func TestMapCTISAssetType_AllKnownTypes(t *testing.T) {
 		{ctis.AssetTypeServerless, asset.AssetTypeServerless},
 		{ctis.AssetTypeContainerRegistry, asset.AssetTypeContainerRegistry},
 		{ctis.AssetTypeHost, asset.AssetTypeHost},
-		{ctis.AssetTypeServer, asset.AssetTypeServer},
+		{ctis.AssetTypeServer, asset.AssetTypeHost},
 		{ctis.AssetTypeContainer, asset.AssetTypeContainer},
 		{ctis.AssetTypeKubernetes, asset.AssetTypeKubernetesCluster},
 		{ctis.AssetTypeKubernetesCluster, asset.AssetTypeKubernetesCluster},

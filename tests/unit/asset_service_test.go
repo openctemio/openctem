@@ -165,7 +165,7 @@ func TestAssetService_CreateAsset_Success(t *testing.T) {
 
 	input := app.CreateAssetInput{
 		Name:        "Test Server",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 		Description: "Test description",
 		Tags:        []string{"production", "web"},
@@ -198,7 +198,7 @@ func TestAssetService_CreateAsset_DuplicateName(t *testing.T) {
 
 	input := app.CreateAssetInput{
 		Name:        "Duplicate Asset",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 	}
 
@@ -235,7 +235,7 @@ func TestAssetService_CreateAsset_InvalidCriticality(t *testing.T) {
 
 	input := app.CreateAssetInput{
 		Name:        "Test Asset",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "super_critical",
 	}
 
@@ -253,7 +253,7 @@ func TestAssetService_GetAsset_Success(t *testing.T) {
 	input := app.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Test Asset",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 	}
 
@@ -301,7 +301,7 @@ func TestAssetService_UpdateAsset_Success(t *testing.T) {
 	input := app.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Original Name",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 	}
 
@@ -339,7 +339,7 @@ func TestAssetService_UpdateAsset_PartialUpdate(t *testing.T) {
 	input := app.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Original Name",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 		Description: "Original description",
 	}
@@ -377,7 +377,7 @@ func TestAssetService_DeleteAsset_Success(t *testing.T) {
 	input := app.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "To Delete",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "low",
 	}
 
@@ -403,8 +403,8 @@ func TestAssetService_ListAssets_WithFilters(t *testing.T) {
 
 	// Create multiple assets
 	assets := []app.CreateAssetInput{
-		{Name: "Server 1", Type: "server", Criticality: "high"},
-		{Name: "Server 2", Type: "server", Criticality: "medium"},
+		{Name: "Server 1", Type: "host", Criticality: "high"},
+		{Name: "Server 2", Type: "host", Criticality: "medium"},
 		{Name: "Database 1", Type: "database", Criticality: "high"},
 	}
 
@@ -438,7 +438,7 @@ func TestAssetService_ListAssets_Pagination(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		input := app.CreateAssetInput{
 			Name:        "Asset " + string(rune('A'+i)),
-			Type:        "server",
+			Type:        "host",
 			Criticality: "medium",
 		}
 		_, err := svc.CreateAsset(context.Background(), input)
@@ -474,7 +474,7 @@ func TestAssetService_ActivateAsset(t *testing.T) {
 	input := app.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Test Asset",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 	}
 
@@ -499,7 +499,7 @@ func TestAssetService_DeactivateAsset(t *testing.T) {
 	input := app.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Test Asset",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 	}
 
@@ -523,7 +523,7 @@ func TestAssetService_ArchiveAsset(t *testing.T) {
 	input := app.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Test Asset",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 	}
 

@@ -61,7 +61,7 @@ func TestValidateAssetType(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "valid - repository", input: TestStruct{Type: "repository"}, wantErr: false},
-		{name: "valid - server", input: TestStruct{Type: "server"}, wantErr: false},
+		{name: "valid - host", input: TestStruct{Type: "host"}, wantErr: false},
 		{name: "valid - container", input: TestStruct{Type: "container"}, wantErr: false},
 		{name: "valid - cloud_account", input: TestStruct{Type: "cloud_account"}, wantErr: false},
 		{name: "valid - network", input: TestStruct{Type: "network"}, wantErr: false},

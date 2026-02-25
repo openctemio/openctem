@@ -63,7 +63,7 @@ func mapCTISAssetType(ctisType ctis.AssetType) asset.AssetType {
 	case ctis.AssetTypeHost:
 		return asset.AssetTypeHost
 	case ctis.AssetTypeServer:
-		return asset.AssetTypeServer
+		return asset.AssetTypeHost
 	case ctis.AssetTypeContainer:
 		return asset.AssetTypeContainer
 	case ctis.AssetTypeKubernetes:

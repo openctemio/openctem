@@ -114,14 +114,14 @@ func TestAssetEntity_NewAsset(t *testing.T) {
 		{
 			name:        "valid asset",
 			assetName:   "test-server",
-			assetType:   asset.AssetTypeServer,
+			assetType:   asset.AssetTypeHost,
 			criticality: asset.CriticalityHigh,
 			wantErr:     false,
 		},
 		{
 			name:        "empty name",
 			assetName:   "",
-			assetType:   asset.AssetTypeServer,
+			assetType:   asset.AssetTypeHost,
 			criticality: asset.CriticalityHigh,
 			wantErr:     true,
 		},
@@ -174,7 +174,7 @@ func TestAssetEntity_NewAsset(t *testing.T) {
 }
 
 func TestAssetEntity_UpdateName(t *testing.T) {
-	a, _ := asset.NewAsset("original", asset.AssetTypeServer, asset.CriticalityHigh)
+	a, _ := asset.NewAsset("original", asset.AssetTypeHost, asset.CriticalityHigh)
 	originalUpdatedAt := a.UpdatedAt()
 
 	time.Sleep(time.Millisecond)
@@ -194,7 +194,7 @@ func TestAssetEntity_UpdateName(t *testing.T) {
 }
 
 func TestAssetEntity_Tags(t *testing.T) {
-	a, _ := asset.NewAsset("test", asset.AssetTypeServer, asset.CriticalityHigh)
+	a, _ := asset.NewAsset("test", asset.AssetTypeHost, asset.CriticalityHigh)
 
 	a.AddTag("production")
 	a.AddTag("web")
@@ -218,7 +218,7 @@ func TestAssetEntity_Tags(t *testing.T) {
 }
 
 func TestAssetEntity_StatusTransitions(t *testing.T) {
-	a, _ := asset.NewAsset("test", asset.AssetTypeServer, asset.CriticalityHigh)
+	a, _ := asset.NewAsset("test", asset.AssetTypeHost, asset.CriticalityHigh)
 
 	if !a.IsActive() {
 		t.Error("expected asset to be active by default")
@@ -244,7 +244,7 @@ func TestMockRepository_CRUD(t *testing.T) {
 	ctx := context.Background()
 	repo := NewMockAssetRepository()
 
-	a, _ := asset.NewAsset("test-server", asset.AssetTypeServer, asset.CriticalityHigh)
+	a, _ := asset.NewAsset("test-server", asset.AssetTypeHost, asset.CriticalityHigh)
 	err := repo.Create(ctx, a)
 	if err != nil {
 		t.Fatalf("failed to create asset: %v", err)
@@ -294,7 +294,7 @@ func TestValueObjects_AssetType(t *testing.T) {
 		valid  bool
 		asType asset.AssetType
 	}{
-		{"server", true, asset.AssetTypeServer},
+		{"host", true, asset.AssetTypeHost},
 		{"container", true, asset.AssetTypeContainer},
 		{"database", true, asset.AssetTypeDatabase},
 		{"invalid", false, ""},

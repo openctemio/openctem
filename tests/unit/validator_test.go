@@ -28,7 +28,7 @@ func TestValidator_CreateAssetRequest_Valid(t *testing.T) {
 
 	req := CreateAssetRequest{
 		Name:        "Test Asset",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 		Description: "Test description",
 		Tags:        []string{"tag1", "tag2"},
@@ -51,7 +51,7 @@ func TestValidator_CreateAssetRequest_MissingRequired(t *testing.T) {
 	}{
 		{
 			name:    "missing name",
-			req:     CreateAssetRequest{Type: "server", Criticality: "high"},
+			req:     CreateAssetRequest{Type: "host", Criticality: "high"},
 			field:   "name",
 			message: "is required",
 		},
@@ -63,7 +63,7 @@ func TestValidator_CreateAssetRequest_MissingRequired(t *testing.T) {
 		},
 		{
 			name:    "missing criticality",
-			req:     CreateAssetRequest{Name: "Test", Type: "server"},
+			req:     CreateAssetRequest{Name: "Test", Type: "host"},
 			field:   "criticality",
 			message: "is required",
 		},
@@ -131,7 +131,7 @@ func TestValidator_CreateAssetRequest_InvalidCriticality(t *testing.T) {
 
 	req := CreateAssetRequest{
 		Name:        "Test Asset",
-		Type:        "server",
+		Type:        "host",
 		Criticality: "super_critical",
 	}
 
@@ -162,7 +162,7 @@ func TestValidator_CreateAssetRequest_NameTooLong(t *testing.T) {
 
 	req := CreateAssetRequest{
 		Name:        strings.Repeat("a", 256),
-		Type:        "server",
+		Type:        "host",
 		Criticality: "high",
 	}
 
@@ -243,7 +243,7 @@ func TestValidator_AllAssetTypes(t *testing.T) {
 		"domain", "subdomain", "certificate", "ip_address", "website",
 		"web_application", "api", "mobile_app", "service", "repository",
 		"cloud_account", "compute", "storage", "serverless", "container_registry",
-		"host", "server", "container", "kubernetes_cluster", "kubernetes_namespace",
+		"host", "container", "kubernetes_cluster", "kubernetes_namespace",
 		"database", "data_store", "s3_bucket", "network", "vpc", "subnet",
 		"load_balancer", "firewall", "iam_user", "iam_role", "service_account",
 		"unclassified", "http_service", "open_port", "discovered_url",
@@ -276,7 +276,7 @@ func TestValidator_AllCriticalities(t *testing.T) {
 		t.Run(crit, func(t *testing.T) {
 			req := CreateAssetRequest{
 				Name:        "Test",
-				Type:        "server",
+				Type:        "host",
 				Criticality: crit,
 			}
 
