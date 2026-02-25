@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -1087,7 +1086,7 @@ func (s *ScopeService) getAssetValues(a *asset.Asset) []string {
 func (s *ScopeService) isAssetInScope(assetValues []string, targets []*scope.Target) bool {
 	for _, assetValue := range assetValues {
 		for _, target := range targets {
-			if s.matchesPattern(assetValue, target.Pattern(), target.TargetType()) {
+			if scope.MatchesPattern(target.TargetType(), target.Pattern(), assetValue) {
 				return true
 			}
 		}
@@ -1099,148 +1098,11 @@ func (s *ScopeService) isAssetInScope(assetValues []string, targets []*scope.Tar
 func (s *ScopeService) isAssetExcluded(assetValues []string, exclusions []*scope.Exclusion) bool {
 	for _, av := range assetValues {
 		for _, exclusion := range exclusions {
-			if s.matchesPattern(av, exclusion.Pattern(), scope.TargetType(exclusion.ExclusionType())) {
+			if scope.MatchesPattern(scope.TargetType(exclusion.ExclusionType()), exclusion.Pattern(), av) {
 				return true
 			}
 		}
 	}
-	return false
-}
-
-// matchesPattern checks if an asset value matches a scope pattern.
-// Supports wildcard patterns (*.example.com) and CIDR notation.
-func (s *ScopeService) matchesPattern(value, pattern string, targetType scope.TargetType) bool {
-	value = strings.ToLower(value)
-	pattern = strings.ToLower(pattern)
-
-	// Handle different target types
-	switch targetType {
-	case scope.TargetTypeDomain, scope.TargetTypeSubdomain:
-		return s.matchDomainPattern(value, pattern)
-	case scope.TargetTypeIPAddress, scope.TargetTypeIPRange:
-		return s.matchIPPattern(value, pattern)
-	case scope.TargetTypeRepository:
-		return s.matchRepositoryPattern(value, pattern)
-	default:
-		// For other types, use simple wildcard matching
-		return s.matchWildcard(value, pattern)
-	}
-}
-
-// matchRepositoryPattern matches repository patterns
-// Pattern formats: github.com/owner/repo, owner/repo, repo
-// Asset name formats: repo, owner/repo
-func (s *ScopeService) matchRepositoryPattern(value, pattern string) bool {
-	// Exact match
-	if value == pattern {
-		return true
-	}
-
-	// Extract repo parts from pattern and value
-	ownerRepo, repoName := s.parseRepoParts(pattern)
-	valueOwnerRepo, valueRepoName := s.parseRepoParts(value)
-
-	// Match owner/repo format
-	if ownerRepo != "" && valueOwnerRepo != "" && ownerRepo == valueOwnerRepo {
-		return true
-	}
-
-	// Match just repo name
-	if repoName == valueRepoName {
-		return true
-	}
-
-	// Check if pattern contains value (for partial matches)
-	if strings.Contains(pattern, value) || strings.Contains(value, ownerRepo) {
-		return true
-	}
-
-	return false
-}
-
-// parseRepoParts extracts owner/repo and repo name from a path.
-// Handles formats: github.com/owner/repo, owner/repo, repo
-func (s *ScopeService) parseRepoParts(path string) (ownerRepo, repoName string) {
-	parts := strings.Split(path, "/")
-
-	switch {
-	case len(parts) >= 3:
-		// Format: github.com/owner/repo or host/owner/repo
-		ownerRepo = strings.Join(parts[1:], "/")
-		repoName = parts[len(parts)-1]
-	case len(parts) == 2:
-		// Format: owner/repo
-		ownerRepo = path
-		repoName = parts[1]
-	default:
-		// Format: just repo name
-		repoName = path
-	}
-
-	return ownerRepo, repoName
-}
-
-// matchDomainPattern matches domain patterns like *.example.com
-func (s *ScopeService) matchDomainPattern(value, pattern string) bool {
-	// Exact match
-	if value == pattern {
-		return true
-	}
-
-	// Wildcard match: *.example.com matches sub.example.com, a.b.example.com, etc.
-	if strings.HasPrefix(pattern, "*.") {
-		suffix := pattern[1:] // Remove the asterisk, keep the dot
-		return strings.HasSuffix(value, suffix)
-	}
-
-	// Check if value is a subdomain of pattern
-	if strings.HasSuffix(value, "."+pattern) {
-		return true
-	}
-
-	return false
-}
-
-// matchIPPattern matches IP addresses and CIDR ranges
-func (s *ScopeService) matchIPPattern(value, pattern string) bool {
-	// Exact match
-	if value == pattern {
-		return true
-	}
-
-	// CIDR matching would require parsing IP addresses
-	// For simplicity, we just check prefix for now
-	// TODO: Implement proper CIDR matching with net.ParseCIDR
-	if strings.Contains(pattern, "/") {
-		// Extract network prefix (simplified)
-		parts := strings.Split(pattern, "/")
-		if len(parts) == 2 {
-			networkPrefix := parts[0]
-			// Check if value starts with same octets
-			if strings.HasPrefix(value, strings.TrimSuffix(networkPrefix, ".0")) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// matchWildcard performs simple wildcard matching
-func (s *ScopeService) matchWildcard(value, pattern string) bool {
-	// Exact match
-	if value == pattern {
-		return true
-	}
-
-	// Simple wildcard: * at start or end
-	if strings.HasPrefix(pattern, "*") {
-		return strings.HasSuffix(value, pattern[1:])
-	}
-	if strings.HasSuffix(pattern, "*") {
-		return strings.HasPrefix(value, pattern[:len(pattern)-1])
-	}
-
 	return false
 }
 

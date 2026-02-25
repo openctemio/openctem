@@ -14,7 +14,7 @@ const (
 	RunStatusRunning   RunStatus = "running"
 	RunStatusCompleted RunStatus = "completed"
 	RunStatusFailed    RunStatus = "failed"
-	RunStatusCanceled RunStatus = "canceled"
+	RunStatusCanceled  RunStatus = "canceled"
 )
 
 // IsValid checks if the run status is valid.

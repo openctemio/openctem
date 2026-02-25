@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -184,6 +185,29 @@ type UpdateScanScheduleRequest struct {
 type CheckScopeRequest struct {
 	AssetType string `json:"asset_type" validate:"required"`
 	Value     string `json:"value" validate:"required"`
+}
+
+// BulkDeleteTargetsRequest represents bulk delete targets request.
+type BulkDeleteTargetsRequest struct {
+	TargetIDs []string `json:"target_ids" validate:"required,min=1,max=100,dive,uuid"`
+}
+
+// BulkDeleteExclusionsRequest represents bulk delete exclusions request.
+type BulkDeleteExclusionsRequest struct {
+	ExclusionIDs []string `json:"exclusion_ids" validate:"required,min=1,max=100,dive,uuid"`
+}
+
+// BulkDeleteSchedulesRequest represents bulk delete schedules request.
+type BulkDeleteSchedulesRequest struct {
+	ScheduleIDs []string `json:"schedule_ids" validate:"required,min=1,max=100,dive,uuid"`
+}
+
+// BulkOperationResponse represents the response for bulk operations.
+type ScopeBulkOperationResponse struct {
+	Success       bool              `json:"success"`
+	AffectedCount int               `json:"affected_count"`
+	FailedIDs     []string          `json:"failed_ids,omitempty"`
+	Errors        map[string]string `json:"errors,omitempty"`
 }
 
 // =============================================================================
@@ -1112,4 +1136,101 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// BulkDeleteTargets handles POST /api/v1/scope/targets/bulk/delete
+func (h *ScopeHandler) BulkDeleteTargets(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req BulkDeleteTargetsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	result := h.bulkDeleteItems(r.Context(), req.TargetIDs, tenantID, func(ctx context.Context, id, tid string) error {
+		return h.service.DeleteTarget(ctx, id, tid)
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// BulkDeleteExclusions handles POST /api/v1/scope/exclusions/bulk/delete
+func (h *ScopeHandler) BulkDeleteExclusions(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req BulkDeleteExclusionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	result := h.bulkDeleteItems(r.Context(), req.ExclusionIDs, tenantID, func(ctx context.Context, id, tid string) error {
+		return h.service.DeleteExclusion(ctx, id, tid)
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// BulkDeleteSchedules handles POST /api/v1/scope/schedules/bulk/delete
+func (h *ScopeHandler) BulkDeleteSchedules(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req BulkDeleteSchedulesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	result := h.bulkDeleteItems(r.Context(), req.ScheduleIDs, tenantID, func(ctx context.Context, id, tid string) error {
+		return h.service.DeleteSchedule(ctx, id, tid)
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// bulkDeleteItems is a helper for bulk delete operations.
+func (h *ScopeHandler) bulkDeleteItems(
+	ctx context.Context,
+	ids []string,
+	tenantID string,
+	deleteFn func(ctx context.Context, id, tenantID string) error,
+) ScopeBulkOperationResponse {
+	var failedIDs []string
+	errs := make(map[string]string)
+	affected := 0
+
+	for _, id := range ids {
+		if err := deleteFn(ctx, id, tenantID); err != nil {
+			failedIDs = append(failedIDs, id)
+			errs[id] = err.Error()
+		} else {
+			affected++
+		}
+	}
+
+	return ScopeBulkOperationResponse{
+		Success:       len(failedIDs) == 0,
+		AffectedCount: affected,
+		FailedIDs:     failedIDs,
+		Errors:        errs,
+	}
 }

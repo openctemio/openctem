@@ -129,7 +129,7 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 			status = $4,
 			tags = $5,
 			updated_at = $6
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $7
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -139,6 +139,7 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 		target.Status().String(),
 		pq.StringArray(target.Tags()),
 		target.UpdatedAt(),
+		target.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope target: %w", err)
@@ -197,6 +198,12 @@ func (r *ScopeTargetRepository) List(ctx context.Context, filter scope.TargetFil
 		}
 		conditions = append(conditions, fmt.Sprintf("status = ANY($%d)", argNum))
 		args = append(args, pq.StringArray(statuses))
+		argNum++
+	}
+
+	if len(filter.Tags) > 0 {
+		conditions = append(conditions, fmt.Sprintf("tags && $%d", argNum))
+		args = append(args, pq.StringArray(filter.Tags))
 		argNum++
 	}
 

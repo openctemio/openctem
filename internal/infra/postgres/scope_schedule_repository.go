@@ -256,7 +256,7 @@ func (r *ScopeScheduleRepository) Update(ctx context.Context, schedule *scope.Sc
 			notify_on_findings = $16,
 			notification_channels = $17,
 			updated_at = $18
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $19
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -278,6 +278,7 @@ func (r *ScopeScheduleRepository) Update(ctx context.Context, schedule *scope.Sc
 		schedule.NotifyOnFindings(),
 		notificationChannelsJSON,
 		schedule.UpdatedAt(),
+		schedule.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scan schedule: %w", err)

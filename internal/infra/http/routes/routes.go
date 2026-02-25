@@ -265,7 +265,7 @@ func Register(
 
 	// Scope Configuration routes (tenant from JWT token)
 	if h.Scope != nil {
-		registerScopeRoutes(router, h.Scope, authMiddleware, userSync)
+		registerScopeRoutes(router, h.Scope, authMiddleware, userSync, moduleService)
 	}
 
 	// Asset Type routes (tenant from JWT token)

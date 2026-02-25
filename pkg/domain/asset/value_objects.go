@@ -34,7 +34,7 @@ const (
 	AssetTypeContainerRegistry AssetType = "container_registry"
 
 	// Infrastructure
-	AssetTypeHost AssetType = "host"
+	AssetTypeHost                AssetType = "host"
 	AssetTypeContainer           AssetType = "container"
 	AssetTypeKubernetesCluster   AssetType = "kubernetes_cluster"
 	AssetTypeKubernetesNamespace AssetType = "kubernetes_namespace"

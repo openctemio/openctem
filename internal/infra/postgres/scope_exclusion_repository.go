@@ -144,7 +144,7 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 			approved_by = $5,
 			approved_at = $6,
 			updated_at = $7
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $8
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -155,6 +155,7 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 		nullString(exclusion.ApprovedBy()),
 		nullTime(exclusion.ApprovedAt()),
 		exclusion.UpdatedAt(),
+		exclusion.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope exclusion: %w", err)

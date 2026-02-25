@@ -163,14 +163,21 @@ func registerAssetGroupRoutes(
 
 // registerScopeRoutes registers scope configuration endpoints.
 // Scope configuration includes targets, exclusions, and scan schedules.
+// Module check: Requires "scope" module to be enabled for the tenant.
 func registerScopeRoutes(
 	router Router,
 	h *handler.ScopeHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	// Add module check middleware if licensing service is available
+	if moduleService != nil {
+		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleScope))
+	}
 
 	// Scope routes - tenant from JWT token
 	router.Group("/api/v1/scope", func(r Router) {
@@ -193,6 +200,9 @@ func registerScopeRoutes(
 		r.POST("/{id}/activate", h.ActivateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateTarget, middleware.Require(permission.ScopeWrite))
 
+		// Bulk operations
+		r.POST("/bulk/delete", h.BulkDeleteTargets, middleware.Require(permission.ScopeDelete))
+
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteTarget, middleware.Require(permission.ScopeDelete))
 	}, tenantMiddlewares...)
@@ -210,6 +220,9 @@ func registerScopeRoutes(
 		r.POST("/{id}/activate", h.ActivateExclusion, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite))
 
+		// Bulk operations
+		r.POST("/bulk/delete", h.BulkDeleteExclusions, middleware.Require(permission.ScopeDelete))
+
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteExclusion, middleware.Require(permission.ScopeDelete))
 	}, tenantMiddlewares...)
@@ -225,6 +238,9 @@ func registerScopeRoutes(
 		r.PUT("/{id}", h.UpdateSchedule, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/enable", h.EnableSchedule, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/disable", h.DisableSchedule, middleware.Require(permission.ScopeWrite))
+
+		// Bulk operations
+		r.POST("/bulk/delete", h.BulkDeleteSchedules, middleware.Require(permission.ScopeDelete))
 
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteSchedule, middleware.Require(permission.ScopeDelete))

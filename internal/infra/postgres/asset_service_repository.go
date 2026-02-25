@@ -675,10 +675,10 @@ func (r *AssetServiceRepository) selectQuery() string {
 
 func (r *AssetServiceRepository) scanService(row *sql.Row) (*asset.AssetService, error) {
 	var (
-		id, tenantID, assetID       string
-		name                        sql.NullString
-		protocol, serviceType       string
-		port                        int
+		id, tenantID, assetID         string
+		name                          sql.NullString
+		protocol, serviceType         string
+		port                          int
 		product, version, banner, cpe sql.NullString
 		isPublic                      bool
 		exposure                      string
@@ -725,10 +725,10 @@ func (r *AssetServiceRepository) scanServices(rows *sql.Rows) ([]*asset.AssetSer
 
 	for rows.Next() {
 		var (
-			id, tenantID, assetID       string
-			name                        sql.NullString
-			protocol, serviceType       string
-			port                        int
+			id, tenantID, assetID         string
+			name                          sql.NullString
+			protocol, serviceType         string
+			port                          int
 			product, version, banner, cpe sql.NullString
 			isPublic                      bool
 			exposure                      string

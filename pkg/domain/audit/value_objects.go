@@ -185,7 +185,7 @@ const (
 	ActionWorkflowRunTriggered Action = "workflow_run.triggered"
 	ActionWorkflowRunCompleted Action = "workflow_run.completed"
 	ActionWorkflowRunFailed    Action = "workflow_run.failed"
-	ActionWorkflowRunCanceled Action = "workflow_run.canceled"
+	ActionWorkflowRunCanceled  Action = "workflow_run.canceled"
 
 	// Rule actions
 	ActionRuleSourceCreated   Action = "rule_source.created"

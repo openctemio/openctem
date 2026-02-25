@@ -232,7 +232,7 @@ func TestMergePropertiesDeep_DNSRecordsMerge(t *testing.T) {
 	overlay := map[string]any{
 		"dns_records": []map[string]any{
 			{"type": "A", "name": "@", "value": "1.2.3.4"}, // duplicate
-			{"type": "AAAA", "name": "@", "value": "::1"},   // new
+			{"type": "AAAA", "name": "@", "value": "::1"},  // new
 		},
 	}
 	result := mergePropertiesDeep(base, overlay)
@@ -315,7 +315,7 @@ func TestBuildCompositeKey_MissingField(t *testing.T) {
 
 func TestBuildCompositeKey_NoCollisionForMissingFields(t *testing.T) {
 	// These two should NOT produce the same key
-	m1 := map[string]any{"a": "x", "c": "z"}       // b missing
+	m1 := map[string]any{"a": "x", "c": "z"}          // b missing
 	m2 := map[string]any{"a": "x", "b": "", "c": "z"} // b present but empty
 
 	key1 := buildCompositeKey(m1, []string{"a", "b", "c"})
