@@ -238,6 +238,7 @@ func registerScopeRoutes(
 		r.PUT("/{id}", h.UpdateSchedule, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/enable", h.EnableSchedule, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/disable", h.DisableSchedule, middleware.Require(permission.ScopeWrite))
+		r.POST("/{id}/run", h.RunScheduleNow, middleware.Require(permission.ScopeWrite))
 
 		// Bulk operations
 		r.POST("/bulk/delete", h.BulkDeleteSchedules, middleware.Require(permission.ScopeDelete))

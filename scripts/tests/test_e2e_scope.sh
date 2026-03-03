@@ -140,7 +140,7 @@ do_request "POST" "/api/v1/scope/targets" "{
     \"target_type\": \"domain\",
     \"pattern\": \"*.e2e-${TIMESTAMP}.example.com\",
     \"description\": \"E2E test scope target\",
-    \"priority\": 50,
+    \"priority\": 5,
     \"tags\": [\"e2e-test\"]
 }" "Authorization: Bearer $ACCESS_TOKEN"
 print_info "Status: $HTTP_CODE"
@@ -168,7 +168,7 @@ fi
 
 print_test "Update scope target"
 if [ -n "$TARGET_ID" ] && [ "$TARGET_ID" != "null" ]; then
-    do_request "PUT" "/api/v1/scope/targets/$TARGET_ID" "{\"priority\": 80}" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "PUT" "/api/v1/scope/targets/$TARGET_ID" "{\"priority\": 8}" "Authorization: Bearer $ACCESS_TOKEN"
     [ "$HTTP_CODE" = "200" ] && print_success "Target updated" || print_failure "Update target" "Got $HTTP_CODE"
 else
     print_skip "Update target (no ID)"

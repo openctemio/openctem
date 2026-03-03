@@ -447,3 +447,29 @@ func matchWildcard(pattern, value string) bool {
 
 	return false
 }
+
+// MatchesExclusionPattern checks if a value matches an exclusion pattern.
+// This handles ExclusionType-specific types (path, finding_type, scanner) that
+// don't exist in TargetType, plus shared types (domain, ip_address, etc.).
+func MatchesExclusionPattern(exclusionType ExclusionType, pattern, value string) bool {
+	switch exclusionType {
+	case ExclusionTypeDomain, ExclusionTypeSubdomain:
+		return matchDomain(pattern, value)
+	case ExclusionTypeIPAddress:
+		return pattern == value
+	case ExclusionTypeIPRange, ExclusionTypeCIDR:
+		return matchCIDR(pattern, value)
+	case ExclusionTypeURL:
+		return matchWildcard(pattern, value)
+	case ExclusionTypeRepository:
+		return matchWildcard(pattern, value)
+	case ExclusionTypePath:
+		return matchWildcard(pattern, value)
+	case ExclusionTypeFindingType:
+		return matchWildcard(pattern, value)
+	case ExclusionTypeScanner:
+		return matchWildcard(pattern, value)
+	default:
+		return matchWildcard(pattern, value)
+	}
+}

@@ -39,9 +39,12 @@ func (m *mockTargetRepo) Create(_ context.Context, target *scope.Target) error {
 	return nil
 }
 
-func (m *mockTargetRepo) GetByID(_ context.Context, id shared.ID) (*scope.Target, error) {
+func (m *mockTargetRepo) GetByID(_ context.Context, tenantID, id shared.ID) (*scope.Target, error) {
 	t, ok := m.targets[id.String()]
 	if !ok {
+		return nil, scope.ErrTargetNotFound
+	}
+	if t.TenantID() != tenantID {
 		return nil, scope.ErrTargetNotFound
 	}
 	return t, nil
@@ -55,11 +58,12 @@ func (m *mockTargetRepo) Update(_ context.Context, target *scope.Target) error {
 	return nil
 }
 
-func (m *mockTargetRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockTargetRepo) Delete(_ context.Context, tenantID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
-	if _, ok := m.targets[id.String()]; !ok {
+	t, ok := m.targets[id.String()]
+	if !ok || t.TenantID() != tenantID {
 		return scope.ErrTargetNotFound
 	}
 	delete(m.targets, id.String())
@@ -123,9 +127,12 @@ func (m *mockExclusionRepo) Create(_ context.Context, exclusion *scope.Exclusion
 	return nil
 }
 
-func (m *mockExclusionRepo) GetByID(_ context.Context, id shared.ID) (*scope.Exclusion, error) {
+func (m *mockExclusionRepo) GetByID(_ context.Context, tenantID, id shared.ID) (*scope.Exclusion, error) {
 	e, ok := m.exclusions[id.String()]
 	if !ok {
+		return nil, scope.ErrExclusionNotFound
+	}
+	if e.TenantID() != tenantID {
 		return nil, scope.ErrExclusionNotFound
 	}
 	return e, nil
@@ -139,11 +146,12 @@ func (m *mockExclusionRepo) Update(_ context.Context, exclusion *scope.Exclusion
 	return nil
 }
 
-func (m *mockExclusionRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockExclusionRepo) Delete(_ context.Context, tenantID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
-	if _, ok := m.exclusions[id.String()]; !ok {
+	e, ok := m.exclusions[id.String()]
+	if !ok || e.TenantID() != tenantID {
 		return scope.ErrExclusionNotFound
 	}
 	delete(m.exclusions, id.String())
@@ -196,9 +204,12 @@ func (m *mockScheduleRepo) Create(_ context.Context, schedule *scope.Schedule) e
 	return nil
 }
 
-func (m *mockScheduleRepo) GetByID(_ context.Context, id shared.ID) (*scope.Schedule, error) {
+func (m *mockScheduleRepo) GetByID(_ context.Context, tenantID, id shared.ID) (*scope.Schedule, error) {
 	s, ok := m.schedules[id.String()]
 	if !ok {
+		return nil, scope.ErrScheduleNotFound
+	}
+	if s.TenantID() != tenantID {
 		return nil, scope.ErrScheduleNotFound
 	}
 	return s, nil
@@ -212,11 +223,12 @@ func (m *mockScheduleRepo) Update(_ context.Context, schedule *scope.Schedule) e
 	return nil
 }
 
-func (m *mockScheduleRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockScheduleRepo) Delete(_ context.Context, tenantID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
-	if _, ok := m.schedules[id.String()]; !ok {
+	s, ok := m.schedules[id.String()]
+	if !ok || s.TenantID() != tenantID {
 		return scope.ErrScheduleNotFound
 	}
 	delete(m.schedules, id.String())
@@ -256,12 +268,12 @@ func newMockAssetRepo() *mockAssetRepo {
 	return &mockAssetRepo{}
 }
 
-func (m *mockAssetRepo) Create(_ context.Context, _ *asset.Asset) error  { return nil }
+func (m *mockAssetRepo) Create(_ context.Context, _ *asset.Asset) error { return nil }
 func (m *mockAssetRepo) GetByID(_ context.Context, _, _ shared.ID) (*asset.Asset, error) {
 	return nil, shared.ErrNotFound
 }
-func (m *mockAssetRepo) Update(_ context.Context, _ *asset.Asset) error  { return nil }
-func (m *mockAssetRepo) Delete(_ context.Context, _, _ shared.ID) error  { return nil }
+func (m *mockAssetRepo) Update(_ context.Context, _ *asset.Asset) error { return nil }
+func (m *mockAssetRepo) Delete(_ context.Context, _, _ shared.ID) error { return nil }
 func (m *mockAssetRepo) List(_ context.Context, _ asset.Filter, _ asset.ListOptions, page pagination.Pagination) (pagination.Result[*asset.Asset], error) {
 	total := int64(len(m.assets))
 	return pagination.NewResult(m.assets, total, page), nil
@@ -327,7 +339,7 @@ func TestScopeServiceCreateTarget(t *testing.T) {
 			TargetType:  "domain",
 			Pattern:     "*.example.com",
 			Description: "Test domain",
-			Priority:    50,
+			Priority:    5,
 			Tags:        []string{"web"},
 			CreatedBy:   "user1",
 		})
@@ -340,8 +352,8 @@ func TestScopeServiceCreateTarget(t *testing.T) {
 		if target.Pattern() != "*.example.com" {
 			t.Errorf("expected pattern *.example.com, got %s", target.Pattern())
 		}
-		if target.Priority() != 50 {
-			t.Errorf("expected priority 50, got %d", target.Priority())
+		if target.Priority() != 5 {
+			t.Errorf("expected priority 5, got %d", target.Priority())
 		}
 		if len(target.Tags()) != 1 || target.Tags()[0] != "web" {
 			t.Errorf("expected [web], got %v", target.Tags())
@@ -434,7 +446,7 @@ func TestScopeServiceGetTarget(t *testing.T) {
 	tr.targets[target.ID().String()] = target
 
 	t.Run("Found", func(t *testing.T) {
-		got, err := svc.GetTarget(context.Background(), target.ID().String())
+		got, err := svc.GetTarget(context.Background(), tenantID.String(), target.ID().String())
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -444,7 +456,7 @@ func TestScopeServiceGetTarget(t *testing.T) {
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		_, err := svc.GetTarget(context.Background(), shared.NewID().String())
+		_, err := svc.GetTarget(context.Background(), tenantID.String(), shared.NewID().String())
 		if err == nil {
 			t.Fatal("expected error for not found")
 		}
@@ -454,7 +466,7 @@ func TestScopeServiceGetTarget(t *testing.T) {
 	})
 
 	t.Run("InvalidID", func(t *testing.T) {
-		_, err := svc.GetTarget(context.Background(), "not-a-uuid")
+		_, err := svc.GetTarget(context.Background(), tenantID.String(), "not-a-uuid")
 		if err == nil {
 			t.Fatal("expected error for invalid ID")
 		}
@@ -477,7 +489,7 @@ func TestScopeServiceUpdateTarget(t *testing.T) {
 		tr.targets[target.ID().String()] = target
 
 		desc := "updated"
-		priority := 80
+		priority := 8
 		updated, err := svc.UpdateTarget(context.Background(), target.ID().String(), tenantID.String(), app.UpdateTargetInput{
 			Description: &desc,
 			Priority:    &priority,
@@ -489,8 +501,8 @@ func TestScopeServiceUpdateTarget(t *testing.T) {
 		if updated.Description() != "updated" {
 			t.Errorf("expected description 'updated', got %s", updated.Description())
 		}
-		if updated.Priority() != 80 {
-			t.Errorf("expected priority 80, got %d", updated.Priority())
+		if updated.Priority() != 8 {
+			t.Errorf("expected priority 8, got %d", updated.Priority())
 		}
 		if len(updated.Tags()) != 1 || updated.Tags()[0] != "new-tag" {
 			t.Errorf("expected [new-tag], got %v", updated.Tags())
@@ -576,7 +588,7 @@ func TestScopeServiceActivateDeactivateTarget(t *testing.T) {
 	tr.targets[target.ID().String()] = target
 
 	t.Run("Deactivate", func(t *testing.T) {
-		result, err := svc.DeactivateTarget(context.Background(), target.ID().String())
+		result, err := svc.DeactivateTarget(context.Background(), target.ID().String(), tenantID.String())
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -586,7 +598,7 @@ func TestScopeServiceActivateDeactivateTarget(t *testing.T) {
 	})
 
 	t.Run("Activate", func(t *testing.T) {
-		result, err := svc.ActivateTarget(context.Background(), target.ID().String())
+		result, err := svc.ActivateTarget(context.Background(), target.ID().String(), tenantID.String())
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -596,7 +608,7 @@ func TestScopeServiceActivateDeactivateTarget(t *testing.T) {
 	})
 
 	t.Run("ActivateNotFound", func(t *testing.T) {
-		_, err := svc.ActivateTarget(context.Background(), shared.NewID().String())
+		_, err := svc.ActivateTarget(context.Background(), shared.NewID().String(), tenantID.String())
 		if err == nil {
 			t.Fatal("expected error for not found")
 		}
@@ -743,7 +755,7 @@ func TestScopeServiceApproveExclusion(t *testing.T) {
 	er.exclusions[exc.ID().String()] = exc
 
 	t.Run("Approve", func(t *testing.T) {
-		approved, err := svc.ApproveExclusion(context.Background(), exc.ID().String(), "admin1")
+		approved, err := svc.ApproveExclusion(context.Background(), exc.ID().String(), tenantID.String(), "admin1")
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -756,7 +768,7 @@ func TestScopeServiceApproveExclusion(t *testing.T) {
 	})
 
 	t.Run("ApproveNotFound", func(t *testing.T) {
-		_, err := svc.ApproveExclusion(context.Background(), shared.NewID().String(), "admin1")
+		_, err := svc.ApproveExclusion(context.Background(), shared.NewID().String(), tenantID.String(), "admin1")
 		if err == nil {
 			t.Fatal("expected error for not found")
 		}
@@ -773,7 +785,7 @@ func TestScopeServiceActivateDeactivateExclusion(t *testing.T) {
 	er.exclusions[exc.ID().String()] = exc
 
 	t.Run("Deactivate", func(t *testing.T) {
-		result, err := svc.DeactivateExclusion(context.Background(), exc.ID().String())
+		result, err := svc.DeactivateExclusion(context.Background(), exc.ID().String(), tenantID.String())
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -783,7 +795,7 @@ func TestScopeServiceActivateDeactivateExclusion(t *testing.T) {
 	})
 
 	t.Run("Activate", func(t *testing.T) {
-		result, err := svc.ActivateExclusion(context.Background(), exc.ID().String())
+		result, err := svc.ActivateExclusion(context.Background(), exc.ID().String(), tenantID.String())
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -841,13 +853,13 @@ func TestScopeServiceCreateSchedule(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		svc, _, _, sr, _ := newTestScopeService()
 		schedule, err := svc.CreateSchedule(context.Background(), app.CreateScheduleInput{
-			TenantID:     tenantID.String(),
-			Name:         "Daily Scan",
-			Description:  "Run every day",
-			ScanType:     "full",
-			ScheduleType: "cron",
+			TenantID:       tenantID.String(),
+			Name:           "Daily Scan",
+			Description:    "Run every day",
+			ScanType:       "full",
+			ScheduleType:   "cron",
 			CronExpression: "0 2 * * *",
-			CreatedBy:    "user1",
+			CreatedBy:      "user1",
 		})
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
@@ -1006,7 +1018,7 @@ func TestScopeServiceEnableDisableSchedule(t *testing.T) {
 	sr.schedules[sched.ID().String()] = sched
 
 	t.Run("Disable", func(t *testing.T) {
-		result, err := svc.DisableSchedule(context.Background(), sched.ID().String())
+		result, err := svc.DisableSchedule(context.Background(), sched.ID().String(), tenantID.String())
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1016,7 +1028,7 @@ func TestScopeServiceEnableDisableSchedule(t *testing.T) {
 	})
 
 	t.Run("Enable", func(t *testing.T) {
-		result, err := svc.EnableSchedule(context.Background(), sched.ID().String())
+		result, err := svc.EnableSchedule(context.Background(), sched.ID().String(), tenantID.String())
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1026,7 +1038,7 @@ func TestScopeServiceEnableDisableSchedule(t *testing.T) {
 	})
 
 	t.Run("DisableNotFound", func(t *testing.T) {
-		_, err := svc.DisableSchedule(context.Background(), shared.NewID().String())
+		_, err := svc.DisableSchedule(context.Background(), shared.NewID().String(), tenantID.String())
 		if err == nil {
 			t.Fatal("expected error for not found")
 		}
@@ -1075,7 +1087,7 @@ func TestScopeServiceRecordScheduleRun(t *testing.T) {
 	sr.schedules[sched.ID().String()] = sched
 
 	nextRun := time.Now().Add(6 * time.Hour)
-	result, err := svc.RecordScheduleRun(context.Background(), sched.ID().String(), "completed", &nextRun)
+	result, err := svc.RecordScheduleRun(context.Background(), tenantID.String(), sched.ID().String(), "completed", &nextRun)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1282,4 +1294,609 @@ func TestScopeServiceListDueSchedules(t *testing.T) {
 	if len(due) != 1 {
 		t.Errorf("expected 1 due schedule, got %d", len(due))
 	}
+}
+
+// =============================================================================
+// RunScheduleNow Tests
+// =============================================================================
+
+// TestScopeServiceRunScheduleNow tests the immediate schedule execution.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceRunScheduleNow
+func TestScopeServiceRunScheduleNow(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("Success", func(t *testing.T) {
+		svc, _, _, sr, _ := newTestScopeService()
+		sched, _ := scope.NewSchedule(tenantID, "Daily Scan", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+		sr.schedules[sched.ID().String()] = sched
+
+		result, err := svc.RunScheduleNow(context.Background(), sched.ID().String(), tenantID.String())
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if result == nil {
+			t.Fatal("expected non-nil schedule")
+		}
+		if result.LastRunStatus() != "running" {
+			t.Errorf("expected 'running' status, got %q", result.LastRunStatus())
+		}
+		if result.LastRunAt() == nil {
+			t.Error("expected non-nil LastRunAt after RunNow")
+		}
+	})
+
+	t.Run("WrongTenant", func(t *testing.T) {
+		svc, _, _, sr, _ := newTestScopeService()
+		sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+		sr.schedules[sched.ID().String()] = sched
+
+		_, err := svc.RunScheduleNow(context.Background(), sched.ID().String(), shared.NewID().String())
+		if err == nil {
+			t.Fatal("expected error for wrong tenant")
+		}
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got: %v", err)
+		}
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		svc, _, _, _, _ := newTestScopeService()
+
+		_, err := svc.RunScheduleNow(context.Background(), shared.NewID().String(), tenantID.String())
+		if err == nil {
+			t.Fatal("expected error for non-existent schedule")
+		}
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got: %v", err)
+		}
+	})
+
+	t.Run("InvalidScheduleID", func(t *testing.T) {
+		svc, _, _, _, _ := newTestScopeService()
+
+		_, err := svc.RunScheduleNow(context.Background(), "not-a-uuid", tenantID.String())
+		if err == nil {
+			t.Fatal("expected error for invalid schedule ID")
+		}
+	})
+
+	t.Run("InvalidTenantID", func(t *testing.T) {
+		svc, _, _, sr, _ := newTestScopeService()
+		sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+		sr.schedules[sched.ID().String()] = sched
+
+		_, err := svc.RunScheduleNow(context.Background(), sched.ID().String(), "not-a-uuid")
+		if err == nil {
+			t.Fatal("expected error for invalid tenant ID")
+		}
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("expected ErrValidation, got: %v", err)
+		}
+	})
+}
+
+// =============================================================================
+// CheckPatternOverlaps Tests
+// =============================================================================
+
+// TestScopeServiceCheckPatternOverlaps tests pattern conflict detection.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceCheckPatternOverlaps
+func TestScopeServiceCheckPatternOverlaps(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("NoOverlaps", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		// Add existing target
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "example.com", "", "user1")
+		tr.targets[target.ID().String()] = target
+
+		// Check a completely different domain
+		warnings, err := svc.CheckPatternOverlaps(context.Background(), tenantID.String(), "domain", "other.com")
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("expected no warnings, got: %v", warnings)
+		}
+	})
+
+	t.Run("WildcardSupersetDetection", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		// Add existing specific target
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "sub.example.com", "", "user1")
+		tr.targets[target.ID().String()] = target
+
+		// New wildcard pattern is superset of existing
+		warnings, err := svc.CheckPatternOverlaps(context.Background(), tenantID.String(), "domain", "*.example.com")
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if len(warnings) == 0 {
+			t.Error("expected warnings for wildcard superset, got none")
+		}
+	})
+
+	t.Run("SubsetDetection", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		// Add existing wildcard target
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "*.example.com", "", "user1")
+		tr.targets[target.ID().String()] = target
+
+		// New specific pattern is subset of existing wildcard
+		warnings, err := svc.CheckPatternOverlaps(context.Background(), tenantID.String(), "domain", "sub.example.com")
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if len(warnings) == 0 {
+			t.Error("expected warnings for subset pattern, got none")
+		}
+	})
+
+	t.Run("ExactDuplicateIgnored", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		// Add existing target
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "example.com", "", "user1")
+		tr.targets[target.ID().String()] = target
+
+		// Exact same pattern should be ignored (handled by ExistsByPattern separately)
+		warnings, err := svc.CheckPatternOverlaps(context.Background(), tenantID.String(), "domain", "example.com")
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("expected no warnings for exact duplicate, got: %v", warnings)
+		}
+	})
+
+	t.Run("DifferentTypeNoOverlap", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		// Add domain target
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "example.com", "", "user1")
+		tr.targets[target.ID().String()] = target
+
+		// Check IP type - should not overlap with domain
+		warnings, err := svc.CheckPatternOverlaps(context.Background(), tenantID.String(), "ip_address", "192.168.1.1")
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("expected no warnings for different type, got: %v", warnings)
+		}
+	})
+
+	t.Run("InvalidTenantID", func(t *testing.T) {
+		svc, _, _, _, _ := newTestScopeService()
+
+		_, err := svc.CheckPatternOverlaps(context.Background(), "not-a-uuid", "domain", "example.com")
+		if err == nil {
+			t.Fatal("expected error for invalid tenant ID")
+		}
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("expected ErrValidation, got: %v", err)
+		}
+	})
+
+	t.Run("InvalidTargetType", func(t *testing.T) {
+		svc, _, _, _, _ := newTestScopeService()
+
+		_, err := svc.CheckPatternOverlaps(context.Background(), tenantID.String(), "invalid_type", "something")
+		if err == nil {
+			t.Fatal("expected error for invalid target type")
+		}
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("expected ErrValidation, got: %v", err)
+		}
+	})
+
+	t.Run("InactiveTargetsIgnored", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		// Add inactive target
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "*.example.com", "", "user1")
+		target.Deactivate()
+		tr.targets[target.ID().String()] = target
+
+		// Active wildcard check: inactive target should not be returned by ListActive mock
+		warnings, err := svc.CheckPatternOverlaps(context.Background(), tenantID.String(), "domain", "sub.example.com")
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("expected no warnings for inactive target, got: %v", warnings)
+		}
+	})
+
+	t.Run("MultipleOverlaps", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		// Add multiple existing targets
+		t1, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "api.example.com", "", "user1")
+		tr.targets[t1.ID().String()] = t1
+		t2, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "web.example.com", "", "user1")
+		tr.targets[t2.ID().String()] = t2
+
+		// Wildcard that covers both
+		warnings, err := svc.CheckPatternOverlaps(context.Background(), tenantID.String(), "domain", "*.example.com")
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if len(warnings) < 2 {
+			t.Errorf("expected at least 2 warnings for multiple overlaps, got %d: %v", len(warnings), warnings)
+		}
+	})
+}
+
+// =============================================================================
+// ValidateCronExpression Tests
+// =============================================================================
+
+// TestValidateCronExpression tests cron expression validation.
+//
+// Run with: go test -v ./tests/unit -run TestValidateCronExpression
+func TestValidateCronExpression(t *testing.T) {
+	t.Run("ValidCronExpressions", func(t *testing.T) {
+		validExprs := []string{
+			"0 2 * * *",      // Daily at 2am
+			"0 3 * * 0",      // Weekly Sunday 3am
+			"0 4 1 * *",      // Monthly 1st at 4am
+			"*/15 * * * *",   // Every 15 minutes
+			"0 0 * * 1-5",    // Weekdays at midnight
+			"0 4 1 */3 *",    // Every 3 months
+			"30 8 * * 1,3,5", // Mon/Wed/Fri at 8:30
+		}
+		for _, expr := range validExprs {
+			if err := scope.ValidateCronExpression(expr); err != nil {
+				t.Errorf("expected valid cron %q, got error: %v", expr, err)
+			}
+		}
+	})
+
+	t.Run("InvalidCronExpressions", func(t *testing.T) {
+		invalidExprs := []string{
+			"",           // Empty
+			"not a cron", // Invalid text
+			"* * *",      // Too few fields
+			"60 * * * *", // Invalid minute
+			"* 25 * * *", // Invalid hour
+		}
+		for _, expr := range invalidExprs {
+			if err := scope.ValidateCronExpression(expr); err == nil {
+				t.Errorf("expected error for invalid cron %q, got nil", expr)
+			} else if !errors.Is(err, shared.ErrValidation) {
+				t.Errorf("expected ErrValidation for %q, got: %v", expr, err)
+			}
+		}
+	})
+}
+
+// =============================================================================
+// SetCronSchedule Error Handling Tests
+// =============================================================================
+
+// TestScheduleSetCronSchedule tests cron schedule setting with validation.
+//
+// Run with: go test -v ./tests/unit -run TestScheduleSetCronSchedule
+func TestScheduleSetCronSchedule(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("ValidCron", func(t *testing.T) {
+		sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+
+		err := sched.SetCronSchedule("0 2 * * *")
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if sched.CronExpression() != "0 2 * * *" {
+			t.Errorf("expected cron '0 2 * * *', got %q", sched.CronExpression())
+		}
+		if sched.ScheduleType() != scope.ScheduleTypeCron {
+			t.Errorf("expected cron type, got %s", sched.ScheduleType())
+		}
+		if sched.IntervalHours() != 0 {
+			t.Errorf("expected 0 interval hours, got %d", sched.IntervalHours())
+		}
+	})
+
+	t.Run("InvalidCron", func(t *testing.T) {
+		sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+
+		err := sched.SetCronSchedule("invalid cron")
+		if err == nil {
+			t.Fatal("expected error for invalid cron")
+		}
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("expected ErrValidation, got: %v", err)
+		}
+	})
+
+	t.Run("EmptyCron", func(t *testing.T) {
+		sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+
+		err := sched.SetCronSchedule("")
+		if err == nil {
+			t.Fatal("expected error for empty cron")
+		}
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("expected ErrValidation, got: %v", err)
+		}
+	})
+}
+
+// =============================================================================
+// CreateSchedule with Cron Validation Tests
+// =============================================================================
+
+// TestScopeServiceCreateScheduleWithCron tests schedule creation with cron validation.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceCreateScheduleWithCron
+func TestScopeServiceCreateScheduleWithCron(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("ValidCronSchedule", func(t *testing.T) {
+		svc, _, _, _, _ := newTestScopeService()
+
+		sched, err := svc.CreateSchedule(context.Background(), app.CreateScheduleInput{
+			TenantID:       tenantID.String(),
+			Name:           "Daily Vuln Scan",
+			ScanType:       "full",
+			ScheduleType:   "cron",
+			CronExpression: "0 2 * * *",
+			CreatedBy:      "user1",
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if sched.CronExpression() != "0 2 * * *" {
+			t.Errorf("expected cron '0 2 * * *', got %q", sched.CronExpression())
+		}
+	})
+
+	t.Run("InvalidCronExpression", func(t *testing.T) {
+		svc, _, _, _, _ := newTestScopeService()
+
+		_, err := svc.CreateSchedule(context.Background(), app.CreateScheduleInput{
+			TenantID:       tenantID.String(),
+			Name:           "Bad Cron",
+			ScanType:       "full",
+			ScheduleType:   "cron",
+			CronExpression: "bad cron expression",
+			CreatedBy:      "user1",
+		})
+		if err == nil {
+			t.Fatal("expected error for invalid cron expression")
+		}
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("expected ErrValidation, got: %v", err)
+		}
+	})
+
+	t.Run("IntervalScheduleIgnoresCron", func(t *testing.T) {
+		svc, _, _, _, _ := newTestScopeService()
+
+		sched, err := svc.CreateSchedule(context.Background(), app.CreateScheduleInput{
+			TenantID:      tenantID.String(),
+			Name:          "Hourly Scan",
+			ScanType:      "full",
+			ScheduleType:  "interval",
+			IntervalHours: 4,
+			CreatedBy:     "user1",
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if sched.IntervalHours() != 4 {
+			t.Errorf("expected 4 interval hours, got %d", sched.IntervalHours())
+		}
+	})
+}
+
+// =============================================================================
+// Tenant Isolation Tests (Activate/Deactivate/Enable/Disable/Approve)
+// =============================================================================
+
+// TestScopeServiceActivateTargetTenantIsolation tests tenant isolation for target activation.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceActivateTargetTenantIsolation
+func TestScopeServiceActivateTargetTenantIsolation(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("Success", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "example.com", "", "user1")
+		target.Deactivate()
+		tr.targets[target.ID().String()] = target
+
+		result, err := svc.ActivateTarget(context.Background(), target.ID().String(), tenantID.String())
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if !result.IsActive() {
+			t.Error("expected target to be active")
+		}
+	})
+
+	t.Run("WrongTenant", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "example.com", "", "user1")
+		target.Deactivate()
+		tr.targets[target.ID().String()] = target
+
+		_, err := svc.ActivateTarget(context.Background(), target.ID().String(), shared.NewID().String())
+		if err == nil {
+			t.Fatal("expected error for wrong tenant")
+		}
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got: %v", err)
+		}
+	})
+}
+
+// TestScopeServiceDeactivateTargetTenantIsolation tests tenant isolation for target deactivation.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceDeactivateTargetTenantIsolation
+func TestScopeServiceDeactivateTargetTenantIsolation(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("Success", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "example.com", "", "user1")
+		tr.targets[target.ID().String()] = target
+
+		result, err := svc.DeactivateTarget(context.Background(), target.ID().String(), tenantID.String())
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if result.IsActive() {
+			t.Error("expected target to be inactive")
+		}
+	})
+
+	t.Run("WrongTenant", func(t *testing.T) {
+		svc, tr, _, _, _ := newTestScopeService()
+		target, _ := scope.NewTarget(tenantID, scope.TargetTypeDomain, "example.com", "", "user1")
+		tr.targets[target.ID().String()] = target
+
+		_, err := svc.DeactivateTarget(context.Background(), target.ID().String(), shared.NewID().String())
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got: %v", err)
+		}
+	})
+}
+
+// TestScopeServiceApproveExclusionTenantIsolation tests tenant isolation for exclusion approval.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceApproveExclusionTenantIsolation
+func TestScopeServiceApproveExclusionTenantIsolation(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("Success", func(t *testing.T) {
+		svc, _, er, _, _ := newTestScopeService()
+		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
+		er.exclusions[exc.ID().String()] = exc
+
+		result, err := svc.ApproveExclusion(context.Background(), exc.ID().String(), tenantID.String(), "admin1")
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if !result.IsApproved() {
+			t.Error("expected exclusion to be approved")
+		}
+		if result.ApprovedBy() != "admin1" {
+			t.Errorf("expected approvedBy 'admin1', got %q", result.ApprovedBy())
+		}
+	})
+
+	t.Run("WrongTenant", func(t *testing.T) {
+		svc, _, er, _, _ := newTestScopeService()
+		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
+		er.exclusions[exc.ID().String()] = exc
+
+		_, err := svc.ApproveExclusion(context.Background(), exc.ID().String(), shared.NewID().String(), "admin1")
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got: %v", err)
+		}
+	})
+}
+
+// TestScopeServiceActivateExclusionTenantIsolation tests tenant isolation for exclusion activation.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceActivateExclusionTenantIsolation
+func TestScopeServiceActivateExclusionTenantIsolation(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("WrongTenant", func(t *testing.T) {
+		svc, _, er, _, _ := newTestScopeService()
+		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
+		exc.Deactivate()
+		er.exclusions[exc.ID().String()] = exc
+
+		_, err := svc.ActivateExclusion(context.Background(), exc.ID().String(), shared.NewID().String())
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got: %v", err)
+		}
+	})
+}
+
+// TestScopeServiceDeactivateExclusionTenantIsolation tests tenant isolation for exclusion deactivation.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceDeactivateExclusionTenantIsolation
+func TestScopeServiceDeactivateExclusionTenantIsolation(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("WrongTenant", func(t *testing.T) {
+		svc, _, er, _, _ := newTestScopeService()
+		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
+		er.exclusions[exc.ID().String()] = exc
+
+		_, err := svc.DeactivateExclusion(context.Background(), exc.ID().String(), shared.NewID().String())
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got: %v", err)
+		}
+	})
+}
+
+// TestScopeServiceEnableScheduleTenantIsolation tests tenant isolation for schedule enabling.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceEnableScheduleTenantIsolation
+func TestScopeServiceEnableScheduleTenantIsolation(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("Success", func(t *testing.T) {
+		svc, _, _, sr, _ := newTestScopeService()
+		sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+		sched.Disable()
+		sr.schedules[sched.ID().String()] = sched
+
+		result, err := svc.EnableSchedule(context.Background(), sched.ID().String(), tenantID.String())
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if !result.Enabled() {
+			t.Error("expected schedule to be enabled")
+		}
+	})
+
+	t.Run("WrongTenant", func(t *testing.T) {
+		svc, _, _, sr, _ := newTestScopeService()
+		sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+		sched.Disable()
+		sr.schedules[sched.ID().String()] = sched
+
+		_, err := svc.EnableSchedule(context.Background(), sched.ID().String(), shared.NewID().String())
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got: %v", err)
+		}
+	})
+}
+
+// TestScopeServiceDisableScheduleTenantIsolation tests tenant isolation for schedule disabling.
+//
+// Run with: go test -v ./tests/unit -run TestScopeServiceDisableScheduleTenantIsolation
+func TestScopeServiceDisableScheduleTenantIsolation(t *testing.T) {
+	tenantID := shared.NewID()
+
+	t.Run("Success", func(t *testing.T) {
+		svc, _, _, sr, _ := newTestScopeService()
+		sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+		sr.schedules[sched.ID().String()] = sched
+
+		result, err := svc.DisableSchedule(context.Background(), sched.ID().String(), tenantID.String())
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if result.Enabled() {
+			t.Error("expected schedule to be disabled")
+		}
+	})
+
+	t.Run("WrongTenant", func(t *testing.T) {
+		svc, _, _, sr, _ := newTestScopeService()
+		sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
+		sr.schedules[sched.ID().String()] = sched
+
+		_, err := svc.DisableSchedule(context.Background(), sched.ID().String(), shared.NewID().String())
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got: %v", err)
+		}
+	})
 }
