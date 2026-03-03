@@ -179,9 +179,20 @@ func TestTargetUpdateMethods(t *testing.T) {
 	})
 
 	t.Run("UpdatePriority", func(t *testing.T) {
-		target.UpdatePriority(75)
-		if target.Priority() != 75 {
-			t.Errorf("expected priority 75, got %d", target.Priority())
+		if err := target.UpdatePriority(7); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if target.Priority() != 7 {
+			t.Errorf("expected priority 7, got %d", target.Priority())
+		}
+	})
+
+	t.Run("UpdatePriorityOutOfBounds", func(t *testing.T) {
+		if err := target.UpdatePriority(0); err == nil {
+			t.Error("expected error for priority 0")
+		}
+		if err := target.UpdatePriority(11); err == nil {
+			t.Error("expected error for priority 11")
 		}
 	})
 
@@ -539,7 +550,9 @@ func TestScheduleUpdateMethods(t *testing.T) {
 	})
 
 	t.Run("SetIntervalSchedule", func(t *testing.T) {
-		sched.SetIntervalSchedule(6)
+		if err := sched.SetIntervalSchedule(6); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
 		if sched.ScheduleType() != scope.ScheduleTypeInterval {
 			t.Errorf("expected interval, got %s", sched.ScheduleType())
 		}
@@ -548,6 +561,15 @@ func TestScheduleUpdateMethods(t *testing.T) {
 		}
 		if sched.CronExpression() != "" {
 			t.Errorf("expected empty cron, got %s", sched.CronExpression())
+		}
+	})
+
+	t.Run("SetIntervalScheduleOutOfBounds", func(t *testing.T) {
+		if err := sched.SetIntervalSchedule(0); err == nil {
+			t.Error("expected error for interval 0")
+		}
+		if err := sched.SetIntervalSchedule(8761); err == nil {
+			t.Error("expected error for interval 8761")
 		}
 	})
 
