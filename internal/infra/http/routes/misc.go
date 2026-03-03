@@ -5,11 +5,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/websocket"
-	"github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/permission"
 )
 
@@ -54,22 +52,14 @@ func registerDashboardRoutes(
 // Audit logs are tenant-scoped (tenant from JWT token).
 // Permission model:
 // - Read (GET): audit:read permission
-//
-// Module check: Requires "audit" module to be enabled.
 func registerAuditRoutes(
 	router Router,
 	h *handler.AuditHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleAudit))
-	}
 
 	// Audit log routes - tenant from JWT token
 	router.Group("/api/v1/audit-logs", func(r Router) {
@@ -127,23 +117,15 @@ func registerSLARoutes(
 // registerIntegrationRoutes registers integration management endpoints.
 // Integrations are tenant-scoped (tenant from JWT token).
 //
-// Module check: Requires "integrations" module to be enabled.
-//
 //nolint:dupl // Route registration functions naturally have similar structure
 func registerIntegrationRoutes(
 	router Router,
 	h *handler.IntegrationHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleIntegrations))
-	}
 
 	// Integration routes - tenant from JWT token
 	router.Group("/api/v1/integrations", func(r Router) {
@@ -151,14 +133,10 @@ func registerIntegrationRoutes(
 		r.GET("/", h.List, middleware.Require(permission.IntegrationsRead))
 
 		// List SCM integrations specifically
-		// Sub-module check: requires integrations.scm to be enabled
-		scmSubModuleCheck := middleware.RequireSubModule(moduleService, "integrations", "scm")
-		r.GET("/scm", ChainFunc(h.ListSCM, scmSubModuleCheck).ServeHTTP, middleware.Require(permission.IntegrationsRead))
+		r.GET("/scm", h.ListSCM, middleware.Require(permission.IntegrationsRead))
 
 		// List Notification integrations specifically
-		// Sub-module check: requires integrations.notifications to be enabled
-		notificationsSubModuleCheck := middleware.RequireSubModule(moduleService, "integrations", "notifications")
-		r.GET("/notifications", ChainFunc(h.ListNotifications, notificationsSubModuleCheck).ServeHTTP, middleware.Require(permission.IntegrationsRead))
+		r.GET("/notifications", h.ListNotifications, middleware.Require(permission.IntegrationsRead))
 
 		// Create new integration
 		r.POST("/", h.Create, middleware.Require(permission.IntegrationsManage))
@@ -188,8 +166,7 @@ func registerIntegrationRoutes(
 		r.GET("/{id}/notification-events", h.GetNotificationEvents, middleware.Require(permission.IntegrationsRead))
 
 		// List repositories from SCM integration
-		// Sub-module check: requires integrations.scm
-		r.GET("/{id}/repositories", ChainFunc(h.ListRepositories, scmSubModuleCheck).ServeHTTP, middleware.Require(permission.IntegrationsRead))
+		r.GET("/{id}/repositories", h.ListRepositories, middleware.Require(permission.IntegrationsRead))
 	}, tenantMiddlewares...)
 }
 
@@ -280,13 +257,8 @@ func registerAPIKeyRoutes(
 	h *handler.APIKeyHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleAPIKeys))
-	}
 
 	router.Group("/api/v1/api-keys", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.APIKeysRead))
@@ -303,13 +275,8 @@ func registerWebhookRoutes(
 	h *handler.WebhookHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleWebhooks))
-	}
 
 	router.Group("/api/v1/webhooks", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.WebhooksRead))

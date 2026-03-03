@@ -30,33 +30,6 @@ func NewModuleService(moduleRepo ModuleRepository, log *logger.Logger) *ModuleSe
 	}
 }
 
-// TenantHasModule checks if a tenant has access to a specific module.
-// OSS Edition: Always returns true (all modules enabled).
-func (s *ModuleService) TenantHasModule(ctx context.Context, tenantID, moduleID string) (bool, error) {
-	return true, nil
-}
-
-// TenantHasSubModule checks if a tenant has access to a specific sub-module.
-// OSS Edition: Always returns true (all modules enabled).
-func (s *ModuleService) TenantHasSubModule(ctx context.Context, tenantID, parentModuleID, subModuleID string) (bool, error) {
-	return true, nil
-}
-
-// GetModuleLimitOutput represents the output for GetTenantModuleLimit.
-type GetModuleLimitOutput struct {
-	Limit     int64
-	Unlimited bool
-}
-
-// GetTenantModuleLimit returns the limit for a specific module metric.
-// OSS Edition: Always returns unlimited.
-func (s *ModuleService) GetTenantModuleLimit(ctx context.Context, tenantID, moduleID, metric string) (*GetModuleLimitOutput, error) {
-	return &GetModuleLimitOutput{
-		Limit:     -1,
-		Unlimited: true,
-	}, nil
-}
-
 // GetTenantEnabledModulesOutput represents the output for GetTenantEnabledModules.
 type GetTenantEnabledModulesOutput struct {
 	ModuleIDs  []string

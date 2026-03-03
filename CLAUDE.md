@@ -1040,102 +1040,31 @@ event := NewSuccessEvent(audit.ActionRoleCreated, audit.ResourceTypeRole, r.ID()
 s.logAudit(ctx, actx, event)
 ```
 
-## 3-Layer Access Control
+## 2-Layer Access Control
 
-OpenCTEM implements a 3-layer access control architecture:
+OpenCTEM OSS implements a 2-layer access control architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    LAYER 1: LICENSING (Tenant)                   │
-├─────────────────────────────────────────────────────────────────┤
-│  Tenant → Plan → Modules                                        │
-│  "What modules can this tenant access?"                         │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                    LAYER 2: RBAC (User)                          │
+│                    LAYER 1: RBAC (User)                          │
 ├─────────────────────────────────────────────────────────────────┤
 │  User → Roles → Permissions                                      │
-│  "What can this user do within allowed modules?"                 │
+│  "What can this user do?"                                        │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│                    LAYER 3: DATA SCOPE (Groups)                  │
+│                    LAYER 2: DATA SCOPE (Groups)                  │
 ├─────────────────────────────────────────────────────────────────┤
 │  User → Groups → Assets/Data                                     │
 │  "What data can this user see?"                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Layer 1: Licensing
+> **Note:** The `Module` entity still exists as UI metadata (sidebar icons, categories, release status).
+> `ModuleService` provides module data via `/api/v1/me/modules` for frontend sidebar filtering.
+> There is no module-based route gating in the OSS edition — all features are available.
 
-**Key Files:**
-
-- `internal/domain/licensing/` - Domain models (Plan, Module, Subscription)
-- `internal/infra/postgres/licensing_repository.go` - Repository
-- `internal/app/licensing_service.go` - Business logic
-- `internal/infra/http/handler/licensing_handler.go` - HTTP handler
-
-**API Endpoints:**
-
-```
-GET /api/v1/plans              # List public plans
-GET /api/v1/plans/{id}         # Get plan details
-GET /api/v1/modules            # List active modules
-GET /api/v1/me/modules         # Get tenant's enabled modules
-GET /api/v1/me/subscription    # Get tenant's subscription
-```
-
-**Usage:**
-
-```go
-// Check module access
-hasModule, err := licensingService.TenantHasModule(ctx, tenantID, "findings")
-
-// Get enabled modules
-output, err := licensingService.GetTenantEnabledModules(ctx, tenantID)
-moduleIDs := output.ModuleIDs  // ["dashboard", "assets", "findings"]
-
-// Get available event types for notifications (based on modules)
-eventTypes, err := licensingService.GetTenantAvailableEventTypes(ctx, tenantID)
-```
-
-**Module Middleware (JWT Routes):**
-
-```go
-// For JWT-authenticated routes (tenant ID from token)
-middleware.RequireModule(licensingService, licensing.ModuleAssets)
-```
-
-**Module Middleware (Agent Routes):**
-
-```go
-// For API key-authenticated routes (tenant ID from agent)
-agentProvider := middleware.AgentContextProviderFunc(handler.AgentFromContext)
-middleware.RequireModuleForAgent(licensingService, agentProvider, licensing.ModuleScans)
-```
-
-**Agent Route Module Requirements:**
-| Endpoint | Module | Notes |
-|----------|--------|-------|
-| `POST /api/v1/agent/heartbeat` | None | Always allowed |
-| `POST /api/v1/agent/ingest` | `scans` | Finding/asset ingestion |
-| `POST /api/v1/agent/ingest/sarif` | `scans` | SARIF ingestion |
-| `GET /api/v1/agent/commands` | `scans` | Command polling |
-| `POST /api/v1/agent/credentials/ingest` | `credentials` | Credential ingestion |
-
-**Agent Management Module Requirements:**
-| Endpoint | Module | Notes |
-|----------|--------|-------|
-| `GET /api/v1/agents` | `scans` | List agents |
-| `POST /api/v1/agents` | `scans` | Create agent (limited by plan's agent_limit) |
-| `PUT /api/v1/agents/{id}` | `scans` | Update agent |
-| `DELETE /api/v1/agents/{id}` | `scans` | Delete agent |
-
-> **Note:** Agents are bundled with the `scans` module because scanning requires agents to execute.
-> The number of agents a tenant can create is controlled by their plan's `agent_limit` field.
-
-### Layer 2: RBAC
+### Layer 1: RBAC
 
 **Key Files:**
 
@@ -1184,7 +1113,7 @@ r.Route("/assets", func(r chi.Router) {
 })
 ```
 
-### Layer 3: Data Scope (Groups)
+### Layer 2: Data Scope (Groups)
 
 **Key Files:**
 

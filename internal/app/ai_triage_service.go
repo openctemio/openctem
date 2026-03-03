@@ -11,20 +11,10 @@ import (
 	"github.com/openctemio/api/internal/infra/llm"
 	"github.com/openctemio/api/pkg/domain/aitriage"
 	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
-)
-
-// AI Triage licensing errors
-var (
-	ErrAITriageNotAvailable      = errors.New("AI triage is not available on your current plan")
-	ErrBulkTriageNotAvailable    = errors.New("bulk AI triage is not available on your current plan")
-	ErrAutoTriageNotAvailable    = errors.New("auto AI triage is not available on your current plan")
-	ErrAITriageBYOKNotAvailable  = errors.New("BYOK mode is not available on your current plan")
-	ErrAITriageAgentNotAvailable = errors.New("self-hosted agent mode is not available on your current plan")
 )
 
 // categorizeError returns a user-friendly error message based on the error type.
@@ -106,13 +96,6 @@ type WorkflowEventDispatcherInterface interface {
 	DispatchAITriageFailed(ctx context.Context, tenantID, findingID, triageID shared.ID, errorMessage string)
 }
 
-// AITriageModuleChecker defines the interface for checking AI Triage module.
-// This avoids circular dependency with module package.
-type AITriageModuleChecker interface {
-	TenantHasModule(ctx context.Context, tenantID, moduleID string) (bool, error)
-	GetTenantModuleLimit(ctx context.Context, tenantID, moduleID, metric string) (*GetModuleLimitOutput, error)
-}
-
 // TriageBroadcaster broadcasts triage events for real-time WebSocket updates.
 type TriageBroadcaster interface {
 	// BroadcastTriage sends a triage event to subscribers.
@@ -132,7 +115,6 @@ type AITriageService struct {
 	llmFactory         *llm.Factory
 	jobEnqueuer        AITriageJobEnqueuer
 	workflowDispatcher WorkflowEventDispatcherInterface
-	licenseChecker     AITriageModuleChecker
 	triageBroadcaster  TriageBroadcaster // For real-time WebSocket updates
 	platformCfg        config.AITriageConfig
 	logger             *logger.Logger
@@ -176,11 +158,6 @@ func (s *AITriageService) SetJobEnqueuer(enqueuer AITriageJobEnqueuer) {
 // SetWorkflowDispatcher sets the workflow event dispatcher for AI triage events.
 func (s *AITriageService) SetWorkflowDispatcher(dispatcher WorkflowEventDispatcherInterface) {
 	s.workflowDispatcher = dispatcher
-}
-
-// SetLicenseChecker sets the license checker for AI triage feature gating.
-func (s *AITriageService) SetLicenseChecker(checker AITriageModuleChecker) {
-	s.licenseChecker = checker
 }
 
 // SetTriageBroadcaster sets the broadcaster for real-time WebSocket updates.
@@ -1210,96 +1187,21 @@ func (s *AITriageService) logTokenLimitExceeded(ctx context.Context, tenantID, r
 // =============================================================================
 
 // checkPlanAccess verifies the tenant has access to AI Triage based on their plan.
-// Returns nil if access is allowed, or an appropriate error if not.
-func (s *AITriageService) checkPlanAccess(ctx context.Context, tenantID, triageType string) error {
-	// If no license checker configured, allow all (backwards compatibility / dev mode)
-	if s.licenseChecker == nil {
-		return nil
-	}
-
-	// Check base AI Triage module access
-	hasAccess, err := s.licenseChecker.TenantHasModule(ctx, tenantID, module.ModuleAITriage)
-	if err != nil {
-		s.logger.Warn("failed to check AI triage license", "error", err, "tenant_id", tenantID)
-		// Fail open for license check errors (allow access but log warning)
-		return nil
-	}
-	if !hasAccess {
-		return fmt.Errorf("%w: %v", shared.ErrForbidden, ErrAITriageNotAvailable)
-	}
-
-	// Check bulk triage access if applicable
-	if triageType == "bulk" {
-		hasBulk, err := s.licenseChecker.TenantHasModule(ctx, tenantID, module.ModuleAITriageBulk)
-		if err != nil {
-			s.logger.Warn("failed to check bulk triage license", "error", err)
-			return nil
-		}
-		if !hasBulk {
-			return fmt.Errorf("%w: %v", shared.ErrForbidden, ErrBulkTriageNotAvailable)
-		}
-	}
-
-	// Check auto triage access if applicable
-	if triageType == "auto" {
-		hasAuto, err := s.licenseChecker.TenantHasModule(ctx, tenantID, module.ModuleAITriageAuto)
-		if err != nil {
-			s.logger.Warn("failed to check auto triage license", "error", err)
-			return nil
-		}
-		if !hasAuto {
-			return fmt.Errorf("%w: %v", shared.ErrForbidden, ErrAutoTriageNotAvailable)
-		}
-	}
-
+// OSS Edition: Always allows access (no licensing).
+func (s *AITriageService) checkPlanAccess(_ context.Context, _, _ string) error {
 	return nil
 }
 
 // checkAIModeAccess verifies the tenant has access to the configured AI mode.
-func (s *AITriageService) checkAIModeAccess(ctx context.Context, tenantID string, mode tenant.AIMode) error {
-	// If no license checker configured, allow all
-	if s.licenseChecker == nil {
-		return nil
-	}
-
-	switch mode {
-	case tenant.AIModeBYOK:
-		hasBYOK, err := s.licenseChecker.TenantHasModule(ctx, tenantID, module.ModuleAITriageBYOK)
-		if err != nil {
-			s.logger.Warn("failed to check BYOK license", "error", err)
-			return nil
-		}
-		if !hasBYOK {
-			return fmt.Errorf("%w: %v", shared.ErrForbidden, ErrAITriageBYOKNotAvailable)
-		}
-
-	case tenant.AIModeAgent:
-		hasAgent, err := s.licenseChecker.TenantHasModule(ctx, tenantID, module.ModuleAITriageAgent)
-		if err != nil {
-			s.logger.Warn("failed to check agent license", "error", err)
-			return nil
-		}
-		if !hasAgent {
-			return fmt.Errorf("%w: %v", shared.ErrForbidden, ErrAITriageAgentNotAvailable)
-		}
-	}
-
+// OSS Edition: Always allows access (no licensing).
+func (s *AITriageService) checkAIModeAccess(_ context.Context, _ string, _ tenant.AIMode) error {
 	return nil
 }
 
 // GetPlanTokenLimit returns the monthly token limit for a tenant based on their plan.
-// Returns -1 if unlimited, 0 if not set.
-func (s *AITriageService) GetPlanTokenLimit(ctx context.Context, tenantID string) (int64, error) {
-	if s.licenseChecker == nil {
-		return -1, nil // Unlimited if no license checker
-	}
-
-	result, err := s.licenseChecker.GetTenantModuleLimit(ctx, tenantID, module.ModuleAITriage, module.AITriageLimitMonthlyTokens)
-	if err != nil {
-		return -1, err
-	}
-
-	return result.Limit, nil
+// OSS Edition: Always returns -1 (unlimited).
+func (s *AITriageService) GetPlanTokenLimit(_ context.Context, _ string) (int64, error) {
+	return -1, nil
 }
 
 // =============================================================================
@@ -1504,14 +1406,6 @@ func (s *AITriageService) GetAIConfig(ctx context.Context, tenantID string) (*AI
 	case tenant.AIModeAgent:
 		info.Provider = "agent"
 		info.Model = "self-hosted"
-	}
-
-	// Get token limit from license if available
-	if s.licenseChecker != nil {
-		limit, err := s.GetPlanTokenLimit(ctx, tenantID)
-		if err == nil && limit > 0 {
-			info.MonthlyTokenLimit = int(limit)
-		}
 	}
 
 	return info, nil

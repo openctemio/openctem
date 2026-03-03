@@ -139,7 +139,6 @@ func Register(
 	authCfg AuthConfig,
 	tenantRepo tenant.Repository,
 	userService *app.UserService,
-	moduleService *app.ModuleService,
 ) {
 	// Create unified auth middleware based on provider
 	unifiedAuthCfg := middleware.UnifiedAuthConfig{
@@ -180,32 +179,32 @@ func Register(
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized
 	if h.Asset != nil {
-		registerAssetRoutes(router, h.Asset, authMiddleware, userSync, moduleService)
+		registerAssetRoutes(router, h.Asset, authMiddleware, userSync)
 	}
 
 	// Component routes (tenant from JWT token)
 	if h.Component != nil {
-		registerComponentRoutes(router, h.Component, authMiddleware, userSync, moduleService)
+		registerComponentRoutes(router, h.Component, authMiddleware, userSync)
 	}
 
 	// Asset Service routes (CTEM Discovery - network services on assets)
 	if h.AssetService != nil {
-		registerAssetServiceRoutes(router, h.AssetService, authMiddleware, userSync, moduleService)
+		registerAssetServiceRoutes(router, h.AssetService, authMiddleware, userSync)
 	}
 
 	// Asset State History routes (CTEM Discovery - shadow IT detection, audit)
 	if h.AssetStateHistory != nil {
-		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync, moduleService)
+		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync)
 	}
 
 	// Asset Relationship routes (CTEM Discovery - attack surface topology graph)
 	if h.AssetRelationship != nil {
-		registerAssetRelationshipRoutes(router, h.AssetRelationship, authMiddleware, userSync, moduleService)
+		registerAssetRelationshipRoutes(router, h.AssetRelationship, authMiddleware, userSync)
 	}
 
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
 	if h.Vulnerability != nil {
-		registerVulnerabilityRoutes(router, h.Vulnerability, authMiddleware, userSync, moduleService)
+		registerVulnerabilityRoutes(router, h.Vulnerability, authMiddleware, userSync)
 	}
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
@@ -228,9 +227,8 @@ func Register(
 
 	// AI Triage routes (tenant from JWT token)
 	// Always registered - handler handles nil service gracefully
-	// Feature gating is done via RequireModule middleware (checks is_active in database)
 	if h.AITriage != nil {
-		registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter, moduleService)
+		registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter)
 	}
 
 	// Dashboard routes (global and tenant from JWT token)
@@ -240,7 +238,7 @@ func Register(
 
 	// Audit log routes (tenant from JWT token)
 	if h.Audit != nil {
-		registerAuditRoutes(router, h.Audit, authMiddleware, userSync, moduleService)
+		registerAuditRoutes(router, h.Audit, authMiddleware, userSync)
 	}
 
 	// Branch routes (asset-scoped, tenant from JWT token)
@@ -255,17 +253,17 @@ func Register(
 
 	// Integration routes (tenant from JWT token)
 	if h.Integration != nil {
-		registerIntegrationRoutes(router, h.Integration, authMiddleware, userSync, moduleService)
+		registerIntegrationRoutes(router, h.Integration, authMiddleware, userSync)
 	}
 
 	// Asset Group routes (tenant from JWT token)
 	if h.AssetGroup != nil {
-		registerAssetGroupRoutes(router, h.AssetGroup, authMiddleware, userSync, moduleService)
+		registerAssetGroupRoutes(router, h.AssetGroup, authMiddleware, userSync)
 	}
 
 	// Scope Configuration routes (tenant from JWT token)
 	if h.Scope != nil {
-		registerScopeRoutes(router, h.Scope, authMiddleware, userSync, moduleService)
+		registerScopeRoutes(router, h.Scope, authMiddleware, userSync)
 	}
 
 	// Asset Type routes (tenant from JWT token)
@@ -290,12 +288,12 @@ func Register(
 
 	// Ingest/Agent routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
-		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, moduleService)
+		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession)
 	}
 
 	// Agent management routes (tenant from JWT token)
 	if h.Agent != nil {
-		registerAgentManagementRoutes(router, h.Agent, nil, authMiddleware, userSync, moduleService)
+		registerAgentManagementRoutes(router, h.Agent, nil, authMiddleware, userSync)
 	}
 
 	// Initialize trigger rate limiter for pipeline/scan trigger endpoints
@@ -312,7 +310,7 @@ func Register(
 
 	// Scan Profile routes (tenant from JWT token)
 	if h.ScanProfile != nil {
-		registerScanProfileRoutes(router, h.ScanProfile, authMiddleware, userSync, moduleService)
+		registerScanProfileRoutes(router, h.ScanProfile, authMiddleware, userSync)
 	}
 
 	// Tool Registry routes (tenant from JWT token for tenant tools)
@@ -332,7 +330,7 @@ func Register(
 
 	// Scan routes (tenant from JWT token)
 	if h.Scan != nil {
-		registerScanRoutes(router, h.Scan, authMiddleware, userSync, moduleService, triggerRateLimiter)
+		registerScanRoutes(router, h.Scan, authMiddleware, userSync, triggerRateLimiter)
 	}
 
 	// Scan Session routes (tenant from JWT token for admin, API key for agent)
@@ -342,17 +340,17 @@ func Register(
 
 	// Scanner Template routes (tenant from JWT token)
 	if h.ScannerTemplate != nil {
-		registerScannerTemplateRoutes(router, h.ScannerTemplate, authMiddleware, userSync, moduleService)
+		registerScannerTemplateRoutes(router, h.ScannerTemplate, authMiddleware, userSync)
 	}
 
 	// Template Source routes (tenant from JWT token)
 	if h.TemplateSource != nil {
-		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync, moduleService)
+		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync)
 	}
 
 	// Secret Store routes (tenant from JWT token)
 	if h.SecretStore != nil {
-		registerSecretStoreRoutes(router, h.SecretStore, authMiddleware, userSync, moduleService)
+		registerSecretStoreRoutes(router, h.SecretStore, authMiddleware, userSync)
 	}
 
 	// Workflow routes (tenant from JWT token)
@@ -377,7 +375,7 @@ func Register(
 
 	// Credential Import routes (tenant from JWT token)
 	if h.CredentialImport != nil {
-		registerCredentialRoutes(router, h.CredentialImport, h.Ingest, authMiddleware, userSync, moduleService)
+		registerCredentialRoutes(router, h.CredentialImport, h.Ingest, authMiddleware, userSync)
 	}
 
 	// Group routes (Access Control - tenant from JWT token)
@@ -402,12 +400,12 @@ func Register(
 
 	// API Key routes (tenant from JWT token)
 	if h.APIKey != nil {
-		registerAPIKeyRoutes(router, h.APIKey, authMiddleware, userSync, moduleService)
+		registerAPIKeyRoutes(router, h.APIKey, authMiddleware, userSync)
 	}
 
 	// Webhook routes (tenant from JWT token)
 	if h.Webhook != nil {
-		registerWebhookRoutes(router, h.Webhook, authMiddleware, userSync, moduleService)
+		registerWebhookRoutes(router, h.Webhook, authMiddleware, userSync)
 	}
 
 	// Notification Outbox routes (tenant from JWT token)

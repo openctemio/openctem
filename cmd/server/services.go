@@ -111,10 +111,7 @@ type Services struct {
 	PermVersion *app.PermissionVersionService
 	PermCache   *app.PermissionCacheService
 
-	// Module Cache
-	ModuleCache *app.ModuleCacheService
-
-	// Module Service (OSS - all modules enabled)
+	// Module Service (OSS - all modules enabled, UI metadata only)
 	Module *app.ModuleService
 
 	// SLA

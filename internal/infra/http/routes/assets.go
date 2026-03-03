@@ -1,10 +1,8 @@
 package routes
 
 import (
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/permission"
 )
 
@@ -15,24 +13,15 @@ import (
 // - Write (POST, PUT): assets:write permission
 // - Delete (DELETE): assets:delete permission
 //
-// Module check: Requires "assets" module to be enabled for the tenant.
-//
 //nolint:dupl // Route registration functions naturally have similar structure
 func registerAssetRoutes(
 	router Router,
 	h *handler.AssetHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build middleware chain with tenant validation from JWT
 	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware if licensing service is available
-	// This ensures tenant has "assets" module enabled
-	if moduleService != nil {
-		middlewares = append(middlewares, middleware.RequireModule(moduleService, module.ModuleAssets))
-	}
 
 	// Asset routes - tenant from JWT token
 	router.Group("/api/v1/assets", func(r Router) {
@@ -71,22 +60,14 @@ func registerAssetRoutes(
 
 // registerComponentRoutes registers component management endpoints.
 // Components are tenant-scoped dependencies/packages (tenant from JWT token).
-//
-// Module check: Requires "assets" module to be enabled (components are sub-module of assets).
 func registerComponentRoutes(
 	router Router,
 	h *handler.ComponentHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build middleware chain with tenant validation from JWT
 	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware - components require assets module
-	if moduleService != nil {
-		middlewares = append(middlewares, middleware.RequireModule(moduleService, module.ModuleAssets))
-	}
 
 	// Component routes - tenant from JWT token
 	router.Group("/api/v1/components", func(r Router) {
@@ -116,22 +97,14 @@ func registerComponentRoutes(
 
 // registerAssetGroupRoutes registers asset group management endpoints.
 // Asset groups are tenant-scoped (tenant from JWT token).
-//
-// Module check: Requires "assets" module to be enabled (asset-groups are part of assets).
 func registerAssetGroupRoutes(
 	router Router,
 	h *handler.AssetGroupHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware - asset groups require assets module
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleAssets))
-	}
 
 	// Asset Group routes - tenant from JWT token
 	router.Group("/api/v1/asset-groups", func(r Router) {
@@ -163,21 +136,14 @@ func registerAssetGroupRoutes(
 
 // registerScopeRoutes registers scope configuration endpoints.
 // Scope configuration includes targets, exclusions, and scan schedules.
-// Module check: Requires "scope" module to be enabled for the tenant.
 func registerScopeRoutes(
 	router Router,
 	h *handler.ScopeHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware if licensing service is available
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleScope))
-	}
 
 	// Scope routes - tenant from JWT token
 	router.Group("/api/v1/scope", func(r Router) {
@@ -354,15 +320,9 @@ func registerAssetServiceRoutes(
 	h *handler.AssetServiceHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware - services require assets module
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleAssets))
-	}
 
 	// Asset Service routes - standalone
 	router.Group("/api/v1/services", func(r Router) {
@@ -394,15 +354,9 @@ func registerAssetRelationshipRoutes(
 	h *handler.AssetRelationshipHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware - relationships require assets module
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleAssets))
-	}
 
 	// Asset-scoped relationship routes
 	router.Group("/api/v1/assets/{id}/relationships", func(r Router) {
@@ -426,15 +380,9 @@ func registerAssetStateHistoryRoutes(
 	h *handler.AssetStateHistoryHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware - state history requires assets module
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleAssets))
-	}
 
 	// State History routes - standalone
 	router.Group("/api/v1/state-history", func(r Router) {

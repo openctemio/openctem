@@ -1,10 +1,8 @@
 package routes
 
 import (
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/permission"
 )
 
@@ -36,111 +34,60 @@ func registerCommandRoutes(
 
 // registerAgentRoutes registers agent API endpoints.
 // These endpoints are authenticated using source API keys (not JWT).
-//
-// Module check: Requires "scans" module to be enabled for ingest/command/scan operations.
-// Heartbeat endpoint is always allowed for agent health monitoring.
 func registerAgentRoutes(
 	router Router,
 	ingestHandler *handler.IngestHandler,
 	commandHandler *handler.CommandHandler,
 	scanSessionHandler *handler.ScanSessionHandler,
-	moduleService *app.ModuleService,
 ) {
-	// Create agent context provider for module middleware
-	agentProvider := middleware.AgentContextProviderFunc(handler.AgentFromContext)
-
-	// Build middleware chain: API key auth + module gating
+	// Build middleware chain: API key auth
 	baseMiddleware := ingestHandler.AuthenticateSource
-
-	// Middleware with scans module check
-	var scansModuleMiddleware Middleware
-	if moduleService != nil {
-		scansModuleMiddleware = middleware.RequireModuleForAgent(
-			moduleService,
-			agentProvider,
-			module.ModuleScans,
-		)
-	}
 
 	// Decompression middleware for ingest endpoints (supports gzip and zstd)
 	decompressMiddleware := middleware.DecompressForIngest()
 
 	// Agent routes - authenticated via API key
 	router.Group("/api/v1/agent", func(r Router) {
-		// Heartbeat - NO module gating (essential for agent health monitoring)
-		// Agents need to report status even if tenant loses access
+		// Heartbeat - essential for agent health monitoring
 		r.POST("/heartbeat", ingestHandler.Heartbeat)
 
-		// Ingest findings/assets - requires "scans" module
+		// Ingest findings/assets
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
 		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
-		if scansModuleMiddleware != nil {
-			r.POST("/ingest", ingestHandler.IngestCTIS, decompressMiddleware, scansModuleMiddleware) // Default: CTIS format
-			r.POST("/ingest/check", ingestHandler.CheckFingerprints, decompressMiddleware, scansModuleMiddleware)
-			r.POST("/ingest/sarif", ingestHandler.IngestSARIF, decompressMiddleware, scansModuleMiddleware)
-			r.POST("/ingest/ctis", ingestHandler.IngestCTIS, decompressMiddleware, scansModuleMiddleware)
-			r.POST("/ingest/recon", ingestHandler.IngestReconReport, decompressMiddleware, scansModuleMiddleware)
-			r.POST("/ingest/chunk", ingestHandler.IngestChunk, decompressMiddleware, scansModuleMiddleware)
-		} else {
-			r.POST("/ingest", ingestHandler.IngestCTIS, decompressMiddleware) // Default: CTIS format
-			r.POST("/ingest/check", ingestHandler.CheckFingerprints, decompressMiddleware)
-			r.POST("/ingest/sarif", ingestHandler.IngestSARIF, decompressMiddleware)
-			r.POST("/ingest/ctis", ingestHandler.IngestCTIS, decompressMiddleware)
-			r.POST("/ingest/recon", ingestHandler.IngestReconReport, decompressMiddleware)
-			r.POST("/ingest/chunk", ingestHandler.IngestChunk, decompressMiddleware)
-		}
+		r.POST("/ingest", ingestHandler.IngestCTIS, decompressMiddleware)
+		r.POST("/ingest/check", ingestHandler.CheckFingerprints, decompressMiddleware)
+		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, decompressMiddleware)
+		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, decompressMiddleware)
+		r.POST("/ingest/recon", ingestHandler.IngestReconReport, decompressMiddleware)
+		r.POST("/ingest/chunk", ingestHandler.IngestChunk, decompressMiddleware)
 
-		// Command polling and status updates - requires "scans" module
-		if scansModuleMiddleware != nil {
-			r.GET("/commands", commandHandler.Poll, scansModuleMiddleware)
-			r.POST("/commands/{id}/acknowledge", commandHandler.Acknowledge, scansModuleMiddleware)
-			r.POST("/commands/{id}/start", commandHandler.Start, scansModuleMiddleware)
-			r.POST("/commands/{id}/complete", commandHandler.Complete, scansModuleMiddleware)
-			r.POST("/commands/{id}/fail", commandHandler.Fail, scansModuleMiddleware)
-		} else {
-			r.GET("/commands", commandHandler.Poll)
-			r.POST("/commands/{id}/acknowledge", commandHandler.Acknowledge)
-			r.POST("/commands/{id}/start", commandHandler.Start)
-			r.POST("/commands/{id}/complete", commandHandler.Complete)
-			r.POST("/commands/{id}/fail", commandHandler.Fail)
-		}
+		// Command polling and status updates
+		r.GET("/commands", commandHandler.Poll)
+		r.POST("/commands/{id}/acknowledge", commandHandler.Acknowledge)
+		r.POST("/commands/{id}/start", commandHandler.Start)
+		r.POST("/commands/{id}/complete", commandHandler.Complete)
+		r.POST("/commands/{id}/fail", commandHandler.Fail)
 
-		// Scan session management - requires "scans" module
+		// Scan session management
 		if scanSessionHandler != nil {
-			if scansModuleMiddleware != nil {
-				r.POST("/scans", scanSessionHandler.RegisterScan, scansModuleMiddleware)
-				r.PATCH("/scans/{id}", scanSessionHandler.UpdateScan, scansModuleMiddleware)
-				r.GET("/scans/{id}", scanSessionHandler.GetScan, scansModuleMiddleware)
-			} else {
-				r.POST("/scans", scanSessionHandler.RegisterScan)
-				r.PATCH("/scans/{id}", scanSessionHandler.UpdateScan)
-				r.GET("/scans/{id}", scanSessionHandler.GetScan)
-			}
+			r.POST("/scans", scanSessionHandler.RegisterScan)
+			r.PATCH("/scans/{id}", scanSessionHandler.UpdateScan)
+			r.GET("/scans/{id}", scanSessionHandler.GetScan)
 		}
 	}, baseMiddleware)
 }
 
 // registerAgentManagementRoutes registers agent management endpoints.
 // Agents are distributed runners, workers, collectors, sensors that execute tasks.
-//
-// Module check: Requires "scans" module to be enabled.
-// Agents are bundled with scans module because scanning requires agents to execute.
-// The number of agents is controlled by the plan's agent_limit field.
 func registerAgentManagementRoutes(
 	router Router,
 	h *handler.AgentHandler,
 	_ interface{}, // analyticsHandler removed in OSS
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware - agents are bundled with scans module
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleScans))
-	}
 
 	// Agent management routes - tenant from JWT token
 	router.Group("/api/v1/agents", func(r Router) {
@@ -224,22 +171,14 @@ func registerPipelineRoutes(
 
 // registerScanProfileRoutes registers scan profile management endpoints.
 // Scan profiles are reusable scan configurations with tool settings.
-//
-// Module check: Requires "scans" module to be enabled (scan profiles are part of scans).
 func registerScanProfileRoutes(
 	router Router,
 	h *handler.ScanProfileHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleScans))
-	}
 
 	// Scan Profile routes - tenant from JWT token
 	router.Group("/api/v1/scan-profiles", func(r Router) {
@@ -413,23 +352,15 @@ func registerCapabilityRoutes(
 
 // registerScanRoutes registers scan management endpoints.
 // Scans bind asset groups with scanners/workflows and schedules.
-//
-// Module check: Requires "scans" module to be enabled.
 func registerScanRoutes(
 	router Router,
 	h *handler.ScanHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 	triggerRateLimiter *middleware.TriggerRateLimiter,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleScans))
-	}
 
 	// Quick scan endpoint - separate from /scans to avoid conflict
 	router.Group("/api/v1/quick-scan", func(r Router) {
@@ -520,22 +451,14 @@ func registerScanSessionRoutes(
 
 // registerScannerTemplateRoutes registers scanner template management endpoints.
 // Scanner templates are custom templates for security tools (Nuclei, Semgrep, Gitleaks).
-//
-// Module check: Requires "scans" module to be enabled (templates are part of scans).
 func registerScannerTemplateRoutes(
 	router Router,
 	h *handler.ScannerTemplateHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleScans))
-	}
 
 	// Scanner Template routes - tenant from JWT token
 	router.Group("/api/v1/scanner-templates", func(r Router) {
@@ -560,22 +483,14 @@ func registerScannerTemplateRoutes(
 
 // registerTemplateSourceRoutes registers template source management endpoints.
 // Template sources are external sources (Git, S3, HTTP) for scanner templates.
-//
-// Module check: Requires "scans" module to be enabled (template sources are part of scans).
 func registerTemplateSourceRoutes(
 	router Router,
 	h *handler.TemplateSourceHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleScans))
-	}
 
 	// Template Source routes - tenant from JWT token
 	router.Group("/api/v1/template-sources", func(r Router) {
@@ -601,22 +516,14 @@ func registerTemplateSourceRoutes(
 // IMPORTANT: This is different from /api/v1/credentials which handles credential LEAKS (exposed passwords).
 // - /api/v1/secret-store: Authentication secrets for template sources (Git tokens, AWS keys, etc.)
 // - /api/v1/credentials: Leaked credentials found during scans (credential exposure management)
-//
-// Module check: Requires "scans" module to be enabled (secrets are part of template scanning).
 func registerSecretStoreRoutes(
 	router Router,
 	h *handler.SecretStoreHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleScans))
-	}
 
 	// Secret store routes - tenant from JWT token
 	// Path: /api/v1/secret-store (NOT /api/v1/credentials which is for credential leaks)
