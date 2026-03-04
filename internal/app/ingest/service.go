@@ -38,6 +38,8 @@ type Service struct {
 	tenantRepo  tenant.Repository
 	auditRepo   audit.Repository
 
+	activityService *app.FindingActivityService
+
 	logger *logger.Logger
 
 	// statsUpdateMu protects concurrent stats updates
@@ -89,6 +91,12 @@ func (s *Service) SetComponentRepository(repo component.Repository) {
 // repository extensions with web_url during asset ingestion.
 func (s *Service) SetRepositoryExtensionRepository(repo asset.RepositoryExtensionRepository) {
 	s.assetProcessor.SetRepositoryExtensionRepository(repo)
+}
+
+// SetActivityService sets the finding activity service for audit trail during ingestion.
+func (s *Service) SetActivityService(activityService *app.FindingActivityService) {
+	s.activityService = activityService
+	s.findingProcessor.SetActivityService(activityService)
 }
 
 // SetFindingCreatedCallback sets the callback for when findings are created.
@@ -194,6 +202,9 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 			"branch", input.GetBranchInfo().Name,
 		)
 
+		// Collect all resolved IDs across assets to batch activity recording
+		var allResolvedIDs []shared.ID
+
 		for _, assetID := range assetMap {
 			// Pass nil for branchID to auto-resolve findings on any default branch.
 			// In the future, we can look up the specific branch and pass its ID.
@@ -212,7 +223,14 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 					"tool_name", toolName,
 					"count", len(resolvedIDs),
 				)
-				// TODO: Create activity records for auto-resolved findings
+				allResolvedIDs = append(allResolvedIDs, resolvedIDs...)
+			}
+		}
+
+		// Record audit trail once for all auto-resolved findings (single batch INSERT)
+		if s.activityService != nil && len(allResolvedIDs) > 0 {
+			if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, allResolvedIDs, toolName, scanID); err != nil {
+				s.logger.Warn("failed to record auto-resolve activities", "error", err)
 			}
 		}
 	} else if s.findingRepo != nil && report.Tool != nil {

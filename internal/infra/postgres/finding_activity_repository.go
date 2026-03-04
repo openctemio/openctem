@@ -82,6 +82,93 @@ func (r *FindingActivityRepository) Create(ctx context.Context, activity *vulner
 	return nil
 }
 
+// activityBatchChunkSize is the maximum number of activities per INSERT to avoid
+// oversized queries and parameter limits (PostgreSQL max 65535 parameters).
+const activityBatchChunkSize = 100
+
+// CreateBatch persists multiple finding activities in chunked INSERTs for performance.
+// This is used for bulk operations like auto-resolve and auto-reopen during ingestion.
+func (r *FindingActivityRepository) CreateBatch(ctx context.Context, activities []*vulnerability.FindingActivity) error {
+	if len(activities) == 0 {
+		return nil
+	}
+
+	for chunkStart := 0; chunkStart < len(activities); chunkStart += activityBatchChunkSize {
+		chunkEnd := chunkStart + activityBatchChunkSize
+		if chunkEnd > len(activities) {
+			chunkEnd = len(activities)
+		}
+		if err := r.insertActivityChunk(ctx, activities[chunkStart:chunkEnd]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// insertActivityChunk performs a single multi-row INSERT for a chunk of activities.
+func (r *FindingActivityRepository) insertActivityChunk(ctx context.Context, activities []*vulnerability.FindingActivity) error {
+	const cols = 10 // number of columns per row
+	valueStrings := make([]string, 0, len(activities))
+	valueArgs := make([]interface{}, 0, len(activities)*cols)
+
+	for i, activity := range activities {
+		changesJSON, err := json.Marshal(activity.Changes())
+		if err != nil {
+			return fmt.Errorf("failed to marshal changes for activity %d: %w", i, err)
+		}
+
+		var sourceMetadataJSON []byte
+		if activity.SourceMetadata() != nil && len(activity.SourceMetadata()) > 0 {
+			sourceMetadataJSON, err = json.Marshal(activity.SourceMetadata())
+			if err != nil {
+				return fmt.Errorf("failed to marshal source metadata for activity %d: %w", i, err)
+			}
+		}
+
+		var actorIDStr sql.NullString
+		if activity.ActorID() != nil {
+			actorIDStr = sql.NullString{String: activity.ActorID().String(), Valid: true}
+		}
+
+		offset := i * cols
+		valueStrings = append(valueStrings, fmt.Sprintf(
+			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			offset+1, offset+2, offset+3, offset+4, offset+5,
+			offset+6, offset+7, offset+8, offset+9, offset+10,
+		))
+		valueArgs = append(valueArgs,
+			activity.ID().String(),
+			activity.TenantID().String(),
+			activity.FindingID().String(),
+			string(activity.ActivityType()),
+			actorIDStr,
+			string(activity.ActorType()),
+			changesJSON,
+			nullString(string(activity.Source())),
+			nullBytes(sourceMetadataJSON),
+			activity.CreatedAt(),
+		)
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO finding_activities (
+			id, tenant_id, finding_id,
+			activity_type, actor_id, actor_type,
+			changes, source, source_metadata,
+			created_at
+		)
+		VALUES %s
+	`, strings.Join(valueStrings, ", "))
+
+	_, err := r.db.ExecContext(ctx, query, valueArgs...)
+	if err != nil {
+		return fmt.Errorf("failed to batch create finding activities: %w", err)
+	}
+
+	return nil
+}
+
 // GetByID retrieves an activity by ID.
 func (r *FindingActivityRepository) GetByID(ctx context.Context, id shared.ID) (*vulnerability.FindingActivity, error) {
 	query := r.selectQuery() + " WHERE fa.id = $1"
