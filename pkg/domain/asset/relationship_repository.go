@@ -31,6 +31,10 @@ type RelationshipRepository interface {
 
 	// CountByAsset returns the count of relationships for an asset.
 	CountByAsset(ctx context.Context, tenantID, assetID shared.ID) (int64, error)
+
+	// CreateBatchIgnoreConflicts inserts multiple relationships, silently skipping duplicates.
+	// Returns the number of relationships actually created (excluding conflicts).
+	CreateBatchIgnoreConflicts(ctx context.Context, rels []*Relationship) (int, error)
 }
 
 // RelationshipFilter defines filtering options for relationship queries.

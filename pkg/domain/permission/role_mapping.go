@@ -22,7 +22,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ComponentsRead, ComponentsWrite, ComponentsDelete,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
-		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate,
+		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
@@ -81,7 +81,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ComponentsRead, ComponentsWrite, ComponentsDelete,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
-		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate,
+		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,

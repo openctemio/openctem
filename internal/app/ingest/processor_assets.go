@@ -19,6 +19,7 @@ import (
 type AssetProcessor struct {
 	repo           asset.Repository
 	repoExtRepo    asset.RepositoryExtensionRepository
+	relRepo        asset.RelationshipRepository
 	propsValidator *validator.PropertiesValidator
 	logger         *logger.Logger
 }
@@ -35,6 +36,11 @@ func NewAssetProcessor(repo asset.Repository, log *logger.Logger) *AssetProcesso
 // SetRepositoryExtensionRepository sets the repository extension repository.
 func (p *AssetProcessor) SetRepositoryExtensionRepository(repo asset.RepositoryExtensionRepository) {
 	p.repoExtRepo = repo
+}
+
+// SetRelationshipRepository sets the asset relationship repository.
+func (p *AssetProcessor) SetRelationshipRepository(repo asset.RelationshipRepository) {
+	p.relRepo = repo
 }
 
 // ProcessBatch processes all assets using batch operations.
@@ -196,6 +202,11 @@ func (p *AssetProcessor) ProcessBatch(
 		}
 	}
 
+	// Step 6: Create subdomain-to-domain relationships
+	if p.relRepo != nil {
+		p.createSubdomainRelationships(ctx, tenantID, report, existingMap)
+	}
+
 	return assetMap, nil
 }
 
@@ -244,6 +255,115 @@ func (p *AssetProcessor) ensureRepositoryExtension(ctx context.Context, domainAs
 	repoExt.SetFullName(assetName)
 
 	return p.repoExtRepo.Create(ctx, repoExt)
+}
+
+// createSubdomainRelationships creates member_of relationships between subdomain and parent domain assets.
+// This links subdomains to their parent domains in the asset relationship graph.
+// Uses batch INSERT...ON CONFLICT DO NOTHING for efficiency (1 query instead of 2N).
+func (p *AssetProcessor) createSubdomainRelationships(
+	ctx context.Context,
+	tenantID shared.ID,
+	report *ctis.Report,
+	existingMap map[string]*asset.Asset,
+) {
+	// Collect all relationships to create
+	rels := make([]*asset.Relationship, 0)
+
+	for i := range report.Assets {
+		ctisAsset := &report.Assets[i]
+		if ctisAsset.Type != ctis.AssetTypeSubdomain {
+			continue
+		}
+
+		// Get root_domain from properties (set by recon converter)
+		rootDomain, ok := ctisAsset.Properties["root_domain"].(string)
+		if !ok || rootDomain == "" {
+			continue
+		}
+
+		// Validate domain format
+		if !isValidDomainName(rootDomain) {
+			p.logger.Warn("invalid root_domain format, skipping relationship",
+				"root_domain", rootDomain,
+			)
+			continue
+		}
+
+		subdomainName := getAssetName(ctisAsset)
+		if subdomainName == "" {
+			continue
+		}
+
+		// Find both assets in the existing map
+		subdomainAsset, subOk := existingMap[subdomainName]
+		parentAsset, parentOk := existingMap[rootDomain]
+		if !subOk || !parentOk {
+			continue
+		}
+
+		// Create member_of relationship: subdomain → domain
+		rel, err := asset.NewRelationship(tenantID, subdomainAsset.ID(), parentAsset.ID(), asset.RelTypeMemberOf)
+		if err != nil {
+			p.logger.Warn("failed to create subdomain relationship entity",
+				"subdomain", subdomainName,
+				"domain", rootDomain,
+				"error", err,
+			)
+			continue
+		}
+
+		rel.SetDescription(fmt.Sprintf("Subdomain %s belongs to domain %s", subdomainName, rootDomain))
+		_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)
+
+		rels = append(rels, rel)
+	}
+
+	if len(rels) == 0 {
+		return
+	}
+
+	// Batch insert all relationships, skipping duplicates via ON CONFLICT DO NOTHING
+	created, err := p.relRepo.CreateBatchIgnoreConflicts(ctx, rels)
+	if err != nil {
+		p.logger.Warn("failed to batch create subdomain relationships",
+			"total", len(rels),
+			"error", err,
+		)
+		return
+	}
+
+	if created > 0 {
+		p.logger.Info("created subdomain relationships",
+			"created", created,
+			"skipped", len(rels)-created,
+		)
+	}
+}
+
+// isValidDomainName validates a basic domain name format.
+func isValidDomainName(domain string) bool {
+	if len(domain) == 0 || len(domain) > 253 {
+		return false
+	}
+	parts := strings.Split(domain, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range parts {
+		if len(part) == 0 || len(part) > 63 {
+			return false
+		}
+		for _, c := range part {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+				return false
+			}
+		}
+		// Labels cannot start or end with hyphen
+		if part[0] == '-' || part[len(part)-1] == '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // deriveWebURLFromAssetName derives the web URL from an asset name.

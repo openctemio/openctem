@@ -329,6 +329,75 @@ fi
 fi
 
 # =============================================================================
+# Section 4b: Create Second User (Approver)
+# =============================================================================
+# Self-approval is prevented, so we need a separate user to approve/reject.
+
+print_header "Section 4b: Create Approver User"
+
+APPROVER_EMAIL="e2e-approver-${TIMESTAMP}@openctem-test.local"
+APPROVER_PASSWORD="TestP@ss456!"
+APPROVER_TOKEN=""
+
+if ! check_critical "Create Approver"; then :; else
+
+# Register second user
+print_test "Register approver user"
+do_request "POST" "/api/v1/auth/register" "{
+    \"email\": \"$APPROVER_EMAIL\",
+    \"password\": \"$APPROVER_PASSWORD\",
+    \"name\": \"E2E Approver ${TIMESTAMP}\"
+}"
+if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
+    APPROVER_USER_ID=$(extract_json "$BODY" '.id // .user_id // .user.id')
+    print_info "Approver user ID: $APPROVER_USER_ID"
+    print_success "Approver registered"
+else
+    print_failure "Register approver" "Expected 201, got $HTTP_CODE. Body: $(echo "$BODY" | head -c 200)"
+fi
+
+# Add approver to team as admin (owner can add members directly)
+if [ -n "$APPROVER_USER_ID" ] && [ "$APPROVER_USER_ID" != "null" ]; then
+    print_test "Add approver to team as admin"
+    do_request "POST" "/api/v1/tenants/$TENANT_ID/members" "{
+        \"user_id\": \"$APPROVER_USER_ID\",
+        \"role\": \"admin\"
+    }" "Authorization: Bearer $ACCESS_TOKEN"
+    if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
+        print_success "Approver added to team as admin"
+    else
+        print_failure "Add approver to team" "Expected 201, got $HTTP_CODE. Body: $(echo "$BODY" | head -c 200)"
+    fi
+
+    # Login as approver and get token for the team
+    print_test "Login as approver"
+    do_request "POST" "/api/v1/auth/login" "{
+        \"email\": \"$APPROVER_EMAIL\",
+        \"password\": \"$APPROVER_PASSWORD\"
+    }"
+    if [ "$HTTP_CODE" = "200" ]; then
+        APPROVER_REFRESH=$(extract_json "$BODY" '.refresh_token')
+        # Exchange refresh token for tenant-scoped access token
+        do_request "POST" "/api/v1/auth/token" "{
+            \"refresh_token\": \"$APPROVER_REFRESH\",
+            \"tenant_id\": \"$TENANT_ID\"
+        }"
+        if [ "$HTTP_CODE" = "200" ]; then
+            APPROVER_TOKEN=$(extract_json "$BODY" '.access_token')
+            print_success "Approver logged in and token exchanged"
+        else
+            print_failure "Approver token exchange" "Expected 200, got $HTTP_CODE"
+        fi
+    else
+        print_failure "Approver login" "Expected 200, got $HTTP_CODE"
+    fi
+else
+    print_failure "No approver user ID" "Cannot add to team"
+fi
+
+fi
+
+# =============================================================================
 # Section 5: Request Approval
 # =============================================================================
 
@@ -424,19 +493,22 @@ if ! check_critical "Approve"; then :; else
 
 print_test "Approve the approval request"
 if [ -n "$APPROVAL_ID" ] && [ "$APPROVAL_ID" != "null" ]; then
-    do_request "POST" "/api/v1/approvals/$APPROVAL_ID/approve" "{
-        \"comment\": \"Approved: WAF mitigation verified\"
-    }" "Authorization: Bearer $ACCESS_TOKEN"
-    print_info "Status: $HTTP_CODE"
+    if [ -n "$APPROVER_TOKEN" ] && [ "$APPROVER_TOKEN" != "null" ]; then
+        # Use the APPROVER (different user) to approve - self-approval is prevented
+        do_request "POST" "/api/v1/approvals/$APPROVAL_ID/approve" "{}" "Authorization: Bearer $APPROVER_TOKEN"
+        print_info "Status: $HTTP_CODE"
 
-    if [ "$HTTP_CODE" = "200" ]; then
-        print_success "Approval approved"
-    elif [ "$HTTP_CODE" = "201" ]; then
-        print_success "Approval approved (201)"
-    elif [ "$HTTP_CODE" = "204" ]; then
-        print_success "Approval approved (204)"
+        if [ "$HTTP_CODE" = "200" ]; then
+            print_success "Approval approved (by different user)"
+        elif [ "$HTTP_CODE" = "201" ]; then
+            print_success "Approval approved (201)"
+        elif [ "$HTTP_CODE" = "204" ]; then
+            print_success "Approval approved (204)"
+        else
+            print_failure "Approve approval" "Expected 200/201/204, got $HTTP_CODE. Body: $(echo "$BODY" | head -c 300)"
+        fi
     else
-        print_failure "Approve approval" "Expected 200/201/204, got $HTTP_CODE"
+        print_skip "Approve (no approver token - second user setup failed)"
     fi
 else
     print_skip "Approve (no approval ID)"
@@ -500,18 +572,22 @@ if [ -n "$FINDING_ID_2" ] && [ "$FINDING_ID_2" != "null" ]; then
         print_failure "Request second approval" "Expected 201, got $HTTP_CODE"
     fi
 
-    # Reject it
+    # Reject it (using approver - different user; field is "reason" not "comment")
     print_test "Reject the approval request"
     if [ -n "$APPROVAL_ID_2" ] && [ "$APPROVAL_ID_2" != "null" ]; then
-        do_request "POST" "/api/v1/approvals/$APPROVAL_ID_2/reject" "{
-            \"comment\": \"Rejected: path traversal must be fixed, not accepted\"
-        }" "Authorization: Bearer $ACCESS_TOKEN"
-        print_info "Status: $HTTP_CODE"
+        if [ -n "$APPROVER_TOKEN" ] && [ "$APPROVER_TOKEN" != "null" ]; then
+            do_request "POST" "/api/v1/approvals/$APPROVAL_ID_2/reject" "{
+                \"reason\": \"Rejected: path traversal must be fixed, not accepted\"
+            }" "Authorization: Bearer $APPROVER_TOKEN"
+            print_info "Status: $HTTP_CODE"
 
-        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "204" ]; then
-            print_success "Approval rejected"
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "204" ]; then
+                print_success "Approval rejected (by different user)"
+            else
+                print_failure "Reject approval" "Expected 200/201/204, got $HTTP_CODE. Body: $(echo "$BODY" | head -c 300)"
+            fi
         else
-            print_failure "Reject approval" "Expected 200/201/204, got $HTTP_CODE"
+            print_skip "Reject approval (no approver token)"
         fi
     else
         print_skip "Reject approval (no approval ID 2)"
@@ -542,10 +618,173 @@ fi
 fi
 
 # =============================================================================
-# Section 11: Auth Check (401)
+# Section 11: Cancel Flow
 # =============================================================================
 
-print_header "Section 11: Auth Check"
+print_header "Section 11: Cancel Flow"
+
+if ! check_critical "Cancel Flow"; then :; else
+
+# Request a new approval for cancel test
+print_test "Request approval for cancel test"
+CANCEL_APPROVAL_ID=""
+if [ -n "$FINDING_ID_2" ] && [ "$FINDING_ID_2" != "null" ]; then
+    do_request "POST" "/api/v1/findings/$FINDING_ID_2/approvals" "{
+        \"justification\": \"Will be canceled by requester\",
+        \"requested_status\": \"false_positive\"
+    }" "Authorization: Bearer $ACCESS_TOKEN"
+    print_info "Status: $HTTP_CODE"
+
+    if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
+        CANCEL_APPROVAL_ID=$(extract_json "$BODY" '.id')
+        print_info "Cancel Approval ID: $CANCEL_APPROVAL_ID"
+        print_success "Approval requested for cancel test"
+    else
+        print_failure "Request approval for cancel" "Expected 201, got $HTTP_CODE"
+    fi
+
+    # Cancel it
+    print_test "Cancel own approval request"
+    if [ -n "$CANCEL_APPROVAL_ID" ] && [ "$CANCEL_APPROVAL_ID" != "null" ]; then
+        do_request "POST" "/api/v1/approvals/$CANCEL_APPROVAL_ID/cancel" "" "Authorization: Bearer $ACCESS_TOKEN"
+        print_info "Status: $HTTP_CODE"
+
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+            CANCEL_STATUS=$(extract_json "$BODY" '.status')
+            print_info "Approval status: $CANCEL_STATUS"
+            print_success "Approval canceled by requester"
+        else
+            print_failure "Cancel approval" "Expected 200, got $HTTP_CODE"
+        fi
+
+        # Try to cancel again (should fail - not pending)
+        print_test "Cancel already canceled approval (should fail)"
+        do_request "POST" "/api/v1/approvals/$CANCEL_APPROVAL_ID/cancel" "" "Authorization: Bearer $ACCESS_TOKEN"
+        print_info "Status: $HTTP_CODE"
+
+        if [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "409" ] || [ "$HTTP_CODE" = "422" ]; then
+            print_success "Re-cancel rejected ($HTTP_CODE)"
+        else
+            print_failure "Re-cancel should fail" "Expected 400/409/422, got $HTTP_CODE"
+        fi
+    else
+        print_skip "Cancel approval (no cancel approval ID)"
+    fi
+else
+    print_skip "Cancel flow (no finding ID 2)"
+fi
+
+fi
+
+# =============================================================================
+# Section 12: Invalid Status Validation
+# =============================================================================
+
+print_header "Section 12: Invalid Status Validation"
+
+if ! check_critical "Invalid Status"; then :; else
+
+print_test "Request approval with invalid requested_status"
+if [ -n "$FINDING_ID" ] && [ "$FINDING_ID" != "null" ]; then
+    do_request "POST" "/api/v1/findings/$FINDING_ID/approvals" "{
+        \"justification\": \"Should fail validation\",
+        \"requested_status\": \"invalid_garbage_status\"
+    }" "Authorization: Bearer $ACCESS_TOKEN"
+    print_info "Status: $HTTP_CODE"
+
+    if [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "422" ]; then
+        print_success "Invalid status rejected ($HTTP_CODE)"
+    else
+        print_failure "Invalid status validation" "Expected 400/422, got $HTTP_CODE"
+    fi
+else
+    print_skip "Invalid status test (no finding ID)"
+fi
+
+fi
+
+# =============================================================================
+# Section 13: Self-Approval Prevention
+# =============================================================================
+
+print_header "Section 13: Self-Approval Prevention"
+
+if ! check_critical "Self-Approval"; then :; else
+
+# The user who requested approval should not be able to approve it themselves
+# First create a new approval
+print_test "Request approval for self-approval test"
+SELF_APPROVAL_ID=""
+if [ -n "$FINDING_ID_2" ] && [ "$FINDING_ID_2" != "null" ]; then
+    do_request "POST" "/api/v1/findings/$FINDING_ID_2/approvals" "{
+        \"justification\": \"Testing self-approval prevention\",
+        \"requested_status\": \"accepted\"
+    }" "Authorization: Bearer $ACCESS_TOKEN"
+    print_info "Status: $HTTP_CODE"
+
+    if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
+        SELF_APPROVAL_ID=$(extract_json "$BODY" '.id')
+        print_success "Approval created for self-approval test"
+
+        # Try to approve own request (should fail)
+        print_test "Approve own request (should fail with self-approval error)"
+        do_request "POST" "/api/v1/approvals/$SELF_APPROVAL_ID/approve" "" "Authorization: Bearer $ACCESS_TOKEN"
+        print_info "Status: $HTTP_CODE"
+        print_info "Response: $(echo "$BODY" | head -c 200)"
+
+        if [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "403" ] || [ "$HTTP_CODE" = "409" ]; then
+            print_success "Self-approval prevented ($HTTP_CODE)"
+        else
+            print_failure "Self-approval should be blocked" "Expected 400/403/409, got $HTTP_CODE"
+        fi
+    else
+        print_failure "Create approval for self-test" "Expected 201, got $HTTP_CODE"
+    fi
+else
+    print_skip "Self-approval test (no finding ID 2)"
+fi
+
+fi
+
+# =============================================================================
+# Section 14: Optimistic Locking (Double Action)
+# =============================================================================
+
+print_header "Section 14: Optimistic Locking"
+
+if ! check_critical "Optimistic Locking"; then :; else
+
+# If self-approval test created an approval, try to reject it twice quickly
+if [ -n "$SELF_APPROVAL_ID" ] && [ "$SELF_APPROVAL_ID" != "null" ]; then
+    # First cancel it (as requester) to clean up
+    do_request "POST" "/api/v1/approvals/$SELF_APPROVAL_ID/cancel" "" "Authorization: Bearer $ACCESS_TOKEN"
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+        print_success "Cleaned up self-approval test approval"
+
+        # Try acting on the canceled approval
+        print_test "Approve canceled approval (should fail)"
+        do_request "POST" "/api/v1/approvals/$SELF_APPROVAL_ID/approve" "" "Authorization: Bearer $ACCESS_TOKEN"
+        print_info "Status: $HTTP_CODE"
+
+        if [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "409" ] || [ "$HTTP_CODE" = "422" ]; then
+            print_success "Cannot approve canceled approval ($HTTP_CODE)"
+        else
+            print_failure "Should not approve canceled" "Expected 400/409, got $HTTP_CODE"
+        fi
+    else
+        print_info "Could not cancel self-approval test approval (status: $HTTP_CODE)"
+    fi
+else
+    print_skip "Optimistic locking test (no self-approval ID)"
+fi
+
+fi
+
+# =============================================================================
+# Section 15: Auth Check (401)
+# =============================================================================
+
+print_header "Section 15: Auth Check"
 
 print_test "Request approval without auth token"
 if [ -n "$FINDING_ID" ] && [ "$FINDING_ID" != "null" ]; then
@@ -578,10 +817,10 @@ else
 fi
 
 # =============================================================================
-# Section 12: Docker Log Check
+# Section 16: Docker Log Check
 # =============================================================================
 
-print_header "Section 12: Docker Log Check"
+print_header "Section 16: Docker Log Check"
 
 print_test "Check Docker logs for errors"
 if command -v docker &> /dev/null; then

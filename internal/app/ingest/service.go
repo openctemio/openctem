@@ -93,6 +93,12 @@ func (s *Service) SetRepositoryExtensionRepository(repo asset.RepositoryExtensio
 	s.assetProcessor.SetRepositoryExtensionRepository(repo)
 }
 
+// SetRelationshipRepository sets the asset relationship repository for creating
+// subdomain-to-domain relationships during asset ingestion.
+func (s *Service) SetRelationshipRepository(repo asset.RelationshipRepository) {
+	s.assetProcessor.SetRelationshipRepository(repo)
+}
+
 // SetActivityService sets the finding activity service for audit trail during ingestion.
 func (s *Service) SetActivityService(activityService *app.FindingActivityService) {
 	s.activityService = activityService

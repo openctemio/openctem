@@ -167,23 +167,24 @@ type approvalScanner interface {
 
 func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*vulnerability.Approval, error) {
 	var (
-		a              vulnerability.Approval
-		id             string
-		tenantID       string
-		findingID      string
-		requestedBy    string
-		approvedBy     *string
-		approvedAt     *time.Time
-		rejectedBy     *string
-		rejectedAt     *time.Time
-		status         string
-		expiresAt      *time.Time
+		a               vulnerability.Approval
+		id              string
+		tenantID        string
+		findingID       string
+		requestedBy     string
+		approvedBy      *string
+		approvedAt      *time.Time
+		rejectedBy      *string
+		rejectedAt      *time.Time
+		rejectionReason *string
+		status          string
+		expiresAt       *time.Time
 	)
 
 	err := scanner.Scan(
 		&id, &tenantID, &findingID, &a.RequestedStatus, &requestedBy,
 		&a.Justification, &approvedBy, &approvedAt, &rejectedBy, &rejectedAt,
-		&a.RejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version,
+		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -208,6 +209,9 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 	if rejectedBy != nil {
 		rid, _ := shared.IDFromString(*rejectedBy)
 		a.RejectedBy = &rid
+	}
+	if rejectionReason != nil {
+		a.RejectionReason = *rejectionReason
 	}
 
 	return &a, nil

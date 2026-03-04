@@ -268,6 +268,67 @@ func (r *AssetRelationshipRepository) CountByAsset(ctx context.Context, tenantID
 	return count, nil
 }
 
+// CreateBatchIgnoreConflicts inserts multiple relationships, silently skipping duplicates.
+func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Context, rels []*asset.Relationship) (int, error) {
+	if len(rels) == 0 {
+		return 0, nil
+	}
+
+	query := `
+		INSERT INTO asset_relationships (
+			id, tenant_id, source_asset_id, target_asset_id,
+			relationship_type, description, confidence, discovery_method,
+			impact_weight, tags, last_verified, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		ON CONFLICT (tenant_id, source_asset_id, target_asset_id, relationship_type) DO NOTHING
+	`
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.PrepareContext(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	created := 0
+	for _, rel := range rels {
+		result, err := stmt.ExecContext(ctx,
+			rel.ID().String(),
+			rel.TenantID().String(),
+			rel.SourceAssetID().String(),
+			rel.TargetAssetID().String(),
+			rel.Type().String(),
+			nullString(rel.Description()),
+			rel.Confidence().String(),
+			rel.DiscoveryMethod().String(),
+			rel.ImpactWeight(),
+			pq.Array(rel.Tags()),
+			rel.LastVerified(),
+			rel.CreatedAt(),
+			rel.UpdatedAt(),
+		)
+		if err != nil {
+			return created, fmt.Errorf("failed to insert relationship: %w", err)
+		}
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected > 0 {
+			created++
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return created, nil
+}
+
 // =============================================================================
 // Internal helpers
 // =============================================================================
