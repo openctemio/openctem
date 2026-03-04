@@ -269,6 +269,21 @@ func registerAPIKeyRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerPlatformStatsRoutes registers platform stats endpoints.
+// These are tenant-scoped routes for viewing platform agent statistics.
+func registerPlatformStatsRoutes(
+	router Router,
+	h *handler.PlatformStatsHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/platform", func(r Router) {
+		r.GET("/stats", h.GetStats)
+	}, tenantMiddlewares...)
+}
+
 // registerWebhookRoutes registers webhook management routes.
 func registerWebhookRoutes(
 	router Router,

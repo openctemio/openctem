@@ -109,6 +109,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
 		Capability:      handler.NewCapabilityHandler(svc.Capability, v, log),
 		Scan:            handler.NewScanHandler(svc.Scan, repos.User, v, log),
+		CI:              handler.NewCIHandler(svc.Scan, log),
 		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
 
 		// Workflows
@@ -158,6 +159,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log),
 		AdminAudit:         handler.NewAdminAuditHandler(repos.AdminAuditLog, log),
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
+
+		// Platform Stats (tenant-scoped platform agent statistics)
+		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log),

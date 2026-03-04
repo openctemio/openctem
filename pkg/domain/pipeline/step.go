@@ -84,8 +84,9 @@ type Step struct {
 	UIPosition UIPosition
 
 	// Tool requirements
-	Tool         string   // Preferred tool (optional)
-	Capabilities []string // Required capabilities
+	Tool         string     // Preferred tool name (optional)
+	ToolID       *shared.ID // Preferred tool ID (FK reference to tools table, optional)
+	Capabilities []string   // Required capabilities
 
 	// Configuration
 	Config         map[string]any
@@ -144,6 +145,11 @@ func NewStep(
 // SetTool sets the preferred tool for the step.
 func (s *Step) SetTool(tool string) {
 	s.Tool = tool
+}
+
+// SetToolID sets the preferred tool ID (FK reference to tools table).
+func (s *Step) SetToolID(id *shared.ID) {
+	s.ToolID = id
 }
 
 // SetConfig sets the step configuration.
@@ -236,6 +242,7 @@ func (s *Step) Clone() *Step {
 		StepOrder:         s.StepOrder,
 		UIPosition:        s.UIPosition,
 		Tool:              s.Tool,
+		ToolID:            s.ToolID,
 		Capabilities:      make([]string, len(s.Capabilities)),
 		Config:            make(map[string]any),
 		TimeoutSeconds:    s.TimeoutSeconds,

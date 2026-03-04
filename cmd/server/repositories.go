@@ -29,6 +29,7 @@ type Repositories struct {
 	Vulnerability    *postgres.VulnerabilityRepository
 	Finding          *postgres.FindingRepository
 	FindingComment   *postgres.FindingCommentRepository
+	FindingApproval  *postgres.FindingApprovalRepository
 	FindingActivity  *postgres.FindingActivityRepository
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
 	DataFlow         *postgres.DataFlowRepository              // Data flow traces for taint tracking
@@ -138,6 +139,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Vulnerability:    postgres.NewVulnerabilityRepository(db),
 		Finding:          postgres.NewFindingRepository(db),
 		FindingComment:   postgres.NewFindingCommentRepository(db),
+		FindingApproval:  postgres.NewFindingApprovalRepository(db),
 		FindingActivity:  postgres.NewFindingActivityRepository(db),
 		AITriage:         postgres.NewAITriageRepository(db),              // AI-powered vulnerability triage
 		DataFlow:         postgres.NewDataFlowRepository(db),              // Data flow traces

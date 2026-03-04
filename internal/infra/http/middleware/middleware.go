@@ -197,12 +197,18 @@ func RecoveryWithConfig(log *logger.Logger, isProduction bool) func(http.Handler
 	}
 }
 
-// CORS adds CORS headers based on configuration.
-func CORS(cfg *config.CORSConfig) func(http.Handler) http.Handler {
-	allowedOrigins := make(map[string]bool)
+// CORSWithEnvironment creates a CORS middleware that enforces environment-specific rules.
+// In production (APP_ENV=production), wildcard "*" origins are rejected at config validation.
+// This function adds runtime enforcement as a defense-in-depth measure.
+func CORSWithEnvironment(cfg *config.CORSConfig, appEnv string) func(http.Handler) http.Handler {
+	allowedOrigins := make(map[string]bool, len(cfg.AllowedOrigins))
 	allowAllOrigins := false
 	for _, origin := range cfg.AllowedOrigins {
 		if origin == "*" {
+			// In production, never allow wildcard even if it slips through validation
+			if appEnv == config.EnvProduction {
+				continue
+			}
 			allowAllOrigins = true
 		}
 		allowedOrigins[origin] = true
@@ -230,6 +236,7 @@ func CORS(cfg *config.CORSConfig) func(http.Handler) http.Handler {
 
 			w.Header().Set("Access-Control-Allow-Methods", methods)
 			w.Header().Set("Access-Control-Allow-Headers", headers)
+			w.Header().Set("Access-Control-Expose-Headers", "X-Permission-Stale, X-Request-ID")
 			w.Header().Set("Access-Control-Max-Age", maxAge)
 
 			if r.Method == http.MethodOptions {
@@ -240,4 +247,10 @@ func CORS(cfg *config.CORSConfig) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// CORS adds CORS headers based on configuration.
+// Deprecated: Use CORSWithEnvironment for production-safe CORS handling.
+func CORS(cfg *config.CORSConfig) func(http.Handler) http.Handler {
+	return CORSWithEnvironment(cfg, "")
 }

@@ -46,6 +46,9 @@ func registerAgentRoutes(
 	// Decompression middleware for ingest endpoints (supports gzip and zstd)
 	decompressMiddleware := middleware.DecompressForIngest()
 
+	// Ingest body limit: 50MB for large scan reports (overrides global 10MB limit)
+	ingestBodyLimit := middleware.BodyLimit(middleware.IngestMaxBodySize)
+
 	// Agent routes - authenticated via API key
 	router.Group("/api/v1/agent", func(r Router) {
 		// Heartbeat - essential for agent health monitoring
@@ -54,12 +57,13 @@ func registerAgentRoutes(
 		// Ingest findings/assets
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
 		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
-		r.POST("/ingest", ingestHandler.IngestCTIS, decompressMiddleware)
-		r.POST("/ingest/check", ingestHandler.CheckFingerprints, decompressMiddleware)
-		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, decompressMiddleware)
-		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, decompressMiddleware)
-		r.POST("/ingest/recon", ingestHandler.IngestReconReport, decompressMiddleware)
-		r.POST("/ingest/chunk", ingestHandler.IngestChunk, decompressMiddleware)
+		// Ingest endpoints use a 50MB body limit (vs 10MB default) for large scan reports
+		r.POST("/ingest", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware)
+		r.POST("/ingest/check", ingestHandler.CheckFingerprints, ingestBodyLimit, decompressMiddleware)
+		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, ingestBodyLimit, decompressMiddleware)
+		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware)
+		r.POST("/ingest/recon", ingestHandler.IngestReconReport, ingestBodyLimit, decompressMiddleware)
+		r.POST("/ingest/chunk", ingestHandler.IngestChunk, ingestBodyLimit, decompressMiddleware)
 
 		// Command polling and status updates
 		r.GET("/commands", commandHandler.Poll)
@@ -355,6 +359,7 @@ func registerCapabilityRoutes(
 func registerScanRoutes(
 	router Router,
 	h *handler.ScanHandler,
+	ciHandler *handler.CIHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	triggerRateLimiter *middleware.TriggerRateLimiter,
@@ -388,6 +393,9 @@ func registerScanRoutes(
 		r.POST("/bulk/disable", h.BulkDisable, middleware.Require(permission.ScansWrite))
 		r.POST("/bulk/delete", h.BulkDelete, middleware.Require(permission.ScansDelete))
 
+		// Import scan config (must be before /{id} to avoid matching)
+		r.POST("/import", h.ImportConfig, middleware.Require(permission.ScansWrite))
+
 		// Read operations
 		r.GET("/", h.ListScans, middleware.Require(permission.ScansRead))
 		r.GET("/{id}", h.GetScan, middleware.Require(permission.ScansRead))
@@ -410,6 +418,14 @@ func registerScanRoutes(
 
 		// Clone scan
 		r.POST("/{id}/clone", h.CloneScan, middleware.Require(permission.ScansWrite))
+
+		// Export scan config
+		r.GET("/{id}/export", h.ExportConfig, middleware.Require(permission.ScansRead))
+
+		// CI/CD snippet generation
+		if ciHandler != nil {
+			r.GET("/{id}/ci-snippet", ciHandler.GenerateSnippet, middleware.Require(permission.ScansRead))
+		}
 
 		// Scan runs sub-resource
 		r.GET("/{id}/runs", h.ListScanRuns, middleware.Require(permission.ScansRead))

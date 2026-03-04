@@ -62,14 +62,15 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 
 	// Apply global middleware (order matters!)
 	s.router.Use(
-		middleware.RecoveryWithConfig(log, cfg.IsProduction()), // Recover from panics (no stack trace in prod)
-		middleware.RequestID(),                                 // Add request ID early
-		middleware.SecurityHeadersWithConfig(securityCfg),      // Security headers with HSTS
-		middleware.CORS(&cfg.CORS),                             // CORS with config
-		middleware.BodyLimit(cfg.Server.MaxBodySize),           // Limit request body size
-		rateLimitMw, // Rate limiting
-		middleware.Timeout(cfg.Server.RequestTimeout), // Per-request timeout
-		middleware.Metrics(),                          // Prometheus metrics
+		middleware.RecoveryWithConfig(log, cfg.IsProduction()),          // Recover from panics (no stack trace in prod)
+		middleware.ConcurrencyLimit(cfg.Server.MaxConcurrentRequests),   // Limit concurrent requests
+		middleware.RequestID(),                                          // Add request ID early
+		middleware.SecurityHeadersWithConfig(securityCfg),               // Security headers with HSTS
+		middleware.CORSWithEnvironment(&cfg.CORS, cfg.App.Env),         // CORS with environment-aware config
+		middleware.BodyLimit(cfg.Server.MaxBodySize),                    // Limit request body size (10MB default)
+		rateLimitMw,                                                    // Rate limiting
+		middleware.Timeout(cfg.Server.RequestTimeout),                  // Per-request timeout
+		middleware.Metrics(),                                           // Prometheus metrics
 		middleware.LoggerWithConfig(log, middleware.LoggerConfig{
 			SkipPaths:            middleware.DefaultLoggerConfig().SkipPaths,
 			SkipSuccessful:       false, // Log all requests by default

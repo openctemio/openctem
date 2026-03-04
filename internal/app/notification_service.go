@@ -286,6 +286,20 @@ func (s *NotificationService) getNotificationIntegrationsForTenant(ctx context.C
 }
 
 // shouldSendToIntegration checks if a notification should be sent to an integration.
+// It evaluates severity filters, event type filters, and (future) group-based routing.
+//
+// Group-based notification routing (planned):
+// When a finding is assigned to groups via assignment rules, notifications can be
+// routed to group-specific channels based on the group's NotificationConfig.
+// The NotificationConfig on each group specifies:
+//   - SlackChannel: which Slack channel to notify
+//   - NotifyCritical/High/Medium/Low: severity-based filtering
+//   - NotifySLAWarn/SLABreach: SLA event filtering
+//   - WeeklyDigest: whether to include in weekly digest
+//
+// To implement group-based routing, the outbox entry's metadata should include
+// the target group IDs, and this method should cross-reference the group's
+// notification config with the integration's channel configuration.
 func (s *NotificationService) shouldSendToIntegration(intg *integration.IntegrationWithNotification, entry *notification.Outbox) bool {
 	ext := intg.Notification
 	if ext == nil {

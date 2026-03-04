@@ -1,6 +1,9 @@
 package routes
 
 import (
+	"time"
+
+	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/permission"
@@ -23,6 +26,15 @@ func registerGroupRoutes(
 		// List and create groups
 		r.GET("/", h.ListGroups, middleware.Require(permission.GroupsRead))
 		r.POST("/", h.CreateGroup, middleware.Require(permission.GroupsWrite))
+
+		// Manual group sync trigger (rate limited: 5 req/min per user)
+		syncRL := middleware.NewRateLimiter(&config.RateLimitConfig{
+			Enabled:         true,
+			RequestsPerSec:  5.0 / 60.0, // 5 requests per minute
+			Burst:           2,
+			CleanupInterval: 5 * time.Minute,
+		}, nil)
+		r.POST("/sync", h.TriggerSync, middleware.Require(permission.GroupsWrite), syncRL.Middleware())
 
 		// Single group operations
 		r.GET("/{groupId}", h.GetGroup, middleware.Require(permission.GroupsRead))

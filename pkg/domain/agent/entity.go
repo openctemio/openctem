@@ -523,6 +523,28 @@ func (a *Agent) CanExecutePlatformJob(capabilities []string, tool, preferredRegi
 	return true
 }
 
+// =============================================================================
+// Platform Agent Statistics
+// =============================================================================
+
+// TierBreakdown holds statistics for a single agent tier.
+type TierBreakdown struct {
+	TotalAgents   int
+	OnlineAgents  int
+	TotalCapacity int
+	CurrentLoad   int
+}
+
+// PlatformAgentStatsResult holds aggregate platform agent statistics.
+type PlatformAgentStatsResult struct {
+	TotalAgents       int
+	OnlineAgents      int
+	TotalCapacity     int
+	CurrentActiveJobs int
+	CurrentQueuedJobs int
+	TierBreakdown     map[string]TierBreakdown
+}
+
 // ScoreForJob calculates a score for job matching (higher is better).
 // Used for selecting the best platform agent for a job.
 func (a *Agent) ScoreForJob(capabilities []string, tool, preferredRegion string) int {

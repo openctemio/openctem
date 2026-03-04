@@ -171,6 +171,8 @@ const (
 	ActionScanConfigPaused    Action = "scan_config.paused"
 	ActionScanConfigActivated Action = "scan_config.activated"
 	ActionScanConfigDisabled  Action = "scan_config.disabled"
+	ActionScanConfigExported  Action = "scan_config.exported"
+	ActionScanConfigImported  Action = "scan_config.imported"
 
 	// Security events
 	ActionSecurityValidationFailed  Action = "security.validation_failed"
@@ -254,6 +256,7 @@ func (a Action) IsValid() bool {
 		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
+		ActionScanConfigExported, ActionScanConfigImported,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionWorkflowCreated, ActionWorkflowUpdated, ActionWorkflowDeleted,
 		ActionWorkflowActivated, ActionWorkflowDeactivated,

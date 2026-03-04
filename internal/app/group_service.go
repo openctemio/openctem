@@ -77,12 +77,13 @@ func (s *GroupService) logAudit(ctx context.Context, actx AuditContext, event Au
 
 // CreateGroupInput represents the input for creating a group.
 type CreateGroupInput struct {
-	TenantID    string               `json:"-"`
-	Name        string               `json:"name" validate:"required,min=2,max=100"`
-	Slug        string               `json:"slug" validate:"required,min=2,max=100,slug"`
-	Description string               `json:"description" validate:"max=500"`
-	GroupType   string               `json:"group_type" validate:"required,oneof=security_team team department project external"`
-	Settings    *group.GroupSettings `json:"settings,omitempty"`
+	TenantID           string                    `json:"-"`
+	Name               string                    `json:"name" validate:"required,min=2,max=100"`
+	Slug               string                    `json:"slug" validate:"required,min=2,max=100,slug"`
+	Description        string                    `json:"description" validate:"max=500"`
+	GroupType          string                    `json:"group_type" validate:"required,oneof=security_team team department project external"`
+	Settings           *group.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *group.NotificationConfig `json:"notification_config,omitempty"`
 }
 
 // CreateGroup creates a new group.
@@ -121,6 +122,10 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 
 	if input.Settings != nil {
 		g.UpdateSettings(*input.Settings)
+	}
+
+	if input.NotificationConfig != nil {
+		g.UpdateNotificationConfig(*input.NotificationConfig)
 	}
 
 	// Create in database
@@ -175,11 +180,12 @@ func (s *GroupService) GetGroupBySlug(ctx context.Context, tenantID, slug string
 
 // UpdateGroupInput represents the input for updating a group.
 type UpdateGroupInput struct {
-	Name        *string              `json:"name" validate:"omitempty,min=2,max=100"`
-	Slug        *string              `json:"slug" validate:"omitempty,min=2,max=100,slug"`
-	Description *string              `json:"description" validate:"omitempty,max=500"`
-	Settings    *group.GroupSettings `json:"settings,omitempty"`
-	IsActive    *bool                `json:"is_active,omitempty"`
+	Name               *string                   `json:"name" validate:"omitempty,min=2,max=100"`
+	Slug               *string                   `json:"slug" validate:"omitempty,min=2,max=100,slug"`
+	Description        *string                   `json:"description" validate:"omitempty,max=500"`
+	Settings           *group.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *group.NotificationConfig `json:"notification_config,omitempty"`
+	IsActive           *bool                     `json:"is_active,omitempty"`
 }
 
 // UpdateGroup updates a group.
@@ -220,6 +226,10 @@ func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input Up
 
 	if input.Settings != nil {
 		g.UpdateSettings(*input.Settings)
+	}
+
+	if input.NotificationConfig != nil {
+		g.UpdateNotificationConfig(*input.NotificationConfig)
 	}
 
 	if input.IsActive != nil {

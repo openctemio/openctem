@@ -226,6 +226,20 @@ func registerVulnerabilityRoutes(
 		r.PUT("/{comment_id}", h.UpdateComment, middleware.Require(permission.FindingsWrite))
 		r.DELETE("/{comment_id}", h.DeleteComment, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)
+
+	// Finding approval routes - tenant from JWT token
+	router.Group("/api/v1/findings/{id}/approvals", func(r Router) {
+		r.GET("/", h.ListFindingApprovals, middleware.Require(permission.FindingsRead))
+		r.POST("/", h.RequestApproval, middleware.Require(permission.FindingsWrite))
+	}, tenantMiddlewares...)
+
+	// Approval management routes - tenant from JWT token
+	router.Group("/api/v1/approvals", func(r Router) {
+		r.GET("/", h.ListPendingApprovals, middleware.Require(permission.FindingsRead))
+		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsWrite))
+		r.POST("/{id}/reject", h.RejectApproval, middleware.Require(permission.FindingsWrite))
+	}, tenantMiddlewares...)
+
 }
 
 // registerFindingActivityRoutes registers finding activity endpoints.

@@ -20,9 +20,10 @@ import (
 
 // GroupHandler handles group-related HTTP requests for the Access Control system.
 type GroupHandler struct {
-	service   *app.GroupService
-	validator *validator.Validator
-	logger    *logger.Logger
+	service     *app.GroupService
+	syncService *app.GroupSyncService
+	validator   *validator.Validator
+	logger      *logger.Logger
 }
 
 // NewGroupHandler creates a new group handler.
@@ -32,6 +33,12 @@ func NewGroupHandler(svc *app.GroupService, v *validator.Validator, log *logger.
 		validator: v,
 		logger:    log,
 	}
+}
+
+// WithSyncService sets the group sync service on the handler.
+func (h *GroupHandler) WithSyncService(syncService *app.GroupSyncService) *GroupHandler {
+	h.syncService = syncService
+	return h
 }
 
 // =============================================================================
@@ -94,20 +101,22 @@ type GroupListResponse struct {
 
 // CreateGroupRequest represents the request to create a group.
 type CreateGroupRequest struct {
-	Name        string               `json:"name" validate:"required,min=2,max=100"`
-	Slug        string               `json:"slug" validate:"required,min=2,max=100,slug"`
-	Description string               `json:"description" validate:"max=500"`
-	GroupType   string               `json:"group_type" validate:"required,oneof=security_team team department project external"`
-	Settings    *group.GroupSettings `json:"settings,omitempty"`
+	Name               string                    `json:"name" validate:"required,min=2,max=100"`
+	Slug               string                    `json:"slug" validate:"required,min=2,max=100,slug"`
+	Description        string                    `json:"description" validate:"max=500"`
+	GroupType          string                    `json:"group_type" validate:"required,oneof=security_team team department project external"`
+	Settings           *group.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *group.NotificationConfig `json:"notification_config,omitempty"`
 }
 
 // UpdateGroupRequest represents the request to update a group.
 type UpdateGroupRequest struct {
-	Name        *string              `json:"name" validate:"omitempty,min=2,max=100"`
-	Slug        *string              `json:"slug" validate:"omitempty,min=2,max=100,slug"`
-	Description *string              `json:"description" validate:"omitempty,max=500"`
-	Settings    *group.GroupSettings `json:"settings,omitempty"`
-	IsActive    *bool                `json:"is_active,omitempty"`
+	Name               *string                   `json:"name" validate:"omitempty,min=2,max=100"`
+	Slug               *string                   `json:"slug" validate:"omitempty,min=2,max=100,slug"`
+	Description        *string                   `json:"description" validate:"omitempty,max=500"`
+	Settings           *group.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *group.NotificationConfig `json:"notification_config,omitempty"`
+	IsActive           *bool                     `json:"is_active,omitempty"`
 }
 
 // AddGroupMemberRequest represents the request to add a member to a group.
@@ -300,12 +309,13 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := app.CreateGroupInput{
-		TenantID:    tenantID,
-		Name:        req.Name,
-		Slug:        req.Slug,
-		Description: req.Description,
-		GroupType:   req.GroupType,
-		Settings:    req.Settings,
+		TenantID:           tenantID,
+		Name:               req.Name,
+		Slug:               req.Slug,
+		Description:        req.Description,
+		GroupType:          req.GroupType,
+		Settings:           req.Settings,
+		NotificationConfig: req.NotificationConfig,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -445,11 +455,12 @@ func (h *GroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := app.UpdateGroupInput{
-		Name:        req.Name,
-		Slug:        req.Slug,
-		Description: req.Description,
-		Settings:    req.Settings,
-		IsActive:    req.IsActive,
+		Name:               req.Name,
+		Slug:               req.Slug,
+		Description:        req.Description,
+		Settings:           req.Settings,
+		NotificationConfig: req.NotificationConfig,
+		IsActive:           req.IsActive,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -1038,6 +1049,53 @@ func (h *GroupHandler) ListMyAssets(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]interface{}{
 		"asset_ids": ids,
 		"count":     len(ids),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// =============================================================================
+// Group Sync
+// =============================================================================
+
+// TriggerSync handles POST /api/v1/groups/sync
+// @Summary Trigger manual group sync
+// @Description Trigger a manual sync of groups from external providers for the current tenant
+// @Tags groups
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} apierror.Error
+// @Router /api/v1/groups/sync [post]
+func (h *GroupHandler) TriggerSync(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.syncService == nil {
+		apierror.BadRequest("Group sync is not configured").WriteJSON(w)
+		return
+	}
+
+	tenantID := middleware.MustGetTenantID(ctx)
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+
+	if err := h.syncService.SyncAll(ctx, tid); err != nil {
+		if errors.Is(err, shared.ErrNotImplemented) {
+			apierror.New(http.StatusNotImplemented, "NOT_IMPLEMENTED", err.Error()).WriteJSON(w)
+			return
+		}
+		h.logger.Error("failed to trigger group sync", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"status":  "ok",
+		"message": "Group sync triggered successfully",
 	}
 
 	w.Header().Set("Content-Type", "application/json")

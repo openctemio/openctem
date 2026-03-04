@@ -56,6 +56,7 @@ type Handlers struct {
 	ToolCategory    *handler.ToolCategoryHandler    // nil if not initialized (no database)
 	Capability      *handler.CapabilityHandler      // nil if not initialized (no database)
 	Scan            *handler.ScanHandler            // nil if not initialized (no database)
+	CI              *handler.CIHandler              // nil if not initialized (no database) - CI/CD snippet generator
 	ScanSession     *handler.ScanSessionHandler     // nil if not initialized (no database)
 	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
 	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
@@ -106,6 +107,9 @@ type Handlers struct {
 	AdminAudit         *handler.AdminAuditHandler
 	AdminTargetMapping *handler.AdminTargetMappingHandler
 
+	// Platform Stats handler (tenant-scoped platform agent stats)
+	PlatformStats *handler.PlatformStatsHandler
+
 	// WebSocket handler for real-time communication
 	WebSocket *websocket.Handler
 }
@@ -142,10 +146,11 @@ func Register(
 ) {
 	// Create unified auth middleware based on provider
 	unifiedAuthCfg := middleware.UnifiedAuthConfig{
-		Provider:       authCfg.Provider,
-		LocalValidator: authCfg.LocalValidator,
-		OIDCValidator:  authCfg.OIDCValidator,
-		Logger:         log,
+		Provider:              authCfg.Provider,
+		LocalValidator:        authCfg.LocalValidator,
+		OIDCValidator:         authCfg.OIDCValidator,
+		Logger:                log,
+		SessionTimeoutMinutes: cfg.Server.SessionTimeoutMinutes,
 	}
 	authMiddleware := middleware.UnifiedAuth(unifiedAuthCfg)
 
@@ -330,7 +335,7 @@ func Register(
 
 	// Scan routes (tenant from JWT token)
 	if h.Scan != nil {
-		registerScanRoutes(router, h.Scan, authMiddleware, userSync, triggerRateLimiter)
+		registerScanRoutes(router, h.Scan, h.CI, authMiddleware, userSync, triggerRateLimiter)
 	}
 
 	// Scan Session routes (tenant from JWT token for admin, API key for agent)
@@ -416,6 +421,11 @@ func Register(
 	// Bootstrap route (combines permissions, subscription, modules, dashboard)
 	if h.Bootstrap != nil {
 		registerBootstrapRoutes(router, h.Bootstrap, authMiddleware, userSync)
+	}
+
+	// Platform Stats routes (tenant-scoped platform agent statistics)
+	if h.PlatformStats != nil {
+		registerPlatformStatsRoutes(router, h.PlatformStats, authMiddleware, userSync)
 	}
 
 	// ==========================================================================

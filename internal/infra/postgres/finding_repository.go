@@ -83,7 +83,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 	query := `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_version, rule_id, file_path, start_line, end_line,
+			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message, severity, status,
 			resolution, resolved_at, resolved_by, scan_id, fingerprint,
@@ -100,7 +100,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -114,6 +114,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		nullID(finding.ComponentID()),
 		finding.Source().String(),
 		finding.ToolName(),
+		nullID(finding.ToolID()),
 		nullString(finding.ToolVersion()),
 		nullString(finding.RuleID()),
 		nullString(finding.FilePath()),
@@ -205,7 +206,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 	query := `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_version, rule_id, file_path, start_line, end_line,
+			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message, severity, status,
 			resolution, resolved_at, resolved_by, scan_id, fingerprint,
@@ -222,7 +223,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -236,6 +237,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		nullID(finding.ComponentID()),
 		finding.Source().String(),
 		finding.ToolName(),
+		nullID(finding.ToolID()),
 		nullString(finding.ToolVersion()),
 		nullString(finding.RuleID()),
 		nullString(finding.FilePath()),
@@ -452,7 +454,7 @@ func (r *FindingRepository) upsertQuery() string {
 	return `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_version, rule_id, file_path, start_line, end_line,
+			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message, severity, status,
 			resolution, resolved_at, resolved_by, scan_id, fingerprint,
@@ -469,11 +471,12 @@ func (r *FindingRepository) upsertQuery() string {
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69)
 		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET
 			vulnerability_id = EXCLUDED.vulnerability_id,
 			component_id = EXCLUDED.component_id,
 			branch_id = COALESCE(EXCLUDED.branch_id, findings.branch_id),
+			tool_id = COALESCE(EXCLUDED.tool_id, findings.tool_id),
 			tool_version = EXCLUDED.tool_version,
 			snippet = COALESCE(EXCLUDED.snippet, findings.snippet),
 			context_snippet = COALESCE(EXCLUDED.context_snippet, findings.context_snippet),
@@ -546,6 +549,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 		nullID(finding.ComponentID()),
 		finding.Source().String(),
 		finding.ToolName(),
+		nullID(finding.ToolID()),
 		nullString(finding.ToolVersion()),
 		nullString(finding.RuleID()),
 		nullString(finding.FilePath()),
@@ -637,17 +641,18 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	// Security: Include tenant_id in WHERE clause to prevent cross-tenant updates
 	query := `
 		UPDATE findings SET
-			vulnerability_id = $2, component_id = $3, tool_version = $4, snippet = $5,
-			message = $6, severity = $7, status = $8, resolution = $9, resolved_at = $10,
-			resolved_by = $11, scan_id = $12, metadata = $13, updated_at = $14,
-			assigned_to = $15, assigned_at = $16, assigned_by = $17
-		WHERE id = $1 AND tenant_id = $18
+			vulnerability_id = $2, component_id = $3, tool_id = $4, tool_version = $5, snippet = $6,
+			message = $7, severity = $8, status = $9, resolution = $10, resolved_at = $11,
+			resolved_by = $12, scan_id = $13, metadata = $14, updated_at = $15,
+			assigned_to = $16, assigned_at = $17, assigned_by = $18
+		WHERE id = $1 AND tenant_id = $19
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
 		finding.ID().String(),
 		nullID(finding.VulnerabilityID()),
 		nullID(finding.ComponentID()),
+		nullID(finding.ToolID()),
 		nullString(finding.ToolVersion()),
 		nullString(finding.Snippet()),
 		finding.Message(),
@@ -1061,7 +1066,7 @@ func (r *FindingRepository) BatchCountByAssetIDs(ctx context.Context, tenantID s
 func (r *FindingRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_version, rule_id, rule_name, file_path, start_line, end_line,
+			tool_name, tool_id, tool_version, rule_id, rule_name, file_path, start_line, end_line,
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
@@ -1111,6 +1116,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		componentID         sql.NullString
 		source              string
 		toolName            string
+		toolID              sql.NullString
 		toolVersion         sql.NullString
 		ruleID              sql.NullString
 		ruleName            sql.NullString
@@ -1198,7 +1204,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 
 	err := scan(
 		&idStr, &tenantIDStr, &vulnerabilityID, &assetIDStr, &branchID, &componentID, &source,
-		&toolName, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
+		&toolName, &toolID, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
 		&startColumn, &endColumn, &snippet, &contextSnippet, &contextStartLine,
 		&title, &description, &message,
 		&severity, &cvssScore, &cvssVector, &cveID, pq.Array(&cweIDs), pq.Array(&owaspIDs), pq.Array(&tags),
@@ -1226,7 +1232,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 
 	return r.reconstruct(findingRow{
 		idStr, tenantIDStr, vulnerabilityID, assetIDStr, branchID, componentID, source,
-		toolName, toolVersion, ruleID, ruleName, filePath,
+		toolName, toolID, toolVersion, ruleID, ruleName, filePath,
 		int(startLine.Int64), int(endLine.Int64), int(startColumn.Int64), int(endColumn.Int64),
 		snippet, contextSnippet, int(contextStartLine.Int64),
 		title, description, message,
@@ -1265,6 +1271,7 @@ type findingRow struct {
 	componentID         sql.NullString
 	source              string
 	toolName            string
+	toolID              sql.NullString
 	toolVersion         sql.NullString
 	ruleID              sql.NullString
 	ruleName            sql.NullString
@@ -1476,6 +1483,7 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		ComponentID:         compID,
 		Source:              source,
 		ToolName:            row.toolName,
+		ToolID:              parseNullID(row.toolID),
 		ToolVersion:         nullStringValue(row.toolVersion),
 		RuleID:              nullStringValue(row.ruleID),
 		RuleName:            nullStringValue(row.ruleName),

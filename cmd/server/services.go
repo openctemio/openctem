@@ -199,7 +199,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize vulnerability & exposure services
 	s.Vulnerability = app.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
-	s.Vulnerability.SetDataFlowRepository(repos.DataFlow) // Wire data flow loading
+	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)       // Wire data flow loading
+	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized

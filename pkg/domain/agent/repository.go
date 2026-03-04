@@ -113,6 +113,13 @@ type Repository interface {
 
 	// HasAgentForCapability checks if there's at least one agent that supports the given capability.
 	HasAgentForCapability(ctx context.Context, tenantID shared.ID, capability string) (bool, error)
+
+	// ==========================================================================
+	// Platform Agent Statistics
+	// ==========================================================================
+
+	// GetPlatformAgentStats returns aggregate statistics for platform agents.
+	GetPlatformAgentStats(ctx context.Context, tenantID shared.ID) (*PlatformAgentStatsResult, error)
 }
 
 // APIKeyFilter represents filter options for listing API keys.
