@@ -918,4 +918,197 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "approval workflow not configured")
 	})
+
+	t.Run("CancelApproval", func(t *testing.T) {
+		_, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
+			TenantID:    shared.NewID().String(),
+			ApprovalID:  shared.NewID().String(),
+			CanceledBy: shared.NewID().String(),
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "approval workflow not configured")
+	})
+}
+
+// =============================================================================
+// Tests: CancelApproval
+// =============================================================================
+
+func TestFindingApprovalService_CancelApproval_Success(t *testing.T) {
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	requestedBy := shared.NewID()
+
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+
+	// Create approval
+	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+		TenantID:        tenantID.String(),
+		FindingID:       findingID.String(),
+		RequestedStatus: "false_positive",
+		Justification:   "Test",
+		RequestedBy:     requestedBy.String(),
+	})
+	require.NoError(t, err)
+
+	// Cancel it (as the requester)
+	approval, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
+		TenantID:    tenantID.String(),
+		ApprovalID:  created.ID.String(),
+		CanceledBy: requestedBy.String(),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, approval)
+	assert.Equal(t, vulnerability.ApprovalStatusCanceled, approval.Status)
+
+	// Verify finding status was NOT changed (cancel does not apply status)
+	assert.Empty(t, findingRepo.statusUpdates, "cancelling should not update finding status")
+}
+
+func TestFindingApprovalService_CancelApproval_NotRequester(t *testing.T) {
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	requestedBy := shared.NewID()
+	otherUser := shared.NewID()
+
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+
+	// Create approval
+	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+		TenantID:        tenantID.String(),
+		FindingID:       findingID.String(),
+		RequestedStatus: "false_positive",
+		Justification:   "Test",
+		RequestedBy:     requestedBy.String(),
+	})
+	require.NoError(t, err)
+
+	// Try to cancel as a different user
+	approval, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
+		TenantID:    tenantID.String(),
+		ApprovalID:  created.ID.String(),
+		CanceledBy: otherUser.String(),
+	})
+
+	assert.Error(t, err, "only the requester should be able to cancel")
+	assert.Nil(t, approval)
+	assert.Contains(t, err.Error(), "only the requester")
+}
+
+func TestFindingApprovalService_CancelApproval_NotPending(t *testing.T) {
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	requestedBy := shared.NewID()
+	approverID := shared.NewID()
+
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+
+	// Create and approve
+	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+		TenantID:        tenantID.String(),
+		FindingID:       findingID.String(),
+		RequestedStatus: "false_positive",
+		Justification:   "Test",
+		RequestedBy:     requestedBy.String(),
+	})
+	require.NoError(t, err)
+
+	_, err = svc.ApproveStatus(context.Background(), app.ApproveStatusInput{
+		TenantID:   tenantID.String(),
+		ApprovalID: created.ID.String(),
+		ApprovedBy: approverID.String(),
+	})
+	require.NoError(t, err)
+
+	// Try to cancel the already-approved approval
+	approval, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
+		TenantID:    tenantID.String(),
+		ApprovalID:  created.ID.String(),
+		CanceledBy: requestedBy.String(),
+	})
+
+	assert.Error(t, err, "should not be able to cancel an already-approved approval")
+	assert.Nil(t, approval)
+	assert.Contains(t, err.Error(), "not pending")
+}
+
+// =============================================================================
+// Tests: RequestApproval - Invalid Status
+// =============================================================================
+
+func TestFindingApprovalService_RequestApproval_InvalidStatus(t *testing.T) {
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	requestedBy := shared.NewID()
+
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+
+	input := app.RequestApprovalInput{
+		TenantID:        tenantID.String(),
+		FindingID:       findingID.String(),
+		RequestedStatus: "invalid_garbage_status",
+		Justification:   "Test justification",
+		RequestedBy:     requestedBy.String(),
+	}
+
+	approval, err := svc.RequestApproval(context.Background(), input)
+
+	assert.Error(t, err, "should reject invalid requested_status")
+	assert.Nil(t, approval)
+	assert.Contains(t, err.Error(), "invalid requested_status")
+	assert.True(t, errors.Is(err, shared.ErrValidation))
+}
+
+// =============================================================================
+// Tests: ApproveStatus - Concurrent Modification
+// =============================================================================
+
+func TestFindingApprovalService_ApproveStatus_ConcurrentModification(t *testing.T) {
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	requestedBy := shared.NewID()
+	approverID := shared.NewID()
+
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+
+	// Create approval
+	created, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+		TenantID:        tenantID.String(),
+		FindingID:       findingID.String(),
+		RequestedStatus: "false_positive",
+		Justification:   "Test",
+		RequestedBy:     requestedBy.String(),
+	})
+	require.NoError(t, err)
+
+	// Set mock to return concurrent modification error on Update
+	approvalRepo.updateErr = vulnerability.ErrConcurrentModification
+
+	// Try to approve - should fail with concurrent modification
+	approval, err := svc.ApproveStatus(context.Background(), app.ApproveStatusInput{
+		TenantID:   tenantID.String(),
+		ApprovalID: created.ID.String(),
+		ApprovedBy: approverID.String(),
+	})
+
+	assert.Error(t, err, "should fail with concurrent modification error")
+	assert.Nil(t, approval)
+	assert.ErrorIs(t, err, vulnerability.ErrConcurrentModification)
+	assert.True(t, errors.Is(err, shared.ErrConflict), "should wrap ErrConflict")
 }

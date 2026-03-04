@@ -13,8 +13,9 @@ CREATE TABLE IF NOT EXISTS finding_status_approvals (
     rejected_by UUID REFERENCES users(id),
     rejected_at TIMESTAMPTZ,
     rejection_reason TEXT,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'canceled')),
     expires_at TIMESTAMPTZ,
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

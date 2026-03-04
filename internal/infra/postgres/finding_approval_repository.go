@@ -27,14 +27,14 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 	query := `
 		INSERT INTO finding_status_approvals (
 			id, tenant_id, finding_id, requested_status, requested_by,
-			justification, status, expires_at, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			justification, status, expires_at, version, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
 		a.ID.String(), a.TenantID.String(), a.FindingID.String(),
 		a.RequestedStatus, a.RequestedBy.String(),
-		a.Justification, string(a.Status), a.ExpiresAt, a.CreatedAt,
+		a.Justification, string(a.Status), a.ExpiresAt, a.Version, a.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create approval: %w", err)
@@ -111,8 +111,9 @@ func (r *FindingApprovalRepository) Update(ctx context.Context, a *vulnerability
 			approved_at = $4,
 			rejected_by = $5,
 			rejected_at = $6,
-			rejection_reason = $7
-		WHERE id = $1
+			rejection_reason = $7,
+			version = $8
+		WHERE id = $1 AND version = $9
 	`
 
 	var approvedBy, rejectedBy *string
@@ -133,6 +134,8 @@ func (r *FindingApprovalRepository) Update(ctx context.Context, a *vulnerability
 		rejectedBy,
 		a.RejectedAt,
 		a.RejectionReason,
+		a.Version,
+		a.Version-1,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update approval: %w", err)
@@ -143,7 +146,7 @@ func (r *FindingApprovalRepository) Update(ctx context.Context, a *vulnerability
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("%w: approval not found", shared.ErrNotFound)
+		return vulnerability.ErrConcurrentModification
 	}
 
 	return nil
@@ -153,7 +156,7 @@ func (r *FindingApprovalRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, finding_id, requested_status, requested_by,
 			justification, approved_by, approved_at, rejected_by, rejected_at,
-			rejection_reason, status, expires_at, created_at
+			rejection_reason, status, expires_at, created_at, version
 		FROM finding_status_approvals
 	`
 }
@@ -180,7 +183,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 	err := scanner.Scan(
 		&id, &tenantID, &findingID, &a.RequestedStatus, &requestedBy,
 		&a.Justification, &approvedBy, &approvedAt, &rejectedBy, &rejectedAt,
-		&a.RejectionReason, &status, &expiresAt, &a.CreatedAt,
+		&a.RejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
