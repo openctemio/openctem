@@ -210,7 +210,9 @@ func (p *FindingProcessor) ProcessBatch(
 	newFindings := make([]*vulnerability.Finding, 0)
 	newFindingsMeta := make([]findingMeta, 0) // Track metadata for error reporting
 	existingFingerprints := make([]string, 0)
-	existingSnippets := make(map[string]string) // Track snippets for existing findings
+	existingNewData := make([]*vulnerability.Finding, 0) // Built findings for enrichment
+	unenrichedFingerprints := make([]string, 0)          // Fingerprints where buildFinding failed
+	existingSnippets := make(map[string]string)          // Track snippets for existing findings
 
 	for _, fm := range validFindings {
 		if existsMap[fm.fingerprint] {
@@ -218,6 +220,14 @@ func (p *FindingProcessor) ProcessBatch(
 			// Track snippet for potential update (if current DB value is invalid)
 			if fm.finding.Location != nil && fm.finding.Location.Snippet != "" && fm.finding.Location.Snippet != "requires login" {
 				existingSnippets[fm.fingerprint] = fm.finding.Location.Snippet
+			}
+			// Build Finding from scan data for enrichment
+			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint)
+			if err == nil {
+				existingNewData = append(existingNewData, newData)
+			} else {
+				// buildFinding failed — fall back to scan-id-only update for this fingerprint
+				unenrichedFingerprints = append(unenrichedFingerprints, fm.fingerprint)
 			}
 		} else {
 			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint)
@@ -324,26 +334,61 @@ func (p *FindingProcessor) ProcessBatch(
 		}
 	}
 
-	// Step 5: Batch update existing findings
+	// Step 5: Enrich existing findings with new scan data
 	if len(existingFingerprints) > 0 {
 		scanID := report.Metadata.ID
-		updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, existingFingerprints, scanID)
-		if err != nil {
-			p.logger.Warn("failed to update existing findings", "error", err)
-		} else {
-			output.FindingsUpdated = int(updated)
+
+		// Step 5a: Enrich findings where buildFinding succeeded
+		if len(existingNewData) > 0 {
+			enriched, err := p.repo.EnrichBatchByFingerprints(ctx, tenantID, existingNewData, scanID)
+			if err != nil {
+				// Graceful fallback: if enrichment fails, fall back to scan-id-only update
+				p.logger.Warn("enrichment failed, falling back to scan-id-only update",
+					"error", err,
+					"count", len(existingNewData),
+				)
+				// Collect fingerprints from failed enrichment for fallback
+				fallbackFPs := make([]string, 0, len(existingNewData))
+				for _, f := range existingNewData {
+					fallbackFPs = append(fallbackFPs, f.Fingerprint())
+				}
+				unenrichedFingerprints = append(unenrichedFingerprints, fallbackFPs...)
+			} else {
+				output.FindingsUpdated = int(enriched)
+				if enriched > 0 {
+					p.logger.Info("enriched existing findings",
+						"count", enriched,
+					)
+				}
+			}
 		}
 
-		// Step 5b: Update snippets for existing findings that have invalid snippets in DB
-		// This fixes the "requires login" issue when Semgrep pro features are unavailable
-		if len(existingSnippets) > 0 {
-			snippetUpdated, err := p.repo.UpdateSnippetBatchByFingerprints(ctx, tenantID, existingSnippets)
+		// Step 5b: Fallback scan-id-only update for findings where buildFinding or enrichment failed
+		if len(unenrichedFingerprints) > 0 {
+			updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, unenrichedFingerprints, scanID)
 			if err != nil {
-				p.logger.Warn("failed to update snippets for existing findings", "error", err)
-			} else if snippetUpdated > 0 {
-				p.logger.Info("updated snippets for existing findings",
-					"count", snippetUpdated,
-				)
+				p.logger.Warn("failed to update existing findings (fallback)", "error", err)
+			} else {
+				output.FindingsUpdated += int(updated)
+			}
+
+			// Update snippets only for unenriched findings (enrichment already handles snippet via LastWins)
+			// This fixes the "requires login" issue when Semgrep pro features are unavailable
+			unenrichedSnippets := make(map[string]string, len(unenrichedFingerprints))
+			for _, fp := range unenrichedFingerprints {
+				if s, ok := existingSnippets[fp]; ok {
+					unenrichedSnippets[fp] = s
+				}
+			}
+			if len(unenrichedSnippets) > 0 {
+				snippetUpdated, err := p.repo.UpdateSnippetBatchByFingerprints(ctx, tenantID, unenrichedSnippets)
+				if err != nil {
+					p.logger.Warn("failed to update snippets for existing findings", "error", err)
+				} else if snippetUpdated > 0 {
+					p.logger.Info("updated snippets for unenriched findings",
+						"count", snippetUpdated,
+					)
+				}
 			}
 		}
 	}

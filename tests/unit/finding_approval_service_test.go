@@ -239,6 +239,14 @@ func (m *mockFindingRepository) ExistsByIDs(_ context.Context, _ shared.ID, _ []
 	return nil, nil
 }
 
+func (m *mockFindingRepository) GetByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]*vulnerability.Finding, error) {
+	return nil, nil
+}
+
+func (m *mockFindingRepository) EnrichBatchByFingerprints(_ context.Context, _ shared.ID, _ []*vulnerability.Finding, _ string) (int64, error) {
+	return 0, nil
+}
+
 // =============================================================================
 // Mock: VulnerabilityRepository (minimal stub)
 // =============================================================================

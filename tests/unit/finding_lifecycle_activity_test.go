@@ -150,6 +150,14 @@ func (s *stubFindingRepo) ExistsByIDs(_ context.Context, _ shared.ID, _ []shared
 	return nil, nil
 }
 
+func (s *stubFindingRepo) GetByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]*vulnerability.Finding, error) {
+	return nil, nil
+}
+
+func (s *stubFindingRepo) EnrichBatchByFingerprints(_ context.Context, _ shared.ID, _ []*vulnerability.Finding, _ string) (int64, error) {
+	return 0, nil
+}
+
 // =============================================================================
 // RecordBatchAutoResolved Tests
 // =============================================================================
