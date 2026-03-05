@@ -106,6 +106,11 @@ type Filter struct {
 	MaxRiskScore  *int          // Filter by maximum risk score
 	HasFindings   *bool         // Filter by whether asset has findings
 	ParentID      *string       // Filter by parent asset ID
+
+	// Layer 2: Data Scope - filter assets by user's group membership
+	// When set, only assets accessible to this user are returned.
+	// Backward compat: if user has no group assignments, all assets are visible.
+	DataScopeUserID *shared.ID
 }
 
 // ListOptions contains options for listing assets (sorting).
@@ -240,6 +245,12 @@ func (f Filter) WithParentID(parentID string) Filter {
 	return f
 }
 
+// WithDataScopeUserID adds a data scope filter by user's group membership.
+func (f Filter) WithDataScopeUserID(id shared.ID) Filter {
+	f.DataScopeUserID = &id
+	return f
+}
+
 // IsEmpty returns true if no filters are set.
 func (f Filter) IsEmpty() bool {
 	return f.TenantID == nil &&
@@ -256,5 +267,6 @@ func (f Filter) IsEmpty() bool {
 		f.MinRiskScore == nil &&
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
-		f.ParentID == nil
+		f.ParentID == nil &&
+		f.DataScopeUserID == nil
 }

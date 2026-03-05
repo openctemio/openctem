@@ -621,6 +621,26 @@ func (r *AccessControlRepository) CanAccessAsset(ctx context.Context, userID, as
 	return exists, nil
 }
 
+// HasAnyScopeAssignment checks if a user has any rows in user_accessible_assets.
+// Returns true if the user has at least one group-based asset assignment.
+// Used for backward compat: if false, user sees all data (no groups configured yet).
+func (r *AccessControlRepository) HasAnyScopeAssignment(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1 FROM user_accessible_assets
+			WHERE user_id = $1 AND tenant_id = $2
+		)
+	`
+
+	var exists bool
+	err := r.db.QueryRowContext(ctx, query, userID.String(), tenantID.String()).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check scope assignment: %w", err)
+	}
+
+	return exists, nil
+}
+
 // GetUserAssetAccess gets the user's access details for an asset.
 func (r *AccessControlRepository) GetUserAssetAccess(ctx context.Context, userID, assetID shared.ID) (*accesscontrol.UserAssetAccess, error) {
 	query := `

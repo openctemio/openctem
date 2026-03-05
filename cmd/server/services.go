@@ -176,6 +176,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset = app.NewAssetService(repos.Asset, log)
 	s.Asset.SetRepositoryExtensionRepository(repos.RepoExt)
 	s.Asset.SetAssetGroupRepository(repos.AssetGroup)
+	s.Asset.SetAccessControlRepository(repos.AccessControl)
 
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
@@ -201,6 +202,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)       // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized

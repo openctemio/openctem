@@ -1624,7 +1624,8 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 }
 
 // GetStats returns aggregated statistics for findings of a tenant.
-func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID) (*vulnerability.FindingStats, error) {
+// dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
+func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID) (*vulnerability.FindingStats, error) {
 	stats := vulnerability.NewFindingStats()
 
 	// Query for total and counts by severity, status, source in one go
@@ -1656,6 +1657,17 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID) (*
 		WHERE tenant_id = $1
 	`
 
+	args := []any{tenantID.String()}
+
+	// Layer 2: Data Scope - filter stats by user's group membership
+	if dataScopeUserID != nil {
+		query += ` AND (
+			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
+			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
+		)`
+		args = append(args, dataScopeUserID.String())
+	}
+
 	var (
 		total, critical, high, medium, low, info                     int64
 		statusNew, statusConfirmed, statusInProgress, statusResolved int64
@@ -1664,7 +1676,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID) (*
 		sourceIac, sourceContainer, sourceManual, sourceExternal     int64
 	)
 
-	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&total,
 		&critical, &high, &medium, &low, &info,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
@@ -1798,6 +1810,20 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	if filter.FilePath != nil && *filter.FilePath != "" {
 		conditions = append(conditions, fmt.Sprintf("file_path ILIKE $%d", argIndex))
 		args = append(args, wrapLikePattern(*filter.FilePath))
+		argIndex++
+	}
+
+	// Layer 2: Data Scope - filter findings by user's group membership on assets
+	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
+	if filter.DataScopeUserID != nil && filter.TenantID != nil {
+		userIDIdx := argIndex
+		tenantIDIdx := argIndex + 1
+		args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
+		argIndex += 2
+		conditions = append(conditions, fmt.Sprintf(`(
+			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+		)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
 	}
 
 	return strings.Join(conditions, " AND "), args

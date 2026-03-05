@@ -132,7 +132,7 @@ func (m *MockFindingRepoForLifecycle) DeleteByAssetID(ctx context.Context, tenan
 func (m *MockFindingRepoForLifecycle) DeleteByScanID(ctx context.Context, tenantID shared.ID, scanID string) error {
 	return nil
 }
-func (m *MockFindingRepoForLifecycle) GetStats(ctx context.Context, tenantID shared.ID) (*vulnerability.FindingStats, error) {
+func (m *MockFindingRepoForLifecycle) GetStats(ctx context.Context, tenantID shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
 	return nil, nil
 }
 func (m *MockFindingRepoForLifecycle) CountBySeverityForScan(ctx context.Context, tenantID shared.ID, scanID string) (vulnerability.SeverityCounts, error) {

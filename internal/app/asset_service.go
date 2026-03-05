@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/assetgroup"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -16,10 +17,11 @@ import (
 
 // AssetService handles asset-related business operations.
 type AssetService struct {
-	repo           asset.Repository
-	repoExtRepo    asset.RepositoryExtensionRepository
-	assetGroupRepo assetgroup.Repository // For recalculating group stats
-	logger         *logger.Logger
+	repo              asset.Repository
+	repoExtRepo       asset.RepositoryExtensionRepository
+	assetGroupRepo    assetgroup.Repository        // For recalculating group stats
+	accessControlRepo accesscontrol.Repository      // For Layer 2 data scope checks
+	logger            *logger.Logger
 }
 
 // NewAssetService creates a new AssetService.
@@ -38,6 +40,11 @@ func (s *AssetService) SetRepositoryExtensionRepository(repo asset.RepositoryExt
 // SetAssetGroupRepository sets the asset group repository for recalculating stats.
 func (s *AssetService) SetAssetGroupRepository(repo assetgroup.Repository) {
 	s.assetGroupRepo = repo
+}
+
+// SetAccessControlRepository sets the access control repository for Layer 2 data scope checks.
+func (s *AssetService) SetAccessControlRepository(repo accesscontrol.Repository) {
+	s.accessControlRepo = repo
 }
 
 // HasRepositoryExtensionRepository returns true if the repository extension repository is configured.
@@ -137,6 +144,14 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 // GetAsset retrieves an asset by ID within a tenant.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (s *AssetService) GetAsset(ctx context.Context, tenantID, assetID string) (*asset.Asset, error) {
+	return s.GetAssetWithScope(ctx, tenantID, assetID, "", true)
+}
+
+// GetAssetWithScope retrieves an asset with optional data scope enforcement.
+// Non-admin users with group assignments can only access assets in their groups.
+// Security: fail-closed — any error during scope check denies access.
+// Returns ErrNotFound (not ErrForbidden) to prevent information disclosure.
+func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID, actingUserID string, isAdmin bool) (*asset.Asset, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -144,11 +159,44 @@ func (s *AssetService) GetAsset(ctx context.Context, tenantID, assetID string) (
 
 	parsedID, err := shared.IDFromString(assetID)
 	if err != nil {
-		// Return NotFound instead of Validation error - from user's perspective, resource doesn't exist
 		return nil, shared.ErrNotFound
 	}
 
-	return s.repo.GetByID(ctx, parsedTenantID, parsedID)
+	a, err := s.repo.GetByID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Layer 2: Data Scope check for non-admin users
+	if !isAdmin && actingUserID != "" && s.accessControlRepo != nil {
+		userID, parseErr := shared.IDFromString(actingUserID)
+		if parseErr != nil {
+			s.logger.Warn("failed to parse acting user ID for scope check", "actingUserID", actingUserID, "error", parseErr)
+			return nil, shared.ErrNotFound // fail-closed
+		}
+
+		// Check if user has any scope assignments (1 EXISTS query, no memory load)
+		hasScope, scopeErr := s.accessControlRepo.HasAnyScopeAssignment(ctx, parsedTenantID, userID)
+		if scopeErr != nil {
+			s.logger.Error("failed to check scope assignment", "error", scopeErr)
+			return nil, shared.ErrNotFound // fail-closed
+		}
+
+		if hasScope {
+			// User has scope assignments — verify access to this specific asset
+			canAccess, accessErr := s.accessControlRepo.CanAccessAsset(ctx, userID, parsedID)
+			if accessErr != nil {
+				s.logger.Error("failed to check asset access", "error", accessErr)
+				return nil, shared.ErrNotFound // fail-closed
+			}
+			if !canAccess {
+				return nil, shared.ErrNotFound // don't leak asset existence
+			}
+		}
+		// If !hasScope, user has no scope assignments → show all (backward compat)
+	}
+
+	return a, nil
 }
 
 // UpdateAssetInput represents the input for updating an asset.
@@ -316,6 +364,10 @@ type ListAssetsInput struct {
 	Sort          string   `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page          int      `validate:"min=0"`
 	PerPage       int      `validate:"min=0,max=100"`
+
+	// Layer 2: Data Scope
+	ActingUserID string // From JWT context
+	IsAdmin      bool   // True for owner/admin (bypasses data scope)
 }
 
 // ListAssets retrieves assets with filtering, sorting, and pagination.
@@ -408,6 +460,14 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	// Has findings filter
 	if input.HasFindings != nil {
 		filter = filter.WithHasFindings(*input.HasFindings)
+	}
+
+	// Layer 2: Data Scope - non-admin users only see assets in their groups
+	if !input.IsAdmin && input.ActingUserID != "" {
+		userID, err := shared.IDFromString(input.ActingUserID)
+		if err == nil {
+			filter = filter.WithDataScopeUserID(userID)
+		}
 	}
 
 	// Build list options with sorting

@@ -128,7 +128,7 @@ func (s *stubFindingRepo) DeleteByAssetID(_ context.Context, _, _ shared.ID) err
 func (s *stubFindingRepo) DeleteByScanID(_ context.Context, _ shared.ID, _ string) error {
 	return nil
 }
-func (s *stubFindingRepo) GetStats(_ context.Context, _ shared.ID) (*vulnerability.FindingStats, error) {
+func (s *stubFindingRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
 	return nil, nil
 }
 func (s *stubFindingRepo) CountBySeverityForScan(_ context.Context, _ shared.ID, _ string) (vulnerability.SeverityCounts, error) {

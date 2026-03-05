@@ -137,6 +137,8 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Asset").WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden("Access denied").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict("Asset already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
@@ -195,6 +197,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Sort:          query.Get("sort"),
 		Page:          parseQueryInt(query.Get("page"), 1),
 		PerPage:       parseQueryInt(query.Get("per_page"), 20),
+		ActingUserID:  middleware.GetUserID(r.Context()),
+		IsAdmin:       middleware.IsAdmin(r.Context()),
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -333,8 +337,8 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GetAsset now enforces tenant isolation internally
-	a, err := h.service.GetAsset(r.Context(), tenantID, id)
+	// GetAssetWithScope enforces tenant isolation + Layer 2 data scope
+	a, err := h.service.GetAssetWithScope(r.Context(), tenantID, id, middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

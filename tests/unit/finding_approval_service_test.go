@@ -217,7 +217,7 @@ func (m *mockFindingRepository) DeleteByAssetID(_ context.Context, _, _ shared.I
 func (m *mockFindingRepository) DeleteByScanID(_ context.Context, _ shared.ID, _ string) error {
 	return nil
 }
-func (m *mockFindingRepository) GetStats(_ context.Context, _ shared.ID) (*vulnerability.FindingStats, error) {
+func (m *mockFindingRepository) GetStats(_ context.Context, _ shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
 	return nil, nil
 }
 func (m *mockFindingRepository) CountBySeverityForScan(_ context.Context, _ shared.ID, _ string) (vulnerability.SeverityCounts, error) {
