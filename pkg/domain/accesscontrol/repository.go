@@ -44,8 +44,17 @@ type Repository interface {
 	CountAssignmentRules(ctx context.Context, tenantID shared.ID, filter AssignmentRuleFilter) (int64, error)
 	ListActiveRulesByPriority(ctx context.Context, tenantID shared.ID) ([]*AssignmentRule, error)
 
+	// Bulk operations
+	BulkCreateAssetOwners(ctx context.Context, owners []*AssetOwner) (int, error)
+
 	// Materialized view operations
 	RefreshUserAccessibleAssets(ctx context.Context) error
+
+	// Incremental access refresh (targeted updates instead of full refresh)
+	RefreshAccessForAssetAssign(ctx context.Context, groupID, assetID shared.ID, ownershipType string) error
+	RefreshAccessForAssetUnassign(ctx context.Context, groupID, assetID shared.ID) error
+	RefreshAccessForMemberAdd(ctx context.Context, groupID, userID shared.ID) error
+	RefreshAccessForMemberRemove(ctx context.Context, groupID, userID shared.ID) error
 }
 
 // AssignmentRuleFilter contains filter options for listing assignment rules.

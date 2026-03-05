@@ -103,9 +103,10 @@ type Services struct {
 	AgentSelector *app.AgentSelector
 
 	// Access Control
-	Group      *app.GroupService
-	Permission *app.PermissionService
-	Role       *app.RoleService
+	Group          *app.GroupService
+	Permission     *app.PermissionService
+	Role           *app.RoleService
+	AssignmentRule *app.AssignmentRuleService
 
 	// Permission Sync
 	PermVersion *app.PermissionVersionService
@@ -403,6 +404,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithPermissionSetRepository(repos.PermissionSet),
 		app.WithAccessControlRepository(repos.AccessControl),
 	)
+
+	s.AssignmentRule = app.NewAssignmentRuleService(repos.AccessControl, repos.Group, log)
 
 	s.Permission = app.NewPermissionService(repos.PermissionSet, log,
 		app.WithPermissionAuditService(s.Audit),

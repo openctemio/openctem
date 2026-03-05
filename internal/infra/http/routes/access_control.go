@@ -55,6 +55,7 @@ func registerGroupRoutes(
 		// Group asset ownership
 		r.GET("/{groupId}/assets", h.ListGroupAssets, middleware.Require(permission.GroupsRead))
 		r.POST("/{groupId}/assets", h.AssignAsset, middleware.Require(permission.GroupsWrite))
+		r.POST("/{groupId}/assets/bulk", h.BulkAssignAssets, middleware.Require(permission.GroupsWrite))
 		r.PUT("/{groupId}/assets/{assetId}", h.UpdateAssetOwnership, middleware.Require(permission.GroupsWrite))
 		r.DELETE("/{groupId}/assets/{assetId}", h.UnassignAsset, middleware.Require(permission.GroupsWrite))
 	}, tenantMiddlewares...)
@@ -67,6 +68,25 @@ func registerGroupRoutes(
 	// Current user's accessible assets (my assets)
 	router.Group("/api/v1/me/assets", func(r Router) {
 		r.GET("/", h.ListMyAssets)
+	}, tenantMiddlewares...)
+}
+
+// registerAssignmentRuleRoutes registers assignment rule endpoints.
+func registerAssignmentRuleRoutes(
+	router Router,
+	h *handler.AssignmentRuleHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/assignment-rules", func(r Router) {
+		r.GET("/", h.ListRules, middleware.Require(permission.AssignmentRulesRead))
+		r.POST("/", h.CreateRule, middleware.Require(permission.AssignmentRulesWrite))
+		r.GET("/{id}", h.GetRule, middleware.Require(permission.AssignmentRulesRead))
+		r.PUT("/{id}", h.UpdateRule, middleware.Require(permission.AssignmentRulesWrite))
+		r.DELETE("/{id}", h.DeleteRule, middleware.Require(permission.AssignmentRulesDelete))
+		r.POST("/{id}/test", h.TestRule, middleware.Require(permission.AssignmentRulesRead))
 	}, tenantMiddlewares...)
 }
 

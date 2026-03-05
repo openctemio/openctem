@@ -74,10 +74,11 @@ type Handlers struct {
 	AssetRelationship *handler.AssetRelationshipHandler // nil if not initialized (no database)
 
 	// Access Control handlers
-	Group         *handler.GroupHandler         // nil if not initialized (no database)
-	PermissionSet *handler.PermissionSetHandler // nil if not initialized (no database)
-	Role          *handler.RoleHandler          // nil if not initialized (no database)
-	Permission    *handler.PermissionHandler    // nil if not initialized (permission sync handler)
+	Group          *handler.GroupHandler          // nil if not initialized (no database)
+	PermissionSet  *handler.PermissionSetHandler  // nil if not initialized (no database)
+	Role           *handler.RoleHandler           // nil if not initialized (no database)
+	Permission     *handler.PermissionHandler     // nil if not initialized (permission sync handler)
+	AssignmentRule *handler.AssignmentRuleHandler // nil if not initialized (no database)
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
@@ -401,6 +402,11 @@ func Register(
 	// Role routes (Access Control - tenant from JWT token)
 	if h.Role != nil {
 		registerRoleRoutes(router, h.Role, authMiddleware, userSync)
+	}
+
+	// Assignment Rule routes (Access Control - tenant from JWT token)
+	if h.AssignmentRule != nil {
+		registerAssignmentRuleRoutes(router, h.AssignmentRule, authMiddleware, userSync)
 	}
 
 	// API Key routes (tenant from JWT token)

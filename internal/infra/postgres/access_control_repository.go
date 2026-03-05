@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
@@ -1398,6 +1399,76 @@ func (r *AccessControlRepository) scanAssignmentRule(
 }
 
 // =============================================================================
+// BULK OPERATIONS
+// =============================================================================
+
+// BulkCreateAssetOwners inserts multiple asset owners in batches.
+// Returns the number of rows successfully inserted.
+func (r *AccessControlRepository) BulkCreateAssetOwners(ctx context.Context, owners []*accesscontrol.AssetOwner) (int, error) {
+	if len(owners) == 0 {
+		return 0, nil
+	}
+
+	const batchSize = 500
+	totalInserted := 0
+
+	for i := 0; i < len(owners); i += batchSize {
+		end := min(i+batchSize, len(owners))
+		batch := owners[i:end]
+
+		var sb strings.Builder
+		sb.WriteString(`INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by) VALUES `)
+		args := make([]any, 0, len(batch)*7)
+		argIdx := 1
+
+		for j, ao := range batch {
+			if j > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+				argIdx, argIdx+1, argIdx+2, argIdx+3, argIdx+4, argIdx+5, argIdx+6))
+			argIdx += 7
+
+			var groupID, userID, assignedBy any
+			if ao.GroupID() != nil {
+				groupID = ao.GroupID().String()
+			}
+			if ao.UserID() != nil {
+				userID = ao.UserID().String()
+			}
+			if ao.AssignedBy() != nil {
+				assignedBy = ao.AssignedBy().String()
+			}
+
+			args = append(args,
+				ao.ID().String(),
+				ao.AssetID().String(),
+				groupID,
+				userID,
+				ao.OwnershipType().String(),
+				ao.AssignedAt(),
+				assignedBy,
+			)
+		}
+
+		sb.WriteString(" ON CONFLICT DO NOTHING")
+
+		result, err := r.db.ExecContext(ctx, sb.String(), args...)
+		if err != nil {
+			return totalInserted, fmt.Errorf("failed to bulk create asset owners (batch %d): %w", i/batchSize, err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return totalInserted, fmt.Errorf("failed to get rows affected: %w", err)
+		}
+		totalInserted += int(rowsAffected)
+	}
+
+	return totalInserted, nil
+}
+
+// =============================================================================
 // MATERIALIZED VIEW OPERATIONS
 // =============================================================================
 
@@ -1410,6 +1481,50 @@ func (r *AccessControlRepository) RefreshUserAccessibleAssets(ctx context.Contex
 		return fmt.Errorf("failed to refresh user accessible assets: %w", err)
 	}
 
+	return nil
+}
+
+// =============================================================================
+// INCREMENTAL ACCESS REFRESH
+// =============================================================================
+
+// RefreshAccessForAssetAssign incrementally updates access when an asset is assigned to a group.
+func (r *AccessControlRepository) RefreshAccessForAssetAssign(ctx context.Context, groupID, assetID shared.ID, ownershipType string) error {
+	query := `SELECT refresh_access_for_asset_assign($1, $2, $3)`
+	_, err := r.db.ExecContext(ctx, query, groupID.String(), assetID.String(), ownershipType)
+	if err != nil {
+		return fmt.Errorf("failed to refresh access for asset assign: %w", err)
+	}
+	return nil
+}
+
+// RefreshAccessForAssetUnassign incrementally updates access when an asset is removed from a group.
+func (r *AccessControlRepository) RefreshAccessForAssetUnassign(ctx context.Context, groupID, assetID shared.ID) error {
+	query := `SELECT refresh_access_for_asset_unassign($1, $2)`
+	_, err := r.db.ExecContext(ctx, query, groupID.String(), assetID.String())
+	if err != nil {
+		return fmt.Errorf("failed to refresh access for asset unassign: %w", err)
+	}
+	return nil
+}
+
+// RefreshAccessForMemberAdd incrementally updates access when a user is added to a group.
+func (r *AccessControlRepository) RefreshAccessForMemberAdd(ctx context.Context, groupID, userID shared.ID) error {
+	query := `SELECT refresh_access_for_member_add($1, $2)`
+	_, err := r.db.ExecContext(ctx, query, groupID.String(), userID.String())
+	if err != nil {
+		return fmt.Errorf("failed to refresh access for member add: %w", err)
+	}
+	return nil
+}
+
+// RefreshAccessForMemberRemove incrementally updates access when a user is removed from a group.
+func (r *AccessControlRepository) RefreshAccessForMemberRemove(ctx context.Context, groupID, userID shared.ID) error {
+	query := `SELECT refresh_access_for_member_remove($1, $2)`
+	_, err := r.db.ExecContext(ctx, query, groupID.String(), userID.String())
+	if err != nil {
+		return fmt.Errorf("failed to refresh access for member remove: %w", err)
+	}
 	return nil
 }
 

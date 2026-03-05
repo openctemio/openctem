@@ -383,6 +383,13 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 		return nil, fmt.Errorf("failed to add member: %w", err)
 	}
 
+	// Incremental refresh: grant access to all assets owned by this group
+	if s.accessControlRepo != nil {
+		if err := s.accessControlRepo.RefreshAccessForMemberAdd(ctx, groupID, input.UserID); err != nil {
+			s.logger.Error("failed to incrementally refresh access for member add", "error", err)
+		}
+	}
+
 	s.logger.Info("member added to group", "group_id", input.GroupID, "user_id", input.UserID.String(), "role", role)
 
 	// Log audit event
@@ -489,6 +496,13 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 		return err
 	}
 
+	// Incremental refresh: revoke access to assets that were only accessible through this group
+	if s.accessControlRepo != nil {
+		if err := s.accessControlRepo.RefreshAccessForMemberRemove(ctx, gid, userID); err != nil {
+			s.logger.Error("failed to incrementally refresh access for member remove", "error", err)
+		}
+	}
+
 	s.logger.Info("member removed from group", "group_id", groupID, "user_id", userID.String())
 
 	// Log audit event
@@ -574,12 +588,8 @@ func (s *GroupService) AssignPermissionSet(ctx context.Context, input AssignPerm
 
 	s.logger.Info("permission set assigned", "group_id", input.GroupID, "permission_set_id", input.PermissionSetID)
 
-	// Refresh materialized view if access control repo is configured
-	if s.accessControlRepo != nil {
-		if err := s.accessControlRepo.RefreshUserAccessibleAssets(ctx); err != nil {
-			s.logger.Error("failed to refresh user accessible assets", "error", err)
-		}
-	}
+	// Note: Permission set changes don't affect data scope (user_accessible_assets),
+	// so no materialized view refresh is needed here.
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
@@ -615,12 +625,8 @@ func (s *GroupService) UnassignPermissionSet(ctx context.Context, groupID, permi
 
 	s.logger.Info("permission set unassigned", "group_id", groupID, "permission_set_id", permissionSetID)
 
-	// Refresh materialized view if access control repo is configured
-	if s.accessControlRepo != nil {
-		if err := s.accessControlRepo.RefreshUserAccessibleAssets(ctx); err != nil {
-			s.logger.Error("failed to refresh user accessible assets", "error", err)
-		}
-	}
+	// Note: Permission set changes don't affect data scope (user_accessible_assets),
+	// so no materialized view refresh is needed here.
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
@@ -714,9 +720,9 @@ func (s *GroupService) AssignAsset(ctx context.Context, input AssignAssetInput, 
 
 	s.logger.Info("asset assigned to group", "group_id", input.GroupID, "asset_id", input.AssetID, "ownership_type", input.OwnershipType)
 
-	// Refresh materialized view
-	if err := s.accessControlRepo.RefreshUserAccessibleAssets(ctx); err != nil {
-		s.logger.Error("failed to refresh user accessible assets", "error", err)
+	// Incremental refresh (only affects this group+asset combination)
+	if err := s.accessControlRepo.RefreshAccessForAssetAssign(ctx, groupID, assetID, input.OwnershipType); err != nil {
+		s.logger.Error("failed to incrementally refresh access for asset assign", "error", err)
 	}
 
 	// Log audit event
@@ -764,9 +770,9 @@ func (s *GroupService) UnassignAsset(ctx context.Context, input UnassignAssetInp
 
 	s.logger.Info("asset unassigned from group", "group_id", input.GroupID, "asset_id", input.AssetID)
 
-	// Refresh materialized view
-	if err := s.accessControlRepo.RefreshUserAccessibleAssets(ctx); err != nil {
-		s.logger.Error("failed to refresh user accessible assets", "error", err)
+	// Incremental refresh (only affects this group+asset combination)
+	if err := s.accessControlRepo.RefreshAccessForAssetUnassign(ctx, groupID, assetID); err != nil {
+		s.logger.Error("failed to incrementally refresh access for asset unassign", "error", err)
 	}
 
 	// Log audit event
@@ -912,4 +918,101 @@ func (s *GroupService) CanAccessAsset(ctx context.Context, userID shared.ID, ass
 	}
 
 	return s.accessControlRepo.CanAccessAsset(ctx, userID, aid)
+}
+
+// =============================================================================
+// BULK ASSET ASSIGNMENT
+// =============================================================================
+
+// BulkAssignAssetsInput represents the input for bulk assigning assets to a group.
+type BulkAssignAssetsInput struct {
+	GroupID       string   `json:"-"`
+	AssetIDs      []string `json:"asset_ids" validate:"required,min=1,max=1000,dive,uuid"`
+	OwnershipType string   `json:"ownership_type" validate:"required,oneof=primary secondary stakeholder informed"`
+}
+
+// BulkAssignAssetsResult represents the result of bulk asset assignment.
+type BulkAssignAssetsResult struct {
+	SuccessCount int      `json:"success_count"`
+	FailedCount  int      `json:"failed_count"`
+	FailedAssets []string `json:"failed_assets,omitempty"`
+}
+
+// BulkAssignAssets assigns multiple assets to a group in bulk.
+func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAssetsInput, assignedBy shared.ID, actx AuditContext) (*BulkAssignAssetsResult, error) {
+	if s.accessControlRepo == nil {
+		return nil, fmt.Errorf("access control repository not configured")
+	}
+
+	groupID, err := shared.IDFromString(input.GroupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	ownershipType := accesscontrol.OwnershipType(input.OwnershipType)
+	if !ownershipType.IsValid() {
+		return nil, fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
+	}
+
+	// Verify group exists
+	g, err := s.repo.GetByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build AssetOwner entities
+	owners := make([]*accesscontrol.AssetOwner, 0, len(input.AssetIDs))
+	failedAssets := make([]string, 0)
+
+	for _, assetIDStr := range input.AssetIDs {
+		assetID, err := shared.IDFromString(assetIDStr)
+		if err != nil {
+			failedAssets = append(failedAssets, assetIDStr)
+			continue
+		}
+
+		ao, err := accesscontrol.NewAssetOwnerForGroup(assetID, groupID, ownershipType, &assignedBy)
+		if err != nil {
+			failedAssets = append(failedAssets, assetIDStr)
+			continue
+		}
+		owners = append(owners, ao)
+	}
+
+	// Bulk insert
+	inserted, err := s.accessControlRepo.BulkCreateAssetOwners(ctx, owners)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk assign assets: %w", err)
+	}
+
+	// Incremental refresh for each successfully assigned asset
+	for _, ao := range owners {
+		if refreshErr := s.accessControlRepo.RefreshAccessForAssetAssign(ctx, groupID, ao.AssetID(), input.OwnershipType); refreshErr != nil {
+			s.logger.Error("failed to refresh access for bulk-assigned asset", "asset_id", ao.AssetID().String(), "error", refreshErr)
+		}
+	}
+
+	result := &BulkAssignAssetsResult{
+		SuccessCount: inserted,
+		FailedCount:  len(input.AssetIDs) - inserted,
+		FailedAssets: failedAssets,
+	}
+
+	s.logger.Info("bulk assets assigned to group",
+		"group_id", input.GroupID,
+		"total", len(input.AssetIDs),
+		"success", inserted,
+		"failed", result.FailedCount,
+	)
+
+	// Log audit event
+	actx.TenantID = g.TenantID().String()
+	event := NewSuccessEvent(audit.ActionAssetAssigned, audit.ResourceTypeGroup, input.GroupID).
+		WithMessage(fmt.Sprintf("Bulk assigned %d assets to group", inserted)).
+		WithMetadata("total_requested", fmt.Sprintf("%d", len(input.AssetIDs))).
+		WithMetadata("success_count", fmt.Sprintf("%d", inserted)).
+		WithMetadata("ownership_type", input.OwnershipType)
+	s.logAudit(ctx, actx, event)
+
+	return result, nil
 }

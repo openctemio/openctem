@@ -120,7 +120,22 @@ func (m *mockAccessControlRepo) CountAssignmentRules(_ context.Context, _ shared
 func (m *mockAccessControlRepo) ListActiveRulesByPriority(_ context.Context, _ shared.ID) ([]*accesscontrol.AssignmentRule, error) {
 	return nil, nil
 }
+func (m *mockAccessControlRepo) BulkCreateAssetOwners(_ context.Context, _ []*accesscontrol.AssetOwner) (int, error) {
+	return 0, nil
+}
 func (m *mockAccessControlRepo) RefreshUserAccessibleAssets(_ context.Context) error {
+	return nil
+}
+func (m *mockAccessControlRepo) RefreshAccessForAssetAssign(_ context.Context, _, _ shared.ID, _ string) error {
+	return nil
+}
+func (m *mockAccessControlRepo) RefreshAccessForAssetUnassign(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockAccessControlRepo) RefreshAccessForMemberAdd(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockAccessControlRepo) RefreshAccessForMemberRemove(_ context.Context, _, _ shared.ID) error {
 	return nil
 }
 

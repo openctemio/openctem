@@ -896,6 +896,65 @@ func (h *GroupHandler) AssignAsset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// BulkAssignAssetsRequest represents the request to bulk assign assets to a group.
+type BulkAssignAssetsRequest struct {
+	AssetIDs      []string `json:"asset_ids" validate:"required,min=1,max=1000,dive,uuid"`
+	OwnershipType string   `json:"ownership_type" validate:"required,oneof=primary secondary stakeholder informed"`
+}
+
+// BulkAssignAssetsResponse represents the response for bulk asset assignment.
+type BulkAssignAssetsResponse struct {
+	SuccessCount int      `json:"success_count"`
+	FailedCount  int      `json:"failed_count"`
+	FailedAssets []string `json:"failed_assets,omitempty"`
+}
+
+// BulkAssignAssets handles POST /api/v1/groups/{groupId}/assets/bulk
+func (h *GroupHandler) BulkAssignAssets(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	groupID := chi.URLParam(r, "groupId")
+
+	userID := middleware.GetLocalUserID(ctx)
+	if userID.IsZero() {
+		apierror.Unauthorized("User context required").WriteJSON(w)
+		return
+	}
+
+	var req BulkAssignAssetsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	input := app.BulkAssignAssetsInput{
+		GroupID:       groupID,
+		AssetIDs:      req.AssetIDs,
+		OwnershipType: req.OwnershipType,
+	}
+
+	actx := h.buildAuditContext(r)
+
+	result, err := h.service.BulkAssignAssets(ctx, input, userID, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	resp := BulkAssignAssetsResponse{
+		SuccessCount: result.SuccessCount,
+		FailedCount:  result.FailedCount,
+		FailedAssets: result.FailedAssets,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 // UnassignAsset handles DELETE /api/v1/groups/{groupId}/assets/{assetId}
 // @Summary Remove an asset from a group
 // @Description Remove an asset ownership from the group
