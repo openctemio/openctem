@@ -481,6 +481,27 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	return s.repo.List(ctx, filter, opts, page)
 }
 
+// ListTags returns distinct tags across all assets for a tenant.
+// Supports prefix filtering for autocomplete.
+func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, limit int) ([]string, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	// Sanitize prefix: trim and limit length to prevent abuse
+	prefix = strings.TrimSpace(prefix)
+	if len(prefix) > 50 {
+		prefix = prefix[:50]
+	}
+
+	return s.repo.ListDistinctTags(ctx, parsedTenantID, prefix, limit)
+}
+
 // ActivateAsset activates an asset.
 // Security: Requires tenantID to prevent cross-tenant activation.
 func (s *AssetService) ActivateAsset(ctx context.Context, tenantID, assetID string) (*asset.Asset, error) {

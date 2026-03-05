@@ -27,10 +27,21 @@ func NewDashboardHandler(dashboardService *app.DashboardService, log *logger.Log
 
 // DashboardStatsResponse represents the dashboard statistics response.
 type DashboardStatsResponse struct {
-	Assets         AssetStats      `json:"assets"`
-	Findings       FindingStats    `json:"findings"`
-	Repositories   RepositoryStats `json:"repositories"`
-	RecentActivity []ActivityItem  `json:"recent_activity"`
+	Assets         AssetStats          `json:"assets"`
+	Findings       FindingStats        `json:"findings"`
+	Repositories   RepositoryStats     `json:"repositories"`
+	RecentActivity []ActivityItem      `json:"recent_activity"`
+	FindingTrend   []FindingTrendPoint `json:"finding_trend"`
+}
+
+// FindingTrendPoint represents one month's finding counts by severity.
+type FindingTrendPoint struct {
+	Date     string `json:"date"`
+	Critical int    `json:"critical"`
+	High     int    `json:"high"`
+	Medium   int    `json:"medium"`
+	Low      int    `json:"low"`
+	Info     int    `json:"info"`
 }
 
 // AssetStats represents asset statistics.
@@ -97,26 +108,7 @@ func (h *DashboardHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to response
-	response := DashboardStatsResponse{
-		Assets: AssetStats{
-			Total:     stats.AssetCount,
-			ByType:    stats.AssetsByType,
-			ByStatus:  stats.AssetsByStatus,
-			RiskScore: stats.AverageRiskScore,
-		},
-		Findings: FindingStats{
-			Total:       stats.FindingCount,
-			BySeverity:  stats.FindingsBySeverity,
-			ByStatus:    stats.FindingsByStatus,
-			Overdue:     stats.OverdueFindings,
-			AverageCVSS: stats.AverageCVSS,
-		},
-		Repositories: RepositoryStats{
-			Total:        stats.RepositoryCount,
-			WithFindings: stats.RepositoriesWithFindings,
-		},
-		RecentActivity: convertActivityItems(stats.RecentActivity),
-	}
+	response := buildDashboardResponse(stats)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -154,7 +146,16 @@ func (h *DashboardHandler) GetGlobalStats(w http.ResponseWriter, r *http.Request
 	}
 
 	// Convert to response
-	response := DashboardStatsResponse{
+	response := buildDashboardResponse(stats)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+// buildDashboardResponse converts internal stats to API response.
+func buildDashboardResponse(stats *app.DashboardStats) DashboardStatsResponse {
+	return DashboardStatsResponse{
 		Assets: AssetStats{
 			Total:     stats.AssetCount,
 			ByType:    stats.AssetsByType,
@@ -173,11 +174,23 @@ func (h *DashboardHandler) GetGlobalStats(w http.ResponseWriter, r *http.Request
 			WithFindings: stats.RepositoriesWithFindings,
 		},
 		RecentActivity: convertActivityItems(stats.RecentActivity),
+		FindingTrend:   convertFindingTrend(stats.FindingTrend),
 	}
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
+func convertFindingTrend(points []app.FindingTrendPoint) []FindingTrendPoint {
+	result := make([]FindingTrendPoint, len(points))
+	for i, p := range points {
+		result[i] = FindingTrendPoint{
+			Date:     p.Date,
+			Critical: p.Critical,
+			High:     p.High,
+			Medium:   p.Medium,
+			Low:      p.Low,
+			Info:     p.Info,
+		}
+	}
+	return result
 }
 
 func convertActivityItems(items []app.ActivityItem) []ActivityItem {

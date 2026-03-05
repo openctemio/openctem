@@ -226,6 +226,187 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 	return activity, nil
 }
 
+// GetAllStats returns all dashboard statistics for a tenant in 2 optimized queries
+// instead of 10+ separate queries. This is used by the main dashboard endpoint.
+func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.ID) (*app.DashboardAllStats, error) {
+	tid := tenantID.String()
+	result := &app.DashboardAllStats{
+		Assets: app.AssetStatsData{
+			ByType:   make(map[string]int),
+			ByStatus: make(map[string]int),
+		},
+		Findings: app.FindingStatsData{
+			BySeverity: make(map[string]int),
+			ByStatus:   make(map[string]int),
+		},
+	}
+
+	// Query 1: All counts in one query using CTEs
+	rows, err := r.db.QueryContext(ctx, `
+		WITH asset_total AS (
+			SELECT COUNT(*) AS cnt FROM assets WHERE tenant_id = $1
+		),
+		asset_by_type AS (
+			SELECT 'atype' AS grp, asset_type AS key, COUNT(*) AS cnt
+			FROM assets WHERE tenant_id = $1 GROUP BY asset_type
+		),
+		asset_by_status AS (
+			SELECT 'astatus' AS grp, status AS key, COUNT(*) AS cnt
+			FROM assets WHERE tenant_id = $1 GROUP BY status
+		),
+		finding_total AS (
+			SELECT COUNT(*) AS cnt FROM findings WHERE tenant_id = $1
+		),
+		finding_by_severity AS (
+			SELECT 'fsev' AS grp, severity AS key, COUNT(*) AS cnt
+			FROM findings WHERE tenant_id = $1 GROUP BY severity
+		),
+		finding_by_status AS (
+			SELECT 'fstatus' AS grp, status AS key, COUNT(*) AS cnt
+			FROM findings WHERE tenant_id = $1 GROUP BY status
+		),
+		avg_cvss AS (
+			SELECT COALESCE(AVG(v.cvss_score), 0) AS val
+			FROM findings f LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
+			WHERE f.tenant_id = $1
+		),
+		repo_total AS (
+			SELECT COUNT(*) AS cnt FROM assets WHERE tenant_id = $1 AND asset_type = 'repository'
+		),
+		repo_with_findings AS (
+			SELECT COUNT(DISTINCT a.id) AS cnt
+			FROM assets a INNER JOIN findings f ON a.id = f.asset_id
+			WHERE a.tenant_id = $1 AND a.asset_type = 'repository'
+		)
+		SELECT 'asset_total' AS grp, '' AS key, cnt, 0::float8 AS val FROM asset_total
+		UNION ALL SELECT grp, key, cnt, 0 FROM asset_by_type
+		UNION ALL SELECT grp, key, cnt, 0 FROM asset_by_status
+		UNION ALL SELECT 'finding_total', '', cnt, 0 FROM finding_total
+		UNION ALL SELECT grp, key, cnt, 0 FROM finding_by_severity
+		UNION ALL SELECT grp, key, cnt, 0 FROM finding_by_status
+		UNION ALL SELECT 'avg_cvss', '', 0, val FROM avg_cvss
+		UNION ALL SELECT 'repo_total', '', cnt, 0 FROM repo_total
+		UNION ALL SELECT 'repo_findings', '', cnt, 0 FROM repo_with_findings`,
+		tid,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var grp, key string
+		var cnt int
+		var val float64
+		if err := rows.Scan(&grp, &key, &cnt, &val); err != nil {
+			return nil, err
+		}
+		switch grp {
+		case "asset_total":
+			result.Assets.Total = cnt
+		case "atype":
+			result.Assets.ByType[key] = cnt
+		case "astatus":
+			result.Assets.ByStatus[key] = cnt
+		case "finding_total":
+			result.Findings.Total = cnt
+		case "fsev":
+			result.Findings.BySeverity[key] = cnt
+		case "fstatus":
+			result.Findings.ByStatus[key] = cnt
+		case "avg_cvss":
+			result.Findings.AverageCVSS = val
+		case "repo_total":
+			result.Repos.Total = cnt
+		case "repo_findings":
+			result.Repos.WithFindings = cnt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result.Activity = make([]app.ActivityItem, 0)
+
+	// Query 2: Recent activity (separate query - different result shape)
+	activityRows, err := r.db.QueryContext(ctx,
+		`SELECT 'finding' as type,
+		        COALESCE(f.rule_id, f.tool_name) as title,
+		        f.message as description,
+		        f.created_at
+		 FROM findings f
+		 WHERE f.tenant_id = $1
+		 ORDER BY f.created_at DESC
+		 LIMIT 10`,
+		tid,
+	)
+	if err != nil {
+		return result, nil // Return partial stats, activity empty
+	}
+	defer activityRows.Close()
+
+	for activityRows.Next() {
+		var item app.ActivityItem
+		if err := activityRows.Scan(&item.Type, &item.Title, &item.Description, &item.Timestamp); err != nil {
+			return result, nil
+		}
+		result.Activity = append(result.Activity, item)
+	}
+
+	return result, nil
+}
+
+// GetFindingTrend returns monthly finding counts by severity for a tenant.
+// Uses a single query with date_trunc and FILTER to pivot severity counts.
+func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shared.ID, months int) ([]app.FindingTrendPoint, error) {
+	if months <= 0 || months > 24 {
+		months = 6
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		WITH months AS (
+			SELECT generate_series(
+				date_trunc('month', NOW()) - ($2::int - 1) * interval '1 month',
+				date_trunc('month', NOW()),
+				interval '1 month'
+			) AS month_start
+		)
+		SELECT
+			to_char(m.month_start, 'Mon') AS date_label,
+			COALESCE(COUNT(*) FILTER (WHERE f.severity = 'critical'), 0) AS critical,
+			COALESCE(COUNT(*) FILTER (WHERE f.severity = 'high'), 0) AS high,
+			COALESCE(COUNT(*) FILTER (WHERE f.severity = 'medium'), 0) AS medium,
+			COALESCE(COUNT(*) FILTER (WHERE f.severity = 'low'), 0) AS low,
+			COALESCE(COUNT(*) FILTER (WHERE f.severity = 'info'), 0) AS info
+		FROM months m
+		LEFT JOIN findings f
+			ON f.tenant_id = $1
+			AND f.created_at >= m.month_start
+			AND f.created_at < m.month_start + interval '1 month'
+		GROUP BY m.month_start
+		ORDER BY m.month_start ASC`,
+		tenantID.String(), months,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	trend := make([]app.FindingTrendPoint, 0, months)
+	for rows.Next() {
+		var p app.FindingTrendPoint
+		if err := rows.Scan(&p.Date, &p.Critical, &p.High, &p.Medium, &p.Low, &p.Info); err != nil {
+			return nil, err
+		}
+		trend = append(trend, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return trend, nil
+}
+
 // Global stats methods (not tenant-scoped)
 
 // GetGlobalAssetStats returns global asset statistics.

@@ -931,6 +931,41 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	return created, updated, nil
 }
 
+// ListDistinctTags returns distinct tags across all assets for a tenant.
+// Supports prefix filtering for autocomplete and a limit for result size.
+func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error) {
+	query := `SELECT DISTINCT tag FROM assets, unnest(tags) AS tag WHERE tenant_id = $1`
+	args := []any{tenantID.String()}
+
+	if prefix != "" {
+		query += ` AND tag ILIKE $2`
+		args = append(args, escapeLikePattern(prefix)+"%")
+	}
+
+	query += fmt.Sprintf(` ORDER BY tag LIMIT %d`, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list distinct tags: %w", err)
+	}
+	defer rows.Close()
+
+	tags := make([]string, 0)
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, fmt.Errorf("failed to scan tag: %w", err)
+		}
+		tags = append(tags, tag)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate tags: %w", err)
+	}
+
+	return tags, nil
+}
+
 // UpdateFindingCounts updates finding counts for multiple assets in batch.
 // This recalculates the finding_count from the findings table.
 func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {

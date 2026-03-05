@@ -66,6 +66,10 @@ type Repository interface {
 	// UpdateFindingCounts updates finding counts for multiple assets in batch.
 	// This is used after bulk finding ingestion to refresh asset statistics.
 	UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error
+
+	// ListDistinctTags returns distinct tags across all assets for a tenant.
+	// Supports prefix filtering for autocomplete and a limit for result size.
+	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error)
 }
 
 // RepositoryExtensionRepository defines the interface for repository extension persistence.

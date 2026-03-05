@@ -29,6 +29,19 @@ type DashboardStats struct {
 
 	// Recent activity
 	RecentActivity []ActivityItem
+
+	// Finding trend (monthly breakdown by severity)
+	FindingTrend []FindingTrendPoint
+}
+
+// FindingTrendPoint represents one month's finding counts by severity.
+type FindingTrendPoint struct {
+	Date     string // "Jan", "Feb", etc.
+	Critical int
+	High     int
+	Medium   int
+	Low      int
+	Info     int
 }
 
 // ActivityItem represents a recent activity item.
@@ -37,6 +50,14 @@ type ActivityItem struct {
 	Title       string
 	Description string
 	Timestamp   time.Time
+}
+
+// DashboardAllStats holds all dashboard stats from the optimized batched query.
+type DashboardAllStats struct {
+	Assets   AssetStatsData
+	Findings FindingStatsData
+	Repos    RepositoryStatsData
+	Activity []ActivityItem
 }
 
 // DashboardStatsRepository defines the interface for dashboard data access.
@@ -49,6 +70,10 @@ type DashboardStatsRepository interface {
 	GetRepositoryStats(ctx context.Context, tenantID shared.ID) (RepositoryStatsData, error)
 	// GetRecentActivity returns recent activity for a tenant
 	GetRecentActivity(ctx context.Context, tenantID shared.ID, limit int) ([]ActivityItem, error)
+	// GetFindingTrend returns monthly finding counts by severity for a tenant
+	GetFindingTrend(ctx context.Context, tenantID shared.ID, months int) ([]FindingTrendPoint, error)
+	// GetAllStats returns all dashboard stats in 2 optimized queries (replaces 10+ individual calls)
+	GetAllStats(ctx context.Context, tenantID shared.ID) (*DashboardAllStats, error)
 
 	// Global stats (not tenant-scoped) - deprecated, use filtered versions
 	GetGlobalAssetStats(ctx context.Context) (AssetStatsData, error)
@@ -101,49 +126,41 @@ func NewDashboardService(repo DashboardStatsRepository, log *logger.Logger) *Das
 }
 
 // GetStats returns dashboard statistics for a tenant.
+// Uses optimized batched query (2 queries instead of 10+).
 func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*DashboardStats, error) {
-	// Get asset stats
-	assetStats, err := s.repo.GetAssetStats(ctx, tenantID)
+	// Batched query: all counts + activity in 2 queries
+	all, err := s.repo.GetAllStats(ctx, tenantID)
 	if err != nil {
-		s.logger.Error("failed to get asset stats", "error", err, "tenant_id", tenantID)
-		// Don't fail completely, use empty stats
-		assetStats = AssetStatsData{ByType: make(map[string]int), ByStatus: make(map[string]int)}
+		s.logger.Error("failed to get dashboard stats", "error", err, "tenant_id", tenantID)
+		// Fallback to empty
+		all = &DashboardAllStats{
+			Assets:   AssetStatsData{ByType: make(map[string]int), ByStatus: make(map[string]int)},
+			Findings: FindingStatsData{BySeverity: make(map[string]int), ByStatus: make(map[string]int)},
+			Activity: []ActivityItem{},
+		}
 	}
 
-	// Get finding stats
-	findingStats, err := s.repo.GetFindingStats(ctx, tenantID)
+	// Finding trend (separate query — different shape, efficient CTE)
+	trend, err := s.repo.GetFindingTrend(ctx, tenantID, 6)
 	if err != nil {
-		s.logger.Error("failed to get finding stats", "error", err, "tenant_id", tenantID)
-		findingStats = FindingStatsData{BySeverity: make(map[string]int), ByStatus: make(map[string]int)}
-	}
-
-	// Get repository stats
-	repoStats, err := s.repo.GetRepositoryStats(ctx, tenantID)
-	if err != nil {
-		s.logger.Error("failed to get repository stats", "error", err, "tenant_id", tenantID)
-		repoStats = RepositoryStatsData{}
-	}
-
-	// Get recent activity
-	activity, err := s.repo.GetRecentActivity(ctx, tenantID, 10)
-	if err != nil {
-		s.logger.Error("failed to get recent activity", "error", err, "tenant_id", tenantID)
-		activity = []ActivityItem{}
+		s.logger.Error("failed to get finding trend", "error", err, "tenant_id", tenantID)
+		trend = []FindingTrendPoint{}
 	}
 
 	return &DashboardStats{
-		AssetCount:               assetStats.Total,
-		AssetsByType:             assetStats.ByType,
-		AssetsByStatus:           assetStats.ByStatus,
-		AverageRiskScore:         assetStats.AverageRiskScore,
-		FindingCount:             findingStats.Total,
-		FindingsBySeverity:       findingStats.BySeverity,
-		FindingsByStatus:         findingStats.ByStatus,
-		OverdueFindings:          findingStats.Overdue,
-		AverageCVSS:              findingStats.AverageCVSS,
-		RepositoryCount:          repoStats.Total,
-		RepositoriesWithFindings: repoStats.WithFindings,
-		RecentActivity:           activity,
+		AssetCount:               all.Assets.Total,
+		AssetsByType:             all.Assets.ByType,
+		AssetsByStatus:           all.Assets.ByStatus,
+		AverageRiskScore:         all.Assets.AverageRiskScore,
+		FindingCount:             all.Findings.Total,
+		FindingsBySeverity:       all.Findings.BySeverity,
+		FindingsByStatus:         all.Findings.ByStatus,
+		OverdueFindings:          all.Findings.Overdue,
+		AverageCVSS:              all.Findings.AverageCVSS,
+		RepositoryCount:          all.Repos.Total,
+		RepositoriesWithFindings: all.Repos.WithFindings,
+		RecentActivity:           all.Activity,
+		FindingTrend:             trend,
 	}, nil
 }
 
@@ -191,6 +208,7 @@ func (s *DashboardService) GetGlobalStats(ctx context.Context) (*DashboardStats,
 		RepositoryCount:          repoStats.Total,
 		RepositoriesWithFindings: repoStats.WithFindings,
 		RecentActivity:           activity,
+		FindingTrend:             []FindingTrendPoint{},
 	}, nil
 }
 
@@ -206,6 +224,7 @@ func (s *DashboardService) GetStatsForTenants(ctx context.Context, tenantIDs []s
 			FindingsBySeverity: make(map[string]int),
 			FindingsByStatus:   make(map[string]int),
 			RecentActivity:     []ActivityItem{},
+			FindingTrend:       []FindingTrendPoint{},
 		}, nil
 	}
 
@@ -250,5 +269,6 @@ func (s *DashboardService) GetStatsForTenants(ctx context.Context, tenantIDs []s
 		RepositoryCount:          repoStats.Total,
 		RepositoriesWithFindings: repoStats.WithFindings,
 		RecentActivity:           activity,
+		FindingTrend:             []FindingTrendPoint{},
 	}, nil
 }

@@ -25,8 +25,9 @@ func registerAssetRoutes(
 
 	// Asset routes - tenant from JWT token
 	router.Group("/api/v1/assets", func(r Router) {
-		// Stats endpoint (must be before /{id} to avoid matching)
+		// Stats and tags endpoints (must be before /{id} to avoid matching)
 		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
 
 		// Bulk operations (must be before /{id} patterns to avoid route conflicts)
 		r.POST("/bulk-sync", h.BulkSync, middleware.Require(permission.AssetsWrite))

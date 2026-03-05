@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
@@ -1069,6 +1070,31 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(stats)
+}
+
+// ListTags returns distinct tags across all assets for the tenant.
+// Supports prefix filtering for autocomplete via ?prefix= query parameter.
+func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	prefix := r.URL.Query().Get("prefix")
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	tags, err := h.service.ListTags(r.Context(), tenantID, prefix, limit)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string][]string{"tags": tags})
 }
 
 // SyncResponse represents the response from a sync operation.
