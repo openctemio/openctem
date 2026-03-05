@@ -147,7 +147,7 @@ func TestGroupSyncService_SyncFromProvider(t *testing.T) {
 	log := logger.NewNop()
 	tenantID := shared.NewID()
 
-	t.Run("ValidProvider_NoError", func(t *testing.T) {
+	t.Run("ValidProvider_NotImplemented", func(t *testing.T) {
 		providers := []struct {
 			name     string
 			provider string
@@ -167,7 +167,9 @@ func TestGroupSyncService_SyncFromProvider(t *testing.T) {
 					"token": "test-token",
 				})
 
-				require.NoError(t, err)
+				// Valid provider is accepted but sync is not yet implemented
+				require.Error(t, err)
+				assert.ErrorIs(t, err, shared.ErrNotImplemented)
 			})
 		}
 	})
@@ -193,14 +195,15 @@ func TestGroupSyncService_SyncFromProvider(t *testing.T) {
 		assert.ErrorIs(t, err, shared.ErrValidation)
 	})
 
-	t.Run("NilConfig_NoError", func(t *testing.T) {
+	t.Run("NilConfig_NotImplemented", func(t *testing.T) {
 		repo := NewMockGroupRepository()
 		service := NewGroupSyncService(repo, log)
 
-		// Should not panic or error with nil config for valid provider
+		// Should not panic with nil config for valid provider
 		err := service.SyncFromProvider(context.Background(), tenantID, "github", nil)
 
-		require.NoError(t, err)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, shared.ErrNotImplemented)
 	})
 }
 
@@ -211,23 +214,25 @@ func TestGroupSyncService_SyncAll(t *testing.T) {
 	log := logger.NewNop()
 	tenantID := shared.NewID()
 
-	t.Run("SyncAll_NoError", func(t *testing.T) {
+	t.Run("SyncAll_NotImplemented", func(t *testing.T) {
 		repo := NewMockGroupRepository()
 		service := NewGroupSyncService(repo, log)
 
 		err := service.SyncAll(context.Background(), tenantID)
 
-		require.NoError(t, err)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, shared.ErrNotImplemented)
 	})
 
-	t.Run("SyncAll_MultipleCallsNoError", func(t *testing.T) {
+	t.Run("SyncAll_MultipleCallsConsistent", func(t *testing.T) {
 		repo := NewMockGroupRepository()
 		service := NewGroupSyncService(repo, log)
 
-		// Multiple calls should not error (idempotent placeholder)
-		for i := 0; i < 3; i++ {
+		// Multiple calls should consistently return not implemented
+		for range 3 {
 			err := service.SyncAll(context.Background(), tenantID)
-			require.NoError(t, err)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, shared.ErrNotImplemented)
 		}
 	})
 }
