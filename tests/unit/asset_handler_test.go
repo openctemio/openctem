@@ -166,6 +166,10 @@ func (m *HandlerMockRepository) UpdateFindingCounts(ctx context.Context, tenantI
 	return nil
 }
 
+func (m *HandlerMockRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error) {
+	return []string{}, nil
+}
+
 func newTestHandler() *handler.AssetHandler {
 	repo := NewHandlerMockRepository()
 	log := logger.NewDevelopment()

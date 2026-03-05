@@ -153,6 +153,10 @@ func (m *MockAssetRepository) UpdateFindingCounts(ctx context.Context, tenantID 
 	return nil
 }
 
+func (m *MockAssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error) {
+	return []string{}, nil
+}
+
 func newTestService() (*app.AssetService, *MockAssetRepository) {
 	repo := NewMockAssetRepository()
 	log := logger.NewDevelopment()

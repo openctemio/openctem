@@ -306,6 +306,10 @@ func (m *mockAssetRepo) UpdateFindingCounts(_ context.Context, _ shared.ID, _ []
 	return nil
 }
 
+func (m *mockAssetRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ string, _ int) ([]string, error) {
+	return []string{}, nil
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================

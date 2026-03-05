@@ -353,6 +353,10 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		result.Activity = append(result.Activity, item)
 	}
 
+	if err := activityRows.Err(); err != nil {
+		return result, nil // Return partial stats, activity may be incomplete
+	}
+
 	return result, nil
 }
 

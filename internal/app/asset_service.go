@@ -19,8 +19,8 @@ import (
 type AssetService struct {
 	repo              asset.Repository
 	repoExtRepo       asset.RepositoryExtensionRepository
-	assetGroupRepo    assetgroup.Repository        // For recalculating group stats
-	accessControlRepo accesscontrol.Repository      // For Layer 2 data scope checks
+	assetGroupRepo    assetgroup.Repository    // For recalculating group stats
+	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
 	logger            *logger.Logger
 }
 
