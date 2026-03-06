@@ -66,17 +66,22 @@ type Repository interface {
 	GetScopeRule(ctx context.Context, tenantID, id shared.ID) (*ScopeRule, error)
 	UpdateScopeRule(ctx context.Context, tenantID shared.ID, rule *ScopeRule) error
 	DeleteScopeRule(ctx context.Context, tenantID, id shared.ID) error
-	ListScopeRules(ctx context.Context, groupID shared.ID, filter ScopeRuleFilter) ([]*ScopeRule, error)
-	CountScopeRules(ctx context.Context, groupID shared.ID) (int64, error)
+	ListScopeRules(ctx context.Context, tenantID, groupID shared.ID, filter ScopeRuleFilter) ([]*ScopeRule, error)
+	CountScopeRules(ctx context.Context, tenantID, groupID shared.ID, filter ScopeRuleFilter) (int64, error)
 	ListActiveScopeRulesByTenant(ctx context.Context, tenantID shared.ID) ([]*ScopeRule, error)
-	ListActiveScopeRulesByGroup(ctx context.Context, groupID shared.ID) ([]*ScopeRule, error)
+	ListActiveScopeRulesByGroup(ctx context.Context, tenantID, groupID shared.ID) ([]*ScopeRule, error)
 
 	// Scope rule asset operations
 	CreateAssetOwnerWithSource(ctx context.Context, ao *AssetOwner, source string, ruleID *shared.ID) error
 	BulkCreateAssetOwnersWithSource(ctx context.Context, owners []*AssetOwner, source string, ruleID *shared.ID) (int, error)
-	DeleteAutoAssignedByRule(ctx context.Context, ruleID shared.ID) (int, error)
+	DeleteAutoAssignedByRule(ctx context.Context, tenantID, ruleID shared.ID) (int, error)
 	DeleteAutoAssignedForAsset(ctx context.Context, assetID, groupID shared.ID) error
-	ListAutoAssignedAssets(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
+	BulkDeleteAutoAssignedForAssets(ctx context.Context, assetIDs []shared.ID, groupID shared.ID) (int, error)
+	ListAutoAssignedAssets(ctx context.Context, tenantID, groupID shared.ID) ([]shared.ID, error)
+	ListAutoAssignedGroupsForAsset(ctx context.Context, assetID shared.ID) ([]shared.ID, error)
+
+	// Transactional scope rule operations
+	DeleteScopeRuleWithCleanup(ctx context.Context, tenantID, ruleID shared.ID) (int, error)
 
 	// Scope rule matching queries
 	FindAssetsByTagMatch(ctx context.Context, tenantID shared.ID, tags []string, logic MatchLogic) ([]shared.ID, error)

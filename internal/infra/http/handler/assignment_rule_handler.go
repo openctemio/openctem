@@ -178,7 +178,12 @@ func (h *AssignmentRuleHandler) ListRules(w http.ResponseWriter, r *http.Request
 		OrderDesc: r.URL.Query().Get("order") == "desc",
 	}
 
-	if active := r.URL.Query().Get("active"); active != "" {
+	// Support both "is_active" (preferred) and "active" (legacy) query params
+	activeParam := r.URL.Query().Get("is_active")
+	if activeParam == "" {
+		activeParam = r.URL.Query().Get("active")
+	}
+	if active := activeParam; active != "" {
 		if parsed, err := strconv.ParseBool(active); err == nil {
 			input.IsActive = &parsed
 		}
@@ -207,7 +212,7 @@ func (h *AssignmentRuleHandler) ListRules(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // CreateRule handles POST /api/v1/assignment-rules
@@ -249,7 +254,7 @@ func (h *AssignmentRuleHandler) CreateRule(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toAssignmentRuleResponse(rule))
+	_ = json.NewEncoder(w).Encode(toAssignmentRuleResponse(rule))
 }
 
 // GetRule handles GET /api/v1/assignment-rules/{id}
@@ -265,7 +270,7 @@ func (h *AssignmentRuleHandler) GetRule(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toAssignmentRuleResponse(rule))
+	_ = json.NewEncoder(w).Encode(toAssignmentRuleResponse(rule))
 }
 
 // UpdateRule handles PUT /api/v1/assignment-rules/{id}
@@ -302,7 +307,7 @@ func (h *AssignmentRuleHandler) UpdateRule(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toAssignmentRuleResponse(rule))
+	_ = json.NewEncoder(w).Encode(toAssignmentRuleResponse(rule))
 }
 
 // DeleteRule handles DELETE /api/v1/assignment-rules/{id}
@@ -330,5 +335,5 @@ func (h *AssignmentRuleHandler) TestRule(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }

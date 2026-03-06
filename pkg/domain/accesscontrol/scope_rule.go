@@ -3,6 +3,7 @@ package accesscontrol
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -188,6 +189,14 @@ func (r *ScopeRule) SetMatchTags(tags []string, logic MatchLogic) error {
 	}
 	if len(tags) > MaxMatchTags {
 		return fmt.Errorf("%w: maximum %d tags per rule", shared.ErrValidation, MaxMatchTags)
+	}
+	for _, tag := range tags {
+		if len(strings.TrimSpace(tag)) == 0 {
+			return fmt.Errorf("%w: empty tag not allowed", shared.ErrValidation)
+		}
+		if len(tag) > 200 {
+			return fmt.Errorf("%w: tag exceeds maximum length of 200 characters", shared.ErrValidation)
+		}
 	}
 	if !logic.IsValid() {
 		return fmt.Errorf("%w: invalid match logic", shared.ErrValidation)

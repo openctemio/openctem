@@ -150,16 +150,16 @@ func (m *mockAccessControlRepo) UpdateScopeRule(_ context.Context, _ shared.ID, 
 func (m *mockAccessControlRepo) DeleteScopeRule(_ context.Context, _, _ shared.ID) error {
 	return nil
 }
-func (m *mockAccessControlRepo) ListScopeRules(_ context.Context, _ shared.ID, _ accesscontrol.ScopeRuleFilter) ([]*accesscontrol.ScopeRule, error) {
+func (m *mockAccessControlRepo) ListScopeRules(_ context.Context, _, _ shared.ID, _ accesscontrol.ScopeRuleFilter) ([]*accesscontrol.ScopeRule, error) {
 	return nil, nil
 }
-func (m *mockAccessControlRepo) CountScopeRules(_ context.Context, _ shared.ID) (int64, error) {
+func (m *mockAccessControlRepo) CountScopeRules(_ context.Context, _, _ shared.ID, _ accesscontrol.ScopeRuleFilter) (int64, error) {
 	return 0, nil
 }
 func (m *mockAccessControlRepo) ListActiveScopeRulesByTenant(_ context.Context, _ shared.ID) ([]*accesscontrol.ScopeRule, error) {
 	return nil, nil
 }
-func (m *mockAccessControlRepo) ListActiveScopeRulesByGroup(_ context.Context, _ shared.ID) ([]*accesscontrol.ScopeRule, error) {
+func (m *mockAccessControlRepo) ListActiveScopeRulesByGroup(_ context.Context, _, _ shared.ID) ([]*accesscontrol.ScopeRule, error) {
 	return nil, nil
 }
 func (m *mockAccessControlRepo) CreateAssetOwnerWithSource(_ context.Context, _ *accesscontrol.AssetOwner, _ string, _ *shared.ID) error {
@@ -168,14 +168,23 @@ func (m *mockAccessControlRepo) CreateAssetOwnerWithSource(_ context.Context, _ 
 func (m *mockAccessControlRepo) BulkCreateAssetOwnersWithSource(_ context.Context, _ []*accesscontrol.AssetOwner, _ string, _ *shared.ID) (int, error) {
 	return 0, nil
 }
-func (m *mockAccessControlRepo) DeleteAutoAssignedByRule(_ context.Context, _ shared.ID) (int, error) {
+func (m *mockAccessControlRepo) DeleteAutoAssignedByRule(_ context.Context, _, _ shared.ID) (int, error) {
 	return 0, nil
 }
 func (m *mockAccessControlRepo) DeleteAutoAssignedForAsset(_ context.Context, _, _ shared.ID) error {
 	return nil
 }
-func (m *mockAccessControlRepo) ListAutoAssignedAssets(_ context.Context, _ shared.ID) ([]shared.ID, error) {
+func (m *mockAccessControlRepo) BulkDeleteAutoAssignedForAssets(_ context.Context, _ []shared.ID, _ shared.ID) (int, error) {
+	return 0, nil
+}
+func (m *mockAccessControlRepo) ListAutoAssignedAssets(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
 	return nil, nil
+}
+func (m *mockAccessControlRepo) ListAutoAssignedGroupsForAsset(_ context.Context, _ shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepo) DeleteScopeRuleWithCleanup(_ context.Context, _, _ shared.ID) (int, error) {
+	return 0, nil
 }
 func (m *mockAccessControlRepo) FindAssetsByTagMatch(_ context.Context, _ shared.ID, _ []string, _ accesscontrol.MatchLogic) ([]shared.ID, error) {
 	return nil, nil

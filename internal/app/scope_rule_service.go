@@ -55,17 +55,20 @@ func (s *ScopeRuleService) CreateScopeRule(ctx context.Context, input CreateScop
 		return nil, fmt.Errorf("%w: invalid group id", shared.ErrValidation)
 	}
 
-	// Verify group exists and is active
+	// Verify group exists, belongs to tenant, and is active
 	grp, err := s.groupRepo.GetByID(ctx, groupID)
 	if err != nil {
+		return nil, fmt.Errorf("%w: group not found", shared.ErrValidation)
+	}
+	if grp.TenantID() != tenantID {
 		return nil, fmt.Errorf("%w: group not found", shared.ErrValidation)
 	}
 	if !grp.IsActive() {
 		return nil, fmt.Errorf("%w: group is not active", shared.ErrValidation)
 	}
 
-	// Check max rules per group
-	count, err := s.acRepo.CountScopeRules(ctx, groupID)
+	// Check max rules per group (count ALL rules, no filter)
+	count, err := s.acRepo.CountScopeRules(ctx, tenantID, groupID, accesscontrol.ScopeRuleFilter{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to count scope rules: %w", err)
 	}
@@ -148,6 +151,7 @@ func (s *ScopeRuleService) CreateScopeRule(ctx context.Context, input CreateScop
 			"assets_added", added,
 		)
 	}
+	s.refreshAccessIfNeeded(ctx, added)
 
 	return rule, nil
 }
@@ -264,12 +268,13 @@ func (s *ScopeRuleService) UpdateScopeRule(ctx context.Context, tenantID, ruleID
 		} else if added > 0 {
 			s.logger.Info("scope rule updated and reconciled", "rule_id", ruleID, "assets_added", added)
 		}
+		s.refreshAccessIfNeeded(ctx, added)
 	}
 
 	return rule, nil
 }
 
-// DeleteScopeRule deletes a scope rule and removes its auto-assignments.
+// DeleteScopeRule deletes a scope rule and removes its auto-assignments atomically.
 func (s *ScopeRuleService) DeleteScopeRule(ctx context.Context, tenantID, ruleID string) error {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -280,19 +285,16 @@ func (s *ScopeRuleService) DeleteScopeRule(ctx context.Context, tenantID, ruleID
 		return fmt.Errorf("%w: invalid rule id", shared.ErrValidation)
 	}
 
+	// Fetch rule first for logging (and to verify it exists)
 	rule, err := s.acRepo.GetScopeRule(ctx, tid, id)
 	if err != nil {
 		return err
 	}
 
-	// Remove auto-assigned assets first
-	removed, err := s.acRepo.DeleteAutoAssignedByRule(ctx, id)
+	// Atomically remove auto-assigned assets AND delete the rule in one transaction
+	removed, err := s.acRepo.DeleteScopeRuleWithCleanup(ctx, tid, id)
 	if err != nil {
-		return fmt.Errorf("failed to clean up auto-assigned assets: %w", err)
-	}
-
-	if err := s.acRepo.DeleteScopeRule(ctx, tid, id); err != nil {
-		return err
+		return fmt.Errorf("failed to delete scope rule: %w", err)
 	}
 
 	// Refresh access for affected assets (single full refresh instead of per-asset)
@@ -306,16 +308,30 @@ func (s *ScopeRuleService) DeleteScopeRule(ctx context.Context, tenantID, ruleID
 	return nil
 }
 
-// ListScopeRules lists scope rules for a group.
-func (s *ScopeRuleService) ListScopeRules(ctx context.Context, groupID string, filter accesscontrol.ScopeRuleFilter) ([]*accesscontrol.ScopeRule, error) {
+// ListScopeRules lists scope rules for a group with tenant isolation.
+func (s *ScopeRuleService) ListScopeRules(ctx context.Context, tenantID, groupID string, filter accesscontrol.ScopeRuleFilter) ([]*accesscontrol.ScopeRule, int64, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	gid, err := shared.IDFromString(groupID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid group id", shared.ErrValidation)
+		return nil, 0, fmt.Errorf("%w: invalid group id", shared.ErrValidation)
 	}
 	if filter.Limit <= 0 {
 		filter.Limit = 50
+	} else if filter.Limit > 100 {
+		filter.Limit = 100
 	}
-	return s.acRepo.ListScopeRules(ctx, gid, filter)
+	rules, err := s.acRepo.ListScopeRules(ctx, tid, gid, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	count, err := s.acRepo.CountScopeRules(ctx, tid, gid, filter)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count scope rules: %w", err)
+	}
+	return rules, count, nil
 }
 
 // PreviewScopeRuleResult shows what assets would be affected by a rule.
@@ -382,27 +398,72 @@ type ReconcileGroupResult struct {
 }
 
 // ReconcileGroup re-evaluates all active scope rules for a group.
-func (s *ScopeRuleService) ReconcileGroup(ctx context.Context, groupID string) (*ReconcileGroupResult, error) {
+// It adds newly matching assets AND removes stale auto-assigned assets that no longer match.
+func (s *ScopeRuleService) ReconcileGroup(ctx context.Context, tenantID, groupID string) (*ReconcileGroupResult, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	gid, err := shared.IDFromString(groupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id", shared.ErrValidation)
 	}
 
-	rules, err := s.acRepo.ListActiveScopeRulesByGroup(ctx, gid)
+	rules, err := s.acRepo.ListActiveScopeRulesByGroup(ctx, tid, gid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list active scope rules: %w", err)
 	}
 
 	result := &ReconcileGroupResult{RulesEvaluated: len(rules)}
 
+	// Fetch existing assets for this group ONCE (avoid N+1 in the loop)
+	existingAssetIDs, err := s.acRepo.ListAssetsByGroup(ctx, gid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list existing assets: %w", err)
+	}
+	existingSet := make(map[shared.ID]struct{}, len(existingAssetIDs))
+	for _, id := range existingAssetIDs {
+		existingSet[id] = struct{}{}
+	}
+
+	// Collect all assets that should be assigned across all rules
+	allMatchedAssets := make(map[shared.ID]struct{})
 	for _, rule := range rules {
-		added, err := s.reconcileRule(ctx, rule)
+		added, matched, err := s.reconcileRuleWithExistingSet(ctx, rule, existingSet)
 		if err != nil {
 			s.logger.Warn("reconciliation failed for rule", "rule_id", rule.ID().String(), "error", err)
 			continue
 		}
 		result.AssetsAdded += added
+		for _, id := range matched {
+			allMatchedAssets[id] = struct{}{}
+		}
 	}
+
+	// Remove stale auto-assigned assets that no longer match any active rule
+	currentAutoAssigned, err := s.acRepo.ListAutoAssignedAssets(ctx, tid, gid)
+	if err != nil {
+		s.logger.Warn("failed to list auto-assigned assets for cleanup", "error", err)
+	} else {
+		staleIDs := make([]shared.ID, 0)
+		for _, assetID := range currentAutoAssigned {
+			if _, stillMatches := allMatchedAssets[assetID]; !stillMatches {
+				staleIDs = append(staleIDs, assetID)
+			}
+		}
+		if len(staleIDs) > 0 {
+			removed, err := s.acRepo.BulkDeleteAutoAssignedForAssets(ctx, staleIDs, gid)
+			if err != nil {
+				s.logger.Warn("failed to remove stale auto-assignments", "error", err)
+			} else {
+				result.AssetsRemoved = removed
+			}
+		}
+	}
+
+	// Single refresh after all rules evaluated
+	changed := result.AssetsAdded + result.AssetsRemoved
+	s.refreshAccessIfNeeded(ctx, changed)
 
 	s.logger.Info("group reconciliation complete",
 		"group_id", groupID,
@@ -415,13 +476,20 @@ func (s *ScopeRuleService) ReconcileGroup(ctx context.Context, groupID string) (
 
 // EvaluateAsset evaluates all active scope rules in a tenant against a single asset.
 // Called when an asset is created or its tags change.
+// It both adds new matches and removes stale auto-assignments for groups that no longer match.
 func (s *ScopeRuleService) EvaluateAsset(ctx context.Context, tenantID shared.ID, assetID shared.ID, tags []string, assetGroupIDs []shared.ID) error {
 	rules, err := s.acRepo.ListActiveScopeRulesByTenant(ctx, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to list active scope rules: %w", err)
 	}
 
-	if len(rules) == 0 {
+	// Get current auto-assigned groups for this asset (needed for stale cleanup)
+	currentAutoGroups, err := s.acRepo.ListAutoAssignedGroupsForAsset(ctx, assetID)
+	if err != nil {
+		return fmt.Errorf("failed to list current auto-assigned groups: %w", err)
+	}
+
+	if len(rules) == 0 && len(currentAutoGroups) == 0 {
 		return nil
 	}
 
@@ -452,6 +520,31 @@ func (s *ScopeRuleService) EvaluateAsset(ctx context.Context, tenantID shared.ID
 		}
 	}
 
+	// Collect matched group IDs for stale comparison
+	matchedGroupIDs := make(map[shared.ID]struct{})
+	groupOwnership := make(map[shared.ID]accesscontrol.OwnershipType)
+	for _, m := range matched {
+		gid := m.rule.GroupID()
+		matchedGroupIDs[gid] = struct{}{}
+		existing, ok := groupOwnership[gid]
+		if !ok || ownershipPriority(m.rule.OwnershipType()) > ownershipPriority(existing) {
+			groupOwnership[gid] = m.rule.OwnershipType()
+		}
+	}
+
+	// Remove stale auto-assignments: groups the asset was assigned to but no longer matches
+	for _, gid := range currentAutoGroups {
+		if _, stillMatched := matchedGroupIDs[gid]; !stillMatched {
+			if err := s.acRepo.DeleteAutoAssignedForAsset(ctx, assetID, gid); err != nil {
+				s.logger.Warn("failed to remove stale auto-assignment", "asset_id", assetID.String(), "group_id", gid.String(), "error", err)
+				continue
+			}
+			if err := s.acRepo.RefreshAccessForAssetUnassign(ctx, gid, assetID); err != nil {
+				s.logger.Warn("failed to refresh access for stale unassign", "error", err)
+			}
+		}
+	}
+
 	if len(matched) == 0 {
 		return nil
 	}
@@ -473,10 +566,12 @@ func (s *ScopeRuleService) EvaluateAsset(ctx context.Context, tenantID shared.ID
 		totalAdded += added
 	}
 
-	// Single refresh call after all assignments (instead of per-assignment)
+	// Use incremental refresh for single-asset evaluation (not full materialized view refresh)
 	if totalAdded > 0 {
-		if err := s.acRepo.RefreshUserAccessibleAssets(ctx); err != nil {
-			s.logger.Warn("failed to refresh access after asset evaluation", "error", err)
+		for gid, ot := range groupOwnership {
+			if err := s.acRepo.RefreshAccessForAssetAssign(ctx, gid, assetID, string(ot)); err != nil {
+				s.logger.Warn("failed to refresh access for asset assign", "error", err)
+			}
 		}
 	}
 
@@ -486,23 +581,34 @@ func (s *ScopeRuleService) EvaluateAsset(ctx context.Context, tenantID shared.ID
 // reconcileRule applies a single rule to find and assign matching assets.
 // Uses batch insert + single refresh instead of per-asset queries.
 func (s *ScopeRuleService) reconcileRule(ctx context.Context, rule *accesscontrol.ScopeRule) (int, error) {
-	matchingAssetIDs, err := s.findMatchingAssets(ctx, rule)
-	if err != nil {
-		return 0, err
-	}
+	added, _, err := s.reconcileRuleWithMatches(ctx, rule)
+	return added, err
+}
 
-	if len(matchingAssetIDs) == 0 {
-		return 0, nil
-	}
-
-	// Get already-assigned assets for this group
+// reconcileRuleWithMatches applies a single rule and returns both the added count
+// and the full set of matching asset IDs (for stale assignment cleanup).
+func (s *ScopeRuleService) reconcileRuleWithMatches(ctx context.Context, rule *accesscontrol.ScopeRule) (int, []shared.ID, error) {
 	existingAssetIDs, err := s.acRepo.ListAssetsByGroup(ctx, rule.GroupID())
 	if err != nil {
-		return 0, fmt.Errorf("failed to list existing assets: %w", err)
+		return 0, nil, fmt.Errorf("failed to list existing assets: %w", err)
 	}
 	existingSet := make(map[shared.ID]struct{}, len(existingAssetIDs))
 	for _, id := range existingAssetIDs {
 		existingSet[id] = struct{}{}
+	}
+	return s.reconcileRuleWithExistingSet(ctx, rule, existingSet)
+}
+
+// reconcileRuleWithExistingSet applies a single rule using a pre-fetched existing asset set.
+// This avoids N+1 queries when called from ReconcileGroup.
+func (s *ScopeRuleService) reconcileRuleWithExistingSet(ctx context.Context, rule *accesscontrol.ScopeRule, existingSet map[shared.ID]struct{}) (int, []shared.ID, error) {
+	matchingAssetIDs, err := s.findMatchingAssets(ctx, rule)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if len(matchingAssetIDs) == 0 {
+		return 0, nil, nil
 	}
 
 	// Collect new assets to assign
@@ -519,36 +625,53 @@ func (s *ScopeRuleService) reconcileRule(ctx context.Context, rule *accesscontro
 	}
 
 	if len(owners) == 0 {
-		return 0, nil
+		return 0, matchingAssetIDs, nil
 	}
 
 	// Batch insert all new assignments (1 query instead of N)
 	ruleID := rule.ID()
 	added, err := s.acRepo.BulkCreateAssetOwnersWithSource(ctx, owners, "scope_rule", &ruleID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to bulk assign assets: %w", err)
+		return 0, nil, fmt.Errorf("failed to bulk assign assets: %w", err)
 	}
 
-	// Single refresh call after all inserts (1 query instead of N)
+	return added, matchingAssetIDs, nil
+}
+
+// refreshAccessIfNeeded refreshes the materialized view if assets were added.
+func (s *ScopeRuleService) refreshAccessIfNeeded(ctx context.Context, added int) {
 	if added > 0 {
 		if err := s.acRepo.RefreshUserAccessibleAssets(ctx); err != nil {
-			s.logger.Warn("failed to refresh access after reconciliation", "error", err)
+			s.logger.Warn("failed to refresh user accessible assets", "error", err)
 		}
 	}
-
-	return added, nil
 }
+
+// maxReconcileAssets is the safety cap for matching assets per rule.
+// If exceeded, the rule is too broad and should be refined.
+const maxReconcileAssets = 50000
 
 // findMatchingAssets returns asset IDs that match a rule's criteria.
 func (s *ScopeRuleService) findMatchingAssets(ctx context.Context, rule *accesscontrol.ScopeRule) ([]shared.ID, error) {
+	var ids []shared.ID
+	var err error
 	switch rule.RuleType() {
 	case accesscontrol.ScopeRuleTagMatch:
-		return s.acRepo.FindAssetsByTagMatch(ctx, rule.TenantID(), rule.MatchTags(), rule.MatchLogic())
+		ids, err = s.acRepo.FindAssetsByTagMatch(ctx, rule.TenantID(), rule.MatchTags(), rule.MatchLogic())
 	case accesscontrol.ScopeRuleAssetGroupMatch:
-		return s.acRepo.FindAssetsByAssetGroupMatch(ctx, rule.TenantID(), rule.MatchAssetGroupIDs())
+		ids, err = s.acRepo.FindAssetsByAssetGroupMatch(ctx, rule.TenantID(), rule.MatchAssetGroupIDs())
 	default:
 		return nil, fmt.Errorf("%w: unknown rule type: %s", shared.ErrValidation, rule.RuleType())
 	}
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) > maxReconcileAssets {
+		s.logger.Warn("scope rule matches too many assets, truncating",
+			"rule_id", rule.ID().String(), "matched", len(ids), "limit", maxReconcileAssets)
+		ids = ids[:maxReconcileAssets]
+	}
+	return ids, nil
 }
 
 // matchTags checks if asset tags match rule tags based on logic.
@@ -577,6 +700,22 @@ func matchTags(assetTags, ruleTags []string, logic accesscontrol.MatchLogic) boo
 		}
 	}
 	return false
+}
+
+// ownershipPriority returns the priority rank of an ownership type (higher = more access).
+func ownershipPriority(ot accesscontrol.OwnershipType) int {
+	switch ot {
+	case accesscontrol.OwnershipPrimary:
+		return 4
+	case accesscontrol.OwnershipSecondary:
+		return 3
+	case accesscontrol.OwnershipStakeholder:
+		return 2
+	case accesscontrol.OwnershipInformed:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // matchAssetGroups checks if asset belongs to any of the rule's asset groups.

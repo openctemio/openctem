@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/group"
@@ -11,6 +12,60 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )
+
+// validFindingPriorities are the allowed values for SetFindingPriority option.
+var validFindingPriorities = map[string]bool{
+	"critical": true, "high": true, "medium": true, "low": true, "info": true, "informational": true,
+}
+
+const (
+	maxConditionArraySize = 50
+	maxConditionValueLen  = 200
+)
+
+// validateAssignmentConditions validates the conditions at rule creation/update time.
+func validateAssignmentConditions(conds accesscontrol.AssignmentConditions) error {
+	type condArray struct {
+		name   string
+		values []string
+	}
+	arrays := []condArray{
+		{"finding_severity", conds.FindingSeverity},
+		{"finding_source", conds.FindingSource},
+		{"finding_type", conds.FindingType},
+		{"asset_tags", conds.AssetTags},
+		{"asset_type", conds.AssetTypes},
+	}
+	for _, a := range arrays {
+		if len(a.values) > maxConditionArraySize {
+			return fmt.Errorf("%w: %s exceeds maximum of %d entries", shared.ErrValidation, a.name, maxConditionArraySize)
+		}
+		for _, v := range a.values {
+			if len(v) > maxConditionValueLen {
+				return fmt.Errorf("%w: %s value exceeds maximum length of %d characters", shared.ErrValidation, a.name, maxConditionValueLen)
+			}
+			if len(strings.TrimSpace(v)) == 0 {
+				return fmt.Errorf("%w: %s contains empty value", shared.ErrValidation, a.name)
+			}
+		}
+	}
+
+	if conds.FilePathPattern != "" && len(conds.FilePathPattern) > 500 {
+		return fmt.Errorf("%w: file_path_pattern exceeds maximum length of 500 characters", shared.ErrValidation)
+	}
+
+	return nil
+}
+
+// validateAssignmentOptions validates the assignment options at rule creation time.
+func validateAssignmentOptions(opts accesscontrol.AssignmentOptions) error {
+	if opts.SetFindingPriority != "" {
+		if !validFindingPriorities[strings.ToLower(opts.SetFindingPriority)] {
+			return fmt.Errorf("%w: invalid set_finding_priority value: %s (must be critical, high, medium, low, or info)", shared.ErrValidation, opts.SetFindingPriority)
+		}
+	}
+	return nil
+}
 
 // AssignmentRuleService handles assignment rule business operations.
 type AssignmentRuleService struct {
@@ -67,9 +122,12 @@ func (s *AssignmentRuleService) CreateRule(ctx context.Context, input CreateRule
 		return nil, fmt.Errorf("%w: invalid target group id format", shared.ErrValidation)
 	}
 
-	// Verify target group exists
+	// Verify target group exists and belongs to this tenant
 	targetGroup, err := s.groupRepo.GetByID(ctx, targetGroupID)
 	if err != nil {
+		return nil, fmt.Errorf("%w: target group not found", shared.ErrValidation)
+	}
+	if targetGroup.TenantID() != tenantID {
 		return nil, fmt.Errorf("%w: target group not found", shared.ErrValidation)
 	}
 	if !targetGroup.IsActive() {
@@ -84,6 +142,10 @@ func (s *AssignmentRuleService) CreateRule(ctx context.Context, input CreateRule
 		}
 	}
 
+	if err := validateAssignmentConditions(input.Conditions); err != nil {
+		return nil, err
+	}
+
 	rule, err := accesscontrol.NewAssignmentRule(tenantID, input.Name, input.Conditions, targetGroupID, createdByID)
 	if err != nil {
 		return nil, err
@@ -96,6 +158,9 @@ func (s *AssignmentRuleService) CreateRule(ctx context.Context, input CreateRule
 		rule.UpdatePriority(input.Priority)
 	}
 	if input.Options != (accesscontrol.AssignmentOptions{}) {
+		if err := validateAssignmentOptions(input.Options); err != nil {
+			return nil, err
+		}
 		rule.UpdateOptions(input.Options)
 	}
 
@@ -173,6 +238,9 @@ func (s *AssignmentRuleService) UpdateRule(ctx context.Context, tenantIDStr, rul
 	}
 
 	if input.Conditions != nil {
+		if err := validateAssignmentConditions(*input.Conditions); err != nil {
+			return nil, err
+		}
 		rule.UpdateConditions(*input.Conditions)
 	}
 
@@ -181,9 +249,12 @@ func (s *AssignmentRuleService) UpdateRule(ctx context.Context, tenantIDStr, rul
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid target group id format", shared.ErrValidation)
 		}
-		// Verify target group exists
+		// Verify target group exists and belongs to this tenant
 		targetGroup, err := s.groupRepo.GetByID(ctx, targetGroupID)
 		if err != nil {
+			return nil, fmt.Errorf("%w: target group not found", shared.ErrValidation)
+		}
+		if targetGroup.TenantID() != tenantID {
 			return nil, fmt.Errorf("%w: target group not found", shared.ErrValidation)
 		}
 		if !targetGroup.IsActive() {
@@ -195,6 +266,9 @@ func (s *AssignmentRuleService) UpdateRule(ctx context.Context, tenantIDStr, rul
 	}
 
 	if input.Options != nil {
+		if err := validateAssignmentOptions(*input.Options); err != nil {
+			return nil, err
+		}
 		rule.UpdateOptions(*input.Options)
 	}
 
@@ -270,6 +344,8 @@ func (s *AssignmentRuleService) ListRules(ctx context.Context, input ListAssignm
 
 	if filter.Limit <= 0 {
 		filter.Limit = 50
+	} else if filter.Limit > 100 {
+		filter.Limit = 100
 	}
 
 	rules, err := s.acRepo.ListAssignmentRules(ctx, tenantID, filter)
@@ -351,8 +427,9 @@ func (s *AssignmentRuleService) TestRule(ctx context.Context, tenantIDStr, ruleI
 				matchCount++
 				if len(samples) < 5 {
 					msg := f.Message()
-					if len(msg) > 100 {
-						msg = msg[:100] + "..."
+					runes := []rune(msg)
+					if len(runes) > 100 {
+						msg = string(runes[:100]) + "..."
 					}
 					samples = append(samples, TestRuleFindingSummary{
 						ID:       f.ID().String(),

@@ -12,3 +12,5 @@ CREATE TABLE IF NOT EXISTS finding_group_assignments (
 CREATE INDEX IF NOT EXISTS idx_fga_tenant_finding ON finding_group_assignments(tenant_id, finding_id);
 CREATE INDEX IF NOT EXISTS idx_fga_tenant_group ON finding_group_assignments(tenant_id, group_id);
 CREATE INDEX IF NOT EXISTS idx_fga_rule ON finding_group_assignments(rule_id);
+CREATE INDEX IF NOT EXISTS idx_fga_tenant_rule ON finding_group_assignments(tenant_id, rule_id) WHERE rule_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_fga_finding ON finding_group_assignments(finding_id);

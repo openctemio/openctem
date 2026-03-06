@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -33,17 +34,38 @@ func NewScopeRuleHandler(svc *app.ScopeRuleService, v *validator.Validator, log 
 
 // ListScopeRules handles GET /api/v1/groups/{groupId}/scope-rules
 func (h *ScopeRuleHandler) ListScopeRules(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	groupID := chi.URLParam(r, "groupId")
 	if groupID == "" {
 		apierror.BadRequest("groupId is required").WriteJSON(w)
 		return
 	}
 
-	filter := accesscontrol.ScopeRuleFilter{
-		Limit: 50,
+	limit := 50
+	offset := 0
+
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
 	}
 
-	rules, err := h.svc.ListScopeRules(r.Context(), groupID, filter)
+	filter := accesscontrol.ScopeRuleFilter{
+		Limit:  limit,
+		Offset: offset,
+	}
+	if active := r.URL.Query().Get("is_active"); active != "" {
+		if parsed, err := strconv.ParseBool(active); err == nil {
+			filter.IsActive = &parsed
+		}
+	}
+
+	rules, totalCount, err := h.svc.ListScopeRules(r.Context(), tenantID, groupID, filter)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -52,8 +74,10 @@ func (h *ScopeRuleHandler) ListScopeRules(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"rules": mapScopeRules(rules),
-		"total": len(rules),
+		"rules":       mapScopeRules(rules),
+		"total_count": totalCount,
+		"limit":       limit,
+		"offset":      offset,
 	})
 }
 
@@ -94,6 +118,7 @@ func (h *ScopeRuleHandler) CreateScopeRule(w http.ResponseWriter, r *http.Reques
 // GetScopeRule handles GET /api/v1/groups/{groupId}/scope-rules/{ruleId}
 func (h *ScopeRuleHandler) GetScopeRule(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
+	groupID := chi.URLParam(r, "groupId")
 	ruleID := chi.URLParam(r, "ruleId")
 	if ruleID == "" {
 		apierror.BadRequest("ruleId is required").WriteJSON(w)
@@ -106,6 +131,12 @@ func (h *ScopeRuleHandler) GetScopeRule(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Validate rule belongs to the group in the URL path
+	if rule.GroupID().String() != groupID {
+		apierror.NotFound("Scope rule").WriteJSON(w)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(mapScopeRule(rule))
 }
@@ -113,15 +144,32 @@ func (h *ScopeRuleHandler) GetScopeRule(w http.ResponseWriter, r *http.Request) 
 // UpdateScopeRule handles PUT /api/v1/groups/{groupId}/scope-rules/{ruleId}
 func (h *ScopeRuleHandler) UpdateScopeRule(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
+	groupID := chi.URLParam(r, "groupId")
 	ruleID := chi.URLParam(r, "ruleId")
 	if ruleID == "" {
 		apierror.BadRequest("ruleId is required").WriteJSON(w)
 		return
 	}
 
+	// Pre-validate rule belongs to this group
+	existing, err := h.svc.GetScopeRule(r.Context(), tenantID, ruleID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if existing.GroupID().String() != groupID {
+		apierror.NotFound("Scope rule").WriteJSON(w)
+		return
+	}
+
 	var input app.UpdateScopeRuleInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(input); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
 
@@ -138,9 +186,21 @@ func (h *ScopeRuleHandler) UpdateScopeRule(w http.ResponseWriter, r *http.Reques
 // DeleteScopeRule handles DELETE /api/v1/groups/{groupId}/scope-rules/{ruleId}
 func (h *ScopeRuleHandler) DeleteScopeRule(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
+	groupID := chi.URLParam(r, "groupId")
 	ruleID := chi.URLParam(r, "ruleId")
 	if ruleID == "" {
 		apierror.BadRequest("ruleId is required").WriteJSON(w)
+		return
+	}
+
+	// Validate rule belongs to this group
+	existing, err := h.svc.GetScopeRule(r.Context(), tenantID, ruleID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if existing.GroupID().String() != groupID {
+		apierror.NotFound("Scope rule").WriteJSON(w)
 		return
 	}
 
@@ -149,16 +209,27 @@ func (h *ScopeRuleHandler) DeleteScopeRule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": "scope rule deleted"})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // PreviewScopeRule handles POST /api/v1/groups/{groupId}/scope-rules/{ruleId}/preview
 func (h *ScopeRuleHandler) PreviewScopeRule(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
+	groupID := chi.URLParam(r, "groupId")
 	ruleID := chi.URLParam(r, "ruleId")
 	if ruleID == "" {
 		apierror.BadRequest("ruleId is required").WriteJSON(w)
+		return
+	}
+
+	// Validate rule belongs to this group
+	existing, err := h.svc.GetScopeRule(r.Context(), tenantID, ruleID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if existing.GroupID().String() != groupID {
+		apierror.NotFound("Scope rule").WriteJSON(w)
 		return
 	}
 
@@ -174,13 +245,14 @@ func (h *ScopeRuleHandler) PreviewScopeRule(w http.ResponseWriter, r *http.Reque
 
 // ReconcileGroup handles POST /api/v1/groups/{groupId}/scope-rules/reconcile
 func (h *ScopeRuleHandler) ReconcileGroup(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	groupID := chi.URLParam(r, "groupId")
 	if groupID == "" {
 		apierror.BadRequest("groupId is required").WriteJSON(w)
 		return
 	}
 
-	result, err := h.svc.ReconcileGroup(r.Context(), groupID)
+	result, err := h.svc.ReconcileGroup(r.Context(), tenantID, groupID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

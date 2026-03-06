@@ -1616,7 +1616,10 @@ func (r *AccessControlRepository) UpdateScopeRule(ctx context.Context, tenantID 
 	if err != nil {
 		return fmt.Errorf("failed to update scope rule: %w", err)
 	}
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
 	if rowsAffected == 0 {
 		return shared.ErrNotFound
 	}
@@ -1630,7 +1633,10 @@ func (r *AccessControlRepository) DeleteScopeRule(ctx context.Context, tenantID,
 	if err != nil {
 		return fmt.Errorf("failed to delete scope rule: %w", err)
 	}
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
 	if rowsAffected == 0 {
 		return shared.ErrNotFound
 	}
@@ -1638,15 +1644,15 @@ func (r *AccessControlRepository) DeleteScopeRule(ctx context.Context, tenantID,
 }
 
 // ListScopeRules lists scope rules for a group.
-func (r *AccessControlRepository) ListScopeRules(ctx context.Context, groupID shared.ID, filter accesscontrol.ScopeRuleFilter) ([]*accesscontrol.ScopeRule, error) {
+func (r *AccessControlRepository) ListScopeRules(ctx context.Context, tenantID, groupID shared.ID, filter accesscontrol.ScopeRuleFilter) ([]*accesscontrol.ScopeRule, error) {
 	query := `
 		SELECT id, tenant_id, group_id, name, description, rule_type, match_tags, match_logic,
 			   match_asset_group_ids, ownership_type, priority, is_active, created_at, updated_at, created_by
 		FROM group_asset_scope_rules
-		WHERE group_id = $1
+		WHERE group_id = $1 AND tenant_id = $2
 	`
-	args := []any{groupID.String()}
-	argIdx := 2
+	args := []any{groupID.String(), tenantID.String()}
+	argIdx := 3
 
 	if filter.IsActive != nil {
 		query += fmt.Sprintf(" AND is_active = $%d", argIdx)
@@ -1675,11 +1681,19 @@ func (r *AccessControlRepository) ListScopeRules(ctx context.Context, groupID sh
 	return r.scanScopeRules(rows)
 }
 
-// CountScopeRules counts scope rules for a group.
-func (r *AccessControlRepository) CountScopeRules(ctx context.Context, groupID shared.ID) (int64, error) {
-	query := `SELECT COUNT(*) FROM group_asset_scope_rules WHERE group_id = $1`
+// CountScopeRules counts scope rules for a group with tenant isolation, respecting the same filter as ListScopeRules.
+func (r *AccessControlRepository) CountScopeRules(ctx context.Context, tenantID, groupID shared.ID, filter accesscontrol.ScopeRuleFilter) (int64, error) {
+	query := `SELECT COUNT(*) FROM group_asset_scope_rules WHERE group_id = $1 AND tenant_id = $2`
+	args := []any{groupID.String(), tenantID.String()}
+	argIdx := 3
+
+	if filter.IsActive != nil {
+		query += fmt.Sprintf(" AND is_active = $%d", argIdx)
+		args = append(args, *filter.IsActive)
+	}
+
 	var count int64
-	err := r.db.QueryRowContext(ctx, query, groupID.String()).Scan(&count)
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count scope rules: %w", err)
 	}
@@ -1704,16 +1718,16 @@ func (r *AccessControlRepository) ListActiveScopeRulesByTenant(ctx context.Conte
 	return r.scanScopeRules(rows)
 }
 
-// ListActiveScopeRulesByGroup returns all active scope rules for a group.
-func (r *AccessControlRepository) ListActiveScopeRulesByGroup(ctx context.Context, groupID shared.ID) ([]*accesscontrol.ScopeRule, error) {
+// ListActiveScopeRulesByGroup returns all active scope rules for a group with tenant isolation.
+func (r *AccessControlRepository) ListActiveScopeRulesByGroup(ctx context.Context, tenantID, groupID shared.ID) ([]*accesscontrol.ScopeRule, error) {
 	query := `
 		SELECT id, tenant_id, group_id, name, description, rule_type, match_tags, match_logic,
 			   match_asset_group_ids, ownership_type, priority, is_active, created_at, updated_at, created_by
 		FROM group_asset_scope_rules
-		WHERE group_id = $1 AND is_active = TRUE
+		WHERE group_id = $1 AND tenant_id = $2 AND is_active = TRUE
 		ORDER BY priority DESC, created_at ASC
 	`
-	rows, err := r.db.QueryContext(ctx, query, groupID.String())
+	rows, err := r.db.QueryContext(ctx, query, groupID.String(), tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list active scope rules by group: %w", err)
 	}
@@ -1760,13 +1774,36 @@ func (r *AccessControlRepository) CreateAssetOwnerWithSource(ctx context.Context
 	return nil
 }
 
-// BulkCreateAssetOwnersWithSource creates multiple asset owner records with source tracking in a single batch.
+// bulkCreateSourceChunkSize limits each INSERT batch to stay within PostgreSQL's 65535
+// parameter limit. With 9 params per row: 65535/9 = 7281 rows max per chunk.
+const bulkCreateSourceChunkSize = 5000
+
+// BulkCreateAssetOwnersWithSource creates multiple asset owner records with source tracking.
+// Automatically chunks large batches to stay within PostgreSQL parameter limits.
 func (r *AccessControlRepository) BulkCreateAssetOwnersWithSource(ctx context.Context, owners []*accesscontrol.AssetOwner, source string, ruleID *shared.ID) (int, error) {
 	if len(owners) == 0 {
 		return 0, nil
 	}
+	const maxBulkSize = 50000
+	if len(owners) > maxBulkSize {
+		return 0, fmt.Errorf("batch size %d exceeds maximum of %d", len(owners), maxBulkSize)
+	}
 
-	// Build batch insert with ON CONFLICT DO NOTHING using strings.Builder
+	totalAdded := 0
+	for start := 0; start < len(owners); start += bulkCreateSourceChunkSize {
+		end := min(start+bulkCreateSourceChunkSize, len(owners))
+		chunk := owners[start:end]
+
+		added, err := r.bulkCreateAssetOwnersWithSourceChunk(ctx, chunk, source, ruleID)
+		if err != nil {
+			return totalAdded, err
+		}
+		totalAdded += added
+	}
+	return totalAdded, nil
+}
+
+func (r *AccessControlRepository) bulkCreateAssetOwnersWithSourceChunk(ctx context.Context, owners []*accesscontrol.AssetOwner, source string, ruleID *shared.ID) (int, error) {
 	var sb strings.Builder
 	sb.WriteString(`INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by, assignment_source, scope_rule_id) VALUES `)
 	args := make([]any, 0, len(owners)*9)
@@ -1804,18 +1841,30 @@ func (r *AccessControlRepository) BulkCreateAssetOwnersWithSource(ctx context.Co
 	if err != nil {
 		return 0, fmt.Errorf("failed to bulk create asset owners: %w", err)
 	}
-	count, _ := result.RowsAffected()
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
 	return int(count), nil
 }
 
 // DeleteAutoAssignedByRule removes all auto-assigned asset owners created by a specific rule.
-func (r *AccessControlRepository) DeleteAutoAssignedByRule(ctx context.Context, ruleID shared.ID) (int, error) {
-	query := `DELETE FROM asset_owners WHERE scope_rule_id = $1 AND assignment_source = 'scope_rule'`
-	result, err := r.db.ExecContext(ctx, query, ruleID.String())
+// Uses subquery to enforce tenant isolation via the scope rule's tenant.
+func (r *AccessControlRepository) DeleteAutoAssignedByRule(ctx context.Context, tenantID, ruleID shared.ID) (int, error) {
+	query := `
+		DELETE FROM asset_owners
+		WHERE scope_rule_id = $1
+		AND assignment_source = 'scope_rule'
+		AND scope_rule_id IN (SELECT id FROM group_asset_scope_rules WHERE tenant_id = $2)
+	`
+	result, err := r.db.ExecContext(ctx, query, ruleID.String(), tenantID.String())
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete auto-assigned by rule: %w", err)
 	}
-	count, _ := result.RowsAffected()
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
 	return int(count), nil
 }
 
@@ -1829,10 +1878,54 @@ func (r *AccessControlRepository) DeleteAutoAssignedForAsset(ctx context.Context
 	return nil
 }
 
+// bulkDeleteChunkSize limits each DELETE IN (...) batch to stay well within PostgreSQL's
+// 65535 parameter limit. Each chunk uses N+1 params (N asset IDs + 1 group ID).
+const bulkDeleteChunkSize = 1000
+
+// BulkDeleteAutoAssignedForAssets removes auto-assigned ownership for multiple assets in a group.
+// Processes in chunks to avoid exceeding PostgreSQL's parameter limit.
+func (r *AccessControlRepository) BulkDeleteAutoAssignedForAssets(ctx context.Context, assetIDs []shared.ID, groupID shared.ID) (int, error) {
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
+
+	totalRemoved := 0
+	for start := 0; start < len(assetIDs); start += bulkDeleteChunkSize {
+		end := min(start+bulkDeleteChunkSize, len(assetIDs))
+		chunk := assetIDs[start:end]
+
+		placeholders := make([]string, len(chunk))
+		args := make([]any, 0, len(chunk)+1)
+		for i, id := range chunk {
+			placeholders[i] = fmt.Sprintf("$%d", i+1)
+			args = append(args, id.String())
+		}
+		args = append(args, groupID.String())
+		query := fmt.Sprintf(
+			`DELETE FROM asset_owners WHERE asset_id IN (%s) AND group_id = $%d AND assignment_source = 'scope_rule'`,
+			strings.Join(placeholders, ","),
+			len(chunk)+1,
+		)
+		result, err := r.db.ExecContext(ctx, query, args...)
+		if err != nil {
+			return totalRemoved, fmt.Errorf("failed to bulk delete auto-assigned assets: %w", err)
+		}
+		rows, _ := result.RowsAffected()
+		totalRemoved += int(rows)
+	}
+
+	return totalRemoved, nil
+}
+
 // ListAutoAssignedAssets lists asset IDs that are auto-assigned to a group via scope rules.
-func (r *AccessControlRepository) ListAutoAssignedAssets(ctx context.Context, groupID shared.ID) ([]shared.ID, error) {
-	query := `SELECT asset_id FROM asset_owners WHERE group_id = $1 AND assignment_source = 'scope_rule'`
-	rows, err := r.db.QueryContext(ctx, query, groupID.String())
+// Uses JOIN to enforce tenant isolation through the scope rule.
+func (r *AccessControlRepository) ListAutoAssignedAssets(ctx context.Context, tenantID, groupID shared.ID) ([]shared.ID, error) {
+	query := `
+		SELECT ao.asset_id FROM asset_owners ao
+		JOIN group_asset_scope_rules gasr ON gasr.id = ao.scope_rule_id
+		WHERE ao.group_id = $1 AND gasr.tenant_id = $2 AND ao.assignment_source = 'scope_rule'
+	`
+	rows, err := r.db.QueryContext(ctx, query, groupID.String(), tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list auto-assigned assets: %w", err)
 	}
@@ -1856,15 +1949,88 @@ func (r *AccessControlRepository) ListAutoAssignedAssets(ctx context.Context, gr
 	return ids, nil
 }
 
+// ListAutoAssignedGroupsForAsset lists group IDs that an asset is auto-assigned to via scope rules.
+func (r *AccessControlRepository) ListAutoAssignedGroupsForAsset(ctx context.Context, assetID shared.ID) ([]shared.ID, error) {
+	query := `SELECT DISTINCT group_id FROM asset_owners WHERE asset_id = $1 AND assignment_source = 'scope_rule'`
+	rows, err := r.db.QueryContext(ctx, query, assetID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list auto-assigned groups for asset: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []shared.ID
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("failed to scan group id: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate auto-assigned groups: %w", err)
+	}
+	return ids, nil
+}
+
+// DeleteScopeRuleWithCleanup atomically removes auto-assigned assets and deletes the scope rule
+// within a single transaction. This prevents the inconsistent state where assets are unassigned
+// but the rule still exists (if rule deletion fails).
+func (r *AccessControlRepository) DeleteScopeRuleWithCleanup(ctx context.Context, tenantID, ruleID shared.ID) (int, error) {
+	var removed int
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		// Step 1: Delete auto-assigned asset owners created by this rule
+		deleteOwnersQuery := `
+			DELETE FROM asset_owners
+			WHERE scope_rule_id = $1
+			AND assignment_source = 'scope_rule'
+			AND scope_rule_id IN (SELECT id FROM group_asset_scope_rules WHERE tenant_id = $2)
+		`
+		result, err := tx.ExecContext(ctx, deleteOwnersQuery, ruleID.String(), tenantID.String())
+		if err != nil {
+			return fmt.Errorf("failed to delete auto-assigned by rule: %w", err)
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+		removed = int(count)
+
+		// Step 2: Delete the scope rule itself
+		deleteRuleQuery := `DELETE FROM group_asset_scope_rules WHERE id = $1 AND tenant_id = $2`
+		ruleResult, err := tx.ExecContext(ctx, deleteRuleQuery, ruleID.String(), tenantID.String())
+		if err != nil {
+			return fmt.Errorf("failed to delete scope rule: %w", err)
+		}
+		ruleRows, _ := ruleResult.RowsAffected()
+		if ruleRows == 0 {
+			return fmt.Errorf("scope rule not found")
+		}
+
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
+// maxMatchingAssets is the safety limit for asset matching queries to prevent
+// unbounded memory usage and excessive DB load during reconciliation.
+const maxMatchingAssets = 50000
+
 // FindAssetsByTagMatch finds assets matching tag criteria.
 func (r *AccessControlRepository) FindAssetsByTagMatch(ctx context.Context, tenantID shared.ID, tags []string, logic accesscontrol.MatchLogic) ([]shared.ID, error) {
 	var query string
 	if logic == accesscontrol.MatchLogicAll {
 		// AND: asset must have ALL tags
-		query = `SELECT id FROM assets WHERE tenant_id = $1 AND tags @> $2`
+		query = `SELECT id FROM assets WHERE tenant_id = $1 AND tags @> $2 LIMIT ` + fmt.Sprintf("%d", maxMatchingAssets+1)
 	} else {
 		// OR: asset must have ANY tag
-		query = `SELECT id FROM assets WHERE tenant_id = $1 AND tags && $2`
+		query = `SELECT id FROM assets WHERE tenant_id = $1 AND tags && $2 LIMIT ` + fmt.Sprintf("%d", maxMatchingAssets+1)
 	}
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), tags)
@@ -1902,12 +2068,13 @@ func (r *AccessControlRepository) FindAssetsByAssetGroupMatch(ctx context.Contex
 		groupIDStrs = append(groupIDStrs, id.String())
 	}
 
-	query := `
+	query := fmt.Sprintf(`
 		SELECT DISTINCT agm.asset_id
 		FROM asset_group_members agm
 		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = $1
 		WHERE agm.asset_group_id = ANY($2)
-	`
+		LIMIT %d
+	`, maxMatchingAssets+1)
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), groupIDStrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find assets by asset group match: %w", err)
@@ -2076,21 +2243,29 @@ func (r *AccessControlRepository) BulkCreateFindingGroupAssignments(ctx context.
 	if len(fgas) == 0 {
 		return 0, nil
 	}
+	const maxBulkSize = 10000
+	if len(fgas) > maxBulkSize {
+		return 0, fmt.Errorf("batch size %d exceeds maximum of %d", len(fgas), maxBulkSize)
+	}
 
-	query := `
-		INSERT INTO finding_group_assignments (id, tenant_id, finding_id, group_id, rule_id, assigned_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (finding_id, group_id) DO NOTHING
-	`
+	// Build a single multi-row INSERT for all assignments
+	var sb strings.Builder
+	sb.WriteString("INSERT INTO finding_group_assignments (id, tenant_id, finding_id, group_id, rule_id, assigned_at) VALUES ")
 
-	totalInserted := 0
-	for _, fga := range fgas {
+	args := make([]any, 0, len(fgas)*6)
+	for i, fga := range fgas {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		paramBase := i * 6
+		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d, $%d, $%d)",
+			paramBase+1, paramBase+2, paramBase+3, paramBase+4, paramBase+5, paramBase+6)
+
 		var ruleID any
 		if fga.RuleID() != nil {
 			ruleID = fga.RuleID().String()
 		}
-
-		result, err := r.db.ExecContext(ctx, query,
+		args = append(args,
 			fga.ID().String(),
 			fga.TenantID().String(),
 			fga.FindingID().String(),
@@ -2098,18 +2273,20 @@ func (r *AccessControlRepository) BulkCreateFindingGroupAssignments(ctx context.
 			ruleID,
 			fga.AssignedAt(),
 		)
-		if err != nil {
-			return totalInserted, fmt.Errorf("failed to create finding group assignment: %w", err)
-		}
+	}
+	sb.WriteString(" ON CONFLICT (finding_id, group_id) DO NOTHING")
 
-		rowsAffected, err := result.RowsAffected()
-		if err != nil {
-			return totalInserted, fmt.Errorf("failed to get rows affected: %w", err)
-		}
-		totalInserted += int(rowsAffected)
+	result, err := r.db.ExecContext(ctx, sb.String(), args...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to bulk create finding group assignments: %w", err)
 	}
 
-	return totalInserted, nil
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return int(rowsAffected), nil
 }
 
 // ListFindingGroupAssignments lists all group assignments for a finding.

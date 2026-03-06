@@ -55,6 +55,9 @@ func (e *AssignmentEngine) EvaluateRules(ctx context.Context, tenantID shared.ID
 	results := make([]AssignmentResult, 0, len(rules))
 
 	for _, rule := range rules {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if e.MatchesConditions(rule.Conditions(), finding) {
 			gid := rule.TargetGroupID()
 			if _, exists := seen[gid]; !exists {
@@ -86,7 +89,11 @@ func (e *AssignmentEngine) EvaluateRules(ctx context.Context, tenantID shared.ID
 // MatchesConditions checks if a finding matches the given conditions.
 // All non-empty condition fields must match (AND logic).
 // Empty conditions = catch-all (always matches).
-func (e *AssignmentEngine) MatchesConditions(conds accesscontrol.AssignmentConditions, finding *vulnerability.Finding) bool {
+// assetType is optional — pass the asset's type when available for AssetTypes condition evaluation.
+func (e *AssignmentEngine) MatchesConditions(conds accesscontrol.AssignmentConditions, finding *vulnerability.Finding, assetType ...string) bool {
+	if finding == nil {
+		return false
+	}
 	if len(conds.FindingSeverity) > 0 {
 		if !stringInSliceFold(finding.Severity().String(), conds.FindingSeverity) {
 			return false
@@ -117,7 +124,19 @@ func (e *AssignmentEngine) MatchesConditions(conds accesscontrol.AssignmentCondi
 		}
 	}
 
-	// AssetTypes: skip for now (finding lacks direct asset type)
+	if len(conds.AssetTypes) > 0 {
+		at := ""
+		if len(assetType) > 0 {
+			at = assetType[0]
+		}
+		if at == "" {
+			// No asset type available — cannot match this condition
+			return false
+		}
+		if !stringInSliceFold(at, conds.AssetTypes) {
+			return false
+		}
+	}
 
 	return true
 }
@@ -134,11 +153,13 @@ func stringInSliceFold(value string, slice []string) bool {
 
 // hasAnyTag checks if any of the finding's tags match any of the required tags.
 func hasAnyTag(findingTags, requiredTags []string) bool {
+	required := make(map[string]struct{}, len(requiredTags))
+	for _, rt := range requiredTags {
+		required[strings.ToLower(rt)] = struct{}{}
+	}
 	for _, ft := range findingTags {
-		for _, rt := range requiredTags {
-			if strings.EqualFold(ft, rt) {
-				return true
-			}
+		if _, ok := required[strings.ToLower(ft)]; ok {
+			return true
 		}
 	}
 	return false
