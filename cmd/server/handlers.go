@@ -131,6 +131,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Role:           handler.NewRoleHandler(svc.Role, v, log),
 		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
 		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
+		ScopeRule:      handler.NewScopeRuleHandler(svc.ScopeRule, v, log),
 
 		// Admin
 		NotificationOutbox: handler.NewNotificationOutboxHandler(repos.NotificationOutbox, log),

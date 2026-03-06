@@ -40,18 +40,18 @@ func NewAssignmentRuleHandler(svc *app.AssignmentRuleService, v *validator.Valid
 
 // AssignmentRuleResponse represents an assignment rule in API responses.
 type AssignmentRuleResponse struct {
-	ID            string                            `json:"id"`
-	TenantID      string                            `json:"tenant_id"`
-	Name          string                            `json:"name"`
-	Description   string                            `json:"description,omitempty"`
-	Priority      int                               `json:"priority"`
-	IsActive      bool                              `json:"is_active"`
+	ID            string                             `json:"id"`
+	TenantID      string                             `json:"tenant_id"`
+	Name          string                             `json:"name"`
+	Description   string                             `json:"description,omitempty"`
+	Priority      int                                `json:"priority"`
+	IsActive      bool                               `json:"is_active"`
 	Conditions    accesscontrol.AssignmentConditions `json:"conditions"`
-	TargetGroupID string                            `json:"target_group_id"`
-	Options       accesscontrol.AssignmentOptions   `json:"options"`
-	CreatedAt     time.Time                         `json:"created_at"`
-	UpdatedAt     time.Time                         `json:"updated_at"`
-	CreatedBy     string                            `json:"created_by,omitempty"`
+	TargetGroupID string                             `json:"target_group_id"`
+	Options       accesscontrol.AssignmentOptions    `json:"options"`
+	CreatedAt     time.Time                          `json:"created_at"`
+	UpdatedAt     time.Time                          `json:"updated_at"`
+	CreatedBy     string                             `json:"created_by,omitempty"`
 }
 
 // AssignmentRuleListResponse represents a paginated list of assignment rules.
@@ -88,23 +88,23 @@ func toAssignmentRuleResponse(r *accesscontrol.AssignmentRule) AssignmentRuleRes
 
 // CreateAssignmentRuleRequest represents the request to create an assignment rule.
 type CreateAssignmentRuleRequest struct {
-	Name          string                            `json:"name" validate:"required,min=2,max=200"`
-	Description   string                            `json:"description" validate:"max=1000"`
-	Priority      int                               `json:"priority"`
+	Name          string                             `json:"name" validate:"required,min=2,max=200"`
+	Description   string                             `json:"description" validate:"max=1000"`
+	Priority      int                                `json:"priority"`
 	Conditions    accesscontrol.AssignmentConditions `json:"conditions"`
-	TargetGroupID string                            `json:"target_group_id" validate:"required,uuid"`
-	Options       accesscontrol.AssignmentOptions   `json:"options"`
+	TargetGroupID string                             `json:"target_group_id" validate:"required,uuid"`
+	Options       accesscontrol.AssignmentOptions    `json:"options"`
 }
 
 // UpdateAssignmentRuleRequest represents the request to update an assignment rule.
 type UpdateAssignmentRuleRequest struct {
-	Name          *string                            `json:"name" validate:"omitempty,min=2,max=200"`
-	Description   *string                            `json:"description" validate:"omitempty,max=1000"`
-	Priority      *int                               `json:"priority"`
-	IsActive      *bool                              `json:"is_active"`
+	Name          *string                             `json:"name" validate:"omitempty,min=2,max=200"`
+	Description   *string                             `json:"description" validate:"omitempty,max=1000"`
+	Priority      *int                                `json:"priority"`
+	IsActive      *bool                               `json:"is_active"`
 	Conditions    *accesscontrol.AssignmentConditions `json:"conditions"`
-	TargetGroupID *string                            `json:"target_group_id" validate:"omitempty,uuid"`
-	Options       *accesscontrol.AssignmentOptions   `json:"options"`
+	TargetGroupID *string                             `json:"target_group_id" validate:"omitempty,uuid"`
+	Options       *accesscontrol.AssignmentOptions    `json:"options"`
 }
 
 // =============================================================================
@@ -255,9 +255,10 @@ func (h *AssignmentRuleHandler) CreateRule(w http.ResponseWriter, r *http.Reques
 // GetRule handles GET /api/v1/assignment-rules/{id}
 func (h *AssignmentRuleHandler) GetRule(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
 	ruleID := chi.URLParam(r, "id")
 
-	rule, err := h.service.GetRule(ctx, ruleID)
+	rule, err := h.service.GetRule(ctx, tenantID, ruleID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -270,6 +271,7 @@ func (h *AssignmentRuleHandler) GetRule(w http.ResponseWriter, r *http.Request) 
 // UpdateRule handles PUT /api/v1/assignment-rules/{id}
 func (h *AssignmentRuleHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
 	ruleID := chi.URLParam(r, "id")
 
 	var req UpdateAssignmentRuleRequest
@@ -293,7 +295,7 @@ func (h *AssignmentRuleHandler) UpdateRule(w http.ResponseWriter, r *http.Reques
 		Options:       req.Options,
 	}
 
-	rule, err := h.service.UpdateRule(ctx, ruleID, input)
+	rule, err := h.service.UpdateRule(ctx, tenantID, ruleID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -305,9 +307,10 @@ func (h *AssignmentRuleHandler) UpdateRule(w http.ResponseWriter, r *http.Reques
 
 // DeleteRule handles DELETE /api/v1/assignment-rules/{id}
 func (h *AssignmentRuleHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	ruleID := chi.URLParam(r, "id")
 
-	if err := h.service.DeleteRule(r.Context(), ruleID); err != nil {
+	if err := h.service.DeleteRule(r.Context(), tenantID, ruleID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -317,9 +320,10 @@ func (h *AssignmentRuleHandler) DeleteRule(w http.ResponseWriter, r *http.Reques
 
 // TestRule handles POST /api/v1/assignment-rules/{id}/test
 func (h *AssignmentRuleHandler) TestRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	ruleID := chi.URLParam(r, "id")
 
-	result, err := h.service.TestRule(r.Context(), ruleID)
+	result, err := h.service.TestRule(r.Context(), tenantID, ruleID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

@@ -1,0 +1,244 @@
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/accesscontrol"
+	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/validator"
+)
+
+// ScopeRuleHandler handles HTTP requests for scope rules.
+type ScopeRuleHandler struct {
+	svc       *app.ScopeRuleService
+	validator *validator.Validator
+	logger    *logger.Logger
+}
+
+// NewScopeRuleHandler creates a new ScopeRuleHandler.
+func NewScopeRuleHandler(svc *app.ScopeRuleService, v *validator.Validator, log *logger.Logger) *ScopeRuleHandler {
+	return &ScopeRuleHandler{
+		svc:       svc,
+		validator: v,
+		logger:    log.With("handler", "scope_rule"),
+	}
+}
+
+// ListScopeRules handles GET /api/v1/groups/{groupId}/scope-rules
+func (h *ScopeRuleHandler) ListScopeRules(w http.ResponseWriter, r *http.Request) {
+	groupID := chi.URLParam(r, "groupId")
+	if groupID == "" {
+		apierror.BadRequest("groupId is required").WriteJSON(w)
+		return
+	}
+
+	filter := accesscontrol.ScopeRuleFilter{
+		Limit: 50,
+	}
+
+	rules, err := h.svc.ListScopeRules(r.Context(), groupID, filter)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"rules": mapScopeRules(rules),
+		"total": len(rules),
+	})
+}
+
+// CreateScopeRule handles POST /api/v1/groups/{groupId}/scope-rules
+func (h *ScopeRuleHandler) CreateScopeRule(w http.ResponseWriter, r *http.Request) {
+	groupID := chi.URLParam(r, "groupId")
+	if groupID == "" {
+		apierror.BadRequest("groupId is required").WriteJSON(w)
+		return
+	}
+
+	var input app.CreateScopeRuleInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	input.GroupID = groupID
+	input.TenantID = middleware.MustGetTenantID(r.Context())
+
+	if err := h.validator.Validate(input); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	userID := middleware.GetUserID(r.Context())
+	rule, err := h.svc.CreateScopeRule(r.Context(), input, userID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(mapScopeRule(rule))
+}
+
+// GetScopeRule handles GET /api/v1/groups/{groupId}/scope-rules/{ruleId}
+func (h *ScopeRuleHandler) GetScopeRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	ruleID := chi.URLParam(r, "ruleId")
+	if ruleID == "" {
+		apierror.BadRequest("ruleId is required").WriteJSON(w)
+		return
+	}
+
+	rule, err := h.svc.GetScopeRule(r.Context(), tenantID, ruleID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(mapScopeRule(rule))
+}
+
+// UpdateScopeRule handles PUT /api/v1/groups/{groupId}/scope-rules/{ruleId}
+func (h *ScopeRuleHandler) UpdateScopeRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	ruleID := chi.URLParam(r, "ruleId")
+	if ruleID == "" {
+		apierror.BadRequest("ruleId is required").WriteJSON(w)
+		return
+	}
+
+	var input app.UpdateScopeRuleInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	rule, err := h.svc.UpdateScopeRule(r.Context(), tenantID, ruleID, input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(mapScopeRule(rule))
+}
+
+// DeleteScopeRule handles DELETE /api/v1/groups/{groupId}/scope-rules/{ruleId}
+func (h *ScopeRuleHandler) DeleteScopeRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	ruleID := chi.URLParam(r, "ruleId")
+	if ruleID == "" {
+		apierror.BadRequest("ruleId is required").WriteJSON(w)
+		return
+	}
+
+	if err := h.svc.DeleteScopeRule(r.Context(), tenantID, ruleID); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "scope rule deleted"})
+}
+
+// PreviewScopeRule handles POST /api/v1/groups/{groupId}/scope-rules/{ruleId}/preview
+func (h *ScopeRuleHandler) PreviewScopeRule(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	ruleID := chi.URLParam(r, "ruleId")
+	if ruleID == "" {
+		apierror.BadRequest("ruleId is required").WriteJSON(w)
+		return
+	}
+
+	result, err := h.svc.PreviewScopeRule(r.Context(), tenantID, ruleID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// ReconcileGroup handles POST /api/v1/groups/{groupId}/scope-rules/reconcile
+func (h *ScopeRuleHandler) ReconcileGroup(w http.ResponseWriter, r *http.Request) {
+	groupID := chi.URLParam(r, "groupId")
+	if groupID == "" {
+		apierror.BadRequest("groupId is required").WriteJSON(w)
+		return
+	}
+
+	result, err := h.svc.ReconcileGroup(r.Context(), groupID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// handleServiceError maps service errors to HTTP responses.
+func (h *ScopeRuleHandler) handleServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case shared.IsNotFound(err):
+		apierror.NotFound("Scope rule").WriteJSON(w)
+	case shared.IsValidation(err):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	default:
+		h.logger.Error("scope rule handler error", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+	}
+}
+
+// mapScopeRule converts a domain ScopeRule to an API response.
+func mapScopeRule(rule *accesscontrol.ScopeRule) map[string]any {
+	matchAssetGroupIDs := make([]string, 0, len(rule.MatchAssetGroupIDs()))
+	for _, id := range rule.MatchAssetGroupIDs() {
+		matchAssetGroupIDs = append(matchAssetGroupIDs, id.String())
+	}
+
+	result := map[string]any{
+		"id":                    rule.ID().String(),
+		"tenant_id":             rule.TenantID().String(),
+		"group_id":              rule.GroupID().String(),
+		"name":                  rule.Name(),
+		"description":           rule.Description(),
+		"rule_type":             rule.RuleType().String(),
+		"match_tags":            rule.MatchTags(),
+		"match_logic":           string(rule.MatchLogic()),
+		"match_asset_group_ids": matchAssetGroupIDs,
+		"ownership_type":        rule.OwnershipType().String(),
+		"priority":              rule.Priority(),
+		"is_active":             rule.IsActive(),
+		"created_at":            rule.CreatedAt(),
+		"updated_at":            rule.UpdatedAt(),
+	}
+
+	if rule.CreatedBy() != nil {
+		result["created_by"] = rule.CreatedBy().String()
+	}
+
+	return result
+}
+
+// mapScopeRules converts a slice of domain ScopeRules to API responses.
+func mapScopeRules(rules []*accesscontrol.ScopeRule) []map[string]any {
+	result := make([]map[string]any, 0, len(rules))
+	for _, rule := range rules {
+		result = append(result, mapScopeRule(rule))
+	}
+	return result
+}

@@ -2,68 +2,47 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"path"
 	"strings"
 
+	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// AssignmentRule represents a rule for automated finding-to-group assignment.
-// This mirrors the assignment_rules database table.
-type AssignmentRule struct {
-	ID            shared.ID
-	TenantID      shared.ID
-	Name          string
-	Description   string
-	Priority      int
-	IsActive      bool
-	Conditions    []RuleCondition
-	TargetGroupID shared.ID
-	Options       map[string]any
-}
-
-// RuleCondition represents a single condition within an assignment rule.
-// Conditions are stored as a JSONB array in the database.
-type RuleCondition struct {
-	Type  string `json:"type"`  // "severity", "tool_name", "finding_type", "source", "tag"
-	Op    string `json:"op"`    // "eq", "neq", "in", "contains"
-	Value string `json:"value"` // The value to match against
-}
-
-// AssignmentRuleRepository defines the interface for querying assignment rules.
-type AssignmentRuleRepository interface {
-	// ListActiveByTenant returns all active assignment rules for a tenant, ordered by priority descending.
-	ListActiveByTenant(ctx context.Context, tenantID shared.ID) ([]*AssignmentRule, error)
+// AssignmentResult represents a single rule match with its target group and options.
+type AssignmentResult struct {
+	GroupID shared.ID
+	RuleID  shared.ID
+	Options accesscontrol.AssignmentOptions
 }
 
 // AssignmentEngine evaluates assignment rules against findings
-// and returns the list of group IDs that should be assigned.
+// and returns the list of matching groups with their options.
 type AssignmentEngine struct {
-	ruleRepo AssignmentRuleRepository
-	logger   *logger.Logger
+	acRepo accesscontrol.Repository
+	logger *logger.Logger
 }
 
 // NewAssignmentEngine creates a new AssignmentEngine.
-func NewAssignmentEngine(ruleRepo AssignmentRuleRepository, log *logger.Logger) *AssignmentEngine {
+func NewAssignmentEngine(acRepo accesscontrol.Repository, log *logger.Logger) *AssignmentEngine {
 	return &AssignmentEngine{
-		ruleRepo: ruleRepo,
-		logger:   log.With("service", "assignment-engine"),
+		acRepo: acRepo,
+		logger: log.With("service", "assignment-engine"),
 	}
 }
 
 // EvaluateRules evaluates all active assignment rules for a tenant against a finding.
-// It returns the list of group IDs whose rules matched.
 // Rules are evaluated in priority order (highest first). All matching rules contribute
-// their target group ID to the result set (no short-circuiting).
-func (e *AssignmentEngine) EvaluateRules(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding) ([]shared.ID, error) {
+// their target group to the result set (no short-circuiting).
+func (e *AssignmentEngine) EvaluateRules(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding) ([]AssignmentResult, error) {
 	if finding == nil {
 		return nil, fmt.Errorf("%w: finding is required", shared.ErrValidation)
 	}
 
-	rules, err := e.ruleRepo.ListActiveByTenant(ctx, tenantID)
+	rules, err := e.acRepo.ListActiveRulesByPriority(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list assignment rules: %w", err)
 	}
@@ -72,21 +51,24 @@ func (e *AssignmentEngine) EvaluateRules(ctx context.Context, tenantID shared.ID
 		return nil, nil
 	}
 
-	// Track unique group IDs to avoid duplicates
 	seen := make(map[shared.ID]struct{})
-	result := make([]shared.ID, 0, len(rules))
+	results := make([]AssignmentResult, 0, len(rules))
 
 	for _, rule := range rules {
-		if e.matchesAllConditions(rule.Conditions, finding) {
-			if _, exists := seen[rule.TargetGroupID]; !exists {
-				seen[rule.TargetGroupID] = struct{}{}
-				result = append(result, rule.TargetGroupID)
+		if e.MatchesConditions(rule.Conditions(), finding) {
+			gid := rule.TargetGroupID()
+			if _, exists := seen[gid]; !exists {
+				seen[gid] = struct{}{}
+				results = append(results, AssignmentResult{
+					GroupID: gid,
+					RuleID:  rule.ID(),
+					Options: rule.Options(),
+				})
 				e.logger.Debug("assignment rule matched",
-					"rule_id", rule.ID.String(),
-					"rule_name", rule.Name,
-					"group_id", rule.TargetGroupID.String(),
-					"finding_severity", finding.Severity().String(),
-					"finding_tool", finding.ToolName(),
+					"rule_id", rule.ID().String(),
+					"rule_name", rule.Name(),
+					"group_id", gid.String(),
+					"finding_id", finding.ID().String(),
 				)
 			}
 		}
@@ -95,77 +77,81 @@ func (e *AssignmentEngine) EvaluateRules(ctx context.Context, tenantID shared.ID
 	e.logger.Info("assignment rules evaluated",
 		"tenant_id", tenantID.String(),
 		"total_rules", len(rules),
-		"matched_groups", len(result),
+		"matched_groups", len(results),
 	)
 
-	return result, nil
+	return results, nil
 }
 
-// matchesAllConditions checks if a finding matches ALL conditions of a rule.
-// An empty conditions list means the rule always matches.
-func (e *AssignmentEngine) matchesAllConditions(conditions []RuleCondition, finding *vulnerability.Finding) bool {
-	for _, cond := range conditions {
-		if !e.matchesCondition(cond, finding) {
+// MatchesConditions checks if a finding matches the given conditions.
+// All non-empty condition fields must match (AND logic).
+// Empty conditions = catch-all (always matches).
+func (e *AssignmentEngine) MatchesConditions(conds accesscontrol.AssignmentConditions, finding *vulnerability.Finding) bool {
+	if len(conds.FindingSeverity) > 0 {
+		if !stringInSliceFold(finding.Severity().String(), conds.FindingSeverity) {
 			return false
 		}
 	}
+
+	if len(conds.FindingSource) > 0 {
+		if !stringInSliceFold(finding.Source().String(), conds.FindingSource) {
+			return false
+		}
+	}
+
+	if len(conds.FindingType) > 0 {
+		if !stringInSliceFold(finding.FindingType().String(), conds.FindingType) {
+			return false
+		}
+	}
+
+	if len(conds.AssetTags) > 0 {
+		if !hasAnyTag(finding.Tags(), conds.AssetTags) {
+			return false
+		}
+	}
+
+	if conds.FilePathPattern != "" {
+		if !matchesFilePathPattern(finding.FilePath(), conds.FilePathPattern) {
+			return false
+		}
+	}
+
+	// AssetTypes: skip for now (finding lacks direct asset type)
+
 	return true
 }
 
-// matchesCondition evaluates a single condition against a finding.
-func (e *AssignmentEngine) matchesCondition(cond RuleCondition, finding *vulnerability.Finding) bool {
-	fieldValue := e.extractFieldValue(cond.Type, finding)
-
-	switch cond.Op {
-	case "eq":
-		return strings.EqualFold(fieldValue, cond.Value)
-	case "neq":
-		return !strings.EqualFold(fieldValue, cond.Value)
-	case "in":
-		return e.valueInList(fieldValue, cond.Value)
-	case "contains":
-		return strings.Contains(strings.ToLower(fieldValue), strings.ToLower(cond.Value))
-	default:
-		// Unknown operator defaults to equality
-		return strings.EqualFold(fieldValue, cond.Value)
-	}
-}
-
-// extractFieldValue extracts the field value from a finding based on condition type.
-func (e *AssignmentEngine) extractFieldValue(condType string, finding *vulnerability.Finding) string {
-	switch condType {
-	case "severity":
-		return finding.Severity().String()
-	case "tool_name":
-		return finding.ToolName()
-	case "finding_type":
-		return finding.FindingType().String()
-	case "source":
-		return finding.Source().String()
-	case "tag":
-		// Tags are joined for matching purposes
-		return strings.Join(finding.Tags(), ",")
-	default:
-		return ""
-	}
-}
-
-// valueInList checks if value is in a comma-separated list (case-insensitive).
-func (e *AssignmentEngine) valueInList(value, commaSeparatedList string) bool {
-	items := strings.Split(commaSeparatedList, ",")
-	for _, item := range items {
-		if strings.EqualFold(strings.TrimSpace(item), value) {
+// stringInSliceFold checks if value is in slice (case-insensitive).
+func stringInSliceFold(value string, slice []string) bool {
+	for _, s := range slice {
+		if strings.EqualFold(value, s) {
 			return true
 		}
 	}
 	return false
 }
 
-// ParseConditions parses a JSON-encoded conditions array into RuleCondition slice.
-func ParseConditions(data []byte) ([]RuleCondition, error) {
-	var conditions []RuleCondition
-	if err := json.Unmarshal(data, &conditions); err != nil {
-		return nil, fmt.Errorf("failed to parse conditions: %w", err)
+// hasAnyTag checks if any of the finding's tags match any of the required tags.
+func hasAnyTag(findingTags, requiredTags []string) bool {
+	for _, ft := range findingTags {
+		for _, rt := range requiredTags {
+			if strings.EqualFold(ft, rt) {
+				return true
+			}
+		}
 	}
-	return conditions, nil
+	return false
+}
+
+// matchesFilePathPattern matches a file path against a glob pattern.
+func matchesFilePathPattern(filePath, pattern string) bool {
+	if filePath == "" {
+		return false
+	}
+	matched, err := path.Match(pattern, filePath)
+	if err != nil {
+		return false
+	}
+	return matched
 }

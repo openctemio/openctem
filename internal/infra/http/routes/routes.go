@@ -79,6 +79,7 @@ type Handlers struct {
 	Role           *handler.RoleHandler           // nil if not initialized (no database)
 	Permission     *handler.PermissionHandler     // nil if not initialized (permission sync handler)
 	AssignmentRule *handler.AssignmentRuleHandler // nil if not initialized (no database)
+	ScopeRule      *handler.ScopeRuleHandler      // nil if not initialized (no database)
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
@@ -407,6 +408,11 @@ func Register(
 	// Assignment Rule routes (Access Control - tenant from JWT token)
 	if h.AssignmentRule != nil {
 		registerAssignmentRuleRoutes(router, h.AssignmentRule, authMiddleware, userSync)
+	}
+
+	// Scope Rule routes (nested under groups)
+	if h.ScopeRule != nil {
+		registerScopeRuleRoutes(router, h.ScopeRule, authMiddleware, userSync)
 	}
 
 	// API Key routes (tenant from JWT token)

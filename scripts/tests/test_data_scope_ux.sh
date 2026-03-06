@@ -5,9 +5,9 @@
 #   3. Assignment Rule API
 #
 # Usage:
-#   ./scripts/test_new_features.sh              # Run unit tests only
-#   ./scripts/test_new_features.sh --api        # Run API integration tests (requires running server)
-#   ./scripts/test_new_features.sh --all        # Run both unit + API tests
+#   ./scripts/tests/test_data_scope_ux.sh              # Run unit tests only
+#   ./scripts/tests/test_data_scope_ux.sh --api        # Run API integration tests (requires running server)
+#   ./scripts/tests/test_data_scope_ux.sh --all        # Run both unit + API tests
 #
 # Environment variables for API tests:
 #   API_URL     - Base URL (default: http://localhost:8080)

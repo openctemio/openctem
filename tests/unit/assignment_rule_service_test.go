@@ -10,7 +10,11 @@ import (
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/group"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -59,18 +63,18 @@ func (m *mockACRepoForRules) CreateAssignmentRule(_ context.Context, r *accessco
 	return m.createRuleErr
 }
 
-func (m *mockACRepoForRules) GetAssignmentRule(_ context.Context, _ shared.ID) (*accesscontrol.AssignmentRule, error) {
+func (m *mockACRepoForRules) GetAssignmentRule(_ context.Context, _, _ shared.ID) (*accesscontrol.AssignmentRule, error) {
 	m.getRuleCalls++
 	return m.getRuleResult, m.getRuleErr
 }
 
-func (m *mockACRepoForRules) UpdateAssignmentRule(_ context.Context, r *accesscontrol.AssignmentRule) error {
+func (m *mockACRepoForRules) UpdateAssignmentRule(_ context.Context, _ shared.ID, r *accesscontrol.AssignmentRule) error {
 	m.updateRuleCalls++
 	m.lastUpdatedRule = r
 	return m.updateRuleErr
 }
 
-func (m *mockACRepoForRules) DeleteAssignmentRule(_ context.Context, _ shared.ID) error {
+func (m *mockACRepoForRules) DeleteAssignmentRule(_ context.Context, _, _ shared.ID) error {
 	m.deleteRuleCalls++
 	return m.deleteRuleErr
 }
@@ -98,12 +102,12 @@ func (m *mockGroupRepoForRules) GetByID(_ context.Context, _ shared.ID) (*group.
 }
 
 // Stub remaining group.Repository methods
-func (m *mockGroupRepoForRules) Create(_ context.Context, _ *group.Group) error   { return nil }
+func (m *mockGroupRepoForRules) Create(_ context.Context, _ *group.Group) error { return nil }
 func (m *mockGroupRepoForRules) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForRules) Update(_ context.Context, _ *group.Group) error  { return nil }
-func (m *mockGroupRepoForRules) Delete(_ context.Context, _ shared.ID) error     { return nil }
+func (m *mockGroupRepoForRules) Update(_ context.Context, _ *group.Group) error { return nil }
+func (m *mockGroupRepoForRules) Delete(_ context.Context, _ shared.ID) error    { return nil }
 func (m *mockGroupRepoForRules) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }
@@ -357,7 +361,7 @@ func TestGetRule_Success(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	rule, err := svc.GetRule(context.Background(), existingRule.ID().String())
+	rule, err := svc.GetRule(context.Background(), tenantID.String(), existingRule.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -374,7 +378,7 @@ func TestGetRule_InvalidID(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	_, err := svc.GetRule(context.Background(), "bad-id")
+	_, err := svc.GetRule(context.Background(), shared.NewID().String(), "bad-id")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -388,7 +392,7 @@ func TestGetRule_NotFound(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	_, err := svc.GetRule(context.Background(), shared.NewID().String())
+	_, err := svc.GetRule(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -422,7 +426,7 @@ func TestUpdateRule_Success(t *testing.T) {
 		IsActive:    &isActive,
 	}
 
-	rule, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -459,7 +463,7 @@ func TestUpdateRule_ChangeTargetGroup(t *testing.T) {
 		TargetGroupID: &newTargetGroupID,
 	}
 
-	rule, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -485,7 +489,7 @@ func TestUpdateRule_TargetGroupInactive(t *testing.T) {
 		TargetGroupID: &newTargetGroupID,
 	}
 
-	_, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	_, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err == nil {
 		t.Fatal("expected error for inactive target group")
 	}
@@ -499,7 +503,7 @@ func TestUpdateRule_InvalidID(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	_, err := svc.UpdateRule(context.Background(), "invalid", app.UpdateRuleInput{})
+	_, err := svc.UpdateRule(context.Background(), shared.NewID().String(), "invalid", app.UpdateRuleInput{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -513,7 +517,7 @@ func TestUpdateRule_NotFound(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	_, err := svc.UpdateRule(context.Background(), shared.NewID().String(), app.UpdateRuleInput{})
+	_, err := svc.UpdateRule(context.Background(), shared.NewID().String(), shared.NewID().String(), app.UpdateRuleInput{})
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -533,7 +537,7 @@ func TestUpdateRule_EmptyName(t *testing.T) {
 	emptyName := ""
 	input := app.UpdateRuleInput{Name: &emptyName}
 
-	_, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	_, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err == nil {
 		t.Fatal("expected error for empty name")
 	}
@@ -551,7 +555,7 @@ func TestDeleteRule_Success(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	err := svc.DeleteRule(context.Background(), shared.NewID().String())
+	err := svc.DeleteRule(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -565,7 +569,7 @@ func TestDeleteRule_InvalidID(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	err := svc.DeleteRule(context.Background(), "not-uuid")
+	err := svc.DeleteRule(context.Background(), shared.NewID().String(), "not-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -579,7 +583,7 @@ func TestDeleteRule_NotFound(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	err := svc.DeleteRule(context.Background(), shared.NewID().String())
+	err := svc.DeleteRule(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -729,7 +733,7 @@ func TestTestRule_Success(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	result, err := svc.TestRule(context.Background(), existingRule.ID().String())
+	result, err := svc.TestRule(context.Background(), tenantID.String(), existingRule.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -752,7 +756,7 @@ func TestTestRule_InvalidID(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	_, err := svc.TestRule(context.Background(), "bad")
+	_, err := svc.TestRule(context.Background(), shared.NewID().String(), "bad")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -766,7 +770,7 @@ func TestTestRule_NotFound(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	_, err := svc.TestRule(context.Background(), shared.NewID().String())
+	_, err := svc.TestRule(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -919,7 +923,7 @@ func TestUpdateRule_PartialUpdate_OnlyName(t *testing.T) {
 	newName := "Only Name Changed"
 	input := app.UpdateRuleInput{Name: &newName}
 
-	rule, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -947,7 +951,7 @@ func TestUpdateRule_Activate(t *testing.T) {
 	isActive := true
 	input := app.UpdateRuleInput{IsActive: &isActive}
 
-	rule, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -971,7 +975,7 @@ func TestUpdateRule_UpdateConditions(t *testing.T) {
 	}
 	input := app.UpdateRuleInput{Conditions: &newConditions}
 
-	rule, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -997,7 +1001,7 @@ func TestUpdateRule_UpdateOptions(t *testing.T) {
 	}
 	input := app.UpdateRuleInput{Options: &newOptions}
 
-	rule, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1017,7 +1021,7 @@ func TestUpdateRule_InvalidTargetGroupID(t *testing.T) {
 	invalidID := "not-a-uuid"
 	input := app.UpdateRuleInput{TargetGroupID: &invalidID}
 
-	_, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	_, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err == nil {
 		t.Fatal("expected error for invalid target group ID")
 	}
@@ -1037,7 +1041,7 @@ func TestUpdateRule_TargetGroupNotFound(t *testing.T) {
 	newGroupID := shared.NewID().String()
 	input := app.UpdateRuleInput{TargetGroupID: &newGroupID}
 
-	_, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	_, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err == nil {
 		t.Fatal("expected error for missing target group")
 	}
@@ -1060,7 +1064,7 @@ func TestUpdateRule_RepoError(t *testing.T) {
 	newName := "Should Fail"
 	input := app.UpdateRuleInput{Name: &newName}
 
-	_, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	_, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err == nil {
 		t.Fatal("expected repo error")
 	}
@@ -1077,7 +1081,7 @@ func TestUpdateRule_NoFieldsChanged(t *testing.T) {
 	// Empty update input - no fields to change
 	input := app.UpdateRuleInput{}
 
-	rule, err := svc.UpdateRule(context.Background(), existingRule.ID().String(), input)
+	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("expected no error for no-op update, got: %v", err)
 	}
@@ -1182,7 +1186,7 @@ func TestDeleteRule_RepoError(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	err := svc.DeleteRule(context.Background(), shared.NewID().String())
+	err := svc.DeleteRule(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected repo error")
 	}
@@ -1191,6 +1195,163 @@ func TestDeleteRule_RepoError(t *testing.T) {
 // =============================================================================
 // TestRule Edge Cases
 // =============================================================================
+
+func TestTestRule_WithEngineWired_MatchesFindings(t *testing.T) {
+	tenantID := shared.NewID()
+	targetGroupID := shared.NewID()
+
+	// Rule that matches critical severity
+	rule := accesscontrol.ReconstituteAssignmentRule(
+		shared.NewID(), tenantID,
+		"Critical Only", "",
+		10, true,
+		accesscontrol.AssignmentConditions{FindingSeverity: []string{"critical"}},
+		targetGroupID,
+		accesscontrol.AssignmentOptions{},
+		time.Now(), time.Now(),
+		nil,
+	)
+
+	// Create findings: 2 critical, 1 high
+	critFinding1 := makeTestFinding(t, tenantID, vulnerability.SeverityCritical, "tool1", vulnerability.FindingSourceSAST)
+	critFinding2 := makeTestFinding(t, tenantID, vulnerability.SeverityCritical, "tool2", vulnerability.FindingSourceDAST)
+	highFinding := makeTestFinding(t, tenantID, vulnerability.SeverityHigh, "tool3", vulnerability.FindingSourceSCA)
+
+	acRepo := &mockACRepoForRules{getRuleResult: rule}
+	groupRepo := &mockGroupRepoForRules{}
+	findingRepo := &mockFindingRepoForRules{
+		listResult: pagination.Result[*vulnerability.Finding]{
+			Data:  []*vulnerability.Finding{critFinding1, critFinding2, highFinding},
+			Total: 3,
+		},
+	}
+
+	log := logger.New(logger.Config{Level: "error"})
+	svc := app.NewAssignmentRuleService(acRepo, groupRepo, log)
+	engine := app.NewAssignmentEngine(acRepo, log)
+	svc.SetAssignmentEngine(engine)
+	svc.SetFindingRepository(findingRepo)
+
+	result, err := svc.TestRule(context.Background(), tenantID.String(), rule.ID().String())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.Equal(t, int64(2), result.MatchingFindings)
+	assert.Len(t, result.SampleFindings, 2)
+	assert.Equal(t, "critical", result.SampleFindings[0].Severity)
+}
+
+func TestTestRule_WithEngineWired_NoMatches(t *testing.T) {
+	tenantID := shared.NewID()
+	targetGroupID := shared.NewID()
+
+	rule := accesscontrol.ReconstituteAssignmentRule(
+		shared.NewID(), tenantID,
+		"Critical Only", "",
+		10, true,
+		accesscontrol.AssignmentConditions{FindingSeverity: []string{"critical"}},
+		targetGroupID,
+		accesscontrol.AssignmentOptions{},
+		time.Now(), time.Now(),
+		nil,
+	)
+
+	lowFinding := makeTestFinding(t, tenantID, vulnerability.SeverityLow, "tool1", vulnerability.FindingSourceSAST)
+
+	acRepo := &mockACRepoForRules{getRuleResult: rule}
+	groupRepo := &mockGroupRepoForRules{}
+	findingRepo := &mockFindingRepoForRules{
+		listResult: pagination.Result[*vulnerability.Finding]{
+			Data:  []*vulnerability.Finding{lowFinding},
+			Total: 1,
+		},
+	}
+
+	log := logger.New(logger.Config{Level: "error"})
+	svc := app.NewAssignmentRuleService(acRepo, groupRepo, log)
+	engine := app.NewAssignmentEngine(acRepo, log)
+	svc.SetAssignmentEngine(engine)
+	svc.SetFindingRepository(findingRepo)
+
+	result, err := svc.TestRule(context.Background(), tenantID.String(), rule.ID().String())
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), result.MatchingFindings)
+	assert.Empty(t, result.SampleFindings)
+}
+
+func TestTestRule_WithEngineWired_FindingRepoError(t *testing.T) {
+	tenantID := shared.NewID()
+	targetGroupID := shared.NewID()
+
+	rule := accesscontrol.ReconstituteAssignmentRule(
+		shared.NewID(), tenantID,
+		"Test Rule", "",
+		10, true,
+		accesscontrol.AssignmentConditions{},
+		targetGroupID,
+		accesscontrol.AssignmentOptions{},
+		time.Now(), time.Now(),
+		nil,
+	)
+
+	acRepo := &mockACRepoForRules{getRuleResult: rule}
+	groupRepo := &mockGroupRepoForRules{}
+	findingRepo := &mockFindingRepoForRules{listErr: errors.New("db error")}
+
+	log := logger.New(logger.Config{Level: "error"})
+	svc := app.NewAssignmentRuleService(acRepo, groupRepo, log)
+	engine := app.NewAssignmentEngine(acRepo, log)
+	svc.SetAssignmentEngine(engine)
+	svc.SetFindingRepository(findingRepo)
+
+	// Should return result with 0 matches (graceful degradation), not error
+	result, err := svc.TestRule(context.Background(), tenantID.String(), rule.ID().String())
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), result.MatchingFindings)
+}
+
+func TestTestRule_WithEngineWired_SampleCappedAt5(t *testing.T) {
+	tenantID := shared.NewID()
+	targetGroupID := shared.NewID()
+
+	// Catch-all rule (empty conditions matches everything)
+	rule := accesscontrol.ReconstituteAssignmentRule(
+		shared.NewID(), tenantID,
+		"Catch All", "",
+		10, true,
+		accesscontrol.AssignmentConditions{},
+		targetGroupID,
+		accesscontrol.AssignmentOptions{},
+		time.Now(), time.Now(),
+		nil,
+	)
+
+	// Create 10 findings (all should match catch-all)
+	findings := make([]*vulnerability.Finding, 10)
+	for i := 0; i < 10; i++ {
+		findings[i] = makeTestFinding(t, tenantID, vulnerability.SeverityHigh, "tool", vulnerability.FindingSourceSAST)
+	}
+
+	acRepo := &mockACRepoForRules{getRuleResult: rule}
+	groupRepo := &mockGroupRepoForRules{}
+	findingRepo := &mockFindingRepoForRules{
+		listResult: pagination.Result[*vulnerability.Finding]{
+			Data:  findings,
+			Total: 10,
+		},
+	}
+
+	log := logger.New(logger.Config{Level: "error"})
+	svc := app.NewAssignmentRuleService(acRepo, groupRepo, log)
+	engine := app.NewAssignmentEngine(acRepo, log)
+	svc.SetAssignmentEngine(engine)
+	svc.SetFindingRepository(findingRepo)
+
+	result, err := svc.TestRule(context.Background(), tenantID.String(), rule.ID().String())
+	require.NoError(t, err)
+	assert.Equal(t, int64(10), result.MatchingFindings)
+	assert.Len(t, result.SampleFindings, 5, "samples should be capped at 5")
+}
 
 func TestTestRule_ReturnsCorrectInfo(t *testing.T) {
 	tenantID := shared.NewID()
@@ -1213,7 +1374,7 @@ func TestTestRule_ReturnsCorrectInfo(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	result, err := svc.TestRule(context.Background(), rule.ID().String())
+	result, err := svc.TestRule(context.Background(), tenantID.String(), rule.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1224,10 +1385,50 @@ func TestTestRule_ReturnsCorrectInfo(t *testing.T) {
 	if result.TargetGroupID != targetGroupID.String() {
 		t.Errorf("expected target group %s, got %s", targetGroupID.String(), result.TargetGroupID)
 	}
-	if result.MatchingAssets != 0 {
-		t.Errorf("expected 0 matching assets (dry run), got %d", result.MatchingAssets)
+	if result.MatchingFindings != 0 {
+		t.Errorf("expected 0 matching findings (no engine wired in test), got %d", result.MatchingFindings)
 	}
-	if result.Message == "" {
-		t.Error("expected non-empty message")
+}
+
+// =============================================================================
+// Mock FindingRepository for TestRule tests
+// =============================================================================
+
+type mockFindingRepoForRules struct {
+	vulnerability.FindingRepository // embed to satisfy interface
+	listResult                      pagination.Result[*vulnerability.Finding]
+	listErr                         error
+}
+
+func (m *mockFindingRepoForRules) List(_ context.Context, _ vulnerability.FindingFilter, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+	return m.listResult, m.listErr
+}
+
+// =============================================================================
+// Test Finding Helper
+// =============================================================================
+
+func makeTestFinding(t *testing.T, tenantID shared.ID, sev vulnerability.Severity, toolName string, source vulnerability.FindingSource) *vulnerability.Finding {
+	t.Helper()
+	assetID := shared.NewID()
+	f, err := vulnerability.NewFinding(tenantID, assetID, source, toolName, sev, "test finding message")
+	require.NoError(t, err)
+
+	data := vulnerability.FindingData{
+		ID:              f.ID(),
+		TenantID:        tenantID,
+		AssetID:         assetID,
+		Source:          source,
+		ToolName:        toolName,
+		Severity:        sev,
+		Message:         "test finding message",
+		FindingType:     vulnerability.FindingTypeVulnerability,
+		Status:          vulnerability.FindingStatusNew,
+		SLAStatus:       vulnerability.SLAStatusNotApplicable,
+		FirstDetectedAt: f.FirstDetectedAt(),
+		LastSeenAt:      f.LastSeenAt(),
+		CreatedAt:       f.CreatedAt(),
+		UpdatedAt:       f.UpdatedAt(),
 	}
+	return vulnerability.ReconstituteFinding(data)
 }

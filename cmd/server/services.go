@@ -107,6 +107,7 @@ type Services struct {
 	Permission     *app.PermissionService
 	Role           *app.RoleService
 	AssignmentRule *app.AssignmentRuleService
+	ScopeRule      *app.ScopeRuleService
 
 	// Permission Sync
 	PermVersion *app.PermissionVersionService
@@ -201,7 +202,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize vulnerability & exposure services
 	s.Vulnerability = app.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
-	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)       // Wire data flow loading
+	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
@@ -249,11 +250,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Component, repos.Agent, repos.Branch, repos.Tenant, repos.Audit, log)
-	s.Ingest.SetDataFlowRepository(repos.DataFlow)           // Wire data flow persistence
-	s.Ingest.SetComponentRepository(repos.Component)         // Wire component linking for SCA findings
-	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)       // Wire repository extension for auto web_url
-	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)  // Wire subdomain-to-domain relationships
-	s.Ingest.SetActivityService(s.FindingActivity)               // Wire activity logging for auto-resolve/reopen
+	s.Ingest.SetDataFlowRepository(repos.DataFlow)              // Wire data flow persistence
+	s.Ingest.SetComponentRepository(repos.Component)            // Wire component linking for SCA findings
+	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)    // Wire repository extension for auto web_url
+	s.Ingest.SetRelationshipRepository(repos.AssetRelationship) // Wire subdomain-to-domain relationships
+	s.Ingest.SetActivityService(s.FindingActivity)              // Wire activity logging for auto-resolve/reopen
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
@@ -406,6 +407,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 
 	s.AssignmentRule = app.NewAssignmentRuleService(repos.AccessControl, repos.Group, log)
+	s.ScopeRule = app.NewScopeRuleService(repos.AccessControl, repos.Group, log)
+
+	// Initialize assignment engine and wire to vulnerability service for auto-routing
+	assignmentEngine := app.NewAssignmentEngine(repos.AccessControl, log)
+	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
+
+	// Wire engine and finding repo to assignment rule service for TestRule
+	s.AssignmentRule.SetAssignmentEngine(assignmentEngine)
+	s.AssignmentRule.SetFindingRepository(repos.Finding)
 
 	s.Permission = app.NewPermissionService(repos.PermissionSet, log,
 		app.WithPermissionAuditService(s.Audit),

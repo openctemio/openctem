@@ -71,6 +71,26 @@ func registerGroupRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerScopeRuleRoutes registers scope rule endpoints (nested under groups).
+func registerScopeRuleRoutes(
+	router Router,
+	h *handler.ScopeRuleHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/groups/{groupId}/scope-rules", func(r Router) {
+		r.GET("/", h.ListScopeRules, middleware.Require(permission.GroupsRead))
+		r.POST("/", h.CreateScopeRule, middleware.Require(permission.GroupsWrite))
+		r.POST("/reconcile", h.ReconcileGroup, middleware.Require(permission.GroupsWrite))
+		r.GET("/{ruleId}", h.GetScopeRule, middleware.Require(permission.GroupsRead))
+		r.PUT("/{ruleId}", h.UpdateScopeRule, middleware.Require(permission.GroupsWrite))
+		r.DELETE("/{ruleId}", h.DeleteScopeRule, middleware.Require(permission.GroupsWrite))
+		r.POST("/{ruleId}/preview", h.PreviewScopeRule, middleware.Require(permission.GroupsRead))
+	}, tenantMiddlewares...)
+}
+
 // registerAssignmentRuleRoutes registers assignment rule endpoints.
 func registerAssignmentRuleRoutes(
 	router Router,

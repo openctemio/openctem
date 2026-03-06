@@ -37,12 +37,17 @@ type Repository interface {
 
 	// Assignment Rules
 	CreateAssignmentRule(ctx context.Context, rule *AssignmentRule) error
-	GetAssignmentRule(ctx context.Context, id shared.ID) (*AssignmentRule, error)
-	UpdateAssignmentRule(ctx context.Context, rule *AssignmentRule) error
-	DeleteAssignmentRule(ctx context.Context, id shared.ID) error
+	GetAssignmentRule(ctx context.Context, tenantID, id shared.ID) (*AssignmentRule, error)
+	UpdateAssignmentRule(ctx context.Context, tenantID shared.ID, rule *AssignmentRule) error
+	DeleteAssignmentRule(ctx context.Context, tenantID, id shared.ID) error
 	ListAssignmentRules(ctx context.Context, tenantID shared.ID, filter AssignmentRuleFilter) ([]*AssignmentRule, error)
 	CountAssignmentRules(ctx context.Context, tenantID shared.ID, filter AssignmentRuleFilter) (int64, error)
 	ListActiveRulesByPriority(ctx context.Context, tenantID shared.ID) ([]*AssignmentRule, error)
+
+	// Finding Group Assignments
+	BulkCreateFindingGroupAssignments(ctx context.Context, fgas []*FindingGroupAssignment) (int, error)
+	ListFindingGroupAssignments(ctx context.Context, tenantID, findingID shared.ID) ([]*FindingGroupAssignment, error)
+	CountFindingsByGroupFromRules(ctx context.Context, tenantID, groupID shared.ID) (int64, error)
 
 	// Bulk operations
 	BulkCreateAssetOwners(ctx context.Context, owners []*AssetOwner) (int, error)
@@ -55,6 +60,27 @@ type Repository interface {
 	RefreshAccessForAssetUnassign(ctx context.Context, groupID, assetID shared.ID) error
 	RefreshAccessForMemberAdd(ctx context.Context, groupID, userID shared.ID) error
 	RefreshAccessForMemberRemove(ctx context.Context, groupID, userID shared.ID) error
+
+	// Scope Rules (dynamic asset-to-group scoping)
+	CreateScopeRule(ctx context.Context, rule *ScopeRule) error
+	GetScopeRule(ctx context.Context, tenantID, id shared.ID) (*ScopeRule, error)
+	UpdateScopeRule(ctx context.Context, tenantID shared.ID, rule *ScopeRule) error
+	DeleteScopeRule(ctx context.Context, tenantID, id shared.ID) error
+	ListScopeRules(ctx context.Context, groupID shared.ID, filter ScopeRuleFilter) ([]*ScopeRule, error)
+	CountScopeRules(ctx context.Context, groupID shared.ID) (int64, error)
+	ListActiveScopeRulesByTenant(ctx context.Context, tenantID shared.ID) ([]*ScopeRule, error)
+	ListActiveScopeRulesByGroup(ctx context.Context, groupID shared.ID) ([]*ScopeRule, error)
+
+	// Scope rule asset operations
+	CreateAssetOwnerWithSource(ctx context.Context, ao *AssetOwner, source string, ruleID *shared.ID) error
+	BulkCreateAssetOwnersWithSource(ctx context.Context, owners []*AssetOwner, source string, ruleID *shared.ID) (int, error)
+	DeleteAutoAssignedByRule(ctx context.Context, ruleID shared.ID) (int, error)
+	DeleteAutoAssignedForAsset(ctx context.Context, assetID, groupID shared.ID) error
+	ListAutoAssignedAssets(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
+
+	// Scope rule matching queries
+	FindAssetsByTagMatch(ctx context.Context, tenantID shared.ID, tags []string, logic MatchLogic) ([]shared.ID, error)
+	FindAssetsByAssetGroupMatch(ctx context.Context, tenantID shared.ID, assetGroupIDs []shared.ID) ([]shared.ID, error)
 }
 
 // AssignmentRuleFilter contains filter options for listing assignment rules.
@@ -85,6 +111,13 @@ func DefaultAssignmentRuleFilter() AssignmentRuleFilter {
 		OrderBy:   "priority",
 		OrderDesc: true, // Higher priority first
 	}
+}
+
+// ScopeRuleFilter contains filter options for listing scope rules.
+type ScopeRuleFilter struct {
+	IsActive *bool
+	Limit    int
+	Offset   int
 }
 
 // UserAssetAccess represents a user's access to an asset.

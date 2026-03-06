@@ -1043,12 +1043,12 @@ func (r *AccessControlRepository) CreateAssignmentRule(ctx context.Context, rule
 }
 
 // GetAssignmentRule retrieves an assignment rule by ID.
-func (r *AccessControlRepository) GetAssignmentRule(ctx context.Context, id shared.ID) (*accesscontrol.AssignmentRule, error) {
+func (r *AccessControlRepository) GetAssignmentRule(ctx context.Context, tenantID, id shared.ID) (*accesscontrol.AssignmentRule, error) {
 	query := `
 		SELECT id, tenant_id, name, description, priority, is_active,
 			   conditions, target_group_id, options, created_at, updated_at, created_by
 		FROM assignment_rules
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $2
 	`
 
 	var (
@@ -1066,7 +1066,7 @@ func (r *AccessControlRepository) GetAssignmentRule(ctx context.Context, id shar
 		createdByStr   sql.NullString
 	)
 
-	err := r.db.QueryRowContext(ctx, query, id.String()).Scan(
+	err := r.db.QueryRowContext(ctx, query, id.String(), tenantID.String()).Scan(
 		&idStr,
 		&tenantIDStr,
 		&name,
@@ -1095,7 +1095,7 @@ func (r *AccessControlRepository) GetAssignmentRule(ctx context.Context, id shar
 }
 
 // UpdateAssignmentRule updates an existing assignment rule.
-func (r *AccessControlRepository) UpdateAssignmentRule(ctx context.Context, rule *accesscontrol.AssignmentRule) error {
+func (r *AccessControlRepository) UpdateAssignmentRule(ctx context.Context, tenantID shared.ID, rule *accesscontrol.AssignmentRule) error {
 	conditionsJSON, err := json.Marshal(rule.Conditions())
 	if err != nil {
 		return fmt.Errorf("failed to marshal conditions: %w", err)
@@ -1110,7 +1110,7 @@ func (r *AccessControlRepository) UpdateAssignmentRule(ctx context.Context, rule
 		UPDATE assignment_rules
 		SET name = $1, description = $2, priority = $3, is_active = $4,
 			conditions = $5, target_group_id = $6, options = $7, updated_at = $8
-		WHERE id = $9
+		WHERE id = $9 AND tenant_id = $10
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -1123,6 +1123,7 @@ func (r *AccessControlRepository) UpdateAssignmentRule(ctx context.Context, rule
 		optionsJSON,
 		rule.UpdatedAt(),
 		rule.ID().String(),
+		tenantID.String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update assignment rule: %w", err)
@@ -1141,10 +1142,10 @@ func (r *AccessControlRepository) UpdateAssignmentRule(ctx context.Context, rule
 }
 
 // DeleteAssignmentRule removes an assignment rule.
-func (r *AccessControlRepository) DeleteAssignmentRule(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM assignment_rules WHERE id = $1`
+func (r *AccessControlRepository) DeleteAssignmentRule(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM assignment_rules WHERE id = $1 AND tenant_id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete assignment rule: %w", err)
 	}
@@ -1526,6 +1527,656 @@ func (r *AccessControlRepository) RefreshAccessForMemberRemove(ctx context.Conte
 		return fmt.Errorf("failed to refresh access for member remove: %w", err)
 	}
 	return nil
+}
+
+// =============================================================================
+// SCOPE RULES
+// =============================================================================
+
+// CreateScopeRule creates a new scope rule.
+func (r *AccessControlRepository) CreateScopeRule(ctx context.Context, rule *accesscontrol.ScopeRule) error {
+	query := `
+		INSERT INTO group_asset_scope_rules
+			(id, tenant_id, group_id, name, description, rule_type, match_tags, match_logic,
+			 match_asset_group_ids, ownership_type, priority, is_active, created_at, updated_at, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+	`
+	var createdBy any
+	if rule.CreatedBy() != nil {
+		createdBy = rule.CreatedBy().String()
+	}
+
+	matchAssetGroupIDs := make([]string, 0, len(rule.MatchAssetGroupIDs()))
+	for _, id := range rule.MatchAssetGroupIDs() {
+		matchAssetGroupIDs = append(matchAssetGroupIDs, id.String())
+	}
+
+	_, err := r.db.ExecContext(ctx, query,
+		rule.ID().String(),
+		rule.TenantID().String(),
+		rule.GroupID().String(),
+		rule.Name(),
+		rule.Description(),
+		rule.RuleType().String(),
+		rule.MatchTags(),
+		string(rule.MatchLogic()),
+		matchAssetGroupIDs,
+		rule.OwnershipType().String(),
+		rule.Priority(),
+		rule.IsActive(),
+		rule.CreatedAt(),
+		rule.UpdatedAt(),
+		createdBy,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create scope rule: %w", err)
+	}
+	return nil
+}
+
+// GetScopeRule retrieves a scope rule by ID with tenant isolation.
+func (r *AccessControlRepository) GetScopeRule(ctx context.Context, tenantID, id shared.ID) (*accesscontrol.ScopeRule, error) {
+	query := `
+		SELECT id, tenant_id, group_id, name, description, rule_type, match_tags, match_logic,
+			   match_asset_group_ids, ownership_type, priority, is_active, created_at, updated_at, created_by
+		FROM group_asset_scope_rules
+		WHERE id = $1 AND tenant_id = $2
+	`
+	row := r.db.QueryRowContext(ctx, query, id.String(), tenantID.String())
+	return r.scanScopeRule(row)
+}
+
+// UpdateScopeRule updates an existing scope rule with tenant isolation.
+func (r *AccessControlRepository) UpdateScopeRule(ctx context.Context, tenantID shared.ID, rule *accesscontrol.ScopeRule) error {
+	matchAssetGroupIDs := make([]string, 0, len(rule.MatchAssetGroupIDs()))
+	for _, id := range rule.MatchAssetGroupIDs() {
+		matchAssetGroupIDs = append(matchAssetGroupIDs, id.String())
+	}
+
+	query := `
+		UPDATE group_asset_scope_rules
+		SET name = $3, description = $4, match_tags = $5, match_logic = $6,
+			match_asset_group_ids = $7, ownership_type = $8, priority = $9,
+			is_active = $10, updated_at = $11
+		WHERE id = $1 AND tenant_id = $2
+	`
+	result, err := r.db.ExecContext(ctx, query,
+		rule.ID().String(),
+		tenantID.String(),
+		rule.Name(),
+		rule.Description(),
+		rule.MatchTags(),
+		string(rule.MatchLogic()),
+		matchAssetGroupIDs,
+		rule.OwnershipType().String(),
+		rule.Priority(),
+		rule.IsActive(),
+		rule.UpdatedAt(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update scope rule: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
+// DeleteScopeRule deletes a scope rule by ID with tenant isolation.
+func (r *AccessControlRepository) DeleteScopeRule(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM group_asset_scope_rules WHERE id = $1 AND tenant_id = $2`
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
+	if err != nil {
+		return fmt.Errorf("failed to delete scope rule: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
+// ListScopeRules lists scope rules for a group.
+func (r *AccessControlRepository) ListScopeRules(ctx context.Context, groupID shared.ID, filter accesscontrol.ScopeRuleFilter) ([]*accesscontrol.ScopeRule, error) {
+	query := `
+		SELECT id, tenant_id, group_id, name, description, rule_type, match_tags, match_logic,
+			   match_asset_group_ids, ownership_type, priority, is_active, created_at, updated_at, created_by
+		FROM group_asset_scope_rules
+		WHERE group_id = $1
+	`
+	args := []any{groupID.String()}
+	argIdx := 2
+
+	if filter.IsActive != nil {
+		query += fmt.Sprintf(" AND is_active = $%d", argIdx)
+		args = append(args, *filter.IsActive)
+		argIdx++
+	}
+
+	query += " ORDER BY priority DESC, created_at ASC"
+
+	if filter.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", argIdx)
+		args = append(args, filter.Limit)
+		argIdx++
+	}
+	if filter.Offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", argIdx)
+		args = append(args, filter.Offset)
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list scope rules: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanScopeRules(rows)
+}
+
+// CountScopeRules counts scope rules for a group.
+func (r *AccessControlRepository) CountScopeRules(ctx context.Context, groupID shared.ID) (int64, error) {
+	query := `SELECT COUNT(*) FROM group_asset_scope_rules WHERE group_id = $1`
+	var count int64
+	err := r.db.QueryRowContext(ctx, query, groupID.String()).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count scope rules: %w", err)
+	}
+	return count, nil
+}
+
+// ListActiveScopeRulesByTenant returns all active scope rules for a tenant.
+func (r *AccessControlRepository) ListActiveScopeRulesByTenant(ctx context.Context, tenantID shared.ID) ([]*accesscontrol.ScopeRule, error) {
+	query := `
+		SELECT id, tenant_id, group_id, name, description, rule_type, match_tags, match_logic,
+			   match_asset_group_ids, ownership_type, priority, is_active, created_at, updated_at, created_by
+		FROM group_asset_scope_rules
+		WHERE tenant_id = $1 AND is_active = TRUE
+		ORDER BY priority DESC, created_at ASC
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list active scope rules by tenant: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanScopeRules(rows)
+}
+
+// ListActiveScopeRulesByGroup returns all active scope rules for a group.
+func (r *AccessControlRepository) ListActiveScopeRulesByGroup(ctx context.Context, groupID shared.ID) ([]*accesscontrol.ScopeRule, error) {
+	query := `
+		SELECT id, tenant_id, group_id, name, description, rule_type, match_tags, match_logic,
+			   match_asset_group_ids, ownership_type, priority, is_active, created_at, updated_at, created_by
+		FROM group_asset_scope_rules
+		WHERE group_id = $1 AND is_active = TRUE
+		ORDER BY priority DESC, created_at ASC
+	`
+	rows, err := r.db.QueryContext(ctx, query, groupID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list active scope rules by group: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanScopeRules(rows)
+}
+
+// CreateAssetOwnerWithSource creates an asset owner record with source tracking.
+func (r *AccessControlRepository) CreateAssetOwnerWithSource(ctx context.Context, ao *accesscontrol.AssetOwner, source string, ruleID *shared.ID) error {
+	query := `
+		INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by, assignment_source, scope_rule_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT DO NOTHING
+	`
+	var groupID, userID, assignedBy, ruleIDVal any
+	if ao.GroupID() != nil {
+		groupID = ao.GroupID().String()
+	}
+	if ao.UserID() != nil {
+		userID = ao.UserID().String()
+	}
+	if ao.AssignedBy() != nil {
+		assignedBy = ao.AssignedBy().String()
+	}
+	if ruleID != nil {
+		ruleIDVal = ruleID.String()
+	}
+
+	_, err := r.db.ExecContext(ctx, query,
+		ao.ID().String(),
+		ao.AssetID().String(),
+		groupID,
+		userID,
+		ao.OwnershipType().String(),
+		ao.AssignedAt(),
+		assignedBy,
+		source,
+		ruleIDVal,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create asset owner with source: %w", err)
+	}
+	return nil
+}
+
+// BulkCreateAssetOwnersWithSource creates multiple asset owner records with source tracking in a single batch.
+func (r *AccessControlRepository) BulkCreateAssetOwnersWithSource(ctx context.Context, owners []*accesscontrol.AssetOwner, source string, ruleID *shared.ID) (int, error) {
+	if len(owners) == 0 {
+		return 0, nil
+	}
+
+	// Build batch insert with ON CONFLICT DO NOTHING using strings.Builder
+	var sb strings.Builder
+	sb.WriteString(`INSERT INTO asset_owners (id, asset_id, group_id, user_id, ownership_type, assigned_at, assigned_by, assignment_source, scope_rule_id) VALUES `)
+	args := make([]any, 0, len(owners)*9)
+	argIdx := 1
+
+	for i, ao := range owners {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			argIdx, argIdx+1, argIdx+2, argIdx+3, argIdx+4, argIdx+5, argIdx+6, argIdx+7, argIdx+8)
+
+		var groupID, userID, assignedBy, ruleIDVal any
+		if ao.GroupID() != nil {
+			groupID = ao.GroupID().String()
+		}
+		if ao.UserID() != nil {
+			userID = ao.UserID().String()
+		}
+		if ao.AssignedBy() != nil {
+			assignedBy = ao.AssignedBy().String()
+		}
+		if ruleID != nil {
+			ruleIDVal = ruleID.String()
+		}
+
+		args = append(args, ao.ID().String(), ao.AssetID().String(), groupID, userID,
+			ao.OwnershipType().String(), ao.AssignedAt(), assignedBy, source, ruleIDVal)
+		argIdx += 9
+	}
+
+	sb.WriteString(" ON CONFLICT DO NOTHING")
+
+	result, err := r.db.ExecContext(ctx, sb.String(), args...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to bulk create asset owners: %w", err)
+	}
+	count, _ := result.RowsAffected()
+	return int(count), nil
+}
+
+// DeleteAutoAssignedByRule removes all auto-assigned asset owners created by a specific rule.
+func (r *AccessControlRepository) DeleteAutoAssignedByRule(ctx context.Context, ruleID shared.ID) (int, error) {
+	query := `DELETE FROM asset_owners WHERE scope_rule_id = $1 AND assignment_source = 'scope_rule'`
+	result, err := r.db.ExecContext(ctx, query, ruleID.String())
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete auto-assigned by rule: %w", err)
+	}
+	count, _ := result.RowsAffected()
+	return int(count), nil
+}
+
+// DeleteAutoAssignedForAsset removes auto-assigned ownership for an asset in a specific group.
+func (r *AccessControlRepository) DeleteAutoAssignedForAsset(ctx context.Context, assetID, groupID shared.ID) error {
+	query := `DELETE FROM asset_owners WHERE asset_id = $1 AND group_id = $2 AND assignment_source = 'scope_rule'`
+	_, err := r.db.ExecContext(ctx, query, assetID.String(), groupID.String())
+	if err != nil {
+		return fmt.Errorf("failed to delete auto-assigned for asset: %w", err)
+	}
+	return nil
+}
+
+// ListAutoAssignedAssets lists asset IDs that are auto-assigned to a group via scope rules.
+func (r *AccessControlRepository) ListAutoAssignedAssets(ctx context.Context, groupID shared.ID) ([]shared.ID, error) {
+	query := `SELECT asset_id FROM asset_owners WHERE group_id = $1 AND assignment_source = 'scope_rule'`
+	rows, err := r.db.QueryContext(ctx, query, groupID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list auto-assigned assets: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []shared.ID
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("failed to scan asset id: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate auto-assigned assets: %w", err)
+	}
+	return ids, nil
+}
+
+// FindAssetsByTagMatch finds assets matching tag criteria.
+func (r *AccessControlRepository) FindAssetsByTagMatch(ctx context.Context, tenantID shared.ID, tags []string, logic accesscontrol.MatchLogic) ([]shared.ID, error) {
+	var query string
+	if logic == accesscontrol.MatchLogicAll {
+		// AND: asset must have ALL tags
+		query = `SELECT id FROM assets WHERE tenant_id = $1 AND tags @> $2`
+	} else {
+		// OR: asset must have ANY tag
+		query = `SELECT id FROM assets WHERE tenant_id = $1 AND tags && $2`
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), tags)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find assets by tag match: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []shared.ID
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("failed to scan asset id: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate tag-matched assets: %w", err)
+	}
+	return ids, nil
+}
+
+// FindAssetsByAssetGroupMatch finds assets that belong to any of the specified asset groups.
+func (r *AccessControlRepository) FindAssetsByAssetGroupMatch(ctx context.Context, tenantID shared.ID, assetGroupIDs []shared.ID) ([]shared.ID, error) {
+	if len(assetGroupIDs) == 0 {
+		return nil, nil
+	}
+
+	groupIDStrs := make([]string, 0, len(assetGroupIDs))
+	for _, id := range assetGroupIDs {
+		groupIDStrs = append(groupIDStrs, id.String())
+	}
+
+	query := `
+		SELECT DISTINCT agm.asset_id
+		FROM asset_group_members agm
+		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = $1
+		WHERE agm.asset_group_id = ANY($2)
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), groupIDStrs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find assets by asset group match: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []shared.ID
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("failed to scan asset id: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate asset-group-matched assets: %w", err)
+	}
+	return ids, nil
+}
+
+// scanScopeRule scans a single scope rule from a row.
+func (r *AccessControlRepository) scanScopeRule(row *sql.Row) (*accesscontrol.ScopeRule, error) {
+	var (
+		idStr, tenantIDStr, groupIDStr string
+		name, description              string
+		ruleType, matchLogic           string
+		ownershipType                  string
+		matchTags                      []string
+		matchAssetGroupIDStrs          []string
+		priority                       int
+		isActive                       bool
+		createdAt, updatedAt           time.Time
+		createdByStr                   *string
+	)
+
+	err := row.Scan(
+		&idStr, &tenantIDStr, &groupIDStr, &name, &description,
+		&ruleType, &matchTags, &matchLogic, &matchAssetGroupIDStrs,
+		&ownershipType, &priority, &isActive, &createdAt, &updatedAt, &createdByStr,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, shared.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to scan scope rule: %w", err)
+	}
+
+	id, _ := shared.IDFromString(idStr)
+	tenantID, _ := shared.IDFromString(tenantIDStr)
+	groupID, _ := shared.IDFromString(groupIDStr)
+
+	var createdBy *shared.ID
+	if createdByStr != nil {
+		cb, err := shared.IDFromString(*createdByStr)
+		if err == nil {
+			createdBy = &cb
+		}
+	}
+
+	matchAssetGroupIDs := make([]shared.ID, 0, len(matchAssetGroupIDStrs))
+	for _, s := range matchAssetGroupIDStrs {
+		agID, err := shared.IDFromString(s)
+		if err == nil {
+			matchAssetGroupIDs = append(matchAssetGroupIDs, agID)
+		}
+	}
+
+	if matchTags == nil {
+		matchTags = []string{}
+	}
+
+	return accesscontrol.ReconstituteScopeRule(
+		id, tenantID, groupID,
+		name, description,
+		accesscontrol.ScopeRuleType(ruleType),
+		matchTags,
+		accesscontrol.MatchLogic(matchLogic),
+		matchAssetGroupIDs,
+		accesscontrol.OwnershipType(ownershipType),
+		priority, isActive,
+		createdAt, updatedAt,
+		createdBy,
+	), nil
+}
+
+// scanScopeRules scans multiple scope rules from rows.
+func (r *AccessControlRepository) scanScopeRules(rows *sql.Rows) ([]*accesscontrol.ScopeRule, error) {
+	var rules []*accesscontrol.ScopeRule
+	for rows.Next() {
+		var (
+			idStr, tenantIDStr, groupIDStr string
+			name, description              string
+			ruleType, matchLogic           string
+			ownershipType                  string
+			matchTags                      []string
+			matchAssetGroupIDStrs          []string
+			priority                       int
+			isActive                       bool
+			createdAt, updatedAt           time.Time
+			createdByStr                   *string
+		)
+
+		err := rows.Scan(
+			&idStr, &tenantIDStr, &groupIDStr, &name, &description,
+			&ruleType, &matchTags, &matchLogic, &matchAssetGroupIDStrs,
+			&ownershipType, &priority, &isActive, &createdAt, &updatedAt, &createdByStr,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan scope rule: %w", err)
+		}
+
+		id, _ := shared.IDFromString(idStr)
+		tenantID, _ := shared.IDFromString(tenantIDStr)
+		groupID, _ := shared.IDFromString(groupIDStr)
+
+		var createdBy *shared.ID
+		if createdByStr != nil {
+			cb, err := shared.IDFromString(*createdByStr)
+			if err == nil {
+				createdBy = &cb
+			}
+		}
+
+		matchAssetGroupIDs := make([]shared.ID, 0, len(matchAssetGroupIDStrs))
+		for _, s := range matchAssetGroupIDStrs {
+			agID, err := shared.IDFromString(s)
+			if err == nil {
+				matchAssetGroupIDs = append(matchAssetGroupIDs, agID)
+			}
+		}
+
+		if matchTags == nil {
+			matchTags = []string{}
+		}
+
+		rules = append(rules, accesscontrol.ReconstituteScopeRule(
+			id, tenantID, groupID,
+			name, description,
+			accesscontrol.ScopeRuleType(ruleType),
+			matchTags,
+			accesscontrol.MatchLogic(matchLogic),
+			matchAssetGroupIDs,
+			accesscontrol.OwnershipType(ownershipType),
+			priority, isActive,
+			createdAt, updatedAt,
+			createdBy,
+		))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate scope rules: %w", err)
+	}
+	return rules, nil
+}
+
+// =============================================================================
+// FINDING GROUP ASSIGNMENTS
+// =============================================================================
+
+// BulkCreateFindingGroupAssignments inserts multiple finding-group assignments.
+// Uses ON CONFLICT DO NOTHING for idempotency (same finding+group pair is ignored).
+func (r *AccessControlRepository) BulkCreateFindingGroupAssignments(ctx context.Context, fgas []*accesscontrol.FindingGroupAssignment) (int, error) {
+	if len(fgas) == 0 {
+		return 0, nil
+	}
+
+	query := `
+		INSERT INTO finding_group_assignments (id, tenant_id, finding_id, group_id, rule_id, assigned_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (finding_id, group_id) DO NOTHING
+	`
+
+	totalInserted := 0
+	for _, fga := range fgas {
+		var ruleID any
+		if fga.RuleID() != nil {
+			ruleID = fga.RuleID().String()
+		}
+
+		result, err := r.db.ExecContext(ctx, query,
+			fga.ID().String(),
+			fga.TenantID().String(),
+			fga.FindingID().String(),
+			fga.GroupID().String(),
+			ruleID,
+			fga.AssignedAt(),
+		)
+		if err != nil {
+			return totalInserted, fmt.Errorf("failed to create finding group assignment: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return totalInserted, fmt.Errorf("failed to get rows affected: %w", err)
+		}
+		totalInserted += int(rowsAffected)
+	}
+
+	return totalInserted, nil
+}
+
+// ListFindingGroupAssignments lists all group assignments for a finding.
+func (r *AccessControlRepository) ListFindingGroupAssignments(ctx context.Context, tenantID, findingID shared.ID) ([]*accesscontrol.FindingGroupAssignment, error) {
+	query := `
+		SELECT id, tenant_id, finding_id, group_id, rule_id, assigned_at
+		FROM finding_group_assignments
+		WHERE tenant_id = $1 AND finding_id = $2
+		ORDER BY assigned_at ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), findingID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list finding group assignments: %w", err)
+	}
+	defer rows.Close()
+
+	var results []*accesscontrol.FindingGroupAssignment
+	for rows.Next() {
+		var (
+			idStr, tenantIDStr, findingIDStr, groupIDStr string
+			ruleIDStr                                    sql.NullString
+			assignedAt                                   time.Time
+		)
+
+		if err := rows.Scan(&idStr, &tenantIDStr, &findingIDStr, &groupIDStr, &ruleIDStr, &assignedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan finding group assignment: %w", err)
+		}
+
+		id, _ := shared.IDFromString(idStr)
+		tid, _ := shared.IDFromString(tenantIDStr)
+		fid, _ := shared.IDFromString(findingIDStr)
+		gid, _ := shared.IDFromString(groupIDStr)
+
+		var ruleID *shared.ID
+		if ruleIDStr.Valid {
+			rid, err := shared.IDFromString(ruleIDStr.String)
+			if err == nil {
+				ruleID = &rid
+			}
+		}
+
+		results = append(results, accesscontrol.ReconstituteFindingGroupAssignment(
+			id, tid, fid, gid, ruleID, assignedAt,
+		))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating finding group assignments: %w", err)
+	}
+
+	return results, nil
+}
+
+// CountFindingsByGroupFromRules counts findings assigned to a group via assignment rules.
+func (r *AccessControlRepository) CountFindingsByGroupFromRules(ctx context.Context, tenantID, groupID shared.ID) (int64, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM finding_group_assignments
+		WHERE tenant_id = $1 AND group_id = $2
+	`
+
+	var count int64
+	err := r.db.QueryRowContext(ctx, query, tenantID.String(), groupID.String()).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count findings by group from rules: %w", err)
+	}
+	return count, nil
 }
 
 // Ensure AccessControlRepository implements accesscontrol.Repository.
