@@ -101,6 +101,14 @@ func (m *MockAssetRepository) FindRepositoryByFullName(ctx context.Context, tena
 	return nil, shared.ErrNotFound
 }
 
+func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
+	return make(map[string]asset.AssetTypeStats), nil
+}
+
+func (m *MockAssetRepository) GetAverageRiskScore(_ context.Context, _ shared.ID) (float64, error) {
+	return 0, nil
+}
+
 // Tests
 
 func TestAssetEntity_NewAsset(t *testing.T) {

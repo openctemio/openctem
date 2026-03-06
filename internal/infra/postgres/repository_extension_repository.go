@@ -245,11 +245,12 @@ func (r *RepositoryExtensionRepository) selectQuery() string {
 		SELECT ar.asset_id, ar.repo_id, ar.full_name, ar.scm_organization, ar.clone_url, ar.web_url, ar.ssh_url,
 			   ar.default_branch, ar.visibility, ar.language, ar.languages, ar.topics,
 			   ar.stars, ar.forks, ar.watchers, ar.open_issues, ar.contributors_count, ar.size_kb,
-			   COALESCE((SELECT COUNT(*) FROM findings f WHERE f.asset_id = ar.asset_id), 0) as finding_count,
+			   COALESCE(fc.finding_count, 0) as finding_count,
 			   ar.risk_score, ar.scan_enabled, ar.scan_schedule, ar.last_scanned_at,
 			   ar.branch_count, ar.protected_branch_count, ar.component_count, ar.vulnerable_component_count,
 			   ar.repo_created_at, ar.repo_updated_at, ar.repo_pushed_at
 		FROM asset_repositories ar
+		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings GROUP BY asset_id) fc ON fc.asset_id = ar.asset_id
 	`
 }
 

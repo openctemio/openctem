@@ -310,6 +310,14 @@ func (m *mockAssetRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ strin
 	return []string{}, nil
 }
 
+func (m *mockAssetRepo) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
+	return make(map[string]asset.AssetTypeStats), nil
+}
+
+func (m *mockAssetRepo) GetAverageRiskScore(_ context.Context, _ shared.ID) (float64, error) {
+	return 0, nil
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================

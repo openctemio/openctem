@@ -170,6 +170,14 @@ func (m *HandlerMockRepository) ListDistinctTags(ctx context.Context, tenantID s
 	return []string{}, nil
 }
 
+func (m *HandlerMockRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
+	return make(map[string]asset.AssetTypeStats), nil
+}
+
+func (m *HandlerMockRepository) GetAverageRiskScore(_ context.Context, _ shared.ID) (float64, error) {
+	return 0, nil
+}
+
 func newTestHandler() *handler.AssetHandler {
 	repo := NewHandlerMockRepository()
 	log := logger.NewDevelopment()

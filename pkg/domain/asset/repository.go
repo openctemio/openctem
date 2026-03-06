@@ -70,6 +70,20 @@ type Repository interface {
 	// ListDistinctTags returns distinct tags across all assets for a tenant.
 	// Supports prefix filtering for autocomplete and a limit for result size.
 	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error)
+
+	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
+	// This replaces the N+1 pattern of calling Count() per type.
+	GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID) (map[string]AssetTypeStats, error)
+
+	// GetAverageRiskScore returns the average risk_score for all assets in a tenant.
+	// This replaces loading all assets into memory to compute the average.
+	GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error)
+}
+
+// AssetTypeStats holds per-type aggregate counts.
+type AssetTypeStats struct {
+	Total   int
+	Exposed int
 }
 
 // RepositoryExtensionRepository defines the interface for repository extension persistence.

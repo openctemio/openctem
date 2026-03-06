@@ -526,10 +526,11 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 
 	query := `
 		SELECT a.id, a.name, a.asset_type, a.status, a.risk_score,
-			   COALESCE((SELECT COUNT(*) FROM findings f WHERE f.asset_id = a.id), 0) as finding_count,
+			   COALESCE(fc.finding_count, 0) as finding_count,
 			   a.last_seen
 		FROM asset_group_members agm
 		JOIN assets a ON a.id = agm.asset_id
+		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings GROUP BY asset_id) fc ON fc.asset_id = a.id
 		WHERE agm.asset_group_id = $1
 		ORDER BY a.name
 		LIMIT $2 OFFSET $3

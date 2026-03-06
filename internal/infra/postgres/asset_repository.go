@@ -186,7 +186,7 @@ func (r *AssetRepository) selectQuery() string {
 	return `
 		SELECT a.id, a.tenant_id, a.parent_id, a.owner_id, a.name, a.asset_type, a.criticality, a.status,
 			   a.scope, a.exposure, a.risk_score,
-			   COALESCE((SELECT COUNT(*) FROM findings f WHERE f.asset_id = a.id), 0) as finding_count,
+			   COALESCE(fc.finding_count, 0) as finding_count,
 			   a.description, a.tags, a.metadata, a.properties,
 			   a.provider, a.external_id, a.classification, a.sync_status, a.last_synced_at, a.sync_error,
 			   a.discovery_source, a.discovery_tool, a.discovered_at,
@@ -194,6 +194,7 @@ func (r *AssetRepository) selectQuery() string {
 			   a.is_internet_accessible, a.exposure_changed_at, a.last_exposure_level,
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at
 		FROM assets a
+		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings GROUP BY asset_id) fc ON fc.asset_id = a.id
 	`
 }
 
@@ -996,4 +997,51 @@ func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shar
 	}
 
 	return nil
+}
+
+// GetAssetTypeBreakdown returns total and exposed counts per asset_type in a single query.
+func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID) (map[string]asset.AssetTypeStats, error) {
+	query := `
+		SELECT
+			asset_type,
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE exposure = 'public') AS exposed
+		FROM assets
+		WHERE tenant_id = $1
+		GROUP BY asset_type
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get asset type breakdown: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]asset.AssetTypeStats)
+	for rows.Next() {
+		var assetType string
+		var total, exposed int
+		if err := rows.Scan(&assetType, &total, &exposed); err != nil {
+			return nil, fmt.Errorf("failed to scan asset type breakdown: %w", err)
+		}
+		result[assetType] = asset.AssetTypeStats{Total: total, Exposed: exposed}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate asset type breakdown: %w", err)
+	}
+
+	return result, nil
+}
+
+// GetAverageRiskScore returns the average risk_score for all assets in a tenant.
+func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error) {
+	var avg float64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE tenant_id = $1`,
+		tenantID.String(),
+	).Scan(&avg)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get average risk score: %w", err)
+	}
+	return avg, nil
 }

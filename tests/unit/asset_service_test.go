@@ -2,6 +2,8 @@ package unit
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/openctemio/api/internal/app"
@@ -155,6 +157,14 @@ func (m *MockAssetRepository) UpdateFindingCounts(ctx context.Context, tenantID 
 
 func (m *MockAssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error) {
 	return []string{}, nil
+}
+
+func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
+	return make(map[string]asset.AssetTypeStats), nil
+}
+
+func (m *MockAssetRepository) GetAverageRiskScore(_ context.Context, _ shared.ID) (float64, error) {
+	return 0, nil
 }
 
 func newTestService() (*app.AssetService, *MockAssetRepository) {
@@ -541,5 +551,572 @@ func TestAssetService_ArchiveAsset(t *testing.T) {
 
 	if archived.Status().String() != "archived" {
 		t.Errorf("expected status archived, got %s", archived.Status().String())
+	}
+}
+
+// =============================================================================
+// CreateAsset Validation Tests (table-driven)
+// =============================================================================
+
+func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   app.CreateAssetInput
+		wantErr string
+	}{
+		{
+			name: "empty name",
+			input: app.CreateAssetInput{
+				Name:        "",
+				Type:        "host",
+				Criticality: "high",
+			},
+			wantErr: "validation error",
+		},
+		{
+			name: "invalid type",
+			input: app.CreateAssetInput{
+				Name:        "Test Asset",
+				Type:        "invalid_type",
+				Criticality: "high",
+			},
+			wantErr: "validation error",
+		},
+		{
+			name: "invalid criticality",
+			input: app.CreateAssetInput{
+				Name:        "Test Asset",
+				Type:        "host",
+				Criticality: "super_critical",
+			},
+			wantErr: "validation error",
+		},
+		{
+			name: "empty type",
+			input: app.CreateAssetInput{
+				Name:        "Test Asset",
+				Type:        "",
+				Criticality: "high",
+			},
+			wantErr: "validation error",
+		},
+		{
+			name: "empty criticality",
+			input: app.CreateAssetInput{
+				Name:        "Test Asset",
+				Type:        "host",
+				Criticality: "",
+			},
+			wantErr: "validation error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, _ := newTestService()
+			_, err := svc.CreateAsset(context.Background(), tt.input)
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+			}
+			if !errors.Is(err, shared.ErrValidation) {
+				t.Errorf("expected ErrValidation, got %v", err)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// UpdateAsset - Not Found
+// =============================================================================
+
+func TestAssetService_UpdateAsset_NotFound(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	newName := "Updated Name"
+	updateInput := app.UpdateAssetInput{
+		Name: &newName,
+	}
+
+	_, err := svc.UpdateAsset(context.Background(), shared.NewID().String(), tenantID, updateInput)
+	if err == nil {
+		t.Fatal("expected error for non-existent asset")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestAssetService_UpdateAsset_InvalidID(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	newName := "Updated Name"
+	updateInput := app.UpdateAssetInput{
+		Name: &newName,
+	}
+
+	_, err := svc.UpdateAsset(context.Background(), "not-a-uuid", tenantID, updateInput)
+	if err == nil {
+		t.Fatal("expected error for invalid ID")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// =============================================================================
+// DeleteAsset - Not Found
+// =============================================================================
+
+func TestAssetService_DeleteAsset_NotFound(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), tenantID)
+	if err == nil {
+		t.Fatal("expected error for non-existent asset")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestAssetService_DeleteAsset_InvalidID(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	err := svc.DeleteAsset(context.Background(), "not-a-uuid", tenantID)
+	if err == nil {
+		t.Fatal("expected error for invalid ID")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// =============================================================================
+// ListAssets - Empty Results
+// =============================================================================
+
+func TestAssetService_ListAssets_EmptyResults(t *testing.T) {
+	svc, _ := newTestService()
+
+	listInput := app.ListAssetsInput{
+		TenantID: shared.NewID().String(),
+		Page:     1,
+		PerPage:  10,
+	}
+
+	result, err := svc.ListAssets(context.Background(), listInput)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if len(result.Data) != 0 {
+		t.Errorf("expected 0 assets, got %d", len(result.Data))
+	}
+	if result.Total != 0 {
+		t.Errorf("expected total 0, got %d", result.Total)
+	}
+}
+
+// =============================================================================
+// BulkUpdateAssetStatus Tests
+// =============================================================================
+
+func TestAssetService_BulkUpdateAssetStatus_Success(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	// Create multiple assets
+	var assetIDs []string
+	for i := 0; i < 3; i++ {
+		input := app.CreateAssetInput{
+			TenantID:    tenantID,
+			Name:        fmt.Sprintf("Bulk Asset %d", i),
+			Type:        "host",
+			Criticality: "medium",
+		}
+		a, err := svc.CreateAsset(context.Background(), input)
+		if err != nil {
+			t.Fatalf("failed to create asset: %v", err)
+		}
+		assetIDs = append(assetIDs, a.ID().String())
+	}
+
+	// Bulk deactivate
+	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+		AssetIDs: assetIDs,
+		Status:   "inactive",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if result.Updated != 3 {
+		t.Errorf("expected 3 updated, got %d", result.Updated)
+	}
+	if result.Failed != 0 {
+		t.Errorf("expected 0 failed, got %d", result.Failed)
+	}
+
+	// Verify status changed
+	for _, id := range assetIDs {
+		a, err := svc.GetAsset(context.Background(), tenantID, id)
+		if err != nil {
+			t.Fatalf("failed to get asset: %v", err)
+		}
+		if a.Status().String() != "inactive" {
+			t.Errorf("expected status inactive, got %s", a.Status().String())
+		}
+	}
+}
+
+func TestAssetService_BulkUpdateAssetStatus_PartialFailures(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	// Create one valid asset
+	input := app.CreateAssetInput{
+		TenantID:    tenantID,
+		Name:        "Valid Asset",
+		Type:        "host",
+		Criticality: "high",
+	}
+	a, err := svc.CreateAsset(context.Background(), input)
+	if err != nil {
+		t.Fatalf("failed to create asset: %v", err)
+	}
+
+	// Mix valid and invalid IDs
+	assetIDs := []string{
+		a.ID().String(),
+		shared.NewID().String(), // non-existent
+		"not-a-uuid",           // invalid format
+	}
+
+	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+		AssetIDs: assetIDs,
+		Status:   "archived",
+	})
+	if err != nil {
+		t.Fatalf("expected no error (partial failures are in result), got %v", err)
+	}
+	if result.Updated != 1 {
+		t.Errorf("expected 1 updated, got %d", result.Updated)
+	}
+	if result.Failed != 2 {
+		t.Errorf("expected 2 failed, got %d", result.Failed)
+	}
+	if len(result.Errors) != 2 {
+		t.Errorf("expected 2 error messages, got %d", len(result.Errors))
+	}
+}
+
+func TestAssetService_BulkUpdateAssetStatus_EmptyInput(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+		AssetIDs: []string{},
+		Status:   "active",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if result.Updated != 0 {
+		t.Errorf("expected 0 updated, got %d", result.Updated)
+	}
+	if result.Failed != 0 {
+		t.Errorf("expected 0 failed, got %d", result.Failed)
+	}
+}
+
+func TestAssetService_BulkUpdateAssetStatus_InvalidStatus(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	_, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+		AssetIDs: []string{shared.NewID().String()},
+		Status:   "invalid_status",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid status")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestAssetService_BulkUpdateAssetStatus_AllStatuses(t *testing.T) {
+	statuses := []struct {
+		input    string
+		expected string
+	}{
+		{"active", "active"},
+		{"inactive", "inactive"},
+		{"archived", "archived"},
+	}
+
+	for _, tt := range statuses {
+		t.Run(tt.input, func(t *testing.T) {
+			svc, _ := newTestService()
+			tenantID := serviceTenantID.String()
+
+			input := app.CreateAssetInput{
+				TenantID:    tenantID,
+				Name:        "Status Test Asset",
+				Type:        "host",
+				Criticality: "low",
+			}
+			a, err := svc.CreateAsset(context.Background(), input)
+			if err != nil {
+				t.Fatalf("failed to create asset: %v", err)
+			}
+
+			result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+				AssetIDs: []string{a.ID().String()},
+				Status:   tt.input,
+			})
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if result.Updated != 1 {
+				t.Errorf("expected 1 updated, got %d", result.Updated)
+			}
+
+			// Verify status
+			updated, err := svc.GetAsset(context.Background(), tenantID, a.ID().String())
+			if err != nil {
+				t.Fatalf("failed to get asset: %v", err)
+			}
+			if updated.Status().String() != tt.expected {
+				t.Errorf("expected status %s, got %s", tt.expected, updated.Status().String())
+			}
+		})
+	}
+}
+
+// =============================================================================
+// CreateAsset - Scope and Exposure Options
+// =============================================================================
+
+func TestAssetService_CreateAsset_WithScopeAndExposure(t *testing.T) {
+	svc, _ := newTestService()
+
+	input := app.CreateAssetInput{
+		Name:        "Scoped Asset",
+		Type:        "host",
+		Criticality: "high",
+		Scope:       "external",
+		Exposure:    "public",
+		Description: "An internet-facing asset",
+		Tags:        []string{"dmz", "public"},
+	}
+
+	a, err := svc.CreateAsset(context.Background(), input)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if a.Scope().String() != "external" {
+		t.Errorf("expected scope external, got %s", a.Scope().String())
+	}
+	if a.Exposure().String() != "public" {
+		t.Errorf("expected exposure public, got %s", a.Exposure().String())
+	}
+	if a.Description() != input.Description {
+		t.Errorf("expected description %q, got %q", input.Description, a.Description())
+	}
+}
+
+func TestAssetService_CreateAsset_InvalidScope(t *testing.T) {
+	svc, _ := newTestService()
+
+	input := app.CreateAssetInput{
+		Name:        "Bad Scope Asset",
+		Type:        "host",
+		Criticality: "high",
+		Scope:       "nonexistent_scope",
+	}
+
+	_, err := svc.CreateAsset(context.Background(), input)
+	if err == nil {
+		t.Fatal("expected error for invalid scope")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestAssetService_CreateAsset_InvalidExposure(t *testing.T) {
+	svc, _ := newTestService()
+
+	input := app.CreateAssetInput{
+		Name:        "Bad Exposure Asset",
+		Type:        "host",
+		Criticality: "high",
+		Exposure:    "nonexistent_exposure",
+	}
+
+	_, err := svc.CreateAsset(context.Background(), input)
+	if err == nil {
+		t.Fatal("expected error for invalid exposure")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+// =============================================================================
+// UpdateAsset - Scope, Exposure, Description, Tags
+// =============================================================================
+
+func TestAssetService_UpdateAsset_AllFields(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	// Create asset
+	input := app.CreateAssetInput{
+		TenantID:    tenantID,
+		Name:        "Full Update Asset",
+		Type:        "host",
+		Criticality: "low",
+		Description: "Original",
+		Tags:        []string{"old-tag"},
+	}
+	created, err := svc.CreateAsset(context.Background(), input)
+	if err != nil {
+		t.Fatalf("failed to create asset: %v", err)
+	}
+
+	// Update all fields
+	newName := "Renamed Asset"
+	newCrit := "critical"
+	newScope := "external"
+	newExposure := "public"
+	newDesc := "Updated description"
+	updateInput := app.UpdateAssetInput{
+		Name:        &newName,
+		Criticality: &newCrit,
+		Scope:       &newScope,
+		Exposure:    &newExposure,
+		Description: &newDesc,
+		Tags:        []string{"new-tag-1", "new-tag-2"},
+	}
+
+	updated, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, updateInput)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if updated.Name() != newName {
+		t.Errorf("expected name %s, got %s", newName, updated.Name())
+	}
+	if updated.Criticality().String() != newCrit {
+		t.Errorf("expected criticality %s, got %s", newCrit, updated.Criticality().String())
+	}
+	if updated.Scope().String() != newScope {
+		t.Errorf("expected scope %s, got %s", newScope, updated.Scope().String())
+	}
+	if updated.Exposure().String() != "public" {
+		t.Errorf("expected exposure public, got %s", updated.Exposure().String())
+	}
+	if updated.Description() != newDesc {
+		t.Errorf("expected description %s, got %s", newDesc, updated.Description())
+	}
+	if len(updated.Tags()) != 2 {
+		t.Errorf("expected 2 tags, got %d", len(updated.Tags()))
+	}
+}
+
+func TestAssetService_UpdateAsset_InvalidCriticality(t *testing.T) {
+	svc, _ := newTestService()
+	tenantID := serviceTenantID.String()
+
+	input := app.CreateAssetInput{
+		TenantID:    tenantID,
+		Name:        "Update Crit Test",
+		Type:        "host",
+		Criticality: "high",
+	}
+	created, err := svc.CreateAsset(context.Background(), input)
+	if err != nil {
+		t.Fatalf("failed to create asset: %v", err)
+	}
+
+	badCrit := "super_critical"
+	_, err = svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, app.UpdateAssetInput{
+		Criticality: &badCrit,
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid criticality")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+// =============================================================================
+// Cross-Tenant Isolation Tests
+// =============================================================================
+
+func TestAssetService_GetAsset_CrossTenantIsolation(t *testing.T) {
+	svc, _ := newTestService()
+	tenantA := shared.NewID().String()
+	tenantB := shared.NewID().String()
+
+	// Create asset in tenant A
+	input := app.CreateAssetInput{
+		TenantID:    tenantA,
+		Name:        "Tenant A Asset",
+		Type:        "host",
+		Criticality: "high",
+	}
+	created, err := svc.CreateAsset(context.Background(), input)
+	if err != nil {
+		t.Fatalf("failed to create asset: %v", err)
+	}
+
+	// Try to access from tenant B
+	_, err = svc.GetAsset(context.Background(), tenantB, created.ID().String())
+	if err == nil {
+		t.Fatal("expected error when accessing asset from different tenant")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for cross-tenant access, got %v", err)
+	}
+}
+
+func TestAssetService_DeleteAsset_CrossTenantIsolation(t *testing.T) {
+	svc, _ := newTestService()
+	tenantA := shared.NewID().String()
+	tenantB := shared.NewID().String()
+
+	// Create asset in tenant A
+	input := app.CreateAssetInput{
+		TenantID:    tenantA,
+		Name:        "Tenant A Delete Test",
+		Type:        "host",
+		Criticality: "high",
+	}
+	created, err := svc.CreateAsset(context.Background(), input)
+	if err != nil {
+		t.Fatalf("failed to create asset: %v", err)
+	}
+
+	// Try to delete from tenant B
+	err = svc.DeleteAsset(context.Background(), created.ID().String(), tenantB)
+	if err == nil {
+		t.Fatal("expected error when deleting asset from different tenant")
+	}
+
+	// Verify asset still exists in tenant A
+	a, err := svc.GetAsset(context.Background(), tenantA, created.ID().String())
+	if err != nil {
+		t.Fatalf("asset should still exist in tenant A: %v", err)
+	}
+	if a == nil {
+		t.Fatal("expected asset, got nil")
 	}
 }
