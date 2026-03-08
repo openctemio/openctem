@@ -148,7 +148,7 @@ jobs:
       # Build API image
       - name: Build and push API by digest
         id: build-api
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -163,7 +163,7 @@ jobs:
       # Build Migrations image
       - name: Build and push Migrations by digest
         id: build-migrations
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile.migrations
@@ -177,7 +177,7 @@ jobs:
       # Build Seed image
       - name: Build and push Seed by digest
         id: build-seed
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile.seed
@@ -191,7 +191,7 @@ jobs:
       # Build Admin CLI image
       - name: Build and push Admin CLI by digest
         id: build-admin-cli
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile.admin-cli
