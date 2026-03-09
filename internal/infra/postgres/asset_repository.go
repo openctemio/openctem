@@ -149,8 +149,9 @@ func (r *AssetRepository) FindRepositoryByRepoName(ctx context.Context, tenantID
 		LIMIT 1
 	`
 
-	suffixSlash := "%/" + repoName // matches "org/repo" or "github.com-org/repo"
-	suffixDash := "%-" + repoName  // matches "something-repo"
+	escaped := escapeLikePattern(repoName)
+	suffixSlash := "%/" + escaped // matches "org/repo" or "github.com-org/repo"
+	suffixDash := "%-" + escaped  // matches "something-repo"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), repoName, suffixSlash, suffixDash)
 	return r.scanAsset(row, shared.ID{})
@@ -175,8 +176,9 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 	`
 
 	// Match names that end with the fullName pattern
-	namePattern := "%/" + fullName // matches "github.com/openctemio/sdk-go" for "openctemio/sdk"
-	externalIdPattern := "%/" + fullName
+	escaped := escapeLikePattern(fullName)
+	namePattern := "%/" + escaped // matches "github.com/openctemio/sdk-go" for "openctemio/sdk"
+	externalIdPattern := "%/" + escaped
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), namePattern, fullName, externalIdPattern)
 	return r.scanAsset(row, shared.ID{})
