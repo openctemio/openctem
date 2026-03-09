@@ -346,7 +346,7 @@ func (r *AdminRepository) buildWhereClause(filter admin.Filter) (string, []any) 
 
 	if filter.Email != "" {
 		conditions = append(conditions, fmt.Sprintf("LOWER(email) LIKE LOWER($%d)", argIndex))
-		args = append(args, "%"+filter.Email+"%")
+		args = append(args, "%"+escapeLikePattern(filter.Email)+"%")
 		argIndex++
 	}
 
@@ -354,7 +354,7 @@ func (r *AdminRepository) buildWhereClause(filter admin.Filter) (string, []any) 
 		conditions = append(conditions, fmt.Sprintf(
 			"(LOWER(email) LIKE LOWER($%d) OR LOWER(name) LIKE LOWER($%d))",
 			argIndex, argIndex))
-		args = append(args, "%"+filter.Search+"%")
+		args = append(args, "%"+escapeLikePattern(filter.Search)+"%")
 		argIndex++
 	}
 
@@ -751,7 +751,7 @@ func (r *AuditLogRepository) buildAuditWhereClause(filter admin.AuditLogFilter) 
 
 	if filter.AdminEmail != "" {
 		conditions = append(conditions, fmt.Sprintf("LOWER(admin_email) LIKE LOWER($%d)", argIndex))
-		args = append(args, "%"+filter.AdminEmail+"%")
+		args = append(args, "%"+escapeLikePattern(filter.AdminEmail)+"%")
 		argIndex++
 	}
 
@@ -795,7 +795,7 @@ func (r *AuditLogRepository) buildAuditWhereClause(filter admin.AuditLogFilter) 
 		conditions = append(conditions, fmt.Sprintf(
 			"(action LIKE $%d OR resource_name LIKE $%d OR error_message LIKE $%d)",
 			argIndex, argIndex, argIndex))
-		args = append(args, "%"+filter.Search+"%")
+		args = append(args, "%"+escapeLikePattern(filter.Search)+"%")
 		argIndex++
 	}
 

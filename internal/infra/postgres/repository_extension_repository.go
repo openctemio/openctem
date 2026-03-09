@@ -184,8 +184,9 @@ func (r *RepositoryExtensionRepository) Delete(ctx context.Context, assetID shar
 // GetByFullName retrieves a repository by full name.
 func (r *RepositoryExtensionRepository) GetByFullName(ctx context.Context, tenantID shared.ID, fullName string) (*asset.RepositoryExtension, error) {
 	query := r.selectQuery() + `
+		INNER JOIN assets a ON a.id = ar.asset_id
 		WHERE ar.full_name = $1
-		AND ar.asset_id IN (SELECT id FROM assets WHERE tenant_id = $2)
+		AND a.tenant_id = $2
 	`
 
 	row := r.db.QueryRowContext(ctx, query, fullName, tenantID.String())
@@ -195,11 +196,13 @@ func (r *RepositoryExtensionRepository) GetByFullName(ctx context.Context, tenan
 // ListByTenant retrieves all repositories for a tenant.
 func (r *RepositoryExtensionRepository) ListByTenant(ctx context.Context, tenantID shared.ID, opts asset.ListOptions, page pagination.Pagination) (pagination.Result[*asset.RepositoryExtension], error) {
 	baseQuery := r.selectQuery() + `
-		WHERE ar.asset_id IN (SELECT id FROM assets WHERE tenant_id = $1)
+		INNER JOIN assets a ON a.id = ar.asset_id
+		WHERE a.tenant_id = $1
 	`
 	countQuery := `
 		SELECT COUNT(*) FROM asset_repositories ar
-		WHERE ar.asset_id IN (SELECT id FROM assets WHERE tenant_id = $1)
+		INNER JOIN assets a ON a.id = ar.asset_id
+		WHERE a.tenant_id = $1
 	`
 
 	// Apply sorting (default to full_name ASC)

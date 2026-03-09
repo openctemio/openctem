@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/jobs"
+	"github.com/openctemio/api/internal/infra/llm"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
@@ -213,6 +214,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetActivityService(s.FindingActivity) // Wire activity tracking
 	s.Vulnerability.SetUserRepository(repos.User)         // Wire user lookup for activity records
 
+	// Note: AITriage is wired to VulnerabilityService later after AITriage initialization
+
 	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.ThreatIntel = app.NewThreatIntelService(repos.ThreatIntel, log)
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
@@ -222,6 +225,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize SLA service
 	s.SLA = app.NewSLAService(repos.SLA, log)
+
+	// Initialize AI Triage service (if configured)
+	if cfg.AITriage.IsConfigured() {
+		llmFactory := llm.NewFactoryWithEncryption(cfg.AITriage, s.Encryptor)
+		s.AITriage = app.NewAITriageService(
+			repos.AITriage,
+			repos.Finding,
+			repos.Tenant,
+			s.FindingActivity,
+			llmFactory,
+			cfg.AITriage,
+			log,
+		)
+		s.AITriage.SetAuditService(s.Audit)
+		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
+		log.Info("AI triage service initialized")
+	}
 
 	// Initialize API Key & Webhook services
 	s.APIKey = app.NewAPIKeyService(repos.APIKey, log)
