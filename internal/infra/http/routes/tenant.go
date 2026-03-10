@@ -61,6 +61,13 @@ func registerTenantRoutes(
 		r.PATCH("/settings/branding", h.UpdateBrandingSettings, middleware.RequireTeamAdmin())
 		r.PATCH("/settings/branch", h.UpdateBranchSettings, middleware.RequireTeamAdmin())
 
+		// Risk scoring settings (admin+)
+		r.GET("/settings/risk-scoring", h.GetRiskScoringSettings, middleware.RequireTeamAdmin())
+		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin())
+		r.POST("/settings/risk-scoring/preview", h.PreviewRiskScoringChanges, middleware.RequireTeamAdmin())
+		r.POST("/settings/risk-scoring/recalculate", h.RecalculateRiskScores, middleware.RequireTeamAdmin())
+		r.GET("/settings/risk-scoring/presets", h.GetRiskScoringPresets, middleware.RequireTeamAdmin())
+
 		// Security & API settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())
 		r.PATCH("/settings/api", h.UpdateAPISettings, middleware.RequireTeamOwner())

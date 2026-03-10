@@ -178,6 +178,10 @@ func (m *HandlerMockRepository) GetAverageRiskScore(_ context.Context, _ shared.
 	return 0, nil
 }
 
+func (m *HandlerMockRepository) BatchUpdateRiskScores(_ context.Context, _ shared.ID, _ []*asset.Asset) error {
+	return nil
+}
+
 func newTestHandler() *handler.AssetHandler {
 	repo := NewHandlerMockRepository()
 	log := logger.NewDevelopment()

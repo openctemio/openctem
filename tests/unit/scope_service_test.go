@@ -318,6 +318,10 @@ func (m *mockAssetRepo) GetAverageRiskScore(_ context.Context, _ shared.ID) (flo
 	return 0, nil
 }
 
+func (m *mockAssetRepo) BatchUpdateRiskScores(_ context.Context, _ shared.ID, _ []*asset.Asset) error {
+	return nil
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================

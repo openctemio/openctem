@@ -189,6 +189,11 @@ func (r *AssetRepository) selectQuery() string {
 		SELECT a.id, a.tenant_id, a.parent_id, a.owner_id, a.name, a.asset_type, a.criticality, a.status,
 			   a.scope, a.exposure, a.risk_score,
 			   COALESCE(fc.finding_count, 0) as finding_count,
+			   COALESCE(fc.finding_critical, 0) as finding_critical,
+			   COALESCE(fc.finding_high, 0) as finding_high,
+			   COALESCE(fc.finding_medium, 0) as finding_medium,
+			   COALESCE(fc.finding_low, 0) as finding_low,
+			   COALESCE(fc.finding_info, 0) as finding_info,
 			   a.description, a.tags, a.metadata, a.properties,
 			   a.provider, a.external_id, a.classification, a.sync_status, a.last_synced_at, a.sync_error,
 			   a.discovery_source, a.discovery_tool, a.discovered_at,
@@ -196,7 +201,18 @@ func (r *AssetRepository) selectQuery() string {
 			   a.is_internet_accessible, a.exposure_changed_at, a.last_exposure_level,
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at
 		FROM assets a
-		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings GROUP BY asset_id) fc ON fc.asset_id = a.id
+		LEFT JOIN (
+			SELECT asset_id,
+				COUNT(*) as finding_count,
+				SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as finding_critical,
+				SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END) as finding_high,
+				SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END) as finding_medium,
+				SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END) as finding_low,
+				SUM(CASE WHEN severity = 'info' THEN 1 ELSE 0 END) as finding_info
+			FROM findings
+			WHERE status != 'resolved'
+			GROUP BY asset_id
+		) fc ON fc.asset_id = a.id
 	`
 }
 
@@ -415,6 +431,11 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		exposure        string
 		riskScore       int
 		findingCount    int
+		findingCritical int
+		findingHigh     int
+		findingMedium   int
+		findingLow      int
+		findingInfo     int
 		description     sql.NullString
 		tags            pq.StringArray
 		metadata        []byte
@@ -447,6 +468,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 	err := scan(
 		&idStr, &tenantIDStr, &parentIDStr, &ownerIDStr, &name, &assetType, &criticality, &status,
 		&scope, &exposure, &riskScore, &findingCount,
+		&findingCritical, &findingHigh, &findingMedium, &findingLow, &findingInfo,
 		&description, &tags, &metadata, &properties,
 		&provider, &externalID, &classification, &syncStatus, &lastSyncedAt, &syncError,
 		&discoverySource, &discoveryTool, &discoveredAt,
@@ -458,7 +480,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		return nil, err
 	}
 
-	return r.reconstructAsset(
+	a, err := r.reconstructAsset(
 		idStr, tenantIDStr, parentIDStr, ownerIDStr, name, assetType, criticality, status,
 		scope, exposure, riskScore, findingCount,
 		description, tags, metadata, properties,
@@ -468,6 +490,19 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		isInternetAccessible, exposureChangedAt, lastExposureLevel,
 		firstSeen, lastSeen, createdAt, updatedAt,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	a.SetFindingSeverityCounts(&asset.FindingSeverityCounts{
+		Critical: findingCritical,
+		High:     findingHigh,
+		Medium:   findingMedium,
+		Low:      findingLow,
+		Info:     findingInfo,
+	})
+
+	return a, nil
 }
 
 func (r *AssetRepository) reconstructAsset(
@@ -996,6 +1031,33 @@ func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shar
 	_, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(idStrings))
 	if err != nil {
 		return fmt.Errorf("failed to update finding counts: %w", err)
+	}
+
+	return nil
+}
+
+// BatchUpdateRiskScores updates risk_score for multiple assets in a single query.
+func (r *AssetRepository) BatchUpdateRiskScores(ctx context.Context, tenantID shared.ID, assets []*asset.Asset) error {
+	if len(assets) == 0 {
+		return nil
+	}
+
+	query := `
+		UPDATE assets SET risk_score = data.score, updated_at = NOW()
+		FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS score) AS data
+		WHERE assets.id = data.id AND assets.tenant_id = $3
+	`
+
+	ids := make([]string, 0, len(assets))
+	scores := make([]int, 0, len(assets))
+	for _, a := range assets {
+		ids = append(ids, a.ID().String())
+		scores = append(scores, a.RiskScore())
+	}
+
+	_, err := r.db.ExecContext(ctx, query, pq.Array(ids), pq.Array(scores), tenantID.String())
+	if err != nil {
+		return fmt.Errorf("failed to batch update risk scores: %w", err)
 	}
 
 	return nil

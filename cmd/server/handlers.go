@@ -40,9 +40,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	commandHandler.SetPipelineService(svc.Pipeline)
 
-	// Tenant handler with role service wired
+	// Tenant handler with role service and asset service wired
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetRoleService(svc.Role)
+	tenantHandler.SetAssetService(svc.Asset)
 
 	// Vulnerability handler with user and asset services for enrichment
 	vulnHandler := handler.NewVulnerabilityHandler(svc.Vulnerability, v, log)

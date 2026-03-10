@@ -78,6 +78,10 @@ type Repository interface {
 	// GetAverageRiskScore returns the average risk_score for all assets in a tenant.
 	// This replaces loading all assets into memory to compute the average.
 	GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error)
+
+	// BatchUpdateRiskScores updates risk scores for multiple assets in a single query.
+	// Uses PostgreSQL unnest() for efficient bulk updates.
+	BatchUpdateRiskScores(ctx context.Context, tenantID shared.ID, assets []*Asset) error
 }
 
 // AssetTypeStats holds per-type aggregate counts.

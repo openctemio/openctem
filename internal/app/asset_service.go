@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/assetgroup"
@@ -15,13 +17,39 @@ import (
 	"github.com/openctemio/api/pkg/pagination"
 )
 
+const (
+	// scoringConfigCacheTTL is the TTL for in-memory scoring config cache.
+	scoringConfigCacheTTL = 5 * time.Minute
+
+	// recalcLockTTL is the TTL for the recalculation distributed lock.
+	recalcLockTTL = 10 * time.Minute
+
+	// recalcLockKeyPrefix is the Redis key prefix for recalculation locks.
+	recalcLockKeyPrefix = "recalc:scoring:"
+
+	// maxRecalcAssets is the maximum number of assets allowed for recalculation.
+	maxRecalcAssets = 100000
+)
+
+// scoringConfigEntry is a cached scoring config for a tenant.
+type scoringConfigEntry struct {
+	config    *asset.RiskScoringConfig
+	expiresAt time.Time
+}
+
 // AssetService handles asset-related business operations.
 type AssetService struct {
 	repo              asset.Repository
 	repoExtRepo       asset.RepositoryExtensionRepository
 	assetGroupRepo    assetgroup.Repository    // For recalculating group stats
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
+	scoringProvider   asset.ScoringConfigProvider
+	redisClient       *redis.Client
 	logger            *logger.Logger
+
+	// In-memory scoring config cache (per-tenant, 5-min TTL)
+	scoringCacheMu sync.RWMutex
+	scoringCache   map[string]scoringConfigEntry // keyed by tenantID string
 }
 
 // NewAssetService creates a new AssetService.
@@ -47,9 +75,68 @@ func (s *AssetService) SetAccessControlRepository(repo accesscontrol.Repository)
 	s.accessControlRepo = repo
 }
 
+// SetScoringConfigProvider sets the scoring config provider for configurable risk scoring.
+func (s *AssetService) SetScoringConfigProvider(provider asset.ScoringConfigProvider) {
+	s.scoringProvider = provider
+	s.scoringCache = make(map[string]scoringConfigEntry)
+}
+
+// SetRedisClient sets the Redis client for distributed locking.
+func (s *AssetService) SetRedisClient(client *redis.Client) {
+	s.redisClient = client
+}
+
 // HasRepositoryExtensionRepository returns true if the repository extension repository is configured.
 func (s *AssetService) HasRepositoryExtensionRepository() bool {
 	return s.repoExtRepo != nil
+}
+
+// getScoringConfig returns the scoring config for a tenant, using cache when available.
+// Falls back to legacy config if no provider is configured.
+func (s *AssetService) getScoringConfig(ctx context.Context, tenantID shared.ID) *asset.RiskScoringConfig {
+	if s.scoringProvider == nil {
+		legacy := asset.LegacyRiskScoringConfig()
+		return &legacy
+	}
+
+	key := tenantID.String()
+
+	// Check cache (read lock)
+	s.scoringCacheMu.RLock()
+	if entry, ok := s.scoringCache[key]; ok && time.Now().Before(entry.expiresAt) {
+		s.scoringCacheMu.RUnlock()
+		return entry.config
+	}
+	s.scoringCacheMu.RUnlock()
+
+	// Cache miss — fetch from provider
+	config, err := s.scoringProvider.GetScoringConfig(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("failed to get scoring config, using legacy", "tenant_id", key, "error", err)
+		legacy := asset.LegacyRiskScoringConfig()
+		return &legacy
+	}
+
+	// Store in cache (write lock)
+	s.scoringCacheMu.Lock()
+	s.scoringCache[key] = scoringConfigEntry{
+		config:    config,
+		expiresAt: time.Now().Add(scoringConfigCacheTTL),
+	}
+	s.scoringCacheMu.Unlock()
+
+	return config
+}
+
+// InvalidateScoringConfigCache removes the cached scoring config for a tenant.
+// Call this when scoring settings are updated.
+func (s *AssetService) InvalidateScoringConfigCache(tenantID shared.ID) {
+	if s.scoringCache == nil {
+		return
+	}
+	s.scoringCacheMu.Lock()
+	delete(s.scoringCache, tenantID.String())
+	s.scoringCacheMu.Unlock()
 }
 
 // CreateAssetInput represents the input for creating an asset.
@@ -130,8 +217,8 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		a.AddTag(tag)
 	}
 
-	// Calculate initial risk score
-	a.CalculateRiskScore()
+	// Calculate initial risk score using tenant-specific config
+	a.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, tenantID))
 
 	if err := s.repo.Create(ctx, a); err != nil {
 		return nil, fmt.Errorf("failed to create asset: %w", err)
@@ -277,8 +364,8 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		}
 	}
 
-	// Recalculate risk score after updates
-	a.CalculateRiskScore()
+	// Recalculate risk score after updates using tenant-specific config
+	a.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, parsedTenantID))
 
 	if err := s.repo.Update(ctx, a); err != nil {
 		return nil, fmt.Errorf("failed to update asset: %w", err)
@@ -798,8 +885,8 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 		a.SetClassification(classification)
 	}
 
-	// Calculate initial risk score
-	a.CalculateRiskScore()
+	// Calculate initial risk score using tenant-specific config
+	a.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, tenantID))
 
 	// Create the asset first
 	if err := s.repo.Create(ctx, a); err != nil {
@@ -1215,7 +1302,7 @@ func (s *AssetService) UpdateFindingCount(ctx context.Context, tenantID, assetID
 	}
 
 	a.UpdateFindingCount(count)
-	a.CalculateRiskScore()
+	a.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, parsedTenantID))
 
 	if err := s.repo.Update(ctx, a); err != nil {
 		return fmt.Errorf("failed to update asset finding count: %w", err)
@@ -1476,8 +1563,8 @@ func (s *AssetService) updateExistingRepositoryAsset(
 		existingAsset.AddTag(tag)
 	}
 
-	// Recalculate risk score
-	existingAsset.CalculateRiskScore()
+	// Recalculate risk score using tenant-specific config
+	existingAsset.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, existingAsset.TenantID()))
 
 	// Mark as synced
 	existingAsset.MarkSynced()
@@ -1530,4 +1617,153 @@ func (s *AssetService) updateExistingRepositoryAsset(
 	)
 
 	return existingAsset, repoExt, nil
+}
+
+// RecalculateAllRiskScores recalculates risk scores for all assets in a tenant
+// using the current scoring configuration. Processes assets in batches.
+func (s *AssetService) RecalculateAllRiskScores(ctx context.Context, tenantID shared.ID) (int, error) {
+	tid := tenantID.String()
+
+	// Acquire distributed lock to prevent concurrent recalculations
+	if s.redisClient != nil {
+		lockKey := recalcLockKeyPrefix + tid
+		acquired, err := s.redisClient.Client().SetNX(ctx, lockKey, "1", recalcLockTTL).Result()
+		switch {
+		case err != nil:
+			s.logger.Warn("failed to acquire recalc lock, proceeding anyway", "tenant_id", tid, "error", err)
+		case !acquired:
+			return 0, fmt.Errorf("%w: risk score recalculation already in progress", shared.ErrConflict)
+		default:
+			defer func() {
+				_ = s.redisClient.Client().Del(ctx, lockKey)
+			}()
+		}
+	}
+
+	// Invalidate scoring cache before starting
+	s.InvalidateScoringConfigCache(tenantID)
+
+	config := s.getScoringConfig(ctx, tenantID)
+	engine := asset.NewRiskScoringEngine(*config)
+
+	// Check total asset count
+	filter := asset.NewFilter().WithTenantID(tid)
+	countPage := pagination.New(1, 1)
+	countResult, err := s.repo.List(ctx, filter, asset.NewListOptions(), countPage)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count assets: %w", err)
+	}
+	if countResult.Total > maxRecalcAssets {
+		return 0, fmt.Errorf("%w: too many assets (%d), max %d", shared.ErrValidation, countResult.Total, maxRecalcAssets)
+	}
+
+	const batchSize = 500
+	totalUpdated := 0
+	pageNum := 1
+
+	for {
+		page := pagination.New(pageNum, batchSize)
+
+		result, err := s.repo.List(ctx, filter, asset.NewListOptions(), page)
+		if err != nil {
+			return totalUpdated, fmt.Errorf("failed to list assets for recalculation: %w", err)
+		}
+
+		if len(result.Data) == 0 {
+			break
+		}
+
+		// Recalculate scores in memory
+		changed := make([]*asset.Asset, 0, len(result.Data))
+		for _, a := range result.Data {
+			oldScore := a.RiskScore()
+			newScore := engine.CalculateScore(a)
+			if oldScore != newScore {
+				a.CalculateRiskScoreWithConfig(config)
+				changed = append(changed, a)
+			}
+		}
+
+		// Batch update only changed assets
+		if len(changed) > 0 {
+			if err := s.repo.BatchUpdateRiskScores(ctx, tenantID, changed); err != nil {
+				return totalUpdated, fmt.Errorf("failed to batch update risk scores: %w", err)
+			}
+			totalUpdated += len(changed)
+		}
+
+		if len(result.Data) < batchSize {
+			break
+		}
+		pageNum++
+	}
+
+	s.logger.Info("recalculated risk scores", "tenant_id", tid, "updated", totalUpdated)
+	return totalUpdated, nil
+}
+
+// PreviewRiskScoreChanges previews how a scoring config change would affect assets.
+// Uses stratified sampling: top 20 + bottom 20 + random 60 assets.
+func (s *AssetService) PreviewRiskScoreChanges(ctx context.Context, tenantID shared.ID, newConfig *asset.RiskScoringConfig) ([]RiskScorePreviewItem, error) {
+	tid := tenantID.String()
+	engine := asset.NewRiskScoringEngine(*newConfig)
+
+	// Get a sample of assets — top risk, bottom risk, and a middle page
+	filter := asset.NewFilter().WithTenantID(tid)
+	allowedSort := asset.AllowedSortFields()
+	sortDesc := pagination.NewSortOption(allowedSort).Parse("-risk_score")
+	sortAsc := pagination.NewSortOption(allowedSort).Parse("risk_score")
+
+	topPage := pagination.New(1, 20)
+	bottomPage := pagination.New(1, 20)
+	middlePage := pagination.New(1, 60)
+
+	topResult, err := s.repo.List(ctx, filter, asset.NewListOptions().WithSort(sortDesc), topPage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get top-risk assets: %w", err)
+	}
+
+	bottomResult, err := s.repo.List(ctx, filter, asset.NewListOptions().WithSort(sortAsc), bottomPage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get bottom-risk assets: %w", err)
+	}
+
+	middleResult, err := s.repo.List(ctx, filter, asset.NewListOptions(), middlePage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get middle assets: %w", err)
+	}
+
+	// Deduplicate
+	seen := make(map[string]bool)
+	items := make([]RiskScorePreviewItem, 0, 100)
+
+	addItems := func(assets []*asset.Asset) {
+		for _, a := range assets {
+			id := a.ID().String()
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			items = append(items, RiskScorePreviewItem{
+				AssetID:      id,
+				AssetName:    a.Name(),
+				CurrentScore: a.RiskScore(),
+				NewScore:     engine.CalculateScore(a),
+			})
+		}
+	}
+
+	addItems(topResult.Data)
+	addItems(bottomResult.Data)
+	addItems(middleResult.Data)
+
+	return items, nil
+}
+
+// RiskScorePreviewItem represents how an asset's risk score would change.
+type RiskScorePreviewItem struct {
+	AssetID      string `json:"asset_id"`
+	AssetName    string `json:"asset_name"`
+	CurrentScore int    `json:"current_score"`
+	NewScore     int    `json:"new_score"`
 }

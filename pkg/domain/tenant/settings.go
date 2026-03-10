@@ -23,7 +23,8 @@ type Settings struct {
 	API      APISettings      `json:"api"`
 	Branding BrandingSettings `json:"branding"`
 	Branch   BranchSettings   `json:"branch"`
-	AI       AISettings       `json:"ai"`
+	AI          AISettings          `json:"ai"`
+	RiskScoring RiskScoringSettings `json:"risk_scoring"`
 }
 
 // BranchSettings contains branch naming convention configuration.
@@ -177,6 +178,297 @@ type AISettings struct {
 }
 
 // =============================================================================
+// Risk Scoring Settings
+// =============================================================================
+
+// RiskScoringSettings configures the risk scoring formula per tenant.
+type RiskScoringSettings struct {
+	Preset              string                  `json:"preset,omitempty"`
+	Weights             ComponentWeights        `json:"weights"`
+	ExposureScores      ExposureScoreConfig     `json:"exposure_scores"`
+	ExposureMultipliers ExposureMultiplierConfig `json:"exposure_multipliers"`
+	CriticalityScores   CriticalityScoreConfig  `json:"criticality_scores"`
+	FindingImpact       FindingImpactConfig     `json:"finding_impact"`
+	CTEMPoints          CTEMPointsConfig        `json:"ctem_points"`
+	RiskLevels          RiskLevelConfig         `json:"risk_levels"`
+}
+
+type ComponentWeights struct {
+	Exposure    int `json:"exposure"`
+	Criticality int `json:"criticality"`
+	Findings    int `json:"findings"`
+	CTEM        int `json:"ctem"`
+}
+
+type ExposureScoreConfig struct {
+	Public     int `json:"public"`
+	Restricted int `json:"restricted"`
+	Private    int `json:"private"`
+	Isolated   int `json:"isolated"`
+	Unknown    int `json:"unknown"`
+}
+
+type ExposureMultiplierConfig struct {
+	Public     float64 `json:"public"`
+	Restricted float64 `json:"restricted"`
+	Private    float64 `json:"private"`
+	Isolated   float64 `json:"isolated"`
+	Unknown    float64 `json:"unknown"`
+}
+
+type CriticalityScoreConfig struct {
+	Critical int `json:"critical"`
+	High     int `json:"high"`
+	Medium   int `json:"medium"`
+	Low      int `json:"low"`
+	None     int `json:"none"`
+}
+
+type FindingImpactConfig struct {
+	Mode             string               `json:"mode"`
+	PerFindingPoints int                  `json:"per_finding_points"`
+	FindingCap       int                  `json:"finding_cap"`
+	SeverityWeights  SeverityWeightConfig `json:"severity_weights"`
+}
+
+type SeverityWeightConfig struct {
+	Critical int `json:"critical"`
+	High     int `json:"high"`
+	Medium   int `json:"medium"`
+	Low      int `json:"low"`
+	Info     int `json:"info"`
+}
+
+type CTEMPointsConfig struct {
+	Enabled            bool `json:"enabled"`
+	InternetAccessible int  `json:"internet_accessible"`
+	PIIExposed         int  `json:"pii_exposed"`
+	PHIExposed         int  `json:"phi_exposed"`
+	HighRiskCompliance int  `json:"high_risk_compliance"`
+	RestrictedData     int  `json:"restricted_data"`
+}
+
+type RiskLevelConfig struct {
+	CriticalMin int `json:"critical_min"`
+	HighMin     int `json:"high_min"`
+	MediumMin   int `json:"medium_min"`
+	LowMin      int `json:"low_min"`
+}
+
+// LegacyRiskScoringSettings returns settings that reproduce the exact current
+// hardcoded risk scoring formula for backward compatibility.
+func LegacyRiskScoringSettings() RiskScoringSettings {
+	return RiskScoringSettings{
+		Preset: "legacy",
+		Weights: ComponentWeights{
+			Exposure: 40, Criticality: 25, Findings: 35, CTEM: 0,
+		},
+		ExposureScores: ExposureScoreConfig{
+			Public: 100, Restricted: 62, Private: 37, Isolated: 12, Unknown: 50,
+		},
+		ExposureMultipliers: ExposureMultiplierConfig{
+			Public: 1.5, Restricted: 1.2, Private: 1.0, Isolated: 0.8, Unknown: 1.0,
+		},
+		CriticalityScores: CriticalityScoreConfig{
+			Critical: 100, High: 72, Medium: 48, Low: 24, None: 0,
+		},
+		FindingImpact: FindingImpactConfig{
+			Mode:             "count",
+			PerFindingPoints: 14,
+			FindingCap:       100,
+			SeverityWeights: SeverityWeightConfig{
+				Critical: 20, High: 10, Medium: 5, Low: 2, Info: 1,
+			},
+		},
+		CTEMPoints: CTEMPointsConfig{Enabled: false},
+		RiskLevels: RiskLevelConfig{
+			CriticalMin: 80, HighMin: 60, MediumMin: 40, LowMin: 20,
+		},
+	}
+}
+
+// DefaultRiskScoringPreset returns the recommended risk scoring settings
+// for new tenants who opt-in to configurable risk scoring.
+func DefaultRiskScoringPreset() RiskScoringSettings {
+	return RiskScoringSettings{
+		Preset: "default",
+		Weights: ComponentWeights{
+			Exposure: 35, Criticality: 25, Findings: 30, CTEM: 10,
+		},
+		ExposureScores: ExposureScoreConfig{
+			Public: 80, Restricted: 50, Private: 30, Isolated: 10, Unknown: 40,
+		},
+		ExposureMultipliers: ExposureMultiplierConfig{
+			Public: 1.3, Restricted: 1.1, Private: 1.0, Isolated: 0.9, Unknown: 1.0,
+		},
+		CriticalityScores: CriticalityScoreConfig{
+			Critical: 100, High: 75, Medium: 50, Low: 25, None: 0,
+		},
+		FindingImpact: FindingImpactConfig{
+			Mode:             "severity_weighted",
+			PerFindingPoints: 5,
+			FindingCap:       100,
+			SeverityWeights: SeverityWeightConfig{
+				Critical: 20, High: 10, Medium: 5, Low: 2, Info: 1,
+			},
+		},
+		CTEMPoints: CTEMPointsConfig{
+			Enabled:            false,
+			InternetAccessible: 30,
+			PIIExposed:         20,
+			PHIExposed:         25,
+			HighRiskCompliance: 15,
+			RestrictedData:     20,
+		},
+		RiskLevels: RiskLevelConfig{
+			CriticalMin: 80, HighMin: 60, MediumMin: 40, LowMin: 20,
+		},
+	}
+}
+
+// AllRiskScoringPresets contains all available risk scoring presets.
+var AllRiskScoringPresets = map[string]RiskScoringSettings{
+	"legacy":     LegacyRiskScoringSettings(),
+	"default":    DefaultRiskScoringPreset(),
+	"banking":    bankingRiskScoringPreset(),
+	"healthcare": healthcareRiskScoringPreset(),
+	"ecommerce":  ecommerceRiskScoringPreset(),
+	"government": governmentRiskScoringPreset(),
+}
+
+// RiskScoringPreset returns a preset by name.
+func RiskScoringPreset(name string) (RiskScoringSettings, bool) {
+	preset, ok := AllRiskScoringPresets[name]
+	return preset, ok
+}
+
+func bankingRiskScoringPreset() RiskScoringSettings {
+	base := DefaultRiskScoringPreset()
+	base.Preset = "banking"
+	base.Weights = ComponentWeights{Exposure: 25, Criticality: 30, Findings: 25, CTEM: 20}
+	base.CTEMPoints.Enabled = true
+	base.CTEMPoints.PIIExposed = 30
+	base.CTEMPoints.HighRiskCompliance = 25
+	base.FindingImpact.SeverityWeights.Critical = 25
+	return base
+}
+
+func healthcareRiskScoringPreset() RiskScoringSettings {
+	base := DefaultRiskScoringPreset()
+	base.Preset = "healthcare"
+	base.Weights = ComponentWeights{Exposure: 20, Criticality: 25, Findings: 25, CTEM: 30}
+	base.CTEMPoints.Enabled = true
+	base.CTEMPoints.PHIExposed = 40
+	base.CTEMPoints.PIIExposed = 30
+	base.CTEMPoints.HighRiskCompliance = 25
+	return base
+}
+
+func ecommerceRiskScoringPreset() RiskScoringSettings {
+	base := DefaultRiskScoringPreset()
+	base.Preset = "ecommerce"
+	base.Weights = ComponentWeights{Exposure: 40, Criticality: 20, Findings: 30, CTEM: 10}
+	base.ExposureScores.Public = 90
+	return base
+}
+
+func governmentRiskScoringPreset() RiskScoringSettings {
+	base := DefaultRiskScoringPreset()
+	base.Preset = "government"
+	base.Weights = ComponentWeights{Exposure: 20, Criticality: 30, Findings: 20, CTEM: 30}
+	base.CTEMPoints.Enabled = true
+	base.CTEMPoints.RestrictedData = 35
+	base.CTEMPoints.HighRiskCompliance = 30
+	return base
+}
+
+// Validate validates the risk scoring settings.
+func (s *RiskScoringSettings) Validate() error {
+	sum := s.Weights.Exposure + s.Weights.Criticality + s.Weights.Findings + s.Weights.CTEM
+	if sum != 100 {
+		return fmt.Errorf("%w: component weights must sum to 100, got %d", shared.ErrValidation, sum)
+	}
+	for name, w := range map[string]int{
+		"exposure": s.Weights.Exposure, "criticality": s.Weights.Criticality,
+		"findings": s.Weights.Findings, "ctem": s.Weights.CTEM,
+	} {
+		if w < 0 || w > 100 {
+			return fmt.Errorf("%w: weight '%s' must be 0-100, got %d", shared.ErrValidation, name, w)
+		}
+	}
+	for name, v := range map[string]int{
+		"public": s.ExposureScores.Public, "restricted": s.ExposureScores.Restricted,
+		"private": s.ExposureScores.Private, "isolated": s.ExposureScores.Isolated,
+		"unknown": s.ExposureScores.Unknown,
+	} {
+		if v < 0 || v > 100 {
+			return fmt.Errorf("%w: exposure score '%s' must be 0-100", shared.ErrValidation, name)
+		}
+	}
+	for name, v := range map[string]int{
+		"critical": s.CriticalityScores.Critical, "high": s.CriticalityScores.High,
+		"medium": s.CriticalityScores.Medium, "low": s.CriticalityScores.Low,
+		"none": s.CriticalityScores.None,
+	} {
+		if v < 0 || v > 100 {
+			return fmt.Errorf("%w: criticality score '%s' must be 0-100", shared.ErrValidation, name)
+		}
+	}
+	for name, m := range map[string]float64{
+		"public": s.ExposureMultipliers.Public, "restricted": s.ExposureMultipliers.Restricted,
+		"private": s.ExposureMultipliers.Private, "isolated": s.ExposureMultipliers.Isolated,
+		"unknown": s.ExposureMultipliers.Unknown,
+	} {
+		if m < 0.1 || m > 3.0 {
+			return fmt.Errorf("%w: exposure multiplier '%s' must be 0.1-3.0", shared.ErrValidation, name)
+		}
+	}
+	if s.FindingImpact.Mode != "count" && s.FindingImpact.Mode != "severity_weighted" {
+		return fmt.Errorf("%w: finding impact mode must be 'count' or 'severity_weighted'", shared.ErrValidation)
+	}
+	if s.FindingImpact.FindingCap < 1 || s.FindingImpact.FindingCap > 100 {
+		return fmt.Errorf("%w: finding_cap must be 1-100", shared.ErrValidation)
+	}
+	if s.FindingImpact.PerFindingPoints < 1 || s.FindingImpact.PerFindingPoints > 50 {
+		return fmt.Errorf("%w: per_finding_points must be 1-50", shared.ErrValidation)
+	}
+	for name, w := range map[string]int{
+		"critical": s.FindingImpact.SeverityWeights.Critical,
+		"high":     s.FindingImpact.SeverityWeights.High,
+		"medium":   s.FindingImpact.SeverityWeights.Medium,
+		"low":      s.FindingImpact.SeverityWeights.Low,
+		"info":     s.FindingImpact.SeverityWeights.Info,
+	} {
+		if w < 0 || w > 50 {
+			return fmt.Errorf("%w: severity weight '%s' must be 0-50", shared.ErrValidation, name)
+		}
+	}
+	if s.CTEMPoints.Enabled {
+		for name, p := range map[string]int{
+			"internet_accessible":  s.CTEMPoints.InternetAccessible,
+			"pii_exposed":          s.CTEMPoints.PIIExposed,
+			"phi_exposed":          s.CTEMPoints.PHIExposed,
+			"high_risk_compliance": s.CTEMPoints.HighRiskCompliance,
+			"restricted_data":      s.CTEMPoints.RestrictedData,
+		} {
+			if p < 0 || p > 100 {
+				return fmt.Errorf("%w: CTEM points '%s' must be 0-100", shared.ErrValidation, name)
+			}
+		}
+	}
+	if !(s.RiskLevels.CriticalMin > s.RiskLevels.HighMin &&
+		s.RiskLevels.HighMin > s.RiskLevels.MediumMin &&
+		s.RiskLevels.MediumMin > s.RiskLevels.LowMin &&
+		s.RiskLevels.LowMin > 0) {
+		return fmt.Errorf("%w: risk levels must be ordered: critical > high > medium > low > 0", shared.ErrValidation)
+	}
+	if s.RiskLevels.CriticalMin > 100 || s.RiskLevels.LowMin < 1 {
+		return fmt.Errorf("%w: risk levels must be between 1-100", shared.ErrValidation)
+	}
+	return nil
+}
+
+// =============================================================================
 // Default Settings
 // =============================================================================
 
@@ -214,6 +506,7 @@ func DefaultSettings() Settings {
 			AutoTriageSeverities:   []string{"critical", "high"},
 			AutoTriageDelaySeconds: 60,
 		},
+		RiskScoring: LegacyRiskScoringSettings(),
 	}
 }
 
@@ -240,6 +533,9 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.AI.Validate(); err != nil {
 		return fmt.Errorf("ai settings: %w", err)
+	}
+	if err := s.RiskScoring.Validate(); err != nil {
+		return fmt.Errorf("risk scoring settings: %w", err)
 	}
 	return nil
 }
@@ -401,7 +697,7 @@ func (s *Settings) ToMap() map[string]any {
 
 // SettingsFromMap converts map[string]any to Settings.
 func SettingsFromMap(m map[string]any) Settings {
-	if m == nil {
+	if len(m) == 0 {
 		return DefaultSettings()
 	}
 	data, _ := json.Marshal(m)
@@ -409,6 +705,12 @@ func SettingsFromMap(m map[string]any) Settings {
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return DefaultSettings()
 	}
+
+	// Ensure risk_scoring has valid defaults if not present in the map
+	if _, ok := m["risk_scoring"]; !ok {
+		settings.RiskScoring = LegacyRiskScoringSettings()
+	}
+
 	return settings
 }
 
@@ -608,5 +910,15 @@ func (t *Tenant) UpdateAISettings(ai AISettings) error {
 	}
 	settings := t.TypedSettings()
 	settings.AI = ai
+	return t.UpdateSettings(settings)
+}
+
+// UpdateRiskScoringSettings updates only the risk scoring settings.
+func (t *Tenant) UpdateRiskScoringSettings(rs RiskScoringSettings) error {
+	if err := rs.Validate(); err != nil {
+		return err
+	}
+	settings := t.TypedSettings()
+	settings.RiskScoring = rs
 	return t.UpdateSettings(settings)
 }

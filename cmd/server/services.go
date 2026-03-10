@@ -180,6 +180,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetRepositoryExtensionRepository(repos.RepoExt)
 	s.Asset.SetAssetGroupRepository(repos.AssetGroup)
 	s.Asset.SetAccessControlRepository(repos.AccessControl)
+	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
+	s.Asset.SetRedisClient(deps.RedisClient)
 
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)

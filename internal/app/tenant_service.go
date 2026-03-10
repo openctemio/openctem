@@ -1081,3 +1081,51 @@ func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID strin
 	result := t.TypedSettings()
 	return &result, nil
 }
+
+// UpdateRiskScoringSettings updates only the risk scoring settings.
+func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID string, rs tenant.RiskScoringSettings, actx AuditContext) (*tenant.Settings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := t.UpdateRiskScoringSettings(rs); err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.Update(ctx, t); err != nil {
+		return nil, fmt.Errorf("failed to update risk scoring settings: %w", err)
+	}
+
+	s.logger.Info("risk scoring settings updated", "tenant_id", tenantID, "preset", rs.Preset)
+
+	actx.TenantID = tenantID
+	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithMessage("Risk scoring settings updated").
+		WithMetadata("preset", rs.Preset)
+	s.logAudit(ctx, actx, event)
+
+	result := t.TypedSettings()
+	return &result, nil
+}
+
+// GetRiskScoringSettings returns the current risk scoring settings for a tenant.
+func (s *TenantService) GetRiskScoringSettings(ctx context.Context, tenantID string) (*tenant.RiskScoringSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+
+	settings := t.TypedSettings()
+	return &settings.RiskScoring, nil
+}

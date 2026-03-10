@@ -21,10 +21,11 @@ import (
 // TenantHandler handles tenant-related HTTP requests.
 // Note: "Team" is the UI-facing name for tenants.
 type TenantHandler struct {
-	service     *app.TenantService
-	roleService *app.RoleService
-	validator   *validator.Validator
-	logger      *logger.Logger
+	service      *app.TenantService
+	roleService  *app.RoleService
+	assetService *app.AssetService
+	validator    *validator.Validator
+	logger       *logger.Logger
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -39,6 +40,11 @@ func NewTenantHandler(svc *app.TenantService, v *validator.Validator, log *logge
 // SetRoleService sets the role service for fetching RBAC roles.
 func (h *TenantHandler) SetRoleService(svc *app.RoleService) {
 	h.roleService = svc
+}
+
+// SetAssetService sets the asset service for risk scoring operations.
+func (h *TenantHandler) SetAssetService(svc *app.AssetService) {
+	h.assetService = svc
 }
 
 // =============================================================================
@@ -270,6 +276,8 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.NotFound("Tenant").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict("Tenant already exists").WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		// Extract just the message without the wrapped error prefix
 		msg := err.Error()
@@ -949,10 +957,11 @@ func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request
 
 // SettingsResponse represents tenant settings in API responses.
 type SettingsResponse struct {
-	General  GeneralSettingsResponse  `json:"general"`
-	Security SecuritySettingsResponse `json:"security"`
-	API      APISettingsResponse      `json:"api"`
-	Branding BrandingSettingsResponse `json:"branding"`
+	General     GeneralSettingsResponse    `json:"general"`
+	Security    SecuritySettingsResponse   `json:"security"`
+	API         APISettingsResponse        `json:"api"`
+	Branding    BrandingSettingsResponse   `json:"branding"`
+	RiskScoring tenant.RiskScoringSettings `json:"risk_scoring"`
 }
 
 // GeneralSettingsResponse represents general settings.
@@ -1018,6 +1027,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			LogoDarkURL:  s.Branding.LogoDarkURL,
 			LogoData:     s.Branding.LogoData,
 		},
+		RiskScoring: s.RiskScoring,
 	}
 }
 
@@ -1266,4 +1276,145 @@ func (h *TenantHandler) UpdateBranchSettings(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+}
+
+// =============================================================================
+// Risk Scoring Settings Endpoints
+// =============================================================================
+
+// GetRiskScoringSettings handles GET /api/v1/tenants/{tenant}/settings/risk-scoring
+func (h *TenantHandler) GetRiskScoringSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	rs, err := h.service.GetRiskScoringSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(rs)
+}
+
+// UpdateRiskScoringSettings handles PATCH /api/v1/tenants/{tenant}/settings/risk-scoring
+func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	var req tenant.RiskScoringSettings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	settings, err := h.service.UpdateRiskScoringSettings(r.Context(), tenantID.String(), req, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Invalidate scoring config cache so new formula takes effect immediately
+	if h.assetService != nil {
+		h.assetService.InvalidateScoringConfigCache(tenantID)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(settings.RiskScoring)
+}
+
+// PreviewRiskScoringChanges handles POST /api/v1/tenants/{tenant}/settings/risk-scoring/preview
+func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.assetService == nil {
+		apierror.InternalServerError("Asset service not configured").WriteJSON(w)
+		return
+	}
+
+	var req tenant.RiskScoringSettings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	config := app.MapTenantToAssetScoringConfig(&req)
+	items, err := h.assetService.PreviewRiskScoreChanges(r.Context(), tenantID, config)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"assets":      items,
+		"total_count": len(items),
+	})
+}
+
+// RecalculateRiskScores handles POST /api/v1/tenants/{tenant}/settings/risk-scoring/recalculate
+func (h *TenantHandler) RecalculateRiskScores(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.assetService == nil {
+		apierror.InternalServerError("Asset service not configured").WriteJSON(w)
+		return
+	}
+
+	updated, err := h.assetService.RecalculateAllRiskScores(r.Context(), tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"assets_updated": updated,
+	})
+}
+
+// GetRiskScoringPresets handles GET /api/v1/tenants/{tenant}/settings/risk-scoring/presets
+func (h *TenantHandler) GetRiskScoringPresets(w http.ResponseWriter, r *http.Request) {
+	presets := tenant.AllRiskScoringPresets
+
+	type presetResponse struct {
+		Name   string                     `json:"name"`
+		Config tenant.RiskScoringSettings `json:"config"`
+	}
+
+	result := make([]presetResponse, 0, len(presets))
+	for name, config := range presets {
+		result = append(result, presetResponse{
+			Name:   name,
+			Config: config,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
 }
