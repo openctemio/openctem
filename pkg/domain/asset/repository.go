@@ -105,6 +105,10 @@ type RepositoryExtensionRepository interface {
 
 	// ListByTenant retrieves all repositories for a tenant.
 	ListByTenant(ctx context.Context, tenantID shared.ID, opts ListOptions, page pagination.Pagination) (pagination.Result[*RepositoryExtension], error)
+
+	// GetByAssetIDs retrieves repository extensions for multiple asset IDs in a single query.
+	// Returns a map keyed by asset ID. Missing entries indicate no extension exists for that asset.
+	GetByAssetIDs(ctx context.Context, assetIDs []shared.ID) (map[shared.ID]*RepositoryExtension, error)
 }
 
 // Filter defines the filtering options for listing assets.

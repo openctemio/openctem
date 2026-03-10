@@ -241,6 +241,41 @@ func (r *RepositoryExtensionRepository) ListByTenant(ctx context.Context, tenant
 	return pagination.NewResult(repos, total, page), nil
 }
 
+// GetByAssetIDs retrieves repository extensions for multiple asset IDs in a single query.
+func (r *RepositoryExtensionRepository) GetByAssetIDs(ctx context.Context, assetIDs []shared.ID) (map[shared.ID]*asset.RepositoryExtension, error) {
+	if len(assetIDs) == 0 {
+		return make(map[shared.ID]*asset.RepositoryExtension), nil
+	}
+
+	ids := make([]string, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		ids = append(ids, id.String())
+	}
+
+	query := r.selectQuery() + " WHERE ar.asset_id = ANY($1)"
+
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch query repository extensions: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[shared.ID]*asset.RepositoryExtension, len(assetIDs))
+	for rows.Next() {
+		repo, err := r.scanRepoFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		result[repo.AssetID()] = repo
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate repository extensions: %w", err)
+	}
+
+	return result, nil
+}
+
 // Helper methods
 
 func (r *RepositoryExtensionRepository) selectQuery() string {

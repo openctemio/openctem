@@ -216,16 +216,26 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Check if we're filtering by repository type to include extensions
 	isRepositoryTypeFilter := len(input.Types) == 1 && input.Types[0] == "repository"
 
-	// If filtering by repository type, fetch extensions and return combined response
+	// If filtering by repository type, batch-fetch extensions and return combined response
 	if isRepositoryTypeFilter && h.service.HasRepositoryExtensionRepository() {
+		// Collect all asset IDs for batch fetch (single query instead of N+1)
+		assetIDs := make([]shared.ID, len(result.Data))
+		for i, a := range result.Data {
+			assetIDs[i] = a.ID()
+		}
+
+		extensions, err := h.service.GetRepositoryExtensionsByAssetIDs(r.Context(), assetIDs)
+		if err != nil {
+			h.logger.Error("failed to batch fetch repository extensions", "error", err)
+			extensions = make(map[shared.ID]*asset.RepositoryExtension)
+		}
+
 		data := make([]AssetWithRepositoryResponse, len(result.Data))
 		for i, a := range result.Data {
 			resp := AssetWithRepositoryResponse{
 				AssetResponse: toAssetResponse(a),
 			}
-			// Fetch repository extension for this asset
-			ext, err := h.service.GetRepositoryExtension(r.Context(), tenantID, a.ID().String())
-			if err == nil && ext != nil {
+			if ext, ok := extensions[a.ID()]; ok {
 				resp.Repository = toRepositoryExtensionResponse(ext)
 			}
 			data[i] = resp

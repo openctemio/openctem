@@ -928,6 +928,16 @@ func (s *AssetService) GetRepositoryExtension(ctx context.Context, tenantID, ass
 	return s.repoExtRepo.GetByAssetID(ctx, parsedID)
 }
 
+// GetRepositoryExtensionsByAssetIDs retrieves repository extensions for multiple assets in a single query.
+// Security: Caller must ensure all assetIDs belong to the specified tenant.
+func (s *AssetService) GetRepositoryExtensionsByAssetIDs(ctx context.Context, assetIDs []shared.ID) (map[shared.ID]*asset.RepositoryExtension, error) {
+	if s.repoExtRepo == nil {
+		return make(map[shared.ID]*asset.RepositoryExtension), nil
+	}
+
+	return s.repoExtRepo.GetByAssetIDs(ctx, assetIDs)
+}
+
 // GetAssetWithRepository retrieves an asset with its repository extension.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (s *AssetService) GetAssetWithRepository(ctx context.Context, tenantID, assetID string) (*asset.Asset, *asset.RepositoryExtension, error) {
