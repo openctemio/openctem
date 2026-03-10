@@ -110,7 +110,8 @@ type Repositories struct {
 	Webhook *postgres.WebhookRepository
 
 	// Licensing (modules from database)
-	Module *postgres.ModuleRepository
+	Module       *postgres.ModuleRepository
+	TenantModule *postgres.TenantModuleRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -220,7 +221,8 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Webhook: postgres.NewWebhookRepository(db),
 
 		// Licensing (modules from database)
-		Module: postgres.NewModuleRepository(db),
+		Module:       postgres.NewModuleRepository(db),
+		TenantModule: postgres.NewTenantModuleRepository(db),
 	}
 }
 

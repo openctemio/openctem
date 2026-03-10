@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	moduleTypes "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
@@ -21,11 +22,12 @@ import (
 // TenantHandler handles tenant-related HTTP requests.
 // Note: "Team" is the UI-facing name for tenants.
 type TenantHandler struct {
-	service      *app.TenantService
-	roleService  *app.RoleService
-	assetService *app.AssetService
-	validator    *validator.Validator
-	logger       *logger.Logger
+	service       *app.TenantService
+	roleService   *app.RoleService
+	assetService  *app.AssetService
+	moduleService *app.ModuleService
+	validator     *validator.Validator
+	logger        *logger.Logger
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -45,6 +47,11 @@ func (h *TenantHandler) SetRoleService(svc *app.RoleService) {
 // SetAssetService sets the asset service for risk scoring operations.
 func (h *TenantHandler) SetAssetService(svc *app.AssetService) {
 	h.assetService = svc
+}
+
+// SetModuleService sets the module service for module management.
+func (h *TenantHandler) SetModuleService(svc *app.ModuleService) {
+	h.moduleService = svc
 }
 
 // =============================================================================
@@ -1417,4 +1424,192 @@ func (h *TenantHandler) GetRiskScoringPresets(w http.ResponseWriter, r *http.Req
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// =============================================================================
+// Module Management
+// =============================================================================
+
+// TenantModuleResponse represents a module with tenant-specific state.
+type TenantModuleResponse struct {
+	ID            string                    `json:"id"`
+	Name          string                    `json:"name"`
+	Description   string                    `json:"description,omitempty"`
+	Icon          string                    `json:"icon,omitempty"`
+	Category      string                    `json:"category"`
+	DisplayOrder  int                       `json:"display_order"`
+	IsCore        bool                      `json:"is_core"`
+	IsEnabled     bool                      `json:"is_enabled"`
+	ReleaseStatus string                    `json:"release_status"`
+	SubModules    []TenantSubModuleResponse `json:"sub_modules,omitempty"`
+}
+
+// TenantSubModuleResponse represents a sub-module in the response.
+type TenantSubModuleResponse struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	Icon          string `json:"icon,omitempty"`
+	ReleaseStatus string `json:"release_status"`
+	IsEnabled     bool   `json:"is_enabled"`
+}
+
+// TenantModuleListResponse wraps the module list with summary.
+type TenantModuleListResponse struct {
+	Modules []TenantModuleResponse `json:"modules"`
+	Summary TenantModuleSummaryResponse `json:"summary"`
+}
+
+// TenantModuleSummaryResponse provides module counts.
+type TenantModuleSummaryResponse struct {
+	Total    int `json:"total"`
+	Enabled  int `json:"enabled"`
+	Disabled int `json:"disabled"`
+	Core     int `json:"core"`
+}
+
+// UpdateTenantModulesRequest is the request body for toggling modules.
+type UpdateTenantModulesRequest struct {
+	Modules []ModuleToggleRequest `json:"modules" validate:"required,min=1,dive"`
+}
+
+// ModuleToggleRequest represents a single module toggle.
+type ModuleToggleRequest struct {
+	ModuleID  string `json:"module_id" validate:"required"`
+	IsEnabled bool   `json:"is_enabled"`
+}
+
+// GetTenantModules handles GET /api/v1/tenants/{tenant}/settings/modules
+func (h *TenantHandler) GetTenantModules(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+
+	config, err := h.moduleService.GetTenantModuleConfig(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
+}
+
+// UpdateTenantModules handles PATCH /api/v1/tenants/{tenant}/settings/modules
+func (h *TenantHandler) UpdateTenantModules(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+
+	var req UpdateTenantModulesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	// Convert to domain types
+	updates := make([]moduleTypes.TenantModuleUpdate, len(req.Modules))
+	for i, m := range req.Modules {
+		updates[i] = moduleTypes.TenantModuleUpdate{
+			ModuleID:  m.ModuleID,
+			IsEnabled: m.IsEnabled,
+		}
+	}
+
+	actx := h.buildAuditContext(r)
+	config, err := h.moduleService.UpdateTenantModules(r.Context(), tenantID.String(), updates, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
+}
+
+// ResetTenantModules handles POST /api/v1/tenants/{tenant}/settings/modules/reset
+func (h *TenantHandler) ResetTenantModules(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	config, err := h.moduleService.ResetTenantModules(r.Context(), tenantID.String(), actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
+}
+
+func toTenantModuleListResponse(config *app.TenantModuleConfigOutput) TenantModuleListResponse {
+	modules := make([]TenantModuleResponse, 0, len(config.Modules))
+	for _, info := range config.Modules {
+		m := info.Module
+		resp := TenantModuleResponse{
+			ID:            m.ID(),
+			Name:          m.Name(),
+			Description:   m.Description(),
+			Icon:          m.Icon(),
+			Category:      m.Category(),
+			DisplayOrder:  m.DisplayOrder(),
+			IsCore:        m.IsCore(),
+			IsEnabled:     info.IsEnabled,
+			ReleaseStatus: string(m.ReleaseStatus()),
+		}
+
+		if len(info.SubModules) > 0 {
+			resp.SubModules = make([]TenantSubModuleResponse, 0, len(info.SubModules))
+			for _, sub := range info.SubModules {
+				resp.SubModules = append(resp.SubModules, TenantSubModuleResponse{
+					ID:            sub.Module.ID(),
+					Name:          sub.Module.Name(),
+					Description:   sub.Module.Description(),
+					Icon:          sub.Module.Icon(),
+					ReleaseStatus: string(sub.Module.ReleaseStatus()),
+					IsEnabled:     sub.IsEnabled,
+				})
+			}
+		}
+
+		modules = append(modules, resp)
+	}
+
+	return TenantModuleListResponse{
+		Modules: modules,
+		Summary: TenantModuleSummaryResponse{
+			Total:    config.Summary.Total,
+			Enabled:  config.Summary.Enabled,
+			Disabled: config.Summary.Disabled,
+			Core:     config.Summary.Core,
+		},
+	}
 }

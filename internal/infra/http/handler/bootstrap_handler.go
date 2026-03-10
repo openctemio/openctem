@@ -79,6 +79,95 @@ type LicensingModuleResponse struct {
 }
 
 // =============================================================================
+// Shared Helper
+// =============================================================================
+
+// buildModulesResponse builds the TenantModulesResponse from enabled modules output.
+// It processes top-level modules and their sub-modules, applying permission filtering
+// and organizing sub-modules by parent ID.
+func (h *BootstrapHandler) buildModulesResponse(
+	enabledModules *app.GetTenantEnabledModulesOutput,
+	userPermissions []string,
+	isAdmin bool,
+) *TenantModulesResponse {
+	// Filter top-level modules based on user's permissions
+	filteredModules := module.FilterModulesByPermissions(enabledModules.Modules, userPermissions, isAdmin)
+
+	// Build a set of filtered top-level module IDs for sub-module inclusion
+	filteredSet := make(map[string]bool, len(filteredModules))
+	for _, m := range filteredModules {
+		filteredSet[m.ID()] = true
+	}
+
+	modulesResp := make([]LicensingModuleResponse, 0, len(filteredModules))
+	moduleIDs := make([]string, 0, len(filteredModules)+len(enabledModules.SubModules))
+	comingSoonIDs := make([]string, 0)
+	betaIDs := make([]string, 0)
+	subModulesMap := make(map[string][]LicensingModuleResponse)
+
+	// Process top-level modules
+	for _, m := range filteredModules {
+		moduleResp := toLicensingModuleResponse(m)
+		modulesResp = append(modulesResp, moduleResp)
+		moduleIDs = append(moduleIDs, m.ID())
+
+		if m.IsComingSoon() {
+			comingSoonIDs = append(comingSoonIDs, m.ID())
+		} else if m.IsBeta() {
+			betaIDs = append(betaIDs, m.ID())
+		}
+	}
+
+	// Process sub-modules from GetTenantEnabledModules output.
+	// enabledModules.SubModules already has disabled sub-modules filtered out.
+	// Only include sub-modules whose parent passed permission filtering.
+	for parentID, subs := range enabledModules.SubModules {
+		if !filteredSet[parentID] {
+			continue
+		}
+		subResps := make([]LicensingModuleResponse, 0, len(subs))
+		for _, sub := range subs {
+			subResp := toLicensingModuleResponse(sub)
+			subResps = append(subResps, subResp)
+			moduleIDs = append(moduleIDs, sub.ID())
+
+			if sub.IsComingSoon() {
+				comingSoonIDs = append(comingSoonIDs, sub.ID())
+			} else if sub.IsBeta() {
+				betaIDs = append(betaIDs, sub.ID())
+			}
+		}
+		if len(subResps) > 0 {
+			subModulesMap[parentID] = subResps
+		}
+	}
+
+	return &TenantModulesResponse{
+		ModuleIDs:           moduleIDs,
+		Modules:             modulesResp,
+		SubModules:          subModulesMap,
+		ComingSoonModuleIDs: comingSoonIDs,
+		BetaModuleIDs:       betaIDs,
+	}
+}
+
+// toLicensingModuleResponse converts a module domain object to response DTO.
+func toLicensingModuleResponse(m *module.Module) LicensingModuleResponse {
+	return LicensingModuleResponse{
+		ID:             m.ID(),
+		Slug:           m.Slug(),
+		Name:           m.Name(),
+		Description:    m.Description(),
+		Icon:           m.Icon(),
+		Category:       m.Category(),
+		DisplayOrder:   m.DisplayOrder(),
+		IsActive:       m.IsActive(),
+		ReleaseStatus:  string(m.ReleaseStatus()),
+		ParentModuleID: m.ParentModuleID(),
+	}
+}
+
+// =============================================================================
 // Bootstrap Endpoint
 // =============================================================================
 
@@ -144,15 +233,7 @@ func (h *BootstrapHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build response
-	resp := BootstrapResponse{
-		Permissions: BootstrapPermissions{
-			List:    permissions,
-			Version: permVersion,
-		},
-	}
-
-	// OSS Edition: All modules are enabled, fetched from database
+	// Get enabled modules for tenant
 	enabledModules, err := h.moduleSvc.GetTenantEnabledModules(ctx, tenantID)
 	if err != nil {
 		h.logger.Error("bootstrap: failed to get enabled modules",
@@ -168,54 +249,13 @@ func (h *BootstrapHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
 		userPermissions = nil // Admin sees all
 	}
 
-	// Filter modules based on user's permissions
-	filteredModules := module.FilterModulesByPermissions(enabledModules.Modules, userPermissions, isAdmin)
-
-	modulesResp := make([]LicensingModuleResponse, 0, len(filteredModules))
-	moduleIDs := make([]string, 0, len(filteredModules))
-	comingSoonIDs := make([]string, 0)
-	betaIDs := make([]string, 0)
-
-	// Separate sub-modules for dedicated response field
-	subModulesMap := make(map[string][]LicensingModuleResponse)
-
-	for _, m := range filteredModules {
-		moduleResp := LicensingModuleResponse{
-			ID:             m.ID(),
-			Slug:           m.Slug(),
-			Name:           m.Name(),
-			Description:    m.Description(),
-			Icon:           m.Icon(),
-			Category:       m.Category(),
-			DisplayOrder:   m.DisplayOrder(),
-			IsActive:       m.IsActive(),
-			ReleaseStatus:  string(m.ReleaseStatus()),
-			ParentModuleID: m.ParentModuleID(),
-		}
-
-		// Add to modules list
-		modulesResp = append(modulesResp, moduleResp)
-		moduleIDs = append(moduleIDs, m.ID())
-
-		// Also organize sub-modules by parent
-		if m.ParentModuleID() != nil {
-			parentID := *m.ParentModuleID()
-			subModulesMap[parentID] = append(subModulesMap[parentID], moduleResp)
-		}
-
-		if m.IsComingSoon() {
-			comingSoonIDs = append(comingSoonIDs, m.ID())
-		} else if m.IsBeta() {
-			betaIDs = append(betaIDs, m.ID())
-		}
-	}
-
-	resp.Modules = &TenantModulesResponse{
-		ModuleIDs:           moduleIDs,
-		Modules:             modulesResp,
-		SubModules:          subModulesMap,
-		ComingSoonModuleIDs: comingSoonIDs,
-		BetaModuleIDs:       betaIDs,
+	// Build response
+	resp := BootstrapResponse{
+		Permissions: BootstrapPermissions{
+			List:    permissions,
+			Version: permVersion,
+		},
+		Modules: h.buildModulesResponse(enabledModules, userPermissions, isAdmin),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -268,7 +308,7 @@ func (h *BootstrapHandler) GetTenantModules(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// OSS Edition: All modules are enabled, fetched from database
+	// Get enabled modules for tenant
 	enabledModules, err := h.moduleSvc.GetTenantEnabledModules(ctx, tenantID)
 	if err != nil {
 		h.logger.Error("failed to get tenant modules",
@@ -279,55 +319,7 @@ func (h *BootstrapHandler) GetTenantModules(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Filter modules based on user's permissions
-	filteredModules := module.FilterModulesByPermissions(enabledModules.Modules, userPermissions, isAdmin)
-
-	modulesResp := make([]LicensingModuleResponse, 0, len(filteredModules))
-	moduleIDs := make([]string, 0, len(filteredModules))
-	comingSoonIDs := make([]string, 0)
-	betaIDs := make([]string, 0)
-
-	// Separate sub-modules for dedicated response field
-	subModulesMap := make(map[string][]LicensingModuleResponse)
-
-	for _, m := range filteredModules {
-		moduleResp := LicensingModuleResponse{
-			ID:             m.ID(),
-			Slug:           m.Slug(),
-			Name:           m.Name(),
-			Description:    m.Description(),
-			Icon:           m.Icon(),
-			Category:       m.Category(),
-			DisplayOrder:   m.DisplayOrder(),
-			IsActive:       m.IsActive(),
-			ReleaseStatus:  string(m.ReleaseStatus()),
-			ParentModuleID: m.ParentModuleID(),
-		}
-
-		// Add to modules list
-		modulesResp = append(modulesResp, moduleResp)
-		moduleIDs = append(moduleIDs, m.ID())
-
-		// Also organize sub-modules by parent
-		if m.ParentModuleID() != nil {
-			parentID := *m.ParentModuleID()
-			subModulesMap[parentID] = append(subModulesMap[parentID], moduleResp)
-		}
-
-		if m.IsComingSoon() {
-			comingSoonIDs = append(comingSoonIDs, m.ID())
-		} else if m.IsBeta() {
-			betaIDs = append(betaIDs, m.ID())
-		}
-	}
-
-	resp := TenantModulesResponse{
-		ModuleIDs:           moduleIDs,
-		Modules:             modulesResp,
-		SubModules:          subModulesMap,
-		ComingSoonModuleIDs: comingSoonIDs,
-		BetaModuleIDs:       betaIDs,
-	}
+	resp := h.buildModulesResponse(enabledModules, userPermissions, isAdmin)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

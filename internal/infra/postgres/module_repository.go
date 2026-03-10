@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/openctemio/api/pkg/domain/module"
@@ -31,7 +32,7 @@ func (r *ModuleRepository) ListActiveModules(ctx context.Context) ([]*module.Mod
 // GetModuleByID retrieves a module by its ID.
 func (r *ModuleRepository) GetModuleByID(ctx context.Context, id string) (*module.Module, error) {
 	query := `
-		SELECT id, slug, name, description, icon, category, display_order, is_active, release_status, parent_module_id
+		SELECT id, slug, name, description, icon, category, display_order, is_active, is_core, release_status, parent_module_id
 		FROM modules
 		WHERE id = $1
 	`
@@ -45,16 +46,17 @@ func (r *ModuleRepository) GetModuleByID(ctx context.Context, id string) (*modul
 		category       string
 		displayOrder   int
 		isActive       bool
+		isCore         bool
 		releaseStatus  string
 		parentModuleID sql.NullString
 	)
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&moduleID, &slug, &name, &description, &icon,
-		&category, &displayOrder, &isActive, &releaseStatus, &parentModuleID,
+		&category, &displayOrder, &isActive, &isCore, &releaseStatus, &parentModuleID,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("module not found: %s", id)
 		}
 		return nil, fmt.Errorf("failed to get module: %w", err)
@@ -74,6 +76,7 @@ func (r *ModuleRepository) GetModuleByID(ctx context.Context, id string) (*modul
 		category,
 		displayOrder,
 		isActive,
+		isCore,
 		releaseStatus,
 		parentID,
 		nil, // eventTypes
@@ -92,7 +95,7 @@ func (r *ModuleRepository) listModules(ctx context.Context, condition string) ([
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, slug, name, description, icon, category, display_order, is_active, release_status, parent_module_id
+		SELECT id, slug, name, description, icon, category, display_order, is_active, is_core, release_status, parent_module_id
 		FROM modules
 		WHERE %s
 		ORDER BY display_order ASC
@@ -115,13 +118,14 @@ func (r *ModuleRepository) listModules(ctx context.Context, condition string) ([
 			category       string
 			displayOrder   int
 			isActive       bool
+			isCore         bool
 			releaseStatus  string
 			parentModuleID sql.NullString
 		)
 
 		if err := rows.Scan(
 			&id, &slug, &name, &description, &icon,
-			&category, &displayOrder, &isActive, &releaseStatus, &parentModuleID,
+			&category, &displayOrder, &isActive, &isCore, &releaseStatus, &parentModuleID,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan module: %w", err)
 		}
@@ -140,6 +144,7 @@ func (r *ModuleRepository) listModules(ctx context.Context, condition string) ([
 			category,
 			displayOrder,
 			isActive,
+			isCore,
 			releaseStatus,
 			parentID,
 			nil, // eventTypes
@@ -153,10 +158,71 @@ func (r *ModuleRepository) listModules(ctx context.Context, condition string) ([
 	return modules, nil
 }
 
+// ListAllSubModules returns all active sub-modules grouped by parent module ID.
+// This avoids N+1 queries when loading sub-modules for multiple parents.
+func (r *ModuleRepository) ListAllSubModules(ctx context.Context) (map[string][]*module.Module, error) {
+	query := `
+		SELECT id, slug, name, description, icon, category, display_order, is_active, is_core, release_status, parent_module_id
+		FROM modules
+		WHERE parent_module_id IS NOT NULL AND is_active = TRUE
+		ORDER BY parent_module_id, display_order ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all sub-modules: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]*module.Module)
+	for rows.Next() {
+		var (
+			id            string
+			slug          string
+			name          string
+			description   sql.NullString
+			icon          sql.NullString
+			category      string
+			displayOrder  int
+			isActive      bool
+			isCore        bool
+			releaseStatus string
+			parentID      sql.NullString
+		)
+
+		if err := rows.Scan(
+			&id, &slug, &name, &description, &icon,
+			&category, &displayOrder, &isActive, &isCore, &releaseStatus, &parentID,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan sub-module: %w", err)
+		}
+
+		var pID *string
+		if parentID.Valid {
+			pID = &parentID.String
+		}
+
+		m := module.ReconstructModule(
+			id, slug, name, description.String, icon.String,
+			category, displayOrder, isActive, isCore, releaseStatus, pID, nil,
+		)
+
+		if parentID.Valid {
+			result[parentID.String] = append(result[parentID.String], m)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate sub-modules: %w", err)
+	}
+
+	return result, nil
+}
+
 // GetSubModules returns sub-modules for a parent module.
 func (r *ModuleRepository) GetSubModules(ctx context.Context, parentModuleID string) ([]*module.Module, error) {
 	query := `
-		SELECT id, slug, name, description, icon, category, display_order, is_active, release_status, parent_module_id
+		SELECT id, slug, name, description, icon, category, display_order, is_active, is_core, release_status, parent_module_id
 		FROM modules
 		WHERE parent_module_id = $1 AND is_active = TRUE
 		ORDER BY display_order ASC
@@ -179,13 +245,14 @@ func (r *ModuleRepository) GetSubModules(ctx context.Context, parentModuleID str
 			category      string
 			displayOrder  int
 			isActive      bool
+			isCore        bool
 			releaseStatus string
 			parentID      sql.NullString
 		)
 
 		if err := rows.Scan(
 			&id, &slug, &name, &description, &icon,
-			&category, &displayOrder, &isActive, &releaseStatus, &parentID,
+			&category, &displayOrder, &isActive, &isCore, &releaseStatus, &parentID,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan sub-module: %w", err)
 		}
@@ -204,6 +271,7 @@ func (r *ModuleRepository) GetSubModules(ctx context.Context, parentModuleID str
 			category,
 			displayOrder,
 			isActive,
+			isCore,
 			releaseStatus,
 			pID,
 			nil, // eventTypes

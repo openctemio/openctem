@@ -24,6 +24,7 @@ type Module struct {
 	category      string
 	displayOrder  int
 	isActive      bool
+	isCore        bool
 	releaseStatus ReleaseStatus
 
 	// Parent module ID for hierarchical modules (sub-modules).
@@ -45,6 +46,7 @@ func (m *Module) Icon() string                 { return m.icon }
 func (m *Module) Category() string             { return m.category }
 func (m *Module) DisplayOrder() int            { return m.displayOrder }
 func (m *Module) IsActive() bool               { return m.isActive }
+func (m *Module) IsCore() bool                 { return m.isCore }
 func (m *Module) ReleaseStatus() ReleaseStatus { return m.releaseStatus }
 func (m *Module) ParentModuleID() *string      { return m.parentModuleID }
 func (m *Module) EventTypes() []string         { return m.eventTypes }
@@ -113,6 +115,7 @@ func ReconstructModule(
 	id, slug, name, description, icon, category string,
 	displayOrder int,
 	isActive bool,
+	isCore bool,
 	releaseStatus string,
 	parentModuleID *string,
 	eventTypes []string,
@@ -132,6 +135,7 @@ func ReconstructModule(
 		category:       category,
 		displayOrder:   displayOrder,
 		isActive:       isActive,
+		isCore:         isCore,
 		releaseStatus:  status,
 		parentModuleID: parentModuleID,
 		eventTypes:     eventTypes,
@@ -228,6 +232,57 @@ const (
 const (
 	AITriageLimitMonthlyTokens = "monthly_token_limit" // Monthly token limit (int64, -1 = unlimited)
 )
+
+// CoreModuleIDs defines modules that are essential for platform operation
+// and cannot be disabled by tenant admins.
+var CoreModuleIDs = map[string]bool{
+	ModuleDashboard: true,
+	ModuleAssets:    true,
+	ModuleFindings:  true,
+	ModuleScans:     true,
+	ModuleTeam:      true,
+	ModuleRoles:     true,
+	ModuleAudit:     true,
+	ModuleSettings:  true,
+}
+
+// IsCoreModule returns true if the module is essential for platform operation.
+func IsCoreModule(moduleID string) bool {
+	return CoreModuleIDs[moduleID]
+}
+
+// UserFacingModuleIDs defines modules shown on the Module Management page.
+// Only modules that directly map to sidebar navigation sections are included.
+// Modules like agents, tools, pipelines are bundled under "scans" in sidebar,
+// so toggling them individually has no sidebar effect — they are excluded.
+var UserFacingModuleIDs = map[string]bool{
+	// Core (always enabled, shown as locked)
+	ModuleDashboard: true,
+	ModuleAssets:    true,
+	ModuleFindings:  true,
+	ModuleScans:     true,
+	ModuleTeam:      true,
+	ModuleRoles:     true,
+	ModuleAudit:     true,
+	ModuleSettings:  true,
+
+	// Toggleable feature modules (each directly controls sidebar visibility)
+	ModuleCredentials:  true, // Discovery > Credential Leaks
+	ModuleComponents:   true, // Discovery > Components (SBOM)
+	ModuleExposures:    true, // Discovery > Exposures (Non-CVE security issues)
+	ModuleThreatIntel:  true, // Prioritization > Threat Intel, Risk Analysis, Business Impact
+	ModulePentest:      true, // Validation > Penetration Testing, Attack Simulation, Control Testing
+	ModuleRemediation:  true, // Mobilization > Remediation Tasks, Workflows
+	ModuleReports:      true, // Insights > Reports
+	ModuleIntegrations: true, // Settings > Integrations (SCM, Notifications, CI/CD, Ticketing, SIEM)
+}
+
+// IsUserFacing returns true if the module should be shown in the admin
+// Module Management page. Internal modules are hidden.
+func IsUserFacing(moduleID string) bool {
+	return UserFacingModuleIDs[moduleID]
+}
+
 
 // ModulePermissionMapping maps module IDs to their required read permissions.
 // This is used to filter modules based on user's RBAC permissions.

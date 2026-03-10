@@ -21,6 +21,7 @@ const (
 	ActionTenantUpdated         Action = "tenant.updated"
 	ActionTenantDeleted         Action = "tenant.deleted"
 	ActionTenantSettingsUpdated Action = "tenant.settings_updated"
+	ActionTenantModulesUpdated Action = "tenant.modules_updated"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -224,7 +225,7 @@ func (a Action) IsValid() bool {
 	case ActionUserCreated, ActionUserUpdated, ActionUserDeleted,
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout,
-		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated,
+		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
@@ -278,7 +279,7 @@ func (a Action) Category() string {
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout:
 		return "user"
-	case ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated:
+	case ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated:
 		return "tenant"
 	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged:
 		return "member"
@@ -452,7 +453,7 @@ func SeverityForAction(a Action) Severity {
 
 	// Medium - important changes
 	case ActionUserCreated, ActionUserActivated,
-		ActionTenantCreated, ActionTenantUpdated,
+		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionRepositoryDeleted, ActionDataExported,
 		ActionAgentCreated, ActionAgentActivated,

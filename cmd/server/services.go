@@ -463,6 +463,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize licensing service (OSS edition - modules from database)
 	s.Module = app.NewModuleService(repos.Module, log)
+	s.Module.SetTenantModuleRepo(repos.TenantModule)
+	s.Module.SetAuditService(s.Audit)
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)

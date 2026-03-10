@@ -44,6 +44,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetRoleService(svc.Role)
 	tenantHandler.SetAssetService(svc.Asset)
+	tenantHandler.SetModuleService(svc.Module)
 
 	// Vulnerability handler with user and asset services for enrichment
 	vulnHandler := handler.NewVulnerabilityHandler(svc.Vulnerability, v, log)
