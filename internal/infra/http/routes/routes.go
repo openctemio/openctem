@@ -109,6 +109,9 @@ type Handlers struct {
 	AdminAudit         *handler.AdminAuditHandler
 	AdminTargetMapping *handler.AdminTargetMappingHandler
 
+	// SSO handler (per-tenant SSO authentication)
+	SSO *handler.SSOHandler // nil if not initialized
+
 	// Platform Stats handler (tenant-scoped platform agent stats)
 	PlatformStats *handler.PlatformStatsHandler
 
@@ -438,6 +441,11 @@ func Register(
 	// Platform Stats routes (tenant-scoped platform agent statistics)
 	if h.PlatformStats != nil {
 		registerPlatformStatsRoutes(router, h.PlatformStats, authMiddleware, userSync)
+	}
+
+	// SSO Identity Provider admin routes (tenant from JWT token)
+	if h.SSO != nil {
+		registerSSOAdminRoutes(router, h.SSO, authMiddleware, userSync)
 	}
 
 	// ==========================================================================

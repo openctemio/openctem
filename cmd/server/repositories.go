@@ -112,6 +112,9 @@ type Repositories struct {
 	// Licensing (modules from database)
 	Module       *postgres.ModuleRepository
 	TenantModule *postgres.TenantModuleRepository
+
+	// SSO Identity Providers
+	IdentityProvider *postgres.IdentityProviderRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -223,6 +226,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		// Licensing (modules from database)
 		Module:       postgres.NewModuleRepository(db),
 		TenantModule: postgres.NewTenantModuleRepository(db),
+
+		// SSO Identity Providers
+		IdentityProvider: postgres.NewIdentityProviderRepository(db),
 	}
 }
 

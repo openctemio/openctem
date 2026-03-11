@@ -80,7 +80,36 @@ func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddl
 			callbackHandler := ChainFunc(h.OAuth.Callback, loginRL)
 			r.POST("/oauth/{provider}/callback", callbackHandler.ServeHTTP)
 		}
+
+		// Per-tenant SSO endpoints (public, rate limited)
+		if h.SSO != nil {
+			// SECURITY: Rate limit all public SSO endpoints to prevent enumeration
+			ssoProvidersHandler := ChainFunc(h.SSO.ListTenantProviders, loginRL)
+			r.GET("/sso/providers", ssoProvidersHandler.ServeHTTP)
+			ssoAuthorizeHandler := ChainFunc(h.SSO.Authorize, loginRL)
+			r.GET("/sso/{provider}/authorize", ssoAuthorizeHandler.ServeHTTP)
+			ssoCallbackHandler := ChainFunc(h.SSO.Callback, loginRL)
+			r.POST("/sso/{provider}/callback", ssoCallbackHandler.ServeHTTP)
+		}
 	})
+}
+
+// registerSSOAdminRoutes registers admin endpoints for managing tenant SSO identity providers.
+func registerSSOAdminRoutes(
+	router Router,
+	h *handler.SSOHandler,
+	authMiddleware, userSyncMiddleware Middleware,
+) {
+	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/settings/identity-providers", func(r Router) {
+		// All SSO admin operations require admin+ (configs contain sensitive client IDs)
+		r.GET("/", h.ListProviders, middleware.RequireTeamAdmin())
+		r.POST("/", h.CreateProvider, middleware.RequireTeamAdmin())
+		r.GET("/{id}", h.GetProvider, middleware.RequireTeamAdmin())
+		r.PUT("/{id}", h.UpdateProvider, middleware.RequireTeamAdmin())
+		r.DELETE("/{id}", h.DeleteProvider, middleware.RequireTeamAdmin())
+	}, middlewares...)
 }
 
 // registerUserRoutes registers user profile management endpoints.

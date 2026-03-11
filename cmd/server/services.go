@@ -139,6 +139,9 @@ type Services struct {
 
 	// JWT
 	JWTGenerator *jwt.Generator
+
+	// SSO
+	SSO *app.SSOService
 }
 
 // ServiceDeps contains dependencies needed to create services.
@@ -512,6 +515,19 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 
 	// Wire session service to user service for session revocation on suspension
 	s.User.SetSessionService(s.Session)
+
+	// Initialize SSO service for per-tenant identity provider authentication
+	s.SSO = app.NewSSOService(
+		repos.IdentityProvider,
+		repos.Tenant,
+		repos.User,
+		repos.Session,
+		repos.RefreshToken,
+		s.Encryptor,
+		cfg.Auth,
+		log,
+	)
+	s.SSO.SetTenantMemberRepo(repos.Tenant)
 }
 
 // InitEmailServices initializes email-related services.

@@ -171,6 +171,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log),
 	}
 
+	// SSO handler (always initialized - uses DB-stored provider configs)
+	if svc.SSO != nil {
+		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
+	}
+
 	return handlers
 }
 
