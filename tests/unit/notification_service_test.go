@@ -1096,8 +1096,9 @@ func TestNotify_Success(t *testing.T) {
 	if len(repo.notifications) != 1 {
 		t.Errorf("expected 1 notification stored, got %d", len(repo.notifications))
 	}
-	if len(ws.calls) != 1 {
-		t.Errorf("expected 1 ws broadcast, got %d", len(ws.calls))
+	// 2 broadcasts: tenant channel (for bell) + audience-specific channel
+	if len(ws.calls) != 2 {
+		t.Errorf("expected 2 ws broadcasts, got %d", len(ws.calls))
 	}
 }
 
@@ -1155,12 +1156,19 @@ func TestNotify_AudienceUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(ws.calls) != 1 {
-		t.Fatalf("expected 1 ws broadcast, got %d", len(ws.calls))
+	// 2 broadcasts: tenant channel (for bell) + user-specific channel
+	if len(ws.calls) != 2 {
+		t.Fatalf("expected 2 ws broadcasts, got %d", len(ws.calls))
 	}
-	expectedChannel := fmt.Sprintf("notification:%s", userID.String())
-	if ws.calls[0].channel != expectedChannel {
-		t.Errorf("expected channel %s, got %s", expectedChannel, ws.calls[0].channel)
+	// First broadcast is always tenant channel
+	expectedTenantChannel := fmt.Sprintf("tenant:%s", tenantID.String())
+	if ws.calls[0].channel != expectedTenantChannel {
+		t.Errorf("expected channel %s, got %s", expectedTenantChannel, ws.calls[0].channel)
+	}
+	// Second broadcast is audience-specific channel
+	expectedUserChannel := fmt.Sprintf("notification:%s", userID.String())
+	if ws.calls[1].channel != expectedUserChannel {
+		t.Errorf("expected channel %s, got %s", expectedUserChannel, ws.calls[1].channel)
 	}
 }
 
@@ -1186,12 +1194,17 @@ func TestNotify_AudienceGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(ws.calls) != 1 {
-		t.Fatalf("expected 1 ws broadcast, got %d", len(ws.calls))
+	// 2 broadcasts: tenant channel (for bell) + group-specific channel
+	if len(ws.calls) != 2 {
+		t.Fatalf("expected 2 ws broadcasts, got %d", len(ws.calls))
 	}
-	expectedChannel := fmt.Sprintf("group:%s", groupID.String())
-	if ws.calls[0].channel != expectedChannel {
-		t.Errorf("expected channel %s, got %s", expectedChannel, ws.calls[0].channel)
+	expectedTenantChannel := fmt.Sprintf("tenant:%s", tenantID.String())
+	if ws.calls[0].channel != expectedTenantChannel {
+		t.Errorf("expected channel %s, got %s", expectedTenantChannel, ws.calls[0].channel)
+	}
+	expectedGroupChannel := fmt.Sprintf("group:%s", groupID.String())
+	if ws.calls[1].channel != expectedGroupChannel {
+		t.Errorf("expected channel %s, got %s", expectedGroupChannel, ws.calls[1].channel)
 	}
 }
 
