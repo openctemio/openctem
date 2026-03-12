@@ -201,6 +201,33 @@ func (m *mockAccessControlRepo) ListFindingGroupAssignments(_ context.Context, _
 func (m *mockAccessControlRepo) CountFindingsByGroupFromRules(_ context.Context, _, _ shared.ID) (int64, error) {
 	return 0, nil
 }
+func (m *mockAccessControlRepo) GetAssetOwnerByID(_ context.Context, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepo) GetAssetOwnerByUser(_ context.Context, _, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepo) DeleteAssetOwnerByID(_ context.Context, _ shared.ID) error {
+	return nil
+}
+func (m *mockAccessControlRepo) DeleteAssetOwnerByUser(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockAccessControlRepo) ListAssetOwnersWithNames(_ context.Context, _, _ shared.ID) ([]*accesscontrol.AssetOwnerWithNames, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepo) GetPrimaryOwnerBrief(_ context.Context, _, _ shared.ID) (*accesscontrol.OwnerBrief, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepo) RefreshAccessForDirectOwnerAdd(_ context.Context, _, _ shared.ID, _ string) error {
+	return nil
+}
+func (m *mockAccessControlRepo) RefreshAccessForDirectOwnerRemove(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockAccessControlRepo) GetPrimaryOwnersByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[string]*accesscontrol.OwnerBrief, error) {
+	return nil, nil
+}
 
 // =============================================================================
 // Mock Finding Repository (for VulnerabilityService data scope tests)

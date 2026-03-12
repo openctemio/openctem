@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/scm"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -22,6 +23,7 @@ import (
 type AssetHandler struct {
 	service            *app.AssetService
 	integrationService *app.IntegrationService
+	accessControlRepo  accesscontrol.Repository
 	validator          *validator.Validator
 	logger             *logger.Logger
 }
@@ -35,6 +37,11 @@ func NewAssetHandler(svc *app.AssetService, v *validator.Validator, log *logger.
 	}
 }
 
+// SetAccessControlRepo sets the access control repository for owner resolution.
+func (h *AssetHandler) SetAccessControlRepo(repo accesscontrol.Repository) {
+	h.accessControlRepo = repo
+}
+
 // SetIntegrationService sets the integration service for sync operations.
 func (h *AssetHandler) SetIntegrationService(svc *app.IntegrationService) {
 	h.integrationService = svc
@@ -42,25 +49,34 @@ func (h *AssetHandler) SetIntegrationService(svc *app.IntegrationService) {
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
-	ID           string         `json:"id"`
-	TenantID     string         `json:"tenant_id,omitempty"`
-	Name         string         `json:"name"`
-	Type         string         `json:"type"`
-	Provider     string         `json:"provider,omitempty"`
-	ExternalID   string         `json:"external_id,omitempty"`
-	Criticality  string         `json:"criticality"`
-	Status       string         `json:"status"`
-	Scope        string         `json:"scope"`
-	Exposure     string         `json:"exposure"`
-	RiskScore    int            `json:"risk_score"`
-	FindingCount int            `json:"finding_count"`
-	Description  string         `json:"description,omitempty"`
-	Tags         []string       `json:"tags,omitempty"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
-	FirstSeen    time.Time      `json:"first_seen"`
-	LastSeen     time.Time      `json:"last_seen"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID           string              `json:"id"`
+	TenantID     string              `json:"tenant_id,omitempty"`
+	Name         string              `json:"name"`
+	Type         string              `json:"type"`
+	Provider     string              `json:"provider,omitempty"`
+	ExternalID   string              `json:"external_id,omitempty"`
+	Criticality  string              `json:"criticality"`
+	Status       string              `json:"status"`
+	Scope        string              `json:"scope"`
+	Exposure     string              `json:"exposure"`
+	RiskScore    int                 `json:"risk_score"`
+	FindingCount int                 `json:"finding_count"`
+	Description  string              `json:"description,omitempty"`
+	Tags         []string            `json:"tags,omitempty"`
+	Metadata     map[string]any      `json:"metadata,omitempty"`
+	PrimaryOwner *OwnerBriefResponse `json:"primary_owner,omitempty"`
+	FirstSeen    time.Time           `json:"first_seen"`
+	LastSeen     time.Time           `json:"last_seen"`
+	CreatedAt    time.Time           `json:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at"`
+}
+
+// OwnerBriefResponse is a lightweight owner representation for asset list responses.
+type OwnerBriefResponse struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	Email string `json:"email,omitempty"`
 }
 
 // ListResponse is defined in common.go
@@ -114,6 +130,39 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		CreatedAt:    a.CreatedAt(),
 		UpdatedAt:    a.UpdatedAt(),
 	}
+}
+
+// toOwnerBriefResponse converts a domain OwnerBrief to API response.
+func toOwnerBriefResponse(brief *accesscontrol.OwnerBrief) *OwnerBriefResponse {
+	if brief == nil {
+		return nil
+	}
+	return &OwnerBriefResponse{
+		ID:    brief.ID,
+		Type:  brief.Type,
+		Name:  brief.Name,
+		Email: brief.Email,
+	}
+}
+
+// batchFetchPrimaryOwners fetches primary owners for a list of assets in a single query.
+func (h *AssetHandler) batchFetchPrimaryOwners(ctx context.Context, tenantID string, assets []*asset.Asset) map[string]*accesscontrol.OwnerBrief {
+	if h.accessControlRepo == nil || len(assets) == 0 {
+		return make(map[string]*accesscontrol.OwnerBrief)
+	}
+
+	assetIDs := make([]shared.ID, len(assets))
+	for i, a := range assets {
+		assetIDs[i] = a.ID()
+	}
+
+	owners, err := h.accessControlRepo.GetPrimaryOwnersByAssetIDs(ctx, shared.MustIDFromString(tenantID), assetIDs)
+	if err != nil {
+		h.logger.Error("failed to batch fetch primary owners", "error", err)
+		return make(map[string]*accesscontrol.OwnerBrief)
+	}
+
+	return owners
 }
 
 // handleValidationError converts validation errors to API errors and writes response.
@@ -213,6 +262,9 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Batch-fetch primary owners for all assets
+	owners := h.batchFetchPrimaryOwners(r.Context(), input.TenantID, result.Data)
+
 	// Check if we're filtering by repository type to include extensions
 	isRepositoryTypeFilter := len(input.Types) == 1 && input.Types[0] == "repository"
 
@@ -235,6 +287,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 			resp := AssetWithRepositoryResponse{
 				AssetResponse: toAssetResponse(a),
 			}
+			resp.AssetResponse.PrimaryOwner = toOwnerBriefResponse(owners[a.ID().String()])
 			if ext, ok := extensions[a.ID()]; ok {
 				resp.Repository = toRepositoryExtensionResponse(ext)
 			}
@@ -259,7 +312,9 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Default response without extensions
 	data := make([]AssetResponse, len(result.Data))
 	for i, a := range result.Data {
-		data[i] = toAssetResponse(a)
+		resp := toAssetResponse(a)
+		resp.PrimaryOwner = toOwnerBriefResponse(owners[a.ID().String()])
+		data[i] = resp
 	}
 
 	response := ListResponse[AssetResponse]{
@@ -355,9 +410,21 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := toAssetResponse(a)
+
+	// Fetch primary owner
+	if h.accessControlRepo != nil {
+		owner, ownerErr := h.accessControlRepo.GetPrimaryOwnerBrief(r.Context(), shared.MustIDFromString(tenantID), a.ID())
+		if ownerErr != nil {
+			h.logger.Error("failed to fetch primary owner", "asset_id", id, "error", ownerErr)
+		} else {
+			resp.PrimaryOwner = toOwnerBriefResponse(owner)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toAssetResponse(a))
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Update handles PUT /api/v1/assets/{id}
@@ -396,10 +463,10 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := app.UpdateAssetInput{
-		Name:        req.Name,
-		Criticality: req.Criticality,
-		Scope:       req.Scope,
-		Exposure:    req.Exposure,
+		Name:                  req.Name,
+		Criticality:           req.Criticality,
+		Scope:                 req.Scope,
+		Exposure:              req.Exposure,
 		Description: req.Description,
 		Tags:        req.Tags,
 	}

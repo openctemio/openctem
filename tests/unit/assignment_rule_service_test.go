@@ -88,6 +88,30 @@ func (m *mockACRepoForRules) CountAssignmentRules(_ context.Context, _ shared.ID
 	m.countRulesCalls++
 	return m.countRulesResult, m.countRulesErr
 }
+func (m *mockACRepoForRules) GetAssetOwnerByID(_ context.Context, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockACRepoForRules) GetAssetOwnerByUser(_ context.Context, _, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockACRepoForRules) DeleteAssetOwnerByID(_ context.Context, _ shared.ID) error {
+	return nil
+}
+func (m *mockACRepoForRules) DeleteAssetOwnerByUser(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockACRepoForRules) ListAssetOwnersWithNames(_ context.Context, _, _ shared.ID) ([]*accesscontrol.AssetOwnerWithNames, error) {
+	return nil, nil
+}
+func (m *mockACRepoForRules) GetPrimaryOwnerBrief(_ context.Context, _, _ shared.ID) (*accesscontrol.OwnerBrief, error) {
+	return nil, nil
+}
+func (m *mockACRepoForRules) RefreshAccessForDirectOwnerAdd(_ context.Context, _, _ shared.ID, _ string) error {
+	return nil
+}
+func (m *mockACRepoForRules) RefreshAccessForDirectOwnerRemove(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
 
 // mockGroupRepoForRules implements group.Repository for assignment rule tests.
 type mockGroupRepoForRules struct {

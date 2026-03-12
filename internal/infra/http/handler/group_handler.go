@@ -836,8 +836,8 @@ type AssignAssetRequest struct {
 	OwnershipType string `json:"ownership_type" validate:"required,oneof=primary secondary stakeholder informed"`
 }
 
-// AssetOwnerResponse represents an asset ownership in API responses.
-type AssetOwnerResponse struct {
+// GroupOwnershipResponse represents an asset ownership in group API responses.
+type GroupOwnershipResponse struct {
 	ID            string `json:"id"`
 	AssetID       string `json:"asset_id"`
 	GroupID       string `json:"group_id,omitempty"`
@@ -1040,7 +1040,7 @@ func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Reque
 // @Tags groups
 // @Produce json
 // @Param groupId path string true "Group ID"
-// @Success 200 {array} AssetOwnerResponse
+// @Success 200 {array} GroupOwnershipResponse
 // @Failure 404 {object} apierror.Error
 // @Router /api/v1/groups/{groupId}/assets [get]
 func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
@@ -1053,9 +1053,9 @@ func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := make([]AssetOwnerResponse, len(owners))
+	resp := make([]GroupOwnershipResponse, len(owners))
 	for i, ao := range owners {
-		resp[i] = AssetOwnerResponse{
+		resp[i] = GroupOwnershipResponse{
 			ID:            ao.ID().String(),
 			AssetID:       ao.AssetID().String(),
 			OwnershipType: ao.OwnershipType().String(),

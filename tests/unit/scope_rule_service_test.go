@@ -186,6 +186,30 @@ func (m *mockACRepoForScope) ListAssetsByGroup(_ context.Context, _ shared.ID) (
 	}
 	return m.listAssetsByGroupResult, nil
 }
+func (m *mockACRepoForScope) GetAssetOwnerByID(_ context.Context, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockACRepoForScope) GetAssetOwnerByUser(_ context.Context, _, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockACRepoForScope) DeleteAssetOwnerByID(_ context.Context, _ shared.ID) error {
+	return nil
+}
+func (m *mockACRepoForScope) DeleteAssetOwnerByUser(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockACRepoForScope) ListAssetOwnersWithNames(_ context.Context, _, _ shared.ID) ([]*accesscontrol.AssetOwnerWithNames, error) {
+	return nil, nil
+}
+func (m *mockACRepoForScope) GetPrimaryOwnerBrief(_ context.Context, _, _ shared.ID) (*accesscontrol.OwnerBrief, error) {
+	return nil, nil
+}
+func (m *mockACRepoForScope) RefreshAccessForDirectOwnerAdd(_ context.Context, _, _ shared.ID, _ string) error {
+	return nil
+}
+func (m *mockACRepoForScope) RefreshAccessForDirectOwnerRemove(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
 
 func (m *mockACRepoForScope) BulkCreateAssetOwnersWithSource(_ context.Context, owners []*accesscontrol.AssetOwner, _ string, _ *shared.ID) (int, error) {
 	m.bulkCreateWithSourceCalls++

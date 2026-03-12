@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/module"
+	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
 	"golang.org/x/sync/errgroup"
 )
@@ -20,6 +21,7 @@ type BootstrapHandler struct {
 	permCacheSvc   *app.PermissionCacheService
 	permVersionSvc *app.PermissionVersionService
 	moduleSvc      *app.ModuleService
+	tenantSvc      *app.TenantService
 	logger         *logger.Logger
 }
 
@@ -28,12 +30,14 @@ func NewBootstrapHandler(
 	permCacheSvc *app.PermissionCacheService,
 	permVersionSvc *app.PermissionVersionService,
 	moduleSvc *app.ModuleService,
+	tenantSvc *app.TenantService,
 	log *logger.Logger,
 ) *BootstrapHandler {
 	return &BootstrapHandler{
 		permCacheSvc:   permCacheSvc,
 		permVersionSvc: permVersionSvc,
 		moduleSvc:      moduleSvc,
+		tenantSvc:      tenantSvc,
 		logger:         log,
 	}
 }
@@ -46,6 +50,7 @@ func NewBootstrapHandler(
 type BootstrapResponse struct {
 	Permissions BootstrapPermissions   `json:"permissions"`
 	Modules     *TenantModulesResponse `json:"modules,omitempty"`
+	RiskLevels  *tenant.RiskLevelConfig `json:"risk_levels,omitempty"`
 }
 
 // BootstrapPermissions contains user permissions and version.
@@ -249,13 +254,25 @@ func (h *BootstrapHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
 		userPermissions = nil // Admin sees all
 	}
 
+	// Fetch risk levels from tenant settings (lightweight, just reads tenant row)
+	var riskLevels *tenant.RiskLevelConfig
+	if h.tenantSvc != nil {
+		rs, err := h.tenantSvc.GetRiskScoringSettings(ctx, tenantID)
+		if err != nil {
+			h.logger.Warn("bootstrap: failed to get risk scoring settings", "error", err)
+		} else {
+			riskLevels = &rs.RiskLevels
+		}
+	}
+
 	// Build response
 	resp := BootstrapResponse{
 		Permissions: BootstrapPermissions{
 			List:    permissions,
 			Version: permVersion,
 		},
-		Modules: h.buildModulesResponse(enabledModules, userPermissions, isAdmin),
+		Modules:    h.buildModulesResponse(enabledModules, userPermissions, isAdmin),
+		RiskLevels: riskLevels,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

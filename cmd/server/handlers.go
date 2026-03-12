@@ -35,6 +35,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
 	assetHandler.SetIntegrationService(svc.Integration)
+	assetHandler.SetAccessControlRepo(repos.AccessControl)
 
 	// Command handler with pipeline service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
@@ -134,6 +135,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
 		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
 		ScopeRule:      handler.NewScopeRuleHandler(svc.ScopeRule, v, log),
+		AssetOwner:     handler.NewAssetOwnerHandler(repos.AccessControl, log),
 
 		// Admin
 		NotificationOutbox: handler.NewNotificationOutboxHandler(repos.NotificationOutbox, log),
@@ -143,6 +145,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			svc.PermCache,
 			svc.PermVersion,
 			svc.Module,
+			svc.Tenant,
 			log,
 		),
 

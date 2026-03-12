@@ -1348,8 +1348,25 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 		h.assetService.InvalidateScoringConfigCache(tenantID)
 	}
 
+	// Auto-recalculate all asset risk scores after saving new config
+	var assetsUpdated int
+	if h.assetService != nil {
+		updated, recalcErr := h.assetService.RecalculateAllRiskScores(r.Context(), tenantID)
+		if recalcErr != nil {
+			h.logger.Warn("auto-recalculate after config save failed",
+				"tenant_id", tenantID.String(), "error", recalcErr)
+		} else {
+			assetsUpdated = updated
+			// Record recalculation time for rate limiting on the dedicated endpoint
+			recalculateLastRun.Store(tenantID.String(), time.Now())
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(settings.RiskScoring)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"config":         settings.RiskScoring,
+		"assets_updated": assetsUpdated,
+	})
 }
 
 // PreviewRiskScoringChanges handles POST /api/v1/tenants/{tenant}/settings/risk-scoring/preview

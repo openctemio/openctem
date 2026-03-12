@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -2354,6 +2356,172 @@ func (r *AccessControlRepository) CountFindingsByGroupFromRules(ctx context.Cont
 		return 0, fmt.Errorf("failed to count findings by group from rules: %w", err)
 	}
 	return count, nil
+}
+
+// ListAssetOwnersWithNames returns asset owners with resolved user/group names.
+func (r *AccessControlRepository) ListAssetOwnersWithNames(ctx context.Context, tenantID, assetID shared.ID) ([]*accesscontrol.AssetOwnerWithNames, error) {
+	query := `
+		SELECT ao.id, ao.asset_id, ao.group_id, ao.user_id, ao.ownership_type,
+		       ao.assigned_at, ao.assigned_by,
+		       COALESCE(u.display_name, '') AS user_name,
+		       COALESCE(u.email, '') AS user_email,
+		       COALESCE(g.name, '') AS group_name,
+		       COALESCE(ab.display_name, '') AS assigned_by_name
+		FROM asset_owners ao
+		LEFT JOIN users u ON ao.user_id = u.id
+		LEFT JOIN groups g ON ao.group_id = g.id
+		LEFT JOIN users ab ON ao.assigned_by = ab.id
+		WHERE ao.asset_id = $1
+		  AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $2))
+		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT id FROM tenant_members WHERE tenant_id = $2))
+		ORDER BY ao.ownership_type = 'primary' DESC, ao.assigned_at ASC`
+
+	rows, err := r.db.QueryContext(ctx, query, assetID.String(), tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list asset owners with names: %w", err)
+	}
+	defer rows.Close()
+
+	var results []*accesscontrol.AssetOwnerWithNames
+	for rows.Next() {
+		var (
+			idStr          string
+			assetIDStr     string
+			groupIDStr     sql.NullString
+			userIDStr      sql.NullString
+			ownershipType  string
+			assignedAt     sql.NullTime
+			assignedBy     sql.NullString
+			userName       string
+			userEmail      string
+			groupName      string
+			assignedByName string
+		)
+		if err := rows.Scan(&idStr, &assetIDStr, &groupIDStr, &userIDStr, &ownershipType,
+			&assignedAt, &assignedBy,
+			&userName, &userEmail, &groupName, &assignedByName); err != nil {
+			return nil, fmt.Errorf("failed to scan asset owner with names: %w", err)
+		}
+
+		ao, err := r.scanAssetOwner(idStr, assetIDStr, groupIDStr, userIDStr, ownershipType, assignedAt, assignedBy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reconstitute asset owner: %w", err)
+		}
+
+		results = append(results, &accesscontrol.AssetOwnerWithNames{
+			AssetOwner:     ao,
+			UserName:       userName,
+			UserEmail:      userEmail,
+			GroupName:      groupName,
+			AssignedByName: assignedByName,
+		})
+	}
+	return results, nil
+}
+
+// GetPrimaryOwnerBrief returns a lightweight representation of the primary owner for an asset.
+func (r *AccessControlRepository) GetPrimaryOwnerBrief(ctx context.Context, tenantID, assetID shared.ID) (*accesscontrol.OwnerBrief, error) {
+	query := `
+		SELECT
+			CASE WHEN ao.user_id IS NOT NULL THEN ao.user_id::text ELSE ao.group_id::text END AS owner_id,
+			CASE WHEN ao.user_id IS NOT NULL THEN 'user' ELSE 'group' END AS owner_type,
+			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.display_name, '') ELSE COALESCE(g.name, '') END AS owner_name,
+			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.email, '') ELSE '' END AS owner_email
+		FROM asset_owners ao
+		LEFT JOIN users u ON ao.user_id = u.id
+		LEFT JOIN groups g ON ao.group_id = g.id
+		WHERE ao.asset_id = $1
+		  AND ao.ownership_type = 'primary'
+		  AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $2))
+		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT id FROM tenant_members WHERE tenant_id = $2))
+		LIMIT 1`
+
+	var brief accesscontrol.OwnerBrief
+	err := r.db.QueryRowContext(ctx, query, assetID.String(), tenantID.String()).Scan(
+		&brief.ID, &brief.Type, &brief.Name, &brief.Email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get primary owner brief: %w", err)
+	}
+	return &brief, nil
+}
+
+// GetPrimaryOwnersByAssetIDs returns primary owners for multiple assets in a single query.
+// Returns a map of assetID (string) → OwnerBrief.
+func (r *AccessControlRepository) GetPrimaryOwnersByAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[string]*accesscontrol.OwnerBrief, error) {
+	if len(assetIDs) == 0 {
+		return make(map[string]*accesscontrol.OwnerBrief), nil
+	}
+
+	// Build IN clause
+	ids := make([]string, len(assetIDs))
+	for i, id := range assetIDs {
+		ids[i] = id.String()
+	}
+
+	query := `
+		SELECT DISTINCT ON (ao.asset_id)
+			ao.asset_id::text,
+			CASE WHEN ao.user_id IS NOT NULL THEN ao.user_id::text ELSE ao.group_id::text END AS owner_id,
+			CASE WHEN ao.user_id IS NOT NULL THEN 'user' ELSE 'group' END AS owner_type,
+			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.display_name, '') ELSE COALESCE(g.name, '') END AS owner_name,
+			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.email, '') ELSE '' END AS owner_email
+		FROM asset_owners ao
+		LEFT JOIN users u ON ao.user_id = u.id
+		LEFT JOIN groups g ON ao.group_id = g.id
+		WHERE ao.asset_id = ANY($1)
+		  AND ao.ownership_type = 'primary'
+		  AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $2))
+		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT id FROM tenant_members WHERE tenant_id = $2))
+		ORDER BY ao.asset_id, ao.assigned_at ASC`
+
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids), tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get primary owners by asset IDs: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]*accesscontrol.OwnerBrief, len(assetIDs))
+	for rows.Next() {
+		var assetIDStr string
+		var brief accesscontrol.OwnerBrief
+		if err := rows.Scan(&assetIDStr, &brief.ID, &brief.Type, &brief.Name, &brief.Email); err != nil {
+			return nil, fmt.Errorf("failed to scan primary owner: %w", err)
+		}
+		result[assetIDStr] = &brief
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate primary owners: %w", err)
+	}
+
+	return result, nil
+}
+
+// RefreshAccessForDirectOwnerAdd updates the user_accessible_assets materialized view
+// when a user is directly added as an asset owner.
+func (r *AccessControlRepository) RefreshAccessForDirectOwnerAdd(ctx context.Context, assetID, userID shared.ID, ownershipType string) error {
+	query := `SELECT refresh_access_for_direct_owner_add($1, $2, $3)`
+
+	_, err := r.db.ExecContext(ctx, query, assetID.String(), userID.String(), ownershipType)
+	if err != nil {
+		return fmt.Errorf("failed to refresh access for direct owner add: %w", err)
+	}
+	return nil
+}
+
+// RefreshAccessForDirectOwnerRemove updates the user_accessible_assets materialized view
+// when a user is removed as a direct asset owner.
+func (r *AccessControlRepository) RefreshAccessForDirectOwnerRemove(ctx context.Context, assetID, userID shared.ID) error {
+	query := `SELECT refresh_access_for_direct_owner_remove($1, $2)`
+
+	_, err := r.db.ExecContext(ctx, query, assetID.String(), userID.String())
+	if err != nil {
+		return fmt.Errorf("failed to refresh access for direct owner remove: %w", err)
+	}
+	return nil
 }
 
 // Ensure AccessControlRepository implements accesscontrol.Repository.

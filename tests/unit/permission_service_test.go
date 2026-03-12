@@ -556,6 +556,33 @@ func (m *mockAccessControlRepoForPermission) FindAssetsByTagMatch(_ context.Cont
 func (m *mockAccessControlRepoForPermission) FindAssetsByAssetGroupMatch(_ context.Context, _ shared.ID, _ []shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
+func (m *mockAccessControlRepoForPermission) GetAssetOwnerByID(_ context.Context, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepoForPermission) GetAssetOwnerByUser(_ context.Context, _, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepoForPermission) DeleteAssetOwnerByID(_ context.Context, _ shared.ID) error {
+	return nil
+}
+func (m *mockAccessControlRepoForPermission) DeleteAssetOwnerByUser(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockAccessControlRepoForPermission) ListAssetOwnersWithNames(_ context.Context, _, _ shared.ID) ([]*accesscontrol.AssetOwnerWithNames, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepoForPermission) GetPrimaryOwnerBrief(_ context.Context, _, _ shared.ID) (*accesscontrol.OwnerBrief, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepoForPermission) RefreshAccessForDirectOwnerAdd(_ context.Context, _, _ shared.ID, _ string) error {
+	return nil
+}
+func (m *mockAccessControlRepoForPermission) RefreshAccessForDirectOwnerRemove(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockAccessControlRepoForPermission) GetPrimaryOwnersByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[string]*accesscontrol.OwnerBrief, error) {
+	return nil, nil
+}
 
 // =============================================================================
 // Helper: create a PermissionService for testing

@@ -165,12 +165,15 @@ func TestRiskScoringHandler_Update_ValidConfig(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	var resp tenant.RiskScoringSettings
-	err := json.Unmarshal(rr.Body.Bytes(), &resp)
+	var rawResp struct {
+		Config        tenant.RiskScoringSettings `json:"config"`
+		AssetsUpdated int                        `json:"assets_updated"`
+	}
+	err := json.Unmarshal(rr.Body.Bytes(), &rawResp)
 	require.NoError(t, err)
 
-	assert.Equal(t, newSettings.Preset, resp.Preset)
-	assert.Equal(t, newSettings.Weights.Exposure, resp.Weights.Exposure)
+	assert.Equal(t, newSettings.Preset, rawResp.Config.Preset)
+	assert.Equal(t, newSettings.Weights.Exposure, rawResp.Config.Weights.Exposure)
 
 	// Verify repo was updated
 	assert.Equal(t, 1, repo.updateCalls)

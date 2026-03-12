@@ -80,6 +80,7 @@ type Handlers struct {
 	Permission     *handler.PermissionHandler     // nil if not initialized (permission sync handler)
 	AssignmentRule *handler.AssignmentRuleHandler // nil if not initialized (no database)
 	ScopeRule      *handler.ScopeRuleHandler      // nil if not initialized (no database)
+	AssetOwner     *handler.AssetOwnerHandler     // nil if not initialized (no database)
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
@@ -190,6 +191,11 @@ func Register(
 	// Asset routes (tenant from JWT token) - only if handler is initialized
 	if h.Asset != nil {
 		registerAssetRoutes(router, h.Asset, authMiddleware, userSync)
+	}
+
+	// Asset Owner routes (tenant from JWT token) - nested under assets
+	if h.AssetOwner != nil {
+		registerAssetOwnerRoutes(router, h.AssetOwner, authMiddleware, userSync)
 	}
 
 	// Component routes (tenant from JWT token)

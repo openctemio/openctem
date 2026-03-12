@@ -196,8 +196,8 @@ func Reconstitute(
 		dataClassification:   dataClassification,
 		piiDataExposed:       piiDataExposed,
 		phiDataExposed:       phiDataExposed,
-		regulatoryOwnerID:    regulatoryOwnerID,
-		isInternetAccessible: isInternetAccessible,
+		regulatoryOwnerID:     regulatoryOwnerID,
+		isInternetAccessible:  isInternetAccessible,
 		exposureChangedAt:    exposureChangedAt,
 		lastExposureLevel:    lastExposureLevel,
 		// Timestamps

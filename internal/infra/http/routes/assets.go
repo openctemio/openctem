@@ -59,6 +59,29 @@ func registerAssetRoutes(
 	}, middlewares...)
 }
 
+// registerAssetOwnerRoutes registers asset ownership endpoints.
+// Asset owners are nested under assets and tenant-scoped.
+// Permission model:
+// - Read (GET): assets:read permission
+// - Write (POST, PUT): assets:write permission
+// - Delete (DELETE): assets:delete permission
+func registerAssetOwnerRoutes(
+	router Router,
+	h *handler.AssetOwnerHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	// Asset owner routes - nested under assets
+	router.Group("/api/v1/assets/{id}/owners", func(r Router) {
+		r.GET("/", h.ListOwners, middleware.Require(permission.AssetsRead))
+		r.POST("/", h.AddOwner, middleware.Require(permission.AssetsWrite))
+		r.PUT("/{ownerID}", h.UpdateOwner, middleware.Require(permission.AssetsWrite))
+		r.DELETE("/{ownerID}", h.RemoveOwner, middleware.Require(permission.AssetsDelete))
+	}, middlewares...)
+}
+
 // registerComponentRoutes registers component management endpoints.
 // Components are tenant-scoped dependencies/packages (tenant from JWT token).
 func registerComponentRoutes(

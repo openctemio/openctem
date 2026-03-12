@@ -292,8 +292,8 @@ type UpdateAssetInput struct {
 	Criticality *string  `validate:"omitempty,criticality"`
 	Scope       *string  `validate:"omitempty,scope"`
 	Exposure    *string  `validate:"omitempty,exposure"`
-	Description *string  `validate:"omitempty,max=1000"`
-	Tags        []string `validate:"omitempty,max=20,dive,max=50"`
+	Description           *string  `validate:"omitempty,max=1000"`
+	Tags                  []string `validate:"omitempty,max=20,dive,max=50"`
 }
 
 // UpdateAsset updates an existing asset.

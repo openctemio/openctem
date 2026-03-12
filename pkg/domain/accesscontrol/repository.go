@@ -19,6 +19,19 @@ type Repository interface {
 	CountAssetOwners(ctx context.Context, assetID shared.ID) (int64, error)
 	HasPrimaryOwner(ctx context.Context, assetID shared.ID) (bool, error)
 
+	// Extended Asset Ownership (with tenant isolation and user/group name resolution)
+	GetAssetOwnerByID(ctx context.Context, id shared.ID) (*AssetOwner, error)
+	GetAssetOwnerByUser(ctx context.Context, assetID, userID shared.ID) (*AssetOwner, error)
+	DeleteAssetOwnerByID(ctx context.Context, id shared.ID) error
+	DeleteAssetOwnerByUser(ctx context.Context, assetID, userID shared.ID) error
+	ListAssetOwnersWithNames(ctx context.Context, tenantID, assetID shared.ID) ([]*AssetOwnerWithNames, error)
+	GetPrimaryOwnerBrief(ctx context.Context, tenantID, assetID shared.ID) (*OwnerBrief, error)
+	GetPrimaryOwnersByAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[string]*OwnerBrief, error)
+
+	// Incremental access refresh for direct user ownership
+	RefreshAccessForDirectOwnerAdd(ctx context.Context, assetID, userID shared.ID, ownershipType string) error
+	RefreshAccessForDirectOwnerRemove(ctx context.Context, assetID, userID shared.ID) error
+
 	// User-Asset access queries
 	ListAccessibleAssets(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
 	CanAccessAsset(ctx context.Context, userID, assetID shared.ID) (bool, error)
@@ -139,6 +152,23 @@ type UserAccessibleAsset struct {
 	AssetID       shared.ID
 	OwnershipType OwnershipType
 	TenantID      shared.ID
+}
+
+// OwnerBrief is a lightweight owner representation for asset list responses.
+type OwnerBrief struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"`  // "user" or "group"
+	Name  string `json:"name"`
+	Email string `json:"email,omitempty"`
+}
+
+// AssetOwnerWithNames extends AssetOwner with resolved user/group names.
+type AssetOwnerWithNames struct {
+	*AssetOwner
+	UserName   string
+	UserEmail  string
+	GroupName  string
+	AssignedByName string
 }
 
 // AssetWithOwners represents an asset with its ownership information.

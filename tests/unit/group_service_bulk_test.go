@@ -93,6 +93,30 @@ func (m *mockACRepoForBulk) DeleteAssetOwner(_ context.Context, _, _ shared.ID) 
 	m.deleteAssetOwnerCalls++
 	return m.deleteAssetOwnerErr
 }
+func (m *mockACRepoForBulk) GetAssetOwnerByID(_ context.Context, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockACRepoForBulk) GetAssetOwnerByUser(_ context.Context, _, _ shared.ID) (*accesscontrol.AssetOwner, error) {
+	return nil, nil
+}
+func (m *mockACRepoForBulk) DeleteAssetOwnerByID(_ context.Context, _ shared.ID) error {
+	return nil
+}
+func (m *mockACRepoForBulk) DeleteAssetOwnerByUser(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockACRepoForBulk) ListAssetOwnersWithNames(_ context.Context, _, _ shared.ID) ([]*accesscontrol.AssetOwnerWithNames, error) {
+	return nil, nil
+}
+func (m *mockACRepoForBulk) GetPrimaryOwnerBrief(_ context.Context, _, _ shared.ID) (*accesscontrol.OwnerBrief, error) {
+	return nil, nil
+}
+func (m *mockACRepoForBulk) RefreshAccessForDirectOwnerAdd(_ context.Context, _, _ shared.ID, _ string) error {
+	return nil
+}
+func (m *mockACRepoForBulk) RefreshAccessForDirectOwnerRemove(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
 
 // mockGroupRepoForBulk is a group.Repository mock for bulk tests.
 type mockGroupRepoForBulk struct {
