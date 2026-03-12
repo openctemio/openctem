@@ -64,6 +64,7 @@ func (r *NotificationRepository) Create(ctx context.Context, n *notification.Not
 }
 
 // List returns notifications visible to a user with audience filtering and read status.
+// Uses COUNT(*) OVER() window function to get total count in a single query.
 // Group membership is resolved via subquery to avoid an extra DB roundtrip.
 func (r *NotificationRepository) List(
 	ctx context.Context,
@@ -76,37 +77,15 @@ func (r *NotificationRepository) List(
 	// Build WHERE clause
 	where, args := r.buildWhereClause(tenantID, userID, filter)
 
-	// Count total
-	countQuery := `
-		SELECT COUNT(*)
-		FROM notifications n
-		LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.user_id = $2
-		LEFT JOIN notification_state ns ON ns.tenant_id = $1 AND ns.user_id = $2
-		` + where
-
-	var total int
-	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return result, fmt.Errorf("failed to count notifications: %w", err)
-	}
-
-	result.Total = int64(total)
-	result.Page = page.Page
-	result.PerPage = page.PerPage
-	result.TotalPages = (total + page.PerPage - 1) / page.PerPage
-
-	if total == 0 {
-		result.Data = make([]*notification.Notification, 0)
-		return result, nil
-	}
-
-	// Fetch data
-	dataQuery := `
+	// Single query with COUNT(*) OVER() to avoid a separate count query.
+	query := `
 		SELECT
 			n.id, n.tenant_id, n.audience, n.audience_id,
 			n.notification_type, n.title, n.body, n.severity,
 			n.resource_type, n.resource_id, n.url,
 			n.actor_id, n.created_at,
-			(nr.notification_id IS NOT NULL OR n.created_at <= COALESCE(ns.last_read_all_at, '1970-01-01'::timestamptz)) AS is_read
+			(nr.notification_id IS NOT NULL OR n.created_at <= COALESCE(ns.last_read_all_at, '-infinity'::timestamptz)) AS is_read,
+			COUNT(*) OVER() AS total_count
 		FROM notifications n
 		LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.user_id = $2
 		LEFT JOIN notification_state ns ON ns.tenant_id = $1 AND ns.user_id = $2
@@ -116,25 +95,35 @@ func (r *NotificationRepository) List(
 
 	args = append(args, page.PerPage, (page.Page-1)*page.PerPage)
 
-	rows, err := r.db.QueryContext(ctx, dataQuery, args...)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return result, fmt.Errorf("failed to list notifications: %w", err)
 	}
 	defer rows.Close()
 
+	var total int
 	items := make([]*notification.Notification, 0, page.PerPage)
 	for rows.Next() {
-		n, err := r.scanNotification(rows)
+		n, totalCount, err := r.scanNotificationWithTotal(rows)
 		if err != nil {
 			return result, fmt.Errorf("failed to scan notification: %w", err)
 		}
 		items = append(items, n)
+		total = totalCount
 	}
 	if err := rows.Err(); err != nil {
 		return result, fmt.Errorf("notification rows error: %w", err)
 	}
 
+	if items == nil {
+		items = make([]*notification.Notification, 0)
+	}
+
 	result.Data = items
+	result.Total = int64(total)
+	result.Page = page.Page
+	result.PerPage = page.PerPage
+	result.TotalPages = (total + page.PerPage - 1) / page.PerPage
 	return result, nil
 }
 
@@ -153,7 +142,7 @@ func (r *NotificationRepository) UnreadCount(
 		LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.user_id = $2
 		LEFT JOIN notification_state ns ON ns.tenant_id = $1 AND ns.user_id = $2
 		WHERE n.tenant_id = $1
-		  AND n.created_at > COALESCE(ns.last_read_all_at, '1970-01-01'::timestamptz)
+		  AND n.created_at > COALESCE(ns.last_read_all_at, '-infinity'::timestamptz)
 		  AND nr.notification_id IS NULL
 		  AND n.created_at > NOW() - INTERVAL '30 days'
 		  AND (` + audienceClause + `)`
@@ -281,14 +270,33 @@ func (r *NotificationRepository) UpsertPreferences(
 			email_digest = $4,
 			muted_types = $5,
 			min_severity = $6,
-			updated_at = NOW()`
+			updated_at = NOW()
+		RETURNING tenant_id, user_id, in_app_enabled, email_digest, muted_types, min_severity, updated_at`
 
-	_, err := r.db.ExecContext(ctx, query, tenantID, userID, params.InAppEnabled, params.EmailDigest, mutedTypesJSON, minSev)
+	var (
+		tID, uID         shared.ID
+		inAppEnabled     bool
+		emailDigest      string
+		retMutedTypesJSON sql.NullString
+		retMinSeverity   sql.NullString
+		updatedAt        time.Time
+	)
+
+	err := r.db.QueryRowContext(ctx, query, tenantID, userID, params.InAppEnabled, params.EmailDigest, mutedTypesJSON, minSev).Scan(
+		&tID, &uID, &inAppEnabled, &emailDigest, &retMutedTypesJSON, &retMinSeverity, &updatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to upsert preferences: %w", err)
 	}
 
-	return r.GetPreferences(ctx, tenantID, userID)
+	var retMutedTypes []string
+	if retMutedTypesJSON.Valid && retMutedTypesJSON.String != "" {
+		if jsonErr := json.Unmarshal([]byte(retMutedTypesJSON.String), &retMutedTypes); jsonErr != nil {
+			retMutedTypes = nil
+		}
+	}
+
+	return notification.ReconstitutePref(tID, uID, inAppEnabled, emailDigest, retMutedTypes, retMinSeverity.String, updatedAt), nil
 }
 
 // ============================================
@@ -300,9 +308,9 @@ func (r *NotificationRepository) UpsertPreferences(
 // Expects $1 = tenantID and $2 = userID in the query args.
 func (r *NotificationRepository) buildAudienceClause() string {
 	return `n.audience = 'all'` +
-		` OR (n.audience = 'user' AND n.audience_id = $2::text)` +
+		` OR (n.audience = 'user' AND n.audience_id = $2)` +
 		` OR (n.audience = 'group' AND n.audience_id IN (` +
-		`SELECT g.id::text FROM groups g ` +
+		`SELECT g.id FROM groups g ` +
 		`INNER JOIN group_members gm ON gm.group_id = g.id ` +
 		`WHERE g.tenant_id = $1 AND gm.user_id = $2 AND g.is_active = true` +
 		`))`
@@ -326,9 +334,9 @@ func (r *NotificationRepository) buildWhereClause(tenantID, userID shared.ID, fi
 
 	if filter.IsRead != nil {
 		if *filter.IsRead {
-			where += " AND (nr.notification_id IS NOT NULL OR n.created_at <= COALESCE(ns.last_read_all_at, '1970-01-01'::timestamptz))"
+			where += " AND (nr.notification_id IS NOT NULL OR n.created_at <= COALESCE(ns.last_read_all_at, '-infinity'::timestamptz))"
 		} else {
-			where += " AND nr.notification_id IS NULL AND n.created_at > COALESCE(ns.last_read_all_at, '1970-01-01'::timestamptz)"
+			where += " AND nr.notification_id IS NULL AND n.created_at > COALESCE(ns.last_read_all_at, '-infinity'::timestamptz)"
 		}
 	}
 
@@ -338,6 +346,63 @@ func (r *NotificationRepository) buildWhereClause(tenantID, userID shared.ID, fi
 // rowScanner interface for scanning from both *sql.Row and *sql.Rows
 type notifRowScanner interface {
 	Scan(dest ...any) error
+}
+
+func (r *NotificationRepository) scanNotificationWithTotal(scanner notifRowScanner) (*notification.Notification, int, error) {
+	var (
+		id               shared.ID
+		tenantID         shared.ID
+		audience         string
+		audienceIDStr    sql.NullString
+		notificationType string
+		title            string
+		body             sql.NullString
+		severity         string
+		resourceType     sql.NullString
+		resourceIDStr    sql.NullString
+		url              sql.NullString
+		actorIDStr       sql.NullString
+		createdAt        time.Time
+		isRead           bool
+		totalCount       int
+	)
+
+	err := scanner.Scan(
+		&id, &tenantID, &audience, &audienceIDStr,
+		&notificationType, &title, &body, &severity,
+		&resourceType, &resourceIDStr, &url,
+		&actorIDStr, &createdAt, &isRead, &totalCount,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var audienceID, resourceID, actorID *shared.ID
+	if audienceIDStr.Valid {
+		parsed, parseErr := shared.IDFromString(audienceIDStr.String)
+		if parseErr == nil {
+			audienceID = &parsed
+		}
+	}
+	if resourceIDStr.Valid {
+		parsed, parseErr := shared.IDFromString(resourceIDStr.String)
+		if parseErr == nil {
+			resourceID = &parsed
+		}
+	}
+	if actorIDStr.Valid {
+		parsed, parseErr := shared.IDFromString(actorIDStr.String)
+		if parseErr == nil {
+			actorID = &parsed
+		}
+	}
+
+	return notification.Reconstitute(
+		id, tenantID, audience, audienceID,
+		notificationType, title, body.String, severity,
+		resourceType.String, resourceID, url.String,
+		actorID, createdAt, isRead,
+	), totalCount, nil
 }
 
 func (r *NotificationRepository) scanNotification(scanner notifRowScanner) (*notification.Notification, error) {

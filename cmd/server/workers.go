@@ -13,14 +13,16 @@ import (
 
 // Workers holds all background worker instances.
 type Workers struct {
-	JobWorker                 *jobs.Worker
-	AgentHealthChecker        *jobs.AgentHealthChecker
-	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
-	ScanScheduler             *app.ScanScheduler
-	CommandExpirationChecker  *app.CommandExpirationChecker
-	OutboxScheduler     *app.OutboxScheduler
-	FindingLifecycleScheduler *app.FindingLifecycleScheduler
-	ControllerManager         *controller.Manager
+	JobWorker                    *jobs.Worker
+	AgentHealthChecker           *jobs.AgentHealthChecker
+	AITriageRecoveryJob          *jobs.AITriageRecoveryJob
+	ScanScheduler                *app.ScanScheduler
+	CommandExpirationChecker     *app.CommandExpirationChecker
+	OutboxScheduler              *app.OutboxScheduler
+	FindingLifecycleScheduler    *app.FindingLifecycleScheduler
+	NotificationCleanupTicker    *time.Ticker
+	notificationService          *app.NotificationService
+	ControllerManager            *controller.Manager
 }
 
 // WorkerDeps contains dependencies needed to create workers.
@@ -105,6 +107,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log,
 	)
 
+	// Store notification service reference for cleanup worker
+	w.notificationService = svc.Notification
+
 	// Note: Template sync uses lazy sync on scan trigger, no background worker needed.
 	// Templates are synced on-demand when a scan uses custom templates.
 
@@ -182,6 +187,24 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 	// Start finding lifecycle scheduler
 	w.FindingLifecycleScheduler.Start()
 
+	// Start notification cleanup worker (runs daily, 90-day retention)
+	if w.notificationService != nil {
+		w.NotificationCleanupTicker = time.NewTicker(24 * time.Hour)
+		go func() {
+			for range w.NotificationCleanupTicker.C {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				deleted, err := w.notificationService.CleanupOld(cleanupCtx, 90)
+				if err != nil {
+					log.Error("notification cleanup failed", "error", err)
+				} else if deleted > 0 {
+					log.Info("notification cleanup completed", "deleted", deleted)
+				}
+				cancel()
+			}
+		}()
+		log.Info("notification cleanup worker started", "interval", "24h", "retention_days", 90)
+	}
+
 	// Start controller manager
 	if err := w.ControllerManager.Start(ctx); err != nil {
 		return err
@@ -229,6 +252,13 @@ func (w *Workers) Stop(log *logger.Logger) {
 	log.Info("stopping finding lifecycle scheduler...")
 	w.FindingLifecycleScheduler.Stop()
 	log.Info("finding lifecycle scheduler stopped")
+
+	// Stop notification cleanup worker
+	if w.NotificationCleanupTicker != nil {
+		log.Info("stopping notification cleanup worker...")
+		w.NotificationCleanupTicker.Stop()
+		log.Info("notification cleanup worker stopped")
+	}
 
 	// Stop controller manager
 	log.Info("stopping controller manager...")

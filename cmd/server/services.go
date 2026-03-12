@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
@@ -13,11 +12,9 @@ import (
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/internal/infra/llm"
-	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
 	"github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/jwt"
@@ -35,15 +32,6 @@ func (b *wsHubBroadcaster) BroadcastActivity(channel string, data any, tenantID 
 
 func (b *wsHubBroadcaster) BroadcastTriage(channel string, data any, tenantID string) {
 	b.hub.BroadcastEvent(channel, data, tenantID)
-}
-
-// groupResolver adapts GroupRepository to app.UserGroupResolver interface.
-type groupResolver struct {
-	repo *postgres.GroupRepository
-}
-
-func (g *groupResolver) GetUserGroupIDs(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error) {
-	return g.repo.ListGroupIDsByUser(ctx, tenantID, userID)
 }
 
 // Services holds all service instances.
@@ -278,9 +266,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log.Logger,
 	)
 
-	// Wire notification to vulnerability and exposure services
+	// Wire outbox notification to vulnerability and exposure services
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
 	s.Exposure.SetOutboxService(deps.DB, s.Outbox)
+
+	// Note: UserNotificationService is wired later after NotificationService is initialized
 
 	// Note: NotificationService is wired later after WebSocketHub is initialized
 
@@ -506,11 +496,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize user notification service (needs WebSocketHub)
 	s.Notification = app.NewNotificationService(
 		repos.Notification,
-		&groupResolver{repo: repos.Group},
 		s.WebSocketHub,
 		log,
 	)
 	log.Info("user notification service initialized")
+
+	// Wire in-app notification service to vulnerability service for real-time user notifications
+	s.Vulnerability.SetUserNotificationService(s.Notification)
 
 	return s, nil
 }

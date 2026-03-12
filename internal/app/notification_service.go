@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/notification"
@@ -14,11 +15,6 @@ import (
 // =============================================================================
 // Interfaces
 // =============================================================================
-
-// UserGroupResolver resolves the group IDs a user belongs to within a tenant.
-type UserGroupResolver interface {
-	GetUserGroupIDs(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
-}
 
 // WebSocketBroadcaster broadcasts messages to WebSocket channels.
 type WebSocketBroadcaster interface {
@@ -43,24 +39,21 @@ type UpdatePreferencesInput struct {
 
 // NotificationService handles user notification operations (inbox).
 type NotificationService struct {
-	repo      notification.Repository
-	groupRepo UserGroupResolver
-	wsHub     WebSocketBroadcaster
-	logger    *logger.Logger
+	repo   notification.Repository
+	wsHub  WebSocketBroadcaster
+	logger *logger.Logger
 }
 
 // NewNotificationService creates a new NotificationService.
 func NewNotificationService(
 	repo notification.Repository,
-	groupRepo UserGroupResolver,
 	wsHub WebSocketBroadcaster,
 	log *logger.Logger,
 ) *NotificationService {
 	return &NotificationService{
-		repo:      repo,
-		groupRepo: groupRepo,
-		wsHub:     wsHub,
-		logger:    log.With("service", "notification"),
+		repo:   repo,
+		wsHub:  wsHub,
+		logger: log.With("service", "notification"),
 	}
 }
 
@@ -192,6 +185,21 @@ func (s *NotificationService) UpdatePreferences(
 
 // Notify creates a notification and pushes it via WebSocket to appropriate channels.
 func (s *NotificationService) Notify(ctx context.Context, params notification.NotificationParams) error {
+	// Validate required fields.
+	if err := validateNotifyParams(params); err != nil {
+		return err
+	}
+
+	// Sanitize URL to prevent open redirects and path traversal.
+	// Only allow clean relative paths (e.g., "/findings/123").
+	if params.URL != "" {
+		if !strings.HasPrefix(params.URL, "/") ||
+			strings.HasPrefix(params.URL, "//") ||
+			strings.Contains(params.URL, "..") {
+			params.URL = ""
+		}
+	}
+
 	n := notification.NewNotification(params)
 
 	if err := s.repo.Create(ctx, n); err != nil {
@@ -287,6 +295,38 @@ var validSeverities = map[string]bool{
 	notification.SeverityLow:      true,
 	notification.SeverityInfo:     true,
 	"":                            true, // allow empty to clear
+}
+
+// validAudiences defines the allowed notification audience types.
+var validAudiences = map[string]bool{
+	notification.AudienceAll:   true,
+	notification.AudienceGroup: true,
+	notification.AudienceUser:  true,
+}
+
+func validateNotifyParams(params notification.NotificationParams) error {
+	if params.Title == "" {
+		return fmt.Errorf("%w: notification title is required", shared.ErrValidation)
+	}
+	if len(params.Title) > 500 {
+		return fmt.Errorf("%w: notification title exceeds 500 characters", shared.ErrValidation)
+	}
+	if len(params.Body) > 10000 {
+		return fmt.Errorf("%w: notification body exceeds 10000 characters", shared.ErrValidation)
+	}
+	if !validAudiences[params.Audience] {
+		return fmt.Errorf("%w: invalid audience: %s", shared.ErrValidation, params.Audience)
+	}
+	if (params.Audience == notification.AudienceUser || params.Audience == notification.AudienceGroup) && params.AudienceID == nil {
+		return fmt.Errorf("%w: audience_id is required for audience type %s", shared.ErrValidation, params.Audience)
+	}
+	if params.NotificationType != "" && !notification.IsValidType(params.NotificationType) {
+		return fmt.Errorf("%w: invalid notification type: %s", shared.ErrValidation, params.NotificationType)
+	}
+	if params.Severity != "" && !notification.IsValidSeverity(params.Severity) {
+		return fmt.Errorf("%w: invalid severity: %s", shared.ErrValidation, params.Severity)
+	}
+	return nil
 }
 
 func validatePreferencesInput(input UpdatePreferencesInput) error {

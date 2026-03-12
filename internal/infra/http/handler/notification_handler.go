@@ -36,17 +36,20 @@ func NewNotificationHandler(svc *app.NotificationService, log *logger.Logger) *N
 
 // NotificationResponse represents a notification in API responses.
 type NotificationResponse struct {
-	ID        string `json:"id"`
-	TenantID  string `json:"tenant_id"`
-	Audience  string `json:"audience"`
-	Severity  string `json:"severity"`
-	Type      string `json:"type"`
-	Title     string `json:"title"`
-	Body      string `json:"body"`
-	Link      string `json:"link,omitempty"`
-	ActorID   string `json:"actor_id,omitempty"`
-	IsRead    bool   `json:"is_read"`
-	CreatedAt string `json:"created_at"`
+	ID               string `json:"id"`
+	TenantID         string `json:"tenant_id"`
+	Audience         string `json:"audience"`
+	AudienceID       string `json:"audience_id,omitempty"`
+	NotificationType string `json:"notification_type"`
+	Severity         string `json:"severity"`
+	Title            string `json:"title"`
+	Body             string `json:"body,omitempty"`
+	ResourceType     string `json:"resource_type,omitempty"`
+	ResourceID       string `json:"resource_id,omitempty"`
+	URL              string `json:"url,omitempty"`
+	ActorID          string `json:"actor_id,omitempty"`
+	IsRead           bool   `json:"is_read"`
+	CreatedAt        string `json:"created_at"`
 }
 
 // UnreadCountResponse represents the unread notification count.
@@ -302,6 +305,7 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 	}
 
 	var req NotificationPreferencesRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024) // 64KB limit
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
@@ -376,18 +380,25 @@ func (h *NotificationHandler) handleServiceError(w http.ResponseWriter, err erro
 // toNotificationResponse converts a domain notification to an API response.
 func toNotificationResponse(n *notification.Notification) NotificationResponse {
 	resp := NotificationResponse{
-		ID:        n.ID().String(),
-		TenantID:  n.TenantID().String(),
-		Audience:  n.Audience(),
-		Severity:  n.Severity(),
-		Type:      n.NotificationType(),
-		Title:     n.Title(),
-		Body:      n.Body(),
-		Link:      n.URL(),
-		IsRead:    n.IsRead(),
-		CreatedAt: n.CreatedAt().Format("2006-01-02T15:04:05Z07:00"),
+		ID:               n.ID().String(),
+		TenantID:         n.TenantID().String(),
+		Audience:         n.Audience(),
+		NotificationType: n.NotificationType(),
+		Severity:         n.Severity(),
+		Title:            n.Title(),
+		Body:             n.Body(),
+		ResourceType:     n.ResourceType(),
+		URL:              n.URL(),
+		IsRead:           n.IsRead(),
+		CreatedAt:        n.CreatedAt().Format("2006-01-02T15:04:05Z07:00"),
 	}
 
+	if n.AudienceID() != nil {
+		resp.AudienceID = n.AudienceID().String()
+	}
+	if n.ResourceID() != nil {
+		resp.ResourceID = n.ResourceID().String()
+	}
 	if n.ActorID() != nil {
 		resp.ActorID = n.ActorID().String()
 	}

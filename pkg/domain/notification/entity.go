@@ -36,9 +36,13 @@ const (
 	TypeFindingNew          = "finding_new"
 	TypeFindingAssigned     = "finding_assigned"
 	TypeFindingStatusChange = "finding_status_change"
+	TypeFindingComment      = "finding_comment"
+	TypeFindingMention      = "finding_mention"
+	TypeScanStarted         = "scan_started"
 	TypeScanCompleted       = "scan_completed"
 	TypeScanFailed          = "scan_failed"
 	TypeAssetDiscovered     = "asset_discovered"
+	TypeMemberInvited       = "member_invited"
 	TypeMemberJoined        = "member_joined"
 	TypeRoleChanged         = "role_changed"
 	TypeSLABreach           = "sla_breach"
@@ -234,8 +238,11 @@ func IsValidSeverity(s string) bool {
 func IsValidType(t string) bool {
 	switch t {
 	case TypeFindingNew, TypeFindingAssigned, TypeFindingStatusChange,
-		TypeScanCompleted, TypeScanFailed, TypeAssetDiscovered,
-		TypeMemberJoined, TypeRoleChanged, TypeSLABreach, TypeSystemAlert:
+		TypeFindingComment, TypeFindingMention,
+		TypeScanStarted, TypeScanCompleted, TypeScanFailed,
+		TypeAssetDiscovered,
+		TypeMemberInvited, TypeMemberJoined, TypeRoleChanged,
+		TypeSLABreach, TypeSystemAlert:
 		return true
 	}
 	return false

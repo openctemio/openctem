@@ -131,6 +131,7 @@ func registerUserRoutes(
 		// Current user profile
 		r.GET("/me", h.GetMe)
 		r.PUT("/me", h.UpdateMe)
+		r.GET("/me/preferences", h.GetPreferences)
 		r.PUT("/me/preferences", h.UpdatePreferences)
 
 		// Current user's tenants/teams
