@@ -2363,7 +2363,7 @@ func (r *AccessControlRepository) ListAssetOwnersWithNames(ctx context.Context, 
 	query := `
 		SELECT ao.id, ao.asset_id, ao.group_id, ao.user_id, ao.ownership_type,
 		       ao.assigned_at, ao.assigned_by,
-		       COALESCE(u.display_name, '') AS user_name,
+		       COALESCE(u.name, '') AS user_name,
 		       COALESCE(u.email, '') AS user_email,
 		       COALESCE(g.name, '') AS group_name,
 		       COALESCE(ab.display_name, '') AS assigned_by_name
@@ -2425,7 +2425,7 @@ func (r *AccessControlRepository) GetPrimaryOwnerBrief(ctx context.Context, tena
 		SELECT
 			CASE WHEN ao.user_id IS NOT NULL THEN ao.user_id::text ELSE ao.group_id::text END AS owner_id,
 			CASE WHEN ao.user_id IS NOT NULL THEN 'user' ELSE 'group' END AS owner_type,
-			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.display_name, '') ELSE COALESCE(g.name, '') END AS owner_name,
+			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.name, '') ELSE COALESCE(g.name, '') END AS owner_name,
 			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.email, '') ELSE '' END AS owner_email
 		FROM asset_owners ao
 		LEFT JOIN users u ON ao.user_id = u.id
@@ -2466,7 +2466,7 @@ func (r *AccessControlRepository) GetPrimaryOwnersByAssetIDs(ctx context.Context
 			ao.asset_id::text,
 			CASE WHEN ao.user_id IS NOT NULL THEN ao.user_id::text ELSE ao.group_id::text END AS owner_id,
 			CASE WHEN ao.user_id IS NOT NULL THEN 'user' ELSE 'group' END AS owner_type,
-			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.display_name, '') ELSE COALESCE(g.name, '') END AS owner_name,
+			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.name, '') ELSE COALESCE(g.name, '') END AS owner_name,
 			CASE WHEN ao.user_id IS NOT NULL THEN COALESCE(u.email, '') ELSE '' END AS owner_email
 		FROM asset_owners ao
 		LEFT JOIN users u ON ao.user_id = u.id
