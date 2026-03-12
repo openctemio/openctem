@@ -327,7 +327,7 @@ func TestAssetService_PreviewRiskScoreChanges(t *testing.T) {
 	newConfig := asset.LegacyRiskScoringConfig()
 	newConfig.Weights = asset.ComponentWeights{Exposure: 80, Criticality: 10, Findings: 10, CTEM: 0}
 
-	items, err := svc.PreviewRiskScoreChanges(context.Background(), serviceTenantID, &newConfig)
+	items, totalCount, err := svc.PreviewRiskScoreChanges(context.Background(), serviceTenantID, &newConfig)
 	if err != nil {
 		t.Fatalf("PreviewRiskScoreChanges failed: %v", err)
 	}
@@ -336,9 +336,16 @@ func TestAssetService_PreviewRiskScoreChanges(t *testing.T) {
 		t.Error("expected preview items, got 0")
 	}
 
+	if totalCount < int64(len(items)) {
+		t.Errorf("total count %d should be >= sample count %d", totalCount, len(items))
+	}
+
 	for _, item := range items {
 		if item.AssetName == "" {
 			t.Error("preview item missing asset name")
+		}
+		if item.Delta != item.NewScore-item.CurrentScore {
+			t.Errorf("delta mismatch: got %d, expected %d", item.Delta, item.NewScore-item.CurrentScore)
 		}
 	}
 }
@@ -560,7 +567,7 @@ func TestAssetService_PreviewRiskScoreChanges_ShowsDeltas(t *testing.T) {
 	newConfig := asset.LegacyRiskScoringConfig()
 	newConfig.Weights = asset.ComponentWeights{Exposure: 90, Criticality: 5, Findings: 5, CTEM: 0}
 
-	items, err := svc.PreviewRiskScoreChanges(context.Background(), serviceTenantID, &newConfig)
+	items, _, err := svc.PreviewRiskScoreChanges(context.Background(), serviceTenantID, &newConfig)
 	if err != nil {
 		t.Fatalf("PreviewRiskScoreChanges failed: %v", err)
 	}

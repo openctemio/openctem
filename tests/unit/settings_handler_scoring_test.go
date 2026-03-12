@@ -627,14 +627,16 @@ func TestRiskScoringHandler_Preview_ReturnsDeltas(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var resp struct {
-		Assets     []app.RiskScorePreviewItem `json:"assets"`
-		TotalCount int                        `json:"total_count"`
+		Assets      []app.RiskScorePreviewItem `json:"assets"`
+		SampleCount int                        `json:"sample_count"`
+		TotalAssets int                        `json:"total_assets"`
 	}
 	err := json.Unmarshal(rr.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	assert.Equal(t, len(resp.Assets), resp.TotalCount)
-	assert.Greater(t, resp.TotalCount, 0, "should have preview items")
+	assert.Equal(t, len(resp.Assets), resp.SampleCount)
+	assert.Greater(t, resp.SampleCount, 0, "should have preview items")
+	assert.GreaterOrEqual(t, resp.TotalAssets, resp.SampleCount, "total should be >= sample")
 
 	for _, item := range resp.Assets {
 		assert.NotEmpty(t, item.AssetID)
@@ -643,6 +645,7 @@ func TestRiskScoringHandler_Preview_ReturnsDeltas(t *testing.T) {
 		assert.LessOrEqual(t, item.CurrentScore, 100)
 		assert.GreaterOrEqual(t, item.NewScore, 0)
 		assert.LessOrEqual(t, item.NewScore, 100)
+		assert.Equal(t, item.NewScore-item.CurrentScore, item.Delta, "delta should match new-current")
 	}
 }
 

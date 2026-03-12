@@ -1367,7 +1367,7 @@ func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http
 	}
 
 	config := app.MapTenantToAssetScoringConfig(&req)
-	items, err := h.assetService.PreviewRiskScoreChanges(r.Context(), tenantID, config)
+	items, totalAssets, err := h.assetService.PreviewRiskScoreChanges(r.Context(), tenantID, config)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1375,8 +1375,9 @@ func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"assets":      items,
-		"total_count": len(items),
+		"assets":       items,
+		"sample_count": len(items),
+		"total_assets": totalAssets,
 	})
 }
 

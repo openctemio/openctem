@@ -1704,12 +1704,19 @@ func (s *AssetService) RecalculateAllRiskScores(ctx context.Context, tenantID sh
 
 // PreviewRiskScoreChanges previews how a scoring config change would affect assets.
 // Uses stratified sampling: top 20 + bottom 20 + random 60 assets.
-func (s *AssetService) PreviewRiskScoreChanges(ctx context.Context, tenantID shared.ID, newConfig *asset.RiskScoringConfig) ([]RiskScorePreviewItem, error) {
+// Returns preview items and total asset count for context.
+func (s *AssetService) PreviewRiskScoreChanges(ctx context.Context, tenantID shared.ID, newConfig *asset.RiskScoringConfig) ([]RiskScorePreviewItem, int64, error) {
 	tid := tenantID.String()
 	engine := asset.NewRiskScoringEngine(*newConfig)
 
 	// Get a sample of assets — top risk, bottom risk, and a middle page
 	filter := asset.NewFilter().WithTenantID(tid)
+
+	// Get total count for context
+	totalCount, err := s.repo.Count(ctx, filter)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count assets: %w", err)
+	}
 	allowedSort := asset.AllowedSortFields()
 	sortDesc := pagination.NewSortOption(allowedSort).Parse("-risk_score")
 	sortAsc := pagination.NewSortOption(allowedSort).Parse("risk_score")
@@ -1720,17 +1727,17 @@ func (s *AssetService) PreviewRiskScoreChanges(ctx context.Context, tenantID sha
 
 	topResult, err := s.repo.List(ctx, filter, asset.NewListOptions().WithSort(sortDesc), topPage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get top-risk assets: %w", err)
+		return nil, totalCount, fmt.Errorf("failed to get top-risk assets: %w", err)
 	}
 
 	bottomResult, err := s.repo.List(ctx, filter, asset.NewListOptions().WithSort(sortAsc), bottomPage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get bottom-risk assets: %w", err)
+		return nil, totalCount, fmt.Errorf("failed to get bottom-risk assets: %w", err)
 	}
 
 	middleResult, err := s.repo.List(ctx, filter, asset.NewListOptions(), middlePage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get middle assets: %w", err)
+		return nil, totalCount, fmt.Errorf("failed to get middle assets: %w", err)
 	}
 
 	// Deduplicate
@@ -1744,11 +1751,14 @@ func (s *AssetService) PreviewRiskScoreChanges(ctx context.Context, tenantID sha
 				continue
 			}
 			seen[id] = true
+			newScore := engine.CalculateScore(a)
 			items = append(items, RiskScorePreviewItem{
 				AssetID:      id,
 				AssetName:    a.Name(),
+				AssetType:    string(a.Type()),
 				CurrentScore: a.RiskScore(),
-				NewScore:     engine.CalculateScore(a),
+				NewScore:     newScore,
+				Delta:        newScore - a.RiskScore(),
 			})
 		}
 	}
@@ -1757,13 +1767,15 @@ func (s *AssetService) PreviewRiskScoreChanges(ctx context.Context, tenantID sha
 	addItems(bottomResult.Data)
 	addItems(middleResult.Data)
 
-	return items, nil
+	return items, totalCount, nil
 }
 
 // RiskScorePreviewItem represents how an asset's risk score would change.
 type RiskScorePreviewItem struct {
 	AssetID      string `json:"asset_id"`
 	AssetName    string `json:"asset_name"`
+	AssetType    string `json:"asset_type"`
 	CurrentScore int    `json:"current_score"`
 	NewScore     int    `json:"new_score"`
+	Delta        int    `json:"delta"`
 }
