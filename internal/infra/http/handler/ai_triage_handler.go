@@ -185,6 +185,14 @@ func (h *AITriageHandler) GetTriageResult(w http.ResponseWriter, r *http.Request
 
 	result, err := h.triageService.GetLatestTriageByFinding(r.Context(), tenantID, findingID)
 	if err != nil {
+		// "Not found" means no triage has been run yet — return 200 with null data
+		// instead of 404, since the finding exists but just hasn't been triaged.
+		if contains(err.Error(), "not found") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": nil})
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
