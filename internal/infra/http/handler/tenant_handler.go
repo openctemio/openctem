@@ -4,20 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/audit"
 	moduleTypes "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
 )
+
+// recalculateCooldown is the minimum interval between recalculations per tenant.
+const recalculateCooldown = 5 * time.Minute
+
+// recalculateLastRun tracks the last recalculation time per tenant ID.
+var recalculateLastRun sync.Map
 
 // TenantHandler handles tenant-related HTTP requests.
 // Note: "Team" is the UI-facing name for tenants.
@@ -1394,11 +1404,40 @@ func (h *TenantHandler) RecalculateRiskScores(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Rate limit: max 1 recalculation per 5 minutes per tenant
+	tenantKey := tenantID.String()
+	now := time.Now()
+	if lastRun, ok := recalculateLastRun.Load(tenantKey); ok {
+		lastTime := lastRun.(time.Time)
+		elapsed := now.Sub(lastTime)
+		if elapsed < recalculateCooldown {
+			retryAfter := int(math.Ceil(recalculateCooldown.Seconds() - elapsed.Seconds()))
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+			apierror.TooManyRequests(
+				fmt.Sprintf("Risk score recalculation is limited to once every %d minutes. Try again in %d seconds.",
+					int(recalculateCooldown.Minutes()), retryAfter),
+			).WriteJSON(w)
+			return
+		}
+	}
+
+	actx := h.buildAuditContext(r)
+
 	updated, err := h.assetService.RecalculateAllRiskScores(r.Context(), tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+
+	// Record successful recalculation time for rate limiting
+	recalculateLastRun.Store(tenantKey, time.Now())
+
+	// Audit log the recalculation
+	event := app.NewSuccessEvent(audit.ActionTenantRiskScoresRecalculated, audit.ResourceTypeTenant, tenantKey).
+		WithMessage(fmt.Sprintf("Risk scores recalculated for %d assets", updated)).
+		WithMetadata("assets_updated", updated).
+		WithSeverity(audit.SeverityMedium)
+	h.service.LogAuditEvent(r.Context(), actx, event)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{

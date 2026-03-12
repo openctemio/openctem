@@ -117,6 +117,13 @@ func (s *TenantService) logAudit(ctx context.Context, actx AuditContext, event A
 	}
 }
 
+// LogAuditEvent logs an audit event via the tenant service's audit service.
+// This is the public variant of logAudit, intended for use by handlers that
+// need to log audit events for operations not managed by the service layer.
+func (s *TenantService) LogAuditEvent(ctx context.Context, actx AuditContext, event AuditEvent) {
+	s.logAudit(ctx, actx, event)
+}
+
 // hasTenantModule checks if a tenant has access to a specific module.
 // In OSS edition, all modules are enabled by default.
 func (s *TenantService) hasTenantModule(ctx context.Context, tenantID string, moduleID string) (bool, error) {
@@ -1105,7 +1112,7 @@ func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID 
 	s.logger.Info("risk scoring settings updated", "tenant_id", tenantID, "preset", rs.Preset)
 
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+	event := NewSuccessEvent(audit.ActionTenantRiskScoringUpdated, audit.ResourceTypeTenant, tenantID).
 		WithMessage("Risk scoring settings updated").
 		WithMetadata("preset", rs.Preset)
 	s.logAudit(ctx, actx, event)

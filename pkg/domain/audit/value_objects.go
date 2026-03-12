@@ -20,8 +20,10 @@ const (
 	ActionTenantCreated         Action = "tenant.created"
 	ActionTenantUpdated         Action = "tenant.updated"
 	ActionTenantDeleted         Action = "tenant.deleted"
-	ActionTenantSettingsUpdated Action = "tenant.settings_updated"
-	ActionTenantModulesUpdated Action = "tenant.modules_updated"
+	ActionTenantSettingsUpdated      Action = "tenant.settings_updated"
+	ActionTenantModulesUpdated      Action = "tenant.modules_updated"
+	ActionTenantRiskScoringUpdated  Action = "tenant.risk_scoring_updated"
+	ActionTenantRiskScoresRecalculated Action = "tenant.risk_scores_recalculated"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -226,6 +228,7 @@ func (a Action) IsValid() bool {
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
+		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
@@ -279,7 +282,8 @@ func (a Action) Category() string {
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout:
 		return "user"
-	case ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated:
+	case ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
+		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated:
 		return "tenant"
 	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged:
 		return "member"
@@ -454,6 +458,7 @@ func SeverityForAction(a Action) Severity {
 	// Medium - important changes
 	case ActionUserCreated, ActionUserActivated,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
+		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionRepositoryDeleted, ActionDataExported,
 		ActionAgentCreated, ActionAgentActivated,
