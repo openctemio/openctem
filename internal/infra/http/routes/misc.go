@@ -170,12 +170,12 @@ func registerIntegrationRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerNotificationOutboxRoutes registers notification outbox endpoints for tenants.
+// registerOutboxRoutes registers notification outbox endpoints for tenants.
 // This allows tenants to monitor and manage their notification delivery queue.
 // NOTE: Admin functionality will be developed in a separate admin backend later.
-func registerNotificationOutboxRoutes(
+func registerOutboxRoutes(
 	router Router,
-	h *handler.NotificationOutboxHandler,
+	h *handler.OutboxHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -266,6 +266,27 @@ func registerAPIKeyRoutes(
 		r.GET("/{id}", h.Get, middleware.Require(permission.APIKeysRead))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.APIKeysDelete))
 		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.APIKeysWrite))
+	}, tenantMiddlewares...)
+}
+
+// registerNotificationRoutes registers user notification endpoints.
+// Notifications are user-scoped within a tenant context.
+// No specific permission middleware needed — users can only access their own notifications.
+func registerNotificationRoutes(
+	router Router,
+	h *handler.NotificationHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/notifications", func(r Router) {
+		r.GET("/", h.List)
+		r.GET("/unread-count", h.GetUnreadCount)
+		r.PATCH("/{id}/read", h.MarkAsRead)
+		r.POST("/read-all", h.MarkAllAsRead)
+		r.GET("/preferences", h.GetPreferences)
+		r.PUT("/preferences", h.UpdatePreferences)
 	}, tenantMiddlewares...)
 }
 

@@ -90,7 +90,8 @@ type Handlers struct {
 	Webhook *handler.WebhookHandler // nil if not initialized (no database)
 
 	// Notification handlers
-	NotificationOutbox *handler.NotificationOutboxHandler // nil if not initialized (no database)
+	Notification *handler.NotificationHandler // nil if not initialized (no database)
+	Outbox       *handler.OutboxHandler       // nil if not initialized (no database)
 
 	// Bootstrap handler (combines multiple endpoints into one)
 	Bootstrap *handler.BootstrapHandler // nil if not initialized (no database)
@@ -434,9 +435,14 @@ func Register(
 		registerWebhookRoutes(router, h.Webhook, authMiddleware, userSync)
 	}
 
+	// User Notification routes (tenant from JWT token, user-scoped)
+	if h.Notification != nil {
+		registerNotificationRoutes(router, h.Notification, authMiddleware, userSync)
+	}
+
 	// Notification Outbox routes (tenant from JWT token)
-	if h.NotificationOutbox != nil {
-		registerNotificationOutboxRoutes(router, h.NotificationOutbox, authMiddleware, userSync)
+	if h.Outbox != nil {
+		registerOutboxRoutes(router, h.Outbox, authMiddleware, userSync)
 	}
 
 	// Bootstrap route (combines permissions, subscription, modules, dashboard)

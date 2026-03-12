@@ -30,7 +30,7 @@ type WorkflowExecutor struct {
 	conditionEvaluator  ConditionEvaluator
 
 	// Services for actions
-	notificationService *NotificationService
+	notificationService *OutboxService
 	integrationService  *IntegrationService
 	auditService        *AuditService
 
@@ -77,8 +77,8 @@ const (
 // WorkflowExecutorOption is a functional option for WorkflowExecutor.
 type WorkflowExecutorOption func(*WorkflowExecutor)
 
-// WithExecutorNotificationService sets the notification service.
-func WithExecutorNotificationService(svc *NotificationService) WorkflowExecutorOption {
+// WithExecutorOutboxService sets the notification service.
+func WithExecutorOutboxService(svc *OutboxService) WorkflowExecutorOption {
 	return func(e *WorkflowExecutor) {
 		e.notificationService = svc
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/integration"
-	"github.com/openctemio/api/pkg/domain/notification"
+	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -25,28 +25,28 @@ type mockOutboxRepo struct {
 	// Create behavior
 	createErr   error
 	createCalls int
-	lastCreated *notification.Outbox
+	lastCreated *outbox.Outbox
 
 	// CreateInTx behavior
 	createInTxErr   error
 	createInTxCalls int
 
 	// GetByID behavior
-	getByIDResult *notification.Outbox
+	getByIDResult *outbox.Outbox
 	getByIDErr    error
 	getByIDCalls  int
 
 	// Update behavior
 	updateErr   error
 	updateCalls int
-	lastUpdated *notification.Outbox
+	lastUpdated *outbox.Outbox
 
 	// Delete behavior
 	deleteErr   error
 	deleteCalls int
 
 	// FetchPendingBatch behavior
-	fetchPendingResult []*notification.Outbox
+	fetchPendingResult []*outbox.Outbox
 	fetchPendingErr    error
 	fetchPendingCalls  int
 
@@ -64,58 +64,58 @@ type mockOutboxRepo struct {
 	deleteOldFailedErr    error
 
 	// List behavior
-	listResult pagination.Result[*notification.Outbox]
+	listResult pagination.Result[*outbox.Outbox]
 	listErr    error
 	listCalls  int
 
 	// GetStats behavior
-	getStatsResult *notification.OutboxStats
+	getStatsResult *outbox.OutboxStats
 	getStatsErr    error
 	getStatsCalls  int
 
 	// ListByTenant behavior
-	listByTenantResult []*notification.Outbox
+	listByTenantResult []*outbox.Outbox
 	listByTenantTotal  int64
 	listByTenantErr    error
 
 	// CountByStatus behavior
-	countByStatusResult map[notification.OutboxStatus]int64
+	countByStatusResult map[outbox.OutboxStatus]int64
 	countByStatusErr    error
 
 	// GetByAggregateID behavior
-	getByAggregateResult []*notification.Outbox
+	getByAggregateResult []*outbox.Outbox
 	getByAggregateErr    error
 }
 
-func (m *mockOutboxRepo) Create(_ context.Context, outbox *notification.Outbox) error {
+func (m *mockOutboxRepo) Create(_ context.Context, outbox *outbox.Outbox) error {
 	m.createCalls++
 	m.lastCreated = outbox
 	return m.createErr
 }
 
-func (m *mockOutboxRepo) CreateInTx(_ context.Context, _ *sql.Tx, outbox *notification.Outbox) error {
+func (m *mockOutboxRepo) CreateInTx(_ context.Context, _ *sql.Tx, outbox *outbox.Outbox) error {
 	m.createInTxCalls++
 	m.lastCreated = outbox
 	return m.createInTxErr
 }
 
-func (m *mockOutboxRepo) GetByID(_ context.Context, _ notification.ID) (*notification.Outbox, error) {
+func (m *mockOutboxRepo) GetByID(_ context.Context, _ outbox.ID) (*outbox.Outbox, error) {
 	m.getByIDCalls++
 	return m.getByIDResult, m.getByIDErr
 }
 
-func (m *mockOutboxRepo) Update(_ context.Context, outbox *notification.Outbox) error {
+func (m *mockOutboxRepo) Update(_ context.Context, outbox *outbox.Outbox) error {
 	m.updateCalls++
 	m.lastUpdated = outbox
 	return m.updateErr
 }
 
-func (m *mockOutboxRepo) Delete(_ context.Context, _ notification.ID) error {
+func (m *mockOutboxRepo) Delete(_ context.Context, _ outbox.ID) error {
 	m.deleteCalls++
 	return m.deleteErr
 }
 
-func (m *mockOutboxRepo) FetchPendingBatch(_ context.Context, _ string, _ int) ([]*notification.Outbox, error) {
+func (m *mockOutboxRepo) FetchPendingBatch(_ context.Context, _ string, _ int) ([]*outbox.Outbox, error) {
 	m.fetchPendingCalls++
 	return m.fetchPendingResult, m.fetchPendingErr
 }
@@ -133,25 +133,25 @@ func (m *mockOutboxRepo) DeleteOldFailed(_ context.Context, _ int) (int64, error
 	return m.deleteOldFailedResult, m.deleteOldFailedErr
 }
 
-func (m *mockOutboxRepo) List(_ context.Context, _ notification.OutboxFilter, _ pagination.Pagination) (pagination.Result[*notification.Outbox], error) {
+func (m *mockOutboxRepo) List(_ context.Context, _ outbox.OutboxFilter, _ pagination.Pagination) (pagination.Result[*outbox.Outbox], error) {
 	m.listCalls++
 	return m.listResult, m.listErr
 }
 
-func (m *mockOutboxRepo) GetStats(_ context.Context, _ *shared.ID) (*notification.OutboxStats, error) {
+func (m *mockOutboxRepo) GetStats(_ context.Context, _ *shared.ID) (*outbox.OutboxStats, error) {
 	m.getStatsCalls++
 	return m.getStatsResult, m.getStatsErr
 }
 
-func (m *mockOutboxRepo) ListByTenant(_ context.Context, _ shared.ID, _ notification.OutboxFilter) ([]*notification.Outbox, int64, error) {
+func (m *mockOutboxRepo) ListByTenant(_ context.Context, _ shared.ID, _ outbox.OutboxFilter) ([]*outbox.Outbox, int64, error) {
 	return m.listByTenantResult, m.listByTenantTotal, m.listByTenantErr
 }
 
-func (m *mockOutboxRepo) CountByStatus(_ context.Context, _ shared.ID) (map[notification.OutboxStatus]int64, error) {
+func (m *mockOutboxRepo) CountByStatus(_ context.Context, _ shared.ID) (map[outbox.OutboxStatus]int64, error) {
 	return m.countByStatusResult, m.countByStatusErr
 }
 
-func (m *mockOutboxRepo) GetByAggregateID(_ context.Context, _ string, _ string) ([]*notification.Outbox, error) {
+func (m *mockOutboxRepo) GetByAggregateID(_ context.Context, _ string, _ string) ([]*outbox.Outbox, error) {
 	return m.getByAggregateResult, m.getByAggregateErr
 }
 
@@ -163,26 +163,26 @@ type mockEventRepo struct {
 	// Create behavior
 	createErr   error
 	createCalls int
-	lastCreated *notification.Event
+	lastCreated *outbox.Event
 
 	// GetByID behavior
-	getByIDResult *notification.Event
+	getByIDResult *outbox.Event
 	getByIDErr    error
 
 	// Delete behavior
 	deleteErr error
 
 	// ListByTenant behavior
-	listByTenantResult []*notification.Event
+	listByTenantResult []*outbox.Event
 	listByTenantTotal  int64
 	listByTenantErr    error
 
 	// GetStats behavior
-	getStatsResult *notification.EventStats
+	getStatsResult *outbox.EventStats
 	getStatsErr    error
 
 	// ListByIntegration behavior
-	listByIntResult []*notification.Event
+	listByIntResult []*outbox.Event
 	listByIntTotal  int64
 	listByIntErr    error
 
@@ -191,29 +191,29 @@ type mockEventRepo struct {
 	deleteOldEventsErr    error
 }
 
-func (m *mockEventRepo) Create(_ context.Context, event *notification.Event) error {
+func (m *mockEventRepo) Create(_ context.Context, event *outbox.Event) error {
 	m.createCalls++
 	m.lastCreated = event
 	return m.createErr
 }
 
-func (m *mockEventRepo) GetByID(_ context.Context, _ notification.ID) (*notification.Event, error) {
+func (m *mockEventRepo) GetByID(_ context.Context, _ outbox.ID) (*outbox.Event, error) {
 	return m.getByIDResult, m.getByIDErr
 }
 
-func (m *mockEventRepo) Delete(_ context.Context, _ notification.ID) error {
+func (m *mockEventRepo) Delete(_ context.Context, _ outbox.ID) error {
 	return m.deleteErr
 }
 
-func (m *mockEventRepo) ListByTenant(_ context.Context, _ shared.ID, _ notification.EventFilter) ([]*notification.Event, int64, error) {
+func (m *mockEventRepo) ListByTenant(_ context.Context, _ shared.ID, _ outbox.EventFilter) ([]*outbox.Event, int64, error) {
 	return m.listByTenantResult, m.listByTenantTotal, m.listByTenantErr
 }
 
-func (m *mockEventRepo) GetStats(_ context.Context, _ *shared.ID) (*notification.EventStats, error) {
+func (m *mockEventRepo) GetStats(_ context.Context, _ *shared.ID) (*outbox.EventStats, error) {
 	return m.getStatsResult, m.getStatsErr
 }
 
-func (m *mockEventRepo) ListByIntegration(_ context.Context, _ string, _, _ int) ([]*notification.Event, int64, error) {
+func (m *mockEventRepo) ListByIntegration(_ context.Context, _ string, _, _ int) ([]*outbox.Event, int64, error) {
 	return m.listByIntResult, m.listByIntTotal, m.listByIntErr
 }
 
@@ -278,15 +278,15 @@ func (m *mockNotifExtRepoForService) ListIntegrationsWithNotification(_ context.
 // Test Helpers
 // =============================================================================
 
-// newTestNotificationService creates a NotificationService with mock dependencies.
-func newTestNotificationService(
+// newTestOutboxService creates a OutboxService with mock dependencies.
+func newTestOutboxService(
 	outboxRepo *mockOutboxRepo,
 	eventRepo *mockEventRepo,
 	notifRepo *mockNotifExtRepoForService,
 	decryptFn func(string) (string, error),
-) *app.NotificationService {
+) *app.OutboxService {
 	log := logger.NewNop()
-	return app.NewNotificationService(
+	return app.NewOutboxService(
 		outboxRepo,
 		eventRepo,
 		notifRepo,
@@ -310,20 +310,20 @@ func failDecrypt() func(string) (string, error) {
 }
 
 // makeTestOutboxEntry creates a test outbox entry using Reconstitute.
-func makeTestOutboxEntry(tenantID shared.ID, eventType, severity string) *notification.Outbox {
+func makeTestOutboxEntry(tenantID shared.ID, eventType, severity string) *outbox.Outbox {
 	now := time.Now()
-	return notification.Reconstitute(
-		notification.NewID(),
+	return outbox.Reconstitute(
+		outbox.NewID(),
 		tenantID,
 		eventType,
 		"finding",
 		nil,
 		"Test Notification",
 		"Test notification body",
-		notification.Severity(severity),
+		outbox.Severity(severity),
 		"https://example.com/finding/1",
 		map[string]any{"key": "value"},
-		notification.OutboxStatusPending,
+		outbox.OutboxStatusPending,
 		0,
 		3,
 		"",
@@ -392,7 +392,7 @@ func TestEnqueueNotification_Success(t *testing.T) {
 	outboxRepo := &mockOutboxRepo{}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	tenantID := shared.NewID()
 	params := app.EnqueueNotificationParams{
@@ -423,10 +423,10 @@ func TestEnqueueNotification_Success(t *testing.T) {
 	if outboxRepo.lastCreated.EventType() != "new_finding" {
 		t.Errorf("expected event type new_finding, got %s", outboxRepo.lastCreated.EventType())
 	}
-	if outboxRepo.lastCreated.Severity() != notification.SeverityCritical {
+	if outboxRepo.lastCreated.Severity() != outbox.SeverityCritical {
 		t.Errorf("expected severity critical, got %s", outboxRepo.lastCreated.Severity())
 	}
-	if outboxRepo.lastCreated.Status() != notification.OutboxStatusPending {
+	if outboxRepo.lastCreated.Status() != outbox.OutboxStatusPending {
 		t.Errorf("expected status pending, got %s", outboxRepo.lastCreated.Status())
 	}
 }
@@ -435,7 +435,7 @@ func TestEnqueueNotification_WithAggregateID(t *testing.T) {
 	outboxRepo := &mockOutboxRepo{}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	aggID := uuid.New()
 	params := app.EnqueueNotificationParams{
@@ -467,7 +467,7 @@ func TestEnqueueNotification_RepoError(t *testing.T) {
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	params := app.EnqueueNotificationParams{
 		TenantID:  shared.NewID(),
@@ -489,7 +489,7 @@ func TestEnqueueNotification_DefaultSeverity(t *testing.T) {
 	outboxRepo := &mockOutboxRepo{}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	params := app.EnqueueNotificationParams{
 		TenantID:  shared.NewID(),
@@ -504,7 +504,7 @@ func TestEnqueueNotification_DefaultSeverity(t *testing.T) {
 	}
 
 	// NewOutbox defaults empty severity to "info"
-	if outboxRepo.lastCreated.Severity() != notification.SeverityInfo {
+	if outboxRepo.lastCreated.Severity() != outbox.SeverityInfo {
 		t.Errorf("expected default severity info, got %s", outboxRepo.lastCreated.Severity())
 	}
 }
@@ -517,7 +517,7 @@ func TestEnqueueNotificationInTx_Success(t *testing.T) {
 	outboxRepo := &mockOutboxRepo{}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	params := app.EnqueueNotificationParams{
 		TenantID:      shared.NewID(),
@@ -544,7 +544,7 @@ func TestEnqueueNotificationInTx_RepoError(t *testing.T) {
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	params := app.EnqueueNotificationParams{
 		TenantID:  shared.NewID(),
@@ -565,11 +565,11 @@ func TestEnqueueNotificationInTx_RepoError(t *testing.T) {
 
 func TestProcessOutboxBatch_EmptyBatch(t *testing.T) {
 	outboxRepo := &mockOutboxRepo{
-		fetchPendingResult: []*notification.Outbox{},
+		fetchPendingResult: []*outbox.Outbox{},
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err != nil {
@@ -589,7 +589,7 @@ func TestProcessOutboxBatch_FetchError(t *testing.T) {
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	_, _, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err == nil {
@@ -602,14 +602,14 @@ func TestProcessOutboxBatch_NoMatchingIntegrations(t *testing.T) {
 	entry := makeTestOutboxEntry(tenantID, "new_finding", "critical")
 
 	outboxRepo := &mockOutboxRepo{
-		fetchPendingResult: []*notification.Outbox{entry},
+		fetchPendingResult: []*outbox.Outbox{entry},
 	}
 	eventRepo := &mockEventRepo{}
 	// No integrations at all
 	notifRepo := &mockNotifExtRepoForService{
 		listIntWithNotifResult: []*integration.IntegrationWithNotification{},
 	}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err != nil {
@@ -629,7 +629,7 @@ func TestProcessOutboxBatch_SkipsDisconnectedIntegrations(t *testing.T) {
 	entry := makeTestOutboxEntry(tenantID, "new_finding", "critical")
 
 	outboxRepo := &mockOutboxRepo{
-		fetchPendingResult: []*notification.Outbox{entry},
+		fetchPendingResult: []*outbox.Outbox{entry},
 	}
 	eventRepo := &mockEventRepo{}
 
@@ -638,7 +638,7 @@ func TestProcessOutboxBatch_SkipsDisconnectedIntegrations(t *testing.T) {
 	notifRepo := &mockNotifExtRepoForService{
 		listIntWithNotifResult: []*integration.IntegrationWithNotification{disconnected},
 	}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err != nil {
@@ -658,13 +658,13 @@ func TestProcessOutboxBatch_IntegrationListError(t *testing.T) {
 	entry := makeTestOutboxEntry(tenantID, "new_finding", "critical")
 
 	outboxRepo := &mockOutboxRepo{
-		fetchPendingResult: []*notification.Outbox{entry},
+		fetchPendingResult: []*outbox.Outbox{entry},
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{
 		listIntWithNotifErr: errors.New("integration repo error"),
 	}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err != nil {
@@ -747,7 +747,7 @@ func TestShouldSendToIntegration_SeverityFiltering(t *testing.T) {
 			// Process batch: if shouldSend=false, no integrations match -> completed (skipped)
 			// if shouldSend=true, integration matches -> attempt send
 			outboxRepo := &mockOutboxRepo{
-				fetchPendingResult: []*notification.Outbox{entry},
+				fetchPendingResult: []*outbox.Outbox{entry},
 			}
 			eventRepo := &mockEventRepo{}
 			notifRepo := &mockNotifExtRepoForService{
@@ -755,7 +755,7 @@ func TestShouldSendToIntegration_SeverityFiltering(t *testing.T) {
 			}
 
 			// Use fail decrypt so sends fail but we can observe matching behavior
-			svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, failDecrypt())
+			svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, failDecrypt())
 
 			processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 			if err != nil {
@@ -850,13 +850,13 @@ func TestShouldSendToIntegration_EventTypeFiltering(t *testing.T) {
 			connected := makeConnectedIntegration(tenantID, integration.ProviderSlack, ext)
 
 			outboxRepo := &mockOutboxRepo{
-				fetchPendingResult: []*notification.Outbox{entry},
+				fetchPendingResult: []*outbox.Outbox{entry},
 			}
 			eventRepo := &mockEventRepo{}
 			notifRepo := &mockNotifExtRepoForService{
 				listIntWithNotifResult: []*integration.IntegrationWithNotification{connected},
 			}
-			svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, failDecrypt())
+			svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, failDecrypt())
 
 			processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 			if err != nil {
@@ -886,13 +886,13 @@ func TestProcessOutboxEntry_NilExtension_SendsAll(t *testing.T) {
 	connected := makeConnectedIntegration(tenantID, integration.ProviderSlack, nil)
 
 	outboxRepo := &mockOutboxRepo{
-		fetchPendingResult: []*notification.Outbox{entry},
+		fetchPendingResult: []*outbox.Outbox{entry},
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{
 		listIntWithNotifResult: []*integration.IntegrationWithNotification{connected},
 	}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, failDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, failDecrypt())
 
 	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err != nil {
@@ -916,7 +916,7 @@ func TestProcessOutboxEntry_DecryptionFailure(t *testing.T) {
 	connected := makeConnectedIntegration(tenantID, integration.ProviderSlack, nil)
 
 	outboxRepo := &mockOutboxRepo{
-		fetchPendingResult: []*notification.Outbox{entry},
+		fetchPendingResult: []*outbox.Outbox{entry},
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{
@@ -924,7 +924,7 @@ func TestProcessOutboxEntry_DecryptionFailure(t *testing.T) {
 	}
 
 	// Decryption fails
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, failDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, failDecrypt())
 
 	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err != nil {
@@ -945,7 +945,7 @@ func TestProcessOutboxEntry_DecryptionSuccess(t *testing.T) {
 	connected := makeConnectedIntegration(tenantID, integration.ProviderWebhook, nil)
 
 	outboxRepo := &mockOutboxRepo{
-		fetchPendingResult: []*notification.Outbox{entry},
+		fetchPendingResult: []*outbox.Outbox{entry},
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{
@@ -956,7 +956,7 @@ func TestProcessOutboxEntry_DecryptionSuccess(t *testing.T) {
 	decryptFn := func(s string) (string, error) {
 		return "https://hooks.example.com/test", nil
 	}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, decryptFn)
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, decryptFn)
 
 	// This will attempt an actual HTTP send to the webhook URL which will fail,
 	// but the decrypt itself should succeed
@@ -982,7 +982,7 @@ func TestCleanupOldEntries_Success(t *testing.T) {
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	deletedCompleted, deletedFailed, err := svc.CleanupOldEntries(context.Background(), 7, 30)
 	if err != nil {
@@ -1002,7 +1002,7 @@ func TestCleanupOldEntries_CompletedError(t *testing.T) {
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	_, _, err := svc.CleanupOldEntries(context.Background(), 7, 30)
 	if err == nil {
@@ -1017,7 +1017,7 @@ func TestCleanupOldEntries_FailedError(t *testing.T) {
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	deletedCompleted, _, err := svc.CleanupOldEntries(context.Background(), 7, 30)
 	if err == nil {
@@ -1039,7 +1039,7 @@ func TestUnlockStaleEntries_Success(t *testing.T) {
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	unlocked, err := svc.UnlockStaleEntries(context.Background(), 10)
 	if err != nil {
@@ -1056,7 +1056,7 @@ func TestUnlockStaleEntries_Error(t *testing.T) {
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	_, err := svc.UnlockStaleEntries(context.Background(), 10)
 	if err == nil {
@@ -1074,7 +1074,7 @@ func TestCleanupOldEvents_Success(t *testing.T) {
 		deleteOldEventsResult: 15,
 	}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	deleted, err := svc.CleanupOldEvents(context.Background(), 90)
 	if err != nil {
@@ -1091,7 +1091,7 @@ func TestCleanupOldEvents_Error(t *testing.T) {
 		deleteOldEventsErr: errors.New("db error"),
 	}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	_, err := svc.CleanupOldEvents(context.Background(), 90)
 	if err == nil {
@@ -1105,7 +1105,7 @@ func TestCleanupOldEvents_Error(t *testing.T) {
 
 func TestOutbox_NewOutbox_DefaultValues(t *testing.T) {
 	tenantID := shared.NewID()
-	outbox := notification.NewOutbox(notification.OutboxParams{
+	ob := outbox.NewOutbox(outbox.OutboxParams{
 		TenantID:      tenantID,
 		EventType:     "new_finding",
 		AggregateType: "finding",
@@ -1113,19 +1113,19 @@ func TestOutbox_NewOutbox_DefaultValues(t *testing.T) {
 		Body:          "Test body",
 	})
 
-	if outbox.Status() != notification.OutboxStatusPending {
-		t.Errorf("expected pending status, got %s", outbox.Status())
+	if ob.Status() != outbox.OutboxStatusPending {
+		t.Errorf("expected pending status, got %s", ob.Status())
 	}
-	if outbox.RetryCount() != 0 {
-		t.Errorf("expected 0 retry count, got %d", outbox.RetryCount())
+	if ob.RetryCount() != 0 {
+		t.Errorf("expected 0 retry count, got %d", ob.RetryCount())
 	}
-	if outbox.MaxRetries() != 3 {
-		t.Errorf("expected 3 max retries (default), got %d", outbox.MaxRetries())
+	if ob.MaxRetries() != 3 {
+		t.Errorf("expected 3 max retries (default), got %d", ob.MaxRetries())
 	}
-	if outbox.Severity() != notification.SeverityInfo {
-		t.Errorf("expected info severity (default), got %s", outbox.Severity())
+	if ob.Severity() != outbox.SeverityInfo {
+		t.Errorf("expected info severity (default), got %s", ob.Severity())
 	}
-	if outbox.Metadata() == nil {
+	if ob.Metadata() == nil {
 		t.Error("expected non-nil metadata map")
 	}
 }
@@ -1134,7 +1134,7 @@ func TestOutbox_MarkCompleted(t *testing.T) {
 	entry := makeTestOutboxEntry(shared.NewID(), "new_finding", "critical")
 	entry.MarkCompleted()
 
-	if entry.Status() != notification.OutboxStatusCompleted {
+	if entry.Status() != outbox.OutboxStatusCompleted {
 		t.Errorf("expected completed status, got %s", entry.Status())
 	}
 	if entry.ProcessedAt() == nil {
@@ -1148,7 +1148,7 @@ func TestOutbox_MarkFailed_WithRetry(t *testing.T) {
 	// First failure (retryCount 0 -> 1, maxRetries 3)
 	entry.MarkFailed("connection timeout")
 
-	if entry.Status() != notification.OutboxStatusPending {
+	if entry.Status() != outbox.OutboxStatusPending {
 		t.Errorf("expected pending status (retryable), got %s", entry.Status())
 	}
 	if entry.RetryCount() != 1 {
@@ -1170,7 +1170,7 @@ func TestOutbox_MarkFailed_MaxRetriesExceeded(t *testing.T) {
 	entry.MarkFailed("error 2") // retry 2
 	entry.MarkFailed("error 3") // retry 3 -> exceeds max
 
-	if entry.Status() != notification.OutboxStatusFailed {
+	if entry.Status() != outbox.OutboxStatusFailed {
 		t.Errorf("expected failed status after max retries, got %s", entry.Status())
 	}
 	if entry.RetryCount() != 3 {
@@ -1188,7 +1188,7 @@ func TestOutbox_MarkDead(t *testing.T) {
 	entry := makeTestOutboxEntry(shared.NewID(), "new_finding", "critical")
 	entry.MarkDead("manual intervention required")
 
-	if entry.Status() != notification.OutboxStatusDead {
+	if entry.Status() != outbox.OutboxStatusDead {
 		t.Errorf("expected dead status, got %s", entry.Status())
 	}
 	if entry.LastError() != "manual intervention required" {
@@ -1206,7 +1206,7 @@ func TestOutbox_Lock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error locking pending entry, got %v", err)
 	}
-	if entry.Status() != notification.OutboxStatusProcessing {
+	if entry.Status() != outbox.OutboxStatusProcessing {
 		t.Errorf("expected processing status, got %s", entry.Status())
 	}
 	if entry.LockedBy() != "worker-1" {
@@ -1233,7 +1233,7 @@ func TestOutbox_Unlock(t *testing.T) {
 
 	entry.Unlock()
 
-	if entry.Status() != notification.OutboxStatusPending {
+	if entry.Status() != outbox.OutboxStatusPending {
 		t.Errorf("expected pending status after unlock, got %s", entry.Status())
 	}
 	if entry.LockedAt() != nil {
@@ -1252,7 +1252,7 @@ func TestOutbox_ResetForRetry(t *testing.T) {
 
 	entry.ResetForRetry()
 
-	if entry.Status() != notification.OutboxStatusPending {
+	if entry.Status() != outbox.OutboxStatusPending {
 		t.Errorf("expected pending status after reset, got %s", entry.Status())
 	}
 	if entry.RetryCount() != 0 {
@@ -1287,14 +1287,14 @@ func TestOutbox_SetGetMetadata(t *testing.T) {
 
 func TestOutboxStatus_IsTerminal(t *testing.T) {
 	tests := []struct {
-		status     notification.OutboxStatus
+		status     outbox.OutboxStatus
 		isTerminal bool
 	}{
-		{notification.OutboxStatusPending, false},
-		{notification.OutboxStatusProcessing, false},
-		{notification.OutboxStatusCompleted, true},
-		{notification.OutboxStatusFailed, false},
-		{notification.OutboxStatusDead, true},
+		{outbox.OutboxStatusPending, false},
+		{outbox.OutboxStatusProcessing, false},
+		{outbox.OutboxStatusCompleted, true},
+		{outbox.OutboxStatusFailed, false},
+		{outbox.OutboxStatusDead, true},
 	}
 
 	for _, tt := range tests {
@@ -1314,20 +1314,20 @@ func TestNewEventFromOutbox_Completed(t *testing.T) {
 	entry := makeTestOutboxEntry(shared.NewID(), "new_finding", "critical")
 	entry.MarkCompleted()
 
-	results := notification.ProcessingResults{
+	results := outbox.ProcessingResults{
 		IntegrationsTotal:     2,
 		IntegrationsMatched:   2,
 		IntegrationsSucceeded: 1,
 		IntegrationsFailed:    1,
-		SendResults: []notification.SendResult{
+		SendResults: []outbox.SendResult{
 			{IntegrationID: "int-1", Status: "success"},
 			{IntegrationID: "int-2", Status: "failed", Error: "timeout"},
 		},
 	}
 
-	event := notification.NewEventFromOutbox(entry, results)
+	event := outbox.NewEventFromOutbox(entry, results)
 
-	if event.Status() != notification.EventStatusCompleted {
+	if event.Status() != outbox.EventStatusCompleted {
 		t.Errorf("expected completed status, got %s", event.Status())
 	}
 	if event.IntegrationsTotal() != 2 {
@@ -1344,19 +1344,19 @@ func TestNewEventFromOutbox_Completed(t *testing.T) {
 func TestNewEventFromOutbox_AllFailed(t *testing.T) {
 	entry := makeTestOutboxEntry(shared.NewID(), "new_finding", "critical")
 
-	results := notification.ProcessingResults{
+	results := outbox.ProcessingResults{
 		IntegrationsTotal:     1,
 		IntegrationsMatched:   1,
 		IntegrationsSucceeded: 0,
 		IntegrationsFailed:    1,
-		SendResults: []notification.SendResult{
+		SendResults: []outbox.SendResult{
 			{IntegrationID: "int-1", Status: "failed", Error: "timeout"},
 		},
 	}
 
-	event := notification.NewEventFromOutbox(entry, results)
+	event := outbox.NewEventFromOutbox(entry, results)
 
-	if event.Status() != notification.EventStatusFailed {
+	if event.Status() != outbox.EventStatusFailed {
 		t.Errorf("expected failed status, got %s", event.Status())
 	}
 }
@@ -1365,17 +1365,17 @@ func TestNewEventFromOutbox_Skipped(t *testing.T) {
 	entry := makeTestOutboxEntry(shared.NewID(), "new_finding", "critical")
 	entry.MarkCompleted()
 
-	results := notification.ProcessingResults{
+	results := outbox.ProcessingResults{
 		IntegrationsTotal:     0,
 		IntegrationsMatched:   0,
 		IntegrationsSucceeded: 0,
 		IntegrationsFailed:    0,
-		SendResults:           []notification.SendResult{},
+		SendResults:           []outbox.SendResult{},
 	}
 
-	event := notification.NewEventFromOutbox(entry, results)
+	event := outbox.NewEventFromOutbox(entry, results)
 
-	if event.Status() != notification.EventStatusSkipped {
+	if event.Status() != outbox.EventStatusSkipped {
 		t.Errorf("expected skipped status, got %s", event.Status())
 	}
 }
@@ -1385,8 +1385,8 @@ func TestNewEventFromOutbox_PreservesFields(t *testing.T) {
 	entry := makeTestOutboxEntry(tenantID, "scan_completed", "info")
 	entry.MarkCompleted()
 
-	results := notification.ProcessingResults{}
-	event := notification.NewEventFromOutbox(entry, results)
+	results := outbox.ProcessingResults{}
+	event := outbox.NewEventFromOutbox(entry, results)
 
 	if event.TenantID() != tenantID {
 		t.Errorf("expected tenant ID %s, got %s", tenantID, event.TenantID())
@@ -1400,7 +1400,7 @@ func TestNewEventFromOutbox_PreservesFields(t *testing.T) {
 	if event.Title() != "Test Notification" {
 		t.Errorf("expected title 'Test Notification', got %s", event.Title())
 	}
-	if event.Severity() != notification.SeverityInfo {
+	if event.Severity() != outbox.SeverityInfo {
 		t.Errorf("expected severity info, got %s", event.Severity())
 	}
 }
@@ -1556,8 +1556,8 @@ func TestNotificationExtension_BooleanCompat(t *testing.T) {
 // Notification Scheduler Tests
 // =============================================================================
 
-func TestNotificationSchedulerConfig_Defaults(t *testing.T) {
-	config := app.DefaultNotificationSchedulerConfig()
+func TestOutboxSchedulerConfig_Defaults(t *testing.T) {
+	config := app.DefaultOutboxSchedulerConfig()
 
 	if config.ProcessInterval != 5*time.Second {
 		t.Errorf("expected 5s process interval, got %v", config.ProcessInterval)
@@ -1585,7 +1585,7 @@ func TestNotificationSchedulerConfig_Defaults(t *testing.T) {
 	}
 }
 
-func TestNotificationScheduler_StartStop(t *testing.T) {
+func TestOutboxScheduler_StartStop(t *testing.T) {
 	outboxRepo := &mockOutboxRepo{
 		deleteOldCompletedResult: 0,
 		deleteOldFailedResult:    0,
@@ -1594,9 +1594,9 @@ func TestNotificationScheduler_StartStop(t *testing.T) {
 		deleteOldEventsResult: 0,
 	}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	config := app.NotificationSchedulerConfig{
+	config := app.OutboxSchedulerConfig{
 		ProcessInterval:        100 * time.Millisecond,
 		CleanupInterval:        100 * time.Millisecond,
 		UnlockInterval:         100 * time.Millisecond,
@@ -1608,7 +1608,7 @@ func TestNotificationScheduler_StartStop(t *testing.T) {
 	}
 
 	log := logger.NewNop()
-	scheduler := app.NewNotificationScheduler(svc, config, log)
+	scheduler := app.NewOutboxScheduler(svc, config, log)
 
 	// Start scheduler
 	scheduler.Start()
@@ -1625,7 +1625,7 @@ func TestNotificationScheduler_StartStop(t *testing.T) {
 	}
 }
 
-func TestNotificationScheduler_DoubleStart(t *testing.T) {
+func TestOutboxScheduler_DoubleStart(t *testing.T) {
 	outboxRepo := &mockOutboxRepo{
 		deleteOldCompletedResult: 0,
 		deleteOldFailedResult:    0,
@@ -1634,9 +1634,9 @@ func TestNotificationScheduler_DoubleStart(t *testing.T) {
 		deleteOldEventsResult: 0,
 	}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	config := app.NotificationSchedulerConfig{
+	config := app.OutboxSchedulerConfig{
 		ProcessInterval:        1 * time.Hour, // Long interval so it doesn't trigger
 		CleanupInterval:        1 * time.Hour,
 		UnlockInterval:         1 * time.Hour,
@@ -1648,7 +1648,7 @@ func TestNotificationScheduler_DoubleStart(t *testing.T) {
 	}
 
 	log := logger.NewNop()
-	scheduler := app.NewNotificationScheduler(svc, config, log)
+	scheduler := app.NewOutboxScheduler(svc, config, log)
 
 	// Double start should not panic
 	scheduler.Start()
@@ -1657,7 +1657,7 @@ func TestNotificationScheduler_DoubleStart(t *testing.T) {
 	scheduler.Stop()
 }
 
-func TestNotificationScheduler_DoubleStop(t *testing.T) {
+func TestOutboxScheduler_DoubleStop(t *testing.T) {
 	outboxRepo := &mockOutboxRepo{
 		deleteOldCompletedResult: 0,
 		deleteOldFailedResult:    0,
@@ -1666,9 +1666,9 @@ func TestNotificationScheduler_DoubleStop(t *testing.T) {
 		deleteOldEventsResult: 0,
 	}
 	notifRepo := &mockNotifExtRepoForService{}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	config := app.NotificationSchedulerConfig{
+	config := app.OutboxSchedulerConfig{
 		ProcessInterval:        1 * time.Hour,
 		CleanupInterval:        1 * time.Hour,
 		UnlockInterval:         1 * time.Hour,
@@ -1680,7 +1680,7 @@ func TestNotificationScheduler_DoubleStop(t *testing.T) {
 	}
 
 	log := logger.NewNop()
-	scheduler := app.NewNotificationScheduler(svc, config, log)
+	scheduler := app.NewOutboxScheduler(svc, config, log)
 
 	scheduler.Start()
 	scheduler.Stop()
@@ -1699,14 +1699,14 @@ func TestProcessOutboxBatch_MultipleEntries(t *testing.T) {
 	entry2 := makeTestOutboxEntry(tenantID, "scan_completed", "info")
 
 	outboxRepo := &mockOutboxRepo{
-		fetchPendingResult: []*notification.Outbox{entry1, entry2},
+		fetchPendingResult: []*outbox.Outbox{entry1, entry2},
 	}
 	eventRepo := &mockEventRepo{}
 	// No integrations -> both get skipped (completed)
 	notifRepo := &mockNotifExtRepoForService{
 		listIntWithNotifResult: []*integration.IntegrationWithNotification{},
 	}
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, successDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err != nil {
@@ -1725,7 +1725,7 @@ func TestProcessOutboxBatch_MultipleEntries(t *testing.T) {
 // =============================================================================
 
 func TestEventStats(t *testing.T) {
-	stats := &notification.EventStats{
+	stats := &outbox.EventStats{
 		Completed: 100,
 		Failed:    5,
 		Skipped:   10,
@@ -1751,7 +1751,7 @@ func TestEventStats(t *testing.T) {
 // =============================================================================
 
 func TestOutboxStats(t *testing.T) {
-	stats := &notification.OutboxStats{
+	stats := &outbox.OutboxStats{
 		Pending:    10,
 		Processing: 2,
 		Completed:  50,
@@ -1785,21 +1785,21 @@ func TestOutboxStats(t *testing.T) {
 // =============================================================================
 
 func TestOutbox_Reconstitute_PreservesAllFields(t *testing.T) {
-	id := notification.NewID()
+	id := outbox.NewID()
 	tenantID := shared.NewID()
 	aggID := uuid.New()
 	now := time.Now()
 	lockedAt := now.Add(-1 * time.Minute)
 	processedAt := now
 
-	entry := notification.Reconstitute(
+	entry := outbox.Reconstitute(
 		id, tenantID,
 		"new_finding", "finding", &aggID,
 		"Title", "Body",
-		notification.SeverityHigh,
+		outbox.SeverityHigh,
 		"https://example.com",
 		map[string]any{"k": "v"},
-		notification.OutboxStatusProcessing,
+		outbox.OutboxStatusProcessing,
 		2, 5, "last error",
 		now, &lockedAt, "worker-99",
 		now, now, &processedAt,
@@ -1826,13 +1826,13 @@ func TestOutbox_Reconstitute_PreservesAllFields(t *testing.T) {
 	if entry.Body() != "Body" {
 		t.Errorf("expected Body, got %s", entry.Body())
 	}
-	if entry.Severity() != notification.SeverityHigh {
+	if entry.Severity() != outbox.SeverityHigh {
 		t.Errorf("expected high, got %s", entry.Severity())
 	}
 	if entry.URL() != "https://example.com" {
 		t.Errorf("expected URL, got %s", entry.URL())
 	}
-	if entry.Status() != notification.OutboxStatusProcessing {
+	if entry.Status() != outbox.OutboxStatusProcessing {
 		t.Errorf("expected processing, got %s", entry.Status())
 	}
 	if entry.RetryCount() != 2 {
@@ -1856,12 +1856,12 @@ func TestOutbox_Reconstitute_PreservesAllFields(t *testing.T) {
 }
 
 func TestOutbox_Reconstitute_NilMetadata(t *testing.T) {
-	entry := notification.Reconstitute(
-		notification.NewID(), shared.NewID(),
+	entry := outbox.Reconstitute(
+		outbox.NewID(), shared.NewID(),
 		"test", "test", nil,
-		"", "", notification.SeverityInfo, "",
+		"", "", outbox.SeverityInfo, "",
 		nil, // nil metadata
-		notification.OutboxStatusPending,
+		outbox.OutboxStatusPending,
 		0, 3, "",
 		time.Now(), nil, "",
 		time.Now(), time.Now(), nil,
@@ -1877,21 +1877,21 @@ func TestOutbox_Reconstitute_NilMetadata(t *testing.T) {
 // =============================================================================
 
 func TestEvent_ReconstituteEvent_PreservesAllFields(t *testing.T) {
-	id := notification.NewID()
+	id := outbox.NewID()
 	tenantID := shared.NewID()
 	aggID := uuid.New()
 	now := time.Now()
 
-	event := notification.ReconstituteEvent(
+	event := outbox.ReconstituteEvent(
 		id, tenantID,
 		"new_finding", "finding", &aggID,
 		"Title", "Body",
-		notification.SeverityCritical,
+		outbox.SeverityCritical,
 		"https://example.com",
 		map[string]any{"key": "val"},
-		notification.EventStatusCompleted,
+		outbox.EventStatusCompleted,
 		3, 2, 1, 1,
-		[]notification.SendResult{{IntegrationID: "int-1", Status: "success"}},
+		[]outbox.SendResult{{IntegrationID: "int-1", Status: "success"}},
 		"partial failure",
 		1,
 		now, now,
@@ -1903,7 +1903,7 @@ func TestEvent_ReconstituteEvent_PreservesAllFields(t *testing.T) {
 	if event.TenantID() != tenantID {
 		t.Errorf("expected tenant ID %s, got %s", tenantID, event.TenantID())
 	}
-	if event.Status() != notification.EventStatusCompleted {
+	if event.Status() != outbox.EventStatusCompleted {
 		t.Errorf("expected completed, got %s", event.Status())
 	}
 	if event.IntegrationsTotal() != 3 {
@@ -1930,12 +1930,12 @@ func TestEvent_ReconstituteEvent_PreservesAllFields(t *testing.T) {
 }
 
 func TestEvent_ReconstituteEvent_NilDefaults(t *testing.T) {
-	event := notification.ReconstituteEvent(
-		notification.NewID(), shared.NewID(),
+	event := outbox.ReconstituteEvent(
+		outbox.NewID(), shared.NewID(),
 		"test", "test", nil,
-		"", "", notification.SeverityInfo, "",
+		"", "", outbox.SeverityInfo, "",
 		nil, // nil metadata
-		notification.EventStatusSkipped,
+		outbox.EventStatusSkipped,
 		0, 0, 0, 0,
 		nil, // nil send results
 		"", 0,
@@ -1956,12 +1956,12 @@ func TestEvent_ReconstituteEvent_NilDefaults(t *testing.T) {
 
 func TestEventStatus_String(t *testing.T) {
 	tests := []struct {
-		status notification.EventStatus
+		status outbox.EventStatus
 		str    string
 	}{
-		{notification.EventStatusCompleted, "completed"},
-		{notification.EventStatusFailed, "failed"},
-		{notification.EventStatusSkipped, "skipped"},
+		{outbox.EventStatusCompleted, "completed"},
+		{outbox.EventStatusFailed, "failed"},
+		{outbox.EventStatusSkipped, "skipped"},
 	}
 
 	for _, tt := range tests {
@@ -1979,15 +1979,15 @@ func TestEventStatus_String(t *testing.T) {
 
 func TestSeverity_String(t *testing.T) {
 	tests := []struct {
-		severity notification.Severity
+		severity outbox.Severity
 		str      string
 	}{
-		{notification.SeverityCritical, "critical"},
-		{notification.SeverityHigh, "high"},
-		{notification.SeverityMedium, "medium"},
-		{notification.SeverityLow, "low"},
-		{notification.SeverityInfo, "info"},
-		{notification.SeverityNone, "none"},
+		{outbox.SeverityCritical, "critical"},
+		{outbox.SeverityHigh, "high"},
+		{outbox.SeverityMedium, "medium"},
+		{outbox.SeverityLow, "low"},
+		{outbox.SeverityInfo, "info"},
+		{outbox.SeverityNone, "none"},
 	}
 
 	for _, tt := range tests {
@@ -2034,27 +2034,27 @@ func TestOutbox_MarkFailed_ExponentialBackoff(t *testing.T) {
 // =============================================================================
 
 func TestNewOutbox_CustomMaxRetries(t *testing.T) {
-	outbox := notification.NewOutbox(notification.OutboxParams{
+	ob := outbox.NewOutbox(outbox.OutboxParams{
 		TenantID:   shared.NewID(),
 		EventType:  "test",
 		MaxRetries: 10,
 	})
 
-	if outbox.MaxRetries() != 10 {
-		t.Errorf("expected 10 max retries, got %d", outbox.MaxRetries())
+	if ob.MaxRetries() != 10 {
+		t.Errorf("expected 10 max retries, got %d", ob.MaxRetries())
 	}
 }
 
 func TestNewOutbox_CustomScheduledAt(t *testing.T) {
 	future := time.Now().Add(1 * time.Hour)
-	outbox := notification.NewOutbox(notification.OutboxParams{
+	ob := outbox.NewOutbox(outbox.OutboxParams{
 		TenantID:    shared.NewID(),
 		EventType:   "test",
 		ScheduledAt: &future,
 	})
 
-	if outbox.ScheduledAt().Before(future.Add(-1 * time.Second)) {
-		t.Errorf("expected scheduledAt at future time, got %v", outbox.ScheduledAt())
+	if ob.ScheduledAt().Before(future.Add(-1 * time.Second)) {
+		t.Errorf("expected scheduledAt at future time, got %v", ob.ScheduledAt())
 	}
 }
 
@@ -2071,7 +2071,7 @@ func TestProcessOutboxBatch_MixedIntegrationResults(t *testing.T) {
 	intg2 := makeConnectedIntegration(tenantID, integration.ProviderWebhook, nil)
 
 	outboxRepo := &mockOutboxRepo{
-		fetchPendingResult: []*notification.Outbox{entry},
+		fetchPendingResult: []*outbox.Outbox{entry},
 	}
 	eventRepo := &mockEventRepo{}
 	notifRepo := &mockNotifExtRepoForService{
@@ -2081,7 +2081,7 @@ func TestProcessOutboxBatch_MixedIntegrationResults(t *testing.T) {
 	// Both integrations will fail because decrypt fails, but the entry still
 	// gets archived to events and deleted from outbox successfully, so
 	// processOutboxEntry returns nil (counts as processed, not failed).
-	svc := newTestNotificationService(outboxRepo, eventRepo, notifRepo, failDecrypt())
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, failDecrypt())
 
 	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err != nil {
@@ -2105,12 +2105,12 @@ func TestProcessOutboxBatch_MixedIntegrationResults(t *testing.T) {
 // =============================================================================
 
 func TestNotificationID_NewAndParse(t *testing.T) {
-	id := notification.NewID()
+	id := outbox.NewID()
 	if id.String() == "" {
 		t.Error("expected non-empty ID string")
 	}
 
-	parsed, err := notification.ParseID(id.String())
+	parsed, err := outbox.ParseID(id.String())
 	if err != nil {
 		t.Fatalf("expected no error parsing valid ID, got %v", err)
 	}
@@ -2120,7 +2120,7 @@ func TestNotificationID_NewAndParse(t *testing.T) {
 }
 
 func TestNotificationID_ParseInvalid(t *testing.T) {
-	_, err := notification.ParseID("not-a-valid-uuid")
+	_, err := outbox.ParseID("not-a-valid-uuid")
 	if err == nil {
 		t.Error("expected error parsing invalid ID")
 	}
@@ -2204,8 +2204,8 @@ func TestNotificationExtension_BooleanSetters(t *testing.T) {
 
 func TestOutboxFilter_Fields(t *testing.T) {
 	tenantID := shared.NewID()
-	status := notification.OutboxStatusPending
-	filter := notification.OutboxFilter{
+	status := outbox.OutboxStatusPending
+	filter := outbox.OutboxFilter{
 		TenantID:      &tenantID,
 		Status:        &status,
 		EventType:     "new_finding",
@@ -2217,7 +2217,7 @@ func TestOutboxFilter_Fields(t *testing.T) {
 	if *filter.TenantID != tenantID {
 		t.Errorf("expected tenant ID %s", tenantID)
 	}
-	if *filter.Status != notification.OutboxStatusPending {
+	if *filter.Status != outbox.OutboxStatusPending {
 		t.Errorf("expected pending status")
 	}
 	if filter.EventType != "new_finding" {
@@ -2233,9 +2233,9 @@ func TestOutboxFilter_Fields(t *testing.T) {
 
 func TestEventFilter_Fields(t *testing.T) {
 	tenantID := shared.NewID()
-	status := notification.EventStatusCompleted
+	status := outbox.EventStatusCompleted
 	aggID := uuid.New()
-	filter := notification.EventFilter{
+	filter := outbox.EventFilter{
 		TenantID:      &tenantID,
 		Status:        &status,
 		EventType:     "scan_completed",
@@ -2248,7 +2248,7 @@ func TestEventFilter_Fields(t *testing.T) {
 	if *filter.TenantID != tenantID {
 		t.Errorf("expected tenant ID %s", tenantID)
 	}
-	if *filter.Status != notification.EventStatusCompleted {
+	if *filter.Status != outbox.EventStatusCompleted {
 		t.Errorf("expected completed status")
 	}
 	if filter.EventType != "scan_completed" {

@@ -564,7 +564,7 @@ func (h *HTTPRequestHandler) isBlockedIP(ip net.IP) bool {
 
 // DefaultNotificationHandler handles notification actions using the notification service.
 type DefaultNotificationHandler struct {
-	notificationService *NotificationService
+	notificationService *OutboxService
 	integrationService  *IntegrationService
 	logger              *logger.Logger
 }

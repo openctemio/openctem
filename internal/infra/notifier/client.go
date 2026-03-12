@@ -1,5 +1,5 @@
-// Package notification provides clients for sending notifications to various providers.
-package notification
+// Package notifier provides clients for sending notifications to various providers.
+package notifier
 
 import (
 	"context"

@@ -18,7 +18,7 @@ type Workers struct {
 	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
 	ScanScheduler             *app.ScanScheduler
 	CommandExpirationChecker  *app.CommandExpirationChecker
-	NotificationScheduler     *app.NotificationScheduler
+	OutboxScheduler     *app.OutboxScheduler
 	FindingLifecycleScheduler *app.FindingLifecycleScheduler
 	ControllerManager         *controller.Manager
 }
@@ -90,9 +90,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	)
 
 	// Initialize notification scheduler
-	w.NotificationScheduler = app.NewNotificationScheduler(
-		svc.Notification,
-		app.DefaultNotificationSchedulerConfig(),
+	w.OutboxScheduler = app.NewOutboxScheduler(
+		svc.Outbox,
+		app.DefaultOutboxSchedulerConfig(),
 		log,
 	)
 
@@ -177,7 +177,7 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 	w.CommandExpirationChecker.Start()
 
 	// Start notification scheduler
-	w.NotificationScheduler.Start()
+	w.OutboxScheduler.Start()
 
 	// Start finding lifecycle scheduler
 	w.FindingLifecycleScheduler.Start()
@@ -222,7 +222,7 @@ func (w *Workers) Stop(log *logger.Logger) {
 
 	// Stop notification scheduler
 	log.Info("stopping notification scheduler...")
-	w.NotificationScheduler.Stop()
+	w.OutboxScheduler.Stop()
 	log.Info("notification scheduler stopped")
 
 	// Stop finding lifecycle scheduler

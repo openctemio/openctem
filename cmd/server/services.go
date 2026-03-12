@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
@@ -12,9 +13,11 @@ import (
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/internal/infra/llm"
+	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
 	"github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/jwt"
@@ -32,6 +35,15 @@ func (b *wsHubBroadcaster) BroadcastActivity(channel string, data any, tenantID 
 
 func (b *wsHubBroadcaster) BroadcastTriage(channel string, data any, tenantID string) {
 	b.hub.BroadcastEvent(channel, data, tenantID)
+}
+
+// groupResolver adapts GroupRepository to app.UserGroupResolver interface.
+type groupResolver struct {
+	repo *postgres.GroupRepository
+}
+
+func (g *groupResolver) GetUserGroupIDs(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error) {
+	return g.repo.ListGroupIDsByUser(ctx, tenantID, userID)
 }
 
 // Services holds all service instances.
@@ -73,6 +85,7 @@ type Services struct {
 
 	// Integrations & Notifications
 	Integration  *app.IntegrationService
+	Outbox       *app.OutboxService
 	Notification *app.NotificationService
 
 	// Agents & Commands
@@ -255,19 +268,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
-	s.Integration.SetNotificationEventRepository(repos.NotificationEvent)
+	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
 
-	s.Notification = app.NewNotificationService(
-		repos.NotificationOutbox,
-		repos.NotificationEvent,
+	s.Outbox = app.NewOutboxService(
+		repos.Outbox,
+		repos.OutboxEvent,
 		repos.IntegrationNotificationExt,
 		s.Encryptor.DecryptString,
 		log.Logger,
 	)
 
 	// Wire notification to vulnerability and exposure services
-	s.Vulnerability.SetNotificationService(deps.DB, s.Notification)
-	s.Exposure.SetNotificationService(deps.DB, s.Notification)
+	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
+	s.Exposure.SetOutboxService(deps.DB, s.Outbox)
+
+	// Note: NotificationService is wired later after WebSocketHub is initialized
 
 	// Initialize agent & command services
 	s.Agent = app.NewAgentService(repos.Agent, s.Audit, log)
@@ -382,7 +397,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.WorkflowNodeRun,
 		log,
 		app.WithExecutorDB(deps.DB),
-		app.WithExecutorNotificationService(s.Notification),
+		app.WithExecutorOutboxService(s.Outbox),
 		app.WithExecutorIntegrationService(s.Integration),
 		app.WithExecutorAuditService(s.Audit),
 	)
@@ -487,6 +502,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.AITriage.SetTriageBroadcaster(broadcaster)
 		log.Info("AI triage broadcaster wired to WebSocket hub")
 	}
+
+	// Initialize user notification service (needs WebSocketHub)
+	s.Notification = app.NewNotificationService(
+		repos.Notification,
+		&groupResolver{repo: repos.Group},
+		s.WebSocketHub,
+		log,
+	)
+	log.Info("user notification service initialized")
 
 	return s, nil
 }

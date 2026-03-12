@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/openctemio/api/pkg/domain/notification"
+	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
@@ -47,9 +47,9 @@ type ListNotificationEventsFilter struct {
 	PerPage       int      `json:"per_page"`
 }
 
-// NotificationService defines the interface for notification operations.
+// OutboxService defines the interface for notification operations.
 // This is a base interface - Enterprise can extend with advanced features.
-type NotificationService interface {
+type OutboxService interface {
 	// Send sends a notification to a specific integration.
 	Send(ctx context.Context, input SendNotificationInput) (*NotificationResult, error)
 
@@ -60,10 +60,10 @@ type NotificationService interface {
 	Test(ctx context.Context, tenantID, integrationID shared.ID) (*NotificationResult, error)
 
 	// ListEvents returns notification events.
-	ListEvents(ctx context.Context, filter ListNotificationEventsFilter) (*ListResult[*notification.Event], error)
+	ListEvents(ctx context.Context, filter ListNotificationEventsFilter) (*ListResult[*outbox.Event], error)
 
 	// GetEvent retrieves a specific notification event.
-	GetEvent(ctx context.Context, tenantID, eventID shared.ID) (*notification.Event, error)
+	GetEvent(ctx context.Context, tenantID, eventID shared.ID) (*outbox.Event, error)
 
 	// RetryEvent retries a failed notification event.
 	RetryEvent(ctx context.Context, tenantID, eventID shared.ID) error

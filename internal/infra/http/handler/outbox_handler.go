@@ -9,21 +9,21 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/notification"
+	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )
 
-// NotificationOutboxHandler handles notification outbox operations for tenants.
-type NotificationOutboxHandler struct {
-	repo   notification.OutboxRepository
+// OutboxHandler handles notification outbox operations for tenants.
+type OutboxHandler struct {
+	repo   outbox.OutboxRepository
 	logger *logger.Logger
 }
 
-// NewNotificationOutboxHandler creates a new NotificationOutboxHandler.
-func NewNotificationOutboxHandler(repo notification.OutboxRepository, log *logger.Logger) *NotificationOutboxHandler {
-	return &NotificationOutboxHandler{
+// NewOutboxHandler creates a new OutboxHandler.
+func NewOutboxHandler(repo outbox.OutboxRepository, log *logger.Logger) *OutboxHandler {
+	return &OutboxHandler{
 		repo:   repo,
 		logger: log.With("handler", "notification_outbox"),
 	}
@@ -51,7 +51,7 @@ type OutboxEntryResponse struct {
 	Metadata      map[string]any `json:"metadata,omitempty"`
 }
 
-func outboxToResponse(o *notification.Outbox) OutboxEntryResponse {
+func outboxToResponse(o *outbox.Outbox) OutboxEntryResponse {
 	resp := OutboxEntryResponse{
 		ID:            o.ID().String(),
 		EventType:     o.EventType(),
@@ -111,7 +111,7 @@ type OutboxStatsResponse struct {
 // @Failure 500 {object} apierror.Response
 // @Router /notification-outbox [get]
 // @Security BearerAuth
-func (h *NotificationOutboxHandler) List(w http.ResponseWriter, r *http.Request) {
+func (h *OutboxHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get tenant ID from context (set by auth middleware)
@@ -142,11 +142,11 @@ func (h *NotificationOutboxHandler) List(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Build filter - always scoped to current tenant
-	filter := notification.OutboxFilter{
+	filter := outbox.OutboxFilter{
 		TenantID: &tenantID,
 	}
 	if status := r.URL.Query().Get("status"); status != "" {
-		s := notification.OutboxStatus(status)
+		s := outbox.OutboxStatus(status)
 		filter.Status = &s
 	}
 
@@ -185,7 +185,7 @@ func (h *NotificationOutboxHandler) List(w http.ResponseWriter, r *http.Request)
 // @Failure 500 {object} apierror.Response
 // @Router /notification-outbox/stats [get]
 // @Security BearerAuth
-func (h *NotificationOutboxHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+func (h *OutboxHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get tenant ID from context
@@ -231,7 +231,7 @@ func (h *NotificationOutboxHandler) GetStats(w http.ResponseWriter, r *http.Requ
 // @Failure 500 {object} apierror.Response
 // @Router /notification-outbox/{id} [get]
 // @Security BearerAuth
-func (h *NotificationOutboxHandler) Get(w http.ResponseWriter, r *http.Request) {
+func (h *OutboxHandler) Get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get tenant ID from context
@@ -248,7 +248,7 @@ func (h *NotificationOutboxHandler) Get(w http.ResponseWriter, r *http.Request) 
 	}
 
 	id := chi.URLParam(r, "id")
-	outboxID, err := notification.ParseID(id)
+	outboxID, err := outbox.ParseID(id)
 	if err != nil {
 		apierror.BadRequest("invalid outbox id").WriteJSON(w)
 		return
@@ -256,7 +256,7 @@ func (h *NotificationOutboxHandler) Get(w http.ResponseWriter, r *http.Request) 
 
 	entry, err := h.repo.GetByID(ctx, outboxID)
 	if err != nil {
-		if errors.Is(err, notification.ErrOutboxNotFound) {
+		if errors.Is(err, outbox.ErrOutboxNotFound) {
 			apierror.NotFound("outbox entry").WriteJSON(w)
 			return
 		}
@@ -288,7 +288,7 @@ func (h *NotificationOutboxHandler) Get(w http.ResponseWriter, r *http.Request) 
 // @Failure 500 {object} apierror.Response
 // @Router /notification-outbox/{id}/retry [post]
 // @Security BearerAuth
-func (h *NotificationOutboxHandler) Retry(w http.ResponseWriter, r *http.Request) {
+func (h *OutboxHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get tenant ID from context
@@ -305,7 +305,7 @@ func (h *NotificationOutboxHandler) Retry(w http.ResponseWriter, r *http.Request
 	}
 
 	id := chi.URLParam(r, "id")
-	outboxID, err := notification.ParseID(id)
+	outboxID, err := outbox.ParseID(id)
 	if err != nil {
 		apierror.BadRequest("invalid outbox id").WriteJSON(w)
 		return
@@ -313,7 +313,7 @@ func (h *NotificationOutboxHandler) Retry(w http.ResponseWriter, r *http.Request
 
 	entry, err := h.repo.GetByID(ctx, outboxID)
 	if err != nil {
-		if errors.Is(err, notification.ErrOutboxNotFound) {
+		if errors.Is(err, outbox.ErrOutboxNotFound) {
 			apierror.NotFound("outbox entry").WriteJSON(w)
 			return
 		}
@@ -329,7 +329,7 @@ func (h *NotificationOutboxHandler) Retry(w http.ResponseWriter, r *http.Request
 	}
 
 	// Only allow retry for failed or dead entries
-	if entry.Status() != notification.OutboxStatusFailed && entry.Status() != notification.OutboxStatusDead {
+	if entry.Status() != outbox.OutboxStatusFailed && entry.Status() != outbox.OutboxStatusDead {
 		apierror.BadRequest("can only retry failed or dead entries").WriteJSON(w)
 		return
 	}
@@ -360,7 +360,7 @@ func (h *NotificationOutboxHandler) Retry(w http.ResponseWriter, r *http.Request
 // @Failure 500 {object} apierror.Response
 // @Router /notification-outbox/{id} [delete]
 // @Security BearerAuth
-func (h *NotificationOutboxHandler) Delete(w http.ResponseWriter, r *http.Request) {
+func (h *OutboxHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get tenant ID from context
@@ -377,7 +377,7 @@ func (h *NotificationOutboxHandler) Delete(w http.ResponseWriter, r *http.Reques
 	}
 
 	id := chi.URLParam(r, "id")
-	outboxID, err := notification.ParseID(id)
+	outboxID, err := outbox.ParseID(id)
 	if err != nil {
 		apierror.BadRequest("invalid outbox id").WriteJSON(w)
 		return
@@ -386,7 +386,7 @@ func (h *NotificationOutboxHandler) Delete(w http.ResponseWriter, r *http.Reques
 	// First get the entry to verify tenant ownership
 	entry, err := h.repo.GetByID(ctx, outboxID)
 	if err != nil {
-		if errors.Is(err, notification.ErrOutboxNotFound) {
+		if errors.Is(err, outbox.ErrOutboxNotFound) {
 			apierror.NotFound("outbox entry").WriteJSON(w)
 			return
 		}
@@ -402,7 +402,7 @@ func (h *NotificationOutboxHandler) Delete(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.repo.Delete(ctx, outboxID); err != nil {
-		if errors.Is(err, notification.ErrOutboxNotFound) {
+		if errors.Is(err, outbox.ErrOutboxNotFound) {
 			apierror.NotFound("outbox entry").WriteJSON(w)
 			return
 		}

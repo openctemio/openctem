@@ -137,8 +137,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScopeRule:      handler.NewScopeRuleHandler(svc.ScopeRule, v, log),
 		AssetOwner:     handler.NewAssetOwnerHandler(repos.AccessControl, log),
 
-		// Admin
-		NotificationOutbox: handler.NewNotificationOutboxHandler(repos.NotificationOutbox, log),
+		// Notification
+		Outbox:       handler.NewOutboxHandler(repos.Outbox, log),
+		Notification: handler.NewNotificationHandler(svc.Notification, log),
 
 		// Bootstrap (initial load endpoint)
 		Bootstrap: handler.NewBootstrapHandler(

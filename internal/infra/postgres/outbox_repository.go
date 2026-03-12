@@ -10,19 +10,19 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"github.com/openctemio/api/pkg/domain/notification"
+	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
 )
 
-// NotificationOutboxRepository implements the notification.OutboxRepository interface.
-type NotificationOutboxRepository struct {
+// OutboxRepository implements the outbox.OutboxRepository interface.
+type OutboxRepository struct {
 	db *DB
 }
 
-// NewNotificationOutboxRepository creates a new NotificationOutboxRepository.
-func NewNotificationOutboxRepository(db *DB) *NotificationOutboxRepository {
-	return &NotificationOutboxRepository{db: db}
+// NewOutboxRepository creates a new OutboxRepository.
+func NewOutboxRepository(db *DB) *OutboxRepository {
+	return &OutboxRepository{db: db}
 }
 
 // =============================================================================
@@ -30,13 +30,13 @@ func NewNotificationOutboxRepository(db *DB) *NotificationOutboxRepository {
 // =============================================================================
 
 // Create inserts a new outbox entry.
-func (r *NotificationOutboxRepository) Create(ctx context.Context, outbox *notification.Outbox) error {
-	return r.createWithExecutor(ctx, r.db, outbox)
+func (r *OutboxRepository) Create(ctx context.Context, entry *outbox.Outbox) error {
+	return r.createWithExecutor(ctx, r.db, entry)
 }
 
 // CreateInTx inserts a new outbox entry within an existing transaction.
-func (r *NotificationOutboxRepository) CreateInTx(ctx context.Context, tx *sql.Tx, outbox *notification.Outbox) error {
-	return r.createWithExecutor(ctx, tx, outbox)
+func (r *OutboxRepository) CreateInTx(ctx context.Context, tx *sql.Tx, entry *outbox.Outbox) error {
+	return r.createWithExecutor(ctx, tx, entry)
 }
 
 // executor interface for both *DB and *sql.Tx
@@ -46,15 +46,15 @@ type executor interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-func (r *NotificationOutboxRepository) createWithExecutor(ctx context.Context, exec executor, outbox *notification.Outbox) error {
-	metadata, err := json.Marshal(outbox.Metadata())
+func (r *OutboxRepository) createWithExecutor(ctx context.Context, exec executor, entry *outbox.Outbox) error {
+	metadata, err := json.Marshal(entry.Metadata())
 	if err != nil {
 		metadata = []byte("{}")
 	}
 
 	var aggregateID *string
-	if outbox.AggregateID() != nil {
-		s := outbox.AggregateID().String()
+	if entry.AggregateID() != nil {
+		s := entry.AggregateID().String()
 		aggregateID = &s
 	}
 
@@ -75,26 +75,26 @@ func (r *NotificationOutboxRepository) createWithExecutor(ctx context.Context, e
 	`
 
 	_, err = exec.ExecContext(ctx, query,
-		outbox.ID().String(),
-		outbox.TenantID().String(),
-		outbox.EventType(),
-		outbox.AggregateType(),
+		entry.ID().String(),
+		entry.TenantID().String(),
+		entry.EventType(),
+		entry.AggregateType(),
 		aggregateID,
-		outbox.Title(),
-		nullableString(outbox.Body()),
-		outbox.Severity().String(),
-		nullableString(outbox.URL()),
+		entry.Title(),
+		nullableString(entry.Body()),
+		entry.Severity().String(),
+		nullableString(entry.URL()),
 		metadata,
-		outbox.Status().String(),
-		outbox.RetryCount(),
-		outbox.MaxRetries(),
-		nullableString(outbox.LastError()),
-		outbox.ScheduledAt(),
-		outbox.LockedAt(),
-		nullableString(outbox.LockedBy()),
-		outbox.CreatedAt(),
-		outbox.UpdatedAt(),
-		outbox.ProcessedAt(),
+		entry.Status().String(),
+		entry.RetryCount(),
+		entry.MaxRetries(),
+		nullableString(entry.LastError()),
+		entry.ScheduledAt(),
+		entry.LockedAt(),
+		nullableString(entry.LockedBy()),
+		entry.CreatedAt(),
+		entry.UpdatedAt(),
+		entry.ProcessedAt(),
 	)
 	if err != nil {
 		return fmt.Errorf("insert notification outbox: %w", err)
@@ -104,7 +104,7 @@ func (r *NotificationOutboxRepository) createWithExecutor(ctx context.Context, e
 }
 
 // GetByID retrieves an outbox entry by ID.
-func (r *NotificationOutboxRepository) GetByID(ctx context.Context, id notification.ID) (*notification.Outbox, error) {
+func (r *OutboxRepository) GetByID(ctx context.Context, id outbox.ID) (*outbox.Outbox, error) {
 	query := `
 		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
 			   title, body, severity, url, metadata,
@@ -120,8 +120,8 @@ func (r *NotificationOutboxRepository) GetByID(ctx context.Context, id notificat
 }
 
 // Update updates an outbox entry.
-func (r *NotificationOutboxRepository) Update(ctx context.Context, outbox *notification.Outbox) error {
-	metadata, err := json.Marshal(outbox.Metadata())
+func (r *OutboxRepository) Update(ctx context.Context, entry *outbox.Outbox) error {
+	metadata, err := json.Marshal(entry.Metadata())
 	if err != nil {
 		metadata = []byte("{}")
 	}
@@ -135,15 +135,15 @@ func (r *NotificationOutboxRepository) Update(ctx context.Context, outbox *notif
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
-		outbox.ID().String(),
-		outbox.Status().String(),
-		outbox.RetryCount(),
-		nullableString(outbox.LastError()),
-		outbox.ScheduledAt(),
-		outbox.LockedAt(),
-		nullableString(outbox.LockedBy()),
-		outbox.UpdatedAt(),
-		outbox.ProcessedAt(),
+		entry.ID().String(),
+		entry.Status().String(),
+		entry.RetryCount(),
+		nullableString(entry.LastError()),
+		entry.ScheduledAt(),
+		entry.LockedAt(),
+		nullableString(entry.LockedBy()),
+		entry.UpdatedAt(),
+		entry.ProcessedAt(),
 		metadata,
 	)
 	if err != nil {
@@ -155,14 +155,14 @@ func (r *NotificationOutboxRepository) Update(ctx context.Context, outbox *notif
 		return fmt.Errorf("get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return notification.ErrOutboxNotFound
+		return outbox.ErrOutboxNotFound
 	}
 
 	return nil
 }
 
 // Delete removes an outbox entry.
-func (r *NotificationOutboxRepository) Delete(ctx context.Context, id notification.ID) error {
+func (r *OutboxRepository) Delete(ctx context.Context, id outbox.ID) error {
 	query := `DELETE FROM notification_outbox WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id.String())
@@ -175,7 +175,7 @@ func (r *NotificationOutboxRepository) Delete(ctx context.Context, id notificati
 		return fmt.Errorf("get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return notification.ErrOutboxNotFound
+		return outbox.ErrOutboxNotFound
 	}
 
 	return nil
@@ -187,7 +187,7 @@ func (r *NotificationOutboxRepository) Delete(ctx context.Context, id notificati
 
 // FetchPendingBatch retrieves and locks a batch of pending outbox entries.
 // Uses FOR UPDATE SKIP LOCKED for concurrent worker safety.
-func (r *NotificationOutboxRepository) FetchPendingBatch(ctx context.Context, workerID string, batchSize int) ([]*notification.Outbox, error) {
+func (r *OutboxRepository) FetchPendingBatch(ctx context.Context, workerID string, batchSize int) ([]*outbox.Outbox, error) {
 	if batchSize <= 0 {
 		batchSize = 50
 	}
@@ -264,7 +264,7 @@ func (r *NotificationOutboxRepository) FetchPendingBatch(ctx context.Context, wo
 }
 
 // UnlockStale releases locks on entries that have been processing for too long.
-func (r *NotificationOutboxRepository) UnlockStale(ctx context.Context, olderThanMinutes int) (int64, error) {
+func (r *OutboxRepository) UnlockStale(ctx context.Context, olderThanMinutes int) (int64, error) {
 	if olderThanMinutes <= 0 {
 		olderThanMinutes = 5 // Default 5 minutes
 	}
@@ -289,7 +289,7 @@ func (r *NotificationOutboxRepository) UnlockStale(ctx context.Context, olderTha
 // =============================================================================
 
 // DeleteOldCompleted removes completed entries older than the specified days.
-func (r *NotificationOutboxRepository) DeleteOldCompleted(ctx context.Context, olderThanDays int) (int64, error) {
+func (r *OutboxRepository) DeleteOldCompleted(ctx context.Context, olderThanDays int) (int64, error) {
 	if olderThanDays <= 0 {
 		olderThanDays = 7 // Default 7 days
 	}
@@ -309,7 +309,7 @@ func (r *NotificationOutboxRepository) DeleteOldCompleted(ctx context.Context, o
 }
 
 // DeleteOldFailed removes failed/dead entries older than the specified days.
-func (r *NotificationOutboxRepository) DeleteOldFailed(ctx context.Context, olderThanDays int) (int64, error) {
+func (r *OutboxRepository) DeleteOldFailed(ctx context.Context, olderThanDays int) (int64, error) {
 	if olderThanDays <= 0 {
 		olderThanDays = 30 // Default 30 days for failed entries (longer for debugging)
 	}
@@ -333,7 +333,7 @@ func (r *NotificationOutboxRepository) DeleteOldFailed(ctx context.Context, olde
 // =============================================================================
 
 // List retrieves outbox entries with filtering and pagination.
-func (r *NotificationOutboxRepository) List(ctx context.Context, filter notification.OutboxFilter, page pagination.Pagination) (pagination.Result[*notification.Outbox], error) {
+func (r *OutboxRepository) List(ctx context.Context, filter outbox.OutboxFilter, page pagination.Pagination) (pagination.Result[*outbox.Outbox], error) {
 	// Build WHERE clause
 	where := "WHERE 1=1"
 	args := make([]any, 0)
@@ -364,7 +364,7 @@ func (r *NotificationOutboxRepository) List(ctx context.Context, filter notifica
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM notification_outbox %s", where)
 	var total int64
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return pagination.Result[*notification.Outbox]{}, fmt.Errorf("count notification outbox: %w", err)
+		return pagination.Result[*outbox.Outbox]{}, fmt.Errorf("count notification outbox: %w", err)
 	}
 
 	// Get paginated results
@@ -384,20 +384,20 @@ func (r *NotificationOutboxRepository) List(ctx context.Context, filter notifica
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return pagination.Result[*notification.Outbox]{}, fmt.Errorf("query notification outbox: %w", err)
+		return pagination.Result[*outbox.Outbox]{}, fmt.Errorf("query notification outbox: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	data, err := r.scanOutboxRows(rows)
 	if err != nil {
-		return pagination.Result[*notification.Outbox]{}, err
+		return pagination.Result[*outbox.Outbox]{}, err
 	}
 
 	return pagination.NewResult(data, total, page), nil
 }
 
 // GetStats returns aggregated statistics for outbox entries.
-func (r *NotificationOutboxRepository) GetStats(ctx context.Context, tenantID *shared.ID) (*notification.OutboxStats, error) {
+func (r *OutboxRepository) GetStats(ctx context.Context, tenantID *shared.ID) (*outbox.OutboxStats, error) {
 	var query string
 	var args []any
 
@@ -427,7 +427,7 @@ func (r *NotificationOutboxRepository) GetStats(ctx context.Context, tenantID *s
 		`
 	}
 
-	var stats notification.OutboxStats
+	var stats outbox.OutboxStats
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&stats.Pending,
 		&stats.Processing,
@@ -444,7 +444,7 @@ func (r *NotificationOutboxRepository) GetStats(ctx context.Context, tenantID *s
 }
 
 // ListByTenant retrieves outbox entries for a tenant with pagination.
-func (r *NotificationOutboxRepository) ListByTenant(ctx context.Context, tenantID shared.ID, filter notification.OutboxFilter) ([]*notification.Outbox, int64, error) {
+func (r *OutboxRepository) ListByTenant(ctx context.Context, tenantID shared.ID, filter outbox.OutboxFilter) ([]*outbox.Outbox, int64, error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
@@ -510,7 +510,7 @@ func (r *NotificationOutboxRepository) ListByTenant(ctx context.Context, tenantI
 }
 
 // CountByStatus returns counts grouped by status for a tenant.
-func (r *NotificationOutboxRepository) CountByStatus(ctx context.Context, tenantID shared.ID) (map[notification.OutboxStatus]int64, error) {
+func (r *OutboxRepository) CountByStatus(ctx context.Context, tenantID shared.ID) (map[outbox.OutboxStatus]int64, error) {
 	query := `
 		SELECT status, COUNT(*) as count
 		FROM notification_outbox
@@ -524,14 +524,14 @@ func (r *NotificationOutboxRepository) CountByStatus(ctx context.Context, tenant
 	}
 	defer func() { _ = rows.Close() }()
 
-	result := make(map[notification.OutboxStatus]int64)
+	result := make(map[outbox.OutboxStatus]int64)
 	for rows.Next() {
 		var status string
 		var count int64
 		if err := rows.Scan(&status, &count); err != nil {
 			return nil, fmt.Errorf("scan status count: %w", err)
 		}
-		result[notification.OutboxStatus(status)] = count
+		result[outbox.OutboxStatus(status)] = count
 	}
 
 	if err := rows.Err(); err != nil {
@@ -542,7 +542,7 @@ func (r *NotificationOutboxRepository) CountByStatus(ctx context.Context, tenant
 }
 
 // GetByAggregateID retrieves outbox entries for a specific aggregate.
-func (r *NotificationOutboxRepository) GetByAggregateID(ctx context.Context, aggregateType string, aggregateID string) ([]*notification.Outbox, error) {
+func (r *OutboxRepository) GetByAggregateID(ctx context.Context, aggregateType string, aggregateID string) ([]*outbox.Outbox, error) {
 	query := `
 		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
 			   title, body, severity, url, metadata,
@@ -567,7 +567,7 @@ func (r *NotificationOutboxRepository) GetByAggregateID(ctx context.Context, agg
 // Scan Helpers
 // =============================================================================
 
-func (r *NotificationOutboxRepository) scanOutbox(row *sql.Row) (*notification.Outbox, error) {
+func (r *OutboxRepository) scanOutbox(row *sql.Row) (*outbox.Outbox, error) {
 	var (
 		id            string
 		tenantID      string
@@ -600,7 +600,7 @@ func (r *NotificationOutboxRepository) scanOutbox(row *sql.Row) (*notification.O
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, notification.ErrOutboxNotFound
+			return nil, outbox.ErrOutboxNotFound
 		}
 		return nil, fmt.Errorf("scan notification outbox: %w", err)
 	}
@@ -614,8 +614,8 @@ func (r *NotificationOutboxRepository) scanOutbox(row *sql.Row) (*notification.O
 	)
 }
 
-func (r *NotificationOutboxRepository) scanOutboxRows(rows *sql.Rows) ([]*notification.Outbox, error) {
-	result := make([]*notification.Outbox, 0)
+func (r *OutboxRepository) scanOutboxRows(rows *sql.Rows) ([]*outbox.Outbox, error) {
+	result := make([]*outbox.Outbox, 0)
 
 	for rows.Next() {
 		var (
@@ -652,7 +652,7 @@ func (r *NotificationOutboxRepository) scanOutboxRows(rows *sql.Rows) ([]*notifi
 			return nil, fmt.Errorf("scan notification outbox row: %w", err)
 		}
 
-		outbox, err := r.mapToOutbox(
+		ob, err := r.mapToOutbox(
 			id, tenantID, eventType, aggregateType, aggregateID,
 			title, body, severity, url, metadata,
 			status, retryCount, maxRetries, lastError,
@@ -662,7 +662,7 @@ func (r *NotificationOutboxRepository) scanOutboxRows(rows *sql.Rows) ([]*notifi
 		if err != nil {
 			continue // Skip invalid rows
 		}
-		result = append(result, outbox)
+		result = append(result, ob)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -672,7 +672,7 @@ func (r *NotificationOutboxRepository) scanOutboxRows(rows *sql.Rows) ([]*notifi
 	return result, nil
 }
 
-func (r *NotificationOutboxRepository) mapToOutbox(
+func (r *OutboxRepository) mapToOutbox(
 	idStr, tenantIDStr, eventType, aggregateType string,
 	aggregateIDNull sql.NullString,
 	title string, body sql.NullString, severity string, url sql.NullString,
@@ -680,8 +680,8 @@ func (r *NotificationOutboxRepository) mapToOutbox(
 	status string, retryCount, maxRetries int, lastError sql.NullString,
 	scheduledAt time.Time, lockedAt sql.NullTime, lockedBy sql.NullString,
 	createdAt, updatedAt time.Time, processedAt sql.NullTime,
-) (*notification.Outbox, error) {
-	id, err := notification.ParseID(idStr)
+) (*outbox.Outbox, error) {
+	id, err := outbox.ParseID(idStr)
 	if err != nil {
 		return nil, fmt.Errorf("parse id: %w", err)
 	}
@@ -718,7 +718,7 @@ func (r *NotificationOutboxRepository) mapToOutbox(
 		processedAtPtr = &processedAt.Time
 	}
 
-	return notification.Reconstitute(
+	return outbox.Reconstitute(
 		id,
 		tenantID,
 		eventType,
@@ -726,10 +726,10 @@ func (r *NotificationOutboxRepository) mapToOutbox(
 		aggregateID,
 		title,
 		body.String,
-		notification.Severity(severity),
+		outbox.Severity(severity),
 		url.String,
 		metadata,
-		notification.OutboxStatus(status),
+		outbox.OutboxStatus(status),
 		retryCount,
 		maxRetries,
 		lastError.String,

@@ -9,18 +9,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/openctemio/api/pkg/domain/notification"
+	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// NotificationEventRepository implements the notification.EventRepository interface.
-type NotificationEventRepository struct {
+// OutboxEventRepository implements the outbox.EventRepository interface.
+type OutboxEventRepository struct {
 	db *DB
 }
 
-// NewNotificationEventRepository creates a new NotificationEventRepository.
-func NewNotificationEventRepository(db *DB) *NotificationEventRepository {
-	return &NotificationEventRepository{db: db}
+// NewOutboxEventRepository creates a new OutboxEventRepository.
+func NewOutboxEventRepository(db *DB) *OutboxEventRepository {
+	return &OutboxEventRepository{db: db}
 }
 
 // =============================================================================
@@ -28,7 +28,7 @@ func NewNotificationEventRepository(db *DB) *NotificationEventRepository {
 // =============================================================================
 
 // Create inserts a new event.
-func (r *NotificationEventRepository) Create(ctx context.Context, event *notification.Event) error {
+func (r *OutboxEventRepository) Create(ctx context.Context, event *outbox.Event) error {
 	metadata, err := json.Marshal(event.Metadata())
 	if err != nil {
 		metadata = []byte("{}")
@@ -93,7 +93,7 @@ func (r *NotificationEventRepository) Create(ctx context.Context, event *notific
 }
 
 // GetByID retrieves an event by ID.
-func (r *NotificationEventRepository) GetByID(ctx context.Context, id notification.ID) (*notification.Event, error) {
+func (r *OutboxEventRepository) GetByID(ctx context.Context, id outbox.ID) (*outbox.Event, error) {
 	query := `
 		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
 			   title, body, severity, url, metadata,
@@ -110,7 +110,7 @@ func (r *NotificationEventRepository) GetByID(ctx context.Context, id notificati
 }
 
 // Delete removes an event.
-func (r *NotificationEventRepository) Delete(ctx context.Context, id notification.ID) error {
+func (r *OutboxEventRepository) Delete(ctx context.Context, id outbox.ID) error {
 	query := `DELETE FROM notification_events WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id.String())
@@ -123,7 +123,7 @@ func (r *NotificationEventRepository) Delete(ctx context.Context, id notificatio
 		return fmt.Errorf("get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return notification.ErrEventNotFound
+		return outbox.ErrEventNotFound
 	}
 
 	return nil
@@ -134,7 +134,7 @@ func (r *NotificationEventRepository) Delete(ctx context.Context, id notificatio
 // =============================================================================
 
 // ListByTenant retrieves events for a tenant with pagination.
-func (r *NotificationEventRepository) ListByTenant(ctx context.Context, tenantID shared.ID, filter notification.EventFilter) ([]*notification.Event, int64, error) {
+func (r *OutboxEventRepository) ListByTenant(ctx context.Context, tenantID shared.ID, filter outbox.EventFilter) ([]*outbox.Event, int64, error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
@@ -201,7 +201,7 @@ func (r *NotificationEventRepository) ListByTenant(ctx context.Context, tenantID
 }
 
 // GetStats returns aggregated statistics for events.
-func (r *NotificationEventRepository) GetStats(ctx context.Context, tenantID *shared.ID) (*notification.EventStats, error) {
+func (r *OutboxEventRepository) GetStats(ctx context.Context, tenantID *shared.ID) (*outbox.EventStats, error) {
 	var query string
 	var args []any
 
@@ -227,7 +227,7 @@ func (r *NotificationEventRepository) GetStats(ctx context.Context, tenantID *sh
 		`
 	}
 
-	var stats notification.EventStats
+	var stats outbox.EventStats
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&stats.Completed,
 		&stats.Failed,
@@ -242,7 +242,7 @@ func (r *NotificationEventRepository) GetStats(ctx context.Context, tenantID *sh
 }
 
 // ListByIntegration retrieves events that were sent to a specific integration.
-func (r *NotificationEventRepository) ListByIntegration(ctx context.Context, integrationID string, limit, offset int) ([]*notification.Event, int64, error) {
+func (r *OutboxEventRepository) ListByIntegration(ctx context.Context, integrationID string, limit, offset int) ([]*outbox.Event, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -295,7 +295,7 @@ func (r *NotificationEventRepository) ListByIntegration(ctx context.Context, int
 // =============================================================================
 
 // DeleteOldEvents removes events older than the specified days.
-func (r *NotificationEventRepository) DeleteOldEvents(ctx context.Context, retentionDays int) (int64, error) {
+func (r *OutboxEventRepository) DeleteOldEvents(ctx context.Context, retentionDays int) (int64, error) {
 	// If retentionDays <= 0, don't delete (unlimited retention)
 	if retentionDays <= 0 {
 		return 0, nil
@@ -318,7 +318,7 @@ func (r *NotificationEventRepository) DeleteOldEvents(ctx context.Context, reten
 // Scan Helpers
 // =============================================================================
 
-func (r *NotificationEventRepository) scanEvent(row *sql.Row) (*notification.Event, error) {
+func (r *OutboxEventRepository) scanEvent(row *sql.Row) (*outbox.Event, error) {
 	var (
 		id                    string
 		tenantID              string
@@ -352,7 +352,7 @@ func (r *NotificationEventRepository) scanEvent(row *sql.Row) (*notification.Eve
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, notification.ErrEventNotFound
+			return nil, outbox.ErrEventNotFound
 		}
 		return nil, fmt.Errorf("scan notification event: %w", err)
 	}
@@ -367,8 +367,8 @@ func (r *NotificationEventRepository) scanEvent(row *sql.Row) (*notification.Eve
 	)
 }
 
-func (r *NotificationEventRepository) scanEventRows(rows *sql.Rows) ([]*notification.Event, error) {
-	result := make([]*notification.Event, 0)
+func (r *OutboxEventRepository) scanEventRows(rows *sql.Rows) ([]*outbox.Event, error) {
+	result := make([]*outbox.Event, 0)
 
 	for rows.Next() {
 		var (
@@ -427,7 +427,7 @@ func (r *NotificationEventRepository) scanEventRows(rows *sql.Rows) ([]*notifica
 	return result, nil
 }
 
-func (r *NotificationEventRepository) mapToEvent(
+func (r *OutboxEventRepository) mapToEvent(
 	idStr, tenantIDStr, eventType, aggregateType string,
 	aggregateIDNull sql.NullString,
 	title string, body sql.NullString, severity string, url sql.NullString,
@@ -436,8 +436,8 @@ func (r *NotificationEventRepository) mapToEvent(
 	integrationsTotal, integrationsMatched, integrationsSucceeded, integrationsFailed int,
 	sendResultsBytes []byte, lastError sql.NullString, retryCount int,
 	createdAt, processedAt time.Time,
-) (*notification.Event, error) {
-	id, err := notification.ParseID(idStr)
+) (*outbox.Event, error) {
+	id, err := outbox.ParseID(idStr)
 	if err != nil {
 		return nil, fmt.Errorf("parse id: %w", err)
 	}
@@ -464,16 +464,16 @@ func (r *NotificationEventRepository) mapToEvent(
 		metadata = make(map[string]any)
 	}
 
-	var sendResults []notification.SendResult
+	var sendResults []outbox.SendResult
 	if len(sendResultsBytes) > 0 {
 		if err := json.Unmarshal(sendResultsBytes, &sendResults); err != nil {
-			sendResults = make([]notification.SendResult, 0)
+			sendResults = make([]outbox.SendResult, 0)
 		}
 	} else {
-		sendResults = make([]notification.SendResult, 0)
+		sendResults = make([]outbox.SendResult, 0)
 	}
 
-	return notification.ReconstituteEvent(
+	return outbox.ReconstituteEvent(
 		id,
 		tenantID,
 		eventType,
@@ -481,10 +481,10 @@ func (r *NotificationEventRepository) mapToEvent(
 		aggregateID,
 		title,
 		body.String,
-		notification.Severity(severity),
+		outbox.Severity(severity),
 		url.String,
 		metadata,
-		notification.EventStatus(status),
+		outbox.EventStatus(status),
 		integrationsTotal,
 		integrationsMatched,
 		integrationsSucceeded,

@@ -1,5 +1,5 @@
-// Package notification provides domain entities for the notification system.
-package notification
+// Package outbox provides domain entities for the notification outbox system.
+package outbox
 
 import (
 	"fmt"

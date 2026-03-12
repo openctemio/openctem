@@ -50,8 +50,9 @@ type Repositories struct {
 	Integration                *postgres.IntegrationRepository
 	IntegrationSCMExt          *postgres.IntegrationSCMExtensionRepository
 	IntegrationNotificationExt *postgres.IntegrationNotificationExtensionRepository
-	NotificationOutbox         *postgres.NotificationOutboxRepository
-	NotificationEvent          *postgres.NotificationEventRepository
+	Outbox         *postgres.OutboxRepository
+	OutboxEvent    *postgres.OutboxEventRepository
+	Notification   *postgres.NotificationRepository
 
 	// Agents & Commands
 	Agent   *postgres.AgentRepository
@@ -164,8 +165,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Integration: postgres.NewIntegrationRepository(db),
 		// IntegrationSCMExt and IntegrationNotificationExt initialized after Integration
 
-		NotificationOutbox: postgres.NewNotificationOutboxRepository(db),
-		NotificationEvent:  postgres.NewNotificationEventRepository(db),
+		Outbox:       postgres.NewOutboxRepository(db),
+		OutboxEvent:  postgres.NewOutboxEventRepository(db),
+		Notification: postgres.NewNotificationRepository(db),
 
 		// Agents & Commands
 		Agent:   postgres.NewAgentRepository(db),

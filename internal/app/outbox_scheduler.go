@@ -9,8 +9,8 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// NotificationSchedulerConfig holds configuration for the notification scheduler.
-type NotificationSchedulerConfig struct {
+// OutboxSchedulerConfig holds configuration for the notification scheduler.
+type OutboxSchedulerConfig struct {
 	// ProcessInterval is how often to process outbox entries (default: 5 seconds).
 	ProcessInterval time.Duration
 	// CleanupInterval is how often to cleanup old entries (default: 24 hours).
@@ -32,9 +32,9 @@ type NotificationSchedulerConfig struct {
 	StaleMinutes int
 }
 
-// DefaultNotificationSchedulerConfig returns the default configuration.
-func DefaultNotificationSchedulerConfig() NotificationSchedulerConfig {
-	return NotificationSchedulerConfig{
+// DefaultOutboxSchedulerConfig returns the default configuration.
+func DefaultOutboxSchedulerConfig() OutboxSchedulerConfig {
+	return OutboxSchedulerConfig{
 		ProcessInterval:        5 * time.Second,
 		CleanupInterval:        24 * time.Hour,
 		UnlockInterval:         1 * time.Minute,
@@ -46,10 +46,10 @@ func DefaultNotificationSchedulerConfig() NotificationSchedulerConfig {
 	}
 }
 
-// NotificationScheduler runs periodic notification processing tasks.
-type NotificationScheduler struct {
-	service  *NotificationService
-	config   NotificationSchedulerConfig
+// OutboxScheduler runs periodic notification processing tasks.
+type OutboxScheduler struct {
+	service  *OutboxService
+	config   OutboxSchedulerConfig
 	log      *logger.Logger
 	workerID string
 
@@ -59,9 +59,9 @@ type NotificationScheduler struct {
 	running bool
 }
 
-// NewNotificationScheduler creates a new notification scheduler.
-func NewNotificationScheduler(service *NotificationService, config NotificationSchedulerConfig, log *logger.Logger) *NotificationScheduler {
-	return &NotificationScheduler{
+// NewOutboxScheduler creates a new notification scheduler.
+func NewOutboxScheduler(service *OutboxService, config OutboxSchedulerConfig, log *logger.Logger) *OutboxScheduler {
+	return &OutboxScheduler{
 		service:  service,
 		config:   config,
 		log:      log,
@@ -71,7 +71,7 @@ func NewNotificationScheduler(service *NotificationService, config NotificationS
 }
 
 // Start starts the notification scheduler.
-func (s *NotificationScheduler) Start() {
+func (s *OutboxScheduler) Start() {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
@@ -100,7 +100,7 @@ func (s *NotificationScheduler) Start() {
 }
 
 // Stop stops the notification scheduler gracefully.
-func (s *NotificationScheduler) Stop() {
+func (s *OutboxScheduler) Stop() {
 	s.mu.Lock()
 	if !s.running {
 		s.mu.Unlock()
@@ -116,7 +116,7 @@ func (s *NotificationScheduler) Stop() {
 }
 
 // processLoop continuously processes outbox entries.
-func (s *NotificationScheduler) processLoop() {
+func (s *OutboxScheduler) processLoop() {
 	defer s.wg.Done()
 
 	ticker := time.NewTicker(s.config.ProcessInterval)
@@ -133,7 +133,7 @@ func (s *NotificationScheduler) processLoop() {
 }
 
 // processBatch processes a batch of pending outbox entries.
-func (s *NotificationScheduler) processBatch() {
+func (s *OutboxScheduler) processBatch() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -156,7 +156,7 @@ func (s *NotificationScheduler) processBatch() {
 }
 
 // cleanupLoop periodically cleans up old entries.
-func (s *NotificationScheduler) cleanupLoop() {
+func (s *OutboxScheduler) cleanupLoop() {
 	defer s.wg.Done()
 
 	// Run cleanup immediately on start
@@ -176,7 +176,7 @@ func (s *NotificationScheduler) cleanupLoop() {
 }
 
 // cleanup removes old completed and failed outbox entries, and old archived events.
-func (s *NotificationScheduler) cleanup() {
+func (s *OutboxScheduler) cleanup() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -208,7 +208,7 @@ func (s *NotificationScheduler) cleanup() {
 }
 
 // unlockLoop periodically unlocks stale entries.
-func (s *NotificationScheduler) unlockLoop() {
+func (s *OutboxScheduler) unlockLoop() {
 	defer s.wg.Done()
 
 	ticker := time.NewTicker(s.config.UnlockInterval)
@@ -225,7 +225,7 @@ func (s *NotificationScheduler) unlockLoop() {
 }
 
 // unlockStale releases locks on entries that have been processing too long.
-func (s *NotificationScheduler) unlockStale() {
+func (s *OutboxScheduler) unlockStale() {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
