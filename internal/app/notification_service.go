@@ -236,6 +236,11 @@ func (s *NotificationService) pushWebSocket(params notification.NotificationPara
 
 	tenantID := params.TenantID.String()
 
+	// Always broadcast to the tenant channel so the notification bell updates.
+	tenantChannel := fmt.Sprintf("tenant:%s", tenantID)
+	s.wsHub.BroadcastEvent(tenantChannel, payload, tenantID)
+
+	// Additionally broadcast to audience-specific channels for targeted listeners.
 	switch params.Audience {
 	case notification.AudienceUser:
 		if params.AudienceID != nil {
@@ -247,9 +252,6 @@ func (s *NotificationService) pushWebSocket(params notification.NotificationPara
 			channel := fmt.Sprintf("group:%s", params.AudienceID.String())
 			s.wsHub.BroadcastEvent(channel, payload, tenantID)
 		}
-	case notification.AudienceAll:
-		channel := fmt.Sprintf("tenant:%s", tenantID)
-		s.wsHub.BroadcastEvent(channel, payload, tenantID)
 	}
 }
 
