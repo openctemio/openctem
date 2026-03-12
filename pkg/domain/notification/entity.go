@@ -221,6 +221,26 @@ func (p *Preferences) IsSeverityAllowed(severity string) bool {
 	return severityRank(severity) >= severityRank(p.minSeverity)
 }
 
+// IsValidSeverity checks if a string is a valid severity value.
+func IsValidSeverity(s string) bool {
+	switch s {
+	case SeverityCritical, SeverityHigh, SeverityMedium, SeverityLow, SeverityInfo:
+		return true
+	}
+	return false
+}
+
+// IsValidType checks if a string is a valid notification type.
+func IsValidType(t string) bool {
+	switch t {
+	case TypeFindingNew, TypeFindingAssigned, TypeFindingStatusChange,
+		TypeScanCompleted, TypeScanFailed, TypeAssetDiscovered,
+		TypeMemberJoined, TypeRoleChanged, TypeSLABreach, TypeSystemAlert:
+		return true
+	}
+	return false
+}
+
 func severityRank(s string) int {
 	switch s {
 	case SeverityCritical:

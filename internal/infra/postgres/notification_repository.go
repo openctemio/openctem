@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -65,17 +64,17 @@ func (r *NotificationRepository) Create(ctx context.Context, n *notification.Not
 }
 
 // List returns notifications visible to a user with audience filtering and read status.
+// Group membership is resolved via subquery to avoid an extra DB roundtrip.
 func (r *NotificationRepository) List(
 	ctx context.Context,
 	tenantID, userID shared.ID,
-	groupIDs []shared.ID,
 	filter notification.ListFilter,
 	page pagination.Pagination,
 ) (pagination.Result[*notification.Notification], error) {
 	var result pagination.Result[*notification.Notification]
 
 	// Build WHERE clause
-	where, args := r.buildWhereClause(tenantID, userID, groupIDs, filter)
+	where, args := r.buildWhereClause(tenantID, userID, filter)
 
 	// Count total
 	countQuery := `
@@ -140,12 +139,13 @@ func (r *NotificationRepository) List(
 }
 
 // UnreadCount returns the count of unread notifications for a user.
+// Group membership is resolved via subquery to avoid an extra DB roundtrip.
 func (r *NotificationRepository) UnreadCount(
 	ctx context.Context,
 	tenantID, userID shared.ID,
-	groupIDs []shared.ID,
 ) (int, error) {
-	where, args := r.buildAudienceClause(tenantID, userID, groupIDs)
+	audienceClause := r.buildAudienceClause()
+	args := []any{tenantID, userID}
 
 	query := `
 		SELECT COUNT(*)
@@ -156,7 +156,7 @@ func (r *NotificationRepository) UnreadCount(
 		  AND n.created_at > COALESCE(ns.last_read_all_at, '1970-01-01'::timestamptz)
 		  AND nr.notification_id IS NULL
 		  AND n.created_at > NOW() - INTERVAL '30 days'
-		  AND (` + where + `)`
+		  AND (` + audienceClause + `)`
 
 	var count int
 	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
@@ -165,16 +165,26 @@ func (r *NotificationRepository) UnreadCount(
 	return count, nil
 }
 
-// MarkAsRead marks a single notification as read.
-func (r *NotificationRepository) MarkAsRead(ctx context.Context, notificationID notification.ID, userID shared.ID) error {
+// MarkAsRead marks a single notification as read, verifying tenant ownership.
+func (r *NotificationRepository) MarkAsRead(ctx context.Context, tenantID shared.ID, notificationID notification.ID, userID shared.ID) error {
 	query := `
 		INSERT INTO notification_reads (notification_id, user_id)
-		VALUES ($1, $2)
+		SELECT $1, $2
+		FROM notifications
+		WHERE id = $1 AND tenant_id = $3
 		ON CONFLICT DO NOTHING`
 
-	_, err := r.db.ExecContext(ctx, query, notificationID, userID)
+	result, err := r.db.ExecContext(ctx, query, notificationID.String(), userID.String(), tenantID.String())
 	if err != nil {
-		return fmt.Errorf("failed to mark notification as read: %w", err)
+		return fmt.Errorf("mark notification as read: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return notification.ErrNotificationNotFound
 	}
 	return nil
 }
@@ -285,25 +295,22 @@ func (r *NotificationRepository) UpsertPreferences(
 // HELPERS
 // ============================================
 
-func (r *NotificationRepository) buildAudienceClause(tenantID, userID shared.ID, groupIDs []shared.ID) (string, []any) {
-	args := []any{tenantID, userID}
-	clauses := []string{"n.audience = 'all'"}
-	clauses = append(clauses, fmt.Sprintf("(n.audience = 'user' AND n.audience_id = $%d)", 2))
-
-	if len(groupIDs) > 0 {
-		placeholders := make([]string, len(groupIDs))
-		for i, gid := range groupIDs {
-			args = append(args, gid)
-			placeholders[i] = fmt.Sprintf("$%d", len(args))
-		}
-		clauses = append(clauses, fmt.Sprintf("(n.audience = 'group' AND n.audience_id IN (%s))", strings.Join(placeholders, ",")))
-	}
-
-	return strings.Join(clauses, " OR "), args
+// buildAudienceClause returns the audience filtering SQL fragment using a subquery
+// for group membership. This eliminates a separate DB roundtrip to fetch group IDs.
+// Expects $1 = tenantID and $2 = userID in the query args.
+func (r *NotificationRepository) buildAudienceClause() string {
+	return `n.audience = 'all'` +
+		` OR (n.audience = 'user' AND n.audience_id = $2::text)` +
+		` OR (n.audience = 'group' AND n.audience_id IN (` +
+		`SELECT g.id::text FROM groups g ` +
+		`INNER JOIN group_members gm ON gm.group_id = g.id ` +
+		`WHERE g.tenant_id = $1 AND gm.user_id = $2 AND g.is_active = true` +
+		`))`
 }
 
-func (r *NotificationRepository) buildWhereClause(tenantID, userID shared.ID, groupIDs []shared.ID, filter notification.ListFilter) (string, []any) {
-	audienceClause, args := r.buildAudienceClause(tenantID, userID, groupIDs)
+func (r *NotificationRepository) buildWhereClause(tenantID, userID shared.ID, filter notification.ListFilter) (string, []any) {
+	args := []any{tenantID, userID}
+	audienceClause := r.buildAudienceClause()
 
 	where := `WHERE n.tenant_id = $1 AND n.created_at > NOW() - INTERVAL '30 days' AND (` + audienceClause + `)`
 

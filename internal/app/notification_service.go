@@ -69,19 +69,14 @@ func NewNotificationService(
 // =============================================================================
 
 // ListNotifications returns paginated notifications visible to the user.
+// Group membership is resolved via subquery in the repository, eliminating an extra DB roundtrip.
 func (s *NotificationService) ListNotifications(
 	ctx context.Context,
 	tenantID, userID shared.ID,
 	filter notification.ListFilter,
 	page pagination.Pagination,
 ) (pagination.Result[*notification.Notification], error) {
-	groupIDs, err := s.groupRepo.GetUserGroupIDs(ctx, tenantID, userID)
-	if err != nil {
-		s.logger.Error("failed to resolve user group IDs", "tenant_id", tenantID, "user_id", userID, "error", err)
-		return pagination.Result[*notification.Notification]{}, fmt.Errorf("resolve user groups: %w", err)
-	}
-
-	result, err := s.repo.List(ctx, tenantID, userID, groupIDs, filter, page)
+	result, err := s.repo.List(ctx, tenantID, userID, filter, page)
 	if err != nil {
 		s.logger.Error("failed to list notifications", "tenant_id", tenantID, "user_id", userID, "error", err)
 		return pagination.Result[*notification.Notification]{}, fmt.Errorf("list notifications: %w", err)
@@ -91,14 +86,9 @@ func (s *NotificationService) ListNotifications(
 }
 
 // GetUnreadCount returns the number of unread notifications for a user.
+// Group membership is resolved via subquery in the repository, eliminating an extra DB roundtrip.
 func (s *NotificationService) GetUnreadCount(ctx context.Context, tenantID, userID shared.ID) (int, error) {
-	groupIDs, err := s.groupRepo.GetUserGroupIDs(ctx, tenantID, userID)
-	if err != nil {
-		s.logger.Error("failed to resolve user group IDs", "tenant_id", tenantID, "user_id", userID, "error", err)
-		return 0, fmt.Errorf("resolve user groups: %w", err)
-	}
-
-	count, err := s.repo.UnreadCount(ctx, tenantID, userID, groupIDs)
+	count, err := s.repo.UnreadCount(ctx, tenantID, userID)
 	if err != nil {
 		s.logger.Error("failed to get unread count", "tenant_id", tenantID, "user_id", userID, "error", err)
 		return 0, fmt.Errorf("get unread count: %w", err)
@@ -112,9 +102,9 @@ func (s *NotificationService) GetUnreadCount(ctx context.Context, tenantID, user
 // =============================================================================
 
 // MarkAsRead marks a single notification as read for a user.
-func (s *NotificationService) MarkAsRead(ctx context.Context, notificationID notification.ID, userID shared.ID) error {
-	if err := s.repo.MarkAsRead(ctx, notificationID, userID); err != nil {
-		s.logger.Error("failed to mark notification as read", "notification_id", notificationID, "user_id", userID, "error", err)
+func (s *NotificationService) MarkAsRead(ctx context.Context, tenantID shared.ID, notificationID notification.ID, userID shared.ID) error {
+	if err := s.repo.MarkAsRead(ctx, tenantID, notificationID, userID); err != nil {
+		s.logger.Error("failed to mark notification as read", "tenant_id", tenantID, "notification_id", notificationID, "user_id", userID, "error", err)
 		return fmt.Errorf("mark as read: %w", err)
 	}
 
@@ -157,6 +147,8 @@ func (s *NotificationService) UpdatePreferences(
 	}
 
 	// Build params from input, fetching existing preferences for defaults.
+	// Note: This read-modify-write is not wrapped in a transaction. The race window is
+	// negligible since only the owning user updates their own preferences.
 	existing, err := s.repo.GetPreferences(ctx, tenantID, userID)
 	if err != nil {
 		s.logger.Error("failed to get existing preferences", "tenant_id", tenantID, "user_id", userID, "error", err)
@@ -307,6 +299,17 @@ func validatePreferencesInput(input UpdatePreferencesInput) error {
 	if input.MinSeverity != nil {
 		if !validSeverities[*input.MinSeverity] {
 			return fmt.Errorf("%w: min_severity must be one of: critical, high, medium, low, info", shared.ErrValidation)
+		}
+	}
+
+	if input.MutedTypes != nil {
+		if len(input.MutedTypes) > 50 {
+			return fmt.Errorf("%w: muted_types exceeds maximum of 50", shared.ErrValidation)
+		}
+		for _, t := range input.MutedTypes {
+			if !notification.IsValidType(t) {
+				return fmt.Errorf("%w: invalid notification type in muted_types: %s", shared.ErrValidation, t)
+			}
 		}
 	}
 

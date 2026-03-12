@@ -113,10 +113,21 @@ func (h *NotificationHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build filter
-	filter := notification.ListFilter{
-		Severity: r.URL.Query().Get("severity"),
-		Type:     r.URL.Query().Get("type"),
+	// Build filter with validation
+	var filter notification.ListFilter
+	if severity := r.URL.Query().Get("severity"); severity != "" {
+		if !notification.IsValidSeverity(severity) {
+			apierror.BadRequest("invalid severity filter value").WriteJSON(w)
+			return
+		}
+		filter.Severity = severity
+	}
+	if notifType := r.URL.Query().Get("type"); notifType != "" {
+		if !notification.IsValidType(notifType) {
+			apierror.BadRequest("invalid type filter value").WriteJSON(w)
+			return
+		}
+		filter.Type = notifType
 	}
 	if isReadStr := r.URL.Query().Get("is_read"); isReadStr != "" {
 		isRead := isReadStr == "true"
@@ -192,7 +203,7 @@ func (h *NotificationHandler) GetUnreadCount(w http.ResponseWriter, r *http.Requ
 func (h *NotificationHandler) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	_, userID, ok := h.extractTenantAndUser(w, r)
+	tenantID, userID, ok := h.extractTenantAndUser(w, r)
 	if !ok {
 		return
 	}
@@ -204,7 +215,7 @@ func (h *NotificationHandler) MarkAsRead(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.MarkAsRead(ctx, notificationID, userID); err != nil {
+	if err := h.service.MarkAsRead(ctx, tenantID, notificationID, userID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}

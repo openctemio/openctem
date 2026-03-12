@@ -21,13 +21,15 @@ type Repository interface {
 	Create(ctx context.Context, n *Notification) error
 
 	// List returns notifications visible to a user (with audience filtering and read status).
-	List(ctx context.Context, tenantID, userID shared.ID, groupIDs []shared.ID, filter ListFilter, page pagination.Pagination) (pagination.Result[*Notification], error)
+	// Group membership is resolved via subquery internally, eliminating an extra DB roundtrip.
+	List(ctx context.Context, tenantID, userID shared.ID, filter ListFilter, page pagination.Pagination) (pagination.Result[*Notification], error)
 
 	// UnreadCount returns the number of unread notifications for a user.
-	UnreadCount(ctx context.Context, tenantID, userID shared.ID, groupIDs []shared.ID) (int, error)
+	// Group membership is resolved via subquery internally, eliminating an extra DB roundtrip.
+	UnreadCount(ctx context.Context, tenantID, userID shared.ID) (int, error)
 
 	// MarkAsRead marks a single notification as read for a user.
-	MarkAsRead(ctx context.Context, notificationID ID, userID shared.ID) error
+	MarkAsRead(ctx context.Context, tenantID shared.ID, notificationID ID, userID shared.ID) error
 
 	// MarkAllAsRead updates the watermark timestamp for a user.
 	MarkAllAsRead(ctx context.Context, tenantID, userID shared.ID) error
