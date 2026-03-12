@@ -125,6 +125,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
 		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),
 
+		// AI Triage (always initialized - handler returns 503 if service is nil)
+		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
+
 		// Suppressions
 		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),
 

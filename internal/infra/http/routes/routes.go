@@ -243,10 +243,8 @@ func Register(
 	}
 
 	// AI Triage routes (tenant from JWT token)
-	// Always registered - handler handles nil service gracefully
-	if h.AITriage != nil {
-		registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter)
-	}
+	// Always registered - handler handles nil service gracefully (returns 503)
+	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter)
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {

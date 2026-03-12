@@ -31,13 +31,13 @@ func NewAITriageHandler(triageSvc *app.AITriageService, log *logger.Logger) *AIT
 }
 
 // checkServiceAvailable returns true if the AI triage service is available.
-// If not available, writes a 503 response and returns false.
+// If not available, writes a 200 response with null data and returns false.
+// This prevents noisy 503/404 errors when AI triage is simply not configured.
 func (h *AITriageHandler) checkServiceAvailable(w http.ResponseWriter) bool {
 	if h.triageService == nil {
-		apierror.ServiceUnavailable("AI triage is not configured. Contact your administrator.").
-			WithDetails(map[string]string{
-				"action": "Configure AI triage provider in system settings",
-			}).WriteJSON(w)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": nil, "ai_configured": false})
 		return false
 	}
 	return true
