@@ -235,6 +235,7 @@ func run() int {
 	workers, err := NewWorkers(&WorkerDeps{
 		Config:   cfg,
 		Log:      log,
+		DB:       db.DB,
 		Repos:    repos,
 		Services: services,
 	})

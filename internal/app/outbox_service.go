@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -478,10 +479,22 @@ func (s *OutboxService) configureClientFromCredentials(
 	return nil
 }
 
-// applyTemplate applies a custom message template.
-func (s *OutboxService) applyTemplate(msg notificationclient.Message, _ string) notificationclient.Message {
-	// TODO: Implement template processing
-	// For now, return the message as-is
+// applyTemplate applies a custom message template with variable substitution.
+// Supported variables: {title}, {body}, {severity}, {url}
+func (s *OutboxService) applyTemplate(msg notificationclient.Message, template string) notificationclient.Message {
+	if template == "" {
+		return msg
+	}
+
+	replacer := strings.NewReplacer(
+		"{title}", msg.Title,
+		"{body}", msg.Body,
+		"{severity}", msg.Severity,
+		"{url}", msg.URL,
+	)
+
+	result := replacer.Replace(template)
+	msg.Body = result
 	return msg
 }
 

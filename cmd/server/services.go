@@ -319,7 +319,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Tool = app.NewToolService(repos.Tool, repos.TenantToolConfig, repos.ToolExecution, log)
 	s.Tool.SetAgentRepo(repos.Agent)           // Enable tool availability checking
 	s.Tool.SetCategoryRepo(repos.ToolCategory) // Enable category info in responses
-	s.ToolCategory = app.NewToolCategoryService(repos.ToolCategory, log)
+	s.ToolCategory = app.NewToolCategoryService(repos.ToolCategory, repos.Tool, log)
 	s.Capability = app.NewCapabilityService(repos.Capability, s.Audit, log)
 
 	// Initialize agent selector for load balancing

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
@@ -29,6 +30,7 @@ type Workers struct {
 type WorkerDeps struct {
 	Config   *config.Config
 	Log      *logger.Logger
+	DB       *sql.DB
 	Repos    *Repositories
 	Services *Services
 }
@@ -147,6 +149,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Interval:           1 * time.Hour,
 			AuditRetentionDays: 365,
 			Logger:             log.With("controller", "data-expiration"),
+		},
+	))
+
+	w.ControllerManager.Register(controller.NewRoleSyncController(
+		deps.DB,
+		&controller.RoleSyncControllerConfig{
+			Interval: 1 * time.Hour,
+			Logger:   log.With("controller", "role-sync"),
 		},
 	))
 

@@ -204,7 +204,7 @@ func (m *toolCatMockRepo) addCategory(cat *toolcategory.ToolCategory) {
 func newToolCatTestService() (*app.ToolCategoryService, *toolCatMockRepo) {
 	repo := newToolCatMockRepo()
 	log := logger.NewNop()
-	svc := app.NewToolCategoryService(repo, log)
+	svc := app.NewToolCategoryService(repo, nil, log)
 	return svc, repo
 }
 

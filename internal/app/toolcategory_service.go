@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/api/pkg/domain/toolcategory"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -12,18 +13,21 @@ import (
 
 // ToolCategoryService handles tool category business operations.
 type ToolCategoryService struct {
-	repo   toolcategory.Repository
-	logger *logger.Logger
+	repo     toolcategory.Repository
+	toolRepo tool.Repository
+	logger   *logger.Logger
 }
 
 // NewToolCategoryService creates a new ToolCategoryService.
 func NewToolCategoryService(
 	repo toolcategory.Repository,
+	toolRepo tool.Repository,
 	log *logger.Logger,
 ) *ToolCategoryService {
 	return &ToolCategoryService{
-		repo:   repo,
-		logger: log.With("service", "toolcategory"),
+		repo:     repo,
+		toolRepo: toolRepo,
+		logger:   log.With("service", "toolcategory"),
 	}
 }
 
@@ -255,8 +259,13 @@ func (s *ToolCategoryService) DeleteCategory(ctx context.Context, tenantID, cate
 		return fmt.Errorf("%w: cannot delete this category", shared.ErrForbidden)
 	}
 
-	// TODO: Check if category is in use by any tools before deleting
-	// This would require checking the tools table for any tools with this category_id
+	// Check if category is in use by any tools
+	if s.toolRepo != nil {
+		tools, err := s.toolRepo.ListByCategoryID(ctx, cid)
+		if err == nil && len(tools) > 0 {
+			return fmt.Errorf("%w: category is in use by %d tool(s)", shared.ErrConflict, len(tools))
+		}
+	}
 
 	if err := s.repo.Delete(ctx, cid); err != nil {
 		return err

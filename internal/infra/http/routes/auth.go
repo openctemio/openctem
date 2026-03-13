@@ -14,6 +14,7 @@ func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddl
 	loginRL := authRateLimiter.LoginMiddleware()
 	registerRL := authRateLimiter.RegisterMiddleware()
 	passwordRL := authRateLimiter.PasswordMiddleware()
+	tokenExchangeRL := authRateLimiter.TokenExchangeMiddleware()
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
@@ -35,11 +36,13 @@ func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddl
 			loginHandler := ChainFunc(h.LocalAuth.Login, loginRL)
 			r.POST("/login", loginHandler.ServeHTTP)
 
-			// Token operations - login rate limit
-			tokenHandler := ChainFunc(h.LocalAuth.ExchangeToken, loginRL)
+			// Token operations - separate rate limit (20/min)
+			// Token exchange requires valid refresh token, not brute-forceable
+			// Used for tenant switching which may happen frequently
+			tokenHandler := ChainFunc(h.LocalAuth.ExchangeToken, tokenExchangeRL)
 			r.POST("/token", tokenHandler.ServeHTTP)
 
-			refreshHandler := ChainFunc(h.LocalAuth.RefreshToken, loginRL)
+			refreshHandler := ChainFunc(h.LocalAuth.RefreshToken, tokenExchangeRL)
 			r.POST("/refresh", refreshHandler.ServeHTTP)
 
 			// Email verification - password rate limit
