@@ -141,17 +141,17 @@ func (s *ScopeRuleService) CreateScopeRule(ctx context.Context, input CreateScop
 	}
 
 	// Run initial reconciliation for this rule
-	added, err := s.reconcileRule(ctx, rule)
+	rr, err := s.reconcileRule(ctx, rule)
 	if err != nil {
 		s.logger.Warn("initial reconciliation failed", "rule_id", rule.ID().String(), "error", err)
 	} else {
 		s.logger.Info("scope rule created and reconciled",
 			"rule_id", rule.ID().String(),
 			"name", rule.Name(),
-			"assets_added", added,
+			"assets_added", rr.added,
 		)
 	}
-	s.refreshAccessIfNeeded(ctx, added)
+	s.refreshAccessIncremental(ctx, rule.GroupID(), rule.OwnershipType(), rr.newlyAddedIDs)
 
 	return rule, nil
 }
@@ -262,13 +262,13 @@ func (s *ScopeRuleService) UpdateScopeRule(ctx context.Context, tenantID, ruleID
 
 	// Only re-reconcile if matching criteria changed and rule is active
 	if matchingChanged && rule.IsActive() {
-		added, err := s.reconcileRule(ctx, rule)
+		rr, err := s.reconcileRule(ctx, rule)
 		if err != nil {
 			s.logger.Warn("reconciliation after update failed", "rule_id", rule.ID().String(), "error", err)
-		} else if added > 0 {
-			s.logger.Info("scope rule updated and reconciled", "rule_id", ruleID, "assets_added", added)
+		} else if rr.added > 0 {
+			s.logger.Info("scope rule updated and reconciled", "rule_id", ruleID, "assets_added", rr.added)
 		}
-		s.refreshAccessIfNeeded(ctx, added)
+		s.refreshAccessIncremental(ctx, rule.GroupID(), rule.OwnershipType(), rr.newlyAddedIDs)
 	}
 
 	return rule, nil
@@ -428,24 +428,29 @@ func (s *ScopeRuleService) ReconcileGroup(ctx context.Context, tenantID, groupID
 
 	// Collect all assets that should be assigned across all rules
 	allMatchedAssets := make(map[shared.ID]struct{})
+	var allNewlyAdded []shared.ID
+	var lastOwnershipType accesscontrol.OwnershipType
 	for _, rule := range rules {
-		added, matched, err := s.reconcileRuleWithExistingSet(ctx, rule, existingSet)
+		rr, err := s.reconcileRuleWithExistingSet(ctx, rule, existingSet)
 		if err != nil {
 			s.logger.Warn("reconciliation failed for rule", "rule_id", rule.ID().String(), "error", err)
 			continue
 		}
-		result.AssetsAdded += added
-		for _, id := range matched {
+		result.AssetsAdded += rr.added
+		allNewlyAdded = append(allNewlyAdded, rr.newlyAddedIDs...)
+		lastOwnershipType = rule.OwnershipType()
+		for _, id := range rr.matchingAssets {
 			allMatchedAssets[id] = struct{}{}
 		}
 	}
 
 	// Remove stale auto-assigned assets that no longer match any active rule
+	var staleIDs []shared.ID
 	currentAutoAssigned, err := s.acRepo.ListAutoAssignedAssets(ctx, tid, gid)
 	if err != nil {
 		s.logger.Warn("failed to list auto-assigned assets for cleanup", "error", err)
 	} else {
-		staleIDs := make([]shared.ID, 0)
+		staleIDs = make([]shared.ID, 0)
 		for _, assetID := range currentAutoAssigned {
 			if _, stillMatches := allMatchedAssets[assetID]; !stillMatches {
 				staleIDs = append(staleIDs, assetID)
@@ -461,9 +466,9 @@ func (s *ScopeRuleService) ReconcileGroup(ctx context.Context, tenantID, groupID
 		}
 	}
 
-	// Single refresh after all rules evaluated
-	changed := result.AssetsAdded + result.AssetsRemoved
-	s.refreshAccessIfNeeded(ctx, changed)
+	// Incremental refresh for added and removed assets
+	s.refreshAccessIncremental(ctx, gid, lastOwnershipType, allNewlyAdded)
+	s.refreshAccessForRemovedAssets(ctx, gid, staleIDs)
 
 	s.logger.Info("group reconciliation complete",
 		"group_id", groupID,
@@ -578,19 +583,26 @@ func (s *ScopeRuleService) EvaluateAsset(ctx context.Context, tenantID shared.ID
 	return nil
 }
 
-// reconcileRule applies a single rule to find and assign matching assets.
-// Uses batch insert + single refresh instead of per-asset queries.
-func (s *ScopeRuleService) reconcileRule(ctx context.Context, rule *accesscontrol.ScopeRule) (int, error) {
-	added, _, err := s.reconcileRuleWithMatches(ctx, rule)
-	return added, err
+// reconcileResult holds the results of a rule reconciliation.
+type reconcileResult struct {
+	added           int
+	matchingAssets  []shared.ID
+	newlyAddedIDs   []shared.ID
 }
 
-// reconcileRuleWithMatches applies a single rule and returns both the added count
-// and the full set of matching asset IDs (for stale assignment cleanup).
-func (s *ScopeRuleService) reconcileRuleWithMatches(ctx context.Context, rule *accesscontrol.ScopeRule) (int, []shared.ID, error) {
+// reconcileRule applies a single rule to find and assign matching assets.
+// Uses batch insert + single refresh instead of per-asset queries.
+func (s *ScopeRuleService) reconcileRule(ctx context.Context, rule *accesscontrol.ScopeRule) (reconcileResult, error) {
+	result, err := s.reconcileRuleWithMatches(ctx, rule)
+	return result, err
+}
+
+// reconcileRuleWithMatches applies a single rule and returns the reconcile result
+// including newly added asset IDs (for incremental refresh).
+func (s *ScopeRuleService) reconcileRuleWithMatches(ctx context.Context, rule *accesscontrol.ScopeRule) (reconcileResult, error) {
 	existingAssetIDs, err := s.acRepo.ListAssetsByGroup(ctx, rule.GroupID())
 	if err != nil {
-		return 0, nil, fmt.Errorf("failed to list existing assets: %w", err)
+		return reconcileResult{}, fmt.Errorf("failed to list existing assets: %w", err)
 	}
 	existingSet := make(map[shared.ID]struct{}, len(existingAssetIDs))
 	for _, id := range existingAssetIDs {
@@ -601,18 +613,19 @@ func (s *ScopeRuleService) reconcileRuleWithMatches(ctx context.Context, rule *a
 
 // reconcileRuleWithExistingSet applies a single rule using a pre-fetched existing asset set.
 // This avoids N+1 queries when called from ReconcileGroup.
-func (s *ScopeRuleService) reconcileRuleWithExistingSet(ctx context.Context, rule *accesscontrol.ScopeRule, existingSet map[shared.ID]struct{}) (int, []shared.ID, error) {
+func (s *ScopeRuleService) reconcileRuleWithExistingSet(ctx context.Context, rule *accesscontrol.ScopeRule, existingSet map[shared.ID]struct{}) (reconcileResult, error) {
 	matchingAssetIDs, err := s.findMatchingAssets(ctx, rule)
 	if err != nil {
-		return 0, nil, err
+		return reconcileResult{}, err
 	}
 
 	if len(matchingAssetIDs) == 0 {
-		return 0, nil, nil
+		return reconcileResult{}, nil
 	}
 
 	// Collect new assets to assign
 	owners := make([]*accesscontrol.AssetOwner, 0, len(matchingAssetIDs))
+	newIDs := make([]shared.ID, 0, len(matchingAssetIDs))
 	for _, assetID := range matchingAssetIDs {
 		if _, exists := existingSet[assetID]; exists {
 			continue // Already assigned
@@ -622,27 +635,75 @@ func (s *ScopeRuleService) reconcileRuleWithExistingSet(ctx context.Context, rul
 			continue
 		}
 		owners = append(owners, ao)
+		newIDs = append(newIDs, assetID)
 	}
 
 	if len(owners) == 0 {
-		return 0, matchingAssetIDs, nil
+		return reconcileResult{matchingAssets: matchingAssetIDs}, nil
 	}
 
 	// Batch insert all new assignments (1 query instead of N)
 	ruleID := rule.ID()
 	added, err := s.acRepo.BulkCreateAssetOwnersWithSource(ctx, owners, "scope_rule", &ruleID)
 	if err != nil {
-		return 0, nil, fmt.Errorf("failed to bulk assign assets: %w", err)
+		return reconcileResult{}, fmt.Errorf("failed to bulk assign assets: %w", err)
 	}
 
-	return added, matchingAssetIDs, nil
+	// Trim newIDs to only the count actually inserted (some may have been skipped as duplicates)
+	if added < len(newIDs) {
+		newIDs = newIDs[:added]
+	}
+
+	return reconcileResult{
+		added:          added,
+		matchingAssets: matchingAssetIDs,
+		newlyAddedIDs:  newIDs,
+	}, nil
 }
 
-// refreshAccessIfNeeded refreshes the materialized view if assets were added.
-func (s *ScopeRuleService) refreshAccessIfNeeded(ctx context.Context, added int) {
-	if added > 0 {
+// incrementalRefreshThreshold is the maximum number of assets for which we use
+// per-asset incremental refresh instead of a full materialized view refresh.
+const incrementalRefreshThreshold = 100
+
+// refreshAccessIncremental refreshes access using per-asset incremental stored procedures
+// when the number of affected assets is small, falling back to a full refresh for large batches.
+func (s *ScopeRuleService) refreshAccessIncremental(ctx context.Context, groupID shared.ID, ownershipType accesscontrol.OwnershipType, assetIDs []shared.ID) {
+	if len(assetIDs) == 0 {
+		return
+	}
+
+	if len(assetIDs) > incrementalRefreshThreshold {
 		if err := s.acRepo.RefreshUserAccessibleAssets(ctx); err != nil {
-			s.logger.Warn("failed to refresh user accessible assets", "error", err)
+			s.logger.Warn("failed to refresh user accessible assets (full)", "error", err)
+		}
+		return
+	}
+
+	for _, assetID := range assetIDs {
+		if err := s.acRepo.RefreshAccessForAssetAssign(ctx, groupID, assetID, string(ownershipType)); err != nil {
+			s.logger.Warn("failed to incremental refresh for asset assign",
+				"group_id", groupID.String(), "asset_id", assetID.String(), "error", err)
+		}
+	}
+}
+
+// refreshAccessForRemovedAssets refreshes access after assets are unassigned from a group.
+func (s *ScopeRuleService) refreshAccessForRemovedAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) {
+	if len(assetIDs) == 0 {
+		return
+	}
+
+	if len(assetIDs) > incrementalRefreshThreshold {
+		if err := s.acRepo.RefreshUserAccessibleAssets(ctx); err != nil {
+			s.logger.Warn("failed to refresh user accessible assets (full)", "error", err)
+		}
+		return
+	}
+
+	for _, assetID := range assetIDs {
+		if err := s.acRepo.RefreshAccessForAssetUnassign(ctx, groupID, assetID); err != nil {
+			s.logger.Warn("failed to incremental refresh for asset unassign",
+				"group_id", groupID.String(), "asset_id", assetID.String(), "error", err)
 		}
 	}
 }

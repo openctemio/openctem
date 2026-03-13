@@ -80,6 +80,10 @@ type mockACRepoForScope struct {
 	refreshAccessCalls int
 	refreshAccessErr   error
 
+	// Incremental refresh tracking
+	refreshAssetAssignCalls   int
+	refreshAssetUnassignCalls int
+
 	// ListAutoAssignedAssets
 	listAutoAssignedResult []shared.ID
 	listAutoAssignedErr    error
@@ -208,6 +212,20 @@ func (m *mockACRepoForScope) RefreshAccessForDirectOwnerAdd(_ context.Context, _
 	return nil
 }
 func (m *mockACRepoForScope) RefreshAccessForDirectOwnerRemove(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockACRepoForScope) RefreshAccessForAssetAssign(_ context.Context, _, _ shared.ID, _ string) error {
+	m.refreshAssetAssignCalls++
+	return nil
+}
+func (m *mockACRepoForScope) RefreshAccessForAssetUnassign(_ context.Context, _, _ shared.ID) error {
+	m.refreshAssetUnassignCalls++
+	return nil
+}
+func (m *mockACRepoForScope) RefreshAccessForMemberAdd(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (m *mockACRepoForScope) RefreshAccessForMemberRemove(_ context.Context, _, _ shared.ID) error {
 	return nil
 }
 
@@ -702,9 +720,9 @@ func TestCreateScopeRule_ReconciliationRunsOnCreate(t *testing.T) {
 	if acRepo.bulkCreateWithSourceCalls != 1 {
 		t.Errorf("expected 1 BulkCreateAssetOwnersWithSource call, got %d", acRepo.bulkCreateWithSourceCalls)
 	}
-	// Should have refreshed access
-	if acRepo.refreshAccessCalls != 1 {
-		t.Errorf("expected 1 RefreshUserAccessibleAssets call, got %d", acRepo.refreshAccessCalls)
+	// Should have used incremental refresh (3 assets < threshold of 100)
+	if acRepo.refreshAssetAssignCalls != 3 {
+		t.Errorf("expected 3 RefreshAccessForAssetAssign calls (one per asset), got %d", acRepo.refreshAssetAssignCalls)
 	}
 }
 
