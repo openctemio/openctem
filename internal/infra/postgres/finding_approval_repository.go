@@ -86,7 +86,15 @@ func (r *FindingApprovalRepository) ListPending(ctx context.Context, tenantID sh
 	}
 	defer rows.Close()
 
-	approvals := make([]*vulnerability.Approval, 0, page.Limit())
+	limit := page.Limit()
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	approvals := make([]*vulnerability.Approval, 0, limit)
 	for rows.Next() {
 		a, err := r.scanApprovalFromRows(rows)
 		if err != nil {
