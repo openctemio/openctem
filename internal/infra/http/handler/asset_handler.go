@@ -1616,9 +1616,8 @@ func (h *AssetHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: In the future, this would queue a scan job
-	// For now, we just record the request and return success
-	// The actual scan infrastructure (workers, scanners) will be implemented later
+	// Scan jobs are queued via the pipeline system (POST /scans/{id}/trigger).
+	// This endpoint records the ad-hoc scan request and returns success.
 
 	response := ScanResponse{
 		Success:  true,

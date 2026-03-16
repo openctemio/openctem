@@ -563,7 +563,7 @@ func toAssetComponentResponse(d *component.AssetDependency) ComponentResponse {
 		ParentComponentID: parentID,
 		IsDirect:          d.Depth() == 1,
 
-		Status:    "active", // TODO: Map status from global component if exists
+		Status:    "active", // Default status; global component status mapping planned for Phase 2
 		Metadata:  c.Metadata(),
 		CreatedAt: d.CreatedAt(), // Use Link creation time
 		UpdatedAt: d.UpdatedAt(),

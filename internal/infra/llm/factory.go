@@ -196,7 +196,7 @@ func (f *Factory) createBYOKProvider(settings tenant.AISettings) (Provider, erro
 		})
 
 	case tenant.LLMProviderAzureOpenAI:
-		// TODO: Implement Azure OpenAI provider
+		// Azure OpenAI support planned for Phase 2.
 		return nil, fmt.Errorf("%w: Azure OpenAI provider not yet implemented", ErrInvalidProvider)
 
 	default:

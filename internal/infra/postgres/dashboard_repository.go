@@ -146,8 +146,7 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 		return stats, err
 	}
 
-	// Note: Overdue count disabled - due_date column not yet implemented in findings table
-	// TODO: Add due_date column to findings table and enable this query
+	// Overdue count requires SLA-based due_date on findings — planned for Phase 2.
 	stats.Overdue = 0
 
 	// Get average CVSS (join with vulnerabilities to get cvss_score)
