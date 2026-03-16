@@ -16,6 +16,8 @@ import (
 	"github.com/openctemio/api/pkg/pagination"
 )
 
+const maxJSONSize = 64 * 1024 * 1024 // 64MB upper bound for marshaled JSON fields
+
 // FindingRepository implements vulnerability.FindingRepository using PostgreSQL.
 type FindingRepository struct {
 	db *DB
@@ -32,17 +34,29 @@ func marshalFindingSARIFFields(finding *vulnerability.Finding) (partialFingerpri
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to marshal partial_fingerprints: %w", err)
 	}
+	if len(partialFingerprints) > maxJSONSize {
+		return nil, nil, nil, nil, fmt.Errorf("partial_fingerprints JSON too large")
+	}
 	relatedLocations, err = json.Marshal(finding.RelatedLocations())
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to marshal related_locations: %w", err)
+	}
+	if len(relatedLocations) > maxJSONSize {
+		return nil, nil, nil, nil, fmt.Errorf("related_locations JSON too large")
 	}
 	stacks, err = json.Marshal(finding.Stacks())
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to marshal stacks: %w", err)
 	}
+	if len(stacks) > maxJSONSize {
+		return nil, nil, nil, nil, fmt.Errorf("stacks JSON too large")
+	}
 	attachments, err = json.Marshal(finding.Attachments())
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to marshal attachments: %w", err)
+	}
+	if len(attachments) > maxJSONSize {
+		return nil, nil, nil, nil, fmt.Errorf("attachments JSON too large")
 	}
 	return partialFingerprints, relatedLocations, stacks, attachments, nil
 }
@@ -55,6 +69,9 @@ func marshalRemediation(r *vulnerability.FindingRemediation) interface{} {
 	}
 	data, err := json.Marshal(r)
 	if err != nil {
+		return nil
+	}
+	if len(data) > maxJSONSize {
 		return nil
 	}
 	return data // Return []byte for valid JSONB
@@ -2331,7 +2348,11 @@ func (r *FindingRepository) EnrichBatchByFingerprints(ctx context.Context, tenan
 		query := buildBatchEnrichQuery(len(chunk))
 
 		// Flatten chunk args into a single slice
-		flatArgs := make([]interface{}, 0, len(chunk)*enrichColumnsPerRow)
+		capNeeded64 := uint64(len(chunk)) * uint64(enrichColumnsPerRow)
+		if capNeeded64 > uint64(int(^uint(0)>>1)) {
+			return totalEnriched, fmt.Errorf("enrichment batch too large")
+		}
+		flatArgs := make([]interface{}, 0, int(capNeeded64))
 		for _, row := range chunk {
 			flatArgs = append(flatArgs, row...)
 		}
@@ -2357,6 +2378,9 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 	metadata, err := json.Marshal(f.Metadata())
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	if len(metadata) > maxJSONSize {
+		return nil, fmt.Errorf("metadata JSON too large")
 	}
 
 	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(f)
