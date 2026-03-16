@@ -126,6 +126,14 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 				}
 			}
 
+			// Update the context logger with user_id and tenant_id
+			// so downstream services using logger.FromContext(ctx) get
+			// request-correlated logs automatically.
+			if ctxLogger := logger.FromContext(ctx); ctxLogger != nil {
+				enriched := ctxLogger.WithContext(ctx)
+				ctx = logger.ToContext(ctx, enriched)
+			}
+
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -322,12 +330,7 @@ func HasTenantAccess(ctx context.Context, tenantID string) bool {
 
 	// Fallback to accessible tenants list
 	accessibleTenants := GetAccessibleTenants(ctx)
-	for _, t := range accessibleTenants {
-		if t == tenantID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(accessibleTenants, tenantID)
 }
 
 // GetUserTenantRole returns the user's role in a specific tenant.

@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -927,5 +928,418 @@ func TestUpdateWorkflow_ActivateDeactivate(t *testing.T) {
 
 	if !result.IsActive {
 		t.Error("Expected workflow to be active")
+	}
+}
+
+// =============================================================================
+// Tests for CreateWorkflow - Validation Errors
+// =============================================================================
+
+func TestCreateWorkflow_ValidationError_InvalidNodeType(t *testing.T) {
+	service, _, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+
+	// Workflow with a trigger node but graph validation fails (no trigger node key)
+	input := app.CreateWorkflowInput{
+		TenantID: tenantID,
+		Name:     "Bad Graph Workflow",
+		Nodes: []app.CreateNodeInput{
+			{
+				NodeKey:  "action_1",
+				NodeType: workflow.NodeTypeAction,
+				Name:     "Action Only",
+			},
+		},
+	}
+
+	// Should fail graph validation (no trigger node)
+	_, err := service.CreateWorkflow(ctx, input)
+	if err == nil {
+		t.Fatal("Expected error for workflow without trigger node")
+	}
+}
+
+func TestCreateWorkflow_DuplicateNodeKeys(t *testing.T) {
+	service, _, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+
+	input := app.CreateWorkflowInput{
+		TenantID: tenantID,
+		Name:     "Duplicate Keys",
+		Nodes: []app.CreateNodeInput{
+			{
+				NodeKey:  "trigger_1",
+				NodeType: workflow.NodeTypeTrigger,
+				Name:     "Trigger",
+				Config:   workflow.NodeConfig{TriggerType: workflow.TriggerTypeManual},
+			},
+			{
+				NodeKey:  "trigger_1", // duplicate key
+				NodeType: workflow.NodeTypeAction,
+				Name:     "Also Trigger 1",
+			},
+		},
+	}
+
+	_, err := service.CreateWorkflow(ctx, input)
+	if err == nil {
+		t.Fatal("Expected error for duplicate node keys")
+	}
+}
+
+func TestCreateWorkflow_RepoError(t *testing.T) {
+	service, workflowRepo, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+
+	workflowRepo.createErr = errors.New("database connection refused")
+
+	input := app.CreateWorkflowInput{
+		TenantID: tenantID,
+		Name:     "Fail Workflow",
+		Nodes: []app.CreateNodeInput{
+			{
+				NodeKey:  "trigger_1",
+				NodeType: workflow.NodeTypeTrigger,
+				Name:     "Trigger",
+				Config:   workflow.NodeConfig{TriggerType: workflow.TriggerTypeManual},
+			},
+		},
+	}
+
+	_, err := service.CreateWorkflow(ctx, input)
+	if err == nil {
+		t.Fatal("Expected error when repo returns error")
+	}
+}
+
+// =============================================================================
+// Tests for GetWorkflow
+// =============================================================================
+
+func TestGetWorkflow_Success(t *testing.T) {
+	service, workflowRepo, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+
+	wf := createTestWorkflow(tenantID, "Get Me")
+	workflowRepo.Create(ctx, wf)
+
+	result, err := service.GetWorkflow(ctx, tenantID, wf.ID)
+	if err != nil {
+		t.Fatalf("GetWorkflow failed: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected non-nil workflow")
+	}
+	if result.Name != "Get Me" {
+		t.Errorf("Expected name 'Get Me', got '%s'", result.Name)
+	}
+}
+
+func TestGetWorkflow_NotFound(t *testing.T) {
+	service, _, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	nonExistentID := shared.NewID()
+
+	_, err := service.GetWorkflow(ctx, tenantID, nonExistentID)
+	if err == nil {
+		t.Fatal("Expected error for non-existent workflow")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestGetWorkflow_WrongTenant(t *testing.T) {
+	service, workflowRepo, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	otherTenantID := shared.NewID()
+
+	wf := createTestWorkflow(tenantID, "Tenant A Workflow")
+	workflowRepo.Create(ctx, wf)
+
+	// Try to get with wrong tenant
+	_, err := service.GetWorkflow(ctx, otherTenantID, wf.ID)
+	if err == nil {
+		t.Fatal("Expected error when accessing with wrong tenant")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got %v", err)
+	}
+}
+
+// =============================================================================
+// Tests for UpdateWorkflow - Not Found
+// =============================================================================
+
+func TestUpdateWorkflow_NotFound(t *testing.T) {
+	service, _, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	newName := "Updated"
+	input := app.UpdateWorkflowInput{
+		TenantID:   tenantID,
+		UserID:     userID,
+		WorkflowID: shared.NewID(), // does not exist
+		Name:       &newName,
+	}
+
+	_, err := service.UpdateWorkflow(ctx, input)
+	if err == nil {
+		t.Fatal("Expected error for non-existent workflow")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got %v", err)
+	}
+}
+
+// =============================================================================
+// Tests for DeleteWorkflow - Not Found
+// =============================================================================
+
+func TestDeleteWorkflow_NotFound(t *testing.T) {
+	service, _, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	err := service.DeleteWorkflow(ctx, tenantID, userID, shared.NewID())
+	if err == nil {
+		t.Fatal("Expected error for non-existent workflow")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got %v", err)
+	}
+}
+
+// =============================================================================
+// Tests for ListWorkflows
+// =============================================================================
+
+func TestListWorkflows_WithFilters(t *testing.T) {
+	service, workflowRepo, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	otherTenantID := shared.NewID()
+
+	// Create workflows for two tenants
+	wf1 := createTestWorkflow(tenantID, "Workflow A")
+	wf2 := createTestWorkflow(tenantID, "Workflow B")
+	wf3 := createTestWorkflow(otherTenantID, "Other Tenant Workflow")
+
+	workflowRepo.Create(ctx, wf1)
+	workflowRepo.Create(ctx, wf2)
+	workflowRepo.Create(ctx, wf3)
+
+	// List for tenantID only
+	result, err := service.ListWorkflows(ctx, app.ListWorkflowsInput{
+		TenantID: tenantID,
+		Page:     1,
+		PerPage:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListWorkflows failed: %v", err)
+	}
+
+	if len(result.Data) != 2 {
+		t.Errorf("Expected 2 workflows for tenant, got %d", len(result.Data))
+	}
+}
+
+func TestListWorkflows_Pagination(t *testing.T) {
+	service, workflowRepo, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+
+	for i := 0; i < 5; i++ {
+		wf := createTestWorkflow(tenantID, fmt.Sprintf("Workflow %d", i))
+		workflowRepo.Create(ctx, wf)
+	}
+
+	// Page defaults
+	result, err := service.ListWorkflows(ctx, app.ListWorkflowsInput{
+		TenantID: tenantID,
+	})
+	if err != nil {
+		t.Fatalf("ListWorkflows failed: %v", err)
+	}
+
+	if result.Total != 5 {
+		t.Errorf("Expected total 5, got %d", result.Total)
+	}
+
+	// Ensure page defaults are applied (page=1, perPage=20 when 0)
+	if result.Page != 1 {
+		t.Errorf("Expected page 1, got %d", result.Page)
+	}
+}
+
+func TestListWorkflows_EmptyResult(t *testing.T) {
+	service, _, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+
+	result, err := service.ListWorkflows(ctx, app.ListWorkflowsInput{
+		TenantID: tenantID,
+		Page:     1,
+		PerPage:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListWorkflows failed: %v", err)
+	}
+
+	if len(result.Data) != 0 {
+		t.Errorf("Expected 0 workflows, got %d", len(result.Data))
+	}
+}
+
+// =============================================================================
+// Tests for TriggerWorkflow (ExecuteWorkflow)
+// =============================================================================
+
+func TestTriggerWorkflow_Success(t *testing.T) {
+	service, workflowRepo, nodeRepo, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	// Create active workflow with trigger node
+	wf := createTestWorkflow(tenantID, "Trigger Me")
+	wf.Activate()
+	workflowRepo.Create(ctx, wf)
+
+	// Add nodes so GetWithGraph returns them
+	triggerNode, _ := workflow.NewNode(wf.ID, "trigger_1", workflow.NodeTypeTrigger, "Trigger")
+	triggerNode.Config.TriggerType = workflow.TriggerTypeManual
+	nodeRepo.Create(ctx, triggerNode)
+	wf.Nodes = append(wf.Nodes, triggerNode)
+	workflowRepo.Update(ctx, wf)
+
+	input := app.TriggerWorkflowInput{
+		TenantID:    tenantID,
+		UserID:      userID,
+		WorkflowID:  wf.ID,
+		TriggerType: workflow.TriggerTypeManual,
+		TriggerData: map[string]any{"source": "test"},
+	}
+
+	run, err := service.TriggerWorkflow(ctx, input)
+	if err != nil {
+		t.Fatalf("TriggerWorkflow failed: %v", err)
+	}
+
+	if run == nil {
+		t.Fatal("Expected non-nil run")
+	}
+	if run.WorkflowID != wf.ID {
+		t.Errorf("Expected workflow ID %s, got %s", wf.ID, run.WorkflowID)
+	}
+	if run.Status != workflow.RunStatusPending {
+		t.Errorf("Expected status pending, got %s", run.Status)
+	}
+}
+
+func TestTriggerWorkflow_InactiveWorkflow(t *testing.T) {
+	service, workflowRepo, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	// Create inactive workflow
+	wf := createTestWorkflow(tenantID, "Inactive WF")
+	wf.Deactivate()
+	workflowRepo.Create(ctx, wf)
+
+	input := app.TriggerWorkflowInput{
+		TenantID:    tenantID,
+		UserID:      userID,
+		WorkflowID:  wf.ID,
+		TriggerType: workflow.TriggerTypeManual,
+	}
+
+	_, err := service.TriggerWorkflow(ctx, input)
+	if err == nil {
+		t.Fatal("Expected error for inactive workflow")
+	}
+
+	var domainErr *shared.DomainError
+	if !errors.As(err, &domainErr) {
+		t.Fatalf("Expected DomainError, got %T: %v", err, err)
+	}
+	if domainErr.Code != "WORKFLOW_INACTIVE" {
+		t.Errorf("Expected error code 'WORKFLOW_INACTIVE', got '%s'", domainErr.Code)
+	}
+}
+
+func TestTriggerWorkflow_WorkflowNotFound(t *testing.T) {
+	service, _, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	input := app.TriggerWorkflowInput{
+		TenantID:    tenantID,
+		UserID:      userID,
+		WorkflowID:  shared.NewID(), // does not exist
+		TriggerType: workflow.TriggerTypeManual,
+	}
+
+	_, err := service.TriggerWorkflow(ctx, input)
+	if err == nil {
+		t.Fatal("Expected error for non-existent workflow")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestTriggerWorkflow_WrongTenant(t *testing.T) {
+	service, workflowRepo, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	otherTenantID := shared.NewID()
+	userID := shared.NewID()
+
+	wf := createTestWorkflow(tenantID, "Workflow for Tenant A")
+	wf.Activate()
+	workflowRepo.Create(ctx, wf)
+
+	input := app.TriggerWorkflowInput{
+		TenantID:    otherTenantID, // wrong tenant
+		UserID:      userID,
+		WorkflowID:  wf.ID,
+		TriggerType: workflow.TriggerTypeManual,
+	}
+
+	_, err := service.TriggerWorkflow(ctx, input)
+	if err == nil {
+		t.Fatal("Expected error when triggering with wrong tenant")
+	}
+}
+
+// =============================================================================
+// Tests for CancelRun
+// =============================================================================
+
+func TestCancelRun_NotFound(t *testing.T) {
+	service, _, _, _, _ := newTestWorkflowService()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	err := service.CancelRun(ctx, tenantID, userID, shared.NewID())
+	if err == nil {
+		t.Fatal("Expected error for non-existent run")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got %v", err)
 	}
 }
