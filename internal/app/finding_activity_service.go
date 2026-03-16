@@ -459,6 +459,25 @@ func (s *FindingActivityService) RecordCommentDeleted(
 	})
 }
 
+// DeleteActivityByCommentID removes the comment_added activity for a given comment ID.
+// This is called when a user deletes their comment to clean up the activity feed.
+func (s *FindingActivityService) DeleteActivityByCommentID(ctx context.Context, tenantID string, commentID string) error {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.activityRepo.DeleteByCommentID(ctx, parsedTenantID, commentID)
+}
+
+// UpdateActivityContentByCommentID updates the content of a comment_added activity.
+func (s *FindingActivityService) UpdateActivityContentByCommentID(ctx context.Context, tenantID string, commentID string, content string) error {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.activityRepo.UpdateContentByCommentID(ctx, parsedTenantID, commentID, content)
+}
+
 // RecordScanDetected is a convenience method for recording scan detections.
 func (s *FindingActivityService) RecordScanDetected(
 	ctx context.Context,
