@@ -160,6 +160,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	w.ControllerManager.Register(controller.NewScopeReconciliationController(
+		repos.AccessControl,
+		svc.ScopeRule,
+		&controller.ScopeReconciliationControllerConfig{
+			Interval: 30 * time.Minute,
+			Logger:   log.With("controller", "scope-reconciliation"),
+		},
+	))
+
 	return w, nil
 }
 

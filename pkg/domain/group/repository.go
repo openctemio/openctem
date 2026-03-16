@@ -30,8 +30,10 @@ type Repository interface {
 	UpdateMember(ctx context.Context, member *Member) error
 	RemoveMember(ctx context.Context, groupID, userID shared.ID) error
 	ListMembers(ctx context.Context, groupID shared.ID) ([]*Member, error)
-	ListMembersWithUserInfo(ctx context.Context, groupID shared.ID) ([]*MemberWithUser, error)
+	ListMembersWithUserInfo(ctx context.Context, groupID shared.ID, limit, offset int) ([]*MemberWithUser, int64, error)
 	CountMembers(ctx context.Context, groupID shared.ID) (int64, error)
+	CountMembersByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error)
+	CountUniqueMembers(ctx context.Context, groupIDs []shared.ID) (int, error)
 	GetMemberStats(ctx context.Context, groupID shared.ID) (*MemberStats, error)
 	IsMember(ctx context.Context, groupID, userID shared.ID) (bool, error)
 

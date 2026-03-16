@@ -50,6 +50,9 @@ type AssetService struct {
 	// In-memory scoring config cache (per-tenant, 5-min TTL)
 	scoringCacheMu sync.RWMutex
 	scoringCache   map[string]scoringConfigEntry // keyed by tenantID string
+
+	// Scope rule evaluator callback (set by services.go wiring)
+	scopeRuleEvaluator ScopeRuleEvaluatorFunc
 }
 
 // NewAssetService creates a new AssetService.
@@ -84,6 +87,12 @@ func (s *AssetService) SetScoringConfigProvider(provider asset.ScoringConfigProv
 // SetRedisClient sets the Redis client for distributed locking.
 func (s *AssetService) SetRedisClient(client *redis.Client) {
 	s.redisClient = client
+}
+
+// SetScopeRuleEvaluator sets the scope rule evaluator callback.
+// When set, asset create/update will trigger async scope rule evaluation.
+func (s *AssetService) SetScopeRuleEvaluator(fn ScopeRuleEvaluatorFunc) {
+	s.scopeRuleEvaluator = fn
 }
 
 // HasRepositoryExtensionRepository returns true if the repository extension repository is configured.
@@ -224,6 +233,25 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		return nil, fmt.Errorf("failed to create asset: %w", err)
 	}
 
+	// Evaluate scope rules for new asset (async — don't block response)
+	if s.scopeRuleEvaluator != nil && len(a.Tags()) > 0 {
+		assetID := a.ID()
+		tid := tenantID
+		tags := make([]string, len(a.Tags()))
+		copy(tags, a.Tags())
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("panic in scope rule evaluation", "asset_id", assetID.String(), "recover", r)
+				}
+			}()
+			if err := s.scopeRuleEvaluator(context.Background(), tid, assetID, tags, nil); err != nil {
+				s.logger.Warn("scope rule evaluation failed after asset create",
+					"asset_id", assetID.String(), "error", err)
+			}
+		}()
+	}
+
 	s.logger.Info("asset created", "id", a.ID().String(), "name", a.Name())
 	return a, nil
 }
@@ -355,7 +383,12 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		a.UpdateDescription(*input.Description)
 	}
 
+	// Capture old tags before replacement (for scope rule evaluation)
+	var oldTags []string
 	if input.Tags != nil {
+		oldTags = make([]string, len(a.Tags()))
+		copy(oldTags, a.Tags())
+
 		for _, tag := range a.Tags() {
 			a.RemoveTag(tag)
 		}
@@ -373,6 +406,25 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 
 	// Recalculate affected group stats (risk_score, finding_count, etc.)
 	s.recalculateAffectedGroups(ctx, parsedID)
+
+	// Evaluate scope rules if tags changed (async — don't block response)
+	if s.scopeRuleEvaluator != nil && input.Tags != nil && !tagsEqual(oldTags, a.Tags()) {
+		assetID := a.ID()
+		tid := parsedTenantID
+		tags := make([]string, len(a.Tags()))
+		copy(tags, a.Tags())
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("panic in scope rule evaluation", "asset_id", assetID.String(), "recover", r)
+				}
+			}()
+			if err := s.scopeRuleEvaluator(context.Background(), tid, assetID, tags, nil); err != nil {
+				s.logger.Warn("scope rule evaluation failed after asset update",
+					"asset_id", assetID.String(), "error", err)
+			}
+		}()
+	}
 
 	s.logger.Info("asset updated", "id", a.ID().String())
 	return a, nil
@@ -1778,4 +1830,21 @@ type RiskScorePreviewItem struct {
 	CurrentScore int    `json:"current_score"`
 	NewScore     int    `json:"new_score"`
 	Delta        int    `json:"delta"`
+}
+
+// tagsEqual compares two string slices for equality (order-insensitive).
+func tagsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	set := make(map[string]struct{}, len(a))
+	for _, t := range a {
+		set[t] = struct{}{}
+	}
+	for _, t := range b {
+		if _, ok := set[t]; !ok {
+			return false
+		}
+	}
+	return true
 }

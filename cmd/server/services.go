@@ -34,6 +34,10 @@ func (b *wsHubBroadcaster) BroadcastTriage(channel string, data any, tenantID st
 	b.hub.BroadcastEvent(channel, data, tenantID)
 }
 
+func (b *wsHubBroadcaster) BroadcastScopeChange(channel string, data any, tenantID string) {
+	b.hub.BroadcastEvent(channel, data, tenantID)
+}
+
 // Services holds all service instances.
 type Services struct {
 	// Auth
@@ -438,6 +442,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.AssignmentRule = app.NewAssignmentRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = app.NewScopeRuleService(repos.AccessControl, repos.Group, log)
+	s.ScopeRule.SetAssetGroupValidator(repos.AccessControl)
+
+	// Wire scope rule hooks for real-time evaluation
+	s.Asset.SetScopeRuleEvaluator(s.ScopeRule.EvaluateAsset)
+	s.AssetGroup.SetScopeRuleReconciler(s.ScopeRule.ReconcileByAssetGroup)
 
 	// Initialize assignment engine and wire to vulnerability service for auto-routing
 	assignmentEngine := app.NewAssignmentEngine(repos.AccessControl, log)
@@ -493,6 +502,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log.Info("AI triage broadcaster wired to WebSocket hub")
 	}
 
+	// Wire to ScopeRule for real-time scope rule changes on group:* channels
+	if s.ScopeRule != nil {
+		s.ScopeRule.SetBroadcaster(broadcaster)
+		log.Info("ScopeRule broadcaster wired to WebSocket hub")
+	}
+
 	// Initialize user notification service (needs WebSocketHub)
 	s.Notification = app.NewNotificationService(
 		repos.Notification,
@@ -500,6 +515,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 	)
 	log.Info("user notification service initialized")
+
+	// Wire notification service to GroupService for member notifications
+	s.Group.SetNotificationService(s.Notification)
 
 	// Wire in-app notification service to vulnerability service for real-time user notifications
 	s.Vulnerability.SetUserNotificationService(s.Notification)

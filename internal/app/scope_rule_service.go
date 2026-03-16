@@ -10,11 +10,23 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// ScopeRuleBroadcaster broadcasts scope rule membership change events via WebSocket.
+type ScopeRuleBroadcaster interface {
+	BroadcastScopeChange(channel string, data any, tenantID string)
+}
+
 // ScopeRuleService handles scope rule business operations.
 type ScopeRuleService struct {
-	acRepo    accesscontrol.Repository
-	groupRepo group.Repository
-	logger    *logger.Logger
+	acRepo         accesscontrol.Repository
+	groupRepo      group.Repository
+	agValidator    assetGroupValidator
+	broadcaster    ScopeRuleBroadcaster
+	logger         *logger.Logger
+}
+
+// assetGroupValidator validates that asset group IDs belong to a specific tenant.
+type assetGroupValidator interface {
+	ValidateAssetGroupsBelongToTenant(ctx context.Context, tenantID shared.ID, assetGroupIDs []shared.ID) error
 }
 
 // NewScopeRuleService creates a new ScopeRuleService.
@@ -29,6 +41,25 @@ func NewScopeRuleService(
 		logger:    log.With("service", "scope_rule"),
 	}
 }
+
+// SetAssetGroupValidator sets the validator for cross-tenant asset group validation.
+// The AccessControlRepository implements this interface.
+func (s *ScopeRuleService) SetAssetGroupValidator(v assetGroupValidator) {
+	s.agValidator = v
+}
+
+// SetBroadcaster sets the WebSocket broadcaster for real-time UI updates.
+func (s *ScopeRuleService) SetBroadcaster(b ScopeRuleBroadcaster) {
+	s.broadcaster = b
+}
+
+// ScopeRuleEvaluatorFunc is the callback type for scope rule evaluation.
+// Used by AssetService to trigger evaluation when asset tags change.
+type ScopeRuleEvaluatorFunc func(ctx context.Context, tenantID, assetID shared.ID, tags []string, assetGroupIDs []shared.ID) error
+
+// ScopeRuleGroupReconcilerFunc is the callback type for asset group membership changes.
+// Called when assets are added/removed from an asset group.
+type ScopeRuleGroupReconcilerFunc func(ctx context.Context, assetGroupID shared.ID)
 
 // CreateScopeRuleInput represents the input for creating a scope rule.
 type CreateScopeRuleInput struct {
@@ -130,6 +161,10 @@ func (s *ScopeRuleService) CreateScopeRule(ctx context.Context, input CreateScop
 				return nil, fmt.Errorf("%w: invalid asset group id: %s", shared.ErrValidation, idStr)
 			}
 			ids = append(ids, id)
+		}
+		// Security: Validate all asset groups belong to the same tenant
+		if err := s.validateAssetGroupOwnership(ctx, tenantID, ids); err != nil {
+			return nil, err
 		}
 		if err := rule.SetMatchAssetGroupIDs(ids); err != nil {
 			return nil, err
@@ -249,6 +284,10 @@ func (s *ScopeRuleService) UpdateScopeRule(ctx context.Context, tenantID, ruleID
 				return nil, fmt.Errorf("%w: invalid asset group id: %s", shared.ErrValidation, idStr)
 			}
 			ids = append(ids, agID)
+		}
+		// Security: Validate all asset groups belong to the same tenant
+		if err := s.validateAssetGroupOwnership(ctx, tid, ids); err != nil {
+			return nil, err
 		}
 		if err := rule.SetMatchAssetGroupIDs(ids); err != nil {
 			return nil, err
@@ -476,6 +515,11 @@ func (s *ScopeRuleService) ReconcileGroup(ctx context.Context, tenantID, groupID
 		"assets_added", result.AssetsAdded,
 	)
 
+	// Broadcast membership changes via WebSocket
+	if s.broadcaster != nil && (result.AssetsAdded > 0 || result.AssetsRemoved > 0) {
+		s.broadcastGroupChange(tid, gid, "scope_rule_reconciled", result.AssetsAdded, result.AssetsRemoved)
+	}
+
 	return result, nil
 }
 
@@ -538,12 +582,26 @@ func (s *ScopeRuleService) EvaluateAsset(ctx context.Context, tenantID shared.ID
 	}
 
 	// Remove stale auto-assignments: groups the asset was assigned to but no longer matches
+	// Batch delete instead of per-group N+1 queries
+	staleGroupIDs := make([]shared.ID, 0)
 	for _, gid := range currentAutoGroups {
 		if _, stillMatched := matchedGroupIDs[gid]; !stillMatched {
-			if err := s.acRepo.DeleteAutoAssignedForAsset(ctx, assetID, gid); err != nil {
-				s.logger.Warn("failed to remove stale auto-assignment", "asset_id", assetID.String(), "group_id", gid.String(), "error", err)
-				continue
-			}
+			staleGroupIDs = append(staleGroupIDs, gid)
+		}
+	}
+	for _, gid := range staleGroupIDs {
+		if err := s.acRepo.DeleteAutoAssignedForAsset(ctx, assetID, gid); err != nil {
+			s.logger.Warn("failed to remove stale auto-assignment", "asset_id", assetID.String(), "group_id", gid.String(), "error", err)
+			continue
+		}
+	}
+	// Batch refresh for all stale unassignments
+	if len(staleGroupIDs) > incrementalRefreshThreshold {
+		if err := s.acRepo.RefreshUserAccessibleAssets(ctx); err != nil {
+			s.logger.Warn("failed to refresh access after stale cleanup (full)", "error", err)
+		}
+	} else {
+		for _, gid := range staleGroupIDs {
 			if err := s.acRepo.RefreshAccessForAssetUnassign(ctx, gid, assetID); err != nil {
 				s.logger.Warn("failed to refresh access for stale unassign", "error", err)
 			}
@@ -577,6 +635,16 @@ func (s *ScopeRuleService) EvaluateAsset(ctx context.Context, tenantID shared.ID
 			if err := s.acRepo.RefreshAccessForAssetAssign(ctx, gid, assetID, string(ot)); err != nil {
 				s.logger.Warn("failed to refresh access for asset assign", "error", err)
 			}
+		}
+	}
+
+	// Broadcast membership changes to subscribed WebSocket clients
+	if s.broadcaster != nil && (totalAdded > 0 || len(staleGroupIDs) > 0) {
+		for gid := range matchedGroupIDs {
+			s.broadcastGroupChange(tenantID, gid, "scope_rule_evaluated", totalAdded, len(staleGroupIDs))
+		}
+		for _, gid := range staleGroupIDs {
+			s.broadcastGroupChange(tenantID, gid, "scope_rule_evaluated", totalAdded, len(staleGroupIDs))
 		}
 	}
 
@@ -791,4 +859,70 @@ func matchAssetGroups(assetGroupIDs, ruleGroupIDs []shared.ID) bool {
 		}
 	}
 	return false
+}
+
+// validateAssetGroupOwnership verifies all asset group IDs belong to the specified tenant.
+// This prevents cross-tenant data access via scope rules.
+func (s *ScopeRuleService) validateAssetGroupOwnership(ctx context.Context, tenantID shared.ID, assetGroupIDs []shared.ID) error {
+	if s.agValidator == nil {
+		// If validator not wired, skip validation (backward compat)
+		s.logger.Warn("asset group validator not set, skipping cross-tenant validation")
+		return nil
+	}
+	return s.agValidator.ValidateAssetGroupsBelongToTenant(ctx, tenantID, assetGroupIDs)
+}
+
+// ReconcileByAssetGroup finds all access control groups that have scope rules
+// referencing the given asset group, and reconciles each one.
+// Called when asset group membership changes (assets added/removed).
+func (s *ScopeRuleService) ReconcileByAssetGroup(ctx context.Context, assetGroupID shared.ID) {
+	groupIDs, err := s.acRepo.ListGroupsWithAssetGroupMatchRule(ctx, assetGroupID)
+	if err != nil {
+		s.logger.Warn("failed to find groups referencing asset group",
+			"asset_group_id", assetGroupID.String(), "error", err)
+		return
+	}
+
+	if len(groupIDs) == 0 {
+		return // No scope rules reference this asset group
+	}
+
+	for _, gid := range groupIDs {
+		rules, err := s.acRepo.ListActiveScopeRulesByGroup(ctx, shared.ID{}, gid)
+		if err != nil || len(rules) == 0 {
+			continue
+		}
+		tenantID := rules[0].TenantID()
+
+		if _, err := s.ReconcileGroup(ctx, tenantID.String(), gid.String()); err != nil {
+			s.logger.Warn("failed to reconcile group after asset group change",
+				"group_id", gid.String(), "asset_group_id", assetGroupID.String(), "error", err)
+		}
+	}
+}
+
+// ReconcileGroupByIDs reconciles a group using parsed IDs (for use by background controller).
+func (s *ScopeRuleService) ReconcileGroupByIDs(ctx context.Context, tenantID, groupID shared.ID) error {
+	_, err := s.ReconcileGroup(ctx, tenantID.String(), groupID.String())
+	return err
+}
+
+// scopeChangeEvent is the WebSocket payload for scope rule membership changes.
+type scopeChangeEvent struct {
+	EventType     string `json:"event_type"`
+	GroupID       string `json:"group_id"`
+	AssetsAdded   int    `json:"assets_added"`
+	AssetsRemoved int    `json:"assets_removed"`
+}
+
+// broadcastGroupChange sends a scope rule change event to WebSocket subscribers.
+func (s *ScopeRuleService) broadcastGroupChange(tenantID, groupID shared.ID, eventType string, added, removed int) {
+	channel := "group:" + groupID.String()
+	event := scopeChangeEvent{
+		EventType:     eventType,
+		GroupID:       groupID.String(),
+		AssetsAdded:   added,
+		AssetsRemoved: removed,
+	}
+	s.broadcaster.BroadcastScopeChange(channel, event, tenantID.String())
 }

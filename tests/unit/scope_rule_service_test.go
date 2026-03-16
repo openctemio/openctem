@@ -322,10 +322,16 @@ func (m *mockGroupRepoForScope) RemoveMember(_ context.Context, _, _ shared.ID) 
 func (m *mockGroupRepoForScope) ListMembers(_ context.Context, _ shared.ID) ([]*group.Member, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForScope) ListMembersWithUserInfo(_ context.Context, _ shared.ID) ([]*group.MemberWithUser, error) {
-	return nil, nil
+func (m *mockGroupRepoForScope) ListMembersWithUserInfo(_ context.Context, _ shared.ID, _, _ int) ([]*group.MemberWithUser, int64, error) {
+	return nil, 0, nil
 }
 func (m *mockGroupRepoForScope) CountMembers(_ context.Context, _ shared.ID) (int64, error) {
+	return 0, nil
+}
+func (m *mockGroupRepoForScope) CountMembersByGroups(_ context.Context, _ []shared.ID) (map[shared.ID]int, error) {
+	return nil, nil
+}
+func (m *mockGroupRepoForScope) CountUniqueMembers(_ context.Context, _ []shared.ID) (int, error) {
 	return 0, nil
 }
 func (m *mockGroupRepoForScope) GetMemberStats(_ context.Context, _ shared.ID) (*group.MemberStats, error) {

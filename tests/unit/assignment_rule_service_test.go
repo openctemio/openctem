@@ -156,10 +156,16 @@ func (m *mockGroupRepoForRules) RemoveMember(_ context.Context, _, _ shared.ID) 
 func (m *mockGroupRepoForRules) ListMembers(_ context.Context, _ shared.ID) ([]*group.Member, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForRules) ListMembersWithUserInfo(_ context.Context, _ shared.ID) ([]*group.MemberWithUser, error) {
-	return nil, nil
+func (m *mockGroupRepoForRules) ListMembersWithUserInfo(_ context.Context, _ shared.ID, _, _ int) ([]*group.MemberWithUser, int64, error) {
+	return nil, 0, nil
 }
 func (m *mockGroupRepoForRules) CountMembers(_ context.Context, _ shared.ID) (int64, error) {
+	return 0, nil
+}
+func (m *mockGroupRepoForRules) CountMembersByGroups(_ context.Context, _ []shared.ID) (map[shared.ID]int, error) {
+	return nil, nil
+}
+func (m *mockGroupRepoForRules) CountUniqueMembers(_ context.Context, _ []shared.ID) (int, error) {
 	return 0, nil
 }
 func (m *mockGroupRepoForRules) GetMemberStats(_ context.Context, _ shared.ID) (*group.MemberStats, error) {

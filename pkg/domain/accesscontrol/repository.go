@@ -15,8 +15,10 @@ type Repository interface {
 	DeleteAssetOwner(ctx context.Context, assetID, groupID shared.ID) error
 	ListAssetOwners(ctx context.Context, assetID shared.ID) ([]*AssetOwner, error)
 	ListAssetsByGroup(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
+	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
 	ListGroupsByAsset(ctx context.Context, assetID shared.ID) ([]shared.ID, error)
 	CountAssetOwners(ctx context.Context, assetID shared.ID) (int64, error)
+	CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error)
 	HasPrimaryOwner(ctx context.Context, assetID shared.ID) (bool, error)
 
 	// Extended Asset Ownership (with tenant isolation and user/group name resolution)
@@ -99,6 +101,11 @@ type Repository interface {
 	// Scope rule matching queries
 	FindAssetsByTagMatch(ctx context.Context, tenantID shared.ID, tags []string, logic MatchLogic) ([]shared.ID, error)
 	FindAssetsByAssetGroupMatch(ctx context.Context, tenantID shared.ID, assetGroupIDs []shared.ID) ([]shared.ID, error)
+
+	// Scope rule controller queries
+	ListTenantsWithActiveScopeRules(ctx context.Context) ([]shared.ID, error)
+	ListGroupsWithActiveScopeRules(ctx context.Context, tenantID shared.ID) ([]shared.ID, error)
+	ListGroupsWithAssetGroupMatchRule(ctx context.Context, assetGroupID shared.ID) ([]shared.ID, error)
 }
 
 // AssignmentRuleFilter contains filter options for listing assignment rules.
@@ -169,6 +176,14 @@ type AssetOwnerWithNames struct {
 	UserEmail  string
 	GroupName  string
 	AssignedByName string
+}
+
+// AssetOwnerWithAsset extends AssetOwner with basic asset details.
+type AssetOwnerWithAsset struct {
+	*AssetOwner
+	AssetName   string
+	AssetType   string
+	AssetStatus string
 }
 
 // AssetWithOwners represents an asset with its ownership information.

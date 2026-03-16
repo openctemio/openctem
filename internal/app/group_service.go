@@ -7,6 +7,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/group"
+	"github.com/openctemio/api/pkg/domain/notification"
 	"github.com/openctemio/api/pkg/domain/permissionset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -14,11 +15,12 @@ import (
 
 // GroupService handles group-related business operations.
 type GroupService struct {
-	repo              group.Repository
-	permissionSetRepo permissionset.Repository
-	accessControlRepo accesscontrol.Repository
-	auditService      *AuditService
-	logger            *logger.Logger
+	repo                group.Repository
+	permissionSetRepo   permissionset.Repository
+	accessControlRepo   accesscontrol.Repository
+	auditService        *AuditService
+	notificationService *NotificationService
+	logger              *logger.Logger
 }
 
 // NewGroupService creates a new GroupService.
@@ -59,6 +61,12 @@ func WithAccessControlRepository(repo accesscontrol.Repository) GroupServiceOpti
 	return func(s *GroupService) {
 		s.accessControlRepo = repo
 	}
+}
+
+// SetNotificationService sets the notification service for GroupService.
+// This is used for late-binding when NotificationService is initialized after GroupService.
+func (s *GroupService) SetNotificationService(ns *NotificationService) {
+	s.notificationService = ns
 }
 
 // logAudit logs an audit event if audit service is configured.
@@ -342,6 +350,65 @@ func (s *GroupService) ListGroups(ctx context.Context, input ListGroupsInput) (*
 	}, nil
 }
 
+// GroupCounts holds member and asset counts for a group.
+type GroupCounts struct {
+	MemberCount int
+	AssetCount  int
+}
+
+// GetGroupCounts returns member and asset counts for the given groups.
+func (s *GroupService) GetGroupCounts(ctx context.Context, groups []*group.Group) (map[shared.ID]GroupCounts, error) {
+	if len(groups) == 0 {
+		return make(map[shared.ID]GroupCounts), nil
+	}
+
+	groupIDs := make([]shared.ID, len(groups))
+	for i, g := range groups {
+		groupIDs[i] = g.ID()
+	}
+
+	memberCounts, err := s.repo.CountMembersByGroups(ctx, groupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get member counts: %w", err)
+	}
+
+	result := make(map[shared.ID]GroupCounts, len(groups))
+	for _, gid := range groupIDs {
+		result[gid] = GroupCounts{
+			MemberCount: memberCounts[gid],
+		}
+	}
+
+	if s.accessControlRepo != nil {
+		assetCounts, err := s.accessControlRepo.CountAssetsByGroups(ctx, groupIDs)
+		if err != nil {
+			s.logger.Warn("failed to get asset counts", "error", err)
+		} else {
+			for _, gid := range groupIDs {
+				c := result[gid]
+				c.AssetCount = assetCounts[gid]
+				result[gid] = c
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// CountUniqueMembers counts the number of distinct users across the given groups.
+func (s *GroupService) CountUniqueMembers(ctx context.Context, groups []*group.Group) (int, error) {
+	if len(groups) == 0 {
+		return 0, nil
+	}
+
+	groupIDs := make([]shared.ID, len(groups))
+	for i, g := range groups {
+		groupIDs[i] = g.ID()
+	}
+
+	return s.repo.CountUniqueMembers(ctx, groupIDs)
+}
+
 // =============================================================================
 // MEMBER OPERATIONS
 // =============================================================================
@@ -403,6 +470,29 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 		WithMetadata("role", input.Role)
 	s.logAudit(ctx, actx, event)
 
+	// Notify the added user
+	if s.notificationService != nil && g != nil {
+		audienceID := input.UserID
+		notifParams := notification.NotificationParams{
+			TenantID:         g.TenantID(),
+			Audience:         notification.AudienceUser,
+			AudienceID:       &audienceID,
+			NotificationType: notification.TypeMemberInvited,
+			Title:            fmt.Sprintf("You've been added to team \"%s\"", g.Name()),
+			Body:             fmt.Sprintf("You have been added to the team \"%s\" as %s.", g.Name(), role),
+			Severity:         notification.SeverityInfo,
+			ResourceType:     "group",
+			ResourceID:       &groupID,
+			URL:              "/settings/access-control/groups",
+		}
+		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
+			notifParams.ActorID = &actorID
+		}
+		if err := s.notificationService.Notify(ctx, notifParams); err != nil {
+			s.logger.Error("failed to notify added member", "error", err, "user_id", input.UserID.String())
+		}
+	}
+
 	return member, nil
 }
 
@@ -452,6 +542,29 @@ func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMe
 		WithMessage(fmt.Sprintf("Member role changed from %s to %s", oldRole, role)).
 		WithMetadata("user_id", input.UserID.String())
 	s.logAudit(ctx, actx, event)
+
+	// Notify the user about role change
+	if s.notificationService != nil && g != nil {
+		audienceID := input.UserID
+		notifParams := notification.NotificationParams{
+			TenantID:         g.TenantID(),
+			Audience:         notification.AudienceUser,
+			AudienceID:       &audienceID,
+			NotificationType: notification.TypeRoleChanged,
+			Title:            fmt.Sprintf("Your role in team \"%s\" has been updated", g.Name()),
+			Body:             fmt.Sprintf("Your role has been changed from %s to %s in team \"%s\".", oldRole, role, g.Name()),
+			Severity:         notification.SeverityInfo,
+			ResourceType:     "group",
+			ResourceID:       &groupID,
+			URL:              "/settings/access-control/groups",
+		}
+		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
+			notifParams.ActorID = &actorID
+		}
+		if err := s.notificationService.Notify(ctx, notifParams); err != nil {
+			s.logger.Error("failed to notify member about role change", "error", err, "user_id", input.UserID.String())
+		}
+	}
 
 	return member, nil
 }
@@ -513,6 +626,29 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 		WithSeverity(audit.SeverityHigh)
 	s.logAudit(ctx, actx, event)
 
+	// Notify the removed user
+	if s.notificationService != nil {
+		audienceID := userID
+		notifParams := notification.NotificationParams{
+			TenantID:         g.TenantID(),
+			Audience:         notification.AudienceUser,
+			AudienceID:       &audienceID,
+			NotificationType: notification.TypeMemberInvited,
+			Title:            fmt.Sprintf("You've been removed from team \"%s\"", g.Name()),
+			Body:             fmt.Sprintf("You have been removed from the team \"%s\".", g.Name()),
+			Severity:         notification.SeverityMedium,
+			ResourceType:     "group",
+			ResourceID:       &gid,
+			URL:              "/settings/access-control/groups",
+		}
+		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
+			notifParams.ActorID = &actorID
+		}
+		if err := s.notificationService.Notify(ctx, notifParams); err != nil {
+			s.logger.Error("failed to notify removed member", "error", err, "user_id", userID.String())
+		}
+	}
+
 	return nil
 }
 
@@ -526,14 +662,14 @@ func (s *GroupService) ListGroupMembers(ctx context.Context, groupID string) ([]
 	return s.repo.ListMembers(ctx, id)
 }
 
-// ListGroupMembersWithUserInfo lists members with user details.
-func (s *GroupService) ListGroupMembersWithUserInfo(ctx context.Context, groupID string) ([]*group.MemberWithUser, error) {
+// ListGroupMembersWithUserInfo lists members with user details, with pagination.
+func (s *GroupService) ListGroupMembersWithUserInfo(ctx context.Context, groupID string, limit, offset int) ([]*group.MemberWithUser, int64, error) {
 	id, err := shared.IDFromString(groupID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+		return nil, 0, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	return s.repo.ListMembersWithUserInfo(ctx, id)
+	return s.repo.ListMembersWithUserInfo(ctx, id, limit, offset)
 }
 
 // ListUserGroups lists all groups a user belongs to.
@@ -847,35 +983,18 @@ func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAss
 	return nil
 }
 
-// ListGroupAssets lists all assets assigned to a group.
-func (s *GroupService) ListGroupAssets(ctx context.Context, groupID string) ([]*accesscontrol.AssetOwner, error) {
+// ListGroupAssets lists assets assigned to a group with asset details, with pagination.
+func (s *GroupService) ListGroupAssets(ctx context.Context, groupID string, limit, offset int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
 	if s.accessControlRepo == nil {
-		return nil, fmt.Errorf("access control repository not configured")
+		return nil, 0, fmt.Errorf("access control repository not configured")
 	}
 
 	gid, err := shared.IDFromString(groupID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+		return nil, 0, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	// First get asset IDs
-	assetIDs, err := s.accessControlRepo.ListAssetsByGroup(ctx, gid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list group assets: %w", err)
-	}
-
-	// Get full asset owner info for each
-	owners := make([]*accesscontrol.AssetOwner, 0, len(assetIDs))
-	for _, assetID := range assetIDs {
-		ao, err := s.accessControlRepo.GetAssetOwner(ctx, assetID, gid)
-		if err != nil {
-			s.logger.Error("failed to get asset owner", "asset_id", assetID.String(), "error", err)
-			continue
-		}
-		owners = append(owners, ao)
-	}
-
-	return owners, nil
+	return s.accessControlRepo.ListAssetOwnersByGroupWithDetails(ctx, gid, limit, offset)
 }
 
 // ListAssetOwners lists all groups that own an asset.

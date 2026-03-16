@@ -42,6 +42,40 @@ func (h *GroupHandler) WithSyncService(syncService *app.GroupSyncService) *Group
 }
 
 // =============================================================================
+// Pagination Helpers
+// =============================================================================
+
+// PaginatedResponse is a generic paginated API response.
+type PaginatedResponse struct {
+	Items      any   `json:"items"`
+	TotalCount int64 `json:"total_count"`
+	Limit      int   `json:"limit"`
+	Offset     int   `json:"offset"`
+}
+
+// parsePagination extracts limit and offset from query params with defaults.
+func parsePagination(r *http.Request) (limit, offset int) {
+	limit = 20
+	offset = 0
+
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	if limit > 100 {
+		limit = 100
+	}
+	return limit, offset
+}
+
+// =============================================================================
 // Response Types
 // =============================================================================
 
@@ -56,7 +90,8 @@ type GroupResponse struct {
 	IsActive           bool                     `json:"is_active"`
 	Settings           group.GroupSettings      `json:"settings,omitempty"`
 	NotificationConfig group.NotificationConfig `json:"notification_config,omitempty"`
-	MemberCount        int                      `json:"member_count,omitempty"`
+	MemberCount        int                      `json:"member_count"`
+	AssetCount         int                      `json:"asset_count"`
 	CreatedAt          time.Time                `json:"created_at"`
 	UpdatedAt          time.Time                `json:"updated_at"`
 }
@@ -71,13 +106,14 @@ type GroupMemberResponse struct {
 
 // GroupMemberWithUserResponse represents a member with user details.
 type GroupMemberWithUserResponse struct {
-	UserID    string    `json:"user_id"`
-	Role      string    `json:"role"`
-	JoinedAt  time.Time `json:"joined_at"`
-	AddedBy   string    `json:"added_by,omitempty"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	AvatarURL string    `json:"avatar_url,omitempty"`
+	UserID      string    `json:"user_id"`
+	Role        string    `json:"role"`
+	JoinedAt    time.Time `json:"joined_at"`
+	AddedBy     string    `json:"added_by,omitempty"`
+	AddedByName string    `json:"added_by_name,omitempty"`
+	Email       string    `json:"email"`
+	Name        string    `json:"name"`
+	AvatarURL   string    `json:"avatar_url,omitempty"`
 }
 
 // GroupWithRoleResponse represents a group with the user's role.
@@ -89,10 +125,11 @@ type GroupWithRoleResponse struct {
 
 // GroupListResponse represents a paginated list of groups.
 type GroupListResponse struct {
-	Groups     []GroupResponse `json:"groups"`
-	TotalCount int64           `json:"total_count"`
-	Limit      int             `json:"limit"`
-	Offset     int             `json:"offset"`
+	Groups            []GroupResponse `json:"groups"`
+	TotalCount        int64           `json:"total_count"`
+	UniqueMemberCount int             `json:"unique_member_count"`
+	Limit             int             `json:"limit"`
+	Offset            int             `json:"offset"`
 }
 
 // =============================================================================
@@ -169,12 +206,13 @@ func toGroupMemberResponse(m *group.Member) GroupMemberResponse {
 
 func toGroupMemberWithUserResponse(m *group.MemberWithUser) GroupMemberWithUserResponse {
 	resp := GroupMemberWithUserResponse{
-		UserID:    m.Member.UserID().String(),
-		Role:      m.Member.Role().String(),
-		JoinedAt:  m.Member.JoinedAt(),
-		Email:     m.Email,
-		Name:      m.Name,
-		AvatarURL: m.AvatarURL,
+		UserID:      m.Member.UserID().String(),
+		Role:        m.Member.Role().String(),
+		JoinedAt:    m.Member.JoinedAt(),
+		Email:       m.Email,
+		Name:        m.Name,
+		AvatarURL:   m.AvatarURL,
+		AddedByName: m.AddedByName,
 	}
 	if m.Member.AddedBy() != nil {
 		resp.AddedBy = m.Member.AddedBy().String()
@@ -350,8 +388,19 @@ func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := toGroupResponse(g)
+
+	// Populate member and asset counts
+	counts, err := h.service.GetGroupCounts(ctx, []*group.Group{g})
+	if err == nil {
+		if c, ok := counts[g.ID()]; ok {
+			resp.MemberCount = c.MemberCount
+			resp.AssetCount = c.AssetCount
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toGroupResponse(g))
+	json.NewEncoder(w).Encode(resp)
 }
 
 // ListGroups handles GET /api/v1/groups
@@ -411,16 +460,33 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Batch-fetch member and asset counts for all groups
+	counts, err := h.service.GetGroupCounts(ctx, output.Groups)
+	if err != nil {
+		h.logger.Warn("failed to get group counts", "error", err)
+	}
+
 	groups := make([]GroupResponse, len(output.Groups))
 	for i, g := range output.Groups {
 		groups[i] = toGroupResponse(g)
+		if c, ok := counts[g.ID()]; ok {
+			groups[i].MemberCount = c.MemberCount
+			groups[i].AssetCount = c.AssetCount
+		}
+	}
+
+	// Count unique members across all groups
+	uniqueMembers, err := h.service.CountUniqueMembers(ctx, output.Groups)
+	if err != nil {
+		h.logger.Warn("failed to count unique members", "error", err)
 	}
 
 	resp := GroupListResponse{
-		Groups:     groups,
-		TotalCount: output.TotalCount,
-		Limit:      limit,
-		Offset:     offset,
+		Groups:            groups,
+		TotalCount:        output.TotalCount,
+		UniqueMemberCount: uniqueMembers,
+		Limit:             limit,
+		Offset:            offset,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -514,15 +580,24 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
 
-	members, err := h.service.ListGroupMembersWithUserInfo(ctx, groupID)
+	limit, offset := parsePagination(r)
+
+	members, totalCount, err := h.service.ListGroupMembersWithUserInfo(ctx, groupID, limit, offset)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	resp := make([]GroupMemberWithUserResponse, len(members))
+	items := make([]GroupMemberWithUserResponse, len(members))
 	for i, m := range members {
-		resp[i] = toGroupMemberWithUserResponse(m)
+		items[i] = toGroupMemberWithUserResponse(m)
+	}
+
+	resp := PaginatedResponse{
+		Items:      items,
+		TotalCount: totalCount,
+		Limit:      limit,
+		Offset:     offset,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -838,13 +913,22 @@ type AssignAssetRequest struct {
 
 // GroupOwnershipResponse represents an asset ownership in group API responses.
 type GroupOwnershipResponse struct {
-	ID            string `json:"id"`
-	AssetID       string `json:"asset_id"`
-	GroupID       string `json:"group_id,omitempty"`
-	UserID        string `json:"user_id,omitempty"`
-	OwnershipType string `json:"ownership_type"`
-	AssignedAt    string `json:"assigned_at"`
-	AssignedBy    string `json:"assigned_by,omitempty"`
+	ID            string              `json:"id"`
+	AssetID       string              `json:"asset_id"`
+	GroupID       string              `json:"group_id,omitempty"`
+	UserID        string              `json:"user_id,omitempty"`
+	OwnershipType string              `json:"ownership_type"`
+	AssignedAt    string              `json:"assigned_at"`
+	AssignedBy    string              `json:"assigned_by,omitempty"`
+	Asset         *AssetBriefResponse `json:"asset,omitempty"`
+}
+
+// AssetBriefResponse represents minimal asset info embedded in ownership responses.
+type AssetBriefResponse struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
 }
 
 // AssignAsset handles POST /api/v1/groups/{groupId}/assets
@@ -1047,29 +1131,44 @@ func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
 
-	owners, err := h.service.ListGroupAssets(ctx, groupID)
+	limit, offset := parsePagination(r)
+
+	owners, totalCount, err := h.service.ListGroupAssets(ctx, groupID, limit, offset)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	resp := make([]GroupOwnershipResponse, len(owners))
+	items := make([]GroupOwnershipResponse, len(owners))
 	for i, ao := range owners {
-		resp[i] = GroupOwnershipResponse{
+		items[i] = GroupOwnershipResponse{
 			ID:            ao.ID().String(),
 			AssetID:       ao.AssetID().String(),
 			OwnershipType: ao.OwnershipType().String(),
 			AssignedAt:    ao.AssignedAt().Format("2006-01-02T15:04:05Z07:00"),
+			Asset: &AssetBriefResponse{
+				ID:     ao.AssetID().String(),
+				Name:   ao.AssetName,
+				Type:   ao.AssetType,
+				Status: ao.AssetStatus,
+			},
 		}
 		if ao.GroupID() != nil {
-			resp[i].GroupID = ao.GroupID().String()
+			items[i].GroupID = ao.GroupID().String()
 		}
 		if ao.UserID() != nil {
-			resp[i].UserID = ao.UserID().String()
+			items[i].UserID = ao.UserID().String()
 		}
 		if ao.AssignedBy() != nil {
-			resp[i].AssignedBy = ao.AssignedBy().String()
+			items[i].AssignedBy = ao.AssignedBy().String()
 		}
+	}
+
+	resp := PaginatedResponse{
+		Items:      items,
+		TotalCount: totalCount,
+		Limit:      limit,
+		Offset:     offset,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1105,7 +1204,7 @@ func (h *GroupHandler) ListMyAssets(w http.ResponseWriter, r *http.Request) {
 		ids[i] = id.String()
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"asset_ids": ids,
 		"count":     len(ids),
 	}
@@ -1152,7 +1251,7 @@ func (h *GroupHandler) TriggerSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"status":  "ok",
 		"message": "Group sync triggered successfully",
 	}

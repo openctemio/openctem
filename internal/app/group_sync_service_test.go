@@ -96,11 +96,18 @@ func (m *MockGroupRepository) ListMembers(_ context.Context, _ shared.ID) ([]*gr
 	return nil, nil
 }
 
-func (m *MockGroupRepository) ListMembersWithUserInfo(_ context.Context, _ shared.ID) ([]*group.MemberWithUser, error) {
-	return nil, nil
+func (m *MockGroupRepository) ListMembersWithUserInfo(_ context.Context, _ shared.ID, _, _ int) ([]*group.MemberWithUser, int64, error) {
+	return nil, 0, nil
 }
 
 func (m *MockGroupRepository) CountMembers(_ context.Context, _ shared.ID) (int64, error) {
+	return 0, nil
+}
+
+func (m *MockGroupRepository) CountMembersByGroups(_ context.Context, _ []shared.ID) (map[shared.ID]int, error) {
+	return nil, nil
+}
+func (m *MockGroupRepository) CountUniqueMembers(_ context.Context, _ []shared.ID) (int, error) {
 	return 0, nil
 }
 

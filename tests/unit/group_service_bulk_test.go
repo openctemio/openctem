@@ -187,10 +187,16 @@ func (m *mockGroupRepoForBulk) GetByExternalID(_ context.Context, _ shared.ID, _
 	return nil, nil
 }
 func (m *mockGroupRepoForBulk) UpdateMember(_ context.Context, _ *group.Member) error { return nil }
-func (m *mockGroupRepoForBulk) ListMembersWithUserInfo(_ context.Context, _ shared.ID) ([]*group.MemberWithUser, error) {
-	return nil, nil
+func (m *mockGroupRepoForBulk) ListMembersWithUserInfo(_ context.Context, _ shared.ID, _, _ int) ([]*group.MemberWithUser, int64, error) {
+	return nil, 0, nil
 }
 func (m *mockGroupRepoForBulk) CountMembers(_ context.Context, _ shared.ID) (int64, error) {
+	return 0, nil
+}
+func (m *mockGroupRepoForBulk) CountMembersByGroups(_ context.Context, _ []shared.ID) (map[shared.ID]int, error) {
+	return nil, nil
+}
+func (m *mockGroupRepoForBulk) CountUniqueMembers(_ context.Context, _ []shared.ID) (int, error) {
 	return 0, nil
 }
 func (m *mockGroupRepoForBulk) GetMemberStats(_ context.Context, _ shared.ID) (*group.MemberStats, error) {

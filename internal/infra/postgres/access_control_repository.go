@@ -358,6 +358,90 @@ func (r *AccessControlRepository) ListAssetsByGroup(ctx context.Context, groupID
 	return assetIDs, nil
 }
 
+// ListAssetOwnersByGroupWithDetails lists asset owners for a group with asset name/type/status, with pagination.
+func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, limit, offset int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
+	// Apply pagination defaults and caps.
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	// Count total asset owners for this group.
+	countQuery := `SELECT COUNT(*) FROM asset_owners WHERE group_id = $1`
+	var totalCount int64
+	if err := r.db.QueryRowContext(ctx, countQuery, groupID.String()).Scan(&totalCount); err != nil {
+		return nil, 0, fmt.Errorf("failed to count asset owners with details: %w", err)
+	}
+
+	query := `
+		SELECT ao.id, ao.asset_id, ao.group_id, ao.user_id, ao.ownership_type, ao.assigned_at, ao.assigned_by,
+		       COALESCE(a.name, ''), COALESCE(a.asset_type, ''), COALESCE(a.status, '')
+		FROM asset_owners ao
+		LEFT JOIN assets a ON a.id = ao.asset_id
+		WHERE ao.group_id = $1
+		ORDER BY ao.assigned_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, groupID.String(), limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list asset owners with details: %w", err)
+	}
+	defer rows.Close()
+
+	var results []*accesscontrol.AssetOwnerWithAsset
+	for rows.Next() {
+		var (
+			idStr, assetIDStr, ownershipType, assignedAt string
+			groupIDStr, userIDStr, assignedByStr          *string
+			assetName, assetType, assetStatus             string
+		)
+		if err := rows.Scan(&idStr, &assetIDStr, &groupIDStr, &userIDStr, &ownershipType, &assignedAt, &assignedByStr,
+			&assetName, &assetType, &assetStatus); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan asset owner with details: %w", err)
+		}
+
+		id, _ := shared.IDFromString(idStr)
+		assetID, _ := shared.IDFromString(assetIDStr)
+
+		var gid *shared.ID
+		if groupIDStr != nil {
+			g, _ := shared.IDFromString(*groupIDStr)
+			gid = &g
+		}
+		var uid *shared.ID
+		if userIDStr != nil {
+			u, _ := shared.IDFromString(*userIDStr)
+			uid = &u
+		}
+		var assignedBy *shared.ID
+		if assignedByStr != nil {
+			ab, _ := shared.IDFromString(*assignedByStr)
+			assignedBy = &ab
+		}
+
+		parsedTime, _ := time.Parse(time.RFC3339, assignedAt)
+
+		ao := accesscontrol.ReconstituteAssetOwner(id, assetID, gid, uid,
+			accesscontrol.OwnershipType(ownershipType), parsedTime, assignedBy)
+
+		results = append(results, &accesscontrol.AssetOwnerWithAsset{
+			AssetOwner:  ao,
+			AssetName:   assetName,
+			AssetType:   assetType,
+			AssetStatus: assetStatus,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return results, totalCount, nil
+}
+
 // ListGroupsByAsset lists all group IDs that own an asset (excludes direct user ownership).
 func (r *AccessControlRepository) ListGroupsByAsset(ctx context.Context, assetID shared.ID) ([]shared.ID, error) {
 	query := `
@@ -489,6 +573,39 @@ func (r *AccessControlRepository) CountAssetOwners(ctx context.Context, assetID 
 	}
 
 	return count, nil
+}
+
+// CountAssetsByGroups counts assets owned by multiple groups in a single query.
+func (r *AccessControlRepository) CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error) {
+	if len(groupIDs) == 0 {
+		return make(map[shared.ID]int), nil
+	}
+
+	ids := make([]string, len(groupIDs))
+	for i, id := range groupIDs {
+		ids[i] = id.String()
+	}
+
+	query := `SELECT group_id, COUNT(DISTINCT asset_id) FROM asset_owners WHERE group_id = ANY($1) GROUP BY group_id`
+
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to count assets by groups: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[shared.ID]int, len(groupIDs))
+	for rows.Next() {
+		var gidStr string
+		var count int
+		if err := rows.Scan(&gidStr, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan asset count: %w", err)
+		}
+		gid, _ := shared.IDFromString(gidStr)
+		result[gid] = count
+	}
+
+	return result, rows.Err()
 }
 
 // HasPrimaryOwner checks if an asset has at least one primary owner.
@@ -2118,7 +2235,7 @@ func (r *AccessControlRepository) scanScopeRule(row *sql.Row) (*accesscontrol.Sc
 
 	err := row.Scan(
 		&idStr, &tenantIDStr, &groupIDStr, &name, &description,
-		&ruleType, &matchTags, &matchLogic, &matchAssetGroupIDStrs,
+		&ruleType, pq.Array(&matchTags), &matchLogic, pq.Array(&matchAssetGroupIDStrs),
 		&ownershipType, &priority, &isActive, &createdAt, &updatedAt, &createdByStr,
 	)
 	if err != nil {
@@ -2185,7 +2302,7 @@ func (r *AccessControlRepository) scanScopeRules(rows *sql.Rows) ([]*accesscontr
 
 		err := rows.Scan(
 			&idStr, &tenantIDStr, &groupIDStr, &name, &description,
-			&ruleType, &matchTags, &matchLogic, &matchAssetGroupIDStrs,
+			&ruleType, pq.Array(&matchTags), &matchLogic, pq.Array(&matchAssetGroupIDStrs),
 			&ownershipType, &priority, &isActive, &createdAt, &updatedAt, &createdByStr,
 		)
 		if err != nil {
@@ -2520,6 +2637,114 @@ func (r *AccessControlRepository) RefreshAccessForDirectOwnerRemove(ctx context.
 	_, err := r.db.ExecContext(ctx, query, assetID.String(), userID.String())
 	if err != nil {
 		return fmt.Errorf("failed to refresh access for direct owner remove: %w", err)
+	}
+	return nil
+}
+
+// ListTenantsWithActiveScopeRules returns all tenants that have at least one active scope rule.
+func (r *AccessControlRepository) ListTenantsWithActiveScopeRules(ctx context.Context) ([]shared.ID, error) {
+	query := `SELECT DISTINCT tenant_id FROM group_asset_scope_rules WHERE is_active = true`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tenants with active scope rules: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]shared.ID, 0)
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("failed to scan tenant id: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ListGroupsWithActiveScopeRules returns distinct group IDs that have active scope rules for a tenant.
+func (r *AccessControlRepository) ListGroupsWithActiveScopeRules(ctx context.Context, tenantID shared.ID) ([]shared.ID, error) {
+	query := `SELECT DISTINCT group_id FROM group_asset_scope_rules WHERE tenant_id = $1 AND is_active = true`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list groups with active scope rules: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]shared.ID, 0)
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("failed to scan group id: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ListGroupsWithAssetGroupMatchRule returns distinct access control group IDs that have
+// active scope rules referencing the given asset group ID in match_asset_group_ids.
+func (r *AccessControlRepository) ListGroupsWithAssetGroupMatchRule(ctx context.Context, assetGroupID shared.ID) ([]shared.ID, error) {
+	query := `
+		SELECT DISTINCT group_id
+		FROM group_asset_scope_rules
+		WHERE $1::uuid = ANY(match_asset_group_ids) AND is_active = true
+	`
+	rows, err := r.db.QueryContext(ctx, query, assetGroupID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list groups with asset group match rule: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]shared.ID, 0)
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("failed to scan group id: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ValidateAssetGroupsBelongToTenant checks that all given asset group IDs belong to the specified tenant.
+// Returns an error if any asset group doesn't exist or belongs to a different tenant.
+func (r *AccessControlRepository) ValidateAssetGroupsBelongToTenant(ctx context.Context, tenantID shared.ID, assetGroupIDs []shared.ID) error {
+	if len(assetGroupIDs) == 0 {
+		return nil
+	}
+
+	// Build parameterized IN clause
+	placeholders := make([]string, len(assetGroupIDs))
+	args := make([]interface{}, 0, len(assetGroupIDs)+1)
+	args = append(args, tenantID.String())
+	for i, id := range assetGroupIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+2)
+		args = append(args, id.String())
+	}
+
+	query := fmt.Sprintf(`
+		SELECT COUNT(*) FROM asset_groups
+		WHERE tenant_id = $1 AND id IN (%s)
+	`, strings.Join(placeholders, ","))
+
+	var count int
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return fmt.Errorf("failed to validate asset groups: %w", err)
+	}
+	if count != len(assetGroupIDs) {
+		return fmt.Errorf("%w: one or more asset groups are invalid or belong to a different tenant", shared.ErrValidation)
 	}
 	return nil
 }

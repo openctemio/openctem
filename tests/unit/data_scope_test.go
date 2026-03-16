@@ -72,6 +72,12 @@ func (m *mockAccessControlRepo) ListGroupsByAsset(_ context.Context, _ shared.ID
 func (m *mockAccessControlRepo) CountAssetOwners(_ context.Context, _ shared.ID) (int64, error) {
 	return 0, nil
 }
+func (m *mockAccessControlRepo) CountAssetsByGroups(_ context.Context, _ []shared.ID) (map[shared.ID]int, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepo) ListAssetOwnersByGroupWithDetails(_ context.Context, _ shared.ID, _, _ int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
+	return nil, 0, nil
+}
 func (m *mockAccessControlRepo) HasPrimaryOwner(_ context.Context, _ shared.ID) (bool, error) {
 	return false, nil
 }
@@ -226,6 +232,15 @@ func (m *mockAccessControlRepo) RefreshAccessForDirectOwnerRemove(_ context.Cont
 	return nil
 }
 func (m *mockAccessControlRepo) GetPrimaryOwnersByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[string]*accesscontrol.OwnerBrief, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepo) ListTenantsWithActiveScopeRules(_ context.Context) ([]shared.ID, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepo) ListGroupsWithActiveScopeRules(_ context.Context, _ shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+func (m *mockAccessControlRepo) ListGroupsWithAssetGroupMatchRule(_ context.Context, _ shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
 
