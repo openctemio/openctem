@@ -253,9 +253,11 @@ type ContextKey string
 const (
 	ContextKeyRequestID ContextKey = "request_id"
 	ContextKeyUserID    ContextKey = "user_id"
+	ContextKeyTenantID  ContextKey = "tenant_id"
 )
 
 // WithContext returns a new Logger with context values.
+// Extracts request_id, user_id, and tenant_id for log correlation.
 func (l *Logger) WithContext(ctx context.Context) *Logger {
 	// Extract common context values
 	logger := l.Logger
@@ -267,6 +269,10 @@ func (l *Logger) WithContext(ctx context.Context) *Logger {
 
 	if userID, ok := ctx.Value(ContextKeyUserID).(string); ok && userID != "" {
 		logger = logger.With(slog.String("user_id", userID))
+	}
+
+	if tenantID, ok := ctx.Value(ContextKeyTenantID).(string); ok && tenantID != "" {
+		logger = logger.With(slog.String("tenant_id", tenantID))
 	}
 
 	return &Logger{Logger: logger}

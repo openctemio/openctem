@@ -16,7 +16,7 @@ import (
 type ExposureService struct {
 	repo                exposure.Repository
 	historyRepo         exposure.StateHistoryRepository
-	notificationService *NotificationService
+	notificationService *OutboxService
 	db                  *sql.DB
 	logger              *logger.Logger
 }
@@ -34,8 +34,8 @@ func NewExposureService(
 	}
 }
 
-// SetNotificationService sets the notification service for transactional outbox pattern.
-func (s *ExposureService) SetNotificationService(db *sql.DB, svc *NotificationService) {
+// SetOutboxService sets the notification service for transactional outbox pattern.
+func (s *ExposureService) SetOutboxService(db *sql.DB, svc *OutboxService) {
 	s.db = db
 	s.notificationService = svc
 }
@@ -89,7 +89,7 @@ func (s *ExposureService) CreateExposure(ctx context.Context, input CreateExposu
 		event.SetAssetID(&id)
 	}
 
-	// Use transactional outbox pattern if NotificationService is configured
+	// Use transactional outbox pattern if OutboxService is configured
 	if s.notificationService != nil && s.db != nil {
 		if err := s.createExposureWithNotification(ctx, event); err != nil {
 			return nil, err

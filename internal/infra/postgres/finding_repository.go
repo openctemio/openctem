@@ -16,6 +16,8 @@ import (
 	"github.com/openctemio/api/pkg/pagination"
 )
 
+const maxJSONSize = 64 * 1024 * 1024 // 64MB upper bound for marshaled JSON fields
+
 // FindingRepository implements vulnerability.FindingRepository using PostgreSQL.
 type FindingRepository struct {
 	db *DB
@@ -32,17 +34,29 @@ func marshalFindingSARIFFields(finding *vulnerability.Finding) (partialFingerpri
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to marshal partial_fingerprints: %w", err)
 	}
+	if len(partialFingerprints) > maxJSONSize {
+		return nil, nil, nil, nil, fmt.Errorf("partial_fingerprints JSON too large")
+	}
 	relatedLocations, err = json.Marshal(finding.RelatedLocations())
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to marshal related_locations: %w", err)
+	}
+	if len(relatedLocations) > maxJSONSize {
+		return nil, nil, nil, nil, fmt.Errorf("related_locations JSON too large")
 	}
 	stacks, err = json.Marshal(finding.Stacks())
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to marshal stacks: %w", err)
 	}
+	if len(stacks) > maxJSONSize {
+		return nil, nil, nil, nil, fmt.Errorf("stacks JSON too large")
+	}
 	attachments, err = json.Marshal(finding.Attachments())
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to marshal attachments: %w", err)
+	}
+	if len(attachments) > maxJSONSize {
+		return nil, nil, nil, nil, fmt.Errorf("attachments JSON too large")
 	}
 	return partialFingerprints, relatedLocations, stacks, attachments, nil
 }
@@ -55,6 +69,9 @@ func marshalRemediation(r *vulnerability.FindingRemediation) interface{} {
 	}
 	data, err := json.Marshal(r)
 	if err != nil {
+		return nil
+	}
+	if len(data) > maxJSONSize {
 		return nil
 	}
 	return data // Return []byte for valid JSONB
@@ -83,7 +100,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 	query := `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_version, rule_id, file_path, start_line, end_line,
+			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message, severity, status,
 			resolution, resolved_at, resolved_by, scan_id, fingerprint,
@@ -100,7 +117,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -114,6 +131,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		nullID(finding.ComponentID()),
 		finding.Source().String(),
 		finding.ToolName(),
+		nullID(finding.ToolID()),
 		nullString(finding.ToolVersion()),
 		nullString(finding.RuleID()),
 		nullString(finding.FilePath()),
@@ -205,7 +223,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 	query := `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_version, rule_id, file_path, start_line, end_line,
+			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message, severity, status,
 			resolution, resolved_at, resolved_by, scan_id, fingerprint,
@@ -222,7 +240,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -236,6 +254,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		nullID(finding.ComponentID()),
 		finding.Source().String(),
 		finding.ToolName(),
+		nullID(finding.ToolID()),
 		nullString(finding.ToolVersion()),
 		nullString(finding.RuleID()),
 		nullString(finding.FilePath()),
@@ -452,7 +471,7 @@ func (r *FindingRepository) upsertQuery() string {
 	return `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_version, rule_id, file_path, start_line, end_line,
+			tool_name, tool_id, tool_version, rule_id, file_path, start_line, end_line,
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message, severity, status,
 			resolution, resolved_at, resolved_by, scan_id, fingerprint,
@@ -469,11 +488,12 @@ func (r *FindingRepository) upsertQuery() string {
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69)
 		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET
 			vulnerability_id = EXCLUDED.vulnerability_id,
 			component_id = EXCLUDED.component_id,
 			branch_id = COALESCE(EXCLUDED.branch_id, findings.branch_id),
+			tool_id = COALESCE(EXCLUDED.tool_id, findings.tool_id),
 			tool_version = EXCLUDED.tool_version,
 			snippet = COALESCE(EXCLUDED.snippet, findings.snippet),
 			context_snippet = COALESCE(EXCLUDED.context_snippet, findings.context_snippet),
@@ -546,6 +566,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 		nullID(finding.ComponentID()),
 		finding.Source().String(),
 		finding.ToolName(),
+		nullID(finding.ToolID()),
 		nullString(finding.ToolVersion()),
 		nullString(finding.RuleID()),
 		nullString(finding.FilePath()),
@@ -637,17 +658,18 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	// Security: Include tenant_id in WHERE clause to prevent cross-tenant updates
 	query := `
 		UPDATE findings SET
-			vulnerability_id = $2, component_id = $3, tool_version = $4, snippet = $5,
-			message = $6, severity = $7, status = $8, resolution = $9, resolved_at = $10,
-			resolved_by = $11, scan_id = $12, metadata = $13, updated_at = $14,
-			assigned_to = $15, assigned_at = $16, assigned_by = $17
-		WHERE id = $1 AND tenant_id = $18
+			vulnerability_id = $2, component_id = $3, tool_id = $4, tool_version = $5, snippet = $6,
+			message = $7, severity = $8, status = $9, resolution = $10, resolved_at = $11,
+			resolved_by = $12, scan_id = $13, metadata = $14, updated_at = $15,
+			assigned_to = $16, assigned_at = $17, assigned_by = $18
+		WHERE id = $1 AND tenant_id = $19
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
 		finding.ID().String(),
 		nullID(finding.VulnerabilityID()),
 		nullID(finding.ComponentID()),
+		nullID(finding.ToolID()),
 		nullString(finding.ToolVersion()),
 		nullString(finding.Snippet()),
 		finding.Message(),
@@ -1061,7 +1083,7 @@ func (r *FindingRepository) BatchCountByAssetIDs(ctx context.Context, tenantID s
 func (r *FindingRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
-			tool_name, tool_version, rule_id, rule_name, file_path, start_line, end_line,
+			tool_name, tool_id, tool_version, rule_id, rule_name, file_path, start_line, end_line,
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
@@ -1111,6 +1133,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		componentID         sql.NullString
 		source              string
 		toolName            string
+		toolID              sql.NullString
 		toolVersion         sql.NullString
 		ruleID              sql.NullString
 		ruleName            sql.NullString
@@ -1198,7 +1221,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 
 	err := scan(
 		&idStr, &tenantIDStr, &vulnerabilityID, &assetIDStr, &branchID, &componentID, &source,
-		&toolName, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
+		&toolName, &toolID, &toolVersion, &ruleID, &ruleName, &filePath, &startLine, &endLine,
 		&startColumn, &endColumn, &snippet, &contextSnippet, &contextStartLine,
 		&title, &description, &message,
 		&severity, &cvssScore, &cvssVector, &cveID, pq.Array(&cweIDs), pq.Array(&owaspIDs), pq.Array(&tags),
@@ -1226,7 +1249,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 
 	return r.reconstruct(findingRow{
 		idStr, tenantIDStr, vulnerabilityID, assetIDStr, branchID, componentID, source,
-		toolName, toolVersion, ruleID, ruleName, filePath,
+		toolName, toolID, toolVersion, ruleID, ruleName, filePath,
 		int(startLine.Int64), int(endLine.Int64), int(startColumn.Int64), int(endColumn.Int64),
 		snippet, contextSnippet, int(contextStartLine.Int64),
 		title, description, message,
@@ -1265,6 +1288,7 @@ type findingRow struct {
 	componentID         sql.NullString
 	source              string
 	toolName            string
+	toolID              sql.NullString
 	toolVersion         sql.NullString
 	ruleID              sql.NullString
 	ruleName            sql.NullString
@@ -1476,6 +1500,7 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		ComponentID:         compID,
 		Source:              source,
 		ToolName:            row.toolName,
+		ToolID:              parseNullID(row.toolID),
 		ToolVersion:         nullStringValue(row.toolVersion),
 		RuleID:              nullStringValue(row.ruleID),
 		RuleName:            nullStringValue(row.ruleName),
@@ -1616,7 +1641,8 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 }
 
 // GetStats returns aggregated statistics for findings of a tenant.
-func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID) (*vulnerability.FindingStats, error) {
+// dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
+func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID) (*vulnerability.FindingStats, error) {
 	stats := vulnerability.NewFindingStats()
 
 	// Query for total and counts by severity, status, source in one go
@@ -1648,6 +1674,17 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID) (*
 		WHERE tenant_id = $1
 	`
 
+	args := []any{tenantID.String()}
+
+	// Layer 2: Data Scope - filter stats by user's group membership
+	if dataScopeUserID != nil {
+		query += ` AND (
+			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
+			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
+		)`
+		args = append(args, dataScopeUserID.String())
+	}
+
 	var (
 		total, critical, high, medium, low, info                     int64
 		statusNew, statusConfirmed, statusInProgress, statusResolved int64
@@ -1656,7 +1693,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID) (*
 		sourceIac, sourceContainer, sourceManual, sourceExternal     int64
 	)
 
-	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&total,
 		&critical, &high, &medium, &low, &info,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
@@ -1790,6 +1827,20 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	if filter.FilePath != nil && *filter.FilePath != "" {
 		conditions = append(conditions, fmt.Sprintf("file_path ILIKE $%d", argIndex))
 		args = append(args, wrapLikePattern(*filter.FilePath))
+		argIndex++
+	}
+
+	// Layer 2: Data Scope - filter findings by user's group membership on assets
+	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
+	if filter.DataScopeUserID != nil && filter.TenantID != nil {
+		userIDIdx := argIndex
+		tenantIDIdx := argIndex + 1
+		args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
+		argIndex += 2
+		conditions = append(conditions, fmt.Sprintf(`(
+			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+		)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
 	}
 
 	return strings.Join(conditions, " AND "), args
@@ -2092,4 +2143,372 @@ func (r *FindingRepository) ExistsByIDs(ctx context.Context, tenantID shared.ID,
 	}
 
 	return result, nil
+}
+
+// GetByFingerprintsBatch retrieves multiple findings by their fingerprints in a single query.
+// Returns a map of fingerprint -> *Finding for all found findings.
+// Security: Requires tenantID to enforce tenant isolation.
+func (r *FindingRepository) GetByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]*vulnerability.Finding, error) {
+	if len(fingerprints) == 0 {
+		return make(map[string]*vulnerability.Finding), nil
+	}
+
+	// Use enrichment-optimized query (no correlated subquery for has_data_flow)
+	// since callers of this method don't need the data flow flag.
+	query := r.selectQueryForEnrichment() + " WHERE tenant_id = $1 AND fingerprint = ANY($2)"
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query findings by fingerprints: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]*vulnerability.Finding, len(fingerprints))
+	for rows.Next() {
+		finding, err := r.scanFindingFromRows(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan finding: %w", err)
+		}
+		result[finding.Fingerprint()] = finding
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating findings: %w", err)
+	}
+
+	return result, nil
+}
+
+// selectQueryForEnrichment returns a SELECT query without the correlated subquery
+// for has_data_flow. This avoids N+1 subqueries when batch-loading findings
+// purely for enrichment purposes (where we don't need the data flow flag).
+func (r *FindingRepository) selectQueryForEnrichment() string {
+	return `
+		SELECT id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
+			tool_name, tool_id, tool_version, rule_id, rule_name, file_path, start_line, end_line,
+			start_column, end_column, snippet, context_snippet, context_start_line,
+			title, description, message,
+			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
+			status, resolution, resolved_at, resolved_by,
+			assigned_to, assigned_at, assigned_by,
+			verified_at, verified_by,
+			sla_deadline, sla_status,
+			first_detected_at, last_seen_at, first_detected_branch, first_detected_commit, last_seen_branch, last_seen_commit,
+			related_issue_url, related_pr_url,
+			duplicate_of, duplicate_count, comments_count,
+			acceptance_expires_at,
+			scan_id, fingerprint, agent_id, metadata, created_at, updated_at,
+			confidence, impact, likelihood, vulnerability_class, subcategory,
+			baseline_state, kind, rank, occurrence_count, correlation_id,
+			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
+			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
+			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
+			data_exposure_risk, reputational_impact, compliance_impact,
+			remediation,
+			FALSE AS has_data_flow
+		FROM findings
+	`
+}
+
+// enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
+const enrichColumnsPerRow = 50
+
+// enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
+// 1000 rows × 50 columns = 50,000 params (safely under limit).
+const enrichBatchChunkSize = 1000
+
+// enrichColumnDef defines a column name and its PostgreSQL type for VALUES clause casting.
+type enrichColumnDef struct {
+	name   string
+	pgType string
+}
+
+// enrichColumnDefs defines the column order for batch enrichment VALUES clause.
+// First 2 columns (id, tenant_id) are used in WHERE, rest are SET columns.
+//
+//nolint:gochecknoglobals // Package-level column definitions for batch enrichment query builder
+var enrichColumnDefs = []enrichColumnDef{
+	{"id", "uuid"},
+	{"tenant_id", "uuid"},
+	{"title", "text"},
+	{"description", "text"},
+	{"snippet", "text"},
+	{"message", "text"},
+	{"severity", "text"},
+	{"cvss_score", "float8"},
+	{"cvss_vector", "text"},
+	{"cve_id", "text"},
+	{"rule_id", "text"},
+	{"rule_name", "text"},
+	{"cwe_ids", "text[]"},
+	{"owasp_ids", "text[]"},
+	{"tags", "text[]"},
+	{"metadata", "jsonb"},
+	{"updated_at", "timestamptz"},
+	{"last_seen_at", "timestamptz"},
+	{"scan_id", "text"},
+	{"confidence", "int"},
+	{"impact", "text"},
+	{"likelihood", "text"},
+	{"vulnerability_class", "text[]"},
+	{"subcategory", "text[]"},
+	{"rank", "float8"},
+	{"occurrence_count", "int"},
+	{"correlation_id", "text"},
+	{"partial_fingerprints", "jsonb"},
+	{"related_locations", "jsonb"},
+	{"stacks", "jsonb"},
+	{"attachments", "jsonb"},
+	{"work_item_uris", "text[]"},
+	{"hosted_viewer_uri", "text"},
+	{"exposure_vector", "text"},
+	{"is_network_accessible", "boolean"},
+	{"is_internet_accessible", "boolean"},
+	{"attack_prerequisites", "text"},
+	{"remediation_type", "text"},
+	{"estimated_fix_time", "int"},
+	{"fix_complexity", "text"},
+	{"remedy_available", "boolean"},
+	{"data_exposure_risk", "text"},
+	{"reputational_impact", "boolean"},
+	{"compliance_impact", "text[]"},
+	{"remediation", "jsonb"},
+	{"file_path", "text"},
+	{"start_line", "int"},
+	{"end_line", "int"},
+	{"start_column", "int"},
+	{"end_column", "int"},
+}
+
+// EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
+// It loads existing findings by fingerprint, applies enrichment, and batch updates enrichable columns
+// using a chunked VALUES-based UPDATE (1 query per chunk instead of N individual UPDATEs).
+// Protected fields (status, resolution, assigned_to, etc.) are never modified.
+// Returns the count of enriched findings.
+//
+//nolint:cyclop // Enrichment batch update inherently has many columns to persist
+func (r *FindingRepository) EnrichBatchByFingerprints(ctx context.Context, tenantID shared.ID, newFindings []*vulnerability.Finding, scanID string) (int64, error) {
+	if len(newFindings) == 0 {
+		return 0, nil
+	}
+
+	// Collect fingerprints and build lookup map from new findings
+	fingerprints := make([]string, 0, len(newFindings))
+	newByFP := make(map[string]*vulnerability.Finding, len(newFindings))
+	for _, f := range newFindings {
+		fp := f.Fingerprint()
+		fingerprints = append(fingerprints, fp)
+		newByFP[fp] = f
+	}
+
+	// Load existing findings from DB
+	existingByFP, err := r.GetByFingerprintsBatch(ctx, tenantID, fingerprints)
+	if err != nil {
+		return 0, fmt.Errorf("failed to load existing findings for enrichment: %w", err)
+	}
+
+	if len(existingByFP) == 0 {
+		return 0, nil
+	}
+
+	// Apply enrichment and collect args for batch UPDATE
+	allArgs := make([][]interface{}, 0, len(existingByFP))
+	for fp, existing := range existingByFP {
+		newData, ok := newByFP[fp]
+		if !ok {
+			continue
+		}
+		existing.EnrichFrom(newData)
+		args, argErr := collectEnrichArgs(existing)
+		if argErr != nil {
+			return 0, fmt.Errorf("failed to collect enrich args for %s: %w", fp, argErr)
+		}
+		allArgs = append(allArgs, args)
+	}
+
+	if len(allArgs) == 0 {
+		return 0, nil
+	}
+
+	// Batch UPDATE in transaction using chunked VALUES clause
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin enrichment transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var totalEnriched int64
+	for i := 0; i < len(allArgs); i += enrichBatchChunkSize {
+		end := i + enrichBatchChunkSize
+		if end > len(allArgs) {
+			end = len(allArgs)
+		}
+		chunk := allArgs[i:end]
+
+		query := buildBatchEnrichQuery(len(chunk))
+
+		// Flatten chunk args into a single slice
+		capNeeded64 := uint64(len(chunk)) * uint64(enrichColumnsPerRow)
+		if capNeeded64 > uint64(int(^uint(0)>>1)) {
+			return totalEnriched, fmt.Errorf("enrichment batch too large")
+		}
+		flatArgs := make([]interface{}, 0, int(capNeeded64))
+		for _, row := range chunk {
+			flatArgs = append(flatArgs, row...)
+		}
+
+		result, execErr := tx.ExecContext(ctx, query, flatArgs...)
+		if execErr != nil {
+			return totalEnriched, fmt.Errorf("failed to batch update enriched findings: %w", execErr)
+		}
+		affected, _ := result.RowsAffected()
+		totalEnriched += affected
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit enrichment transaction: %w", err)
+	}
+
+	return totalEnriched, nil
+}
+
+// collectEnrichArgs marshals a single finding into the ordered parameter slice
+// matching enrichColumnDefs (50 values: id, tenant_id, then 48 SET columns).
+func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
+	metadata, err := json.Marshal(f.Metadata())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	if len(metadata) > maxJSONSize {
+		return nil, fmt.Errorf("metadata JSON too large")
+	}
+
+	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(f)
+	if err != nil {
+		return nil, err
+	}
+
+	remediationJSON := marshalRemediation(f.Remediation())
+
+	return []interface{}{
+		// WHERE columns
+		f.ID().String(),
+		f.TenantID().String(),
+		// SET columns
+		nullString(f.Title()),
+		nullString(f.Description()),
+		nullString(f.Snippet()),
+		f.Message(),
+		f.Severity().String(),
+		nullFloat64(f.CVSSScore()),
+		nullString(f.CVSSVector()),
+		nullString(f.CVEID()),
+		nullString(f.RuleID()),
+		nullString(f.RuleName()),
+		pq.Array(f.CWEIDs()),
+		pq.Array(f.OWASPIDs()),
+		pq.Array(f.Tags()),
+		metadata,
+		f.UpdatedAt(),
+		f.LastSeenAt(),
+		nullString(f.ScanID()),
+		nullIntPtr(f.Confidence()),
+		nullString(f.Impact()),
+		nullString(f.Likelihood()),
+		pq.Array(f.VulnerabilityClass()),
+		pq.Array(f.Subcategory()),
+		nullFloat64(f.Rank()),
+		f.OccurrenceCount(),
+		nullString(f.CorrelationID()),
+		partialFingerprints,
+		relatedLocations,
+		stacks,
+		attachments,
+		pq.Array(f.WorkItemURIs()),
+		nullString(f.HostedViewerURI()),
+		nullString(f.ExposureVector().String()),
+		f.IsNetworkAccessible(),
+		f.IsInternetAccessible(),
+		nullString(f.AttackPrerequisites()),
+		nullString(f.RemediationType().String()),
+		nullIntPtr(f.EstimatedFixTime()),
+		nullString(f.FixComplexity().String()),
+		f.RemedyAvailable(),
+		nullString(f.DataExposureRisk().String()),
+		f.ReputationalImpact(),
+		pq.Array(f.ComplianceImpact()),
+		remediationJSON,
+		nullString(f.FilePath()),
+		f.StartLine(),
+		f.EndLine(),
+		f.StartColumn(),
+		f.EndColumn(),
+	}, nil
+}
+
+// buildBatchEnrichQuery builds a VALUES-based UPDATE query for the given number of rows.
+// Uses type casts on the first row only; PostgreSQL infers types for subsequent rows.
+//
+// Generated query format:
+//
+//	UPDATE findings AS f SET title = d.title, description = d.description, ...
+//	FROM (VALUES ($1::uuid, $2::uuid, $3::text, ...), ($51, $52, $53, ...), ...)
+//	AS d(id, tenant_id, title, description, ...)
+//	WHERE f.id = d.id AND f.tenant_id = d.tenant_id
+func buildBatchEnrichQuery(rowCount int) string {
+	colCount := len(enrichColumnDefs)
+	var sb strings.Builder
+
+	// Estimate capacity: ~3000 for SET clause + ~100 per row for VALUES
+	sb.Grow(3000 + rowCount*120)
+
+	sb.WriteString("UPDATE findings AS f SET ")
+
+	// SET clause: columns 2..N (skip id, tenant_id which are WHERE columns)
+	for i := 2; i < colCount; i++ {
+		if i > 2 {
+			sb.WriteString(", ")
+		}
+		col := enrichColumnDefs[i].name
+		sb.WriteString(col)
+		sb.WriteString(" = d.")
+		sb.WriteString(col)
+	}
+
+	sb.WriteString(" FROM (VALUES ")
+
+	// VALUES rows with parameter placeholders
+	for row := 0; row < rowCount; row++ {
+		if row > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteByte('(')
+		for col := 0; col < colCount; col++ {
+			if col > 0 {
+				sb.WriteString(", ")
+			}
+			paramNum := row*colCount + col + 1
+			fmt.Fprintf(&sb, "$%d", paramNum)
+			// Type casts on first row only so PostgreSQL knows column types
+			if row == 0 {
+				sb.WriteString("::")
+				sb.WriteString(enrichColumnDefs[col].pgType)
+			}
+		}
+		sb.WriteByte(')')
+	}
+
+	sb.WriteString(") AS d(")
+
+	// Column aliases for the derived table
+	for i, col := range enrichColumnDefs {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(col.name)
+	}
+
+	sb.WriteString(") WHERE f.id = d.id AND f.tenant_id = d.tenant_id")
+
+	return sb.String()
 }

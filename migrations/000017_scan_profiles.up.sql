@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS scan_sessions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT chk_scan_sessions_scanner_type CHECK (scanner_type IS NULL OR scanner_type IN ('sast', 'sca', 'secret', 'container', 'iac', 'dast', 'recon')),
-    CONSTRAINT chk_scan_sessions_status CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled'))
+    CONSTRAINT chk_scan_sessions_status CHECK (status IN ('pending', 'running', 'completed', 'failed', 'canceled'))
 );
 
 COMMENT ON TABLE scan_sessions IS 'Individual scan execution records';

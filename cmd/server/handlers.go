@@ -35,14 +35,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
 	assetHandler.SetIntegrationService(svc.Integration)
+	assetHandler.SetAccessControlRepo(repos.AccessControl)
 
 	// Command handler with pipeline service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	commandHandler.SetPipelineService(svc.Pipeline)
 
-	// Tenant handler with role service wired
+	// Tenant handler with role service and asset service wired
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetRoleService(svc.Role)
+	tenantHandler.SetAssetService(svc.Asset)
+	tenantHandler.SetModuleService(svc.Module)
 
 	// Vulnerability handler with user and asset services for enrichment
 	vulnHandler := handler.NewVulnerabilityHandler(svc.Vulnerability, v, log)
@@ -109,6 +112,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
 		Capability:      handler.NewCapabilityHandler(svc.Capability, v, log),
 		Scan:            handler.NewScanHandler(svc.Scan, repos.User, v, log),
+		CI:              handler.NewCIHandler(svc.Scan, log),
 		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
 
 		// Workflows
@@ -121,23 +125,31 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
 		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),
 
+		// AI Triage (always initialized - handler returns 503 if service is nil)
+		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
+
 		// Suppressions
 		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),
 
 		// Access Control
-		Group:         handler.NewGroupHandler(svc.Group, v, log),
-		PermissionSet: handler.NewPermissionSetHandler(svc.Permission, v, log),
-		Role:          handler.NewRoleHandler(svc.Role, v, log),
-		Permission:    handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
+		Group:          handler.NewGroupHandler(svc.Group, v, log),
+		PermissionSet:  handler.NewPermissionSetHandler(svc.Permission, v, log),
+		Role:           handler.NewRoleHandler(svc.Role, v, log),
+		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
+		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
+		ScopeRule:      handler.NewScopeRuleHandler(svc.ScopeRule, v, log),
+		AssetOwner:     handler.NewAssetOwnerHandler(repos.AccessControl, log),
 
-		// Admin
-		NotificationOutbox: handler.NewNotificationOutboxHandler(repos.NotificationOutbox, log),
+		// Notification
+		Outbox:       handler.NewOutboxHandler(repos.Outbox, log),
+		Notification: handler.NewNotificationHandler(svc.Notification, log),
 
 		// Bootstrap (initial load endpoint)
 		Bootstrap: handler.NewBootstrapHandler(
 			svc.PermCache,
 			svc.PermVersion,
 			svc.Module,
+			svc.Tenant,
 			log,
 		),
 
@@ -159,8 +171,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminAudit:         handler.NewAdminAuditHandler(repos.AdminAuditLog, log),
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
+		// Platform Stats (tenant-scoped platform agent statistics)
+		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
+
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log),
+	}
+
+	// SSO handler (always initialized - uses DB-stored provider configs)
+	if svc.SSO != nil {
+		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
 	}
 
 	return handlers

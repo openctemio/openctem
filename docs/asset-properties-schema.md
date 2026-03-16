@@ -299,7 +299,7 @@ The schema varies by `asset_type` - each type has specific properties relevant t
 
 ### Infrastructure Assets
 
-#### `host` / `server`
+#### `host`
 ```json
 {
   "hostname": "string",            // Hostname

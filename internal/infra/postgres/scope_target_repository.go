@@ -104,10 +104,10 @@ func (r *ScopeTargetRepository) Create(ctx context.Context, target *scope.Target
 	return nil
 }
 
-// GetByID retrieves a scope target by its ID.
-func (r *ScopeTargetRepository) GetByID(ctx context.Context, id shared.ID) (*scope.Target, error) {
-	query := scopeTargetSelectQuery + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
+// GetByID retrieves a scope target by its tenant ID and ID.
+func (r *ScopeTargetRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*scope.Target, error) {
+	query := scopeTargetSelectQuery + " WHERE tenant_id = $1 AND id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 
 	target, err := r.scanTarget(row)
 	if err != nil {
@@ -129,7 +129,7 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 			status = $4,
 			tags = $5,
 			updated_at = $6
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $7
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -139,6 +139,7 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 		target.Status().String(),
 		pq.StringArray(target.Tags()),
 		target.UpdatedAt(),
+		target.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope target: %w", err)
@@ -152,10 +153,10 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 	return nil
 }
 
-// Delete removes a scope target by its ID.
-func (r *ScopeTargetRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM scope_targets WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete removes a scope target by its tenant ID and ID.
+func (r *ScopeTargetRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM scope_targets WHERE tenant_id = $1 AND id = $2"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete scope target: %w", err)
 	}
@@ -197,6 +198,12 @@ func (r *ScopeTargetRepository) List(ctx context.Context, filter scope.TargetFil
 		}
 		conditions = append(conditions, fmt.Sprintf("status = ANY($%d)", argNum))
 		args = append(args, pq.StringArray(statuses))
+		argNum++
+	}
+
+	if len(filter.Tags) > 0 {
+		conditions = append(conditions, fmt.Sprintf("tags && $%d", argNum))
+		args = append(args, pq.StringArray(filter.Tags))
 		argNum++
 	}
 

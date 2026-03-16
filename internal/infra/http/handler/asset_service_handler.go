@@ -51,6 +51,7 @@ type AssetServiceResponse struct {
 	Version         string     `json:"version,omitempty"`
 	Banner          string     `json:"banner,omitempty"`
 	CPE             string     `json:"cpe,omitempty"`
+	Technologies    []string   `json:"technologies"`
 	IsPublic        bool       `json:"is_public"`
 	Exposure        string     `json:"exposure"`
 	TLSEnabled      bool       `json:"tls_enabled"`
@@ -93,8 +94,9 @@ type CreateAssetServiceRequest struct {
 	Product         string `json:"product" validate:"omitempty,max=255"`
 	Version         string `json:"version" validate:"omitempty,max=100"`
 	Banner          string `json:"banner" validate:"omitempty,max=4096"`
-	CPE             string `json:"cpe" validate:"omitempty,max=500"`
-	IsPublic        bool   `json:"is_public"`
+	CPE             string   `json:"cpe" validate:"omitempty,max=500"`
+	Technologies    []string `json:"technologies" validate:"omitempty,max=50,dive,max=100"`
+	IsPublic        bool     `json:"is_public"`
 	Exposure        string `json:"exposure" validate:"omitempty,oneof=public restricted private"`
 	TLSEnabled      bool   `json:"tls_enabled"`
 	TLSVersion      string `json:"tls_version" validate:"omitempty,max=20"`
@@ -107,8 +109,9 @@ type UpdateAssetServiceRequest struct {
 	Product    *string `json:"product" validate:"omitempty,max=255"`
 	Version    *string `json:"version" validate:"omitempty,max=100"`
 	Banner     *string `json:"banner" validate:"omitempty,max=4096"`
-	CPE        *string `json:"cpe" validate:"omitempty,max=500"`
-	IsPublic   *bool   `json:"is_public"`
+	CPE          *string   `json:"cpe" validate:"omitempty,max=500"`
+	Technologies *[]string `json:"technologies" validate:"omitempty,max=50,dive,max=100"`
+	IsPublic     *bool     `json:"is_public"`
 	Exposure   *string `json:"exposure" validate:"omitempty,oneof=public restricted private"`
 	TLSEnabled *bool   `json:"tls_enabled"`
 	TLSVersion *string `json:"tls_version" validate:"omitempty,max=20"`
@@ -264,6 +267,9 @@ func (h *AssetServiceHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.CPE != "" {
 		svc.SetCPE(req.CPE)
 	}
+	if len(req.Technologies) > 0 {
+		svc.SetTechnologies(req.Technologies)
+	}
 	if req.IsPublic {
 		svc.SetPublic(true)
 	}
@@ -412,6 +418,9 @@ func (h *AssetServiceHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CPE != nil {
 		svc.SetCPE(*req.CPE)
+	}
+	if req.Technologies != nil {
+		svc.SetTechnologies(*req.Technologies)
 	}
 	if req.IsPublic != nil {
 		svc.SetPublic(*req.IsPublic)
@@ -735,6 +744,7 @@ func toAssetServiceResponse(svc *asset.AssetService) AssetServiceResponse {
 		Version:         svc.Version(),
 		Banner:          sanitizeBanner(svc.Banner()), // Security: redact sensitive info from banners
 		CPE:             svc.CPE(),
+		Technologies:    svc.Technologies(),
 		IsPublic:        svc.IsPublic(),
 		Exposure:        svc.Exposure().String(),
 		TLSEnabled:      svc.TLSEnabled(),

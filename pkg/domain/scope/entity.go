@@ -1,9 +1,11 @@
 package scope
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/robfig/cron/v3"
 )
 
 // =============================================================================
@@ -119,9 +121,13 @@ func (t *Target) UpdateDescription(description string) {
 	t.updatedAt = time.Now()
 }
 
-func (t *Target) UpdatePriority(priority int) {
+func (t *Target) UpdatePriority(priority int) error {
+	if priority < 1 || priority > 10 {
+		return fmt.Errorf("%w: priority must be between 1 and 10", shared.ErrValidation)
+	}
 	t.priority = priority
 	t.updatedAt = time.Now()
+	return nil
 }
 
 func (t *Target) UpdateTags(tags []string) {
@@ -258,9 +264,7 @@ func (e *Exclusion) IsApproved() bool {
 
 // Matches checks if a value matches this exclusion's pattern.
 func (e *Exclusion) Matches(value string) bool {
-	// Convert exclusion type to target type for matching
-	targetType := TargetType(e.exclusionType)
-	return MatchesPattern(targetType, e.pattern, value)
+	return MatchesExclusionPattern(e.exclusionType, e.pattern, value)
 }
 
 // Update methods
@@ -457,18 +461,38 @@ func (s *Schedule) UpdateDescription(description string) {
 	s.updatedAt = time.Now()
 }
 
-func (s *Schedule) SetCronSchedule(cronExpression string) {
+// ValidateCronExpression checks if a cron expression is valid.
+func ValidateCronExpression(expr string) error {
+	if expr == "" {
+		return fmt.Errorf("%w: cron expression is required", shared.ErrValidation)
+	}
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	if _, err := parser.Parse(expr); err != nil {
+		return fmt.Errorf("%w: invalid cron expression: %s", shared.ErrValidation, err.Error())
+	}
+	return nil
+}
+
+func (s *Schedule) SetCronSchedule(cronExpression string) error {
+	if err := ValidateCronExpression(cronExpression); err != nil {
+		return err
+	}
 	s.scheduleType = ScheduleTypeCron
 	s.cronExpression = cronExpression
 	s.intervalHours = 0
 	s.updatedAt = time.Now()
+	return nil
 }
 
-func (s *Schedule) SetIntervalSchedule(hours int) {
+func (s *Schedule) SetIntervalSchedule(hours int) error {
+	if hours < 1 || hours > 8760 {
+		return fmt.Errorf("%w: interval_hours must be between 1 and 8760", shared.ErrValidation)
+	}
 	s.scheduleType = ScheduleTypeInterval
 	s.intervalHours = hours
 	s.cronExpression = ""
 	s.updatedAt = time.Now()
+	return nil
 }
 
 func (s *Schedule) SetTargetScope(scope TargetScope, ids []shared.ID, tags []string) {

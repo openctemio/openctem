@@ -150,7 +150,7 @@ func (r *PipelineTemplateRepository) List(ctx context.Context, filter pipeline.T
 		stepsQuery := `
 			SELECT id, pipeline_id, step_key, name, description, step_order,
 			       ui_position_x, ui_position_y,
-			       tool, capabilities, config, timeout_seconds,
+			       tool, tool_id, capabilities, config, timeout_seconds,
 			       depends_on, condition_type, condition_value,
 			       max_retries, retry_delay_seconds, created_at
 			FROM pipeline_steps
@@ -283,7 +283,7 @@ func (r *PipelineTemplateRepository) GetWithSteps(ctx context.Context, id shared
 	stepsQuery := `
 		SELECT id, pipeline_id, step_key, name, description, step_order,
 		       ui_position_x, ui_position_y,
-		       tool, capabilities, config, timeout_seconds,
+		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
 		       max_retries, retry_delay_seconds, created_at
 		FROM pipeline_steps
@@ -386,7 +386,7 @@ func (r *PipelineTemplateRepository) ListWithSystemTemplates(ctx context.Context
 		stepsQuery := `
 			SELECT id, pipeline_id, step_key, name, description, step_order,
 			       ui_position_x, ui_position_y,
-			       tool, capabilities, config, timeout_seconds,
+			       tool, tool_id, capabilities, config, timeout_seconds,
 			       depends_on, condition_type, condition_value,
 			       max_retries, retry_delay_seconds, created_at
 			FROM pipeline_steps
@@ -613,6 +613,9 @@ func scanStep(rows *sql.Rows) (*pipeline.Step, error) {
 		conditionType sql.NullString
 		conditionVal  sql.NullString
 		tool          sql.NullString
+		toolID        sql.NullString
+		uiPosX        sql.NullFloat64
+		uiPosY        sql.NullFloat64
 	)
 
 	err := rows.Scan(
@@ -622,9 +625,10 @@ func scanStep(rows *sql.Rows) (*pipeline.Step, error) {
 		&s.Name,
 		&s.Description,
 		&s.StepOrder,
-		&s.UIPosition.X,
-		&s.UIPosition.Y,
+		&uiPosX,
+		&uiPosY,
 		&tool,
+		&toolID,
 		&capabilities,
 		&config,
 		&s.TimeoutSeconds,
@@ -644,8 +648,20 @@ func scanStep(rows *sql.Rows) (*pipeline.Step, error) {
 	s.PipelineID, _ = shared.IDFromString(pipelineID)
 	s.Capabilities = capabilities
 	s.DependsOn = dependsOn
+	if uiPosX.Valid {
+		s.UIPosition.X = uiPosX.Float64
+	}
+	if uiPosY.Valid {
+		s.UIPosition.Y = uiPosY.Float64
+	}
 	if tool.Valid {
 		s.Tool = tool.String
+	}
+	if toolID.Valid {
+		parsedToolID, err := shared.IDFromString(toolID.String)
+		if err == nil {
+			s.ToolID = &parsedToolID
+		}
 	}
 
 	if len(config) > 0 {
@@ -685,11 +701,11 @@ func (r *PipelineStepRepository) Create(ctx context.Context, s *pipeline.Step) e
 		INSERT INTO pipeline_steps (
 			id, pipeline_id, step_key, name, description, step_order,
 			ui_position_x, ui_position_y,
-			tool, capabilities, config, timeout_seconds,
+			tool, tool_id, capabilities, config, timeout_seconds,
 			depends_on, condition_type, condition_value,
 			max_retries, retry_delay_seconds, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -702,6 +718,7 @@ func (r *PipelineStepRepository) Create(ctx context.Context, s *pipeline.Step) e
 		s.UIPosition.X,
 		s.UIPosition.Y,
 		nullString(s.Tool),
+		nullID(s.ToolID),
 		pq.Array(s.Capabilities),
 		config,
 		s.TimeoutSeconds,
@@ -741,7 +758,7 @@ func (r *PipelineStepRepository) CreateBatch(ctx context.Context, steps []*pipel
 	}
 
 	// Build batch INSERT query
-	const numCols = 18
+	const numCols = 19
 	valueStrings := make([]string, 0, len(steps))
 	valueArgs := make([]any, 0, len(steps)*numCols)
 
@@ -768,6 +785,7 @@ func (r *PipelineStepRepository) CreateBatch(ctx context.Context, steps []*pipel
 			s.UIPosition.X,
 			s.UIPosition.Y,
 			nullString(s.Tool),
+			nullID(s.ToolID),
 			pq.Array(s.Capabilities),
 			config,
 			s.TimeoutSeconds,
@@ -784,7 +802,7 @@ func (r *PipelineStepRepository) CreateBatch(ctx context.Context, steps []*pipel
 		INSERT INTO pipeline_steps (
 			id, pipeline_id, step_key, name, description, step_order,
 			ui_position_x, ui_position_y,
-			tool, capabilities, config, timeout_seconds,
+			tool, tool_id, capabilities, config, timeout_seconds,
 			depends_on, condition_type, condition_value,
 			max_retries, retry_delay_seconds, created_at
 		)
@@ -807,7 +825,7 @@ func (r *PipelineStepRepository) GetByID(ctx context.Context, id shared.ID) (*pi
 	query := `
 		SELECT id, pipeline_id, step_key, name, description, step_order,
 		       ui_position_x, ui_position_y,
-		       tool, capabilities, config, timeout_seconds,
+		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
 		       max_retries, retry_delay_seconds, created_at
 		FROM pipeline_steps
@@ -832,7 +850,7 @@ func (r *PipelineStepRepository) GetByPipelineID(ctx context.Context, pipelineID
 	query := `
 		SELECT id, pipeline_id, step_key, name, description, step_order,
 		       ui_position_x, ui_position_y,
-		       tool, capabilities, config, timeout_seconds,
+		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
 		       max_retries, retry_delay_seconds, created_at
 		FROM pipeline_steps
@@ -863,7 +881,7 @@ func (r *PipelineStepRepository) GetByKey(ctx context.Context, pipelineID shared
 	query := `
 		SELECT id, pipeline_id, step_key, name, description, step_order,
 		       ui_position_x, ui_position_y,
-		       tool, capabilities, config, timeout_seconds,
+		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
 		       max_retries, retry_delay_seconds, created_at
 		FROM pipeline_steps
@@ -894,9 +912,9 @@ func (r *PipelineStepRepository) Update(ctx context.Context, s *pipeline.Step) e
 		UPDATE pipeline_steps
 		SET name = $2, description = $3, step_order = $4,
 		    ui_position_x = $5, ui_position_y = $6,
-		    tool = $7, capabilities = $8, config = $9, timeout_seconds = $10,
-		    depends_on = $11, condition_type = $12, condition_value = $13,
-		    max_retries = $14, retry_delay_seconds = $15
+		    tool = $7, tool_id = $8, capabilities = $9, config = $10, timeout_seconds = $11,
+		    depends_on = $12, condition_type = $13, condition_value = $14,
+		    max_retries = $15, retry_delay_seconds = $16
 		WHERE id = $1
 	`
 
@@ -908,6 +926,7 @@ func (r *PipelineStepRepository) Update(ctx context.Context, s *pipeline.Step) e
 		s.UIPosition.X,
 		s.UIPosition.Y,
 		nullString(s.Tool),
+		nullID(s.ToolID),
 		pq.Array(s.Capabilities),
 		config,
 		s.TimeoutSeconds,

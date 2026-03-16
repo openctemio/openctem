@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT chk_pipeline_runs_trigger_type CHECK (trigger_type IN ('manual', 'schedule', 'webhook', 'api', 'on_asset_discovery')),
-    CONSTRAINT chk_pipeline_runs_status CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled', 'timeout'))
+    CONSTRAINT chk_pipeline_runs_status CHECK (status IN ('pending', 'running', 'completed', 'failed', 'canceled', 'timeout'))
 );
 
 COMMENT ON TABLE pipeline_runs IS 'Pipeline execution instances';
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS step_runs (
     error_code VARCHAR(100),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT chk_step_runs_status CHECK (status IN ('pending', 'queued', 'running', 'completed', 'failed', 'skipped', 'cancelled', 'timeout'))
+    CONSTRAINT chk_step_runs_status CHECK (status IN ('pending', 'queued', 'running', 'completed', 'failed', 'skipped', 'canceled', 'timeout'))
 );
 
 COMMENT ON TABLE step_runs IS 'Individual step execution records';

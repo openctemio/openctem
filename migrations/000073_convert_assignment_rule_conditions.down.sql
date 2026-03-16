@@ -1,0 +1,4 @@
+-- Cannot perfectly reverse the conversion, but this is best-effort.
+-- The old array format is not recoverable from the new flat format
+-- since operator information is lost.
+-- No-op: data migration is one-way.

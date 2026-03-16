@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/jobs"
+	"github.com/openctemio/api/internal/infra/llm"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
@@ -30,6 +31,10 @@ func (b *wsHubBroadcaster) BroadcastActivity(channel string, data any, tenantID 
 }
 
 func (b *wsHubBroadcaster) BroadcastTriage(channel string, data any, tenantID string) {
+	b.hub.BroadcastEvent(channel, data, tenantID)
+}
+
+func (b *wsHubBroadcaster) BroadcastScopeChange(channel string, data any, tenantID string) {
 	b.hub.BroadcastEvent(channel, data, tenantID)
 }
 
@@ -72,6 +77,7 @@ type Services struct {
 
 	// Integrations & Notifications
 	Integration  *app.IntegrationService
+	Outbox       *app.OutboxService
 	Notification *app.NotificationService
 
 	// Agents & Commands
@@ -103,18 +109,17 @@ type Services struct {
 	AgentSelector *app.AgentSelector
 
 	// Access Control
-	Group      *app.GroupService
-	Permission *app.PermissionService
-	Role       *app.RoleService
+	Group          *app.GroupService
+	Permission     *app.PermissionService
+	Role           *app.RoleService
+	AssignmentRule *app.AssignmentRuleService
+	ScopeRule      *app.ScopeRuleService
 
 	// Permission Sync
 	PermVersion *app.PermissionVersionService
 	PermCache   *app.PermissionCacheService
 
-	// Module Cache
-	ModuleCache *app.ModuleCacheService
-
-	// Module Service (OSS - all modules enabled)
+	// Module Service (OSS - all modules enabled, UI metadata only)
 	Module *app.ModuleService
 
 	// SLA
@@ -139,6 +144,9 @@ type Services struct {
 
 	// JWT
 	JWTGenerator *jwt.Generator
+
+	// SSO
+	SSO *app.SSOService
 }
 
 // ServiceDeps contains dependencies needed to create services.
@@ -179,6 +187,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset = app.NewAssetService(repos.Asset, log)
 	s.Asset.SetRepositoryExtensionRepository(repos.RepoExt)
 	s.Asset.SetAssetGroupRepository(repos.AssetGroup)
+	s.Asset.SetAccessControlRepository(repos.AccessControl)
+	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
+	s.Asset.SetRedisClient(deps.RedisClient)
 
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
@@ -202,7 +213,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize vulnerability & exposure services
 	s.Vulnerability = app.NewVulnerabilityService(repos.Vulnerability, repos.Finding, log)
 	s.Vulnerability.SetCommentRepository(repos.FindingComment)
-	s.Vulnerability.SetDataFlowRepository(repos.DataFlow) // Wire data flow loading
+	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
+	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
+	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
 	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
@@ -210,6 +223,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire activity service dependencies
 	s.Vulnerability.SetActivityService(s.FindingActivity) // Wire activity tracking
 	s.Vulnerability.SetUserRepository(repos.User)         // Wire user lookup for activity records
+
+	// Note: AITriage is wired to VulnerabilityService later after AITriage initialization
 
 	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.ThreatIntel = app.NewThreatIntelService(repos.ThreatIntel, log)
@@ -221,6 +236,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize SLA service
 	s.SLA = app.NewSLAService(repos.SLA, log)
 
+	// Initialize AI Triage service (if configured)
+	if cfg.AITriage.IsConfigured() {
+		llmFactory := llm.NewFactoryWithEncryption(cfg.AITriage, s.Encryptor)
+		s.AITriage = app.NewAITriageService(
+			repos.AITriage,
+			repos.Finding,
+			repos.Tenant,
+			s.FindingActivity,
+			llmFactory,
+			cfg.AITriage,
+			log,
+		)
+		s.AITriage.SetAuditService(s.Audit)
+		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
+		log.Info("AI triage service initialized")
+	}
+
 	// Initialize API Key & Webhook services
 	s.APIKey = app.NewAPIKeyService(repos.APIKey, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
@@ -228,19 +260,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
-	s.Integration.SetNotificationEventRepository(repos.NotificationEvent)
+	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
 
-	s.Notification = app.NewNotificationService(
-		repos.NotificationOutbox,
-		repos.NotificationEvent,
+	s.Outbox = app.NewOutboxService(
+		repos.Outbox,
+		repos.OutboxEvent,
 		repos.IntegrationNotificationExt,
 		s.Encryptor.DecryptString,
 		log.Logger,
 	)
 
-	// Wire notification to vulnerability and exposure services
-	s.Vulnerability.SetNotificationService(deps.DB, s.Notification)
-	s.Exposure.SetNotificationService(deps.DB, s.Notification)
+	// Wire outbox notification to vulnerability and exposure services
+	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
+	s.Exposure.SetOutboxService(deps.DB, s.Outbox)
+
+	// Note: UserNotificationService is wired later after NotificationService is initialized
+
+	// Note: NotificationService is wired later after WebSocketHub is initialized
 
 	// Initialize agent & command services
 	s.Agent = app.NewAgentService(repos.Agent, s.Audit, log)
@@ -248,9 +284,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Component, repos.Agent, repos.Branch, repos.Tenant, repos.Audit, log)
-	s.Ingest.SetDataFlowRepository(repos.DataFlow)           // Wire data flow persistence
-	s.Ingest.SetComponentRepository(repos.Component)         // Wire component linking for SCA findings
-	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt) // Wire repository extension for auto web_url
+	s.Ingest.SetDataFlowRepository(repos.DataFlow)              // Wire data flow persistence
+	s.Ingest.SetComponentRepository(repos.Component)            // Wire component linking for SCA findings
+	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)    // Wire repository extension for auto web_url
+	s.Ingest.SetRelationshipRepository(repos.AssetRelationship) // Wire subdomain-to-domain relationships
+	s.Ingest.SetActivityService(s.FindingActivity)              // Wire activity logging for auto-resolve/reopen
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
@@ -285,7 +323,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Tool = app.NewToolService(repos.Tool, repos.TenantToolConfig, repos.ToolExecution, log)
 	s.Tool.SetAgentRepo(repos.Agent)           // Enable tool availability checking
 	s.Tool.SetCategoryRepo(repos.ToolCategory) // Enable category info in responses
-	s.ToolCategory = app.NewToolCategoryService(repos.ToolCategory, log)
+	s.ToolCategory = app.NewToolCategoryService(repos.ToolCategory, repos.Tool, log)
 	s.Capability = app.NewCapabilityService(repos.Capability, s.Audit, log)
 
 	// Initialize agent selector for load balancing
@@ -353,7 +391,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.WorkflowNodeRun,
 		log,
 		app.WithExecutorDB(deps.DB),
-		app.WithExecutorNotificationService(s.Notification),
+		app.WithExecutorOutboxService(s.Outbox),
 		app.WithExecutorIntegrationService(s.Integration),
 		app.WithExecutorAuditService(s.Audit),
 	)
@@ -402,6 +440,22 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithAccessControlRepository(repos.AccessControl),
 	)
 
+	s.AssignmentRule = app.NewAssignmentRuleService(repos.AccessControl, repos.Group, log)
+	s.ScopeRule = app.NewScopeRuleService(repos.AccessControl, repos.Group, log)
+	s.ScopeRule.SetAssetGroupValidator(repos.AccessControl)
+
+	// Wire scope rule hooks for real-time evaluation
+	s.Asset.SetScopeRuleEvaluator(s.ScopeRule.EvaluateAsset)
+	s.AssetGroup.SetScopeRuleReconciler(s.ScopeRule.ReconcileByAssetGroup)
+
+	// Initialize assignment engine and wire to vulnerability service for auto-routing
+	assignmentEngine := app.NewAssignmentEngine(repos.AccessControl, log)
+	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
+
+	// Wire engine and finding repo to assignment rule service for TestRule
+	s.AssignmentRule.SetAssignmentEngine(assignmentEngine)
+	s.AssignmentRule.SetFindingRepository(repos.Finding)
+
 	s.Permission = app.NewPermissionService(repos.PermissionSet, log,
 		app.WithPermissionAuditService(s.Audit),
 		app.WithPermissionAccessControlRepository(repos.AccessControl),
@@ -426,6 +480,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize licensing service (OSS edition - modules from database)
 	s.Module = app.NewModuleService(repos.Module, log)
+	s.Module.SetTenantModuleRepo(repos.TenantModule)
+	s.Module.SetAuditService(s.Audit)
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
@@ -445,6 +501,26 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.AITriage.SetTriageBroadcaster(broadcaster)
 		log.Info("AI triage broadcaster wired to WebSocket hub")
 	}
+
+	// Wire to ScopeRule for real-time scope rule changes on group:* channels
+	if s.ScopeRule != nil {
+		s.ScopeRule.SetBroadcaster(broadcaster)
+		log.Info("ScopeRule broadcaster wired to WebSocket hub")
+	}
+
+	// Initialize user notification service (needs WebSocketHub)
+	s.Notification = app.NewNotificationService(
+		repos.Notification,
+		s.WebSocketHub,
+		log,
+	)
+	log.Info("user notification service initialized")
+
+	// Wire notification service to GroupService for member notifications
+	s.Group.SetNotificationService(s.Notification)
+
+	// Wire in-app notification service to vulnerability service for real-time user notifications
+	s.Vulnerability.SetUserNotificationService(s.Notification)
 
 	return s, nil
 }
@@ -473,6 +549,19 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 
 	// Wire session service to user service for session revocation on suspension
 	s.User.SetSessionService(s.Session)
+
+	// Initialize SSO service for per-tenant identity provider authentication
+	s.SSO = app.NewSSOService(
+		repos.IdentityProvider,
+		repos.Tenant,
+		repos.User,
+		repos.Session,
+		repos.RefreshToken,
+		s.Encryptor,
+		cfg.Auth,
+		log,
+	)
+	s.SSO.SetTenantMemberRepo(repos.Tenant)
 }
 
 // InitEmailServices initializes email-related services.

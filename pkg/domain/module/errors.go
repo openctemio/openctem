@@ -16,4 +16,6 @@ var (
 	ErrInvalidPlanID        = fmt.Errorf("%w: invalid plan ID format", shared.ErrValidation)
 	ErrInvalidModuleID      = fmt.Errorf("%w: invalid module ID format", shared.ErrValidation)
 	ErrInvalidSubModuleID   = fmt.Errorf("%w: invalid sub-module ID format", shared.ErrValidation)
+	ErrCoreModuleCannotBeDisabled = fmt.Errorf("%w: core module cannot be disabled", shared.ErrValidation)
+	ErrModuleNotAvailable   = fmt.Errorf("%w: module is not available", shared.ErrValidation)
 )

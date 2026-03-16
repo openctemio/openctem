@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/openctemio/api/pkg/domain/group"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -409,21 +410,39 @@ func (r *GroupRepository) ListMembers(ctx context.Context, groupID shared.ID) ([
 	return members, rows.Err()
 }
 
-// ListMembersWithUserInfo lists members with user details.
-func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID shared.ID) ([]*group.MemberWithUser, error) {
+// ListMembersWithUserInfo lists members with user details, with pagination.
+func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID shared.ID, limit, offset int) ([]*group.MemberWithUser, int64, error) {
+	// Apply pagination defaults and caps.
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	// Count total members.
+	countQuery := `SELECT COUNT(*) FROM group_members WHERE group_id = $1`
+	var totalCount int64
+	if err := r.db.QueryRowContext(ctx, countQuery, groupID.String()).Scan(&totalCount); err != nil {
+		return nil, 0, fmt.Errorf("failed to count members with user info: %w", err)
+	}
+
 	query := `
 		SELECT
 			gm.group_id, gm.user_id, gm.role, gm.joined_at, gm.added_by,
-			u.email, u.name, u.avatar_url, u.last_login_at
+			u.email, u.name, u.avatar_url, u.last_login_at,
+			COALESCE(ab.name, ab.email, '') AS added_by_name
 		FROM group_members gm
 		INNER JOIN users u ON u.id = gm.user_id
+		LEFT JOIN users ab ON ab.id = gm.added_by
 		WHERE gm.group_id = $1
 		ORDER BY gm.joined_at ASC
+		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, groupID.String())
+	rows, err := r.db.QueryContext(ctx, query, groupID.String(), limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list members with user info: %w", err)
+		return nil, 0, fmt.Errorf("failed to list members with user info: %w", err)
 	}
 	defer rows.Close()
 
@@ -436,13 +455,15 @@ func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID s
 			email, name                    string
 			avatarURL                      sql.NullString
 			lastLoginAt                    sql.NullTime
+			addedByName                    string
 		)
 
 		if err := rows.Scan(
 			&groupIDStr, &userIDStr, &roleStr, &joinedAt, &addedByStr,
 			&email, &name, &avatarURL, &lastLoginAt,
+			&addedByName,
 		); err != nil {
-			return nil, fmt.Errorf("failed to scan member with user: %w", err)
+			return nil, 0, fmt.Errorf("failed to scan member with user: %w", err)
 		}
 
 		groupID, _ := shared.IDFromString(groupIDStr)
@@ -469,10 +490,15 @@ func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID s
 			Name:        name,
 			AvatarURL:   avatarURL.String,
 			LastLoginAt: lastLogin,
+			AddedByName: addedByName,
 		})
 	}
 
-	return members, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return members, totalCount, nil
 }
 
 // CountMembers counts members in a group.
@@ -483,6 +509,61 @@ func (r *GroupRepository) CountMembers(ctx context.Context, groupID shared.ID) (
 	err := r.db.QueryRowContext(ctx, query, groupID.String()).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count members: %w", err)
+	}
+
+	return count, nil
+}
+
+// CountMembersByGroups counts members for multiple groups in a single query.
+func (r *GroupRepository) CountMembersByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error) {
+	if len(groupIDs) == 0 {
+		return make(map[shared.ID]int), nil
+	}
+
+	ids := make([]string, len(groupIDs))
+	for i, id := range groupIDs {
+		ids[i] = id.String()
+	}
+
+	query := `SELECT group_id, COUNT(*) FROM group_members WHERE group_id = ANY($1) GROUP BY group_id`
+
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to count members by groups: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[shared.ID]int, len(groupIDs))
+	for rows.Next() {
+		var gidStr string
+		var count int
+		if err := rows.Scan(&gidStr, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan member count: %w", err)
+		}
+		gid, _ := shared.IDFromString(gidStr)
+		result[gid] = count
+	}
+
+	return result, rows.Err()
+}
+
+// CountUniqueMembers counts distinct users across multiple groups.
+func (r *GroupRepository) CountUniqueMembers(ctx context.Context, groupIDs []shared.ID) (int, error) {
+	if len(groupIDs) == 0 {
+		return 0, nil
+	}
+
+	ids := make([]string, len(groupIDs))
+	for i, id := range groupIDs {
+		ids[i] = id.String()
+	}
+
+	query := `SELECT COUNT(DISTINCT user_id) FROM group_members WHERE group_id = ANY($1)`
+
+	var count int
+	err := r.db.QueryRowContext(ctx, query, pq.Array(ids)).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count unique members: %w", err)
 	}
 
 	return count, nil

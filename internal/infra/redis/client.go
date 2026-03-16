@@ -3,8 +3,10 @@ package redis
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -45,11 +47,16 @@ func New(cfg *config.RedisConfig, log *logger.Logger) (*Client, error) {
 
 	// Configure TLS if enabled
 	if cfg.TLSEnabled {
-		opts.TLSConfig = &tls.Config{
-			InsecureSkipVerify: cfg.TLSSkipVerify,
-			MinVersion:         tls.VersionTLS12,
+		tlsConfig, err := buildRedisTLSConfig(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure redis TLS: %w", err)
 		}
-		log.Info("redis TLS enabled", "skip_verify", cfg.TLSSkipVerify)
+		opts.TLSConfig = tlsConfig
+		log.Info("redis TLS enabled",
+			"skip_verify", cfg.TLSSkipVerify,
+			"cert_file", cfg.TLSCertFile,
+			"ca_file", cfg.TLSCAFile,
+		)
 	}
 
 	client := redis.NewClient(opts)
@@ -237,4 +244,37 @@ func (c *Client) PoolStats() *redis.PoolStats {
 // Logger returns the client's logger for use by other redis components.
 func (c *Client) Logger() *logger.Logger {
 	return c.logger
+}
+
+// buildRedisTLSConfig creates a TLS configuration for the Redis connection.
+// Supports optional client certificates (mTLS) and custom CA certificates.
+func buildRedisTLSConfig(cfg *config.RedisConfig) (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: cfg.TLSSkipVerify, //nolint:gosec // configurable for dev environments
+		MinVersion:         tls.VersionTLS12,
+	}
+
+	// Load client certificate for mTLS if both cert and key are provided
+	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load redis TLS client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	// Load custom CA certificate if provided
+	if cfg.TLSCAFile != "" {
+		caCert, err := os.ReadFile(cfg.TLSCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read redis TLS CA file: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse redis TLS CA certificate")
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	return tlsConfig, nil
 }

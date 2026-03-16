@@ -118,10 +118,10 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 	return nil
 }
 
-// GetByID retrieves a scope exclusion by its ID.
-func (r *ScopeExclusionRepository) GetByID(ctx context.Context, id shared.ID) (*scope.Exclusion, error) {
-	query := scopeExclusionSelectQuery + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
+// GetByID retrieves a scope exclusion by its tenant ID and ID.
+func (r *ScopeExclusionRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*scope.Exclusion, error) {
+	query := scopeExclusionSelectQuery + " WHERE tenant_id = $1 AND id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 
 	exclusion, err := r.scanExclusion(row)
 	if err != nil {
@@ -144,7 +144,7 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 			approved_by = $5,
 			approved_at = $6,
 			updated_at = $7
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $8
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -155,6 +155,7 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 		nullString(exclusion.ApprovedBy()),
 		nullTime(exclusion.ApprovedAt()),
 		exclusion.UpdatedAt(),
+		exclusion.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope exclusion: %w", err)
@@ -168,10 +169,10 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 	return nil
 }
 
-// Delete removes a scope exclusion by its ID.
-func (r *ScopeExclusionRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM scope_exclusions WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete removes a scope exclusion by its tenant ID and ID.
+func (r *ScopeExclusionRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM scope_exclusions WHERE tenant_id = $1 AND id = $2"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete scope exclusion: %w", err)
 	}

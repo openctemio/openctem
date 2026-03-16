@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -94,6 +95,12 @@ type ScanScheduleResponse struct {
 	UpdatedAt            time.Time              `json:"updated_at"`
 }
 
+// CreateTargetResponseWithWarnings wraps a target response with overlap warnings.
+type CreateTargetResponseWithWarnings struct {
+	ScopeTargetResponse
+	Warnings []string `json:"warnings,omitempty"`
+}
+
 // ScopeStatsResponse represents scope statistics in API responses.
 type ScopeStatsResponse struct {
 	TotalTargets     int64   `json:"total_targets"`
@@ -184,6 +191,29 @@ type UpdateScanScheduleRequest struct {
 type CheckScopeRequest struct {
 	AssetType string `json:"asset_type" validate:"required"`
 	Value     string `json:"value" validate:"required"`
+}
+
+// BulkDeleteTargetsRequest represents bulk delete targets request.
+type BulkDeleteTargetsRequest struct {
+	TargetIDs []string `json:"target_ids" validate:"required,min=1,max=100,dive,uuid"`
+}
+
+// BulkDeleteExclusionsRequest represents bulk delete exclusions request.
+type BulkDeleteExclusionsRequest struct {
+	ExclusionIDs []string `json:"exclusion_ids" validate:"required,min=1,max=100,dive,uuid"`
+}
+
+// BulkDeleteSchedulesRequest represents bulk delete schedules request.
+type BulkDeleteSchedulesRequest struct {
+	ScheduleIDs []string `json:"schedule_ids" validate:"required,min=1,max=100,dive,uuid"`
+}
+
+// BulkOperationResponse represents the response for bulk operations.
+type ScopeBulkOperationResponse struct {
+	Success       bool              `json:"success"`
+	AffectedCount int               `json:"affected_count"`
+	FailedIDs     []string          `json:"failed_ids,omitempty"`
+	Errors        map[string]string `json:"errors,omitempty"`
 }
 
 // =============================================================================
@@ -399,9 +429,23 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for pattern overlaps (non-blocking warnings)
+	warnings, overlapErr := h.service.CheckPatternOverlaps(r.Context(), tenantID, req.TargetType, req.Pattern)
+	if overlapErr != nil {
+		h.logger.Warn("failed to check pattern overlaps", "error", overlapErr)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toScopeTargetResponse(target))
+
+	if len(warnings) > 0 {
+		json.NewEncoder(w).Encode(CreateTargetResponseWithWarnings{
+			ScopeTargetResponse: toScopeTargetResponse(target),
+			Warnings:            warnings,
+		})
+	} else {
+		json.NewEncoder(w).Encode(toScopeTargetResponse(target))
+	}
 }
 
 // GetTarget handles GET /api/v1/scope/targets/{id}
@@ -419,17 +463,11 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 // @Router       /scope/targets/{id} [get]
 func (h *ScopeHandler) GetTarget(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	target, err := h.service.GetTarget(r.Context(), targetID)
+	target, err := h.service.GetTarget(r.Context(), tenantID, targetID)
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
-		return
-	}
-
-	// Verify tenant ownership
-	tenantID := middleware.MustGetTenantID(r.Context())
-	if target.TenantID().String() != tenantID {
-		apierror.NotFound("Scope target").WriteJSON(w)
 		return
 	}
 
@@ -522,8 +560,9 @@ func (h *ScopeHandler) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 // @Router       /scope/targets/{id}/activate [post]
 func (h *ScopeHandler) ActivateTarget(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	target, err := h.service.ActivateTarget(r.Context(), targetID)
+	target, err := h.service.ActivateTarget(r.Context(), targetID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
 		return
@@ -548,8 +587,9 @@ func (h *ScopeHandler) ActivateTarget(w http.ResponseWriter, r *http.Request) {
 // @Router       /scope/targets/{id}/deactivate [post]
 func (h *ScopeHandler) DeactivateTarget(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	target, err := h.service.DeactivateTarget(r.Context(), targetID)
+	target, err := h.service.DeactivateTarget(r.Context(), targetID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
 		return
@@ -682,17 +722,11 @@ func (h *ScopeHandler) CreateExclusion(w http.ResponseWriter, r *http.Request) {
 // @Router       /scope/exclusions/{id} [get]
 func (h *ScopeHandler) GetExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	exclusion, err := h.service.GetExclusion(r.Context(), exclusionID)
+	exclusion, err := h.service.GetExclusion(r.Context(), tenantID, exclusionID)
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
-		return
-	}
-
-	// Verify tenant ownership
-	tenantID := middleware.MustGetTenantID(r.Context())
-	if exclusion.TenantID().String() != tenantID {
-		apierror.NotFound("Scope exclusion").WriteJSON(w)
 		return
 	}
 
@@ -770,11 +804,24 @@ func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 }
 
 // ApproveExclusion handles POST /api/v1/scope/exclusions/{id}/approve
+// @Summary      Approve scope exclusion
+// @Description  Approve a scope exclusion, marking it as reviewed and authorized
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Exclusion ID"
+// @Success      200  {object}  ScopeExclusionResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/exclusions/{id}/approve [post]
 func (h *ScopeHandler) ApproveExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
-	exclusion, err := h.service.ApproveExclusion(r.Context(), exclusionID, userID)
+	exclusion, err := h.service.ApproveExclusion(r.Context(), exclusionID, tenantID, userID)
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
@@ -785,10 +832,23 @@ func (h *ScopeHandler) ApproveExclusion(w http.ResponseWriter, r *http.Request) 
 }
 
 // ActivateExclusion handles POST /api/v1/scope/exclusions/{id}/activate
+// @Summary      Activate scope exclusion
+// @Description  Activate a scope exclusion
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Exclusion ID"
+// @Success      200  {object}  ScopeExclusionResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/exclusions/{id}/activate [post]
 func (h *ScopeHandler) ActivateExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	exclusion, err := h.service.ActivateExclusion(r.Context(), exclusionID)
+	exclusion, err := h.service.ActivateExclusion(r.Context(), exclusionID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
@@ -799,10 +859,23 @@ func (h *ScopeHandler) ActivateExclusion(w http.ResponseWriter, r *http.Request)
 }
 
 // DeactivateExclusion handles POST /api/v1/scope/exclusions/{id}/deactivate
+// @Summary      Deactivate scope exclusion
+// @Description  Deactivate a scope exclusion
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Exclusion ID"
+// @Success      200  {object}  ScopeExclusionResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/exclusions/{id}/deactivate [post]
 func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Request) {
 	exclusionID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	exclusion, err := h.service.DeactivateExclusion(r.Context(), exclusionID)
+	exclusion, err := h.service.DeactivateExclusion(r.Context(), exclusionID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
 		return
@@ -944,17 +1017,11 @@ func (h *ScopeHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 // @Router       /scope/schedules/{id} [get]
 func (h *ScopeHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 	scheduleID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	schedule, err := h.service.GetSchedule(r.Context(), scheduleID)
+	schedule, err := h.service.GetSchedule(r.Context(), tenantID, scheduleID)
 	if err != nil {
 		h.handleServiceError(w, "Scan schedule", err)
-		return
-	}
-
-	// Verify tenant ownership
-	tenantID := middleware.MustGetTenantID(r.Context())
-	if schedule.TenantID().String() != tenantID {
-		apierror.NotFound("Scan schedule").WriteJSON(w)
 		return
 	}
 
@@ -963,6 +1030,19 @@ func (h *ScopeHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateSchedule handles PUT /api/v1/scope/schedules/{id}
+// @Summary      Update scan schedule
+// @Description  Update an existing scan schedule
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                     true  "Schedule ID"
+// @Param        body  body      UpdateScanScheduleRequest  true  "Update data"
+// @Success      200   {object}  ScanScheduleResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/schedules/{id} [put]
 func (h *ScopeHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
 	scheduleID := chi.URLParam(r, "id")
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -1004,6 +1084,18 @@ func (h *ScopeHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteSchedule handles DELETE /api/v1/scope/schedules/{id}
+// @Summary      Delete scan schedule
+// @Description  Delete a scan schedule
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Schedule ID"
+// @Success      204  "No Content"
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/schedules/{id} [delete]
 func (h *ScopeHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
 	scheduleID := chi.URLParam(r, "id")
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -1017,10 +1109,23 @@ func (h *ScopeHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
 }
 
 // EnableSchedule handles POST /api/v1/scope/schedules/{id}/enable
+// @Summary      Enable scan schedule
+// @Description  Enable a scan schedule so it will run on its configured schedule
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Schedule ID"
+// @Success      200  {object}  ScanScheduleResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/schedules/{id}/enable [post]
 func (h *ScopeHandler) EnableSchedule(w http.ResponseWriter, r *http.Request) {
 	scheduleID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	schedule, err := h.service.EnableSchedule(r.Context(), scheduleID)
+	schedule, err := h.service.EnableSchedule(r.Context(), scheduleID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scan schedule", err)
 		return
@@ -1031,10 +1136,50 @@ func (h *ScopeHandler) EnableSchedule(w http.ResponseWriter, r *http.Request) {
 }
 
 // DisableSchedule handles POST /api/v1/scope/schedules/{id}/disable
+// @Summary      Disable scan schedule
+// @Description  Disable a scan schedule so it will no longer run automatically
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Schedule ID"
+// @Success      200  {object}  ScanScheduleResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/schedules/{id}/disable [post]
 func (h *ScopeHandler) DisableSchedule(w http.ResponseWriter, r *http.Request) {
 	scheduleID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	schedule, err := h.service.DisableSchedule(r.Context(), scheduleID)
+	schedule, err := h.service.DisableSchedule(r.Context(), scheduleID, tenantID)
+	if err != nil {
+		h.handleServiceError(w, "Scan schedule", err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toScanScheduleResponse(schedule))
+}
+
+// RunScheduleNow handles POST /api/v1/scope/schedules/{id}/run
+// @Summary      Run scan schedule now
+// @Description  Trigger an immediate run of a scan schedule
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Schedule ID"
+// @Success      200  {object}  ScanScheduleResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/schedules/{id}/run [post]
+func (h *ScopeHandler) RunScheduleNow(w http.ResponseWriter, r *http.Request) {
+	scheduleID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	schedule, err := h.service.RunScheduleNow(r.Context(), scheduleID, tenantID)
 	if err != nil {
 		h.handleServiceError(w, "Scan schedule", err)
 		return
@@ -1049,6 +1194,15 @@ func (h *ScopeHandler) DisableSchedule(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 // GetStats handles GET /api/v1/scope/stats
+// @Summary      Get scope statistics
+// @Description  Get aggregate statistics for scope targets, exclusions, and schedules
+// @Tags         Scope
+// @Produce      json
+// @Success      200  {object}  ScopeStatsResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/stats [get]
 func (h *ScopeHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
@@ -1073,6 +1227,18 @@ func (h *ScopeHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // CheckScope handles POST /api/v1/scope/check
+// @Summary      Check if value is in scope
+// @Description  Check whether a given asset type and value falls within scope targets and exclusions
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        body  body      CheckScopeRequest  true  "Asset type and value to check"
+// @Success      200   {object}  ScopeMatchResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      401   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/check [post]
 func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
@@ -1112,4 +1278,137 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// BulkDeleteTargets handles POST /api/v1/scope/targets/bulk/delete
+// @Summary      Bulk delete scope targets
+// @Description  Delete multiple scope targets in a single operation
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        body  body      BulkDeleteTargetsRequest  true  "Target IDs to delete"
+// @Success      200   {object}  ScopeBulkOperationResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      401   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/targets/bulk/delete [post]
+func (h *ScopeHandler) BulkDeleteTargets(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req BulkDeleteTargetsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	result := h.bulkDeleteItems(r.Context(), req.TargetIDs, tenantID, func(ctx context.Context, id, tid string) error {
+		return h.service.DeleteTarget(ctx, id, tid)
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// BulkDeleteExclusions handles POST /api/v1/scope/exclusions/bulk/delete
+// @Summary      Bulk delete scope exclusions
+// @Description  Delete multiple scope exclusions in a single operation
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        body  body      BulkDeleteExclusionsRequest  true  "Exclusion IDs to delete"
+// @Success      200   {object}  ScopeBulkOperationResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      401   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/exclusions/bulk/delete [post]
+func (h *ScopeHandler) BulkDeleteExclusions(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req BulkDeleteExclusionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	result := h.bulkDeleteItems(r.Context(), req.ExclusionIDs, tenantID, func(ctx context.Context, id, tid string) error {
+		return h.service.DeleteExclusion(ctx, id, tid)
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// BulkDeleteSchedules handles POST /api/v1/scope/schedules/bulk/delete
+// @Summary      Bulk delete scan schedules
+// @Description  Delete multiple scan schedules in a single operation
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        body  body      BulkDeleteSchedulesRequest  true  "Schedule IDs to delete"
+// @Success      200   {object}  ScopeBulkOperationResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      401   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/schedules/bulk/delete [post]
+func (h *ScopeHandler) BulkDeleteSchedules(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req BulkDeleteSchedulesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	result := h.bulkDeleteItems(r.Context(), req.ScheduleIDs, tenantID, func(ctx context.Context, id, tid string) error {
+		return h.service.DeleteSchedule(ctx, id, tid)
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// bulkDeleteItems is a helper for bulk delete operations.
+func (h *ScopeHandler) bulkDeleteItems(
+	ctx context.Context,
+	ids []string,
+	tenantID string,
+	deleteFn func(ctx context.Context, id, tenantID string) error,
+) ScopeBulkOperationResponse {
+	var failedIDs []string
+	errs := make(map[string]string)
+	affected := 0
+
+	for _, id := range ids {
+		if err := deleteFn(ctx, id, tenantID); err != nil {
+			failedIDs = append(failedIDs, id)
+			errs[id] = err.Error()
+		} else {
+			affected++
+		}
+	}
+
+	return ScopeBulkOperationResponse{
+		Success:       len(failedIDs) == 0,
+		AffectedCount: affected,
+		FailedIDs:     failedIDs,
+		Errors:        errs,
+	}
 }

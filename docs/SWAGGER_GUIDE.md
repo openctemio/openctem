@@ -15,8 +15,8 @@ make swagger
 ### Endpoint Annotations
 
 ```go
-// @Summary      Mô tả ngắn (max 120 chars)
-// @Description  Mô tả chi tiết endpoint
+// @Summary      Short description (max 120 chars)
+// @Description  Detailed endpoint description
 // @Tags         TagName
 // @Accept       json
 // @Produce      json
@@ -37,7 +37,7 @@ func (h *Handler) Method(w http.ResponseWriter, r *http.Request) {}
 
 ### Request/Response Types
 
-Swag sử dụng struct tags để generate schema:
+Swag uses struct tags to generate the schema:
 
 ```go
 type CreateRequest struct {
@@ -57,26 +57,26 @@ type Response struct {
 
 ```
 api/openapi/
-├── openapi.yaml          # OLD: Manual docs (có thể xóa)
+├── openapi.yaml          # OLD: Manual docs (can be deleted)
 └── swagger/
-    └── swagger.yaml      # NEW: Auto-generated từ code
+    └── swagger.yaml      # NEW: Auto-generated from code
 ```
 
 ## Workflow
 
-1. **Thêm/sửa annotations** trong handlers (`internal/infra/http/handler/*.go`)
+1. **Add/edit annotations** in handlers (`internal/infra/http/handler/*.go`)
 2. **Generate docs**: `make swagger`
-3. **Verify**: Xem `api/openapi/swagger/swagger.yaml`
+3. **Verify**: View `api/openapi/swagger/swagger.yaml`
 
 ## Tips
 
-- **Tags**: Nhóm endpoints theo domain (Assets, Projects, Branches...)
-- **Security**: Thêm `@Security BearerAuth` cho protected endpoints
-- **Errors**: Document tất cả status codes có thể trả về
-- **Types**: Dùng struct types thay vì `map[string]interface{}` khi có thể
-- **Comments**: Đặt annotations **ngay trước** function declaration
+- **Tags**: Group endpoints by domain (Assets, Projects, Branches...)
+- **Security**: Add `@Security BearerAuth` for protected endpoints
+- **Errors**: Document all possible status codes
+- **Types**: Use struct types instead of `map[string]interface{}` when possible
+- **Comments**: Place annotations **immediately before** the function declaration
 
-## Handlers với Swag Annotations
+## Handlers with Swag Annotations
 
 | Handler | Endpoints | Status |
 |---------|-----------|--------|

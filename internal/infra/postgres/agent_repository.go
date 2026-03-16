@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -742,13 +743,19 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 	}
 
 	if len(metadata) > 0 {
-		_ = json.Unmarshal(metadata, &a.Metadata)
+		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
+			log.Printf("[DEBUG] failed to unmarshal agent metadata (id=%s): %v", a.ID, err)
+		}
 	}
 	if len(labels) > 0 {
-		_ = json.Unmarshal(labels, &a.Labels)
+		if err := json.Unmarshal(labels, &a.Labels); err != nil {
+			log.Printf("[DEBUG] failed to unmarshal agent labels (id=%s): %v", a.ID, err)
+		}
 	}
 	if len(config) > 0 {
-		_ = json.Unmarshal(config, &a.Config)
+		if err := json.Unmarshal(config, &a.Config); err != nil {
+			log.Printf("[DEBUG] failed to unmarshal agent config (id=%s): %v", a.ID, err)
+		}
 	}
 
 	return a, nil
@@ -896,13 +903,19 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 	}
 
 	if len(metadata) > 0 {
-		_ = json.Unmarshal(metadata, &a.Metadata)
+		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
+			log.Printf("[DEBUG] failed to unmarshal agent metadata (id=%s): %v", a.ID, err)
+		}
 	}
 	if len(labels) > 0 {
-		_ = json.Unmarshal(labels, &a.Labels)
+		if err := json.Unmarshal(labels, &a.Labels); err != nil {
+			log.Printf("[DEBUG] failed to unmarshal agent labels (id=%s): %v", a.ID, err)
+		}
 	}
 	if len(config) > 0 {
-		_ = json.Unmarshal(config, &a.Config)
+		if err := json.Unmarshal(config, &a.Config); err != nil {
+			log.Printf("[DEBUG] failed to unmarshal agent config (id=%s): %v", a.ID, err)
+		}
 	}
 
 	return a, nil
@@ -1087,6 +1100,69 @@ func (r *AgentRepository) GetAgentsOfflineSince(ctx context.Context, since time.
 	}
 
 	return agents, nil
+}
+
+// GetPlatformAgentStats returns aggregate statistics for platform agents.
+// NOTE: Cross-tenant access is intentional — platform agents are shared infrastructure
+// managed by OpenCTEM, not scoped to individual tenants. The queued jobs count is
+// tenant-scoped via the tenantID parameter.
+func (r *AgentRepository) GetPlatformAgentStats(ctx context.Context, tenantID shared.ID) (*agent.PlatformAgentStatsResult, error) {
+	// Single CTE query combining agent stats and queued job count to avoid N+1
+	query := `
+		WITH agent_stats AS (
+			SELECT
+				COALESCE(labels->>'tier', 'shared') AS tier,
+				COUNT(*) AS total_agents,
+				COUNT(*) FILTER (WHERE health = 'online') AS online_agents,
+				COALESCE(SUM(max_concurrent_jobs), 0) AS total_capacity,
+				COALESCE(SUM(current_jobs), 0) AS current_load
+			FROM agents
+			WHERE is_platform_agent = TRUE AND status = 'active'
+			GROUP BY COALESCE(labels->>'tier', 'shared')
+		), queued AS (
+			SELECT COUNT(*) AS cnt FROM commands
+			WHERE is_platform_job = TRUE AND status IN ('pending', 'queued') AND tenant_id = $1
+		)
+		SELECT q.cnt, a.tier, a.total_agents, a.online_agents, a.total_capacity, a.current_load
+		FROM agent_stats a, queued q
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to query platform agent stats: %w", err)
+	}
+	defer rows.Close()
+
+	result := &agent.PlatformAgentStatsResult{
+		TierBreakdown: make(map[string]agent.TierBreakdown),
+	}
+
+	for rows.Next() {
+		var tier string
+		var tb agent.TierBreakdown
+		if err := rows.Scan(&result.CurrentQueuedJobs, &tier, &tb.TotalAgents, &tb.OnlineAgents, &tb.TotalCapacity, &tb.CurrentLoad); err != nil {
+			return nil, fmt.Errorf("failed to scan platform agent stats: %w", err)
+		}
+		result.TierBreakdown[tier] = tb
+		result.TotalAgents += tb.TotalAgents
+		result.OnlineAgents += tb.OnlineAgents
+		result.TotalCapacity += tb.TotalCapacity
+		result.CurrentActiveJobs += tb.CurrentLoad
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate platform agent stats: %w", err)
+	}
+
+	// Handle case where no agents exist but we still need queued count
+	if len(result.TierBreakdown) == 0 {
+		queueQuery := `SELECT COUNT(*) FROM commands WHERE is_platform_job = TRUE AND status IN ('pending', 'queued') AND tenant_id = $1`
+		if err := r.db.QueryRowContext(ctx, queueQuery, tenantID.String()).Scan(&result.CurrentQueuedJobs); err != nil {
+			return nil, fmt.Errorf("failed to query queued platform jobs: %w", err)
+		}
+	}
+
+	return result, nil
 }
 
 // HasAgentForCapability checks if there's at least one ONLINE agent that supports the given capability.

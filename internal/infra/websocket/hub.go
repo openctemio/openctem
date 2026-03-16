@@ -100,6 +100,10 @@ func defaultAuthorize(client *Client, channel string) bool {
 		// Notification channel: client must be in the tenant
 		return client.TenantID == id
 
+	case ChannelTypeGroup:
+		// Group channel: requires tenant access (id = group_id)
+		return client.TenantID != "" && id != ""
+
 	default:
 		// Unknown channel type, deny by default
 		return false

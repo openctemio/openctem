@@ -2,27 +2,10 @@ package module
 
 import (
 	"context"
+	"time"
 
-	"github.com/google/uuid"
+	"github.com/openctemio/api/pkg/domain/shared"
 )
-
-// PlanRepository defines the interface for plan persistence operations.
-type PlanRepository interface {
-	// GetByID retrieves a plan by its ID.
-	GetByID(ctx context.Context, id ID) (*Plan, error)
-
-	// GetBySlug retrieves a plan by its slug.
-	GetBySlug(ctx context.Context, slug string) (*Plan, error)
-
-	// ListPublicPlans returns all public plans.
-	ListPublicPlans(ctx context.Context) ([]*Plan, error)
-
-	// ListAllPlans returns all plans (including non-public).
-	ListAllPlans(ctx context.Context) ([]*Plan, error)
-
-	// GetPlanWithModules retrieves a plan with its modules populated.
-	GetPlanWithModules(ctx context.Context, id ID) (*Plan, error)
-}
 
 // ModuleRepository defines the interface for module persistence operations.
 type ModuleRepository interface {
@@ -40,40 +23,33 @@ type ModuleRepository interface {
 
 	// ListByCategory returns modules filtered by category.
 	ListByCategory(ctx context.Context, category string) ([]*Module, error)
-
-	// GetModulesForPlan returns all modules included in a plan.
-	GetModulesForPlan(ctx context.Context, planID ID) ([]*Module, error)
-
-	// GetEventTypesForModule returns event types associated with a module.
-	GetEventTypesForModule(ctx context.Context, moduleID string) ([]string, error)
-
-	// GetModuleForEventType returns the module that owns a specific event type.
-	GetModuleForEventType(ctx context.Context, eventType string) (*Module, error)
 }
 
-// SubscriptionRepository defines the interface for subscription persistence operations.
-type SubscriptionRepository interface {
-	// GetByTenantID retrieves the subscription for a tenant.
-	GetByTenantID(ctx context.Context, tenantID uuid.UUID) (*TenantSubscription, error)
+// TenantModuleOverride represents a tenant's override for a module's enabled state.
+type TenantModuleOverride struct {
+	TenantID   shared.ID
+	ModuleID   string
+	IsEnabled  bool
+	EnabledAt  *time.Time
+	DisabledAt *time.Time
+	UpdatedBy  *shared.ID
+	UpdatedAt  time.Time
+}
 
-	// GetEnabledModuleIDs returns the module IDs enabled for a tenant.
-	GetEnabledModuleIDs(ctx context.Context, tenantID uuid.UUID) ([]string, error)
+// TenantModuleUpdate represents a single module toggle request.
+type TenantModuleUpdate struct {
+	ModuleID  string
+	IsEnabled bool
+}
 
-	// HasModule checks if a tenant has access to a specific module.
-	HasModule(ctx context.Context, tenantID uuid.UUID, moduleID string) (bool, error)
+// TenantModuleRepository defines the interface for per-tenant module configuration.
+type TenantModuleRepository interface {
+	// ListByTenant returns all module overrides for a tenant.
+	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*TenantModuleOverride, error)
 
-	// GetModuleLimit returns the effective limit for a module metric.
-	GetModuleLimit(ctx context.Context, tenantID uuid.UUID, moduleID, metric string) (int64, error)
+	// UpsertBatch creates or updates multiple module overrides for a tenant.
+	UpsertBatch(ctx context.Context, tenantID shared.ID, updates []TenantModuleUpdate, updatedBy *shared.ID) error
 
-	// UpdateSubscription updates a tenant's subscription.
-	UpdateSubscription(ctx context.Context, subscription *TenantSubscription) error
-
-	// UpdatePlan changes a tenant's plan.
-	UpdatePlan(ctx context.Context, tenantID, planID uuid.UUID) error
-
-	// UpdateStatus updates the subscription status.
-	UpdateStatus(ctx context.Context, tenantID uuid.UUID, status SubscriptionStatus) error
-
-	// SetLimitsOverride sets custom limits for a tenant.
-	SetLimitsOverride(ctx context.Context, tenantID uuid.UUID, limits map[string]any) error
+	// DeleteByTenant removes all module overrides for a tenant (reset to defaults).
+	DeleteByTenant(ctx context.Context, tenantID shared.ID) error
 }

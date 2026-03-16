@@ -184,8 +184,9 @@ func (r *RepositoryExtensionRepository) Delete(ctx context.Context, assetID shar
 // GetByFullName retrieves a repository by full name.
 func (r *RepositoryExtensionRepository) GetByFullName(ctx context.Context, tenantID shared.ID, fullName string) (*asset.RepositoryExtension, error) {
 	query := r.selectQuery() + `
+		INNER JOIN assets a ON a.id = ar.asset_id
 		WHERE ar.full_name = $1
-		AND ar.asset_id IN (SELECT id FROM assets WHERE tenant_id = $2)
+		AND a.tenant_id = $2
 	`
 
 	row := r.db.QueryRowContext(ctx, query, fullName, tenantID.String())
@@ -195,11 +196,13 @@ func (r *RepositoryExtensionRepository) GetByFullName(ctx context.Context, tenan
 // ListByTenant retrieves all repositories for a tenant.
 func (r *RepositoryExtensionRepository) ListByTenant(ctx context.Context, tenantID shared.ID, opts asset.ListOptions, page pagination.Pagination) (pagination.Result[*asset.RepositoryExtension], error) {
 	baseQuery := r.selectQuery() + `
-		WHERE ar.asset_id IN (SELECT id FROM assets WHERE tenant_id = $1)
+		INNER JOIN assets a ON a.id = ar.asset_id
+		WHERE a.tenant_id = $1
 	`
 	countQuery := `
 		SELECT COUNT(*) FROM asset_repositories ar
-		WHERE ar.asset_id IN (SELECT id FROM assets WHERE tenant_id = $1)
+		INNER JOIN assets a ON a.id = ar.asset_id
+		WHERE a.tenant_id = $1
 	`
 
 	// Apply sorting (default to full_name ASC)
@@ -238,6 +241,41 @@ func (r *RepositoryExtensionRepository) ListByTenant(ctx context.Context, tenant
 	return pagination.NewResult(repos, total, page), nil
 }
 
+// GetByAssetIDs retrieves repository extensions for multiple asset IDs in a single query.
+func (r *RepositoryExtensionRepository) GetByAssetIDs(ctx context.Context, assetIDs []shared.ID) (map[shared.ID]*asset.RepositoryExtension, error) {
+	if len(assetIDs) == 0 {
+		return make(map[shared.ID]*asset.RepositoryExtension), nil
+	}
+
+	ids := make([]string, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		ids = append(ids, id.String())
+	}
+
+	query := r.selectQuery() + " WHERE ar.asset_id = ANY($1)"
+
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch query repository extensions: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[shared.ID]*asset.RepositoryExtension, len(assetIDs))
+	for rows.Next() {
+		repo, err := r.scanRepoFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		result[repo.AssetID()] = repo
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate repository extensions: %w", err)
+	}
+
+	return result, nil
+}
+
 // Helper methods
 
 func (r *RepositoryExtensionRepository) selectQuery() string {
@@ -245,11 +283,12 @@ func (r *RepositoryExtensionRepository) selectQuery() string {
 		SELECT ar.asset_id, ar.repo_id, ar.full_name, ar.scm_organization, ar.clone_url, ar.web_url, ar.ssh_url,
 			   ar.default_branch, ar.visibility, ar.language, ar.languages, ar.topics,
 			   ar.stars, ar.forks, ar.watchers, ar.open_issues, ar.contributors_count, ar.size_kb,
-			   COALESCE((SELECT COUNT(*) FROM findings f WHERE f.asset_id = ar.asset_id), 0) as finding_count,
+			   COALESCE(fc.finding_count, 0) as finding_count,
 			   ar.risk_score, ar.scan_enabled, ar.scan_schedule, ar.last_scanned_at,
 			   ar.branch_count, ar.protected_branch_count, ar.component_count, ar.vulnerable_component_count,
 			   ar.repo_created_at, ar.repo_updated_at, ar.repo_pushed_at
 		FROM asset_repositories ar
+		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings GROUP BY asset_id) fc ON fc.asset_id = ar.asset_id
 	`
 }
 

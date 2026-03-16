@@ -161,6 +161,33 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// GetPreferences returns the current authenticated user's preferences.
+// @Summary      Get user preferences
+// @Description  Returns the preferences of the authenticated user
+// @Tags         Users
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  PreferencesDTO
+// @Failure      401  {object}  map[string]string
+// @Router       /users/me/preferences [get]
+func (h *UserHandler) GetPreferences(w http.ResponseWriter, r *http.Request) {
+	localUser := middleware.GetLocalUser(r.Context())
+	if localUser == nil {
+		apierror.Unauthorized("User not found").WriteJSON(w)
+		return
+	}
+
+	prefs := PreferencesDTO{
+		Theme:         localUser.Preferences().Theme,
+		Language:      localUser.Preferences().Language,
+		Notifications: localUser.Preferences().Notifications,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(prefs)
+}
+
 // UpdatePreferences updates the current authenticated user's preferences.
 // @Summary      Update user preferences
 // @Description  Updates the preferences of the authenticated user

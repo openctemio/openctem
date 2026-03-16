@@ -145,7 +145,7 @@ linters-settings:
     locale: US
     ignore-words:
       - openctem
-      - cancelled
+      - canceled
 
   prealloc:
     simple: true

@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -33,6 +34,14 @@ type FindingProcessor struct {
 
 	// findingCreatedCallback is called after findings are successfully created
 	findingCreatedCallback FindingCreatedCallback
+
+	// activityService records audit trail for auto-reopen events
+	activityService activityRecorder
+}
+
+// activityRecorder is the subset of FindingActivityService needed by the processor.
+type activityRecorder interface {
+	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) error
 }
 
 // NewFindingProcessor creates a new finding processor.
@@ -53,6 +62,11 @@ func (p *FindingProcessor) SetComponentRepository(repo component.Repository) {
 // SetDataFlowRepository sets the data flow repository for persisting data flow traces.
 func (p *FindingProcessor) SetDataFlowRepository(repo vulnerability.DataFlowRepository) {
 	p.dataFlowRepo = repo
+}
+
+// SetActivityService sets the activity service for recording auto-reopen audit trail.
+func (p *FindingProcessor) SetActivityService(svc activityRecorder) {
+	p.activityService = svc
 }
 
 // SetFindingCreatedCallback sets the callback for when findings are created.
@@ -196,7 +210,9 @@ func (p *FindingProcessor) ProcessBatch(
 	newFindings := make([]*vulnerability.Finding, 0)
 	newFindingsMeta := make([]findingMeta, 0) // Track metadata for error reporting
 	existingFingerprints := make([]string, 0)
-	existingSnippets := make(map[string]string) // Track snippets for existing findings
+	existingNewData := make([]*vulnerability.Finding, 0) // Built findings for enrichment
+	unenrichedFingerprints := make([]string, 0)          // Fingerprints where buildFinding failed
+	existingSnippets := make(map[string]string)          // Track snippets for existing findings
 
 	for _, fm := range validFindings {
 		if existsMap[fm.fingerprint] {
@@ -204,6 +220,14 @@ func (p *FindingProcessor) ProcessBatch(
 			// Track snippet for potential update (if current DB value is invalid)
 			if fm.finding.Location != nil && fm.finding.Location.Snippet != "" && fm.finding.Location.Snippet != "requires login" {
 				existingSnippets[fm.fingerprint] = fm.finding.Location.Snippet
+			}
+			// Build Finding from scan data for enrichment
+			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint)
+			if err == nil {
+				existingNewData = append(existingNewData, newData)
+			} else {
+				// buildFinding failed — fall back to scan-id-only update for this fingerprint
+				unenrichedFingerprints = append(unenrichedFingerprints, fm.fingerprint)
 			}
 		} else {
 			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint)
@@ -230,7 +254,16 @@ func (p *FindingProcessor) ProcessBatch(
 			p.logger.Info("batch auto-reopened findings",
 				"count", len(reopenedMap),
 			)
-			// TODO: Create activity records for auto-reopened findings
+			// Record audit trail for auto-reopened findings
+			if p.activityService != nil {
+				reopenedIDs := make([]shared.ID, 0, len(reopenedMap))
+				for _, fid := range reopenedMap {
+					reopenedIDs = append(reopenedIDs, fid)
+				}
+				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopenedIDs); err != nil {
+					p.logger.Warn("failed to record auto-reopen activities", "error", err)
+				}
+			}
 		}
 	}
 
@@ -301,26 +334,61 @@ func (p *FindingProcessor) ProcessBatch(
 		}
 	}
 
-	// Step 5: Batch update existing findings
+	// Step 5: Enrich existing findings with new scan data
 	if len(existingFingerprints) > 0 {
 		scanID := report.Metadata.ID
-		updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, existingFingerprints, scanID)
-		if err != nil {
-			p.logger.Warn("failed to update existing findings", "error", err)
-		} else {
-			output.FindingsUpdated = int(updated)
+
+		// Step 5a: Enrich findings where buildFinding succeeded
+		if len(existingNewData) > 0 {
+			enriched, err := p.repo.EnrichBatchByFingerprints(ctx, tenantID, existingNewData, scanID)
+			if err != nil {
+				// Graceful fallback: if enrichment fails, fall back to scan-id-only update
+				p.logger.Warn("enrichment failed, falling back to scan-id-only update",
+					"error", err,
+					"count", len(existingNewData),
+				)
+				// Collect fingerprints from failed enrichment for fallback
+				fallbackFPs := make([]string, 0, len(existingNewData))
+				for _, f := range existingNewData {
+					fallbackFPs = append(fallbackFPs, f.Fingerprint())
+				}
+				unenrichedFingerprints = append(unenrichedFingerprints, fallbackFPs...)
+			} else {
+				output.FindingsUpdated = int(enriched)
+				if enriched > 0 {
+					p.logger.Info("enriched existing findings",
+						"count", enriched,
+					)
+				}
+			}
 		}
 
-		// Step 5b: Update snippets for existing findings that have invalid snippets in DB
-		// This fixes the "requires login" issue when Semgrep pro features are unavailable
-		if len(existingSnippets) > 0 {
-			snippetUpdated, err := p.repo.UpdateSnippetBatchByFingerprints(ctx, tenantID, existingSnippets)
+		// Step 5b: Fallback scan-id-only update for findings where buildFinding or enrichment failed
+		if len(unenrichedFingerprints) > 0 {
+			updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, unenrichedFingerprints, scanID)
 			if err != nil {
-				p.logger.Warn("failed to update snippets for existing findings", "error", err)
-			} else if snippetUpdated > 0 {
-				p.logger.Info("updated snippets for existing findings",
-					"count", snippetUpdated,
-				)
+				p.logger.Warn("failed to update existing findings (fallback)", "error", err)
+			} else {
+				output.FindingsUpdated += int(updated)
+			}
+
+			// Update snippets only for unenriched findings (enrichment already handles snippet via LastWins)
+			// This fixes the "requires login" issue when Semgrep pro features are unavailable
+			unenrichedSnippets := make(map[string]string, len(unenrichedFingerprints))
+			for _, fp := range unenrichedFingerprints {
+				if s, ok := existingSnippets[fp]; ok {
+					unenrichedSnippets[fp] = s
+				}
+			}
+			if len(unenrichedSnippets) > 0 {
+				snippetUpdated, err := p.repo.UpdateSnippetBatchByFingerprints(ctx, tenantID, unenrichedSnippets)
+				if err != nil {
+					p.logger.Warn("failed to update snippets for existing findings", "error", err)
+				} else if snippetUpdated > 0 {
+					p.logger.Info("updated snippets for unenriched findings",
+						"count", snippetUpdated,
+					)
+				}
 			}
 		}
 	}
@@ -742,6 +810,13 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	if ctisFinding.Secret.CommitCount > 0 {
 		f.SetSecretCommitCount(ctisFinding.Secret.CommitCount)
 	}
+	// Previously unmapped fields - store in metadata to prevent data loss
+	if ctisFinding.Secret.RevokedAt != nil {
+		f.SetMetadata("secret_revoked_at", ctisFinding.Secret.RevokedAt.Format(time.RFC3339))
+	}
+	if ctisFinding.Secret.Length > 0 {
+		f.SetMetadata("secret_length", ctisFinding.Secret.Length)
+	}
 }
 
 // setComplianceFields sets compliance-specific fields on a finding.
@@ -797,7 +872,49 @@ func (p *FindingProcessor) setWeb3Fields(f *vulnerability.Finding, ctisFinding *
 	if ctisFinding.Web3.BytecodeOffset > 0 {
 		f.SetWeb3BytecodeOffset(ctisFinding.Web3.BytecodeOffset)
 	}
-	// RelatedTxHashes available in CTIS but not mapped to domain yet
+	// Previously unmapped fields - store in metadata to prevent data loss
+	if len(ctisFinding.Web3.RelatedTxHashes) > 0 {
+		f.SetMetadata("web3_related_tx_hashes", ctisFinding.Web3.RelatedTxHashes)
+	}
+	if ctisFinding.Web3.VulnerablePattern != "" {
+		f.SetMetadata("web3_vulnerable_pattern", ctisFinding.Web3.VulnerablePattern)
+	}
+	if ctisFinding.Web3.ExploitableOnMainnet {
+		f.SetMetadata("web3_exploitable_on_mainnet", true)
+	}
+	if ctisFinding.Web3.EstimatedImpactUSD > 0 {
+		f.SetMetadata("web3_estimated_impact_usd", ctisFinding.Web3.EstimatedImpactUSD)
+	}
+	if ctisFinding.Web3.AffectedValueUSD > 0 {
+		f.SetMetadata("web3_affected_value_usd", ctisFinding.Web3.AffectedValueUSD)
+	}
+	if ctisFinding.Web3.AttackVector != "" {
+		f.SetMetadata("web3_attack_vector", ctisFinding.Web3.AttackVector)
+	}
+	if len(ctisFinding.Web3.AttackerAddresses) > 0 {
+		f.SetMetadata("web3_attacker_addresses", ctisFinding.Web3.AttackerAddresses)
+	}
+	if ctisFinding.Web3.DetectionTool != "" {
+		f.SetMetadata("web3_detection_tool", ctisFinding.Web3.DetectionTool)
+	}
+	if ctisFinding.Web3.DetectionConfidence != "" {
+		f.SetMetadata("web3_detection_confidence", ctisFinding.Web3.DetectionConfidence)
+	}
+	if ctisFinding.Web3.GasIssue != nil {
+		if data, err := json.Marshal(ctisFinding.Web3.GasIssue); err == nil {
+			f.SetMetadata("web3_gas_issue", json.RawMessage(data))
+		}
+	}
+	if ctisFinding.Web3.AccessControl != nil {
+		if data, err := json.Marshal(ctisFinding.Web3.AccessControl); err == nil {
+			f.SetMetadata("web3_access_control", json.RawMessage(data))
+		}
+	}
+	if ctisFinding.Web3.Reentrancy != nil {
+		if data, err := json.Marshal(ctisFinding.Web3.Reentrancy); err == nil {
+			f.SetMetadata("web3_reentrancy", json.RawMessage(data))
+		}
+	}
 }
 
 // setMisconfigFields sets misconfiguration-specific fields on a finding.

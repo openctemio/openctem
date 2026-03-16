@@ -7,24 +7,34 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
+// FindingSeverityCounts holds per-severity finding counts for an asset.
+type FindingSeverityCounts struct {
+	Critical int
+	High     int
+	Medium   int
+	Low      int
+	Info     int
+}
+
 // Asset represents an asset entity in the domain.
 type Asset struct {
-	id           shared.ID
-	tenantID     shared.ID
-	parentID     *shared.ID // For hierarchical assets (e.g., subdomain -> domain)
-	ownerID      *shared.ID // User who owns this asset
-	name         string
-	assetType    AssetType
-	criticality  Criticality
-	status       Status
-	scope        Scope
-	exposure     Exposure
-	riskScore    int
-	findingCount int
-	description  string
-	tags         []string
-	metadata     map[string]any
-	properties   map[string]any // Type-specific properties (JSONB)
+	id                    shared.ID
+	tenantID              shared.ID
+	parentID              *shared.ID // For hierarchical assets (e.g., subdomain -> domain)
+	ownerID               *shared.ID // User who owns this asset
+	name                  string
+	assetType             AssetType
+	criticality           Criticality
+	status                Status
+	scope                 Scope
+	exposure              Exposure
+	riskScore             int
+	findingCount          int
+	findingSeverityCounts *FindingSeverityCounts
+	description           string
+	tags                  []string
+	metadata              map[string]any
+	properties            map[string]any // Type-specific properties (JSONB)
 
 	// External provider info
 	provider       Provider
@@ -186,8 +196,8 @@ func Reconstitute(
 		dataClassification:   dataClassification,
 		piiDataExposed:       piiDataExposed,
 		phiDataExposed:       phiDataExposed,
-		regulatoryOwnerID:    regulatoryOwnerID,
-		isInternetAccessible: isInternetAccessible,
+		regulatoryOwnerID:     regulatoryOwnerID,
+		isInternetAccessible:  isInternetAccessible,
 		exposureChangedAt:    exposureChangedAt,
 		lastExposureLevel:    lastExposureLevel,
 		// Timestamps
@@ -246,6 +256,16 @@ func (a *Asset) RiskScore() int {
 // FindingCount returns the number of findings for this asset.
 func (a *Asset) FindingCount() int {
 	return a.findingCount
+}
+
+// FindingSeverityCounts returns the per-severity finding counts.
+func (a *Asset) FindingSeverityCounts() *FindingSeverityCounts {
+	return a.findingSeverityCounts
+}
+
+// SetFindingSeverityCounts sets the per-severity finding counts.
+func (a *Asset) SetFindingSeverityCounts(counts *FindingSeverityCounts) {
+	a.findingSeverityCounts = counts
 }
 
 // Description returns the asset description.

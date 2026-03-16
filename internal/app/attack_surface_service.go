@@ -134,10 +134,10 @@ func (s *AttackSurfaceService) GetStats(ctx context.Context, tenantID shared.ID)
 	}
 
 	// Get assets with risk score for average calculation
-	avgRiskScore := s.calculateAverageRiskScore(ctx, tenantIDStr)
+	avgRiskScore := s.calculateAverageRiskScore(ctx, tenantID)
 
 	// Get asset breakdown by type
-	assetBreakdown := s.getAssetBreakdown(ctx, tenantIDStr)
+	assetBreakdown := s.getAssetBreakdown(ctx, tenantID)
 
 	// Get exposed services list (limit to 5 for overview)
 	exposedServicesList := s.getExposedServicesList(ctx, tenantIDStr, 5)
@@ -160,68 +160,41 @@ func (s *AttackSurfaceService) GetStats(ctx context.Context, tenantID shared.ID)
 	}, nil
 }
 
-// calculateAverageRiskScore calculates the average risk score for all assets.
-func (s *AttackSurfaceService) calculateAverageRiskScore(ctx context.Context, tenantID string) float64 {
-	// Get all assets with their risk scores
-	result, err := s.assetRepo.List(ctx, asset.Filter{
-		TenantID: &tenantID,
-	}, asset.ListOptions{}, pagination.Pagination{Page: 1, PerPage: 1000})
+// calculateAverageRiskScore calculates the average risk score using a single AVG() query.
+func (s *AttackSurfaceService) calculateAverageRiskScore(ctx context.Context, tenantID shared.ID) float64 {
+	avg, err := s.assetRepo.GetAverageRiskScore(ctx, tenantID)
 	if err != nil {
-		s.logger.Error("failed to get assets for risk score calculation", "error", err)
+		s.logger.Error("failed to get average risk score", "error", err)
 		return 0
 	}
-
-	if len(result.Data) == 0 {
-		return 0
-	}
-
-	totalRiskScore := 0
-	for _, a := range result.Data {
-		totalRiskScore += a.RiskScore()
-	}
-
-	return float64(totalRiskScore) / float64(len(result.Data))
+	return avg
 }
 
-// getAssetBreakdown returns asset count breakdown by type with exposed count.
-func (s *AttackSurfaceService) getAssetBreakdown(ctx context.Context, tenantID string) []AssetTypeBreakdown {
+// getAssetBreakdown returns asset count breakdown by type using a single GROUP BY query.
+func (s *AttackSurfaceService) getAssetBreakdown(ctx context.Context, tenantID shared.ID) []AssetTypeBreakdown {
 	assetTypes := []asset.AssetType{
 		asset.AssetTypeDomain,
 		asset.AssetTypeWebsite,
 		asset.AssetTypeService,
 		asset.AssetTypeRepository,
 		asset.AssetTypeCloudAccount,
-		asset.AssetTypeServer,
+		asset.AssetTypeHost,
+	}
+
+	// Single query returns all types with total + exposed counts
+	statsMap, err := s.assetRepo.GetAssetTypeBreakdown(ctx, tenantID)
+	if err != nil {
+		s.logger.Error("failed to get asset type breakdown", "error", err)
+		statsMap = make(map[string]asset.AssetTypeStats)
 	}
 
 	breakdown := make([]AssetTypeBreakdown, 0, len(assetTypes))
-
 	for _, assetType := range assetTypes {
-		// Count total for this type
-		total, err := s.assetRepo.Count(ctx, asset.Filter{
-			TenantID: &tenantID,
-			Types:    []asset.AssetType{assetType},
-		})
-		if err != nil {
-			s.logger.Error("failed to count assets by type", "error", err, "type", assetType)
-			total = 0
-		}
-
-		// Count exposed for this type
-		exposed, err := s.assetRepo.Count(ctx, asset.Filter{
-			TenantID:  &tenantID,
-			Types:     []asset.AssetType{assetType},
-			Exposures: []asset.Exposure{asset.ExposurePublic},
-		})
-		if err != nil {
-			s.logger.Error("failed to count exposed assets by type", "error", err, "type", assetType)
-			exposed = 0
-		}
-
+		stats := statsMap[assetType.String()]
 		breakdown = append(breakdown, AssetTypeBreakdown{
 			Type:    assetType.String(),
-			Total:   int(total),
-			Exposed: int(exposed),
+			Total:   stats.Total,
+			Exposed: stats.Exposed,
 		})
 	}
 

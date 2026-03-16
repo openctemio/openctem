@@ -241,11 +241,30 @@ func (e *DefaultConditionEvaluator) parseNumbers(left any, right string) (float6
 // HTTPRequestHandler handles HTTP request actions.
 // SECURITY: Includes SSRF protection via URL allowlist/denylist.
 type HTTPRequestHandler struct {
-	client       *http.Client
-	logger       *logger.Logger
-	blockedCIDRs []string      // Internal/private ranges to block
-	maxTimeout   time.Duration // Maximum timeout allowed
-	maxBodySize  int64         // Maximum response body size
+	client              *http.Client
+	logger              *logger.Logger
+	blockedCIDRs        []string      // Internal/private ranges to block
+	maxTimeout          time.Duration // Maximum timeout allowed
+	maxBodySize         int64         // Maximum response body size
+	allowLocalhostForTesting bool     // Disables localhost validation (testing only)
+}
+
+// SetClient overrides the default HTTP client used by the handler.
+// This is intended for testing purposes only.
+func (h *HTTPRequestHandler) SetClient(client *http.Client) {
+	h.client = client
+}
+
+// SetBlockedCIDRs overrides the list of blocked CIDR ranges.
+// This is intended for testing purposes only.
+func (h *HTTPRequestHandler) SetBlockedCIDRs(cidrs []string) {
+	h.blockedCIDRs = cidrs
+}
+
+// AllowLocalhostForTesting disables the localhost/loopback SSRF check.
+// This is intended for testing purposes only — never call in production.
+func (h *HTTPRequestHandler) AllowLocalhostForTesting() {
+	h.allowLocalhostForTesting = true
 }
 
 // NewHTTPRequestHandler creates a new secure HTTPRequestHandler.
@@ -503,7 +522,7 @@ func (h *HTTPRequestHandler) validateURL(urlStr string) error {
 
 	// Block localhost variants
 	lowHost := strings.ToLower(host)
-	if lowHost == "localhost" || lowHost == "127.0.0.1" || lowHost == "::1" {
+	if !h.allowLocalhostForTesting && (lowHost == "localhost" || lowHost == "127.0.0.1" || lowHost == "::1") {
 		return fmt.Errorf("localhost not allowed")
 	}
 
@@ -517,7 +536,7 @@ func (h *HTTPRequestHandler) validateURL(urlStr string) error {
 
 	// SEC-WF09: If it's already an IP, validate directly
 	if ip := net.ParseIP(host); ip != nil {
-		if h.isBlockedIP(ip) {
+		if !h.allowLocalhostForTesting && h.isBlockedIP(ip) {
 			return fmt.Errorf("IP address %s is in blocked range", ip.String())
 		}
 		return nil
@@ -564,7 +583,7 @@ func (h *HTTPRequestHandler) isBlockedIP(ip net.IP) bool {
 
 // DefaultNotificationHandler handles notification actions using the notification service.
 type DefaultNotificationHandler struct {
-	notificationService *NotificationService
+	notificationService *OutboxService
 	integrationService  *IntegrationService
 	logger              *logger.Logger
 }

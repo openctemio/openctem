@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/internal/infra/notification"
+	"github.com/openctemio/api/internal/infra/notifier"
 	"github.com/openctemio/api/internal/infra/scm"
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/integration"
-	notificationdomain "github.com/openctemio/api/pkg/domain/notification"
+	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -25,9 +25,9 @@ type IntegrationService struct {
 	repo                  integration.Repository
 	scmExtRepo            integration.SCMExtensionRepository
 	notificationExtRepo   integration.NotificationExtensionRepository
-	notificationEventRepo notificationdomain.EventRepository
+	notificationEventRepo outbox.EventRepository
 	scmFactory            *scm.ClientFactory
-	notificationFactory   *notification.ClientFactory
+	notificationFactory   *notifier.ClientFactory
 	encryptor             crypto.Encryptor
 	logger                *logger.Logger
 
@@ -52,7 +52,7 @@ func NewIntegrationService(
 		repo:                repo,
 		scmExtRepo:          scmExtRepo,
 		scmFactory:          scm.NewClientFactory(),
-		notificationFactory: notification.NewClientFactory(),
+		notificationFactory: notifier.NewClientFactory(),
 		encryptor:           encryptor,
 		logger:              log.With("service", "integration"),
 		testRateLimitMap:    make(map[string]time.Time),
@@ -64,8 +64,8 @@ func (s *IntegrationService) SetNotificationExtensionRepository(repo integration
 	s.notificationExtRepo = repo
 }
 
-// SetNotificationEventRepository sets the notification event repository.
-func (s *IntegrationService) SetNotificationEventRepository(repo notificationdomain.EventRepository) {
+// SetOutboxEventRepository sets the notification event repository.
+func (s *IntegrationService) SetOutboxEventRepository(repo outbox.EventRepository) {
 	s.notificationEventRepo = repo
 }
 
@@ -753,8 +753,8 @@ func splitEmailCredentials(creds *EmailCredentials) (*EmailMetadata, *EmailSensi
 }
 
 // mergeEmailConfig merges email metadata and sensitive credentials into a full EmailConfig.
-func mergeEmailConfig(metadata *EmailMetadata, sensitive *EmailSensitiveCredentials) *notification.EmailConfig {
-	config := &notification.EmailConfig{
+func mergeEmailConfig(metadata *EmailMetadata, sensitive *EmailSensitiveCredentials) *notifier.EmailConfig {
+	config := &notifier.EmailConfig{
 		SMTPHost:    metadata.SMTPHost,
 		SMTPPort:    metadata.SMTPPort,
 		FromEmail:   metadata.FromEmail,
@@ -773,7 +773,7 @@ func mergeEmailConfig(metadata *EmailMetadata, sensitive *EmailSensitiveCredenti
 }
 
 // parseEmailCredentials parses JSON email credentials and returns an EmailConfig.
-func (s *IntegrationService) parseEmailCredentials(credentials string) (*notification.EmailConfig, error) {
+func (s *IntegrationService) parseEmailCredentials(credentials string) (*notifier.EmailConfig, error) {
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentials), &emailCreds); err != nil {
 		return nil, fmt.Errorf("parse email credentials: %w", err)
@@ -793,7 +793,7 @@ func (s *IntegrationService) parseEmailCredentials(credentials string) (*notific
 		return nil, fmt.Errorf("at least one recipient email is required")
 	}
 
-	return &notification.EmailConfig{
+	return &notifier.EmailConfig{
 		SMTPHost:    emailCreds.SMTPHost,
 		SMTPPort:    emailCreds.SMTPPort,
 		Username:    emailCreds.Username,
@@ -809,15 +809,15 @@ func (s *IntegrationService) parseEmailCredentials(credentials string) (*notific
 }
 
 // buildNotificationConfig builds a notification client config based on the provider and credentials.
-func (s *IntegrationService) buildNotificationConfig(intg *integration.Integration, notifExt *integration.NotificationExtension) (notification.Config, error) {
+func (s *IntegrationService) buildNotificationConfig(intg *integration.Integration, notifExt *integration.NotificationExtension) (notifier.Config, error) {
 	// Populate metadata from credentials for backward compatibility (existing integrations)
 	s.populateMetadataFromCredentials(intg)
 
 	credentials := s.decryptCredentials(intg)
 	provider := intg.Provider()
 
-	config := notification.Config{
-		Provider: notification.Provider(provider.String()),
+	config := notifier.Config{
+		Provider: notifier.Provider(provider.String()),
 	}
 
 	switch provider {
@@ -846,7 +846,7 @@ func (s *IntegrationService) buildNotificationConfig(intg *integration.Integrati
 
 // buildEmailConfig builds email config by merging metadata (non-sensitive) and credentials (sensitive).
 // This supports both new format (split storage) and legacy format (all in credentials).
-func (s *IntegrationService) buildEmailConfig(intg *integration.Integration, decryptedCredentials string) (*notification.EmailConfig, error) {
+func (s *IntegrationService) buildEmailConfig(intg *integration.Integration, decryptedCredentials string) (*notifier.EmailConfig, error) {
 	metadata := intg.Metadata()
 
 	// Check if we have email config in metadata (new format)
@@ -1958,7 +1958,7 @@ func (s *IntegrationService) SendNotification(ctx context.Context, input SendNot
 	}
 
 	// Build message
-	msg := notification.Message{
+	msg := notifier.Message{
 		Title:      input.Title,
 		Body:       input.Body,
 		Severity:   input.Severity,

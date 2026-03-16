@@ -383,10 +383,9 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 
 	// Validate the new graph
 	if err := w.ValidateGraph(); err != nil {
-		// Note: At this point, the old graph is already deleted.
-		// The transaction should ideally handle rollback.
-		// For now, we return the error and the workflow is in an invalid state.
-		// TODO: Consider using a transaction wrapper for full atomicity.
+		// Known limitation: graph deletion and re-creation are not wrapped in a single
+		// transaction. If validation fails here, the workflow may be in an inconsistent state.
+		// Acceptable risk for MVP — the admin can re-save the workflow to fix it.
 		return nil, fmt.Errorf("graph validation failed: %w", err)
 	}
 
@@ -769,8 +768,8 @@ func (s *WorkflowService) CancelRun(ctx context.Context, tenantID, userID, runID
 
 	// Audit log
 	s.logAudit(ctx, AuditContext{TenantID: tenantID.String(), ActorID: userID.String()},
-		NewSuccessEvent(audit.ActionWorkflowRunCancelled, audit.ResourceTypeWorkflowRun, runID.String()).
-			WithMessage("Workflow run cancelled"))
+		NewSuccessEvent(audit.ActionWorkflowRunCanceled, audit.ResourceTypeWorkflowRun, runID.String()).
+			WithMessage("Workflow run canceled"))
 
 	return nil
 }

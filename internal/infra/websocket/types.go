@@ -91,6 +91,7 @@ const (
 	ChannelTypeTenant       ChannelType = "tenant"       // tenant:{id} - tenant-wide notifications
 	ChannelTypeNotification ChannelType = "notification" // notification:{tenant_id} - notification delivery
 	ChannelTypeTriage       ChannelType = "triage"       // triage:{finding_id} - AI triage progress updates
+	ChannelTypeGroup        ChannelType = "group"        // group:{id} - group membership/scope rule changes
 )
 
 // ParseChannel extracts the channel type and ID from a channel string.

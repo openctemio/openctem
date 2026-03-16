@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -85,7 +84,9 @@ func (s *ScopeService) CreateTarget(ctx context.Context, input CreateTargetInput
 
 	// Apply optional settings
 	if input.Priority > 0 {
-		target.UpdatePriority(input.Priority)
+		if err := target.UpdatePriority(input.Priority); err != nil {
+			return nil, err
+		}
 	}
 	if len(input.Tags) > 0 {
 		target.UpdateTags(input.Tags)
@@ -99,13 +100,17 @@ func (s *ScopeService) CreateTarget(ctx context.Context, input CreateTargetInput
 	return target, nil
 }
 
-// GetTarget retrieves a scope target by ID.
-func (s *ScopeService) GetTarget(ctx context.Context, targetID string) (*scope.Target, error) {
+// GetTarget retrieves a scope target by tenant ID and ID.
+func (s *ScopeService) GetTarget(ctx context.Context, tenantID string, targetID string) (*scope.Target, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(targetID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
-	return s.targetRepo.GetByID(ctx, parsedID)
+	return s.targetRepo.GetByID(ctx, parsedTenantID, parsedID)
 }
 
 // UpdateTargetInput represents the input for updating a scope target.
@@ -117,32 +122,27 @@ type UpdateTargetInput struct {
 
 // UpdateTarget updates an existing scope target.
 func (s *ScopeService) UpdateTarget(ctx context.Context, targetID string, tenantID string, input UpdateTargetInput) (*scope.Target, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(targetID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	target, err := s.targetRepo.GetByID(ctx, parsedID)
+	target, err := s.targetRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify tenant ownership
-	if tenantID != "" {
-		parsedTenantID, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		if target.TenantID() != parsedTenantID {
-			return nil, shared.ErrNotFound
-		}
 	}
 
 	if input.Description != nil {
 		target.UpdateDescription(*input.Description)
 	}
 	if input.Priority != nil {
-		target.UpdatePriority(*input.Priority)
+		if err := target.UpdatePriority(*input.Priority); err != nil {
+			return nil, err
+		}
 	}
 	if input.Tags != nil {
 		target.UpdateTags(input.Tags)
@@ -156,29 +156,19 @@ func (s *ScopeService) UpdateTarget(ctx context.Context, targetID string, tenant
 	return target, nil
 }
 
-// DeleteTarget deletes a scope target by ID.
+// DeleteTarget deletes a scope target by ID with atomic tenant verification.
 func (s *ScopeService) DeleteTarget(ctx context.Context, targetID string, tenantID string) error {
 	parsedID, err := shared.IDFromString(targetID)
 	if err != nil {
 		return shared.ErrNotFound
 	}
 
-	// Verify tenant ownership
-	if tenantID != "" {
-		target, err := s.targetRepo.GetByID(ctx, parsedID)
-		if err != nil {
-			return err
-		}
-		parsedTenantID, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		if target.TenantID() != parsedTenantID {
-			return shared.ErrNotFound
-		}
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	if err := s.targetRepo.Delete(ctx, parsedID); err != nil {
+	if err := s.targetRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
 
@@ -245,13 +235,17 @@ func (s *ScopeService) ListActiveTargets(ctx context.Context, tenantID string) (
 }
 
 // ActivateTarget activates a scope target.
-func (s *ScopeService) ActivateTarget(ctx context.Context, targetID string) (*scope.Target, error) {
+func (s *ScopeService) ActivateTarget(ctx context.Context, targetID string, tenantID string) (*scope.Target, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(targetID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	target, err := s.targetRepo.GetByID(ctx, parsedID)
+	target, err := s.targetRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -267,13 +261,17 @@ func (s *ScopeService) ActivateTarget(ctx context.Context, targetID string) (*sc
 }
 
 // DeactivateTarget deactivates a scope target.
-func (s *ScopeService) DeactivateTarget(ctx context.Context, targetID string) (*scope.Target, error) {
+func (s *ScopeService) DeactivateTarget(ctx context.Context, targetID string, tenantID string) (*scope.Target, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(targetID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	target, err := s.targetRepo.GetByID(ctx, parsedID)
+	target, err := s.targetRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -329,13 +327,17 @@ func (s *ScopeService) CreateExclusion(ctx context.Context, input CreateExclusio
 	return exclusion, nil
 }
 
-// GetExclusion retrieves a scope exclusion by ID.
-func (s *ScopeService) GetExclusion(ctx context.Context, exclusionID string) (*scope.Exclusion, error) {
+// GetExclusion retrieves a scope exclusion by tenant ID and ID.
+func (s *ScopeService) GetExclusion(ctx context.Context, tenantID string, exclusionID string) (*scope.Exclusion, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(exclusionID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
-	return s.exclusionRepo.GetByID(ctx, parsedID)
+	return s.exclusionRepo.GetByID(ctx, parsedTenantID, parsedID)
 }
 
 // UpdateExclusionInput represents the input for updating a scope exclusion.
@@ -346,25 +348,18 @@ type UpdateExclusionInput struct {
 
 // UpdateExclusion updates an existing scope exclusion.
 func (s *ScopeService) UpdateExclusion(ctx context.Context, exclusionID string, tenantID string, input UpdateExclusionInput) (*scope.Exclusion, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(exclusionID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedID)
+	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify tenant ownership
-	if tenantID != "" {
-		parsedTenantID, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		if exclusion.TenantID() != parsedTenantID {
-			return nil, shared.ErrNotFound
-		}
 	}
 
 	if input.Reason != nil {
@@ -382,29 +377,19 @@ func (s *ScopeService) UpdateExclusion(ctx context.Context, exclusionID string, 
 	return exclusion, nil
 }
 
-// DeleteExclusion deletes a scope exclusion by ID.
+// DeleteExclusion deletes a scope exclusion by ID with atomic tenant verification.
 func (s *ScopeService) DeleteExclusion(ctx context.Context, exclusionID string, tenantID string) error {
 	parsedID, err := shared.IDFromString(exclusionID)
 	if err != nil {
 		return shared.ErrNotFound
 	}
 
-	// Verify tenant ownership
-	if tenantID != "" {
-		exclusion, err := s.exclusionRepo.GetByID(ctx, parsedID)
-		if err != nil {
-			return err
-		}
-		parsedTenantID, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		if exclusion.TenantID() != parsedTenantID {
-			return shared.ErrNotFound
-		}
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	if err := s.exclusionRepo.Delete(ctx, parsedID); err != nil {
+	if err := s.exclusionRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
 
@@ -471,13 +456,17 @@ func (s *ScopeService) ListActiveExclusions(ctx context.Context, tenantID string
 }
 
 // ApproveExclusion approves a scope exclusion.
-func (s *ScopeService) ApproveExclusion(ctx context.Context, exclusionID string, approvedBy string) (*scope.Exclusion, error) {
+func (s *ScopeService) ApproveExclusion(ctx context.Context, exclusionID string, tenantID string, approvedBy string) (*scope.Exclusion, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(exclusionID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedID)
+	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -493,13 +482,17 @@ func (s *ScopeService) ApproveExclusion(ctx context.Context, exclusionID string,
 }
 
 // ActivateExclusion activates a scope exclusion.
-func (s *ScopeService) ActivateExclusion(ctx context.Context, exclusionID string) (*scope.Exclusion, error) {
+func (s *ScopeService) ActivateExclusion(ctx context.Context, exclusionID string, tenantID string) (*scope.Exclusion, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(exclusionID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedID)
+	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -515,13 +508,17 @@ func (s *ScopeService) ActivateExclusion(ctx context.Context, exclusionID string
 }
 
 // DeactivateExclusion deactivates a scope exclusion.
-func (s *ScopeService) DeactivateExclusion(ctx context.Context, exclusionID string) (*scope.Exclusion, error) {
+func (s *ScopeService) DeactivateExclusion(ctx context.Context, exclusionID string, tenantID string) (*scope.Exclusion, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(exclusionID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedID)
+	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -599,9 +596,13 @@ func (s *ScopeService) CreateSchedule(ctx context.Context, input CreateScheduleI
 
 	// Set schedule timing
 	if input.ScheduleType == string(scope.ScheduleTypeCron) && input.CronExpression != "" {
-		schedule.SetCronSchedule(input.CronExpression)
+		if err := schedule.SetCronSchedule(input.CronExpression); err != nil {
+			return nil, err
+		}
 	} else if input.ScheduleType == string(scope.ScheduleTypeInterval) && input.IntervalHours > 0 {
-		schedule.SetIntervalSchedule(input.IntervalHours)
+		if err := schedule.SetIntervalSchedule(input.IntervalHours); err != nil {
+			return nil, err
+		}
 	}
 
 	// Set target scope
@@ -631,13 +632,17 @@ func (s *ScopeService) CreateSchedule(ctx context.Context, input CreateScheduleI
 	return schedule, nil
 }
 
-// GetSchedule retrieves a scan schedule by ID.
-func (s *ScopeService) GetSchedule(ctx context.Context, scheduleID string) (*scope.Schedule, error) {
+// GetSchedule retrieves a scan schedule by tenant ID and ID.
+func (s *ScopeService) GetSchedule(ctx context.Context, tenantID string, scheduleID string) (*scope.Schedule, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(scheduleID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
-	return s.scheduleRepo.GetByID(ctx, parsedID)
+	return s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
 }
 
 // UpdateScheduleInput represents the input for updating a scan schedule.
@@ -658,25 +663,18 @@ type UpdateScheduleInput struct {
 
 // UpdateSchedule updates an existing scan schedule.
 func (s *ScopeService) UpdateSchedule(ctx context.Context, scheduleID string, tenantID string, input UpdateScheduleInput) (*scope.Schedule, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(scheduleID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedID)
+	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify tenant ownership
-	if tenantID != "" {
-		parsedTenantID, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		if schedule.TenantID() != parsedTenantID {
-			return nil, shared.ErrNotFound
-		}
 	}
 
 	if input.Name != nil {
@@ -689,9 +687,13 @@ func (s *ScopeService) UpdateSchedule(ctx context.Context, scheduleID string, te
 	// Update schedule timing
 	if input.ScheduleType != nil {
 		if *input.ScheduleType == string(scope.ScheduleTypeCron) && input.CronExpression != nil {
-			schedule.SetCronSchedule(*input.CronExpression)
+			if err := schedule.SetCronSchedule(*input.CronExpression); err != nil {
+				return nil, err
+			}
 		} else if *input.ScheduleType == string(scope.ScheduleTypeInterval) && input.IntervalHours != nil {
-			schedule.SetIntervalSchedule(*input.IntervalHours)
+			if err := schedule.SetIntervalSchedule(*input.IntervalHours); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -737,29 +739,19 @@ func (s *ScopeService) UpdateSchedule(ctx context.Context, scheduleID string, te
 	return schedule, nil
 }
 
-// DeleteSchedule deletes a scan schedule by ID.
+// DeleteSchedule deletes a scan schedule by ID with atomic tenant verification.
 func (s *ScopeService) DeleteSchedule(ctx context.Context, scheduleID string, tenantID string) error {
 	parsedID, err := shared.IDFromString(scheduleID)
 	if err != nil {
 		return shared.ErrNotFound
 	}
 
-	// Verify tenant ownership
-	if tenantID != "" {
-		schedule, err := s.scheduleRepo.GetByID(ctx, parsedID)
-		if err != nil {
-			return err
-		}
-		parsedTenantID, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		if schedule.TenantID() != parsedTenantID {
-			return shared.ErrNotFound
-		}
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	if err := s.scheduleRepo.Delete(ctx, parsedID); err != nil {
+	if err := s.scheduleRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
 
@@ -822,13 +814,17 @@ func (s *ScopeService) ListDueSchedules(ctx context.Context) ([]*scope.Schedule,
 }
 
 // EnableSchedule enables a scan schedule.
-func (s *ScopeService) EnableSchedule(ctx context.Context, scheduleID string) (*scope.Schedule, error) {
+func (s *ScopeService) EnableSchedule(ctx context.Context, scheduleID string, tenantID string) (*scope.Schedule, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(scheduleID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedID)
+	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -844,13 +840,17 @@ func (s *ScopeService) EnableSchedule(ctx context.Context, scheduleID string) (*
 }
 
 // DisableSchedule disables a scan schedule.
-func (s *ScopeService) DisableSchedule(ctx context.Context, scheduleID string) (*scope.Schedule, error) {
+func (s *ScopeService) DisableSchedule(ctx context.Context, scheduleID string, tenantID string) (*scope.Schedule, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(scheduleID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedID)
+	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -865,14 +865,45 @@ func (s *ScopeService) DisableSchedule(ctx context.Context, scheduleID string) (
 	return schedule, nil
 }
 
-// RecordScheduleRun records a scan run for a schedule.
-func (s *ScopeService) RecordScheduleRun(ctx context.Context, scheduleID string, status string, nextRunAt *time.Time) (*scope.Schedule, error) {
+// RunScheduleNow triggers an immediate run of a scan schedule.
+func (s *ScopeService) RunScheduleNow(ctx context.Context, scheduleID string, tenantID string) (*scope.Schedule, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(scheduleID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedID)
+	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Record a run with "running" status
+	schedule.RecordRun("running", nil)
+
+	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
+		return nil, fmt.Errorf("failed to run schedule now: %w", err)
+	}
+
+	s.logger.Info("scan schedule triggered manually", "id", scheduleID)
+	return schedule, nil
+}
+
+// RecordScheduleRun records a scan run for a schedule.
+func (s *ScopeService) RecordScheduleRun(ctx context.Context, tenantID string, scheduleID string, status string, nextRunAt *time.Time) (*scope.Schedule, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	parsedID, err := shared.IDFromString(scheduleID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+
+	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -1087,7 +1118,7 @@ func (s *ScopeService) getAssetValues(a *asset.Asset) []string {
 func (s *ScopeService) isAssetInScope(assetValues []string, targets []*scope.Target) bool {
 	for _, assetValue := range assetValues {
 		for _, target := range targets {
-			if s.matchesPattern(assetValue, target.Pattern(), target.TargetType()) {
+			if scope.MatchesPattern(target.TargetType(), target.Pattern(), assetValue) {
 				return true
 			}
 		}
@@ -1099,148 +1130,11 @@ func (s *ScopeService) isAssetInScope(assetValues []string, targets []*scope.Tar
 func (s *ScopeService) isAssetExcluded(assetValues []string, exclusions []*scope.Exclusion) bool {
 	for _, av := range assetValues {
 		for _, exclusion := range exclusions {
-			if s.matchesPattern(av, exclusion.Pattern(), scope.TargetType(exclusion.ExclusionType())) {
+			if scope.MatchesExclusionPattern(exclusion.ExclusionType(), exclusion.Pattern(), av) {
 				return true
 			}
 		}
 	}
-	return false
-}
-
-// matchesPattern checks if an asset value matches a scope pattern.
-// Supports wildcard patterns (*.example.com) and CIDR notation.
-func (s *ScopeService) matchesPattern(value, pattern string, targetType scope.TargetType) bool {
-	value = strings.ToLower(value)
-	pattern = strings.ToLower(pattern)
-
-	// Handle different target types
-	switch targetType {
-	case scope.TargetTypeDomain, scope.TargetTypeSubdomain:
-		return s.matchDomainPattern(value, pattern)
-	case scope.TargetTypeIPAddress, scope.TargetTypeIPRange:
-		return s.matchIPPattern(value, pattern)
-	case scope.TargetTypeRepository:
-		return s.matchRepositoryPattern(value, pattern)
-	default:
-		// For other types, use simple wildcard matching
-		return s.matchWildcard(value, pattern)
-	}
-}
-
-// matchRepositoryPattern matches repository patterns
-// Pattern formats: github.com/owner/repo, owner/repo, repo
-// Asset name formats: repo, owner/repo
-func (s *ScopeService) matchRepositoryPattern(value, pattern string) bool {
-	// Exact match
-	if value == pattern {
-		return true
-	}
-
-	// Extract repo parts from pattern and value
-	ownerRepo, repoName := s.parseRepoParts(pattern)
-	valueOwnerRepo, valueRepoName := s.parseRepoParts(value)
-
-	// Match owner/repo format
-	if ownerRepo != "" && valueOwnerRepo != "" && ownerRepo == valueOwnerRepo {
-		return true
-	}
-
-	// Match just repo name
-	if repoName == valueRepoName {
-		return true
-	}
-
-	// Check if pattern contains value (for partial matches)
-	if strings.Contains(pattern, value) || strings.Contains(value, ownerRepo) {
-		return true
-	}
-
-	return false
-}
-
-// parseRepoParts extracts owner/repo and repo name from a path.
-// Handles formats: github.com/owner/repo, owner/repo, repo
-func (s *ScopeService) parseRepoParts(path string) (ownerRepo, repoName string) {
-	parts := strings.Split(path, "/")
-
-	switch {
-	case len(parts) >= 3:
-		// Format: github.com/owner/repo or host/owner/repo
-		ownerRepo = strings.Join(parts[1:], "/")
-		repoName = parts[len(parts)-1]
-	case len(parts) == 2:
-		// Format: owner/repo
-		ownerRepo = path
-		repoName = parts[1]
-	default:
-		// Format: just repo name
-		repoName = path
-	}
-
-	return ownerRepo, repoName
-}
-
-// matchDomainPattern matches domain patterns like *.example.com
-func (s *ScopeService) matchDomainPattern(value, pattern string) bool {
-	// Exact match
-	if value == pattern {
-		return true
-	}
-
-	// Wildcard match: *.example.com matches sub.example.com, a.b.example.com, etc.
-	if strings.HasPrefix(pattern, "*.") {
-		suffix := pattern[1:] // Remove the asterisk, keep the dot
-		return strings.HasSuffix(value, suffix)
-	}
-
-	// Check if value is a subdomain of pattern
-	if strings.HasSuffix(value, "."+pattern) {
-		return true
-	}
-
-	return false
-}
-
-// matchIPPattern matches IP addresses and CIDR ranges
-func (s *ScopeService) matchIPPattern(value, pattern string) bool {
-	// Exact match
-	if value == pattern {
-		return true
-	}
-
-	// CIDR matching would require parsing IP addresses
-	// For simplicity, we just check prefix for now
-	// TODO: Implement proper CIDR matching with net.ParseCIDR
-	if strings.Contains(pattern, "/") {
-		// Extract network prefix (simplified)
-		parts := strings.Split(pattern, "/")
-		if len(parts) == 2 {
-			networkPrefix := parts[0]
-			// Check if value starts with same octets
-			if strings.HasPrefix(value, strings.TrimSuffix(networkPrefix, ".0")) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// matchWildcard performs simple wildcard matching
-func (s *ScopeService) matchWildcard(value, pattern string) bool {
-	// Exact match
-	if value == pattern {
-		return true
-	}
-
-	// Simple wildcard: * at start or end
-	if strings.HasPrefix(pattern, "*") {
-		return strings.HasSuffix(value, pattern[1:])
-	}
-	if strings.HasSuffix(pattern, "*") {
-		return strings.HasPrefix(value, pattern[:len(pattern)-1])
-	}
-
 	return false
 }
 
@@ -1289,4 +1183,55 @@ func (s *ScopeService) CheckScope(ctx context.Context, tenantID string, assetTyp
 	}
 
 	return result, nil
+}
+
+// =============================================================================
+// Pattern Conflict Detection
+// =============================================================================
+
+// CheckPatternOverlaps checks if a new target pattern overlaps with existing patterns.
+// Returns a list of warning messages describing the overlaps (non-blocking).
+func (s *ScopeService) CheckPatternOverlaps(ctx context.Context, tenantID string, targetType string, pattern string) ([]string, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	parsedTargetType, err := scope.ParseTargetType(targetType)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+	}
+
+	// Get all active targets for this tenant
+	activeTargets, err := s.targetRepo.ListActive(ctx, parsedTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list active targets: %w", err)
+	}
+
+	warnings := make([]string, 0)
+
+	for _, existing := range activeTargets {
+		if existing.TargetType() != parsedTargetType {
+			continue
+		}
+
+		if existing.Pattern() == pattern {
+			continue // Exact duplicate handled by ExistsByPattern check
+		}
+
+		// Check bidirectional: does the new pattern match the existing one, or vice versa?
+		newMatchesExisting := scope.MatchesPattern(parsedTargetType, pattern, existing.Pattern())
+		existingMatchesNew := scope.MatchesPattern(parsedTargetType, existing.Pattern(), pattern)
+
+		switch {
+		case newMatchesExisting && existingMatchesNew:
+			warnings = append(warnings, fmt.Sprintf("Pattern %q is equivalent to existing pattern %q", pattern, existing.Pattern()))
+		case newMatchesExisting:
+			warnings = append(warnings, fmt.Sprintf("Pattern %q is a superset of existing pattern %q", pattern, existing.Pattern()))
+		case existingMatchesNew:
+			warnings = append(warnings, fmt.Sprintf("Pattern %q is a subset of existing pattern %q", pattern, existing.Pattern()))
+		}
+	}
+
+	return warnings, nil
 }

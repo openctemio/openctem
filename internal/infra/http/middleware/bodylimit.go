@@ -6,8 +6,11 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 )
 
-// DefaultMaxBodySize is the default maximum request body size (1MB).
-const DefaultMaxBodySize = 1 << 20 // 1 MB
+// DefaultMaxBodySize is the default maximum request body size (10MB).
+const DefaultMaxBodySize = 10 << 20 // 10 MB
+
+// IngestMaxBodySize is the maximum request body size for ingest endpoints (50MB).
+const IngestMaxBodySize = 50 << 20 // 50 MB
 
 // BodyLimit limits the maximum size of request bodies.
 // If maxBytes is 0, DefaultMaxBodySize is used.

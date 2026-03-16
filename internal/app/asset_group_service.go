@@ -14,6 +14,9 @@ import (
 type AssetGroupService struct {
 	repo   assetgroup.Repository
 	logger *logger.Logger
+
+	// Scope rule reconciler callback (set by services.go wiring)
+	scopeRuleReconciler ScopeRuleGroupReconcilerFunc
 }
 
 // NewAssetGroupService creates a new asset group service.
@@ -22,6 +25,12 @@ func NewAssetGroupService(repo assetgroup.Repository, log *logger.Logger) *Asset
 		repo:   repo,
 		logger: log,
 	}
+}
+
+// SetScopeRuleReconciler sets the scope rule reconciler callback.
+// Called when asset group membership changes to re-evaluate scope rules.
+func (s *AssetGroupService) SetScopeRuleReconciler(fn ScopeRuleGroupReconcilerFunc) {
+	s.scopeRuleReconciler = fn
 }
 
 // CreateAssetGroupInput represents input for creating an asset group.
@@ -325,7 +334,24 @@ func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, groupID shared
 	}
 
 	// Recalculate counts
-	return s.repo.RecalculateCounts(ctx, groupID)
+	if err := s.repo.RecalculateCounts(ctx, groupID); err != nil {
+		return err
+	}
+
+	// Trigger scope rule reconciliation for asset group membership change (async)
+	if s.scopeRuleReconciler != nil {
+		gid := groupID
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
+				}
+			}()
+			s.scopeRuleReconciler(context.Background(), gid)
+		}()
+	}
+
+	return nil
 }
 
 // RemoveAssetsFromGroup removes assets from a group.
@@ -348,7 +374,24 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, groupID s
 	}
 
 	// Recalculate counts
-	return s.repo.RecalculateCounts(ctx, groupID)
+	if err := s.repo.RecalculateCounts(ctx, groupID); err != nil {
+		return err
+	}
+
+	// Trigger scope rule reconciliation for asset group membership change (async)
+	if s.scopeRuleReconciler != nil {
+		gid := groupID
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
+				}
+			}()
+			s.scopeRuleReconciler(context.Background(), gid)
+		}()
+	}
+
+	return nil
 }
 
 // GetGroupAssets retrieves assets in a group.

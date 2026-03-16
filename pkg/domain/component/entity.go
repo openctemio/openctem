@@ -337,6 +337,24 @@ func (ad *AssetDependency) Depth() int                    { return ad.depth }
 func (ad *AssetDependency) CreatedAt() time.Time          { return ad.createdAt }
 func (ad *AssetDependency) UpdatedAt() time.Time          { return ad.updatedAt }
 
+// SetDependencyType updates the dependency type.
+func (ad *AssetDependency) SetDependencyType(t DependencyType) {
+	ad.dependencyType = t
+	ad.updatedAt = time.Now().UTC()
+}
+
+// SetPath updates the dependency path.
+func (ad *AssetDependency) SetPath(p string) {
+	ad.path = p
+	ad.updatedAt = time.Now().UTC()
+}
+
+// SetManifestFile updates the manifest file.
+func (ad *AssetDependency) SetManifestFile(f string) {
+	ad.manifestFile = f
+	ad.updatedAt = time.Now().UTC()
+}
+
 // SetParentComponentID sets the parent dependency ID for transitive deps.
 // Returns error if attempting to create a circular dependency (self-reference).
 func (ad *AssetDependency) SetParentComponentID(parentID *shared.ID) error {

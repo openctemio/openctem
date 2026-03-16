@@ -29,6 +29,7 @@ type Repositories struct {
 	Vulnerability    *postgres.VulnerabilityRepository
 	Finding          *postgres.FindingRepository
 	FindingComment   *postgres.FindingCommentRepository
+	FindingApproval  *postgres.FindingApprovalRepository
 	FindingActivity  *postgres.FindingActivityRepository
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
 	DataFlow         *postgres.DataFlowRepository              // Data flow traces for taint tracking
@@ -49,8 +50,9 @@ type Repositories struct {
 	Integration                *postgres.IntegrationRepository
 	IntegrationSCMExt          *postgres.IntegrationSCMExtensionRepository
 	IntegrationNotificationExt *postgres.IntegrationNotificationExtensionRepository
-	NotificationOutbox         *postgres.NotificationOutboxRepository
-	NotificationEvent          *postgres.NotificationEventRepository
+	Outbox         *postgres.OutboxRepository
+	OutboxEvent    *postgres.OutboxEventRepository
+	Notification   *postgres.NotificationRepository
 
 	// Agents & Commands
 	Agent   *postgres.AgentRepository
@@ -109,7 +111,11 @@ type Repositories struct {
 	Webhook *postgres.WebhookRepository
 
 	// Licensing (modules from database)
-	Module *postgres.ModuleRepository
+	Module       *postgres.ModuleRepository
+	TenantModule *postgres.TenantModuleRepository
+
+	// SSO Identity Providers
+	IdentityProvider *postgres.IdentityProviderRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -138,6 +144,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Vulnerability:    postgres.NewVulnerabilityRepository(db),
 		Finding:          postgres.NewFindingRepository(db),
 		FindingComment:   postgres.NewFindingCommentRepository(db),
+		FindingApproval:  postgres.NewFindingApprovalRepository(db),
 		FindingActivity:  postgres.NewFindingActivityRepository(db),
 		AITriage:         postgres.NewAITriageRepository(db),              // AI-powered vulnerability triage
 		DataFlow:         postgres.NewDataFlowRepository(db),              // Data flow traces
@@ -158,8 +165,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Integration: postgres.NewIntegrationRepository(db),
 		// IntegrationSCMExt and IntegrationNotificationExt initialized after Integration
 
-		NotificationOutbox: postgres.NewNotificationOutboxRepository(db),
-		NotificationEvent:  postgres.NewNotificationEventRepository(db),
+		Outbox:       postgres.NewOutboxRepository(db),
+		OutboxEvent:  postgres.NewOutboxEventRepository(db),
+		Notification: postgres.NewNotificationRepository(db),
 
 		// Agents & Commands
 		Agent:   postgres.NewAgentRepository(db),
@@ -218,7 +226,11 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Webhook: postgres.NewWebhookRepository(db),
 
 		// Licensing (modules from database)
-		Module: postgres.NewModuleRepository(db),
+		Module:       postgres.NewModuleRepository(db),
+		TenantModule: postgres.NewTenantModuleRepository(db),
+
+		// SSO Identity Providers
+		IdentityProvider: postgres.NewIdentityProviderRepository(db),
 	}
 }
 

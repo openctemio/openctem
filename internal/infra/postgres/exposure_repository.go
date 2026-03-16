@@ -309,7 +309,7 @@ func (r *ExposureRepository) Upsert(ctx context.Context, event *exposure.Exposur
 			first_seen_at, last_seen_at, resolved_at, resolved_by, resolution_notes,
 			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET
 			last_seen_at = EXCLUDED.last_seen_at,
 			updated_at = EXCLUDED.updated_at

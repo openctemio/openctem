@@ -167,11 +167,19 @@ func (s *ComponentService) UpdateComponent(ctx context.Context, dependencyID str
 	}
 
 	// 2. Handle Contextual Updates (DependencyType, Path)
-	// Note: We don't have setters exposed on AssetDependency for these yet, need to add them or use reflection (bad).
-	// We will add Mutators to AssetDependency in `entity.go` shortly.
-
-	// Assuming Mutators exist (I will add them next):
-	// TODO: Enable these once mutators are added to AssetDependency
+	if input.DependencyType != nil {
+		dt, err := component.ParseDependencyType(*input.DependencyType)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, err)
+		}
+		dep.SetDependencyType(dt)
+	}
+	if input.ManifestPath != nil {
+		dep.SetPath(*input.ManifestPath)
+	}
+	if input.ManifestFile != nil {
+		dep.SetManifestFile(*input.ManifestFile)
+	}
 
 	// 3. Handle Global Updates (Version, License)
 	// If version changes, we must Find-Or-Create the new Global Component and link to it.

@@ -137,11 +137,13 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
 
 			if !limiter.Allow() {
-				rl.log.Warn("rate limit exceeded",
-					"ip", ip,
-					"path", r.URL.Path,
-					"request_id", GetRequestID(r.Context()),
-				)
+				if rl.log != nil {
+					rl.log.Warn("rate limit exceeded",
+						"ip", ip,
+						"path", r.URL.Path,
+						"request_id", GetRequestID(r.Context()),
+					)
+				}
 
 				// Update remaining to 0 since we're rate limited
 				w.Header().Set("X-RateLimit-Remaining", "0")
@@ -309,10 +311,11 @@ func EndpointKeyFunc(r *http.Request) string {
 // AuthRateLimiter provides stricter rate limiting for authentication endpoints.
 // This is critical for preventing brute-force attacks.
 type AuthRateLimiter struct {
-	loginLimiter    *RateLimiter // Very strict: 5 attempts per minute per IP
-	registerLimiter *RateLimiter // Strict: 3 attempts per minute per IP
-	passwordLimiter *RateLimiter // Very strict: 3 attempts per minute per IP
-	log             *logger.Logger
+	loginLimiter         *RateLimiter // Very strict: 5 attempts per minute per IP
+	registerLimiter      *RateLimiter // Strict: 3 attempts per minute per IP
+	passwordLimiter      *RateLimiter // Very strict: 3 attempts per minute per IP
+	tokenExchangeLimiter *RateLimiter // Moderate: 20 per minute per IP (tenant switch)
+	log                  *logger.Logger
 }
 
 // AuthRateLimitConfig configures auth-specific rate limits.
@@ -326,6 +329,11 @@ type AuthRateLimitConfig struct {
 	// PasswordResetRatePerMin is the max password reset/forgot attempts per minute per IP.
 	// Default: 3
 	PasswordResetRatePerMin int
+	// TokenExchangeRatePerMin is the max token exchange/refresh attempts per minute per IP.
+	// Higher than login because token exchange requires a valid refresh token (not brute-forceable)
+	// and is used for tenant switching which may happen frequently.
+	// Default: 20
+	TokenExchangeRatePerMin int
 	// CleanupInterval for visitor entries.
 	// Default: 1 minute
 	CleanupInterval time.Duration
@@ -337,6 +345,7 @@ func DefaultAuthRateLimitConfig() AuthRateLimitConfig {
 		LoginRatePerMin:         5,
 		RegisterRatePerMin:      3,
 		PasswordResetRatePerMin: 3,
+		TokenExchangeRatePerMin: 20,
 		CleanupInterval:         time.Minute,
 	}
 }
@@ -355,11 +364,15 @@ func NewAuthRateLimiter(cfg AuthRateLimitConfig, log *logger.Logger) *AuthRateLi
 	if cfg.CleanupInterval == 0 {
 		cfg.CleanupInterval = time.Minute
 	}
+	if cfg.TokenExchangeRatePerMin == 0 {
+		cfg.TokenExchangeRatePerMin = 20
+	}
 
 	// Convert per-minute rates to per-second for rate.Limit
 	loginRate := float64(cfg.LoginRatePerMin) / 60.0
 	registerRate := float64(cfg.RegisterRatePerMin) / 60.0
 	passwordRate := float64(cfg.PasswordResetRatePerMin) / 60.0
+	tokenExchangeRate := float64(cfg.TokenExchangeRatePerMin) / 60.0
 
 	return &AuthRateLimiter{
 		loginLimiter: NewRateLimiter(&config.RateLimitConfig{
@@ -380,6 +393,12 @@ func NewAuthRateLimiter(cfg AuthRateLimitConfig, log *logger.Logger) *AuthRateLi
 			Burst:           cfg.PasswordResetRatePerMin,
 			CleanupInterval: cfg.CleanupInterval,
 		}, log),
+		tokenExchangeLimiter: NewRateLimiter(&config.RateLimitConfig{
+			Enabled:         true,
+			RequestsPerSec:  tokenExchangeRate,
+			Burst:           cfg.TokenExchangeRatePerMin,
+			CleanupInterval: cfg.CleanupInterval,
+		}, log),
 		log: log,
 	}
 }
@@ -389,12 +408,20 @@ func (a *AuthRateLimiter) Stop() {
 	a.loginLimiter.Stop()
 	a.registerLimiter.Stop()
 	a.passwordLimiter.Stop()
+	a.tokenExchangeLimiter.Stop()
 }
 
 // LoginMiddleware returns middleware for login endpoints.
 // Applies strict rate limiting to prevent brute-force attacks.
 func (a *AuthRateLimiter) LoginMiddleware() func(http.Handler) http.Handler {
 	return a.loginLimiter.Middleware()
+}
+
+// TokenExchangeMiddleware returns middleware for token exchange/refresh endpoints.
+// Uses a higher rate limit than login because token exchange requires a valid
+// refresh token (not brute-forceable) and is used for tenant switching.
+func (a *AuthRateLimiter) TokenExchangeMiddleware() func(http.Handler) http.Handler {
+	return a.tokenExchangeLimiter.Middleware()
 }
 
 // RegisterMiddleware returns middleware for registration endpoints.

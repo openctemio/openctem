@@ -20,9 +20,10 @@ import (
 
 // GroupHandler handles group-related HTTP requests for the Access Control system.
 type GroupHandler struct {
-	service   *app.GroupService
-	validator *validator.Validator
-	logger    *logger.Logger
+	service     *app.GroupService
+	syncService *app.GroupSyncService
+	validator   *validator.Validator
+	logger      *logger.Logger
 }
 
 // NewGroupHandler creates a new group handler.
@@ -32,6 +33,46 @@ func NewGroupHandler(svc *app.GroupService, v *validator.Validator, log *logger.
 		validator: v,
 		logger:    log,
 	}
+}
+
+// WithSyncService sets the group sync service on the handler.
+func (h *GroupHandler) WithSyncService(syncService *app.GroupSyncService) *GroupHandler {
+	h.syncService = syncService
+	return h
+}
+
+// =============================================================================
+// Pagination Helpers
+// =============================================================================
+
+// PaginatedResponse is a generic paginated API response.
+type PaginatedResponse struct {
+	Items      any   `json:"items"`
+	TotalCount int64 `json:"total_count"`
+	Limit      int   `json:"limit"`
+	Offset     int   `json:"offset"`
+}
+
+// parsePagination extracts limit and offset from query params with defaults.
+func parsePagination(r *http.Request) (limit, offset int) {
+	limit = 20
+	offset = 0
+
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	if limit > 100 {
+		limit = 100
+	}
+	return limit, offset
 }
 
 // =============================================================================
@@ -49,7 +90,8 @@ type GroupResponse struct {
 	IsActive           bool                     `json:"is_active"`
 	Settings           group.GroupSettings      `json:"settings,omitempty"`
 	NotificationConfig group.NotificationConfig `json:"notification_config,omitempty"`
-	MemberCount        int                      `json:"member_count,omitempty"`
+	MemberCount        int                      `json:"member_count"`
+	AssetCount         int                      `json:"asset_count"`
 	CreatedAt          time.Time                `json:"created_at"`
 	UpdatedAt          time.Time                `json:"updated_at"`
 }
@@ -64,13 +106,14 @@ type GroupMemberResponse struct {
 
 // GroupMemberWithUserResponse represents a member with user details.
 type GroupMemberWithUserResponse struct {
-	UserID    string    `json:"user_id"`
-	Role      string    `json:"role"`
-	JoinedAt  time.Time `json:"joined_at"`
-	AddedBy   string    `json:"added_by,omitempty"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	AvatarURL string    `json:"avatar_url,omitempty"`
+	UserID      string    `json:"user_id"`
+	Role        string    `json:"role"`
+	JoinedAt    time.Time `json:"joined_at"`
+	AddedBy     string    `json:"added_by,omitempty"`
+	AddedByName string    `json:"added_by_name,omitempty"`
+	Email       string    `json:"email"`
+	Name        string    `json:"name"`
+	AvatarURL   string    `json:"avatar_url,omitempty"`
 }
 
 // GroupWithRoleResponse represents a group with the user's role.
@@ -82,10 +125,11 @@ type GroupWithRoleResponse struct {
 
 // GroupListResponse represents a paginated list of groups.
 type GroupListResponse struct {
-	Groups     []GroupResponse `json:"groups"`
-	TotalCount int64           `json:"total_count"`
-	Limit      int             `json:"limit"`
-	Offset     int             `json:"offset"`
+	Groups            []GroupResponse `json:"groups"`
+	TotalCount        int64           `json:"total_count"`
+	UniqueMemberCount int             `json:"unique_member_count"`
+	Limit             int             `json:"limit"`
+	Offset            int             `json:"offset"`
 }
 
 // =============================================================================
@@ -94,20 +138,22 @@ type GroupListResponse struct {
 
 // CreateGroupRequest represents the request to create a group.
 type CreateGroupRequest struct {
-	Name        string               `json:"name" validate:"required,min=2,max=100"`
-	Slug        string               `json:"slug" validate:"required,min=2,max=100,slug"`
-	Description string               `json:"description" validate:"max=500"`
-	GroupType   string               `json:"group_type" validate:"required,oneof=security_team team department project external"`
-	Settings    *group.GroupSettings `json:"settings,omitempty"`
+	Name               string                    `json:"name" validate:"required,min=2,max=100"`
+	Slug               string                    `json:"slug" validate:"required,min=2,max=100,slug"`
+	Description        string                    `json:"description" validate:"max=500"`
+	GroupType          string                    `json:"group_type" validate:"required,oneof=security_team team department project external"`
+	Settings           *group.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *group.NotificationConfig `json:"notification_config,omitempty"`
 }
 
 // UpdateGroupRequest represents the request to update a group.
 type UpdateGroupRequest struct {
-	Name        *string              `json:"name" validate:"omitempty,min=2,max=100"`
-	Slug        *string              `json:"slug" validate:"omitempty,min=2,max=100,slug"`
-	Description *string              `json:"description" validate:"omitempty,max=500"`
-	Settings    *group.GroupSettings `json:"settings,omitempty"`
-	IsActive    *bool                `json:"is_active,omitempty"`
+	Name               *string                   `json:"name" validate:"omitempty,min=2,max=100"`
+	Slug               *string                   `json:"slug" validate:"omitempty,min=2,max=100,slug"`
+	Description        *string                   `json:"description" validate:"omitempty,max=500"`
+	Settings           *group.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *group.NotificationConfig `json:"notification_config,omitempty"`
+	IsActive           *bool                     `json:"is_active,omitempty"`
 }
 
 // AddGroupMemberRequest represents the request to add a member to a group.
@@ -160,12 +206,13 @@ func toGroupMemberResponse(m *group.Member) GroupMemberResponse {
 
 func toGroupMemberWithUserResponse(m *group.MemberWithUser) GroupMemberWithUserResponse {
 	resp := GroupMemberWithUserResponse{
-		UserID:    m.Member.UserID().String(),
-		Role:      m.Member.Role().String(),
-		JoinedAt:  m.Member.JoinedAt(),
-		Email:     m.Email,
-		Name:      m.Name,
-		AvatarURL: m.AvatarURL,
+		UserID:      m.Member.UserID().String(),
+		Role:        m.Member.Role().String(),
+		JoinedAt:    m.Member.JoinedAt(),
+		Email:       m.Email,
+		Name:        m.Name,
+		AvatarURL:   m.AvatarURL,
+		AddedByName: m.AddedByName,
 	}
 	if m.Member.AddedBy() != nil {
 		resp.AddedBy = m.Member.AddedBy().String()
@@ -300,12 +347,13 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := app.CreateGroupInput{
-		TenantID:    tenantID,
-		Name:        req.Name,
-		Slug:        req.Slug,
-		Description: req.Description,
-		GroupType:   req.GroupType,
-		Settings:    req.Settings,
+		TenantID:           tenantID,
+		Name:               req.Name,
+		Slug:               req.Slug,
+		Description:        req.Description,
+		GroupType:          req.GroupType,
+		Settings:           req.Settings,
+		NotificationConfig: req.NotificationConfig,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -340,8 +388,19 @@ func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := toGroupResponse(g)
+
+	// Populate member and asset counts
+	counts, err := h.service.GetGroupCounts(ctx, []*group.Group{g})
+	if err == nil {
+		if c, ok := counts[g.ID()]; ok {
+			resp.MemberCount = c.MemberCount
+			resp.AssetCount = c.AssetCount
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toGroupResponse(g))
+	json.NewEncoder(w).Encode(resp)
 }
 
 // ListGroups handles GET /api/v1/groups
@@ -401,16 +460,33 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Batch-fetch member and asset counts for all groups
+	counts, err := h.service.GetGroupCounts(ctx, output.Groups)
+	if err != nil {
+		h.logger.Warn("failed to get group counts", "error", err)
+	}
+
 	groups := make([]GroupResponse, len(output.Groups))
 	for i, g := range output.Groups {
 		groups[i] = toGroupResponse(g)
+		if c, ok := counts[g.ID()]; ok {
+			groups[i].MemberCount = c.MemberCount
+			groups[i].AssetCount = c.AssetCount
+		}
+	}
+
+	// Count unique members across all groups
+	uniqueMembers, err := h.service.CountUniqueMembers(ctx, output.Groups)
+	if err != nil {
+		h.logger.Warn("failed to count unique members", "error", err)
 	}
 
 	resp := GroupListResponse{
-		Groups:     groups,
-		TotalCount: output.TotalCount,
-		Limit:      limit,
-		Offset:     offset,
+		Groups:            groups,
+		TotalCount:        output.TotalCount,
+		UniqueMemberCount: uniqueMembers,
+		Limit:             limit,
+		Offset:            offset,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -445,11 +521,12 @@ func (h *GroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := app.UpdateGroupInput{
-		Name:        req.Name,
-		Slug:        req.Slug,
-		Description: req.Description,
-		Settings:    req.Settings,
-		IsActive:    req.IsActive,
+		Name:               req.Name,
+		Slug:               req.Slug,
+		Description:        req.Description,
+		Settings:           req.Settings,
+		NotificationConfig: req.NotificationConfig,
+		IsActive:           req.IsActive,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -503,15 +580,24 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
 
-	members, err := h.service.ListGroupMembersWithUserInfo(ctx, groupID)
+	limit, offset := parsePagination(r)
+
+	members, totalCount, err := h.service.ListGroupMembersWithUserInfo(ctx, groupID, limit, offset)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	resp := make([]GroupMemberWithUserResponse, len(members))
+	items := make([]GroupMemberWithUserResponse, len(members))
 	for i, m := range members {
-		resp[i] = toGroupMemberWithUserResponse(m)
+		items[i] = toGroupMemberWithUserResponse(m)
+	}
+
+	resp := PaginatedResponse{
+		Items:      items,
+		TotalCount: totalCount,
+		Limit:      limit,
+		Offset:     offset,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -825,15 +911,24 @@ type AssignAssetRequest struct {
 	OwnershipType string `json:"ownership_type" validate:"required,oneof=primary secondary stakeholder informed"`
 }
 
-// AssetOwnerResponse represents an asset ownership in API responses.
-type AssetOwnerResponse struct {
-	ID            string `json:"id"`
-	AssetID       string `json:"asset_id"`
-	GroupID       string `json:"group_id,omitempty"`
-	UserID        string `json:"user_id,omitempty"`
-	OwnershipType string `json:"ownership_type"`
-	AssignedAt    string `json:"assigned_at"`
-	AssignedBy    string `json:"assigned_by,omitempty"`
+// GroupOwnershipResponse represents an asset ownership in group API responses.
+type GroupOwnershipResponse struct {
+	ID            string              `json:"id"`
+	AssetID       string              `json:"asset_id"`
+	GroupID       string              `json:"group_id,omitempty"`
+	UserID        string              `json:"user_id,omitempty"`
+	OwnershipType string              `json:"ownership_type"`
+	AssignedAt    string              `json:"assigned_at"`
+	AssignedBy    string              `json:"assigned_by,omitempty"`
+	Asset         *AssetBriefResponse `json:"asset,omitempty"`
+}
+
+// AssetBriefResponse represents minimal asset info embedded in ownership responses.
+type AssetBriefResponse struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
 }
 
 // AssignAsset handles POST /api/v1/groups/{groupId}/assets
@@ -883,6 +978,65 @@ func (h *GroupHandler) AssignAsset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// BulkAssignAssetsRequest represents the request to bulk assign assets to a group.
+type BulkAssignAssetsRequest struct {
+	AssetIDs      []string `json:"asset_ids" validate:"required,min=1,max=1000,dive,uuid"`
+	OwnershipType string   `json:"ownership_type" validate:"required,oneof=primary secondary stakeholder informed"`
+}
+
+// BulkAssignAssetsResponse represents the response for bulk asset assignment.
+type BulkAssignAssetsResponse struct {
+	SuccessCount int      `json:"success_count"`
+	FailedCount  int      `json:"failed_count"`
+	FailedAssets []string `json:"failed_assets,omitempty"`
+}
+
+// BulkAssignAssets handles POST /api/v1/groups/{groupId}/assets/bulk
+func (h *GroupHandler) BulkAssignAssets(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	groupID := chi.URLParam(r, "groupId")
+
+	userID := middleware.GetLocalUserID(ctx)
+	if userID.IsZero() {
+		apierror.Unauthorized("User context required").WriteJSON(w)
+		return
+	}
+
+	var req BulkAssignAssetsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	input := app.BulkAssignAssetsInput{
+		GroupID:       groupID,
+		AssetIDs:      req.AssetIDs,
+		OwnershipType: req.OwnershipType,
+	}
+
+	actx := h.buildAuditContext(r)
+
+	result, err := h.service.BulkAssignAssets(ctx, input, userID, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	resp := BulkAssignAssetsResponse{
+		SuccessCount: result.SuccessCount,
+		FailedCount:  result.FailedCount,
+		FailedAssets: result.FailedAssets,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // UnassignAsset handles DELETE /api/v1/groups/{groupId}/assets/{assetId}
@@ -970,36 +1124,51 @@ func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Reque
 // @Tags groups
 // @Produce json
 // @Param groupId path string true "Group ID"
-// @Success 200 {array} AssetOwnerResponse
+// @Success 200 {array} GroupOwnershipResponse
 // @Failure 404 {object} apierror.Error
 // @Router /api/v1/groups/{groupId}/assets [get]
 func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
 
-	owners, err := h.service.ListGroupAssets(ctx, groupID)
+	limit, offset := parsePagination(r)
+
+	owners, totalCount, err := h.service.ListGroupAssets(ctx, groupID, limit, offset)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	resp := make([]AssetOwnerResponse, len(owners))
+	items := make([]GroupOwnershipResponse, len(owners))
 	for i, ao := range owners {
-		resp[i] = AssetOwnerResponse{
+		items[i] = GroupOwnershipResponse{
 			ID:            ao.ID().String(),
 			AssetID:       ao.AssetID().String(),
 			OwnershipType: ao.OwnershipType().String(),
 			AssignedAt:    ao.AssignedAt().Format("2006-01-02T15:04:05Z07:00"),
+			Asset: &AssetBriefResponse{
+				ID:     ao.AssetID().String(),
+				Name:   ao.AssetName,
+				Type:   ao.AssetType,
+				Status: ao.AssetStatus,
+			},
 		}
 		if ao.GroupID() != nil {
-			resp[i].GroupID = ao.GroupID().String()
+			items[i].GroupID = ao.GroupID().String()
 		}
 		if ao.UserID() != nil {
-			resp[i].UserID = ao.UserID().String()
+			items[i].UserID = ao.UserID().String()
 		}
 		if ao.AssignedBy() != nil {
-			resp[i].AssignedBy = ao.AssignedBy().String()
+			items[i].AssignedBy = ao.AssignedBy().String()
 		}
+	}
+
+	resp := PaginatedResponse{
+		Items:      items,
+		TotalCount: totalCount,
+		Limit:      limit,
+		Offset:     offset,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1035,9 +1204,56 @@ func (h *GroupHandler) ListMyAssets(w http.ResponseWriter, r *http.Request) {
 		ids[i] = id.String()
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"asset_ids": ids,
 		"count":     len(ids),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// =============================================================================
+// Group Sync
+// =============================================================================
+
+// TriggerSync handles POST /api/v1/groups/sync
+// @Summary Trigger manual group sync
+// @Description Trigger a manual sync of groups from external providers for the current tenant
+// @Tags groups
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} apierror.Error
+// @Router /api/v1/groups/sync [post]
+func (h *GroupHandler) TriggerSync(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.syncService == nil {
+		apierror.BadRequest("Group sync is not configured").WriteJSON(w)
+		return
+	}
+
+	tenantID := middleware.MustGetTenantID(ctx)
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+
+	if err := h.syncService.SyncAll(ctx, tid); err != nil {
+		if errors.Is(err, shared.ErrNotImplemented) {
+			apierror.New(http.StatusNotImplemented, "NOT_IMPLEMENTED", err.Error()).WriteJSON(w)
+			return
+		}
+		h.logger.Error("failed to trigger group sync", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	resp := map[string]any{
+		"status":  "ok",
+		"message": "Group sync triggered successfully",
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -195,6 +195,90 @@ func (s *FindingActivityService) RecordActivity(ctx context.Context, input Recor
 	return activity, nil
 }
 
+// RecordBatchAutoResolved creates activity records for findings that were auto-resolved
+// during ingestion. This provides an audit trail for the auto-resolve lifecycle event.
+func (s *FindingActivityService) RecordBatchAutoResolved(
+	ctx context.Context,
+	tenantID shared.ID,
+	findingIDs []shared.ID,
+	toolName string,
+	scanID string,
+) error {
+	if len(findingIDs) == 0 {
+		return nil
+	}
+
+	activities := make([]*vulnerability.FindingActivity, 0, len(findingIDs))
+	for _, fid := range findingIDs {
+		activity, err := vulnerability.NewFindingActivity(
+			tenantID,
+			fid,
+			vulnerability.ActivityAutoResolved,
+			nil, // no actor - system action
+			vulnerability.ActorTypeSystem,
+			map[string]interface{}{
+				"reason":  "not_found_in_full_scan",
+				"scanner": toolName,
+				"scan_id": scanID,
+			},
+			vulnerability.SourceAuto,
+			nil,
+		)
+		if err != nil {
+			s.logger.Warn("failed to create auto-resolved activity", "finding_id", fid.String(), "error", err)
+			continue
+		}
+		activities = append(activities, activity)
+	}
+
+	if err := s.activityRepo.CreateBatch(ctx, activities); err != nil {
+		return fmt.Errorf("failed to batch create auto-resolved activities: %w", err)
+	}
+
+	s.logger.Info("recorded batch auto-resolved activities", "count", len(activities))
+	return nil
+}
+
+// RecordBatchAutoReopened creates activity records for findings that were auto-reopened
+// during ingestion (previously auto-resolved findings seen again in a new scan).
+func (s *FindingActivityService) RecordBatchAutoReopened(
+	ctx context.Context,
+	tenantID shared.ID,
+	findingIDs []shared.ID,
+) error {
+	if len(findingIDs) == 0 {
+		return nil
+	}
+
+	activities := make([]*vulnerability.FindingActivity, 0, len(findingIDs))
+	for _, fid := range findingIDs {
+		activity, err := vulnerability.NewFindingActivity(
+			tenantID,
+			fid,
+			vulnerability.ActivityAutoReopened,
+			nil, // no actor - system action
+			vulnerability.ActorTypeSystem,
+			map[string]interface{}{
+				"reason": "finding_detected_again",
+			},
+			vulnerability.SourceAuto,
+			nil,
+		)
+		if err != nil {
+			s.logger.Warn("failed to create auto-reopened activity", "finding_id", fid.String(), "error", err)
+			continue
+		}
+		activities = append(activities, activity)
+	}
+
+	if err := s.activityRepo.CreateBatch(ctx, activities); err != nil {
+		return fmt.Errorf("failed to batch create auto-reopened activities: %w", err)
+	}
+
+	s.logger.Info("recorded batch auto-reopened activities", "count", len(activities))
+	return nil
+}
+
 // RecordStatusChange is a convenience method for recording status changes.
 func (s *FindingActivityService) RecordStatusChange(
 	ctx context.Context,

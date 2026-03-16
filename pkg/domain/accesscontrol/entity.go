@@ -463,3 +463,69 @@ func (r *AssignmentRule) Deactivate() {
 	r.isActive = false
 	r.updatedAt = time.Now().UTC()
 }
+
+// =============================================================================
+// FINDING GROUP ASSIGNMENT
+// =============================================================================
+
+// FindingGroupAssignment represents a finding assigned to a group via an assignment rule.
+type FindingGroupAssignment struct {
+	id         shared.ID
+	tenantID   shared.ID
+	findingID  shared.ID
+	groupID    shared.ID
+	ruleID     *shared.ID
+	assignedAt time.Time
+}
+
+// NewFindingGroupAssignment creates a new finding-group assignment.
+func NewFindingGroupAssignment(tenantID, findingID, groupID shared.ID, ruleID *shared.ID) (*FindingGroupAssignment, error) {
+	if tenantID.IsZero() {
+		return nil, fmt.Errorf("%w: tenantID is required", shared.ErrValidation)
+	}
+	if findingID.IsZero() {
+		return nil, fmt.Errorf("%w: findingID is required", shared.ErrValidation)
+	}
+	if groupID.IsZero() {
+		return nil, fmt.Errorf("%w: groupID is required", shared.ErrValidation)
+	}
+
+	return &FindingGroupAssignment{
+		id:         shared.NewID(),
+		tenantID:   tenantID,
+		findingID:  findingID,
+		groupID:    groupID,
+		ruleID:     ruleID,
+		assignedAt: time.Now().UTC(),
+	}, nil
+}
+
+// ReconstituteFindingGroupAssignment recreates from persistence.
+func ReconstituteFindingGroupAssignment(id, tenantID, findingID, groupID shared.ID, ruleID *shared.ID, assignedAt time.Time) *FindingGroupAssignment {
+	return &FindingGroupAssignment{
+		id:         id,
+		tenantID:   tenantID,
+		findingID:  findingID,
+		groupID:    groupID,
+		ruleID:     ruleID,
+		assignedAt: assignedAt,
+	}
+}
+
+// ID returns the assignment ID.
+func (fga *FindingGroupAssignment) ID() shared.ID { return fga.id }
+
+// TenantID returns the tenant ID.
+func (fga *FindingGroupAssignment) TenantID() shared.ID { return fga.tenantID }
+
+// FindingID returns the finding ID.
+func (fga *FindingGroupAssignment) FindingID() shared.ID { return fga.findingID }
+
+// GroupID returns the group ID.
+func (fga *FindingGroupAssignment) GroupID() shared.ID { return fga.groupID }
+
+// RuleID returns the rule ID (nil if manually assigned).
+func (fga *FindingGroupAssignment) RuleID() *shared.ID { return fga.ruleID }
+
+// AssignedAt returns the assignment timestamp.
+func (fga *FindingGroupAssignment) AssignedAt() time.Time { return fga.assignedAt }

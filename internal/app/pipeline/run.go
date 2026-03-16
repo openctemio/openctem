@@ -719,7 +719,8 @@ func (s *Service) evaluateCondition(ctx context.Context, step *pipeline.Step, ru
 		assetType, ok := run.Context["asset_type"].(string)
 		return ok && assetType == step.Condition.Value
 	case pipeline.ConditionTypeExpression:
-		// TODO: Implement expression evaluation
+		// Expression evaluation not yet supported — always passes.
+		// Phase 2: add CEL or expr-lang evaluator for dynamic conditions.
 		return true
 	case pipeline.ConditionTypeStepResult:
 		// Check previous step result
@@ -815,10 +816,10 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 		return err
 	}
 
-	// Audit log: run cancelled
+	// Audit log: run canceled
 	s.logAudit(ctx, AuditContext{TenantID: tenantID},
-		NewSuccessEvent(audit.ActionPipelineRunCancelled, audit.ResourceTypePipelineRun, runID).
-			WithMessage("Pipeline run cancelled"))
+		NewSuccessEvent(audit.ActionPipelineRunCanceled, audit.ResourceTypePipelineRun, runID).
+			WithMessage("Pipeline run canceled"))
 
 	return nil
 }

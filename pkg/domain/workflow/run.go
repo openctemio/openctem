@@ -14,13 +14,13 @@ const (
 	RunStatusRunning   RunStatus = "running"
 	RunStatusCompleted RunStatus = "completed"
 	RunStatusFailed    RunStatus = "failed"
-	RunStatusCancelled RunStatus = "cancelled"
+	RunStatusCanceled  RunStatus = "canceled"
 )
 
 // IsValid checks if the run status is valid.
 func (s RunStatus) IsValid() bool {
 	switch s {
-	case RunStatusPending, RunStatusRunning, RunStatusCompleted, RunStatusFailed, RunStatusCancelled:
+	case RunStatusPending, RunStatusRunning, RunStatusCompleted, RunStatusFailed, RunStatusCanceled:
 		return true
 	}
 	return false
@@ -28,7 +28,7 @@ func (s RunStatus) IsValid() bool {
 
 // IsTerminal checks if the status is a terminal state.
 func (s RunStatus) IsTerminal() bool {
-	return s == RunStatusCompleted || s == RunStatusFailed || s == RunStatusCancelled
+	return s == RunStatusCompleted || s == RunStatusFailed || s == RunStatusCanceled
 }
 
 // Run represents an execution of a workflow.
@@ -115,10 +115,10 @@ func (r *Run) Fail(errorMessage string) {
 	r.CompletedAt = &now
 }
 
-// Cancel marks the run as cancelled.
+// Cancel marks the run as canceled.
 func (r *Run) Cancel() {
 	now := time.Now()
-	r.Status = RunStatusCancelled
+	r.Status = RunStatusCanceled
 	r.CompletedAt = &now
 }
 

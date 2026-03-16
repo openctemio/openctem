@@ -115,6 +115,7 @@ type MemberWithUser struct {
 	Name        string
 	AvatarURL   string
 	LastLoginAt *time.Time
+	AddedByName string // Resolved name of who added this member
 }
 
 // MemberStats contains statistics about group members.

@@ -35,7 +35,6 @@ const (
 
 	// Infrastructure
 	AssetTypeHost                AssetType = "host"
-	AssetTypeServer              AssetType = "server"
 	AssetTypeContainer           AssetType = "container"
 	AssetTypeKubernetesCluster   AssetType = "kubernetes_cluster"
 	AssetTypeKubernetesNamespace AssetType = "kubernetes_namespace"
@@ -90,7 +89,6 @@ func AllAssetTypes() []AssetType {
 		AssetTypeContainerRegistry,
 		// Infrastructure
 		AssetTypeHost,
-		AssetTypeServer,
 		AssetTypeContainer,
 		AssetTypeKubernetesCluster,
 		AssetTypeKubernetesNamespace,

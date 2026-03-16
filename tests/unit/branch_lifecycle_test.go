@@ -132,7 +132,7 @@ func (m *MockFindingRepoForLifecycle) DeleteByAssetID(ctx context.Context, tenan
 func (m *MockFindingRepoForLifecycle) DeleteByScanID(ctx context.Context, tenantID shared.ID, scanID string) error {
 	return nil
 }
-func (m *MockFindingRepoForLifecycle) GetStats(ctx context.Context, tenantID shared.ID) (*vulnerability.FindingStats, error) {
+func (m *MockFindingRepoForLifecycle) GetStats(ctx context.Context, tenantID shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
 	return nil, nil
 }
 func (m *MockFindingRepoForLifecycle) CountBySeverityForScan(ctx context.Context, tenantID shared.ID, scanID string) (vulnerability.SeverityCounts, error) {
@@ -153,6 +153,14 @@ func (m *MockFindingRepoForLifecycle) ExistsByIDs(ctx context.Context, tenantID 
 		result[id] = true
 	}
 	return result, nil
+}
+
+func (m *MockFindingRepoForLifecycle) GetByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]*vulnerability.Finding, error) {
+	return make(map[string]*vulnerability.Finding), nil
+}
+
+func (m *MockFindingRepoForLifecycle) EnrichBatchByFingerprints(ctx context.Context, tenantID shared.ID, newFindings []*vulnerability.Finding, scanID string) (int64, error) {
+	return 0, nil
 }
 
 // MockTenantLister implements app.TenantLister for tests.

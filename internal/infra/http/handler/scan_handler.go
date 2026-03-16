@@ -1167,3 +1167,84 @@ func (h *ScanHandler) GetOverviewStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
+// --- Config Export/Import Handlers ---
+
+// ExportConfig handles GET /api/v1/scans/{id}/export
+// @Summary      Export scan configuration
+// @Description  Export a scan configuration as a JSON file for sharing or backup
+// @Tags         Scans
+// @Produce      application/json
+// @Param        id   path      string  true  "Scan ID"
+// @Success      200  {object}  object  "Scan configuration JSON"
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scans/{id}/export [get]
+func (h *ScanHandler) ExportConfig(w http.ResponseWriter, r *http.Request) {
+	scanID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+
+	sid, err := shared.IDFromString(scanID)
+	if err != nil {
+		apierror.BadRequest("Invalid scan ID").WriteJSON(w)
+		return
+	}
+
+	data, err := h.service.ExportConfig(r.Context(), tid, sid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"scan-config-%s.json\"", scanID))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+// ImportConfig handles POST /api/v1/scans/import
+// @Summary      Import scan configuration
+// @Description  Create a new scan from an imported JSON configuration
+// @Tags         Scans
+// @Accept       json
+// @Produce      json
+// @Param        request  body      object  true  "Scan configuration JSON (exported format)"
+// @Success      201  {object}  ScanDetailResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scans/import [post]
+func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+
+	// Read the entire request body as the config JSON
+	var data json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		apierror.BadRequest("Invalid JSON body").WriteJSON(w)
+		return
+	}
+
+	sc, err := h.service.ImportConfig(r.Context(), tid, data)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), sc))
+}

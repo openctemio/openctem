@@ -149,8 +149,9 @@ func (r *AssetRepository) FindRepositoryByRepoName(ctx context.Context, tenantID
 		LIMIT 1
 	`
 
-	suffixSlash := "%/" + repoName // matches "org/repo" or "github.com-org/repo"
-	suffixDash := "%-" + repoName  // matches "something-repo"
+	escaped := escapeLikePattern(repoName)
+	suffixSlash := "%/" + escaped // matches "org/repo" or "github.com-org/repo"
+	suffixDash := "%-" + escaped  // matches "something-repo"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), repoName, suffixSlash, suffixDash)
 	return r.scanAsset(row, shared.ID{})
@@ -175,8 +176,9 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 	`
 
 	// Match names that end with the fullName pattern
-	namePattern := "%/" + fullName // matches "github.com/openctemio/sdk-go" for "openctemio/sdk"
-	externalIdPattern := "%/" + fullName
+	escaped := escapeLikePattern(fullName)
+	namePattern := "%/" + escaped // matches "github.com/openctemio/sdk-go" for "openctemio/sdk"
+	externalIdPattern := "%/" + escaped
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), namePattern, fullName, externalIdPattern)
 	return r.scanAsset(row, shared.ID{})
@@ -186,7 +188,12 @@ func (r *AssetRepository) selectQuery() string {
 	return `
 		SELECT a.id, a.tenant_id, a.parent_id, a.owner_id, a.name, a.asset_type, a.criticality, a.status,
 			   a.scope, a.exposure, a.risk_score,
-			   COALESCE((SELECT COUNT(*) FROM findings f WHERE f.asset_id = a.id), 0) as finding_count,
+			   COALESCE(fc.finding_count, 0) as finding_count,
+			   COALESCE(fc.finding_critical, 0) as finding_critical,
+			   COALESCE(fc.finding_high, 0) as finding_high,
+			   COALESCE(fc.finding_medium, 0) as finding_medium,
+			   COALESCE(fc.finding_low, 0) as finding_low,
+			   COALESCE(fc.finding_info, 0) as finding_info,
 			   a.description, a.tags, a.metadata, a.properties,
 			   a.provider, a.external_id, a.classification, a.sync_status, a.last_synced_at, a.sync_error,
 			   a.discovery_source, a.discovery_tool, a.discovered_at,
@@ -194,6 +201,18 @@ func (r *AssetRepository) selectQuery() string {
 			   a.is_internet_accessible, a.exposure_changed_at, a.last_exposure_level,
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at
 		FROM assets a
+		LEFT JOIN (
+			SELECT asset_id,
+				COUNT(*) as finding_count,
+				SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as finding_critical,
+				SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END) as finding_high,
+				SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END) as finding_medium,
+				SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END) as finding_low,
+				SUM(CASE WHEN severity = 'info' THEN 1 ELSE 0 END) as finding_info
+			FROM findings
+			WHERE status != 'resolved'
+			GROUP BY asset_id
+		) fc ON fc.asset_id = a.id
 	`
 }
 
@@ -412,6 +431,11 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		exposure        string
 		riskScore       int
 		findingCount    int
+		findingCritical int
+		findingHigh     int
+		findingMedium   int
+		findingLow      int
+		findingInfo     int
 		description     sql.NullString
 		tags            pq.StringArray
 		metadata        []byte
@@ -444,6 +468,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 	err := scan(
 		&idStr, &tenantIDStr, &parentIDStr, &ownerIDStr, &name, &assetType, &criticality, &status,
 		&scope, &exposure, &riskScore, &findingCount,
+		&findingCritical, &findingHigh, &findingMedium, &findingLow, &findingInfo,
 		&description, &tags, &metadata, &properties,
 		&provider, &externalID, &classification, &syncStatus, &lastSyncedAt, &syncError,
 		&discoverySource, &discoveryTool, &discoveredAt,
@@ -455,7 +480,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		return nil, err
 	}
 
-	return r.reconstructAsset(
+	a, err := r.reconstructAsset(
 		idStr, tenantIDStr, parentIDStr, ownerIDStr, name, assetType, criticality, status,
 		scope, exposure, riskScore, findingCount,
 		description, tags, metadata, properties,
@@ -465,6 +490,19 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		isInternetAccessible, exposureChangedAt, lastExposureLevel,
 		firstSeen, lastSeen, createdAt, updatedAt,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	a.SetFindingSeverityCounts(&asset.FindingSeverityCounts{
+		Critical: findingCritical,
+		High:     findingHigh,
+		Medium:   findingMedium,
+		Low:      findingLow,
+		Info:     findingInfo,
+	})
+
+	return a, nil
 }
 
 func (r *AssetRepository) reconstructAsset(
@@ -752,6 +790,18 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
+	// Layer 2: Data Scope - filter by user's group membership
+	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
+	if filter.DataScopeUserID != nil && filter.TenantID != nil {
+		userIDIdx := argIndex
+		tenantIDIdx := argIndex + 1
+		args = append(args, filter.DataScopeUserID.String(), *filter.TenantID)
+		conditions = append(conditions, fmt.Sprintf(`(
+			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+			OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+		)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+	}
+
 	return strings.Join(conditions, " AND "), args
 }
 
@@ -918,6 +968,41 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	return created, updated, nil
 }
 
+// ListDistinctTags returns distinct tags across all assets for a tenant.
+// Supports prefix filtering for autocomplete and a limit for result size.
+func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error) {
+	query := `SELECT DISTINCT tag FROM assets, unnest(tags) AS tag WHERE tenant_id = $1`
+	args := []any{tenantID.String()}
+
+	if prefix != "" {
+		query += ` AND tag ILIKE $2`
+		args = append(args, escapeLikePattern(prefix)+"%")
+	}
+
+	query += fmt.Sprintf(` ORDER BY tag LIMIT %d`, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list distinct tags: %w", err)
+	}
+	defer rows.Close()
+
+	tags := make([]string, 0)
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, fmt.Errorf("failed to scan tag: %w", err)
+		}
+		tags = append(tags, tag)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate tags: %w", err)
+	}
+
+	return tags, nil
+}
+
 // UpdateFindingCounts updates finding counts for multiple assets in batch.
 // This recalculates the finding_count from the findings table.
 func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {
@@ -948,4 +1033,78 @@ func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shar
 	}
 
 	return nil
+}
+
+// BatchUpdateRiskScores updates risk_score for multiple assets in a single query.
+func (r *AssetRepository) BatchUpdateRiskScores(ctx context.Context, tenantID shared.ID, assets []*asset.Asset) error {
+	if len(assets) == 0 {
+		return nil
+	}
+
+	query := `
+		UPDATE assets SET risk_score = data.score, updated_at = NOW()
+		FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS score) AS data
+		WHERE assets.id = data.id AND assets.tenant_id = $3
+	`
+
+	ids := make([]string, 0, len(assets))
+	scores := make([]int, 0, len(assets))
+	for _, a := range assets {
+		ids = append(ids, a.ID().String())
+		scores = append(scores, a.RiskScore())
+	}
+
+	_, err := r.db.ExecContext(ctx, query, pq.Array(ids), pq.Array(scores), tenantID.String())
+	if err != nil {
+		return fmt.Errorf("failed to batch update risk scores: %w", err)
+	}
+
+	return nil
+}
+
+// GetAssetTypeBreakdown returns total and exposed counts per asset_type in a single query.
+func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID) (map[string]asset.AssetTypeStats, error) {
+	query := `
+		SELECT
+			asset_type,
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE exposure = 'public') AS exposed
+		FROM assets
+		WHERE tenant_id = $1
+		GROUP BY asset_type
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get asset type breakdown: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]asset.AssetTypeStats)
+	for rows.Next() {
+		var assetType string
+		var total, exposed int
+		if err := rows.Scan(&assetType, &total, &exposed); err != nil {
+			return nil, fmt.Errorf("failed to scan asset type breakdown: %w", err)
+		}
+		result[assetType] = asset.AssetTypeStats{Total: total, Exposed: exposed}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate asset type breakdown: %w", err)
+	}
+
+	return result, nil
+}
+
+// GetAverageRiskScore returns the average risk_score for all assets in a tenant.
+func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error) {
+	var avg float64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE tenant_id = $1`,
+		tenantID.String(),
+	).Scan(&avg)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get average risk score: %w", err)
+	}
+	return avg, nil
 }

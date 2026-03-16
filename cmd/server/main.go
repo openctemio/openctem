@@ -215,7 +215,7 @@ func run() int {
 	}
 
 	server := http.NewServer(cfg, log)
-	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.Module)
+	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User)
 
 	// Handle --routes flag
 	if *showRoutes {
@@ -235,6 +235,7 @@ func run() int {
 	workers, err := NewWorkers(&WorkerDeps{
 		Config:   cfg,
 		Log:      log,
+		DB:       db.DB,
 		Repos:    repos,
 		Services: services,
 	})

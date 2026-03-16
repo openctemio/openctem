@@ -14,8 +14,9 @@ var (
 	ErrUnauthorized  = errors.New("unauthorized")
 	ErrForbidden     = errors.New("forbidden")
 	ErrInternal      = errors.New("internal error")
-	ErrConflict      = errors.New("conflict")
-	ErrValidation    = errors.New("validation error")
+	ErrConflict        = errors.New("conflict")
+	ErrValidation      = errors.New("validation error")
+	ErrNotImplemented  = errors.New("not implemented")
 )
 
 // DomainError represents a domain-specific error.

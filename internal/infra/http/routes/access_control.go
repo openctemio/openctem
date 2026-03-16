@@ -1,6 +1,9 @@
 package routes
 
 import (
+	"time"
+
+	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/permission"
@@ -24,6 +27,15 @@ func registerGroupRoutes(
 		r.GET("/", h.ListGroups, middleware.Require(permission.GroupsRead))
 		r.POST("/", h.CreateGroup, middleware.Require(permission.GroupsWrite))
 
+		// Manual group sync trigger (rate limited: 5 req/min per user)
+		syncRL := middleware.NewRateLimiter(&config.RateLimitConfig{
+			Enabled:         true,
+			RequestsPerSec:  5.0 / 60.0, // 5 requests per minute
+			Burst:           2,
+			CleanupInterval: 5 * time.Minute,
+		}, nil)
+		r.POST("/sync", h.TriggerSync, middleware.Require(permission.GroupsWrite), syncRL.Middleware())
+
 		// Single group operations
 		r.GET("/{groupId}", h.GetGroup, middleware.Require(permission.GroupsRead))
 		r.PUT("/{groupId}", h.UpdateGroup, middleware.Require(permission.GroupsWrite))
@@ -43,6 +55,7 @@ func registerGroupRoutes(
 		// Group asset ownership
 		r.GET("/{groupId}/assets", h.ListGroupAssets, middleware.Require(permission.GroupsRead))
 		r.POST("/{groupId}/assets", h.AssignAsset, middleware.Require(permission.GroupsWrite))
+		r.POST("/{groupId}/assets/bulk", h.BulkAssignAssets, middleware.Require(permission.GroupsWrite))
 		r.PUT("/{groupId}/assets/{assetId}", h.UpdateAssetOwnership, middleware.Require(permission.GroupsWrite))
 		r.DELETE("/{groupId}/assets/{assetId}", h.UnassignAsset, middleware.Require(permission.GroupsWrite))
 	}, tenantMiddlewares...)
@@ -55,6 +68,45 @@ func registerGroupRoutes(
 	// Current user's accessible assets (my assets)
 	router.Group("/api/v1/me/assets", func(r Router) {
 		r.GET("/", h.ListMyAssets)
+	}, tenantMiddlewares...)
+}
+
+// registerScopeRuleRoutes registers scope rule endpoints (nested under groups).
+func registerScopeRuleRoutes(
+	router Router,
+	h *handler.ScopeRuleHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/groups/{groupId}/scope-rules", func(r Router) {
+		r.GET("/", h.ListScopeRules, middleware.Require(permission.GroupsRead))
+		r.POST("/", h.CreateScopeRule, middleware.Require(permission.GroupsWrite))
+		r.POST("/reconcile", h.ReconcileGroup, middleware.Require(permission.GroupsWrite))
+		r.GET("/{ruleId}", h.GetScopeRule, middleware.Require(permission.GroupsRead))
+		r.PUT("/{ruleId}", h.UpdateScopeRule, middleware.Require(permission.GroupsWrite))
+		r.DELETE("/{ruleId}", h.DeleteScopeRule, middleware.Require(permission.GroupsWrite))
+		r.POST("/{ruleId}/preview", h.PreviewScopeRule, middleware.Require(permission.GroupsRead))
+	}, tenantMiddlewares...)
+}
+
+// registerAssignmentRuleRoutes registers assignment rule endpoints.
+func registerAssignmentRuleRoutes(
+	router Router,
+	h *handler.AssignmentRuleHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/assignment-rules", func(r Router) {
+		r.GET("/", h.ListRules, middleware.Require(permission.AssignmentRulesRead))
+		r.POST("/", h.CreateRule, middleware.Require(permission.AssignmentRulesWrite))
+		r.GET("/{id}", h.GetRule, middleware.Require(permission.AssignmentRulesRead))
+		r.PUT("/{id}", h.UpdateRule, middleware.Require(permission.AssignmentRulesWrite))
+		r.DELETE("/{id}", h.DeleteRule, middleware.Require(permission.AssignmentRulesDelete))
+		r.POST("/{id}/test", h.TestRule, middleware.Require(permission.AssignmentRulesRead))
 	}, tenantMiddlewares...)
 }
 

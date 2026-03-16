@@ -2,6 +2,7 @@ package asset
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -27,10 +28,11 @@ type AssetService struct {
 	serviceType ServiceType
 
 	// Service Details (from banner grabbing/fingerprinting)
-	product string // Software name: nginx, Apache, OpenSSH, MySQL
-	version string // Software version: 1.18.0, 8.0.23
-	banner  string // Raw service banner
-	cpe     string // Common Platform Enumeration identifier
+	product      string   // Software name: nginx, Apache, OpenSSH, MySQL
+	version      string   // Software version: 1.18.0, 8.0.23
+	banner       string   // Raw service banner
+	cpe          string   // Common Platform Enumeration identifier
+	technologies []string // Detected technologies: React, Node.js, jQuery, etc.
 
 	// Exposure
 	isPublic   bool     // Directly accessible from internet
@@ -95,6 +97,7 @@ func ReconstituteAssetService(
 	port int,
 	serviceType ServiceType,
 	product, version, banner, cpe string,
+	technologies []string,
 	isPublic bool,
 	exposure Exposure,
 	tlsEnabled bool,
@@ -106,6 +109,9 @@ func ReconstituteAssetService(
 	stateChangedAt *time.Time,
 	createdAt, updatedAt time.Time,
 ) *AssetService {
+	if technologies == nil {
+		technologies = []string{}
+	}
 	return &AssetService{
 		id:              id,
 		tenantID:        tenantID,
@@ -118,6 +124,7 @@ func ReconstituteAssetService(
 		version:         version,
 		banner:          banner,
 		cpe:             cpe,
+		technologies:    technologies,
 		isPublic:        isPublic,
 		exposure:        exposure,
 		tlsEnabled:      tlsEnabled,
@@ -149,6 +156,7 @@ func (s *AssetService) Product() string            { return s.product }
 func (s *AssetService) Version() string            { return s.version }
 func (s *AssetService) Banner() string             { return s.banner }
 func (s *AssetService) CPE() string                { return s.cpe }
+func (s *AssetService) Technologies() []string     { return s.technologies }
 func (s *AssetService) IsPublic() bool             { return s.isPublic }
 func (s *AssetService) Exposure() Exposure         { return s.exposure }
 func (s *AssetService) TLSEnabled() bool           { return s.tlsEnabled }
@@ -197,6 +205,33 @@ func (s *AssetService) SetCPE(cpe string) {
 		cpe = cpe[:500]
 	}
 	s.cpe = cpe
+	s.updatedAt = time.Now().UTC()
+}
+
+func (s *AssetService) SetTechnologies(technologies []string) {
+	if technologies == nil {
+		technologies = []string{}
+	}
+	// Sanitize: trim whitespace, remove empty/duplicate entries
+	seen := make(map[string]struct{})
+	cleaned := make([]string, 0, len(technologies))
+	for _, tech := range technologies {
+		tech = strings.TrimSpace(tech)
+		if tech == "" || len(tech) > 100 {
+			continue
+		}
+		lower := strings.ToLower(tech)
+		if _, exists := seen[lower]; exists {
+			continue
+		}
+		seen[lower] = struct{}{}
+		cleaned = append(cleaned, tech)
+		// Cap at 50 technologies
+		if len(cleaned) >= 50 {
+			break
+		}
+	}
+	s.technologies = cleaned
 	s.updatedAt = time.Now().UTC()
 }
 

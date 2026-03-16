@@ -1,10 +1,8 @@
 package routes
 
 import (
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/permission"
 )
 
@@ -92,15 +90,12 @@ func registerThreatIntelRoutes(
 // Two sets of routes:
 // 1. Admin routes (JWT auth): /api/v1/credentials - import, stats, management
 // 2. Agent routes (API key auth): /api/v1/agent/credentials - ingest from agents
-//
-// Module check: Requires "credentials" module to be enabled.
 func registerCredentialRoutes(
 	router Router,
 	h *handler.CredentialImportHandler,
 	ingestHandler *handler.IngestHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
@@ -141,18 +136,8 @@ func registerCredentialRoutes(
 	}, tenantMiddlewares...)
 
 	// Agent routes for credential ingest (API key auth) - only if ingest handler exists
-	// Module check: Requires "credentials" module to be enabled.
 	if ingestHandler != nil {
-		agentProvider := middleware.AgentContextProviderFunc(handler.AgentFromContext)
-
-		// Build middleware chain: API key auth + credentials module check
 		agentMiddlewares := []Middleware{ingestHandler.AuthenticateSource}
-		if moduleService != nil {
-			agentMiddlewares = append(
-				agentMiddlewares,
-				middleware.RequireModuleForAgent(moduleService, agentProvider, module.ModuleCredentials),
-			)
-		}
 
 		router.Group("/api/v1/agent/credentials", func(r Router) {
 			// Ingest credentials from agents
@@ -163,20 +148,16 @@ func registerCredentialRoutes(
 
 // registerVulnerabilityRoutes registers vulnerability and finding management endpoints.
 // Vulnerabilities are global (CVE database), Findings are tenant-scoped (tenant from JWT token).
-//
-// Module check: Findings routes require "findings" module to be enabled.
-// Vulnerabilities are global CVE database and don't require module check.
 func registerVulnerabilityRoutes(
 	router Router,
 	h *handler.VulnerabilityHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	moduleService *app.ModuleService,
 ) {
 	// Build base middleware chain
 	baseMiddlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Vulnerability routes - global CVE database (no tenant required, no module check)
+	// Vulnerability routes - global CVE database (no tenant required)
 	router.Group("/api/v1/vulnerabilities", func(r Router) {
 		// Read operations
 		r.GET("/", h.ListVulnerabilities, middleware.Require(permission.VulnerabilitiesRead))
@@ -191,11 +172,6 @@ func registerVulnerabilityRoutes(
 
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware for findings routes
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleFindings))
-	}
 
 	// Finding routes - tenant from JWT token
 	router.Group("/api/v1/findings", func(r Router) {
@@ -250,6 +226,21 @@ func registerVulnerabilityRoutes(
 		r.PUT("/{comment_id}", h.UpdateComment, middleware.Require(permission.FindingsWrite))
 		r.DELETE("/{comment_id}", h.DeleteComment, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)
+
+	// Finding approval routes - tenant from JWT token
+	router.Group("/api/v1/findings/{id}/approvals", func(r Router) {
+		r.GET("/", h.ListFindingApprovals, middleware.Require(permission.FindingsRead))
+		r.POST("/", h.RequestApproval, middleware.Require(permission.FindingsWrite))
+	}, tenantMiddlewares...)
+
+	// Approval management routes - tenant from JWT token
+	router.Group("/api/v1/approvals", func(r Router) {
+		r.GET("/", h.ListPendingApprovals, middleware.Require(permission.FindingsRead))
+		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/reject", h.RejectApproval, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/cancel", h.CancelApproval, middleware.Require(permission.FindingsWrite))
+	}, tenantMiddlewares...)
+
 }
 
 // registerFindingActivityRoutes registers finding activity endpoints.
@@ -283,7 +274,6 @@ func registerFindingActivityRoutes(
 // registerAITriageRoutes registers AI triage endpoints.
 // AI triage is tenant-scoped (tenant from JWT token).
 // Rate limiting is applied to POST endpoints to prevent abuse of expensive LLM calls.
-// Module check middleware ensures feature is only accessible when ai_triage module is active.
 //
 // Endpoints:
 // - POST /api/v1/findings/{id}/ai-triage - Request AI triage for a finding (rate-limited)
@@ -298,16 +288,9 @@ func registerAITriageRoutes(
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	rateLimiter *middleware.AITriageRateLimiter,
-	moduleService *app.ModuleService,
 ) {
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Add module check middleware - returns 403 if ai_triage module is not active
-	// This checks the is_active field in the modules table
-	if moduleService != nil {
-		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireModule(moduleService, module.ModuleAITriage))
-	}
 
 	// Add rate limiter to POST endpoints if available
 	var postMiddlewares []Middleware
@@ -338,7 +321,5 @@ func registerAITriageRoutes(
 		append(postMiddlewares, middleware.Require(permission.FindingsWrite))...)
 
 	// AI triage config endpoint - returns current AI mode, provider, model
-	// Note: This endpoint also goes through module check - returns 403 if module not active
-	// The handler returns is_enabled: false if service is not configured
 	router.GET("/api/v1/ai-triage/config", h.GetConfig, tenantMiddlewares...)
 }

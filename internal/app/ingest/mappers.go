@@ -63,7 +63,7 @@ func mapCTISAssetType(ctisType ctis.AssetType) asset.AssetType {
 	case ctis.AssetTypeHost:
 		return asset.AssetTypeHost
 	case ctis.AssetTypeServer:
-		return asset.AssetTypeServer
+		return asset.AssetTypeHost
 	case ctis.AssetTypeContainer:
 		return asset.AssetTypeContainer
 	case ctis.AssetTypeKubernetes:
@@ -160,6 +160,8 @@ func detectFindingSource(toolName string, capabilities []string) vulnerability.F
 	for _, cap := range capabilities {
 		capLower := strings.ToLower(cap)
 		switch {
+		case strings.Contains(capLower, "container"):
+			return vulnerability.FindingSourceContainer
 		case strings.Contains(capLower, "sast"):
 			return vulnerability.FindingSourceSAST
 		case strings.Contains(capLower, "sca"):
@@ -168,8 +170,6 @@ func detectFindingSource(toolName string, capabilities []string) vulnerability.F
 			return vulnerability.FindingSourceDAST
 		case strings.Contains(capLower, "secret"):
 			return vulnerability.FindingSourceSecret
-		case strings.Contains(capLower, "container"):
-			return vulnerability.FindingSourceContainer
 		case strings.Contains(capLower, "iac"):
 			return vulnerability.FindingSourceIaC
 		}

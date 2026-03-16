@@ -19,6 +19,7 @@ import (
 type AssetProcessor struct {
 	repo           asset.Repository
 	repoExtRepo    asset.RepositoryExtensionRepository
+	relRepo        asset.RelationshipRepository
 	propsValidator *validator.PropertiesValidator
 	logger         *logger.Logger
 }
@@ -35,6 +36,11 @@ func NewAssetProcessor(repo asset.Repository, log *logger.Logger) *AssetProcesso
 // SetRepositoryExtensionRepository sets the repository extension repository.
 func (p *AssetProcessor) SetRepositoryExtensionRepository(repo asset.RepositoryExtensionRepository) {
 	p.repoExtRepo = repo
+}
+
+// SetRelationshipRepository sets the asset relationship repository.
+func (p *AssetProcessor) SetRelationshipRepository(repo asset.RelationshipRepository) {
+	p.relRepo = repo
 }
 
 // ProcessBatch processes all assets using batch operations.
@@ -196,6 +202,19 @@ func (p *AssetProcessor) ProcessBatch(
 		}
 	}
 
+	// Step 5.5: Auto-create root domain assets for orphaned subdomains
+	p.ensureRootDomainAssets(ctx, tenantID, report, existingMap, output)
+
+	// Step 6: Create subdomain-to-domain relationships
+	if p.relRepo != nil {
+		p.createSubdomainRelationships(ctx, tenantID, report, existingMap)
+	}
+
+	// Step 7: Create resolves_to relationships for DNS records (domain/subdomain → IP)
+	if p.relRepo != nil {
+		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output)
+	}
+
 	return assetMap, nil
 }
 
@@ -244,6 +263,379 @@ func (p *AssetProcessor) ensureRepositoryExtension(ctx context.Context, domainAs
 	repoExt.SetFullName(assetName)
 
 	return p.repoExtRepo.Create(ctx, repoExt)
+}
+
+// ensureRootDomainAssets auto-creates root domain assets when subdomains reference
+// a root_domain that doesn't exist yet. This ensures subdomain-to-domain relationships
+// can always be created, even when only subdomains are ingested (e.g., from subfinder).
+func (p *AssetProcessor) ensureRootDomainAssets(
+	ctx context.Context,
+	tenantID shared.ID,
+	report *ctis.Report,
+	existingMap map[string]*asset.Asset,
+	output *Output,
+) {
+	// Collect unique root domains that need to be created
+	needed := make(map[string]bool)
+	for i := range report.Assets {
+		ctisAsset := &report.Assets[i]
+		if ctisAsset.Type != ctis.AssetTypeSubdomain {
+			continue
+		}
+
+		rootDomain, ok := ctisAsset.Properties["root_domain"].(string)
+		if !ok || rootDomain == "" {
+			continue
+		}
+
+		if !isValidDomainName(rootDomain) {
+			continue
+		}
+
+		// Skip if root domain already exists in current batch
+		if _, exists := existingMap[rootDomain]; exists {
+			continue
+		}
+
+		needed[rootDomain] = true
+	}
+
+	if len(needed) == 0 {
+		return
+	}
+
+	// Batch lookup in database for any that already exist outside this batch
+	domainNames := make([]string, 0, len(needed))
+	for name := range needed {
+		domainNames = append(domainNames, name)
+	}
+
+	dbExisting, err := p.repo.GetByNames(ctx, tenantID, domainNames)
+	if err != nil {
+		p.logger.Warn("failed to lookup root domains in database", "error", err)
+		return
+	}
+
+	// Add found domains to existingMap
+	for name, a := range dbExisting {
+		existingMap[name] = a
+		delete(needed, name)
+	}
+
+	if len(needed) == 0 {
+		return
+	}
+
+	// Create missing root domain assets
+	newDomains := make([]*asset.Asset, 0, len(needed))
+	for domainName := range needed {
+		domainAsset, err := asset.NewAsset(domainName, asset.AssetTypeDomain, asset.CriticalityMedium)
+		if err != nil {
+			p.logger.Warn("failed to create root domain asset entity",
+				"domain", domainName,
+				"error", err,
+			)
+			continue
+		}
+
+		domainAsset.SetTenantID(tenantID)
+		domainAsset.UpdateDescription("Root domain auto-created from subdomain discovery")
+
+		now := time.Now()
+		domainAsset.SetDiscoveryInfo(asset.DiscoverySourceDNS, "subdomain_enumeration", &now)
+
+		metadata := asset.BuildDomainMetadata(domainName, asset.DiscoverySourceDNS)
+		domainAsset.SetProperties(metadata)
+
+		newDomains = append(newDomains, domainAsset)
+		existingMap[domainName] = domainAsset
+	}
+
+	if len(newDomains) == 0 {
+		return
+	}
+
+	created, _, err := p.repo.UpsertBatch(ctx, newDomains)
+	if err != nil {
+		p.logger.Warn("failed to batch create root domain assets",
+			"count", len(newDomains),
+			"error", err,
+		)
+		// Remove from existingMap since creation failed
+		for _, a := range newDomains {
+			delete(existingMap, a.Name())
+		}
+		return
+	}
+
+	output.AssetsCreated += created
+	p.logger.Info("auto-created root domain assets for orphaned subdomains",
+		"created", created,
+		"domains", domainNames,
+	)
+}
+
+// createSubdomainRelationships creates member_of relationships between subdomain and parent domain assets.
+// This links subdomains to their parent domains in the asset relationship graph.
+// Uses batch INSERT...ON CONFLICT DO NOTHING for efficiency (1 query instead of 2N).
+func (p *AssetProcessor) createSubdomainRelationships(
+	ctx context.Context,
+	tenantID shared.ID,
+	report *ctis.Report,
+	existingMap map[string]*asset.Asset,
+) {
+	// Collect all relationships to create
+	rels := make([]*asset.Relationship, 0)
+
+	for i := range report.Assets {
+		ctisAsset := &report.Assets[i]
+		if ctisAsset.Type != ctis.AssetTypeSubdomain {
+			continue
+		}
+
+		// Get root_domain from properties (set by recon converter)
+		rootDomain, ok := ctisAsset.Properties["root_domain"].(string)
+		if !ok || rootDomain == "" {
+			continue
+		}
+
+		// Validate domain format
+		if !isValidDomainName(rootDomain) {
+			p.logger.Warn("invalid root_domain format, skipping relationship",
+				"root_domain", rootDomain,
+			)
+			continue
+		}
+
+		subdomainName := getAssetName(ctisAsset)
+		if subdomainName == "" {
+			continue
+		}
+
+		// Find both assets in the existing map
+		subdomainAsset, subOk := existingMap[subdomainName]
+		parentAsset, parentOk := existingMap[rootDomain]
+		if !subOk || !parentOk {
+			continue
+		}
+
+		// Create member_of relationship: subdomain → domain
+		rel, err := asset.NewRelationship(tenantID, subdomainAsset.ID(), parentAsset.ID(), asset.RelTypeMemberOf)
+		if err != nil {
+			p.logger.Warn("failed to create subdomain relationship entity",
+				"subdomain", subdomainName,
+				"domain", rootDomain,
+				"error", err,
+			)
+			continue
+		}
+
+		rel.SetDescription(fmt.Sprintf("Subdomain %s belongs to domain %s", subdomainName, rootDomain))
+		_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)
+
+		rels = append(rels, rel)
+	}
+
+	if len(rels) == 0 {
+		return
+	}
+
+	// Batch insert all relationships, skipping duplicates via ON CONFLICT DO NOTHING
+	created, err := p.relRepo.CreateBatchIgnoreConflicts(ctx, rels)
+	if err != nil {
+		p.logger.Warn("failed to batch create subdomain relationships",
+			"total", len(rels),
+			"error", err,
+		)
+		return
+	}
+
+	if created > 0 {
+		p.logger.Info("created subdomain relationships",
+			"created", created,
+			"skipped", len(rels)-created,
+		)
+	}
+}
+
+// createDNSResolvesToRelationships creates resolves_to relationships between domain/subdomain
+// assets and their resolved IP addresses. If IP assets don't exist yet, they are auto-created.
+// This maps the DNS resolution graph for attack surface analysis.
+func (p *AssetProcessor) createDNSResolvesToRelationships(
+	ctx context.Context,
+	tenantID shared.ID,
+	report *ctis.Report,
+	existingMap map[string]*asset.Asset,
+	output *Output,
+) {
+	// Collect domain→IP mappings from report assets
+	type dnsMapping struct {
+		domainName string
+		ip         string
+	}
+	mappings := make([]dnsMapping, 0)
+	ipSet := make(map[string]bool)
+
+	for i := range report.Assets {
+		ctisAsset := &report.Assets[i]
+		if ctisAsset.Type != ctis.AssetTypeDomain && ctisAsset.Type != ctis.AssetTypeSubdomain {
+			continue
+		}
+
+		domainName := getAssetName(ctisAsset)
+		if domainName == "" {
+			continue
+		}
+
+		// Check if domain exists in our map
+		if _, ok := existingMap[domainName]; !ok {
+			continue
+		}
+
+		// Extract resolved IPs from properties
+		ips, ok := ctisAsset.Properties["resolved_ips"].([]string)
+		if !ok {
+			// Try []any (JSON unmarshaling produces this)
+			if ifaces, ok := ctisAsset.Properties["resolved_ips"].([]any); ok {
+				ips = make([]string, 0, len(ifaces))
+				for _, iface := range ifaces {
+					if s, ok := iface.(string); ok && s != "" {
+						ips = append(ips, s)
+					}
+				}
+			}
+		}
+
+		for _, ip := range ips {
+			if ip == "" || !isValidIP(ip) {
+				continue
+			}
+			mappings = append(mappings, dnsMapping{domainName: domainName, ip: ip})
+			ipSet[ip] = true
+		}
+	}
+
+	if len(mappings) == 0 {
+		return
+	}
+
+	// Ensure IP assets exist
+	ipNames := make([]string, 0, len(ipSet))
+	for ip := range ipSet {
+		ipNames = append(ipNames, ip)
+	}
+
+	dbIPs, err := p.repo.GetByNames(ctx, tenantID, ipNames)
+	if err != nil {
+		p.logger.Warn("failed to lookup IP assets", "error", err)
+		return
+	}
+	for name, a := range dbIPs {
+		existingMap[name] = a
+	}
+
+	// Create missing IP assets
+	newIPs := make([]*asset.Asset, 0)
+	for ip := range ipSet {
+		if _, exists := existingMap[ip]; exists {
+			continue
+		}
+
+		ipAsset, err := asset.NewAsset(ip, asset.AssetTypeIPAddress, asset.CriticalityLow)
+		if err != nil {
+			continue
+		}
+		ipAsset.SetTenantID(tenantID)
+		ipAsset.UpdateDescription("IP address auto-created from DNS resolution")
+
+		now := time.Now()
+		ipAsset.SetDiscoveryInfo(asset.DiscoverySourceDNS, "dns_resolution", &now)
+
+		newIPs = append(newIPs, ipAsset)
+		existingMap[ip] = ipAsset
+	}
+
+	if len(newIPs) > 0 {
+		created, _, err := p.repo.UpsertBatch(ctx, newIPs)
+		if err != nil {
+			p.logger.Warn("failed to create IP assets from DNS resolution", "error", err)
+			for _, a := range newIPs {
+				delete(existingMap, a.Name())
+			}
+			return
+		}
+		output.AssetsCreated += created
+	}
+
+	// Create resolves_to relationships
+	rels := make([]*asset.Relationship, 0, len(mappings))
+	for _, m := range mappings {
+		domainAsset, dOk := existingMap[m.domainName]
+		ipAsset, iOk := existingMap[m.ip]
+		if !dOk || !iOk {
+			continue
+		}
+
+		rel, err := asset.NewRelationship(tenantID, domainAsset.ID(), ipAsset.ID(), asset.RelTypeResolvesTo)
+		if err != nil {
+			continue
+		}
+		rel.SetDescription(fmt.Sprintf("%s resolves to %s", m.domainName, m.ip))
+		_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)
+		rels = append(rels, rel)
+	}
+
+	if len(rels) == 0 {
+		return
+	}
+
+	created, err := p.relRepo.CreateBatchIgnoreConflicts(ctx, rels)
+	if err != nil {
+		p.logger.Warn("failed to create DNS resolves_to relationships", "error", err)
+		return
+	}
+
+	if created > 0 {
+		p.logger.Info("created DNS resolves_to relationships",
+			"created", created,
+			"skipped", len(rels)-created,
+		)
+	}
+}
+
+// isValidIP performs basic IP address validation (IPv4 and IPv6).
+func isValidIP(ip string) bool {
+	if ip == "" {
+		return false
+	}
+	// Simple validation: must contain dots (IPv4) or colons (IPv6)
+	return strings.Contains(ip, ".") || strings.Contains(ip, ":")
+}
+
+// isValidDomainName validates a basic domain name format.
+func isValidDomainName(domain string) bool {
+	if len(domain) == 0 || len(domain) > 253 {
+		return false
+	}
+	parts := strings.Split(domain, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range parts {
+		if len(part) == 0 || len(part) > 63 {
+			return false
+		}
+		for _, c := range part {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+				return false
+			}
+		}
+		// Labels cannot start or end with hyphen
+		if part[0] == '-' || part[len(part)-1] == '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // deriveWebURLFromAssetName derives the web URL from an asset name.

@@ -2,501 +2,358 @@ package app
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"fmt"
-	"log/slog"
+	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	notificationclient "github.com/openctemio/api/internal/infra/notification"
-	"github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/notification"
 	"github.com/openctemio/api/pkg/domain/shared"
-)
-
-// Status constants for notification results.
-const (
-	notificationStatusFailed  = "failed"
-	notificationStatusSuccess = "success"
+	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
 )
 
 // =============================================================================
-// Service Interface
+// Interfaces
 // =============================================================================
 
-// NotificationService handles notification outbox operations.
+// WebSocketBroadcaster broadcasts messages to WebSocket channels.
+type WebSocketBroadcaster interface {
+	BroadcastEvent(channel string, data any, tenantID string)
+}
+
+// =============================================================================
+// Input Types
+// =============================================================================
+
+// UpdatePreferencesInput represents input for updating notification preferences.
+type UpdatePreferencesInput struct {
+	InAppEnabled *bool    `json:"in_app_enabled"`
+	EmailDigest  *string  `json:"email_digest"` // "none", "daily", "weekly"
+	MutedTypes   []string `json:"muted_types"`
+	MinSeverity  *string  `json:"min_severity"`
+}
+
+// =============================================================================
+// Service
+// =============================================================================
+
+// NotificationService handles user notification operations (inbox).
 type NotificationService struct {
-	outboxRepo        notification.OutboxRepository
-	eventRepo         notification.EventRepository
-	notificationRepo  integration.NotificationExtensionRepository
-	clientFactory     *notificationclient.ClientFactory
-	credentialDecrypt func(string) (string, error)
-	log               *slog.Logger
+	repo   notification.Repository
+	wsHub  WebSocketBroadcaster
+	logger *logger.Logger
 }
 
 // NewNotificationService creates a new NotificationService.
 func NewNotificationService(
-	outboxRepo notification.OutboxRepository,
-	eventRepo notification.EventRepository,
-	notificationRepo integration.NotificationExtensionRepository,
-	credentialDecrypt func(string) (string, error),
-	log *slog.Logger,
+	repo notification.Repository,
+	wsHub WebSocketBroadcaster,
+	log *logger.Logger,
 ) *NotificationService {
 	return &NotificationService{
-		outboxRepo:        outboxRepo,
-		eventRepo:         eventRepo,
-		notificationRepo:  notificationRepo,
-		clientFactory:     notificationclient.NewClientFactory(),
-		credentialDecrypt: credentialDecrypt,
-		log:               log,
+		repo:   repo,
+		wsHub:  wsHub,
+		logger: log.With("service", "notification"),
 	}
 }
 
 // =============================================================================
-// Outbox Entry Creation
+// Notification Listing & Counts
 // =============================================================================
 
-// EnqueueNotificationParams contains parameters for enqueuing a notification.
-type EnqueueNotificationParams struct {
-	TenantID      shared.ID
-	EventType     string     // e.g., "new_finding", "scan_completed"
-	AggregateType string     // e.g., "finding", "scan"
-	AggregateID   *uuid.UUID // ID of the source entity
-	Title         string
-	Body          string
-	Severity      string // critical, high, medium, low, info
-	URL           string
-	Metadata      map[string]any
-}
-
-// EnqueueNotification creates an outbox entry for a notification.
-// This should be called within the same transaction as the business event.
-func (s *NotificationService) EnqueueNotification(ctx context.Context, params EnqueueNotificationParams) error {
-	outbox := notification.NewOutbox(notification.OutboxParams{
-		TenantID:      params.TenantID,
-		EventType:     params.EventType,
-		AggregateType: params.AggregateType,
-		AggregateID:   params.AggregateID,
-		Title:         params.Title,
-		Body:          params.Body,
-		Severity:      notification.Severity(params.Severity),
-		URL:           params.URL,
-		Metadata:      params.Metadata,
-	})
-
-	if err := s.outboxRepo.Create(ctx, outbox); err != nil {
-		return fmt.Errorf("create outbox entry: %w", err)
+// ListNotifications returns paginated notifications visible to the user.
+// Group membership is resolved via subquery in the repository, eliminating an extra DB roundtrip.
+func (s *NotificationService) ListNotifications(
+	ctx context.Context,
+	tenantID, userID shared.ID,
+	filter notification.ListFilter,
+	page pagination.Pagination,
+) (pagination.Result[*notification.Notification], error) {
+	result, err := s.repo.List(ctx, tenantID, userID, filter, page)
+	if err != nil {
+		s.logger.Error("failed to list notifications", "tenant_id", tenantID, "user_id", userID, "error", err)
+		return pagination.Result[*notification.Notification]{}, fmt.Errorf("list notifications: %w", err)
 	}
 
-	s.log.Debug("enqueued notification",
-		"outbox_id", outbox.ID().String(),
-		"tenant_id", params.TenantID.String(),
-		"event_type", params.EventType,
-		"aggregate_type", params.AggregateType,
-	)
+	return result, nil
+}
+
+// GetUnreadCount returns the number of unread notifications for a user.
+// Group membership is resolved via subquery in the repository, eliminating an extra DB roundtrip.
+func (s *NotificationService) GetUnreadCount(ctx context.Context, tenantID, userID shared.ID) (int, error) {
+	count, err := s.repo.UnreadCount(ctx, tenantID, userID)
+	if err != nil {
+		s.logger.Error("failed to get unread count", "tenant_id", tenantID, "user_id", userID, "error", err)
+		return 0, fmt.Errorf("get unread count: %w", err)
+	}
+
+	return count, nil
+}
+
+// =============================================================================
+// Read Status
+// =============================================================================
+
+// MarkAsRead marks a single notification as read for a user.
+func (s *NotificationService) MarkAsRead(ctx context.Context, tenantID shared.ID, notificationID notification.ID, userID shared.ID) error {
+	if err := s.repo.MarkAsRead(ctx, tenantID, notificationID, userID); err != nil {
+		s.logger.Error("failed to mark notification as read", "tenant_id", tenantID, "notification_id", notificationID, "user_id", userID, "error", err)
+		return fmt.Errorf("mark as read: %w", err)
+	}
 
 	return nil
 }
 
-// EnqueueNotificationInTx creates an outbox entry within an existing transaction.
-// This is the preferred method for the transactional outbox pattern.
-func (s *NotificationService) EnqueueNotificationInTx(ctx context.Context, tx *sql.Tx, params EnqueueNotificationParams) error {
-	outbox := notification.NewOutbox(notification.OutboxParams{
-		TenantID:      params.TenantID,
-		EventType:     params.EventType,
-		AggregateType: params.AggregateType,
-		AggregateID:   params.AggregateID,
-		Title:         params.Title,
-		Body:          params.Body,
-		Severity:      notification.Severity(params.Severity),
-		URL:           params.URL,
-		Metadata:      params.Metadata,
-	})
-
-	if err := s.outboxRepo.CreateInTx(ctx, tx, outbox); err != nil {
-		return fmt.Errorf("create outbox entry in tx: %w", err)
+// MarkAllAsRead marks all notifications as read for a user within a tenant.
+func (s *NotificationService) MarkAllAsRead(ctx context.Context, tenantID, userID shared.ID) error {
+	if err := s.repo.MarkAllAsRead(ctx, tenantID, userID); err != nil {
+		s.logger.Error("failed to mark all notifications as read", "tenant_id", tenantID, "user_id", userID, "error", err)
+		return fmt.Errorf("mark all as read: %w", err)
 	}
-
-	s.log.Debug("enqueued notification in transaction",
-		"outbox_id", outbox.ID().String(),
-		"tenant_id", params.TenantID.String(),
-		"event_type", params.EventType,
-	)
 
 	return nil
 }
 
 // =============================================================================
-// Outbox Processing (implements jobs.NotificationProcessor)
+// Preferences
 // =============================================================================
 
-// ProcessOutboxBatch processes a batch of pending outbox entries.
-func (s *NotificationService) ProcessOutboxBatch(ctx context.Context, workerID string, batchSize int) (processed, failed int, err error) {
-	// Fetch and lock pending entries
-	entries, err := s.outboxRepo.FetchPendingBatch(ctx, workerID, batchSize)
+// GetPreferences returns notification preferences for a user.
+func (s *NotificationService) GetPreferences(ctx context.Context, tenantID, userID shared.ID) (*notification.Preferences, error) {
+	prefs, err := s.repo.GetPreferences(ctx, tenantID, userID)
 	if err != nil {
-		return 0, 0, fmt.Errorf("fetch pending batch: %w", err)
+		s.logger.Error("failed to get notification preferences", "tenant_id", tenantID, "user_id", userID, "error", err)
+		return nil, fmt.Errorf("get preferences: %w", err)
 	}
 
-	if len(entries) == 0 {
-		return 0, 0, nil
-	}
-
-	s.log.Debug("processing notification batch",
-		"worker_id", workerID,
-		"batch_size", len(entries),
-	)
-
-	// Process each entry
-	for _, entry := range entries {
-		if err := s.processOutboxEntry(ctx, entry); err != nil {
-			s.log.Error("failed to process outbox entry",
-				"outbox_id", entry.ID().String(),
-				"error", err,
-			)
-			failed++
-		} else {
-			processed++
-		}
-	}
-
-	return processed, failed, nil
+	return prefs, nil
 }
 
-// processOutboxEntry processes a single outbox entry.
-func (s *NotificationService) processOutboxEntry(ctx context.Context, entry *notification.Outbox) error {
-	// Get all notification integrations for this tenant
-	integrations, err := s.getNotificationIntegrationsForTenant(ctx, entry.TenantID())
+// UpdatePreferences creates or updates notification preferences for a user.
+func (s *NotificationService) UpdatePreferences(
+	ctx context.Context,
+	tenantID, userID shared.ID,
+	input UpdatePreferencesInput,
+) (*notification.Preferences, error) {
+	if err := validatePreferencesInput(input); err != nil {
+		return nil, err
+	}
+
+	// Build params from input, fetching existing preferences for defaults.
+	// Note: This read-modify-write is not wrapped in a transaction. The race window is
+	// negligible since only the owning user updates their own preferences.
+	existing, err := s.repo.GetPreferences(ctx, tenantID, userID)
 	if err != nil {
-		entry.MarkFailed(fmt.Sprintf("failed to get integrations: %v", err))
-		if updateErr := s.outboxRepo.Update(ctx, entry); updateErr != nil {
-			s.log.Error("failed to update outbox entry after error", "error", updateErr)
-		}
+		s.logger.Error("failed to get existing preferences", "tenant_id", tenantID, "user_id", userID, "error", err)
+		return nil, fmt.Errorf("get existing preferences: %w", err)
+	}
+
+	params := notification.PreferencesParams{
+		InAppEnabled: existing.InAppEnabled(),
+		EmailDigest:  existing.EmailDigest(),
+		MutedTypes:   existing.MutedTypes(),
+		MinSeverity:  existing.MinSeverity(),
+	}
+
+	if input.InAppEnabled != nil {
+		params.InAppEnabled = *input.InAppEnabled
+	}
+	if input.EmailDigest != nil {
+		params.EmailDigest = *input.EmailDigest
+	}
+	if input.MutedTypes != nil {
+		params.MutedTypes = input.MutedTypes
+	}
+	if input.MinSeverity != nil {
+		params.MinSeverity = *input.MinSeverity
+	}
+
+	prefs, err := s.repo.UpsertPreferences(ctx, tenantID, userID, params)
+	if err != nil {
+		s.logger.Error("failed to upsert notification preferences", "tenant_id", tenantID, "user_id", userID, "error", err)
+		return nil, fmt.Errorf("upsert preferences: %w", err)
+	}
+
+	s.logger.Info("notification preferences updated", "tenant_id", tenantID, "user_id", userID)
+
+	return prefs, nil
+}
+
+// =============================================================================
+// Notify
+// =============================================================================
+
+// Notify creates a notification and pushes it via WebSocket to appropriate channels.
+func (s *NotificationService) Notify(ctx context.Context, params notification.NotificationParams) error {
+	// Validate required fields.
+	if err := validateNotifyParams(params); err != nil {
 		return err
 	}
 
-	// Collect processing results
-	results := notification.ProcessingResults{
-		IntegrationsTotal:     len(integrations),
-		IntegrationsMatched:   0,
-		IntegrationsSucceeded: 0,
-		IntegrationsFailed:    0,
-		SendResults:           make([]notification.SendResult, 0),
-	}
-
-	// Send to each matching integration
-	var sendErrors []string
-
-	for _, intg := range integrations {
-		// Check if this integration should receive this notification
-		if !s.shouldSendToIntegration(intg, entry) {
-			continue
-		}
-
-		results.IntegrationsMatched++
-
-		// Send notification and collect result
-		sendResult := s.sendToIntegration(ctx, intg, entry)
-		results.SendResults = append(results.SendResults, sendResult)
-
-		if sendResult.Status == "success" {
-			results.IntegrationsSucceeded++
-		} else {
-			results.IntegrationsFailed++
-			sendErrors = append(sendErrors, fmt.Sprintf("%s: %s", intg.Integration.Name(), sendResult.Error))
+	// Sanitize URL to prevent open redirects and path traversal.
+	// Only allow clean relative paths (e.g., "/findings/123").
+	if params.URL != "" {
+		if !strings.HasPrefix(params.URL, "/") ||
+			strings.HasPrefix(params.URL, "//") ||
+			strings.Contains(params.URL, "..") {
+			params.URL = ""
 		}
 	}
 
-	// Determine final status and mark entry
-	switch {
-	case results.IntegrationsSucceeded > 0:
-		// At least one integration succeeded
-		entry.MarkCompleted()
-		if len(sendErrors) > 0 {
-			s.log.Warn("some integrations failed",
-				"outbox_id", entry.ID().String(),
-				"success_count", results.IntegrationsSucceeded,
-				"errors", sendErrors,
-			)
-		}
-	case results.IntegrationsFailed > 0:
-		// All integrations failed
-		entry.MarkFailed(fmt.Sprintf("all integrations failed: %v", sendErrors))
-	default:
-		// No matching integrations (skipped)
-		entry.MarkCompleted()
+	n := notification.NewNotification(params)
+
+	if err := s.repo.Create(ctx, n); err != nil {
+		s.logger.Error("failed to create notification", "tenant_id", params.TenantID, "type", params.NotificationType, "error", err)
+		return fmt.Errorf("create notification: %w", err)
 	}
 
-	// Archive to notification_events
-	event := notification.NewEventFromOutbox(entry, results)
-	if err := s.eventRepo.Create(ctx, event); err != nil {
-		s.log.Error("failed to archive notification event",
-			"outbox_id", entry.ID().String(),
-			"error", err,
-		)
-		// Don't fail the processing, just log the error
-		// Update the outbox status and continue
-		return s.outboxRepo.Update(ctx, entry)
-	}
+	// Push via WebSocket based on audience.
+	s.pushWebSocket(params)
 
-	// Delete from outbox after successful archive
-	if err := s.outboxRepo.Delete(ctx, entry.ID()); err != nil {
-		s.log.Error("failed to delete outbox entry after archive",
-			"outbox_id", entry.ID().String(),
-			"error", err,
-		)
-		// Fall back to updating status if delete fails
-		return s.outboxRepo.Update(ctx, entry)
-	}
-
-	s.log.Debug("notification processed and archived",
-		"outbox_id", entry.ID().String(),
-		"event_status", event.Status(),
-		"integrations_matched", results.IntegrationsMatched,
-		"integrations_succeeded", results.IntegrationsSucceeded,
+	s.logger.Info("notification created",
+		"notification_id", n.ID(),
+		"tenant_id", params.TenantID,
+		"type", params.NotificationType,
+		"audience", params.Audience,
 	)
 
 	return nil
 }
 
-// getNotificationIntegrationsForTenant gets all connected notification integrations for a tenant.
-func (s *NotificationService) getNotificationIntegrationsForTenant(ctx context.Context, tenantID shared.ID) ([]*integration.IntegrationWithNotification, error) {
-	// Convert shared.ID to integration.ID
-	intTenantID, err := integration.ParseID(tenantID.String())
-	if err != nil {
-		return nil, fmt.Errorf("parse tenant id: %w", err)
+// pushWebSocket sends a real-time notification to the appropriate WebSocket channels.
+func (s *NotificationService) pushWebSocket(params notification.NotificationParams) {
+	if s.wsHub == nil {
+		return
 	}
 
-	// List all notification integrations with their extensions
-	intgs, err := s.notificationRepo.ListIntegrationsWithNotification(ctx, intTenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list integrations: %w", err)
+	payload := map[string]interface{}{
+		"type":     "notification",
+		"sub_type": params.NotificationType,
+		"title":    params.Title,
+		"body":     params.Body,
+		"severity": params.Severity,
 	}
 
-	// Filter to only connected integrations
-	connected := make([]*integration.IntegrationWithNotification, 0, len(intgs))
-	for _, intg := range intgs {
-		if intg.Integration != nil && intg.Integration.Status() == integration.StatusConnected {
-			connected = append(connected, intg)
+	tenantID := params.TenantID.String()
+
+	// Always broadcast to the tenant channel so the notification bell updates.
+	tenantChannel := fmt.Sprintf("tenant:%s", tenantID)
+	s.wsHub.BroadcastEvent(tenantChannel, payload, tenantID)
+
+	// Additionally broadcast to audience-specific channels for targeted listeners.
+	switch params.Audience {
+	case notification.AudienceUser:
+		if params.AudienceID != nil {
+			channel := fmt.Sprintf("notification:%s", params.AudienceID.String())
+			s.wsHub.BroadcastEvent(channel, payload, tenantID)
+		}
+	case notification.AudienceGroup:
+		if params.AudienceID != nil {
+			channel := fmt.Sprintf("group:%s", params.AudienceID.String())
+			s.wsHub.BroadcastEvent(channel, payload, tenantID)
 		}
 	}
-
-	return connected, nil
 }
 
-// shouldSendToIntegration checks if a notification should be sent to an integration.
-func (s *NotificationService) shouldSendToIntegration(intg *integration.IntegrationWithNotification, entry *notification.Outbox) bool {
-	ext := intg.Notification
-	if ext == nil {
-		return true // No extension = send all
+// =============================================================================
+// Cleanup
+// =============================================================================
+
+// CleanupOld removes notifications older than the specified retention period.
+func (s *NotificationService) CleanupOld(ctx context.Context, retentionDays int) (int64, error) {
+	if retentionDays <= 0 {
+		return 0, fmt.Errorf("%w: retention days must be positive", shared.ErrValidation)
 	}
 
-	// Check severity filter
-	if !ext.ShouldNotify(entry.Severity().String()) {
-		return false
+	age := time.Duration(retentionDays) * 24 * time.Hour
+
+	deleted, err := s.repo.DeleteOlderThan(ctx, age)
+	if err != nil {
+		s.logger.Error("failed to cleanup old notifications", "retention_days", retentionDays, "error", err)
+		return 0, fmt.Errorf("cleanup old notifications: %w", err)
 	}
 
-	// Check event type filter
-	if !ext.ShouldNotifyEventType(integration.EventType(entry.EventType())) {
-		return false
+	if deleted > 0 {
+		s.logger.Info("cleaned up old notifications", "deleted", deleted, "retention_days", retentionDays)
 	}
 
-	return true
+	return deleted, nil
 }
 
-// sendToIntegration sends a notification to a specific integration.
-// Returns a SendResult with success/failure status for archiving.
-func (s *NotificationService) sendToIntegration(ctx context.Context, intg *integration.IntegrationWithNotification, entry *notification.Outbox) notification.SendResult {
-	ext := intg.Notification
-	sentAt := time.Now()
+// =============================================================================
+// Validation Helpers
+// =============================================================================
 
-	// Base result info
-	result := notification.SendResult{
-		IntegrationID:   intg.Integration.ID().String(),
-		IntegrationName: intg.Integration.Name(),
-		Provider:        intg.Integration.Provider().String(),
-		SentAt:          sentAt,
-	}
-
-	// Decrypt credentials
-	credentials, err := s.credentialDecrypt(intg.Integration.CredentialsEncrypted())
-	if err != nil {
-		result.Status = notificationStatusFailed
-		result.Error = fmt.Sprintf("decrypt credentials: %v", err)
-		return result
-	}
-
-	// Build notification client config based on provider
-	config := notificationclient.Config{
-		Provider: notificationclient.Provider(intg.Integration.Provider().String()),
-	}
-
-	// Parse credentials and set appropriate config fields based on provider
-	if err := s.configureClientFromCredentials(&config, intg.Integration, credentials, ext); err != nil {
-		result.Status = notificationStatusFailed
-		result.Error = fmt.Sprintf("configure client: %v", err)
-		return result
-	}
-
-	// Create client
-	client, err := s.clientFactory.CreateClient(config)
-	if err != nil {
-		result.Status = notificationStatusFailed
-		result.Error = fmt.Sprintf("create client: %v", err)
-		return result
-	}
-
-	// Build message
-	msg := notificationclient.Message{
-		Title:    entry.Title(),
-		Body:     entry.Body(),
-		Severity: entry.Severity().String(),
-		URL:      entry.URL(),
-	}
-
-	// Apply custom template if configured
-	if ext != nil && ext.MessageTemplate() != "" {
-		msg = s.applyTemplate(msg, ext.MessageTemplate())
-	}
-
-	// Send with timeout
-	sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	sendResult, err := client.Send(sendCtx, msg)
-	if err != nil {
-		result.Status = notificationStatusFailed
-		result.Error = err.Error()
-		return result
-	}
-
-	// Success
-	result.Status = notificationStatusSuccess
-	if sendResult != nil {
-		result.MessageID = sendResult.MessageID
-	}
-
-	return result
+var validEmailDigests = map[string]bool{
+	"none":   true,
+	"daily":  true,
+	"weekly": true,
 }
 
-// configureClientFromCredentials configures the notification client based on provider type.
-// It supports both new format (metadata + sensitive credentials) and legacy format (all in credentials).
-func (s *NotificationService) configureClientFromCredentials(
-	config *notificationclient.Config,
-	intg *integration.Integration,
-	credentials string,
-	ext *integration.NotificationExtension,
-) error {
-	provider := intg.Provider()
-	metadata := intg.Metadata()
+var validSeverities = map[string]bool{
+	notification.SeverityCritical: true,
+	notification.SeverityHigh:     true,
+	notification.SeverityMedium:   true,
+	notification.SeverityLow:      true,
+	notification.SeverityInfo:     true,
+	"":                            true, // allow empty to clear
+}
 
-	switch provider {
-	case integration.ProviderSlack, integration.ProviderTeams, integration.ProviderWebhook:
-		// These providers use webhook URL as credentials
-		config.WebhookURL = credentials
-	case integration.ProviderTelegram:
-		// Telegram uses bot token + chat ID
-		config.BotToken = credentials
-		// Read chat_id from metadata (new format) or fallback to extension (legacy)
-		if chatID, ok := metadata["chat_id"].(string); ok && chatID != "" {
-			config.ChatID = chatID
-		} else if ext != nil && ext.ChannelID() != "" {
-			config.ChatID = ext.ChannelID()
-		}
-	case integration.ProviderEmail:
-		// Check if email config is in metadata (new format)
-		if smtpHost, ok := metadata["smtp_host"].(string); ok && smtpHost != "" {
-			// New format: read non-sensitive from metadata, sensitive from credentials
-			emailConfig := &notificationclient.EmailConfig{
-				SMTPHost:    smtpHost,
-				FromEmail:   getStringFromMap(metadata, "from_email"),
-				FromName:    getStringFromMap(metadata, "from_name"),
-				UseTLS:      getBoolFromMap(metadata, "use_tls"),
-				UseSTARTTLS: getBoolFromMap(metadata, "use_starttls"),
-				SkipVerify:  getBoolFromMap(metadata, "skip_verify"),
-				ReplyTo:     getStringFromMap(metadata, "reply_to"),
-			}
+// validAudiences defines the allowed notification audience types.
+var validAudiences = map[string]bool{
+	notification.AudienceAll:   true,
+	notification.AudienceGroup: true,
+	notification.AudienceUser:  true,
+}
 
-			// Get smtp_port (can be float64 or int from JSON)
-			if port, ok := metadata["smtp_port"].(float64); ok {
-				emailConfig.SMTPPort = int(port)
-			} else if port, ok := metadata["smtp_port"].(int); ok {
-				emailConfig.SMTPPort = port
-			}
-
-			// Get to_emails array
-			if toEmails, ok := metadata["to_emails"].([]any); ok {
-				emailConfig.ToEmails = make([]string, 0, len(toEmails))
-				for _, e := range toEmails {
-					if email, ok := e.(string); ok {
-						emailConfig.ToEmails = append(emailConfig.ToEmails, email)
-					}
-				}
-			}
-
-			// Parse sensitive credentials (username, password)
-			if credentials != "" {
-				var sensitive struct {
-					Username string `json:"username"`
-					Password string `json:"password"`
-				}
-				if err := json.Unmarshal([]byte(credentials), &sensitive); err == nil {
-					emailConfig.Username = sensitive.Username
-					emailConfig.Password = sensitive.Password
-				}
-			}
-
-			config.Email = emailConfig
-		} else {
-			// Legacy format: all config in credentials
-			var emailConfig notificationclient.EmailConfig
-			if err := json.Unmarshal([]byte(credentials), &emailConfig); err != nil {
-				return fmt.Errorf("parse email config: %w", err)
-			}
-			config.Email = &emailConfig
-		}
-	default:
-		// Generic: try webhook URL
-		config.WebhookURL = credentials
+func validateNotifyParams(params notification.NotificationParams) error {
+	if params.Title == "" {
+		return fmt.Errorf("%w: notification title is required", shared.ErrValidation)
 	}
-
+	if len(params.Title) > 500 {
+		return fmt.Errorf("%w: notification title exceeds 500 characters", shared.ErrValidation)
+	}
+	if len(params.Body) > 10000 {
+		return fmt.Errorf("%w: notification body exceeds 10000 characters", shared.ErrValidation)
+	}
+	if !validAudiences[params.Audience] {
+		return fmt.Errorf("%w: invalid audience: %s", shared.ErrValidation, params.Audience)
+	}
+	if (params.Audience == notification.AudienceUser || params.Audience == notification.AudienceGroup) && params.AudienceID == nil {
+		return fmt.Errorf("%w: audience_id is required for audience type %s", shared.ErrValidation, params.Audience)
+	}
+	if params.NotificationType != "" && !notification.IsValidType(params.NotificationType) {
+		return fmt.Errorf("%w: invalid notification type: %s", shared.ErrValidation, params.NotificationType)
+	}
+	if params.Severity != "" && !notification.IsValidSeverity(params.Severity) {
+		return fmt.Errorf("%w: invalid severity: %s", shared.ErrValidation, params.Severity)
+	}
 	return nil
 }
 
-// applyTemplate applies a custom message template.
-func (s *NotificationService) applyTemplate(msg notificationclient.Message, _ string) notificationclient.Message {
-	// TODO: Implement template processing
-	// For now, return the message as-is
-	return msg
-}
-
-// =============================================================================
-// Cleanup Operations
-// =============================================================================
-
-// CleanupOldEntries removes old completed and failed entries.
-func (s *NotificationService) CleanupOldEntries(ctx context.Context, completedDays, failedDays int) (deletedCompleted, deletedFailed int64, err error) {
-	deletedCompleted, err = s.outboxRepo.DeleteOldCompleted(ctx, completedDays)
-	if err != nil {
-		return 0, 0, fmt.Errorf("delete old completed: %w", err)
+func validatePreferencesInput(input UpdatePreferencesInput) error {
+	if input.EmailDigest != nil {
+		if !validEmailDigests[*input.EmailDigest] {
+			return fmt.Errorf("%w: email_digest must be one of: none, daily, weekly", shared.ErrValidation)
+		}
 	}
 
-	deletedFailed, err = s.outboxRepo.DeleteOldFailed(ctx, failedDays)
-	if err != nil {
-		return deletedCompleted, 0, fmt.Errorf("delete old failed: %w", err)
+	if input.MinSeverity != nil {
+		if !validSeverities[*input.MinSeverity] {
+			return fmt.Errorf("%w: min_severity must be one of: critical, high, medium, low, info", shared.ErrValidation)
+		}
 	}
 
-	return deletedCompleted, deletedFailed, nil
-}
+	if input.MutedTypes != nil {
+		if len(input.MutedTypes) > 50 {
+			return fmt.Errorf("%w: muted_types exceeds maximum of 50", shared.ErrValidation)
+		}
+		for _, t := range input.MutedTypes {
+			if !notification.IsValidType(t) {
+				return fmt.Errorf("%w: invalid notification type in muted_types: %s", shared.ErrValidation, t)
+			}
+		}
+	}
 
-// UnlockStaleEntries releases locks on stale processing entries.
-func (s *NotificationService) UnlockStaleEntries(ctx context.Context, olderThanMinutes int) (unlocked int64, err error) {
-	return s.outboxRepo.UnlockStale(ctx, olderThanMinutes)
-}
-
-// CleanupOldEvents removes notification events older than the specified retention days.
-// If retentionDays <= 0, no deletion is performed (unlimited retention).
-func (s *NotificationService) CleanupOldEvents(ctx context.Context, retentionDays int) (deleted int64, err error) {
-	return s.eventRepo.DeleteOldEvents(ctx, retentionDays)
+	return nil
 }

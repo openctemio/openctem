@@ -66,6 +66,28 @@ type Repository interface {
 	// UpdateFindingCounts updates finding counts for multiple assets in batch.
 	// This is used after bulk finding ingestion to refresh asset statistics.
 	UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error
+
+	// ListDistinctTags returns distinct tags across all assets for a tenant.
+	// Supports prefix filtering for autocomplete and a limit for result size.
+	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error)
+
+	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
+	// This replaces the N+1 pattern of calling Count() per type.
+	GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID) (map[string]AssetTypeStats, error)
+
+	// GetAverageRiskScore returns the average risk_score for all assets in a tenant.
+	// This replaces loading all assets into memory to compute the average.
+	GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error)
+
+	// BatchUpdateRiskScores updates risk scores for multiple assets in a single query.
+	// Uses PostgreSQL unnest() for efficient bulk updates.
+	BatchUpdateRiskScores(ctx context.Context, tenantID shared.ID, assets []*Asset) error
+}
+
+// AssetTypeStats holds per-type aggregate counts.
+type AssetTypeStats struct {
+	Total   int
+	Exposed int
 }
 
 // RepositoryExtensionRepository defines the interface for repository extension persistence.
@@ -87,6 +109,10 @@ type RepositoryExtensionRepository interface {
 
 	// ListByTenant retrieves all repositories for a tenant.
 	ListByTenant(ctx context.Context, tenantID shared.ID, opts ListOptions, page pagination.Pagination) (pagination.Result[*RepositoryExtension], error)
+
+	// GetByAssetIDs retrieves repository extensions for multiple asset IDs in a single query.
+	// Returns a map keyed by asset ID. Missing entries indicate no extension exists for that asset.
+	GetByAssetIDs(ctx context.Context, assetIDs []shared.ID) (map[shared.ID]*RepositoryExtension, error)
 }
 
 // Filter defines the filtering options for listing assets.
@@ -106,6 +132,11 @@ type Filter struct {
 	MaxRiskScore  *int          // Filter by maximum risk score
 	HasFindings   *bool         // Filter by whether asset has findings
 	ParentID      *string       // Filter by parent asset ID
+
+	// Layer 2: Data Scope - filter assets by user's group membership
+	// When set, only assets accessible to this user are returned.
+	// Backward compat: if user has no group assignments, all assets are visible.
+	DataScopeUserID *shared.ID
 }
 
 // ListOptions contains options for listing assets (sorting).
@@ -240,6 +271,12 @@ func (f Filter) WithParentID(parentID string) Filter {
 	return f
 }
 
+// WithDataScopeUserID adds a data scope filter by user's group membership.
+func (f Filter) WithDataScopeUserID(id shared.ID) Filter {
+	f.DataScopeUserID = &id
+	return f
+}
+
 // IsEmpty returns true if no filters are set.
 func (f Filter) IsEmpty() bool {
 	return f.TenantID == nil &&
@@ -256,5 +293,6 @@ func (f Filter) IsEmpty() bool {
 		f.MinRiskScore == nil &&
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
-		f.ParentID == nil
+		f.ParentID == nil &&
+		f.DataScopeUserID == nil
 }

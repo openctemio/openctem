@@ -31,13 +31,13 @@ func NewAITriageHandler(triageSvc *app.AITriageService, log *logger.Logger) *AIT
 }
 
 // checkServiceAvailable returns true if the AI triage service is available.
-// If not available, writes a 503 response and returns false.
+// If not available, writes a 200 response with null data and returns false.
+// This prevents noisy 503/404 errors when AI triage is simply not configured.
 func (h *AITriageHandler) checkServiceAvailable(w http.ResponseWriter) bool {
 	if h.triageService == nil {
-		apierror.ServiceUnavailable("AI triage is not configured. Contact your administrator.").
-			WithDetails(map[string]string{
-				"action": "Configure AI triage provider in system settings",
-			}).WriteJSON(w)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": nil, "ai_configured": false})
 		return false
 	}
 	return true
@@ -185,6 +185,14 @@ func (h *AITriageHandler) GetTriageResult(w http.ResponseWriter, r *http.Request
 
 	result, err := h.triageService.GetLatestTriageByFinding(r.Context(), tenantID, findingID)
 	if err != nil {
+		// "Not found" means no triage has been run yet — return 200 with null data
+		// instead of 404, since the finding exists but just hasn't been triaged.
+		if contains(err.Error(), "not found") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": nil})
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}

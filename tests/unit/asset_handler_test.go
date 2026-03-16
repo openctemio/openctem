@@ -166,6 +166,22 @@ func (m *HandlerMockRepository) UpdateFindingCounts(ctx context.Context, tenantI
 	return nil
 }
 
+func (m *HandlerMockRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error) {
+	return []string{}, nil
+}
+
+func (m *HandlerMockRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
+	return make(map[string]asset.AssetTypeStats), nil
+}
+
+func (m *HandlerMockRepository) GetAverageRiskScore(_ context.Context, _ shared.ID) (float64, error) {
+	return 0, nil
+}
+
+func (m *HandlerMockRepository) BatchUpdateRiskScores(_ context.Context, _ shared.ID, _ []*asset.Asset) error {
+	return nil
+}
+
 func newTestHandler() *handler.AssetHandler {
 	repo := NewHandlerMockRepository()
 	log := logger.NewDevelopment()
@@ -179,7 +195,7 @@ func TestAssetHandler_Create_Success(t *testing.T) {
 
 	body := map[string]any{
 		"name":        "Test Asset",
-		"type":        "server",
+		"type":        "host",
 		"criticality": "high",
 		"description": "Test description",
 		"tags":        []string{"production"},
@@ -229,7 +245,7 @@ func TestAssetHandler_Create_ValidationError(t *testing.T) {
 	}{
 		{
 			name: "missing name",
-			body: map[string]any{"type": "server", "criticality": "high"},
+			body: map[string]any{"type": "host", "criticality": "high"},
 		},
 		{
 			name: "invalid type",
@@ -237,7 +253,7 @@ func TestAssetHandler_Create_ValidationError(t *testing.T) {
 		},
 		{
 			name: "invalid criticality",
-			body: map[string]any{"name": "Test", "type": "server", "criticality": "super"},
+			body: map[string]any{"name": "Test", "type": "host", "criticality": "super"},
 		},
 	}
 
@@ -264,7 +280,7 @@ func TestAssetHandler_Get_Success(t *testing.T) {
 	// First create an asset
 	createBody := map[string]any{
 		"name":        "Test Asset",
-		"type":        "server",
+		"type":        "host",
 		"criticality": "high",
 	}
 	jsonBody, _ := json.Marshal(createBody)
@@ -337,7 +353,7 @@ func TestAssetHandler_Update_Success(t *testing.T) {
 	// Create asset
 	createBody := map[string]any{
 		"name":        "Original Name",
-		"type":        "server",
+		"type":        "host",
 		"criticality": "high",
 	}
 	jsonBody, _ := json.Marshal(createBody)
@@ -383,7 +399,7 @@ func TestAssetHandler_Update_PartialFields(t *testing.T) {
 	// Create asset
 	createBody := map[string]any{
 		"name":        "Original Name",
-		"type":        "server",
+		"type":        "host",
 		"criticality": "high",
 		"description": "Original description",
 	}
@@ -433,7 +449,7 @@ func TestAssetHandler_Delete_Success(t *testing.T) {
 	// Create asset
 	createBody := map[string]any{
 		"name":        "To Delete",
-		"type":        "server",
+		"type":        "host",
 		"criticality": "low",
 	}
 	jsonBody, _ := json.Marshal(createBody)
@@ -467,7 +483,7 @@ func TestAssetHandler_List_Success(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		createBody := map[string]any{
 			"name":        "Asset " + string(rune('A'+i)),
-			"type":        "server",
+			"type":        "host",
 			"criticality": "high",
 		}
 		jsonBody, _ := json.Marshal(createBody)
@@ -504,7 +520,7 @@ func TestAssetHandler_List_WithFilters(t *testing.T) {
 	// Create assets
 	createBody := map[string]any{
 		"name":        "Test Server",
-		"type":        "server",
+		"type":        "host",
 		"criticality": "high",
 	}
 	jsonBody, _ := json.Marshal(createBody)

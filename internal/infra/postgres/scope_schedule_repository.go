@@ -201,10 +201,10 @@ func (r *ScopeScheduleRepository) Create(ctx context.Context, schedule *scope.Sc
 	return nil
 }
 
-// GetByID retrieves a scan schedule by its ID.
-func (r *ScopeScheduleRepository) GetByID(ctx context.Context, id shared.ID) (*scope.Schedule, error) {
-	query := scopeScheduleSelectQuery + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
+// GetByID retrieves a scan schedule by its tenant ID and ID.
+func (r *ScopeScheduleRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*scope.Schedule, error) {
+	query := scopeScheduleSelectQuery + " WHERE tenant_id = $1 AND id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 
 	schedule, err := r.scanSchedule(row)
 	if err != nil {
@@ -256,7 +256,7 @@ func (r *ScopeScheduleRepository) Update(ctx context.Context, schedule *scope.Sc
 			notify_on_findings = $16,
 			notification_channels = $17,
 			updated_at = $18
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $19
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -278,6 +278,7 @@ func (r *ScopeScheduleRepository) Update(ctx context.Context, schedule *scope.Sc
 		schedule.NotifyOnFindings(),
 		notificationChannelsJSON,
 		schedule.UpdatedAt(),
+		schedule.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scan schedule: %w", err)
@@ -291,10 +292,10 @@ func (r *ScopeScheduleRepository) Update(ctx context.Context, schedule *scope.Sc
 	return nil
 }
 
-// Delete removes a scan schedule by its ID.
-func (r *ScopeScheduleRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM scan_schedules WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete removes a scan schedule by its tenant ID and ID.
+func (r *ScopeScheduleRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM scan_schedules WHERE tenant_id = $1 AND id = $2"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete scan schedule: %w", err)
 	}

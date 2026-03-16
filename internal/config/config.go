@@ -42,13 +42,15 @@ type AppConfig struct {
 
 // ServerConfig holds HTTP server configuration.
 type ServerConfig struct {
-	Host            string
-	Port            int
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	RequestTimeout  time.Duration // Per-request handler timeout
-	ShutdownTimeout time.Duration
-	MaxBodySize     int64
+	Host                  string
+	Port                  int
+	ReadTimeout           time.Duration
+	WriteTimeout          time.Duration
+	RequestTimeout        time.Duration // Per-request handler timeout
+	ShutdownTimeout       time.Duration
+	MaxBodySize           int64
+	SessionTimeoutMinutes int // Session timeout in minutes (0 = disabled, default: 30)
+	MaxConcurrentRequests int // Maximum concurrent requests (default: 1000)
 }
 
 // GRPCConfig holds gRPC server configuration.
@@ -82,6 +84,9 @@ type RedisConfig struct {
 	WriteTimeout  time.Duration
 	TLSEnabled    bool
 	TLSSkipVerify bool
+	TLSCertFile   string // Path to TLS certificate file (optional, for mTLS)
+	TLSKeyFile    string // Path to TLS key file (optional, for mTLS)
+	TLSCAFile     string // Path to CA certificate file (optional, for custom CA)
 	MaxRetries    int
 	MinRetryDelay time.Duration
 	MaxRetryDelay time.Duration
@@ -413,13 +418,15 @@ func Load() (*Config, error) {
 			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
 		},
 		Server: ServerConfig{
-			Host:            getEnv("SERVER_HOST", "0.0.0.0"),
-			Port:            getEnvInt("SERVER_PORT", 8080),
-			ReadTimeout:     getEnvDuration("SERVER_READ_TIMEOUT", 15*time.Second),
-			WriteTimeout:    getEnvDuration("SERVER_WRITE_TIMEOUT", 15*time.Second),
-			RequestTimeout:  getEnvDuration("SERVER_REQUEST_TIMEOUT", 30*time.Second), // Per-request timeout
-			ShutdownTimeout: getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
-			MaxBodySize:     getEnvInt64("SERVER_MAX_BODY_SIZE", 1<<20), // 1MB default
+			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),
+			Port:                  getEnvInt("SERVER_PORT", 8080),
+			ReadTimeout:           getEnvDuration("SERVER_READ_TIMEOUT", 15*time.Second),
+			WriteTimeout:          getEnvDuration("SERVER_WRITE_TIMEOUT", 15*time.Second),
+			RequestTimeout:        getEnvDuration("SERVER_REQUEST_TIMEOUT", 30*time.Second), // Per-request timeout
+			ShutdownTimeout:       getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
+			MaxBodySize:           getEnvInt64("SERVER_MAX_BODY_SIZE", 10<<20), // 10MB default
+			SessionTimeoutMinutes: getEnvInt("SESSION_TIMEOUT_MINUTES", 30),   // 30 minutes default
+			MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 1000), // 1000 concurrent requests default
 		},
 		GRPC: GRPCConfig{
 			Port: getEnvInt("GRPC_PORT", 9090),
@@ -447,6 +454,9 @@ func Load() (*Config, error) {
 			WriteTimeout:  getEnvDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
 			TLSEnabled:    getEnvBool("REDIS_TLS_ENABLED", false),
 			TLSSkipVerify: getEnvBool("REDIS_TLS_SKIP_VERIFY", false),
+			TLSCertFile:   getEnv("REDIS_TLS_CERT_FILE", ""),
+			TLSKeyFile:    getEnv("REDIS_TLS_KEY_FILE", ""),
+			TLSCAFile:     getEnv("REDIS_TLS_CA_FILE", ""),
 			MaxRetries:    getEnvInt("REDIS_MAX_RETRIES", 3),
 			MinRetryDelay: getEnvDuration("REDIS_MIN_RETRY_DELAY", 100*time.Millisecond),
 			MaxRetryDelay: getEnvDuration("REDIS_MAX_RETRY_DELAY", 3*time.Second),

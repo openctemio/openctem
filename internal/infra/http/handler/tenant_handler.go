@@ -4,27 +4,40 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/audit"
+	moduleTypes "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
 )
 
+// recalculateCooldown is the minimum interval between recalculations per tenant.
+const recalculateCooldown = 5 * time.Minute
+
+// recalculateLastRun tracks the last recalculation time per tenant ID.
+var recalculateLastRun sync.Map
+
 // TenantHandler handles tenant-related HTTP requests.
 // Note: "Team" is the UI-facing name for tenants.
 type TenantHandler struct {
-	service     *app.TenantService
-	roleService *app.RoleService
-	validator   *validator.Validator
-	logger      *logger.Logger
+	service       *app.TenantService
+	roleService   *app.RoleService
+	assetService  *app.AssetService
+	moduleService *app.ModuleService
+	validator     *validator.Validator
+	logger        *logger.Logger
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -39,6 +52,16 @@ func NewTenantHandler(svc *app.TenantService, v *validator.Validator, log *logge
 // SetRoleService sets the role service for fetching RBAC roles.
 func (h *TenantHandler) SetRoleService(svc *app.RoleService) {
 	h.roleService = svc
+}
+
+// SetAssetService sets the asset service for risk scoring operations.
+func (h *TenantHandler) SetAssetService(svc *app.AssetService) {
+	h.assetService = svc
+}
+
+// SetModuleService sets the module service for module management.
+func (h *TenantHandler) SetModuleService(svc *app.ModuleService) {
+	h.moduleService = svc
 }
 
 // =============================================================================
@@ -270,6 +293,8 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.NotFound("Tenant").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict("Tenant already exists").WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		// Extract just the message without the wrapped error prefix
 		msg := err.Error()
@@ -949,10 +974,11 @@ func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request
 
 // SettingsResponse represents tenant settings in API responses.
 type SettingsResponse struct {
-	General  GeneralSettingsResponse  `json:"general"`
-	Security SecuritySettingsResponse `json:"security"`
-	API      APISettingsResponse      `json:"api"`
-	Branding BrandingSettingsResponse `json:"branding"`
+	General     GeneralSettingsResponse    `json:"general"`
+	Security    SecuritySettingsResponse   `json:"security"`
+	API         APISettingsResponse        `json:"api"`
+	Branding    BrandingSettingsResponse   `json:"branding"`
+	RiskScoring tenant.RiskScoringSettings `json:"risk_scoring"`
 }
 
 // GeneralSettingsResponse represents general settings.
@@ -1018,6 +1044,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			LogoDarkURL:  s.Branding.LogoDarkURL,
 			LogoData:     s.Branding.LogoData,
 		},
+		RiskScoring: s.RiskScoring,
 	}
 }
 
@@ -1266,4 +1293,380 @@ func (h *TenantHandler) UpdateBranchSettings(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+}
+
+// =============================================================================
+// Risk Scoring Settings Endpoints
+// =============================================================================
+
+// GetRiskScoringSettings handles GET /api/v1/tenants/{tenant}/settings/risk-scoring
+func (h *TenantHandler) GetRiskScoringSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	rs, err := h.service.GetRiskScoringSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(rs)
+}
+
+// UpdateRiskScoringSettings handles PATCH /api/v1/tenants/{tenant}/settings/risk-scoring
+func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	var req tenant.RiskScoringSettings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	settings, err := h.service.UpdateRiskScoringSettings(r.Context(), tenantID.String(), req, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Invalidate scoring config cache so new formula takes effect immediately
+	if h.assetService != nil {
+		h.assetService.InvalidateScoringConfigCache(tenantID)
+	}
+
+	// Auto-recalculate all asset risk scores after saving new config
+	var assetsUpdated int
+	if h.assetService != nil {
+		updated, recalcErr := h.assetService.RecalculateAllRiskScores(r.Context(), tenantID)
+		if recalcErr != nil {
+			h.logger.Warn("auto-recalculate after config save failed",
+				"tenant_id", tenantID.String(), "error", recalcErr)
+		} else {
+			assetsUpdated = updated
+			// Record recalculation time for rate limiting on the dedicated endpoint
+			recalculateLastRun.Store(tenantID.String(), time.Now())
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"config":         settings.RiskScoring,
+		"assets_updated": assetsUpdated,
+	})
+}
+
+// PreviewRiskScoringChanges handles POST /api/v1/tenants/{tenant}/settings/risk-scoring/preview
+func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.assetService == nil {
+		apierror.InternalServerError("Asset service not configured").WriteJSON(w)
+		return
+	}
+
+	var req tenant.RiskScoringSettings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	config := app.MapTenantToAssetScoringConfig(&req)
+	items, totalAssets, err := h.assetService.PreviewRiskScoreChanges(r.Context(), tenantID, config)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"assets":       items,
+		"sample_count": len(items),
+		"total_assets": totalAssets,
+	})
+}
+
+// RecalculateRiskScores handles POST /api/v1/tenants/{tenant}/settings/risk-scoring/recalculate
+func (h *TenantHandler) RecalculateRiskScores(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.assetService == nil {
+		apierror.InternalServerError("Asset service not configured").WriteJSON(w)
+		return
+	}
+
+	// Rate limit: max 1 recalculation per 5 minutes per tenant
+	tenantKey := tenantID.String()
+	now := time.Now()
+	if lastRun, ok := recalculateLastRun.Load(tenantKey); ok {
+		lastTime := lastRun.(time.Time)
+		elapsed := now.Sub(lastTime)
+		if elapsed < recalculateCooldown {
+			retryAfter := int(math.Ceil(recalculateCooldown.Seconds() - elapsed.Seconds()))
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+			apierror.TooManyRequests(
+				fmt.Sprintf("Risk score recalculation is limited to once every %d minutes. Try again in %d seconds.",
+					int(recalculateCooldown.Minutes()), retryAfter),
+			).WriteJSON(w)
+			return
+		}
+	}
+
+	actx := h.buildAuditContext(r)
+
+	updated, err := h.assetService.RecalculateAllRiskScores(r.Context(), tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Record successful recalculation time for rate limiting
+	recalculateLastRun.Store(tenantKey, time.Now())
+
+	// Audit log the recalculation
+	event := app.NewSuccessEvent(audit.ActionTenantRiskScoresRecalculated, audit.ResourceTypeTenant, tenantKey).
+		WithMessage(fmt.Sprintf("Risk scores recalculated for %d assets", updated)).
+		WithMetadata("assets_updated", updated).
+		WithSeverity(audit.SeverityMedium)
+	h.service.LogAuditEvent(r.Context(), actx, event)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"assets_updated": updated,
+	})
+}
+
+// GetRiskScoringPresets handles GET /api/v1/tenants/{tenant}/settings/risk-scoring/presets
+func (h *TenantHandler) GetRiskScoringPresets(w http.ResponseWriter, r *http.Request) {
+	presets := tenant.AllRiskScoringPresets
+
+	type presetResponse struct {
+		Name   string                     `json:"name"`
+		Config tenant.RiskScoringSettings `json:"config"`
+	}
+
+	result := make([]presetResponse, 0, len(presets))
+	for name, config := range presets {
+		result = append(result, presetResponse{
+			Name:   name,
+			Config: config,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// =============================================================================
+// Module Management
+// =============================================================================
+
+// TenantModuleResponse represents a module with tenant-specific state.
+type TenantModuleResponse struct {
+	ID            string                    `json:"id"`
+	Name          string                    `json:"name"`
+	Description   string                    `json:"description,omitempty"`
+	Icon          string                    `json:"icon,omitempty"`
+	Category      string                    `json:"category"`
+	DisplayOrder  int                       `json:"display_order"`
+	IsCore        bool                      `json:"is_core"`
+	IsEnabled     bool                      `json:"is_enabled"`
+	ReleaseStatus string                    `json:"release_status"`
+	SubModules    []TenantSubModuleResponse `json:"sub_modules,omitempty"`
+}
+
+// TenantSubModuleResponse represents a sub-module in the response.
+type TenantSubModuleResponse struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	Icon          string `json:"icon,omitempty"`
+	ReleaseStatus string `json:"release_status"`
+	IsEnabled     bool   `json:"is_enabled"`
+}
+
+// TenantModuleListResponse wraps the module list with summary.
+type TenantModuleListResponse struct {
+	Modules []TenantModuleResponse `json:"modules"`
+	Summary TenantModuleSummaryResponse `json:"summary"`
+}
+
+// TenantModuleSummaryResponse provides module counts.
+type TenantModuleSummaryResponse struct {
+	Total    int `json:"total"`
+	Enabled  int `json:"enabled"`
+	Disabled int `json:"disabled"`
+	Core     int `json:"core"`
+}
+
+// UpdateTenantModulesRequest is the request body for toggling modules.
+type UpdateTenantModulesRequest struct {
+	Modules []ModuleToggleRequest `json:"modules" validate:"required,min=1,dive"`
+}
+
+// ModuleToggleRequest represents a single module toggle.
+type ModuleToggleRequest struct {
+	ModuleID  string `json:"module_id" validate:"required"`
+	IsEnabled bool   `json:"is_enabled"`
+}
+
+// GetTenantModules handles GET /api/v1/tenants/{tenant}/settings/modules
+func (h *TenantHandler) GetTenantModules(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+
+	config, err := h.moduleService.GetTenantModuleConfig(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
+}
+
+// UpdateTenantModules handles PATCH /api/v1/tenants/{tenant}/settings/modules
+func (h *TenantHandler) UpdateTenantModules(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+
+	var req UpdateTenantModulesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	// Convert to domain types
+	updates := make([]moduleTypes.TenantModuleUpdate, len(req.Modules))
+	for i, m := range req.Modules {
+		updates[i] = moduleTypes.TenantModuleUpdate{
+			ModuleID:  m.ModuleID,
+			IsEnabled: m.IsEnabled,
+		}
+	}
+
+	actx := h.buildAuditContext(r)
+	config, err := h.moduleService.UpdateTenantModules(r.Context(), tenantID.String(), updates, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
+}
+
+// ResetTenantModules handles POST /api/v1/tenants/{tenant}/settings/modules/reset
+func (h *TenantHandler) ResetTenantModules(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	config, err := h.moduleService.ResetTenantModules(r.Context(), tenantID.String(), actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
+}
+
+func toTenantModuleListResponse(config *app.TenantModuleConfigOutput) TenantModuleListResponse {
+	modules := make([]TenantModuleResponse, 0, len(config.Modules))
+	for _, info := range config.Modules {
+		m := info.Module
+		resp := TenantModuleResponse{
+			ID:            m.ID(),
+			Name:          m.Name(),
+			Description:   m.Description(),
+			Icon:          m.Icon(),
+			Category:      m.Category(),
+			DisplayOrder:  m.DisplayOrder(),
+			IsCore:        m.IsCore(),
+			IsEnabled:     info.IsEnabled,
+			ReleaseStatus: string(m.ReleaseStatus()),
+		}
+
+		if len(info.SubModules) > 0 {
+			resp.SubModules = make([]TenantSubModuleResponse, 0, len(info.SubModules))
+			for _, sub := range info.SubModules {
+				resp.SubModules = append(resp.SubModules, TenantSubModuleResponse{
+					ID:            sub.Module.ID(),
+					Name:          sub.Module.Name(),
+					Description:   sub.Module.Description(),
+					Icon:          sub.Module.Icon(),
+					ReleaseStatus: string(sub.Module.ReleaseStatus()),
+					IsEnabled:     sub.IsEnabled,
+				})
+			}
+		}
+
+		modules = append(modules, resp)
+	}
+
+	return TenantModuleListResponse{
+		Modules: modules,
+		Summary: TenantModuleSummaryResponse{
+			Total:    config.Summary.Total,
+			Enabled:  config.Summary.Enabled,
+			Disabled: config.Summary.Disabled,
+			Core:     config.Summary.Core,
+		},
+	}
 }

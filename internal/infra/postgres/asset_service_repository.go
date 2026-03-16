@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -37,13 +38,13 @@ func (r *AssetServiceRepository) Create(ctx context.Context, service *asset.Asse
 	query := `
 		INSERT INTO asset_services (
 			id, tenant_id, asset_id, name, protocol, port, service_type,
-			product, version, banner, cpe,
+			product, version, banner, cpe, technologies,
 			is_public, exposure, tls_enabled, tls_version,
 			discovery_source, discovered_at, last_seen_at,
 			finding_count, risk_score, state, state_changed_at,
 			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -58,6 +59,7 @@ func (r *AssetServiceRepository) Create(ctx context.Context, service *asset.Asse
 		nullString(service.Version()),
 		nullString(service.Banner()),
 		nullString(service.CPE()),
+		pq.StringArray(service.Technologies()),
 		service.IsPublic(),
 		service.Exposure().String(),
 		service.TLSEnabled(),
@@ -97,10 +99,11 @@ func (r *AssetServiceRepository) Update(ctx context.Context, service *asset.Asse
 	query := `
 		UPDATE asset_services
 		SET name = $3, product = $4, version = $5, banner = $6, cpe = $7,
-		    is_public = $8, exposure = $9, tls_enabled = $10, tls_version = $11,
-		    discovery_source = $12, discovered_at = $13, last_seen_at = $14,
-		    finding_count = $15, risk_score = $16, state = $17, state_changed_at = $18,
-		    updated_at = $19
+		    technologies = $8,
+		    is_public = $9, exposure = $10, tls_enabled = $11, tls_version = $12,
+		    discovery_source = $13, discovered_at = $14, last_seen_at = $15,
+		    finding_count = $16, risk_score = $17, state = $18, state_changed_at = $19,
+		    updated_at = $20
 		WHERE tenant_id = $1 AND id = $2
 	`
 
@@ -112,6 +115,7 @@ func (r *AssetServiceRepository) Update(ctx context.Context, service *asset.Asse
 		nullString(service.Version()),
 		nullString(service.Banner()),
 		nullString(service.CPE()),
+		pq.StringArray(service.Technologies()),
 		service.IsPublic(),
 		service.Exposure().String(),
 		service.TLSEnabled(),
@@ -366,13 +370,13 @@ func (r *AssetServiceRepository) UpsertBatch(ctx context.Context, services []*as
 	query := `
 		INSERT INTO asset_services (
 			id, tenant_id, asset_id, name, protocol, port, service_type,
-			product, version, banner, cpe,
+			product, version, banner, cpe, technologies,
 			is_public, exposure, tls_enabled, tls_version,
 			discovery_source, discovered_at, last_seen_at,
 			finding_count, risk_score, state, state_changed_at,
 			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
 		ON CONFLICT (tenant_id, asset_id, port, protocol)
 		DO UPDATE SET
 			name = EXCLUDED.name,
@@ -381,6 +385,7 @@ func (r *AssetServiceRepository) UpsertBatch(ctx context.Context, services []*as
 			version = EXCLUDED.version,
 			banner = EXCLUDED.banner,
 			cpe = EXCLUDED.cpe,
+			technologies = EXCLUDED.technologies,
 			is_public = EXCLUDED.is_public,
 			exposure = EXCLUDED.exposure,
 			tls_enabled = EXCLUDED.tls_enabled,
@@ -418,6 +423,7 @@ func (r *AssetServiceRepository) UpsertBatch(ctx context.Context, services []*as
 			nullString(service.Version()),
 			nullString(service.Banner()),
 			nullString(service.CPE()),
+			pq.StringArray(service.Technologies()),
 			service.IsPublic(),
 			service.Exposure().String(),
 			service.TLSEnabled(),
@@ -664,7 +670,7 @@ func (r *AssetServiceRepository) selectQuery() string {
 		SELECT
 			s.id, s.tenant_id, s.asset_id,
 			s.name, s.protocol, s.port, s.service_type,
-			s.product, s.version, s.banner, s.cpe,
+			s.product, s.version, s.banner, s.cpe, s.technologies,
 			s.is_public, s.exposure, s.tls_enabled, s.tls_version,
 			s.discovery_source, s.discovered_at, s.last_seen_at,
 			s.finding_count, s.risk_score, s.state, s.state_changed_at,
@@ -676,9 +682,11 @@ func (r *AssetServiceRepository) selectQuery() string {
 func (r *AssetServiceRepository) scanService(row *sql.Row) (*asset.AssetService, error) {
 	var (
 		id, tenantID, assetID         string
-		name, protocol, serviceType   string
+		name                          sql.NullString
+		protocol, serviceType         string
 		port                          int
 		product, version, banner, cpe sql.NullString
+		technologies                  pq.StringArray
 		isPublic                      bool
 		exposure                      string
 		tlsEnabled                    bool
@@ -694,7 +702,7 @@ func (r *AssetServiceRepository) scanService(row *sql.Row) (*asset.AssetService,
 	err := row.Scan(
 		&id, &tenantID, &assetID,
 		&name, &protocol, &port, &serviceType,
-		&product, &version, &banner, &cpe,
+		&product, &version, &banner, &cpe, &technologies,
 		&isPublic, &exposure, &tlsEnabled, &tlsVersion,
 		&discoverySource, &discoveredAt, &lastSeenAt,
 		&findingCount, &riskScore, &state, &stateChangedAt,
@@ -711,7 +719,7 @@ func (r *AssetServiceRepository) scanService(row *sql.Row) (*asset.AssetService,
 	return r.reconstituteService(
 		id, tenantID, assetID,
 		name, protocol, port, serviceType,
-		product, version, banner, cpe,
+		product, version, banner, cpe, technologies,
 		isPublic, exposure, tlsEnabled, tlsVersion,
 		discoverySource, discoveredAt, lastSeenAt,
 		findingCount, riskScore, state, stateChangedAt,
@@ -725,9 +733,11 @@ func (r *AssetServiceRepository) scanServices(rows *sql.Rows) ([]*asset.AssetSer
 	for rows.Next() {
 		var (
 			id, tenantID, assetID         string
-			name, protocol, serviceType   string
+			name                          sql.NullString
+			protocol, serviceType         string
 			port                          int
 			product, version, banner, cpe sql.NullString
+			technologies                  pq.StringArray
 			isPublic                      bool
 			exposure                      string
 			tlsEnabled                    bool
@@ -743,7 +753,7 @@ func (r *AssetServiceRepository) scanServices(rows *sql.Rows) ([]*asset.AssetSer
 		err := rows.Scan(
 			&id, &tenantID, &assetID,
 			&name, &protocol, &port, &serviceType,
-			&product, &version, &banner, &cpe,
+			&product, &version, &banner, &cpe, &technologies,
 			&isPublic, &exposure, &tlsEnabled, &tlsVersion,
 			&discoverySource, &discoveredAt, &lastSeenAt,
 			&findingCount, &riskScore, &state, &stateChangedAt,
@@ -757,7 +767,7 @@ func (r *AssetServiceRepository) scanServices(rows *sql.Rows) ([]*asset.AssetSer
 		service := r.reconstituteService(
 			id, tenantID, assetID,
 			name, protocol, port, serviceType,
-			product, version, banner, cpe,
+			product, version, banner, cpe, technologies,
 			isPublic, exposure, tlsEnabled, tlsVersion,
 			discoverySource, discoveredAt, lastSeenAt,
 			findingCount, riskScore, state, stateChangedAt,
@@ -775,8 +785,9 @@ func (r *AssetServiceRepository) scanServices(rows *sql.Rows) ([]*asset.AssetSer
 
 func (r *AssetServiceRepository) reconstituteService(
 	id, tenantID, assetID string,
-	name, protocol string, port int, serviceType string,
+	name sql.NullString, protocol string, port int, serviceType string,
 	product, version, banner, cpe sql.NullString,
+	technologies []string,
 	isPublic bool, exposure string, tlsEnabled bool, tlsVersion sql.NullString,
 	discoverySource sql.NullString, discoveredAt, lastSeenAt sql.NullTime,
 	findingCount, riskScore int, state string, stateChangedAt sql.NullTime,
@@ -801,7 +812,7 @@ func (r *AssetServiceRepository) reconstituteService(
 		parsedID,
 		parsedTenantID,
 		parsedAssetID,
-		name,
+		nullStringValue(name),
 		asset.Protocol(protocol),
 		port,
 		asset.ServiceType(serviceType),
@@ -809,6 +820,7 @@ func (r *AssetServiceRepository) reconstituteService(
 		nullStringValue(version),
 		nullStringValue(banner),
 		nullStringValue(cpe),
+		technologies,
 		isPublic,
 		asset.Exposure(exposure),
 		tlsEnabled,

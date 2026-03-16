@@ -544,3 +544,87 @@ func (s *AgentService) GetAvailableCapabilitiesForTenant(ctx context.Context, te
 func (s *AgentService) HasCapability(ctx context.Context, tenantID shared.ID, capability string) (bool, error) {
 	return s.repo.HasAgentForCapability(ctx, tenantID, capability)
 }
+
+// =============================================================================
+// Platform Agent Statistics
+// =============================================================================
+
+// PlatformTierStats represents statistics for a single platform agent tier.
+type PlatformTierStats struct {
+	TotalAgents    int
+	OnlineAgents   int
+	OfflineAgents  int
+	TotalCapacity  int
+	CurrentLoad    int
+	AvailableSlots int
+}
+
+// PlatformStatsOutput represents the output for platform stats.
+type PlatformStatsOutput struct {
+	Enabled         bool
+	MaxTier         string
+	AccessibleTiers []string
+	MaxConcurrent   int
+	MaxQueued       int
+	CurrentActive   int
+	CurrentQueued   int
+	AvailableSlots  int
+	TierStats       map[string]PlatformTierStats
+}
+
+// GetPlatformStats returns aggregate statistics for platform agents accessible to the tenant.
+func (s *AgentService) GetPlatformStats(ctx context.Context, tenantID shared.ID) (*PlatformStatsOutput, error) {
+	s.logger.Debug("getting platform stats", "tenant_id", tenantID)
+
+	stats, err := s.repo.GetPlatformAgentStats(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get platform agent stats: %w", err)
+	}
+
+	// If no platform agents exist, return disabled
+	if stats.TotalAgents == 0 {
+		return &PlatformStatsOutput{
+			Enabled:         false,
+			MaxTier:         "shared",
+			AccessibleTiers: []string{"shared"},
+			TierStats:       make(map[string]PlatformTierStats),
+		}, nil
+	}
+
+	// Build tier stats
+	tierStats := make(map[string]PlatformTierStats)
+	for tier, ts := range stats.TierBreakdown {
+		tierStats[tier] = PlatformTierStats{
+			TotalAgents:    ts.TotalAgents,
+			OnlineAgents:   ts.OnlineAgents,
+			OfflineAgents:  ts.TotalAgents - ts.OnlineAgents,
+			TotalCapacity:  ts.TotalCapacity,
+			CurrentLoad:    ts.CurrentLoad,
+			AvailableSlots: ts.TotalCapacity - ts.CurrentLoad,
+		}
+	}
+
+	// Determine accessible tiers (all tenants get shared; add dedicated/premium if agents exist)
+	accessibleTiers := []string{"shared"}
+	maxTier := "shared"
+	if _, ok := stats.TierBreakdown["dedicated"]; ok {
+		accessibleTiers = append(accessibleTiers, "dedicated")
+		maxTier = "dedicated"
+	}
+	if _, ok := stats.TierBreakdown["premium"]; ok {
+		accessibleTiers = append(accessibleTiers, "premium")
+		maxTier = "premium"
+	}
+
+	return &PlatformStatsOutput{
+		Enabled:         true,
+		MaxTier:         maxTier,
+		AccessibleTiers: accessibleTiers,
+		MaxConcurrent:   stats.TotalCapacity,
+		MaxQueued:       stats.TotalCapacity * 3, // 3x capacity for queue
+		CurrentActive:   stats.CurrentActiveJobs,
+		CurrentQueued:   stats.CurrentQueuedJobs,
+		AvailableSlots:  stats.TotalCapacity - stats.CurrentActiveJobs,
+		TierStats:       tierStats,
+	}, nil
+}

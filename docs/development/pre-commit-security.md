@@ -1,44 +1,44 @@
 # Pre-commit Security Hooks
 
-Hướng dẫn cấu hình và sử dụng pre-commit hooks bảo mật cho OpenCTEM API.
+Guide for configuring and using security pre-commit hooks for OpenCTEM API.
 
-## Cài đặt
+## Installation
 
 ```bash
-# Cài đặt tất cả công cụ và hooks
+# Install all tools and hooks
 make pre-commit-install
 ```
 
-## Các Security Hooks
+## Security Hooks
 
-| Hook | Mục đích |
-|------|----------|
-| **Gitleaks** | Phát hiện secrets (API keys, passwords, tokens) |
-| **Golangci-lint** | Static analysis với gosec (security vulnerabilities) |
-| **Trivy** | Scan vulnerabilities trong dependencies |
-| **Checkov** | IaC security scan cho Dockerfile |
+| Hook | Purpose |
+|------|---------|
+| **Gitleaks** | Detect secrets (API keys, passwords, tokens) |
+| **Golangci-lint** | Static analysis with gosec (security vulnerabilities) |
+| **Trivy** | Scan vulnerabilities in dependencies |
+| **Checkov** | IaC security scan for Dockerfile |
 | **Hadolint** | Dockerfile best practices |
 
-## Chạy thủ công
+## Manual Execution
 
 ```bash
-# Chạy tất cả hooks
+# Run all hooks
 make pre-commit-run
 
-# Chạy full security scan
+# Run full security scan
 make security-scan
 
-# Chỉ chạy gitleaks
+# Run only gitleaks
 make gitleaks
 ```
 
-## Cấu hình False Positive & Ignore
+## Configuring False Positives & Ignores
 
 ### 1. Gitleaks - Ignore Secrets
 
-**File cấu hình:** `.gitleaks.toml`
+**Configuration file:** `.gitleaks.toml`
 
-#### Ignore file hoặc đường dẫn
+#### Ignore files or paths
 
 ```toml
 [allowlist]
@@ -54,7 +54,7 @@ paths = [
 ]
 ```
 
-#### Ignore pattern cụ thể (false positive)
+#### Ignore specific patterns (false positive)
 
 ```toml
 [allowlist]
@@ -67,14 +67,14 @@ regexes = [
 ]
 ```
 
-#### Ignore inline trong code
+#### Ignore inline in code
 
 ```go
 // gitleaks:allow
 const TestToken = "fake-token-for-testing"
 ```
 
-#### Ignore commit cụ thể
+#### Ignore specific commits
 
 ```toml
 [allowlist]
@@ -87,9 +87,9 @@ commits = [
 
 ### 2. Golangci-lint with Gosec
 
-**File cấu hình:** `.golangci.yml`
+**Configuration file:** `.golangci.yml`
 
-#### Ignore rule cụ thể
+#### Ignore specific rules
 
 ```yaml
 linters-settings:
@@ -100,7 +100,7 @@ linters-settings:
       - G402  # Allow InsecureSkipVerify
 ```
 
-#### Ignore file hoặc path
+#### Ignore files or paths
 
 ```yaml
 issues:
@@ -116,13 +116,13 @@ issues:
         - gosec
 ```
 
-#### Ignore inline trong code
+#### Ignore inline in code
 
 ```go
 // nolint:gosec
 password := "admin123"  // This is a test value
 
-// Hoặc ignore nhiều linters
+// Or ignore multiple linters
 // nolint:gosec,errcheck
 ```
 
@@ -130,7 +130,7 @@ password := "admin123"  // This is a test value
 
 ### 3. Trivy - Ignore Vulnerabilities
 
-**Tạo file:** `.trivyignore`
+**Create file:** `.trivyignore`
 
 ```
 # Ignore specific CVE
@@ -140,7 +140,7 @@ CVE-2023-12345
 CVE-2023-67890  # Won't fix - not applicable to our use case
 ```
 
-**Hoặc ignore inline qua command:**
+**Or ignore inline via command:**
 
 ```bash
 trivy fs --skip-files="internal/legacy/*" .
@@ -151,7 +151,7 @@ trivy fs --skip-dirs="vendor,testdata" .
 
 ### 4. Checkov - Ignore IaC Checks
 
-**Tạo file:** `.checkov.yaml`
+**Create file:** `.checkov.yaml`
 
 ```yaml
 skip-check:
@@ -159,7 +159,7 @@ skip-check:
   - CKV_DOCKER_3  # Ensure USER is set
 ```
 
-**Hoặc inline trong Dockerfile:**
+**Or inline in Dockerfile:**
 
 ```dockerfile
 # checkov:skip=CKV_DOCKER_2: Health check handled by orchestrator
@@ -177,7 +177,7 @@ FROM golang:1.25-alpine
 RUN apt-get update && apt-get install -y curl
 ```
 
-**Tạo file:** `.hadolint.yaml`
+**Create file:** `.hadolint.yaml`
 
 ```yaml
 ignored:
@@ -191,14 +191,14 @@ trustedRegistries:
 
 ---
 
-## Bypass khi cần thiết
+## Bypass When Necessary
 
-> ⚠️ **Cảnh báo**: Chỉ sử dụng khi thực sự cần thiết!
+> ⚠️ **Warning**: Only use when absolutely necessary!
 
 ```bash
-# Bypass pre-commit cho một commit (KHÔNG khuyến khích)
+# Bypass pre-commit for a single commit (NOT recommended)
 git commit --no-verify -m "Your message"
 
-# Chạy hooks trừ một số hooks cụ thể
+# Run hooks except specific ones
 SKIP=gitleaks,trivy-fs git commit -m "Your message"
 ```

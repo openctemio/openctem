@@ -20,7 +20,10 @@ const (
 	ActionTenantCreated         Action = "tenant.created"
 	ActionTenantUpdated         Action = "tenant.updated"
 	ActionTenantDeleted         Action = "tenant.deleted"
-	ActionTenantSettingsUpdated Action = "tenant.settings_updated"
+	ActionTenantSettingsUpdated      Action = "tenant.settings_updated"
+	ActionTenantModulesUpdated      Action = "tenant.modules_updated"
+	ActionTenantRiskScoringUpdated  Action = "tenant.risk_scoring_updated"
+	ActionTenantRiskScoresRecalculated Action = "tenant.risk_scores_recalculated"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -161,7 +164,7 @@ const (
 	ActionPipelineRunTriggered        Action = "pipeline_run.triggered"
 	ActionPipelineRunCompleted        Action = "pipeline_run.completed"
 	ActionPipelineRunFailed           Action = "pipeline_run.failed"
-	ActionPipelineRunCancelled        Action = "pipeline_run.cancelled"
+	ActionPipelineRunCanceled         Action = "pipeline_run.canceled"
 
 	// Scan config actions
 	ActionScanConfigCreated   Action = "scan_config.created"
@@ -171,6 +174,8 @@ const (
 	ActionScanConfigPaused    Action = "scan_config.paused"
 	ActionScanConfigActivated Action = "scan_config.activated"
 	ActionScanConfigDisabled  Action = "scan_config.disabled"
+	ActionScanConfigExported  Action = "scan_config.exported"
+	ActionScanConfigImported  Action = "scan_config.imported"
 
 	// Security events
 	ActionSecurityValidationFailed  Action = "security.validation_failed"
@@ -185,7 +190,7 @@ const (
 	ActionWorkflowRunTriggered Action = "workflow_run.triggered"
 	ActionWorkflowRunCompleted Action = "workflow_run.completed"
 	ActionWorkflowRunFailed    Action = "workflow_run.failed"
-	ActionWorkflowRunCancelled Action = "workflow_run.cancelled"
+	ActionWorkflowRunCanceled  Action = "workflow_run.canceled"
 
 	// Rule actions
 	ActionRuleSourceCreated   Action = "rule_source.created"
@@ -222,7 +227,8 @@ func (a Action) IsValid() bool {
 	case ActionUserCreated, ActionUserUpdated, ActionUserDeleted,
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout,
-		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated,
+		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
+		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
@@ -238,6 +244,7 @@ func (a Action) IsValid() bool {
 		ActionAgentCreated, ActionAgentUpdated, ActionAgentDeleted,
 		ActionAgentActivated, ActionAgentDeactivated, ActionAgentRevoked,
 		ActionAgentKeyRegenerated, ActionAgentConnected, ActionAgentDisconnected,
+		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
 		ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
@@ -250,13 +257,14 @@ func (a Action) IsValid() bool {
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineTemplateDeleted,
 		ActionPipelineTemplateActivated, ActionPipelineTemplateDeactivated,
 		ActionPipelineStepCreated, ActionPipelineStepUpdated, ActionPipelineStepDeleted,
-		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunFailed, ActionPipelineRunCancelled,
+		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
+		ActionScanConfigExported, ActionScanConfigImported,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionWorkflowCreated, ActionWorkflowUpdated, ActionWorkflowDeleted,
 		ActionWorkflowActivated, ActionWorkflowDeactivated,
-		ActionWorkflowRunTriggered, ActionWorkflowRunCompleted, ActionWorkflowRunFailed, ActionWorkflowRunCancelled,
+		ActionWorkflowRunTriggered, ActionWorkflowRunCompleted, ActionWorkflowRunFailed, ActionWorkflowRunCanceled,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
@@ -274,7 +282,8 @@ func (a Action) Category() string {
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout:
 		return "user"
-	case ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated:
+	case ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
+		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated:
 		return "tenant"
 	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged:
 		return "member"
@@ -442,18 +451,21 @@ func SeverityForAction(a Action) Severity {
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionAgentDeactivated, ActionAgentKeyRegenerated,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
-		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCancelled:
+		ActionCredentialDeleted,
+		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled:
 		return SeverityHigh
 
 	// Medium - important changes
 	case ActionUserCreated, ActionUserActivated,
-		ActionTenantCreated, ActionTenantUpdated,
+		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
+		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionRepositoryDeleted, ActionDataExported,
 		ActionAgentCreated, ActionAgentActivated,
 		ActionRoleCreated, ActionRoleUpdated,
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted,
 		ActionScanConfigCreated, ActionScanConfigTriggered,
+		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialAccessed,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,

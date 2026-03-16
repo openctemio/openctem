@@ -99,12 +99,23 @@ func buildPageURL(baseURL string, query url.Values, page, perPage int) string {
 }
 
 // parseQueryArray parses a comma-separated query parameter into a string slice.
-// Returns nil if the input is empty.
+// Returns nil if the input is empty. Each element is trimmed of whitespace.
 func parseQueryArray(s string) []string {
 	if s == "" {
 		return nil
 	}
-	return strings.Split(s, ",")
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // parseQueryInt parses a query parameter as an integer.

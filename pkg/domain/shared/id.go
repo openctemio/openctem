@@ -12,9 +12,14 @@ type ID struct {
 	value uuid.UUID
 }
 
-// NewID creates a new random ID.
+// NewID creates a new time-sortable ID (UUID v7).
 func NewID() ID {
-	return ID{value: uuid.New()}
+	id, err := uuid.NewV7()
+	if err != nil {
+		// Fallback to v4 if v7 generation fails (should never happen)
+		return ID{value: uuid.New()}
+	}
+	return ID{value: id}
 }
 
 // IDFromString creates an ID from a string.

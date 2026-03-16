@@ -16,14 +16,14 @@ type TargetRepository interface {
 	// Create persists a new scope target.
 	Create(ctx context.Context, target *Target) error
 
-	// GetByID retrieves a scope target by its ID.
-	GetByID(ctx context.Context, id shared.ID) (*Target, error)
+	// GetByID retrieves a scope target by its tenant ID and ID.
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*Target, error)
 
 	// Update updates an existing scope target.
 	Update(ctx context.Context, target *Target) error
 
-	// Delete removes a scope target by its ID.
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete removes a scope target by its tenant ID and ID.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// List retrieves scope targets with filtering and pagination.
 	List(ctx context.Context, filter TargetFilter, page pagination.Pagination) (pagination.Result[*Target], error)
@@ -56,14 +56,14 @@ type ExclusionRepository interface {
 	// Create persists a new scope exclusion.
 	Create(ctx context.Context, exclusion *Exclusion) error
 
-	// GetByID retrieves a scope exclusion by its ID.
-	GetByID(ctx context.Context, id shared.ID) (*Exclusion, error)
+	// GetByID retrieves a scope exclusion by its tenant ID and ID.
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*Exclusion, error)
 
 	// Update updates an existing scope exclusion.
 	Update(ctx context.Context, exclusion *Exclusion) error
 
-	// Delete removes a scope exclusion by its ID.
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete removes a scope exclusion by its tenant ID and ID.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// List retrieves scope exclusions with filtering and pagination.
 	List(ctx context.Context, filter ExclusionFilter, page pagination.Pagination) (pagination.Result[*Exclusion], error)
@@ -96,14 +96,14 @@ type ScheduleRepository interface {
 	// Create persists a new scan schedule.
 	Create(ctx context.Context, schedule *Schedule) error
 
-	// GetByID retrieves a scan schedule by its ID.
-	GetByID(ctx context.Context, id shared.ID) (*Schedule, error)
+	// GetByID retrieves a scan schedule by its tenant ID and ID.
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*Schedule, error)
 
 	// Update updates an existing scan schedule.
 	Update(ctx context.Context, schedule *Schedule) error
 
-	// Delete removes a scan schedule by its ID.
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete removes a scan schedule by its tenant ID and ID.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// List retrieves scan schedules with filtering and pagination.
 	List(ctx context.Context, filter ScheduleFilter, page pagination.Pagination) (pagination.Result[*Schedule], error)

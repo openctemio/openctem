@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/pkg/apierror"
@@ -34,10 +35,11 @@ const (
 
 // UnifiedAuthConfig holds configuration for unified auth middleware.
 type UnifiedAuthConfig struct {
-	Provider       config.AuthProvider
-	LocalValidator *jwt.Generator
-	OIDCValidator  *keycloak.Validator
-	Logger         *logger.Logger
+	Provider              config.AuthProvider
+	LocalValidator        *jwt.Generator
+	OIDCValidator         *keycloak.Validator
+	Logger                *logger.Logger
+	SessionTimeoutMinutes int // Session timeout in minutes (0 = disabled)
 }
 
 // DefaultAccessTokenCookieName is the default cookie name for access tokens.
@@ -114,6 +116,22 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 			if err != nil {
 				handleAuthError(w, err, cfg.Logger, r.Context())
 				return
+			}
+
+			// Check session timeout based on token's issued-at (iat) claim
+			if cfg.SessionTimeoutMinutes > 0 {
+				if isSessionExpired(ctx, cfg.SessionTimeoutMinutes) {
+					apierror.Unauthorized("Session has expired").WriteJSON(w)
+					return
+				}
+			}
+
+			// Update the context logger with user_id and tenant_id
+			// so downstream services using logger.FromContext(ctx) get
+			// request-correlated logs automatically.
+			if ctxLogger := logger.FromContext(ctx); ctxLogger != nil {
+				enriched := ctxLogger.WithContext(ctx)
+				ctx = logger.ToContext(ctx, enriched)
 			}
 
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -223,6 +241,28 @@ func handleAuthError(w http.ResponseWriter, err error, log *logger.Logger, ctx c
 	}
 }
 
+// isSessionExpired checks if the token's issued-at time exceeds the session timeout.
+// It checks both local JWT claims and OIDC claims for the IssuedAt field.
+func isSessionExpired(ctx context.Context, timeoutMinutes int) bool {
+	timeout := time.Duration(timeoutMinutes) * time.Minute
+
+	// Check local JWT claims first
+	if claims := GetLocalClaims(ctx); claims != nil {
+		if claims.IssuedAt != nil {
+			return time.Since(claims.IssuedAt.Time) > timeout
+		}
+	}
+
+	// Check OIDC (Keycloak) claims
+	if claims := GetClaims(ctx); claims != nil {
+		if claims.IssuedAt != nil {
+			return time.Since(claims.IssuedAt.Time) > timeout
+		}
+	}
+
+	return false
+}
+
 // GetSessionID extracts the session ID from context.
 func GetSessionID(ctx context.Context) string {
 	if id, ok := ctx.Value(SessionIDKey).(string); ok {
@@ -290,12 +330,7 @@ func HasTenantAccess(ctx context.Context, tenantID string) bool {
 
 	// Fallback to accessible tenants list
 	accessibleTenants := GetAccessibleTenants(ctx)
-	for _, t := range accessibleTenants {
-		if t == tenantID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(accessibleTenants, tenantID)
 }
 
 // GetUserTenantRole returns the user's role in a specific tenant.
