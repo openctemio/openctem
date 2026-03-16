@@ -160,6 +160,36 @@ func (r *FindingApprovalRepository) Update(ctx context.Context, a *vulnerability
 	return nil
 }
 
+// ListExpiredApproved retrieves all approved approvals that have expired.
+// Cross-tenant query for the background expiration controller.
+func (r *FindingApprovalRepository) ListExpiredApproved(ctx context.Context, limit int) ([]*vulnerability.Approval, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := r.selectQuery() + ` WHERE status = 'approved' AND expires_at IS NOT NULL AND expires_at < NOW() ORDER BY expires_at ASC LIMIT $1`
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list expired approved approvals: %w", err)
+	}
+	defer rows.Close()
+
+	approvals := make([]*vulnerability.Approval, 0, limit)
+	for rows.Next() {
+		a, err := r.scanApprovalFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		approvals = append(approvals, a)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate expired approvals: %w", err)
+	}
+
+	return approvals, nil
+}
+
 func (r *FindingApprovalRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, finding_id, requested_status, requested_by,
