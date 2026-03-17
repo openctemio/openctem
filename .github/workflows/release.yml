@@ -102,6 +102,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
@@ -119,6 +123,39 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          append_body: true
+          body: |
+            ## Docker Images
+
+            Images are published to **GitHub Container Registry** (multi-arch: amd64 + arm64):
+
+            ```bash
+            # API
+            docker pull ghcr.io/openctemio/api:${{ steps.version.outputs.VERSION }}
+
+            # Database Migrations
+            docker pull ghcr.io/openctemio/migrations:${{ steps.version.outputs.VERSION }}
+
+            # Database Seed
+            docker pull ghcr.io/openctemio/seed:${{ steps.version.outputs.VERSION }}
+
+            # Admin CLI
+            docker pull ghcr.io/openctemio/admin-cli:${{ steps.version.outputs.VERSION }}
+            ```
+
+            > Images are also mirrored to Docker Hub (`openctemio/*`) if configured.
+
+            ## Deployment
+
+            ```bash
+            # Update version in your .env.versions file
+            API_VERSION=${{ steps.version.outputs.VERSION }}
+            MIGRATIONS_VERSION=${{ steps.version.outputs.VERSION }}
+
+            # Pull and restart
+            docker compose pull
+            docker compose up -d
+            ```
           files: |
             /tmp/artifacts/*.tar.gz
             /tmp/artifacts/*.zip
