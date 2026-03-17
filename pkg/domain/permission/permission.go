@@ -288,9 +288,36 @@ const (
 // =============================================================================
 
 const (
-	// Pentest/Validation permissions (validation:*)
+	// Pentest/Validation permissions (validation:* - legacy)
 	ValidationRead  Permission = "validation:read"
 	ValidationWrite Permission = "validation:write"
+
+	// Granular pentest permissions (pentest:*)
+	PentestCampaignsRead   Permission = "pentest:campaigns:read"
+	PentestCampaignsWrite  Permission = "pentest:campaigns:write"
+	PentestCampaignsDelete Permission = "pentest:campaigns:delete"
+	PentestFindingsRead    Permission = "pentest:findings:read"
+	PentestFindingsWrite   Permission = "pentest:findings:write"
+	PentestFindingsDelete  Permission = "pentest:findings:delete"
+	PentestRetestsRead     Permission = "pentest:retests:read"
+	PentestRetestsWrite    Permission = "pentest:retests:write"
+	PentestTemplatesRead   Permission = "pentest:templates:read"
+	PentestTemplatesWrite  Permission = "pentest:templates:write"
+	PentestReportsWrite    Permission = "pentest:reports:write"
+)
+
+// =============================================================================
+// COMPLIANCE MODULE
+// =============================================================================
+
+const (
+	ComplianceFrameworksRead  Permission = "compliance:frameworks:read"
+	ComplianceFrameworksWrite Permission = "compliance:frameworks:write"
+	ComplianceAssessmentsRead  Permission = "compliance:assessments:read"
+	ComplianceAssessmentsWrite Permission = "compliance:assessments:write"
+	ComplianceMappingsRead     Permission = "compliance:mappings:read"
+	ComplianceMappingsWrite    Permission = "compliance:mappings:write"
+	ComplianceReportsRead      Permission = "compliance:reports:read"
 )
 
 // =============================================================================
@@ -409,8 +436,21 @@ func AllPermissions() []Permission {
 		// Attack Surface module
 		ScopeRead, ScopeWrite, ScopeDelete,
 
-		// Validation module
+		// Validation module (legacy)
 		ValidationRead, ValidationWrite, PentestRead, PentestWrite,
+
+		// Pentest module (granular)
+		PentestCampaignsRead, PentestCampaignsWrite, PentestCampaignsDelete,
+		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
+		PentestRetestsRead, PentestRetestsWrite,
+		PentestTemplatesRead, PentestTemplatesWrite,
+		PentestReportsWrite,
+
+		// Compliance module
+		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
+		ComplianceMappingsRead, ComplianceMappingsWrite,
+		ComplianceReportsRead,
 
 		// Reports module
 		ReportsRead, ReportsWrite,

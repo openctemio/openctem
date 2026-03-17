@@ -160,6 +160,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	w.ControllerManager.Register(controller.NewApprovalExpirationController(
+		repos.FindingApproval,
+		repos.Finding,
+		&controller.ApprovalExpirationControllerConfig{
+			Interval:  1 * time.Hour,
+			BatchSize: 100,
+			Logger:    log.With("controller", "approval-expiration"),
+		},
+	))
+
 	w.ControllerManager.Register(controller.NewScopeReconciliationController(
 		repos.AccessControl,
 		svc.ScopeRule,

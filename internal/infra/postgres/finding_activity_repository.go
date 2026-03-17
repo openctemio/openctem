@@ -571,3 +571,30 @@ func (r *FindingActivityRepository) buildTenantWhereClause(filter vulnerability.
 
 	return strings.Join(conditions, " AND "), args
 }
+
+// DeleteByCommentID removes the comment_added activity for a given comment ID.
+// Exception to append-only: user comment content is not an audit event.
+// Security: tenantID is required to prevent cross-tenant data modification.
+func (r *FindingActivityRepository) DeleteByCommentID(ctx context.Context, tenantID shared.ID, commentID string) error {
+	query := `DELETE FROM finding_activities WHERE tenant_id = $1 AND activity_type = 'comment_added' AND changes->>'comment_id' = $2`
+	_, err := r.db.ExecContext(ctx, query, tenantID.String(), commentID)
+	if err != nil {
+		return fmt.Errorf("failed to delete activity by comment_id: %w", err)
+	}
+	return nil
+}
+
+// UpdateContentByCommentID updates the content in the comment_added activity for a given comment ID.
+// Security: tenantID is required to prevent cross-tenant data modification.
+func (r *FindingActivityRepository) UpdateContentByCommentID(ctx context.Context, tenantID shared.ID, commentID string, content string) error {
+	preview := content
+	if len(preview) > 100 {
+		preview = preview[:100] + "..."
+	}
+	query := `UPDATE finding_activities SET changes = changes || jsonb_build_object('content', $3::text, 'preview', $4::text) WHERE tenant_id = $1 AND activity_type = 'comment_added' AND changes->>'comment_id' = $2`
+	_, err := r.db.ExecContext(ctx, query, tenantID.String(), commentID, content, preview)
+	if err != nil {
+		return fmt.Errorf("failed to update activity content by comment_id: %w", err)
+	}
+	return nil
+}

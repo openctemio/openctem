@@ -53,7 +53,7 @@ func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerab
 
 // GetByID retrieves a comment by ID.
 func (r *FindingCommentRepository) GetByID(ctx context.Context, id shared.ID) (*vulnerability.FindingComment, error) {
-	query := r.selectQuery() + " WHERE id = $1"
+	query := r.selectQuery() + " WHERE fc.id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
 	return r.scanComment(row)
 }
@@ -82,7 +82,7 @@ func (r *FindingCommentRepository) Update(ctx context.Context, comment *vulnerab
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("comment not found")
+		return fmt.Errorf("%w: comment not found", shared.ErrNotFound)
 	}
 
 	return nil
@@ -103,7 +103,7 @@ func (r *FindingCommentRepository) Delete(ctx context.Context, id shared.ID) err
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("comment not found")
+		return fmt.Errorf("%w: comment not found", shared.ErrNotFound)
 	}
 
 	return nil
@@ -162,7 +162,7 @@ func (r *FindingCommentRepository) scanComment(row *sql.Row) (*vulnerability.Fin
 	comment, err := r.doScan(row.Scan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("comment not found")
+			return nil, fmt.Errorf("%w: comment not found", shared.ErrNotFound)
 		}
 		return nil, fmt.Errorf("failed to scan finding comment: %w", err)
 	}

@@ -95,6 +95,19 @@ func (m *mockApprovalRepository) ListPending(_ context.Context, tenantID shared.
 	}, nil
 }
 
+func (m *mockApprovalRepository) ListExpiredApproved(_ context.Context, limit int) ([]*vulnerability.Approval, error) {
+	result := make([]*vulnerability.Approval, 0)
+	for _, a := range m.approvals {
+		if a.Status == vulnerability.ApprovalStatusApproved && a.IsExpired() {
+			result = append(result, a)
+			if len(result) >= limit {
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
 func (m *mockApprovalRepository) Update(_ context.Context, approval *vulnerability.Approval) error {
 	if m.updateErr != nil {
 		return m.updateErr

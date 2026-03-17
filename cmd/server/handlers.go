@@ -121,6 +121,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// SLA Policies
 		SLA: handler.NewSLAHandler(svc.SLA, v, log),
 
+		// Pentest Campaign Management
+		Pentest: handler.NewPentestHandler(svc.Pentest, repos.User, log),
+
+		// Compliance Framework Management
+		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
+
 		// API Keys & Webhooks
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
 		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),

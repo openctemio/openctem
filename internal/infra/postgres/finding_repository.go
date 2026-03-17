@@ -113,11 +113,11 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation
+			remediation, pentest_campaign_id
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -196,6 +196,8 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		nullIntPtr(finding.ASVSLevel()),
 		// Remediation JSONB (contains recommendation, fix_code, fix_regex, steps, references, etc.)
 		remediationJSON,
+		// Pentest campaign FK (NULL for non-pentest findings)
+		nullID(finding.PentestCampaignID()),
 	)
 
 	if err != nil {
@@ -236,11 +238,11 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation
+			remediation, pentest_campaign_id
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -319,6 +321,8 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		nullIntPtr(finding.ASVSLevel()),
 		// Remediation JSONB
 		remediationJSON,
+		// Pentest campaign FK
+		nullID(finding.PentestCampaignID()),
 	)
 
 	if err != nil {
@@ -484,11 +488,11 @@ func (r *FindingRepository) upsertQuery() string {
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation
+			remediation, pentest_campaign_id
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70)
 		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET
 			vulnerability_id = EXCLUDED.vulnerability_id,
 			component_id = EXCLUDED.component_id,
@@ -900,10 +904,11 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 	}
 
 	// Security: Include tenant_id in WHERE clause
+	// Security: Exclude pentest findings — they must be managed via the pentest module
 	query := fmt.Sprintf(`
 		UPDATE findings
 		SET status = $2, resolution = $3, resolved_by = $4%s, updated_at = NOW()
-		WHERE tenant_id = $1 AND id IN (%s)
+		WHERE tenant_id = $1 AND source != 'pentest' AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
 	_, err := r.db.ExecContext(ctx, query, args...)
@@ -1095,7 +1100,7 @@ func (r *FindingRepository) selectQuery() string {
 			related_issue_url, related_pr_url,
 			duplicate_of, duplicate_count, comments_count,
 			acceptance_expires_at,
-			scan_id, fingerprint, agent_id, metadata, created_at, updated_at,
+			scan_id, fingerprint, agent_id, metadata, pentest_campaign_id, created_at, updated_at,
 			confidence, impact, likelihood, vulnerability_class, subcategory,
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
@@ -1182,6 +1187,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		fingerprint         string
 		agentID             sql.NullString
 		metadata            []byte
+		pentestCampaignID   sql.NullString
 		createdAt           time.Time
 		updatedAt           time.Time
 		// SARIF 2.1.0 fields
@@ -1233,7 +1239,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&relatedIssue, &relatedPR,
 		&duplicateOf, &duplicateCount, &commentsCount,
 		&acceptanceExpiresAt,
-		&scanID, &fingerprint, &agentID, &metadata, &createdAt, &updatedAt,
+		&scanID, &fingerprint, &agentID, &metadata, &pentestCampaignID, &createdAt, &updatedAt,
 		&confidence, &impact, &likelihood, pq.Array(&vulnerabilityClass), pq.Array(&subcategory),
 		&baselineState, &kind, &rank, &occurrenceCount, &correlationID,
 		&partialFingerprints, &relatedLocations, &stacks, &attachments, pq.Array(&workItemURIs), &hostedViewerURI,
@@ -1262,7 +1268,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		relatedIssue, relatedPR,
 		duplicateOf, duplicateCount, commentsCount,
 		acceptanceExpiresAt,
-		scanID, fingerprint, agentID, metadata, createdAt, updatedAt,
+		scanID, fingerprint, agentID, metadata, pentestCampaignID, createdAt, updatedAt,
 		// SARIF fields
 		confidence, impact, likelihood, vulnerabilityClass, subcategory,
 		baselineState, kind, rank, occurrenceCount, correlationID,
@@ -1337,6 +1343,7 @@ type findingRow struct {
 	fingerprint         string
 	agentID             sql.NullString
 	metadata            []byte
+	pentestCampaignID   sql.NullString
 	createdAt           time.Time
 	updatedAt           time.Time
 	// SARIF 2.1.0 fields
@@ -1551,6 +1558,7 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		Fingerprint:         row.fingerprint,
 		AgentID:             parseNullID(row.agentID),
 		Metadata:            meta,
+		PentestCampaignID:   parseNullID(row.pentestCampaignID),
 		CreatedAt:           row.createdAt,
 		UpdatedAt:           row.updatedAt,
 		// SARIF 2.1.0 fields
@@ -1662,6 +1670,12 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN status = 'false_positive' THEN 1 ELSE 0 END), 0) as status_false_positive,
 			COALESCE(SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END), 0) as status_accepted,
 			COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0) as status_duplicate,
+			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
+			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
+			COALESCE(SUM(CASE WHEN status = 'remediation' THEN 1 ELSE 0 END), 0) as status_remediation,
+			COALESCE(SUM(CASE WHEN status = 'retest' THEN 1 ELSE 0 END), 0) as status_retest,
+			COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0) as status_verified,
+			COALESCE(SUM(CASE WHEN status = 'accepted_risk' THEN 1 ELSE 0 END), 0) as status_accepted_risk,
 			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
 			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
 			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
@@ -1669,6 +1683,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN source = 'iac' THEN 1 ELSE 0 END), 0) as source_iac,
 			COALESCE(SUM(CASE WHEN source = 'container' THEN 1 ELSE 0 END), 0) as source_container,
 			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
+			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
 			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external
 		FROM findings
 		WHERE tenant_id = $1
@@ -1689,8 +1704,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		total, critical, high, medium, low, info                     int64
 		statusNew, statusConfirmed, statusInProgress, statusResolved int64
 		statusFalsePositive, statusAccepted, statusDuplicate         int64
+		statusDraft, statusInReview, statusRemediation               int64
+		statusRetest, statusVerified, statusAcceptedRisk             int64
 		sourceSast, sourceDast, sourceSca, sourceSecret              int64
-		sourceIac, sourceContainer, sourceManual, sourceExternal     int64
+		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
+		sourceExternal                                               int64
 	)
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
@@ -1698,8 +1716,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		&critical, &high, &medium, &low, &info,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
 		&statusFalsePositive, &statusAccepted, &statusDuplicate,
+		&statusDraft, &statusInReview, &statusRemediation,
+		&statusRetest, &statusVerified, &statusAcceptedRisk,
 		&sourceSast, &sourceDast, &sourceSca, &sourceSecret,
-		&sourceIac, &sourceContainer, &sourceManual, &sourceExternal,
+		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
+		&sourceExternal,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get finding stats: %w", err)
@@ -1722,6 +1743,12 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	stats.ByStatus[vulnerability.FindingStatusFalsePositive] = statusFalsePositive
 	stats.ByStatus[vulnerability.FindingStatusAccepted] = statusAccepted
 	stats.ByStatus[vulnerability.FindingStatusDuplicate] = statusDuplicate
+	stats.ByStatus[vulnerability.FindingStatusDraft] = statusDraft
+	stats.ByStatus[vulnerability.FindingStatusInReview] = statusInReview
+	stats.ByStatus[vulnerability.FindingStatusRemediation] = statusRemediation
+	stats.ByStatus[vulnerability.FindingStatusRetest] = statusRetest
+	stats.ByStatus[vulnerability.FindingStatusVerified] = statusVerified
+	stats.ByStatus[vulnerability.FindingStatusAcceptedRisk] = statusAcceptedRisk
 
 	// By source
 	stats.BySource[vulnerability.FindingSourceSAST] = sourceSast
@@ -1731,12 +1758,13 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	stats.BySource[vulnerability.FindingSourceIaC] = sourceIac
 	stats.BySource[vulnerability.FindingSourceContainer] = sourceContainer
 	stats.BySource[vulnerability.FindingSourceManual] = sourceManual
+	stats.BySource[vulnerability.FindingSourcePentest] = sourcePentest
 	stats.BySource[vulnerability.FindingSourceExternal] = sourceExternal
 
 	// Calculate open and resolved counts
-	// Open = new + confirmed + in_progress (active issues needing attention)
-	stats.OpenCount = statusNew + statusConfirmed + statusInProgress
-	stats.ResolvedCount = statusResolved
+	// Open = new + confirmed + in_progress + pentest active (draft, in_review, remediation, retest)
+	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview + statusRemediation + statusRetest
+	stats.ResolvedCount = statusResolved + statusVerified
 
 	return stats, nil
 }
@@ -1796,6 +1824,16 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		conditions = append(conditions, fmt.Sprintf("status IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
+	if len(filter.ExcludeStatuses) > 0 {
+		placeholders := make([]string, len(filter.ExcludeStatuses))
+		for i, st := range filter.ExcludeStatuses {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, st.String())
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("status NOT IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
 	if len(filter.Sources) > 0 {
 		placeholders := make([]string, len(filter.Sources))
 		for i, src := range filter.Sources {
@@ -1827,6 +1865,13 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	if filter.FilePath != nil && *filter.FilePath != "" {
 		conditions = append(conditions, fmt.Sprintf("file_path ILIKE $%d", argIndex))
 		args = append(args, wrapLikePattern(*filter.FilePath))
+		argIndex++
+	}
+
+	// Pentest campaign filter
+	if filter.PentestCampaignID != nil {
+		conditions = append(conditions, fmt.Sprintf("pentest_campaign_id = $%d", argIndex))
+		args = append(args, filter.PentestCampaignID.String())
 		argIndex++
 	}
 
@@ -1880,6 +1925,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
 				AND f.status IN ('new', 'open', 'confirmed', 'in_progress')
+				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
 		args = []interface{}{tenantID.String(), assetID.String(), toolName, currentScanID, branchID.String()}
@@ -1899,6 +1945,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
 				AND f.status IN ('new', 'open', 'confirmed', 'in_progress')
+				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
 		args = []interface{}{tenantID.String(), assetID.String(), toolName, currentScanID}
@@ -2197,7 +2244,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			related_issue_url, related_pr_url,
 			duplicate_of, duplicate_count, comments_count,
 			acceptance_expires_at,
-			scan_id, fingerprint, agent_id, metadata, created_at, updated_at,
+			scan_id, fingerprint, agent_id, metadata, pentest_campaign_id, created_at, updated_at,
 			confidence, impact, likelihood, vulnerability_class, subcategory,
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,

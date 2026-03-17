@@ -979,6 +979,7 @@ type SettingsResponse struct {
 	API         APISettingsResponse        `json:"api"`
 	Branding    BrandingSettingsResponse   `json:"branding"`
 	RiskScoring tenant.RiskScoringSettings `json:"risk_scoring"`
+	Pentest     tenant.PentestSettings     `json:"pentest"`
 }
 
 // GeneralSettingsResponse represents general settings.
@@ -1045,7 +1046,20 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			LogoData:     s.Branding.LogoData,
 		},
 		RiskScoring: s.RiskScoring,
+		Pentest:     pentestWithDefaults(s.Pentest),
 	}
+}
+
+// pentestWithDefaults returns pentest settings with system defaults for empty fields.
+func pentestWithDefaults(ps tenant.PentestSettings) tenant.PentestSettings {
+	defaults := tenant.DefaultSettings().Pentest
+	if len(ps.CampaignTypes) == 0 {
+		ps.CampaignTypes = defaults.CampaignTypes
+	}
+	if len(ps.Methodologies) == 0 {
+		ps.Methodologies = defaults.Methodologies
+	}
+	return ps
 }
 
 // GetSettings handles GET /api/v1/tenants/{tenant}/settings
@@ -1285,6 +1299,70 @@ func (h *TenantHandler) UpdateBranchSettings(w http.ResponseWriter, r *http.Requ
 
 	actx := h.buildAuditContext(r)
 	settings, err := h.service.UpdateBranchSettings(r.Context(), tenantID.String(), input, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toSettingsResponse(settings))
+}
+
+// =============================================================================
+// Pentest Settings Endpoints
+// =============================================================================
+
+// UpdatePentestSettingsRequest represents the request to update pentest settings.
+type UpdatePentestSettingsRequest struct {
+	CampaignTypes []tenant.ConfigOption `json:"campaign_types" validate:"dive"`
+	Methodologies []tenant.ConfigOption `json:"methodologies" validate:"dive"`
+}
+
+// GetPentestSettings handles GET /api/v1/tenants/{tenant}/settings/pentest
+func (h *TenantHandler) GetPentestSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	ps, err := h.service.GetPentestSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ps)
+}
+
+// UpdatePentestSettings handles PATCH /api/v1/tenants/{tenant}/settings/pentest
+func (h *TenantHandler) UpdatePentestSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	var req UpdatePentestSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	input := app.UpdatePentestSettingsInput{
+		CampaignTypes: req.CampaignTypes,
+		Methodologies: req.Methodologies,
+	}
+
+	actx := h.buildAuditContext(r)
+	settings, err := h.service.UpdatePentestSettings(r.Context(), tenantID.String(), input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

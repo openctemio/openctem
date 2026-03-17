@@ -61,6 +61,10 @@ func registerTenantRoutes(
 		r.PATCH("/settings/branding", h.UpdateBrandingSettings, middleware.RequireTeamAdmin())
 		r.PATCH("/settings/branch", h.UpdateBranchSettings, middleware.RequireTeamAdmin())
 
+		// Pentest settings (admin+)
+		r.GET("/settings/pentest", h.GetPentestSettings, middleware.RequireTeamAdmin())
+		r.PATCH("/settings/pentest", h.UpdatePentestSettings, middleware.RequireTeamAdmin())
+
 		// Risk scoring settings (admin+)
 		r.GET("/settings/risk-scoring", h.GetRiskScoringSettings, middleware.RequireTeamAdmin())
 		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin())

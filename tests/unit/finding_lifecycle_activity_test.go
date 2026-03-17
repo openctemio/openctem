@@ -54,6 +54,14 @@ func (m *MockFindingActivityRepo) ListByTenant(_ context.Context, _ shared.ID, _
 	return pagination.Result[*vulnerability.FindingActivity]{}, nil
 }
 
+func (m *MockFindingActivityRepo) DeleteByCommentID(_ context.Context, _ shared.ID, _ string) error {
+	return nil
+}
+
+func (m *MockFindingActivityRepo) UpdateContentByCommentID(_ context.Context, _ shared.ID, _ string, _ string) error {
+	return nil
+}
+
 // TotalActivitiesBatched returns the total number of activities across all batch calls.
 func (m *MockFindingActivityRepo) TotalActivitiesBatched() int {
 	total := 0

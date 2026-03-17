@@ -125,6 +125,12 @@ type Services struct {
 	// SLA
 	SLA *app.SLAService
 
+	// Pentest
+	Pentest *app.PentestService
+
+	// Compliance
+	Compliance *app.ComplianceService
+
 	// API Keys & Webhooks
 	APIKey  *app.APIKeyService
 	Webhook *app.WebhookService
@@ -235,6 +241,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize SLA service
 	s.SLA = app.NewSLAService(repos.SLA, log)
+
+	// Initialize Pentest service
+	s.Pentest = app.NewPentestService(
+		repos.PentestCampaign, repos.PentestFinding,
+		repos.PentestRetest, repos.PentestTemplate,
+		repos.PentestReport, log,
+	)
+	// Wire unified finding repository for CTEM integration (pentest findings → findings table)
+	s.Pentest.SetUnifiedFindingRepository(repos.Finding)
+	// Note: Pentest notification wiring happens later after NotificationService is initialized
+
+	// Initialize Compliance service
+	s.Compliance = app.NewComplianceService(
+		repos.ComplianceFramework, repos.ComplianceControl,
+		repos.ComplianceAssessment, repos.ComplianceMapping, log,
+	)
+	s.Compliance.SetFindingRepository(repos.Finding)
 
 	// Initialize AI Triage service (if configured)
 	if cfg.AITriage.IsConfigured() {
@@ -521,6 +544,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Wire in-app notification service to vulnerability service for real-time user notifications
 	s.Vulnerability.SetUserNotificationService(s.Notification)
+
+	// Wire in-app notification service to pentest service
+	s.Pentest.SetUserNotificationService(s.Notification)
 
 	return s, nil
 }

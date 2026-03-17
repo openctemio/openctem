@@ -45,6 +45,19 @@ type Repositories struct {
 	Dashboard *postgres.DashboardRepository
 	Branch    *postgres.BranchRepository
 
+	// Pentest
+	PentestCampaign  *postgres.PentestCampaignRepository
+	PentestFinding   *postgres.PentestFindingRepository
+	PentestRetest    *postgres.PentestRetestRepository
+	PentestTemplate  *postgres.PentestTemplateRepository
+	PentestReport    *postgres.PentestReportRepository
+
+	// Compliance
+	ComplianceFramework  *postgres.ComplianceFrameworkRepository
+	ComplianceControl    *postgres.ComplianceControlRepository
+	ComplianceAssessment *postgres.ComplianceAssessmentRepository
+	ComplianceMapping    *postgres.ComplianceMappingRepository
+
 	// SLA & Integration
 	SLA                        *postgres.SLAPolicyRepository
 	Integration                *postgres.IntegrationRepository
@@ -161,6 +174,19 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Branch:    postgres.NewBranchRepository(db),
 
 		// SLA & Integration
+		// Pentest
+		PentestCampaign: postgres.NewPentestCampaignRepository(db),
+		PentestFinding:  postgres.NewPentestFindingRepository(db),
+		PentestRetest:   postgres.NewPentestRetestRepository(db),
+		PentestTemplate: postgres.NewPentestTemplateRepository(db),
+		PentestReport:   postgres.NewPentestReportRepository(db),
+
+		// Compliance
+		ComplianceFramework:  postgres.NewComplianceFrameworkRepository(db),
+		ComplianceControl:    postgres.NewComplianceControlRepository(db),
+		ComplianceAssessment: postgres.NewComplianceAssessmentRepository(db),
+		ComplianceMapping:    postgres.NewComplianceMappingRepository(db),
+
 		SLA:         postgres.NewSLAPolicyRepository(db),
 		Integration: postgres.NewIntegrationRepository(db),
 		// IntegrationSCMExt and IntegrationNotificationExt initialized after Integration
