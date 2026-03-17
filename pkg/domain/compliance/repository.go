@@ -21,8 +21,8 @@ type FrameworkRepository interface {
 	Create(ctx context.Context, framework *Framework) error
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*Framework, error)
 	GetBySlug(ctx context.Context, slug string) (*Framework, error)
-	Update(ctx context.Context, framework *Framework) error
-	Delete(ctx context.Context, id shared.ID) error
+	Update(ctx context.Context, tenantID shared.ID, framework *Framework) error
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 	List(ctx context.Context, filter FrameworkFilter, page pagination.Pagination) (pagination.Result[*Framework], error)
 }
 

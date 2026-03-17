@@ -1824,6 +1824,16 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		conditions = append(conditions, fmt.Sprintf("status IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
+	if len(filter.ExcludeStatuses) > 0 {
+		placeholders := make([]string, len(filter.ExcludeStatuses))
+		for i, st := range filter.ExcludeStatuses {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, st.String())
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("status NOT IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
 	if len(filter.Sources) > 0 {
 		placeholders := make([]string, len(filter.Sources))
 		for i, src := range filter.Sources {

@@ -1089,6 +1089,76 @@ func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID strin
 	return &result, nil
 }
 
+// UpdatePentestSettingsInput represents input for updating pentest settings.
+type UpdatePentestSettingsInput struct {
+	CampaignTypes []tenant.ConfigOption `json:"campaign_types"`
+	Methodologies []tenant.ConfigOption `json:"methodologies"`
+}
+
+// UpdatePentestSettings updates only the pentest settings.
+func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID string, input UpdatePentestSettingsInput, actx AuditContext) (*tenant.Settings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+
+	ps := tenant.PentestSettings{
+		CampaignTypes: input.CampaignTypes,
+		Methodologies: input.Methodologies,
+	}
+
+	if err := t.UpdatePentestSettings(ps); err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.Update(ctx, t); err != nil {
+		return nil, fmt.Errorf("failed to update pentest settings: %w", err)
+	}
+
+	s.logger.Info("pentest settings updated", "tenant_id", tenantID)
+
+	actx.TenantID = tenantID
+	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithMessage("Pentest settings updated")
+	s.logAudit(ctx, actx, event)
+
+	result := t.TypedSettings()
+	return &result, nil
+}
+
+// GetPentestSettings returns the current pentest settings for a tenant.
+// Returns system defaults if the tenant has not customized pentest settings.
+func (s *TenantService) GetPentestSettings(ctx context.Context, tenantID string) (*tenant.PentestSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+
+	settings := t.TypedSettings()
+	ps := settings.Pentest
+
+	// Fall back to system defaults if tenant has not customized
+	defaults := tenant.DefaultSettings().Pentest
+	if len(ps.CampaignTypes) == 0 {
+		ps.CampaignTypes = defaults.CampaignTypes
+	}
+	if len(ps.Methodologies) == 0 {
+		ps.Methodologies = defaults.Methodologies
+	}
+
+	return &ps, nil
+}
+
 // UpdateRiskScoringSettings updates only the risk scoring settings.
 func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID string, rs tenant.RiskScoringSettings, actx AuditContext) (*tenant.Settings, error) {
 	parsedID, err := shared.IDFromString(tenantID)

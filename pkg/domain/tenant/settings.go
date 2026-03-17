@@ -25,6 +25,7 @@ type Settings struct {
 	Branch   BranchSettings   `json:"branch"`
 	AI          AISettings          `json:"ai"`
 	RiskScoring RiskScoringSettings `json:"risk_scoring"`
+	Pentest     PentestSettings     `json:"pentest"`
 }
 
 // BranchSettings contains branch naming convention configuration.
@@ -34,6 +35,51 @@ type BranchSettings struct {
 	// Rules are ordered; first match wins. If no rule matches, falls through
 	// to system defaults (feature/, release/, hotfix/, main, master, etc.).
 	TypeRules branch.BranchTypeRules `json:"type_rules,omitempty"`
+}
+
+// PentestSettings holds pentest-related configuration per tenant.
+type PentestSettings struct {
+	CampaignTypes []ConfigOption `json:"campaign_types,omitempty"`
+	Methodologies []ConfigOption `json:"methodologies,omitempty"`
+}
+
+// ConfigOption represents a configurable option with value and label.
+type ConfigOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// Validate validates pentest settings.
+func (s *PentestSettings) Validate() error {
+	seen := make(map[string]bool, len(s.CampaignTypes))
+	for _, ct := range s.CampaignTypes {
+		if ct.Value == "" {
+			return fmt.Errorf("%w: campaign type value cannot be empty", shared.ErrValidation)
+		}
+		if ct.Label == "" {
+			return fmt.Errorf("%w: campaign type label cannot be empty", shared.ErrValidation)
+		}
+		if seen[ct.Value] {
+			return fmt.Errorf("%w: duplicate campaign type value: %s", shared.ErrValidation, ct.Value)
+		}
+		seen[ct.Value] = true
+	}
+
+	seen = make(map[string]bool, len(s.Methodologies))
+	for _, m := range s.Methodologies {
+		if m.Value == "" {
+			return fmt.Errorf("%w: methodology value cannot be empty", shared.ErrValidation)
+		}
+		if m.Label == "" {
+			return fmt.Errorf("%w: methodology label cannot be empty", shared.ErrValidation)
+		}
+		if seen[m.Value] {
+			return fmt.Errorf("%w: duplicate methodology value: %s", shared.ErrValidation, m.Value)
+		}
+		seen[m.Value] = true
+	}
+
+	return nil
 }
 
 // GeneralSettings contains general tenant configuration.
@@ -507,6 +553,27 @@ func DefaultSettings() Settings {
 			AutoTriageDelaySeconds: 60,
 		},
 		RiskScoring: LegacyRiskScoringSettings(),
+		Pentest: PentestSettings{
+			CampaignTypes: []ConfigOption{
+				{Value: "external", Label: "External Pentest"},
+				{Value: "internal", Label: "Internal Pentest"},
+				{Value: "web_app", Label: "Web Application"},
+				{Value: "mobile", Label: "Mobile Application"},
+				{Value: "api", Label: "API Testing"},
+				{Value: "network", Label: "Network Pentest"},
+				{Value: "social_engineering", Label: "Social Engineering"},
+				{Value: "physical", Label: "Physical Security"},
+				{Value: "cloud", Label: "Cloud Infrastructure"},
+				{Value: "wireless", Label: "Wireless Network"},
+			},
+			Methodologies: []ConfigOption{
+				{Value: "OWASP", Label: "OWASP Testing Guide"},
+				{Value: "PTES", Label: "PTES"},
+				{Value: "NIST", Label: "NIST SP 800-115"},
+				{Value: "OSSTMM", Label: "OSSTMM"},
+				{Value: "CREST", Label: "CREST"},
+			},
+		},
 	}
 }
 
@@ -536,6 +603,9 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.RiskScoring.Validate(); err != nil {
 		return fmt.Errorf("risk scoring settings: %w", err)
+	}
+	if err := s.Pentest.Validate(); err != nil {
+		return fmt.Errorf("pentest settings: %w", err)
 	}
 	return nil
 }
@@ -910,6 +980,16 @@ func (t *Tenant) UpdateAISettings(ai AISettings) error {
 	}
 	settings := t.TypedSettings()
 	settings.AI = ai
+	return t.UpdateSettings(settings)
+}
+
+// UpdatePentestSettings updates only the pentest settings.
+func (t *Tenant) UpdatePentestSettings(ps PentestSettings) error {
+	if err := ps.Validate(); err != nil {
+		return err
+	}
+	settings := t.TypedSettings()
+	settings.Pentest = ps
 	return t.UpdateSettings(settings)
 }
 

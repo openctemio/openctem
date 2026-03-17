@@ -73,14 +73,14 @@ func (r *ComplianceFrameworkRepository) GetBySlug(ctx context.Context, slug stri
 	return f, nil
 }
 
-// Update persists framework changes.
-func (r *ComplianceFrameworkRepository) Update(ctx context.Context, f *compliance.Framework) error {
+// Update persists framework changes with tenant isolation.
+func (r *ComplianceFrameworkRepository) Update(ctx context.Context, tenantID shared.ID, f *compliance.Framework) error {
 	metaJSON, _ := json.Marshal(f.Metadata())
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE compliance_frameworks SET name=$2, slug=$3, version=$4, description=$5,
-			category=$6, total_controls=$7, is_active=$8, metadata=$9, updated_at=$10
-		WHERE id=$1 AND is_system = FALSE`,
-		f.ID().String(), f.Name(), f.Slug(), f.Version(), f.Description(),
+		`UPDATE compliance_frameworks SET name=$3, slug=$4, version=$5, description=$6,
+			category=$7, total_controls=$8, is_active=$9, metadata=$10, updated_at=$11
+		WHERE id=$1 AND tenant_id = $2 AND is_system = FALSE`,
+		f.ID().String(), tenantID.String(), f.Name(), f.Slug(), f.Version(), f.Description(),
 		string(f.Category()), f.TotalControls(), f.IsActive(), metaJSON, f.UpdatedAt(),
 	)
 	if err != nil {
@@ -93,10 +93,11 @@ func (r *ComplianceFrameworkRepository) Update(ctx context.Context, f *complianc
 	return nil
 }
 
-// Delete removes a framework.
-func (r *ComplianceFrameworkRepository) Delete(ctx context.Context, id shared.ID) error {
+// Delete removes a framework with tenant isolation.
+func (r *ComplianceFrameworkRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
 	result, err := r.db.ExecContext(ctx,
-		`DELETE FROM compliance_frameworks WHERE id = $1 AND is_system = FALSE`, id.String(),
+		`DELETE FROM compliance_frameworks WHERE id = $1 AND tenant_id = $2 AND is_system = FALSE`,
+		id.String(), tenantID.String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete framework: %w", err)
@@ -205,7 +206,7 @@ func (r *ComplianceFrameworkRepository) buildFrameworkWhere(filter compliance.Fr
 	}
 	if filter.Search != nil && *filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", idx, idx))
-		args = append(args, "%"+*filter.Search+"%")
+		args = append(args, wrapLikePattern(*filter.Search))
 		idx++
 	}
 
