@@ -82,6 +82,12 @@ type Handlers struct {
 	ScopeRule      *handler.ScopeRuleHandler      // nil if not initialized (no database)
 	AssetOwner     *handler.AssetOwnerHandler     // nil if not initialized (no database)
 
+	// Pentest Campaign Management handlers
+	Pentest *handler.PentestHandler // nil if not initialized (no database)
+
+	// Compliance Framework Management handlers
+	Compliance *handler.ComplianceHandler // nil if not initialized (no database)
+
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
 
@@ -264,6 +270,16 @@ func Register(
 	// SLA Policy routes (tenant from JWT token)
 	if h.SLA != nil {
 		registerSLARoutes(router, h.SLA, authMiddleware, userSync)
+	}
+
+	// Pentest Campaign Management routes (tenant from JWT token)
+	if h.Pentest != nil {
+		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync)
+	}
+
+	// Compliance Framework Management routes (tenant from JWT token)
+	if h.Compliance != nil {
+		registerComplianceRoutes(router, h.Compliance, authMiddleware, userSync)
 	}
 
 	// Integration routes (tenant from JWT token)

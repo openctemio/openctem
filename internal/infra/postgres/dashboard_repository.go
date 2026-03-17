@@ -254,15 +254,15 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			FROM assets WHERE tenant_id = $1 GROUP BY status
 		),
 		finding_total AS (
-			SELECT COUNT(*) AS cnt FROM findings WHERE tenant_id = $1
+			SELECT COUNT(*) AS cnt FROM findings WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review')
 		),
 		finding_by_severity AS (
 			SELECT 'fsev' AS grp, severity AS key, COUNT(*) AS cnt
-			FROM findings WHERE tenant_id = $1 GROUP BY severity
+			FROM findings WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') GROUP BY severity
 		),
 		finding_by_status AS (
 			SELECT 'fstatus' AS grp, status AS key, COUNT(*) AS cnt
-			FROM findings WHERE tenant_id = $1 GROUP BY status
+			FROM findings WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') GROUP BY status
 		),
 		avg_cvss AS (
 			SELECT COALESCE(AVG(v.cvss_score), 0) AS val

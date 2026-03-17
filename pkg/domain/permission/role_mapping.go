@@ -60,8 +60,19 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete,
-		// Validation
+		// Validation (legacy)
 		ValidationRead, ValidationWrite,
+		// Pentest (granular - all)
+		PentestCampaignsRead, PentestCampaignsWrite, PentestCampaignsDelete,
+		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
+		PentestRetestsRead, PentestRetestsWrite,
+		PentestTemplatesRead, PentestTemplatesWrite,
+		PentestReportsWrite,
+		// Compliance (all)
+		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
+		ComplianceMappingsRead, ComplianceMappingsWrite,
+		ComplianceReportsRead,
 		// Reports
 		ReportsRead, ReportsWrite,
 		// Threat Intel
@@ -119,8 +130,19 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete,
-		// Validation
+		// Validation (legacy)
 		ValidationRead, ValidationWrite,
+		// Pentest (granular - all)
+		PentestCampaignsRead, PentestCampaignsWrite, PentestCampaignsDelete,
+		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
+		PentestRetestsRead, PentestRetestsWrite,
+		PentestTemplatesRead, PentestTemplatesWrite,
+		PentestReportsWrite,
+		// Compliance (all)
+		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
+		ComplianceMappingsRead, ComplianceMappingsWrite,
+		ComplianceReportsRead,
 		// Reports
 		ReportsRead, ReportsWrite,
 		// Threat Intel
@@ -177,8 +199,19 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SLARead,
 		// Attack Surface (read + write)
 		ScopeRead, ScopeWrite,
-		// Validation (read + write)
+		// Validation (legacy)
 		ValidationRead, ValidationWrite,
+		// Pentest (read + write, no delete)
+		PentestCampaignsRead, PentestCampaignsWrite,
+		PentestFindingsRead, PentestFindingsWrite,
+		PentestRetestsRead, PentestRetestsWrite,
+		PentestTemplatesRead, PentestTemplatesWrite,
+		PentestReportsWrite,
+		// Compliance (read + write assessments/mappings, no framework write)
+		ComplianceFrameworksRead,
+		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
+		ComplianceMappingsRead, ComplianceMappingsWrite,
+		ComplianceReportsRead,
 		// Reports (read + write)
 		ReportsRead, ReportsWrite,
 		// Threat Intel (read only)
@@ -234,8 +267,12 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SLARead,
 		// Attack Surface (read only)
 		ScopeRead,
-		// Validation (read only)
+		// Validation (legacy)
 		ValidationRead,
+		// Pentest (read only)
+		PentestCampaignsRead, PentestFindingsRead, PentestRetestsRead, PentestTemplatesRead,
+		// Compliance (read only)
+		ComplianceFrameworksRead, ComplianceAssessmentsRead, ComplianceMappingsRead, ComplianceReportsRead,
 		// Reports (read only)
 		ReportsRead,
 		// Threat Intel (read only)

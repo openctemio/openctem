@@ -308,7 +308,10 @@ var ModulePermissionMapping = map[string]string{
 	ModuleSLA:         "settings:sla:read",
 
 	// Validation modules
-	ModulePentest: "validation:read",
+	ModulePentest: "pentest:campaigns:read",
+
+	// Compliance modules
+	"compliance": "compliance:frameworks:read",
 
 	// Mobilization modules
 	ModuleRemediation:  "findings:remediation:read",
