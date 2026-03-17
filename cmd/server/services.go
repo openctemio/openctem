@@ -257,6 +257,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.ComplianceFramework, repos.ComplianceControl,
 		repos.ComplianceAssessment, repos.ComplianceMapping, log,
 	)
+	s.Compliance.SetFindingRepository(repos.Finding)
 
 	// Initialize AI Triage service (if configured)
 	if cfg.AITriage.IsConfigured() {

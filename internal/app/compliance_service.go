@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/api/pkg/domain/compliance"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )
@@ -18,6 +19,7 @@ type ComplianceService struct {
 	controlRepo    compliance.ControlRepository
 	assessmentRepo compliance.AssessmentRepository
 	mappingRepo    compliance.MappingRepository
+	findingRepo    vulnerability.FindingRepository // For draft guard on mapping
 	logger         *logger.Logger
 }
 
@@ -36,6 +38,11 @@ func NewComplianceService(
 		mappingRepo:    mappingRepo,
 		logger:         log.With("service", "compliance"),
 	}
+}
+
+// SetFindingRepository sets the finding repository for draft guard on compliance mapping.
+func (s *ComplianceService) SetFindingRepository(repo vulnerability.FindingRepository) {
+	s.findingRepo = repo
 }
 
 // =============================================
@@ -72,9 +79,14 @@ func (s *ComplianceService) GetFrameworkStats(ctx context.Context, tenantID, fra
 // CONTROL OPERATIONS
 // =============================================
 
-// ListControls lists controls for a framework.
-func (s *ComplianceService) ListControls(ctx context.Context, frameworkID string, page pagination.Pagination) (pagination.Result[*compliance.Control], error) {
+// ListControls lists controls for a framework with tenant verification.
+func (s *ComplianceService) ListControls(ctx context.Context, tenantID, frameworkID string, page pagination.Pagination) (pagination.Result[*compliance.Control], error) {
+	tid, _ := shared.IDFromString(tenantID)
 	fid, _ := shared.IDFromString(frameworkID)
+	// Verify tenant can access this framework
+	if _, err := s.frameworkRepo.GetByID(ctx, tid, fid); err != nil {
+		return pagination.Result[*compliance.Control]{}, err
+	}
 	return s.controlRepo.ListByFramework(ctx, fid, page)
 }
 
@@ -216,6 +228,17 @@ func (s *ComplianceService) MapFindingToControl(ctx context.Context, tenantID, f
 	tid, _ := shared.IDFromString(tenantID)
 	fid, _ := shared.IDFromString(findingID)
 	cid, _ := shared.IDFromString(controlID)
+
+	// Block mapping for draft/in_review findings (unconfirmed)
+	if s.findingRepo != nil {
+		finding, err := s.findingRepo.GetByID(ctx, tid, fid)
+		if err != nil {
+			return nil, fmt.Errorf("%w: finding not found", shared.ErrNotFound)
+		}
+		if finding.Status() == vulnerability.FindingStatusDraft || finding.Status() == vulnerability.FindingStatusInReview {
+			return nil, fmt.Errorf("%w: cannot map unconfirmed findings to compliance controls", shared.ErrValidation)
+		}
+	}
 
 	impactType := compliance.ImpactDirect
 	if impact != "" {

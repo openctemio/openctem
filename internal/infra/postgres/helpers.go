@@ -133,3 +133,15 @@ func fromJSONB(data []byte, target any) error {
 	}
 	return json.Unmarshal(data, target)
 }
+
+// unmarshalJSONBMap decodes JSONB bytes into a map.
+func unmarshalJSONBMap(data []byte) map[string]any {
+	if len(data) == 0 {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil
+	}
+	return m
+}

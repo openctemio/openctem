@@ -321,6 +321,8 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		nullIntPtr(finding.ASVSLevel()),
 		// Remediation JSONB
 		remediationJSON,
+		// Pentest campaign FK
+		nullID(finding.PentestCampaignID()),
 	)
 
 	if err != nil {
@@ -902,10 +904,11 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 	}
 
 	// Security: Include tenant_id in WHERE clause
+	// Security: Exclude pentest findings — they must be managed via the pentest module
 	query := fmt.Sprintf(`
 		UPDATE findings
 		SET status = $2, resolution = $3, resolved_by = $4%s, updated_at = NOW()
-		WHERE tenant_id = $1 AND id IN (%s)
+		WHERE tenant_id = $1 AND source != 'pentest' AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
 	_, err := r.db.ExecContext(ctx, query, args...)
@@ -1097,7 +1100,7 @@ func (r *FindingRepository) selectQuery() string {
 			related_issue_url, related_pr_url,
 			duplicate_of, duplicate_count, comments_count,
 			acceptance_expires_at,
-			scan_id, fingerprint, agent_id, metadata, pentest_campaign_id, source_metadata, created_at, updated_at,
+			scan_id, fingerprint, agent_id, metadata, pentest_campaign_id, created_at, updated_at,
 			confidence, impact, likelihood, vulnerability_class, subcategory,
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
@@ -1185,7 +1188,6 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		agentID             sql.NullString
 		metadata            []byte
 		pentestCampaignID   sql.NullString
-		sourceMetadata      []byte
 		createdAt           time.Time
 		updatedAt           time.Time
 		// SARIF 2.1.0 fields
@@ -1237,7 +1239,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&relatedIssue, &relatedPR,
 		&duplicateOf, &duplicateCount, &commentsCount,
 		&acceptanceExpiresAt,
-		&scanID, &fingerprint, &agentID, &metadata, &pentestCampaignID, &sourceMetadata, &createdAt, &updatedAt,
+		&scanID, &fingerprint, &agentID, &metadata, &pentestCampaignID, &createdAt, &updatedAt,
 		&confidence, &impact, &likelihood, pq.Array(&vulnerabilityClass), pq.Array(&subcategory),
 		&baselineState, &kind, &rank, &occurrenceCount, &correlationID,
 		&partialFingerprints, &relatedLocations, &stacks, &attachments, pq.Array(&workItemURIs), &hostedViewerURI,
@@ -1266,7 +1268,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		relatedIssue, relatedPR,
 		duplicateOf, duplicateCount, commentsCount,
 		acceptanceExpiresAt,
-		scanID, fingerprint, agentID, metadata, pentestCampaignID, sourceMetadata, createdAt, updatedAt,
+		scanID, fingerprint, agentID, metadata, pentestCampaignID, createdAt, updatedAt,
 		// SARIF fields
 		confidence, impact, likelihood, vulnerabilityClass, subcategory,
 		baselineState, kind, rank, occurrenceCount, correlationID,
@@ -1342,7 +1344,6 @@ type findingRow struct {
 	agentID             sql.NullString
 	metadata            []byte
 	pentestCampaignID   sql.NullString
-	sourceMetadata      []byte
 	createdAt           time.Time
 	updatedAt           time.Time
 	// SARIF 2.1.0 fields
@@ -1669,6 +1670,12 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN status = 'false_positive' THEN 1 ELSE 0 END), 0) as status_false_positive,
 			COALESCE(SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END), 0) as status_accepted,
 			COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0) as status_duplicate,
+			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
+			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
+			COALESCE(SUM(CASE WHEN status = 'remediation' THEN 1 ELSE 0 END), 0) as status_remediation,
+			COALESCE(SUM(CASE WHEN status = 'retest' THEN 1 ELSE 0 END), 0) as status_retest,
+			COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0) as status_verified,
+			COALESCE(SUM(CASE WHEN status = 'accepted_risk' THEN 1 ELSE 0 END), 0) as status_accepted_risk,
 			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
 			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
 			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
@@ -1676,6 +1683,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN source = 'iac' THEN 1 ELSE 0 END), 0) as source_iac,
 			COALESCE(SUM(CASE WHEN source = 'container' THEN 1 ELSE 0 END), 0) as source_container,
 			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
+			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
 			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external
 		FROM findings
 		WHERE tenant_id = $1
@@ -1696,8 +1704,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		total, critical, high, medium, low, info                     int64
 		statusNew, statusConfirmed, statusInProgress, statusResolved int64
 		statusFalsePositive, statusAccepted, statusDuplicate         int64
+		statusDraft, statusInReview, statusRemediation               int64
+		statusRetest, statusVerified, statusAcceptedRisk             int64
 		sourceSast, sourceDast, sourceSca, sourceSecret              int64
-		sourceIac, sourceContainer, sourceManual, sourceExternal     int64
+		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
+		sourceExternal                                               int64
 	)
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
@@ -1705,8 +1716,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		&critical, &high, &medium, &low, &info,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
 		&statusFalsePositive, &statusAccepted, &statusDuplicate,
+		&statusDraft, &statusInReview, &statusRemediation,
+		&statusRetest, &statusVerified, &statusAcceptedRisk,
 		&sourceSast, &sourceDast, &sourceSca, &sourceSecret,
-		&sourceIac, &sourceContainer, &sourceManual, &sourceExternal,
+		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
+		&sourceExternal,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get finding stats: %w", err)
@@ -1729,6 +1743,12 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	stats.ByStatus[vulnerability.FindingStatusFalsePositive] = statusFalsePositive
 	stats.ByStatus[vulnerability.FindingStatusAccepted] = statusAccepted
 	stats.ByStatus[vulnerability.FindingStatusDuplicate] = statusDuplicate
+	stats.ByStatus[vulnerability.FindingStatusDraft] = statusDraft
+	stats.ByStatus[vulnerability.FindingStatusInReview] = statusInReview
+	stats.ByStatus[vulnerability.FindingStatusRemediation] = statusRemediation
+	stats.ByStatus[vulnerability.FindingStatusRetest] = statusRetest
+	stats.ByStatus[vulnerability.FindingStatusVerified] = statusVerified
+	stats.ByStatus[vulnerability.FindingStatusAcceptedRisk] = statusAcceptedRisk
 
 	// By source
 	stats.BySource[vulnerability.FindingSourceSAST] = sourceSast
@@ -1738,12 +1758,13 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	stats.BySource[vulnerability.FindingSourceIaC] = sourceIac
 	stats.BySource[vulnerability.FindingSourceContainer] = sourceContainer
 	stats.BySource[vulnerability.FindingSourceManual] = sourceManual
+	stats.BySource[vulnerability.FindingSourcePentest] = sourcePentest
 	stats.BySource[vulnerability.FindingSourceExternal] = sourceExternal
 
 	// Calculate open and resolved counts
-	// Open = new + confirmed + in_progress (active issues needing attention)
-	stats.OpenCount = statusNew + statusConfirmed + statusInProgress
-	stats.ResolvedCount = statusResolved
+	// Open = new + confirmed + in_progress + pentest active (draft, in_review, remediation, retest)
+	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview + statusRemediation + statusRetest
+	stats.ResolvedCount = statusResolved + statusVerified
 
 	return stats, nil
 }
@@ -1834,6 +1855,13 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	if filter.FilePath != nil && *filter.FilePath != "" {
 		conditions = append(conditions, fmt.Sprintf("file_path ILIKE $%d", argIndex))
 		args = append(args, wrapLikePattern(*filter.FilePath))
+		argIndex++
+	}
+
+	// Pentest campaign filter
+	if filter.PentestCampaignID != nil {
+		conditions = append(conditions, fmt.Sprintf("pentest_campaign_id = $%d", argIndex))
+		args = append(args, filter.PentestCampaignID.String())
 		argIndex++
 	}
 
@@ -2206,7 +2234,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			related_issue_url, related_pr_url,
 			duplicate_of, duplicate_count, comments_count,
 			acceptance_expires_at,
-			scan_id, fingerprint, agent_id, metadata, pentest_campaign_id, source_metadata, created_at, updated_at,
+			scan_id, fingerprint, agent_id, metadata, pentest_campaign_id, created_at, updated_at,
 			confidence, impact, likelihood, vulnerability_class, subcategory,
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,

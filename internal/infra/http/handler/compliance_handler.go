@@ -78,8 +78,9 @@ func (h *ComplianceHandler) GetFramework(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, toComplianceFrameworkResponse(framework))
 }
 
-// ListControls lists controls for a framework.
+// ListControls lists controls for a framework with tenant verification.
 func (h *ComplianceHandler) ListControls(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	frameworkID := chi.URLParam(r, "id")
 
 	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 50)
@@ -91,7 +92,7 @@ func (h *ComplianceHandler) ListControls(w http.ResponseWriter, r *http.Request)
 		perPage,
 	)
 
-	result, err := h.service.ListControls(r.Context(), frameworkID, page)
+	result, err := h.service.ListControls(r.Context(), tenantID, frameworkID, page)
 	if err != nil {
 		h.handleError(w, err)
 		return
