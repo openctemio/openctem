@@ -172,7 +172,9 @@ const (
 	ModuleSLA         = "sla"
 
 	// Validation
-	ModulePentest = "pentest"
+	ModulePentest          = "pentest"
+	ModuleAttackSimulation = "attack_simulation"
+	ModuleControlTesting   = "control_testing"
 
 	// Mobilization
 	ModuleRemediation  = "remediation"
@@ -271,8 +273,10 @@ var UserFacingModuleIDs = map[string]bool{
 	ModuleComponents:   true, // Discovery > Components (SBOM)
 	ModuleExposures:    true, // Discovery > Exposures (Non-CVE security issues)
 	ModuleThreatIntel:  true, // Prioritization > Threat Intel, Risk Analysis, Business Impact
-	ModulePentest:      true, // Validation > Penetration Testing, Attack Simulation, Control Testing
-	ModuleRemediation:  true, // Mobilization > Remediation Tasks, Workflows
+	ModulePentest:           true, // Validation > Penetration Testing
+	ModuleAttackSimulation:  true, // Validation > Attack Simulation (BAS)
+	ModuleControlTesting:    true, // Validation > Control Testing
+	ModuleRemediation:       true, // Mobilization > Remediation Tasks, Workflows
 	ModuleReports:      true, // Insights > Reports
 	ModuleIntegrations: true, // Settings > Integrations (SCM, Notifications, CI/CD, Ticketing, SIEM)
 }
