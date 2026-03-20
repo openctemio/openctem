@@ -190,7 +190,7 @@ print_header "Test 3: Groups View"
 # =============================================================================
 
 print_test "GET /findings/groups?group_by=cve_id"
-result=$(api_call GET "/api/v1/finding-groups?group_by=cve_id")
+result=$(api_call GET "/api/v1/findings/groups?group_by=cve_id")
 status=$(get_status "$result")
 body=$(get_body "$result")
 if [ "$status" = "200" ]; then
@@ -201,7 +201,7 @@ else
 fi
 
 print_test "GET /findings/groups?group_by=asset_id"
-result=$(api_call GET "/api/v1/finding-groups?group_by=asset_id")
+result=$(api_call GET "/api/v1/findings/groups?group_by=asset_id")
 if [ "$(get_status "$result")" = "200" ]; then
     print_pass "Groups by asset works"
 else
@@ -209,7 +209,7 @@ else
 fi
 
 print_test "GET /findings/groups?group_by=severity"
-result=$(api_call GET "/api/v1/finding-groups?group_by=severity")
+result=$(api_call GET "/api/v1/findings/groups?group_by=severity")
 if [ "$(get_status "$result")" = "200" ]; then
     print_pass "Groups by severity works"
 else
@@ -221,7 +221,7 @@ print_header "Test 4: Bulk Fix Applied"
 # =============================================================================
 
 print_test "POST /findings/actions/fix-applied (with note)"
-result=$(api_call POST "/api/v1/finding-actions/fix-applied" "{\"filter\":{\"cve_ids\":[\"CVE-2021-44228\"]},\"note\":\"Upgraded log4j-core to 2.17.1\",\"include_related_cves\":false}")
+result=$(api_call POST "/api/v1/findings/actions/fix-applied" "{\"filter\":{\"cve_ids\":[\"CVE-2021-44228\"]},\"note\":\"Upgraded log4j-core to 2.17.1\",\"include_related_cves\":false}")
 status=$(get_status "$result")
 body=$(get_body "$result")
 if [ "$status" = "200" ]; then
@@ -248,7 +248,7 @@ print_header "Test 5: Bulk Fix Applied WITHOUT note (should fail)"
 # =============================================================================
 
 print_test "POST /findings/actions/fix-applied without note (should fail)"
-result=$(api_call POST "/api/v1/finding-actions/fix-applied" '{"filter":{"cve_ids":["CVE-2021-44228"]},"note":""}')
+result=$(api_call POST "/api/v1/findings/actions/fix-applied" '{"filter":{"cve_ids":["CVE-2021-44228"]},"note":""}')
 status=$(get_status "$result")
 if [ "$status" = "400" ]; then
     print_pass "Fix applied without note rejected (400)"
@@ -261,7 +261,7 @@ print_header "Test 6: Verify (Security approve)"
 # =============================================================================
 
 print_test "POST /findings/actions/verify (by filter)"
-result=$(api_call POST "/api/v1/finding-actions/verify" "{\"filter\":{\"cve_ids\":[\"CVE-2021-44228\"]},\"note\":\"Verified by security team\"}")
+result=$(api_call POST "/api/v1/findings/actions/verify" "{\"filter\":{\"cve_ids\":[\"CVE-2021-44228\"]},\"note\":\"Verified by security team\"}")
 status=$(get_status "$result")
 body=$(get_body "$result")
 if [ "$status" = "200" ]; then
@@ -288,7 +288,7 @@ print_header "Test 7: Related CVEs"
 # =============================================================================
 
 print_test "GET /findings/related-cves/CVE-2021-44228"
-result=$(api_call GET "/api/v1/finding-groups/related-cves/CVE-2021-44228")
+result=$(api_call GET "/api/v1/findings/related-cves/CVE-2021-44228")
 status=$(get_status "$result")
 if [ "$status" = "200" ]; then
     print_pass "Related CVEs endpoint works"
@@ -301,7 +301,7 @@ print_header "Test 8: Auto-Assign to Owners"
 # =============================================================================
 
 print_test "POST /findings/actions/assign-to-owners"
-result=$(api_call POST "/api/v1/finding-actions/assign-to-owners" '{"filter":{}}')
+result=$(api_call POST "/api/v1/findings/actions/assign-to-owners" '{"filter":{}}')
 status=$(get_status "$result")
 if [ "$status" = "200" ]; then
     print_pass "Auto-assign endpoint works"
