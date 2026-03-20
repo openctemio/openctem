@@ -62,6 +62,9 @@ type Repository interface {
 	// Finding Group Assignments
 	BulkCreateFindingGroupAssignments(ctx context.Context, fgas []*FindingGroupAssignment) (int, error)
 	ListFindingGroupAssignments(ctx context.Context, tenantID, findingID shared.ID) ([]*FindingGroupAssignment, error)
+	// BatchListFindingGroupIDs returns group IDs for multiple findings in 1 query.
+	// Returns map[findingID][]groupID. Avoids N+1 in bulk operations.
+	BatchListFindingGroupIDs(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) (map[shared.ID][]shared.ID, error)
 	CountFindingsByGroupFromRules(ctx context.Context, tenantID, groupID shared.ID) (int64, error)
 
 	// Bulk operations

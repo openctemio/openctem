@@ -88,6 +88,8 @@ const (
 	FindingsExport     Permission = "findings:export"
 	FindingsBulkUpdate Permission = "findings:bulk_update"
 	FindingsApprove    Permission = "findings:approve"
+	FindingsFixApply   Permission = "findings:fix_apply" // in_progress → fix_applied (dev/owner action)
+	FindingsVerify     Permission = "findings:verify"    // fix_applied → resolved (security/scanner action)
 
 	// Exposure permissions (findings:exposures:*)
 	ExposuresRead   Permission = "findings:exposures:read"
@@ -392,6 +394,7 @@ func AllPermissions() []Permission {
 		// Findings module
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
+		FindingsFixApply, FindingsVerify,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,

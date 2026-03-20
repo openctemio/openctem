@@ -663,10 +663,10 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	query := `
 		UPDATE findings SET
 			vulnerability_id = $2, component_id = $3, tool_id = $4, tool_version = $5, snippet = $6,
-			message = $7, severity = $8, status = $9, resolution = $10, resolved_at = $11,
-			resolved_by = $12, scan_id = $13, metadata = $14, updated_at = $15,
-			assigned_to = $16, assigned_at = $17, assigned_by = $18
-		WHERE id = $1 AND tenant_id = $19
+			message = $7, severity = $8, status = $9, resolution = $10, resolution_method = $11,
+			resolved_at = $12, resolved_by = $13, scan_id = $14, metadata = $15, updated_at = $16,
+			assigned_to = $17, assigned_at = $18, assigned_by = $19
+		WHERE id = $1 AND tenant_id = $20
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -680,6 +680,7 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 		finding.Severity().String(),
 		finding.Status().String(),
 		nullString(finding.Resolution()),
+		nullString(finding.ResolutionMethod()),
 		nullTime(finding.ResolvedAt()),
 		nullID(finding.ResolvedBy()),
 		nullString(finding.ScanID()),
@@ -1092,7 +1093,7 @@ func (r *FindingRepository) selectQuery() string {
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
-			status, resolution, resolved_at, resolved_by,
+			status, resolution, resolution_method, resolved_at, resolved_by,
 			assigned_to, assigned_at, assigned_by,
 			verified_at, verified_by,
 			sla_deadline, sla_status,
@@ -1162,6 +1163,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		tags                []string
 		status              string
 		resolution          sql.NullString
+		resolutionMethod    sql.NullString
 		resolvedAt          sql.NullTime
 		resolvedBy          sql.NullString
 		assignedTo          sql.NullString
@@ -1231,7 +1233,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&startColumn, &endColumn, &snippet, &contextSnippet, &contextStartLine,
 		&title, &description, &message,
 		&severity, &cvssScore, &cvssVector, &cveID, pq.Array(&cweIDs), pq.Array(&owaspIDs), pq.Array(&tags),
-		&status, &resolution, &resolvedAt, &resolvedBy,
+		&status, &resolution, &resolutionMethod, &resolvedAt, &resolvedBy,
 		&assignedTo, &assignedAt, &assignedBy,
 		&verifiedAt, &verifiedBy,
 		&slaDeadline, &slaStatus,
@@ -1260,7 +1262,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		snippet, contextSnippet, int(contextStartLine.Int64),
 		title, description, message,
 		severity, cvssScore, cvssVector, cveID, cweIDs, owaspIDs, tags,
-		status, resolution, resolvedAt, resolvedBy,
+		status, resolution, resolutionMethod, resolvedAt, resolvedBy,
 		assignedTo, assignedAt, assignedBy,
 		verifiedAt, verifiedBy,
 		slaDeadline, slaStatus,
@@ -1318,6 +1320,7 @@ type findingRow struct {
 	tags                []string
 	status              string
 	resolution          sql.NullString
+	resolutionMethod    sql.NullString
 	resolvedAt          sql.NullTime
 	resolvedBy          sql.NullString
 	assignedTo          sql.NullString
@@ -1533,6 +1536,7 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		Tags:                row.tags,
 		Status:              status,
 		Resolution:          nullStringValue(row.resolution),
+		ResolutionMethod:    nullStringValue(row.resolutionMethod),
 		ResolvedAt:          nullTimeValue(row.resolvedAt),
 		ResolvedBy:          parseNullID(row.resolvedBy),
 		AssignedTo:          parseNullID(row.assignedTo),
@@ -1914,6 +1918,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 			UPDATE findings f
 			SET status = 'resolved',
 				resolution = 'auto_fixed',
+				resolution_method = 'scan_verified',
 				resolved_at = NOW(),
 				updated_at = NOW()
 			FROM repository_branches rb
@@ -1924,7 +1929,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 				AND f.branch_id = $5
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress')
+				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -1935,6 +1940,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 			UPDATE findings f
 			SET status = 'resolved',
 				resolution = 'auto_fixed',
+				resolution_method = 'scan_verified',
 				resolved_at = NOW(),
 				updated_at = NOW()
 			FROM repository_branches rb
@@ -1944,7 +1950,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 				AND f.scan_id != $4
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress')
+				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -2033,8 +2039,9 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	// Use ANY($2) for batch lookup efficiency
 	query := `
 		UPDATE findings
-		SET status = 'open',
+		SET status = 'confirmed',
 			resolution = NULL,
+			resolution_method = NULL,
 			resolved_at = NULL,
 			resolved_by = NULL,
 			updated_at = NOW()
@@ -2236,7 +2243,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message,
 			severity, cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids, tags,
-			status, resolution, resolved_at, resolved_by,
+			status, resolution, resolution_method, resolved_at, resolved_by,
 			assigned_to, assigned_at, assigned_by,
 			verified_at, verified_by,
 			sla_deadline, sla_status,

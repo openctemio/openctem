@@ -63,7 +63,9 @@ func registerAgentRoutes(
 		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, ingestBodyLimit, decompressMiddleware)
 		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware)
 		r.POST("/ingest/recon", ingestHandler.IngestReconReport, ingestBodyLimit, decompressMiddleware)
+		r.POST("/ingest/scan", ingestHandler.IngestScan, ingestBodyLimit, decompressMiddleware)
 		r.POST("/ingest/chunk", ingestHandler.IngestChunk, ingestBodyLimit, decompressMiddleware)
+		r.GET("/ingest/scanners", ingestHandler.ListScanners)
 
 		// Command polling and status updates
 		r.GET("/commands", commandHandler.Poll)
