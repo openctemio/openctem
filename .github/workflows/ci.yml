@@ -17,22 +17,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Checkout sdk-go
-        uses: actions/checkout@v6
-        with:
-          repository: openctemio/sdk-go
-          path: sdk-go
-
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-
-      - name: Setup sdk-go replace
-        run: |
-          go mod edit -replace github.com/openctemio/sdk-go=./sdk-go
-          go mod tidy
 
       - name: Run go vet
         run: go vet ./...
@@ -75,22 +64,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Checkout sdk-go
-        uses: actions/checkout@v6
-        with:
-          repository: openctemio/sdk-go
-          path: sdk-go
-
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Setup sdk-go replace
-        run: |
-          go mod edit -replace github.com/openctemio/sdk-go=./sdk-go
-          go mod tidy
+      - name: Download dependencies
+        run: go mod download
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
@@ -117,22 +98,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Checkout sdk-go
-        uses: actions/checkout@v6
-        with:
-          repository: openctemio/sdk-go
-          path: sdk-go
-
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-
-      - name: Setup sdk-go replace
-        run: |
-          go mod edit -replace github.com/openctemio/sdk-go=./sdk-go
-          go mod tidy
 
       - name: Build API Server
         run: |
