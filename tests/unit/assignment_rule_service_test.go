@@ -1462,3 +1462,7 @@ func makeTestFinding(t *testing.T, tenantID shared.ID, sev vulnerability.Severit
 	}
 	return vulnerability.ReconstituteFinding(data)
 }
+
+func (m *mockACRepoForRules) BatchListFindingGroupIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID][]shared.ID, error) {
+	return make(map[shared.ID][]shared.ID), nil
+}

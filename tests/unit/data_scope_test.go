@@ -908,3 +908,7 @@ func TestFindingFilter_WithDataScopeUserID(t *testing.T) {
 		t.Errorf("expected %s, got %s", userID, *f.DataScopeUserID)
 	}
 }
+
+func (m *mockAccessControlRepo) BatchListFindingGroupIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID][]shared.ID, error) {
+	return make(map[shared.ID][]shared.ID), nil
+}

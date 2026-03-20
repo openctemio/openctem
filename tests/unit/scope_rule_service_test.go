@@ -1407,3 +1407,7 @@ func TestScopeRule_SetMatchAssetGroupIDs_WrongRuleType(t *testing.T) {
 		t.Errorf("expected validation error, got: %v", err)
 	}
 }
+
+func (m *mockACRepoForScope) BatchListFindingGroupIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID][]shared.ID, error) {
+	return make(map[shared.ID][]shared.ID), nil
+}

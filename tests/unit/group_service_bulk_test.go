@@ -966,3 +966,7 @@ func TestAssignmentRule_Reconstitute(t *testing.T) {
 		t.Errorf("expected CreatedAt %v, got %v", now, rule.CreatedAt())
 	}
 }
+
+func (m *mockACRepoForBulk) BatchListFindingGroupIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID][]shared.ID, error) {
+	return make(map[shared.ID][]shared.ID), nil
+}
