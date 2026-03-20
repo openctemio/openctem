@@ -83,7 +83,7 @@ type Handlers struct {
 	AssetOwner     *handler.AssetOwnerHandler     // nil if not initialized (no database)
 
 	// Finding Lifecycle (closed-loop: fix_applied → verified → resolved)
-	FindingLifecycle *handler.FindingLifecycleHandler // nil if not initialized (no database)
+	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
 
 	// Pentest Campaign Management handlers
 	Pentest *handler.PentestHandler // nil if not initialized (no database)
@@ -230,12 +230,7 @@ func Register(
 
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
 	if h.Vulnerability != nil {
-		registerVulnerabilityRoutes(router, h.Vulnerability, authMiddleware, userSync)
-	}
-
-	// Finding Lifecycle routes (groups + actions — separate paths to avoid Chi mount conflict)
-	if h.FindingLifecycle != nil {
-		registerFindingLifecycleRoutes(router, h.FindingLifecycle, authMiddleware, userSync)
+		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, authMiddleware, userSync)
 	}
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS

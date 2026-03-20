@@ -86,7 +86,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Vulnerabilities & Exposures
 		Vulnerability:      vulnHandler,
 		FindingActivity:    handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
-		FindingLifecycle:   handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
+		FindingActions:   handler.NewFindingActionsHandler(svc.FindingActions, log),
 		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:      handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
 		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),

@@ -151,6 +151,7 @@ func registerCredentialRoutes(
 func registerVulnerabilityRoutes(
 	router Router,
 	h *handler.VulnerabilityHandler,
+	findingActionsHandler *handler.FindingActionsHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -213,6 +214,22 @@ func registerVulnerabilityRoutes(
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete))
 	}, tenantMiddlewares...)
+
+	// Finding lifecycle routes (groups + actions) — same tenant middlewares
+	// Separate group to keep exposure.go manageable, but under /api/v1/findings path
+	if findingActionsHandler != nil {
+		router.Group("/api/v1/finding-groups", func(r Router) {
+			r.GET("/", findingActionsHandler.ListFindingGroups, middleware.Require(permission.FindingsRead))
+			r.GET("/related-cves/{cveId}", findingActionsHandler.GetRelatedCVEs, middleware.Require(permission.FindingsRead))
+		}, tenantMiddlewares...)
+
+		router.Group("/api/v1/finding-actions", func(r Router) {
+			r.POST("/fix-applied", findingActionsHandler.FixApplied, middleware.Require(permission.FindingsFixApply))
+			r.POST("/verify", findingActionsHandler.Verify, middleware.Require(permission.FindingsVerify))
+			r.POST("/reject-fix", findingActionsHandler.RejectFix, middleware.Require(permission.FindingsVerify))
+			r.POST("/assign-to-owners", findingActionsHandler.AssignToOwners, middleware.Require(permission.FindingsWrite))
+		}, tenantMiddlewares...)
+	}
 
 	// Asset-scoped finding routes
 	router.Group("/api/v1/assets/{id}/findings", func(r Router) {

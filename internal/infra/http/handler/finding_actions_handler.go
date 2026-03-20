@@ -17,21 +17,21 @@ import (
 	"github.com/openctemio/api/pkg/pagination"
 )
 
-// FindingLifecycleHandler handles closed-loop finding lifecycle operations.
-type FindingLifecycleHandler struct {
-	service *app.FindingLifecycleService
+// FindingActionsHandler handles closed-loop finding lifecycle operations.
+type FindingActionsHandler struct {
+	service *app.FindingActionsService
 	logger  *logger.Logger
 }
 
-// NewFindingLifecycleHandler creates a new FindingLifecycleHandler.
-func NewFindingLifecycleHandler(svc *app.FindingLifecycleService, log *logger.Logger) *FindingLifecycleHandler {
-	return &FindingLifecycleHandler{service: svc, logger: log}
+// NewFindingActionsHandler creates a new FindingActionsHandler.
+func NewFindingActionsHandler(svc *app.FindingActionsService, log *logger.Logger) *FindingActionsHandler {
+	return &FindingActionsHandler{service: svc, logger: log}
 }
 
 // --- Group View ---
 
 // ListFindingGroups handles GET /api/v1/findings/groups
-func (h *FindingLifecycleHandler) ListFindingGroups(w http.ResponseWriter, r *http.Request) {
+func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	groupBy := r.URL.Query().Get("group_by")
 	if groupBy == "" {
@@ -60,7 +60,7 @@ func (h *FindingLifecycleHandler) ListFindingGroups(w http.ResponseWriter, r *ht
 // --- Related CVEs ---
 
 // GetRelatedCVEs handles GET /api/v1/findings/related-cves/{cveId}
-func (h *FindingLifecycleHandler) GetRelatedCVEs(w http.ResponseWriter, r *http.Request) {
+func (h *FindingActionsHandler) GetRelatedCVEs(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	cveID := chi.URLParam(r, "cveId")
 	if cveID == "" {
@@ -98,7 +98,7 @@ type FindingFilterRequest struct {
 }
 
 // FixApplied handles POST /api/v1/findings/actions/fix-applied
-func (h *FindingLifecycleHandler) FixApplied(w http.ResponseWriter, r *http.Request) {
+func (h *FindingActionsHandler) FixApplied(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetLocalUserID(r.Context())
 
@@ -142,7 +142,7 @@ type VerifyRequest struct {
 }
 
 // Verify handles POST /api/v1/findings/actions/verify
-func (h *FindingLifecycleHandler) Verify(w http.ResponseWriter, r *http.Request) {
+func (h *FindingActionsHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetLocalUserID(r.Context())
 
@@ -196,7 +196,7 @@ type RejectFixRequest struct {
 }
 
 // RejectFix handles POST /api/v1/findings/actions/reject-fix
-func (h *FindingLifecycleHandler) RejectFix(w http.ResponseWriter, r *http.Request) {
+func (h *FindingActionsHandler) RejectFix(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetLocalUserID(r.Context())
 
@@ -248,7 +248,7 @@ type AssignToOwnersRequest struct {
 }
 
 // AssignToOwners handles POST /api/v1/findings/actions/assign-to-owners
-func (h *FindingLifecycleHandler) AssignToOwners(w http.ResponseWriter, r *http.Request) {
+func (h *FindingActionsHandler) AssignToOwners(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetLocalUserID(r.Context())
 
@@ -277,7 +277,7 @@ func (h *FindingLifecycleHandler) AssignToOwners(w http.ResponseWriter, r *http.
 
 // --- Helpers ---
 
-func (h *FindingLifecycleHandler) buildFilter(r *http.Request) vulnerability.FindingFilter {
+func (h *FindingActionsHandler) buildFilter(r *http.Request) vulnerability.FindingFilter {
 	filter := vulnerability.NewFindingFilter()
 	q := r.URL.Query()
 
@@ -319,7 +319,7 @@ func (h *FindingLifecycleHandler) buildFilter(r *http.Request) vulnerability.Fin
 	return filter
 }
 
-func (h *FindingLifecycleHandler) buildPagination(r *http.Request, defaultPerPage int) pagination.Pagination {
+func (h *FindingActionsHandler) buildPagination(r *http.Request, defaultPerPage int) pagination.Pagination {
 	q := r.URL.Query()
 	perPage := defaultPerPage
 	page := 1
@@ -338,7 +338,7 @@ func (h *FindingLifecycleHandler) buildPagination(r *http.Request, defaultPerPag
 	return pagination.New(perPage, (page-1)*perPage)
 }
 
-func (h *FindingLifecycleHandler) handleError(w http.ResponseWriter, err error) {
+func (h *FindingActionsHandler) handleError(w http.ResponseWriter, err error) {
 	if errors.Is(err, shared.ErrValidation) {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
@@ -347,7 +347,7 @@ func (h *FindingLifecycleHandler) handleError(w http.ResponseWriter, err error) 
 	apierror.InternalServerError("Internal server error").WriteJSON(w)
 }
 
-func (h *FindingLifecycleHandler) writeJSON(w http.ResponseWriter, status int, data any) {
+func (h *FindingActionsHandler) writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)

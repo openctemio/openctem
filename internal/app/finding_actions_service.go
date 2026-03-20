@@ -15,9 +15,9 @@ import (
 	"github.com/openctemio/api/pkg/pagination"
 )
 
-// FindingLifecycleService handles the closed-loop finding lifecycle:
+// FindingActionsService handles the closed-loop finding lifecycle:
 // in_progress → fix_applied → resolved (verified by scan or security).
-type FindingLifecycleService struct {
+type FindingActionsService struct {
 	findingRepo     vulnerability.FindingRepository
 	accessCtrlRepo  accesscontrol.Repository
 	groupRepo       group.Repository
@@ -27,8 +27,8 @@ type FindingLifecycleService struct {
 	logger          *logger.Logger
 }
 
-// NewFindingLifecycleService creates a new FindingLifecycleService.
-func NewFindingLifecycleService(
+// NewFindingActionsService creates a new FindingActionsService.
+func NewFindingActionsService(
 	findingRepo vulnerability.FindingRepository,
 	accessCtrlRepo accesscontrol.Repository,
 	groupRepo group.Repository,
@@ -36,8 +36,8 @@ func NewFindingLifecycleService(
 	activityService *FindingActivityService,
 	db *sql.DB,
 	logger *logger.Logger,
-) *FindingLifecycleService {
-	return &FindingLifecycleService{
+) *FindingActionsService {
+	return &FindingActionsService{
 		findingRepo:     findingRepo,
 		accessCtrlRepo:  accessCtrlRepo,
 		groupRepo:       groupRepo,
@@ -51,7 +51,7 @@ func NewFindingLifecycleService(
 // --- Group View ---
 
 // ListFindingGroups returns findings grouped by a dimension.
-func (s *FindingLifecycleService) ListFindingGroups(
+func (s *FindingActionsService) ListFindingGroups(
 	ctx context.Context, tenantID string, groupBy string, filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	tid, err := shared.IDFromString(tenantID)
@@ -74,7 +74,7 @@ func (s *FindingLifecycleService) ListFindingGroups(
 // --- Related CVEs ---
 
 // GetRelatedCVEs finds CVEs that share the same component as the given CVE.
-func (s *FindingLifecycleService) GetRelatedCVEs(
+func (s *FindingActionsService) GetRelatedCVEs(
 	ctx context.Context, tenantID string, cveID string, filter vulnerability.FindingFilter,
 ) ([]vulnerability.RelatedCVE, error) {
 	tid, err := shared.IDFromString(tenantID)
@@ -109,7 +109,7 @@ type BulkFixAppliedResult struct {
 
 // BulkFixApplied marks findings as fix_applied.
 // Authorization: user must be assignee, group member, or asset owner for each finding.
-func (s *FindingLifecycleService) BulkFixApplied(
+func (s *FindingActionsService) BulkFixApplied(
 	ctx context.Context, tenantID string, userID string, input BulkFixAppliedInput,
 ) (*BulkFixAppliedResult, error) {
 	tid, err := shared.IDFromString(tenantID)
@@ -245,7 +245,7 @@ func (s *FindingLifecycleService) BulkFixApplied(
 // canMarkFixApplied checks if a user can mark a finding as fix_applied.
 // User must be: direct assignee, member of assigned group, or asset owner.
 // findingGroupMap and assetOwnerMap are preloaded to avoid N+1 queries.
-func (s *FindingLifecycleService) canMarkFixApplied(
+func (s *FindingActionsService) canMarkFixApplied(
 	userID shared.ID,
 	userGroupIDs map[shared.ID]bool,
 	findingGroupMap map[shared.ID][]shared.ID, // finding ID → assigned group IDs
@@ -277,7 +277,7 @@ func (s *FindingLifecycleService) canMarkFixApplied(
 // --- Bulk Verify ---
 
 // BulkVerify resolves fix_applied findings (manual security review).
-func (s *FindingLifecycleService) BulkVerify(
+func (s *FindingActionsService) BulkVerify(
 	ctx context.Context, tenantID string, userID string, findingIDs []string, note string,
 ) (*BulkUpdateResult, error) {
 	tid, err := shared.IDFromString(tenantID)
@@ -343,7 +343,7 @@ func (s *FindingLifecycleService) BulkVerify(
 // --- Bulk Reject Fix ---
 
 // BulkRejectFix reopens fix_applied findings (fix was incorrect).
-func (s *FindingLifecycleService) BulkRejectFix(
+func (s *FindingActionsService) BulkRejectFix(
 	ctx context.Context, tenantID string, userID string, findingIDs []string, reason string,
 ) (*BulkUpdateResult, error) {
 	tid, err := shared.IDFromString(tenantID)
@@ -411,7 +411,7 @@ type VerifyByFilterInput struct {
 
 // BulkVerifyByFilter resolves all fix_applied findings matching a filter.
 // Used by Pending Review tab to approve entire groups at once.
-func (s *FindingLifecycleService) BulkVerifyByFilter(
+func (s *FindingActionsService) BulkVerifyByFilter(
 	ctx context.Context, tenantID string, userID string, input VerifyByFilterInput,
 ) (int64, error) {
 	tid, err := shared.IDFromString(tenantID)
@@ -449,7 +449,7 @@ type RejectByFilterInput struct {
 }
 
 // BulkRejectByFilter reopens all fix_applied findings matching a filter.
-func (s *FindingLifecycleService) BulkRejectByFilter(
+func (s *FindingActionsService) BulkRejectByFilter(
 	ctx context.Context, tenantID string, userID string, input RejectByFilterInput,
 ) (int64, error) {
 	tid, err := shared.IDFromString(tenantID)
@@ -489,7 +489,7 @@ type AutoAssignToOwnersResult struct {
 
 // AutoAssignToOwners assigns findings to their asset owners.
 // Only assigns findings that don't already have an assignee.
-func (s *FindingLifecycleService) AutoAssignToOwners(
+func (s *FindingActionsService) AutoAssignToOwners(
 	ctx context.Context, tenantID string, assignerID string, filter vulnerability.FindingFilter,
 ) (*AutoAssignToOwnersResult, error) {
 	tid, err := shared.IDFromString(tenantID)
