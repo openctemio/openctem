@@ -328,47 +328,6 @@ func (h *wfExecMockActionHandler) getCallCount() int {
 	return h.callCount
 }
 
-type wfExecMockNotificationHandler struct {
-	mu          sync.Mutex
-	callCount   int
-	returnErr   error
-	returnOutput map[string]any
-}
-
-func (h *wfExecMockNotificationHandler) Send(ctx context.Context, input *app.NotificationInput) (map[string]any, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.callCount++
-	if h.returnErr != nil {
-		return nil, h.returnErr
-	}
-	if h.returnOutput != nil {
-		return h.returnOutput, nil
-	}
-	return map[string]any{"sent": true}, nil
-}
-
-func (h *wfExecMockNotificationHandler) getCallCount() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.callCount
-}
-
-type wfExecMockConditionEvaluator struct {
-	mu        sync.Mutex
-	result    bool
-	returnErr error
-}
-
-func (e *wfExecMockConditionEvaluator) Evaluate(ctx context.Context, expression string, data map[string]any) (bool, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.returnErr != nil {
-		return false, e.returnErr
-	}
-	return e.result, nil
-}
-
 // =============================================================================
 // Helper functions to build test workflows and runs
 // =============================================================================

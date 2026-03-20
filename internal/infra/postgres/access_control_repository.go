@@ -2459,6 +2459,44 @@ func (r *AccessControlRepository) ListFindingGroupAssignments(ctx context.Contex
 	return results, nil
 }
 
+// BatchListFindingGroupIDs returns group IDs for multiple findings in a single query.
+// Avoids N+1 when checking group membership for bulk operations.
+func (r *AccessControlRepository) BatchListFindingGroupIDs(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) (map[shared.ID][]shared.ID, error) {
+	result := make(map[shared.ID][]shared.ID, len(findingIDs))
+	if len(findingIDs) == 0 {
+		return result, nil
+	}
+
+	ids := make([]string, len(findingIDs))
+	for i, id := range findingIDs {
+		ids[i] = id.String()
+	}
+
+	query := `
+		SELECT finding_id, group_id
+		FROM finding_group_assignments
+		WHERE tenant_id = $1 AND finding_id = ANY($2)
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch list finding group IDs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var findingIDStr, groupIDStr string
+		if err := rows.Scan(&findingIDStr, &groupIDStr); err != nil {
+			return nil, fmt.Errorf("failed to scan finding group ID: %w", err)
+		}
+		fid, _ := shared.IDFromString(findingIDStr)
+		gid, _ := shared.IDFromString(groupIDStr)
+		result[fid] = append(result[fid], gid)
+	}
+
+	return result, rows.Err()
+}
+
 // CountFindingsByGroupFromRules counts findings assigned to a group via assignment rules.
 func (r *AccessControlRepository) CountFindingsByGroupFromRules(ctx context.Context, tenantID, groupID shared.ID) (int64, error) {
 	query := `

@@ -118,12 +118,7 @@ func (c *WebhookClient) buildPayload(msg Message) WebhookPayload {
 
 	attachments := make([]WebhookAttachment, 0, len(msg.Attachments))
 	for _, att := range msg.Attachments {
-		attachments = append(attachments, WebhookAttachment{
-			Title: att.Title,
-			Text:  att.Text,
-			Color: att.Color,
-			URL:   att.URL,
-		})
+		attachments = append(attachments, WebhookAttachment(att))
 	}
 
 	return WebhookPayload{

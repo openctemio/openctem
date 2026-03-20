@@ -1679,7 +1679,7 @@ func (s *AssetService) RecalculateAllRiskScores(ctx context.Context, tenantID sh
 	// Acquire distributed lock to prevent concurrent recalculations
 	if s.redisClient != nil {
 		lockKey := recalcLockKeyPrefix + tid
-		acquired, err := s.redisClient.Client().SetNX(ctx, lockKey, "1", recalcLockTTL).Result()
+		acquired, err := s.redisClient.SetNX(ctx, lockKey, "1", recalcLockTTL)
 		switch {
 		case err != nil:
 			s.logger.Warn("failed to acquire recalc lock, proceeding anyway", "tenant_id", tid, "error", err)

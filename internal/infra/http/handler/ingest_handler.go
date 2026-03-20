@@ -17,7 +17,9 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/sdk-go/pkg/adapters"
 	"github.com/openctemio/sdk-go/pkg/chunk"
+	"github.com/openctemio/sdk-go/pkg/core"
 	"github.com/openctemio/sdk-go/pkg/ctis"
 )
 
@@ -27,11 +29,12 @@ type contextKey string
 const agentContextKey contextKey = "agent"
 
 // IngestHandler handles ingestion-related HTTP requests.
-// It supports CTIS, SARIF, and Recon formats.
+// It supports CTIS, SARIF, Recon, and raw scanner output formats.
 type IngestHandler struct {
-	ingestService *ingest.Service
-	agentService  *app.AgentService
-	logger        *logger.Logger
+	ingestService   *ingest.Service
+	agentService    *app.AgentService
+	adapterRegistry *adapters.Registry
+	logger          *logger.Logger
 }
 
 // NewIngestHandler creates a new ingest handler.
@@ -41,9 +44,10 @@ func NewIngestHandler(
 	log *logger.Logger,
 ) *IngestHandler {
 	return &IngestHandler{
-		ingestService: ingestSvc,
-		agentService:  agentSvc,
-		logger:        log,
+		ingestService:   ingestSvc,
+		agentService:    agentSvc,
+		adapterRegistry: adapters.NewRegistry(),
+		logger:          log,
 	}
 }
 
@@ -879,4 +883,108 @@ func (h *IngestHandler) buildReconToCTISInput(req *ReconIngestRequest) *ctis.Rec
 	}
 
 	return ctisInput
+}
+
+// =============================================================================
+// Raw Scanner Output Ingestion Endpoint
+// =============================================================================
+
+// ScanIngestRequest represents the request body for raw scanner output ingestion.
+type ScanIngestRequest struct {
+	// Scanner type: vuls, trivy, nuclei, semgrep, gitleaks (required if auto-detect fails)
+	ScannerType string `json:"scanner_type,omitempty"`
+
+	// Raw scanner output data
+	Data json.RawMessage `json:"data"`
+}
+
+// ScannerListResponse lists supported scanner adapters.
+type ScannerListResponse struct {
+	Scanners []string `json:"scanners"`
+}
+
+// IngestScan handles POST /api/v1/agent/ingest/scan
+// It accepts raw scanner output and uses the appropriate adapter to convert to CTIS.
+func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
+	agt := AgentFromContext(r.Context())
+	if agt == nil {
+		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		h.logger.Debug("failed to read request body", "error", err)
+		apierror.BadRequest("Failed to read request body").WriteJSON(w)
+		return
+	}
+
+	if len(bodyBytes) == 0 {
+		apierror.BadRequest("Request body is required").WriteJSON(w)
+		return
+	}
+
+	// Try to parse as wrapped format: { "scanner_type": "...", "data": {...} }
+	var req ScanIngestRequest
+	var scannerType string
+	var scanData []byte
+
+	if err := json.Unmarshal(bodyBytes, &req); err == nil && len(req.Data) > 0 {
+		scannerType = req.ScannerType
+		scanData = req.Data
+	} else {
+		// Treat entire body as raw scanner output (auto-detect mode)
+		scanData = bodyBytes
+		// Check query param for scanner type hint
+		scannerType = r.URL.Query().Get("scanner_type")
+	}
+
+	// Convert using adapter registry
+	report, err := h.adapterRegistry.Convert(r.Context(), scannerType, scanData, &core.AdapterOptions{})
+	if err != nil {
+		h.logger.Debug("scanner adapter conversion failed", "error", err, "scanner_type", scannerType)
+		apierror.BadRequest("Failed to convert scanner output: " + err.Error()).WriteJSON(w)
+		return
+	}
+
+	// Ingest the converted CTIS report
+	input := ingest.Input{
+		Report: report,
+	}
+
+	output, err := h.ingestService.Ingest(r.Context(), agt, input)
+	if err != nil {
+		h.logger.Error("scan ingestion failed", "error", err, "scanner_type", scannerType)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	resp := IngestResponse{
+		ScanID:          output.ReportID,
+		AssetsCreated:   output.AssetsCreated,
+		AssetsUpdated:   output.AssetsUpdated,
+		FindingsCreated: output.FindingsCreated,
+		FindingsUpdated: output.FindingsUpdated,
+		FindingsSkipped: output.FindingsSkipped,
+		Errors:          output.Errors,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
+}
+
+// ListScanners handles GET /api/v1/agent/ingest/scanners
+// It returns the list of supported scanner adapters.
+func (h *IngestHandler) ListScanners(w http.ResponseWriter, r *http.Request) {
+	resp := ScannerListResponse{
+		Scanners: h.adapterRegistry.List(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }

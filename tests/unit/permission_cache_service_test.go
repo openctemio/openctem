@@ -16,17 +16,7 @@ import (
 // permission-checking logic independently.
 // =============================================================================
 
-// permCacheStore is a test interface matching the redis.CacheStore[[]string]
-// methods used by PermissionCacheService.
-type permCacheStore interface {
-	Get(ctx context.Context, key string) (*[]string, error)
-	Set(ctx context.Context, key string, value []string) error
-	Delete(ctx context.Context, key string) error
-	DeletePattern(ctx context.Context, pattern string) error
-	GetOrSetFallback(ctx context.Context, key string, loader func(ctx context.Context) (*[]string, error)) (*[]string, error)
-}
-
-// mockPermCache implements permCacheStore for testing.
+// mockPermCache implements a cache store for testing.
 type mockPermCache struct {
 	store map[string][]string
 

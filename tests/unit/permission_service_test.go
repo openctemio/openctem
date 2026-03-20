@@ -1421,3 +1421,7 @@ func TestPermissionService_HasPermission_NoGroups(t *testing.T) {
 		t.Error("expected user with no groups to have no permissions")
 	}
 }
+
+func (m *mockAccessControlRepoForPermission) BatchListFindingGroupIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID][]shared.ID, error) {
+	return make(map[shared.ID][]shared.ID), nil
+}

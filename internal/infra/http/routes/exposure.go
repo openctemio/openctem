@@ -151,6 +151,7 @@ func registerCredentialRoutes(
 func registerVulnerabilityRoutes(
 	router Router,
 	h *handler.VulnerabilityHandler,
+	findingActionsHandler *handler.FindingActionsHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -181,9 +182,23 @@ func registerVulnerabilityRoutes(
 		// Stats endpoint (must be before /{id} to avoid route conflicts)
 		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead))
 
-		// Bulk operations (must be before /{id} to avoid route conflicts)
+		// Groups + Related CVEs (must be before /{id})
+		if findingActionsHandler != nil {
+			r.GET("/groups", findingActionsHandler.ListFindingGroups, middleware.Require(permission.FindingsRead))
+			r.GET("/related-cves/{cveId}", findingActionsHandler.GetRelatedCVEs, middleware.Require(permission.FindingsRead))
+		}
+
+		// Bulk operations (must be before /{id})
 		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.Require(permission.FindingsWrite))
 		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.Require(permission.FindingsWrite))
+
+		// Actions (must be before /{id})
+		if findingActionsHandler != nil {
+			r.POST("/actions/fix-applied", findingActionsHandler.FixApplied, middleware.Require(permission.FindingsFixApply))
+			r.POST("/actions/verify", findingActionsHandler.Verify, middleware.Require(permission.FindingsVerify))
+			r.POST("/actions/reject-fix", findingActionsHandler.RejectFix, middleware.Require(permission.FindingsVerify))
+			r.POST("/actions/assign-to-owners", findingActionsHandler.AssignToOwners, middleware.Require(permission.FindingsWrite))
+		}
 
 		// Single finding operations
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))

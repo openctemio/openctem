@@ -23,6 +23,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
+		FindingsFixApply, FindingsVerify,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
@@ -93,13 +94,14 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
+		FindingsFixApply, FindingsVerify,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
 		CredentialsRead, CredentialsWrite,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
-		PoliciesRead, PoliciesWrite, PoliciesDelete,
+		PoliciesRead, PoliciesDelete, PoliciesWrite,
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
@@ -160,9 +162,9 @@ var RolePermissions = map[tenant.Role][]Permission{
 		AssetsRead, AssetsWrite,
 		AssetGroupsRead, AssetGroupsWrite,
 		ComponentsRead, ComponentsWrite,
-		// Findings (read + write, no delete)
+		// Findings (read + write, no delete; fix_apply yes, verify no)
 		FindingsRead, FindingsWrite,
-		FindingsTriage, FindingsStatus,
+		FindingsTriage, FindingsStatus, FindingsFixApply,
 		ExposuresRead, ExposuresWrite,
 		SuppressionsRead,
 		VulnerabilitiesRead,

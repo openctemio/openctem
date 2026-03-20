@@ -9,7 +9,6 @@ import (
 
 	scanservice "github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/pkg/domain/agent"
-	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/assetgroup"
 	"github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/pipeline"
@@ -696,35 +695,6 @@ func (m *mockToolRepo) addTool(name string, active bool) {
 		IsActive:         active,
 		SupportedTargets: []string{},
 	}
-}
-
-// =============================================================================
-// Mock: tool.TargetMappingRepository (stub)
-// =============================================================================
-
-type mockTargetMappingRepo struct{}
-
-func (m *mockTargetMappingRepo) Create(_ context.Context, _ *tool.TargetAssetTypeMapping) error {
-	return nil
-}
-func (m *mockTargetMappingRepo) GetByID(_ context.Context, _ shared.ID) (*tool.TargetAssetTypeMapping, error) {
-	return nil, nil
-}
-func (m *mockTargetMappingRepo) Update(_ context.Context, _ *tool.TargetAssetTypeMapping) error {
-	return nil
-}
-func (m *mockTargetMappingRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
-func (m *mockTargetMappingRepo) List(_ context.Context, _ tool.TargetMappingFilter, _ pagination.Pagination) (pagination.Result[*tool.TargetAssetTypeMapping], error) {
-	return pagination.Result[*tool.TargetAssetTypeMapping]{}, nil
-}
-func (m *mockTargetMappingRepo) GetAssetTypesForTargets(_ context.Context, _ []string) ([]asset.AssetType, error) {
-	return nil, nil
-}
-func (m *mockTargetMappingRepo) GetTargetsForAssetType(_ context.Context, _ asset.AssetType) ([]string, error) {
-	return nil, nil
-}
-func (m *mockTargetMappingRepo) GetCompatibleAssetTypes(_ context.Context, _ []string, _ []asset.AssetType) ([]asset.AssetType, error) {
-	return nil, nil
 }
 
 // =============================================================================

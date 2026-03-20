@@ -496,3 +496,4 @@ func TestDifferentTenantsProduceDifferentActivities(t *testing.T) {
 		t.Errorf("second activity: tenant = %s, want %s", a2.TenantID(), tenant2)
 	}
 }
+

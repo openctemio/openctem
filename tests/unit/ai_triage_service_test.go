@@ -2,7 +2,6 @@ package unit
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,9 +14,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/aitriage"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/pkg/pagination"
 )
 
 // =============================================================================
@@ -155,162 +152,6 @@ func (m *mockAITriageRepo) MarkStuckAsFailed(_ context.Context, _ shared.ID, _ s
 	return m.markStuckResult, nil
 }
 
-// mockAITriageFindingRepo implements vulnerability.FindingRepository (subset).
-type mockAITriageFindingRepo struct {
-	findings    map[string]*vulnerability.Finding
-	getByIDErr  error
-	existsByIDs map[shared.ID]bool
-	existsErr   error
-}
-
-func newMockAITriageFindingRepo() *mockAITriageFindingRepo {
-	return &mockAITriageFindingRepo{
-		findings:    make(map[string]*vulnerability.Finding),
-		existsByIDs: make(map[shared.ID]bool),
-	}
-}
-
-func (m *mockAITriageFindingRepo) GetByID(_ context.Context, _, id shared.ID) (*vulnerability.Finding, error) {
-	if m.getByIDErr != nil {
-		return nil, m.getByIDErr
-	}
-	f, ok := m.findings[id.String()]
-	if !ok {
-		return nil, fmt.Errorf("finding not found")
-	}
-	return f, nil
-}
-
-func (m *mockAITriageFindingRepo) ExistsByIDs(_ context.Context, _ shared.ID, ids []shared.ID) (map[shared.ID]bool, error) {
-	if m.existsErr != nil {
-		return nil, m.existsErr
-	}
-	result := make(map[shared.ID]bool, len(ids))
-	for _, id := range ids {
-		result[id] = m.existsByIDs[id]
-	}
-	return result, nil
-}
-
-// Stub methods to satisfy vulnerability.FindingRepository interface.
-func (m *mockAITriageFindingRepo) Create(_ context.Context, _ *vulnerability.Finding) error {
-	return nil
-}
-
-func (m *mockAITriageFindingRepo) CreateInTx(_ context.Context, _ *sql.Tx, _ *vulnerability.Finding) error {
-	return nil
-}
-
-func (m *mockAITriageFindingRepo) CreateBatch(_ context.Context, _ []*vulnerability.Finding) error {
-	return nil
-}
-
-func (m *mockAITriageFindingRepo) CreateBatchWithResult(_ context.Context, _ []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
-	return nil, nil
-}
-
-func (m *mockAITriageFindingRepo) Update(_ context.Context, _ *vulnerability.Finding) error {
-	return nil
-}
-
-func (m *mockAITriageFindingRepo) Delete(_ context.Context, _, _ shared.ID) error { return nil }
-
-func (m *mockAITriageFindingRepo) List(_ context.Context, _ vulnerability.FindingFilter, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	return pagination.Result[*vulnerability.Finding]{}, nil
-}
-
-func (m *mockAITriageFindingRepo) ListByAssetID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	return pagination.Result[*vulnerability.Finding]{}, nil
-}
-
-func (m *mockAITriageFindingRepo) ListByVulnerabilityID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	return pagination.Result[*vulnerability.Finding]{}, nil
-}
-
-func (m *mockAITriageFindingRepo) ListByComponentID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	return pagination.Result[*vulnerability.Finding]{}, nil
-}
-
-func (m *mockAITriageFindingRepo) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
-	return 0, nil
-}
-
-func (m *mockAITriageFindingRepo) CountByAssetID(_ context.Context, _, _ shared.ID) (int64, error) {
-	return 0, nil
-}
-
-func (m *mockAITriageFindingRepo) CountOpenByAssetID(_ context.Context, _, _ shared.ID) (int64, error) {
-	return 0, nil
-}
-
-func (m *mockAITriageFindingRepo) GetByFingerprint(_ context.Context, _ shared.ID, _ string) (*vulnerability.Finding, error) {
-	return nil, nil
-}
-
-func (m *mockAITriageFindingRepo) ExistsByFingerprint(_ context.Context, _ shared.ID, _ string) (bool, error) {
-	return false, nil
-}
-
-func (m *mockAITriageFindingRepo) CheckFingerprintsExist(_ context.Context, _ shared.ID, _ []string) (map[string]bool, error) {
-	return nil, nil
-}
-
-func (m *mockAITriageFindingRepo) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _ string) (int64, error) {
-	return 0, nil
-}
-
-func (m *mockAITriageFindingRepo) UpdateSnippetBatchByFingerprints(_ context.Context, _ shared.ID, _ map[string]string) (int64, error) {
-	return 0, nil
-}
-
-func (m *mockAITriageFindingRepo) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]int64, error) {
-	return nil, nil
-}
-
-func (m *mockAITriageFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID) error {
-	return nil
-}
-
-func (m *mockAITriageFindingRepo) DeleteByAssetID(_ context.Context, _, _ shared.ID) error {
-	return nil
-}
-
-func (m *mockAITriageFindingRepo) DeleteByScanID(_ context.Context, _ shared.ID, _ string) error {
-	return nil
-}
-
-func (m *mockAITriageFindingRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
-	return nil, nil
-}
-
-func (m *mockAITriageFindingRepo) CountBySeverityForScan(_ context.Context, _ shared.ID, _ string) (vulnerability.SeverityCounts, error) {
-	return vulnerability.SeverityCounts{}, nil
-}
-
-func (m *mockAITriageFindingRepo) AutoResolveStale(_ context.Context, _, _ shared.ID, _, _ string, _ *shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-
-func (m *mockAITriageFindingRepo) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
-	return nil, nil
-}
-
-func (m *mockAITriageFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]shared.ID, error) {
-	return nil, nil
-}
-
-func (m *mockAITriageFindingRepo) ExpireFeatureBranchFindings(_ context.Context, _ shared.ID, _ int) (int64, error) {
-	return 0, nil
-}
-
-func (m *mockAITriageFindingRepo) GetByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]*vulnerability.Finding, error) {
-	return nil, nil
-}
-
-func (m *mockAITriageFindingRepo) EnrichBatchByFingerprints(_ context.Context, _ shared.ID, _ []*vulnerability.Finding, _ string) (int64, error) {
-	return 0, nil
-}
-
 // mockAITriageTenantRepo implements tenant.Repository.
 type mockAITriageTenantRepo struct {
 	tenants    map[string]*tenant.Tenant
@@ -405,32 +246,6 @@ func (m *mockAITriageTenantRepo) DeleteExpiredInvitations(_ context.Context) (in
 	return 0, nil
 }
 func (m *mockAITriageTenantRepo) AcceptInvitationTx(_ context.Context, _ *tenant.Invitation, _ *tenant.Membership) error {
-	return nil
-}
-
-// mockJobEnqueuer implements app.AITriageJobEnqueuer.
-type mockJobEnqueuer struct {
-	enqueuedJobs []enqueuedJob
-	enqueueErr   error
-}
-
-type enqueuedJob struct {
-	resultID  string
-	tenantID  string
-	findingID string
-	delay     time.Duration
-}
-
-func (m *mockJobEnqueuer) EnqueueAITriage(_ context.Context, resultID, tenantID, findingID string, delay time.Duration) error {
-	if m.enqueueErr != nil {
-		return m.enqueueErr
-	}
-	m.enqueuedJobs = append(m.enqueuedJobs, enqueuedJob{
-		resultID:  resultID,
-		tenantID:  tenantID,
-		findingID: findingID,
-		delay:     delay,
-	})
 	return nil
 }
 
@@ -2288,3 +2103,4 @@ func TestAITriage_Exploitability_IsValid(t *testing.T) {
 		t.Error("expected 'unknown' to be invalid exploitability")
 	}
 }
+

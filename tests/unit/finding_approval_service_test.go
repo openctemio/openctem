@@ -1133,3 +1133,19 @@ func TestFindingApprovalService_ApproveStatus_ConcurrentModification(t *testing.
 	assert.ErrorIs(t, err, vulnerability.ErrConcurrentModification)
 	assert.True(t, errors.Is(err, shared.ErrConflict), "should wrap ErrConflict")
 }
+
+func (m *mockFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
+	return pagination.Result[*vulnerability.FindingGroup]{}, nil
+}
+
+func (m *mockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockFindingRepository) FindRelatedCVEs(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter) ([]vulnerability.RelatedCVE, error) {
+	return nil, nil
+}
+
+func (m *mockFindingRepository) ListByStatusAndAssets(_ context.Context, _ shared.ID, _ vulnerability.FindingStatus, _ []shared.ID) ([]*vulnerability.Finding, error) {
+	return nil, nil
+}

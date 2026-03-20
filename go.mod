@@ -10,7 +10,7 @@ require (
 	github.com/hibiken/asynq v0.26.0
 	github.com/klauspost/compress v1.18.4
 	github.com/lib/pq v1.11.2
-	github.com/openctemio/sdk-go v0.2.0
+	github.com/openctemio/sdk-go v0.2.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.18.0
 	golang.org/x/crypto v0.49.0

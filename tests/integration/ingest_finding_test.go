@@ -7,6 +7,7 @@ import (
 
 	"github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/pagination"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/sdk-go/pkg/ctis"
 )
@@ -557,4 +558,20 @@ func TestIngestFinding_StatusTransitions(t *testing.T) {
 			t.Error("ResolvedBy should be set to actorID")
 		}
 	})
+}
+
+func (m *MockFindingRepositoryForIngest) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
+	return pagination.Result[*vulnerability.FindingGroup]{}, nil
+}
+
+func (m *MockFindingRepositoryForIngest) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+	return 0, nil
+}
+
+func (m *MockFindingRepositoryForIngest) FindRelatedCVEs(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter) ([]vulnerability.RelatedCVE, error) {
+	return nil, nil
+}
+
+func (m *MockFindingRepositoryForIngest) ListByStatusAndAssets(_ context.Context, _ shared.ID, _ vulnerability.FindingStatus, _ []shared.ID) ([]*vulnerability.Finding, error) {
+	return nil, nil
 }

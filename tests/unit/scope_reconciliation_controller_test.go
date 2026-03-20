@@ -371,3 +371,11 @@ func (m *mockACRepoForControllerWithPerTenantErr) ListGroupsWithActiveScopeRules
 	}
 	return resp.ids, resp.err
 }
+
+func (m *mockACRepoForController) BatchListFindingGroupIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID][]shared.ID, error) {
+	return make(map[shared.ID][]shared.ID), nil
+}
+
+func (m *mockACRepoForControllerWithPerTenantErr) BatchListFindingGroupIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID][]shared.ID, error) {
+	return make(map[shared.ID][]shared.ID), nil
+}

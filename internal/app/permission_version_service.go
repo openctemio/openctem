@@ -138,7 +138,7 @@ func (s *PermissionVersionService) EnsureVersion(ctx context.Context, tenantID, 
 	key := s.buildKey(tenantID, userID)
 
 	// Try to set NX (only if not exists)
-	set, err := s.redisClient.Client().SetNX(ctx, key, 1, permVersionTTL).Result()
+	set, err := s.redisClient.SetNX(ctx, key, "1", permVersionTTL)
 	if err != nil {
 		s.logger.Warn("failed to ensure permission version",
 			"tenant_id", tenantID,

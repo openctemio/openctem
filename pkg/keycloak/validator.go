@@ -208,12 +208,12 @@ func (v *Validator) backgroundRefresh() {
 	}
 }
 
-// LastRefreshError returns the last refresh error and consecutive failure count.
-// Returns nil, 0 if last refresh was successful.
-func (v *Validator) LastRefreshError() (error, int) {
+// LastRefreshError returns the consecutive failure count and last refresh error.
+// Returns 0, nil if last refresh was successful.
+func (v *Validator) LastRefreshError() (int, error) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
-	return v.lastError, v.consecutiveFailures
+	return v.consecutiveFailures, v.lastError
 }
 
 // LastRefreshTime returns the time of the last successful JWKS refresh.

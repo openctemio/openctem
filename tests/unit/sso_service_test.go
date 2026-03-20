@@ -421,7 +421,7 @@ func (m *ssoMockUserRepo) Update(_ context.Context, u *user.User) error {
 }
 
 func (m *ssoMockUserRepo) Delete(_ context.Context, _ shared.ID) error {
-	return nil
+	return m.deleteErr
 }
 
 func (m *ssoMockUserRepo) ExistsByEmail(_ context.Context, _ string) (bool, error) {

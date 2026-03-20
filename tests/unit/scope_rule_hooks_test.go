@@ -484,3 +484,7 @@ func TestReconcileGroupByIDs_DelegatesToReconcileGroup(t *testing.T) {
 		t.Errorf("expected 1 BulkCreateAssetOwnersWithSource call, got %d", acRepo.bulkCreateWithSourceCalls)
 	}
 }
+
+func (m *mockACRepoForHooks) BatchListFindingGroupIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID][]shared.ID, error) {
+	return make(map[shared.ID][]shared.ID), nil
+}
