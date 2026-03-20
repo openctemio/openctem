@@ -349,3 +349,19 @@ func TestFindingStatusWorkflow(t *testing.T) {
 
 	t.Logf("Workflow complete: finding resolved by %s at %v", finding.ResolvedBy(), finding.ResolvedAt())
 }
+
+func (m *MockFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
+	return pagination.Result[*vulnerability.FindingGroup]{}, nil
+}
+
+func (m *MockFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+	return 0, nil
+}
+
+func (m *MockFindingRepository) FindRelatedCVEs(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter) ([]vulnerability.RelatedCVE, error) {
+	return nil, nil
+}
+
+func (m *MockFindingRepository) ListByStatusAndAssets(_ context.Context, _ shared.ID, _ vulnerability.FindingStatus, _ []shared.ID) ([]*vulnerability.Finding, error) {
+	return nil, nil
+}
