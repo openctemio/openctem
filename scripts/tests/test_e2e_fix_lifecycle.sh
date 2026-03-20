@@ -46,10 +46,15 @@ print_pass() { echo -e "${GREEN}✓ PASS:${NC} $1"; PASSED=$((PASSED + 1)); }
 print_fail() { echo -e "${RED}✗ FAIL:${NC} $1"; FAILED=$((FAILED + 1)); }
 print_skip() { echo -e "${YELLOW}⊘ SKIP:${NC} $1"; SKIPPED=$((SKIPPED + 1)); }
 
+ACCESS_TOKEN=""
+HEADER_FILE=$(mktemp /tmp/openctem_e2e_headers.XXXXXX)
+trap 'rm -f "$COOKIE_JAR" "$RESPONSE_FILE" "$HEADER_FILE"' EXIT
+
 api_call() {
     local method=$1 path=$2 data=$3
     local args=(-s -w "\n%{http_code}" -b "$COOKIE_JAR" -c "$COOKIE_JAR")
     args+=(-H "Content-Type: application/json")
+    [ -n "$ACCESS_TOKEN" ] && args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
     if [ "$method" = "POST" ] || [ "$method" = "PATCH" ] || [ "$method" = "PUT" ]; then
         args+=(-X "$method" -d "$data")
     elif [ "$method" = "GET" ]; then
@@ -68,29 +73,51 @@ get_body() { echo "$1" | cut -d'|' -f2-; }
 print_header "Setup: Register + Login + Create Team"
 # =============================================================================
 
+# 1. Register
 result=$(api_call POST "/api/v1/auth/register" "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\",\"name\":\"$TEST_NAME\"}")
 if [ "$(get_status "$result")" = "201" ] || [ "$(get_status "$result")" = "200" ]; then
     print_pass "Register user"
 else
     print_fail "Register user ($(get_status "$result"))"
-    echo "Cannot continue without user. Exiting."
     exit 1
 fi
 
-result=$(api_call POST "/api/v1/auth/login" "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\"}")
-if [ "$(get_status "$result")" = "200" ]; then
-    print_pass "Login"
+# 2. Login — capture refresh_token from Set-Cookie header
+curl -s -D "$HEADER_FILE" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "Content-Type: application/json" \
+  -X POST "${API_URL}/api/v1/auth/login" \
+  -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\"}" > "$RESPONSE_FILE" 2>/dev/null
+
+LOGIN_STATUS=$(grep "^HTTP/" "$HEADER_FILE" | tail -1 | awk '{print $2}')
+REFRESH_TOKEN=$(grep "Set-Cookie: refresh_token=" "$HEADER_FILE" | sed 's/.*refresh_token=//;s/;.*//' | tr -d '\r')
+
+if [ "$LOGIN_STATUS" = "200" ] && [ -n "$REFRESH_TOKEN" ]; then
+    print_pass "Login (got refresh_token)"
 else
-    print_fail "Login ($(get_status "$result"))"
+    print_fail "Login (status=$LOGIN_STATUS, token=${REFRESH_TOKEN:+present})"
     exit 1
 fi
 
-result=$(api_call POST "/api/v1/tenants" "{\"name\":\"$TEST_TEAM_NAME\",\"slug\":\"$TEST_TEAM_SLUG\"}")
-status=$(get_status "$result")
-if [ "$status" = "201" ] || [ "$status" = "200" ]; then
-    print_pass "Create team"
+# 3. Create first team — uses refresh_token cookie, returns access_token
+RESP=$(curl -s -w "\n%{http_code}" \
+  -b "refresh_token=$REFRESH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "${API_URL}/api/v1/auth/create-first-team" \
+  -d "{\"team_name\":\"$TEST_TEAM_NAME\",\"team_slug\":\"$TEST_TEAM_SLUG\"}")
+
+TEAM_STATUS=$(echo "$RESP" | tail -1)
+TEAM_BODY=$(echo "$RESP" | sed '$d')
+ACCESS_TOKEN=$(echo "$TEAM_BODY" | jq -r '.access_token // empty' 2>/dev/null)
+
+if [ "$TEAM_STATUS" = "200" ] || [ "$TEAM_STATUS" = "201" ]; then
+    if [ -n "$ACCESS_TOKEN" ]; then
+        print_pass "Create team + got access_token"
+    else
+        print_fail "Create team (no access_token in response)"
+        exit 1
+    fi
 else
-    print_fail "Create team ($status)"
+    print_fail "Create team ($TEAM_STATUS): $(echo "$TEAM_BODY" | jq -r '.message // .error // empty' 2>/dev/null)"
     exit 1
 fi
 
@@ -98,7 +125,7 @@ fi
 print_header "Setup: Create Asset + Finding"
 # =============================================================================
 
-result=$(api_call POST "/api/v1/assets" '{"name":"test-server-lifecycle","asset_type":"host","criticality":"high"}')
+result=$(api_call POST "/api/v1/assets" '{"name":"test-server-lifecycle","type":"host","criticality":"high"}')
 status=$(get_status "$result")
 body=$(get_body "$result")
 if [ "$status" = "201" ] || [ "$status" = "200" ]; then
@@ -163,7 +190,7 @@ print_header "Test 3: Groups View"
 # =============================================================================
 
 print_test "GET /findings/groups?group_by=cve_id"
-result=$(api_call GET "/api/v1/findings/groups?group_by=cve_id")
+result=$(api_call GET "/api/v1/finding-groups?group_by=cve_id")
 status=$(get_status "$result")
 body=$(get_body "$result")
 if [ "$status" = "200" ]; then
@@ -174,7 +201,7 @@ else
 fi
 
 print_test "GET /findings/groups?group_by=asset_id"
-result=$(api_call GET "/api/v1/findings/groups?group_by=asset_id")
+result=$(api_call GET "/api/v1/finding-groups?group_by=asset_id")
 if [ "$(get_status "$result")" = "200" ]; then
     print_pass "Groups by asset works"
 else
@@ -182,7 +209,7 @@ else
 fi
 
 print_test "GET /findings/groups?group_by=severity"
-result=$(api_call GET "/api/v1/findings/groups?group_by=severity")
+result=$(api_call GET "/api/v1/finding-groups?group_by=severity")
 if [ "$(get_status "$result")" = "200" ]; then
     print_pass "Groups by severity works"
 else
@@ -194,7 +221,7 @@ print_header "Test 4: Bulk Fix Applied"
 # =============================================================================
 
 print_test "POST /findings/actions/fix-applied (with note)"
-result=$(api_call POST "/api/v1/findings/actions/fix-applied" "{\"filter\":{\"cve_ids\":[\"CVE-2021-44228\"]},\"note\":\"Upgraded log4j-core to 2.17.1\",\"include_related_cves\":false}")
+result=$(api_call POST "/api/v1/finding-actions/fix-applied" "{\"filter\":{\"cve_ids\":[\"CVE-2021-44228\"]},\"note\":\"Upgraded log4j-core to 2.17.1\",\"include_related_cves\":false}")
 status=$(get_status "$result")
 body=$(get_body "$result")
 if [ "$status" = "200" ]; then
@@ -221,7 +248,7 @@ print_header "Test 5: Bulk Fix Applied WITHOUT note (should fail)"
 # =============================================================================
 
 print_test "POST /findings/actions/fix-applied without note (should fail)"
-result=$(api_call POST "/api/v1/findings/actions/fix-applied" '{"filter":{"cve_ids":["CVE-2021-44228"]},"note":""}')
+result=$(api_call POST "/api/v1/finding-actions/fix-applied" '{"filter":{"cve_ids":["CVE-2021-44228"]},"note":""}')
 status=$(get_status "$result")
 if [ "$status" = "400" ]; then
     print_pass "Fix applied without note rejected (400)"
@@ -234,7 +261,7 @@ print_header "Test 6: Verify (Security approve)"
 # =============================================================================
 
 print_test "POST /findings/actions/verify (by filter)"
-result=$(api_call POST "/api/v1/findings/actions/verify" "{\"filter\":{\"cve_ids\":[\"CVE-2021-44228\"]},\"note\":\"Verified by security team\"}")
+result=$(api_call POST "/api/v1/finding-actions/verify" "{\"filter\":{\"cve_ids\":[\"CVE-2021-44228\"]},\"note\":\"Verified by security team\"}")
 status=$(get_status "$result")
 body=$(get_body "$result")
 if [ "$status" = "200" ]; then
@@ -261,7 +288,7 @@ print_header "Test 7: Related CVEs"
 # =============================================================================
 
 print_test "GET /findings/related-cves/CVE-2021-44228"
-result=$(api_call GET "/api/v1/findings/related-cves/CVE-2021-44228")
+result=$(api_call GET "/api/v1/finding-groups/related-cves/CVE-2021-44228")
 status=$(get_status "$result")
 if [ "$status" = "200" ]; then
     print_pass "Related CVEs endpoint works"
@@ -274,7 +301,7 @@ print_header "Test 8: Auto-Assign to Owners"
 # =============================================================================
 
 print_test "POST /findings/actions/assign-to-owners"
-result=$(api_call POST "/api/v1/findings/actions/assign-to-owners" '{"filter":{}}')
+result=$(api_call POST "/api/v1/finding-actions/assign-to-owners" '{"filter":{}}')
 status=$(get_status "$result")
 if [ "$status" = "200" ]; then
     print_pass "Auto-assign endpoint works"

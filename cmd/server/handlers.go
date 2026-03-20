@@ -84,8 +84,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetRelationship: handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 
 		// Vulnerabilities & Exposures
-		Vulnerability:    vulnHandler,
-		FindingActivity:  handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		Vulnerability:      vulnHandler,
+		FindingActivity:    handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		FindingLifecycle:   handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
 		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:      handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
 		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),

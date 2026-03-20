@@ -62,9 +62,10 @@ type Services struct {
 	FindingSourceCache *app.FindingSourceCacheService
 
 	// Vulnerabilities & Exposures
-	Vulnerability    *app.VulnerabilityService
-	FindingActivity  *app.FindingActivityService
-	Exposure         *app.ExposureService
+	Vulnerability      *app.VulnerabilityService
+	FindingActivity    *app.FindingActivityService
+	FindingLifecycle   *app.FindingLifecycleService
+	Exposure           *app.ExposureService
 	ThreatIntel      *app.ThreatIntelService
 	CredentialImport *app.CredentialImportService
 
@@ -231,6 +232,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetUserRepository(repos.User)         // Wire user lookup for activity records
 
 	// Note: AITriage is wired to VulnerabilityService later after AITriage initialization
+
+	// Initialize finding lifecycle service (closed-loop: fix_applied → verify → resolved)
+	s.FindingLifecycle = app.NewFindingLifecycleService(
+		repos.Finding, repos.AccessControl, repos.Group, repos.Asset,
+		s.FindingActivity, deps.DB, log,
+	)
 
 	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.ThreatIntel = app.NewThreatIntelService(repos.ThreatIntel, log)

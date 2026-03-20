@@ -233,7 +233,7 @@ func Register(
 		registerVulnerabilityRoutes(router, h.Vulnerability, authMiddleware, userSync)
 	}
 
-	// Finding Lifecycle routes (closed-loop: groups, fix-applied, verify, reject, auto-assign)
+	// Finding Lifecycle routes (groups + actions — separate paths to avoid Chi mount conflict)
 	if h.FindingLifecycle != nil {
 		registerFindingLifecycleRoutes(router, h.FindingLifecycle, authMiddleware, userSync)
 	}

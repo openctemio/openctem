@@ -16,6 +16,9 @@ import (
 //	POST /api/v1/findings/actions/verify               → Verify fix-applied findings (security)
 //	POST /api/v1/findings/actions/reject-fix            → Reject fix (security)
 //	POST /api/v1/findings/actions/assign-to-owners      → Auto-assign to asset owners
+// registerFindingLifecycleRoutes registers closed-loop lifecycle endpoints.
+// Uses /api/v1/finding-groups and /api/v1/finding-actions to avoid
+// Chi mount conflict with existing /api/v1/findings group.
 func registerFindingLifecycleRoutes(
 	router Router,
 	h *handler.FindingLifecycleHandler,
@@ -23,22 +26,17 @@ func registerFindingLifecycleRoutes(
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Finding lifecycle routes
-	router.Group("/api/v1/findings", func(r Router) {
-		// Group view (read)
-		r.GET("/groups", h.ListFindingGroups, middleware.Require(permission.FindingsRead))
-
-		// Related CVEs (read) — path avoids conflict with /{id}/* routes
+	// Group view
+	router.Group("/api/v1/finding-groups", func(r Router) {
+		r.GET("/", h.ListFindingGroups, middleware.Require(permission.FindingsRead))
 		r.GET("/related-cves/{cveId}", h.GetRelatedCVEs, middleware.Require(permission.FindingsRead))
+	}, tenantMiddlewares...)
 
-		// Actions (write) — rate limited to prevent bulk abuse
-		r.POST("/actions/fix-applied", h.FixApplied,
-			middleware.Require(permission.FindingsFixApply))
-		r.POST("/actions/verify", h.Verify,
-			middleware.Require(permission.FindingsVerify))
-		r.POST("/actions/reject-fix", h.RejectFix,
-			middleware.Require(permission.FindingsVerify))
-		r.POST("/actions/assign-to-owners", h.AssignToOwners,
-			middleware.Require(permission.FindingsWrite))
+	// Actions
+	router.Group("/api/v1/finding-actions", func(r Router) {
+		r.POST("/fix-applied", h.FixApplied, middleware.Require(permission.FindingsFixApply))
+		r.POST("/verify", h.Verify, middleware.Require(permission.FindingsVerify))
+		r.POST("/reject-fix", h.RejectFix, middleware.Require(permission.FindingsVerify))
+		r.POST("/assign-to-owners", h.AssignToOwners, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)
 }

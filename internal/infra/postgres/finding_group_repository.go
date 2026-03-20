@@ -151,7 +151,7 @@ func (r *FindingRepository) groupByCVE(
 		FROM findings f
 		LEFT JOIN vulnerabilities v ON v.id = f.vulnerability_id
 		WHERE f.tenant_id = $1 AND f.cve_id IS NOT NULL AND f.source != 'pentest' %s
-		GROUP BY f.cve_id, v.id, v.title, v.severity, v.cvss_score, v.epss_score, v.exploit_available, v.cisa_kev_date_added
+		GROUP BY f.cve_id, v.id, v.title, v.severity, f.severity, v.cvss_score, v.epss_score, v.exploit_available, v.cisa_kev_date_added
 		ORDER BY
 			CASE COALESCE(v.severity, f.severity)
 				WHEN 'critical' THEN 1 WHEN 'high' THEN 2
@@ -259,13 +259,13 @@ func (r *FindingRepository) groupByAsset(
 			a.name as label,
 			a.asset_type::text as asset_type,
 			a.criticality::text as criticality,
-			COALESCE(u.display_name, '') as owner_name,
+			COALESCE(u.name, '') as owner_name,
 			%s
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
 		LEFT JOIN users u ON u.id = a.owner_id
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
-		GROUP BY a.id, a.name, a.asset_type, a.criticality, u.display_name
+		GROUP BY a.id, a.name, a.asset_type, a.criticality, u.name
 		ORDER BY COUNT(*) DESC
 		LIMIT $%d OFFSET $%d
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)
@@ -347,14 +347,14 @@ func (r *FindingRepository) groupByOwner(
 	query := fmt.Sprintf(`
 		SELECT
 			COALESCE(a.owner_id::text, 'unassigned') as group_key,
-			COALESCE(u.display_name, 'Unassigned') as label,
+			COALESCE(u.name, 'Unassigned') as label,
 			COALESCE(u.email, '') as email,
 			%s
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
 		LEFT JOIN users u ON u.id = a.owner_id
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
-		GROUP BY a.owner_id, u.display_name, u.email
+		GROUP BY a.owner_id, u.name, u.email
 		ORDER BY COUNT(*) DESC
 		LIMIT $%d OFFSET $%d
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)
@@ -587,9 +587,9 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 	}
 
 	query := fmt.Sprintf(`
-		UPDATE findings
+		UPDATE findings f
 		SET status = $2, resolution = $3, resolved_by = $4%s, updated_at = NOW()
-		WHERE tenant_id = $1 AND source != 'pentest' %s
+		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
 	`, resolvedClause, extraWhere)
 
 	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}, filterArgs...)
