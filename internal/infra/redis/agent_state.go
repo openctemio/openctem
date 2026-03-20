@@ -398,9 +398,11 @@ func (s *AgentStateStore) GetOnlinePlatformAgents(ctx context.Context) ([]string
 	s.client.client.ZRemRangeByScore(ctx, platformAgentOnlineKey, "-inf", strconv.FormatFloat(cutoff, 'f', 0, 64))
 
 	// Get all remaining
-	members, err := s.client.client.ZRangeByScore(ctx, platformAgentOnlineKey, &redis.ZRangeBy{
-		Min: "-inf",
-		Max: "+inf",
+	members, err := s.client.client.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key:     platformAgentOnlineKey,
+		Start:   "-inf",
+		Stop:    "+inf",
+		ByScore: true,
 	}).Result()
 
 	if err != nil {

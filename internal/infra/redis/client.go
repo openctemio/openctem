@@ -144,6 +144,27 @@ func (c *Client) Set(ctx context.Context, key, value string, ttl time.Duration) 
 	return nil
 }
 
+// SetNX sets a key only if it does not already exist (NX mode).
+// Returns true if the key was set, false if it already existed.
+func (c *Client) SetNX(ctx context.Context, key, value string, ttl time.Duration) (bool, error) {
+	if key == "" {
+		return false, errors.New("key is required")
+	}
+
+	result, err := c.client.SetArgs(ctx, key, value, redis.SetArgs{
+		Mode: "NX",
+		TTL:  ttl,
+	}).Result()
+	if errors.Is(err, redis.Nil) {
+		// Key already existed — not set
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("redis setnx: %w", err)
+	}
+	return result == "OK", nil
+}
+
 // Del deletes one or more keys.
 func (c *Client) Del(ctx context.Context, keys ...string) error {
 	if len(keys) == 0 {

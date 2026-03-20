@@ -282,7 +282,7 @@ func (t *ScannerTemplate) Update(name, description string, content []byte, tags 
 
 	t.Description = description
 
-	if content != nil && len(content) > 0 {
+	if len(content) > 0 {
 		if int64(len(content)) > t.TemplateType.MaxSize() {
 			return shared.NewDomainError("VALIDATION", "content exceeds maximum size", shared.ErrValidation)
 		}
