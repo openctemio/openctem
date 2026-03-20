@@ -109,7 +109,6 @@ func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string
 		}
 		clauses = append(clauses, fmt.Sprintf("f.finding_type = ANY($%d)", argOffset))
 		args = append(args, pq.Array(types))
-		argOffset++
 	}
 
 	return strings.Join(clauses, " AND "), args
