@@ -86,7 +86,8 @@ type Handlers struct {
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
 
 	// Pentest Campaign Management handlers
-	Pentest *handler.PentestHandler // nil if not initialized (no database)
+	Pentest                *handler.PentestHandler             // nil if not initialized (no database)
+	PentestCampaignRoleQry middleware.CampaignRoleQuerier       // Campaign role resolver for RBAC middleware
 
 	// Compliance Framework Management handlers
 	Compliance *handler.ComplianceHandler // nil if not initialized (no database)
@@ -180,6 +181,14 @@ func Register(
 
 	// Auth routes - based on provider (some protected, some public)
 	registerAuthRoutes(router, h, authCfg, authMiddleware)
+
+	// Initialize per-user read endpoint rate limiter to prevent enumeration and scraping.
+	// Applied to all GET requests on authenticated tenant-scoped routes via
+	// buildTokenTenantMiddlewares (package-level variable).
+	if cfg.RateLimit.Enabled {
+		rl := middleware.NewReadEndpointRateLimiter(middleware.DefaultReadEndpointRateLimitConfig(), log)
+		readRateLimitMiddleware = rl.Middleware()
+	}
 
 	// UserSync middleware syncs authenticated users to local database
 	// Supports both local auth and OIDC auth
@@ -277,7 +286,7 @@ func Register(
 
 	// Pentest Campaign Management routes (tenant from JWT token)
 	if h.Pentest != nil {
-		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync)
+		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync, h.PentestCampaignRoleQry)
 	}
 
 	// Compliance Framework Management routes (tenant from JWT token)
@@ -506,12 +515,22 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	return middlewares
 }
 
+// readRateLimitMiddleware is the per-user read endpoint rate limiter,
+// set during Register() if rate limiting is enabled. Applied automatically
+// by buildTokenTenantMiddlewares to all tenant-scoped route groups.
+var readRateLimitMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
 // This uses tenant ID from JWT claims instead of URL path.
 // Best practice: tenant-scoped access tokens eliminate IDOR by design.
+// Includes per-user read rate limiting when enabled.
 func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
 	middlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
-	return append(middlewares, middleware.RequireTenant())
+	middlewares = append(middlewares, middleware.RequireTenant())
+	if readRateLimitMiddleware != nil {
+		middlewares = append(middlewares, readRateLimitMiddleware)
+	}
+	return middlewares
 }
 
 // ChainFunc wraps a handler function with middleware(s).

@@ -90,6 +90,17 @@ func (r *PermissionSetRepository) GetByID(ctx context.Context, id shared.ID) (*p
 	return r.scanPermissionSet(r.db.QueryRowContext(ctx, query, id.String()))
 }
 
+// GetByTenantAndID retrieves a permission set by tenant and ID (tenant-scoped).
+func (r *PermissionSetRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*permissionset.PermissionSet, error) {
+	query := `
+		SELECT id, tenant_id, name, slug, description, set_type,
+			   parent_set_id, cloned_from_version, is_active, created_at, updated_at
+		FROM permission_sets
+		WHERE tenant_id = $1 AND id = $2
+	`
+	return r.scanPermissionSet(r.db.QueryRowContext(ctx, query, tenantID.String(), id.String()))
+}
+
 // GetBySlug retrieves a permission set by tenant and slug.
 func (r *PermissionSetRepository) GetBySlug(ctx context.Context, tenantID *shared.ID, slug string) (*permissionset.PermissionSet, error) {
 	var query string

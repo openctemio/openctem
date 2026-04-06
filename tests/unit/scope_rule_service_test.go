@@ -291,6 +291,14 @@ func (m *mockGroupRepoForScope) GetByID(_ context.Context, id shared.ID) (*group
 	return g, nil
 }
 
+func (m *mockGroupRepoForScope) GetByTenantAndID(_ context.Context, _, id shared.ID) (*group.Group, error) {
+	g, ok := m.groups[id]
+	if !ok {
+		return nil, group.ErrGroupNotFound
+	}
+	return g, nil
+}
+
 // Stubs for remaining interface methods
 func (m *mockGroupRepoForScope) Create(_ context.Context, _ *group.Group) error { return nil }
 func (m *mockGroupRepoForScope) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {

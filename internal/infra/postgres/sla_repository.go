@@ -76,6 +76,13 @@ func (r *SLAPolicyRepository) GetByID(ctx context.Context, id shared.ID) (*sla.P
 	return r.scanPolicy(row)
 }
 
+// GetByTenantAndID retrieves a policy by tenant and ID (tenant-scoped).
+func (r *SLAPolicyRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sla.Policy, error) {
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
+	return r.scanPolicy(row)
+}
+
 // GetByAsset retrieves the policy for a specific asset.
 // Returns the asset-specific policy if exists, otherwise the tenant default.
 func (r *SLAPolicyRepository) GetByAsset(ctx context.Context, tenantID, assetID shared.ID) (*sla.Policy, error) {

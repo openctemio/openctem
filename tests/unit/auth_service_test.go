@@ -658,6 +658,10 @@ func (m *mockAuthAuditRepo) GetByID(_ context.Context, _ shared.ID) (*audit.Audi
 	return nil, shared.ErrNotFound
 }
 
+func (m *mockAuthAuditRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*audit.AuditLog, error) {
+	return nil, nil
+}
+
 func (m *mockAuthAuditRepo) List(_ context.Context, _ audit.Filter, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
@@ -1710,9 +1714,9 @@ func TestAuthService_ResetPassword(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		// Should update user and revoke all sessions
-		if deps.userRepo.updateCalls != 1 {
-			t.Errorf("expected 1 user update call, got %d", deps.userRepo.updateCalls)
+		// Should update user twice (1: clear reset token, 2: set new password) and revoke all sessions
+		if deps.userRepo.updateCalls != 2 {
+			t.Errorf("expected 2 user update calls (clear token + set password), got %d", deps.userRepo.updateCalls)
 		}
 		if deps.sessionRepo.revokeAllCalls != 1 {
 			t.Errorf("expected 1 session revoke-all call, got %d", deps.sessionRepo.revokeAllCalls)

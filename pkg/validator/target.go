@@ -484,3 +484,37 @@ func (r *TargetValidationResult) GetTargetsByType(targetType TargetType) []Valid
 	}
 	return result
 }
+
+// ValidateWebhookURL validates that a URL is safe for server-side requests (SSRF protection).
+// It ensures the URL uses http/https scheme and doesn't point to internal/localhost addresses.
+func ValidateWebhookURL(rawURL string) error {
+	if rawURL == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL format")
+	}
+
+	// Only allow http and https schemes
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("only http and https schemes are allowed")
+	}
+
+	host := parsed.Hostname()
+
+	// Block localhost hostnames
+	if isLocalhostHostname(host) {
+		return fmt.Errorf("localhost URLs are not allowed")
+	}
+
+	// Block internal/private IPs
+	if ip := net.ParseIP(host); ip != nil {
+		if isInternalIP(ip) || isLocalhostIP(ip) {
+			return fmt.Errorf("internal IP addresses are not allowed")
+		}
+	}
+
+	return nil
+}

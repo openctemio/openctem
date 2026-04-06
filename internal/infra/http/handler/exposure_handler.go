@@ -256,9 +256,10 @@ func (h *ExposureHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /exposures/{id} [get]
 func (h *ExposureHandler) Get(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	exposureID := chi.URLParam(r, "id")
 
-	event, err := h.service.GetExposure(r.Context(), exposureID)
+	event, err := h.service.GetExposureSecure(r.Context(), tenantID, exposureID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

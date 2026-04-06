@@ -261,6 +261,10 @@ func (m *mockAssetGroupRepo) GetByID(_ context.Context, id shared.ID) (*assetgro
 	return g, nil
 }
 
+func (m *mockAssetGroupRepo) GetByTenantAndID(ctx context.Context, _, id shared.ID) (*assetgroup.AssetGroup, error) {
+	return m.GetByID(ctx, id)
+}
+
 func (m *mockAssetGroupRepo) Update(_ context.Context, _ *assetgroup.AssetGroup) error { return nil }
 func (m *mockAssetGroupRepo) Delete(_ context.Context, _ shared.ID) error              { return nil }
 func (m *mockAssetGroupRepo) List(_ context.Context, _ assetgroup.Filter, _ assetgroup.ListOptions, _ pagination.Pagination) (pagination.Result[*assetgroup.AssetGroup], error) {

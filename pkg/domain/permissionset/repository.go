@@ -11,6 +11,8 @@ type Repository interface {
 	// Permission Set CRUD
 	Create(ctx context.Context, ps *PermissionSet) error
 	GetByID(ctx context.Context, id shared.ID) (*PermissionSet, error)
+	// GetByTenantAndID retrieves a permission set by tenant and ID.
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*PermissionSet, error)
 	GetBySlug(ctx context.Context, tenantID *shared.ID, slug string) (*PermissionSet, error)
 	Update(ctx context.Context, ps *PermissionSet) error
 	Delete(ctx context.Context, id shared.ID) error

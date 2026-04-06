@@ -752,12 +752,12 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Has findings filter - use EXISTS subquery for real-time count
+	// Has findings filter - use EXISTS subquery (finding_count is a computed JOIN alias, not a column)
 	if filter.HasFindings != nil {
 		if *filter.HasFindings {
-			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id)")
+			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.status != 'resolved')")
 		} else {
-			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id)")
+			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.status != 'resolved')")
 		}
 	}
 
@@ -1062,6 +1062,31 @@ func (r *AssetRepository) BatchUpdateRiskScores(ctx context.Context, tenantID sh
 	return nil
 }
 
+// BulkUpdateStatus atomically updates the status of multiple assets in a single SQL statement.
+func (r *AssetRepository) BulkUpdateStatus(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, status asset.Status) (int64, error) {
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
+
+	ids := make([]string, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		ids = append(ids, id.String())
+	}
+
+	query := `
+		UPDATE assets
+		SET status = $1, updated_at = NOW()
+		WHERE tenant_id = $2 AND id = ANY($3::uuid[])
+	`
+
+	result, err := r.db.ExecContext(ctx, query, status.String(), tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return 0, fmt.Errorf("bulk update status: %w", err)
+	}
+
+	return result.RowsAffected()
+}
+
 // GetAssetTypeBreakdown returns total and exposed counts per asset_type in a single query.
 func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID) (map[string]asset.AssetTypeStats, error) {
 	query := `
@@ -1107,4 +1132,85 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 		return 0, fmt.Errorf("failed to get average risk score: %w", err)
 	}
 	return avg, nil
+}
+
+// GetAggregateStats computes all asset statistics using SQL aggregation (no in-memory loading).
+func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string) (*asset.AggregateStats, error) {
+	stats := &asset.AggregateStats{
+		ByType:        make(map[string]int),
+		ByStatus:      make(map[string]int),
+		ByCriticality: make(map[string]int),
+		ByScope:       make(map[string]int),
+		ByExposure:    make(map[string]int),
+	}
+
+	// Single query for all aggregations (finding counts via subquery since it's not a column)
+	query := `
+		SELECT
+			COUNT(*) AS total,
+			COALESCE(AVG(a.risk_score), 0) AS risk_score_avg,
+			COUNT(*) FILTER (WHERE fc.cnt > 0) AS with_findings,
+			COALESCE(SUM(fc.cnt), 0) AS findings_total,
+			COUNT(*) FILTER (WHERE a.risk_score >= 70) AS high_risk_count
+		FROM assets a
+		LEFT JOIN (
+			SELECT asset_id, COUNT(*) AS cnt
+			FROM findings
+			GROUP BY asset_id
+		) fc ON fc.asset_id = a.id
+		WHERE a.tenant_id = $1
+	`
+	args := []any{tenantID.String()}
+	if len(types) > 0 {
+		query += ` AND asset_type = ANY($2::text[])`
+		args = append(args, pq.Array(types))
+	}
+
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
+		&stats.Total, &stats.RiskScoreAvg, &stats.WithFindings,
+		&stats.FindingsTotal, &stats.HighRiskCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get aggregate stats: %w", err)
+	}
+
+	// GROUP BY queries for breakdowns
+	breakdowns := []struct {
+		column string
+		dest   map[string]int
+	}{
+		{"asset_type", stats.ByType},
+		{"status", stats.ByStatus},
+		{"criticality", stats.ByCriticality},
+		{"scope", stats.ByScope},
+		{"exposure", stats.ByExposure},
+	}
+
+	for _, bd := range breakdowns {
+		bdQuery := fmt.Sprintf(
+			`SELECT %s, COUNT(*) FROM assets WHERE tenant_id = $1`, bd.column)
+		bdArgs := []any{tenantID.String()}
+		if len(types) > 0 {
+			bdQuery += ` AND asset_type = ANY($2::text[])`
+			bdArgs = append(bdArgs, pq.Array(types))
+		}
+		bdQuery += fmt.Sprintf(` GROUP BY %s`, bd.column)
+
+		rows, err := r.db.QueryContext(ctx, bdQuery, bdArgs...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get %s breakdown: %w", bd.column, err)
+		}
+		for rows.Next() {
+			var key string
+			var count int
+			if err := rows.Scan(&key, &count); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("failed to scan %s breakdown: %w", bd.column, err)
+			}
+			bd.dest[key] = count
+		}
+		_ = rows.Close()
+	}
+
+	return stats, nil
 }

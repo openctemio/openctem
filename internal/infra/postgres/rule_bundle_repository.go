@@ -79,6 +79,13 @@ func (r *RuleBundleRepository) GetByID(ctx context.Context, id shared.ID) (*rule
 	return r.scanBundle(row)
 }
 
+// GetByTenantAndID retrieves a bundle by tenant and ID (tenant-scoped).
+func (r *RuleBundleRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*rule.Bundle, error) {
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
+	return r.scanBundle(row)
+}
+
 // GetLatest retrieves the latest ready bundle for a tenant and tool.
 func (r *RuleBundleRepository) GetLatest(ctx context.Context, tenantID, toolID shared.ID) (*rule.Bundle, error) {
 	query := r.selectQuery() + `

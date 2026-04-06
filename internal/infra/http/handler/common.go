@@ -68,8 +68,9 @@ func NewPaginationLinks(r *http.Request, page, perPage, totalPages int) *Paginat
 func buildBaseURL(r *http.Request) string {
 	scheme := schemeHTTPS
 	if r.TLS == nil {
-		// Check X-Forwarded-Proto header for reverse proxy scenarios
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		// Check X-Forwarded-Proto header for reverse proxy scenarios.
+		// Security: Only accept "http" or "https" to prevent injection (CWE-644).
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto == "http" || proto == "https" {
 			scheme = proto
 		} else {
 			scheme = schemeHTTP
@@ -78,10 +79,26 @@ func buildBaseURL(r *http.Request) string {
 
 	host := r.Host
 	if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" {
-		host = fwdHost
+		// Security: Validate host format to prevent header injection (CWE-644).
+		if isValidHostHeader(fwdHost) {
+			host = fwdHost
+		}
 	}
 
 	return fmt.Sprintf("%s://%s%s", scheme, host, r.URL.Path)
+}
+
+// isValidHostHeader checks if a host header value contains only safe characters.
+func isValidHostHeader(host string) bool {
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+	for _, r := range host {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == ':') {
+			return false
+		}
+	}
+	return true
 }
 
 // buildPageURL builds a URL with the specified page number.

@@ -54,6 +54,10 @@ func (m *mockSLARepo) GetByID(_ context.Context, id shared.ID) (*sla.Policy, err
 	return nil, sla.ErrNotFound
 }
 
+func (m *mockSLARepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*sla.Policy, error) {
+	return nil, nil
+}
+
 func (m *mockSLARepo) GetByAsset(_ context.Context, tenantID, assetID shared.ID) (*sla.Policy, error) {
 	if m.getByAsset != nil {
 		return nil, m.getByAsset

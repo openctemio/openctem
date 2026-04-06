@@ -1325,3 +1325,115 @@ func (a *AdminMappingRateLimiter) WriteMiddleware() func(http.Handler) http.Hand
 		})
 	}
 }
+
+// =============================================================================
+// Read Endpoint Rate Limiting (per-user for GET requests)
+// =============================================================================
+
+// ReadEndpointRateLimiter provides per-user rate limiting for read/list endpoints.
+// This prevents enumeration attacks and excessive polling on GET endpoints
+// across all authenticated API routes.
+type ReadEndpointRateLimiter struct {
+	limiter *RateLimiter
+	log     *logger.Logger
+}
+
+// ReadEndpointRateLimitConfig configures read endpoint rate limits.
+type ReadEndpointRateLimitConfig struct {
+	// ReadRequestsPerMin is the max GET requests per minute per user.
+	// Default: 120 (2 per second — generous for normal usage, blocks scraping)
+	ReadRequestsPerMin int
+	// CleanupInterval for visitor entries.
+	// Default: 1 minute
+	CleanupInterval time.Duration
+}
+
+// DefaultReadEndpointRateLimitConfig returns secure defaults for read endpoint rate limiting.
+func DefaultReadEndpointRateLimitConfig() ReadEndpointRateLimitConfig {
+	return ReadEndpointRateLimitConfig{
+		ReadRequestsPerMin: 120,
+		CleanupInterval:    time.Minute,
+	}
+}
+
+// NewReadEndpointRateLimiter creates a rate limiter for read/list endpoints.
+func NewReadEndpointRateLimiter(cfg ReadEndpointRateLimitConfig, log *logger.Logger) *ReadEndpointRateLimiter {
+	if cfg.ReadRequestsPerMin == 0 {
+		cfg.ReadRequestsPerMin = 120
+	}
+	if cfg.CleanupInterval == 0 {
+		cfg.CleanupInterval = time.Minute
+	}
+
+	// Convert per-minute rate to per-second for rate.Limit
+	readRate := float64(cfg.ReadRequestsPerMin) / 60.0
+
+	return &ReadEndpointRateLimiter{
+		limiter: NewRateLimiter(&config.RateLimitConfig{
+			Enabled:         true,
+			RequestsPerSec:  readRate,
+			Burst:           cfg.ReadRequestsPerMin,
+			CleanupInterval: cfg.CleanupInterval,
+		}, log),
+		log: log,
+	}
+}
+
+// Stop gracefully shuts down the rate limiter.
+func (rel *ReadEndpointRateLimiter) Stop() {
+	rel.limiter.Stop()
+}
+
+// Middleware returns middleware that rate-limits GET requests per user.
+// Non-GET requests pass through without rate limiting.
+func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Only rate-limit GET (read/list) requests
+			if r.Method != http.MethodGet {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Use user ID as the key for per-user rate limiting
+			key := UserKeyFunc(r)
+			limiter := rel.limiter.getVisitor(key)
+
+			// Get current tokens before Allow() consumes one
+			tokens := limiter.Tokens()
+			remaining := int(math.Max(0, math.Floor(tokens)-1))
+
+			// Calculate reset time
+			tokensToRefill := float64(rel.limiter.burst) - tokens
+			var resetTime time.Time
+			if tokensToRefill > 0 && rel.limiter.rate > 0 {
+				secondsToRefill := tokensToRefill / float64(rel.limiter.rate)
+				resetTime = time.Now().Add(time.Duration(secondsToRefill * float64(time.Second)))
+			} else {
+				resetTime = time.Now()
+			}
+
+			// Set rate limit headers
+			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rel.limiter.burst))
+			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
+
+			if !limiter.Allow() {
+				if rel.log != nil {
+					rel.log.Warn("read endpoint rate limit exceeded",
+						"key", key,
+						"path", r.URL.Path,
+						"request_id", GetRequestID(r.Context()),
+					)
+				}
+
+				w.Header().Set("X-RateLimit-Remaining", "0")
+				w.Header().Set("Retry-After", "1")
+				apierror.RateLimitExceeded().WriteJSON(w)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}

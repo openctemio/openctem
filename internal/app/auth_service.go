@@ -772,7 +772,7 @@ func (s *AuthService) VerifyEmail(ctx context.Context, token string) error {
 		return ErrInvalidVerificationToken
 	}
 
-	// Verify email
+	// Security: Clear verification token FIRST to prevent race condition reuse (CWE-640).
 	u.VerifyEmail()
 
 	if err := s.userRepo.Update(ctx, u); err != nil {
@@ -855,17 +855,24 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 		return fmt.Errorf("password validation failed: %w", err)
 	}
 
+	// Security: Clear reset token FIRST to prevent race condition reuse (CWE-640).
+	// If two concurrent requests use the same token, the first clears it and
+	// the second will fail at GetByPasswordResetToken (token no longer exists).
+	u.ClearPasswordResetToken()
+	if err := s.userRepo.Update(ctx, u); err != nil {
+		return fmt.Errorf("failed to clear reset token: %w", err)
+	}
+
 	// Hash new password
 	passwordHash, err := s.passwordHasher.Hash(input.NewPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Update password and clear reset token
+	// Update password
 	if err := u.SetPasswordHash(passwordHash); err != nil {
 		return fmt.Errorf("failed to set password hash: %w", err)
 	}
-	u.ClearPasswordResetToken()
 
 	// Revoke all sessions for security
 	if err := s.sessionRepo.RevokeAllByUserID(ctx, u.ID()); err != nil {

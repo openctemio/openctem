@@ -177,6 +177,10 @@ func (m *ruleSvcMockRuleRepo) GetByID(_ context.Context, id shared.ID) (*rule.Ru
 	return r, nil
 }
 
+func (m *ruleSvcMockRuleRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*rule.Rule, error) {
+	return nil, nil
+}
+
 func (m *ruleSvcMockRuleRepo) GetBySourceAndRuleID(_ context.Context, sourceID shared.ID, ruleID string) (*rule.Rule, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -313,6 +317,10 @@ func (m *ruleSvcMockBundleRepo) GetByID(_ context.Context, id shared.ID) (*rule.
 		return nil, shared.ErrNotFound
 	}
 	return b, nil
+}
+
+func (m *ruleSvcMockBundleRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*rule.Bundle, error) {
+	return nil, nil
 }
 
 func (m *ruleSvcMockBundleRepo) GetLatest(_ context.Context, tenantID, toolID shared.ID) (*rule.Bundle, error) {
@@ -551,6 +559,10 @@ func (m *ruleSvcMockAuditRepo) CreateBatch(_ context.Context, logs []*audit.Audi
 
 func (m *ruleSvcMockAuditRepo) GetByID(_ context.Context, _ shared.ID) (*audit.AuditLog, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (m *ruleSvcMockAuditRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*audit.AuditLog, error) {
+	return nil, nil
 }
 
 func (m *ruleSvcMockAuditRepo) List(_ context.Context, _ audit.Filter, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {

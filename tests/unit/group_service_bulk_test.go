@@ -145,6 +145,17 @@ func (m *mockGroupRepoForBulk) GetByID(_ context.Context, id shared.ID) (*group.
 	return g, nil
 }
 
+func (m *mockGroupRepoForBulk) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*group.Group, error) {
+	g, ok := m.groups[id]
+	if !ok {
+		return nil, group.ErrGroupNotFound
+	}
+	if g.TenantID() != tenantID {
+		return nil, group.ErrGroupNotFound
+	}
+	return g, nil
+}
+
 func (m *mockGroupRepoForBulk) GetMember(_ context.Context, _, _ shared.ID) (*group.Member, error) {
 	if m.getMemberErr != nil {
 		return nil, m.getMemberErr

@@ -165,6 +165,13 @@ func (r *RuleRepository) GetByID(ctx context.Context, id shared.ID) (*rule.Rule,
 	return r.scanRule(row)
 }
 
+// GetByTenantAndID retrieves a rule by tenant and ID (tenant-scoped).
+func (r *RuleRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*rule.Rule, error) {
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
+	return r.scanRule(row)
+}
+
 // GetBySourceAndRuleID retrieves a rule by source and rule ID.
 func (r *RuleRepository) GetBySourceAndRuleID(ctx context.Context, sourceID shared.ID, ruleID string) (*rule.Rule, error) {
 	query := r.selectQuery() + " WHERE source_id = $1 AND rule_id = $2"

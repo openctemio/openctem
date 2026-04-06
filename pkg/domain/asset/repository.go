@@ -82,6 +82,26 @@ type Repository interface {
 	// BatchUpdateRiskScores updates risk scores for multiple assets in a single query.
 	// Uses PostgreSQL unnest() for efficient bulk updates.
 	BatchUpdateRiskScores(ctx context.Context, tenantID shared.ID, assets []*Asset) error
+
+	// BulkUpdateStatus atomically updates the status of multiple assets in a single transaction.
+	BulkUpdateStatus(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, status Status) (int64, error)
+
+	// GetAggregateStats computes all asset statistics using SQL aggregation.
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string) (*AggregateStats, error)
+}
+
+// AggregateStats holds all statistics computed via SQL aggregation.
+type AggregateStats struct {
+	Total         int
+	ByType        map[string]int
+	ByStatus      map[string]int
+	ByCriticality map[string]int
+	ByScope       map[string]int
+	ByExposure    map[string]int
+	WithFindings  int
+	FindingsTotal int
+	HighRiskCount int
+	RiskScoreAvg  float64
 }
 
 // AssetTypeStats holds per-type aggregate counts.

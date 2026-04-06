@@ -182,6 +182,20 @@ func (m *HandlerMockRepository) BatchUpdateRiskScores(_ context.Context, _ share
 	return nil
 }
 
+func (m *HandlerMockRepository) BulkUpdateStatus(_ context.Context, _ shared.ID, _ []shared.ID, _ asset.Status) (int64, error) {
+	return 0, nil
+}
+
+func (m *HandlerMockRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ []string) (*asset.AggregateStats, error) {
+	return &asset.AggregateStats{
+		ByType:        make(map[string]int),
+		ByStatus:      make(map[string]int),
+		ByCriticality: make(map[string]int),
+		ByScope:       make(map[string]int),
+		ByExposure:    make(map[string]int),
+	}, nil
+}
+
 func newTestHandler() *handler.AssetHandler {
 	repo := NewHandlerMockRepository()
 	log := logger.NewDevelopment()

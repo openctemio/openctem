@@ -20,6 +20,9 @@ type Repository interface {
 	// GetByID retrieves an exposure event by its ID.
 	GetByID(ctx context.Context, id shared.ID) (*ExposureEvent, error)
 
+	// GetByTenantAndID retrieves an exposure event by tenant and ID (tenant-scoped access control).
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*ExposureEvent, error)
+
 	// GetByFingerprint retrieves an exposure event by fingerprint within a tenant.
 	GetByFingerprint(ctx context.Context, tenantID shared.ID, fingerprint string) (*ExposureEvent, error)
 

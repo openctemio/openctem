@@ -322,6 +322,20 @@ func (m *mockAssetRepo) BatchUpdateRiskScores(_ context.Context, _ shared.ID, _ 
 	return nil
 }
 
+func (m *mockAssetRepo) BulkUpdateStatus(_ context.Context, _ shared.ID, _ []shared.ID, _ asset.Status) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockAssetRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []string) (*asset.AggregateStats, error) {
+	return &asset.AggregateStats{
+		ByType:        make(map[string]int),
+		ByStatus:      make(map[string]int),
+		ByCriticality: make(map[string]int),
+		ByScope:       make(map[string]int),
+		ByExposure:    make(map[string]int),
+	}, nil
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================

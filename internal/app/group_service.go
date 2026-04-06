@@ -176,6 +176,19 @@ func (s *GroupService) GetGroup(ctx context.Context, groupID string) (*group.Gro
 	return s.repo.GetByID(ctx, id)
 }
 
+// GetGroupSecure retrieves a group by tenant and ID (tenant-scoped access control).
+func (s *GroupService) GetGroupSecure(ctx context.Context, tenantID, groupID string) (*group.Group, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	id, err := shared.IDFromString(groupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+	return s.repo.GetByTenantAndID(ctx, tid, id)
+}
+
 // GetGroupBySlug retrieves a group by tenant and slug.
 func (s *GroupService) GetGroupBySlug(ctx context.Context, tenantID, slug string) (*group.Group, error) {
 	tid, err := shared.IDFromString(tenantID)

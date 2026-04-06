@@ -257,6 +257,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	// Wire unified finding repository for CTEM integration (pentest findings → findings table)
 	s.Pentest.SetUnifiedFindingRepository(repos.Finding)
+	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
 	// Note: Pentest notification wiring happens later after NotificationService is initialized
 
 	// Initialize Compliance service
@@ -328,10 +329,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize credential service for template sources
 	// Decode hex key to bytes (64 hex chars -> 32 bytes for AES-256)
-	encryptionKey, err := hex.DecodeString(cfg.Encryption.Key)
-	if err != nil {
-		// Fallback to raw bytes if not hex encoded
-		encryptionKey = []byte(cfg.Encryption.Key)
+	var encryptionKey []byte
+	if cfg.Encryption.IsConfigured() {
+		encryptionKey, err = hex.DecodeString(cfg.Encryption.Key)
+		if err != nil {
+			// Fallback to raw bytes if not hex encoded
+			encryptionKey = []byte(cfg.Encryption.Key)
+		}
+	} else {
+		// Use a zero key for development (secret store will still work but is not secure)
+		log.Warn("APP_ENCRYPTION_KEY not configured - secret store using zero key (development only)")
+		encryptionKey = make([]byte, 32)
 	}
 	s.SecretStore, err = app.NewSecretStoreService(repos.SecretStore, encryptionKey, s.Audit, log)
 	if err != nil {

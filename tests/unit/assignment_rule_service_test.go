@@ -125,6 +125,10 @@ func (m *mockGroupRepoForRules) GetByID(_ context.Context, _ shared.ID) (*group.
 	return m.getByIDResult, m.getByIDErr
 }
 
+func (m *mockGroupRepoForRules) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*group.Group, error) {
+	return m.getByIDResult, m.getByIDErr
+}
+
 // Stub remaining group.Repository methods
 func (m *mockGroupRepoForRules) Create(_ context.Context, _ *group.Group) error { return nil }
 func (m *mockGroupRepoForRules) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {

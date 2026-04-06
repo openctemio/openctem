@@ -88,6 +88,10 @@ func (m *mockPermissionSetRepo) GetByID(_ context.Context, id shared.ID) (*permi
 	return ps, nil
 }
 
+func (m *mockPermissionSetRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*permissionset.PermissionSet, error) {
+	return nil, nil
+}
+
 func (m *mockPermissionSetRepo) GetBySlug(_ context.Context, _ *shared.ID, slug string) (*permissionset.PermissionSet, error) {
 	if m.getBySlugErr != nil {
 		return nil, m.getBySlugErr
@@ -292,6 +296,9 @@ func (m *mockGroupRepoForPermission) GetByID(_ context.Context, id shared.ID) (*
 		return nil, errors.New("group not found")
 	}
 	return g, nil
+}
+func (m *mockGroupRepoForPermission) GetByTenantAndID(_ context.Context, _, id shared.ID) (*group.Group, error) {
+	return nil, nil
 }
 func (m *mockGroupRepoForPermission) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, nil

@@ -123,7 +123,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SLA: handler.NewSLAHandler(svc.SLA, v, log),
 
 		// Pentest Campaign Management
-		Pentest: handler.NewPentestHandler(svc.Pentest, repos.User, log),
+		Pentest:                handler.NewPentestHandler(svc.Pentest, repos.User, log),
+		PentestCampaignRoleQry: repos.PentestCampaignMember,
 
 		// Compliance Framework Management
 		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
