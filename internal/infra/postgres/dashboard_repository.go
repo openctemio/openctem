@@ -30,60 +30,44 @@ func (r *DashboardRepository) GetAssetStats(ctx context.Context, tenantID shared
 		ByStatus: make(map[string]int),
 	}
 
-	// Get total count filtered by tenant
-	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM assets WHERE tenant_id = $1`,
-		tenantID.String(),
-	).Scan(&stats.Total)
-	if err != nil {
-		return stats, err
-	}
+	// Single query with CTEs — replaces 3 separate queries
+	query := `
+		WITH base AS (
+			SELECT asset_type, status FROM assets WHERE tenant_id = $1
+		),
+		total AS (SELECT COUNT(*) AS cnt FROM base),
+		by_type AS (SELECT asset_type, COUNT(*) AS cnt FROM base GROUP BY asset_type),
+		by_status AS (SELECT status, COUNT(*) AS cnt FROM base GROUP BY status)
+		SELECT 'total' AS category, '' AS key, cnt FROM total
+		UNION ALL
+		SELECT 'type', asset_type, cnt FROM by_type
+		UNION ALL
+		SELECT 'status', status, cnt FROM by_status
+	`
 
-	// Get by type filtered by tenant
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT asset_type, COUNT(*) FROM assets WHERE tenant_id = $1 GROUP BY asset_type`,
-		tenantID.String(),
-	)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var assetType string
-		var count int
-		if err := rows.Scan(&assetType, &count); err != nil {
-			return stats, err
-		}
-		stats.ByType[assetType] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	// Get by status filtered by tenant
-	rows, err = r.db.QueryContext(ctx,
-		`SELECT status, COUNT(*) FROM assets WHERE tenant_id = $1 GROUP BY status`,
-		tenantID.String(),
-	)
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {
 		return stats, err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var status string
+		var category, key string
 		var count int
-		if err := rows.Scan(&status, &count); err != nil {
+		if err := rows.Scan(&category, &key, &count); err != nil {
 			return stats, err
 		}
-		stats.ByStatus[status] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
+		switch category {
+		case "total":
+			stats.Total = count
+		case "type":
+			stats.ByType[key] = count
+		case "status":
+			stats.ByStatus[key] = count
+		}
 	}
 
-	return stats, nil
+	return stats, rows.Err()
 }
 
 // GetFindingStats returns finding statistics for a tenant.
@@ -93,72 +77,55 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 		ByStatus:   make(map[string]int),
 	}
 
-	// Get total count
-	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM findings WHERE tenant_id = $1`,
-		tenantID.String(),
-	).Scan(&stats.Total)
-	if err != nil {
-		return stats, err
-	}
+	// Single query with CTEs — replaces 4 separate queries
+	query := `
+		WITH base AS (
+			SELECT id, severity, status, vulnerability_id FROM findings WHERE tenant_id = $1
+		),
+		total AS (SELECT COUNT(*) AS cnt FROM base),
+		by_sev AS (SELECT severity, COUNT(*) AS cnt FROM base GROUP BY severity),
+		by_stat AS (SELECT status, COUNT(*) AS cnt FROM base GROUP BY status),
+		avg_cvss AS (
+			SELECT COALESCE(AVG(v.cvss_score), 0) AS val
+			FROM base b LEFT JOIN vulnerabilities v ON b.vulnerability_id = v.id
+		)
+		SELECT 'total' AS category, '' AS key, cnt::float8 FROM total
+		UNION ALL
+		SELECT 'severity', severity, cnt::float8 FROM by_sev
+		UNION ALL
+		SELECT 'status', status, cnt::float8 FROM by_stat
+		UNION ALL
+		SELECT 'avg_cvss', '', val FROM avg_cvss
+	`
 
-	// Get by severity
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT severity, COUNT(*) FROM findings WHERE tenant_id = $1 GROUP BY severity`,
-		tenantID.String(),
-	)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var severity string
-		var count int
-		if err := rows.Scan(&severity, &count); err != nil {
-			return stats, err
-		}
-		stats.BySeverity[severity] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	// Get by status
-	rows, err = r.db.QueryContext(ctx,
-		`SELECT status, COUNT(*) FROM findings WHERE tenant_id = $1 GROUP BY status`,
-		tenantID.String(),
-	)
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {
 		return stats, err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
+		var category, key string
+		var value float64
+		if err := rows.Scan(&category, &key, &value); err != nil {
 			return stats, err
 		}
-		stats.ByStatus[status] = count
+		switch category {
+		case "total":
+			stats.Total = int(value)
+		case "severity":
+			stats.BySeverity[key] = int(value)
+		case "status":
+			stats.ByStatus[key] = int(value)
+		case "avg_cvss":
+			stats.AverageCVSS = value
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return stats, err
 	}
 
-	// Overdue count requires SLA-based due_date on findings — planned for Phase 2.
-	stats.Overdue = 0
-
-	// Get average CVSS (join with vulnerabilities to get cvss_score)
-	err = r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(v.cvss_score), 0) FROM findings f
-		 LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
-		 WHERE f.tenant_id = $1`,
-		tenantID.String(),
-	).Scan(&stats.AverageCVSS)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		stats.AverageCVSS = 0
-	}
+	stats.Overdue = 0 // Requires SLA-based due_date — planned for Phase 2
 
 	return stats, nil
 }
