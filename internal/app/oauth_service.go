@@ -444,13 +444,19 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, accessToken string
 	}
 
 	var data struct {
-		ID      string `json:"id"`
-		Email   string `json:"email"`
-		Name    string `json:"name"`
-		Picture string `json:"picture"`
+		ID            string `json:"id"`
+		Email         string `json:"email"`
+		Name          string `json:"name"`
+		Picture       string `json:"picture"`
+		EmailVerified bool   `json:"verified_email"` // Google uses "verified_email" in v2
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, err
+	}
+
+	// SECURITY: Only accept verified emails from Google
+	if !data.EmailVerified {
+		return nil, fmt.Errorf("email not verified by Google")
 	}
 
 	return &OAuthUserInfo{
