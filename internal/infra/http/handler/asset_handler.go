@@ -51,6 +51,7 @@ func (h *AssetHandler) SetIntegrationService(svc *app.IntegrationService) {
 type AssetResponse struct {
 	ID           string              `json:"id"`
 	TenantID     string              `json:"tenant_id,omitempty"`
+	ParentID     string              `json:"parent_id,omitempty"`
 	Name         string              `json:"name"`
 	Type         string              `json:"type"`
 	Provider     string              `json:"provider,omitempty"`
@@ -67,6 +68,24 @@ type AssetResponse struct {
 	Metadata     map[string]any      `json:"metadata,omitempty"`
 	Properties   map[string]any      `json:"properties,omitempty"`
 	PrimaryOwner *OwnerBriefResponse `json:"primary_owner,omitempty"`
+
+	// Discovery
+	DiscoverySource string     `json:"discovery_source,omitempty"`
+	DiscoveryTool   string     `json:"discovery_tool,omitempty"`
+	DiscoveredAt    *time.Time `json:"discovered_at,omitempty"`
+
+	// CTEM
+	ComplianceScope     []string `json:"compliance_scope,omitempty"`
+	DataClassification  string   `json:"data_classification,omitempty"`
+	PIIDataExposed      bool     `json:"pii_data_exposed"`
+	PHIDataExposed      bool     `json:"phi_data_exposed"`
+	IsInternetAccessible bool    `json:"is_internet_accessible"`
+
+	// Sync
+	SyncStatus   string     `json:"sync_status,omitempty"`
+	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
+
+	// Timestamps
 	FirstSeen    time.Time           `json:"first_seen"`
 	LastSeen     time.Time           `json:"last_seen"`
 	CreatedAt    time.Time           `json:"created_at"`
@@ -120,9 +139,15 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		tenantID = a.TenantID().String()
 	}
 
+	var parentID string
+	if pid := a.ParentID(); pid != nil {
+		parentID = pid.String()
+	}
+
 	resp := AssetResponse{
 		ID:           a.ID().String(),
 		TenantID:     tenantID,
+		ParentID:     parentID,
 		Name:         a.Name(),
 		Type:         a.Type().String(),
 		Provider:     a.Provider().String(),
@@ -137,6 +162,24 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		Tags:         a.Tags(),
 		Metadata:     a.Metadata(),
 		Properties:   a.Properties(),
+
+		// Discovery
+		DiscoverySource: a.DiscoverySource(),
+		DiscoveryTool:   a.DiscoveryTool(),
+		DiscoveredAt:    a.DiscoveredAt(),
+
+		// CTEM
+		ComplianceScope:      a.ComplianceScope(),
+		DataClassification:   a.DataClassification().String(),
+		PIIDataExposed:       a.PIIDataExposed(),
+		PHIDataExposed:       a.PHIDataExposed(),
+		IsInternetAccessible: a.IsInternetAccessible(),
+
+		// Sync
+		SyncStatus:   a.SyncStatus().String(),
+		LastSyncedAt: a.LastSyncedAt(),
+
+		// Timestamps
 		FirstSeen:    a.FirstSeen(),
 		LastSeen:     a.LastSeen(),
 		CreatedAt:    a.CreatedAt(),

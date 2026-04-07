@@ -201,8 +201,8 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 	}
 	_ = clientSecret // Just validating decryption works
 
-	// Generate state token containing org slug + provider
-	state, err := s.generateState(input.OrgSlug, input.Provider)
+	// Generate state token with nonce for CSRF + replay protection
+	state, nonce, err := s.generateState(input.OrgSlug, input.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("generate state: %w", err)
 	}
@@ -219,6 +219,7 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 	params.Set("redirect_uri", input.RedirectURI)
 	params.Set("state", state)
 	params.Set("response_type", "code")
+	params.Set("nonce", nonce) // ID token replay prevention
 
 	if len(ip.Scopes()) > 0 {
 		params.Set("scope", strings.Join(ip.Scopes(), " "))
@@ -371,29 +372,37 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	}, nil
 }
 
-// generateState generates a signed state token containing org slug and provider.
-func (s *SSOService) generateState(orgSlug, provider string) (string, error) {
+// generateState generates a signed state token containing org slug, provider, and nonce.
+func (s *SSOService) generateState(orgSlug, provider string) (state string, nonce string, err error) {
 	randomBytes := make([]byte, 16)
 	if _, err := rand.Read(randomBytes); err != nil {
-		return "", err
+		return "", "", err
 	}
+
+	// Generate nonce for ID token replay prevention
+	nonceBytes := make([]byte, 16)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return "", "", err
+	}
+	nonce = base64.RawURLEncoding.EncodeToString(nonceBytes)
 
 	stateData := map[string]interface{}{
 		"org":      orgSlug,
 		"provider": provider,
+		"nonce":    nonce,
 		"random":   base64.URLEncoding.EncodeToString(randomBytes),
 		"exp":      time.Now().Add(10 * time.Minute).Unix(),
 	}
 
-	stateJSON, err := json.Marshal(stateData)
-	if err != nil {
-		return "", err
+	stateJSON, marshalErr := json.Marshal(stateData)
+	if marshalErr != nil {
+		return "", "", marshalErr
 	}
 
 	stateBase64 := base64.URLEncoding.EncodeToString(stateJSON)
 	signature := s.signState(stateBase64)
 
-	return stateBase64 + "." + signature, nil
+	return stateBase64 + "." + signature, nonce, nil
 }
 
 // signState creates an HMAC signature for the state.
@@ -593,6 +602,25 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
+		// SECURITY: Verify auth provider matches to prevent account takeover.
+		// A local user cannot be logged in via SSO (and vice versa) unless
+		// the auth provider matches or the user was created by this SSO provider.
+		existingProvider := existingUser.AuthProvider()
+		expectedProvider := s.mapAuthProvider(provider)
+
+		if existingProvider != expectedProvider && existingProvider != user.AuthProviderOIDC {
+			// Allow local users to be "upgraded" to SSO only if they have no password set
+			// (i.e., they were invited but haven't set a password yet).
+			if existingProvider == user.AuthProviderLocal && existingUser.PasswordHash() != nil {
+				s.logger.Warn("SSO login blocked: email exists with different auth provider",
+					"email", userInfo.Email,
+					"existing_provider", existingProvider,
+					"sso_provider", expectedProvider,
+				)
+				return nil, fmt.Errorf("%w: this email is registered with a different login method", ErrSSODomainNotAllowed)
+			}
+		}
+
 		existingUser.UpdateLastLogin()
 		if updateErr := s.userRepo.Update(ctx, existingUser); updateErr != nil {
 			s.logger.Warn("failed to update last login", "error", updateErr)

@@ -169,16 +169,16 @@ func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
 
 // CreateProviderRequest is the request body for creating an identity provider.
 type CreateProviderRequest struct {
-	Provider         string   `json:"provider" validate:"required"`
-	DisplayName      string   `json:"display_name" validate:"required"`
-	ClientID         string   `json:"client_id" validate:"required"`
-	ClientSecret     string   `json:"client_secret" validate:"required"`
-	IssuerURL        string   `json:"issuer_url"`
-	TenantIdentifier string   `json:"tenant_identifier"`
-	Scopes           []string `json:"scopes"`
-	AllowedDomains   []string `json:"allowed_domains"`
+	Provider         string   `json:"provider" validate:"required,oneof=entra_id okta google_workspace"`
+	DisplayName      string   `json:"display_name" validate:"required,min=1,max=255"`
+	ClientID         string   `json:"client_id" validate:"required,max=255"`
+	ClientSecret     string   `json:"client_secret" validate:"required,max=1000"`
+	IssuerURL        string   `json:"issuer_url" validate:"omitempty,url,max=500"`
+	TenantIdentifier string   `json:"tenant_identifier" validate:"max=255"`
+	Scopes           []string `json:"scopes" validate:"max=20,dive,max=100"`
+	AllowedDomains   []string `json:"allowed_domains" validate:"max=50,dive,max=255"`
 	AutoProvision    bool     `json:"auto_provision"`
-	DefaultRole      string   `json:"default_role"`
+	DefaultRole      string   `json:"default_role" validate:"omitempty,oneof=member viewer"`
 }
 
 // CreateProvider creates a new identity provider configuration.
@@ -267,15 +267,15 @@ func (h *SSOHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 
 // UpdateProviderRequest is the request body for updating an identity provider.
 type UpdateProviderRequest struct {
-	DisplayName      *string  `json:"display_name"`
-	ClientID         *string  `json:"client_id"`
-	ClientSecret     *string  `json:"client_secret"`
-	IssuerURL        *string  `json:"issuer_url"`
-	TenantIdentifier *string  `json:"tenant_identifier"`
-	Scopes           []string `json:"scopes"`
-	AllowedDomains   []string `json:"allowed_domains"`
+	DisplayName      *string  `json:"display_name" validate:"omitempty,min=1,max=255"`
+	ClientID         *string  `json:"client_id" validate:"omitempty,max=255"`
+	ClientSecret     *string  `json:"client_secret" validate:"omitempty,max=1000"`
+	IssuerURL        *string  `json:"issuer_url" validate:"omitempty,url,max=500"`
+	TenantIdentifier *string  `json:"tenant_identifier" validate:"omitempty,max=255"`
+	Scopes           []string `json:"scopes" validate:"max=20,dive,max=100"`
+	AllowedDomains   []string `json:"allowed_domains" validate:"max=50,dive,max=255"`
 	AutoProvision    *bool    `json:"auto_provision"`
-	DefaultRole      *string  `json:"default_role"`
+	DefaultRole      *string  `json:"default_role" validate:"omitempty,oneof=member viewer"`
 	IsActive         *bool    `json:"is_active"`
 }
 
