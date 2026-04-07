@@ -164,10 +164,31 @@ curl http://localhost:8080/ready
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTH_PROVIDER` | `local` | Auth provider: `local`, `oidc`, `hybrid` |
-| `AI_PLATFORM_PROVIDER` | - | AI triage: `claude`, `openai`, `gemini` |
-| `SMTP_ENABLED` | `false` | Enable email notifications |
+| `AUTH_ALLOW_REGISTRATION` | `true` | Allow public registration. **Set `false` in production** — use invitation flow instead |
+| `AI_PLATFORM_PROVIDER` | — | AI triage: `claude`, `openai`, `gemini` |
+| `SMTP_ENABLED` | `false` | Enable email notifications (required for invitations) |
 | `RATE_LIMIT_RPS` | `100` | Rate limit (requests/second) |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+
+### Production User Management
+
+In production, disable public registration and use the invitation system:
+
+```env
+AUTH_ALLOW_REGISTRATION=false   # No public signup
+SMTP_ENABLED=true               # Required for invitation emails
+```
+
+**Flow**: Admin creates invitation → User receives email → User clicks link → Account created → User joins tenant.
+
+```bash
+# API: Create invitation (requires team:admin permission)
+POST /api/v1/tenants/{tenant}/invitations
+{"email": "user@company.com", "role_ids": ["role-uuid"]}
+
+# User accepts invitation via token link
+POST /api/v1/invitations/{token}/accept
+```
 
 ## Commands
 
@@ -333,3 +354,8 @@ kubectl exec -it deploy/openctem-api -n openctem -- \
 ## License
 
 MIT License - See [LICENSE](LICENSE) file for details.
+
+## Legal
+
+- [Terms of Service](../docs/legal/terms-of-service.md)
+- [Privacy Policy](../docs/legal/privacy-policy.md)
