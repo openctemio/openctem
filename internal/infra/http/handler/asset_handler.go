@@ -52,6 +52,7 @@ type AssetResponse struct {
 	ID           string              `json:"id"`
 	TenantID     string              `json:"tenant_id,omitempty"`
 	ParentID     string              `json:"parent_id,omitempty"`
+	OwnerRef     string              `json:"owner_ref,omitempty"`
 	Name         string              `json:"name"`
 	Type         string              `json:"type"`
 	Provider     string              `json:"provider,omitempty"`
@@ -120,6 +121,7 @@ type CreateAssetRequest struct {
 	Exposure    string   `json:"exposure" validate:"omitempty,exposure"`
 	Description string   `json:"description" validate:"max=1000"`
 	Tags        []string `json:"tags" validate:"max=20,dive,max=50"`
+	OwnerRef    string   `json:"owner_ref" validate:"max=500"`
 }
 
 // UpdateAssetRequest represents the request to update an asset.
@@ -148,6 +150,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		ID:           a.ID().String(),
 		TenantID:     tenantID,
 		ParentID:     parentID,
+		OwnerRef:     a.OwnerRef(),
 		Name:         a.Name(),
 		Type:         a.Type().String(),
 		Provider:     a.Provider().String(),
@@ -436,6 +439,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Exposure:    req.Exposure,
 		Description: req.Description,
 		Tags:        req.Tags,
+		OwnerRef:    req.OwnerRef,
 	}
 
 	a, err := h.service.CreateAsset(r.Context(), input)

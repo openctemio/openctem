@@ -1161,6 +1161,12 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	}
 	newAsset.SetDiscoveryInfo(discoverySource, discoveryTool, discoveredAt)
 
+	// Set owner reference from external source
+	ownerRef := p.extractOwnerRef(ctisAsset)
+	if ownerRef != "" {
+		newAsset.SetOwnerRef(ownerRef)
+	}
+
 	// Build and set properties (with validation)
 	properties := p.buildPropertiesFromCTIS(ctisAsset)
 	newAsset.SetProperties(properties)
@@ -1172,6 +1178,13 @@ func (p *AssetProcessor) createAssetFromCTIS(
 func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool) {
 	// Mark as seen
 	existing.MarkSeen()
+
+	// Update owner ref if provided and not already set
+	if existing.OwnerRef() == "" {
+		if ownerRef := p.extractOwnerRef(ctisAsset); ownerRef != "" {
+			existing.SetOwnerRef(ownerRef)
+		}
+	}
 
 	// Merge tags
 	for _, tag := range ctisAsset.Tags {
@@ -1241,4 +1254,32 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 	}
 
 	return props
+}
+
+// extractOwnerRef extracts owner reference from CTIS asset.
+// Checks multiple sources: compliance.regulatory_owner, technical.repository.owner,
+// properties.owner, properties.contact.
+func (p *AssetProcessor) extractOwnerRef(ctisAsset *ctis.Asset) string {
+	// 1. Compliance regulatory owner (highest priority)
+	if ctisAsset.Compliance != nil && ctisAsset.Compliance.RegulatoryOwner != "" {
+		return ctisAsset.Compliance.RegulatoryOwner
+	}
+
+	// 2. Repository owner (GitHub/GitLab org)
+	if ctisAsset.Technical != nil && ctisAsset.Technical.Repository != nil && ctisAsset.Technical.Repository.Owner != "" {
+		return ctisAsset.Technical.Repository.Owner
+	}
+
+	// 3. Properties (custom fields from scanner)
+	if owner, ok := ctisAsset.Properties["owner"].(string); ok && owner != "" {
+		return owner
+	}
+	if contact, ok := ctisAsset.Properties["contact"].(string); ok && contact != "" {
+		return contact
+	}
+	if responsible, ok := ctisAsset.Properties["responsible"].(string); ok && responsible != "" {
+		return responsible
+	}
+
+	return ""
 }

@@ -158,6 +158,7 @@ type CreateAssetInput struct {
 	Exposure    string   `validate:"omitempty,exposure"`
 	Description string   `validate:"max=1000"`
 	Tags        []string `validate:"max=20,dive,max=50"`
+	OwnerRef    string   `validate:"max=500"` // Raw owner from external source
 }
 
 // CreateAsset creates a new asset.
@@ -224,6 +225,11 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	}
 	for _, tag := range input.Tags {
 		a.AddTag(tag)
+	}
+
+	// Set owner reference from external source
+	if input.OwnerRef != "" {
+		a.SetOwnerRef(input.OwnerRef)
 	}
 
 	// Calculate initial risk score using tenant-specific config
