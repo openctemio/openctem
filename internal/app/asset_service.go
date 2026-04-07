@@ -176,6 +176,10 @@ type CreateAssetInput struct {
 
 // CreateAsset creates a new asset.
 func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) (*asset.Asset, error) {
+	// Strip null bytes early — PostgreSQL rejects 0x00 in UTF-8
+	input.Name = strings.ReplaceAll(input.Name, "\x00", "")
+	input.Description = strings.ReplaceAll(input.Description, "\x00", "")
+
 	s.logger.Info("creating asset", "name", input.Name)
 
 	assetType, err := asset.ParseAssetType(input.Type)
