@@ -34,8 +34,12 @@ func NewFindingActionsHandler(svc *app.FindingActionsService, log *logger.Logger
 func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	groupBy := r.URL.Query().Get("group_by")
+	allowedGroupBy := map[string]bool{"cve_id": true, "asset_id": true, "severity": true, "status": true, "source": true, "type": true}
 	if groupBy == "" {
 		groupBy = "cve_id"
+	} else if !allowedGroupBy[groupBy] {
+		apierror.BadRequest("Invalid group_by value").WriteJSON(w)
+		return
 	}
 
 	filter := h.buildFilter(r)
@@ -87,14 +91,14 @@ func (h *FindingActionsHandler) GetRelatedCVEs(w http.ResponseWriter, r *http.Re
 type FixAppliedRequest struct {
 	Filter             FindingFilterRequest `json:"filter"`
 	IncludeRelatedCVEs bool                 `json:"include_related_cves"`
-	Note               string               `json:"note"`
-	Reference          string               `json:"reference"`
+	Note               string               `json:"note" validate:"max=5000"`
+	Reference          string               `json:"reference" validate:"max=1000"`
 }
 
 // FindingFilterRequest is the filter in request body.
 type FindingFilterRequest struct {
-	CVEIDs    []string `json:"cve_ids"`
-	AssetTags []string `json:"asset_tags"`
+	CVEIDs    []string `json:"cve_ids" validate:"max=100,dive,max=255"`
+	AssetTags []string `json:"asset_tags" validate:"max=100,dive,max=255"`
 }
 
 // FixApplied handles POST /api/v1/findings/actions/fix-applied
@@ -105,6 +109,20 @@ func (h *FindingActionsHandler) FixApplied(w http.ResponseWriter, r *http.Reques
 	var req FixAppliedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// Validate input bounds
+	if len(req.Filter.CVEIDs) > 100 {
+		apierror.BadRequest("Maximum 100 CVE IDs allowed").WriteJSON(w)
+		return
+	}
+	if len(req.Filter.AssetTags) > 100 {
+		apierror.BadRequest("Maximum 100 asset tags allowed").WriteJSON(w)
+		return
+	}
+	if len(req.Note) > 5000 {
+		apierror.BadRequest("Note must be at most 5000 characters").WriteJSON(w)
 		return
 	}
 
@@ -136,9 +154,9 @@ func (h *FindingActionsHandler) FixApplied(w http.ResponseWriter, r *http.Reques
 
 // VerifyRequest supports both finding_ids and filter. At least one must be provided.
 type VerifyRequest struct {
-	FindingIDs []string             `json:"finding_ids"` // verify specific findings
-	Filter     *FindingFilterRequest `json:"filter"`      // verify all matching filter
-	Note       string               `json:"note"`
+	FindingIDs []string             `json:"finding_ids" validate:"max=100,dive,uuid"` // verify specific findings
+	Filter     *FindingFilterRequest `json:"filter"`                                   // verify all matching filter
+	Note       string               `json:"note" validate:"max=5000"`
 }
 
 // Verify handles POST /api/v1/findings/actions/verify
@@ -149,6 +167,20 @@ func (h *FindingActionsHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	var req VerifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// Validate input bounds
+	if len(req.FindingIDs) > 100 {
+		apierror.BadRequest("Maximum 100 finding IDs allowed").WriteJSON(w)
+		return
+	}
+	if len(req.Note) > 5000 {
+		apierror.BadRequest("Note must be at most 5000 characters").WriteJSON(w)
+		return
+	}
+	if req.Filter != nil && (len(req.Filter.CVEIDs) > 100 || len(req.Filter.AssetTags) > 100) {
+		apierror.BadRequest("Maximum 100 filter items allowed").WriteJSON(w)
 		return
 	}
 
@@ -190,9 +222,9 @@ func (h *FindingActionsHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 // RejectFixRequest supports both finding_ids and filter.
 type RejectFixRequest struct {
-	FindingIDs []string             `json:"finding_ids"`
+	FindingIDs []string             `json:"finding_ids" validate:"max=100"`
 	Filter     *FindingFilterRequest `json:"filter"`
-	Reason     string               `json:"reason"`
+	Reason     string               `json:"reason" validate:"max=5000"`
 }
 
 // RejectFix handles POST /api/v1/findings/actions/reject-fix
@@ -203,6 +235,20 @@ func (h *FindingActionsHandler) RejectFix(w http.ResponseWriter, r *http.Request
 	var req RejectFixRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// Validate input bounds
+	if len(req.FindingIDs) > 100 {
+		apierror.BadRequest("Maximum 100 finding IDs allowed").WriteJSON(w)
+		return
+	}
+	if len(req.Reason) > 5000 {
+		apierror.BadRequest("Reason must be at most 5000 characters").WriteJSON(w)
+		return
+	}
+	if req.Filter != nil && (len(req.Filter.CVEIDs) > 100 || len(req.Filter.AssetTags) > 100) {
+		apierror.BadRequest("Maximum 100 filter items allowed").WriteJSON(w)
 		return
 	}
 
@@ -309,11 +355,19 @@ func (h *FindingActionsHandler) buildFilter(r *http.Request) vulnerability.Findi
 	}
 
 	if cves := q.Get("cve_ids"); cves != "" {
-		filter.CVEIDs = splitCSV(cves)
+		cveList := splitCSV(cves)
+		if len(cveList) > 100 {
+			cveList = cveList[:100] // Silently cap at 100
+		}
+		filter.CVEIDs = cveList
 	}
 
 	if tags := q.Get("asset_tags"); tags != "" {
-		filter.AssetTags = splitCSV(tags)
+		tagList := splitCSV(tags)
+		if len(tagList) > 100 {
+			tagList = tagList[:100]
+		}
+		filter.AssetTags = tagList
 	}
 
 	return filter

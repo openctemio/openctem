@@ -76,6 +76,7 @@ RUN CGO_ENABLED=0 \
     GOARCH=${TARGETARCH:-$(go env GOARCH)} \
     go build -ldflags="-s -w" -o /app/bin/bootstrap-admin ./cmd/bootstrap-admin
 
+
 # -----------------------------------------------------------------------------
 # Production stage
 # -----------------------------------------------------------------------------

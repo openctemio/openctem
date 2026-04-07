@@ -152,6 +152,7 @@ func (h *EmailTaskHandler) HandleTeamInvitation(ctx context.Context, t *asynq.Ta
 		payload.TeamName,
 		payload.Token,
 		payload.ExpiresIn,
+		payload.TenantID, // Per-tenant SMTP support
 	)
 	if err != nil {
 		h.logger.Error("failed to send team invitation email",

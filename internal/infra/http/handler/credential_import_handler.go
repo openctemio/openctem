@@ -63,38 +63,38 @@ type CredentialImportItem struct {
 
 // CredentialSourceReq represents source information in the request.
 type CredentialSourceReq struct {
-	Type         string  `json:"type" validate:"required"`
-	Name         string  `json:"name,omitempty"`
-	URL          string  `json:"url,omitempty"`
+	Type         string  `json:"type" validate:"required,max=50"`
+	Name         string  `json:"name,omitempty" validate:"max=255"`
+	URL          string  `json:"url,omitempty" validate:"omitempty,url,max=2000"`
 	DiscoveredAt *string `json:"discovered_at,omitempty"` // ISO8601 format
 }
 
 // DedupKeyRequest represents deduplication key in the request.
 type DedupKeyRequest struct {
-	BreachName string `json:"breach_name,omitempty"`
-	BreachDate string `json:"breach_date,omitempty"`
-	Repository string `json:"repository,omitempty"`
-	FilePath   string `json:"file_path,omitempty"`
-	CommitHash string `json:"commit_hash,omitempty"`
-	Branch     string `json:"branch,omitempty"`
-	SourceURL  string `json:"source_url,omitempty"`
-	PasteID    string `json:"paste_id,omitempty"`
+	BreachName string `json:"breach_name,omitempty" validate:"max=255"`
+	BreachDate string `json:"breach_date,omitempty" validate:"max=30"`
+	Repository string `json:"repository,omitempty" validate:"max=500"`
+	FilePath   string `json:"file_path,omitempty" validate:"max=1000"`
+	CommitHash string `json:"commit_hash,omitempty" validate:"max=64"`
+	Branch     string `json:"branch,omitempty" validate:"max=255"`
+	SourceURL  string `json:"source_url,omitempty" validate:"omitempty,max=2000"`
+	PasteID    string `json:"paste_id,omitempty" validate:"max=255"`
 }
 
 // CredentialContextReq represents context information in the request.
 type CredentialContextReq struct {
-	Username   string         `json:"username,omitempty"`
-	Email      string         `json:"email,omitempty"`
-	Domain     string         `json:"domain,omitempty"`
-	IPAddress  string         `json:"ip_address,omitempty"`
-	UserAgent  string         `json:"user_agent,omitempty"`
-	LineNumber int            `json:"line_number,omitempty"`
+	Username   string         `json:"username,omitempty" validate:"max=255"`
+	Email      string         `json:"email,omitempty" validate:"omitempty,email,max=254"`
+	Domain     string         `json:"domain,omitempty" validate:"max=255"`
+	IPAddress  string         `json:"ip_address,omitempty" validate:"max=45"` // IPv6 max
+	UserAgent  string         `json:"user_agent,omitempty" validate:"max=500"`
+	LineNumber int            `json:"line_number,omitempty" validate:"min=0,max=10000000"`
 	Extra      map[string]any `json:"extra,omitempty"`
 }
 
 // ImportOptionsRequest represents import options in the request.
 type ImportOptionsRequest struct {
-	DedupStrategy        string `json:"dedup_strategy,omitempty"`
+	DedupStrategy        string `json:"dedup_strategy,omitempty" validate:"omitempty,oneof=skip update upsert"`
 	ReactivateResolved   bool   `json:"reactivate_resolved"`
 	NotifyReactivated    bool   `json:"notify_reactivated"`
 	NotifyNewCritical    bool   `json:"notify_new_critical"`
@@ -103,9 +103,9 @@ type ImportOptionsRequest struct {
 
 // ImportMetadataRequest represents import metadata in the request.
 type ImportMetadataRequest struct {
-	SourceTool  string `json:"source_tool,omitempty"`
-	BatchID     string `json:"batch_id,omitempty"`
-	Description string `json:"description,omitempty"`
+	SourceTool  string `json:"source_tool,omitempty" validate:"max=100"`
+	BatchID     string `json:"batch_id,omitempty" validate:"max=100"`
+	Description string `json:"description,omitempty" validate:"max=1000"`
 }
 
 // Import handles POST /api/v1/credentials/import

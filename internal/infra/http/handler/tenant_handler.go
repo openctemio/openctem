@@ -176,8 +176,8 @@ type UpdateMemberRoleRequest struct {
 // CreateInvitationRequest represents the request to create an invitation.
 // Note: In simplified model, all invited users are "member". Permissions come from RBAC roles.
 type CreateInvitationRequest struct {
-	Email   string   `json:"email" validate:"required,email"`
-	RoleIDs []string `json:"role_ids" validate:"required,min=1"` // RBAC roles to assign (required)
+	Email   string   `json:"email" validate:"required,email,max=254"`
+	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=10"` // RBAC roles to assign (required, max 10)
 }
 
 // =============================================================================
@@ -875,8 +875,8 @@ func (h *TenantHandler) GetInvitation(w http.ResponseWriter, r *http.Request) {
 // This allows users to see what team they're invited to before logging in.
 func (h *TenantHandler) GetInvitationPreview(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
-	if token == "" {
-		apierror.BadRequest("Invitation token is required").WriteJSON(w)
+	if token == "" || strings.ContainsRune(token, 0) || len(token) < 10 {
+		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
 		return
 	}
 

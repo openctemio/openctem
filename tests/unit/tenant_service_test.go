@@ -418,7 +418,7 @@ func seedMembershipInRepo(repo *mockTenantRepo, userID, tenantID shared.ID, role
 // seedPendingInvitation creates a pending invitation and stores it in the mock repo.
 func seedPendingInvitation(repo *mockTenantRepo, tenantID shared.ID, email string, role tenant.Role, inviterID shared.ID) *tenant.Invitation {
 	inv := tenant.ReconstituteInvitation(
-		shared.NewID(), tenantID, email, role, []string{"role-1"},
+		shared.NewID(), tenantID, email, role, []string{"00000000-0000-0000-0000-000000000003"},
 		"test-token-"+email, inviterID,
 		time.Now().UTC().Add(7*24*time.Hour), nil, time.Now().UTC(),
 	)
@@ -1454,7 +1454,7 @@ func TestTenantSvc_CreateInvitation_Success(t *testing.T) {
 	input := app.CreateInvitationInput{
 		Email:   "newuser@example.com",
 		Role:    "member",
-		RoleIDs: []string{"role-1"},
+		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
 	}
 
 	result, err := svc.CreateInvitation(context.Background(), existing.ID().String(), input, inviterID, app.AuditContext{})
@@ -1478,7 +1478,7 @@ func TestTenantSvc_CreateInvitation_InvalidTenantID(t *testing.T) {
 	input := app.CreateInvitationInput{
 		Email:   "user@test.com",
 		Role:    "member",
-		RoleIDs: []string{"role-1"},
+		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
 	}
 
 	_, err := svc.CreateInvitation(context.Background(), "bad-uuid", input, shared.NewID(), app.AuditContext{})
@@ -1497,7 +1497,7 @@ func TestTenantSvc_CreateInvitation_InvalidRole(t *testing.T) {
 	input := app.CreateInvitationInput{
 		Email:   "user@test.com",
 		Role:    "superadmin",
-		RoleIDs: []string{"role-1"},
+		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
 	}
 
 	_, err := svc.CreateInvitation(context.Background(), existing.ID().String(), input, shared.NewID(), app.AuditContext{})
@@ -1559,7 +1559,7 @@ func TestTenantSvc_CreateInvitation_DuplicatePendingInvitation(t *testing.T) {
 	input := app.CreateInvitationInput{
 		Email:   "existing@test.com",
 		Role:    "member",
-		RoleIDs: []string{"role-1"},
+		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
 	}
 
 	_, err := svc2.CreateInvitation(context.Background(), existing2.ID().String(), input, shared.NewID(), app.AuditContext{})
@@ -1581,7 +1581,7 @@ func TestTenantSvc_CreateInvitation_UserAlreadyMember(t *testing.T) {
 	input := app.CreateInvitationInput{
 		Email:   "member@test.com",
 		Role:    "member",
-		RoleIDs: []string{"role-1"},
+		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
 	}
 
 	_, err := svc.CreateInvitation(context.Background(), existing.ID().String(), input, shared.NewID(), app.AuditContext{})
@@ -1601,7 +1601,7 @@ func TestTenantSvc_CreateInvitation_RepoCreateError(t *testing.T) {
 	input := app.CreateInvitationInput{
 		Email:   "user@test.com",
 		Role:    "member",
-		RoleIDs: []string{"role-1"},
+		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
 	}
 
 	_, err := svc.CreateInvitation(context.Background(), existing.ID().String(), input, shared.NewID(), app.AuditContext{})
@@ -1625,7 +1625,7 @@ func TestTenantSvc_CreateInvitation_WithEmailEnqueuer(t *testing.T) {
 	input := app.CreateInvitationInput{
 		Email:   "newuser@test.com",
 		Role:    "member",
-		RoleIDs: []string{"role-1"},
+		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
 	}
 
 	_, err := svc.CreateInvitation(context.Background(), existing.ID().String(), input, inviterID, app.AuditContext{})
@@ -1654,7 +1654,7 @@ func TestTenantSvc_CreateInvitation_EmailEnqueueError_DoesNotFail(t *testing.T) 
 	input := app.CreateInvitationInput{
 		Email:   "user@test.com",
 		Role:    "member",
-		RoleIDs: []string{"role-1"},
+		RoleIDs: []string{"00000000-0000-0000-0000-000000000003"},
 	}
 
 	// Should succeed despite email enqueue failure
@@ -1755,7 +1755,7 @@ func TestTenantSvc_AcceptInvitation_ExpiredInvitation(t *testing.T) {
 
 	// Create an expired invitation
 	inv := tenant.ReconstituteInvitation(
-		shared.NewID(), tenantID, "user@test.com", tenant.RoleMember, []string{"role-1"},
+		shared.NewID(), tenantID, "user@test.com", tenant.RoleMember, []string{"00000000-0000-0000-0000-000000000003"},
 		"expired-token", shared.NewID(),
 		time.Now().UTC().Add(-1*time.Hour), // Already expired
 		nil, time.Now().UTC().Add(-8*24*time.Hour),
@@ -1778,7 +1778,7 @@ func TestTenantSvc_AcceptInvitation_AlreadyAccepted(t *testing.T) {
 	// Create an already accepted invitation
 	acceptedAt := time.Now().UTC()
 	inv := tenant.ReconstituteInvitation(
-		shared.NewID(), tenantID, "user@test.com", tenant.RoleMember, []string{"role-1"},
+		shared.NewID(), tenantID, "user@test.com", tenant.RoleMember, []string{"00000000-0000-0000-0000-000000000003"},
 		"accepted-token", shared.NewID(),
 		time.Now().UTC().Add(7*24*time.Hour),
 		&acceptedAt, // Already accepted

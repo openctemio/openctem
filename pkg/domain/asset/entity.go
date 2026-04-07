@@ -2,6 +2,7 @@ package asset
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -71,6 +72,8 @@ type Asset struct {
 
 // NewAsset creates a new Asset entity.
 func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset, error) {
+	// Strip null bytes — PostgreSQL rejects 0x00 in UTF-8 strings
+	name = strings.ReplaceAll(name, "\x00", "")
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
 	}
