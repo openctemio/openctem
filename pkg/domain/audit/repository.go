@@ -19,6 +19,9 @@ type Repository interface {
 	// GetByID retrieves an audit log by ID.
 	GetByID(ctx context.Context, id shared.ID) (*AuditLog, error)
 
+	// GetByTenantAndID retrieves an audit log by tenant and ID.
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*AuditLog, error)
+
 	// List retrieves audit logs matching the filter with pagination.
 	List(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*AuditLog], error)
 

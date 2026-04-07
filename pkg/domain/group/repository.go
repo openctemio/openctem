@@ -11,6 +11,8 @@ type Repository interface {
 	// Group CRUD operations
 	Create(ctx context.Context, g *Group) error
 	GetByID(ctx context.Context, id shared.ID) (*Group, error)
+	// GetByTenantAndID retrieves a group by tenant and ID (tenant-scoped access control).
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Group, error)
 	GetBySlug(ctx context.Context, tenantID shared.ID, slug string) (*Group, error)
 	Update(ctx context.Context, g *Group) error
 	Delete(ctx context.Context, id shared.ID) error

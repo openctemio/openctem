@@ -262,6 +262,19 @@ func (s *ExposureService) GetExposure(ctx context.Context, eventID string) (*exp
 	return s.repo.GetByID(ctx, parsedID)
 }
 
+// GetExposureSecure retrieves an exposure event by tenant and ID (tenant-scoped access control).
+func (s *ExposureService) GetExposureSecure(ctx context.Context, tenantID, eventID string) (*exposure.ExposureEvent, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	parsedID, err := shared.IDFromString(eventID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	return s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
+}
+
 // ListExposuresInput represents the input for listing exposure events.
 type ListExposuresInput struct {
 	TenantID string

@@ -146,7 +146,9 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 				s.logger.Error("failed to recalculate counts", "group_id", group.ID(), "error", err)
 			}
 			// Refresh group from database
-			group, _ = s.repo.GetByID(ctx, group.ID())
+			if refreshed, err := s.repo.GetByTenantAndID(ctx, tenantID, group.ID()); err == nil && refreshed != nil {
+				group = refreshed
+			}
 		}
 	}
 
@@ -154,14 +156,22 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 	return group, nil
 }
 
-// GetAssetGroup retrieves an asset group by ID.
-func (s *AssetGroupService) GetAssetGroup(ctx context.Context, id shared.ID) (*assetgroup.AssetGroup, error) {
-	return s.repo.GetByID(ctx, id)
+// GetAssetGroup retrieves an asset group by tenant and ID.
+func (s *AssetGroupService) GetAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) (*assetgroup.AssetGroup, error) {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.repo.GetByTenantAndID(ctx, tenantID, id)
 }
 
 // UpdateAssetGroup updates an existing asset group.
-func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, id shared.ID, input UpdateAssetGroupInput) (*assetgroup.AssetGroup, error) {
-	group, err := s.repo.GetByID(ctx, id)
+func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID, input UpdateAssetGroupInput) (*assetgroup.AssetGroup, error) {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	group, err := s.repo.GetByTenantAndID(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +424,7 @@ type BulkUpdateInput struct {
 }
 
 // BulkUpdateAssetGroups updates multiple asset groups.
-func (s *AssetGroupService) BulkUpdateAssetGroups(ctx context.Context, input BulkUpdateInput) (int, error) {
+func (s *AssetGroupService) BulkUpdateAssetGroups(ctx context.Context, tenantID string, input BulkUpdateInput) (int, error) {
 	updated := 0
 	for _, idStr := range input.GroupIDs {
 		id, err := shared.IDFromString(idStr)
@@ -422,7 +432,7 @@ func (s *AssetGroupService) BulkUpdateAssetGroups(ctx context.Context, input Bul
 			continue
 		}
 
-		_, err = s.UpdateAssetGroup(ctx, id, UpdateAssetGroupInput{
+		_, err = s.UpdateAssetGroup(ctx, tenantID, id, UpdateAssetGroupInput{
 			Environment: input.Environment,
 			Criticality: input.Criticality,
 		})

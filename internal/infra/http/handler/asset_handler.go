@@ -59,16 +59,27 @@ type AssetResponse struct {
 	Status       string              `json:"status"`
 	Scope        string              `json:"scope"`
 	Exposure     string              `json:"exposure"`
-	RiskScore    int                 `json:"risk_score"`
-	FindingCount int                 `json:"finding_count"`
-	Description  string              `json:"description,omitempty"`
+	RiskScore             int                      `json:"risk_score"`
+	FindingCount          int                      `json:"finding_count"`
+	FindingSeverityCounts *FindingSeverityResponse  `json:"finding_severity_counts,omitempty"`
+	Description           string                   `json:"description,omitempty"`
 	Tags         []string            `json:"tags,omitempty"`
 	Metadata     map[string]any      `json:"metadata,omitempty"`
+	Properties   map[string]any      `json:"properties,omitempty"`
 	PrimaryOwner *OwnerBriefResponse `json:"primary_owner,omitempty"`
 	FirstSeen    time.Time           `json:"first_seen"`
 	LastSeen     time.Time           `json:"last_seen"`
 	CreatedAt    time.Time           `json:"created_at"`
 	UpdatedAt    time.Time           `json:"updated_at"`
+}
+
+// FindingSeverityResponse represents finding counts by severity level.
+type FindingSeverityResponse struct {
+	Critical int `json:"critical"`
+	High     int `json:"high"`
+	Medium   int `json:"medium"`
+	Low      int `json:"low"`
+	Info     int `json:"info"`
 }
 
 // OwnerBriefResponse is a lightweight owner representation for asset list responses.
@@ -109,7 +120,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		tenantID = a.TenantID().String()
 	}
 
-	return AssetResponse{
+	resp := AssetResponse{
 		ID:           a.ID().String(),
 		TenantID:     tenantID,
 		Name:         a.Name(),
@@ -125,11 +136,25 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		Description:  a.Description(),
 		Tags:         a.Tags(),
 		Metadata:     a.Metadata(),
+		Properties:   a.Properties(),
 		FirstSeen:    a.FirstSeen(),
 		LastSeen:     a.LastSeen(),
 		CreatedAt:    a.CreatedAt(),
 		UpdatedAt:    a.UpdatedAt(),
 	}
+
+	// Include finding severity breakdown if available
+	if counts := a.FindingSeverityCounts(); counts != nil {
+		resp.FindingSeverityCounts = &FindingSeverityResponse{
+			Critical: counts.Critical,
+			High:     counts.High,
+			Medium:   counts.Medium,
+			Low:      counts.Low,
+			Info:     counts.Info,
+		}
+	}
+
+	return resp
 }
 
 // toOwnerBriefResponse converts a domain OwnerBrief to API response.
@@ -1096,52 +1121,24 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	typesFilter := parseQueryArray(query.Get("types"))
 
-	// Build filter for stats
-	input := app.ListAssetsInput{
-		TenantID: tenantID,
-		PerPage:  1000, // Get enough for stats calculation
-	}
-	if len(typesFilter) > 0 {
-		input.Types = typesFilter
-	}
-
-	// Get assets to calculate stats
-	result, err := h.service.ListAssets(r.Context(), input)
+	// Use service method with SQL aggregation for efficient stats
+	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Calculate stats from results
 	stats := AssetStatsResponse{
-		Total:         int(result.Total),
-		ByType:        make(map[string]int),
-		ByStatus:      make(map[string]int),
-		ByCriticality: make(map[string]int),
-		ByScope:       make(map[string]int),
-		ByExposure:    make(map[string]int),
-	}
-
-	var totalRiskScore int
-	for _, a := range result.Data {
-		stats.ByType[a.Type().String()]++
-		stats.ByStatus[a.Status().String()]++
-		stats.ByCriticality[a.Criticality().String()]++
-		stats.ByScope[a.Scope().String()]++
-		stats.ByExposure[a.Exposure().String()]++
-		stats.FindingsTotal += a.FindingCount()
-		if a.FindingCount() > 0 {
-			stats.WithFindings++
-		}
-		totalRiskScore += a.RiskScore()
-		// Count high-risk assets (risk_score >= 70)
-		if a.RiskScore() >= 70 {
-			stats.HighRiskCount++
-		}
-	}
-
-	if len(result.Data) > 0 {
-		stats.RiskScoreAvg = float64(totalRiskScore) / float64(len(result.Data))
+		Total:         aggStats.Total,
+		ByType:        aggStats.ByType,
+		ByStatus:      aggStats.ByStatus,
+		ByCriticality: aggStats.ByCriticality,
+		ByScope:       aggStats.ByScope,
+		ByExposure:    aggStats.ByExposure,
+		WithFindings:  aggStats.WithFindings,
+		FindingsTotal: aggStats.FindingsTotal,
+		HighRiskCount: aggStats.HighRiskCount,
+		RiskScoreAvg:  aggStats.RiskScoreAvg,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

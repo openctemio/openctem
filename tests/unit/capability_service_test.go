@@ -41,6 +41,10 @@ func (m *MockCapabilityRepository) GetByID(ctx context.Context, id shared.ID) (*
 	return c, nil
 }
 
+func (m *MockCapabilityRepository) GetByTenantAndID(_ context.Context, _, id shared.ID) (*capability.Capability, error) {
+	return nil, nil
+}
+
 func (m *MockCapabilityRepository) GetByName(ctx context.Context, tenantID *shared.ID, name string) (*capability.Capability, error) {
 	for _, c := range m.capabilities {
 		if c.Name == name {

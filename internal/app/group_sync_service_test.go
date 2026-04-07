@@ -44,6 +44,13 @@ func (m *MockGroupRepository) GetByID(_ context.Context, id shared.ID) (*group.G
 	return nil, shared.ErrNotFound
 }
 
+func (m *MockGroupRepository) GetByTenantAndID(_ context.Context, _, id shared.ID) (*group.Group, error) {
+	if g, ok := m.groups[id.String()]; ok {
+		return g, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
 func (m *MockGroupRepository) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, shared.ErrNotFound
 }

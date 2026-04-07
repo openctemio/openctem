@@ -87,6 +87,9 @@ func (m *credImportMockExposureRepo) GetByID(_ context.Context, id shared.ID) (*
 	}
 	return e, nil
 }
+func (m *credImportMockExposureRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*exposure.ExposureEvent, error) {
+	return nil, nil
+}
 
 func (m *credImportMockExposureRepo) GetByFingerprint(_ context.Context, _ shared.ID, fingerprint string) (*exposure.ExposureEvent, error) {
 	m.getFPCalls++

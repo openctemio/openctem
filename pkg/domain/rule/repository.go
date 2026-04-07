@@ -69,6 +69,9 @@ type RuleRepository interface {
 	// GetByID retrieves a rule by ID.
 	GetByID(ctx context.Context, id shared.ID) (*Rule, error)
 
+	// GetByTenantAndID retrieves a rule by tenant and ID.
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Rule, error)
+
 	// GetBySourceAndRuleID retrieves a rule by source and rule ID.
 	GetBySourceAndRuleID(ctx context.Context, sourceID shared.ID, ruleID string) (*Rule, error)
 
@@ -111,6 +114,9 @@ type BundleRepository interface {
 
 	// GetByID retrieves a bundle by ID.
 	GetByID(ctx context.Context, id shared.ID) (*Bundle, error)
+
+	// GetByTenantAndID retrieves a bundle by tenant and ID.
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Bundle, error)
 
 	// GetLatest retrieves the latest ready bundle for a tenant and tool.
 	GetLatest(ctx context.Context, tenantID, toolID shared.ID) (*Bundle, error)

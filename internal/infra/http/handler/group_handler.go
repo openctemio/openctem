@@ -380,9 +380,10 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/groups/{groupId} [get]
 func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(r.Context())
 	groupID := chi.URLParam(r, "groupId")
 
-	g, err := h.service.GetGroup(ctx, groupID)
+	g, err := h.service.GetGroupSecure(ctx, tenantID, groupID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

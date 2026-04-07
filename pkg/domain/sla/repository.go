@@ -14,6 +14,9 @@ type Repository interface {
 	// GetByID retrieves a policy by ID.
 	GetByID(ctx context.Context, id shared.ID) (*Policy, error)
 
+	// GetByTenantAndID retrieves a policy by tenant and ID.
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Policy, error)
+
 	// GetByAsset retrieves the policy for a specific asset.
 	// Returns the asset-specific policy if exists, otherwise the tenant default.
 	GetByAsset(ctx context.Context, tenantID, assetID shared.ID) (*Policy, error)

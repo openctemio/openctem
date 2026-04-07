@@ -101,6 +101,19 @@ func (r *GroupRepository) GetByID(ctx context.Context, id shared.ID) (*group.Gro
 	return r.scanGroup(r.db.QueryRowContext(ctx, query, id.String()))
 }
 
+// GetByTenantAndID retrieves a group by tenant and ID.
+func (r *GroupRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*group.Group, error) {
+	query := `
+		SELECT id, tenant_id, name, slug, description, group_type,
+			   external_id, external_source, settings, notification_config,
+			   metadata, is_active, created_at, updated_at
+		FROM groups
+		WHERE tenant_id = $1 AND id = $2
+	`
+
+	return r.scanGroup(r.db.QueryRowContext(ctx, query, tenantID.String(), id.String()))
+}
+
 // GetBySlug retrieves a group by tenant and slug.
 func (r *GroupRepository) GetBySlug(ctx context.Context, tenantID shared.ID, slug string) (*group.Group, error) {
 	query := `

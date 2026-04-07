@@ -526,6 +526,14 @@ func (h *IntegrationHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Security: Validate BaseURL against SSRF (CWE-918)
+	if req.BaseURL != "" {
+		if err := validator.ValidateWebhookURL(req.BaseURL); err != nil {
+			apierror.BadRequest("base_url: " + err.Error()).WriteJSON(w)
+			return
+		}
+	}
+
 	// Suppress unused variable warning for userID (may be used for audit logging)
 	_ = userID
 
@@ -641,6 +649,14 @@ func (h *IntegrationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Security: Validate BaseURL against SSRF (CWE-918)
+	if req.BaseURL != nil && *req.BaseURL != "" {
+		if err := validator.ValidateWebhookURL(*req.BaseURL); err != nil {
+			apierror.BadRequest("base_url: " + err.Error()).WriteJSON(w)
+			return
+		}
+	}
+
 	input := app.UpdateIntegrationInput{
 		Name:            req.Name,
 		Description:     req.Description,
@@ -751,6 +767,14 @@ func (h *IntegrationHandler) TestCredentials(w http.ResponseWriter, r *http.Requ
 	if err := h.validator.Validate(&req); err != nil {
 		h.handleValidationError(w, err)
 		return
+	}
+
+	// Security: Validate BaseURL against SSRF (CWE-918)
+	if req.BaseURL != "" {
+		if err := validator.ValidateWebhookURL(req.BaseURL); err != nil {
+			apierror.BadRequest("base_url: " + err.Error()).WriteJSON(w)
+			return
+		}
 	}
 
 	result, err := h.service.TestIntegrationCredentials(r.Context(), app.TestIntegrationCredentialsInput{

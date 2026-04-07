@@ -622,6 +622,15 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 
 // ListTags returns distinct tags across all assets for a tenant.
 // Supports prefix filtering for autocomplete.
+// GetAssetStats returns aggregated asset statistics using SQL aggregation.
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string) (*asset.AggregateStats, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, types)
+}
+
 func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, limit int) ([]string, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -738,9 +747,9 @@ type BulkAssetStatusResult struct {
 	Errors  []string `json:"errors,omitempty"`
 }
 
-// BulkUpdateAssetStatus updates the status of multiple assets.
+// BulkUpdateAssetStatus atomically updates the status of multiple assets.
 // Security: Requires tenantID to prevent cross-tenant status changes.
-// OPTIMIZED: Reduces N API calls to a single batch operation.
+// Uses a single SQL UPDATE with IN clause for atomicity.
 func (s *AssetService) BulkUpdateAssetStatus(ctx context.Context, tenantID string, input BulkUpdateAssetStatusInput) (*BulkAssetStatusResult, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -752,13 +761,14 @@ func (s *AssetService) BulkUpdateAssetStatus(ctx context.Context, tenantID strin
 	}
 
 	// Validate status
-	status := input.Status
-	if status != "active" && status != "inactive" && status != "archived" {
-		return nil, fmt.Errorf("%w: invalid status '%s', must be one of: active, inactive, archived", shared.ErrValidation, status)
+	parsedStatus, err := asset.ParseStatus(input.Status)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid status '%s', must be one of: active, inactive, archived", shared.ErrValidation, input.Status)
 	}
 
+	// Parse and validate all IDs first
 	result := &BulkAssetStatusResult{}
-
+	validIDs := make([]shared.ID, 0, len(input.AssetIDs))
 	for _, idStr := range input.AssetIDs {
 		parsedID, err := shared.IDFromString(idStr)
 		if err != nil {
@@ -766,36 +776,27 @@ func (s *AssetService) BulkUpdateAssetStatus(ctx context.Context, tenantID strin
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: invalid id format", idStr))
 			continue
 		}
+		validIDs = append(validIDs, parsedID)
+	}
 
-		// GetByID with tenantID automatically enforces tenant isolation
-		a, err := s.repo.GetByID(ctx, parsedTenantID, parsedID)
-		if err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
-			continue
-		}
+	if len(validIDs) == 0 {
+		return result, nil
+	}
 
-		// Apply status change
-		switch status {
-		case "active":
-			a.Activate()
-		case "inactive":
-			a.Deactivate()
-		case "archived":
-			a.Archive()
-		}
+	// Atomic bulk update - single SQL statement
+	updated, err := s.repo.BulkUpdateStatus(ctx, parsedTenantID, validIDs, parsedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk update status: %w", err)
+	}
 
-		if err := s.repo.Update(ctx, a); err != nil {
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
-			continue
-		}
-
-		result.Updated++
+	result.Updated = int(updated)
+	// If fewer rows updated than requested, some IDs were not found
+	if int(updated) < len(validIDs) {
+		result.Failed += len(validIDs) - int(updated)
 	}
 
 	s.logger.Info("bulk asset status update completed",
-		"status", status,
+		"status", input.Status,
 		"updated", result.Updated,
 		"failed", result.Failed)
 

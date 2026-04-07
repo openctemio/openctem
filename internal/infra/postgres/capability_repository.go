@@ -162,6 +162,20 @@ func (r *CapabilityRepository) GetByID(ctx context.Context, id shared.ID) (*capa
 	return c, nil
 }
 
+// GetByTenantAndID returns a capability by tenant and ID (tenant-scoped).
+func (r *CapabilityRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*capability.Capability, error) {
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
+	c, err := r.scanCapability(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: capability not found", shared.ErrNotFound)
+		}
+		return nil, fmt.Errorf("failed to get capability: %w", err)
+	}
+	return c, nil
+}
+
 // GetByName returns a capability by name within a scope.
 func (r *CapabilityRepository) GetByName(ctx context.Context, tenantID *shared.ID, name string) (*capability.Capability, error) {
 	var query string

@@ -46,8 +46,9 @@ type Repositories struct {
 	Branch    *postgres.BranchRepository
 
 	// Pentest
-	PentestCampaign  *postgres.PentestCampaignRepository
-	PentestFinding   *postgres.PentestFindingRepository
+	PentestCampaign       *postgres.PentestCampaignRepository
+	PentestCampaignMember *postgres.PentestCampaignMemberRepository
+	PentestFinding        *postgres.PentestFindingRepository
 	PentestRetest    *postgres.PentestRetestRepository
 	PentestTemplate  *postgres.PentestTemplateRepository
 	PentestReport    *postgres.PentestReportRepository
@@ -175,8 +176,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// SLA & Integration
 		// Pentest
-		PentestCampaign: postgres.NewPentestCampaignRepository(db),
-		PentestFinding:  postgres.NewPentestFindingRepository(db),
+		PentestCampaign:       postgres.NewPentestCampaignRepository(db),
+		PentestCampaignMember: postgres.NewPentestCampaignMemberRepository(db),
+		PentestFinding:        postgres.NewPentestFindingRepository(db),
 		PentestRetest:   postgres.NewPentestRetestRepository(db),
 		PentestTemplate: postgres.NewPentestTemplateRepository(db),
 		PentestReport:   postgres.NewPentestReportRepository(db),

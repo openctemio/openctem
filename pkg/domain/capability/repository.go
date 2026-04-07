@@ -23,6 +23,9 @@ type Repository interface {
 	// GetByID returns a capability by ID.
 	GetByID(ctx context.Context, id shared.ID) (*Capability, error)
 
+	// GetByTenantAndID returns a capability by tenant and ID.
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Capability, error)
+
 	// GetByName returns a capability by name within a scope (tenant or platform).
 	// If tenantID is nil, it looks for platform capability.
 	GetByName(ctx context.Context, tenantID *shared.ID, name string) (*Capability, error)

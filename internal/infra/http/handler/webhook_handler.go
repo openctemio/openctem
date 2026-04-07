@@ -118,6 +118,12 @@ func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Security: Validate URL against SSRF (CWE-918)
+	if err := validator.ValidateWebhookURL(req.URL); err != nil {
+		apierror.BadRequest("url: " + err.Error()).WriteJSON(w)
+		return
+	}
+
 	input := app.CreateWebhookInput{
 		TenantID:          tenantID,
 		Name:              req.Name,
@@ -210,6 +216,14 @@ func (h *WebhookHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
 		return
+	}
+
+	// Security: Validate URL against SSRF (CWE-918)
+	if req.URL != nil {
+		if err := validator.ValidateWebhookURL(*req.URL); err != nil {
+			apierror.BadRequest("url: " + err.Error()).WriteJSON(w)
+			return
+		}
 	}
 
 	input := app.UpdateWebhookInput{

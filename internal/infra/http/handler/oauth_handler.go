@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/config"
@@ -77,6 +79,18 @@ func (h *OAuthHandler) Authorize(w http.ResponseWriter, r *http.Request) {
 	// Use default frontend callback URL if not provided
 	if redirectURI == "" {
 		redirectURI = h.oauthConfig.FrontendCallbackURL
+	}
+
+	// Security: Validate redirect_uri against allowed origins (CWE-601)
+	if !h.isRedirectAllowed(redirectURI) {
+		apierror.BadRequest("Invalid redirect URI").WriteJSON(w)
+		return
+	}
+
+	// Security: Validate final_redirect against allowed origins (CWE-601)
+	if finalRedirect != "" && !h.isRedirectAllowed(finalRedirect) {
+		apierror.BadRequest("Invalid redirect URI").WriteJSON(w)
+		return
 	}
 
 	result, err := h.oauthService.GetAuthorizationURL(r.Context(), app.AuthorizationURLInput{
@@ -231,4 +245,50 @@ func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
 		h.logger.Error("oauth error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// isRedirectAllowed validates that a redirect URL is safe (CWE-601 protection).
+// Only allows URLs whose origin matches the configured FrontendCallbackURL.
+func (h *OAuthHandler) isRedirectAllowed(rawURL string) bool {
+	if rawURL == "" {
+		return true
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+
+	// Only allow http/https schemes
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+
+	// If AllowedRedirectURLs is configured, check against it
+	if len(h.oauthConfig.AllowedRedirectURLs) > 0 {
+		for _, allowed := range h.oauthConfig.AllowedRedirectURLs {
+			allowedParsed, err := url.Parse(allowed)
+			if err != nil {
+				continue
+			}
+			if strings.EqualFold(parsed.Host, allowedParsed.Host) &&
+				strings.EqualFold(parsed.Scheme, allowedParsed.Scheme) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Default: only allow the configured FrontendCallbackURL origin
+	if h.oauthConfig.FrontendCallbackURL == "" {
+		return false
+	}
+
+	frontendParsed, err := url.Parse(h.oauthConfig.FrontendCallbackURL)
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(parsed.Host, frontendParsed.Host) &&
+		strings.EqualFold(parsed.Scheme, frontendParsed.Scheme)
 }

@@ -159,6 +159,13 @@ func (r *AuditRepository) GetByID(ctx context.Context, id shared.ID) (*audit.Aud
 	return r.scanAuditLog(row, audit.AuditLogNotFoundError(id))
 }
 
+// GetByTenantAndID retrieves an audit log by tenant and ID (tenant-scoped).
+func (r *AuditRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*audit.AuditLog, error) {
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
+	return r.scanAuditLog(row, audit.AuditLogNotFoundError(id))
+}
+
 // List retrieves audit logs matching the filter with pagination.
 func (r *AuditRepository) List(ctx context.Context, filter audit.Filter, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	baseQuery := r.selectQuery()

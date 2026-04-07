@@ -120,6 +120,20 @@ func (h *TemplateSourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Security: Validate source URLs against SSRF (CWE-918)
+	if req.GitConfig != nil && req.GitConfig.URL != "" {
+		if err := validator.ValidateWebhookURL(req.GitConfig.URL); err != nil {
+			apierror.BadRequest("git_config.url: " + err.Error()).WriteJSON(w)
+			return
+		}
+	}
+	if req.HTTPConfig != nil && req.HTTPConfig.URL != "" {
+		if err := validator.ValidateWebhookURL(req.HTTPConfig.URL); err != nil {
+			apierror.BadRequest("http_config.url: " + err.Error()).WriteJSON(w)
+			return
+		}
+	}
+
 	tenantID := middleware.GetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
@@ -284,6 +298,20 @@ func (h *TemplateSourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
 		return
+	}
+
+	// Security: Validate source URLs against SSRF (CWE-918)
+	if req.GitConfig != nil && req.GitConfig.URL != "" {
+		if err := validator.ValidateWebhookURL(req.GitConfig.URL); err != nil {
+			apierror.BadRequest("git_config.url: " + err.Error()).WriteJSON(w)
+			return
+		}
+	}
+	if req.HTTPConfig != nil && req.HTTPConfig.URL != "" {
+		if err := validator.ValidateWebhookURL(req.HTTPConfig.URL); err != nil {
+			apierror.BadRequest("http_config.url: " + err.Error()).WriteJSON(w)
+			return
+		}
 	}
 
 	tenantID := middleware.GetTenantID(r.Context())

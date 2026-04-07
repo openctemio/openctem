@@ -87,6 +87,10 @@ func (m *mockAssetGroupServiceRepo) GetByID(_ context.Context, id shared.ID) (*a
 	return g, nil
 }
 
+func (m *mockAssetGroupServiceRepo) GetByTenantAndID(ctx context.Context, _, id shared.ID) (*assetgroup.AssetGroup, error) {
+	return m.GetByID(ctx, id)
+}
+
 func (m *mockAssetGroupServiceRepo) Update(_ context.Context, group *assetgroup.AssetGroup) error {
 	m.updateCalls++
 	if m.updateErr != nil {
@@ -470,7 +474,7 @@ func TestGetAssetGroup(t *testing.T) {
 
 		existing := seedAssetGroup(repo, tenantID, "My Group", assetgroup.EnvironmentStaging, assetgroup.CriticalityMedium)
 
-		result, err := svc.GetAssetGroup(context.Background(), existing.ID())
+		result, err := svc.GetAssetGroup(context.Background(), tenantID.String(), existing.ID())
 		if err != nil {
 			t.Fatalf("GetAssetGroup failed: %v", err)
 		}
@@ -486,7 +490,7 @@ func TestGetAssetGroup(t *testing.T) {
 		repo := newMockAssetGroupServiceRepo()
 		svc := newTestAssetGroupService(repo)
 
-		_, err := svc.GetAssetGroup(context.Background(), shared.NewID())
+		_, err := svc.GetAssetGroup(context.Background(), shared.NewID().String(), shared.NewID())
 		if err == nil {
 			t.Fatal("expected error for non-existent group")
 		}
@@ -519,7 +523,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 			Criticality: &newCrit,
 		}
 
-		result, err := svc.UpdateAssetGroup(context.Background(), existing.ID(), input)
+		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), input)
 		if err != nil {
 			t.Fatalf("UpdateAssetGroup failed: %v", err)
 		}
@@ -543,13 +547,14 @@ func TestUpdateAssetGroup(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		repo := newMockAssetGroupServiceRepo()
 		svc := newTestAssetGroupService(repo)
+		tenantID := shared.NewID()
 
 		newName := "Updated"
 		input := app.UpdateAssetGroupInput{
 			Name: &newName,
 		}
 
-		_, err := svc.UpdateAssetGroup(context.Background(), shared.NewID(), input)
+		_, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), shared.NewID(), input)
 		if err == nil {
 			t.Fatal("expected error for non-existent group")
 		}
@@ -570,7 +575,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 			Name: &newName,
 		}
 
-		result, err := svc.UpdateAssetGroup(context.Background(), existing.ID(), input)
+		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), input)
 		if err != nil {
 			t.Fatalf("UpdateAssetGroup failed: %v", err)
 		}
@@ -598,7 +603,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 			Environment: &newEnv,
 		}
 
-		result, err := svc.UpdateAssetGroup(context.Background(), existing.ID(), input)
+		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), input)
 		if err != nil {
 			t.Fatalf("UpdateAssetGroup failed: %v", err)
 		}
@@ -619,7 +624,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 			Environment: &badEnv,
 		}
 
-		_, err := svc.UpdateAssetGroup(context.Background(), existing.ID(), input)
+		_, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), input)
 		if err == nil {
 			t.Fatal("expected error for invalid environment")
 		}
@@ -640,7 +645,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 			Criticality: &newCrit,
 		}
 
-		result, err := svc.UpdateAssetGroup(context.Background(), existing.ID(), input)
+		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), input)
 		if err != nil {
 			t.Fatalf("UpdateAssetGroup failed: %v", err)
 		}
@@ -661,7 +666,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 			Criticality: &badCrit,
 		}
 
-		_, err := svc.UpdateAssetGroup(context.Background(), existing.ID(), input)
+		_, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), input)
 		if err == nil {
 			t.Fatal("expected error for invalid criticality")
 		}
@@ -682,7 +687,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 			Tags: newTags,
 		}
 
-		result, err := svc.UpdateAssetGroup(context.Background(), existing.ID(), input)
+		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), input)
 		if err != nil {
 			t.Fatalf("UpdateAssetGroup failed: %v", err)
 		}
@@ -711,7 +716,7 @@ func TestDeleteAssetGroup(t *testing.T) {
 		}
 
 		// Verify it was removed
-		_, err = svc.GetAssetGroup(context.Background(), existing.ID())
+		_, err = svc.GetAssetGroup(context.Background(), tenantID.String(), existing.ID())
 		if err == nil {
 			t.Fatal("expected group to be deleted")
 		}
@@ -1282,7 +1287,7 @@ func TestBulkUpdateAssetGroups(t *testing.T) {
 			Environment: &newEnv,
 		}
 
-		updated, err := svc.BulkUpdateAssetGroups(context.Background(), input)
+		updated, err := svc.BulkUpdateAssetGroups(context.Background(), tenantID.String(), input)
 		if err != nil {
 			t.Fatalf("BulkUpdateAssetGroups failed: %v", err)
 		}
@@ -1295,6 +1300,7 @@ func TestBulkUpdateAssetGroups(t *testing.T) {
 	t.Run("all invalid IDs", func(t *testing.T) {
 		repo := newMockAssetGroupServiceRepo()
 		svc := newTestAssetGroupService(repo)
+		tenantID := shared.NewID()
 
 		newCrit := "low"
 		input := app.BulkUpdateInput{
@@ -1302,7 +1308,7 @@ func TestBulkUpdateAssetGroups(t *testing.T) {
 			Criticality: &newCrit,
 		}
 
-		updated, err := svc.BulkUpdateAssetGroups(context.Background(), input)
+		updated, err := svc.BulkUpdateAssetGroups(context.Background(), tenantID.String(), input)
 		if err != nil {
 			t.Fatalf("BulkUpdateAssetGroups failed: %v", err)
 		}

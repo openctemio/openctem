@@ -15,6 +15,9 @@ type Repository interface {
 	// GetByID retrieves an asset group by its ID.
 	GetByID(ctx context.Context, id shared.ID) (*AssetGroup, error)
 
+	// GetByTenantAndID retrieves an asset group by tenant and ID (tenant-scoped).
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*AssetGroup, error)
+
 	// Update updates an existing asset group.
 	Update(ctx context.Context, group *AssetGroup) error
 

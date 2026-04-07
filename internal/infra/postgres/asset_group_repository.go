@@ -157,6 +157,22 @@ func (r *AssetGroupRepository) GetByID(ctx context.Context, id shared.ID) (*asse
 	return g, nil
 }
 
+// GetByTenantAndID retrieves an asset group by tenant and ID (tenant-scoped).
+func (r *AssetGroupRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*assetgroup.AssetGroup, error) {
+	query := assetGroupSelectQuery + " WHERE ag.tenant_id = $1 AND ag.id = $2"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
+
+	g, err := r.scanAssetGroup(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, shared.ErrNotFound
+		}
+		return nil, fmt.Errorf("get asset group: %w", err)
+	}
+
+	return g, nil
+}
+
 // Update updates an asset group.
 func (r *AssetGroupRepository) Update(ctx context.Context, g *assetgroup.AssetGroup) error {
 	query := `

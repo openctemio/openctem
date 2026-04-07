@@ -197,6 +197,10 @@ type OAuthConfig struct {
 	// StateDuration is how long OAuth state tokens are valid
 	StateDuration time.Duration
 
+	// AllowedRedirectURLs is a whitelist of allowed OAuth redirect URLs.
+	// If empty, only the FrontendCallbackURL origin is allowed.
+	AllowedRedirectURLs []string
+
 	// Providers
 	Google    OAuthProviderConfig
 	GitHub    OAuthProviderConfig

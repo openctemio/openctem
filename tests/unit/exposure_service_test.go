@@ -79,6 +79,9 @@ func (m *mockExposureRepo) GetByID(_ context.Context, id shared.ID) (*exposure.E
 	}
 	return e, nil
 }
+func (m *mockExposureRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*exposure.ExposureEvent, error) {
+	return m.GetByID(context.Background(), id)
+}
 
 func (m *mockExposureRepo) GetByFingerprint(_ context.Context, _ shared.ID, _ string) (*exposure.ExposureEvent, error) {
 	return nil, shared.ErrNotFound

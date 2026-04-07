@@ -56,6 +56,20 @@ func (m *mockGroupRepo) GetByID(_ context.Context, id shared.ID) (*group.Group, 
 	return g, nil
 }
 
+func (m *mockGroupRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*group.Group, error) {
+	if m.getByIDErr != nil {
+		return nil, m.getByIDErr
+	}
+	g, ok := m.groups[id]
+	if !ok {
+		return nil, group.ErrGroupNotFound
+	}
+	if g.TenantID() != tenantID {
+		return nil, group.ErrGroupNotFound
+	}
+	return g, nil
+}
+
 func (m *mockGroupRepo) GetBySlug(_ context.Context, tenantID shared.ID, slug string) (*group.Group, error) {
 	for _, g := range m.groups {
 		if g.TenantID() == tenantID && g.Slug() == slug {

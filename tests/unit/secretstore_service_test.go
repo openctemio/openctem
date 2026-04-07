@@ -202,6 +202,10 @@ func (m *secretMockAuditRepo) GetByID(_ context.Context, _ shared.ID) (*audit.Au
 	return nil, errors.New("not implemented")
 }
 
+func (m *secretMockAuditRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*audit.AuditLog, error) {
+	return nil, nil
+}
+
 func (m *secretMockAuditRepo) List(_ context.Context, _ audit.Filter, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }

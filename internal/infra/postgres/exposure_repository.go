@@ -129,6 +129,14 @@ func (r *ExposureRepository) GetByID(ctx context.Context, id shared.ID) (*exposu
 	return r.scanExposureEvent(row, id)
 }
 
+// GetByTenantAndID retrieves an exposure event by tenant and ID.
+func (r *ExposureRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*exposure.ExposureEvent, error) {
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
+
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
+	return r.scanExposureEvent(row, id)
+}
+
 // GetByFingerprint retrieves an exposure event by fingerprint within a tenant.
 func (r *ExposureRepository) GetByFingerprint(ctx context.Context, tenantID shared.ID, fingerprint string) (*exposure.ExposureEvent, error) {
 	query := r.selectQuery() + " WHERE tenant_id = $1 AND fingerprint = $2"

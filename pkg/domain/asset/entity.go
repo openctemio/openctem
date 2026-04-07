@@ -542,9 +542,14 @@ func (a *Asset) Properties() map[string]any {
 }
 
 // SetParentID sets the parent asset ID.
-func (a *Asset) SetParentID(parentID *shared.ID) {
+// Returns error if the parent ID would create a self-reference.
+func (a *Asset) SetParentID(parentID *shared.ID) error {
+	if parentID != nil && *parentID == a.id {
+		return fmt.Errorf("%w: asset cannot be its own parent", shared.ErrValidation)
+	}
 	a.parentID = parentID
 	a.updatedAt = time.Now().UTC()
+	return nil
 }
 
 // SetOwnerID sets the owner user ID.
