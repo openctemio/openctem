@@ -25,17 +25,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: go
-          queries: security-and-quality
-
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version: '1.25.8'
           cache: true
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          queries: security-and-quality
 
       - name: Build
         run: go build ./...
