@@ -184,11 +184,49 @@ SMTP_ENABLED=true               # Required for invitation emails
 ```bash
 # API: Create invitation (requires team:admin permission)
 POST /api/v1/tenants/{tenant}/invitations
-{"email": "user@company.com", "role_ids": ["role-uuid"]}
+{"email": "user@company.com", "role_ids": ["00000000-0000-0000-0000-000000000003"]}
+
+# System roles (pre-seeded, shared across all tenants):
+#   00000000-...-000000000001  owner       (full access)
+#   00000000-...-000000000002  admin       (all except team:delete)
+#   00000000-...-000000000003  member      (read/write, no delete)
+#   00000000-...-000000000004  viewer      (read-only)
 
 # User accepts invitation via token link
 POST /api/v1/invitations/{token}/accept
 ```
+
+### Per-Tenant SMTP
+
+Each tenant can configure its own SMTP server for outgoing emails (invitations, notifications).
+If not configured, the system-wide SMTP (`SMTP_HOST`, etc.) is used as fallback.
+
+**Setup via email integration:**
+```bash
+POST /api/v1/integrations
+{
+  "name": "Company Email",
+  "category": "notification",
+  "provider": "email",
+  "auth_type": "basic",
+  "metadata": {
+    "smtp_host": "smtp.company.com",
+    "smtp_port": 587,
+    "smtp_user": "noreply@company.com",
+    "smtp_password": "app-password",
+    "smtp_from": "noreply@company.com",
+    "smtp_from_name": "Security Team",
+    "smtp_tls": true
+  }
+}
+```
+
+**Resolution order:**
+1. Tenant has active email integration → use tenant SMTP
+2. No tenant integration → use system SMTP (`SMTP_HOST`, `SMTP_PORT`, etc.)
+3. No system SMTP → emails skipped (logged as warning)
+
+Credentials are encrypted at rest using AES-256-GCM.
 
 ## Commands
 

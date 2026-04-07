@@ -391,6 +391,48 @@ return tx.Commit() // Both or neither succeed
 
 For detailed docs, see `docs/architecture/notification-system.md`.
 
+### Per-Tenant SMTP
+
+Transactional emails (invitations, verification, password reset) support per-tenant SMTP configuration via the email notification integration.
+
+**Resolution order:** Tenant email integration (if active) → System SMTP (`SMTP_HOST` env vars) → Skip (log warning).
+
+```go
+// TenantSMTPResolver interface (internal/app/email_service.go)
+type TenantSMTPResolver interface {
+    GetTenantSMTPConfig(ctx context.Context, tenantID string) (*email.Config, error)
+}
+
+// Implementation: IntegrationSMTPResolver (internal/app/tenant_smtp_resolver.go)
+// Reads SMTP config from integration metadata:
+//   smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, smtp_from_name, smtp_tls
+```
+
+**Key Files:** `internal/app/email_service.go`, `internal/app/tenant_smtp_resolver.go`
+
+### User Management (Production)
+
+In production, disable public registration: `AUTH_ALLOW_REGISTRATION=false`
+
+Users are added via the invitation system:
+
+```go
+// 1. Admin creates invitation (requires team:admin)
+POST /api/v1/tenants/{tenant}/invitations
+{"email": "user@company.com", "role_ids": ["00000000-0000-0000-0000-000000000003"]}
+
+// System roles (pre-seeded, tenant_id=NULL):
+//   00000000-...-000000000001  owner
+//   00000000-...-000000000002  admin
+//   00000000-...-000000000003  member
+//   00000000-...-000000000004  viewer
+
+// 2. User accepts via token link
+POST /api/v1/invitations/{token}/accept-with-refresh
+```
+
+**Key Files:** `internal/app/tenant_service.go` (CreateInvitation), `internal/infra/http/handler/tenant_handler.go`
+
 ---
 
 ## Platform Agents Architecture (v3.2)
