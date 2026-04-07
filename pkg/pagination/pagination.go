@@ -111,6 +111,9 @@ func New(page, perPage int) Pagination {
 	if page < 1 {
 		page = 1
 	}
+	if page > 100000 {
+		page = 100000 // Prevent integer overflow in Offset() calculation
+	}
 	if perPage < 1 {
 		perPage = 20
 	}
