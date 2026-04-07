@@ -53,6 +53,19 @@ type AssetService struct {
 
 	// Scope rule evaluator callback (set by services.go wiring)
 	scopeRuleEvaluator ScopeRuleEvaluatorFunc
+
+	// User matcher for auto-resolving owner_ref to owner_id
+	userMatcher UserMatcher
+}
+
+// UserMatcher resolves external references (email, username) to user IDs.
+type UserMatcher interface {
+	FindUserIDByEmail(ctx context.Context, tenantID shared.ID, email string) (*shared.ID, error)
+}
+
+// SetUserMatcher sets the user matcher for owner auto-resolution.
+func (s *AssetService) SetUserMatcher(m UserMatcher) {
+	s.userMatcher = m
 }
 
 // NewAssetService creates a new AssetService.
@@ -227,9 +240,16 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		a.AddTag(tag)
 	}
 
-	// Set owner reference from external source
+	// Set owner reference from external source and try auto-match
 	if input.OwnerRef != "" {
 		a.SetOwnerRef(input.OwnerRef)
+		// Auto-match: if owner_ref looks like an email, try to find user
+		if strings.Contains(input.OwnerRef, "@") && s.userMatcher != nil {
+			if matchedID, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, input.OwnerRef); err == nil && matchedID != nil {
+				a.SetOwnerID(matchedID)
+				s.logger.Info("auto-matched owner_ref to user", "owner_ref", input.OwnerRef, "user_id", matchedID.String())
+			}
+		}
 	}
 
 	// Calculate initial risk score using tenant-specific config
