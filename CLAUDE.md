@@ -31,7 +31,7 @@ go test -cover ./...                         # With coverage
 
 ## Tech Stack & Structure
 
-- **Go 1.25+**, strict linting via golangci-lint
+- **Go 1.26+**, strict linting via golangci-lint
 - **PostgreSQL** persistence, **Chi Router**, **DDD architecture**
 
 ```
