@@ -166,6 +166,9 @@ func (m *mockFindingRepository) GetByID(_ context.Context, tenantID, id shared.I
 	}
 	return f, nil
 }
+func (m *mockFindingRepository) GetByIDs(_ context.Context, _ shared.ID, _ []shared.ID) ([]*vulnerability.Finding, error) {
+	return nil, nil
+}
 func (m *mockFindingRepository) Update(_ context.Context, _ *vulnerability.Finding) error {
 	return nil
 }

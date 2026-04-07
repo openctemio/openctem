@@ -67,6 +67,10 @@ func (m *wfActionMockFindingRepo) GetByID(_ context.Context, tenantID, id shared
 	return f, nil
 }
 
+func (m *wfActionMockFindingRepo) GetByIDs(_ context.Context, _ shared.ID, _ []shared.ID) ([]*vulnerability.Finding, error) {
+	return nil, nil
+}
+
 func (m *wfActionMockFindingRepo) Update(_ context.Context, f *vulnerability.Finding) error {
 	if m.updateErr != nil {
 		return m.updateErr

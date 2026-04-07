@@ -88,6 +88,9 @@ func (s *stubFindingRepo) CreateBatchWithResult(_ context.Context, _ []*vulnerab
 func (s *stubFindingRepo) GetByID(_ context.Context, _, _ shared.ID) (*vulnerability.Finding, error) {
 	return nil, nil
 }
+func (s *stubFindingRepo) GetByIDs(_ context.Context, _ shared.ID, _ []shared.ID) ([]*vulnerability.Finding, error) {
+	return nil, nil
+}
 func (s *stubFindingRepo) Update(_ context.Context, _ *vulnerability.Finding) error { return nil }
 func (s *stubFindingRepo) Delete(_ context.Context, _, _ shared.ID) error           { return nil }
 func (s *stubFindingRepo) List(_ context.Context, _ vulnerability.FindingFilter, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {

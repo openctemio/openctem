@@ -1,7 +1,6 @@
 package unit
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -811,10 +810,6 @@ func createTestMember(t *testing.T, role pentest.CampaignRole) *pentest.Campaign
 	)
 	require.NoError(t, err)
 	return member
-}
-
-func stubContext() context.Context {
-	return context.Background()
 }
 
 func mustParseTime(t *testing.T, s string) time.Time {

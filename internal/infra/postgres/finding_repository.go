@@ -651,6 +651,35 @@ func (r *FindingRepository) GetByID(ctx context.Context, tenantID, id shared.ID)
 	return r.scanFinding(row, vulnerability.FindingNotFoundError(id))
 }
 
+// GetByIDs retrieves multiple findings by IDs within a tenant (batch fetch).
+func (r *FindingRepository) GetByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]*vulnerability.Finding, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = id.String()
+	}
+
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = ANY($2::uuid[])"
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(idStrs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get findings by ids: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]*vulnerability.Finding, 0, len(ids))
+	for rows.Next() {
+		f, err := r.scanFindingFromRows(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan finding: %w", err)
+		}
+		results = append(results, f)
+	}
+	return results, rows.Err()
+}
+
 // Update updates an existing finding.
 // Security: Uses finding.TenantID() to ensure tenant isolation in SQL WHERE clause.
 func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.Finding) error {

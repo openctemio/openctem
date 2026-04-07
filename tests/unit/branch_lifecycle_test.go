@@ -60,6 +60,9 @@ func (m *MockFindingRepoForLifecycle) CreateBatch(ctx context.Context, findings 
 func (m *MockFindingRepoForLifecycle) GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error) {
 	return nil, shared.ErrNotFound
 }
+func (m *MockFindingRepoForLifecycle) GetByIDs(_ context.Context, _ shared.ID, _ []shared.ID) ([]*vulnerability.Finding, error) {
+	return nil, nil
+}
 func (m *MockFindingRepoForLifecycle) Update(ctx context.Context, f *vulnerability.Finding) error {
 	return nil
 }
