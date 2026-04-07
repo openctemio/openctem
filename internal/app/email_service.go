@@ -10,12 +10,21 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// TenantSMTPResolver resolves per-tenant SMTP configuration from integrations.
+// Returns nil if tenant has no custom SMTP config (fallback to system default).
+type TenantSMTPResolver interface {
+	GetTenantSMTPConfig(ctx context.Context, tenantID string) (*email.Config, error)
+}
+
 // EmailService handles sending emails for various application events.
+// Supports per-tenant SMTP via TenantSMTPResolver: if a tenant has a custom
+// email integration configured, it uses that SMTP server instead of the system default.
 type EmailService struct {
-	sender  email.Sender
-	config  config.SMTPConfig
-	appName string
-	logger  *logger.Logger
+	sender       email.Sender // System-wide default sender
+	tenantSMTP   TenantSMTPResolver
+	config       config.SMTPConfig
+	appName      string
+	logger       *logger.Logger
 }
 
 // NewEmailService creates a new EmailService.
@@ -26,6 +35,29 @@ func NewEmailService(sender email.Sender, cfg config.SMTPConfig, appName string,
 		appName: appName,
 		logger:  log.With("service", "email"),
 	}
+}
+
+// SetTenantSMTPResolver sets the per-tenant SMTP resolver.
+func (s *EmailService) SetTenantSMTPResolver(resolver TenantSMTPResolver) {
+	s.tenantSMTP = resolver
+}
+
+// getSenderForTenant returns a per-tenant SMTP sender if configured, or the default sender.
+func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) email.Sender {
+	if s.tenantSMTP == nil || tenantID == "" {
+		return s.sender
+	}
+
+	cfg, err := s.tenantSMTP.GetTenantSMTPConfig(ctx, tenantID)
+	if err != nil {
+		s.logger.Debug("no tenant SMTP config, using system default", "tenant_id", tenantID)
+		return s.sender
+	}
+	if cfg == nil {
+		return s.sender
+	}
+
+	return email.NewSMTPSender(*cfg)
 }
 
 // IsConfigured returns true if email service is properly configured.
@@ -170,8 +202,15 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 }
 
 // SendTeamInvitationEmail sends a team invitation email.
-func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEmail, inviterName, teamName, token string, expiresIn time.Duration) error {
-	if !s.IsConfigured() {
+// Uses per-tenant SMTP if configured, otherwise falls back to system SMTP.
+func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEmail, inviterName, teamName, token string, expiresIn time.Duration, tenantID ...string) error {
+	// Resolve sender: per-tenant or system default
+	sender := s.sender
+	if len(tenantID) > 0 && tenantID[0] != "" {
+		sender = s.getSenderForTenant(ctx, tenantID[0])
+	}
+
+	if sender == nil || !sender.IsConfigured() {
 		s.logger.Warn("email service not configured, skipping team invitation email",
 			"email", recipientEmail,
 		)
@@ -188,7 +227,7 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 		AppName:       s.appName,
 	}
 
-	if err := s.sender.SendTemplate(ctx, recipientEmail, email.TemplateTeamInvitation, data); err != nil {
+	if err := sender.SendTemplate(ctx, recipientEmail, email.TemplateTeamInvitation, data); err != nil {
 		s.logger.Error("failed to send team invitation email",
 			"email", recipientEmail,
 			"error", err,
@@ -199,6 +238,7 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 	s.logger.Info("team invitation email sent",
 		"email", recipientEmail,
 		"team", teamName,
+		"tenant_smtp", len(tenantID) > 0 && tenantID[0] != "",
 	)
 	return nil
 }
