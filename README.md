@@ -219,6 +219,104 @@ See `/docs` endpoint for complete OpenAPI documentation.
 | POST | `/api/v1/platform/poll` | Long-poll for jobs |
 | POST | `/api/v1/platform/jobs/{id}/result` | Submit job results |
 
+## Deployment
+
+### Docker Compose
+
+```bash
+# 1. Go to setup directory
+cd ../setup
+
+# 2. Initialize environment files
+make init-prod
+
+# 3. Generate secrets and update .env files
+make generate-secrets
+# Update all <CHANGE_ME> values in .env.*.prod files
+
+# 4. Setup SSL (self-signed or Let's Encrypt)
+make auto-ssl
+
+# 5. Start production
+make prod-up
+
+# 6. Create first admin user
+make bootstrap-admin-prod email=admin@example.com
+```
+
+### Kubernetes (Helm)
+
+```bash
+# 1. Create namespace and secrets
+kubectl create namespace openctem
+
+kubectl create secret generic openctem-api-secrets \
+  --namespace openctem \
+  --from-literal=AUTH_JWT_SECRET=$(openssl rand -base64 48) \
+  --from-literal=APP_ENCRYPTION_KEY=$(openssl rand -hex 32) \
+  --from-literal=DB_USER=openctem \
+  --from-literal=DB_PASSWORD=$(openssl rand -hex 24) \
+  --from-literal=DB_NAME=openctem
+
+kubectl create secret generic openctem-db-secrets \
+  --namespace openctem \
+  --from-literal=username=openctem \
+  --from-literal=password=<same-db-password>
+
+kubectl create secret generic openctem-redis-secrets \
+  --namespace openctem \
+  --from-literal=password=$(openssl rand -hex 24)
+
+# 2. Install with bootstrap admin (first-time only)
+helm install openctem ../setup/kubernetes/helm/openctem \
+  --namespace openctem \
+  --set bootstrapAdmin.enabled=true \
+  --set bootstrapAdmin.email=admin@example.com \
+  --set ingress.hosts[0].host=openctem.yourdomain.com
+
+# 3. Get the admin API key (shown once — save it!)
+kubectl logs job/openctem-bootstrap-admin -n openctem
+```
+
+### Bootstrap Admin (First-time Setup)
+
+The first admin user must be created via CLI — there is no default account.
+
+**Docker Compose:**
+```bash
+make bootstrap-admin-prod email=admin@example.com role=super_admin
+```
+
+**Kubernetes (during helm install):**
+```bash
+helm install openctem ./openctem \
+  --set bootstrapAdmin.enabled=true \
+  --set bootstrapAdmin.email=admin@example.com
+```
+
+**Kubernetes (after install):**
+```bash
+kubectl exec -it deploy/openctem-api -n openctem -- \
+  /app/bootstrap-admin -email=admin@example.com
+```
+
+**Standalone binary:**
+```bash
+./bootstrap-admin \
+  -db="postgres://user:pass@host:5432/openctem?sslmode=require" \
+  -email=admin@example.com \
+  -role=super_admin
+```
+
+| Flag | Env Var | Description |
+|------|---------|-------------|
+| `-db` | `DATABASE_URL` or `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` | Database connection |
+| `-email` | `ADMIN_EMAIL` | Admin email (required) |
+| `-name` | `ADMIN_NAME` | Display name (defaults to email prefix) |
+| `-role` | — | `super_admin`, `ops_admin`, `viewer` |
+| `-api-key` | `BOOTSTRAP_ADMIN_KEY` | Use specific key (auto-generated if empty) |
+| `-force` | — | Overwrite existing admin with same email |
+
 ## Security
 
 - SSRF protection on all URL inputs (webhooks, integrations, template sources)
