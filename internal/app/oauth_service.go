@@ -203,6 +203,11 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 		return nil, ErrOAuthUserInfoFailed
 	}
 
+	// SECURITY: Require email from OAuth provider
+	if userInfo.Email == "" {
+		return nil, fmt.Errorf("OAuth provider did not return an email address")
+	}
+
 	// Find or create user
 	u, err := s.findOrCreateUser(ctx, userInfo, input.Provider)
 	if err != nil {
@@ -601,6 +606,21 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
+		// SECURITY: Verify auth provider matches to prevent account takeover.
+		// A local user with a password cannot be logged in via OAuth.
+		existingProvider := existingUser.AuthProvider()
+		expectedProvider := provider.ToAuthProvider()
+
+		if existingProvider != expectedProvider && existingProvider == user.AuthProviderLocal {
+			if existingUser.PasswordHash() != nil {
+				s.logger.Warn("OAuth login blocked: email exists with local auth",
+					"email", userInfo.Email,
+					"oauth_provider", provider,
+				)
+				return nil, fmt.Errorf("this email is registered with password login")
+			}
+		}
+
 		// Update last login
 		existingUser.UpdateLastLogin()
 		if err := s.userRepo.Update(ctx, existingUser); err != nil {
