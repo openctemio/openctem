@@ -65,6 +65,7 @@ type AssetResponse struct {
 	Description           string                   `json:"description,omitempty"`
 	Tags         []string            `json:"tags,omitempty"`
 	Metadata     map[string]any      `json:"metadata,omitempty"`
+	Properties   map[string]any      `json:"properties,omitempty"`
 	PrimaryOwner *OwnerBriefResponse `json:"primary_owner,omitempty"`
 	FirstSeen    time.Time           `json:"first_seen"`
 	LastSeen     time.Time           `json:"last_seen"`
@@ -135,6 +136,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		Description:  a.Description(),
 		Tags:         a.Tags(),
 		Metadata:     a.Metadata(),
+		Properties:   a.Properties(),
 		FirstSeen:    a.FirstSeen(),
 		LastSeen:     a.LastSeen(),
 		CreatedAt:    a.CreatedAt(),
