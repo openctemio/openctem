@@ -158,8 +158,7 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 	}
 
 	// Prepare COPY statement
-	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("temp_epss_scores",
-		"cve_id", "epss_score", "percentile", "model_version", "score_date"))
+	stmt, err := tx.PrepareContext(ctx, "COPY temp_epss_scores (cve_id, epss_score, percentile, model_version, score_date) FROM STDIN")
 	if err != nil {
 		return fmt.Errorf("failed to prepare COPY statement: %w", err)
 	}
