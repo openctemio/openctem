@@ -548,9 +548,9 @@ func (s *TenantService) GetMembership(ctx context.Context, userID shared.ID, ten
 // CreateInvitationInput represents the input for creating an invitation.
 // Note: All invited users are "member". Permissions come from RBAC roles (RoleIDs).
 type CreateInvitationInput struct {
-	Email   string   `json:"email" validate:"required,email"`
-	Role    string   `json:"-"`                                  // Internal use only - always set to "member" by handler
-	RoleIDs []string `json:"role_ids" validate:"required,min=1"` // RBAC roles to assign (required)
+	Email   string   `json:"email" validate:"required,email,max=254"`
+	Role    string   `json:"-"`                                       // Internal use only - always set to "member" by handler
+	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=10"` // RBAC roles to assign (required, max 10)
 }
 
 // CreateInvitation creates an invitation to join a tenant.
@@ -564,6 +564,13 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	role, ok := tenant.ParseRole(input.Role)
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
+	}
+
+	// Validate role_ids are valid UUIDs (prevent empty strings → DB errors)
+	for _, rid := range input.RoleIDs {
+		if _, err := shared.IDFromString(rid); err != nil {
+			return nil, fmt.Errorf("%w: invalid role_id '%s'", shared.ErrValidation, rid)
+		}
 	}
 
 	// Check for existing pending invitation

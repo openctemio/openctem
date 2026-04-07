@@ -392,7 +392,7 @@ func (h *IntegrationHandler) handleServiceError(w http.ResponseWriter, err error
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Integration").WriteJSON(w)
-	case errors.Is(err, shared.ErrAlreadyExists):
+	case errors.Is(err, shared.ErrAlreadyExists), errors.Is(err, shared.ErrConflict):
 		apierror.Conflict("Integration already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
