@@ -14,7 +14,6 @@ import (
 // the SMTP settings are stored encrypted in the integration's config/credentials.
 type IntegrationSMTPResolver struct {
 	integrationRepo integration.Repository
-	encryptor       interface{ Decrypt([]byte) ([]byte, error) }
 	logger          *logger.Logger
 }
 
