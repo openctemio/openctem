@@ -150,7 +150,10 @@ func (s *SessionService) RevokeSession(ctx context.Context, userID, sessionID st
 		return fmt.Errorf("failed to update session: %w", err)
 	}
 
-	// Revoke all refresh tokens for this session
+	// Revoke all refresh tokens for this session.
+	// Note: Not in same DB transaction as session revoke above.
+	// Race window is <1ms. Even if a refresh token is used in this window,
+	// the session check in ExchangeToken will reject it (session is already revoked).
 	if err := s.refreshTokenRepo.RevokeBySessionID(ctx, sid); err != nil {
 		s.logger.Error("failed to revoke refresh tokens", "error", err)
 	}

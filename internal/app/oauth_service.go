@@ -133,14 +133,14 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 		return nil, ErrProviderDisabled
 	}
 
-	// Generate state token for CSRF protection
-	state, err := s.generateState(input.Provider, input.FinalRedirect)
+	// Generate state token with PKCE for CSRF + code interception protection
+	state, codeVerifier, err := s.generateState(input.Provider, input.FinalRedirect)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
 
-	// Build authorization URL based on provider
-	authURL, err := s.buildAuthorizationURL(input.Provider, providerConfig, input.RedirectURI, state)
+	// Build authorization URL with PKCE challenge
+	authURL, err := s.buildAuthorizationURL(input.Provider, providerConfig, input.RedirectURI, state, codeVerifier)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build authorization URL: %w", err)
 	}
@@ -183,14 +183,14 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 		return nil, ErrProviderDisabled
 	}
 
-	// Validate state
-	finalRedirect, err := s.validateState(input.State, input.Provider)
+	// Validate state and extract PKCE verifier
+	finalRedirect, codeVerifier, err := s.validateState(input.State, input.Provider)
 	if err != nil {
 		return nil, ErrInvalidState
 	}
 
-	// Exchange code for tokens
-	tokens, err := s.exchangeCode(ctx, input.Provider, providerConfig, input.Code, input.RedirectURI)
+	// Exchange code for tokens (includes PKCE code_verifier)
+	tokens, err := s.exchangeCode(ctx, input.Provider, providerConfig, input.Code, input.RedirectURI, codeVerifier)
 	if err != nil {
 		s.logger.Error("failed to exchange OAuth code", "provider", input.Provider, "error", err)
 		return nil, ErrOAuthExchangeFailed
@@ -266,18 +266,38 @@ func (s *OAuthService) getProviderConfig(provider OAuthProvider) *config.OAuthPr
 	return nil
 }
 
-// generateState generates a signed state token.
-func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect string) (string, error) {
+// generatePKCE generates a PKCE code verifier and challenge (RFC 7636).
+func generatePKCE() (verifier, challenge string, err error) {
+	verifierBytes := make([]byte, 32)
+	if _, err := rand.Read(verifierBytes); err != nil {
+		return "", "", err
+	}
+	verifier = base64.RawURLEncoding.EncodeToString(verifierBytes)
+
+	hash := sha256.Sum256([]byte(verifier))
+	challenge = base64.RawURLEncoding.EncodeToString(hash[:])
+	return verifier, challenge, nil
+}
+
+// generateState generates a signed state token with PKCE verifier.
+func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect string) (state string, codeVerifier string, err error) {
 	// Generate random bytes
 	randomBytes := make([]byte, 16)
 	if _, err := rand.Read(randomBytes); err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	// Create state data
+	// Generate PKCE
+	verifier, _, pkceErr := generatePKCE()
+	if pkceErr != nil {
+		return "", "", pkceErr
+	}
+
+	// Create state data (includes PKCE verifier for callback verification)
 	stateData := map[string]interface{}{
 		"provider":       string(provider),
 		"final_redirect": finalRedirect,
+		"code_verifier":  verifier,
 		"random":         base64.URLEncoding.EncodeToString(randomBytes),
 		"exp":            time.Now().Add(s.config.StateDuration).Unix(),
 	}
@@ -285,14 +305,14 @@ func (s *OAuthService) generateState(provider OAuthProvider, finalRedirect strin
 	// Encode state data
 	stateJSON, err := json.Marshal(stateData)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// Sign the state
 	stateBase64 := base64.URLEncoding.EncodeToString(stateJSON)
 	signature := s.signState(stateBase64)
 
-	return stateBase64 + "." + signature, nil
+	return stateBase64 + "." + signature, verifier, nil
 }
 
 // signState creates an HMAC signature for the state.
@@ -306,11 +326,11 @@ func (s *OAuthService) signState(data string) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// validateState validates and decodes the state token.
-func (s *OAuthService) validateState(state string, expectedProvider OAuthProvider) (string, error) {
+// validateState validates and decodes the state token. Returns finalRedirect and codeVerifier.
+func (s *OAuthService) validateState(state string, expectedProvider OAuthProvider) (string, string, error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", errors.New("invalid state format")
+		return "", "", errors.New("invalid state format")
 	}
 
 	stateData, signature := parts[0], parts[1]
@@ -318,37 +338,38 @@ func (s *OAuthService) validateState(state string, expectedProvider OAuthProvide
 	// Verify signature
 	expectedSig := s.signState(stateData)
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", errors.New("invalid state signature")
+		return "", "", errors.New("invalid state signature")
 	}
 
 	// Decode state data
 	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
 	if err != nil {
-		return "", errors.New("invalid state encoding")
+		return "", "", errors.New("invalid state encoding")
 	}
 
 	var data map[string]interface{}
 	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", errors.New("invalid state JSON")
+		return "", "", errors.New("invalid state JSON")
 	}
 
 	// Check expiration
 	expFloat, ok := data["exp"].(float64)
 	if !ok {
-		return "", errors.New("invalid state expiration")
+		return "", "", errors.New("invalid state expiration")
 	}
 	if time.Now().Unix() > int64(expFloat) {
-		return "", errors.New("state expired")
+		return "", "", errors.New("state expired")
 	}
 
 	// Check provider
 	provider, ok := data["provider"].(string)
 	if !ok || provider != string(expectedProvider) {
-		return "", errors.New("provider mismatch")
+		return "", "", errors.New("provider mismatch")
 	}
 
 	finalRedirect, _ := data["final_redirect"].(string)
-	return finalRedirect, nil
+	verifier, _ := data["code_verifier"].(string)
+	return finalRedirect, verifier, nil
 }
 
 // OAuth token response.
@@ -361,7 +382,7 @@ type oauthTokens struct {
 }
 
 // exchangeCode exchanges the authorization code for tokens.
-func (s *OAuthService) exchangeCode(ctx context.Context, provider OAuthProvider, cfg *config.OAuthProviderConfig, code, redirectURI string) (*oauthTokens, error) {
+func (s *OAuthService) exchangeCode(ctx context.Context, provider OAuthProvider, cfg *config.OAuthProviderConfig, code, redirectURI, codeVerifier string) (*oauthTokens, error) {
 	tokenURL := s.getTokenURL(provider)
 
 	data := url.Values{}
@@ -370,6 +391,11 @@ func (s *OAuthService) exchangeCode(ctx context.Context, provider OAuthProvider,
 	data.Set("code", code)
 	data.Set("redirect_uri", redirectURI)
 	data.Set("grant_type", "authorization_code")
+
+	// PKCE: Include code_verifier (RFC 7636)
+	if codeVerifier != "" {
+		data.Set("code_verifier", codeVerifier)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
@@ -705,7 +731,7 @@ func (s *OAuthService) createSession(ctx context.Context, u *user.User) (*Sessio
 }
 
 // buildAuthorizationURL builds the OAuth authorization URL.
-func (s *OAuthService) buildAuthorizationURL(provider OAuthProvider, cfg *config.OAuthProviderConfig, redirectURI, state string) (string, error) {
+func (s *OAuthService) buildAuthorizationURL(provider OAuthProvider, cfg *config.OAuthProviderConfig, redirectURI, state, codeVerifier string) (string, error) {
 	authURL := s.getAuthURL(provider)
 
 	params := url.Values{}
@@ -716,6 +742,14 @@ func (s *OAuthService) buildAuthorizationURL(provider OAuthProvider, cfg *config
 
 	if len(cfg.Scopes) > 0 {
 		params.Set("scope", strings.Join(cfg.Scopes, " "))
+	}
+
+	// PKCE: Add code_challenge (RFC 7636)
+	if codeVerifier != "" {
+		challengeHash := sha256.Sum256([]byte(codeVerifier))
+		codeChallenge := base64.RawURLEncoding.EncodeToString(challengeHash[:])
+		params.Set("code_challenge", codeChallenge)
+		params.Set("code_challenge_method", "S256")
 	}
 
 	// Provider-specific parameters
