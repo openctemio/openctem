@@ -593,6 +593,25 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
+		// SECURITY: Verify auth provider matches to prevent account takeover.
+		// A local user cannot be logged in via SSO (and vice versa) unless
+		// the auth provider matches or the user was created by this SSO provider.
+		existingProvider := existingUser.AuthProvider()
+		expectedProvider := s.mapAuthProvider(provider)
+
+		if existingProvider != expectedProvider && existingProvider != user.AuthProviderOIDC {
+			// Allow local users to be "upgraded" to SSO only if they have no password set
+			// (i.e., they were invited but haven't set a password yet).
+			if existingProvider == user.AuthProviderLocal && existingUser.PasswordHash() != nil {
+				s.logger.Warn("SSO login blocked: email exists with different auth provider",
+					"email", userInfo.Email,
+					"existing_provider", existingProvider,
+					"sso_provider", expectedProvider,
+				)
+				return nil, fmt.Errorf("%w: this email is registered with a different login method", ErrSSODomainNotAllowed)
+			}
+		}
+
 		existingUser.UpdateLastLogin()
 		if updateErr := s.userRepo.Update(ctx, existingUser); updateErr != nil {
 			s.logger.Warn("failed to update last login", "error", updateErr)
