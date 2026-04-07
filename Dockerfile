@@ -76,6 +76,13 @@ RUN CGO_ENABLED=0 \
     GOARCH=${TARGETARCH:-$(go env GOARCH)} \
     go build -ldflags="-s -w" -o /app/bin/bootstrap-admin ./cmd/bootstrap-admin
 
+# Build migrate tool (for K8s initContainer and rollback)
+RUN CGO_ENABLED=0 \
+    GOOS=${TARGETOS:-linux} \
+    GOARCH=${TARGETARCH:-$(go env GOARCH)} \
+    go install -tags 'postgres' -ldflags="-s -w" github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.3 && \
+    cp $(go env GOPATH)/bin/migrate /app/bin/migrate
+
 # -----------------------------------------------------------------------------
 # Production stage
 # -----------------------------------------------------------------------------
@@ -94,6 +101,7 @@ RUN addgroup -g 1000 -S openctem && \
 # Copy binaries from builder
 COPY --from=builder /app/bin/server .
 COPY --from=builder /app/bin/bootstrap-admin .
+COPY --from=builder /app/bin/migrate /usr/local/bin/migrate
 
 # Copy migrations if exist
 COPY --from=builder /app/migrations ./migrations
