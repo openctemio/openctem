@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -100,7 +101,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Agents & Commands
 		Command: commandHandler,
-		Agent:   handler.NewAgentHandler(svc.Agent, v, log),
+		Agent:   newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
 		Ingest:  handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
 
 		// Scanning & Pipelines
@@ -212,4 +213,32 @@ func InitLocalAuthHandler(
 		)
 		log.Info("local auth handler initialized")
 	}
+}
+
+// newAgentHandlerWithTemplates creates an AgentHandler wired with the
+// optional config-template service. Templates live in
+// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/agent-templates) and can be
+// edited without rebuilding the frontend.
+func newAgentHandlerWithTemplates(
+	agentSvc *app.AgentService,
+	cfg *config.Config,
+	v *validator.Validator,
+	log *logger.Logger,
+) *handler.AgentHandler {
+	h := handler.NewAgentHandler(agentSvc, v, log)
+
+	templatesDir := cfg.AgentConfig.TemplatesDir
+	if templatesDir == "" {
+		templatesDir = "configs/agent-templates"
+	}
+	tmplSvc := app.NewAgentConfigTemplateService(templatesDir, log)
+	h.SetTemplateService(tmplSvc)
+
+	publicAPIURL := cfg.AgentConfig.PublicAPIURL
+	if publicAPIURL == "" {
+		publicAPIURL = cfg.App.URL
+	}
+	h.SetPublicAPIURL(publicAPIURL)
+
+	return h
 }

@@ -106,6 +106,10 @@ COPY --from=builder /app/bin/bootstrap-tenant .
 # Copy migrations if exist
 COPY --from=builder /app/migrations ./migrations
 
+# Copy agent config templates (editable without rebuild — operators can
+# mount a configmap/host volume on /app/configs to override)
+COPY --from=builder /app/configs ./configs
+
 # Change ownership
 RUN chown -R openctem:openctem /app
 

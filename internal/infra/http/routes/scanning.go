@@ -100,6 +100,7 @@ func registerAgentManagementRoutes(
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.AgentsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.AgentsRead))
+		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.AgentsRead))
 
 		// Available capabilities for tenant (aggregated from all accessible agents)
 		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.AgentsRead))
