@@ -115,19 +115,43 @@ func buildPageURL(baseURL string, query url.Values, page, perPage int) string {
 	return baseURL + "?" + params.Encode()
 }
 
+// maxQueryArrayItems caps the number of comma-separated values accepted from
+// a single query parameter. Prevents DoS via `?tags=a,b,c,…10000_items` which
+// would otherwise allocate unbounded slices and SQL arrays. 100 is well above
+// any legitimate UI use case (filters typically select 1–20 values).
+const maxQueryArrayItems = 100
+
+// maxQueryArrayItemLen caps the length of any single value in the array.
+// Defends against pathological cases like `?tags=<1MB-string>` which would
+// blow up downstream LIKE patterns and SQL parameter sizes.
+const maxQueryArrayItemLen = 200
+
 // parseQueryArray parses a comma-separated query parameter into a string slice.
-// Returns nil if the input is empty. Each element is trimmed of whitespace.
+// Returns nil if the input is empty. Each element is trimmed of whitespace and
+// truncated to maxQueryArrayItemLen. The whole list is capped at
+// maxQueryArrayItems to prevent denial-of-service via huge filter strings.
 func parseQueryArray(s string) []string {
 	if s == "" {
 		return nil
 	}
+	// Hard ceiling on raw input size before splitting — defense-in-depth.
+	if len(s) > maxQueryArrayItems*(maxQueryArrayItemLen+1) {
+		s = s[:maxQueryArrayItems*(maxQueryArrayItemLen+1)]
+	}
 	parts := strings.Split(s, ",")
+	if len(parts) > maxQueryArrayItems {
+		parts = parts[:maxQueryArrayItems]
+	}
 	result := make([]string, 0, len(parts))
 	for _, p := range parts {
 		trimmed := strings.TrimSpace(p)
-		if trimmed != "" {
-			result = append(result, trimmed)
+		if trimmed == "" {
+			continue
 		}
+		if len(trimmed) > maxQueryArrayItemLen {
+			trimmed = trimmed[:maxQueryArrayItemLen]
+		}
+		result = append(result, trimmed)
 	}
 	if len(result) == 0 {
 		return nil
