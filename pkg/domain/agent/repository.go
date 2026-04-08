@@ -120,6 +120,11 @@ type Repository interface {
 
 	// GetPlatformAgentStats returns aggregate statistics for platform agents.
 	GetPlatformAgentStats(ctx context.Context, tenantID shared.ID) (*PlatformAgentStatsResult, error)
+
+	// GetTenantAgentStats returns aggregate statistics for the tenant's agents,
+	// grouped by status, health, type, and execution mode. Computed via SQL
+	// aggregation in a single round-trip. Excludes platform-shared agents.
+	GetTenantAgentStats(ctx context.Context, tenantID shared.ID) (*TenantAgentStats, error)
 }
 
 // APIKeyFilter represents filter options for listing API keys.

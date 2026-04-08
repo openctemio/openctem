@@ -106,6 +106,9 @@ func (m *agentSelMockAgentRepo) HasAgentForCapability(_ context.Context, _ share
 func (m *agentSelMockAgentRepo) GetPlatformAgentStats(_ context.Context, _ shared.ID) (*agent.PlatformAgentStatsResult, error) {
 	return nil, nil
 }
+func (m *agentSelMockAgentRepo) GetTenantAgentStats(_ context.Context, _ shared.ID) (*agent.TenantAgentStats, error) {
+	return nil, nil
+}
 
 // =============================================================================
 // Helpers

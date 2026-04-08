@@ -1165,6 +1165,77 @@ func (r *AgentRepository) GetPlatformAgentStats(ctx context.Context, tenantID sh
 	return result, nil
 }
 
+// GetTenantAgentStats returns aggregate statistics for a tenant's agents.
+// Computes status / health / type / execution_mode breakdowns plus active job
+// count in a SINGLE query using UNION ALL of grouped subqueries — replaces
+// client-side .filter().length over a paginated list.
+func (r *AgentRepository) GetTenantAgentStats(ctx context.Context, tenantID shared.ID) (*agent.TenantAgentStats, error) {
+	stats := &agent.TenantAgentStats{
+		ByStatus: make(map[string]int),
+		ByHealth: make(map[string]int),
+		ByType:   make(map[string]int),
+		ByMode:   make(map[string]int),
+	}
+
+	query := `
+WITH tenant_agents AS (
+  SELECT id, status, health, type, execution_mode, current_jobs
+  FROM agents
+  WHERE tenant_id = $1 AND is_platform_agent = FALSE
+)
+SELECT category, key, value FROM (
+  SELECT 'total'::text         AS category, ''::text       AS key, COUNT(*)::float8 AS value FROM tenant_agents
+  UNION ALL
+  SELECT 'online_active',        '',                                COUNT(*)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online'
+  UNION ALL
+  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online' AND execution_mode = 'daemon'
+  UNION ALL
+  SELECT 'status',               status,                            COUNT(*)::float8 FROM tenant_agents GROUP BY status
+  UNION ALL
+  SELECT 'health',               health,                            COUNT(*)::float8 FROM tenant_agents GROUP BY health
+  UNION ALL
+  SELECT 'type',                 type,                              COUNT(*)::float8 FROM tenant_agents GROUP BY type
+  UNION ALL
+  SELECT 'execution_mode',       execution_mode,                    COUNT(*)::float8 FROM tenant_agents GROUP BY execution_mode
+) sub
+`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tenant agent stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var category, key string
+		var value float64
+		if err := rows.Scan(&category, &key, &value); err != nil {
+			return nil, fmt.Errorf("failed to scan tenant agent stats row: %w", err)
+		}
+		switch category {
+		case "total":
+			stats.Total = int(value)
+		case "online_active":
+			stats.OnlineActive = int(value)
+		case "active_jobs":
+			stats.ActiveJobs = int(value)
+		case "status":
+			stats.ByStatus[key] = int(value)
+		case "health":
+			stats.ByHealth[key] = int(value)
+		case "type":
+			stats.ByType[key] = int(value)
+		case "execution_mode":
+			stats.ByMode[key] = int(value)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating tenant agent stats: %w", err)
+	}
+
+	return stats, nil
+}
+
 // HasAgentForCapability checks if there's at least one ONLINE agent that supports the given capability.
 func (r *AgentRepository) HasAgentForCapability(ctx context.Context, tenantID shared.ID, capability string) (bool, error) {
 	query := `

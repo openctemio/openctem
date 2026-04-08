@@ -318,6 +318,15 @@ func (m *agentSvcMockRepo) GetPlatformAgentStats(_ context.Context, _ shared.ID)
 	}, nil
 }
 
+func (m *agentSvcMockRepo) GetTenantAgentStats(_ context.Context, _ shared.ID) (*agent.TenantAgentStats, error) {
+	return &agent.TenantAgentStats{
+		ByStatus: make(map[string]int),
+		ByHealth: make(map[string]int),
+		ByType:   make(map[string]int),
+		ByMode:   make(map[string]int),
+	}, nil
+}
+
 // seedAgent creates and stores an agent in the mock repo.
 func (m *agentSvcMockRepo) seedAgent(tenantID shared.ID, name string, agentType agent.AgentType) *agent.Agent {
 	a, _ := agent.NewAgent(tenantID, name, agentType, "test agent", []string{"sast"}, []string{"semgrep"}, agent.ExecutionModeStandalone)

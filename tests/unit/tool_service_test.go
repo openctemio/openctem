@@ -572,6 +572,9 @@ func (m *toolSvcMockAgentRepo) HasAgentForCapability(_ context.Context, _ shared
 func (m *toolSvcMockAgentRepo) GetPlatformAgentStats(_ context.Context, _ shared.ID) (*agent.PlatformAgentStatsResult, error) {
 	return nil, nil
 }
+func (m *toolSvcMockAgentRepo) GetTenantAgentStats(_ context.Context, _ shared.ID) (*agent.TenantAgentStats, error) {
+	return nil, nil
+}
 
 // toolSvcMockCategoryRepo is a minimal mock for toolcategory.Repository.
 type toolSvcMockCategoryRepo struct {

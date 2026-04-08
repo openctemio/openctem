@@ -250,6 +250,51 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// AgentStatsResponse mirrors agent.TenantAgentStats with snake_case JSON.
+type AgentStatsResponse struct {
+	Total          int            `json:"total"`
+	ByStatus       map[string]int `json:"by_status"`
+	ByHealth       map[string]int `json:"by_health"`
+	ByType         map[string]int `json:"by_type"`
+	ByExecutionMode map[string]int `json:"by_execution_mode"`
+	ActiveJobs     int            `json:"active_jobs"`
+	OnlineActive   int            `json:"online_active"`
+}
+
+// GetStats handles GET /api/v1/agents/stats
+// @Summary      Get tenant agent statistics
+// @Description  Returns aggregated stats for the tenant's agents (status, health, type, mode breakdowns)
+// @Tags         Agents
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  AgentStatsResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Router       /agents/stats [get]
+func (h *AgentHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+
+	stats, err := h.service.GetTenantAgentStats(r.Context(), tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	resp := AgentStatsResponse{
+		Total:           stats.Total,
+		ByStatus:        stats.ByStatus,
+		ByHealth:        stats.ByHealth,
+		ByType:          stats.ByType,
+		ByExecutionMode: stats.ByMode,
+		ActiveJobs:      stats.ActiveJobs,
+		OnlineActive:    stats.OnlineActive,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 // UpdateAgentRequest represents the request body for updating an agent.
 type UpdateAgentRequest struct {
 	Name              string   `json:"name" validate:"omitempty,min=1,max=255"`
