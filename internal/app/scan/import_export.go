@@ -49,6 +49,10 @@ type ScanConfigExport struct {
 	ProfileID      string `json:"profile_id,omitempty"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
 
+	// Retry config
+	MaxRetries          int `json:"max_retries,omitempty"`
+	RetryBackoffSeconds int `json:"retry_backoff_seconds,omitempty"`
+
 	// Export metadata
 	ExportedAt string `json:"exported_at"`
 	Version    string `json:"version"`
@@ -69,21 +73,23 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 	}
 
 	export := ScanConfigExport{
-		Name:              sc.Name,
-		Description:       sc.Description,
-		ScanType:          string(sc.ScanType),
-		ScannerName:       sc.ScannerName,
-		ScannerConfig:     sc.ScannerConfig,
-		TargetsPerJob:     sc.TargetsPerJob,
-		ScheduleType:      string(sc.ScheduleType),
-		ScheduleCron:      sc.ScheduleCron,
-		ScheduleDay:       sc.ScheduleDay,
-		ScheduleTimezone:  sc.ScheduleTimezone,
-		RunOnTenantRunner: sc.RunOnTenantRunner,
-		AgentPreference:   string(sc.AgentPreference),
-		TimeoutSeconds:    sc.TimeoutSeconds,
-		ExportedAt:        time.Now().UTC().Format(time.RFC3339),
-		Version:           configExportVersion,
+		Name:                sc.Name,
+		Description:         sc.Description,
+		ScanType:            string(sc.ScanType),
+		ScannerName:         sc.ScannerName,
+		ScannerConfig:       sc.ScannerConfig,
+		TargetsPerJob:       sc.TargetsPerJob,
+		ScheduleType:        string(sc.ScheduleType),
+		ScheduleCron:        sc.ScheduleCron,
+		ScheduleDay:         sc.ScheduleDay,
+		ScheduleTimezone:    sc.ScheduleTimezone,
+		RunOnTenantRunner:   sc.RunOnTenantRunner,
+		AgentPreference:     string(sc.AgentPreference),
+		TimeoutSeconds:      sc.TimeoutSeconds,
+		MaxRetries:          sc.MaxRetries,
+		RetryBackoffSeconds: sc.RetryBackoffSeconds,
+		ExportedAt:          time.Now().UTC().Format(time.RFC3339),
+		Version:             configExportVersion,
 	}
 
 	if sc.ProfileID != nil && !sc.ProfileID.IsZero() {
@@ -170,25 +176,27 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 
 	// Build create input from export
 	input := CreateScanInput{
-		TenantID:        tenantID.String(),
-		Name:            export.Name,
-		Description:     export.Description,
-		AssetGroupIDs:   export.AssetGroupIDs,
-		Targets:         export.Targets,
-		ScanType:        export.ScanType,
-		ScannerName:     export.ScannerName,
-		ScannerConfig:   export.ScannerConfig,
-		TargetsPerJob:   export.TargetsPerJob,
-		ScheduleType:    export.ScheduleType,
-		ScheduleCron:    export.ScheduleCron,
-		ScheduleDay:     export.ScheduleDay,
-		ScheduleTime:    scheduleTime,
-		Timezone:        export.ScheduleTimezone,
-		Tags:            export.Tags,
-		TenantRunner:    export.RunOnTenantRunner,
-		AgentPreference: export.AgentPreference,
-		ProfileID:       export.ProfileID,
-		TimeoutSeconds:  export.TimeoutSeconds,
+		TenantID:            tenantID.String(),
+		Name:                export.Name,
+		Description:         export.Description,
+		AssetGroupIDs:       export.AssetGroupIDs,
+		Targets:             export.Targets,
+		ScanType:            export.ScanType,
+		ScannerName:         export.ScannerName,
+		ScannerConfig:       export.ScannerConfig,
+		TargetsPerJob:       export.TargetsPerJob,
+		ScheduleType:        export.ScheduleType,
+		ScheduleCron:        export.ScheduleCron,
+		ScheduleDay:         export.ScheduleDay,
+		ScheduleTime:        scheduleTime,
+		Timezone:            export.ScheduleTimezone,
+		Tags:                export.Tags,
+		TenantRunner:        export.RunOnTenantRunner,
+		AgentPreference:     export.AgentPreference,
+		ProfileID:           export.ProfileID,
+		TimeoutSeconds:      export.TimeoutSeconds,
+		MaxRetries:          export.MaxRetries,
+		RetryBackoffSeconds: export.RetryBackoffSeconds,
 	}
 
 	// Set primary asset group ID for backward compatibility

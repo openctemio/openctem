@@ -159,7 +159,7 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 		SET status = $2, context = $3,
 		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7, total_findings = $8,
 		    started_at = $9, completed_at = $10, error_message = $11,
-		    scan_profile_id = $12, quality_gate_result = $13
+		    scan_profile_id = $12, quality_gate_result = $13, retry_attempt = $14
 		WHERE id = $1
 	`
 
@@ -177,6 +177,7 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 		run.ErrorMessage,
 		nullID(run.ScanProfileID),
 		nullBytes(qualityGateResult),
+		run.RetryAttempt,
 	)
 
 	if err != nil {
@@ -470,33 +471,48 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 	return rowsAffected, nil
 }
 
-// ListPendingRetries returns failed pipeline_runs that are eligible for automatic retry.
-// Uses a single query with DISTINCT ON + JOIN to find the latest failed run per scan
-// and check exponential backoff against retry_backoff_seconds * 2^retry_attempt.
+// ListPendingRetries atomically claims failed pipeline_runs eligible for automatic retry.
+//
+// The query finds failed runs whose:
+//   - parent scan is active and has max_retries > 0
+//   - retry_attempt < scan.max_retries (still has retry budget)
+//   - retry_dispatched_at IS NULL (not already claimed by another controller)
+//   - exponential backoff window has elapsed (retry_backoff * 2^retry_attempt seconds)
+//
+// It uses FOR UPDATE SKIP LOCKED + atomic UPDATE to set retry_dispatched_at = NOW(),
+// ensuring each failed run is claimed at most once even with concurrent controllers
+// or repeated polling cycles. The claim marker is permanent (we never reset it),
+// since each retry creates a NEW pipeline_run that becomes the new "latest".
 func (r *PipelineRunRepository) ListPendingRetries(ctx context.Context, limit int) ([]pipeline.RetryCandidate, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	query := `
-		WITH latest_runs AS (
-			SELECT DISTINCT ON (scan_id)
-				id, scan_id, tenant_id, status, completed_at, retry_attempt
-			FROM pipeline_runs
-			WHERE scan_id IS NOT NULL
-			ORDER BY scan_id, created_at DESC
+		WITH eligible AS (
+			SELECT pr.id, pr.scan_id, pr.tenant_id, pr.retry_attempt,
+			       s.max_retries, s.retry_backoff_seconds
+			FROM pipeline_runs pr
+			JOIN scans s ON s.id = pr.scan_id
+			WHERE pr.status = 'failed'
+			  AND pr.retry_dispatched_at IS NULL
+			  AND pr.completed_at IS NOT NULL
+			  AND s.max_retries > 0
+			  AND pr.retry_attempt < s.max_retries
+			  AND s.status = 'active'
+			  AND NOW() >= pr.completed_at + (s.retry_backoff_seconds * POWER(2, pr.retry_attempt) || ' seconds')::interval
+			ORDER BY pr.completed_at ASC
+			LIMIT $1
+			FOR UPDATE OF pr SKIP LOCKED
+		),
+		claimed AS (
+			UPDATE pipeline_runs pr
+			SET retry_dispatched_at = NOW()
+			FROM eligible e
+			WHERE pr.id = e.id
+			RETURNING e.id, e.scan_id, e.tenant_id, e.retry_attempt, e.max_retries, e.retry_backoff_seconds
 		)
-		SELECT lr.id, lr.scan_id, lr.tenant_id, lr.retry_attempt,
-		       s.max_retries, s.retry_backoff_seconds
-		FROM latest_runs lr
-		JOIN scans s ON s.id = lr.scan_id
-		WHERE lr.status = 'failed'
-		  AND s.max_retries > 0
-		  AND lr.retry_attempt < s.max_retries
-		  AND s.status = 'active'
-		  AND lr.completed_at IS NOT NULL
-		  AND NOW() >= lr.completed_at + (s.retry_backoff_seconds * POWER(2, lr.retry_attempt) || ' seconds')::interval
-		ORDER BY lr.completed_at ASC
-		LIMIT $1
+		SELECT id, scan_id, tenant_id, retry_attempt, max_retries, retry_backoff_seconds
+		FROM claimed
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, limit)

@@ -77,4 +77,17 @@ ALTER TABLE pipeline_runs
 COMMENT ON COLUMN pipeline_runs.retry_attempt IS
     'Current retry attempt number (0 = first attempt, 1 = first retry, ...)';
 
+-- 6. retry_dispatched_at column on pipeline_runs — set when ScanRetryController
+-- claims a failed run for retry. Prevents duplicate dispatches across multiple
+-- controller instances or polling cycles.
+ALTER TABLE pipeline_runs
+    ADD COLUMN IF NOT EXISTS retry_dispatched_at TIMESTAMPTZ;
+
+COMMENT ON COLUMN pipeline_runs.retry_dispatched_at IS
+    'When a retry was dispatched for this failed run (deduplication marker)';
+
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_retry_pending
+    ON pipeline_runs(scan_id, completed_at)
+    WHERE status = 'failed' AND retry_dispatched_at IS NULL;
+
 COMMIT;

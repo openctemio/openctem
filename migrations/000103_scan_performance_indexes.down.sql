@@ -4,6 +4,8 @@
 
 BEGIN;
 
+DROP INDEX IF EXISTS idx_pipeline_runs_retry_pending;
+ALTER TABLE pipeline_runs DROP COLUMN IF EXISTS retry_dispatched_at;
 ALTER TABLE pipeline_runs DROP COLUMN IF EXISTS retry_attempt;
 
 ALTER TABLE scans DROP CONSTRAINT IF EXISTS chk_scans_retry_backoff;
