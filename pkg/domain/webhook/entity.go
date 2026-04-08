@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -65,6 +66,8 @@ type Webhook struct {
 
 // NewWebhook creates a new webhook entity.
 func NewWebhook(id, tenantID ID, name, url string, eventTypes []string) *Webhook {
+	// Strip null bytes — PostgreSQL rejects 0x00 in UTF-8 strings
+	name = strings.ReplaceAll(name, "\x00", "")
 	now := time.Now()
 	return &Webhook{
 		id:                   id,

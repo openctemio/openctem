@@ -53,6 +53,19 @@ type AssetService struct {
 
 	// Scope rule evaluator callback (set by services.go wiring)
 	scopeRuleEvaluator ScopeRuleEvaluatorFunc
+
+	// User matcher for auto-resolving owner_ref to owner_id
+	userMatcher UserMatcher
+}
+
+// UserMatcher resolves external references (email, username) to user IDs.
+type UserMatcher interface {
+	FindUserIDByEmail(ctx context.Context, tenantID shared.ID, email string) (*shared.ID, error)
+}
+
+// SetUserMatcher sets the user matcher for owner auto-resolution.
+func (s *AssetService) SetUserMatcher(m UserMatcher) {
+	s.userMatcher = m
 }
 
 // NewAssetService creates a new AssetService.
@@ -158,10 +171,15 @@ type CreateAssetInput struct {
 	Exposure    string   `validate:"omitempty,exposure"`
 	Description string   `validate:"max=1000"`
 	Tags        []string `validate:"max=20,dive,max=50"`
+	OwnerRef    string   `validate:"max=500"` // Raw owner from external source
 }
 
 // CreateAsset creates a new asset.
 func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) (*asset.Asset, error) {
+	// Strip null bytes early — PostgreSQL rejects 0x00 in UTF-8
+	input.Name = strings.ReplaceAll(input.Name, "\x00", "")
+	input.Description = strings.ReplaceAll(input.Description, "\x00", "")
+
 	s.logger.Info("creating asset", "name", input.Name)
 
 	assetType, err := asset.ParseAssetType(input.Type)
@@ -224,6 +242,18 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	}
 	for _, tag := range input.Tags {
 		a.AddTag(tag)
+	}
+
+	// Set owner reference from external source and try auto-match
+	if input.OwnerRef != "" {
+		a.SetOwnerRef(input.OwnerRef)
+		// Auto-match: if owner_ref looks like an email, try to find user
+		if strings.Contains(input.OwnerRef, "@") && s.userMatcher != nil {
+			if matchedID, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, input.OwnerRef); err == nil && matchedID != nil {
+				a.SetOwnerID(matchedID)
+				s.logger.Info("auto-matched owner_ref to user", "owner_ref", input.OwnerRef, "user_id", matchedID.String())
+			}
+		}
 	}
 
 	// Calculate initial risk score using tenant-specific config

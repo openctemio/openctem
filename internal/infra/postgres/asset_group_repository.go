@@ -490,18 +490,37 @@ func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID)
 	return &stats, nil
 }
 
-// AddAssets adds assets to a group.
+// AddAssets adds assets to a group using multi-row INSERT for performance.
 func (r *AssetGroupRepository) AddAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) error {
 	if len(assetIDs) == 0 {
 		return nil
 	}
 
-	// Use ON CONFLICT to handle duplicates
-	query := "INSERT INTO asset_group_members (asset_group_id, asset_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+	// Build multi-row INSERT to avoid N+1 (one round-trip instead of N)
+	const chunkSize = 500
+	gidStr := groupID.String()
 
-	for _, assetID := range assetIDs {
-		if _, err := r.db.ExecContext(ctx, query, groupID.String(), assetID.String()); err != nil {
-			return fmt.Errorf("add asset to group: %w", err)
+	for i := 0; i < len(assetIDs); i += chunkSize {
+		end := i + chunkSize
+		if end > len(assetIDs) {
+			end = len(assetIDs)
+		}
+		chunk := assetIDs[i:end]
+
+		valueStrings := make([]string, 0, len(chunk))
+		args := make([]any, 0, len(chunk)*2)
+		for j, assetID := range chunk {
+			valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d)", j*2+1, j*2+2))
+			args = append(args, gidStr, assetID.String())
+		}
+
+		query := fmt.Sprintf(
+			"INSERT INTO asset_group_members (asset_group_id, asset_id) VALUES %s ON CONFLICT DO NOTHING",
+			strings.Join(valueStrings, ", "),
+		)
+
+		if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("add assets to group: %w", err)
 		}
 	}
 

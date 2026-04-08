@@ -447,28 +447,29 @@ func (r *PermissionSetRepository) GetWithItems(ctx context.Context, id shared.ID
 	}, nil
 }
 
-// BatchAddItems adds multiple items to a permission set.
+// BatchAddItems adds multiple items to a permission set using multi-row INSERT.
 func (r *PermissionSetRepository) BatchAddItems(ctx context.Context, items []*permissionset.Item) error {
 	if len(items) == 0 {
 		return nil
 	}
 
-	query := `
+	valueStrings := make([]string, 0, len(items))
+	args := make([]any, 0, len(items)*3)
+	for i, item := range items {
+		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d)", i*3+1, i*3+2, i*3+3))
+		args = append(args, item.PermissionSetID().String(), item.PermissionID(), item.ModificationType().String())
+	}
+
+	query := fmt.Sprintf(`
 		INSERT INTO permission_set_items (permission_set_id, permission_id, modification_type)
-		VALUES ($1, $2, $3)
+		VALUES %s
 		ON CONFLICT (permission_set_id, permission_id) DO UPDATE
 		SET modification_type = EXCLUDED.modification_type
-	`
+	`, strings.Join(valueStrings, ", "))
 
-	for _, item := range items {
-		_, err := r.db.ExecContext(ctx, query,
-			item.PermissionSetID().String(),
-			item.PermissionID(),
-			item.ModificationType().String(),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to add item %s: %w", item.PermissionID(), err)
-		}
+	_, err := r.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to batch add items: %w", err)
 	}
 
 	return nil
@@ -483,25 +484,26 @@ func (r *PermissionSetRepository) ReplaceItems(ctx context.Context, permissionSe
 			return fmt.Errorf("failed to delete existing items: %w", err)
 		}
 
-		// Insert new items
+		// Insert new items using multi-row INSERT
 		if len(items) == 0 {
 			return nil
 		}
 
-		query := `
-			INSERT INTO permission_set_items (permission_set_id, permission_id, modification_type)
-			VALUES ($1, $2, $3)
-		`
+		valueStrings := make([]string, 0, len(items))
+		args := make([]any, 0, len(items)*3)
+		for i, item := range items {
+			valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d)", i*3+1, i*3+2, i*3+3))
+			args = append(args, item.PermissionSetID().String(), item.PermissionID(), item.ModificationType().String())
+		}
 
-		for _, item := range items {
-			_, err := tx.ExecContext(ctx, query,
-				item.PermissionSetID().String(),
-				item.PermissionID(),
-				item.ModificationType().String(),
-			)
-			if err != nil {
-				return fmt.Errorf("failed to insert item %s: %w", item.PermissionID(), err)
-			}
+		query := fmt.Sprintf(
+			`INSERT INTO permission_set_items (permission_set_id, permission_id, modification_type) VALUES %s`,
+			strings.Join(valueStrings, ", "),
+		)
+
+		_, err = tx.ExecContext(ctx, query, args...)
+		if err != nil {
+			return fmt.Errorf("failed to insert items: %w", err)
 		}
 
 		return nil

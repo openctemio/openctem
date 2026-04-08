@@ -22,7 +22,8 @@ type Asset struct {
 	id                    shared.ID
 	tenantID              shared.ID
 	parentID              *shared.ID // For hierarchical assets (e.g., subdomain -> domain)
-	ownerID               *shared.ID // User who owns this asset
+	ownerID               *shared.ID // User who owns this asset (resolved)
+	ownerRef              string     // Raw owner text from external source (email, username, team)
 	name                  string
 	assetType             AssetType
 	criticality           Criticality
@@ -503,6 +504,17 @@ func (a *Asset) ParentID() *shared.ID {
 // OwnerID returns the owner user ID.
 func (a *Asset) OwnerID() *shared.ID {
 	return a.ownerID
+}
+
+// OwnerRef returns the raw owner text from external sources.
+func (a *Asset) OwnerRef() string {
+	return a.ownerRef
+}
+
+// SetOwnerRef sets the raw owner text from external sources.
+func (a *Asset) SetOwnerRef(ref string) {
+	a.ownerRef = ref
+	a.updatedAt = time.Now().UTC()
 }
 
 // Provider returns the external provider.

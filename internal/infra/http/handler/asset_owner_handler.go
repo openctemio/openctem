@@ -231,6 +231,7 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 
 // UpdateOwner handles PUT /api/v1/assets/{id}/owners/{ownerID}
 func (h *AssetOwnerHandler) UpdateOwner(w http.ResponseWriter, r *http.Request) {
+	assetID := r.PathValue("id")
 	ownerID := r.PathValue("ownerID")
 	if ownerID == "" {
 		apierror.BadRequest("Owner ID is required").WriteJSON(w)
@@ -266,6 +267,12 @@ func (h *AssetOwnerHandler) UpdateOwner(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Verify the owner belongs to the asset from URL path (prevents IDOR)
+	if ao.AssetID().String() != assetID {
+		apierror.NotFound("Asset owner").WriteJSON(w)
+		return
+	}
+
 	if err := ao.UpdateOwnershipType(ownershipType); err != nil {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
@@ -282,6 +289,7 @@ func (h *AssetOwnerHandler) UpdateOwner(w http.ResponseWriter, r *http.Request) 
 
 // RemoveOwner handles DELETE /api/v1/assets/{id}/owners/{ownerID}
 func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) {
+	assetID := r.PathValue("id")
 	ownerID := r.PathValue("ownerID")
 	if ownerID == "" {
 		apierror.BadRequest("Owner ID is required").WriteJSON(w)
@@ -303,6 +311,12 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 		}
 		h.logger.Error("failed to get asset owner", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	// Verify the owner belongs to the asset from URL path (prevents IDOR)
+	if ao.AssetID().String() != assetID {
+		apierror.NotFound("Asset owner").WriteJSON(w)
 		return
 	}
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -1001,27 +1002,26 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 			return fmt.Errorf("failed to create membership: %w", err)
 		}
 
-		// Assign RBAC roles from invitation.RoleIDs
+		// Assign RBAC roles from invitation.RoleIDs using multi-row INSERT
 		// These are the roles selected by admin when creating the invitation
 		roleIDs := inv.RoleIDs()
 		if len(roleIDs) > 0 {
-			userRolesQuery := `
-				INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_at, assigned_by)
-				VALUES ($1, $2, $3, $4, $5)
-				ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
-			`
+			valueStrings := make([]string, 0, len(roleIDs))
+			args := make([]any, 0, len(roleIDs)*5)
+			for i, roleID := range roleIDs {
+				valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d)", i*5+1, i*5+2, i*5+3, i*5+4, i*5+5))
+				args = append(args, m.UserID().String(), m.TenantID().String(), roleID, m.JoinedAt(), invitedBy)
+			}
 
-			for _, roleID := range roleIDs {
-				_, err = tx.ExecContext(ctx, userRolesQuery,
-					m.UserID().String(),
-					m.TenantID().String(),
-					roleID,
-					m.JoinedAt(),
-					invitedBy,
-				)
-				if err != nil {
-					return fmt.Errorf("failed to assign role %s: %w", roleID, err)
-				}
+			userRolesQuery := fmt.Sprintf(`
+				INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_at, assigned_by)
+				VALUES %s
+				ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
+			`, strings.Join(valueStrings, ", "))
+
+			_, err = tx.ExecContext(ctx, userRolesQuery, args...)
+			if err != nil {
+				return fmt.Errorf("failed to assign roles: %w", err)
 			}
 		}
 
