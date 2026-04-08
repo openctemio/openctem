@@ -992,12 +992,13 @@ type GeneralSettingsResponse struct {
 
 // SecuritySettingsResponse represents security settings.
 type SecuritySettingsResponse struct {
-	SSOEnabled        bool     `json:"sso_enabled"`
-	SSOProvider       string   `json:"sso_provider,omitempty"`
-	MFARequired       bool     `json:"mfa_required"`
-	SessionTimeoutMin int      `json:"session_timeout_min"`
-	IPWhitelist       []string `json:"ip_whitelist"`
-	AllowedDomains    []string `json:"allowed_domains"`
+	SSOEnabled            bool     `json:"sso_enabled"`
+	SSOProvider           string   `json:"sso_provider,omitempty"`
+	MFARequired           bool     `json:"mfa_required"`
+	SessionTimeoutMin     int      `json:"session_timeout_min"`
+	IPWhitelist           []string `json:"ip_whitelist"`
+	AllowedDomains        []string `json:"allowed_domains"`
+	EmailVerificationMode string   `json:"email_verification_mode"`
 }
 
 // APISettingsResponse represents API settings.
@@ -1028,12 +1029,13 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			Website:  s.General.Website,
 		},
 		Security: SecuritySettingsResponse{
-			SSOEnabled:        s.Security.SSOEnabled,
-			SSOProvider:       s.Security.SSOProvider,
-			MFARequired:       s.Security.MFARequired,
-			SessionTimeoutMin: s.Security.SessionTimeoutMin,
-			IPWhitelist:       s.Security.IPWhitelist,
-			AllowedDomains:    s.Security.AllowedDomains,
+			SSOEnabled:            s.Security.SSOEnabled,
+			SSOProvider:           s.Security.SSOProvider,
+			MFARequired:           s.Security.MFARequired,
+			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
+			IPWhitelist:           s.Security.IPWhitelist,
+			AllowedDomains:        s.Security.AllowedDomains,
+			EmailVerificationMode: string(s.Security.EmailVerificationMode),
 		},
 		API: APISettingsResponse{
 			APIKeyEnabled: s.API.APIKeyEnabled,
@@ -1129,13 +1131,14 @@ func (h *TenantHandler) UpdateGeneralSettings(w http.ResponseWriter, r *http.Req
 
 // UpdateSecuritySettingsRequest represents the request to update security settings.
 type UpdateSecuritySettingsRequest struct {
-	SSOEnabled        bool     `json:"sso_enabled"`
-	SSOProvider       string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
-	SSOConfigURL      string   `json:"sso_config_url" validate:"omitempty,url"`
-	MFARequired       bool     `json:"mfa_required"`
-	SessionTimeoutMin int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
-	IPWhitelist       []string `json:"ip_whitelist"`
-	AllowedDomains    []string `json:"allowed_domains"`
+	SSOEnabled            bool     `json:"sso_enabled"`
+	SSOProvider           string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
+	SSOConfigURL          string   `json:"sso_config_url" validate:"omitempty,url"`
+	MFARequired           bool     `json:"mfa_required"`
+	SessionTimeoutMin     int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
+	IPWhitelist           []string `json:"ip_whitelist"`
+	AllowedDomains        []string `json:"allowed_domains"`
+	EmailVerificationMode string   `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -1158,13 +1161,14 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	}
 
 	input := app.UpdateSecuritySettingsInput{
-		SSOEnabled:        req.SSOEnabled,
-		SSOProvider:       req.SSOProvider,
-		SSOConfigURL:      req.SSOConfigURL,
-		MFARequired:       req.MFARequired,
-		SessionTimeoutMin: req.SessionTimeoutMin,
-		IPWhitelist:       req.IPWhitelist,
-		AllowedDomains:    req.AllowedDomains,
+		SSOEnabled:            req.SSOEnabled,
+		SSOProvider:           req.SSOProvider,
+		SSOConfigURL:          req.SSOConfigURL,
+		MFARequired:           req.MFARequired,
+		SessionTimeoutMin:     req.SessionTimeoutMin,
+		IPWhitelist:           req.IPWhitelist,
+		AllowedDomains:        req.AllowedDomains,
+		EmailVerificationMode: req.EmailVerificationMode,
 	}
 
 	actx := h.buildAuditContext(r)

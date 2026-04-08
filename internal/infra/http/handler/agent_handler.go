@@ -640,7 +640,7 @@ type AgentConfigTemplatesResponse struct {
 // @Tags Agents
 // @Produce json
 // @Param id path string true "Agent ID"
-// @Param api_key query string false "Optional API key to embed in templates (only available right after creation/regeneration)"
+// @Param X-Agent-API-Key header string false "Optional API key to embed in templates (only available right after creation/regeneration). MUST be sent as header, not query parameter."
 // @Success 200 {object} AgentConfigTemplatesResponse
 // @Failure 404 {object} apierror.Error
 // @Failure 500 {object} apierror.Error
@@ -663,7 +663,12 @@ func (h *AgentHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	apiKey := r.URL.Query().Get("api_key")
+	// API key MUST come from a header, never a query string. Query strings are
+	// logged by load balancers, proxies, CDNs, browser history, and referer
+	// headers — embedding a credential there is a known leakage vector.
+	// Caller passes the freshly issued key from agent creation/regeneration
+	// in the X-Agent-API-Key header. If absent, we render a placeholder.
+	apiKey := r.Header.Get("X-Agent-API-Key")
 	if apiKey == "" {
 		apiKey = "<YOUR_API_KEY>"
 	}

@@ -113,6 +113,61 @@ func (s *AuthService) SetSMTPChecker(checker SMTPAvailabilityCheck) {
 	s.smtpChecker = checker
 }
 
+// shouldRequireEmailVerificationForUser is the login-time variant. It looks
+// at ALL tenants the user belongs to and applies the strictest setting:
+//
+//   - "always" anywhere → require verification (deny login if unverified)
+//   - "never" anywhere (without "always") → skip verification (allow login)
+//   - "auto" everywhere → fall back to SMTP availability check
+//
+// If the user has no memberships at all (e.g., self-registered, not yet
+// invited), fall back to global SMTP detection.
+func (s *AuthService) shouldRequireEmailVerificationForUser(ctx context.Context, userID shared.ID) bool {
+	if s.tenantRepo == nil {
+		return s.shouldRequireEmailVerification(ctx, "")
+	}
+	memberships, err := s.tenantRepo.GetUserMemberships(ctx, userID)
+	if err != nil || len(memberships) == 0 {
+		return s.shouldRequireEmailVerification(ctx, "")
+	}
+	hasAlways := false
+	hasNever := false
+	for _, m := range memberships {
+		mode := s.getTenantVerificationMode(ctx, m.TenantID)
+		switch mode {
+		case tenant.EmailVerificationAlways:
+			hasAlways = true
+		case tenant.EmailVerificationNever:
+			hasNever = true
+		}
+	}
+	if hasAlways {
+		return true
+	}
+	if hasNever {
+		return false
+	}
+	// All tenants are "auto" → fall back to SMTP check using the first tenant
+	return s.shouldRequireEmailVerification(ctx, memberships[0].TenantID)
+}
+
+// getTenantVerificationMode reads a tenant's EmailVerificationMode setting.
+// Returns empty string if tenant lookup fails (caller treats as auto).
+func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr string) tenant.EmailVerificationMode {
+	if tenantIDStr == "" || s.tenantRepo == nil {
+		return ""
+	}
+	tid, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return ""
+	}
+	t, err := s.tenantRepo.GetByID(ctx, tid)
+	if err != nil || t == nil {
+		return ""
+	}
+	return t.TypedSettings().Security.EmailVerificationMode
+}
+
 // shouldRequireEmailVerification returns true if a newly registered user in
 // the given tenant should be required to verify their email before login.
 //
@@ -345,11 +400,26 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	}
 
 	// Check if email is verified.
-	// If the user is already verified, allow login. Otherwise, only block when
-	// the platform actually requires verification (smart check — defaults to
-	// "no SMTP, no requirement" so first-time deployments work without SMTP).
-	if !u.EmailVerified() && s.shouldRequireEmailVerification(ctx, "") {
-		return nil, ErrEmailNotVerified
+	// If the user is already verified, allow login. Otherwise:
+	//
+	//   1. SMTP DOWNGRADE PROTECTION: If a verification token was issued at
+	//      registration (meaning the platform required verification at that
+	//      time), the user MUST verify even if SMTP is now disabled. This
+	//      prevents an attacker from triggering SMTP removal to auto-verify
+	//      accounts stuck pending verification.
+	//
+	//   2. Otherwise consult the user's tenant memberships and apply the
+	//      strictest per-tenant EmailVerificationMode (always > never > auto).
+	//      This makes per-tenant override actually work at login time —
+	//      fixes the design flaw where Login passed empty tenantID and the
+	//      override was effectively ignored.
+	if !u.EmailVerified() {
+		if u.EmailVerificationToken() != nil {
+			return nil, ErrEmailNotVerified
+		}
+		if s.shouldRequireEmailVerificationForUser(ctx, u.ID()) {
+			return nil, ErrEmailNotVerified
+		}
 	}
 
 	// Reset failed login attempts on successful login

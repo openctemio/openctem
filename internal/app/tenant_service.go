@@ -868,13 +868,14 @@ func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID stri
 
 // UpdateSecuritySettingsInput represents input for updating security settings.
 type UpdateSecuritySettingsInput struct {
-	SSOEnabled        bool     `json:"sso_enabled"`
-	SSOProvider       string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
-	SSOConfigURL      string   `json:"sso_config_url" validate:"omitempty,url"`
-	MFARequired       bool     `json:"mfa_required"`
-	SessionTimeoutMin int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
-	IPWhitelist       []string `json:"ip_whitelist"`
-	AllowedDomains    []string `json:"allowed_domains"`
+	SSOEnabled            bool     `json:"sso_enabled"`
+	SSOProvider           string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
+	SSOConfigURL          string   `json:"sso_config_url" validate:"omitempty,url"`
+	MFARequired           bool     `json:"mfa_required"`
+	SessionTimeoutMin     int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
+	IPWhitelist           []string `json:"ip_whitelist"`
+	AllowedDomains        []string `json:"allowed_domains"`
+	EmailVerificationMode string   `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
 }
 
 // UpdateSecuritySettings updates only the security settings.
@@ -900,14 +901,20 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 	}
 
+	mode := tenant.EmailVerificationMode(input.EmailVerificationMode)
+	if mode == "" {
+		// Preserve existing mode if caller doesn't specify (don't reset to empty/auto)
+		mode = t.TypedSettings().Security.EmailVerificationMode
+	}
 	security := tenant.SecuritySettings{
-		SSOEnabled:        input.SSOEnabled,
-		SSOProvider:       input.SSOProvider,
-		SSOConfigURL:      input.SSOConfigURL,
-		MFARequired:       input.MFARequired,
-		SessionTimeoutMin: input.SessionTimeoutMin,
-		IPWhitelist:       input.IPWhitelist,
-		AllowedDomains:    input.AllowedDomains,
+		SSOEnabled:            input.SSOEnabled,
+		SSOProvider:           input.SSOProvider,
+		SSOConfigURL:          input.SSOConfigURL,
+		MFARequired:           input.MFARequired,
+		SessionTimeoutMin:     input.SessionTimeoutMin,
+		IPWhitelist:           input.IPWhitelist,
+		AllowedDomains:        input.AllowedDomains,
+		EmailVerificationMode: mode,
 	}
 
 	if err := t.UpdateSecuritySettings(security); err != nil {
