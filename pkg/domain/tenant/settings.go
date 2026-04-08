@@ -99,6 +99,39 @@ type SecuritySettings struct {
 	SessionTimeoutMin int      `json:"session_timeout_min"` // Session timeout in minutes (15-480)
 	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
 	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
+
+	// EmailVerificationMode controls whether new users must verify their email.
+	//   "auto"   = (default) require verification IFF SMTP is configured (smart)
+	//   "always" = always require verification (operator must configure SMTP)
+	//   "never"  = never require verification (open registration; security risk)
+	EmailVerificationMode EmailVerificationMode `json:"email_verification_mode,omitempty"`
+}
+
+// EmailVerificationMode controls per-tenant email verification behavior.
+type EmailVerificationMode string
+
+const (
+	// EmailVerificationAuto requires verification only when SMTP is configured.
+	// This is the default and prevents the chicken-and-egg problem where a new
+	// deployment can't register users because no SMTP is set up yet.
+	EmailVerificationAuto EmailVerificationMode = "auto"
+	// EmailVerificationAlways forces verification regardless of SMTP availability.
+	// If SMTP is not configured, registered users will be unable to verify and
+	// thus unable to log in — operator must configure SMTP first.
+	EmailVerificationAlways EmailVerificationMode = "always"
+	// EmailVerificationNever skips verification for all users in this tenant.
+	// Use only for closed/internal deployments. Opens the door to account
+	// hijacking via email spoofing.
+	EmailVerificationNever EmailVerificationMode = "never"
+)
+
+// IsValid reports whether the mode is one of the allowed values.
+func (m EmailVerificationMode) IsValid() bool {
+	switch m {
+	case EmailVerificationAuto, EmailVerificationAlways, EmailVerificationNever, "":
+		return true
+	}
+	return false
 }
 
 // APISettings contains API and webhook configuration.
@@ -528,13 +561,14 @@ func DefaultSettings() Settings {
 			Website:  "",
 		},
 		Security: SecuritySettings{
-			SSOEnabled:        false,
-			SSOProvider:       "",
-			SSOConfigURL:      "",
-			MFARequired:       false,
-			SessionTimeoutMin: 60, // 1 hour default
-			IPWhitelist:       []string{},
-			AllowedDomains:    []string{},
+			SSOEnabled:            false,
+			SSOProvider:           "",
+			SSOConfigURL:          "",
+			MFARequired:           false,
+			SessionTimeoutMin:     60, // 1 hour default
+			IPWhitelist:           []string{},
+			AllowedDomains:        []string{},
+			EmailVerificationMode: EmailVerificationAuto, // Smart: require iff SMTP configured
 		},
 		API: APISettings{
 			APIKeyEnabled: false,
@@ -639,6 +673,10 @@ func (s *GeneralSettings) Validate() error {
 
 // Validate validates security settings.
 func (s *SecuritySettings) Validate() error {
+	// Validate email verification mode
+	if !s.EmailVerificationMode.IsValid() {
+		return fmt.Errorf("%w: email_verification_mode must be one of: auto, always, never", shared.ErrValidation)
+	}
 	// Validate session timeout
 	if s.SessionTimeoutMin < 15 || s.SessionTimeoutMin > 480 {
 		if s.SessionTimeoutMin != 0 { // Allow 0 for default

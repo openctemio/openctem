@@ -150,6 +150,13 @@ func run() int {
 		return 1
 	}
 
+	// Wire SMTP availability checker into auth service for smart email verification.
+	// When no SMTP is configured (system or tenant), email verification is auto-disabled
+	// so first-time deployments can register users without setting up SMTP first.
+	if services.Auth != nil && services.Email != nil {
+		services.Auth.SetSMTPChecker(services.Email)
+	}
+
 	// ==========================================================================
 	// Job Queue
 	// ==========================================================================

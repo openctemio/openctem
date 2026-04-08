@@ -18,9 +18,11 @@ import (
 
 // AgentHandler handles HTTP requests for agents.
 type AgentHandler struct {
-	service   *app.AgentService
-	validator *validator.Validator
-	logger    *logger.Logger
+	service         *app.AgentService
+	templateService *app.AgentConfigTemplateService
+	publicAPIURL    string // Public URL agents will connect to (defaults to API_URL env var)
+	validator       *validator.Validator
+	logger          *logger.Logger
 }
 
 // NewAgentHandler creates a new AgentHandler.
@@ -30,6 +32,17 @@ func NewAgentHandler(service *app.AgentService, v *validator.Validator, log *log
 		validator: v,
 		logger:    log.With("handler", "agent"),
 	}
+}
+
+// SetTemplateService injects the agent config template service.
+// Optional dependency — if nil, the config template endpoint returns 503.
+func (h *AgentHandler) SetTemplateService(svc *app.AgentConfigTemplateService) {
+	h.templateService = svc
+}
+
+// SetPublicAPIURL sets the public URL that agent configs will reference.
+func (h *AgentHandler) SetPublicAPIURL(url string) {
+	h.publicAPIURL = url
 }
 
 // CreateAgentRequest represents the request body for creating an agent.

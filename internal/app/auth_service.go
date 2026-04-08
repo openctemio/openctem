@@ -44,7 +44,19 @@ type AuthService struct {
 	config           config.AuthConfig
 	logger           *logger.Logger
 	auditService     *AuditService
-	roleService      *RoleService // Optional: for database-driven role permissions
+	roleService      *RoleService          // Optional: for database-driven role permissions
+	smtpChecker      SMTPAvailabilityCheck // Optional: enables smart email verification
+}
+
+// SMTPAvailabilityCheck reports whether outbound email is available, either via
+// the system SMTP config or for a specific tenant. Used by smart email
+// verification to skip verification when no email channel exists.
+type SMTPAvailabilityCheck interface {
+	// HasSystemSMTP returns true if the platform has system-wide SMTP configured.
+	HasSystemSMTP() bool
+	// HasTenantSMTP returns true if the given tenant has a custom SMTP integration.
+	// tenantID may be empty for self-registration (no tenant context yet).
+	HasTenantSMTP(ctx context.Context, tenantID string) bool
 }
 
 // NewAuthService creates a new AuthService.
@@ -92,6 +104,58 @@ func NewAuthService(
 // instead of using hardcoded role-permission mappings.
 func (s *AuthService) SetRoleService(roleService *RoleService) {
 	s.roleService = roleService
+}
+
+// SetSMTPChecker injects the SMTP availability checker used for smart email
+// verification (auto mode). If not set, the service falls back to the
+// global RequireEmailVerification flag from config.
+func (s *AuthService) SetSMTPChecker(checker SMTPAvailabilityCheck) {
+	s.smtpChecker = checker
+}
+
+// shouldRequireEmailVerification returns true if a newly registered user in
+// the given tenant should be required to verify their email before login.
+//
+// Resolution order:
+//  1. Tenant setting (if tenantID provided AND setting is "always" or "never")
+//  2. SMTP availability (auto mode):
+//     - tenant SMTP configured → require verification
+//     - system SMTP configured → require verification
+//     - no SMTP at all → SKIP verification (graceful, no chicken-and-egg)
+//  3. Global env config (if smtpChecker not wired) → fallback
+func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenantID string) bool {
+	// 1. Per-tenant override (highest priority)
+	if tenantID != "" && s.tenantRepo != nil {
+		tid, err := shared.IDFromString(tenantID)
+		if err == nil {
+			if t, terr := s.tenantRepo.GetByID(ctx, tid); terr == nil && t != nil {
+				switch t.TypedSettings().Security.EmailVerificationMode {
+				case tenant.EmailVerificationAlways:
+					return true
+				case tenant.EmailVerificationNever:
+					return false
+				}
+				// EmailVerificationAuto / empty → fall through to SMTP check
+			}
+		}
+	}
+
+	// 2. Smart auto-detection via SMTP availability
+	if s.smtpChecker != nil {
+		if tenantID != "" && s.smtpChecker.HasTenantSMTP(ctx, tenantID) {
+			return true
+		}
+		if s.smtpChecker.HasSystemSMTP() {
+			return true
+		}
+		// No SMTP anywhere → skip (the verification email cannot be delivered)
+		s.logger.Info("email verification skipped: no SMTP configured",
+			"tenant_id", tenantID)
+		return false
+	}
+
+	// 3. Fallback to global env config
+	return s.config.RequireEmailVerification
 }
 
 // RegisterInput represents the input for user registration.
@@ -157,9 +221,11 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Generate verification token if required
+	// Generate verification token if required (smart: respects tenant setting + SMTP availability)
+	requireVerification := s.shouldRequireEmailVerification(ctx, "")
+
 	var verificationToken string
-	if s.config.RequireEmailVerification {
+	if requireVerification {
 		token, err := password.GenerateVerificationToken()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate verification token: %w", err)
@@ -169,6 +235,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		newUser.SetEmailVerificationToken(token, expiresAt)
 	} else {
 		// Auto-verify email if verification not required
+		// (e.g., no SMTP configured — sending verification email is impossible)
 		newUser.VerifyEmail()
 	}
 
@@ -192,7 +259,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	return &RegisterResult{
 		User:                 newUser,
 		VerificationToken:    verificationToken,
-		RequiresVerification: s.config.RequireEmailVerification,
+		RequiresVerification: requireVerification,
 	}, nil
 }
 
@@ -277,8 +344,11 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 		return nil, ErrInvalidCredentials
 	}
 
-	// Check if email is verified
-	if s.config.RequireEmailVerification && !u.EmailVerified() {
+	// Check if email is verified.
+	// If the user is already verified, allow login. Otherwise, only block when
+	// the platform actually requires verification (smart check — defaults to
+	// "no SMTP, no requirement" so first-time deployments work without SMTP).
+	if !u.EmailVerified() && s.shouldRequireEmailVerification(ctx, "") {
 		return nil, ErrEmailNotVerified
 	}
 
