@@ -87,7 +87,8 @@ type Repository interface {
 	BulkUpdateStatus(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, status Status) (int64, error)
 
 	// GetAggregateStats computes all asset statistics using SQL aggregation.
-	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string) (*AggregateStats, error)
+	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string) (*AggregateStats, error)
 }
 
 // AggregateStats holds all statistics computed via SQL aggregation.

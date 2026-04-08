@@ -131,6 +131,7 @@ type UpdateAssetRequest struct {
 	Scope       *string  `json:"scope" validate:"omitempty,scope"`
 	Exposure    *string  `json:"exposure" validate:"omitempty,exposure"`
 	Description *string  `json:"description" validate:"omitempty,max=1000"`
+	OwnerRef    *string  `json:"owner_ref" validate:"omitempty,max=500"`
 	Tags        []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
 }
 
@@ -535,11 +536,12 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := app.UpdateAssetInput{
-		Name:                  req.Name,
-		Criticality:           req.Criticality,
-		Scope:                 req.Scope,
-		Exposure:              req.Exposure,
+		Name:        req.Name,
+		Criticality: req.Criticality,
+		Scope:       req.Scope,
+		Exposure:    req.Exposure,
 		Description: req.Description,
+		OwnerRef:    req.OwnerRef,
 		Tags:        req.Tags,
 	}
 
@@ -1158,6 +1160,7 @@ type AssetStatsResponse struct {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        types         query     string  false  "Filter by types (comma-separated)"
+// @Param        tags          query     string  false  "Filter by tags (comma-separated, overlap)"
 // @Success      200  {object}  AssetStatsResponse
 // @Failure      401  {object}  map[string]string
 // @Failure      500  {object}  map[string]string
@@ -1167,9 +1170,10 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 	typesFilter := parseQueryArray(query.Get("types"))
+	tagsFilter := parseQueryArray(query.Get("tags"))
 
 	// Use service method with SQL aggregation for efficient stats
-	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter)
+	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter, tagsFilter)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
