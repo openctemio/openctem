@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -1078,9 +1079,9 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scan").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
-		apierror.Conflict("Scan already exists").WriteJSON(w)
+		apierror.Conflict(cleanErrorMessage(err, "Scan already exists")).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
-		apierror.BadRequest(err.Error()).WriteJSON(w)
+		apierror.BadRequest(cleanErrorMessage(err, "Invalid request")).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
@@ -1089,6 +1090,45 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// cleanErrorMessage extracts a user-friendly message from an error.
+// Prefers the .Message field on shared.DomainError (without wrapping noise),
+// falls back to err.Error() trimmed of internal codes.
+func cleanErrorMessage(err error, fallback string) string {
+	var de *shared.DomainError
+	if errors.As(err, &de) {
+		if de.Message != "" {
+			return de.Message
+		}
+	}
+	// Try to strip leading "CODE: " prefix and trailing ": validation" / similar
+	msg := err.Error()
+	// Strip leading "VALIDATION: " or similar code prefix
+	if i := strings.Index(msg, ": "); i > 0 && i < 30 {
+		head := msg[:i]
+		isCode := true
+		for _, r := range head {
+			if !((r >= 'A' && r <= 'Z') || r == '_') {
+				isCode = false
+				break
+			}
+		}
+		if isCode {
+			msg = msg[i+2:]
+		}
+	}
+	// Strip trailing ": validation" or ": <wrapped err>"
+	if i := strings.LastIndex(msg, ": "); i > 0 {
+		tail := msg[i+2:]
+		if tail == "validation" || tail == "not found" || tail == "already exists" {
+			msg = msg[:i]
+		}
+	}
+	if msg == "" {
+		return fallback
+	}
+	return msg
 }
 
 // QuickScan performs an immediate scan on provided targets.
