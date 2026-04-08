@@ -99,4 +99,15 @@ type Repository interface {
 
 	// UpdateStatusByAssetGroupID updates status for all scans in an asset group.
 	UpdateStatusByAssetGroupID(ctx context.Context, assetGroupID shared.ID, status Status) error
+
+	// Distributed Locking (for multi-instance schedulers)
+
+	// TryLockScanForScheduler attempts to acquire a session-level advisory lock
+	// for the given scan ID. Returns true if the lock was acquired, false if
+	// another instance already holds it. The lock must be released with
+	// UnlockScanForScheduler when the trigger completes.
+	TryLockScanForScheduler(ctx context.Context, id shared.ID) (bool, error)
+
+	// UnlockScanForScheduler releases a previously acquired scheduler lock for the given scan ID.
+	UnlockScanForScheduler(ctx context.Context, id shared.ID) error
 }

@@ -171,6 +171,14 @@ func (m *mockScanRepo) UpdateStatusByAssetGroupID(_ context.Context, _ shared.ID
 	return nil
 }
 
+func (m *mockScanRepo) TryLockScanForScheduler(_ context.Context, _ shared.ID) (bool, error) {
+	return true, nil
+}
+
+func (m *mockScanRepo) UnlockScanForScheduler(_ context.Context, _ shared.ID) error {
+	return nil
+}
+
 // addScan is a helper to insert a scan into the mock.
 func (m *mockScanRepo) addScan(s *scan.Scan) {
 	m.scans[s.ID.String()] = s
@@ -386,6 +394,9 @@ func (m *mockRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ pipeline.Ru
 }
 func (m *mockRunRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (pipeline.RunStats, error) {
 	return pipeline.RunStats{}, nil
+}
+func (m *mockRunRepo) MarkTimedOutRuns(_ context.Context) (int64, error) {
+	return 0, nil
 }
 
 // =============================================================================

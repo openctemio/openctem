@@ -141,6 +141,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Scan timeout controller: enforces per-scan timeout_seconds on running pipeline_runs
+	w.ControllerManager.Register(controller.NewScanTimeoutController(
+		repos.PipelineRun,
+		&controller.ScanTimeoutControllerConfig{
+			Interval: 60 * time.Second,
+			Logger:   log.With("controller", "scan-timeout"),
+		},
+	))
+
 	w.ControllerManager.Register(controller.NewDataExpirationController(
 		repos.Suppression,
 		repos.ScopeExcl,

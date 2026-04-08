@@ -429,6 +429,43 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 	return nil
 }
 
+// MarkTimedOutRuns marks pipeline_runs as timed out if they have been running
+// longer than their scan's timeout_seconds. Uses a single SQL UPDATE joining
+// pipeline_runs and scans for efficiency.
+//
+// A run is considered timed out when:
+//   - status = 'running' OR 'pending'
+//   - started_at IS NOT NULL
+//   - now() - started_at > scan.timeout_seconds
+//
+// Returns the number of runs marked as timeout.
+func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error) {
+	query := `
+		UPDATE pipeline_runs pr
+		SET status = 'timeout',
+		    completed_at = NOW(),
+		    error_message = 'scan exceeded configured timeout'
+		FROM scans s
+		WHERE pr.scan_id = s.id
+		  AND pr.status IN ('pending', 'running')
+		  AND pr.started_at IS NOT NULL
+		  AND s.timeout_seconds > 0
+		  AND EXTRACT(EPOCH FROM (NOW() - pr.started_at)) > s.timeout_seconds
+	`
+
+	result, err := r.db.ExecContext(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to mark timed out runs: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
 // ListByScanID lists runs for a specific scan with pagination.
 func (r *PipelineRunRepository) ListByScanID(ctx context.Context, scanID shared.ID, page, perPage int) ([]*pipeline.Run, int64, error) {
 	// Get total count

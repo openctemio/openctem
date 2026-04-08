@@ -160,6 +160,11 @@ type RunRepository interface {
 	// GetStatsByTenant returns aggregated run statistics for a tenant in a single query.
 	// This is optimized to avoid N+1 queries when fetching stats.
 	GetStatsByTenant(ctx context.Context, tenantID shared.ID) (RunStats, error)
+
+	// MarkTimedOutRuns marks runs as timed out if they have been running longer than
+	// their scan's timeout_seconds. Returns the number of runs marked.
+	// This is intended to be called periodically by a background worker.
+	MarkTimedOutRuns(ctx context.Context) (int64, error)
 }
 
 // RunStats represents aggregated run statistics.

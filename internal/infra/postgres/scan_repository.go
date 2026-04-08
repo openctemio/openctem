@@ -518,6 +518,59 @@ func (r *ScanRepository) UpdateStatusByAssetGroupID(ctx context.Context, assetGr
 	return nil
 }
 
+// scanSchedulerLockNamespace is a constant used as the first key in 2-arg
+// pg_advisory_lock to namespace scan scheduler locks. Picked to be unlikely
+// to collide with other application locks.
+const scanSchedulerLockNamespace int32 = 0x5343414e // "SCAN" in ASCII
+
+// TryLockScanForScheduler attempts to acquire a session-level advisory lock for the given scan ID.
+// Uses pg_try_advisory_lock(int4, int4) — the first arg namespaces this lock to the scan scheduler,
+// the second arg is a 32-bit hash of the scan UUID.
+func (r *ScanRepository) TryLockScanForScheduler(ctx context.Context, id shared.ID) (bool, error) {
+	key := scanIDLockKey(id)
+	var acquired bool
+	err := r.db.QueryRowContext(ctx,
+		"SELECT pg_try_advisory_lock($1, $2)",
+		scanSchedulerLockNamespace, key,
+	).Scan(&acquired)
+	if err != nil {
+		return false, fmt.Errorf("failed to try advisory lock for scan %s: %w", id.String(), err)
+	}
+	return acquired, nil
+}
+
+// UnlockScanForScheduler releases a previously acquired session-level scheduler lock.
+func (r *ScanRepository) UnlockScanForScheduler(ctx context.Context, id shared.ID) error {
+	key := scanIDLockKey(id)
+	var released bool
+	err := r.db.QueryRowContext(ctx,
+		"SELECT pg_advisory_unlock($1, $2)",
+		scanSchedulerLockNamespace, key,
+	).Scan(&released)
+	if err != nil {
+		return fmt.Errorf("failed to release advisory lock for scan %s: %w", id.String(), err)
+	}
+	return nil
+}
+
+// scanIDLockKey converts a scan UUID to a deterministic int32 key for advisory locks.
+// Uses FNV-1a 32-bit hash of the UUID string. Collisions are rare and only cause
+// brief serialization (the worst case is two unrelated scans waiting for each other,
+// which is acceptable since each trigger is fast).
+func scanIDLockKey(id shared.ID) int32 {
+	const (
+		fnvOffsetBasis uint32 = 2166136261
+		fnvPrime       uint32 = 16777619
+	)
+	h := fnvOffsetBasis
+	s := id.String()
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= fnvPrime
+	}
+	return int32(h) //nolint:gosec // intentional truncation for advisory lock key
+}
+
 // selectQuery returns the base SELECT query.
 func (r *ScanRepository) selectQuery() string {
 	return `

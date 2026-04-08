@@ -115,6 +115,14 @@ func (m *mockScanRepository) UpdateStatusByAssetGroupID(_ context.Context, _ sha
 	return nil
 }
 
+func (m *mockScanRepository) TryLockScanForScheduler(_ context.Context, _ shared.ID) (bool, error) {
+	return true, nil
+}
+
+func (m *mockScanRepository) UnlockScanForScheduler(_ context.Context, _ shared.ID) error {
+	return nil
+}
+
 // addScan is a test helper to insert a scan into the mock repository.
 func (m *mockScanRepository) addScan(s *scan.Scan) {
 	m.scans[s.ID.String()] = s
