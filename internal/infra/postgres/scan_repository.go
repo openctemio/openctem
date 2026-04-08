@@ -74,6 +74,10 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 	if timeoutSecs <= 0 {
 		timeoutSecs = scan.DefaultScanTimeoutSeconds
 	}
+	retryBackoff := s.RetryBackoffSeconds
+	if retryBackoff <= 0 {
+		retryBackoff = scan.DefaultRetryBackoffSeconds
+	}
 
 	query := `
 		INSERT INTO scans (
@@ -81,12 +85,13 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
 			scanner_name, scanner_config, targets_per_job,
 			schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
-			tags, run_on_tenant_runner, agent_preference, profile_id, timeout_seconds, status,
+			tags, run_on_tenant_runner, agent_preference, profile_id, timeout_seconds,
+			max_retries, retry_backoff_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
 			created_by, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -113,6 +118,8 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		agentPref,
 		profileID,
 		timeoutSecs,
+		s.MaxRetries,
+		retryBackoff,
 		string(s.Status),
 		nil, // last_run_id
 		s.LastRunAt,
@@ -240,6 +247,10 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 	if timeoutSecs <= 0 {
 		timeoutSecs = scan.DefaultScanTimeoutSeconds
 	}
+	retryBackoff := s.RetryBackoffSeconds
+	if retryBackoff <= 0 {
+		retryBackoff = scan.DefaultRetryBackoffSeconds
+	}
 
 	query := `
 		UPDATE scans
@@ -247,8 +258,9 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    asset_group_id = $4, asset_group_ids = $5, targets = $6, scan_type = $7, pipeline_id = $8,
 		    scanner_name = $9, scanner_config = $10, targets_per_job = $11,
 		    schedule_type = $12, schedule_cron = $13, schedule_day = $14, schedule_time = $15, schedule_timezone = $16, next_run_at = $17,
-		    tags = $18, run_on_tenant_runner = $19, agent_preference = $20, profile_id = $21, timeout_seconds = $22, status = $23,
-		    updated_at = $24
+		    tags = $18, run_on_tenant_runner = $19, agent_preference = $20, profile_id = $21, timeout_seconds = $22,
+		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
+		    updated_at = $26
 		WHERE id = $1
 	`
 
@@ -275,6 +287,8 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		agentPref,
 		profileID,
 		timeoutSecs,
+		s.MaxRetries,
+		retryBackoff,
 		string(s.Status),
 		s.UpdatedAt,
 	)
@@ -578,7 +592,8 @@ func (r *ScanRepository) selectQuery() string {
 		       asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
 		       scanner_name, scanner_config, targets_per_job,
 		       schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
-		       tags, run_on_tenant_runner, agent_preference, profile_id, timeout_seconds, status,
+		       tags, run_on_tenant_runner, agent_preference, profile_id, timeout_seconds,
+		       max_retries, retry_backoff_seconds, status,
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
 		       created_by, created_at, updated_at
@@ -596,27 +611,29 @@ type scanRowReader interface {
 func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 	s := &scan.Scan{}
 	var (
-		id               string
-		tenantID         string
-		assetGroupID     sql.NullString
-		assetGroupIDs    pq.StringArray
-		targets          pq.StringArray
-		scanType         string
-		scheduleType     string
-		status           string
-		tags             pq.StringArray
-		scannerConfig    []byte
-		pipelineID       sql.NullString
-		profileID        sql.NullString
-		agentPreference  sql.NullString
-		timeoutSeconds   sql.NullInt64
-		lastRunID        sql.NullString
-		createdBy        sql.NullString
-		description      sql.NullString
-		scannerName      sql.NullString
-		scheduleCron     sql.NullString
-		lastRunStatus    sql.NullString
-		scheduleTimezone sql.NullString
+		id                  string
+		tenantID            string
+		assetGroupID        sql.NullString
+		assetGroupIDs       pq.StringArray
+		targets             pq.StringArray
+		scanType            string
+		scheduleType        string
+		status              string
+		tags                pq.StringArray
+		scannerConfig       []byte
+		pipelineID          sql.NullString
+		profileID           sql.NullString
+		agentPreference     sql.NullString
+		timeoutSeconds      sql.NullInt64
+		maxRetries          sql.NullInt64
+		retryBackoffSeconds sql.NullInt64
+		lastRunID           sql.NullString
+		createdBy           sql.NullString
+		description         sql.NullString
+		scannerName         sql.NullString
+		scheduleCron        sql.NullString
+		lastRunStatus       sql.NullString
+		scheduleTimezone    sql.NullString
 	)
 
 	err := reader.Scan(
@@ -643,6 +660,8 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&agentPreference,
 		&profileID,
 		&timeoutSeconds,
+		&maxRetries,
+		&retryBackoffSeconds,
 		&status,
 		&lastRunID,
 		&s.LastRunAt,
@@ -694,6 +713,15 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		s.TimeoutSeconds = int(timeoutSeconds.Int64)
 	} else {
 		s.TimeoutSeconds = scan.DefaultScanTimeoutSeconds
+	}
+
+	if maxRetries.Valid && maxRetries.Int64 >= 0 {
+		s.MaxRetries = int(maxRetries.Int64)
+	}
+	if retryBackoffSeconds.Valid && retryBackoffSeconds.Int64 > 0 {
+		s.RetryBackoffSeconds = int(retryBackoffSeconds.Int64)
+	} else {
+		s.RetryBackoffSeconds = scan.DefaultRetryBackoffSeconds
 	}
 
 	if pipelineID.Valid {

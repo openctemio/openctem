@@ -800,7 +800,7 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 	return s.runRepo.List(ctx, filter, page)
 }
 
-// CancelRun cancels a pipeline run.
+// CancelRun cancels a pipeline run and all its in-flight commands.
 func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	run, err := s.GetRun(ctx, tenantID, runID)
 	if err != nil {
@@ -814,6 +814,19 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	run.Cancel()
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return err
+	}
+
+	// Cancel all in-flight commands belonging to this run so agents stop work.
+	if s.commandRepo != nil {
+		canceled, cancelErr := s.commandRepo.CancelByPipelineRunID(ctx, run.TenantID, run.ID)
+		if cancelErr != nil {
+			// Non-fatal: run is already canceled, commands will eventually be reaped by JobRecoveryController
+			s.logger.Warn("failed to cancel commands for pipeline run",
+				"run_id", runID,
+				"error", cancelErr)
+		} else if canceled > 0 {
+			s.logger.Info("canceled in-flight commands", "run_id", runID, "count", canceled)
+		}
 	}
 
 	// Audit log: run canceled

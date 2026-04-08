@@ -150,6 +150,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Scan retry controller: dispatches automatic retries for failed scans
+	// with retry budget remaining (uses exponential backoff)
+	w.ControllerManager.Register(controller.NewScanRetryController(
+		repos.PipelineRun,
+		svc.Scan, // scan service implements RetryDispatcher
+		&controller.ScanRetryControllerConfig{
+			Interval:  60 * time.Second,
+			BatchSize: 100,
+			Logger:    log.With("controller", "scan-retry"),
+		},
+	))
+
 	w.ControllerManager.Register(controller.NewDataExpirationController(
 		repos.Suppression,
 		repos.ScopeExcl,

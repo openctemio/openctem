@@ -1088,3 +1088,34 @@ func (r *CommandRepository) GetStatsByTenant(ctx context.Context, tenantID share
 
 	return stats, nil
 }
+
+// CancelByPipelineRunID marks all non-terminal commands for a pipeline run as canceled.
+// A command is "non-terminal" if its status is one of: pending, acknowledged, running.
+// Terminal statuses (completed, failed, canceled, expired) are left untouched.
+//
+// Tenant scoping is enforced — only commands belonging to the given tenant are affected.
+// Returns the number of commands canceled.
+func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID, runID shared.ID) (int64, error) {
+	// We must find commands via step_runs.pipeline_run_id since commands
+	// link to step_runs (not directly to pipeline_runs).
+	query := `
+		UPDATE commands c
+		SET status = 'canceled',
+		    updated_at = NOW(),
+		    completed_at = NOW()
+		FROM step_runs sr
+		WHERE c.step_run_id = sr.id
+		  AND c.tenant_id = $1
+		  AND sr.pipeline_run_id = $2
+		  AND c.status IN ('pending', 'acknowledged', 'running')
+	`
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), runID.String())
+	if err != nil {
+		return 0, fmt.Errorf("failed to cancel commands by pipeline run: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	return rows, nil
+}

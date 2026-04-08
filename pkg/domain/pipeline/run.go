@@ -73,6 +73,9 @@ type Run struct {
 	ScanProfileID     *shared.ID                     // Reference to the scan profile used
 	QualityGateResult *scanprofile.QualityGateResult // Quality gate evaluation result
 
+	// Retry tracking
+	RetryAttempt int // 0 = first attempt, N = Nth retry
+
 	// Step runs (loaded separately)
 	StepRuns []*StepRun
 

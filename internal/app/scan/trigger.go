@@ -149,6 +149,9 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	}
 	run.SetTotalSteps(len(steps))
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
+	if sc.ProfileID != nil {
+		run.ScanProfileID = sc.ProfileID // Propagate scan profile for quality gate evaluation
+	}
 
 	// Atomically check concurrent limits and create run to prevent race conditions
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {
@@ -224,6 +227,9 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 	run.SetTotalSteps(1)
 	run.Start()
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
+	if sc.ProfileID != nil {
+		run.ScanProfileID = sc.ProfileID // Propagate scan profile for quality gate evaluation
+	}
 
 	// Atomically check concurrent limits and create run to prevent race conditions
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {

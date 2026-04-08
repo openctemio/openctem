@@ -46,6 +46,10 @@ type Scan struct {
 	// Timeout - max execution time in seconds (default 3600 = 1h, max 86400 = 24h)
 	TimeoutSeconds int
 
+	// Retry config - automatic retry of failed runs with exponential backoff
+	MaxRetries          int // 0 = no retry, max 10
+	RetryBackoffSeconds int // Initial backoff (default 60s), actual delay is backoff * 2^attempt
+
 	// Status
 	Status Status
 
@@ -91,9 +95,11 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 		ScheduleType:     ScheduleManual,
 		ScheduleTimezone: "UTC",
 		Tags:             []string{},
-		AgentPreference:  AgentPreferenceAuto,
-		TimeoutSeconds:   DefaultScanTimeoutSeconds,
-		Status:           StatusActive,
+		AgentPreference:     AgentPreferenceAuto,
+		TimeoutSeconds:      DefaultScanTimeoutSeconds,
+		MaxRetries:          0,
+		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
+		Status:              StatusActive,
 		TotalRuns:        0,
 		SuccessfulRuns:   0,
 		FailedRuns:       0,
@@ -131,9 +137,11 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 		ScheduleType:     ScheduleManual,
 		ScheduleTimezone: "UTC",
 		Tags:             []string{},
-		AgentPreference:  AgentPreferenceAuto,
-		TimeoutSeconds:   DefaultScanTimeoutSeconds,
-		Status:           StatusActive,
+		AgentPreference:     AgentPreferenceAuto,
+		TimeoutSeconds:      DefaultScanTimeoutSeconds,
+		MaxRetries:          0,
+		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
+		Status:              StatusActive,
 		TotalRuns:        0,
 		SuccessfulRuns:   0,
 		FailedRuns:       0,
@@ -392,16 +400,68 @@ func (s *Scan) SetProfileID(profileID *shared.ID) {
 }
 
 // SetTimeoutSeconds sets the maximum execution time in seconds.
-// If <= 0, defaults to DefaultScanTimeoutSeconds. Capped at MaxScanTimeoutSeconds.
+// Enforces [MinScanTimeoutSeconds, MaxScanTimeoutSeconds] bounds at the domain layer
+// (defense-in-depth — even if HTTP validation is bypassed, the domain enforces the floor).
+// If <= 0, defaults to DefaultScanTimeoutSeconds.
 func (s *Scan) SetTimeoutSeconds(seconds int) {
 	if seconds <= 0 {
 		seconds = DefaultScanTimeoutSeconds
+	}
+	if seconds < MinScanTimeoutSeconds {
+		seconds = MinScanTimeoutSeconds
 	}
 	if seconds > MaxScanTimeoutSeconds {
 		seconds = MaxScanTimeoutSeconds
 	}
 	s.TimeoutSeconds = seconds
 	s.UpdatedAt = time.Now()
+}
+
+// SetRetryConfig configures the retry behavior for failed runs.
+// maxRetries is capped at MaxRetryCount; backoff is bounded to [Min,Max]RetryBackoffSeconds.
+func (s *Scan) SetRetryConfig(maxRetries, backoffSeconds int) {
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	if maxRetries > MaxRetryCount {
+		maxRetries = MaxRetryCount
+	}
+	if backoffSeconds <= 0 {
+		backoffSeconds = DefaultRetryBackoffSeconds
+	}
+	if backoffSeconds < MinRetryBackoffSeconds {
+		backoffSeconds = MinRetryBackoffSeconds
+	}
+	if backoffSeconds > MaxRetryBackoffSeconds {
+		backoffSeconds = MaxRetryBackoffSeconds
+	}
+	s.MaxRetries = maxRetries
+	s.RetryBackoffSeconds = backoffSeconds
+	s.UpdatedAt = time.Now()
+}
+
+// CalculateRetryDelay returns the exponential backoff delay for the given attempt number.
+// attempt 0 = first retry, attempt 1 = second retry, etc.
+// Capped at MaxRetryBackoffSeconds.
+func (s *Scan) CalculateRetryDelay(attempt int) time.Duration {
+	backoff := s.RetryBackoffSeconds
+	if backoff <= 0 {
+		backoff = DefaultRetryBackoffSeconds
+	}
+	// delay = backoff * 2^attempt, capped
+	delay := backoff
+	for i := 0; i < attempt && delay < MaxRetryBackoffSeconds; i++ {
+		delay *= 2
+	}
+	if delay > MaxRetryBackoffSeconds {
+		delay = MaxRetryBackoffSeconds
+	}
+	return time.Duration(delay) * time.Second
+}
+
+// ShouldRetry returns true if a failed run with the given retry attempt should be retried.
+func (s *Scan) ShouldRetry(currentAttempt int) bool {
+	return s.MaxRetries > 0 && currentAttempt < s.MaxRetries
 }
 
 // Activate activates the scan.
@@ -568,11 +628,13 @@ func (s *Scan) Clone(newName string) *Scan {
 		ScheduleTime:      s.ScheduleTime,
 		ScheduleTimezone:  s.ScheduleTimezone,
 		Tags:              make([]string, len(s.Tags)),
-		RunOnTenantRunner: s.RunOnTenantRunner,
-		AgentPreference:   s.AgentPreference,
-		ProfileID:         s.ProfileID,
-		TimeoutSeconds:    s.TimeoutSeconds,
-		Status:            StatusActive,
+		RunOnTenantRunner:   s.RunOnTenantRunner,
+		AgentPreference:     s.AgentPreference,
+		ProfileID:           s.ProfileID,
+		TimeoutSeconds:      s.TimeoutSeconds,
+		MaxRetries:          s.MaxRetries,
+		RetryBackoffSeconds: s.RetryBackoffSeconds,
+		Status:              StatusActive,
 		TotalRuns:         0,
 		SuccessfulRuns:    0,
 		FailedRuns:        0,

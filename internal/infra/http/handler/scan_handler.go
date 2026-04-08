@@ -60,26 +60,33 @@ type CreateScanRequest struct {
 	Timezone        string         `json:"timezone" validate:"max=50"`
 	Tags            []string       `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner    bool           `json:"run_on_tenant_runner"`
-	AgentPreference string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
-	ProfileID       string         `json:"profile_id" validate:"omitempty,uuid"`
-	TimeoutSeconds  int            `json:"timeout_seconds" validate:"omitempty,min=1,max=86400"`
+	AgentPreference     string `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID           string `json:"profile_id" validate:"omitempty,uuid"`
+	TimeoutSeconds      int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
+	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
+	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
 type UpdateScanRequest struct {
-	Name          string         `json:"name" validate:"omitempty,min=1,max=200"`
-	Description   string         `json:"description" validate:"max=1000"`
-	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName   string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig map[string]any `json:"scanner_config"`
-	TargetsPerJob *int           `json:"targets_per_job"`
-	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay   *int           `json:"schedule_day"`
-	ScheduleTime  *string        `json:"schedule_time"`
-	Timezone      string         `json:"timezone" validate:"max=50"`
-	Tags          []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner  *bool          `json:"run_on_tenant_runner"`
+	Name            string         `json:"name" validate:"omitempty,min=1,max=200"`
+	Description     string         `json:"description" validate:"max=1000"`
+	PipelineID      string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName     string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig   map[string]any `json:"scanner_config"`
+	TargetsPerJob   *int           `json:"targets_per_job"`
+	ScheduleType    string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
+	ScheduleCron    string         `json:"schedule_cron" validate:"max=100"`
+	ScheduleDay     *int           `json:"schedule_day"`
+	ScheduleTime    *string        `json:"schedule_time"`
+	Timezone        string         `json:"timezone" validate:"max=50"`
+	Tags            []string       `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner    *bool          `json:"run_on_tenant_runner"`
+	AgentPreference     string  `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID           *string `json:"profile_id" validate:"omitempty"`
+	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
+	MaxRetries          *int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
+	RetryBackoffSeconds *int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
 }
 
 // TriggerScanRequest represents the request body for triggering a scan.
@@ -167,7 +174,12 @@ type ScanDetailResponse struct {
 	NextRunAt         *string        `json:"next_run_at,omitempty"`
 	Tags              []string       `json:"tags,omitempty"`
 	RunOnTenantRunner bool           `json:"run_on_tenant_runner"`
-	Status            string         `json:"status"`
+	AgentPreference     string  `json:"agent_preference"`
+	ProfileID           *string `json:"profile_id,omitempty"`
+	TimeoutSeconds      int     `json:"timeout_seconds"`
+	MaxRetries          int     `json:"max_retries"`
+	RetryBackoffSeconds int     `json:"retry_backoff_seconds"`
+	Status              string  `json:"status"`
 	LastRunID         *string        `json:"last_run_id,omitempty"`
 	LastRunAt         *string        `json:"last_run_at,omitempty"`
 	LastRunStatus     string         `json:"last_run_status,omitempty"`
@@ -280,10 +292,12 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		Timezone:        req.Timezone,
 		Tags:            req.Tags,
 		TenantRunner:    req.TenantRunner,
-		AgentPreference: req.AgentPreference,
-		ProfileID:       req.ProfileID,
-		TimeoutSeconds:  req.TimeoutSeconds,
-		CreatedBy:       userID,
+		AgentPreference:     req.AgentPreference,
+		ProfileID:           req.ProfileID,
+		TimeoutSeconds:      req.TimeoutSeconds,
+		MaxRetries:          req.MaxRetries,
+		RetryBackoffSeconds: req.RetryBackoffSeconds,
+		CreatedBy:           userID,
 	}
 
 	s, err := h.service.CreateScan(r.Context(), input)
@@ -454,21 +468,26 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scansvc.UpdateScanInput{
-		TenantID:      tenantID,
-		ScanID:        scanID,
-		Name:          req.Name,
-		Description:   req.Description,
-		PipelineID:    req.PipelineID,
-		ScannerName:   req.ScannerName,
-		ScannerConfig: req.ScannerConfig,
-		TargetsPerJob: req.TargetsPerJob,
-		ScheduleType:  req.ScheduleType,
-		ScheduleCron:  req.ScheduleCron,
-		ScheduleDay:   req.ScheduleDay,
-		ScheduleTime:  scheduleTime,
-		Timezone:      req.Timezone,
-		Tags:          req.Tags,
-		TenantRunner:  req.TenantRunner,
+		TenantID:        tenantID,
+		ScanID:          scanID,
+		Name:            req.Name,
+		Description:     req.Description,
+		PipelineID:      req.PipelineID,
+		ScannerName:     req.ScannerName,
+		ScannerConfig:   req.ScannerConfig,
+		TargetsPerJob:   req.TargetsPerJob,
+		ScheduleType:    req.ScheduleType,
+		ScheduleCron:    req.ScheduleCron,
+		ScheduleDay:     req.ScheduleDay,
+		ScheduleTime:    scheduleTime,
+		Timezone:        req.Timezone,
+		Tags:            req.Tags,
+		TenantRunner:    req.TenantRunner,
+		AgentPreference:     req.AgentPreference,
+		ProfileID:           req.ProfileID,
+		TimeoutSeconds:      req.TimeoutSeconds,
+		MaxRetries:          req.MaxRetries,
+		RetryBackoffSeconds: req.RetryBackoffSeconds,
 	}
 
 	s, err := h.service.UpdateScan(r.Context(), input)
@@ -956,7 +975,11 @@ func (h *ScanHandler) toScanResponse(ctx context.Context, s *scan.Scan) *ScanDet
 		ScheduleTimezone:  s.ScheduleTimezone,
 		Tags:              s.Tags,
 		RunOnTenantRunner: s.RunOnTenantRunner,
-		Status:            string(s.Status),
+		AgentPreference:     string(s.AgentPreference),
+		TimeoutSeconds:      s.TimeoutSeconds,
+		MaxRetries:          s.MaxRetries,
+		RetryBackoffSeconds: s.RetryBackoffSeconds,
+		Status:              string(s.Status),
 		LastRunStatus:     s.LastRunStatus,
 		TotalRuns:         s.TotalRuns,
 		SuccessfulRuns:    s.SuccessfulRuns,
@@ -968,6 +991,11 @@ func (h *ScanHandler) toScanResponse(ctx context.Context, s *scan.Scan) *ScanDet
 	if s.PipelineID != nil {
 		pid := s.PipelineID.String()
 		resp.PipelineID = &pid
+	}
+
+	if s.ProfileID != nil {
+		pid := s.ProfileID.String()
+		resp.ProfileID = &pid
 	}
 
 	if s.ScheduleTime != nil {

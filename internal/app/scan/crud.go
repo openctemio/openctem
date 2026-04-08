@@ -39,8 +39,11 @@ type CreateScanInput struct {
 	TenantRunner    bool           `json:"run_on_tenant_runner"`
 	AgentPreference string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"` // Agent selection mode: auto (default), tenant, platform
 	ProfileID       string         `json:"profile_id" validate:"omitempty,uuid"`                             // Optional scan profile (tool configs, quality gates)
-	TimeoutSeconds  int            `json:"timeout_seconds" validate:"omitempty,min=1,max=86400"`             // Max execution time (default 3600, max 86400)
-	CreatedBy       string         `json:"created_by" validate:"omitempty,uuid"`
+	TimeoutSeconds  int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`            // Max execution time (default 3600, min 30, max 86400)
+	// Retry config: max_retries=0 disables retry; backoff is initial delay (exponential per attempt)
+	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
+	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
+	CreatedBy           string `json:"created_by" validate:"omitempty,uuid"`
 }
 
 // CreateScanResult represents the result of creating a scan.
@@ -123,24 +126,21 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	// Set timeout (defaults to DefaultScanTimeoutSeconds if 0)
 	sc.SetTimeoutSeconds(input.TimeoutSeconds)
 
-	// Link scan profile if provided
+	// Set retry config (defaults: max_retries=0 disables retry)
+	if input.MaxRetries > 0 || input.RetryBackoffSeconds > 0 {
+		sc.SetRetryConfig(input.MaxRetries, input.RetryBackoffSeconds)
+	}
+
+	// Link scan profile if provided (SQL-level tenant enforcement via GetAccessibleByID)
 	if input.ProfileID != "" {
 		profileID, err := shared.IDFromString(input.ProfileID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid profile_id", shared.ErrValidation)
 		}
-		// Verify profile exists and belongs to tenant (defense-in-depth)
 		if s.profileRepo != nil {
-			profile, err := s.profileRepo.GetByID(ctx, profileID)
-			if err != nil {
+			// GetAccessibleByID returns ErrNotFound for cross-tenant attempts (no info leak)
+			if _, err := s.profileRepo.GetAccessibleByID(ctx, tenantID, profileID); err != nil {
 				return nil, fmt.Errorf("scan profile not found: %w", err)
-			}
-			// System profiles (no tenant) are allowed for everyone; tenant profiles must match.
-			if !profile.TenantID.IsZero() && profile.TenantID != tenantID {
-				s.logger.Warn("SECURITY: cross-tenant scan profile access attempt",
-					"tenant_id", input.TenantID,
-					"profile_tenant_id", profile.TenantID.String())
-				return nil, fmt.Errorf("%w: scan profile not found", shared.ErrNotFound)
 			}
 		}
 		sc.SetProfileID(&profileID)
@@ -591,6 +591,16 @@ type UpdateScanInput struct {
 	Tags            []string       `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner    *bool          `json:"run_on_tenant_runner"`
 	AgentPreference string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	// ProfileID: pointer with sentinel:
+	//   nil           = leave unchanged
+	//   pointer to "" = unlink profile
+	//   pointer to id = link to profile
+	ProfileID *string `json:"profile_id" validate:"omitempty"`
+	// TimeoutSeconds: nil = leave unchanged, otherwise min=30 max=86400
+	TimeoutSeconds *int `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
+	// Retry config: nil = leave unchanged
+	MaxRetries          *int `json:"max_retries" validate:"omitempty,min=0,max=10"`
+	RetryBackoffSeconds *int `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
 }
 
 // UpdateScan updates a scan.
@@ -665,6 +675,44 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 	// Update agent preference if provided
 	if input.AgentPreference != "" {
 		sc.SetAgentPreference(scan.AgentPreference(input.AgentPreference))
+	}
+
+	// Update timeout if provided (validation enforces min=30, max=86400)
+	if input.TimeoutSeconds != nil {
+		sc.SetTimeoutSeconds(*input.TimeoutSeconds)
+	}
+
+	// Update retry config if either field is provided
+	if input.MaxRetries != nil || input.RetryBackoffSeconds != nil {
+		maxRetries := sc.MaxRetries
+		if input.MaxRetries != nil {
+			maxRetries = *input.MaxRetries
+		}
+		backoff := sc.RetryBackoffSeconds
+		if input.RetryBackoffSeconds != nil {
+			backoff = *input.RetryBackoffSeconds
+		}
+		sc.SetRetryConfig(maxRetries, backoff)
+	}
+
+	// Update profile link if provided (sentinel: empty string = unlink)
+	if input.ProfileID != nil {
+		if *input.ProfileID == "" {
+			sc.SetProfileID(nil)
+		} else {
+			profileID, err := shared.IDFromString(*input.ProfileID)
+			if err != nil {
+				return nil, fmt.Errorf("%w: invalid profile_id", shared.ErrValidation)
+			}
+			tenantID, _ := shared.IDFromString(input.TenantID)
+			if s.profileRepo != nil {
+				// GetAccessibleByID enforces tenant scope at SQL layer (defense-in-depth)
+				if _, err := s.profileRepo.GetAccessibleByID(ctx, tenantID, profileID); err != nil {
+					return nil, fmt.Errorf("scan profile not found: %w", err)
+				}
+			}
+			sc.SetProfileID(&profileID)
+		}
 	}
 
 	// Save to repository

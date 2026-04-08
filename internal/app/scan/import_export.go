@@ -45,6 +45,10 @@ type ScanConfigExport struct {
 	RunOnTenantRunner bool     `json:"run_on_tenant_runner"`
 	AgentPreference   string   `json:"agent_preference,omitempty"`
 
+	// Profile and timeout
+	ProfileID      string `json:"profile_id,omitempty"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+
 	// Export metadata
 	ExportedAt string `json:"exported_at"`
 	Version    string `json:"version"`
@@ -77,8 +81,13 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 		ScheduleTimezone:  sc.ScheduleTimezone,
 		RunOnTenantRunner: sc.RunOnTenantRunner,
 		AgentPreference:   string(sc.AgentPreference),
+		TimeoutSeconds:    sc.TimeoutSeconds,
 		ExportedAt:        time.Now().UTC().Format(time.RFC3339),
 		Version:           configExportVersion,
+	}
+
+	if sc.ProfileID != nil && !sc.ProfileID.IsZero() {
+		export.ProfileID = sc.ProfileID.String()
 	}
 
 	// Convert targets
@@ -161,23 +170,25 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 
 	// Build create input from export
 	input := CreateScanInput{
-		TenantID:      tenantID.String(),
-		Name:          export.Name,
-		Description:   export.Description,
-		AssetGroupIDs: export.AssetGroupIDs,
-		Targets:       export.Targets,
-		ScanType:      export.ScanType,
-		ScannerName:   export.ScannerName,
-		ScannerConfig: export.ScannerConfig,
-		TargetsPerJob: export.TargetsPerJob,
-		ScheduleType:  export.ScheduleType,
-		ScheduleCron:  export.ScheduleCron,
-		ScheduleDay:   export.ScheduleDay,
-		ScheduleTime:  scheduleTime,
-		Timezone:      export.ScheduleTimezone,
-		Tags:          export.Tags,
-		TenantRunner:  export.RunOnTenantRunner,
+		TenantID:        tenantID.String(),
+		Name:            export.Name,
+		Description:     export.Description,
+		AssetGroupIDs:   export.AssetGroupIDs,
+		Targets:         export.Targets,
+		ScanType:        export.ScanType,
+		ScannerName:     export.ScannerName,
+		ScannerConfig:   export.ScannerConfig,
+		TargetsPerJob:   export.TargetsPerJob,
+		ScheduleType:    export.ScheduleType,
+		ScheduleCron:    export.ScheduleCron,
+		ScheduleDay:     export.ScheduleDay,
+		ScheduleTime:    scheduleTime,
+		Timezone:        export.ScheduleTimezone,
+		Tags:            export.Tags,
+		TenantRunner:    export.RunOnTenantRunner,
 		AgentPreference: export.AgentPreference,
+		ProfileID:       export.ProfileID,
+		TimeoutSeconds:  export.TimeoutSeconds,
 	}
 
 	// Set primary asset group ID for backward compatibility

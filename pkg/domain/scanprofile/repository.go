@@ -27,6 +27,11 @@ type Repository interface {
 	// GetByTenantAndID retrieves a scan profile by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*ScanProfile, error)
 
+	// GetAccessibleByID retrieves a scan profile by ID if accessible to the tenant.
+	// Accessible profiles are: own tenant profiles OR system profiles (tenant_id IS NULL).
+	// Enforces tenant isolation at the SQL layer (defense-in-depth).
+	GetAccessibleByID(ctx context.Context, tenantID, id shared.ID) (*ScanProfile, error)
+
 	// GetByTenantAndName retrieves a scan profile by tenant and name.
 	GetByTenantAndName(ctx context.Context, tenantID shared.ID, name string) (*ScanProfile, error)
 
