@@ -147,7 +147,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
 		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
 		ScopeRule:      handler.NewScopeRuleHandler(svc.ScopeRule, v, log),
-		AssetOwner:     handler.NewAssetOwnerHandler(repos.AccessControl, log),
+		AssetOwner:     handler.NewAssetOwnerHandler(repos.AccessControl, repos.Asset, log),
 
 		// Notification
 		Outbox:       handler.NewOutboxHandler(repos.Outbox, log),

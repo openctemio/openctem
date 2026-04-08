@@ -83,6 +83,34 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 		return nil, fmt.Errorf("target asset: %w", err)
 	}
 
+	// Placement mutex: `runs_on` and `deployed_to` describe overlapping
+	// concepts ("where this thing lives") so we forbid both existing for
+	// the same source/target pair. The UI constraint table also enforces
+	// this client-side, but agents and ingest pipelines bypass that path
+	// — this is the authoritative check.
+	//
+	// We only run this check when the requested type is one half of the
+	// pair; for every other relationship type the loop below is skipped.
+	if relType == asset.RelTypeRunsOn || relType == asset.RelTypeDeployedTo {
+		var conflictingType asset.RelationshipType
+		if relType == asset.RelTypeRunsOn {
+			conflictingType = asset.RelTypeDeployedTo
+		} else {
+			conflictingType = asset.RelTypeRunsOn
+		}
+		exists, existsErr := s.relRepo.Exists(ctx, tenantID, sourceID, targetID, conflictingType)
+		if existsErr != nil {
+			return nil, fmt.Errorf("failed to check placement mutex: %w", existsErr)
+		}
+		if exists {
+			return nil, fmt.Errorf(
+				"%w: a %q relationship already exists between these assets — runs_on and deployed_to are mutually exclusive for the same source/target pair",
+				shared.ErrAlreadyExists,
+				conflictingType,
+			)
+		}
+	}
+
 	// Create domain entity
 	rel, err := asset.NewRelationship(tenantID, sourceID, targetID, relType)
 	if err != nil {

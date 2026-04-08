@@ -155,10 +155,21 @@ func (h *AssetRelationshipHandler) ListByAsset(w http.ResponseWriter, r *http.Re
 // Create handles POST /api/v1/assets/{id}/relationships
 func (h *AssetRelationshipHandler) Create(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
+	pathAssetID := chi.URLParam(r, "id")
 
 	var req CreateRelationshipRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// The path's {id} is the source asset. If the body also supplies
+	// source_asset_id it must match — otherwise the URL becomes a lie.
+	// If the body omits source_asset_id, fall back to the path.
+	if req.SourceAssetID == "" {
+		req.SourceAssetID = pathAssetID
+	} else if req.SourceAssetID != pathAssetID {
+		apierror.BadRequest("source_asset_id in body does not match the asset ID in the URL").WriteJSON(w)
 		return
 	}
 
