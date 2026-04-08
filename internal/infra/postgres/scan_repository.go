@@ -52,10 +52,27 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		assetGroupID = &agid
 	}
 
+	// Handle nullable profile_id
+	var profileID *string
+	if s.ProfileID != nil {
+		pid := s.ProfileID.String()
+		profileID = &pid
+	}
+
 	// Convert AssetGroupIDs to string array for database
 	assetGroupIDStrings := make([]string, len(s.AssetGroupIDs))
 	for i, id := range s.AssetGroupIDs {
 		assetGroupIDStrings[i] = id.String()
+	}
+
+	// Default agent preference and timeout
+	agentPref := string(s.AgentPreference)
+	if agentPref == "" {
+		agentPref = string(scan.AgentPreferenceAuto)
+	}
+	timeoutSecs := s.TimeoutSeconds
+	if timeoutSecs <= 0 {
+		timeoutSecs = scan.DefaultScanTimeoutSeconds
 	}
 
 	query := `
@@ -64,12 +81,12 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
 			scanner_name, scanner_config, targets_per_job,
 			schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
-			tags, run_on_tenant_runner, status,
+			tags, run_on_tenant_runner, agent_preference, profile_id, timeout_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
 			created_by, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -93,6 +110,9 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		s.NextRunAt,
 		pq.Array(s.Tags),
 		s.RunOnTenantRunner,
+		agentPref,
+		profileID,
+		timeoutSecs,
 		string(s.Status),
 		nil, // last_run_id
 		s.LastRunAt,
@@ -204,14 +224,31 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		assetGroupIDStrings[i] = id.String()
 	}
 
+	// Handle nullable profile_id
+	var profileID *string
+	if s.ProfileID != nil {
+		pid := s.ProfileID.String()
+		profileID = &pid
+	}
+
+	// Default agent preference and timeout
+	agentPref := string(s.AgentPreference)
+	if agentPref == "" {
+		agentPref = string(scan.AgentPreferenceAuto)
+	}
+	timeoutSecs := s.TimeoutSeconds
+	if timeoutSecs <= 0 {
+		timeoutSecs = scan.DefaultScanTimeoutSeconds
+	}
+
 	query := `
 		UPDATE scans
 		SET name = $2, description = $3,
 		    asset_group_id = $4, asset_group_ids = $5, targets = $6, scan_type = $7, pipeline_id = $8,
 		    scanner_name = $9, scanner_config = $10, targets_per_job = $11,
 		    schedule_type = $12, schedule_cron = $13, schedule_day = $14, schedule_time = $15, schedule_timezone = $16, next_run_at = $17,
-		    tags = $18, run_on_tenant_runner = $19, status = $20,
-		    updated_at = $21
+		    tags = $18, run_on_tenant_runner = $19, agent_preference = $20, profile_id = $21, timeout_seconds = $22, status = $23,
+		    updated_at = $24
 		WHERE id = $1
 	`
 
@@ -235,6 +272,9 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		s.NextRunAt,
 		pq.Array(s.Tags),
 		s.RunOnTenantRunner,
+		agentPref,
+		profileID,
+		timeoutSecs,
 		string(s.Status),
 		s.UpdatedAt,
 	)
@@ -485,12 +525,148 @@ func (r *ScanRepository) selectQuery() string {
 		       asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
 		       scanner_name, scanner_config, targets_per_job,
 		       schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
-		       tags, run_on_tenant_runner, status,
+		       tags, run_on_tenant_runner, agent_preference, profile_id, timeout_seconds, status,
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
 		       created_by, created_at, updated_at
 		FROM scans
 	`
+}
+
+// scanRowReader abstracts sql.Row and sql.Rows for shared scanning logic.
+type scanRowReader interface {
+	Scan(dest ...any) error
+}
+
+// readScan scans a single scan row using a generic row reader.
+// This is the single source of truth for parsing scan rows from DB.
+func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
+	s := &scan.Scan{}
+	var (
+		id               string
+		tenantID         string
+		assetGroupID     sql.NullString
+		assetGroupIDs    pq.StringArray
+		targets          pq.StringArray
+		scanType         string
+		scheduleType     string
+		status           string
+		tags             pq.StringArray
+		scannerConfig    []byte
+		pipelineID       sql.NullString
+		profileID        sql.NullString
+		agentPreference  sql.NullString
+		timeoutSeconds   sql.NullInt64
+		lastRunID        sql.NullString
+		createdBy        sql.NullString
+		description      sql.NullString
+		scannerName      sql.NullString
+		scheduleCron     sql.NullString
+		lastRunStatus    sql.NullString
+		scheduleTimezone sql.NullString
+	)
+
+	err := reader.Scan(
+		&id,
+		&tenantID,
+		&s.Name,
+		&description,
+		&assetGroupID,
+		&assetGroupIDs,
+		&targets,
+		&scanType,
+		&pipelineID,
+		&scannerName,
+		&scannerConfig,
+		&s.TargetsPerJob,
+		&scheduleType,
+		&scheduleCron,
+		&s.ScheduleDay,
+		&s.ScheduleTime,
+		&scheduleTimezone,
+		&s.NextRunAt,
+		&tags,
+		&s.RunOnTenantRunner,
+		&agentPreference,
+		&profileID,
+		&timeoutSeconds,
+		&status,
+		&lastRunID,
+		&s.LastRunAt,
+		&lastRunStatus,
+		&s.TotalRuns,
+		&s.SuccessfulRuns,
+		&s.FailedRuns,
+		&createdBy,
+		&s.CreatedAt,
+		&s.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	s.ID, _ = shared.IDFromString(id)
+	s.TenantID, _ = shared.IDFromString(tenantID)
+	if assetGroupID.Valid {
+		s.AssetGroupID, _ = shared.IDFromString(assetGroupID.String)
+	}
+	s.AssetGroupIDs = make([]shared.ID, 0, len(assetGroupIDs))
+	for _, idStr := range assetGroupIDs {
+		if id, err := shared.IDFromString(idStr); err == nil {
+			s.AssetGroupIDs = append(s.AssetGroupIDs, id)
+		}
+	}
+	s.Targets = targets
+	s.ScanType = scan.ScanType(scanType)
+	s.ScheduleType = scan.ScheduleType(scheduleType)
+	s.Status = scan.Status(status)
+	s.Tags = tags
+
+	s.Description = description.String
+	s.ScannerName = scannerName.String
+	s.ScheduleCron = scheduleCron.String
+	s.LastRunStatus = lastRunStatus.String
+	s.ScheduleTimezone = scheduleTimezone.String
+	if s.ScheduleTimezone == "" {
+		s.ScheduleTimezone = "UTC"
+	}
+
+	if agentPreference.Valid {
+		s.AgentPreference = scan.AgentPreference(agentPreference.String)
+	} else {
+		s.AgentPreference = scan.AgentPreferenceAuto
+	}
+
+	if timeoutSeconds.Valid && timeoutSeconds.Int64 > 0 {
+		s.TimeoutSeconds = int(timeoutSeconds.Int64)
+	} else {
+		s.TimeoutSeconds = scan.DefaultScanTimeoutSeconds
+	}
+
+	if pipelineID.Valid {
+		pid, _ := shared.IDFromString(pipelineID.String)
+		s.PipelineID = &pid
+	}
+	if profileID.Valid {
+		pid, _ := shared.IDFromString(profileID.String)
+		s.ProfileID = &pid
+	}
+	if lastRunID.Valid {
+		lid, _ := shared.IDFromString(lastRunID.String)
+		s.LastRunID = &lid
+	}
+	if createdBy.Valid {
+		cid, _ := shared.IDFromString(createdBy.String)
+		s.CreatedBy = &cid
+	}
+
+	if len(scannerConfig) > 0 {
+		_ = json.Unmarshal(scannerConfig, &s.ScannerConfig)
+	} else {
+		s.ScannerConfig = make(map[string]any)
+	}
+
+	return s, nil
 }
 
 // buildWhereClause builds the WHERE clause from filters.
@@ -555,225 +731,21 @@ func (r *ScanRepository) buildWhereClause(filter scan.Filter) (string, []any) {
 
 // scanFromRow scans a single row into a Scan.
 func (r *ScanRepository) scanFromRow(row *sql.Row) (*scan.Scan, error) {
-	s := &scan.Scan{}
-	var (
-		id               string
-		tenantID         string
-		assetGroupID     sql.NullString // Now nullable
-		assetGroupIDs    pq.StringArray // Multiple asset groups
-		targets          pq.StringArray // Direct targets
-		scanType         string
-		scheduleType     string
-		status           string
-		tags             pq.StringArray
-		scannerConfig    []byte
-		pipelineID       sql.NullString
-		lastRunID        sql.NullString
-		createdBy        sql.NullString
-		description      sql.NullString
-		scannerName      sql.NullString
-		scheduleCron     sql.NullString
-		lastRunStatus    sql.NullString
-		scheduleTimezone sql.NullString
-	)
-
-	err := row.Scan(
-		&id,
-		&tenantID,
-		&s.Name,
-		&description,
-		&assetGroupID,
-		&assetGroupIDs, // Multiple asset groups
-		&targets,       // Direct targets
-		&scanType,
-		&pipelineID,
-		&scannerName,
-		&scannerConfig,
-		&s.TargetsPerJob,
-		&scheduleType,
-		&scheduleCron,
-		&s.ScheduleDay,
-		&s.ScheduleTime,
-		&scheduleTimezone,
-		&s.NextRunAt,
-		&tags,
-		&s.RunOnTenantRunner,
-		&status,
-		&lastRunID,
-		&s.LastRunAt,
-		&lastRunStatus,
-		&s.TotalRuns,
-		&s.SuccessfulRuns,
-		&s.FailedRuns,
-		&createdBy,
-		&s.CreatedAt,
-		&s.UpdatedAt,
-	)
-
+	s, err := r.readScan(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to scan scan: %w", err)
 	}
-
-	s.ID, _ = shared.IDFromString(id)
-	s.TenantID, _ = shared.IDFromString(tenantID)
-	// Handle nullable asset_group_id
-	if assetGroupID.Valid {
-		s.AssetGroupID, _ = shared.IDFromString(assetGroupID.String)
-	}
-	// Convert asset_group_ids string array to []shared.ID
-	s.AssetGroupIDs = make([]shared.ID, 0, len(assetGroupIDs))
-	for _, idStr := range assetGroupIDs {
-		if id, err := shared.IDFromString(idStr); err == nil {
-			s.AssetGroupIDs = append(s.AssetGroupIDs, id)
-		}
-	}
-	s.Targets = targets // Set direct targets
-	s.ScanType = scan.ScanType(scanType)
-	s.ScheduleType = scan.ScheduleType(scheduleType)
-	s.Status = scan.Status(status)
-	s.Tags = tags
-
-	s.Description = description.String
-	s.ScannerName = scannerName.String
-	s.ScheduleCron = scheduleCron.String
-	s.LastRunStatus = lastRunStatus.String
-	s.ScheduleTimezone = scheduleTimezone.String
-	if s.ScheduleTimezone == "" {
-		s.ScheduleTimezone = "UTC"
-	}
-
-	if pipelineID.Valid {
-		pid, _ := shared.IDFromString(pipelineID.String)
-		s.PipelineID = &pid
-	}
-	if lastRunID.Valid {
-		lid, _ := shared.IDFromString(lastRunID.String)
-		s.LastRunID = &lid
-	}
-	if createdBy.Valid {
-		cid, _ := shared.IDFromString(createdBy.String)
-		s.CreatedBy = &cid
-	}
-
-	if len(scannerConfig) > 0 {
-		_ = json.Unmarshal(scannerConfig, &s.ScannerConfig)
-	} else {
-		s.ScannerConfig = make(map[string]any)
-	}
-
 	return s, nil
 }
 
 // scanFromRows scans a row from Rows into a Scan.
 func (r *ScanRepository) scanFromRows(rows *sql.Rows) (*scan.Scan, error) {
-	s := &scan.Scan{}
-	var (
-		id               string
-		tenantID         string
-		assetGroupID     sql.NullString // Now nullable
-		assetGroupIDs    pq.StringArray // Multiple asset groups
-		targets          pq.StringArray // Direct targets
-		scanType         string
-		scheduleType     string
-		status           string
-		tags             pq.StringArray
-		scannerConfig    []byte
-		pipelineID       sql.NullString
-		lastRunID        sql.NullString
-		createdBy        sql.NullString
-		description      sql.NullString
-		scannerName      sql.NullString
-		scheduleCron     sql.NullString
-		lastRunStatus    sql.NullString
-		scheduleTimezone sql.NullString
-	)
-
-	err := rows.Scan(
-		&id,
-		&tenantID,
-		&s.Name,
-		&description,
-		&assetGroupID,
-		&assetGroupIDs, // Multiple asset groups
-		&targets,       // Direct targets
-		&scanType,
-		&pipelineID,
-		&scannerName,
-		&scannerConfig,
-		&s.TargetsPerJob,
-		&scheduleType,
-		&scheduleCron,
-		&s.ScheduleDay,
-		&s.ScheduleTime,
-		&scheduleTimezone,
-		&s.NextRunAt,
-		&tags,
-		&s.RunOnTenantRunner,
-		&status,
-		&lastRunID,
-		&s.LastRunAt,
-		&lastRunStatus,
-		&s.TotalRuns,
-		&s.SuccessfulRuns,
-		&s.FailedRuns,
-		&createdBy,
-		&s.CreatedAt,
-		&s.UpdatedAt,
-	)
-
+	s, err := r.readScan(rows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan scan: %w", err)
 	}
-
-	s.ID, _ = shared.IDFromString(id)
-	s.TenantID, _ = shared.IDFromString(tenantID)
-	// Handle nullable asset_group_id
-	if assetGroupID.Valid {
-		s.AssetGroupID, _ = shared.IDFromString(assetGroupID.String)
-	}
-	// Convert asset_group_ids string array to []shared.ID
-	s.AssetGroupIDs = make([]shared.ID, 0, len(assetGroupIDs))
-	for _, idStr := range assetGroupIDs {
-		if id, err := shared.IDFromString(idStr); err == nil {
-			s.AssetGroupIDs = append(s.AssetGroupIDs, id)
-		}
-	}
-	s.Targets = targets // Set direct targets
-	s.ScanType = scan.ScanType(scanType)
-	s.ScheduleType = scan.ScheduleType(scheduleType)
-	s.Status = scan.Status(status)
-	s.Tags = tags
-
-	s.Description = description.String
-	s.ScannerName = scannerName.String
-	s.ScheduleCron = scheduleCron.String
-	s.LastRunStatus = lastRunStatus.String
-	s.ScheduleTimezone = scheduleTimezone.String
-	if s.ScheduleTimezone == "" {
-		s.ScheduleTimezone = "UTC"
-	}
-
-	if pipelineID.Valid {
-		pid, _ := shared.IDFromString(pipelineID.String)
-		s.PipelineID = &pid
-	}
-	if lastRunID.Valid {
-		lid, _ := shared.IDFromString(lastRunID.String)
-		s.LastRunID = &lid
-	}
-	if createdBy.Valid {
-		cid, _ := shared.IDFromString(createdBy.String)
-		s.CreatedBy = &cid
-	}
-
-	if len(scannerConfig) > 0 {
-		_ = json.Unmarshal(scannerConfig, &s.ScannerConfig)
-	} else {
-		s.ScannerConfig = make(map[string]any)
-	}
-
 	return s, nil
 }

@@ -43,23 +43,26 @@ func NewScanHandler(service *scansvc.Service, userRepo user.Repository, v *valid
 // CreateScanRequest represents the request body for creating a scan.
 // Either asset_group_id OR asset_group_ids OR targets must be provided (can have all).
 type CreateScanRequest struct {
-	Name          string         `json:"name" validate:"required,min=1,max=200"`
-	Description   string         `json:"description" validate:"max=1000"`
-	AssetGroupID  string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
-	AssetGroupIDs []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets       []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
-	ScanType      string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName   string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig map[string]any `json:"scanner_config"`
-	TargetsPerJob int            `json:"targets_per_job"`
-	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay   *int           `json:"schedule_day"`
-	ScheduleTime  *string        `json:"schedule_time"`
-	Timezone      string         `json:"timezone" validate:"max=50"`
-	Tags          []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner  bool           `json:"run_on_tenant_runner"`
+	Name            string         `json:"name" validate:"required,min=1,max=200"`
+	Description     string         `json:"description" validate:"max=1000"`
+	AssetGroupID    string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
+	AssetGroupIDs   []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets         []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	ScanType        string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	PipelineID      string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName     string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig   map[string]any `json:"scanner_config"`
+	TargetsPerJob   int            `json:"targets_per_job"`
+	ScheduleType    string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
+	ScheduleCron    string         `json:"schedule_cron" validate:"max=100"`
+	ScheduleDay     *int           `json:"schedule_day"`
+	ScheduleTime    *string        `json:"schedule_time"`
+	Timezone        string         `json:"timezone" validate:"max=50"`
+	Tags            []string       `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner    bool           `json:"run_on_tenant_runner"`
+	AgentPreference string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	ProfileID       string         `json:"profile_id" validate:"omitempty,uuid"`
+	TimeoutSeconds  int            `json:"timeout_seconds" validate:"omitempty,min=1,max=86400"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
@@ -259,25 +262,28 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scansvc.CreateScanInput{
-		TenantID:      tenantID,
-		Name:          req.Name,
-		Description:   req.Description,
-		AssetGroupID:  primaryAssetGroupID, // Primary for backward compat
-		AssetGroupIDs: assetGroupIDs,       // Full list for new scans
-		Targets:       req.Targets,
-		ScanType:      req.ScanType,
-		PipelineID:    req.PipelineID,
-		ScannerName:   req.ScannerName,
-		ScannerConfig: req.ScannerConfig,
-		TargetsPerJob: req.TargetsPerJob,
-		ScheduleType:  req.ScheduleType,
-		ScheduleCron:  req.ScheduleCron,
-		ScheduleDay:   req.ScheduleDay,
-		ScheduleTime:  scheduleTime,
-		Timezone:      req.Timezone,
-		Tags:          req.Tags,
-		TenantRunner:  req.TenantRunner,
-		CreatedBy:     userID,
+		TenantID:        tenantID,
+		Name:            req.Name,
+		Description:     req.Description,
+		AssetGroupID:    primaryAssetGroupID, // Primary for backward compat
+		AssetGroupIDs:   assetGroupIDs,       // Full list for new scans
+		Targets:         req.Targets,
+		ScanType:        req.ScanType,
+		PipelineID:      req.PipelineID,
+		ScannerName:     req.ScannerName,
+		ScannerConfig:   req.ScannerConfig,
+		TargetsPerJob:   req.TargetsPerJob,
+		ScheduleType:    req.ScheduleType,
+		ScheduleCron:    req.ScheduleCron,
+		ScheduleDay:     req.ScheduleDay,
+		ScheduleTime:    scheduleTime,
+		Timezone:        req.Timezone,
+		Tags:            req.Tags,
+		TenantRunner:    req.TenantRunner,
+		AgentPreference: req.AgentPreference,
+		ProfileID:       req.ProfileID,
+		TimeoutSeconds:  req.TimeoutSeconds,
+		CreatedBy:       userID,
 	}
 
 	s, err := h.service.CreateScan(r.Context(), input)

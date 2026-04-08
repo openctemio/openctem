@@ -38,6 +38,8 @@ type CreateScanInput struct {
 	Tags            []string       `json:"tags" validate:"max=20,dive,max=50"`
 	TenantRunner    bool           `json:"run_on_tenant_runner"`
 	AgentPreference string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"` // Agent selection mode: auto (default), tenant, platform
+	ProfileID       string         `json:"profile_id" validate:"omitempty,uuid"`                             // Optional scan profile (tool configs, quality gates)
+	TimeoutSeconds  int            `json:"timeout_seconds" validate:"omitempty,min=1,max=86400"`             // Max execution time (default 3600, max 86400)
 	CreatedBy       string         `json:"created_by" validate:"omitempty,uuid"`
 }
 
@@ -116,6 +118,32 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	// Set agent preference
 	if input.AgentPreference != "" {
 		sc.SetAgentPreference(scan.AgentPreference(input.AgentPreference))
+	}
+
+	// Set timeout (defaults to DefaultScanTimeoutSeconds if 0)
+	sc.SetTimeoutSeconds(input.TimeoutSeconds)
+
+	// Link scan profile if provided
+	if input.ProfileID != "" {
+		profileID, err := shared.IDFromString(input.ProfileID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid profile_id", shared.ErrValidation)
+		}
+		// Verify profile exists and belongs to tenant (defense-in-depth)
+		if s.profileRepo != nil {
+			profile, err := s.profileRepo.GetByID(ctx, profileID)
+			if err != nil {
+				return nil, fmt.Errorf("scan profile not found: %w", err)
+			}
+			// System profiles (no tenant) are allowed for everyone; tenant profiles must match.
+			if !profile.TenantID.IsZero() && profile.TenantID != tenantID {
+				s.logger.Warn("SECURITY: cross-tenant scan profile access attempt",
+					"tenant_id", input.TenantID,
+					"profile_tenant_id", profile.TenantID.String())
+				return nil, fmt.Errorf("%w: scan profile not found", shared.ErrNotFound)
+			}
+		}
+		sc.SetProfileID(&profileID)
 	}
 
 	// Set created by

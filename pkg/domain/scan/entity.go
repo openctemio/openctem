@@ -40,6 +40,12 @@ type Scan struct {
 	RunOnTenantRunner bool            // Restrict to tenant's own runners
 	AgentPreference   AgentPreference // Agent selection mode: auto, tenant, platform
 
+	// Profile - links to ScanProfile for tool configs, intensity, quality gates
+	ProfileID *shared.ID
+
+	// Timeout - max execution time in seconds (default 3600 = 1h, max 86400 = 24h)
+	TimeoutSeconds int
+
 	// Status
 	Status Status
 
@@ -86,6 +92,7 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 		ScheduleTimezone: "UTC",
 		Tags:             []string{},
 		AgentPreference:  AgentPreferenceAuto,
+		TimeoutSeconds:   DefaultScanTimeoutSeconds,
 		Status:           StatusActive,
 		TotalRuns:        0,
 		SuccessfulRuns:   0,
@@ -125,6 +132,7 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 		ScheduleTimezone: "UTC",
 		Tags:             []string{},
 		AgentPreference:  AgentPreferenceAuto,
+		TimeoutSeconds:   DefaultScanTimeoutSeconds,
 		Status:           StatusActive,
 		TotalRuns:        0,
 		SuccessfulRuns:   0,
@@ -254,26 +262,34 @@ func (s *Scan) computeNextRunAt() {
 }
 
 // calculateNextRun computes the next run time based on schedule.
+// Honors ScheduleTimezone — schedule_time is interpreted in the configured timezone,
+// and cron expressions are evaluated in the same timezone.
 func (s *Scan) calculateNextRun() *time.Time {
 	if s.ScheduleType == ScheduleManual {
 		return nil
 	}
 
-	now := time.Now()
+	// Resolve timezone (default to UTC on parse failure to avoid silent skew)
+	loc, err := time.LoadLocation(s.ScheduleTimezone)
+	if err != nil || loc == nil {
+		loc = time.UTC
+	}
+
+	now := time.Now().In(loc)
 	var next time.Time
 
 	switch s.ScheduleType {
 	case ScheduleDaily:
-		next = now.Add(24 * time.Hour)
+		next = nextAtTimeOfDay(now, s.ScheduleTime, 1)
 	case ScheduleWeekly:
-		next = now.Add(7 * 24 * time.Hour)
+		next = nextAtWeekday(now, s.ScheduleDay, s.ScheduleTime)
 	case ScheduleMonthly:
-		next = now.AddDate(0, 1, 0)
+		next = nextAtDayOfMonth(now, s.ScheduleDay, s.ScheduleTime)
 	case ScheduleCrontab:
-		// Parse cron expression using robfig/cron
+		// Parse cron expression with timezone-aware schedule
 		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		schedule, err := parser.Parse(s.ScheduleCron)
-		if err != nil {
+		schedule, parseErr := parser.Parse(s.ScheduleCron)
+		if parseErr != nil {
 			// Fallback to 24 hours if parsing fails
 			next = now.Add(24 * time.Hour)
 		} else {
@@ -283,7 +299,59 @@ func (s *Scan) calculateNextRun() *time.Time {
 		return nil
 	}
 
-	return &next
+	// Convert back to UTC for storage consistency
+	utc := next.UTC()
+	return &utc
+}
+
+// nextAtTimeOfDay returns the next occurrence of the given time-of-day, advancing
+// at least dayOffset days from `now` (1 = tomorrow if today's slot already passed).
+func nextAtTimeOfDay(now time.Time, t *time.Time, _ int) time.Time {
+	hour, minute := 0, 0
+	if t != nil {
+		hour = t.Hour()
+		minute = t.Minute()
+	}
+	candidate := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+	if !candidate.After(now) {
+		candidate = candidate.AddDate(0, 0, 1)
+	}
+	return candidate
+}
+
+// nextAtWeekday returns the next occurrence of the given weekday at the given time-of-day.
+func nextAtWeekday(now time.Time, dayOfWeek *int, t *time.Time) time.Time {
+	candidate := nextAtTimeOfDay(now, t, 0)
+	if dayOfWeek == nil {
+		return candidate.AddDate(0, 0, 7)
+	}
+	target := time.Weekday(*dayOfWeek)
+	for candidate.Weekday() != target {
+		candidate = candidate.AddDate(0, 0, 1)
+	}
+	if !candidate.After(now) {
+		candidate = candidate.AddDate(0, 0, 7)
+	}
+	return candidate
+}
+
+// nextAtDayOfMonth returns the next occurrence of the given day-of-month at the given time-of-day.
+func nextAtDayOfMonth(now time.Time, dayOfMonth *int, t *time.Time) time.Time {
+	hour, minute := 0, 0
+	if t != nil {
+		hour = t.Hour()
+		minute = t.Minute()
+	}
+	day := 1
+	if dayOfMonth != nil {
+		day = *dayOfMonth
+	}
+	// Try this month first
+	candidate := time.Date(now.Year(), now.Month(), day, hour, minute, 0, 0, now.Location())
+	if !candidate.After(now) {
+		candidate = candidate.AddDate(0, 1, 0)
+	}
+	return candidate
 }
 
 // CalculateNextRunAt returns the next scheduled run time.
@@ -313,6 +381,26 @@ func (s *Scan) SetAgentPreference(pref AgentPreference) {
 		pref = AgentPreferenceAuto
 	}
 	s.AgentPreference = pref
+	s.UpdatedAt = time.Now()
+}
+
+// SetProfileID links the scan to a scan profile (for tool configs and quality gates).
+// Pass nil to unlink.
+func (s *Scan) SetProfileID(profileID *shared.ID) {
+	s.ProfileID = profileID
+	s.UpdatedAt = time.Now()
+}
+
+// SetTimeoutSeconds sets the maximum execution time in seconds.
+// If <= 0, defaults to DefaultScanTimeoutSeconds. Capped at MaxScanTimeoutSeconds.
+func (s *Scan) SetTimeoutSeconds(seconds int) {
+	if seconds <= 0 {
+		seconds = DefaultScanTimeoutSeconds
+	}
+	if seconds > MaxScanTimeoutSeconds {
+		seconds = MaxScanTimeoutSeconds
+	}
+	s.TimeoutSeconds = seconds
 	s.UpdatedAt = time.Now()
 }
 
@@ -482,6 +570,8 @@ func (s *Scan) Clone(newName string) *Scan {
 		Tags:              make([]string, len(s.Tags)),
 		RunOnTenantRunner: s.RunOnTenantRunner,
 		AgentPreference:   s.AgentPreference,
+		ProfileID:         s.ProfileID,
+		TimeoutSeconds:    s.TimeoutSeconds,
 		Status:            StatusActive,
 		TotalRuns:         0,
 		SuccessfulRuns:    0,

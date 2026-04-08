@@ -43,3 +43,11 @@ const (
 	// AgentPreferencePlatform only uses platform agents.
 	AgentPreferencePlatform AgentPreference = "platform"
 )
+
+// Timeout constants for scan execution.
+const (
+	// DefaultScanTimeoutSeconds is the default scan timeout (1 hour).
+	DefaultScanTimeoutSeconds = 3600
+	// MaxScanTimeoutSeconds is the maximum allowed scan timeout (24 hours).
+	MaxScanTimeoutSeconds = 86400
+)
