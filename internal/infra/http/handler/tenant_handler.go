@@ -875,7 +875,7 @@ func (h *TenantHandler) GetInvitation(w http.ResponseWriter, r *http.Request) {
 // This allows users to see what team they're invited to before logging in.
 func (h *TenantHandler) GetInvitationPreview(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
-	if token == "" || strings.ContainsRune(token, 0) || len(token) < 10 {
+	if token == "" || strings.ContainsRune(token, 0) || len(token) < 40 || len(token) > 100 {
 		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
 		return
 	}
