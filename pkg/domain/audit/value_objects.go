@@ -29,6 +29,8 @@ const (
 	ActionMemberAdded       Action = "member.added"
 	ActionMemberRemoved     Action = "member.removed"
 	ActionMemberRoleChanged Action = "member.role_changed"
+	ActionMemberSuspended   Action = "member.suspended"
+	ActionMemberReactivated Action = "member.reactivated"
 
 	// Invitation actions
 	ActionInvitationCreated  Action = "invitation.created"
@@ -230,6 +232,7 @@ func (a Action) IsValid() bool {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
+		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
 		ActionComponentCreated, ActionComponentUpdated, ActionComponentDeleted,
@@ -285,7 +288,8 @@ func (a Action) Category() string {
 	case ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated:
 		return "tenant"
-	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged:
+	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
+		ActionMemberSuspended, ActionMemberReactivated:
 		return "member"
 	case ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired:
 		return "invitation"

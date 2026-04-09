@@ -821,6 +821,48 @@ func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.I
 	}, nil
 }
 
+// GetUserSuspendedMemberships returns the suspended memberships for a user.
+// Mirrors GetUserMemberships but with the inverted status filter. Used by
+// the login flow so the UI can surface "your access to {tenant} is suspended"
+// instead of routing the user to onboarding when they have only-suspended
+// memberships left.
+func (r *TenantRepository) GetUserSuspendedMemberships(ctx context.Context, userID shared.ID) ([]tenant.UserMembership, error) {
+	query := `
+		SELECT
+			t.id,
+			t.slug,
+			t.name,
+			COALESCE(ver.role, m.role) as effective_role
+		FROM tenant_members m
+		INNER JOIN tenants t ON t.id = m.tenant_id
+		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.user_id = $1
+		  AND m.status = 'suspended'
+		ORDER BY m.suspended_at DESC NULLS LAST, m.joined_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, userID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get suspended memberships: %w", err)
+	}
+	defer rows.Close()
+
+	var memberships []tenant.UserMembership
+	for rows.Next() {
+		var m tenant.UserMembership
+		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role); err != nil {
+			return nil, fmt.Errorf("failed to scan suspended membership: %w", err)
+		}
+		memberships = append(memberships, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate suspended memberships: %w", err)
+	}
+
+	return memberships, nil
+}
+
 // GetUserMemberships returns lightweight membership data for JWT tokens.
 // Uses v_user_effective_role view to get the highest-priority role from user_roles table.
 // SECURITY: Suspended memberships are excluded so suspended users cannot exchange

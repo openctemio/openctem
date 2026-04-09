@@ -350,6 +350,10 @@ func (m *mockAuthTenantRepo) GetUserMemberships(_ context.Context, _ shared.ID) 
 	return m.userMemberships, nil
 }
 
+func (m *mockAuthTenantRepo) GetUserSuspendedMemberships(_ context.Context, _ shared.ID) ([]tenant.UserMembership, error) {
+	return nil, nil
+}
+
 func (m *mockAuthTenantRepo) GetMemberByEmail(_ context.Context, _ shared.ID, _ string) (*tenant.MemberWithUser, error) {
 	return nil, shared.ErrNotFound
 }

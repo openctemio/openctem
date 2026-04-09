@@ -177,6 +177,12 @@ type LoginResponse struct {
 	ExpiresIn    int64        `json:"expires_in"`
 	User         UserInfo     `json:"user"`
 	Tenants      []TenantInfo `json:"tenants"`
+	// SuspendedTenants is non-empty when the user has memberships that
+	// are currently suspended. The client uses this to show a clear
+	// "your access to X is suspended" notice instead of bouncing the
+	// user to /onboarding/create-team. Suspended tenants are NOT
+	// accessible — the user cannot pick one and exchange a token.
+	SuspendedTenants []TenantInfo `json:"suspended_tenants,omitempty"`
 }
 
 // UserInfo contains basic user information.
@@ -236,6 +242,21 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Convert suspended memberships (may be nil — that's fine, omitempty
+	// keeps the response clean for the typical case).
+	var suspendedTenants []TenantInfo
+	if len(result.SuspendedTenants) > 0 {
+		suspendedTenants = make([]TenantInfo, len(result.SuspendedTenants))
+		for i, t := range result.SuspendedTenants {
+			suspendedTenants[i] = TenantInfo{
+				ID:   t.TenantID,
+				Slug: t.TenantSlug,
+				Name: t.TenantName,
+				Role: t.Role,
+			}
+		}
+	}
+
 	// Calculate expires_in in seconds (for refresh token)
 	expiresIn := int64(h.authConfig.RefreshTokenDuration.Seconds())
 
@@ -260,7 +281,8 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			Email: result.User.Email(),
 			Name:  result.User.Name(),
 		},
-		Tenants: tenants,
+		Tenants:          tenants,
+		SuspendedTenants: suspendedTenants,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
