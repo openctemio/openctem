@@ -386,6 +386,10 @@ func registerAssetRelationshipRoutes(
 	router.Group("/api/v1/assets/{id}/relationships", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
 		r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
+		// Bulk create — fan-out from one source asset to many targets
+		// in a single round trip. Source asset validation runs ONCE
+		// for the whole batch instead of per-item.
+		r.POST("/batch", h.BatchCreate, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 
 	// Standalone relationship routes (direct CRUD by relationship ID

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -49,6 +50,209 @@ type UpdateRelationshipInput struct {
 	ImpactWeight *int     `json:"impact_weight" validate:"omitempty,min=1,max=10"`
 	Tags         []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
 	MarkVerified bool     `json:"mark_verified"`
+}
+
+// =============================================================================
+// Batch creation
+// =============================================================================
+
+// BatchCreateRelationshipInput is the per-item payload for the batch
+// create endpoint. The TenantID and SourceAssetID are NOT here — the
+// service takes them once for the whole batch and reuses for every
+// item, which is the entire point of the batch endpoint.
+type BatchCreateRelationshipInput struct {
+	TargetAssetID   string   `validate:"required,uuid"`
+	Type            string   `validate:"required"`
+	Description     string   `validate:"max=1000"`
+	Confidence      string   `validate:"omitempty"`
+	DiscoveryMethod string   `validate:"omitempty"`
+	ImpactWeight    *int     `validate:"omitempty,min=1,max=10"`
+	Tags            []string `validate:"omitempty,max=20,dive,max=50"`
+}
+
+// BatchCreateRelationshipResultStatus enumerates the possible outcomes
+// for one item in a batch create call.
+type BatchCreateRelationshipResultStatus string
+
+const (
+	BatchCreateStatusCreated   BatchCreateRelationshipResultStatus = "created"
+	BatchCreateStatusDuplicate BatchCreateRelationshipResultStatus = "duplicate"
+	BatchCreateStatusError     BatchCreateRelationshipResultStatus = "error"
+)
+
+// BatchCreateRelationshipResultItem is one slot in the batch response.
+// `Index` matches the position of the corresponding input in the
+// request, so the frontend can map results back to target names
+// without re-fetching anything.
+type BatchCreateRelationshipResultItem struct {
+	Index          int                                  `json:"index"`
+	Status         BatchCreateRelationshipResultStatus  `json:"status"`
+	TargetAssetID  string                               `json:"target_asset_id"`
+	RelationshipID string                               `json:"relationship_id,omitempty"`
+	Error          string                               `json:"error,omitempty"`
+}
+
+// BatchCreateRelationshipResult is the aggregate response.
+type BatchCreateRelationshipResult struct {
+	Results    []BatchCreateRelationshipResultItem `json:"results"`
+	CreatedN   int                                 `json:"created"`
+	DuplicateN int                                 `json:"duplicates"`
+	ErrorN     int                                 `json:"errors"`
+	TotalN     int                                 `json:"total"`
+}
+
+// CreateRelationshipBatch creates many relationships from one source
+// asset in a single call. The source asset and tenant are validated
+// ONCE for the whole batch (instead of per-item like the singleton
+// CreateRelationship), and each item's outcome is reported separately
+// so the caller can produce a per-target success/failure UI.
+//
+// Semantics intentionally match Promise.allSettled on the frontend:
+// a per-item failure does NOT abort the rest of the batch. The whole
+// thing returns 200 with a results array even if every item failed —
+// the caller decides what to do based on the per-item statuses.
+//
+// This is what the frontend Add Relationship dialog calls when the
+// user multi-selects targets. It replaces the previous N parallel
+// POSTs at the cost of one slightly bigger response.
+func (s *AssetRelationshipService) CreateRelationshipBatch(
+	ctx context.Context,
+	tenantID, sourceAssetID string,
+	items []BatchCreateRelationshipInput,
+) (*BatchCreateRelationshipResult, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	parsedSourceID, err := shared.IDFromString(sourceAssetID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid source asset ID", shared.ErrValidation)
+	}
+
+	// Validate the source asset ONCE for the whole batch — every item
+	// shares it. This is the primary efficiency win vs N singleton calls.
+	if _, err := s.assetRepo.GetByID(ctx, parsedTenantID, parsedSourceID); err != nil {
+		return nil, fmt.Errorf("source asset: %w", err)
+	}
+
+	result := &BatchCreateRelationshipResult{
+		Results: make([]BatchCreateRelationshipResultItem, 0, len(items)),
+		TotalN:  len(items),
+	}
+
+	for i, item := range items {
+		entry := BatchCreateRelationshipResultItem{
+			Index:         i,
+			TargetAssetID: item.TargetAssetID,
+		}
+
+		// Per-item failure paths bail out via this closure so we can
+		// keep the loop body flat. Each `fail` updates the entry and
+		// appends — we never `continue` past it.
+		fail := func(status BatchCreateRelationshipResultStatus, msg string) {
+			entry.Status = status
+			entry.Error = msg
+			result.Results = append(result.Results, entry)
+			switch status {
+			case BatchCreateStatusDuplicate:
+				result.DuplicateN++
+			case BatchCreateStatusError:
+				result.ErrorN++
+			}
+		}
+
+		// Parse + validate target ID
+		parsedTargetID, perr := shared.IDFromString(item.TargetAssetID)
+		if perr != nil {
+			fail(BatchCreateStatusError, "invalid target asset ID")
+			continue
+		}
+
+		// Validate relationship type
+		relType, perr := asset.ParseRelationshipType(item.Type)
+		if perr != nil {
+			fail(BatchCreateStatusError, perr.Error())
+			continue
+		}
+
+		// Verify the target asset belongs to the tenant
+		if _, gerr := s.assetRepo.GetByID(ctx, parsedTenantID, parsedTargetID); gerr != nil {
+			fail(BatchCreateStatusError, "target asset not found")
+			continue
+		}
+
+		// Placement mutex — same rule the singleton path enforces.
+		if relType == asset.RelTypeRunsOn || relType == asset.RelTypeDeployedTo {
+			conflictingType := asset.RelTypeDeployedTo
+			if relType == asset.RelTypeDeployedTo {
+				conflictingType = asset.RelTypeRunsOn
+			}
+			exists, eerr := s.relRepo.Exists(ctx, parsedTenantID, parsedSourceID, parsedTargetID, conflictingType)
+			if eerr != nil {
+				fail(BatchCreateStatusError, "failed to check placement mutex")
+				continue
+			}
+			if exists {
+				fail(BatchCreateStatusDuplicate,
+					fmt.Sprintf("a %q relationship already exists between these assets", conflictingType))
+				continue
+			}
+		}
+
+		// Build the domain entity
+		rel, nerr := asset.NewRelationship(parsedTenantID, parsedSourceID, parsedTargetID, relType)
+		if nerr != nil {
+			fail(BatchCreateStatusError, nerr.Error())
+			continue
+		}
+		if item.Description != "" {
+			rel.SetDescription(item.Description)
+		}
+		if item.Confidence != "" {
+			confidence, cerr := asset.ParseRelationshipConfidence(item.Confidence)
+			if cerr != nil {
+				fail(BatchCreateStatusError, cerr.Error())
+				continue
+			}
+			_ = rel.SetConfidence(confidence)
+		}
+		if item.DiscoveryMethod != "" {
+			method, mderr := asset.ParseRelationshipDiscoveryMethod(item.DiscoveryMethod)
+			if mderr != nil {
+				fail(BatchCreateStatusError, mderr.Error())
+				continue
+			}
+			_ = rel.SetDiscoveryMethod(method)
+		}
+		if item.ImpactWeight != nil {
+			if iwerr := rel.SetImpactWeight(*item.ImpactWeight); iwerr != nil {
+				fail(BatchCreateStatusError, iwerr.Error())
+				continue
+			}
+		}
+		if item.Tags != nil {
+			rel.SetTags(item.Tags)
+		}
+
+		// Persist. Map the unique-violation error to a duplicate
+		// status so the user sees "already related" not "internal
+		// error" when picking a pair that's already in the table.
+		if perr := s.relRepo.Create(ctx, rel); perr != nil {
+			if errors.Is(perr, shared.ErrAlreadyExists) {
+				fail(BatchCreateStatusDuplicate, "a relationship of this type already exists between these assets")
+				continue
+			}
+			fail(BatchCreateStatusError, perr.Error())
+			continue
+		}
+
+		entry.Status = BatchCreateStatusCreated
+		entry.RelationshipID = rel.ID().String()
+		result.Results = append(result.Results, entry)
+		result.CreatedN++
+	}
+
+	return result, nil
 }
 
 // CreateRelationship creates a new relationship between two assets.

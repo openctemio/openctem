@@ -68,6 +68,30 @@ type CreateRelationshipRequest struct {
 	Tags            []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
 }
 
+// BatchCreateRelationshipItem is one entry in a batch create body.
+// Note: NO `source_asset_id` here — the source comes from the URL
+// path (`/assets/{id}/relationships/batch`) and is shared across the
+// whole batch.
+type BatchCreateRelationshipItem struct {
+	Type            string   `json:"type" validate:"required"`
+	TargetAssetID   string   `json:"target_asset_id" validate:"required,uuid"`
+	Description     string   `json:"description" validate:"max=1000"`
+	Confidence      string   `json:"confidence" validate:"omitempty"`
+	DiscoveryMethod string   `json:"discovery_method" validate:"omitempty"`
+	ImpactWeight    *int     `json:"impact_weight" validate:"omitempty,min=1,max=10"`
+	Tags            []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+}
+
+// BatchCreateRelationshipRequest is the body of POST
+// /api/v1/assets/{id}/relationships/batch.
+type BatchCreateRelationshipRequest struct {
+	// Hard cap on items per batch — prevents abuse via giant payloads
+	// and matches the validator's `dive` limit. The frontend's
+	// "Select all visible" only ever offers up to PICKER_PAGE_SIZE
+	// (50) items, so 100 is comfortable headroom.
+	Items []BatchCreateRelationshipItem `json:"items" validate:"required,min=1,max=100,dive"`
+}
+
 // UpdateRelationshipRequest represents the request to update a relationship.
 type UpdateRelationshipRequest struct {
 	Description  *string  `json:"description" validate:"omitempty,max=1000"`
@@ -263,6 +287,60 @@ func (h *AssetRelationshipHandler) Delete(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// BatchCreate handles POST /api/v1/assets/{id}/relationships/batch
+//
+// Bulk-creates relationships from one source asset to many targets.
+// The source asset is taken from the URL path and validated ONCE for
+// the whole batch (rather than once per item like the singleton path),
+// which is why this endpoint exists. Per-item failures (invalid type,
+// target not found, duplicate) do NOT abort the batch — every item
+// gets a result entry with its own status, mirroring frontend
+// Promise.allSettled semantics.
+//
+// Always returns 200 with a results array, even if every item failed.
+// The caller decides what to do based on per-item statuses.
+func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	pathAssetID := chi.URLParam(r, "id")
+
+	var req BatchCreateRelationshipRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	// Translate the wire DTOs to service inputs.
+	items := make([]app.BatchCreateRelationshipInput, 0, len(req.Items))
+	for _, w := range req.Items {
+		items = append(items, app.BatchCreateRelationshipInput{
+			TargetAssetID:   w.TargetAssetID,
+			Type:            w.Type,
+			Description:     w.Description,
+			Confidence:      w.Confidence,
+			DiscoveryMethod: w.DiscoveryMethod,
+			ImpactWeight:    w.ImpactWeight,
+			Tags:            w.Tags,
+		})
+	}
+
+	result, err := h.service.CreateRelationshipBatch(r.Context(), tenantID, pathAssetID, items)
+	if err != nil {
+		// Whole-batch failure (bad tenant, missing source asset, etc).
+		// Per-item failures are reported inside the result, not here.
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 // UsageStats handles GET /api/v1/relationships/usage-stats
