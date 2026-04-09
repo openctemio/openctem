@@ -35,6 +35,12 @@ type RelationshipRepository interface {
 	// CreateBatchIgnoreConflicts inserts multiple relationships, silently skipping duplicates.
 	// Returns the number of relationships actually created (excluding conflicts).
 	CreateBatchIgnoreConflicts(ctx context.Context, rels []*Relationship) (int, error)
+
+	// CountByType returns the count of relationships per type for a tenant.
+	// Used by the usage-stats endpoint so admins can see which relationship
+	// types are actually being used and trim or extend the registry
+	// based on real data instead of guessing.
+	CountByType(ctx context.Context, tenantID shared.ID) (map[RelationshipType]int64, error)
 }
 
 // RelationshipFilter defines filtering options for relationship queries.

@@ -185,6 +185,17 @@ func (m *MockRelationshipRepository) CreateBatchIgnoreConflicts(_ context.Contex
 	return len(rels), nil
 }
 
+// CountByType returns per-type relationship counts. The mock implementation
+// walks the in-memory relationships map and groups by type — used by the
+// usage-stats endpoint tests.
+func (m *MockRelationshipRepository) CountByType(_ context.Context, _ shared.ID) (map[asset.RelationshipType]int64, error) {
+	out := make(map[asset.RelationshipType]int64)
+	for _, rel := range m.relationships {
+		out[rel.Type()]++
+	}
+	return out, nil
+}
+
 // AddRelationshipWithAssets adds a pre-built RelationshipWithAssets to the mock store.
 func (m *MockRelationshipRepository) AddRelationshipWithAssets(rwa *asset.RelationshipWithAssets) {
 	m.relationships[rwa.Relationship.ID().String()] = rwa.Relationship
@@ -772,20 +783,22 @@ func TestAssetRelationshipService_AllRelationshipTypes(t *testing.T) {
 		{"deployed_to", "deployed_to"},
 		{"contains", "contains"},
 		{"exposes", "exposes"},
-		{"member_of", "member_of"},
 		{"resolves_to", "resolves_to"},
+		{"cname_of", "cname_of"},
 		// Attack Path Analysis
 		{"depends_on", "depends_on"},
+		{"peer_of", "peer_of"},
+		{"replicates_to", "replicates_to"},
 		{"sends_data_to", "sends_data_to"},
 		{"stores_data_in", "stores_data_in"},
 		{"authenticates_to", "authenticates_to"},
 		{"granted_to", "granted_to"},
+		{"has_access_to", "has_access_to"},
 		{"load_balances", "load_balances"},
-		// Control & Ownership
+		// Control & Observability
 		{"protected_by", "protected_by"},
 		{"monitors", "monitors"},
 		{"manages", "manages"},
-		{"owned_by", "owned_by"},
 	}
 
 	for _, tc := range allTypes {
@@ -816,9 +829,12 @@ func TestAssetRelationshipService_AllRelationshipTypes(t *testing.T) {
 		})
 	}
 
-	// Verify exactly 16 types tested
-	if len(allTypes) != 16 {
-		t.Errorf("expected 16 relationship types, got %d", len(allTypes))
+	// Verify the test list matches the canonical registry. The number
+	// is intentionally derived from `asset.AllRelationshipTypes()` so
+	// adding/removing types in the YAML registry only requires
+	// updating `allTypes` above — not also touching this assertion.
+	if len(allTypes) != len(asset.AllRelationshipTypes()) {
+		t.Errorf("expected %d relationship types, got %d", len(asset.AllRelationshipTypes()), len(allTypes))
 	}
 }
 
@@ -1133,7 +1149,7 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeOwnedBy)
+		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeContains)
 		relRepo.AddRelationshipWithAssets(rwa)
 
 		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
@@ -1698,7 +1714,7 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeMemberOf)
+		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeContains)
 		relRepo.AddRelationshipWithAssets(rwa)
 
 		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)

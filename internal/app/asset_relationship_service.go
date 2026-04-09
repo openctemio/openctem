@@ -256,3 +256,56 @@ func (s *AssetRelationshipService) ListAssetRelationships(
 
 	return s.relRepo.ListByAsset(ctx, parsedTenantID, parsedAssetID, filter)
 }
+
+// RelationshipTypeUsage holds usage stats for a single relationship type.
+type RelationshipTypeUsage struct {
+	ID          string `json:"id"`
+	Direct      string `json:"direct"`
+	Inverse     string `json:"inverse"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	// Count is the number of relationships of this type that exist
+	// for the tenant. 0 means the type is registered but unused —
+	// a candidate for removal from the registry.
+	Count int64 `json:"count"`
+}
+
+// GetRelationshipTypeUsage returns counts per relationship type for a
+// tenant joined with the metadata from the generated registry. The
+// result includes EVERY registered type (zero-count entries are
+// preserved) so admins can see which types are unused and prune the
+// registry based on real data instead of guessing.
+func (s *AssetRelationshipService) GetRelationshipTypeUsage(
+	ctx context.Context,
+	tenantID string,
+) ([]RelationshipTypeUsage, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+
+	counts, err := s.relRepo.CountByType(ctx, parsedTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("count relationships by type: %w", err)
+	}
+
+	// Walk every type in the registry so unused types appear with
+	// count=0. The order is the YAML declaration order which keeps
+	// the response stable across calls.
+	out := make([]RelationshipTypeUsage, 0, len(asset.AllRelationshipTypes()))
+	for _, t := range asset.AllRelationshipTypes() {
+		meta, ok := asset.RelationshipTypeRegistry[t]
+		if !ok {
+			continue
+		}
+		out = append(out, RelationshipTypeUsage{
+			ID:          string(t),
+			Direct:      meta.Direct,
+			Inverse:     meta.Inverse,
+			Description: meta.Description,
+			Category:    meta.Category,
+			Count:       counts[t],
+		})
+	}
+	return out, nil
+}

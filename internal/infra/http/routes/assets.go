@@ -388,8 +388,12 @@ func registerAssetRelationshipRoutes(
 		r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 
-	// Standalone relationship routes (direct CRUD by relationship ID)
+	// Standalone relationship routes (direct CRUD by relationship ID
+	// + tenant-wide usage stats endpoint).
 	router.Group("/api/v1/relationships", func(r Router) {
+		// usage-stats must be registered before /{relationshipId} so chi
+		// matches the literal path before the param pattern.
+		r.GET("/usage-stats", h.UsageStats, middleware.Require(permission.AssetsRead))
 		r.GET("/{relationshipId}", h.Get, middleware.Require(permission.AssetsRead))
 		r.PUT("/{relationshipId}", h.Update, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{relationshipId}", h.Delete, middleware.Require(permission.AssetsDelete))

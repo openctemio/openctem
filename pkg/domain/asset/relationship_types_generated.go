@@ -17,18 +17,20 @@ const (
 	RelTypeDeployedTo RelationshipType = "deployed_to"
 	RelTypeContains RelationshipType = "contains"
 	RelTypeExposes RelationshipType = "exposes"
-	RelTypeMemberOf RelationshipType = "member_of"
 	RelTypeResolvesTo RelationshipType = "resolves_to"
+	RelTypeCnameOf RelationshipType = "cname_of"
 	RelTypeDependsOn RelationshipType = "depends_on"
+	RelTypePeerOf RelationshipType = "peer_of"
+	RelTypeReplicatesTo RelationshipType = "replicates_to"
 	RelTypeSendsDataTo RelationshipType = "sends_data_to"
 	RelTypeStoresDataIn RelationshipType = "stores_data_in"
 	RelTypeAuthenticatesTo RelationshipType = "authenticates_to"
 	RelTypeGrantedTo RelationshipType = "granted_to"
+	RelTypeHasAccessTo RelationshipType = "has_access_to"
 	RelTypeLoadBalances RelationshipType = "load_balances"
 	RelTypeProtectedBy RelationshipType = "protected_by"
 	RelTypeMonitors RelationshipType = "monitors"
 	RelTypeManages RelationshipType = "manages"
-	RelTypeOwnedBy RelationshipType = "owned_by"
 )
 
 // allRelationshipTypesGenerated is the canonical list of every valid
@@ -38,18 +40,20 @@ var allRelationshipTypesGenerated = []RelationshipType{
 	RelTypeDeployedTo,
 	RelTypeContains,
 	RelTypeExposes,
-	RelTypeMemberOf,
 	RelTypeResolvesTo,
+	RelTypeCnameOf,
 	RelTypeDependsOn,
+	RelTypePeerOf,
+	RelTypeReplicatesTo,
 	RelTypeSendsDataTo,
 	RelTypeStoresDataIn,
 	RelTypeAuthenticatesTo,
 	RelTypeGrantedTo,
+	RelTypeHasAccessTo,
 	RelTypeLoadBalances,
 	RelTypeProtectedBy,
 	RelTypeMonitors,
 	RelTypeManages,
-	RelTypeOwnedBy,
 }
 
 // RelationshipTypeMetadata holds the human-readable labels and the
@@ -117,31 +121,35 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 		Category:    "attack_surface_mapping",
 		Direct:      "Contains",
 		Inverse:     "Contained By",
-		Description: "Hierarchical parent-child relationship (org → app → service; cluster → namespace).",
+		Description: "Hierarchical parent-child relationship. The single direction we use for ALL hierarchical edges (cluster→workload, host→container, cloud_account→host, etc). Always source = parent, target = child. Do NOT model the inverse as a separate edge.",
 		Constraints: []RelationshipConstraint{
 			{
-				Sources: []string{ "k8s_cluster" },
-				Targets: []string{ "k8s_workload" },
-			},
-			{
-				Sources: []string{ "api_collection", "api" },
-				Targets: []string{ "api_endpoint" },
-			},
-			{
-				Sources: []string{ "host" },
-				Targets: []string{ "container", "service", "database" },
-			},
-			{
-				Sources: []string{ "repository" },
-				Targets: []string{ "container_image" },
+				Sources: []string{ "cloud_account" },
+				Targets: []string{ "host", "database", "k8s_cluster", "network", "storage", "serverless", "load_balancer" },
 			},
 			{
 				Sources: []string{ "network" },
 				Targets: []string{ "host", "cloud_account", "load_balancer" },
 			},
 			{
-				Sources: []string{ "cloud_account" },
-				Targets: []string{ "host", "database", "k8s_cluster", "network", "storage", "serverless" },
+				Sources: []string{ "host" },
+				Targets: []string{ "container", "service", "database" },
+			},
+			{
+				Sources: []string{ "k8s_cluster" },
+				Targets: []string{ "k8s_workload", "kubernetes_namespace" },
+			},
+			{
+				Sources: []string{ "k8s_workload" },
+				Targets: []string{ "container" },
+			},
+			{
+				Sources: []string{ "api_collection", "api" },
+				Targets: []string{ "api_endpoint" },
+			},
+			{
+				Sources: []string{ "repository" },
+				Targets: []string{ "container_image" },
 			},
 		},
 	},
@@ -166,33 +174,29 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 			},
 		},
 	},
-	RelTypeMemberOf: {
-		ID:          RelTypeMemberOf,
-		Category:    "attack_surface_mapping",
-		Direct:      "Member Of",
-		Inverse:     "Has Member",
-		Description: "Membership in a group or collection (user → group; host → cluster; namespace → cluster).",
-		Constraints: []RelationshipConstraint{
-			{
-				Sources: []string{ "host", "container", "k8s_workload" },
-				Targets: []string{ "k8s_cluster", "network" },
-			},
-			{
-				Sources: []string{ "service", "api" },
-				Targets: []string{ "network" },
-			},
-		},
-	},
 	RelTypeResolvesTo: {
 		ID:          RelTypeResolvesTo,
 		Category:    "attack_surface_mapping",
 		Direct:      "Resolves To",
 		Inverse:     "Resolved By",
-		Description: "DNS resolution (domain/subdomain → IP/CDN/load balancer).",
+		Description: "Literal DNS A/AAAA resolution — a domain resolves to an IP record or a load balancer that owns that IP. STRICT semantic: target MUST be the network endpoint, not the server that happens to own the IP. For \"this domain leads to this server / website\" use Exposes. For subdomain → parent domain or CNAME aliases use Cname Of.",
 		Constraints: []RelationshipConstraint{
 			{
 				Sources: []string{ "domain" },
-				Targets: []string{ "ip_address", "load_balancer", "cloud_account", "host" },
+				Targets: []string{ "ip_address", "load_balancer" },
+			},
+		},
+	},
+	RelTypeCnameOf: {
+		ID:          RelTypeCnameOf,
+		Category:    "attack_surface_mapping",
+		Direct:      "CNAME Of",
+		Inverse:     "Has CNAME",
+		Description: "DNS aliasing — this name is a CNAME for that name. Also used for subdomain → parent domain logical relationships. Distinct from Resolves To which captures the final IP/host record.",
+		Constraints: []RelationshipConstraint{
+			{
+				Sources: []string{ "domain" },
+				Targets: []string{ "domain" },
 			},
 		},
 	},
@@ -201,7 +205,7 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 		Category:    "attack_path_analysis",
 		Direct:      "Depends On",
 		Inverse:     "Used By",
-		Description: "A needs B to function (service → database; web_app → api).",
+		Description: "A needs B to function (service → database; web_app → api). Use for hard runtime dependencies, NOT for peer relationships (use Peer Of) or replication (use Replicates To).",
 		Constraints: []RelationshipConstraint{
 			{
 				Sources: []string{ "service", "api", "website" },
@@ -217,20 +221,50 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 			},
 		},
 	},
+	RelTypePeerOf: {
+		ID:          RelTypePeerOf,
+		Category:    "attack_path_analysis",
+		Direct:      "Peer Of",
+		Inverse:     "Peer Of",
+		Description: "Symmetric relationship between equal-rank assets — sibling services in a cluster, HA pairs, leader/follower nodes. Pick EITHER asset as source; the inverse direction is implied. Do NOT model the same pair twice.",
+		Constraints: []RelationshipConstraint{
+			{
+				Sources: []string{ "service", "api" },
+				Targets: []string{ "service", "api" },
+			},
+			{
+				Sources: []string{ "database" },
+				Targets: []string{ "database" },
+			},
+			{
+				Sources: []string{ "host", "container" },
+				Targets: []string{ "host", "container" },
+			},
+		},
+	},
+	RelTypeReplicatesTo: {
+		ID:          RelTypeReplicatesTo,
+		Category:    "attack_path_analysis",
+		Direct:      "Replicates To",
+		Inverse:     "Replicates From",
+		Description: "Data replication relationship — primary database streams to replica, log shipper writes to remote, etc. Different from Sends Data To which is application-level data flow; replication is infrastructure-level state copy.",
+		Constraints: []RelationshipConstraint{
+			{
+				Sources: []string{ "database", "storage" },
+				Targets: []string{ "database", "storage" },
+			},
+		},
+	},
 	RelTypeSendsDataTo: {
 		ID:          RelTypeSendsDataTo,
 		Category:    "attack_path_analysis",
 		Direct:      "Sends Data To",
 		Inverse:     "Receives Data From",
-		Description: "Data flow in-transit (service → service; producer → queue).",
+		Description: "Application data flow in-transit (service → service; producer → queue). For infrastructure replication use Replicates To.",
 		Constraints: []RelationshipConstraint{
 			{
 				Sources: []string{ "service", "api", "website", "mobile" },
 				Targets: []string{ "database", "api", "service", "cloud_account" },
-			},
-			{
-				Sources: []string{ "database" },
-				Targets: []string{ "database" },
 			},
 		},
 	},
@@ -273,11 +307,24 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 		Category:    "attack_path_analysis",
 		Direct:      "Granted To",
 		Inverse:     "Has Grant",
-		Description: "IAM privilege (role/policy → principal/resource).",
+		Description: "IAM grant — a credential/role/policy is granted TO a principal (user, service, machine identity). Use for \"who is allowed to use this credential\". For \"what does this principal have access to\" use Has Access To.",
 		Constraints: []RelationshipConstraint{
 			{
-				Sources: []string{ "credential", "service" },
-				Targets: []string{ "cloud_account", "database", "api", "service", "k8s_cluster" },
+				Sources: []string{ "credential" },
+				Targets: []string{ "iam_user", "iam_role", "service_account", "service" },
+			},
+		},
+	},
+	RelTypeHasAccessTo: {
+		ID:          RelTypeHasAccessTo,
+		Category:    "attack_path_analysis",
+		Direct:      "Has Access To",
+		Inverse:     "Accessed By",
+		Description: "IAM resource access — a principal/credential has been authorised to access a resource. The other half of the IAM model alongside Granted To. Use for \"what can this credential reach\".",
+		Constraints: []RelationshipConstraint{
+			{
+				Sources: []string{ "credential", "iam_user", "iam_role", "service_account", "service" },
+				Targets: []string{ "cloud_account", "database", "api", "service", "k8s_cluster", "storage" },
 			},
 		},
 	},
@@ -296,10 +343,10 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 	},
 	RelTypeProtectedBy: {
 		ID:          RelTypeProtectedBy,
-		Category:    "control_and_ownership",
+		Category:    "control_and_observability",
 		Direct:      "Protected By",
 		Inverse:     "Protects",
-		Description: "Security control (web_app → WAF; host → EDR; cloud → CSPM).",
+		Description: "Active security control that can block / mitigate / quarantine (WAF, EDR with prevention, IPS, CSPM with auto-remediation, runtime security agents). Use this when the tool can modify traffic/state, not just observe it. For pure observability use Monitors.",
 		Constraints: []RelationshipConstraint{
 			{
 				Sources: []string{ "website", "api", "service" },
@@ -317,10 +364,10 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 	},
 	RelTypeMonitors: {
 		ID:          RelTypeMonitors,
-		Category:    "control_and_ownership",
+		Category:    "control_and_observability",
 		Direct:      "Monitors",
 		Inverse:     "Monitored By",
-		Description: "Observability (SIEM/EDR/APM → asset).",
+		Description: "Passive observability — telemetry collection without blocking or modifying state (SIEM ingest, APM traces, log forwarding, vulnerability scanners). For tools that can take action use Protected By.",
 		Constraints: []RelationshipConstraint{
 			{
 				Sources: []string{ "service" },
@@ -330,10 +377,10 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 	},
 	RelTypeManages: {
 		ID:          RelTypeManages,
-		Category:    "control_and_ownership",
+		Category:    "control_and_observability",
 		Direct:      "Manages",
 		Inverse:     "Managed By",
-		Description: "Control-plane management (cloud_account/IAM → resource/workload).",
+		Description: "Control-plane management — the source asset has CRUD authority over the target (cloud account manages its resources, k8s cluster manages its workloads, IaC stack manages provisioned assets). Different from Contains which is structural hierarchy.",
 		Constraints: []RelationshipConstraint{
 			{
 				Sources: []string{ "cloud_account" },
@@ -342,19 +389,6 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 			{
 				Sources: []string{ "k8s_cluster" },
 				Targets: []string{ "k8s_workload", "container" },
-			},
-		},
-	},
-	RelTypeOwnedBy: {
-		ID:          RelTypeOwnedBy,
-		Category:    "control_and_ownership",
-		Direct:      "Owned By",
-		Inverse:     "Owns",
-		Description: "Accountability (asset → team/owner).",
-		Constraints: []RelationshipConstraint{
-			{
-				Sources: []string{ "domain", "website", "service", "repository", "cloud_account", "host", "database", "api", "mobile", "k8s_cluster" },
-				Targets: []string{ "service" },
 			},
 		},
 	},
@@ -370,5 +404,5 @@ type RelationshipCategory struct {
 var RelationshipCategories = []RelationshipCategory{
 	{ID: "attack_surface_mapping", Name: "Attack Surface Mapping"},
 	{ID: "attack_path_analysis", Name: "Attack Path Analysis"},
-	{ID: "control_and_ownership", Name: "Control & Ownership"},
+	{ID: "control_and_observability", Name: "Control & Observability"},
 }

@@ -265,6 +265,31 @@ func (h *AssetRelationshipHandler) Delete(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// UsageStats handles GET /api/v1/relationships/usage-stats
+//
+// Returns the per-type usage count for every relationship type in the
+// registry, joined with each type's display metadata. Used by tenant
+// admins to see which types are actually being used and prune the
+// registry based on real data instead of guesses. Types with count=0
+// are returned (so the response is "every type in the registry, with
+// its count").
+func (h *AssetRelationshipHandler) UsageStats(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	usage, err := h.service.GetRelationshipTypeUsage(r.Context(), tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data":  usage,
+		"total": len(usage),
+	})
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================

@@ -419,8 +419,12 @@ func (p *AssetProcessor) createSubdomainRelationships(
 			continue
 		}
 
-		// Create member_of relationship: subdomain → domain
-		rel, err := asset.NewRelationship(tenantID, subdomainAsset.ID(), parentAsset.ID(), asset.RelTypeMemberOf)
+		// Create `contains` relationship: parent_domain → subdomain.
+		// We use the canonical hierarchy direction (source = parent,
+		// target = child) — `member_of` was removed from the registry
+		// in favour of a single hierarchy direction. See
+		// configs/relationship-types.yaml for the design rationale.
+		rel, err := asset.NewRelationship(tenantID, parentAsset.ID(), subdomainAsset.ID(), asset.RelTypeContains)
 		if err != nil {
 			p.logger.Warn("failed to create subdomain relationship entity",
 				"subdomain", subdomainName,
@@ -430,7 +434,7 @@ func (p *AssetProcessor) createSubdomainRelationships(
 			continue
 		}
 
-		rel.SetDescription(fmt.Sprintf("Subdomain %s belongs to domain %s", subdomainName, rootDomain))
+		rel.SetDescription(fmt.Sprintf("Domain %s contains subdomain %s", rootDomain, subdomainName))
 		_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)
 
 		rels = append(rels, rel)

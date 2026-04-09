@@ -6,30 +6,53 @@
 # the platform supports. The Go enum, TypeScript union, label maps, and
 # constraint maps are GENERATED from this file by:
 #
-#     cd api && go run ./cmd/gen-relationships
+#     cd api && make generate-relationships
 #
 # Workflow when adding a new relationship type:
 #   1. Edit this file (add an entry under `types`)
-#   2. Run `make generate-relationships` (or the go run command above)
-#   3. Commit this file + the generated .go and .ts files together
+#   2. Run `make generate-relationships`
+#   3. Commit YAML + the two generated files together
 #
 # DO NOT edit the generated files directly — they will be overwritten.
 #
-# Why YAML and not Go/TS code as the source: a single declarative
-# config means new types can't drift between languages, and a future
-# version of the codegen could emit Python / OpenAPI / etc. without
-# touching this file.
+# -----------------------------------------------------------------------------
+# DESIGN NOTES — read before adding/removing types
+# -----------------------------------------------------------------------------
+#
+# 1. Hierarchy direction is `contains` (parent → child). We deliberately
+#    do NOT have `member_of` (child → parent). Pick one direction or
+#    your data ends up split between two equivalent representations.
+#
+# 2. `owned_by` is intentionally absent. Asset ownership lives in the
+#    `asset_owners` table (with primary/secondary/stakeholder/etc. via
+#    the proper RACI model) and is exposed by the Owners tab, NOT as
+#    a relationship edge.
+#
+# 3. The `category` field is used by the Add Relationship dialog to
+#    group the dropdown into sections. If you add a new type, set its
+#    category to one of the entries in `categories` below.
+#
+# 4. KNOWN LIMITATION on constraint enforcement: some asset types in
+#    the constraints below (`k8s_cluster`, `k8s_workload`, `container_image`,
+#    `api_collection`, `api_endpoint`, `identity_provider`, `compute`)
+#    are virtual frontend types — they don't exist as real `AssetType`
+#    enum values in the backend. The constraint table is therefore
+#    UI-side advisory only; the backend cannot enforce it. The only
+#    server-side rule we currently enforce is the runs_on/deployed_to
+#    placement mutex. To make constraints fully enforceable, either
+#    add those types as real `AssetType` enum values OR add an alias
+#    map here that resolves virtual types to base types at codegen time.
 # =============================================================================
 
-# Categories used to organise types in the UI dropdown.
+# Categories used to group types in the UI dropdown.
 # Display order is the order they appear here.
 categories:
   - id: attack_surface_mapping
     name: Attack Surface Mapping
   - id: attack_path_analysis
     name: Attack Path Analysis
-  - id: control_and_ownership
-    name: Control & Ownership
+  - id: control_and_observability
+    name: Control & Observability
 
 # Relationship types.
 #
@@ -44,11 +67,11 @@ categories:
 #                  Shown in the Add Relationship dialog so users know
 #                  which type to pick.
 #   constraints  — list of (sourceTypes, targetTypes) tuples. The UI
-#                  uses this to filter the picker; the backend uses it
-#                  for additional validation. Each tuple defines ONE
-#                  valid combination — the union of all tuples is the
-#                  full set of valid pairs for that relationship type.
+#                  uses this to filter the picker. Each tuple defines
+#                  ONE valid combination — the union of all tuples is
+#                  the full set of valid pairs for that relationship type.
 #                  Asset type IDs must match the ExtendedAssetType union.
+#                  See LIMITATION note above re: backend enforcement.
 
 types:
 
@@ -89,21 +112,29 @@ types:
     direct: Contains
     inverse: Contained By
     description: >-
-      Hierarchical parent-child relationship (org → app → service;
-      cluster → namespace).
+      Hierarchical parent-child relationship. The single direction we
+      use for ALL hierarchical edges (cluster→workload, host→container,
+      cloud_account→host, etc). Always source = parent, target = child.
+      Do NOT model the inverse as a separate edge.
     constraints:
-      - sources: [k8s_cluster]
-        targets: [k8s_workload]
-      - sources: [api_collection, api]
-        targets: [api_endpoint]
-      - sources: [host]
-        targets: [container, service, database]
-      - sources: [repository]
-        targets: [container_image]
+      # Cloud / infra hierarchy
+      - sources: [cloud_account]
+        targets: [host, database, k8s_cluster, network, storage, serverless, load_balancer]
       - sources: [network]
         targets: [host, cloud_account, load_balancer]
-      - sources: [cloud_account]
-        targets: [host, database, k8s_cluster, network, storage, serverless]
+      - sources: [host]
+        targets: [container, service, database]
+      # K8s hierarchy
+      - sources: [k8s_cluster]
+        targets: [k8s_workload, kubernetes_namespace]
+      - sources: [k8s_workload]
+        targets: [container]
+      # API hierarchy
+      - sources: [api_collection, api]
+        targets: [api_endpoint]
+      # Code hierarchy
+      - sources: [repository]
+        targets: [container_image]
 
   - id: exposes
     category: attack_surface_mapping
@@ -120,27 +151,32 @@ types:
       - sources: [load_balancer]
         targets: [api, service, website]
 
-  - id: member_of
-    category: attack_surface_mapping
-    direct: Member Of
-    inverse: Has Member
-    description: >-
-      Membership in a group or collection (user → group; host → cluster;
-      namespace → cluster).
-    constraints:
-      - sources: [host, container, k8s_workload]
-        targets: [k8s_cluster, network]
-      - sources: [service, api]
-        targets: [network]
-
   - id: resolves_to
     category: attack_surface_mapping
     direct: Resolves To
     inverse: Resolved By
-    description: DNS resolution (domain/subdomain → IP/CDN/load balancer).
+    description: >-
+      Literal DNS A/AAAA resolution — a domain resolves to an IP record
+      or a load balancer that owns that IP. STRICT semantic: target
+      MUST be the network endpoint, not the server that happens to own
+      the IP. For "this domain leads to this server / website" use
+      Exposes. For subdomain → parent domain or CNAME aliases use
+      Cname Of.
     constraints:
       - sources: [domain]
-        targets: [ip_address, load_balancer, cloud_account, host]
+        targets: [ip_address, load_balancer]
+
+  - id: cname_of
+    category: attack_surface_mapping
+    direct: CNAME Of
+    inverse: Has CNAME
+    description: >-
+      DNS aliasing — this name is a CNAME for that name. Also used for
+      subdomain → parent domain logical relationships. Distinct from
+      Resolves To which captures the final IP/host record.
+    constraints:
+      - sources: [domain]
+        targets: [domain]
 
   # ---- Attack Path Analysis ----------------------------------------------
 
@@ -148,7 +184,10 @@ types:
     category: attack_path_analysis
     direct: Depends On
     inverse: Used By
-    description: A needs B to function (service → database; web_app → api).
+    description: >-
+      A needs B to function (service → database; web_app → api). Use
+      for hard runtime dependencies, NOT for peer relationships
+      (use Peer Of) or replication (use Replicates To).
     constraints:
       - sources: [service, api, website]
         targets: [database, api, service, credential]
@@ -157,16 +196,46 @@ types:
       - sources: [mobile]
         targets: [api, service]
 
+  - id: peer_of
+    category: attack_path_analysis
+    direct: Peer Of
+    inverse: Peer Of
+    description: >-
+      Symmetric relationship between equal-rank assets — sibling
+      services in a cluster, HA pairs, leader/follower nodes. Pick
+      EITHER asset as source; the inverse direction is implied.
+      Do NOT model the same pair twice.
+    constraints:
+      - sources: [service, api]
+        targets: [service, api]
+      - sources: [database]
+        targets: [database]
+      - sources: [host, container]
+        targets: [host, container]
+
+  - id: replicates_to
+    category: attack_path_analysis
+    direct: Replicates To
+    inverse: Replicates From
+    description: >-
+      Data replication relationship — primary database streams to
+      replica, log shipper writes to remote, etc. Different from
+      Sends Data To which is application-level data flow; replication
+      is infrastructure-level state copy.
+    constraints:
+      - sources: [database, storage]
+        targets: [database, storage]
+
   - id: sends_data_to
     category: attack_path_analysis
     direct: Sends Data To
     inverse: Receives Data From
-    description: Data flow in-transit (service → service; producer → queue).
+    description: >-
+      Application data flow in-transit (service → service; producer
+      → queue). For infrastructure replication use Replicates To.
     constraints:
       - sources: [service, api, website, mobile]
         targets: [database, api, service, cloud_account]
-      - sources: [database]
-        targets: [database]  # replication
 
   - id: stores_data_in
     category: attack_path_analysis
@@ -194,10 +263,26 @@ types:
     category: attack_path_analysis
     direct: Granted To
     inverse: Has Grant
-    description: IAM privilege (role/policy → principal/resource).
+    description: >-
+      IAM grant — a credential/role/policy is granted TO a principal
+      (user, service, machine identity). Use for "who is allowed to
+      use this credential". For "what does this principal have access
+      to" use Has Access To.
     constraints:
-      - sources: [credential, service]
-        targets: [cloud_account, database, api, service, k8s_cluster]
+      - sources: [credential]
+        targets: [iam_user, iam_role, service_account, service]
+
+  - id: has_access_to
+    category: attack_path_analysis
+    direct: Has Access To
+    inverse: Accessed By
+    description: >-
+      IAM resource access — a principal/credential has been authorised
+      to access a resource. The other half of the IAM model alongside
+      Granted To. Use for "what can this credential reach".
+    constraints:
+      - sources: [credential, iam_user, iam_role, service_account, service]
+        targets: [cloud_account, database, api, service, k8s_cluster, storage]
 
   - id: load_balances
     category: attack_path_analysis
@@ -208,13 +293,25 @@ types:
       - sources: [load_balancer, service, cloud_account]
         targets: [host, k8s_workload, service, container]
 
-  # ---- Control & Ownership ----------------------------------------------
+  # ---- Control & Observability ------------------------------------------
+  #
+  # Note on monitors vs protected_by: many security tools (EDR, WAF,
+  # SIEM, CNAPP, …) do BOTH detection and prevention. We keep both
+  # types because the distinction is meaningful for compliance reports
+  # ("which assets have an active prevention control") but acknowledge
+  # the boundary is fuzzy. When in doubt, use protected_by for tools
+  # that can block/mitigate and monitors for read-only observability.
 
   - id: protected_by
-    category: control_and_ownership
+    category: control_and_observability
     direct: Protected By
     inverse: Protects
-    description: Security control (web_app → WAF; host → EDR; cloud → CSPM).
+    description: >-
+      Active security control that can block / mitigate / quarantine
+      (WAF, EDR with prevention, IPS, CSPM with auto-remediation,
+      runtime security agents). Use this when the tool can modify
+      traffic/state, not just observe it. For pure observability use
+      Monitors.
     constraints:
       - sources: [website, api, service]
         targets: [load_balancer, service]   # WAF, CDN as load_balancer/service
@@ -224,40 +321,36 @@ types:
         targets: [service]                  # CSPM, GuardDuty as service
 
   - id: monitors
-    category: control_and_ownership
+    category: control_and_observability
     direct: Monitors
     inverse: Monitored By
-    description: Observability (SIEM/EDR/APM → asset).
+    description: >-
+      Passive observability — telemetry collection without blocking
+      or modifying state (SIEM ingest, APM traces, log forwarding,
+      vulnerability scanners). For tools that can take action use
+      Protected By.
     constraints:
       - sources: [service]                  # SIEM, EDR, APM as service
-        targets: [host, k8s_cluster, cloud_account, api, service, database, network]
+        targets:
+          - host
+          - k8s_cluster
+          - cloud_account
+          - api
+          - service
+          - database
+          - network
 
   - id: manages
-    category: control_and_ownership
+    category: control_and_observability
     direct: Manages
     inverse: Managed By
-    description: Control-plane management (cloud_account/IAM → resource/workload).
+    description: >-
+      Control-plane management — the source asset has CRUD authority
+      over the target (cloud account manages its resources, k8s
+      cluster manages its workloads, IaC stack manages provisioned
+      assets). Different from Contains which is structural hierarchy.
     constraints:
       - sources: [cloud_account]
         targets: [host, database, k8s_cluster, network, load_balancer]
       - sources: [k8s_cluster]
         targets: [k8s_workload, container]
-
-  - id: owned_by
-    category: control_and_ownership
-    direct: Owned By
-    inverse: Owns
-    description: Accountability (asset → team/owner).
-    constraints:
-      - sources:
-          - domain
-          - website
-          - service
-          - repository
-          - cloud_account
-          - host
-          - database
-          - api
-          - mobile
-          - k8s_cluster
-        targets: [service]                  # team/owner represented as service type
