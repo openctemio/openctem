@@ -231,9 +231,13 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 
 // GetMembership retrieves a membership by user and tenant.
 // Role is fetched from v_user_effective_role view.
+// Status fields are populated so callers (e.g. RequireMembership middleware)
+// can enforce suspension on every request.
 func (r *TenantRepository) GetMembership(ctx context.Context, userID shared.ID, tenantID shared.ID) (*tenant.Membership, error) {
 	query := `
-		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at
+		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
+		       m.invited_by, m.joined_at,
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by
 		FROM tenant_members m
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1 AND m.tenant_id = $2
@@ -244,9 +248,12 @@ func (r *TenantRepository) GetMembership(ctx context.Context, userID shared.ID, 
 
 // GetMembershipByID retrieves a membership by ID.
 // Role is fetched from v_user_effective_role view.
+// Status fields are populated so the service layer can branch on suspension.
 func (r *TenantRepository) GetMembershipByID(ctx context.Context, id shared.ID) (*tenant.Membership, error) {
 	query := `
-		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at
+		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
+		       m.invited_by, m.joined_at,
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by
 		FROM tenant_members m
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.id = $1
@@ -807,6 +814,8 @@ func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.I
 
 // GetUserMemberships returns lightweight membership data for JWT tokens.
 // Uses v_user_effective_role view to get the highest-priority role from user_roles table.
+// SECURITY: Suspended memberships are excluded so suspended users cannot exchange
+// refresh tokens for tenant-scoped access tokens.
 func (r *TenantRepository) GetUserMemberships(ctx context.Context, userID shared.ID) ([]tenant.UserMembership, error) {
 	// Query using the effective role view (gets highest-hierarchy role from user_roles)
 	// Falls back to tenant_members.role if user_roles hasn't been synced yet
@@ -820,6 +829,7 @@ func (r *TenantRepository) GetUserMemberships(ctx context.Context, userID shared
 		INNER JOIN tenants t ON t.id = m.tenant_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1
+		  AND m.status = 'active'
 		ORDER BY m.joined_at DESC
 	`
 
@@ -1128,9 +1138,16 @@ func (r *TenantRepository) scanMembership(row *sql.Row) (*tenant.Membership, err
 		idStr, userIDStr, tenantIDStr, roleStr string
 		invitedByStr                           sql.NullString
 		joinedAt                               time.Time
+		statusStr                              string
+		suspendedAt                            sql.NullTime
+		suspendedByStr                         sql.NullString
 	)
 
-	err := row.Scan(&idStr, &userIDStr, &tenantIDStr, &roleStr, &invitedByStr, &joinedAt)
+	err := row.Scan(
+		&idStr, &userIDStr, &tenantIDStr, &roleStr,
+		&invitedByStr, &joinedAt,
+		&statusStr, &suspendedAt, &suspendedByStr,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -1151,7 +1168,24 @@ func (r *TenantRepository) scanMembership(row *sql.Row) (*tenant.Membership, err
 		}
 	}
 
-	return tenant.ReconstituteMembership(id, userID, tenantID, role, invitedBy, joinedAt), nil
+	var suspendedAtPtr *time.Time
+	if suspendedAt.Valid {
+		t := suspendedAt.Time
+		suspendedAtPtr = &t
+	}
+
+	var suspendedBy *shared.ID
+	if suspendedByStr.Valid {
+		parsed, err := shared.IDFromString(suspendedByStr.String)
+		if err == nil {
+			suspendedBy = &parsed
+		}
+	}
+
+	return tenant.ReconstituteMembershipWithStatus(
+		id, userID, tenantID, role, invitedBy, joinedAt,
+		tenant.MemberStatus(statusStr), suspendedAtPtr, suspendedBy,
+	), nil
 }
 
 func (r *TenantRepository) scanMembershipRow(rows *sql.Rows) (*tenant.Membership, error) {

@@ -65,7 +65,12 @@ func TenantContext(tenantRepo tenant.Repository) func(http.Handler) http.Handler
 	}
 }
 
-// RequireMembership verifies the authenticated user is a member of the tenant.
+// RequireMembership verifies the authenticated user is a member of the tenant
+// AND that the membership is currently active (not suspended). This is the
+// canonical enforcement point for member suspension — it runs on every
+// tenant-scoped request, so suspension takes effect immediately even if the
+// user is holding a still-valid JWT.
+//
 // Must be used after KeycloakAuth, UserSync, and TenantContext middleware.
 func RequireMembership(tenantRepo tenant.Repository) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -89,6 +94,13 @@ func RequireMembership(tenantRepo tenant.Repository) func(http.Handler) http.Han
 					return
 				}
 				apierror.InternalError(fmt.Errorf("failed to check membership")).WriteJSON(w)
+				return
+			}
+
+			// Reject suspended members. The membership row stays in place
+			// (audit trail), but the user has no access until reactivated.
+			if membership.IsSuspended() {
+				apierror.Forbidden("Your access to this tenant has been suspended").WriteJSON(w)
 				return
 			}
 
