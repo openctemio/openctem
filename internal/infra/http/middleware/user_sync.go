@@ -142,8 +142,12 @@ func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handle
 				"email", localUser.Email(),
 			)
 
-			// Check if user is suspended
-			if localUser.IsSuspended() {
+			// Check the platform-level user status. The OSS product has
+			// no UI to set this; only direct DB intervention can. We log
+			// the access attempt but do not block here — the auth flow
+			// already rejects suspended users at login. This is a warn
+			// for forensic visibility.
+			if localUser.Status() == user.StatusSuspended {
 				log.Warn("suspended user attempted access",
 					"user_id", localUser.ID().String(),
 					"keycloak_id", keycloakID,
@@ -188,27 +192,7 @@ func RequireLocalUser() func(http.Handler) http.Handler {
 	}
 }
 
-// RequireActiveUser ensures the local user is active (not suspended).
-func RequireActiveUser() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			localUser := GetLocalUser(r.Context())
-			if localUser == nil {
-				http.Error(w, "User not found", http.StatusInternalServerError)
-				return
-			}
-
-			if localUser.IsSuspended() {
-				http.Error(w, "User account is suspended", http.StatusForbidden)
-				return
-			}
-
-			if !localUser.IsActive() {
-				http.Error(w, "User account is inactive", http.StatusForbidden)
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
-	}
-}
+// Note: RequireActiveUser middleware was removed. It was never wired
+// into any route, and tenant-scoped routes already enforce access via
+// RequireMembership (which checks membership.IsSuspended). Platform-
+// level user suspension has no UI in the OSS product.

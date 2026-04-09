@@ -364,45 +364,19 @@ func (u *User) SyncFromKeycloak(email, name string) {
 	u.UpdateLastLogin()
 }
 
-// Suspend suspends the user account.
-func (u *User) Suspend() error {
-	if u.status == StatusSuspended {
-		return fmt.Errorf("%w: user is already suspended", shared.ErrValidation)
-	}
-	u.status = StatusSuspended
-	u.updatedAt = time.Now().UTC()
-	return nil
-}
-
-// Activate activates the user account.
-func (u *User) Activate() error {
-	if u.status == StatusActive {
-		return fmt.Errorf("%w: user is already active", shared.ErrValidation)
-	}
-	u.status = StatusActive
-	u.updatedAt = time.Now().UTC()
-	return nil
-}
-
-// Deactivate deactivates the user account.
-func (u *User) Deactivate() error {
-	if u.status == StatusInactive {
-		return fmt.Errorf("%w: user is already inactive", shared.ErrValidation)
-	}
-	u.status = StatusInactive
-	u.updatedAt = time.Now().UTC()
-	return nil
-}
-
 // IsActive returns true if the user is active.
 func (u *User) IsActive() bool {
 	return u.status == StatusActive
 }
 
-// IsSuspended returns true if the user is suspended.
-func (u *User) IsSuspended() bool {
-	return u.status == StatusSuspended
-}
+// Note: User-level Suspend/Activate/Deactivate methods were removed
+// because the OSS product has no admin path that calls them. Member
+// access is managed at the membership level via TenantService.SuspendMember
+// / ReactivateMember (see internal/app/tenant_service.go). The
+// `users.status` column and StatusInactive/StatusSuspended constants
+// are kept so an operator can flip the column directly via SQL for
+// incident response — the login flow in auth_service.go honours the
+// "suspended" value as a defense-in-depth check.
 
 // =============================================================================
 // Local Auth Getters
