@@ -54,6 +54,12 @@ type RegisterRequest struct {
 	Email    string `json:"email" validate:"required,email,max=255"`
 	Password string `json:"password" validate:"required,min=8,max=128"`
 	Name     string `json:"name" validate:"required,max=255"`
+	// InvitationToken is optional: when present, the register flow
+	// resolves the target tenant from the invitation and uses that
+	// tenant's email-verification rule. Without this, registrations via
+	// invitation links would fall back to the platform default and
+	// silently ignore an admin's per-tenant "never" setting.
+	InvitationToken string `json:"invitation_token,omitempty" validate:"omitempty,max=200"`
 }
 
 // RegisterResponse is the response body for user registration.
@@ -89,9 +95,10 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.authService.Register(r.Context(), app.RegisterInput{
-		Email:    req.Email,
-		Password: req.Password,
-		Name:     req.Name,
+		Email:           req.Email,
+		Password:        req.Password,
+		Name:            req.Name,
+		InvitationToken: req.InvitationToken,
 	})
 	if err != nil {
 		h.handleAuthError(w, err)

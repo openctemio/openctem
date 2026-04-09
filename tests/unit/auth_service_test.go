@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,7 +280,11 @@ func (m *mockAuthTenantRepo) ListActiveTenantIDs(_ context.Context) ([]shared.ID
 	if m.listActiveTenantIDsErr != nil {
 		return nil, m.listActiveTenantIDsErr
 	}
-	return nil, nil
+	ids := make([]shared.ID, 0, len(m.tenants))
+	for _, t := range m.tenants {
+		ids = append(ids, t.ID())
+	}
+	return ids, nil
 }
 
 func (m *mockAuthTenantRepo) CreateMembership(_ context.Context, membership *tenant.Membership) error {
@@ -775,6 +780,29 @@ func newTestAuthServiceWithConfig(cfg config.AuthConfig) (*app.AuthService, *aut
 	return svc, deps
 }
 
+// Helper: build a Tenant with the given EmailVerificationMode set.
+// Used by the Register tests that exercise the single-tenant fallback
+// and the invitation-token tenant resolution.
+func mustNewTenantWithVerificationMode(
+	t *testing.T,
+	name string,
+	mode tenant.EmailVerificationMode,
+) *tenant.Tenant {
+	t.Helper()
+	slug := strings.ToLower(strings.ReplaceAll(name, " ", "-")) +
+		"-" + shared.NewID().String()[:8]
+	tn, err := tenant.NewTenant(name, slug, "test-creator")
+	if err != nil {
+		t.Fatalf("NewTenant: %v", err)
+	}
+	settings := tn.TypedSettings()
+	settings.Security.EmailVerificationMode = mode
+	if err := tn.UpdateSettings(settings); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	return tn
+}
+
 // Helper: create a local user and store in mock repo.
 func seedAuthLocalUser(repo *mockAuthUserRepo, email, passwordHash string) *user.User {
 	u := user.Reconstitute(
@@ -1123,6 +1151,134 @@ func TestAuthService_Register(t *testing.T) {
 			t.Errorf("expected normalized email, got %s", result.User.Email())
 		}
 		_ = deps // used
+	})
+
+	// --- Single-tenant fallback (Fix for the "EmailVerificationMode=never
+	// is ignored at register time" bug) ---
+	t.Run("single tenant with mode=never overrides global verification", func(t *testing.T) {
+		// Global config requires verification, but the platform's only
+		// tenant says "never". Register must respect the tenant rule
+		// because it's the obvious target for any new self-registration.
+		cfg := defaultAuthTestConfig()
+		cfg.RequireEmailVerification = true
+		svc, deps := newTestAuthServiceWithConfig(cfg)
+
+		soleTenant := mustNewTenantWithVerificationMode(
+			t, "Acme", tenant.EmailVerificationNever,
+		)
+		deps.tenantRepo.tenants[soleTenant.ID().String()] = soleTenant
+
+		result, err := svc.Register(context.Background(), app.RegisterInput{
+			Email:    "alice@example.com",
+			Password: "Password123!",
+			Name:     "Alice",
+		})
+		if err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		if result.RequiresVerification {
+			t.Error("expected RequiresVerification=false (single-tenant override should win)")
+		}
+		if !result.User.EmailVerified() {
+			t.Error("expected user to be auto-verified when verification is skipped")
+		}
+	})
+
+	t.Run("single tenant with mode=always forces verification", func(t *testing.T) {
+		// Global config does NOT require verification, but the only tenant
+		// says "always". The tenant rule must still win.
+		svc, deps := newTestAuthService()
+
+		soleTenant := mustNewTenantWithVerificationMode(
+			t, "Acme", tenant.EmailVerificationAlways,
+		)
+		deps.tenantRepo.tenants[soleTenant.ID().String()] = soleTenant
+
+		result, err := svc.Register(context.Background(), app.RegisterInput{
+			Email:    "bob@example.com",
+			Password: "Password123!",
+			Name:     "Bob",
+		})
+		if err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		if !result.RequiresVerification {
+			t.Error("expected RequiresVerification=true (single-tenant override)")
+		}
+		if result.VerificationToken == "" {
+			t.Error("expected a verification token to be issued")
+		}
+	})
+
+	t.Run("multiple tenants falls back to global config", func(t *testing.T) {
+		// With more than one tenant the heuristic can't pick the "right"
+		// one, so we must fall back to the platform default. Verify that
+		// the global RequireEmailVerification still applies in this case.
+		cfg := defaultAuthTestConfig()
+		cfg.RequireEmailVerification = true
+		svc, deps := newTestAuthServiceWithConfig(cfg)
+
+		t1 := mustNewTenantWithVerificationMode(t, "First", tenant.EmailVerificationNever)
+		t2 := mustNewTenantWithVerificationMode(t, "Second", tenant.EmailVerificationNever)
+		deps.tenantRepo.tenants[t1.ID().String()] = t1
+		deps.tenantRepo.tenants[t2.ID().String()] = t2
+
+		result, err := svc.Register(context.Background(), app.RegisterInput{
+			Email:    "carol@example.com",
+			Password: "Password123!",
+			Name:     "Carol",
+		})
+		if err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		if !result.RequiresVerification {
+			t.Error("expected RequiresVerification=true (global fallback when multi-tenant)")
+		}
+	})
+
+	t.Run("invitation token resolves to inviting tenant rule", func(t *testing.T) {
+		// User registers via an invitation link → backend should resolve
+		// the invitation, find its tenant, and apply that tenant's
+		// EmailVerificationMode (here: "never") even though the global
+		// config and the multi-tenant heuristic would otherwise require
+		// verification.
+		cfg := defaultAuthTestConfig()
+		cfg.RequireEmailVerification = true
+		svc, deps := newTestAuthServiceWithConfig(cfg)
+
+		// Two tenants exist; the user is being invited into the second
+		// one. Without invitation_token plumbing the multi-tenant
+		// fallback would punt to the global config and require verify.
+		other := mustNewTenantWithVerificationMode(t, "Other", tenant.EmailVerificationAlways)
+		invitingTenant := mustNewTenantWithVerificationMode(t, "Inviter", tenant.EmailVerificationNever)
+		deps.tenantRepo.tenants[other.ID().String()] = other
+		deps.tenantRepo.tenants[invitingTenant.ID().String()] = invitingTenant
+
+		invitedBy := shared.NewID()
+		inv, err := tenant.NewInvitation(
+			invitingTenant.ID(),
+			"dave@example.com",
+			tenant.RoleMember,
+			invitedBy,
+			[]string{shared.NewID().String()}, // role_ids — at least one is required
+		)
+		if err != nil {
+			t.Fatalf("create invitation: %v", err)
+		}
+		deps.tenantRepo.invitations = []*tenant.Invitation{inv}
+
+		result, err := svc.Register(context.Background(), app.RegisterInput{
+			Email:           "dave@example.com",
+			Password:        "Password123!",
+			Name:            "Dave",
+			InvitationToken: inv.Token(),
+		})
+		if err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		if result.RequiresVerification {
+			t.Error("expected RequiresVerification=false (invitation tenant rule = never)")
+		}
 	})
 
 	t.Run("user repo check email error", func(t *testing.T) {
