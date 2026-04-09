@@ -220,6 +220,9 @@ func (m *mockAITriageTenantRepo) GetMemberStats(_ context.Context, _ shared.ID) 
 func (m *mockAITriageTenantRepo) GetUserMemberships(_ context.Context, _ shared.ID) ([]tenant.UserMembership, error) {
 	return nil, nil
 }
+func (m *mockAITriageTenantRepo) GetUserSuspendedMemberships(_ context.Context, _ shared.ID) ([]tenant.UserMembership, error) {
+	return nil, nil
+}
 func (m *mockAITriageTenantRepo) GetMemberByEmail(_ context.Context, _ shared.ID, _ string) (*tenant.MemberWithUser, error) {
 	return nil, nil
 }

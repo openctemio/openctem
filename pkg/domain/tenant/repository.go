@@ -36,8 +36,14 @@ type Repository interface {
 	ListTenantsByUser(ctx context.Context, userID shared.ID) ([]*TenantWithRole, error)
 	CountMembersByTenant(ctx context.Context, tenantID shared.ID) (int64, error)
 	GetMemberStats(ctx context.Context, tenantID shared.ID) (*MemberStats, error)
-	// GetUserMemberships returns lightweight membership data for JWT tokens
+	// GetUserMemberships returns lightweight membership data for JWT tokens.
+	// Suspended memberships are filtered out — they cannot mint tokens.
 	GetUserMemberships(ctx context.Context, userID shared.ID) ([]UserMembership, error)
+	// GetUserSuspendedMemberships returns the SUSPENDED memberships for a
+	// user. Used by the login flow so the UI can tell a suspended user
+	// "your access to {tenant} is suspended" instead of bouncing them to
+	// the create-team onboarding screen with no explanation.
+	GetUserSuspendedMemberships(ctx context.Context, userID shared.ID) ([]UserMembership, error)
 	// GetMemberByEmail retrieves a member by email address within a tenant
 	GetMemberByEmail(ctx context.Context, tenantID shared.ID, email string) (*MemberWithUser, error)
 

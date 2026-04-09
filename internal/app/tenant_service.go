@@ -312,9 +312,17 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
 
-	// Check if user is already a member
-	_, err = s.repo.GetMembership(ctx, input.UserID, parsedTenantID)
+	// Check if user is already a member. A suspended membership blocks
+	// re-add: the admin must reactivate the existing row instead of
+	// creating a duplicate that loses the suspension audit trail.
+	existing, err := s.repo.GetMembership(ctx, input.UserID, parsedTenantID)
 	if err == nil {
+		if existing.IsSuspended() {
+			return nil, fmt.Errorf(
+				"%w: this user has a suspended membership in this tenant — reactivate them via the Members page instead",
+				shared.ErrValidation,
+			)
+		}
 		return nil, fmt.Errorf("%w: user is already a member", shared.ErrValidation)
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
@@ -504,11 +512,10 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 	s.logger.Info("member suspended", "membership_id", membershipID, "user_id", userID)
 
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeMembership, membershipID).
+	event := NewSuccessEvent(audit.ActionMemberSuspended, audit.ResourceTypeMembership, membershipID).
 		WithSeverity(audit.SeverityHigh).
 		WithMessage("Member suspended").
-		WithMetadata("user_id", userID).
-		WithMetadata("action", "suspend")
+		WithMetadata("user_id", userID)
 	s.logAudit(ctx, actx, event)
 
 	return nil
@@ -540,11 +547,10 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
 
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeMembership, membershipID).
+	event := NewSuccessEvent(audit.ActionMemberReactivated, audit.ResourceTypeMembership, membershipID).
 		WithSeverity(audit.SeverityMedium).
 		WithMessage("Member reactivated").
-		WithMetadata("user_id", userID).
-		WithMetadata("action", "reactivate")
+		WithMetadata("user_id", userID)
 	s.logAudit(ctx, actx, event)
 
 	return nil
@@ -693,9 +699,18 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		return nil, fmt.Errorf("failed to check existing invitation: %w", err)
 	}
 
-	// Check if user is already a member of this tenant
+	// Check if user is already a member of this tenant. A suspended
+	// membership counts as "already a member" — the admin must reactivate
+	// them via the Members page rather than sending a new invitation, so
+	// the suspend audit trail and any compliance evidence stay intact.
 	existingMember, err := s.repo.GetMemberByEmail(ctx, parsedID, input.Email)
 	if err == nil && existingMember != nil {
+		if existingMember.Status == string(tenant.MemberStatusSuspended) {
+			return nil, fmt.Errorf(
+				"%w: this user has a suspended membership in this tenant — reactivate them via the Members page instead of sending a new invitation",
+				shared.ErrValidation,
+			)
+		}
 		return nil, fmt.Errorf("%w: user with this email is already a member of this team", shared.ErrValidation)
 	}
 	if err != nil && !errors.Is(err, shared.ErrNotFound) {
@@ -794,9 +809,18 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		}
 	}
 
-	// Check if user is already a member
-	_, err = s.repo.GetMembership(ctx, userID, invitation.TenantID())
+	// Check if user is already a member. If they have a suspended
+	// membership the admin must reactivate it via the Members page —
+	// accepting an invitation cannot bypass an active suspension because
+	// that would silently erase the audit trail.
+	existingMembership, err := s.repo.GetMembership(ctx, userID, invitation.TenantID())
 	if err == nil {
+		if existingMembership.IsSuspended() {
+			return nil, fmt.Errorf(
+				"%w: your access to this team is suspended — please contact an administrator to be reactivated",
+				shared.ErrValidation,
+			)
+		}
 		return nil, fmt.Errorf("%w: you are already a member of this team", shared.ErrValidation)
 	}
 	if !errors.Is(err, shared.ErrNotFound) {

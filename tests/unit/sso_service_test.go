@@ -283,6 +283,10 @@ func (m *ssoMockTenantRepo) GetUserMemberships(_ context.Context, _ shared.ID) (
 	return nil, nil
 }
 
+func (m *ssoMockTenantRepo) GetUserSuspendedMemberships(_ context.Context, _ shared.ID) ([]tenant.UserMembership, error) {
+	return nil, nil
+}
+
 func (m *ssoMockTenantRepo) GetMemberByEmail(_ context.Context, _ shared.ID, _ string) (*tenant.MemberWithUser, error) {
 	return nil, nil
 }

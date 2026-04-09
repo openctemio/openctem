@@ -342,7 +342,13 @@ type LoginResult struct {
 	RefreshToken string // Global refresh token (no tenant context)
 	ExpiresAt    time.Time
 	SessionID    string
-	Tenants      []TenantMembershipInfo // List of tenants user belongs to
+	Tenants      []TenantMembershipInfo // Active tenants user can access
+	// SuspendedTenants lists tenants where this user has a suspended
+	// membership. The user has zero access to these tenants — the field
+	// exists purely so the UI can show "your access to {name} is
+	// suspended" instead of bouncing the user to /onboarding/create-team
+	// when they have no active memberships.
+	SuspendedTenants []TenantMembershipInfo
 }
 
 // Login authenticates a user and creates a session.
@@ -479,6 +485,26 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 		})
 	}
 
+	// Also fetch suspended memberships so the client can show a clear
+	// "your access to {tenant} is suspended" message instead of routing
+	// the user into the create-team flow with no explanation. This is a
+	// best-effort lookup — failure does not break login.
+	var suspendedInfos []TenantMembershipInfo
+	if suspended, serr := s.tenantRepo.GetUserSuspendedMemberships(ctx, u.ID()); serr == nil {
+		suspendedInfos = make([]TenantMembershipInfo, 0, len(suspended))
+		for _, m := range suspended {
+			suspendedInfos = append(suspendedInfos, TenantMembershipInfo{
+				TenantID:   m.TenantID,
+				TenantSlug: m.TenantSlug,
+				TenantName: m.TenantName,
+				Role:       m.Role,
+			})
+		}
+	} else {
+		s.logger.Warn("failed to load suspended memberships at login",
+			"user_id", u.ID().String(), "error", serr)
+	}
+
 	// Generate GLOBAL refresh token (no tenant context)
 	refreshTokenStr, refreshExpiresAt, err := s.tokenGenerator.GenerateGlobalRefreshToken(
 		u.ID().String(),
@@ -538,11 +564,12 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	}
 
 	return &LoginResult{
-		User:         u,
-		RefreshToken: refreshTokenStr,
-		ExpiresAt:    refreshExpiresAt,
-		SessionID:    sess.ID().String(),
-		Tenants:      tenantInfos,
+		User:             u,
+		RefreshToken:     refreshTokenStr,
+		ExpiresAt:        refreshExpiresAt,
+		SessionID:        sess.ID().String(),
+		Tenants:          tenantInfos,
+		SuspendedTenants: suspendedInfos,
 	}, nil
 }
 
@@ -1351,9 +1378,17 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		}
 	}
 
-	// Check if user is already a member
-	_, err = s.tenantRepo.GetMembership(ctx, u.ID(), invitation.TenantID())
+	// Check if user is already a member. A suspended membership cannot be
+	// bypassed via invitation accept — that would silently erase the
+	// suspension audit trail. The admin must reactivate via Members page.
+	existingMembership, err := s.tenantRepo.GetMembership(ctx, u.ID(), invitation.TenantID())
 	if err == nil {
+		if existingMembership.IsSuspended() {
+			return nil, fmt.Errorf(
+				"%w: your access to this team is suspended — please contact an administrator to be reactivated",
+				shared.ErrValidation,
+			)
+		}
 		return nil, fmt.Errorf("%w: you are already a member of this team", shared.ErrValidation)
 	}
 	if !errors.Is(err, shared.ErrNotFound) {

@@ -219,66 +219,11 @@ func (s *UserService) UpdatePreferences(ctx context.Context, userID string, pref
 	return u, nil
 }
 
-// SuspendUser suspends a user account.
-// This also revokes all active sessions to immediately block access.
-func (s *UserService) SuspendUser(ctx context.Context, userID string) (*user.User, error) {
-	parsedID, err := shared.IDFromString(userID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-
-	u, err := s.repo.GetByID(ctx, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := u.Suspend(); err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, u); err != nil {
-		return nil, fmt.Errorf("failed to suspend user: %w", err)
-	}
-
-	// Revoke all sessions to immediately block access
-	// This also triggers permission cache invalidation via SessionService
-	if s.sessionService != nil {
-		if err := s.sessionService.RevokeAllSessions(ctx, userID, ""); err != nil {
-			s.logger.Warn("failed to revoke sessions on suspend",
-				"user_id", userID,
-				"error", err,
-			)
-			// Don't fail the suspend operation, just log the warning
-		}
-	}
-
-	s.logger.Info("user suspended", "user_id", userID)
-	return u, nil
-}
-
-// ActivateUser activates a user account.
-func (s *UserService) ActivateUser(ctx context.Context, userID string) (*user.User, error) {
-	parsedID, err := shared.IDFromString(userID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-
-	u, err := s.repo.GetByID(ctx, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := u.Activate(); err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, u); err != nil {
-		return nil, fmt.Errorf("failed to activate user: %w", err)
-	}
-
-	s.logger.Info("user activated", "user_id", userID)
-	return u, nil
-}
+// Note: SuspendUser / ActivateUser were removed. They were never wired
+// into any handler or route, and member access is managed at the
+// membership level via TenantService.SuspendMember / ReactivateMember.
+// See pkg/domain/user/entity.go for the rationale on keeping the
+// status column itself.
 
 // GetUsersByIDs retrieves multiple users by their IDs (string format).
 func (s *UserService) GetUsersByIDs(ctx context.Context, userIDs []string) ([]*user.User, error) {
