@@ -959,6 +959,41 @@ func (r *TenantRepository) DeleteExpiredInvitations(ctx context.Context) (int64,
 	return result.RowsAffected()
 }
 
+// DeletePendingInvitationsByUserID removes EVERY pending (unaccepted)
+// invitation for the user's email address in the given tenant. Used
+// when a member is removed from a tenant — we want to make sure they
+// can't rejoin via a stale invitation token still sitting in their
+// inbox.
+//
+// The user's email is looked up via JOIN so the caller doesn't need
+// to fetch it first. Email matching is case-insensitive (LOWER) to
+// match the acceptance flow's strings.EqualFold semantics.
+//
+// Already-accepted invitations are NOT deleted because they are a
+// historical audit record. Only unaccepted rows (where the token is
+// still potentially usable) get wiped.
+//
+// Returns the number of rows deleted (0 is not an error — it just
+// means the user had no pending invitations to clean up).
+func (r *TenantRepository) DeletePendingInvitationsByUserID(
+	ctx context.Context,
+	tenantID, userID shared.ID,
+) (int64, error) {
+	query := `
+		DELETE FROM tenant_invitations ti
+		USING users u
+		WHERE ti.tenant_id = $1
+		  AND u.id = $2
+		  AND LOWER(ti.email) = LOWER(u.email)
+		  AND ti.accepted_at IS NULL
+	`
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), userID.String())
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete pending invitations by user id: %w", err)
+	}
+	return result.RowsAffected()
+}
+
 // AcceptInvitationTx atomically updates the invitation and creates the membership in a single transaction.
 // Creates membership in tenant_members and role assignment in user_roles.
 func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.Invitation, m *tenant.Membership) error {

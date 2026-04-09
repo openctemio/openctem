@@ -48,6 +48,15 @@ type Repository interface {
 	GetPendingInvitationByEmail(ctx context.Context, tenantID shared.ID, email string) (*Invitation, error)
 	DeleteExpiredInvitations(ctx context.Context) (int64, error)
 
+	// DeletePendingInvitationsByUserID removes every UNACCEPTED
+	// invitation matching the user's email in the given tenant.
+	// Used when removing a member to ensure they can't rejoin via
+	// a stale token still sitting in their inbox. Looks up the
+	// user's email via JOIN so the caller doesn't need to fetch it
+	// first. Email matching is case-insensitive. Returns the number
+	// of rows deleted (0 is not an error).
+	DeletePendingInvitationsByUserID(ctx context.Context, tenantID, userID shared.ID) (int64, error)
+
 	// AcceptInvitationTx atomically updates the invitation and creates the membership in a single transaction.
 	// This ensures data consistency - either both operations succeed or neither does.
 	AcceptInvitationTx(ctx context.Context, invitation *Invitation, membership *Membership) error

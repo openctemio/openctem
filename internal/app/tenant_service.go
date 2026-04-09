@@ -426,6 +426,26 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 	// This reduces the window of vulnerability from 5 minutes (cache TTL) to 0
 	s.invalidateUserPermissions(ctx, tenantID, userID)
 
+	// Wipe any pending invitations the user still has in their inbox
+	// for this tenant. Without this they could re-accept the original
+	// invitation token to rejoin after the admin removed them — a
+	// real privilege escalation path. Best-effort: a failure here is
+	// logged but doesn't roll back the membership delete (the primary
+	// security goal — revoking access — has already succeeded).
+	if deleted, derr := s.repo.DeletePendingInvitationsByUserID(ctx, membership.TenantID(), membership.UserID()); derr != nil {
+		s.logger.Warn("failed to clean up pending invitations after member removal",
+			"tenant_id", tenantID,
+			"user_id", userID,
+			"error", derr,
+		)
+	} else if deleted > 0 {
+		s.logger.Info("invalidated pending invitations on member removal",
+			"tenant_id", tenantID,
+			"user_id", userID,
+			"deleted", deleted,
+		)
+	}
+
 	s.logger.Info("member removed", "membership_id", membershipID)
 
 	// Log audit event

@@ -23,7 +23,15 @@ type Workers struct {
 	FindingLifecycleScheduler    *app.FindingLifecycleScheduler
 	NotificationCleanupTicker    *time.Ticker
 	notificationService          *app.NotificationService
-	ControllerManager            *controller.Manager
+	// SessionCleanupTicker periodically deletes expired/revoked
+	// sessions and refresh tokens. Without this the tables grow
+	// unboundedly because logout marks rows as 'revoked' (not deleted)
+	// and refresh-token rotation marks old rows as 'used' (not deleted).
+	// SessionService.CleanupExpiredSessions() exists in the codebase
+	// but was never wired into a worker until this hookup.
+	SessionCleanupTicker *time.Ticker
+	sessionService       *app.SessionService
+	ControllerManager    *controller.Manager
 }
 
 // WorkerDeps contains dependencies needed to create workers.
@@ -111,6 +119,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	// Store notification service reference for cleanup worker
 	w.notificationService = svc.Notification
+
+	// Store session service reference for the session cleanup worker.
+	// Started in Workers.Start() — see comment on SessionCleanupTicker.
+	w.sessionService = svc.Session
 
 	// Note: Template sync uses lazy sync on scan trigger, no background worker needed.
 	// Templates are synced on-demand when a scan uses custom templates.
@@ -255,6 +267,46 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 		log.Info("notification cleanup worker started", "interval", "24h", "retention_days", 90)
 	}
 
+	// Start session + refresh-token cleanup worker.
+	//
+	// PURPOSE: delete rows that the regular code paths leave behind.
+	// Logout marks sessions as 'revoked' (UPDATE, not DELETE). Refresh
+	// token rotation marks the old token as used (UPDATE, not DELETE).
+	// Without this worker the sessions and refresh_tokens tables grow
+	// unboundedly with every login.
+	//
+	// SCHEDULE: every hour. Cheap query (single DELETE filtered by
+	// expires_at + status), runs against indexed columns. Hourly
+	// keeps the tables tight without spamming the DB. We also fire
+	// once at startup so a freshly-deployed server reclaims any
+	// backlog from when this worker didn't exist.
+	if w.sessionService != nil {
+		runCleanup := func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			sessionsDeleted, tokensDeleted, err := w.sessionService.CleanupExpiredSessions(cleanupCtx)
+			if err != nil {
+				log.Error("session cleanup failed", "error", err)
+				return
+			}
+			if sessionsDeleted > 0 || tokensDeleted > 0 {
+				log.Info("session cleanup completed",
+					"sessions_deleted", sessionsDeleted,
+					"refresh_tokens_deleted", tokensDeleted,
+				)
+			}
+		}
+		// Initial run on startup to clear historical backlog.
+		go runCleanup()
+		w.SessionCleanupTicker = time.NewTicker(1 * time.Hour)
+		go func() {
+			for range w.SessionCleanupTicker.C {
+				runCleanup()
+			}
+		}()
+		log.Info("session cleanup worker started", "interval", "1h")
+	}
+
 	// Start controller manager
 	if err := w.ControllerManager.Start(ctx); err != nil {
 		return err
@@ -308,6 +360,13 @@ func (w *Workers) Stop(log *logger.Logger) {
 		log.Info("stopping notification cleanup worker...")
 		w.NotificationCleanupTicker.Stop()
 		log.Info("notification cleanup worker stopped")
+	}
+
+	// Stop session cleanup worker
+	if w.SessionCleanupTicker != nil {
+		log.Info("stopping session cleanup worker...")
+		w.SessionCleanupTicker.Stop()
+		log.Info("session cleanup worker stopped")
 	}
 
 	// Stop controller manager
