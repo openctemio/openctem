@@ -160,7 +160,16 @@ func Register(
 	authCfg AuthConfig,
 	tenantRepo tenant.Repository,
 	userService *app.UserService,
+	// Optional Redis-backed membership reader. When non-nil it is
+	// used by RequireMembership and RequireActiveMembershipFromJWT
+	// instead of querying the database directly. nil falls back to
+	// tenantRepo (the legacy behaviour).
+	membershipReader middleware.MembershipReader,
 ) {
+	// Pick the membership reader: cache when available, repo otherwise.
+	if membershipReader == nil {
+		membershipReader = tenantRepo
+	}
 	// Create unified auth middleware based on provider
 	unifiedAuthCfg := middleware.UnifiedAuthConfig{
 		Provider:              authCfg.Provider,
@@ -193,8 +202,10 @@ func Register(
 	// Initialize the JWT-tenant membership check. This middleware is
 	// appended to every chain returned by buildTokenTenantMiddlewares,
 	// so any token-scoped route automatically rejects suspended users.
-	if tenantRepo != nil {
-		activeMembershipFromJWTMiddleware = middleware.RequireActiveMembershipFromJWT(tenantRepo)
+	// Uses the cache reader when wired, otherwise falls back to the
+	// raw tenant repository.
+	if membershipReader != nil {
+		activeMembershipFromJWTMiddleware = middleware.RequireActiveMembershipFromJWT(membershipReader)
 	}
 
 	// UserSync middleware syncs authenticated users to local database
@@ -211,7 +222,7 @@ func Register(
 
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
-		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, h.LocalAuth)
+		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized

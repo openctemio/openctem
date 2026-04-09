@@ -47,7 +47,13 @@ type TenantService struct {
 	// RequireMembership middleware. JWT-claim-scoped routes (e.g.
 	// /api/v1/me/*, /api/v1/notifications) would still let the user in.
 	sessionService *SessionService
-	logger         *logger.Logger
+	// Membership cache used by RequireMembership middleware. We hold a
+	// reference here so mutations (suspend / reactivate / role change /
+	// remove) can drop the cached entry immediately. nil means caching
+	// is disabled (Redis unavailable) and the middleware reads the
+	// repository directly — invalidation calls become no-ops.
+	membershipCache *MembershipCacheService
+	logger          *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -120,6 +126,26 @@ func (s *TenantService) SetPermissionServices(cacheSvc *PermissionCacheService, 
 // (e.g. /api/v1/me/*) until their JWT expires.
 func (s *TenantService) SetSessionService(sessionService *SessionService) {
 	s.sessionService = sessionService
+}
+
+// SetMembershipCache injects the membership cache so mutations
+// (suspend / reactivate / role change / member removal) can drop the
+// cached entry immediately. With the cache wired up, the middleware
+// no longer hits the database on every request — but the same wiring
+// is what guarantees a suspended user gets a 403 on their NEXT
+// request instead of after the cache TTL expires.
+func (s *TenantService) SetMembershipCache(cache *MembershipCacheService) {
+	s.membershipCache = cache
+}
+
+// invalidateMembershipCache is the convenience helper used by every
+// mutation that touches role or status. Safe to call when the cache
+// is unset (no-op).
+func (s *TenantService) invalidateMembershipCache(ctx context.Context, tenantID, userID string) {
+	if s.membershipCache == nil {
+		return
+	}
+	s.membershipCache.Invalidate(ctx, tenantID, userID)
 }
 
 // logAudit logs an audit event if audit service is configured.
@@ -407,6 +433,12 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, fmt.Errorf("failed to update member role: %w", err)
 	}
 
+	// Drop the membership cache so the next request reads the new
+	// role instead of the cached old one. The permission cache is
+	// already invalidated separately by the role service when
+	// effective permissions change.
+	s.invalidateMembershipCache(ctx, membership.TenantID().String(), membership.UserID().String())
+
 	s.logger.Info("member role updated", "membership_id", membershipID, "new_role", role)
 
 	// Log audit event
@@ -445,9 +477,11 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 		return err
 	}
 
-	// Immediately invalidate permission cache and version to prevent stale access
-	// This reduces the window of vulnerability from 5 minutes (cache TTL) to 0
+	// Immediately invalidate permission cache, membership cache, and
+	// version to prevent stale access. This reduces the window of
+	// vulnerability from 5 minutes (cache TTL) to 0.
 	s.invalidateUserPermissions(ctx, tenantID, userID)
+	s.invalidateMembershipCache(ctx, tenantID, userID)
 
 	// Wipe any pending invitations the user still has in their inbox
 	// for this tenant. Without this they could re-accept the original
@@ -514,18 +548,23 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
 
-	// Immediately revoke access — three independent kill switches:
+	// Immediately revoke access — four independent kill switches:
 	//
 	//   1. Permission cache invalidation: forces a fresh permission
 	//      lookup on the next tenant-scoped request, which now sees
 	//      the suspended status and 403s.
-	//   2. Session revocation: kills all of this user's active sessions
+	//   2. Membership cache invalidation: drops the cached membership
+	//      so the RequireMembership middleware re-reads the suspended
+	//      status from the DB on the next request instead of waiting
+	//      for the cache TTL to expire.
+	//   3. Session revocation: kills all of this user's active sessions
 	//      and refresh tokens. Without this, JWT-claim-scoped routes
 	//      (/api/v1/me/*, /api/v1/notifications) would still let the
 	//      user in until their JWT expired (~30 min).
-	//   3. Pending invitation cleanup: removes any unaccepted invites
+	//   4. Pending invitation cleanup: removes any unaccepted invites
 	//      so the user can't rejoin via a stale link.
 	s.invalidateUserPermissions(ctx, tenantID, userID)
+	s.invalidateMembershipCache(ctx, tenantID, userID)
 
 	if s.sessionService != nil {
 		if err := s.sessionService.RevokeAllSessions(ctx, userID, ""); err != nil {
@@ -583,8 +622,11 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	// "empty permissions" (the result of the suspend invalidation) for
 	// up to permCacheTTL (5 minutes). The Increment side-effect also
 	// bumps the user's permission version so any in-flight JWT clients
-	// know to refetch.
+	// know to refetch. The membership cache also has to drop its
+	// suspended snapshot so the next RequireMembership check sees
+	// status='active' immediately.
 	s.invalidateUserPermissions(ctx, tenantID, userID)
+	s.invalidateMembershipCache(ctx, tenantID, userID)
 
 	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
 

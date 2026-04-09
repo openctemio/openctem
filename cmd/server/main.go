@@ -226,7 +226,7 @@ func run() int {
 	}
 
 	server := http.NewServer(cfg, log)
-	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User)
+	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache)
 
 	// Handle --routes flag
 	if *showRoutes {

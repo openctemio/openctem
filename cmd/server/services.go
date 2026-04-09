@@ -120,6 +120,14 @@ type Services struct {
 	PermVersion *app.PermissionVersionService
 	PermCache   *app.PermissionCacheService
 
+	// Membership cache (Redis-backed wrapper around tenant.Repository
+	// .GetMembership). Read by RequireMembership +
+	// RequireActiveMembershipFromJWT middlewares so the membership
+	// status check on every tenant-scoped request becomes a Redis GET
+	// instead of a DB round trip. Invalidated by TenantService when
+	// role / status / membership rows change.
+	MembershipCache *app.MembershipCacheService
+
 	// Module Service (OSS - all modules enabled, UI metadata only)
 	Module *app.ModuleService
 
@@ -508,6 +516,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		return nil, fmt.Errorf("failed to initialize permission cache service: %w", err)
 	}
 
+	// Initialize membership cache. Hard error if Redis is unreachable
+	// at boot — without this cache the RequireMembership middleware
+	// hammers the database on every request.
+	s.MembershipCache, err = app.NewMembershipCacheService(deps.RedisClient, repos.Tenant, log)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize membership cache service: %w", err)
+	}
+
 	s.Role = app.NewRoleService(repos.Role, repos.RolePermission, log,
 		app.WithRoleAuditService(s.Audit),
 		app.WithRolePermissionVersionService(s.PermVersion),
@@ -516,6 +532,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Wire permission services to tenant service
 	s.Tenant.SetPermissionServices(s.PermCache, s.PermVersion)
+
+	// Wire membership cache so mutations (suspend / reactivate / role
+	// change / member removal) can drop the cached entry immediately.
+	s.Tenant.SetMembershipCache(s.MembershipCache)
 
 	// Initialize licensing service (OSS edition - modules from database)
 	s.Module = app.NewModuleService(repos.Module, log)

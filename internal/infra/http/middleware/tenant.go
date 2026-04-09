@@ -65,14 +65,27 @@ func TenantContext(tenantRepo tenant.Repository) func(http.Handler) http.Handler
 	}
 }
 
+// MembershipReader is the minimal lookup contract the membership-aware
+// middleware needs. Both the raw tenant.Repository and the cached
+// app.MembershipCacheService implement it via structural typing, so the
+// middleware can transparently switch between direct DB access and a
+// Redis-backed cache without knowing the difference.
+type MembershipReader interface {
+	GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenant.Membership, error)
+}
+
 // RequireMembership verifies the authenticated user is a member of the tenant
 // AND that the membership is currently active (not suspended). This is the
 // canonical enforcement point for member suspension — it runs on every
 // tenant-scoped request, so suspension takes effect immediately even if the
 // user is holding a still-valid JWT.
 //
+// The reader is typically a Redis-backed cache wrapping the tenant repo,
+// so the per-request cost is a Redis GET on cache hit (the common case)
+// instead of a DB round trip.
+//
 // Must be used after KeycloakAuth, UserSync, and TenantContext middleware.
-func RequireMembership(tenantRepo tenant.Repository) func(http.Handler) http.Handler {
+func RequireMembership(reader MembershipReader) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID := GetLocalUserID(r.Context())
@@ -87,7 +100,7 @@ func RequireMembership(tenantRepo tenant.Repository) func(http.Handler) http.Han
 				return
 			}
 
-			membership, err := tenantRepo.GetMembership(r.Context(), userID, teamID)
+			membership, err := reader.GetMembership(r.Context(), userID, teamID)
 			if err != nil {
 				if errors.Is(err, shared.ErrNotFound) {
 					apierror.Forbidden("You are not a member of this tenant").WriteJSON(w)
@@ -124,8 +137,11 @@ func RequireMembership(tenantRepo tenant.Repository) func(http.Handler) http.Han
 // hitting JWT-claim-scoped endpoints until their token expires, even
 // though tenant-scoped URL routes are blocked.
 //
+// Like RequireMembership it accepts the MembershipReader interface so
+// the same Redis-backed cache can serve both URL- and JWT-tenant routes.
+//
 // Must be used after KeycloakAuth, UserSync, and RequireTenant middleware.
-func RequireActiveMembershipFromJWT(tenantRepo tenant.Repository) func(http.Handler) http.Handler {
+func RequireActiveMembershipFromJWT(reader MembershipReader) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID := GetLocalUserID(r.Context())
@@ -146,7 +162,7 @@ func RequireActiveMembershipFromJWT(tenantRepo tenant.Repository) func(http.Hand
 				return
 			}
 
-			membership, err := tenantRepo.GetMembership(r.Context(), userID, tenantID)
+			membership, err := reader.GetMembership(r.Context(), userID, tenantID)
 			if err != nil {
 				if errors.Is(err, shared.ErrNotFound) {
 					apierror.Forbidden("You are not a member of this tenant").WriteJSON(w)
