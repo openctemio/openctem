@@ -835,6 +835,37 @@ func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ResendInvitation handles POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend
+//
+// Re-sends the invitation email for a pending (unaccepted, unexpired)
+// invitation. Does NOT change the token, expiry, or any other metadata.
+// Idempotent — calling it 3 times sends 3 emails, all containing the
+// same token link. The existing link in the user's inbox stays valid.
+//
+// Returns 200 on success, 400 if the invitation was already accepted
+// or has expired, 404 if the invitation doesn't exist or belongs to a
+// different tenant.
+func (h *TenantHandler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	invitationID := r.PathValue("invitationId")
+	if invitationID == "" {
+		apierror.BadRequest("Invitation ID is required").WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	if err := h.service.ResendInvitation(r.Context(), tenantID, invitationID, actx); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"message": "Invitation email resent",
+	})
+}
+
 // GetInvitation handles GET /api/v1/invitations/{token}
 func (h *TenantHandler) GetInvitation(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")

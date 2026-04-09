@@ -54,6 +54,7 @@ func registerTenantRoutes(
 		r.PATCH("/members/{memberId}", h.UpdateMemberRole, middleware.RequireTeamAdmin())
 		r.DELETE("/members/{memberId}", h.RemoveMember, middleware.RequireTeamAdmin())
 		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin())
+		r.POST("/invitations/{invitationId}/resend", h.ResendInvitation, middleware.RequireTeamAdmin())
 		r.DELETE("/invitations/{invitationId}", h.DeleteInvitation, middleware.RequireTeamAdmin())
 
 		// Settings management (admin+)

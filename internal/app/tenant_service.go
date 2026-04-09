@@ -780,6 +780,87 @@ func (s *TenantService) CleanupExpiredInvitations(ctx context.Context) (int64, e
 	return count, nil
 }
 
+// ResendInvitation re-enqueues the invitation email for a pending
+// invitation. Does NOT change the token, expiry, or any other fields
+// on the invitation row — just fires the email again. This lets admins
+// recover from lost/spam-filtered invitation emails without having to
+// delete + recreate (which invalidates the old token).
+//
+// Returns ErrNotFound if the invitation doesn't exist, and ErrValidation
+// if the invitation has already been accepted or has expired.
+func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitationID string, actx AuditContext) error {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	parsedInvID, err := shared.IDFromString(invitationID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid invitation id format", shared.ErrValidation)
+	}
+
+	inv, err := s.repo.GetInvitationByID(ctx, parsedInvID)
+	if err != nil {
+		return err
+	}
+
+	// Tenant isolation — invitation must belong to the requesting tenant
+	if inv.TenantID().String() != parsedTenantID.String() {
+		return shared.ErrNotFound
+	}
+
+	if inv.IsAccepted() {
+		return fmt.Errorf("%w: invitation has already been accepted", shared.ErrValidation)
+	}
+	if inv.IsExpired() {
+		return fmt.Errorf("%w: invitation has expired — create a new one", shared.ErrValidation)
+	}
+
+	if s.emailEnqueuer == nil {
+		return fmt.Errorf("%w: email service is not configured", shared.ErrValidation)
+	}
+
+	// Look up inviter name + tenant name for the email template
+	inviterName := "A team member"
+	if s.userInfoProvider != nil {
+		if name, nerr := s.userInfoProvider.GetUserNameByID(ctx, inv.InvitedBy()); nerr == nil && name != "" {
+			inviterName = name
+		}
+	}
+	teamName := "the team"
+	if t, terr := s.repo.GetByID(ctx, parsedTenantID); terr == nil && t != nil {
+		teamName = t.Name()
+	}
+
+	payload := TeamInvitationJobPayload{
+		RecipientEmail: inv.Email(),
+		InviterName:    inviterName,
+		TeamName:       teamName,
+		Token:          inv.Token(),
+		ExpiresIn:      time.Until(inv.ExpiresAt()), // remaining TTL, not the original 7 days
+		InvitationID:   inv.ID().String(),
+		TenantID:       tenantID,
+	}
+	if err := s.emailEnqueuer.EnqueueTeamInvitation(ctx, payload); err != nil {
+		return fmt.Errorf("failed to enqueue invitation email: %w", err)
+	}
+
+	s.logger.Info("invitation email resent",
+		"email", inv.Email(),
+		"invitation_id", invitationID,
+		"tenant_id", tenantID,
+	)
+
+	// Audit
+	actx.TenantID = tenantID
+	event := NewSuccessEvent(audit.ActionInvitationCreated, audit.ResourceTypeInvitation, invitationID).
+		WithSeverity(audit.SeverityLow).
+		WithMessage(fmt.Sprintf("Invitation email resent to %s", inv.Email())).
+		WithMetadata("email", inv.Email())
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
 // GetUserDisplayName returns the display name for a user by their ID.
 // Returns empty string if user not found or no userInfoProvider is configured.
 func (s *TenantService) GetUserDisplayName(ctx context.Context, userID shared.ID) string {
