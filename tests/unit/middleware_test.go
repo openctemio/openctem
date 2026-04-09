@@ -299,6 +299,98 @@ func TestRequireMembership_NoMembership_Rejected(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// RequireActiveMembershipFromJWT: suspension enforcement on JWT-claim routes
+// =============================================================================
+
+// requireMembershipFromJWTRequest sets the context the JWT-tenant
+// variant expects: a local user (LocalUserKey) and the tenant id
+// stored under TenantIDKey by the auth middleware (NOT TeamIDKey,
+// which is the URL-path variant).
+func requireMembershipFromJWTRequest(u *user.User, tenantID shared.ID) *http.Request {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, middleware.LocalUserKey, u)
+	ctx = context.WithValue(ctx, middleware.TenantIDKey, tenantID.String())
+	return httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx)
+}
+
+func TestRequireActiveMembershipFromJWT_Active_Allowed(t *testing.T) {
+	u := newMembershipTestUser(t)
+	tenantID := shared.NewID()
+
+	m, err := tenant.NewMembership(u.ID(), tenantID, tenant.RoleMember, nil)
+	if err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+	repo := newMockTenantRepo()
+	repo.memberships[m.ID().String()] = m
+
+	called := false
+	handler := middleware.RequireActiveMembershipFromJWT(repo)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, requireMembershipFromJWTRequest(u, tenantID))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !called {
+		t.Fatal("expected next handler to run for active member")
+	}
+}
+
+func TestRequireActiveMembershipFromJWT_Suspended_Rejected(t *testing.T) {
+	// Regression for the gap where suspended users could still hit
+	// /api/v1/me/* and other JWT-claim-scoped routes until their
+	// access token expired.
+	u := newMembershipTestUser(t)
+	tenantID := shared.NewID()
+	suspender := shared.NewID()
+
+	m, err := tenant.NewMembership(u.ID(), tenantID, tenant.RoleMember, nil)
+	if err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+	if err := m.Suspend(suspender); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	repo := newMockTenantRepo()
+	repo.memberships[m.ID().String()] = m
+
+	handler := middleware.RequireActiveMembershipFromJWT(repo)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("next handler must not run for suspended member")
+	}))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, requireMembershipFromJWTRequest(u, tenantID))
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRequireActiveMembershipFromJWT_NoTenantClaim_Rejected(t *testing.T) {
+	// JWT without a tenant claim should be 401 even if the user is
+	// authenticated.
+	u := newMembershipTestUser(t)
+	repo := newMockTenantRepo()
+
+	handler := middleware.RequireActiveMembershipFromJWT(repo)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("next handler must not run without a tenant claim")
+	}))
+
+	ctx := context.WithValue(context.Background(), middleware.LocalUserKey, u)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
 // TestAllContextValues tests that all context values work together
 func TestAllContextValues(t *testing.T) {
 	ctx := context.Background()

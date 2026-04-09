@@ -592,6 +592,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Wire session service to user service for session revocation on suspension
 	s.User.SetSessionService(s.Session)
 
+	// Wire session service to tenant service so SuspendMember can revoke
+	// all sessions of a suspended user immediately. Without this, the
+	// user's existing JWT continues to work on JWT-claim-scoped routes
+	// (e.g. /api/v1/me/*, /api/v1/notifications) until it expires.
+	s.Tenant.SetSessionService(s.Session)
+
 	// Initialize SSO service for per-tenant identity provider authentication
 	s.SSO = app.NewSSOService(
 		repos.IdentityProvider,
@@ -630,11 +636,12 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 	return nil
 }
 
-// SetEmailEnqueuer sets the email job enqueuer.
-func (s *Services) SetEmailEnqueuer(enqueuer app.EmailJobEnqueuer) {
-	s.EmailEnqueue = enqueuer
-	s.Tenant = app.NewTenantService(nil, nil, app.WithEmailEnqueuer(enqueuer))
-}
+// Note: SetEmailEnqueuer was removed. The previous implementation
+// rebuilt s.Tenant with `app.NewTenantService(nil, nil, ...)`, which
+// dropped the repo and the logger and would panic on any subsequent
+// call. The actual wiring of the email enqueuer happens in main.go
+// where it can also re-attach the permission and session services
+// after the tenant service is reconstructed.
 
 // initEncryptor initializes the credentials encryptor.
 func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, error) {

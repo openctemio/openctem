@@ -538,33 +538,30 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	// Generate session ID first so we can include it in the JWT
 	sessionID := shared.NewID()
 
-	// Query user's tenant memberships
-	memberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
+	// Query user's tenant memberships in a SINGLE round trip — both
+	// active (for token exchange) and suspended (for the "your access
+	// is suspended" UI message). The previous code issued two
+	// sequential queries to the same table for opposite filters.
+	var (
+		tenantInfos    []TenantMembershipInfo
+		suspendedInfos []TenantMembershipInfo
+	)
+	memberships, err := s.tenantRepo.GetUserMembershipsWithStatus(ctx, u.ID())
 	if err != nil {
 		s.logger.Error("failed to get user memberships", "error", err)
-		// Continue without memberships - user can still login but won't have tenant access
-		memberships = nil
-	}
-
-	// Convert to TenantMembershipInfo for response
-	tenantInfos := make([]TenantMembershipInfo, 0, len(memberships))
-	for _, m := range memberships {
-		tenantInfos = append(tenantInfos, TenantMembershipInfo{
-			TenantID:   m.TenantID,
-			TenantSlug: m.TenantSlug,
-			TenantName: m.TenantName,
-			Role:       m.Role,
-		})
-	}
-
-	// Also fetch suspended memberships so the client can show a clear
-	// "your access to {tenant} is suspended" message instead of routing
-	// the user into the create-team flow with no explanation. This is a
-	// best-effort lookup — failure does not break login.
-	var suspendedInfos []TenantMembershipInfo
-	if suspended, serr := s.tenantRepo.GetUserSuspendedMemberships(ctx, u.ID()); serr == nil {
-		suspendedInfos = make([]TenantMembershipInfo, 0, len(suspended))
-		for _, m := range suspended {
+		// Continue without memberships — user can still login but won't have tenant access
+	} else {
+		tenantInfos = make([]TenantMembershipInfo, 0, len(memberships.Active))
+		for _, m := range memberships.Active {
+			tenantInfos = append(tenantInfos, TenantMembershipInfo{
+				TenantID:   m.TenantID,
+				TenantSlug: m.TenantSlug,
+				TenantName: m.TenantName,
+				Role:       m.Role,
+			})
+		}
+		suspendedInfos = make([]TenantMembershipInfo, 0, len(memberships.Suspended))
+		for _, m := range memberships.Suspended {
 			suspendedInfos = append(suspendedInfos, TenantMembershipInfo{
 				TenantID:   m.TenantID,
 				TenantSlug: m.TenantSlug,
@@ -572,9 +569,6 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 				Role:       m.Role,
 			})
 		}
-	} else {
-		s.logger.Warn("failed to load suspended memberships at login",
-			"user_id", u.ID().String(), "error", serr)
 	}
 
 	// Generate GLOBAL refresh token (no tenant context)

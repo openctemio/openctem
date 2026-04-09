@@ -114,6 +114,58 @@ func RequireMembership(tenantRepo tenant.Repository) func(http.Handler) http.Han
 	}
 }
 
+// RequireActiveMembershipFromJWT is the JWT-claim variant of
+// RequireMembership. It is used by token-based tenant routes (e.g.
+// /api/v1/me/*, /api/v1/notifications, /api/v1/api-keys) where the
+// tenant ID comes from the access-token claim instead of the URL
+// path.
+//
+// Without this, suspended members with a still-valid JWT could keep
+// hitting JWT-claim-scoped endpoints until their token expires, even
+// though tenant-scoped URL routes are blocked.
+//
+// Must be used after KeycloakAuth, UserSync, and RequireTenant middleware.
+func RequireActiveMembershipFromJWT(tenantRepo tenant.Repository) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID := GetLocalUserID(r.Context())
+			if userID.IsZero() {
+				apierror.Unauthorized("Authentication required").WriteJSON(w)
+				return
+			}
+
+			// Tenant ID lives in JWT claims (not URL path) for these routes.
+			tenantIDStr := GetTenantID(r.Context())
+			if tenantIDStr == "" {
+				apierror.Unauthorized("Tenant ID not found in token").WriteJSON(w)
+				return
+			}
+			tenantID, err := shared.IDFromString(tenantIDStr)
+			if err != nil {
+				apierror.Unauthorized("Invalid tenant ID in token").WriteJSON(w)
+				return
+			}
+
+			membership, err := tenantRepo.GetMembership(r.Context(), userID, tenantID)
+			if err != nil {
+				if errors.Is(err, shared.ErrNotFound) {
+					apierror.Forbidden("You are not a member of this tenant").WriteJSON(w)
+					return
+				}
+				apierror.InternalError(fmt.Errorf("failed to check membership")).WriteJSON(w)
+				return
+			}
+
+			if membership.IsSuspended() {
+				apierror.Forbidden("Your access to this tenant has been suspended").WriteJSON(w)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // RequireTeamRole checks if the user has one of the required roles in the team.
 // Must be used after RequireMembership middleware.
 func RequireTeamRole(roles ...tenant.Role) func(http.Handler) http.Handler {

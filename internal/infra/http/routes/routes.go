@@ -190,6 +190,13 @@ func Register(
 		readRateLimitMiddleware = rl.Middleware()
 	}
 
+	// Initialize the JWT-tenant membership check. This middleware is
+	// appended to every chain returned by buildTokenTenantMiddlewares,
+	// so any token-scoped route automatically rejects suspended users.
+	if tenantRepo != nil {
+		activeMembershipFromJWTMiddleware = middleware.RequireActiveMembershipFromJWT(tenantRepo)
+	}
+
 	// UserSync middleware syncs authenticated users to local database
 	// Supports both local auth and OIDC auth
 	var userSync Middleware
@@ -520,6 +527,17 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 // by buildTokenTenantMiddlewares to all tenant-scoped route groups.
 var readRateLimitMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
+// activeMembershipFromJWTMiddleware checks that the user holding the
+// JWT is still an ACTIVE member of the tenant the JWT claims to be
+// scoped to. Set during Register() once tenantRepo is available.
+//
+// Without this, suspended members with a still-valid access token
+// could keep hitting JWT-claim-scoped routes (/api/v1/me/*,
+// /api/v1/notifications, /api/v1/api-keys, /api/v1/scans/...) until
+// the JWT expires. URL-path tenant routes already enforce this via
+// RequireMembership in tenant.go.
+var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
 // This uses tenant ID from JWT claims instead of URL path.
 // Best practice: tenant-scoped access tokens eliminate IDOR by design.
@@ -527,6 +545,13 @@ var readRateLimitMiddleware Middleware //nolint:gochecknoglobals // set once dur
 func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
 	middlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
 	middlewares = append(middlewares, middleware.RequireTenant())
+	// Membership status check — must run AFTER RequireTenant (which
+	// validates the JWT carries a tenant id). Skipped only if Register
+	// did not wire tenantRepo, which would only happen in tests with a
+	// minimal handler set.
+	if activeMembershipFromJWTMiddleware != nil {
+		middlewares = append(middlewares, activeMembershipFromJWTMiddleware)
+	}
 	if readRateLimitMiddleware != nil {
 		middlewares = append(middlewares, readRateLimitMiddleware)
 	}

@@ -40,6 +40,13 @@ type TenantService struct {
 	// Permission sync services for immediate cache invalidation on member removal
 	permCacheSvc   *PermissionCacheService
 	permVersionSvc *PermissionVersionService
+	// Session service for revoking all sessions of a user when their
+	// access is paused (suspend) or removed. Without this, an existing
+	// browser tab keeps a valid JWT until expiry and the suspension
+	// only takes effect on tenant-scoped routes that hit
+	// RequireMembership middleware. JWT-claim-scoped routes (e.g.
+	// /api/v1/me/*, /api/v1/notifications) would still let the user in.
+	sessionService *SessionService
 	logger         *logger.Logger
 }
 
@@ -105,6 +112,14 @@ func WithTenantPermissionVersionService(svc *PermissionVersionService) TenantSer
 func (s *TenantService) SetPermissionServices(cacheSvc *PermissionCacheService, versionSvc *PermissionVersionService) {
 	s.permCacheSvc = cacheSvc
 	s.permVersionSvc = versionSvc
+}
+
+// SetSessionService injects the session service so SuspendMember and
+// RemoveMember can revoke all of the user's sessions immediately.
+// Without it, suspended users can still hit JWT-claim-scoped routes
+// (e.g. /api/v1/me/*) until their JWT expires.
+func (s *TenantService) SetSessionService(sessionService *SessionService) {
+	s.sessionService = sessionService
 }
 
 // logAudit logs an audit event if audit service is configured.
@@ -499,10 +514,29 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
 
-	// Immediately revoke access
+	// Immediately revoke access — three independent kill switches:
+	//
+	//   1. Permission cache invalidation: forces a fresh permission
+	//      lookup on the next tenant-scoped request, which now sees
+	//      the suspended status and 403s.
+	//   2. Session revocation: kills all of this user's active sessions
+	//      and refresh tokens. Without this, JWT-claim-scoped routes
+	//      (/api/v1/me/*, /api/v1/notifications) would still let the
+	//      user in until their JWT expired (~30 min).
+	//   3. Pending invitation cleanup: removes any unaccepted invites
+	//      so the user can't rejoin via a stale link.
 	s.invalidateUserPermissions(ctx, tenantID, userID)
 
-	// Invalidate pending invitations
+	if s.sessionService != nil {
+		if err := s.sessionService.RevokeAllSessions(ctx, userID, ""); err != nil {
+			// Best effort — log but don't fail the suspend. The
+			// permission cache invalidation above is the primary
+			// kill switch; session revocation is defense in depth.
+			s.logger.Warn("failed to revoke sessions on suspend",
+				"user_id", userID, "error", err)
+		}
+	}
+
 	if deleted, derr := s.repo.DeletePendingInvitationsByUserID(ctx, membership.TenantID(), membership.UserID()); derr != nil {
 		s.logger.Warn("failed to clean up invitations on suspend", "error", derr)
 	} else if deleted > 0 {
@@ -543,6 +577,14 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
+
+	// Invalidate the permission cache so the user's reactivated state
+	// takes effect immediately. Without this the user could see stale
+	// "empty permissions" (the result of the suspend invalidation) for
+	// up to permCacheTTL (5 minutes). The Increment side-effect also
+	// bumps the user's permission version so any in-flight JWT clients
+	// know to refetch.
+	s.invalidateUserPermissions(ctx, tenantID, userID)
 
 	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
 

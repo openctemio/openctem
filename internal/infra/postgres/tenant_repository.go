@@ -863,6 +863,64 @@ func (r *TenantRepository) GetUserSuspendedMemberships(ctx context.Context, user
 	return memberships, nil
 }
 
+// GetUserMembershipsWithStatus returns BOTH active and suspended
+// memberships in a single query, partitioned by status. The login
+// flow needs both lists (active for token exchange, suspended for
+// the "your access is suspended" UI message); the previous
+// implementation called GetUserMemberships and
+// GetUserSuspendedMemberships sequentially, doubling the round-trip
+// cost on every login.
+//
+// The returned struct keeps the API stable: callers that only need
+// active memberships read .Active, callers that need both read both.
+func (r *TenantRepository) GetUserMembershipsWithStatus(
+	ctx context.Context, userID shared.ID,
+) (*tenant.UserMembershipsByStatus, error) {
+	query := `
+		SELECT
+			t.id,
+			t.slug,
+			t.name,
+			COALESCE(ver.role, m.role) as effective_role,
+			COALESCE(m.status, 'active') as status
+		FROM tenant_members m
+		INNER JOIN tenants t ON t.id = m.tenant_id
+		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.user_id = $1
+		ORDER BY
+		    CASE WHEN m.status = 'suspended' THEN m.suspended_at ELSE m.joined_at END DESC NULLS LAST
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, userID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user memberships: %w", err)
+	}
+	defer rows.Close()
+
+	result := &tenant.UserMembershipsByStatus{}
+	for rows.Next() {
+		var (
+			m      tenant.UserMembership
+			status string
+		)
+		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role, &status); err != nil {
+			return nil, fmt.Errorf("failed to scan membership: %w", err)
+		}
+		switch status {
+		case "suspended":
+			result.Suspended = append(result.Suspended, m)
+		default:
+			result.Active = append(result.Active, m)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate memberships: %w", err)
+	}
+
+	return result, nil
+}
+
 // GetUserMemberships returns lightweight membership data for JWT tokens.
 // Uses v_user_effective_role view to get the highest-priority role from user_roles table.
 // SECURITY: Suspended memberships are excluded so suspended users cannot exchange

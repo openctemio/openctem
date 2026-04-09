@@ -359,6 +359,18 @@ func (m *mockAuthTenantRepo) GetUserSuspendedMemberships(_ context.Context, _ sh
 	return nil, nil
 }
 
+// GetUserMembershipsWithStatus mirrors GetUserMemberships for the
+// merged-query path. Returns active = m.userMemberships and an empty
+// suspended slice unless explicitly populated by the test.
+func (m *mockAuthTenantRepo) GetUserMembershipsWithStatus(_ context.Context, _ shared.ID) (*tenant.UserMembershipsByStatus, error) {
+	if m.getUserMembershipsErr != nil {
+		return nil, m.getUserMembershipsErr
+	}
+	return &tenant.UserMembershipsByStatus{
+		Active: m.userMemberships,
+	}, nil
+}
+
 func (m *mockAuthTenantRepo) GetMemberByEmail(_ context.Context, _ shared.ID, _ string) (*tenant.MemberWithUser, error) {
 	return nil, shared.ErrNotFound
 }

@@ -173,6 +173,10 @@ func run() int {
 		app.WithEmailEnqueuer(emailEnqueuer),
 	)
 	services.Tenant.SetPermissionServices(services.PermCache, services.PermVersion)
+	// Re-wire session service after rebuilding the tenant service —
+	// the constructor above replaces services.Tenant, dropping the
+	// SetSessionService call from initServices().
+	services.Tenant.SetSessionService(services.Session)
 
 	// Wire AI triage job enqueuer if service is enabled
 	if services.AITriage != nil {
