@@ -12,46 +12,23 @@ import (
 // =============================================================================
 // Value Objects: RelationshipType
 // =============================================================================
+//
+// The constants (RelTypeRunsOn, RelTypeDeployedTo, etc.) and the
+// `allRelationshipTypesGenerated` slice live in
+// relationship_types_generated.go, which is generated from
+// configs/relationship-types.yaml. Add a new type by editing the YAML
+// and running `make generate-relationships` — never add constants here
+// by hand.
 
 // RelationshipType represents the type of relationship between assets.
 type RelationshipType string
 
-const (
-	// Attack Surface Mapping
-	RelTypeRunsOn     RelationshipType = "runs_on"
-	RelTypeDeployedTo RelationshipType = "deployed_to"
-	RelTypeContains   RelationshipType = "contains"
-	RelTypeExposes    RelationshipType = "exposes"
-	RelTypeMemberOf   RelationshipType = "member_of"
-	RelTypeResolvesTo RelationshipType = "resolves_to"
-
-	// Attack Path Analysis
-	RelTypeDependsOn       RelationshipType = "depends_on"
-	RelTypeSendsDataTo     RelationshipType = "sends_data_to"
-	RelTypeStoresDataIn    RelationshipType = "stores_data_in"
-	RelTypeAuthenticatesTo RelationshipType = "authenticates_to"
-	RelTypeGrantedTo       RelationshipType = "granted_to"
-	RelTypeLoadBalances    RelationshipType = "load_balances"
-
-	// Control & Ownership
-	RelTypeProtectedBy RelationshipType = "protected_by"
-	RelTypeMonitors    RelationshipType = "monitors"
-	RelTypeManages     RelationshipType = "manages"
-	RelTypeOwnedBy     RelationshipType = "owned_by"
-)
-
-// AllRelationshipTypes returns all valid relationship types.
+// AllRelationshipTypes returns all valid relationship types in
+// declaration order. The underlying slice is generated.
 func AllRelationshipTypes() []RelationshipType {
-	return []RelationshipType{
-		// Attack Surface Mapping
-		RelTypeRunsOn, RelTypeDeployedTo, RelTypeContains,
-		RelTypeExposes, RelTypeMemberOf, RelTypeResolvesTo,
-		// Attack Path Analysis
-		RelTypeDependsOn, RelTypeSendsDataTo, RelTypeStoresDataIn,
-		RelTypeAuthenticatesTo, RelTypeGrantedTo, RelTypeLoadBalances,
-		// Control & Ownership
-		RelTypeProtectedBy, RelTypeMonitors, RelTypeManages, RelTypeOwnedBy,
-	}
+	out := make([]RelationshipType, len(allRelationshipTypesGenerated))
+	copy(out, allRelationshipTypesGenerated)
+	return out
 }
 
 // IsValid checks if the relationship type is valid.
