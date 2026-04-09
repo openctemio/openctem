@@ -761,51 +761,48 @@ func (r *TenantRepository) GetMemberByEmail(ctx context.Context, tenantID shared
 // wide state that has no tenant context and no UI to manage it. The tenant
 // admin only cares whether a member's access to *this* tenant is active or
 // suspended; that information lives on tenant_members.status.
+//
+// All seven aggregates (total / active / role counts × 4 / pending invites)
+// are computed in a SINGLE round trip via a CTE that materialises the
+// member rows once and feeds the COUNT() FILTER aggregates from that
+// CTE plus a sub-SELECT for invitations. The previous version issued
+// three sequential queries to the same table set.
 func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.ID) (*tenant.MemberStats, error) {
-	// Get total and active member counts
-	memberQuery := `
+	query := `
+		WITH members AS (
+			SELECT m.user_id, COALESCE(m.status, 'active') AS status, ver.role AS effective_role
+			FROM tenant_members m
+			LEFT JOIN v_user_effective_role ver
+			    ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+			WHERE m.tenant_id = $1
+		)
 		SELECT
-			COUNT(*) as total,
-			COUNT(CASE WHEN COALESCE(m.status, 'active') = 'active' THEN 1 END) as active
-		FROM tenant_members m
-		WHERE m.tenant_id = $1
+			COUNT(*)                                                            AS total,
+			COUNT(*) FILTER (WHERE status = 'active')                          AS active,
+			COUNT(*) FILTER (WHERE effective_role = 'owner')                   AS owners,
+			COUNT(*) FILTER (WHERE effective_role = 'admin')                   AS admins,
+			COUNT(*) FILTER (WHERE effective_role = 'member' OR effective_role IS NULL) AS members_cnt,
+			COUNT(*) FILTER (WHERE effective_role = 'viewer')                  AS viewers,
+			(
+				SELECT COUNT(*)
+				FROM tenant_invitations
+				WHERE tenant_id = $1 AND accepted_at IS NULL AND expires_at > NOW()
+			) AS pending_invites
+		FROM members
 	`
 
-	var total, active int
-	err := r.db.QueryRowContext(ctx, memberQuery, tenantID.String()).Scan(&total, &active)
+	var (
+		total, active                              int
+		owners, admins, membersCount, viewers      int
+		pendingInvites                             int
+	)
+	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+		&total, &active,
+		&owners, &admins, &membersCount, &viewers,
+		&pendingInvites,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get member stats: %w", err)
-	}
-
-	// Get role counts from v_user_effective_role
-	roleQuery := `
-		SELECT
-			COUNT(CASE WHEN ver.role = 'owner' THEN 1 END) as owners,
-			COUNT(CASE WHEN ver.role = 'admin' THEN 1 END) as admins,
-			COUNT(CASE WHEN ver.role = 'member' OR ver.role IS NULL THEN 1 END) as members,
-			COUNT(CASE WHEN ver.role = 'viewer' THEN 1 END) as viewers
-		FROM tenant_members m
-		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
-		WHERE m.tenant_id = $1
-	`
-
-	var owners, admins, membersCount, viewers int
-	err = r.db.QueryRowContext(ctx, roleQuery, tenantID.String()).Scan(&owners, &admins, &membersCount, &viewers)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get role counts: %w", err)
-	}
-
-	// Get pending invitations count
-	inviteQuery := `
-		SELECT COUNT(*)
-		FROM tenant_invitations
-		WHERE tenant_id = $1 AND accepted_at IS NULL AND expires_at > NOW()
-	`
-
-	var pendingInvites int
-	err = r.db.QueryRowContext(ctx, inviteQuery, tenantID.String()).Scan(&pendingInvites)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pending invites: %w", err)
 	}
 
 	return &tenant.MemberStats{
