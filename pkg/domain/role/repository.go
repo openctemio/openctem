@@ -36,6 +36,13 @@ type Repository interface {
 	// GetUserRoles returns all roles for a user in a tenant.
 	GetUserRoles(ctx context.Context, tenantID, userID ID) ([]*Role, error)
 
+	// GetUsersRoles returns all roles for multiple users in a tenant in
+	// ONE round trip. The returned map keys are user IDs (string form);
+	// values are the roles assigned to that user. Used by the member
+	// list endpoint to avoid the N+1 enrichment loop where every member
+	// triggered an individual GetUserRoles call.
+	GetUsersRoles(ctx context.Context, tenantID ID, userIDs []ID) (map[string][]*Role, error)
+
 	// GetUserPermissions returns all permissions for a user (UNION of all roles).
 	GetUserPermissions(ctx context.Context, tenantID, userID ID) ([]string, error)
 

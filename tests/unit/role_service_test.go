@@ -152,6 +152,13 @@ func (m *mockRoleRepo) GetUserRoles(_ context.Context, _ role.ID, _ role.ID) ([]
 	return []*role.Role{}, nil
 }
 
+func (m *mockRoleRepo) GetUsersRoles(_ context.Context, _ role.ID, _ []role.ID) (map[string][]*role.Role, error) {
+	if m.getUserRolesErr != nil {
+		return nil, m.getUserRolesErr
+	}
+	return map[string][]*role.Role{}, nil
+}
+
 func (m *mockRoleRepo) GetUserPermissions(_ context.Context, _ role.ID, _ role.ID) ([]string, error) {
 	if m.getUserPermsErr != nil {
 		return nil, m.getUserPermsErr

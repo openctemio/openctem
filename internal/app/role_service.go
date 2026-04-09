@@ -420,6 +420,32 @@ func (s *RoleService) GetUserRoles(ctx context.Context, tenantID, userID string)
 	return s.roleRepo.GetUserRoles(ctx, tid, uid)
 }
 
+// GetUsersRoles returns all roles for multiple users in ONE round trip.
+// Used by the member list endpoint to avoid the N+1 enrichment loop.
+// Invalid user ID strings are silently dropped — the caller is the
+// member list which can't have invalid IDs by construction (they come
+// from the same DB), and the contract is "best effort" to keep the
+// list endpoint resilient.
+func (s *RoleService) GetUsersRoles(
+	ctx context.Context, tenantID string, userIDs []string,
+) (map[string][]*role.Role, error) {
+	tid, err := role.ParseID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
+	parsed := make([]role.ID, 0, len(userIDs))
+	for _, s := range userIDs {
+		uid, err := role.ParseID(s)
+		if err != nil {
+			continue
+		}
+		parsed = append(parsed, uid)
+	}
+
+	return s.roleRepo.GetUsersRoles(ctx, tid, parsed)
+}
+
 // GetUserPermissions returns all permissions for a user (UNION of all roles).
 func (s *RoleService) GetUserPermissions(ctx context.Context, tenantID, userID string) ([]string, error) {
 	tid, err := role.ParseID(tenantID)
