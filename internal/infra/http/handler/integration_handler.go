@@ -397,6 +397,27 @@ func (h *IntegrationHandler) handleServiceError(w http.ResponseWriter, err error
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
+		// Detect upstream / network errors so the client gets an actionable
+		// 502 instead of a generic 500. The error string is the only signal we
+		// have here because the SCM client wraps net errors as plain errors.
+		errStr := err.Error()
+		isUpstream := strings.Contains(errStr, "no such host") ||
+			strings.Contains(errStr, "connection refused") ||
+			strings.Contains(errStr, "i/o timeout") ||
+			strings.Contains(errStr, "network is unreachable") ||
+			strings.Contains(errStr, "TLS handshake") ||
+			strings.Contains(errStr, "context deadline exceeded") ||
+			strings.Contains(errStr, "EOF")
+		if isUpstream {
+			// Log the full error server-side for debugging but return a
+			// generic message — never leak internal hostnames or DNS resolver
+			// addresses to the client.
+			h.logger.Warn("integration upstream error", "error", err)
+			apierror.New(http.StatusBadGateway, apierror.Code("INTEGRATION_UNREACHABLE"),
+				"Could not reach the integration provider. Check the host, network, and credentials, then retry.").
+				WriteJSON(w)
+			return
+		}
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}

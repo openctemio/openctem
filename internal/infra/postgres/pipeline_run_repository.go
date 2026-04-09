@@ -46,9 +46,10 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 			total_steps, completed_steps, failed_steps, skipped_steps, total_findings,
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
+			retry_attempt,
 			created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -71,6 +72,7 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 		run.ErrorMessage,
 		nullID(run.ScanProfileID),
 		nullBytes(qualityGateResult),
+		run.RetryAttempt,
 		run.CreatedAt,
 	)
 
@@ -157,7 +159,7 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 		SET status = $2, context = $3,
 		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7, total_findings = $8,
 		    started_at = $9, completed_at = $10, error_message = $11,
-		    scan_profile_id = $12, quality_gate_result = $13
+		    scan_profile_id = $12, quality_gate_result = $13, retry_attempt = $14
 		WHERE id = $1
 	`
 
@@ -175,6 +177,7 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 		run.ErrorMessage,
 		nullID(run.ScanProfileID),
 		nullBytes(qualityGateResult),
+		run.RetryAttempt,
 	)
 
 	if err != nil {
@@ -391,9 +394,10 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 			total_steps, completed_steps, failed_steps, skipped_steps, total_findings,
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
+			retry_attempt,
 			created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -416,6 +420,7 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 		run.ErrorMessage,
 		nullID(run.ScanProfileID),
 		nullBytes(qualityGateResult),
+		run.RetryAttempt,
 		run.CreatedAt,
 	)
 	if err != nil {
@@ -427,6 +432,122 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 	}
 
 	return nil
+}
+
+// MarkTimedOutRuns marks pipeline_runs as timed out if they have been running
+// longer than their scan's timeout_seconds. Uses a single SQL UPDATE joining
+// pipeline_runs and scans for efficiency.
+//
+// A run is considered timed out when:
+//   - status = 'running' OR 'pending'
+//   - started_at IS NOT NULL
+//   - now() - started_at > scan.timeout_seconds
+//
+// Returns the number of runs marked as timeout.
+func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error) {
+	query := `
+		UPDATE pipeline_runs pr
+		SET status = 'timeout',
+		    completed_at = NOW(),
+		    error_message = 'scan exceeded configured timeout'
+		FROM scans s
+		WHERE pr.scan_id = s.id
+		  AND pr.status IN ('pending', 'running')
+		  AND pr.started_at IS NOT NULL
+		  AND s.timeout_seconds > 0
+		  AND EXTRACT(EPOCH FROM (NOW() - pr.started_at)) > s.timeout_seconds
+	`
+
+	result, err := r.db.ExecContext(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to mark timed out runs: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
+// ListPendingRetries atomically claims failed pipeline_runs eligible for automatic retry.
+//
+// The query finds failed runs whose:
+//   - parent scan is active and has max_retries > 0
+//   - retry_attempt < scan.max_retries (still has retry budget)
+//   - retry_dispatched_at IS NULL (not already claimed by another controller)
+//   - exponential backoff window has elapsed (retry_backoff * 2^retry_attempt seconds)
+//
+// It uses FOR UPDATE SKIP LOCKED + atomic UPDATE to set retry_dispatched_at = NOW(),
+// ensuring each failed run is claimed at most once even with concurrent controllers
+// or repeated polling cycles. The claim marker is permanent (we never reset it),
+// since each retry creates a NEW pipeline_run that becomes the new "latest".
+func (r *PipelineRunRepository) ListPendingRetries(ctx context.Context, limit int) ([]pipeline.RetryCandidate, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `
+		WITH eligible AS (
+			SELECT pr.id, pr.scan_id, pr.tenant_id, pr.retry_attempt,
+			       s.max_retries, s.retry_backoff_seconds
+			FROM pipeline_runs pr
+			JOIN scans s ON s.id = pr.scan_id
+			WHERE pr.status = 'failed'
+			  AND pr.retry_dispatched_at IS NULL
+			  AND pr.completed_at IS NOT NULL
+			  AND s.max_retries > 0
+			  AND pr.retry_attempt < s.max_retries
+			  AND s.status = 'active'
+			  AND NOW() >= pr.completed_at + (s.retry_backoff_seconds * POWER(2, pr.retry_attempt) || ' seconds')::interval
+			ORDER BY pr.completed_at ASC
+			LIMIT $1
+			FOR UPDATE OF pr SKIP LOCKED
+		),
+		claimed AS (
+			UPDATE pipeline_runs pr
+			SET retry_dispatched_at = NOW()
+			FROM eligible e
+			WHERE pr.id = e.id
+			RETURNING e.id, e.scan_id, e.tenant_id, e.retry_attempt, e.max_retries, e.retry_backoff_seconds
+		)
+		SELECT id, scan_id, tenant_id, retry_attempt, max_retries, retry_backoff_seconds
+		FROM claimed
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pending retries: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []pipeline.RetryCandidate
+	for rows.Next() {
+		var (
+			runIDStr, scanIDStr, tenantIDStr string
+			retryAttempt                     int
+			maxRetries                       int
+			backoff                          int
+		)
+		if err := rows.Scan(&runIDStr, &scanIDStr, &tenantIDStr, &retryAttempt, &maxRetries, &backoff); err != nil {
+			return nil, fmt.Errorf("failed to scan retry candidate: %w", err)
+		}
+		runID, _ := shared.IDFromString(runIDStr)
+		scanID, _ := shared.IDFromString(scanIDStr)
+		tenantID, _ := shared.IDFromString(tenantIDStr)
+		candidates = append(candidates, pipeline.RetryCandidate{
+			RunID:               runID,
+			ScanID:              scanID,
+			TenantID:            tenantID,
+			RetryAttempt:        retryAttempt,
+			MaxRetries:          maxRetries,
+			RetryBackoffSeconds: backoff,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate retry candidates: %w", err)
+	}
+	return candidates, nil
 }
 
 // ListByScanID lists runs for a specific scan with pagination.
@@ -470,7 +591,7 @@ func (r *PipelineRunRepository) selectQuery() string {
 		       trigger_type, triggered_by, status, context,
 		       total_steps, completed_steps, failed_steps, skipped_steps, total_findings,
 		       started_at, completed_at, error_message,
-		       scan_profile_id, quality_gate_result,
+		       scan_profile_id, quality_gate_result, retry_attempt,
 		       created_at
 		FROM pipeline_runs
 	`
@@ -533,6 +654,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		completedAt       sql.NullTime
 		scanProfileID     sql.NullString
 		qualityGateResult []byte
+		retryAttempt      sql.NullInt64
 	)
 
 	var triggeredBy, errorMessage sql.NullString
@@ -556,8 +678,10 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		&errorMessage,
 		&scanProfileID,
 		&qualityGateResult,
+		&retryAttempt,
 		&run.CreatedAt,
 	)
+	_ = retryAttempt // populated below
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -607,6 +731,10 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		}
 	}
 
+	if retryAttempt.Valid {
+		run.RetryAttempt = int(retryAttempt.Int64)
+	}
+
 	return run, nil
 }
 
@@ -625,6 +753,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		completedAt       sql.NullTime
 		scanProfileID     sql.NullString
 		qualityGateResult []byte
+		retryAttempt      sql.NullInt64
 	)
 
 	var triggeredBy, errorMessage sql.NullString
@@ -648,6 +777,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		&errorMessage,
 		&scanProfileID,
 		&qualityGateResult,
+		&retryAttempt,
 		&run.CreatedAt,
 	)
 
@@ -694,6 +824,10 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		if err := json.Unmarshal(qualityGateResult, &qgr); err == nil {
 			run.QualityGateResult = &qgr
 		}
+	}
+
+	if retryAttempt.Valid {
+		run.RetryAttempt = int(retryAttempt.Int64)
 	}
 
 	return run, nil

@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/pipeline"
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/api/pkg/domain/scanprofile"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/templatesource"
 	"github.com/openctemio/api/pkg/domain/tool"
@@ -183,6 +184,7 @@ type Service struct {
 	templateSourceRepo  templatesource.Repository
 	toolRepo            tool.Repository
 	targetMappingRepo   tool.TargetMappingRepository // For asset-scanner compatibility
+	profileRepo         scanprofile.Repository       // For ScanProfile linking and quality gates
 	templateSyncer      TemplateSyncer
 	agentSelector       AgentSelector
 	securityValidator   SecurityValidator
@@ -204,6 +206,13 @@ func WithAuditService(auditService AuditService) ServiceOption {
 func WithTargetMappingRepo(repo tool.TargetMappingRepository) ServiceOption {
 	return func(s *Service) {
 		s.targetMappingRepo = repo
+	}
+}
+
+// WithProfileRepo sets the scan profile repository for ScanProfile linking and quality gates.
+func WithProfileRepo(repo scanprofile.Repository) ServiceOption {
+	return func(s *Service) {
+		s.profileRepo = repo
 	}
 }
 

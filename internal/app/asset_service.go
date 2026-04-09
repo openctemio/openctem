@@ -350,8 +350,9 @@ type UpdateAssetInput struct {
 	Criticality *string  `validate:"omitempty,criticality"`
 	Scope       *string  `validate:"omitempty,scope"`
 	Exposure    *string  `validate:"omitempty,exposure"`
-	Description           *string  `validate:"omitempty,max=1000"`
-	Tags                  []string `validate:"omitempty,max=20,dive,max=50"`
+	Description *string  `validate:"omitempty,max=1000"`
+	OwnerRef    *string  `validate:"omitempty,max=500"` // Free-text owner reference
+	Tags        []string `validate:"omitempty,max=20,dive,max=50"`
 }
 
 // UpdateAsset updates an existing asset.
@@ -411,6 +412,10 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 
 	if input.Description != nil {
 		a.UpdateDescription(*input.Description)
+	}
+
+	if input.OwnerRef != nil {
+		a.SetOwnerRef(*input.OwnerRef)
 	}
 
 	// Capture old tags before replacement (for scope rule evaluation)
@@ -653,12 +658,13 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 // ListTags returns distinct tags across all assets for a tenant.
 // Supports prefix filtering for autocomplete.
 // GetAssetStats returns aggregated asset statistics using SQL aggregation.
-func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string) (*asset.AggregateStats, error) {
+// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string, tags []string) (*asset.AggregateStats, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	return s.repo.GetAggregateStats(ctx, parsedTenantID, types)
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags)
 }
 
 func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, limit int) ([]string, error) {

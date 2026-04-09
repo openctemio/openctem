@@ -259,6 +259,10 @@ func (m *cmdMockRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (command.
 	return command.CommandStats{}, nil
 }
 
+func (m *cmdMockRepo) CancelByPipelineRunID(_ context.Context, _ shared.ID, _ shared.ID) (int64, error) {
+	return 0, nil
+}
+
 // =============================================================================
 // Helper functions
 // =============================================================================

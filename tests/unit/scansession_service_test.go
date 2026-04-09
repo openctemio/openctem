@@ -256,6 +256,10 @@ func (m *scanSessionMockAgentRepo) GetPlatformAgentStats(_ context.Context, _ sh
 	return nil, nil
 }
 
+func (m *scanSessionMockAgentRepo) GetTenantAgentStats(_ context.Context, _ shared.ID) (*agent.TenantAgentStats, error) {
+	return nil, nil
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================

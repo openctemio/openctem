@@ -43,3 +43,26 @@ const (
 	// AgentPreferencePlatform only uses platform agents.
 	AgentPreferencePlatform AgentPreference = "platform"
 )
+
+// Timeout constants for scan execution.
+const (
+	// MinScanTimeoutSeconds is the minimum allowed scan timeout (30 seconds).
+	// Lower values would create DoS pressure on the timeout sweeper.
+	MinScanTimeoutSeconds = 30
+	// DefaultScanTimeoutSeconds is the default scan timeout (1 hour).
+	DefaultScanTimeoutSeconds = 3600
+	// MaxScanTimeoutSeconds is the maximum allowed scan timeout (24 hours).
+	MaxScanTimeoutSeconds = 86400
+)
+
+// Retry constants for scan execution.
+const (
+	// MaxRetryCount is the absolute maximum retries allowed per scan.
+	MaxRetryCount = 10
+	// DefaultRetryBackoffSeconds is the default initial backoff between retries.
+	DefaultRetryBackoffSeconds = 60
+	// MinRetryBackoffSeconds is the minimum allowed initial backoff.
+	MinRetryBackoffSeconds = 10
+	// MaxRetryBackoffSeconds is the maximum allowed initial backoff (24 hours).
+	MaxRetryBackoffSeconds = 86400
+)

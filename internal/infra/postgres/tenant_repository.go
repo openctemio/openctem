@@ -231,9 +231,13 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 
 // GetMembership retrieves a membership by user and tenant.
 // Role is fetched from v_user_effective_role view.
+// Status fields are populated so callers (e.g. RequireMembership middleware)
+// can enforce suspension on every request.
 func (r *TenantRepository) GetMembership(ctx context.Context, userID shared.ID, tenantID shared.ID) (*tenant.Membership, error) {
 	query := `
-		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at
+		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
+		       m.invited_by, m.joined_at,
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by
 		FROM tenant_members m
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1 AND m.tenant_id = $2
@@ -244,9 +248,12 @@ func (r *TenantRepository) GetMembership(ctx context.Context, userID shared.ID, 
 
 // GetMembershipByID retrieves a membership by ID.
 // Role is fetched from v_user_effective_role view.
+// Status fields are populated so the service layer can branch on suspension.
 func (r *TenantRepository) GetMembershipByID(ctx context.Context, id shared.ID) (*tenant.Membership, error) {
 	query := `
-		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at
+		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
+		       m.invited_by, m.joined_at,
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by
 		FROM tenant_members m
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.id = $1
@@ -316,6 +323,31 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 		}
 	}
 
+	return nil
+}
+
+// UpdateMembershipStatus persists the status / suspended_at /
+// suspended_by fields on a membership. Called by SuspendMember and
+// ReactivateMember in the service layer.
+func (r *TenantRepository) UpdateMembershipStatus(ctx context.Context, m *tenant.Membership) error {
+	query := `
+		UPDATE tenant_members
+		SET status = $2, suspended_at = $3, suspended_by = $4
+		WHERE id = $1
+	`
+	result, err := r.db.ExecContext(ctx, query,
+		m.ID().String(),
+		string(m.Status()),
+		nullTime(m.SuspendedAt()),
+		nullIDPtr(m.SuspendedBy()),
+	)
+	if err != nil {
+		return fmt.Errorf("update membership status: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return shared.ErrNotFound
+	}
 	return nil
 }
 
@@ -463,11 +495,13 @@ func (r *TenantRepository) CountMembersByTenant(ctx context.Context, tenantID sh
 
 // ListMembersWithUserInfo lists all members of a tenant with user details.
 // Role is fetched from v_user_effective_role view.
+// Status is the MEMBERSHIP status (tenant_members.status), not the user-level
+// status — see the comment on GetMemberStats for the rationale.
 func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID shared.ID) ([]*tenant.MemberWithUser, error) {
 	query := `
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
-			u.email, u.name, u.avatar_url, u.status, u.last_login_at
+			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -552,11 +586,12 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 	}
 
 	// Single query with COUNT(*) OVER() window function to avoid 2 round-trips
-	// This returns total matching count alongside each row
+	// This returns total matching count alongside each row.
+	// Status is the MEMBERSHIP status (tenant_members.status), see GetMemberStats.
 	selectQuery := fmt.Sprintf(`
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
-			u.email, u.name, u.avatar_url, u.status, u.last_login_at,
+			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at,
 			COUNT(*) OVER() as total_count
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
@@ -654,11 +689,12 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 
 // GetMemberByEmail retrieves a member by email address within a tenant.
 // Role is fetched from v_user_effective_role view.
+// Status is the MEMBERSHIP status (tenant_members.status), see GetMemberStats.
 func (r *TenantRepository) GetMemberByEmail(ctx context.Context, tenantID shared.ID, email string) (*tenant.MemberWithUser, error) {
 	query := `
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
-			u.email, u.name, u.avatar_url, u.status, u.last_login_at
+			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -719,14 +755,19 @@ func (r *TenantRepository) GetMemberByEmail(ctx context.Context, tenantID shared
 
 // GetMemberStats retrieves member statistics for a tenant.
 // Role counts are fetched from v_user_effective_role view.
+//
+// "Active" here means the MEMBERSHIP is active (tenant_members.status='active').
+// We deliberately do NOT use users.status — that field is a global, platform-
+// wide state that has no tenant context and no UI to manage it. The tenant
+// admin only cares whether a member's access to *this* tenant is active or
+// suspended; that information lives on tenant_members.status.
 func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.ID) (*tenant.MemberStats, error) {
 	// Get total and active member counts
 	memberQuery := `
 		SELECT
 			COUNT(*) as total,
-			COUNT(CASE WHEN u.status = 'active' THEN 1 END) as active
+			COUNT(CASE WHEN COALESCE(m.status, 'active') = 'active' THEN 1 END) as active
 		FROM tenant_members m
-		INNER JOIN users u ON u.id = m.user_id
 		WHERE m.tenant_id = $1
 	`
 
@@ -782,6 +823,8 @@ func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.I
 
 // GetUserMemberships returns lightweight membership data for JWT tokens.
 // Uses v_user_effective_role view to get the highest-priority role from user_roles table.
+// SECURITY: Suspended memberships are excluded so suspended users cannot exchange
+// refresh tokens for tenant-scoped access tokens.
 func (r *TenantRepository) GetUserMemberships(ctx context.Context, userID shared.ID) ([]tenant.UserMembership, error) {
 	// Query using the effective role view (gets highest-hierarchy role from user_roles)
 	// Falls back to tenant_members.role if user_roles hasn't been synced yet
@@ -795,6 +838,7 @@ func (r *TenantRepository) GetUserMemberships(ctx context.Context, userID shared
 		INNER JOIN tenants t ON t.id = m.tenant_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1
+		  AND m.status = 'active'
 		ORDER BY m.joined_at DESC
 	`
 
@@ -959,6 +1003,41 @@ func (r *TenantRepository) DeleteExpiredInvitations(ctx context.Context) (int64,
 	return result.RowsAffected()
 }
 
+// DeletePendingInvitationsByUserID removes EVERY pending (unaccepted)
+// invitation for the user's email address in the given tenant. Used
+// when a member is removed from a tenant — we want to make sure they
+// can't rejoin via a stale invitation token still sitting in their
+// inbox.
+//
+// The user's email is looked up via JOIN so the caller doesn't need
+// to fetch it first. Email matching is case-insensitive (LOWER) to
+// match the acceptance flow's strings.EqualFold semantics.
+//
+// Already-accepted invitations are NOT deleted because they are a
+// historical audit record. Only unaccepted rows (where the token is
+// still potentially usable) get wiped.
+//
+// Returns the number of rows deleted (0 is not an error — it just
+// means the user had no pending invitations to clean up).
+func (r *TenantRepository) DeletePendingInvitationsByUserID(
+	ctx context.Context,
+	tenantID, userID shared.ID,
+) (int64, error) {
+	query := `
+		DELETE FROM tenant_invitations ti
+		USING users u
+		WHERE ti.tenant_id = $1
+		  AND u.id = $2
+		  AND LOWER(ti.email) = LOWER(u.email)
+		  AND ti.accepted_at IS NULL
+	`
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), userID.String())
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete pending invitations by user id: %w", err)
+	}
+	return result.RowsAffected()
+}
+
 // AcceptInvitationTx atomically updates the invitation and creates the membership in a single transaction.
 // Creates membership in tenant_members and role assignment in user_roles.
 func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.Invitation, m *tenant.Membership) error {
@@ -1068,9 +1147,16 @@ func (r *TenantRepository) scanMembership(row *sql.Row) (*tenant.Membership, err
 		idStr, userIDStr, tenantIDStr, roleStr string
 		invitedByStr                           sql.NullString
 		joinedAt                               time.Time
+		statusStr                              string
+		suspendedAt                            sql.NullTime
+		suspendedByStr                         sql.NullString
 	)
 
-	err := row.Scan(&idStr, &userIDStr, &tenantIDStr, &roleStr, &invitedByStr, &joinedAt)
+	err := row.Scan(
+		&idStr, &userIDStr, &tenantIDStr, &roleStr,
+		&invitedByStr, &joinedAt,
+		&statusStr, &suspendedAt, &suspendedByStr,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -1091,7 +1177,24 @@ func (r *TenantRepository) scanMembership(row *sql.Row) (*tenant.Membership, err
 		}
 	}
 
-	return tenant.ReconstituteMembership(id, userID, tenantID, role, invitedBy, joinedAt), nil
+	var suspendedAtPtr *time.Time
+	if suspendedAt.Valid {
+		t := suspendedAt.Time
+		suspendedAtPtr = &t
+	}
+
+	var suspendedBy *shared.ID
+	if suspendedByStr.Valid {
+		parsed, err := shared.IDFromString(suspendedByStr.String)
+		if err == nil {
+			suspendedBy = &parsed
+		}
+	}
+
+	return tenant.ReconstituteMembershipWithStatus(
+		id, userID, tenantID, role, invitedBy, joinedAt,
+		tenant.MemberStatus(statusStr), suspendedAtPtr, suspendedBy,
+	), nil
 }
 
 func (r *TenantRepository) scanMembershipRow(rows *sql.Rows) (*tenant.Membership, error) {

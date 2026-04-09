@@ -366,3 +366,63 @@ func (s *Service) getCommandStats(ctx context.Context, tenantID shared.ID) (Stat
 		Canceled:  stats.Canceled,
 	}, nil
 }
+
+// =============================================================================
+// Retry Operations
+// =============================================================================
+
+// RetryScanRun creates a new pipeline run for a scan as part of automatic retry.
+// Called by the ScanRetryController when a previous run failed and the scan
+// has retry budget remaining.
+//
+// The new run is tagged with retry_attempt = previous attempt + 1.
+func (s *Service) RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, retryAttempt int) error {
+	sc, err := s.scanRepo.GetByTenantAndID(ctx, tenantID, scanID)
+	if err != nil {
+		return fmt.Errorf("scan not found for retry: %w", err)
+	}
+
+	// Defensive: if scan is no longer active or has no retry budget, skip
+	if sc.Status != scan.StatusActive {
+		s.logger.Info("skipping retry: scan no longer active", "scan_id", scanID.String())
+		return nil
+	}
+	if !sc.ShouldRetry(retryAttempt - 1) {
+		s.logger.Info("skipping retry: retry budget exhausted", "scan_id", scanID.String(), "attempt", retryAttempt, "max", sc.MaxRetries)
+		return nil
+	}
+
+	// Trigger a new run via the standard trigger path, with retry attempt in context
+	run, err := s.TriggerScan(ctx, TriggerScanExecInput{
+		TenantID: tenantID.String(),
+		ScanID:   scanID.String(),
+		Context: map[string]any{
+			"triggered_by":  "retry-controller",
+			"retry_attempt": retryAttempt,
+			"retried_at":    time.Now().Unix(),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to trigger retry: %w", err)
+	}
+
+	// Persist retry_attempt on the new run (TriggerScan creates it via pipeline)
+	// The trigger path doesn't currently set RetryAttempt, so we update it here.
+	if run != nil {
+		run.RetryAttempt = retryAttempt
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			s.logger.Warn("failed to persist retry_attempt on retried run", "run_id", run.ID.String(), "error", err)
+		}
+	}
+
+	s.logger.Info("scan retry triggered",
+		"scan_id", scanID.String(),
+		"new_run_id", func() string {
+			if run != nil {
+				return run.ID.String()
+			}
+			return ""
+		}(),
+		"attempt", retryAttempt)
+	return nil
+}

@@ -392,6 +392,14 @@ func (m *mockAuthTenantRepo) DeleteExpiredInvitations(_ context.Context) (int64,
 	return 0, nil
 }
 
+func (m *mockAuthTenantRepo) DeletePendingInvitationsByUserID(_ context.Context, _, _ shared.ID) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockAuthTenantRepo) UpdateMembershipStatus(_ context.Context, _ *tenant.Membership) error {
+	return nil
+}
+
 func (m *mockAuthTenantRepo) AcceptInvitationTx(_ context.Context, _ *tenant.Invitation, _ *tenant.Membership) error {
 	if m.acceptInvitationTxErr != nil {
 		return m.acceptInvitationTxErr

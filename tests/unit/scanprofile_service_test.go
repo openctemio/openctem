@@ -65,6 +65,18 @@ func (m *scanProfileMockRepository) GetByTenantAndID(_ context.Context, tenantID
 	return p, nil
 }
 
+func (m *scanProfileMockRepository) GetAccessibleByID(_ context.Context, tenantID, id shared.ID) (*scanprofile.ScanProfile, error) {
+	p, ok := m.profiles[id.String()]
+	if !ok {
+		return nil, shared.NewDomainError("NOT_FOUND", "scan profile not found", shared.ErrNotFound)
+	}
+	// Accessible: own tenant OR system profile (tenant is zero)
+	if !p.TenantID.IsZero() && !p.TenantID.Equals(tenantID) {
+		return nil, shared.NewDomainError("NOT_FOUND", "scan profile not found", shared.ErrNotFound)
+	}
+	return p, nil
+}
+
 func (m *scanProfileMockRepository) GetByTenantAndName(_ context.Context, tenantID shared.ID, name string) (*scanprofile.ScanProfile, error) {
 	for _, p := range m.profiles {
 		if p.TenantID.Equals(tenantID) && p.Name == name {

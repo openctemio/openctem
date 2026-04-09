@@ -16,21 +16,22 @@ const (
 
 // Config holds all application configuration.
 type Config struct {
-	App        AppConfig
-	Server     ServerConfig
-	GRPC       GRPCConfig
-	Database   DatabaseConfig
-	Redis      RedisConfig
-	Log        LogConfig
-	Auth       AuthConfig
-	OAuth      OAuthConfig
-	Keycloak   KeycloakConfig
-	CORS       CORSConfig
-	RateLimit  RateLimitConfig
-	SMTP       SMTPConfig
-	Worker     WorkerConfig
-	Encryption EncryptionConfig
-	AITriage   AITriageConfig
+	App         AppConfig
+	Server      ServerConfig
+	GRPC        GRPCConfig
+	Database    DatabaseConfig
+	Redis       RedisConfig
+	Log         LogConfig
+	Auth        AuthConfig
+	OAuth       OAuthConfig
+	Keycloak    KeycloakConfig
+	CORS        CORSConfig
+	RateLimit   RateLimitConfig
+	SMTP        SMTPConfig
+	Worker      WorkerConfig
+	Encryption  EncryptionConfig
+	AITriage    AITriageConfig
+	AgentConfig AgentConfigConfig
 }
 
 // AppConfig holds application-level configuration.
@@ -38,6 +39,19 @@ type AppConfig struct {
 	Name  string
 	Env   string
 	Debug bool
+	URL   string // Public app URL (used as fallback for agent config base URL)
+}
+
+// AgentConfigConfig holds the agent config template service settings.
+type AgentConfigConfig struct {
+	// TemplatesDir is the filesystem path containing agent config templates
+	// (yaml.tmpl, env.tmpl, docker.tmpl, cli.tmpl). Operators can edit these
+	// without rebuilding the API or UI.
+	// Default: configs/agent-templates
+	TemplatesDir string
+	// PublicAPIURL is the URL agents will connect to (embedded in templates).
+	// If empty, falls back to App.URL.
+	PublicAPIURL string
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -420,6 +434,11 @@ func Load() (*Config, error) {
 			Name:  getEnv("APP_NAME", "openctem"),
 			Env:   getEnv("APP_ENV", "development"),
 			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
+			URL:   getEnv("APP_URL", ""),
+		},
+		AgentConfig: AgentConfigConfig{
+			TemplatesDir: getEnv("AGENT_CONFIG_TEMPLATES_DIR", "configs/agent-templates"),
+			PublicAPIURL: getEnv("AGENT_PUBLIC_API_URL", ""),
 		},
 		Server: ServerConfig{
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),

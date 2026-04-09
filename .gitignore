@@ -59,6 +59,7 @@ debug
 # SDK
 sdk/
 sdk-go/
+sdk-go
 
 # Built binary (at root level only)
 /server

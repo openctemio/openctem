@@ -135,21 +135,40 @@ func (s *ScanScheduler) checkAndTrigger() {
 }
 
 func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
-	// Mark as running to prevent double-trigger
+	// Mark as running to prevent double-trigger within this process
 	s.runningRuns.Store(sc.ID, true)
 	defer s.runningRuns.Delete(sc.ID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Update next_run_at immediately to prevent re-trigger by other scheduler instances
+	// Acquire distributed advisory lock to prevent double-trigger across multiple
+	// API replicas. If another instance is already triggering this scan, skip it.
+	acquired, err := s.scanRepo.TryLockScanForScheduler(ctx, sc.ID)
+	if err != nil {
+		s.logger.Error("failed to acquire scheduler lock", "scan_id", sc.ID.String(), "error", err)
+		return
+	}
+	if !acquired {
+		s.logger.Debug("scan locked by another scheduler instance, skipping", "scan_id", sc.ID.String())
+		return
+	}
+	defer func() {
+		if unlockErr := s.scanRepo.UnlockScanForScheduler(ctx, sc.ID); unlockErr != nil {
+			s.logger.Error("failed to release scheduler lock", "scan_id", sc.ID.String(), "error", unlockErr)
+		}
+	}()
+
+	// Update next_run_at immediately to prevent re-trigger on the next polling cycle.
+	// (The advisory lock prevents concurrent triggers; this update prevents the same
+	// instance from picking it up again on the next cycle.)
 	nextRunAt := sc.CalculateNextRunAt()
 	if err := s.scanRepo.UpdateNextRunAt(ctx, sc.ID, nextRunAt); err != nil {
 		s.logger.Error("failed to update next_run_at", "scan_id", sc.ID.String(), "error", err)
 	}
 
 	// Trigger the scan
-	_, err := s.scanService.TriggerScan(ctx, scansvc.TriggerScanExecInput{
+	_, err = s.scanService.TriggerScan(ctx, scansvc.TriggerScanExecInput{
 		TenantID: sc.TenantID.String(),
 		ScanID:   sc.ID.String(),
 		Context: map[string]any{

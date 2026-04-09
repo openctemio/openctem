@@ -302,6 +302,15 @@ generate:
 	@echo "Generating code..."
 	$(GOCMD) generate ./...
 
+## generate-relationships: Regenerate relationship type files from YAML
+##                         (Go enum + TS union + label/constraint maps)
+##
+## Single source of truth: configs/relationship-types.yaml
+## Edit the YAML, run this target, commit YAML + the two generated files.
+generate-relationships:
+	@echo "Generating relationship types from configs/relationship-types.yaml..."
+	@GOWORK=off $(GOCMD) run ./cmd/gen-relationships
+
 ## proto: Generate protobuf code
 proto:
 	@echo "Generating protobuf..."

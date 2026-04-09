@@ -742,6 +742,44 @@ func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SuspendMember handles POST /api/v1/tenants/{tenant}/members/{memberId}/suspend
+func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
+	memberID := r.PathValue("memberId")
+	if memberID == "" {
+		apierror.BadRequest("Member ID is required").WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	if err := h.service.SuspendMember(r.Context(), memberID, actx); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Member suspended"})
+}
+
+// ReactivateMember handles POST /api/v1/tenants/{tenant}/members/{memberId}/reactivate
+func (h *TenantHandler) ReactivateMember(w http.ResponseWriter, r *http.Request) {
+	memberID := r.PathValue("memberId")
+	if memberID == "" {
+		apierror.BadRequest("Member ID is required").WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	if err := h.service.ReactivateMember(r.Context(), memberID, actx); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Member reactivated"})
+}
+
 // =============================================================================
 // Invitation Handlers
 // =============================================================================
@@ -833,6 +871,37 @@ func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ResendInvitation handles POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend
+//
+// Re-sends the invitation email for a pending (unaccepted, unexpired)
+// invitation. Does NOT change the token, expiry, or any other metadata.
+// Idempotent — calling it 3 times sends 3 emails, all containing the
+// same token link. The existing link in the user's inbox stays valid.
+//
+// Returns 200 on success, 400 if the invitation was already accepted
+// or has expired, 404 if the invitation doesn't exist or belongs to a
+// different tenant.
+func (h *TenantHandler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	invitationID := r.PathValue("invitationId")
+	if invitationID == "" {
+		apierror.BadRequest("Invitation ID is required").WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	if err := h.service.ResendInvitation(r.Context(), tenantID, invitationID, actx); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"message": "Invitation email resent",
+	})
 }
 
 // GetInvitation handles GET /api/v1/invitations/{token}
@@ -992,12 +1061,13 @@ type GeneralSettingsResponse struct {
 
 // SecuritySettingsResponse represents security settings.
 type SecuritySettingsResponse struct {
-	SSOEnabled        bool     `json:"sso_enabled"`
-	SSOProvider       string   `json:"sso_provider,omitempty"`
-	MFARequired       bool     `json:"mfa_required"`
-	SessionTimeoutMin int      `json:"session_timeout_min"`
-	IPWhitelist       []string `json:"ip_whitelist"`
-	AllowedDomains    []string `json:"allowed_domains"`
+	SSOEnabled            bool     `json:"sso_enabled"`
+	SSOProvider           string   `json:"sso_provider,omitempty"`
+	MFARequired           bool     `json:"mfa_required"`
+	SessionTimeoutMin     int      `json:"session_timeout_min"`
+	IPWhitelist           []string `json:"ip_whitelist"`
+	AllowedDomains        []string `json:"allowed_domains"`
+	EmailVerificationMode string   `json:"email_verification_mode"`
 }
 
 // APISettingsResponse represents API settings.
@@ -1028,12 +1098,13 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			Website:  s.General.Website,
 		},
 		Security: SecuritySettingsResponse{
-			SSOEnabled:        s.Security.SSOEnabled,
-			SSOProvider:       s.Security.SSOProvider,
-			MFARequired:       s.Security.MFARequired,
-			SessionTimeoutMin: s.Security.SessionTimeoutMin,
-			IPWhitelist:       s.Security.IPWhitelist,
-			AllowedDomains:    s.Security.AllowedDomains,
+			SSOEnabled:            s.Security.SSOEnabled,
+			SSOProvider:           s.Security.SSOProvider,
+			MFARequired:           s.Security.MFARequired,
+			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
+			IPWhitelist:           s.Security.IPWhitelist,
+			AllowedDomains:        s.Security.AllowedDomains,
+			EmailVerificationMode: string(s.Security.EmailVerificationMode),
 		},
 		API: APISettingsResponse{
 			APIKeyEnabled: s.API.APIKeyEnabled,
@@ -1129,13 +1200,14 @@ func (h *TenantHandler) UpdateGeneralSettings(w http.ResponseWriter, r *http.Req
 
 // UpdateSecuritySettingsRequest represents the request to update security settings.
 type UpdateSecuritySettingsRequest struct {
-	SSOEnabled        bool     `json:"sso_enabled"`
-	SSOProvider       string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
-	SSOConfigURL      string   `json:"sso_config_url" validate:"omitempty,url"`
-	MFARequired       bool     `json:"mfa_required"`
-	SessionTimeoutMin int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
-	IPWhitelist       []string `json:"ip_whitelist"`
-	AllowedDomains    []string `json:"allowed_domains"`
+	SSOEnabled            bool     `json:"sso_enabled"`
+	SSOProvider           string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
+	SSOConfigURL          string   `json:"sso_config_url" validate:"omitempty,url"`
+	MFARequired           bool     `json:"mfa_required"`
+	SessionTimeoutMin     int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
+	IPWhitelist           []string `json:"ip_whitelist"`
+	AllowedDomains        []string `json:"allowed_domains"`
+	EmailVerificationMode string   `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -1158,13 +1230,14 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	}
 
 	input := app.UpdateSecuritySettingsInput{
-		SSOEnabled:        req.SSOEnabled,
-		SSOProvider:       req.SSOProvider,
-		SSOConfigURL:      req.SSOConfigURL,
-		MFARequired:       req.MFARequired,
-		SessionTimeoutMin: req.SessionTimeoutMin,
-		IPWhitelist:       req.IPWhitelist,
-		AllowedDomains:    req.AllowedDomains,
+		SSOEnabled:            req.SSOEnabled,
+		SSOProvider:           req.SSOProvider,
+		SSOConfigURL:          req.SSOConfigURL,
+		MFARequired:           req.MFARequired,
+		SessionTimeoutMin:     req.SessionTimeoutMin,
+		IPWhitelist:           req.IPWhitelist,
+		AllowedDomains:        req.AllowedDomains,
+		EmailVerificationMode: req.EmailVerificationMode,
 	}
 
 	actx := h.buildAuditContext(r)

@@ -185,6 +185,17 @@ func (m *MockRelationshipRepository) CreateBatchIgnoreConflicts(_ context.Contex
 	return len(rels), nil
 }
 
+// CountByType returns per-type relationship counts. The mock implementation
+// walks the in-memory relationships map and groups by type — used by the
+// usage-stats endpoint tests.
+func (m *MockRelationshipRepository) CountByType(_ context.Context, _ shared.ID) (map[asset.RelationshipType]int64, error) {
+	out := make(map[asset.RelationshipType]int64)
+	for _, rel := range m.relationships {
+		out[rel.Type()]++
+	}
+	return out, nil
+}
+
 // AddRelationshipWithAssets adds a pre-built RelationshipWithAssets to the mock store.
 func (m *MockRelationshipRepository) AddRelationshipWithAssets(rwa *asset.RelationshipWithAssets) {
 	m.relationships[rwa.Relationship.ID().String()] = rwa.Relationship
@@ -772,20 +783,22 @@ func TestAssetRelationshipService_AllRelationshipTypes(t *testing.T) {
 		{"deployed_to", "deployed_to"},
 		{"contains", "contains"},
 		{"exposes", "exposes"},
-		{"member_of", "member_of"},
 		{"resolves_to", "resolves_to"},
+		{"cname_of", "cname_of"},
 		// Attack Path Analysis
 		{"depends_on", "depends_on"},
+		{"peer_of", "peer_of"},
+		{"replicates_to", "replicates_to"},
 		{"sends_data_to", "sends_data_to"},
 		{"stores_data_in", "stores_data_in"},
 		{"authenticates_to", "authenticates_to"},
 		{"granted_to", "granted_to"},
+		{"has_access_to", "has_access_to"},
 		{"load_balances", "load_balances"},
-		// Control & Ownership
+		// Control & Observability
 		{"protected_by", "protected_by"},
 		{"monitors", "monitors"},
 		{"manages", "manages"},
-		{"owned_by", "owned_by"},
 	}
 
 	for _, tc := range allTypes {
@@ -816,9 +829,12 @@ func TestAssetRelationshipService_AllRelationshipTypes(t *testing.T) {
 		})
 	}
 
-	// Verify exactly 16 types tested
-	if len(allTypes) != 16 {
-		t.Errorf("expected 16 relationship types, got %d", len(allTypes))
+	// Verify the test list matches the canonical registry. The number
+	// is intentionally derived from `asset.AllRelationshipTypes()` so
+	// adding/removing types in the YAML registry only requires
+	// updating `allTypes` above — not also touching this assertion.
+	if len(allTypes) != len(asset.AllRelationshipTypes()) {
+		t.Errorf("expected %d relationship types, got %d", len(asset.AllRelationshipTypes()), len(allTypes))
 	}
 }
 
@@ -1133,7 +1149,7 @@ func TestAssetRelationshipService_UpdateRelationship(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeOwnedBy)
+		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeContains)
 		relRepo.AddRelationshipWithAssets(rwa)
 
 		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
@@ -1698,7 +1714,7 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeMemberOf)
+		rwa := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeContains)
 		relRepo.AddRelationshipWithAssets(rwa)
 
 		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
@@ -1900,6 +1916,317 @@ func TestAssetRelationshipService_TenantIsolation(t *testing.T) {
 		err := svc.DeleteRelationship(ctx, tenantB.String(), rwa.Relationship.ID().String())
 		if err == nil {
 			t.Fatal("expected error when deleting another tenant's relationship")
+		}
+	})
+}
+
+// =============================================================================
+// Tests: CreateRelationshipBatch
+// =============================================================================
+
+func TestAssetRelationshipService_CreateRelationshipBatch(t *testing.T) {
+	ctx := context.Background()
+	tenantID := relTestTenantID
+
+	t.Run("happy_path/all_succeed", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		source := createRelTestAsset(t, assetRepo, tenantID, "source")
+		target1 := createRelTestAsset(t, assetRepo, tenantID, "target1")
+		target2 := createRelTestAsset(t, assetRepo, tenantID, "target2")
+		target3 := createRelTestAsset(t, assetRepo, tenantID, "target3")
+
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
+			[]app.BatchCreateRelationshipInput{
+				{TargetAssetID: target1.ID().String(), Type: "exposes"},
+				{TargetAssetID: target2.ID().String(), Type: "exposes"},
+				{TargetAssetID: target3.ID().String(), Type: "exposes"},
+			})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.TotalN != 3 || result.CreatedN != 3 || result.DuplicateN != 0 || result.ErrorN != 0 {
+			t.Errorf("expected 3 created / 0 dup / 0 err, got %+v", result)
+		}
+		for i, r := range result.Results {
+			if r.Status != app.BatchCreateStatusCreated {
+				t.Errorf("result[%d] status = %s, want created", i, r.Status)
+			}
+			if r.RelationshipID == "" {
+				t.Errorf("result[%d] missing relationship_id", i)
+			}
+		}
+	})
+
+	t.Run("mixed/one_invalid_target_others_succeed", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		source := createRelTestAsset(t, assetRepo, tenantID, "source")
+		target1 := createRelTestAsset(t, assetRepo, tenantID, "target1")
+		target2 := createRelTestAsset(t, assetRepo, tenantID, "target2")
+
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
+			[]app.BatchCreateRelationshipInput{
+				{TargetAssetID: target1.ID().String(), Type: "exposes"},
+				{TargetAssetID: shared.NewID().String(), Type: "exposes"}, // does not exist
+				{TargetAssetID: target2.ID().String(), Type: "exposes"},
+			})
+		if err != nil {
+			t.Fatalf("unexpected whole-batch error: %v", err)
+		}
+		if result.TotalN != 3 || result.CreatedN != 2 || result.ErrorN != 1 {
+			t.Errorf("expected 2 created / 1 err, got %+v", result)
+		}
+		if result.Results[1].Status != app.BatchCreateStatusError {
+			t.Errorf("result[1] status = %s, want error", result.Results[1].Status)
+		}
+	})
+
+	t.Run("invalid_type_marks_item_as_error_not_whole_batch", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		source := createRelTestAsset(t, assetRepo, tenantID, "source")
+		target1 := createRelTestAsset(t, assetRepo, tenantID, "target1")
+
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
+			[]app.BatchCreateRelationshipInput{
+				{TargetAssetID: target1.ID().String(), Type: "this_is_not_a_real_type"},
+			})
+		if err != nil {
+			t.Fatalf("unexpected whole-batch error: %v", err)
+		}
+		if result.ErrorN != 1 || result.CreatedN != 0 {
+			t.Errorf("expected 1 err / 0 created, got %+v", result)
+		}
+		if result.Results[0].Status != app.BatchCreateStatusError {
+			t.Errorf("status = %s, want error", result.Results[0].Status)
+		}
+	})
+
+	t.Run("source_asset_not_in_tenant/whole_batch_fails", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		// No source asset in the repo — every item should fail because
+		// the per-batch source validation runs first.
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), shared.NewID().String(),
+			[]app.BatchCreateRelationshipInput{
+				{TargetAssetID: shared.NewID().String(), Type: "exposes"},
+			})
+		if err == nil {
+			t.Fatal("expected whole-batch error for missing source asset")
+		}
+		if result != nil {
+			t.Errorf("expected nil result on whole-batch failure, got %+v", result)
+		}
+	})
+
+	t.Run("invalid_tenant_id/whole_batch_fails", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		_, err := svc.CreateRelationshipBatch(ctx, "not-a-uuid", shared.NewID().String(),
+			[]app.BatchCreateRelationshipInput{
+				{TargetAssetID: shared.NewID().String(), Type: "exposes"},
+			})
+		if err == nil {
+			t.Fatal("expected validation error for malformed tenant ID")
+		}
+	})
+
+	t.Run("empty_items/returns_zero_result", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		source := createRelTestAsset(t, assetRepo, tenantID, "source")
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(), nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.TotalN != 0 || result.CreatedN != 0 {
+			t.Errorf("expected zero result, got %+v", result)
+		}
+	})
+
+	t.Run("result_index_matches_input_position", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		source := createRelTestAsset(t, assetRepo, tenantID, "source")
+		target1 := createRelTestAsset(t, assetRepo, tenantID, "target1")
+		target2 := createRelTestAsset(t, assetRepo, tenantID, "target2")
+
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		result, err := svc.CreateRelationshipBatch(ctx, tenantID.String(), source.ID().String(),
+			[]app.BatchCreateRelationshipInput{
+				{TargetAssetID: target1.ID().String(), Type: "exposes"},
+				{TargetAssetID: target2.ID().String(), Type: "exposes"},
+			})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Frontend depends on Index matching input position so it can
+		// look up target names without re-fetching. Pin this contract.
+		for i, r := range result.Results {
+			if r.Index != i {
+				t.Errorf("result[%d] index = %d, want %d", i, r.Index, i)
+			}
+		}
+	})
+}
+
+// =============================================================================
+// Tests: GetRelationshipTypeUsage
+// =============================================================================
+
+func TestAssetRelationshipService_GetRelationshipTypeUsage(t *testing.T) {
+	ctx := context.Background()
+	tenantID := relTestTenantID
+
+	t.Run("returns_every_registered_type_with_count", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		// Seed two relationships of two different types
+		rwa1 := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeRunsOn)
+		rwa2 := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeRunsOn)
+		rwa3 := buildRelationshipWithAssets(tenantID, shared.NewID(), shared.NewID(), asset.RelTypeContains)
+		relRepo.AddRelationshipWithAssets(rwa1)
+		relRepo.AddRelationshipWithAssets(rwa2)
+		relRepo.AddRelationshipWithAssets(rwa3)
+
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		usage, err := svc.GetRelationshipTypeUsage(ctx, tenantID.String())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Every registered type must appear, including unused ones
+		// (count=0). The endpoint promises this so admins can see what
+		// to prune.
+		if len(usage) != len(asset.AllRelationshipTypes()) {
+			t.Errorf("expected %d entries, got %d", len(asset.AllRelationshipTypes()), len(usage))
+		}
+
+		// Spot check the seeded counts
+		var runsOnCount, containsCount, exposesCount int64
+		for _, u := range usage {
+			switch asset.RelationshipType(u.ID) {
+			case asset.RelTypeRunsOn:
+				runsOnCount = u.Count
+			case asset.RelTypeContains:
+				containsCount = u.Count
+			case asset.RelTypeExposes:
+				exposesCount = u.Count
+			}
+		}
+		if runsOnCount != 2 {
+			t.Errorf("runs_on count = %d, want 2", runsOnCount)
+		}
+		if containsCount != 1 {
+			t.Errorf("contains count = %d, want 1", containsCount)
+		}
+		if exposesCount != 0 {
+			t.Errorf("exposes count = %d, want 0 (unused type should appear with zero)", exposesCount)
+		}
+	})
+
+	t.Run("includes_metadata_from_registry", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		usage, err := svc.GetRelationshipTypeUsage(ctx, tenantID.String())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Find runs_on and verify the labels/category came from the
+		// registry. The service joins the per-tenant counts with the
+		// registry metadata so the response is self-contained.
+		var found bool
+		for _, u := range usage {
+			if u.ID == "runs_on" {
+				found = true
+				if u.Direct == "" || u.Inverse == "" {
+					t.Errorf("runs_on missing labels: %+v", u)
+				}
+				if u.Category == "" {
+					t.Errorf("runs_on missing category")
+				}
+				if u.Description == "" {
+					t.Errorf("runs_on missing description")
+				}
+				break
+			}
+		}
+		if !found {
+			t.Error("runs_on not found in usage stats")
+		}
+	})
+
+	t.Run("invalid_tenant_id/error", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		_, err := svc.GetRelationshipTypeUsage(ctx, "not-a-uuid")
+		if err == nil {
+			t.Fatal("expected validation error for malformed tenant ID")
+		}
+	})
+
+	t.Run("empty_tenant/all_zero", func(t *testing.T) {
+		relRepo := NewMockRelationshipRepository()
+		assetRepo := NewMockAssetRepository()
+		log := newRelTestLogger()
+
+		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
+
+		usage, err := svc.GetRelationshipTypeUsage(ctx, tenantID.String())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Tenant with zero relationships still gets an entry per
+		// registered type with count=0. The frontend depends on this
+		// shape (no missing types).
+		if len(usage) != len(asset.AllRelationshipTypes()) {
+			t.Errorf("expected %d entries, got %d", len(asset.AllRelationshipTypes()), len(usage))
+		}
+		for _, u := range usage {
+			if u.Count != 0 {
+				t.Errorf("type %s count = %d, want 0", u.ID, u.Count)
+			}
 		}
 	})
 }

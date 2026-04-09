@@ -40,6 +40,16 @@ type Scan struct {
 	RunOnTenantRunner bool            // Restrict to tenant's own runners
 	AgentPreference   AgentPreference // Agent selection mode: auto, tenant, platform
 
+	// Profile - links to ScanProfile for tool configs, intensity, quality gates
+	ProfileID *shared.ID
+
+	// Timeout - max execution time in seconds (default 3600 = 1h, max 86400 = 24h)
+	TimeoutSeconds int
+
+	// Retry config - automatic retry of failed runs with exponential backoff
+	MaxRetries          int // 0 = no retry, max 10
+	RetryBackoffSeconds int // Initial backoff (default 60s), actual delay is backoff * 2^attempt
+
 	// Status
 	Status Status
 
@@ -85,8 +95,11 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 		ScheduleType:     ScheduleManual,
 		ScheduleTimezone: "UTC",
 		Tags:             []string{},
-		AgentPreference:  AgentPreferenceAuto,
-		Status:           StatusActive,
+		AgentPreference:     AgentPreferenceAuto,
+		TimeoutSeconds:      DefaultScanTimeoutSeconds,
+		MaxRetries:          0,
+		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
+		Status:              StatusActive,
 		TotalRuns:        0,
 		SuccessfulRuns:   0,
 		FailedRuns:       0,
@@ -124,8 +137,11 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 		ScheduleType:     ScheduleManual,
 		ScheduleTimezone: "UTC",
 		Tags:             []string{},
-		AgentPreference:  AgentPreferenceAuto,
-		Status:           StatusActive,
+		AgentPreference:     AgentPreferenceAuto,
+		TimeoutSeconds:      DefaultScanTimeoutSeconds,
+		MaxRetries:          0,
+		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
+		Status:              StatusActive,
 		TotalRuns:        0,
 		SuccessfulRuns:   0,
 		FailedRuns:       0,
@@ -254,26 +270,34 @@ func (s *Scan) computeNextRunAt() {
 }
 
 // calculateNextRun computes the next run time based on schedule.
+// Honors ScheduleTimezone — schedule_time is interpreted in the configured timezone,
+// and cron expressions are evaluated in the same timezone.
 func (s *Scan) calculateNextRun() *time.Time {
 	if s.ScheduleType == ScheduleManual {
 		return nil
 	}
 
-	now := time.Now()
+	// Resolve timezone (default to UTC on parse failure to avoid silent skew)
+	loc, err := time.LoadLocation(s.ScheduleTimezone)
+	if err != nil || loc == nil {
+		loc = time.UTC
+	}
+
+	now := time.Now().In(loc)
 	var next time.Time
 
 	switch s.ScheduleType {
 	case ScheduleDaily:
-		next = now.Add(24 * time.Hour)
+		next = nextAtTimeOfDay(now, s.ScheduleTime, 1)
 	case ScheduleWeekly:
-		next = now.Add(7 * 24 * time.Hour)
+		next = nextAtWeekday(now, s.ScheduleDay, s.ScheduleTime)
 	case ScheduleMonthly:
-		next = now.AddDate(0, 1, 0)
+		next = nextAtDayOfMonth(now, s.ScheduleDay, s.ScheduleTime)
 	case ScheduleCrontab:
-		// Parse cron expression using robfig/cron
+		// Parse cron expression with timezone-aware schedule
 		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		schedule, err := parser.Parse(s.ScheduleCron)
-		if err != nil {
+		schedule, parseErr := parser.Parse(s.ScheduleCron)
+		if parseErr != nil {
 			// Fallback to 24 hours if parsing fails
 			next = now.Add(24 * time.Hour)
 		} else {
@@ -283,7 +307,59 @@ func (s *Scan) calculateNextRun() *time.Time {
 		return nil
 	}
 
-	return &next
+	// Convert back to UTC for storage consistency
+	utc := next.UTC()
+	return &utc
+}
+
+// nextAtTimeOfDay returns the next occurrence of the given time-of-day, advancing
+// at least dayOffset days from `now` (1 = tomorrow if today's slot already passed).
+func nextAtTimeOfDay(now time.Time, t *time.Time, _ int) time.Time {
+	hour, minute := 0, 0
+	if t != nil {
+		hour = t.Hour()
+		minute = t.Minute()
+	}
+	candidate := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+	if !candidate.After(now) {
+		candidate = candidate.AddDate(0, 0, 1)
+	}
+	return candidate
+}
+
+// nextAtWeekday returns the next occurrence of the given weekday at the given time-of-day.
+func nextAtWeekday(now time.Time, dayOfWeek *int, t *time.Time) time.Time {
+	candidate := nextAtTimeOfDay(now, t, 0)
+	if dayOfWeek == nil {
+		return candidate.AddDate(0, 0, 7)
+	}
+	target := time.Weekday(*dayOfWeek)
+	for candidate.Weekday() != target {
+		candidate = candidate.AddDate(0, 0, 1)
+	}
+	if !candidate.After(now) {
+		candidate = candidate.AddDate(0, 0, 7)
+	}
+	return candidate
+}
+
+// nextAtDayOfMonth returns the next occurrence of the given day-of-month at the given time-of-day.
+func nextAtDayOfMonth(now time.Time, dayOfMonth *int, t *time.Time) time.Time {
+	hour, minute := 0, 0
+	if t != nil {
+		hour = t.Hour()
+		minute = t.Minute()
+	}
+	day := 1
+	if dayOfMonth != nil {
+		day = *dayOfMonth
+	}
+	// Try this month first
+	candidate := time.Date(now.Year(), now.Month(), day, hour, minute, 0, 0, now.Location())
+	if !candidate.After(now) {
+		candidate = candidate.AddDate(0, 1, 0)
+	}
+	return candidate
 }
 
 // CalculateNextRunAt returns the next scheduled run time.
@@ -314,6 +390,78 @@ func (s *Scan) SetAgentPreference(pref AgentPreference) {
 	}
 	s.AgentPreference = pref
 	s.UpdatedAt = time.Now()
+}
+
+// SetProfileID links the scan to a scan profile (for tool configs and quality gates).
+// Pass nil to unlink.
+func (s *Scan) SetProfileID(profileID *shared.ID) {
+	s.ProfileID = profileID
+	s.UpdatedAt = time.Now()
+}
+
+// SetTimeoutSeconds sets the maximum execution time in seconds.
+// Enforces [MinScanTimeoutSeconds, MaxScanTimeoutSeconds] bounds at the domain layer
+// (defense-in-depth — even if HTTP validation is bypassed, the domain enforces the floor).
+// If <= 0, defaults to DefaultScanTimeoutSeconds.
+func (s *Scan) SetTimeoutSeconds(seconds int) {
+	if seconds <= 0 {
+		seconds = DefaultScanTimeoutSeconds
+	}
+	if seconds < MinScanTimeoutSeconds {
+		seconds = MinScanTimeoutSeconds
+	}
+	if seconds > MaxScanTimeoutSeconds {
+		seconds = MaxScanTimeoutSeconds
+	}
+	s.TimeoutSeconds = seconds
+	s.UpdatedAt = time.Now()
+}
+
+// SetRetryConfig configures the retry behavior for failed runs.
+// maxRetries is capped at MaxRetryCount; backoff is bounded to [Min,Max]RetryBackoffSeconds.
+func (s *Scan) SetRetryConfig(maxRetries, backoffSeconds int) {
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	if maxRetries > MaxRetryCount {
+		maxRetries = MaxRetryCount
+	}
+	if backoffSeconds <= 0 {
+		backoffSeconds = DefaultRetryBackoffSeconds
+	}
+	if backoffSeconds < MinRetryBackoffSeconds {
+		backoffSeconds = MinRetryBackoffSeconds
+	}
+	if backoffSeconds > MaxRetryBackoffSeconds {
+		backoffSeconds = MaxRetryBackoffSeconds
+	}
+	s.MaxRetries = maxRetries
+	s.RetryBackoffSeconds = backoffSeconds
+	s.UpdatedAt = time.Now()
+}
+
+// CalculateRetryDelay returns the exponential backoff delay for the given attempt number.
+// attempt 0 = first retry, attempt 1 = second retry, etc.
+// Capped at MaxRetryBackoffSeconds.
+func (s *Scan) CalculateRetryDelay(attempt int) time.Duration {
+	backoff := s.RetryBackoffSeconds
+	if backoff <= 0 {
+		backoff = DefaultRetryBackoffSeconds
+	}
+	// delay = backoff * 2^attempt, capped
+	delay := backoff
+	for i := 0; i < attempt && delay < MaxRetryBackoffSeconds; i++ {
+		delay *= 2
+	}
+	if delay > MaxRetryBackoffSeconds {
+		delay = MaxRetryBackoffSeconds
+	}
+	return time.Duration(delay) * time.Second
+}
+
+// ShouldRetry returns true if a failed run with the given retry attempt should be retried.
+func (s *Scan) ShouldRetry(currentAttempt int) bool {
+	return s.MaxRetries > 0 && currentAttempt < s.MaxRetries
 }
 
 // Activate activates the scan.
@@ -480,9 +628,13 @@ func (s *Scan) Clone(newName string) *Scan {
 		ScheduleTime:      s.ScheduleTime,
 		ScheduleTimezone:  s.ScheduleTimezone,
 		Tags:              make([]string, len(s.Tags)),
-		RunOnTenantRunner: s.RunOnTenantRunner,
-		AgentPreference:   s.AgentPreference,
-		Status:            StatusActive,
+		RunOnTenantRunner:   s.RunOnTenantRunner,
+		AgentPreference:     s.AgentPreference,
+		ProfileID:           s.ProfileID,
+		TimeoutSeconds:      s.TimeoutSeconds,
+		MaxRetries:          s.MaxRetries,
+		RetryBackoffSeconds: s.RetryBackoffSeconds,
+		Status:              StatusActive,
 		TotalRuns:         0,
 		SuccessfulRuns:    0,
 		FailedRuns:        0,

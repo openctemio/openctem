@@ -65,6 +65,26 @@ func (s *EmailService) IsConfigured() bool {
 	return s.sender != nil && s.sender.IsConfigured()
 }
 
+// HasSystemSMTP implements SMTPAvailabilityCheck.
+// Returns true if the system-wide SMTP sender is configured.
+func (s *EmailService) HasSystemSMTP() bool {
+	return s.IsConfigured()
+}
+
+// HasTenantSMTP implements SMTPAvailabilityCheck.
+// Returns true if the given tenant has a custom SMTP integration configured.
+// tenantID may be empty for self-registration without tenant context.
+func (s *EmailService) HasTenantSMTP(ctx context.Context, tenantID string) bool {
+	if s.tenantSMTP == nil || tenantID == "" {
+		return false
+	}
+	cfg, err := s.tenantSMTP.GetTenantSMTPConfig(ctx, tenantID)
+	if err != nil || cfg == nil {
+		return false
+	}
+	return cfg.Host != ""
+}
+
 // SendVerificationEmail sends an email verification link to a user.
 func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, userName, token string, expiresIn time.Duration) error {
 	if !s.IsConfigured() {

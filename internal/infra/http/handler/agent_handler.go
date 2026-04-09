@@ -18,9 +18,11 @@ import (
 
 // AgentHandler handles HTTP requests for agents.
 type AgentHandler struct {
-	service   *app.AgentService
-	validator *validator.Validator
-	logger    *logger.Logger
+	service         *app.AgentService
+	templateService *app.AgentConfigTemplateService
+	publicAPIURL    string // Public URL agents will connect to (defaults to API_URL env var)
+	validator       *validator.Validator
+	logger          *logger.Logger
 }
 
 // NewAgentHandler creates a new AgentHandler.
@@ -30,6 +32,17 @@ func NewAgentHandler(service *app.AgentService, v *validator.Validator, log *log
 		validator: v,
 		logger:    log.With("handler", "agent"),
 	}
+}
+
+// SetTemplateService injects the agent config template service.
+// Optional dependency — if nil, the config template endpoint returns 503.
+func (h *AgentHandler) SetTemplateService(svc *app.AgentConfigTemplateService) {
+	h.templateService = svc
+}
+
+// SetPublicAPIURL sets the public URL that agent configs will reference.
+func (h *AgentHandler) SetPublicAPIURL(url string) {
+	h.publicAPIURL = url
 }
 
 // CreateAgentRequest represents the request body for creating an agent.
@@ -235,6 +248,51 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// AgentStatsResponse mirrors agent.TenantAgentStats with snake_case JSON.
+type AgentStatsResponse struct {
+	Total          int            `json:"total"`
+	ByStatus       map[string]int `json:"by_status"`
+	ByHealth       map[string]int `json:"by_health"`
+	ByType         map[string]int `json:"by_type"`
+	ByExecutionMode map[string]int `json:"by_execution_mode"`
+	ActiveJobs     int            `json:"active_jobs"`
+	OnlineActive   int            `json:"online_active"`
+}
+
+// GetStats handles GET /api/v1/agents/stats
+// @Summary      Get tenant agent statistics
+// @Description  Returns aggregated stats for the tenant's agents (status, health, type, mode breakdowns)
+// @Tags         Agents
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  AgentStatsResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Router       /agents/stats [get]
+func (h *AgentHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+
+	stats, err := h.service.GetTenantAgentStats(r.Context(), tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	resp := AgentStatsResponse{
+		Total:           stats.Total,
+		ByStatus:        stats.ByStatus,
+		ByHealth:        stats.ByHealth,
+		ByType:          stats.ByType,
+		ByExecutionMode: stats.ByMode,
+		ActiveJobs:      stats.ActiveJobs,
+		OnlineActive:    stats.OnlineActive,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // UpdateAgentRequest represents the request body for updating an agent.
@@ -607,4 +665,82 @@ func (h *AgentHandler) GetAvailableCapabilities(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// AgentConfigTemplatesResponse holds the rendered agent config templates.
+type AgentConfigTemplatesResponse struct {
+	YAML   string `json:"yaml"`
+	Env    string `json:"env"`
+	Docker string `json:"docker"`
+	CLI    string `json:"cli"`
+}
+
+// GetConfigTemplates handles GET /api/v1/agents/{id}/config-templates
+// Returns rendered configuration templates (YAML, env, Docker, CLI) for an agent.
+// Templates are loaded from configs/agent-templates/*.tmpl on the API host
+// and can be edited without rebuilding the frontend.
+//
+// @Summary Get agent configuration templates
+// @Description Returns rendered config templates for an agent in multiple formats
+// @Tags Agents
+// @Produce json
+// @Param id path string true "Agent ID"
+// @Param X-Agent-API-Key header string false "Optional API key to embed in templates (only available right after creation/regeneration). MUST be sent as header, not query parameter."
+// @Success 200 {object} AgentConfigTemplatesResponse
+// @Failure 404 {object} apierror.Error
+// @Failure 500 {object} apierror.Error
+// @Failure 503 {object} apierror.Error "Template service not configured"
+// @Security BearerAuth
+// @Router /agents/{id}/config-templates [get]
+func (h *AgentHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Request) {
+	if h.templateService == nil {
+		apierror.New(http.StatusServiceUnavailable, "TEMPLATE_SERVICE_DISABLED",
+			"Agent config template service is not configured").WriteJSON(w)
+		return
+	}
+
+	agentID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	a, err := h.service.GetAgent(r.Context(), tenantID, agentID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// API key MUST come from a header, never a query string. Query strings are
+	// logged by load balancers, proxies, CDNs, browser history, and referer
+	// headers — embedding a credential there is a known leakage vector.
+	// Caller passes the freshly issued key from agent creation/regeneration
+	// in the X-Agent-API-Key header. If absent, we render a placeholder.
+	apiKey := r.Header.Get("X-Agent-API-Key")
+	if apiKey == "" {
+		apiKey = "<YOUR_API_KEY>"
+	}
+
+	baseURL := h.publicAPIURL
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+
+	rendered, err := h.templateService.Render(app.AgentTemplateData{
+		Agent:   a,
+		APIKey:  apiKey,
+		BaseURL: baseURL,
+	})
+	if err != nil {
+		h.logger.Error("failed to render agent config templates", "error", err, "agent_id", agentID)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	resp := AgentConfigTemplatesResponse{
+		YAML:   rendered.YAML,
+		Env:    rendered.Env,
+		Docker: rendered.Docker,
+		CLI:    rendered.CLI,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }

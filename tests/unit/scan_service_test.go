@@ -171,6 +171,14 @@ func (m *mockScanRepo) UpdateStatusByAssetGroupID(_ context.Context, _ shared.ID
 	return nil
 }
 
+func (m *mockScanRepo) TryLockScanForScheduler(_ context.Context, _ shared.ID) (bool, error) {
+	return true, nil
+}
+
+func (m *mockScanRepo) UnlockScanForScheduler(_ context.Context, _ shared.ID) error {
+	return nil
+}
+
 // addScan is a helper to insert a scan into the mock.
 func (m *mockScanRepo) addScan(s *scan.Scan) {
 	m.scans[s.ID.String()] = s
@@ -387,6 +395,12 @@ func (m *mockRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ pipeline.Ru
 func (m *mockRunRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (pipeline.RunStats, error) {
 	return pipeline.RunStats{}, nil
 }
+func (m *mockRunRepo) MarkTimedOutRuns(_ context.Context) (int64, error) {
+	return 0, nil
+}
+func (m *mockRunRepo) ListPendingRetries(_ context.Context, _ int) ([]pipeline.RetryCandidate, error) {
+	return nil, nil
+}
 
 // =============================================================================
 // Mock: pipeline.StepRepository
@@ -541,6 +555,9 @@ func (m *mockCommandRepo) FailExhaustedCommands(_ context.Context, _ int) (int64
 }
 func (m *mockCommandRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (command.CommandStats, error) {
 	return command.CommandStats{}, nil
+}
+func (m *mockCommandRepo) CancelByPipelineRunID(_ context.Context, _, _ shared.ID) (int64, error) {
+	return 0, nil
 }
 
 // =============================================================================

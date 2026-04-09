@@ -115,6 +115,11 @@ type Repository interface {
 	// GetStatsByTenant returns aggregated command statistics for a tenant in a single query.
 	// This is optimized to avoid N queries when fetching stats.
 	GetStatsByTenant(ctx context.Context, tenantID shared.ID) (CommandStats, error)
+
+	// CancelByPipelineRunID marks all non-terminal commands for a pipeline run as canceled.
+	// Used when a scan is cancelled by the user to abort in-flight commands.
+	// Returns the number of commands canceled.
+	CancelByPipelineRunID(ctx context.Context, tenantID shared.ID, runID shared.ID) (int64, error)
 }
 
 // CommandStats represents aggregated command statistics.

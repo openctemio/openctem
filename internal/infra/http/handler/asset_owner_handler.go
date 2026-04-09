@@ -9,22 +9,66 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
+	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // AssetOwnerHandler handles asset ownership HTTP requests.
 type AssetOwnerHandler struct {
-	repo   accesscontrol.Repository
-	logger *logger.Logger
+	repo      accesscontrol.Repository
+	assetRepo asset.Repository
+	logger    *logger.Logger
 }
 
 // NewAssetOwnerHandler creates a new asset owner handler.
-func NewAssetOwnerHandler(repo accesscontrol.Repository, log *logger.Logger) *AssetOwnerHandler {
+//
+// assetRepo is required for the per-request tenant check on AddOwner /
+// UpdateOwner / RemoveOwner — without it a user with assets:write in
+// tenant A could craft a request for an asset in tenant B because
+// asset_owners is not directly tenant-scoped.
+func NewAssetOwnerHandler(
+	repo accesscontrol.Repository,
+	assetRepo asset.Repository,
+	log *logger.Logger,
+) *AssetOwnerHandler {
 	return &AssetOwnerHandler{
-		repo:   repo,
-		logger: log,
+		repo:      repo,
+		assetRepo: assetRepo,
+		logger:    log,
 	}
+}
+
+// requireAssetInTenant verifies the asset exists and belongs to the caller's
+// tenant. Returns the parsed asset ID on success. On failure it writes the
+// appropriate error response and returns the zero value + false; callers
+// should bail out immediately.
+//
+// We deliberately respond with a generic 404 in both "asset doesn't exist"
+// and "asset belongs to a different tenant" cases — leaking the difference
+// would let an attacker probe the cross-tenant ID space.
+func (h *AssetOwnerHandler) requireAssetInTenant(
+	w http.ResponseWriter,
+	r *http.Request,
+	rawAssetID string,
+) (shared.ID, bool) {
+	parsed, err := shared.IDFromString(rawAssetID)
+	if err != nil {
+		apierror.BadRequest("Invalid asset ID").WriteJSON(w)
+		return shared.ID{}, false
+	}
+	tenantID := middleware.MustGetTenantID(r.Context())
+	parsedTenantID, terr := shared.IDFromString(tenantID)
+	if terr != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return shared.ID{}, false
+	}
+	if _, gerr := h.assetRepo.GetByID(r.Context(), parsedTenantID, parsed); gerr != nil {
+		// Generic 404 — do not distinguish "not found" from "wrong tenant".
+		apierror.NotFound("Asset").WriteJSON(w)
+		return shared.ID{}, false
+	}
+	return parsed, true
 }
 
 // AddAssetOwnerRequest represents the request to add an owner to an asset.
@@ -130,6 +174,16 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Tenant check FIRST. We must verify the asset belongs to the caller's
+	// tenant before doing anything else, otherwise an attacker with
+	// assets:write in tenant A could craft a POST against an asset ID in
+	// tenant B and have us happily insert an asset_owners row referencing
+	// it (the table is keyed by asset_id only and does not carry tenant_id).
+	parsedAssetID, ok := h.requireAssetInTenant(w, r, assetID)
+	if !ok {
+		return
+	}
+
 	var req AddAssetOwnerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
@@ -150,12 +204,6 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 	ownershipType := accesscontrol.OwnershipType(req.OwnershipType)
 	if !ownershipType.IsValid() {
 		apierror.BadRequest("Invalid ownership_type. Must be one of: primary, secondary, stakeholder, informed, regulatory").WriteJSON(w)
-		return
-	}
-
-	parsedAssetID, err := shared.IDFromString(assetID)
-	if err != nil {
-		apierror.BadRequest("Invalid asset ID").WriteJSON(w)
 		return
 	}
 
@@ -238,6 +286,12 @@ func (h *AssetOwnerHandler) UpdateOwner(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Tenant check on the asset before allowing the update — defense
+	// against the same cross-tenant attack as AddOwner.
+	if _, ok := h.requireAssetInTenant(w, r, assetID); !ok {
+		return
+	}
+
 	var req UpdateAssetOwnerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
@@ -293,6 +347,11 @@ func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) 
 	ownerID := r.PathValue("ownerID")
 	if ownerID == "" {
 		apierror.BadRequest("Owner ID is required").WriteJSON(w)
+		return
+	}
+
+	// Tenant check on the asset before allowing the delete.
+	if _, ok := h.requireAssetInTenant(w, r, assetID); !ok {
 		return
 	}
 

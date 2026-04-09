@@ -5,8 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/tenant"
+	"github.com/openctemio/api/pkg/domain/user"
 )
 
 // Note: KeycloakAuth middleware tests require a mock JWKS server.
@@ -190,6 +194,108 @@ func TestGetUsername_EmptyContext(t *testing.T) {
 
 	if username != "" {
 		t.Errorf("expected empty string, got %s", username)
+	}
+}
+
+// =============================================================================
+// RequireMembership: suspension enforcement
+// =============================================================================
+
+// newMembershipTestUser builds a minimal local user usable in middleware tests.
+func newMembershipTestUser(t *testing.T) *user.User {
+	t.Helper()
+	hash := "x"
+	return user.Reconstitute(
+		shared.NewID(), nil,
+		"member@example.com", "Member", "", "",
+		user.StatusActive, user.Preferences{}, nil,
+		time.Now().UTC(), time.Now().UTC(),
+		user.AuthProviderLocal, &hash, true,
+		nil, nil, nil, nil, 0, nil,
+	)
+}
+
+// requireMembershipRequest assembles the context that RequireMembership expects:
+// a local user (via LocalUserKey) and a tenant id (via TeamIDKey).
+func requireMembershipRequest(u *user.User, tenantID shared.ID) *http.Request {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, middleware.LocalUserKey, u)
+	ctx = context.WithValue(ctx, middleware.TeamIDKey, tenantID)
+	return httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx)
+}
+
+func TestRequireMembership_ActiveMember_Allowed(t *testing.T) {
+	u := newMembershipTestUser(t)
+	tenantID := shared.NewID()
+
+	m, err := tenant.NewMembership(u.ID(), tenantID, tenant.RoleMember, nil)
+	if err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+
+	repo := newMockTenantRepo()
+	repo.memberships[m.ID().String()] = m
+
+	called := false
+	handler := middleware.RequireMembership(repo)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, requireMembershipRequest(u, tenantID))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !called {
+		t.Fatal("expected next handler to be called for active member")
+	}
+}
+
+func TestRequireMembership_SuspendedMember_Rejected(t *testing.T) {
+	u := newMembershipTestUser(t)
+	tenantID := shared.NewID()
+	suspender := shared.NewID()
+
+	m, err := tenant.NewMembership(u.ID(), tenantID, tenant.RoleMember, nil)
+	if err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+	if err := m.Suspend(suspender); err != nil {
+		t.Fatalf("suspend membership: %v", err)
+	}
+
+	repo := newMockTenantRepo()
+	repo.memberships[m.ID().String()] = m
+
+	handler := middleware.RequireMembership(repo)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("next handler must not be called for suspended member")
+	}))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, requireMembershipRequest(u, tenantID))
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRequireMembership_NoMembership_Rejected(t *testing.T) {
+	u := newMembershipTestUser(t)
+	tenantID := shared.NewID()
+
+	repo := newMockTenantRepo() // empty
+
+	handler := middleware.RequireMembership(repo)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("next handler must not be called when membership missing")
+	}))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, requireMembershipRequest(u, tenantID))
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
 	}
 }
 

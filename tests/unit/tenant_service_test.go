@@ -51,6 +51,7 @@ type mockTenantRepo struct {
 	listPendingInvErr            error
 	getPendingInvByEmailErr      error
 	deleteExpiredInvErr          error
+	deletePendingByUserErr       error
 	acceptInvitationTxErr        error
 	listActiveTenantIDsErr       error
 
@@ -70,8 +71,9 @@ type mockTenantRepo struct {
 	pendingInvitations    []*tenant.Invitation
 	membersByTenant       []*tenant.Membership
 	userMemberships       []tenant.UserMembership
-	deletedExpiredCount   int64
-	existingMemberByEmail *tenant.MemberWithUser
+	deletedExpiredCount       int64
+	deletedPendingByUserCount int64
+	existingMemberByEmail     *tenant.MemberWithUser
 }
 
 func newMockTenantRepo() *mockTenantRepo {
@@ -326,6 +328,17 @@ func (m *mockTenantRepo) DeleteExpiredInvitations(_ context.Context) (int64, err
 		return 0, m.deleteExpiredInvErr
 	}
 	return m.deletedExpiredCount, nil
+}
+
+func (m *mockTenantRepo) DeletePendingInvitationsByUserID(_ context.Context, _, _ shared.ID) (int64, error) {
+	if m.deletePendingByUserErr != nil {
+		return 0, m.deletePendingByUserErr
+	}
+	return m.deletedPendingByUserCount, nil
+}
+
+func (m *mockTenantRepo) UpdateMembershipStatus(_ context.Context, _ *tenant.Membership) error {
+	return nil
 }
 
 func (m *mockTenantRepo) AcceptInvitationTx(_ context.Context, inv *tenant.Invitation, membership *tenant.Membership) error {

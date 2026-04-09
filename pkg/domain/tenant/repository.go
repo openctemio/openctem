@@ -26,6 +26,9 @@ type Repository interface {
 	GetMembership(ctx context.Context, userID shared.ID, tenantID shared.ID) (*Membership, error)
 	GetMembershipByID(ctx context.Context, id shared.ID) (*Membership, error)
 	UpdateMembership(ctx context.Context, membership *Membership) error
+	// UpdateMembershipStatus persists the lifecycle status change
+	// (active ↔ suspended). Used by Suspend/Reactivate service methods.
+	UpdateMembershipStatus(ctx context.Context, membership *Membership) error
 	DeleteMembership(ctx context.Context, id shared.ID) error
 	ListMembersByTenant(ctx context.Context, tenantID shared.ID) ([]*Membership, error)
 	ListMembersWithUserInfo(ctx context.Context, tenantID shared.ID) ([]*MemberWithUser, error)
@@ -47,6 +50,15 @@ type Repository interface {
 	ListPendingInvitationsByTenant(ctx context.Context, tenantID shared.ID) ([]*Invitation, error)
 	GetPendingInvitationByEmail(ctx context.Context, tenantID shared.ID, email string) (*Invitation, error)
 	DeleteExpiredInvitations(ctx context.Context) (int64, error)
+
+	// DeletePendingInvitationsByUserID removes every UNACCEPTED
+	// invitation matching the user's email in the given tenant.
+	// Used when removing a member to ensure they can't rejoin via
+	// a stale token still sitting in their inbox. Looks up the
+	// user's email via JOIN so the caller doesn't need to fetch it
+	// first. Email matching is case-insensitive. Returns the number
+	// of rows deleted (0 is not an error).
+	DeletePendingInvitationsByUserID(ctx context.Context, tenantID, userID shared.ID) (int64, error)
 
 	// AcceptInvitationTx atomically updates the invitation and creates the membership in a single transaction.
 	// This ensures data consistency - either both operations succeed or neither does.

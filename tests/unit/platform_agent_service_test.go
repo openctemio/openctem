@@ -205,6 +205,15 @@ func (m *mockAgentRepo) GetPlatformAgentStats(_ context.Context, _ shared.ID) (*
 	}, nil
 }
 
+func (m *mockAgentRepo) GetTenantAgentStats(_ context.Context, _ shared.ID) (*agent.TenantAgentStats, error) {
+	return &agent.TenantAgentStats{
+		ByStatus: make(map[string]int),
+		ByHealth: make(map[string]int),
+		ByType:   make(map[string]int),
+		ByMode:   make(map[string]int),
+	}, nil
+}
+
 // =============================================================================
 // Test Helpers
 // =============================================================================

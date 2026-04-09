@@ -545,6 +545,18 @@ type PlatformAgentStatsResult struct {
 	TierBreakdown     map[string]TierBreakdown
 }
 
+// TenantAgentStats holds aggregate statistics for a tenant's agents,
+// computed via SQL aggregation. Powers the agents page stat cards.
+type TenantAgentStats struct {
+	Total          int            `json:"total"`
+	ByStatus       map[string]int `json:"by_status"`        // active, disabled, revoked, ...
+	ByHealth       map[string]int `json:"by_health"`        // online, offline, error, unknown
+	ByType         map[string]int `json:"by_type"`          // runner, worker, collector, sensor
+	ByMode         map[string]int `json:"by_execution_mode"` // standalone, daemon
+	ActiveJobs     int            `json:"active_jobs"`       // SUM(current_jobs) for online daemon agents
+	OnlineActive   int            `json:"online_active"`     // status=active AND health=online
+}
+
 // ScoreForJob calculates a score for job matching (higher is better).
 // Used for selecting the best platform agent for a job.
 func (a *Agent) ScoreForJob(capabilities []string, tool, preferredRegion string) int {

@@ -386,10 +386,18 @@ func registerAssetRelationshipRoutes(
 	router.Group("/api/v1/assets/{id}/relationships", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
 		r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
+		// Bulk create — fan-out from one source asset to many targets
+		// in a single round trip. Source asset validation runs ONCE
+		// for the whole batch instead of per-item.
+		r.POST("/batch", h.BatchCreate, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 
-	// Standalone relationship routes (direct CRUD by relationship ID)
+	// Standalone relationship routes (direct CRUD by relationship ID
+	// + tenant-wide usage stats endpoint).
 	router.Group("/api/v1/relationships", func(r Router) {
+		// usage-stats must be registered before /{relationshipId} so chi
+		// matches the literal path before the param pattern.
+		r.GET("/usage-stats", h.UsageStats, middleware.Require(permission.AssetsRead))
 		r.GET("/{relationshipId}", h.Get, middleware.Require(permission.AssetsRead))
 		r.PUT("/{relationshipId}", h.Update, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{relationshipId}", h.Delete, middleware.Require(permission.AssetsDelete))

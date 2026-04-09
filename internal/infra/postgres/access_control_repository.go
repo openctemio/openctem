@@ -2515,13 +2515,15 @@ func (r *AccessControlRepository) CountFindingsByGroupFromRules(ctx context.Cont
 
 // ListAssetOwnersWithNames returns asset owners with resolved user/group names.
 func (r *AccessControlRepository) ListAssetOwnersWithNames(ctx context.Context, tenantID, assetID shared.ID) ([]*accesscontrol.AssetOwnerWithNames, error) {
+	// Note: users table has column `name`, not `display_name`. Previous version
+	// referenced `ab.display_name` which doesn't exist → 500 on every call.
 	query := `
 		SELECT ao.id, ao.asset_id, ao.group_id, ao.user_id, ao.ownership_type,
 		       ao.assigned_at, ao.assigned_by,
 		       COALESCE(u.name, '') AS user_name,
 		       COALESCE(u.email, '') AS user_email,
 		       COALESCE(g.name, '') AS group_name,
-		       COALESCE(ab.display_name, '') AS assigned_by_name
+		       COALESCE(ab.name, '') AS assigned_by_name
 		FROM asset_owners ao
 		LEFT JOIN users u ON ao.user_id = u.id
 		LEFT JOIN groups g ON ao.group_id = g.id

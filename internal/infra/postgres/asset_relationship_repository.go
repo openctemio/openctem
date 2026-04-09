@@ -329,6 +329,38 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 	return created, nil
 }
 
+// CountByType returns relationship counts grouped by type for a tenant.
+// Used by the usage-stats endpoint so admins can see which relationship
+// types are actually being used and prune the registry based on real
+// data instead of guessing.
+func (r *AssetRelationshipRepository) CountByType(ctx context.Context, tenantID shared.ID) (map[asset.RelationshipType]int64, error) {
+	query := `
+		SELECT relationship_type, COUNT(*) AS n
+		FROM asset_relationships
+		WHERE tenant_id = $1
+		GROUP BY relationship_type
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("count relationships by type: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make(map[asset.RelationshipType]int64)
+	for rows.Next() {
+		var typeStr string
+		var n int64
+		if err := rows.Scan(&typeStr, &n); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		out[asset.RelationshipType(typeStr)] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate: %w", err)
+	}
+	return out, nil
+}
+
 // =============================================================================
 // Internal helpers
 // =============================================================================

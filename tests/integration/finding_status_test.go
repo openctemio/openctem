@@ -80,7 +80,7 @@ func (m *MockFindingRepository) DeleteByAssetID(ctx context.Context, assetID sha
 func (m *MockFindingRepository) DeleteByScanID(ctx context.Context, tenantID shared.ID, scanID string) error {
 	return nil
 }
-func (m *MockFindingRepository) GetStats(ctx context.Context, tenantID shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
+func (m *MockFindingRepository) GetStats(ctx context.Context, tenantID shared.ID, _ *shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
 	return nil, nil
 }
 func (m *MockFindingRepository) BatchCountByAssetIDs(ctx context.Context, assetIDs []shared.ID) (map[shared.ID]int64, error) {

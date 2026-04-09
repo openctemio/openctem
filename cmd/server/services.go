@@ -393,6 +393,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanSecurityValidatorAdapter,
 		log,
 		scan.WithAuditService(scanAuditAdapter),
+		scan.WithProfileRepo(repos.ScanProfile),
 	)
 
 	// Create adapters for pipeline sub-package

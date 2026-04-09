@@ -160,6 +160,30 @@ type RunRepository interface {
 	// GetStatsByTenant returns aggregated run statistics for a tenant in a single query.
 	// This is optimized to avoid N+1 queries when fetching stats.
 	GetStatsByTenant(ctx context.Context, tenantID shared.ID) (RunStats, error)
+
+	// MarkTimedOutRuns marks runs as timed out if they have been running longer than
+	// their scan's timeout_seconds. Returns the number of runs marked.
+	// This is intended to be called periodically by a background worker.
+	MarkTimedOutRuns(ctx context.Context) (int64, error)
+
+	// ListPendingRetries returns failed pipeline_runs that are eligible for automatic retry.
+	// A run is eligible when:
+	//   - Its parent scan has max_retries > 0 and is active
+	//   - Its retry_attempt < scan.max_retries
+	//   - It is the latest run for the scan
+	//   - The exponential backoff window has elapsed since completed_at
+	// Returns RetryCandidate records (run + retry config) for the controller to process.
+	ListPendingRetries(ctx context.Context, limit int) ([]RetryCandidate, error)
+}
+
+// RetryCandidate represents a failed pipeline run eligible for retry.
+type RetryCandidate struct {
+	RunID               shared.ID
+	ScanID              shared.ID
+	TenantID            shared.ID
+	RetryAttempt        int // Current retry_attempt of the failed run; new run will be RetryAttempt+1
+	MaxRetries          int
+	RetryBackoffSeconds int
 }
 
 // RunStats represents aggregated run statistics.

@@ -270,7 +270,7 @@ func (m *mockFindingRepoForScope) GetByID(_ context.Context, _, _ shared.ID) (*v
 	return m.findingByID, m.findingByIDErr
 }
 
-func (m *mockFindingRepoForScope) GetStats(_ context.Context, _ shared.ID, dataScopeUserID *shared.ID) (*vulnerability.FindingStats, error) {
+func (m *mockFindingRepoForScope) GetStats(_ context.Context, _ shared.ID, dataScopeUserID *shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
 	m.getStatsCalls++
 	m.getStatsDataScopeUser = dataScopeUserID
 	return m.statsResult, m.statsErr

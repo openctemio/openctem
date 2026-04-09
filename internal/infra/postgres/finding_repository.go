@@ -1683,7 +1683,8 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 
 // GetStats returns aggregated statistics for findings of a tenant.
 // dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
-func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID) (*vulnerability.FindingStats, error) {
+// assetID: if non-nil, only count findings for that specific asset.
+func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, assetID *shared.ID) (*vulnerability.FindingStats, error) {
 	stats := vulnerability.NewFindingStats()
 
 	// Query for total and counts by severity, status, source in one go
@@ -1731,6 +1732,14 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
 		)`
 		args = append(args, dataScopeUserID.String())
+	}
+
+	// Asset filter — used when the page is `/findings?assetId=…` so
+	// the severity cards reflect the same filtered table the user is
+	// looking at, not the global tenant counts.
+	if assetID != nil {
+		args = append(args, assetID.String())
+		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
 	}
 
 	var (

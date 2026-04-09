@@ -1145,8 +1145,14 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 	return avg, nil
 }
 
-// GetAggregateStats computes all asset statistics using SQL aggregation (no in-memory loading).
-func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string) (*asset.AggregateStats, error) {
+// GetAggregateStats computes all asset statistics in a SINGLE round-trip.
+// Filters: types (asset_type ANY), tags (tags && — overlap, matches List semantics).
+//
+// The previous implementation issued 6 queries (1 totals + 5 GROUP BY breakdowns).
+// This version collapses everything into one query using a CTE + UNION ALL,
+// trading slightly more complex SQL for an 83% reduction in DB round-trips.
+// PostgreSQL plans a single scan of the filtered CTE for all aggregates.
+func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string) (*asset.AggregateStats, error) {
 	stats := &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),
@@ -1155,72 +1161,102 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 		ByExposure:    make(map[string]int),
 	}
 
-	// Single query for all aggregations (finding counts via subquery since it's not a column)
-	query := `
-		SELECT
-			COUNT(*) AS total,
-			COALESCE(AVG(a.risk_score), 0) AS risk_score_avg,
-			COUNT(*) FILTER (WHERE fc.cnt > 0) AS with_findings,
-			COALESCE(SUM(fc.cnt), 0) AS findings_total,
-			COUNT(*) FILTER (WHERE a.risk_score >= 70) AS high_risk_count
-		FROM assets a
-		LEFT JOIN (
-			SELECT asset_id, COUNT(*) AS cnt
-			FROM findings
-			GROUP BY asset_id
-		) fc ON fc.asset_id = a.id
-		WHERE a.tenant_id = $1
-	`
+	// Build the WHERE clause once.
+	filterClause := " WHERE a.tenant_id = $1"
 	args := []any{tenantID.String()}
+	idx := 2
 	if len(types) > 0 {
-		query += ` AND asset_type = ANY($2::text[])`
+		filterClause += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
 		args = append(args, pq.Array(types))
+		idx++
+	}
+	if len(tags) > 0 {
+		filterClause += fmt.Sprintf(" AND a.tags && $%d", idx)
+		args = append(args, pq.Array(tags))
+		// No further conditions follow, so we don't increment idx here.
+		// If a new branch is added below, restore the increment first.
 	}
 
-	err := r.db.QueryRowContext(ctx, query, args...).Scan(
-		&stats.Total, &stats.RiskScoreAvg, &stats.WithFindings,
-		&stats.FindingsTotal, &stats.HighRiskCount,
-	)
+	// One query, three columns:
+	//   category — which aggregate this row belongs to
+	//   key      — the breakdown key (empty for scalar aggregates)
+	//   value    — float8 so it carries both COUNT(*) and AVG(risk_score)
+	//
+	// Postgres will plan a single scan of `filtered` for all the inline
+	// SELECTs that follow. The findings CTE is restricted to the filtered
+	// asset id set so we never touch findings rows for assets we filtered out.
+	query := fmt.Sprintf(`
+WITH filtered AS (
+  SELECT a.id, a.asset_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score
+  FROM assets a
+  %s
+),
+finding_counts AS (
+  SELECT f.asset_id, COUNT(*)::bigint AS cnt
+  FROM findings f
+  WHERE f.asset_id IN (SELECT id FROM filtered)
+  GROUP BY f.asset_id
+)
+SELECT category, key, value FROM (
+  SELECT 'total'::text          AS category, ''::text          AS key, COUNT(*)::float8 AS value FROM filtered
+  UNION ALL
+  SELECT 'risk_avg',              '',                                  COALESCE(AVG(risk_score), 0)::float8 FROM filtered
+  UNION ALL
+  SELECT 'with_findings',         '',                                  (SELECT COUNT(*)::float8 FROM finding_counts)
+  UNION ALL
+  SELECT 'findings_total',        '',                                  (SELECT COALESCE(SUM(cnt), 0)::float8 FROM finding_counts)
+  UNION ALL
+  SELECT 'high_risk',             '',                                  COUNT(*)::float8 FROM filtered WHERE risk_score >= 70
+  UNION ALL
+  SELECT 'asset_type',            asset_type,                          COUNT(*)::float8 FROM filtered GROUP BY asset_type
+  UNION ALL
+  SELECT 'status',                status,                              COUNT(*)::float8 FROM filtered GROUP BY status
+  UNION ALL
+  SELECT 'criticality',           criticality,                         COUNT(*)::float8 FROM filtered GROUP BY criticality
+  UNION ALL
+  SELECT 'scope',                 scope,                               COUNT(*)::float8 FROM filtered GROUP BY scope
+  UNION ALL
+  SELECT 'exposure',              exposure,                            COUNT(*)::float8 FROM filtered GROUP BY exposure
+) sub
+`, filterClause)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get aggregate stats: %w", err)
 	}
+	defer func() { _ = rows.Close() }()
 
-	// GROUP BY queries for breakdowns
-	breakdowns := []struct {
-		column string
-		dest   map[string]int
-	}{
-		{"asset_type", stats.ByType},
-		{"status", stats.ByStatus},
-		{"criticality", stats.ByCriticality},
-		{"scope", stats.ByScope},
-		{"exposure", stats.ByExposure},
+	for rows.Next() {
+		var category, key string
+		var value float64
+		if err := rows.Scan(&category, &key, &value); err != nil {
+			return nil, fmt.Errorf("failed to scan aggregate stats row: %w", err)
+		}
+		switch category {
+		case "total":
+			stats.Total = int(value)
+		case "risk_avg":
+			stats.RiskScoreAvg = value
+		case "with_findings":
+			stats.WithFindings = int(value)
+		case "findings_total":
+			stats.FindingsTotal = int(value)
+		case "high_risk":
+			stats.HighRiskCount = int(value)
+		case "asset_type":
+			stats.ByType[key] = int(value)
+		case "status":
+			stats.ByStatus[key] = int(value)
+		case "criticality":
+			stats.ByCriticality[key] = int(value)
+		case "scope":
+			stats.ByScope[key] = int(value)
+		case "exposure":
+			stats.ByExposure[key] = int(value)
+		}
 	}
-
-	for _, bd := range breakdowns {
-		bdQuery := fmt.Sprintf(
-			`SELECT %s, COUNT(*) FROM assets WHERE tenant_id = $1`, bd.column)
-		bdArgs := []any{tenantID.String()}
-		if len(types) > 0 {
-			bdQuery += ` AND asset_type = ANY($2::text[])`
-			bdArgs = append(bdArgs, pq.Array(types))
-		}
-		bdQuery += fmt.Sprintf(` GROUP BY %s`, bd.column)
-
-		rows, err := r.db.QueryContext(ctx, bdQuery, bdArgs...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get %s breakdown: %w", bd.column, err)
-		}
-		for rows.Next() {
-			var key string
-			var count int
-			if err := rows.Scan(&key, &count); err != nil {
-				_ = rows.Close()
-				return nil, fmt.Errorf("failed to scan %s breakdown: %w", bd.column, err)
-			}
-			bd.dest[key] = count
-		}
-		_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating aggregate stats: %w", err)
 	}
 
 	return stats, nil

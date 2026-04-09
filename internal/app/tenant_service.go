@@ -426,6 +426,26 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 	// This reduces the window of vulnerability from 5 minutes (cache TTL) to 0
 	s.invalidateUserPermissions(ctx, tenantID, userID)
 
+	// Wipe any pending invitations the user still has in their inbox
+	// for this tenant. Without this they could re-accept the original
+	// invitation token to rejoin after the admin removed them — a
+	// real privilege escalation path. Best-effort: a failure here is
+	// logged but doesn't roll back the membership delete (the primary
+	// security goal — revoking access — has already succeeded).
+	if deleted, derr := s.repo.DeletePendingInvitationsByUserID(ctx, membership.TenantID(), membership.UserID()); derr != nil {
+		s.logger.Warn("failed to clean up pending invitations after member removal",
+			"tenant_id", tenantID,
+			"user_id", userID,
+			"error", derr,
+		)
+	} else if deleted > 0 {
+		s.logger.Info("invalidated pending invitations on member removal",
+			"tenant_id", tenantID,
+			"user_id", userID,
+			"deleted", deleted,
+		)
+	}
+
 	s.logger.Info("member removed", "membership_id", membershipID)
 
 	// Log audit event
@@ -434,6 +454,97 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 		WithSeverity(audit.SeverityHigh).
 		WithMessage("Member removed from team").
 		WithMetadata("user_id", userID)
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
+// SuspendMember suspends a member's access to a tenant. The membership
+// row stays in the database (preserving audit trail, ownership
+// attribution, and compliance evidence), but the user's access is
+// immediately revoked: sessions are invalidated, permission cache
+// cleared, and JWT exchange should check membership status.
+func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, actx AuditContext) error {
+	parsedID, err := shared.IDFromString(membershipID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
+	}
+
+	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+
+	actorID, err := shared.IDFromString(actx.ActorID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
+	}
+
+	if err := membership.Suspend(actorID); err != nil {
+		return err
+	}
+
+	if err := s.repo.UpdateMembershipStatus(ctx, membership); err != nil {
+		return err
+	}
+
+	tenantID := membership.TenantID().String()
+	userID := membership.UserID().String()
+
+	// Immediately revoke access
+	s.invalidateUserPermissions(ctx, tenantID, userID)
+
+	// Invalidate pending invitations
+	if deleted, derr := s.repo.DeletePendingInvitationsByUserID(ctx, membership.TenantID(), membership.UserID()); derr != nil {
+		s.logger.Warn("failed to clean up invitations on suspend", "error", derr)
+	} else if deleted > 0 {
+		s.logger.Info("invalidated invitations on suspend", "deleted", deleted)
+	}
+
+	s.logger.Info("member suspended", "membership_id", membershipID, "user_id", userID)
+
+	actx.TenantID = tenantID
+	event := NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeMembership, membershipID).
+		WithSeverity(audit.SeverityHigh).
+		WithMessage("Member suspended").
+		WithMetadata("user_id", userID).
+		WithMetadata("action", "suspend")
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
+// ReactivateMember restores a suspended member's access.
+func (s *TenantService) ReactivateMember(ctx context.Context, membershipID string, actx AuditContext) error {
+	parsedID, err := shared.IDFromString(membershipID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
+	}
+
+	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+
+	if err := membership.Reactivate(); err != nil {
+		return err
+	}
+
+	if err := s.repo.UpdateMembershipStatus(ctx, membership); err != nil {
+		return err
+	}
+
+	tenantID := membership.TenantID().String()
+	userID := membership.UserID().String()
+
+	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
+
+	actx.TenantID = tenantID
+	event := NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeMembership, membershipID).
+		WithSeverity(audit.SeverityMedium).
+		WithMessage("Member reactivated").
+		WithMetadata("user_id", userID).
+		WithMetadata("action", "reactivate")
 	s.logAudit(ctx, actx, event)
 
 	return nil
@@ -760,6 +871,87 @@ func (s *TenantService) CleanupExpiredInvitations(ctx context.Context) (int64, e
 	return count, nil
 }
 
+// ResendInvitation re-enqueues the invitation email for a pending
+// invitation. Does NOT change the token, expiry, or any other fields
+// on the invitation row — just fires the email again. This lets admins
+// recover from lost/spam-filtered invitation emails without having to
+// delete + recreate (which invalidates the old token).
+//
+// Returns ErrNotFound if the invitation doesn't exist, and ErrValidation
+// if the invitation has already been accepted or has expired.
+func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitationID string, actx AuditContext) error {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	parsedInvID, err := shared.IDFromString(invitationID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid invitation id format", shared.ErrValidation)
+	}
+
+	inv, err := s.repo.GetInvitationByID(ctx, parsedInvID)
+	if err != nil {
+		return err
+	}
+
+	// Tenant isolation — invitation must belong to the requesting tenant
+	if inv.TenantID().String() != parsedTenantID.String() {
+		return shared.ErrNotFound
+	}
+
+	if inv.IsAccepted() {
+		return fmt.Errorf("%w: invitation has already been accepted", shared.ErrValidation)
+	}
+	if inv.IsExpired() {
+		return fmt.Errorf("%w: invitation has expired — create a new one", shared.ErrValidation)
+	}
+
+	if s.emailEnqueuer == nil {
+		return fmt.Errorf("%w: email service is not configured", shared.ErrValidation)
+	}
+
+	// Look up inviter name + tenant name for the email template
+	inviterName := "A team member"
+	if s.userInfoProvider != nil {
+		if name, nerr := s.userInfoProvider.GetUserNameByID(ctx, inv.InvitedBy()); nerr == nil && name != "" {
+			inviterName = name
+		}
+	}
+	teamName := "the team"
+	if t, terr := s.repo.GetByID(ctx, parsedTenantID); terr == nil && t != nil {
+		teamName = t.Name()
+	}
+
+	payload := TeamInvitationJobPayload{
+		RecipientEmail: inv.Email(),
+		InviterName:    inviterName,
+		TeamName:       teamName,
+		Token:          inv.Token(),
+		ExpiresIn:      time.Until(inv.ExpiresAt()), // remaining TTL, not the original 7 days
+		InvitationID:   inv.ID().String(),
+		TenantID:       tenantID,
+	}
+	if err := s.emailEnqueuer.EnqueueTeamInvitation(ctx, payload); err != nil {
+		return fmt.Errorf("failed to enqueue invitation email: %w", err)
+	}
+
+	s.logger.Info("invitation email resent",
+		"email", inv.Email(),
+		"invitation_id", invitationID,
+		"tenant_id", tenantID,
+	)
+
+	// Audit
+	actx.TenantID = tenantID
+	event := NewSuccessEvent(audit.ActionInvitationCreated, audit.ResourceTypeInvitation, invitationID).
+		WithSeverity(audit.SeverityLow).
+		WithMessage(fmt.Sprintf("Invitation email resent to %s", inv.Email())).
+		WithMetadata("email", inv.Email())
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
 // GetUserDisplayName returns the display name for a user by their ID.
 // Returns empty string if user not found or no userInfoProvider is configured.
 func (s *TenantService) GetUserDisplayName(ctx context.Context, userID shared.ID) string {
@@ -868,13 +1060,14 @@ func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID stri
 
 // UpdateSecuritySettingsInput represents input for updating security settings.
 type UpdateSecuritySettingsInput struct {
-	SSOEnabled        bool     `json:"sso_enabled"`
-	SSOProvider       string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
-	SSOConfigURL      string   `json:"sso_config_url" validate:"omitempty,url"`
-	MFARequired       bool     `json:"mfa_required"`
-	SessionTimeoutMin int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
-	IPWhitelist       []string `json:"ip_whitelist"`
-	AllowedDomains    []string `json:"allowed_domains"`
+	SSOEnabled            bool     `json:"sso_enabled"`
+	SSOProvider           string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
+	SSOConfigURL          string   `json:"sso_config_url" validate:"omitempty,url"`
+	MFARequired           bool     `json:"mfa_required"`
+	SessionTimeoutMin     int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
+	IPWhitelist           []string `json:"ip_whitelist"`
+	AllowedDomains        []string `json:"allowed_domains"`
+	EmailVerificationMode string   `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
 }
 
 // UpdateSecuritySettings updates only the security settings.
@@ -900,14 +1093,20 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 	}
 
+	mode := tenant.EmailVerificationMode(input.EmailVerificationMode)
+	if mode == "" {
+		// Preserve existing mode if caller doesn't specify (don't reset to empty/auto)
+		mode = t.TypedSettings().Security.EmailVerificationMode
+	}
 	security := tenant.SecuritySettings{
-		SSOEnabled:        input.SSOEnabled,
-		SSOProvider:       input.SSOProvider,
-		SSOConfigURL:      input.SSOConfigURL,
-		MFARequired:       input.MFARequired,
-		SessionTimeoutMin: input.SessionTimeoutMin,
-		IPWhitelist:       input.IPWhitelist,
-		AllowedDomains:    input.AllowedDomains,
+		SSOEnabled:            input.SSOEnabled,
+		SSOProvider:           input.SSOProvider,
+		SSOConfigURL:          input.SSOConfigURL,
+		MFARequired:           input.MFARequired,
+		SessionTimeoutMin:     input.SessionTimeoutMin,
+		IPWhitelist:           input.IPWhitelist,
+		AllowedDomains:        input.AllowedDomains,
+		EmailVerificationMode: mode,
 	}
 
 	if err := t.UpdateSecuritySettings(security); err != nil {

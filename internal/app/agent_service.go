@@ -572,6 +572,22 @@ type PlatformStatsOutput struct {
 	TierStats       map[string]PlatformTierStats
 }
 
+// GetTenantAgentStats returns aggregate statistics for the tenant's agents.
+// Computed via SQL aggregation in a single round-trip — replaces the
+// previous client-side .filter().length pattern that only saw the current
+// page of results.
+func (s *AgentService) GetTenantAgentStats(ctx context.Context, tenantID string) (*agent.TenantAgentStats, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	stats, err := s.repo.GetTenantAgentStats(ctx, parsedTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant agent stats: %w", err)
+	}
+	return stats, nil
+}
+
 // GetPlatformStats returns aggregate statistics for platform agents accessible to the tenant.
 func (s *AgentService) GetPlatformStats(ctx context.Context, tenantID shared.ID) (*PlatformStatsOutput, error) {
 	s.logger.Debug("getting platform stats", "tenant_id", tenantID)

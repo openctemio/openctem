@@ -36,7 +36,17 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	}
 
 	if !sc.CanTrigger() {
-		return nil, fmt.Errorf("%w: scan is not active", shared.ErrValidation)
+		// Give the user a specific, actionable error message based on the current state.
+		var msg string
+		switch sc.Status {
+		case scan.StatusPaused:
+			msg = fmt.Sprintf("Cannot trigger scan '%s' because it is paused. Resume the scan first to trigger it.", sc.Name)
+		case scan.StatusDisabled:
+			msg = fmt.Sprintf("Cannot trigger scan '%s' because it is disabled. Activate the scan first to trigger it.", sc.Name)
+		default:
+			msg = fmt.Sprintf("Cannot trigger scan '%s' (current status: %s). Only active scans can be triggered.", sc.Name, sc.Status)
+		}
+		return nil, shared.NewDomainError("SCAN_NOT_TRIGGERABLE", msg, shared.ErrValidation)
 	}
 
 	// NOTE: Concurrent run limits are now checked atomically in CreateRunIfUnderLimit
@@ -149,6 +159,9 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	}
 	run.SetTotalSteps(len(steps))
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
+	if sc.ProfileID != nil {
+		run.ScanProfileID = sc.ProfileID // Propagate scan profile for quality gate evaluation
+	}
 
 	// Atomically check concurrent limits and create run to prevent race conditions
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {
@@ -224,6 +237,9 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 	run.SetTotalSteps(1)
 	run.Start()
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
+	if sc.ProfileID != nil {
+		run.ScanProfileID = sc.ProfileID // Propagate scan profile for quality gate evaluation
+	}
 
 	// Atomically check concurrent limits and create run to prevent race conditions
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {

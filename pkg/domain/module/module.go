@@ -176,6 +176,12 @@ const (
 	ModuleAttackSimulation = "attack_simulation"
 	ModuleControlTesting   = "control_testing"
 
+	// Compliance
+	// Seeded by migration 000105_compliance_module_seed.up.sql.
+	// User-facing (toggleable from Settings → Modules) and gated by
+	// the compliance:frameworks:read permission.
+	ModuleCompliance = "compliance"
+
 	// Mobilization
 	ModuleRemediation  = "remediation"
 	ModuleSuppressions = "suppressions"
@@ -276,6 +282,7 @@ var UserFacingModuleIDs = map[string]bool{
 	ModulePentest:           true, // Validation > Penetration Testing
 	ModuleAttackSimulation:  true, // Validation > Attack Simulation (BAS)
 	ModuleControlTesting:    true, // Validation > Control Testing
+	ModuleCompliance:        true, // Compliance > Frameworks, Controls, Audit
 	ModuleRemediation:       true, // Mobilization > Remediation Tasks, Workflows
 	ModuleReports:      true, // Insights > Reports
 	ModuleIntegrations: true, // Settings > Integrations (SCM, Notifications, CI/CD, Ticketing, SIEM)
@@ -315,7 +322,7 @@ var ModulePermissionMapping = map[string]string{
 	ModulePentest: "pentest:campaigns:read",
 
 	// Compliance modules
-	"compliance": "compliance:frameworks:read",
+	ModuleCompliance: "compliance:frameworks:read",
 
 	// Mobilization modules
 	ModuleRemediation:  "findings:remediation:read",
