@@ -495,11 +495,13 @@ func (r *TenantRepository) CountMembersByTenant(ctx context.Context, tenantID sh
 
 // ListMembersWithUserInfo lists all members of a tenant with user details.
 // Role is fetched from v_user_effective_role view.
+// Status is the MEMBERSHIP status (tenant_members.status), not the user-level
+// status — see the comment on GetMemberStats for the rationale.
 func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID shared.ID) ([]*tenant.MemberWithUser, error) {
 	query := `
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
-			u.email, u.name, u.avatar_url, u.status, u.last_login_at
+			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -584,11 +586,12 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 	}
 
 	// Single query with COUNT(*) OVER() window function to avoid 2 round-trips
-	// This returns total matching count alongside each row
+	// This returns total matching count alongside each row.
+	// Status is the MEMBERSHIP status (tenant_members.status), see GetMemberStats.
 	selectQuery := fmt.Sprintf(`
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
-			u.email, u.name, u.avatar_url, u.status, u.last_login_at,
+			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at,
 			COUNT(*) OVER() as total_count
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
@@ -686,11 +689,12 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 
 // GetMemberByEmail retrieves a member by email address within a tenant.
 // Role is fetched from v_user_effective_role view.
+// Status is the MEMBERSHIP status (tenant_members.status), see GetMemberStats.
 func (r *TenantRepository) GetMemberByEmail(ctx context.Context, tenantID shared.ID, email string) (*tenant.MemberWithUser, error) {
 	query := `
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
-			u.email, u.name, u.avatar_url, u.status, u.last_login_at
+			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -751,14 +755,19 @@ func (r *TenantRepository) GetMemberByEmail(ctx context.Context, tenantID shared
 
 // GetMemberStats retrieves member statistics for a tenant.
 // Role counts are fetched from v_user_effective_role view.
+//
+// "Active" here means the MEMBERSHIP is active (tenant_members.status='active').
+// We deliberately do NOT use users.status — that field is a global, platform-
+// wide state that has no tenant context and no UI to manage it. The tenant
+// admin only cares whether a member's access to *this* tenant is active or
+// suspended; that information lives on tenant_members.status.
 func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.ID) (*tenant.MemberStats, error) {
 	// Get total and active member counts
 	memberQuery := `
 		SELECT
 			COUNT(*) as total,
-			COUNT(CASE WHEN u.status = 'active' THEN 1 END) as active
+			COUNT(CASE WHEN COALESCE(m.status, 'active') = 'active' THEN 1 END) as active
 		FROM tenant_members m
-		INNER JOIN users u ON u.id = m.user_id
 		WHERE m.tenant_id = $1
 	`
 

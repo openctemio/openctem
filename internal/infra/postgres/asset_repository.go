@@ -1173,7 +1173,8 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	if len(tags) > 0 {
 		filterClause += fmt.Sprintf(" AND a.tags && $%d", idx)
 		args = append(args, pq.Array(tags))
-		idx++
+		// No further conditions follow, so we don't increment idx here.
+		// If a new branch is added below, restore the increment first.
 	}
 
 	// One query, three columns:
