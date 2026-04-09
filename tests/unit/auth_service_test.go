@@ -396,6 +396,10 @@ func (m *mockAuthTenantRepo) DeletePendingInvitationsByUserID(_ context.Context,
 	return 0, nil
 }
 
+func (m *mockAuthTenantRepo) UpdateMembershipStatus(_ context.Context, _ *tenant.Membership) error {
+	return nil
+}
+
 func (m *mockAuthTenantRepo) AcceptInvitationTx(_ context.Context, _ *tenant.Invitation, _ *tenant.Membership) error {
 	if m.acceptInvitationTxErr != nil {
 		return m.acceptInvitationTxErr

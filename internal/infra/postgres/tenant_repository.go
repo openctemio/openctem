@@ -319,6 +319,31 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 	return nil
 }
 
+// UpdateMembershipStatus persists the status / suspended_at /
+// suspended_by fields on a membership. Called by SuspendMember and
+// ReactivateMember in the service layer.
+func (r *TenantRepository) UpdateMembershipStatus(ctx context.Context, m *tenant.Membership) error {
+	query := `
+		UPDATE tenant_members
+		SET status = $2, suspended_at = $3, suspended_by = $4
+		WHERE id = $1
+	`
+	result, err := r.db.ExecContext(ctx, query,
+		m.ID().String(),
+		string(m.Status()),
+		nullTime(m.SuspendedAt()),
+		nullIDPtr(m.SuspendedBy()),
+	)
+	if err != nil {
+		return fmt.Errorf("update membership status: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
 // DeleteMembership removes a membership.
 // Also removes all user_roles for this user in this tenant.
 func (r *TenantRepository) DeleteMembership(ctx context.Context, id shared.ID) error {

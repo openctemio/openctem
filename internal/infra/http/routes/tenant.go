@@ -52,6 +52,8 @@ func registerTenantRoutes(
 		r.PATCH("/", h.Update, middleware.RequireTeamAdmin())
 		r.POST("/members", h.AddMember, middleware.RequireTeamAdmin())
 		r.PATCH("/members/{memberId}", h.UpdateMemberRole, middleware.RequireTeamAdmin())
+		r.POST("/members/{memberId}/suspend", h.SuspendMember, middleware.RequireTeamAdmin())
+		r.POST("/members/{memberId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin())
 		r.DELETE("/members/{memberId}", h.RemoveMember, middleware.RequireTeamAdmin())
 		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin())
 		r.POST("/invitations/{invitationId}/resend", h.ResendInvitation, middleware.RequireTeamAdmin())

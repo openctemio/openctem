@@ -337,6 +337,10 @@ func (m *mockTenantRepo) DeletePendingInvitationsByUserID(_ context.Context, _, 
 	return m.deletedPendingByUserCount, nil
 }
 
+func (m *mockTenantRepo) UpdateMembershipStatus(_ context.Context, _ *tenant.Membership) error {
+	return nil
+}
+
 func (m *mockTenantRepo) AcceptInvitationTx(_ context.Context, inv *tenant.Invitation, membership *tenant.Membership) error {
 	m.acceptInvTxCalls++
 	if m.acceptInvitationTxErr != nil {

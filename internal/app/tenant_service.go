@@ -459,6 +459,97 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 	return nil
 }
 
+// SuspendMember suspends a member's access to a tenant. The membership
+// row stays in the database (preserving audit trail, ownership
+// attribution, and compliance evidence), but the user's access is
+// immediately revoked: sessions are invalidated, permission cache
+// cleared, and JWT exchange should check membership status.
+func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, actx AuditContext) error {
+	parsedID, err := shared.IDFromString(membershipID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
+	}
+
+	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+
+	actorID, err := shared.IDFromString(actx.ActorID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
+	}
+
+	if err := membership.Suspend(actorID); err != nil {
+		return err
+	}
+
+	if err := s.repo.UpdateMembershipStatus(ctx, membership); err != nil {
+		return err
+	}
+
+	tenantID := membership.TenantID().String()
+	userID := membership.UserID().String()
+
+	// Immediately revoke access
+	s.invalidateUserPermissions(ctx, tenantID, userID)
+
+	// Invalidate pending invitations
+	if deleted, derr := s.repo.DeletePendingInvitationsByUserID(ctx, membership.TenantID(), membership.UserID()); derr != nil {
+		s.logger.Warn("failed to clean up invitations on suspend", "error", derr)
+	} else if deleted > 0 {
+		s.logger.Info("invalidated invitations on suspend", "deleted", deleted)
+	}
+
+	s.logger.Info("member suspended", "membership_id", membershipID, "user_id", userID)
+
+	actx.TenantID = tenantID
+	event := NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeMembership, membershipID).
+		WithSeverity(audit.SeverityHigh).
+		WithMessage("Member suspended").
+		WithMetadata("user_id", userID).
+		WithMetadata("action", "suspend")
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
+// ReactivateMember restores a suspended member's access.
+func (s *TenantService) ReactivateMember(ctx context.Context, membershipID string, actx AuditContext) error {
+	parsedID, err := shared.IDFromString(membershipID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
+	}
+
+	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+
+	if err := membership.Reactivate(); err != nil {
+		return err
+	}
+
+	if err := s.repo.UpdateMembershipStatus(ctx, membership); err != nil {
+		return err
+	}
+
+	tenantID := membership.TenantID().String()
+	userID := membership.UserID().String()
+
+	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
+
+	actx.TenantID = tenantID
+	event := NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeMembership, membershipID).
+		WithSeverity(audit.SeverityMedium).
+		WithMessage("Member reactivated").
+		WithMetadata("user_id", userID).
+		WithMetadata("action", "reactivate")
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
 // invalidateUserPermissions clears permission cache and version for a user.
 // Called when user is removed from tenant to immediately revoke access.
 func (s *TenantService) invalidateUserPermissions(ctx context.Context, tenantID, userID string) {

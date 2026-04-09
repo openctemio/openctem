@@ -323,6 +323,10 @@ func (m *ssoMockTenantRepo) DeletePendingInvitationsByUserID(_ context.Context, 
 	return 0, nil
 }
 
+func (m *ssoMockTenantRepo) UpdateMembershipStatus(_ context.Context, _ *tenant.Membership) error {
+	return nil
+}
+
 func (m *ssoMockTenantRepo) AcceptInvitationTx(_ context.Context, _ *tenant.Invitation, _ *tenant.Membership) error {
 	return nil
 }

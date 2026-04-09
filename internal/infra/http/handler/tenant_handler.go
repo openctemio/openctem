@@ -742,6 +742,44 @@ func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SuspendMember handles POST /api/v1/tenants/{tenant}/members/{memberId}/suspend
+func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
+	memberID := r.PathValue("memberId")
+	if memberID == "" {
+		apierror.BadRequest("Member ID is required").WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	if err := h.service.SuspendMember(r.Context(), memberID, actx); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Member suspended"})
+}
+
+// ReactivateMember handles POST /api/v1/tenants/{tenant}/members/{memberId}/reactivate
+func (h *TenantHandler) ReactivateMember(w http.ResponseWriter, r *http.Request) {
+	memberID := r.PathValue("memberId")
+	if memberID == "" {
+		apierror.BadRequest("Member ID is required").WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	if err := h.service.ReactivateMember(r.Context(), memberID, actx); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Member reactivated"})
+}
+
 // =============================================================================
 // Invitation Handlers
 // =============================================================================

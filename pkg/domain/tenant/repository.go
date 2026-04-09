@@ -26,6 +26,9 @@ type Repository interface {
 	GetMembership(ctx context.Context, userID shared.ID, tenantID shared.ID) (*Membership, error)
 	GetMembershipByID(ctx context.Context, id shared.ID) (*Membership, error)
 	UpdateMembership(ctx context.Context, membership *Membership) error
+	// UpdateMembershipStatus persists the lifecycle status change
+	// (active ↔ suspended). Used by Suspend/Reactivate service methods.
+	UpdateMembershipStatus(ctx context.Context, membership *Membership) error
 	DeleteMembership(ctx context.Context, id shared.ID) error
 	ListMembersByTenant(ctx context.Context, tenantID shared.ID) ([]*Membership, error)
 	ListMembersWithUserInfo(ctx context.Context, tenantID shared.ID) ([]*MemberWithUser, error)
