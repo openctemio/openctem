@@ -486,12 +486,24 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	includeUser := includes["user"]
 	includeRoles := includes["roles"]
 
-	// Parse search/pagination parameters
+	// Parse search/pagination parameters. We always go through the
+	// paginated SearchMembersWithUserInfo path when include=user is
+	// set, even if the client did not pass an explicit limit — the
+	// default cap protects the API from accidentally returning every
+	// member of a 50k-tenant in one response. Clients that want more
+	// results must opt in by passing limit=N (capped server-side).
+	const (
+		defaultMemberLimit = 100
+		maxMemberLimit     = 500
+	)
 	search := r.URL.Query().Get("search")
-	limit := 0
+	limit := defaultMemberLimit
 	offset := 0
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			if parsed > maxMemberLimit {
+				parsed = maxMemberLimit
+			}
 			limit = parsed
 		}
 	}
@@ -501,37 +513,21 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Use search endpoint when search/pagination is requested with include=user
-	useSearch := includeUser && (search != "" || limit > 0 || offset > 0)
-
 	if includeUser {
-		var members []*tenant.MemberWithUser
-		var total int
-
-		if useSearch {
-			// Use search with filtering and pagination
-			filters := tenant.MemberSearchFilters{
-				Search: search,
-				Limit:  limit,
-				Offset: offset,
-			}
-			result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
-			if err != nil {
-				h.handleServiceError(w, err)
-				return
-			}
-			members = result.Members
-			total = result.Total
-		} else {
-			// Legacy: list all members without pagination
-			var err error
-			members, err = h.service.ListMembersWithUserInfo(r.Context(), tenantID.String())
-			if err != nil {
-				h.handleServiceError(w, err)
-				return
-			}
-			total = len(members)
+		// Always paginate when include=user. The legacy unpaginated
+		// path was a memory hazard for large tenants.
+		filters := tenant.MemberSearchFilters{
+			Search: search,
+			Limit:  limit,
+			Offset: offset,
 		}
+		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
+		if err != nil {
+			h.handleServiceError(w, err)
+			return
+		}
+		members := result.Members
+		total := result.Total
 
 		response := make([]MemberWithUserResponse, len(members))
 		for i, m := range members {
