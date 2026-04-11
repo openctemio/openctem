@@ -127,7 +127,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SLA: handler.NewSLAHandler(svc.SLA, v, log),
 
 		// Pentest Campaign Management
-		Pentest:                handler.NewPentestHandler(svc.Pentest, repos.User, log),
+		Pentest: func() *handler.PentestHandler {
+			h := handler.NewPentestHandler(svc.Pentest, repos.User, log)
+			h.SetImportService(app.NewFindingImportService(repos.Finding, log))
+			return h
+		}(),
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
 
 		// File Attachments (shared across pentest/retest/campaign)
