@@ -37,6 +37,10 @@ type AuditContext struct {
 	UserAgent  string
 	RequestID  string
 	SessionID  string
+	// ActorRole captures the caller's role at the moment of the action.
+	// Used by pentest module to distinguish reviewer QA edits from creator
+	// self-edits in audit forensics. Optional — empty for non-pentest paths.
+	ActorRole string
 }
 
 // LogEvent creates and persists an audit log entry.
@@ -83,6 +87,11 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 	}
 	if actx.SessionID != "" {
 		log.WithSessionID(actx.SessionID)
+	}
+	// Stamp the actor's role into metadata so audit reviewers can distinguish
+	// reviewer QA actions from creator self-edits without joining other tables.
+	if actx.ActorRole != "" {
+		log.WithMetadata("actor_role", actx.ActorRole)
 	}
 
 	// Set event details

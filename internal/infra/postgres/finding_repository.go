@@ -113,11 +113,11 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id
+			remediation, pentest_campaign_id, created_by
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -126,7 +126,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		finding.ID().String(),
 		finding.TenantID().String(),
 		nullID(finding.VulnerabilityID()),
-		finding.AssetID().String(),
+		nullIDValue(finding.AssetID()), // pentest findings may have no asset
 		nullID(finding.BranchID()),
 		nullID(finding.ComponentID()),
 		finding.Source().String(),
@@ -198,6 +198,8 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		remediationJSON,
 		// Pentest campaign FK (NULL for non-pentest findings)
 		nullID(finding.PentestCampaignID()),
+		// Creator (NULL for automated scanner findings, set for manually-authored pentest findings)
+		nullID(finding.CreatedBy()),
 	)
 
 	if err != nil {
@@ -238,11 +240,11 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id
+			remediation, pentest_campaign_id, created_by
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -251,7 +253,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		finding.ID().String(),
 		finding.TenantID().String(),
 		nullID(finding.VulnerabilityID()),
-		finding.AssetID().String(),
+		nullIDValue(finding.AssetID()), // pentest findings may have no asset
 		nullID(finding.BranchID()),
 		nullID(finding.ComponentID()),
 		finding.Source().String(),
@@ -323,6 +325,8 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		remediationJSON,
 		// Pentest campaign FK
 		nullID(finding.PentestCampaignID()),
+		// Creator user ID
+		nullID(finding.CreatedBy()),
 	)
 
 	if err != nil {
@@ -565,7 +569,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 		finding.ID().String(),
 		finding.TenantID().String(),
 		nullID(finding.VulnerabilityID()),
-		finding.AssetID().String(),
+		nullIDValue(finding.AssetID()), // pentest findings may have no asset
 		nullID(finding.BranchID()),
 		nullID(finding.ComponentID()),
 		finding.Source().String(),
@@ -683,42 +687,73 @@ func (r *FindingRepository) GetByIDs(ctx context.Context, tenantID shared.ID, id
 // Update updates an existing finding.
 // Security: Uses finding.TenantID() to ensure tenant isolation in SQL WHERE clause.
 func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.Finding) error {
-	metadata, err := json.Marshal(finding.Metadata())
+	// Merge sourceMetadata INTO metadata for persistence. The pentest module
+	// stores steps_to_reproduce, poc_code, business_impact, etc. in
+	// sourceMetadata, but the DB has a single `metadata` JSONB column.
+	// During Create, this merge happens in the service. During Update, we
+	// need to re-merge here to persist pentest field changes.
+	mergedMeta := finding.Metadata()
+	if mergedMeta == nil {
+		mergedMeta = make(map[string]any)
+	}
+	if sm := finding.SourceMetadata(); sm != nil {
+		for k, v := range sm {
+			mergedMeta[k] = v
+		}
+	}
+	metadata, err := json.Marshal(mergedMeta)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	// Security: Include tenant_id in WHERE clause to prevent cross-tenant updates
+	remediationJSON := marshalRemediation(finding.Remediation())
+
+	// Security: Include tenant_id in WHERE clause to prevent cross-tenant updates.
+	// NOTE: This UPDATE covers ALL mutable columns — including title, description,
+	// tags, classification, and source_metadata. The original version only updated
+	// scanner-oriented fields, which meant pentest edit operations silently lost data.
 	query := `
 		UPDATE findings SET
 			vulnerability_id = $2, component_id = $3, tool_id = $4, tool_version = $5, snippet = $6,
 			message = $7, severity = $8, status = $9, resolution = $10, resolution_method = $11,
 			resolved_at = $12, resolved_by = $13, scan_id = $14, metadata = $15, updated_at = $16,
-			assigned_to = $17, assigned_at = $18, assigned_by = $19
+			assigned_to = $17, assigned_at = $18, assigned_by = $19,
+			title = $21, description = $22, tags = $23,
+			cvss_score = $24, cvss_vector = $25, cve_id = $26, cwe_ids = $27, owasp_ids = $28,
+			remediation = $29
 		WHERE id = $1 AND tenant_id = $20
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
-		finding.ID().String(),
-		nullID(finding.VulnerabilityID()),
-		nullID(finding.ComponentID()),
-		nullID(finding.ToolID()),
-		nullString(finding.ToolVersion()),
-		nullString(finding.Snippet()),
-		finding.Message(),
-		finding.Severity().String(),
-		finding.Status().String(),
-		nullString(finding.Resolution()),
-		nullString(finding.ResolutionMethod()),
-		nullTime(finding.ResolvedAt()),
-		nullID(finding.ResolvedBy()),
-		nullString(finding.ScanID()),
-		metadata,
-		finding.UpdatedAt(),
-		nullID(finding.AssignedTo()),
-		nullTime(finding.AssignedAt()),
-		nullID(finding.AssignedBy()),
-		finding.TenantID().String(), // Security: tenant isolation
+		finding.ID().String(),                 // $1
+		nullID(finding.VulnerabilityID()),     // $2
+		nullID(finding.ComponentID()),         // $3
+		nullID(finding.ToolID()),              // $4
+		nullString(finding.ToolVersion()),     // $5
+		nullString(finding.Snippet()),         // $6
+		finding.Message(),                     // $7
+		finding.Severity().String(),           // $8
+		finding.Status().String(),             // $9
+		nullString(finding.Resolution()),      // $10
+		nullString(finding.ResolutionMethod()), // $11
+		nullTime(finding.ResolvedAt()),        // $12
+		nullID(finding.ResolvedBy()),          // $13
+		nullString(finding.ScanID()),          // $14
+		metadata,                              // $15
+		finding.UpdatedAt(),                   // $16
+		nullID(finding.AssignedTo()),          // $17
+		nullTime(finding.AssignedAt()),        // $18
+		nullID(finding.AssignedBy()),          // $19
+		finding.TenantID().String(),           // $20 (WHERE)
+		nullString(finding.Title()),           // $21
+		nullString(finding.Description()),     // $22
+		pq.Array(finding.Tags()),              // $23
+		nullFloat64(finding.CVSSScore()),       // $24
+		nullString(finding.CVSSVector()),      // $25
+		nullString(finding.CVEID()),           // $26
+		pq.Array(finding.CWEIDs()),            // $27
+		pq.Array(finding.OWASPIDs()),          // $28
+		remediationJSON,                       // $29
 	)
 
 	if err != nil {
@@ -1137,7 +1172,7 @@ func (r *FindingRepository) selectQuery() string {
 			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
-			remediation,
+			remediation, created_by,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -1163,7 +1198,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		idStr               string
 		tenantIDStr         string
 		vulnerabilityID     sql.NullString
-		assetIDStr          string
+		assetIDStr          sql.NullString
 		branchID            sql.NullString
 		componentID         sql.NullString
 		source              string
@@ -1252,6 +1287,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		complianceImpact     []string
 		// Remediation JSONB
 		remediation []byte
+		// Creator (pentest ownership)
+		createdBy sql.NullString
 		// Data flow flag
 		hasDataFlow bool
 	)
@@ -1277,7 +1314,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&exposureVector, &isNetworkAccessible, &isInternetAccessible, &attackPrerequisites,
 		&remediationType, &estimatedFixTime, &fixComplexity, &remedyAvailable,
 		&dataExposureRisk, &reputationalImpact, pq.Array(&complianceImpact),
-		&remediation,
+		&remediation, &createdBy,
 		&hasDataFlow,
 	)
 	if err != nil {
@@ -1310,6 +1347,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		dataExposureRisk, reputationalImpact, complianceImpact,
 		// Remediation JSONB
 		remediation,
+		// Creator (pentest ownership)
+		createdBy,
 		// Data flow flag
 		hasDataFlow,
 	})
@@ -1320,7 +1359,7 @@ type findingRow struct {
 	idStr               string
 	tenantIDStr         string
 	vulnerabilityID     sql.NullString
-	assetIDStr          string
+	assetIDStr          sql.NullString // nullable since migration 000112
 	branchID            sql.NullString
 	componentID         sql.NullString
 	source              string
@@ -1409,6 +1448,8 @@ type findingRow struct {
 	complianceImpact     []string
 	// Remediation JSONB
 	remediation []byte
+	// Creator (pentest ownership)
+	createdBy sql.NullString
 	// Data flow flag
 	hasDataFlow bool
 }
@@ -1424,9 +1465,15 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		return nil, fmt.Errorf("failed to parse tenant_id: %w", err)
 	}
 
-	parsedAssetID, err := shared.IDFromString(row.assetIDStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse asset id: %w", err)
+	// asset_id is nullable for pentest findings (migration 000112).
+	// Zero ID indicates "no linked asset".
+	var parsedAssetID shared.ID
+	if row.assetIDStr.Valid && row.assetIDStr.String != "" {
+		id, err := shared.IDFromString(row.assetIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse asset id: %w", err)
+		}
+		parsedAssetID = id
 	}
 
 	var vulnID *shared.ID
@@ -1591,9 +1638,15 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		Fingerprint:         row.fingerprint,
 		AgentID:             parseNullID(row.agentID),
 		Metadata:            meta,
+		// For pentest findings, source_metadata keys live inside the same
+		// metadata JSONB column. Copy the full map so the handler's
+		// toUnifiedPentestFindingResponse() can read steps_to_reproduce,
+		// poc_code, business_impact, etc. from SourceMetadata().
+		SourceMetadata:      meta,
 		PentestCampaignID:   parseNullID(row.pentestCampaignID),
 		CreatedAt:           row.createdAt,
 		UpdatedAt:           row.updatedAt,
+		CreatedBy:           parseNullID(row.createdBy),
 		// SARIF 2.1.0 fields
 		Confidence:          confidence,
 		Impact:              nullStringValue(row.impact),
@@ -1915,6 +1968,37 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		conditions = append(conditions, fmt.Sprintf("pentest_campaign_id = $%d", argIndex))
 		args = append(args, filter.PentestCampaignID.String())
 		argIndex++
+	}
+
+	// Pentest campaign visibility filter: restrict findings to a set of campaigns
+	// the caller has access to. Empty slice means "no campaigns" → return nothing.
+	if filter.PentestCampaignIDs != nil {
+		if len(filter.PentestCampaignIDs) == 0 {
+			conditions = append(conditions, "FALSE")
+		} else {
+			placeholders := make([]string, len(filter.PentestCampaignIDs))
+			for i, id := range filter.PentestCampaignIDs {
+				placeholders[i] = fmt.Sprintf("$%d", argIndex)
+				args = append(args, id.String())
+				argIndex++
+			}
+			conditions = append(conditions, fmt.Sprintf("pentest_campaign_id IN (%s)", strings.Join(placeholders, ",")))
+		}
+	}
+
+	// Pentest campaign membership visibility filter (single SQL subquery).
+	// Preferred over PentestCampaignIDs when caller has a user ID — lets the
+	// PG planner pick the cheapest join strategy. Requires filter.TenantID set.
+	if filter.PentestCampaignMemberUserID != nil && filter.TenantID != nil {
+		userIdx := argIndex
+		tenantIdx := argIndex + 1
+		args = append(args, filter.PentestCampaignMemberUserID.String(), filter.TenantID.String())
+		argIndex += 2
+		conditions = append(conditions, fmt.Sprintf(
+			`pentest_campaign_id IN (
+				SELECT campaign_id FROM pentest_campaign_members
+				WHERE user_id = $%d AND tenant_id = $%d
+			)`, userIdx, tenantIdx))
 	}
 
 	// Layer 2: Data Scope - filter findings by user's group membership on assets
@@ -2296,7 +2380,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
-			remediation,
+			remediation, created_by,
 			FALSE AS has_data_flow
 		FROM findings
 	`

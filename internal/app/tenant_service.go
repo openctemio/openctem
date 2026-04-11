@@ -19,6 +19,15 @@ type EmailJobEnqueuer interface {
 	EnqueueTeamInvitation(ctx context.Context, payload TeamInvitationJobPayload) error
 }
 
+// MemberStatusEmailNotifier sends transactional emails when a
+// membership lifecycle event happens (suspend / reactivate). The
+// concrete implementation is *app.EmailService; we depend on the
+// interface here to keep the dependency direction clean.
+type MemberStatusEmailNotifier interface {
+	SendMemberSuspendedEmail(ctx context.Context, recipientEmail, recipientName, teamName, actorName, tenantID string) error
+	SendMemberReactivatedEmail(ctx context.Context, recipientEmail, recipientName, teamName, actorName, tenantID string) error
+}
+
 // TeamInvitationJobPayload contains data for team invitation email jobs.
 type TeamInvitationJobPayload struct {
 	RecipientEmail string
@@ -53,7 +62,15 @@ type TenantService struct {
 	// is disabled (Redis unavailable) and the middleware reads the
 	// repository directly — invalidation calls become no-ops.
 	membershipCache *MembershipCacheService
-	logger          *logger.Logger
+	// Email notifier for membership lifecycle events. Optional — if
+	// nil (or if SMTP is not configured) the suspend/reactivate
+	// operations succeed without sending an email.
+	statusNotifier MemberStatusEmailNotifier
+	// User service for fetching user name + email when sending the
+	// suspend / reactivate notification email. Optional: when unset,
+	// the email is skipped (best-effort).
+	userService *UserService
+	logger      *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -136,6 +153,77 @@ func (s *TenantService) SetSessionService(sessionService *SessionService) {
 // request instead of after the cache TTL expires.
 func (s *TenantService) SetMembershipCache(cache *MembershipCacheService) {
 	s.membershipCache = cache
+}
+
+// SetMemberStatusEmailNotifier injects the email notifier used by
+// SuspendMember and ReactivateMember to tell the affected user what
+// happened. Optional: when unset, the operations still succeed but
+// the user is not notified.
+func (s *TenantService) SetMemberStatusEmailNotifier(n MemberStatusEmailNotifier) {
+	s.statusNotifier = n
+}
+
+// SetUserService injects the user service so the suspend/reactivate
+// notifier can resolve a recipient name + email from the user id on
+// the membership row. Optional alongside SetMemberStatusEmailNotifier.
+func (s *TenantService) SetUserService(u *UserService) {
+	s.userService = u
+}
+
+// notifyMemberStatusChange sends an email to the affected user when
+// their membership is suspended or reactivated. Best-effort: any
+// failure (no notifier wired, user lookup fail, SMTP down) is logged
+// at warn level and never returned to the caller, because the audit
+// log is the system of record for the lifecycle event.
+func (s *TenantService) notifyMemberStatusChange(
+	ctx context.Context,
+	suspended bool,
+	tenantID, userID, actorID string,
+) {
+	if s.statusNotifier == nil || s.userService == nil {
+		return
+	}
+
+	// Resolve user name + email.
+	users, err := s.userService.GetUsersByIDs(ctx, []string{userID})
+	if err != nil || len(users) == 0 {
+		s.logger.Warn("status email skipped: user lookup failed",
+			"user_id", userID, "error", err)
+		return
+	}
+	u := users[0]
+	if u.Email() == "" {
+		return
+	}
+
+	// Resolve tenant name (best effort).
+	teamName := "the team"
+	if tid, perr := shared.IDFromString(tenantID); perr == nil {
+		if t, terr := s.repo.GetByID(ctx, tid); terr == nil && t != nil {
+			teamName = t.Name()
+		}
+	}
+
+	// Resolve actor name (best effort).
+	actorName := ""
+	if actorID != "" {
+		if actorUsers, aerr := s.userService.GetUsersByIDs(ctx, []string{actorID}); aerr == nil && len(actorUsers) > 0 {
+			actorName = actorUsers[0].Name()
+		}
+	}
+
+	var notifyErr error
+	if suspended {
+		notifyErr = s.statusNotifier.SendMemberSuspendedEmail(
+			ctx, u.Email(), u.Name(), teamName, actorName, tenantID)
+	} else {
+		notifyErr = s.statusNotifier.SendMemberReactivatedEmail(
+			ctx, u.Email(), u.Name(), teamName, actorName, tenantID)
+	}
+	if notifyErr != nil {
+		s.logger.Warn("status email failed",
+			"user_id", userID, "tenant_id", tenantID, "error", notifyErr)
+	}
 }
 
 // invalidateMembershipCache is the convenience helper used by every
@@ -582,6 +670,10 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 		s.logger.Info("invalidated invitations on suspend", "deleted", deleted)
 	}
 
+	// Best-effort: notify the user via email so they know their
+	// access was paused (and aren't surprised by a 403 next login).
+	s.notifyMemberStatusChange(ctx, true, tenantID, userID, actx.ActorID)
+
 	s.logger.Info("member suspended", "membership_id", membershipID, "user_id", userID)
 
 	actx.TenantID = tenantID
@@ -627,6 +719,9 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	// status='active' immediately.
 	s.invalidateUserPermissions(ctx, tenantID, userID)
 	s.invalidateMembershipCache(ctx, tenantID, userID)
+
+	// Best-effort: notify the user via email that their access is back.
+	s.notifyMemberStatusChange(ctx, false, tenantID, userID, actx.ActorID)
 
 	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
 
@@ -1518,5 +1613,6 @@ func (s *TenantService) GetRiskScoringSettings(ctx context.Context, tenantID str
 	}
 
 	settings := t.TypedSettings()
-	return &settings.RiskScoring, nil
+	rs := settings.RiskScoring
+	return &rs, nil
 }

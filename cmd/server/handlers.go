@@ -1,7 +1,10 @@
 package main
 
 import (
+	"database/sql"
+
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -127,6 +130,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Pentest:                handler.NewPentestHandler(svc.Pentest, repos.User, log),
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
 
+		// File Attachments (shared across pentest/retest/campaign)
+		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, log),
+
 		// Compliance Framework Management
 		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
 
@@ -240,5 +246,14 @@ func newAgentHandlerWithTemplates(
 	}
 	h.SetPublicAPIURL(publicAPIURL)
 
+	return h
+}
+
+// newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
+// membership verification for finding-scoped attachments.
+func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, log *logger.Logger) *handler.AttachmentHandler {
+	h := handler.NewAttachmentHandler(attachSvc, log)
+	h.SetAccessChecker(pentestSvc)
+	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
 	return h
 }

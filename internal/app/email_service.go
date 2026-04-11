@@ -221,6 +221,80 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 	return nil
 }
 
+// SendMemberSuspendedEmail notifies a user that their tenant
+// access has been suspended. Uses per-tenant SMTP if configured.
+// Best-effort: returns nil and logs a warning if email is not
+// configured for the tenant — the suspend operation should succeed
+// even when the user can't be notified.
+func (s *EmailService) SendMemberSuspendedEmail(
+	ctx context.Context,
+	recipientEmail, recipientName, teamName, actorName, tenantID string,
+) error {
+	sender := s.sender
+	if tenantID != "" {
+		sender = s.getSenderForTenant(ctx, tenantID)
+	}
+	if sender == nil || !sender.IsConfigured() {
+		s.logger.Warn("email service not configured, skipping member suspended email",
+			"email", recipientEmail, "tenant_id", tenantID)
+		return nil
+	}
+
+	data := email.MemberStatusChangeData{
+		UserName:  recipientName,
+		TeamName:  teamName,
+		ActorName: actorName,
+		AppURL:    s.config.BaseURL,
+		AppName:   s.appName,
+	}
+
+	if err := sender.SendTemplate(ctx, recipientEmail, email.TemplateMemberSuspended, data); err != nil {
+		s.logger.Error("failed to send member suspended email",
+			"email", recipientEmail, "error", err)
+		return fmt.Errorf("failed to send member suspended email: %w", err)
+	}
+
+	s.logger.Info("member suspended email sent",
+		"email", recipientEmail, "team", teamName)
+	return nil
+}
+
+// SendMemberReactivatedEmail notifies a user that their access
+// has been restored. Same best-effort semantics as
+// SendMemberSuspendedEmail.
+func (s *EmailService) SendMemberReactivatedEmail(
+	ctx context.Context,
+	recipientEmail, recipientName, teamName, actorName, tenantID string,
+) error {
+	sender := s.sender
+	if tenantID != "" {
+		sender = s.getSenderForTenant(ctx, tenantID)
+	}
+	if sender == nil || !sender.IsConfigured() {
+		s.logger.Warn("email service not configured, skipping member reactivated email",
+			"email", recipientEmail, "tenant_id", tenantID)
+		return nil
+	}
+
+	data := email.MemberStatusChangeData{
+		UserName:  recipientName,
+		TeamName:  teamName,
+		ActorName: actorName,
+		AppURL:    s.config.BaseURL,
+		AppName:   s.appName,
+	}
+
+	if err := sender.SendTemplate(ctx, recipientEmail, email.TemplateMemberReactivated, data); err != nil {
+		s.logger.Error("failed to send member reactivated email",
+			"email", recipientEmail, "error", err)
+		return fmt.Errorf("failed to send member reactivated email: %w", err)
+	}
+
+	s.logger.Info("member reactivated email sent",
+		"email", recipientEmail, "team", teamName)
+	return nil
+}
+
 // SendTeamInvitationEmail sends a team invitation email.
 // Uses per-tenant SMTP if configured, otherwise falls back to system SMTP.
 func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEmail, inviterName, teamName, token string, expiresIn time.Duration, tenantID ...string) error {

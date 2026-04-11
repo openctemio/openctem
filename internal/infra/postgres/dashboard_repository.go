@@ -77,10 +77,13 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 		ByStatus:   make(map[string]int),
 	}
 
-	// Single query with CTEs — replaces 4 separate queries
+	// Single query with CTEs — replaces 4 separate queries.
+	// Excludes pentest "draft" and "in_review" statuses (Phase 4 internal workflow,
+	// hidden from the CTEM dashboard until reviewer approves).
 	query := `
 		WITH base AS (
-			SELECT id, severity, status, vulnerability_id FROM findings WHERE tenant_id = $1
+			SELECT id, severity, status, vulnerability_id FROM findings
+			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review')
 		),
 		total AS (SELECT COUNT(*) AS cnt FROM base),
 		by_sev AS (SELECT severity, COUNT(*) AS cnt FROM base GROUP BY severity),
@@ -234,7 +237,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		avg_cvss AS (
 			SELECT COALESCE(AVG(v.cvss_score), 0) AS val
 			FROM findings f LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
-			WHERE f.tenant_id = $1
+			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review')
 		),
 		repo_total AS (
 			SELECT COUNT(*) AS cnt FROM assets WHERE tenant_id = $1 AND asset_type = 'repository'
@@ -353,6 +356,7 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 			ON f.tenant_id = $1
 			AND f.created_at >= m.month_start
 			AND f.created_at < m.month_start + interval '1 month'
+			AND f.status NOT IN ('draft', 'in_review')
 		GROUP BY m.month_start
 		ORDER BY m.month_start ASC`,
 		tenantID.String(), months,
@@ -642,9 +646,13 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 	// Build placeholder string for IN clause
 	placeholders, args := buildInClause(tenantIDs, 0)
 
+	// Exclude pentest "draft" and "in_review" from the CTEM dashboard counts.
+	excludeInternal := " AND status NOT IN ('draft', 'in_review')"
+
 	// Get total count
+	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`,
+		`SELECT COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`+excludeInternal,
 		args...,
 	).Scan(&stats.Total)
 	if err != nil {
@@ -654,7 +662,7 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 	// Get by severity
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT severity, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`) GROUP BY severity`,
+		`SELECT severity, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`+excludeInternal+` GROUP BY severity`,
 		args...,
 	)
 	if err != nil {
@@ -677,7 +685,7 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 	// Get by status
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	rows, err = r.db.QueryContext(ctx,
-		`SELECT status, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`) GROUP BY status`,
+		`SELECT status, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`+excludeInternal+` GROUP BY status`,
 		args...,
 	)
 	if err != nil {
@@ -702,7 +710,7 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COALESCE(AVG(v.cvss_score), 0) FROM findings f
 		 LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
-		 WHERE f.tenant_id IN (`+placeholders+`)`,
+		 WHERE f.tenant_id IN (`+placeholders+`) AND f.status NOT IN ('draft', 'in_review')`,
 		args...,
 	).Scan(&stats.AverageCVSS)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {

@@ -13,7 +13,9 @@ import (
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/internal/infra/llm"
 	"github.com/openctemio/api/internal/infra/redis"
+	"github.com/openctemio/api/internal/infra/storage"
 	"github.com/openctemio/api/internal/infra/websocket"
+	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/suppression"
 	"github.com/openctemio/api/pkg/email"
@@ -135,7 +137,8 @@ type Services struct {
 	SLA *app.SLAService
 
 	// Pentest
-	Pentest *app.PentestService
+	Pentest    *app.PentestService
+	Attachment *app.AttachmentService
 
 	// Compliance
 	Compliance *app.ComplianceService
@@ -266,7 +269,45 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire unified finding repository for CTEM integration (pentest findings → findings table)
 	s.Pentest.SetUnifiedFindingRepository(repos.Finding)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	s.Pentest.SetAuditService(s.Audit)                    // audit logging for team changes + status changes
+	s.Pentest.SetFindingActivityService(s.FindingActivity) // finding activity trail
 	// Note: Pentest notification wiring happens later after NotificationService is initialized
+
+	// Initialize Attachment service (file upload/download).
+	// Storage provider selected via STORAGE_PROVIDER env var (default: "local").
+	// Local path configurable via STORAGE_LOCAL_PATH (default: ./data/attachments).
+	// In Docker: mount a volume at the local path to persist across rebuilds.
+	var fileStorage attachment.FileStorage
+	switch cfg.Storage.Provider {
+	case "local", "":
+		storagePath := cfg.Storage.LocalPath
+		if storagePath == "" {
+			storagePath = "./data/attachments"
+		}
+		fileStorage = storage.NewLocalStorage(storagePath)
+		log.Info("attachment storage: local filesystem", "path", storagePath)
+	default:
+		// Future: case "s3", "minio", "gcs" → initialize respective provider
+		log.Warn("unsupported storage provider, falling back to local", "provider", cfg.Storage.Provider)
+		fileStorage = storage.NewLocalStorage("./data/attachments")
+	}
+	s.Attachment = app.NewAttachmentService(repos.Attachment, fileStorage, log)
+	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
+	storageResolver := app.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
+	s.Attachment.SetTenantStorageResolver(storageResolver, func(cfg attachment.StorageConfig) (attachment.FileStorage, error) {
+		switch cfg.Provider {
+		case "local":
+			basePath := cfg.BasePath
+			if basePath == "" {
+				basePath = "./data/attachments"
+			}
+			return storage.NewLocalStorage(basePath), nil
+		case "s3", "minio":
+			return storage.NewS3Storage(cfg.Bucket, cfg.Region, cfg.Endpoint, cfg.AccessKey, cfg.SecretKey)
+		default:
+			return nil, fmt.Errorf("unsupported tenant storage provider: %s", cfg.Provider)
+		}
+	})
 
 	// Initialize Compliance service
 	s.Compliance = app.NewComplianceService(

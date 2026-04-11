@@ -89,6 +89,9 @@ type Handlers struct {
 	Pentest                *handler.PentestHandler             // nil if not initialized (no database)
 	PentestCampaignRoleQry middleware.CampaignRoleQuerier       // Campaign role resolver for RBAC middleware
 
+	// File Attachments (shared across pentest, retest, campaign)
+	Attachment *handler.AttachmentHandler // nil if not initialized
+
 	// Compliance Framework Management handlers
 	Compliance *handler.ComplianceHandler // nil if not initialized (no database)
 
@@ -305,6 +308,11 @@ func Register(
 	// Pentest Campaign Management routes (tenant from JWT token)
 	if h.Pentest != nil {
 		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync, h.PentestCampaignRoleQry)
+	}
+
+	// Attachment routes (file upload/download, shared across pentest/retest/campaign)
+	if h.Attachment != nil {
+		registerAttachmentRoutes(router, h.Attachment, authMiddleware, userSync)
 	}
 
 	// Compliance Framework Management routes (tenant from JWT token)
