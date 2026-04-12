@@ -95,6 +95,12 @@ type Handlers struct {
 	// Compliance Framework Management handlers
 	Compliance *handler.ComplianceHandler // nil if not initialized (no database)
 
+	// Attack Simulation & Control Testing
+	Simulation *handler.SimulationHandler // nil if not initialized (no database)
+
+	// Threat Actor Intelligence
+	ThreatActor *handler.ThreatActorHandler // nil if not initialized (no database)
+
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
 
@@ -318,6 +324,16 @@ func Register(
 	// Compliance Framework Management routes (tenant from JWT token)
 	if h.Compliance != nil {
 		registerComplianceRoutes(router, h.Compliance, authMiddleware, userSync)
+	}
+
+	// Attack Simulation & Control Testing routes
+	if h.Simulation != nil {
+		registerSimulationRoutes(router, h.Simulation, authMiddleware, userSync)
+	}
+
+	// Threat Actor Intelligence routes
+	if h.ThreatActor != nil {
+		registerThreatActorRoutes(router, h.ThreatActor, authMiddleware, userSync)
 	}
 
 	// Integration routes (tenant from JWT token)

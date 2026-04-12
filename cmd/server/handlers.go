@@ -140,6 +140,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Compliance Framework Management
 		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
 
+		// Attack Simulation & Control Testing
+		Simulation: handler.NewSimulationHandler(svc.Simulation, log),
+
+		// Threat Actor Intelligence
+		ThreatActor: handler.NewThreatActorHandler(svc.ThreatActor, log),
+
 		// API Keys & Webhooks
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
 		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),

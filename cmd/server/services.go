@@ -143,6 +143,12 @@ type Services struct {
 	// Compliance
 	Compliance *app.ComplianceService
 
+	// Attack Simulation & Control Testing
+	Simulation *app.SimulationService
+
+	// Threat Actor Intelligence
+	ThreatActor *app.ThreatActorService
+
 	// API Keys & Webhooks
 	APIKey  *app.APIKeyService
 	Webhook *app.WebhookService
@@ -310,6 +316,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 
 	// Initialize Compliance service
+	// Simulation service — pass Simulation repo for both sim and control test
+	// (ControlTestRepository not yet implemented — pass nil, service handles gracefully)
+	s.Simulation = app.NewSimulationService(repos.Simulation, nil, log)
+	s.ThreatActor = app.NewThreatActorService(repos.ThreatActor, log)
+
 	s.Compliance = app.NewComplianceService(
 		repos.ComplianceFramework, repos.ComplianceControl,
 		repos.ComplianceAssessment, repos.ComplianceMapping, log,
