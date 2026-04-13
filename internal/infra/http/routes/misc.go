@@ -45,6 +45,8 @@ func registerDashboardRoutes(
 	router.Group("/api/v1/dashboard", func(r Router) {
 		r.GET("/stats/global", h.GetGlobalStats, middleware.Require(permission.DashboardRead))
 		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead))
+		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead))
+		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead))
 	}, tenantMiddlewares...)
 }
 

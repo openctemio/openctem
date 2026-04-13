@@ -89,6 +89,10 @@ type DashboardStatsRepository interface {
 	GetGlobalRepositoryStats(ctx context.Context) (RepositoryStatsData, error)
 	GetGlobalRecentActivity(ctx context.Context, limit int) ([]ActivityItem, error)
 
+	// MTTR & Trending
+	GetMTTRMetrics(ctx context.Context, tenantID shared.ID) (map[string]float64, error)
+	GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error)
+
 	// Filtered stats (by accessible tenant IDs) - for multi-tenant authorization
 	GetFilteredAssetStats(ctx context.Context, tenantIDs []string) (AssetStatsData, error)
 	GetFilteredFindingStats(ctx context.Context, tenantIDs []string) (FindingStatsData, error)
@@ -170,6 +174,16 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 		RecentActivity:           all.Activity,
 		FindingTrend:             trend,
 	}, nil
+}
+
+// GetMTTRMetrics returns MTTR (Mean Time To Remediate) in hours by severity.
+func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.ID) (map[string]float64, error) {
+	return s.repo.GetMTTRMetrics(ctx, tenantID)
+}
+
+// GetRiskVelocity returns weekly new vs resolved finding counts.
+func (s *DashboardService) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error) {
+	return s.repo.GetRiskVelocity(ctx, tenantID, weeks)
 }
 
 // GetGlobalStats returns global dashboard statistics (not tenant-scoped).
