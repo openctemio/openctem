@@ -606,6 +606,12 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	return a, nil
 }
 
+// SaveAsset persists changes to an asset entity directly.
+// Used by handlers that modify the entity and need to persist without going through UpdateAssetInput.
+func (s *AssetService) SaveAsset(ctx context.Context, a *asset.Asset) error {
+	return s.repo.Update(ctx, a)
+}
+
 // DeleteAsset deletes an asset by ID.
 // Security: Requires tenantID to prevent cross-tenant deletion.
 func (s *AssetService) DeleteAsset(ctx context.Context, assetID string, tenantID string) error {

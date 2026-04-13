@@ -1691,4 +1691,43 @@ func (h *AssetHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+// UpdateCrownJewel marks/unmarks an asset as a crown jewel with business impact scoring.
+func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	assetID := r.PathValue("id")
+
+	var req struct {
+		IsCrownJewel        bool    `json:"is_crown_jewel"`
+		BusinessImpactScore float64 `json:"business_impact_score"`
+		BusinessImpactNotes string  `json:"business_impact_notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid JSON body").WriteJSON(w)
+		return
+	}
+
+	a, err := h.service.GetAsset(r.Context(), tenantID, assetID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Store crown jewel data in properties (DB columns added by migration 000126)
+	props := a.Properties()
+	if props == nil {
+		props = make(map[string]any)
+	}
+	props["is_crown_jewel"] = req.IsCrownJewel
+	props["business_impact_score"] = req.BusinessImpactScore
+	props["business_impact_notes"] = req.BusinessImpactNotes
+	a.SetProperties(props)
+
+	if err := h.service.SaveAsset(r.Context(), a); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, toAssetResponse(a))
+}
+
 // Helper functions are defined in common.go

@@ -44,6 +44,7 @@ func registerAssetRoutes(
 		r.POST("/repository", h.CreateRepository, middleware.Require(permission.AssetsWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.AssetsWrite))
 		r.PUT("/{id}/repository", h.UpdateRepository, middleware.Require(permission.AssetsWrite))
+		r.PATCH("/{id}/crown-jewel", h.UpdateCrownJewel, middleware.Require(permission.AssetsWrite))
 
 		// Status operations
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AssetsWrite))
