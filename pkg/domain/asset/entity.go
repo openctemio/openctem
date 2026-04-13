@@ -26,6 +26,7 @@ type Asset struct {
 	ownerRef              string     // Raw owner text from external source (email, username, team)
 	name                  string
 	assetType             AssetType
+	subType               string
 	criticality           Criticality
 	status                Status
 	scope                 Scope
@@ -230,6 +231,16 @@ func (a *Asset) Name() string {
 // Type returns the asset type.
 func (a *Asset) Type() AssetType {
 	return a.assetType
+}
+
+// SubType returns the asset sub-type (e.g., "firewall" for type=network).
+func (a *Asset) SubType() string {
+	return a.subType
+}
+
+// SetSubType sets the asset sub-type.
+func (a *Asset) SetSubType(subType string) {
+	a.subType = subType
 }
 
 // Category returns the asset category (derived from type, not stored).
