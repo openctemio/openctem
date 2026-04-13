@@ -149,6 +149,9 @@ type Services struct {
 	// Threat Actor Intelligence
 	ThreatActor *app.ThreatActorService
 
+	// Remediation Campaigns
+	RemediationCampaign *app.RemediationCampaignService
+
 	// API Keys & Webhooks
 	APIKey  *app.APIKeyService
 	Webhook *app.WebhookService
@@ -318,6 +321,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize Compliance service
 	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
 	s.ThreatActor = app.NewThreatActorService(repos.ThreatActor, log)
+	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
 
 	s.Compliance = app.NewComplianceService(
 		repos.ComplianceFramework, repos.ComplianceControl,

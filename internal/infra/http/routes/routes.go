@@ -101,6 +101,9 @@ type Handlers struct {
 	// Threat Actor Intelligence
 	ThreatActor *handler.ThreatActorHandler // nil if not initialized (no database)
 
+	// Remediation Campaigns
+	RemediationCampaign *handler.RemediationCampaignHandler // nil if not initialized
+
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
 
@@ -334,6 +337,11 @@ func Register(
 	// Threat Actor Intelligence routes
 	if h.ThreatActor != nil {
 		registerThreatActorRoutes(router, h.ThreatActor, authMiddleware, userSync)
+	}
+
+	// Remediation Campaign routes
+	if h.RemediationCampaign != nil {
+		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync)
 	}
 
 	// Integration routes (tenant from JWT token)

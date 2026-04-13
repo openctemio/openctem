@@ -146,6 +146,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Threat Actor Intelligence
 		ThreatActor: handler.NewThreatActorHandler(svc.ThreatActor, log),
 
+		// Remediation Campaigns
+		RemediationCampaign: handler.NewRemediationCampaignHandler(svc.RemediationCampaign, log),
+
 		// API Keys & Webhooks
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
 		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),

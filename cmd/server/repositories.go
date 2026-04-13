@@ -69,6 +69,9 @@ type Repositories struct {
 	// Threat Actor Intelligence
 	ThreatActor *postgres.ThreatActorRepository
 
+	// Remediation Campaigns
+	RemediationCampaign *postgres.RemediationCampaignRepository
+
 	// SLA & Integration
 	SLA                        *postgres.SLAPolicyRepository
 	Integration                *postgres.IntegrationRepository
@@ -208,6 +211,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Threat Actor Intelligence
 		ThreatActor: postgres.NewThreatActorRepository(db),
+
+		// Remediation Campaigns
+		RemediationCampaign: postgres.NewRemediationCampaignRepository(db),
 
 		SLA:         postgres.NewSLAPolicyRepository(db),
 		Integration: postgres.NewIntegrationRepository(db),
