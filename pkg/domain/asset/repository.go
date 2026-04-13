@@ -98,13 +98,25 @@ type Repository interface {
 
 	// GetAggregateStats computes all asset statistics using SQL aggregation.
 	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string) (*AggregateStats, error)
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string) (*AggregateStats, error)
+
+	// GetPropertyFacets returns distinct JSONB property keys and their top values for faceted filtering.
+	GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]PropertyFacet, error)
+}
+
+// PropertyFacet represents a property key with its distinct values for filtering UI.
+type PropertyFacet struct {
+	Key    string
+	Label  string
+	Values []string
+	Count  int
 }
 
 // AggregateStats holds all statistics computed via SQL aggregation.
 type AggregateStats struct {
 	Total         int
 	ByType        map[string]int
+	BySubType     map[string]int
 	ByStatus      map[string]int
 	ByCriticality map[string]int
 	ByScope       map[string]int
@@ -163,8 +175,9 @@ type Filter struct {
 	MaxRiskScore  *int          // Filter by maximum risk score
 	HasFindings   *bool         // Filter by whether asset has findings
 	ParentID      *string       // Filter by parent asset ID
-	IsCrownJewel  *bool         // Filter crown jewel assets
-	SubType       *string       // Filter by sub_type
+	IsCrownJewel       *bool             // Filter crown jewel assets
+	SubType            *string           // Filter by sub_type
+	PropertiesFilter   map[string]string // Filter by JSONB properties key=value (AND, containment)
 
 	// Layer 2: Data Scope - filter assets by user's group membership
 	// When set, only assets accessible to this user are returned.
@@ -310,6 +323,12 @@ func (f Filter) WithDataScopeUserID(id shared.ID) Filter {
 	return f
 }
 
+// WithPropertiesFilter adds JSONB properties key=value filter pairs.
+func (f Filter) WithPropertiesFilter(kv map[string]string) Filter {
+	f.PropertiesFilter = kv
+	return f
+}
+
 // IsEmpty returns true if no filters are set.
 func (f Filter) IsEmpty() bool {
 	return f.TenantID == nil &&
@@ -327,5 +346,6 @@ func (f Filter) IsEmpty() bool {
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
 		f.ParentID == nil &&
-		f.DataScopeUserID == nil
+		f.DataScopeUserID == nil &&
+		len(f.PropertiesFilter) == 0
 }

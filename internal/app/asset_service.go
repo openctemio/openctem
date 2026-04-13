@@ -682,9 +682,10 @@ type ListAssetsInput struct {
 	MinRiskScore  *int     `validate:"omitempty,min=0,max=100"`
 	MaxRiskScore  *int     `validate:"omitempty,min=0,max=100"`
 	HasFindings   *bool    // Filter by whether asset has findings
-	IsCrownJewel  *bool    // Filter crown jewel assets
-	SubType       *string  // Filter by sub_type
-	Sort          string   `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
+	IsCrownJewel     *bool             // Filter crown jewel assets
+	SubType          *string           // Filter by sub_type
+	PropertiesFilter map[string]string // Filter by JSONB properties key=value pairs (max 5)
+	Sort             string            `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page          int      `validate:"min=0"`
 	PerPage       int      `validate:"min=0,max=100"`
 
@@ -795,6 +796,11 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		filter.SubType = input.SubType
 	}
 
+	// Properties filter (JSONB containment)
+	if len(input.PropertiesFilter) > 0 {
+		filter = filter.WithPropertiesFilter(input.PropertiesFilter)
+	}
+
 	// Layer 2: Data Scope - non-admin users only see assets in their groups
 	if !input.IsAdmin && input.ActingUserID != "" {
 		userID, err := shared.IDFromString(input.ActingUserID)
@@ -814,16 +820,25 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	return s.repo.List(ctx, filter, opts, page)
 }
 
-// ListTags returns distinct tags across all assets for a tenant.
-// Supports prefix filtering for autocomplete.
-// GetAssetStats returns aggregated asset statistics using SQL aggregation.
-// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string, tags []string) (*asset.AggregateStats, error) {
+// GetPropertyFacets returns distinct property keys and values for faceted filtering.
+func (s *AssetService) GetPropertyFacets(ctx context.Context, tenantID string, types []string, subType string) ([]asset.PropertyFacet, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags)
+	return s.repo.GetPropertyFacets(ctx, parsedTenantID, types, subType)
+}
+
+// ListTags returns distinct tags across all assets for a tenant.
+// Supports prefix filtering for autocomplete.
+// GetAssetStats returns aggregated asset statistics using SQL aggregation.
+// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string, tags []string, subType string) (*asset.AggregateStats, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags, subType)
 }
 
 func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, limit int) ([]string, error) {

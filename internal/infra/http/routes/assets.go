@@ -27,6 +27,7 @@ func registerAssetRoutes(
 	router.Group("/api/v1/assets", func(r Router) {
 		// Stats and tags endpoints (must be before /{id} to avoid matching)
 		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		r.GET("/facets", h.GetFacets, middleware.Require(permission.AssetsRead))
 		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
 
 		// Bulk operations (must be before /{id} patterns to avoid route conflicts)

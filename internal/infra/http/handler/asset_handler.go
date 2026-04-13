@@ -321,8 +321,9 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		MaxRiskScore:  parseQueryIntPtr(query.Get("max_risk_score")),
 		HasFindings:   parseQueryBoolPtr(query.Get("has_findings")),
 		IsCrownJewel:  parseQueryBoolPtr(query.Get("is_crown_jewel")),
-		SubType:       nilIfEmpty(query.Get("sub_type")),
-		Sort:          query.Get("sort"),
+		SubType:          nilIfEmpty(query.Get("sub_type")),
+		PropertiesFilter: parsePropertiesFilter(query.Get("properties")),
+		Sort:             query.Get("sort"),
 		Page:          parseQueryInt(query.Get("page"), 1),
 		PerPage:       parseQueryInt(query.Get("per_page"), 20),
 		ActingUserID:  middleware.GetUserID(r.Context()),
@@ -1149,6 +1150,7 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 type AssetStatsResponse struct {
 	Total         int            `json:"total"`
 	ByType        map[string]int `json:"by_type"`
+	BySubType     map[string]int `json:"by_sub_type"`
 	ByStatus      map[string]int `json:"by_status"`
 	ByCriticality map[string]int `json:"by_criticality"`
 	ByScope       map[string]int `json:"by_scope"`
@@ -1177,9 +1179,10 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	typesFilter := parseQueryArray(query.Get("types"))
 	tagsFilter := parseQueryArray(query.Get("tags"))
+	subTypeFilter := query.Get("sub_type")
 
 	// Use service method with SQL aggregation for efficient stats
-	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter, tagsFilter)
+	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter, tagsFilter, subTypeFilter)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1188,6 +1191,7 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats := AssetStatsResponse{
 		Total:         aggStats.Total,
 		ByType:        aggStats.ByType,
+		BySubType:     aggStats.BySubType,
 		ByStatus:      aggStats.ByStatus,
 		ByCriticality: aggStats.ByCriticality,
 		ByScope:       aggStats.ByScope,
@@ -1226,6 +1230,25 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string][]string{"tags": tags})
+}
+
+// GetFacets returns distinct property keys and their values for faceted filtering.
+// Scoped to tenant + optional type filter. Returns top 20 values per key.
+func (h *AssetHandler) GetFacets(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	query := r.URL.Query()
+	types := parseQueryArray(query.Get("types"))
+	subType := query.Get("sub_type")
+
+	facets, err := h.service.GetPropertyFacets(r.Context(), tenantID, types, subType)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(facets)
 }
 
 // SyncResponse represents the response from a sync operation.

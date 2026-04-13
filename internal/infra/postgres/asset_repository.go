@@ -865,6 +865,15 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
+	// Properties filter — JSONB containment using parameterized jsonb_build_object (injection-safe)
+	// Uses idx_assets_properties GIN index for efficient lookups
+	for key, val := range filter.PropertiesFilter {
+		conditions = append(conditions, fmt.Sprintf(
+			"a.properties @> jsonb_build_object($%d::text, $%d::text)", argIndex, argIndex+1))
+		args = append(args, key, val)
+		argIndex += 2
+	}
+
 	// Layer 2: Data Scope - filter by user's group membership
 	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
 	if filter.DataScopeUserID != nil && filter.TenantID != nil {
@@ -1221,9 +1230,10 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 // This version collapses everything into one query using a CTE + UNION ALL,
 // trading slightly more complex SQL for an 83% reduction in DB round-trips.
 // PostgreSQL plans a single scan of the filtered CTE for all aggregates.
-func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string) (*asset.AggregateStats, error) {
+func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string) (*asset.AggregateStats, error) {
 	stats := &asset.AggregateStats{
 		ByType:        make(map[string]int),
+		BySubType:     make(map[string]int),
 		ByStatus:      make(map[string]int),
 		ByCriticality: make(map[string]int),
 		ByScope:       make(map[string]int),
@@ -1242,8 +1252,12 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	if len(tags) > 0 {
 		filterClause += fmt.Sprintf(" AND a.tags && $%d", idx)
 		args = append(args, pq.Array(tags))
-		// No further conditions follow, so we don't increment idx here.
-		// If a new branch is added below, restore the increment first.
+		idx++
+	}
+	if subType != "" {
+		filterClause += fmt.Sprintf(" AND a.sub_type = $%d", idx)
+		args = append(args, subType)
+		// idx++ if more conditions are added
 	}
 
 	// One query, three columns:
@@ -1256,7 +1270,7 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	// asset id set so we never touch findings rows for assets we filtered out.
 	query := fmt.Sprintf(`
 WITH filtered AS (
-  SELECT a.id, a.asset_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score
+  SELECT a.id, a.asset_type, a.sub_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score
   FROM assets a
   %s
 ),
@@ -1278,6 +1292,8 @@ SELECT category, key, value FROM (
   SELECT 'high_risk',             '',                                  COUNT(*)::float8 FROM filtered WHERE risk_score >= 70
   UNION ALL
   SELECT 'asset_type',            asset_type,                          COUNT(*)::float8 FROM filtered GROUP BY asset_type
+  UNION ALL
+  SELECT 'sub_type',              sub_type,                            COUNT(*)::float8 FROM filtered WHERE sub_type IS NOT NULL AND sub_type != '' GROUP BY sub_type
   UNION ALL
   SELECT 'status',                status,                              COUNT(*)::float8 FROM filtered GROUP BY status
   UNION ALL
@@ -1314,6 +1330,8 @@ SELECT category, key, value FROM (
 			stats.HighRiskCount = int(value)
 		case "asset_type":
 			stats.ByType[key] = int(value)
+		case "sub_type":
+			stats.BySubType[key] = int(value)
 		case "status":
 			stats.ByStatus[key] = int(value)
 		case "criticality":
@@ -1329,4 +1347,110 @@ SELECT category, key, value FROM (
 	}
 
 	return stats, nil
+}
+
+// GetPropertyFacets returns distinct JSONB property keys and their top values.
+// Uses a 2-step approach: first get keys, then get top values per key.
+func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]asset.PropertyFacet, error) {
+	// Build WHERE clause
+	where := "WHERE a.tenant_id = $1 AND a.properties IS NOT NULL AND a.properties != '{}'::jsonb"
+	args := []any{tenantID.String()}
+	idx := 2
+
+	if len(types) > 0 {
+		where += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
+		args = append(args, pq.Array(types))
+		idx++
+	}
+	if subType != "" {
+		where += fmt.Sprintf(" AND a.sub_type = $%d", idx)
+		args = append(args, subType)
+		idx++
+	}
+
+	// Step 1: Get top property keys with counts (skip array/object values, only scalar)
+	keysQuery := fmt.Sprintf(`
+		SELECT key, COUNT(*) as cnt
+		FROM (
+			SELECT jsonb_object_keys(a.properties) as key
+			FROM assets a %s
+		) keys
+		WHERE key NOT IN ('ip_addresses', 'dns_records', 'ports', 'technologies', 'interfaces', 'tags')
+		GROUP BY key
+		HAVING COUNT(*) >= 2
+		ORDER BY cnt DESC
+		LIMIT 15
+	`, where)
+
+	keyRows, err := r.db.QueryContext(ctx, keysQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get property keys: %w", err)
+	}
+	defer func() { _ = keyRows.Close() }()
+
+	type keyInfo struct {
+		key   string
+		count int
+	}
+	keys := make([]keyInfo, 0, 15)
+	for keyRows.Next() {
+		var k string
+		var c int
+		if err := keyRows.Scan(&k, &c); err != nil {
+			return nil, fmt.Errorf("failed to scan key: %w", err)
+		}
+		keys = append(keys, keyInfo{key: k, count: c})
+	}
+	if err := keyRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating keys: %w", err)
+	}
+
+	// Step 2: For each key, get distinct values (top 20)
+	facets := make([]asset.PropertyFacet, 0, len(keys))
+	for _, ki := range keys {
+		valQuery := fmt.Sprintf(`
+			SELECT DISTINCT a.properties->>$%d AS val
+			FROM assets a %s AND a.properties ? $%d
+			AND jsonb_typeof(a.properties->$%d) IN ('string', 'number', 'boolean')
+			ORDER BY val
+			LIMIT 20
+		`, idx, where, idx, idx)
+
+		valArgs := append(args, ki.key) //nolint:gocritic
+		valRows, err := r.db.QueryContext(ctx, valQuery, valArgs...)
+		if err != nil {
+			continue // Skip this key on error
+		}
+
+		values := make([]string, 0, 20)
+		for valRows.Next() {
+			var v sql.NullString
+			if err := valRows.Scan(&v); err == nil && v.Valid && v.String != "" {
+				values = append(values, v.String)
+			}
+		}
+		_ = valRows.Close()
+
+		if len(values) > 0 {
+			facets = append(facets, asset.PropertyFacet{
+				Key:    ki.key,
+				Label:  formatPropertyLabel(ki.key),
+				Values: values,
+				Count:  ki.count,
+			})
+		}
+	}
+
+	return facets, nil
+}
+
+// formatPropertyLabel converts snake_case key to Title Case label.
+func formatPropertyLabel(key string) string {
+	words := strings.Split(key, "_")
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
