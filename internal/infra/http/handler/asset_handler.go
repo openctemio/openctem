@@ -55,6 +55,7 @@ type AssetResponse struct {
 	OwnerRef     string              `json:"owner_ref,omitempty"`
 	Name         string              `json:"name"`
 	Type         string              `json:"type"`
+	Category     string              `json:"category"`
 	Provider     string              `json:"provider,omitempty"`
 	ExternalID   string              `json:"external_id,omitempty"`
 	Criticality  string              `json:"criticality"`
@@ -154,6 +155,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		OwnerRef:     a.OwnerRef(),
 		Name:         a.Name(),
 		Type:         a.Type().String(),
+		Category:     string(a.Category()),
 		Provider:     a.Provider().String(),
 		ExternalID:   a.ExternalID(),
 		Criticality:  a.Criticality().String(),

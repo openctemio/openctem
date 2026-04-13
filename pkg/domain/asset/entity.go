@@ -232,6 +232,11 @@ func (a *Asset) Type() AssetType {
 	return a.assetType
 }
 
+// Category returns the asset category (derived from type, not stored).
+func (a *Asset) Category() Category {
+	return CategoryForType(a.assetType)
+}
+
 // Criticality returns the asset criticality.
 func (a *Asset) Criticality() Criticality {
 	return a.criticality
