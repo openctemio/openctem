@@ -32,10 +32,24 @@ UPDATE asset_types SET category_id = (SELECT id FROM asset_type_categories WHERE
     WHERE code IN ('user_account', 'credential', 'iam_user', 'iam_role', 'service_account');
 
 -- =============================================================================
--- Step 1: Update CHECK constraint to allow new consolidated types
+-- Step 1: Add new consolidated types to asset_types master table
+-- (FK constraint fk_assets_asset_type requires types to exist here first)
 -- =============================================================================
 
--- Drop old constraint that doesn't include new types
+INSERT INTO asset_types (code, name, description, category_id, display_order, is_scannable, is_discoverable, is_active)
+VALUES
+    ('application', 'Application', 'Web applications, APIs, mobile apps',
+     (SELECT id FROM asset_type_categories WHERE code = 'application'), 20, TRUE, TRUE, TRUE),
+    ('identity', 'Identity', 'Users, roles, service accounts',
+     (SELECT id FROM asset_type_categories WHERE code = 'identity'), 60, FALSE, TRUE, TRUE),
+    ('kubernetes', 'Kubernetes', 'Clusters, namespaces, workloads',
+     (SELECT id FROM asset_type_categories WHERE code = 'cloud'), 45, TRUE, TRUE, TRUE)
+ON CONFLICT (code) DO NOTHING;
+
+-- =============================================================================
+-- Step 2: Update CHECK constraint to allow new consolidated types (if exists)
+-- =============================================================================
+
 ALTER TABLE assets DROP CONSTRAINT IF EXISTS chk_assets_type;
 
 -- Add new constraint with all types (core + legacy for backward compat)
