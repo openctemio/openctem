@@ -204,7 +204,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	// Upsert: if asset with same name already exists, merge and update instead of rejecting.
 	// This handles re-ingestion, manual re-creation, and multi-source discovery gracefully.
 	existing, err := s.repo.GetByName(ctx, tenantID, input.Name)
-	if err != nil && !errors.Is(err, asset.ErrAssetNotFound) {
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check asset existence: %w", err)
 	}
 	if existing != nil {
@@ -909,6 +909,64 @@ func (s *AssetService) ArchiveAsset(ctx context.Context, tenantID, assetID strin
 
 	s.logger.Info("asset archived", "id", assetID)
 	return a, nil
+}
+
+// ArchiveStaleAssets finds and archives assets that haven't been seen for staleDays.
+// Returns the count of archived assets. If dryRun is true, only counts without archiving.
+func (s *AssetService) ArchiveStaleAssets(ctx context.Context, tenantID string, staleDays int, dryRun bool) (int64, error) {
+	if staleDays < 1 {
+		staleDays = 90
+	}
+
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return 0, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -staleDays)
+
+	// Find stale assets: last_seen < cutoff AND status = active
+	filter := asset.Filter{
+		TenantID: &tenantID,
+	}
+	// Use list with pagination to process in batches
+	page := pagination.Pagination{Page: 1, PerPage: 500}
+	result, err := s.repo.List(ctx, filter, asset.ListOptions{}, page)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list assets for lifecycle check: %w", err)
+	}
+
+	var archived int64
+	for _, a := range result.Data {
+		if a.Status() == asset.StatusArchived {
+			continue
+		}
+		lastSeen := a.LastSeen()
+		if lastSeen.IsZero() || lastSeen.After(cutoff) {
+			continue
+		}
+
+		if dryRun {
+			s.logger.Info("would archive stale asset (dry run)",
+				"id", a.ID().String(), "name", a.Name(),
+				"last_seen", lastSeen.Format(time.RFC3339))
+			archived++
+			continue
+		}
+
+		a.Archive()
+		if err := s.repo.Update(ctx, a); err != nil {
+			s.logger.Warn("failed to archive stale asset",
+				"id", a.ID().String(), "error", err)
+			continue
+		}
+		archived++
+		s.logger.Info("archived stale asset",
+			"id", a.ID().String(), "name", a.Name(),
+			"last_seen", lastSeen.Format(time.RFC3339),
+			"stale_days", staleDays)
+	}
+
+	return archived, nil
 }
 
 // BulkUpdateAssetStatusInput represents input for bulk asset status update.
