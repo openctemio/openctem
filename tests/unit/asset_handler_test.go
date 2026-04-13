@@ -136,6 +136,14 @@ func (m *HandlerMockRepository) FindRepositoryByFullName(ctx context.Context, te
 	return nil, shared.ErrNotFound
 }
 
+func (m *HandlerMockRepository) FindByIP(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
+func (m *HandlerMockRepository) FindByHostname(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
 func (m *HandlerMockRepository) GetByNames(ctx context.Context, tenantID shared.ID, names []string) (map[string]*asset.Asset, error) {
 	result := make(map[string]*asset.Asset)
 	for _, a := range m.assets {

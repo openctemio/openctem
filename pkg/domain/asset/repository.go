@@ -50,6 +50,16 @@ type Repository interface {
 	// It searches for assets whose name or external_id contains the full name pattern.
 	FindRepositoryByFullName(ctx context.Context, tenantID shared.ID, fullName string) (*Asset, error)
 
+	// FindByIP finds an existing asset by IP address.
+	// Searches: name, properties->>'ip', properties->'ip_address'->>'address'.
+	// Returns nil, nil if not found.
+	FindByIP(ctx context.Context, tenantID shared.ID, ip string) (*Asset, error)
+
+	// FindByHostname finds an existing asset by hostname.
+	// Searches: name, properties->>'hostname', properties->'ip_address'->>'hostname'.
+	// Returns nil, nil if not found.
+	FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*Asset, error)
+
 	// ==========================================================================
 	// Batch Operations (for high-performance ingestion)
 	// ==========================================================================

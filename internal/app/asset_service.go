@@ -201,12 +201,22 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		}
 	}
 
-	exists, err := s.repo.ExistsByName(ctx, tenantID, input.Name)
-	if err != nil {
+	// Upsert: if asset with same name already exists, merge and update instead of rejecting.
+	// This handles re-ingestion, manual re-creation, and multi-source discovery gracefully.
+	existing, err := s.repo.GetByName(ctx, tenantID, input.Name)
+	if err != nil && !errors.Is(err, asset.ErrAssetNotFound) {
 		return nil, fmt.Errorf("failed to check asset existence: %w", err)
 	}
-	if exists {
-		return nil, asset.AlreadyExistsError(input.Name)
+	if existing != nil {
+		return s.mergeAndUpdateExisting(ctx, existing, input, assetType, criticality, tenantID)
+	}
+
+	// IP/hostname correlation: if input.Name looks like an IP, check if a host with
+	// that IP already exists. If input.Name looks like a hostname, check if an
+	// IP-named asset has that hostname in properties. This correlates ESXi hosts
+	// with Splunk IPs, CMDB records, etc.
+	if correlated := s.correlateByIPOrHostname(ctx, tenantID, input); correlated != nil {
+		return s.mergeAndUpdateExisting(ctx, correlated, input, assetType, criticality, tenantID)
 	}
 
 	a, err := asset.NewAsset(input.Name, assetType, criticality)
@@ -284,6 +294,137 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 
 	s.logger.Info("asset created", "id", a.ID().String(), "name", a.Name())
 	return a, nil
+}
+
+// correlateByIPOrHostname tries to find an existing asset by IP or hostname properties.
+// If input.Name looks like an IP (e.g., "10.0.1.5"), search for hosts with that IP in properties.
+// If input.Name looks like a hostname, search for IP-named assets with that hostname in properties.
+// Returns nil if no correlation found.
+func (s *AssetService) correlateByIPOrHostname(ctx context.Context, tenantID shared.ID, input CreateAssetInput) *asset.Asset {
+	name := input.Name
+
+	// Try IP correlation: name is an IP → find host that has this IP
+	if looksLikeIP(name) {
+		found, err := s.repo.FindByIP(ctx, tenantID, name)
+		if err != nil {
+			s.logger.Warn("IP correlation lookup failed", "ip", name, "error", err)
+			return nil
+		}
+		if found != nil {
+			s.logger.Info("asset correlated by IP", "ip", name, "existing_id", found.ID().String(), "existing_name", found.Name())
+			return found
+		}
+	}
+
+	// Try hostname correlation: name is a hostname → find IP-named asset with this hostname
+	if !looksLikeIP(name) && name != "" {
+		found, err := s.repo.FindByHostname(ctx, tenantID, name)
+		if err != nil {
+			s.logger.Warn("hostname correlation lookup failed", "hostname", name, "error", err)
+			return nil
+		}
+		if found != nil {
+			// Hostname is more descriptive than IP — update the asset name
+			if looksLikeIP(found.Name()) {
+				_ = found.UpdateName(name)
+				s.logger.Info("asset correlated by hostname, renamed from IP",
+					"hostname", name, "old_name", found.Name(), "id", found.ID().String())
+			}
+			return found
+		}
+	}
+
+	return nil
+}
+
+// looksLikeIP returns true if the string looks like an IPv4 or IPv6 address.
+func looksLikeIP(s string) bool {
+	// Simple check: contains dots and all segments are numeric (IPv4)
+	// or contains colons (IPv6)
+	if strings.Contains(s, ":") {
+		return true // IPv6
+	}
+	parts := strings.Split(s, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+		for _, c := range p {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// mergeAndUpdateExisting updates an existing asset with new data from CreateAssetInput.
+// Only non-empty fields from input override the existing values.
+// This implements the "create-or-update" (upsert) pattern for manual asset creation.
+func (s *AssetService) mergeAndUpdateExisting(
+	ctx context.Context,
+	existing *asset.Asset,
+	input CreateAssetInput,
+	_ asset.AssetType,
+	criticality asset.Criticality,
+	tenantID shared.ID,
+) (*asset.Asset, error) {
+	// Update criticality if provided and different
+	if criticality != existing.Criticality() {
+		_ = existing.UpdateCriticality(criticality)
+	}
+
+	// Update description if provided
+	if input.Description != "" {
+		existing.UpdateDescription(input.Description)
+	}
+
+	// Update scope if provided
+	if input.Scope != "" {
+		scope, err := asset.ParseScope(input.Scope)
+		if err == nil {
+			_ = existing.UpdateScope(scope)
+		}
+	}
+
+	// Update exposure if provided
+	if input.Exposure != "" {
+		exposure, err := asset.ParseExposure(input.Exposure)
+		if err == nil {
+			_ = existing.UpdateExposure(exposure)
+		}
+	}
+
+	// Merge tags (add new, keep existing)
+	for _, tag := range input.Tags {
+		existing.AddTag(tag)
+	}
+
+	// Update owner ref if provided
+	if input.OwnerRef != "" {
+		existing.SetOwnerRef(input.OwnerRef)
+		if strings.Contains(input.OwnerRef, "@") && s.userMatcher != nil {
+			if matchedID, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, input.OwnerRef); err == nil && matchedID != nil {
+				existing.SetOwnerID(matchedID)
+			}
+		}
+	}
+
+	// Mark as seen (updates last_seen)
+	existing.MarkSeen()
+
+	// Recalculate risk score
+	existing.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, tenantID))
+
+	if err := s.repo.Update(ctx, existing); err != nil {
+		return nil, fmt.Errorf("failed to update existing asset: %w", err)
+	}
+
+	s.logger.Info("asset upserted (updated existing)", "id", existing.ID().String(), "name", existing.Name())
+	return existing, nil
 }
 
 // GetAsset retrieves an asset by ID within a tenant.

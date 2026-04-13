@@ -140,6 +140,14 @@ func (m *mockAttackSurfaceRepo) FindRepositoryByFullName(_ context.Context, _ sh
 	return nil, shared.ErrNotFound
 }
 
+func (m *mockAttackSurfaceRepo) FindByIP(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
+func (m *mockAttackSurfaceRepo) FindByHostname(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
 func (m *mockAttackSurfaceRepo) GetByNames(_ context.Context, _ shared.ID, _ []string) (map[string]*asset.Asset, error) {
 	return make(map[string]*asset.Asset), nil
 }

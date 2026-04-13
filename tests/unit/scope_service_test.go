@@ -296,6 +296,14 @@ func (m *mockAssetRepo) FindRepositoryByRepoName(_ context.Context, _ shared.ID,
 func (m *mockAssetRepo) FindRepositoryByFullName(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
 	return nil, shared.ErrNotFound
 }
+
+func (m *mockAssetRepo) FindByIP(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
+func (m *mockAssetRepo) FindByHostname(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
 func (m *mockAssetRepo) GetByNames(_ context.Context, _ shared.ID, _ []string) (map[string]*asset.Asset, error) {
 	return nil, nil
 }

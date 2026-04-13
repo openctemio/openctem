@@ -316,9 +316,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 
 	// Initialize Compliance service
-	// Simulation service — pass Simulation repo for both sim and control test
-	// (ControlTestRepository not yet implemented — pass nil, service handles gracefully)
-	s.Simulation = app.NewSimulationService(repos.Simulation, nil, log)
+	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
 	s.ThreatActor = app.NewThreatActorService(repos.ThreatActor, log)
 
 	s.Compliance = app.NewComplianceService(

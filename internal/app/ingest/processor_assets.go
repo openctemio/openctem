@@ -1248,6 +1248,14 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 		}
 	}
 
+	// Normalize IP storage for host assets:
+	// - Convert properties.ip (string) → properties.ip_addresses (array)
+	// - Extract IP from asset value/name if host type
+	// - Extract hostname from ip_address.hostname into top-level hostname
+	if ctisAsset.Type == ctis.AssetTypeHost || ctisAsset.Type == "host" {
+		normalizeHostIPProperties(props, getAssetName(ctisAsset))
+	}
+
 	// Validate properties based on asset type
 	if errs := p.propsValidator.ValidateProperties(string(ctisAsset.Type), props); errs != nil {
 		p.logger.Warn("properties validation errors",
@@ -1286,4 +1294,80 @@ func (p *AssetProcessor) extractOwnerRef(ctisAsset *ctis.Asset) string {
 	}
 
 	return ""
+}
+
+// normalizeHostIPProperties standardizes IP storage for host assets.
+// Ensures all IPs are in `ip_addresses` (array), removes legacy `ip` (string).
+// Promotes ip_address.hostname to top-level `hostname`.
+func normalizeHostIPProperties(props map[string]any, assetName string) {
+	// Collect all known IPs into a set
+	ipSet := make(map[string]bool)
+
+	// From legacy properties.ip (string)
+	if ip, ok := props["ip"].(string); ok && ip != "" {
+		ipSet[ip] = true
+		delete(props, "ip") // Remove legacy key
+	}
+
+	// From existing ip_addresses array
+	if ips, ok := props["ip_addresses"].([]any); ok {
+		for _, v := range ips {
+			if s, ok := v.(string); ok && s != "" {
+				ipSet[s] = true
+			}
+		}
+	}
+	if ips, ok := props["ip_addresses"].([]string); ok {
+		for _, s := range ips {
+			if s != "" {
+				ipSet[s] = true
+			}
+		}
+	}
+
+	// From ip_address technical data (structured object)
+	if ipAddr, ok := props["ip_address"].(map[string]any); ok {
+		if addr, ok := ipAddr["address"].(string); ok && addr != "" {
+			ipSet[addr] = true
+		}
+		// Promote hostname to top-level if not already set
+		if hostname, ok := ipAddr["hostname"].(string); ok && hostname != "" {
+			if _, exists := props["hostname"]; !exists {
+				props["hostname"] = hostname
+			}
+		}
+	}
+
+	// From asset name if it looks like an IP
+	if looksLikeIPv4(assetName) {
+		ipSet[assetName] = true
+	}
+
+	// Write back as standardized array
+	if len(ipSet) > 0 {
+		ips := make([]string, 0, len(ipSet))
+		for ip := range ipSet {
+			ips = append(ips, ip)
+		}
+		props["ip_addresses"] = ips
+	}
+}
+
+// looksLikeIPv4 returns true if s matches basic IPv4 pattern.
+func looksLikeIPv4(s string) bool {
+	parts := strings.Split(s, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" || len(p) > 3 {
+			return false
+		}
+		for _, c := range p {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }

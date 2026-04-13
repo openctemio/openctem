@@ -101,6 +101,14 @@ func (m *MockAssetRepository) FindRepositoryByFullName(ctx context.Context, tena
 	return nil, shared.ErrNotFound
 }
 
+func (m *MockAssetRepository) FindByIP(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
+func (m *MockAssetRepository) FindByHostname(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
 func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
 	return make(map[string]asset.AssetTypeStats), nil
 }

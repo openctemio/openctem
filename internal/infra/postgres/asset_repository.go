@@ -131,6 +131,50 @@ func (r *AssetRepository) GetByName(ctx context.Context, tenantID shared.ID, nam
 	return r.scanAsset(row, shared.ID{})
 }
 
+// FindByIP finds an existing asset that matches the given IP address.
+// Searches: name, properties->>'ip', properties->'ip_address'->>'address',
+// and properties->'ip_addresses' array (host with multiple IPs).
+// Returns nil (no error) if no match found.
+func (r *AssetRepository) FindByIP(ctx context.Context, tenantID shared.ID, ip string) (*asset.Asset, error) {
+	query := r.selectQuery() + ` WHERE a.tenant_id = $1 AND (
+		a.name = $2
+		OR a.properties->>'ip' = $2
+		OR a.properties->'ip_address'->>'address' = $2
+		OR a.properties->'ip_addresses' ? $2
+	) LIMIT 1`
+
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), ip)
+	a, err := r.scanAsset(row, shared.ID{})
+	if err != nil {
+		if errors.Is(err, asset.ErrAssetNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to find asset by IP: %w", err)
+	}
+	return a, nil
+}
+
+// FindByHostname finds an existing asset that matches the given hostname.
+// Searches: name (exact), properties->>'hostname', properties->'ip_address'->>'hostname'.
+// Returns nil (no error) if no match found.
+func (r *AssetRepository) FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*asset.Asset, error) {
+	query := r.selectQuery() + ` WHERE a.tenant_id = $1 AND (
+		a.name = $2
+		OR a.properties->>'hostname' = $2
+		OR a.properties->'ip_address'->>'hostname' = $2
+	) LIMIT 1`
+
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), hostname)
+	a, err := r.scanAsset(row, shared.ID{})
+	if err != nil {
+		if errors.Is(err, asset.ErrAssetNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to find asset by hostname: %w", err)
+	}
+	return a, nil
+}
+
 // FindRepositoryByRepoName finds a repository asset whose name ends with the given repo name.
 // This handles matching agent-created assets like "github.com-org/suborg/repo" with repo name "repo".
 // NOTE: This only matches by repo name, use FindRepositoryByFullName for more precise matching.
@@ -889,7 +933,12 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 				SELECT array_agg(DISTINCT t)
 				FROM unnest(assets.tags || EXCLUDED.tags) AS t
 			),
-			properties = merge_jsonb_deep(assets.properties, EXCLUDED.properties),
+			-- Freshness-aware merge: newer data wins, stale data only fills gaps
+			properties = CASE
+				WHEN EXCLUDED.last_seen >= COALESCE(assets.last_seen, '1970-01-01'::timestamptz)
+				THEN merge_jsonb_deep(assets.properties, EXCLUDED.properties)
+				ELSE merge_jsonb_deep(EXCLUDED.properties, assets.properties)
+			END,
 			last_seen = GREATEST(assets.last_seen, EXCLUDED.last_seen),
 			updated_at = NOW(),
 			discovery_source = COALESCE(assets.discovery_source, EXCLUDED.discovery_source),
