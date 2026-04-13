@@ -44,6 +44,14 @@ type FindingTrendPoint struct {
 	Info     int
 }
 
+// RiskVelocityPoint represents weekly new vs resolved finding counts.
+type RiskVelocityPoint struct {
+	Week          time.Time `json:"week"`
+	NewCount      int       `json:"new_count"`
+	ResolvedCount int       `json:"resolved_count"`
+	Velocity      int       `json:"velocity"` // new - resolved (positive = losing ground)
+}
+
 // ActivityItem represents a recent activity item.
 type ActivityItem struct {
 	Type        string

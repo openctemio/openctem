@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
@@ -379,6 +380,83 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 	}
 
 	return trend, nil
+}
+
+// GetMTTRMetrics returns Mean Time To Remediate metrics by severity.
+// MTTR = average time between finding creation and resolution.
+func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID) (map[string]float64, error) {
+	query := `SELECT
+		severity,
+		COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 3600), 0) as avg_hours
+		FROM findings
+		WHERE tenant_id = $1
+		AND status IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
+		AND updated_at > created_at
+		GROUP BY severity`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MTTR metrics: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]float64)
+	for rows.Next() {
+		var severity string
+		var avgHours float64
+		if err := rows.Scan(&severity, &avgHours); err != nil {
+			return nil, fmt.Errorf("failed to scan MTTR: %w", err)
+		}
+		result[severity] = avgHours
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate MTTR: %w", err)
+	}
+	return result, nil
+}
+
+// GetRiskVelocity returns new vs resolved findings per week for trending analysis.
+// Positive velocity = losing ground, negative = improving.
+func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]app.RiskVelocityPoint, error) {
+	if weeks < 1 {
+		weeks = 12
+	}
+	query := `WITH weeks AS (
+		SELECT generate_series(
+			date_trunc('week', NOW() - ($2::int || ' weeks')::interval),
+			date_trunc('week', NOW()),
+			'1 week'::interval
+		) AS week_start
+	)
+	SELECT
+		w.week_start,
+		COALESCE(SUM(CASE WHEN f.created_at >= w.week_start AND f.created_at < w.week_start + '1 week'::interval THEN 1 ELSE 0 END), 0) as new_count,
+		COALESCE(SUM(CASE WHEN f.updated_at >= w.week_start AND f.updated_at < w.week_start + '1 week'::interval
+			AND f.status IN ('resolved', 'verified') THEN 1 ELSE 0 END), 0) as resolved_count
+	FROM weeks w
+	LEFT JOIN findings f ON f.tenant_id = $1
+	GROUP BY w.week_start
+	ORDER BY w.week_start`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), weeks)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get risk velocity: %w", err)
+	}
+	defer rows.Close()
+
+	var points []app.RiskVelocityPoint
+	for rows.Next() {
+		var p app.RiskVelocityPoint
+		if err := rows.Scan(&p.Week, &p.NewCount, &p.ResolvedCount); err != nil {
+			return nil, fmt.Errorf("failed to scan velocity: %w", err)
+		}
+		p.Velocity = p.NewCount - p.ResolvedCount
+		points = append(points, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate velocity: %w", err)
+	}
+	return points, nil
 }
 
 // Global stats methods (not tenant-scoped)
