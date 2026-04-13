@@ -155,6 +155,10 @@ func AllAssetTypes() []AssetType {
 		AssetTypeHTTPService,
 		AssetTypeOpenPort,
 		AssetTypeDiscoveredURL,
+		// Consolidated core types
+		AssetTypeApplication,
+		AssetTypeIdentity,
+		AssetTypeKubernetes,
 	}
 }
 

@@ -43,7 +43,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 
 	query := `
 		INSERT INTO assets (
-			id, tenant_id, parent_id, owner_id, owner_ref, name, asset_type, criticality, status,
+			id, tenant_id, parent_id, owner_id, owner_ref, name, asset_type, sub_type, criticality, status,
 			scope, exposure, risk_score,
 			description, tags, metadata, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
@@ -52,7 +52,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 			is_internet_accessible, exposure_changed_at, last_exposure_level,
 			first_seen, last_seen, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
 	`
 
 	ownerRefVal := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -64,6 +64,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 		ownerRefVal,
 		a.Name(),
 		a.Type().String(),
+		sql.NullString{String: a.SubType(), Valid: a.SubType() != ""},
 		a.Criticality().String(),
 		a.Status().String(),
 		a.Scope().String(),
@@ -232,7 +233,7 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 
 func (r *AssetRepository) selectQuery() string {
 	return `
-		SELECT a.id, a.tenant_id, a.parent_id, a.owner_id, a.owner_ref, a.name, a.asset_type, a.criticality, a.status,
+		SELECT a.id, a.tenant_id, a.parent_id, a.owner_id, a.owner_ref, a.name, a.asset_type, a.sub_type, a.criticality, a.status,
 			   a.scope, a.exposure, a.risk_score,
 			   COALESCE(fc.finding_count, 0) as finding_count,
 			   COALESCE(fc.finding_critical, 0) as finding_critical,
@@ -276,14 +277,14 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 
 	query := `
 		UPDATE assets
-		SET parent_id = $2, owner_id = $3, owner_ref = $4, name = $5, asset_type = $6, criticality = $7, status = $8,
-		    scope = $9, exposure = $10, risk_score = $11,
-		    description = $12, tags = $13, metadata = $14, properties = $15,
-		    provider = $16, external_id = $17, classification = $18, sync_status = $19, last_synced_at = $20, sync_error = $21,
-		    discovery_source = $22, discovery_tool = $23, discovered_at = $24,
-		    compliance_scope = $25, data_classification = $26, pii_data_exposed = $27, phi_data_exposed = $28, regulatory_owner_id = $29,
-		    is_internet_accessible = $30, exposure_changed_at = $31, last_exposure_level = $32,
-		    last_seen = $33, updated_at = $34
+		SET parent_id = $2, owner_id = $3, owner_ref = $4, name = $5, asset_type = $6, sub_type = $7, criticality = $8, status = $9,
+		    scope = $10, exposure = $11, risk_score = $12,
+		    description = $13, tags = $14, metadata = $15, properties = $16,
+		    provider = $17, external_id = $18, classification = $19, sync_status = $20, last_synced_at = $21, sync_error = $22,
+		    discovery_source = $23, discovery_tool = $24, discovered_at = $25,
+		    compliance_scope = $26, data_classification = $27, pii_data_exposed = $28, phi_data_exposed = $29, regulatory_owner_id = $30,
+		    is_internet_accessible = $31, exposure_changed_at = $32, last_exposure_level = $33,
+		    last_seen = $34, updated_at = $35
 		WHERE id = $1
 	`
 
@@ -295,6 +296,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		updateOwnerRef,
 		a.Name(),
 		a.Type().String(),
+		sql.NullString{String: a.SubType(), Valid: a.SubType() != ""},
 		a.Criticality().String(),
 		a.Status().String(),
 		a.Scope().String(),
@@ -474,6 +476,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		ownerRef        sql.NullString
 		name            string
 		assetType       string
+		subType         sql.NullString
 		criticality     string
 		status          string
 		scope           string
@@ -515,7 +518,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 	)
 
 	err := scan(
-		&idStr, &tenantIDStr, &parentIDStr, &ownerIDStr, &ownerRef, &name, &assetType, &criticality, &status,
+		&idStr, &tenantIDStr, &parentIDStr, &ownerIDStr, &ownerRef, &name, &assetType, &subType, &criticality, &status,
 		&scope, &exposure, &riskScore, &findingCount,
 		&findingCritical, &findingHigh, &findingMedium, &findingLow, &findingInfo,
 		&description, &tags, &metadata, &properties,
@@ -530,7 +533,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 	}
 
 	a, err := r.reconstructAsset(
-		idStr, tenantIDStr, parentIDStr, ownerIDStr, ownerRef, name, assetType, criticality, status,
+		idStr, tenantIDStr, parentIDStr, ownerIDStr, ownerRef, name, assetType, subType.String, criticality, status,
 		scope, exposure, riskScore, findingCount,
 		description, tags, metadata, properties,
 		provider, externalID, classification, syncStatus, lastSyncedAt, syncError,
@@ -557,7 +560,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 func (r *AssetRepository) reconstructAsset(
 	idStr string,
 	tenantIDStr, parentIDStr, ownerIDStr, ownerRefStr sql.NullString,
-	name, assetTypeStr, criticalityStr, statusStr string,
+	name, assetTypeStr, subTypeStr, criticalityStr, statusStr string,
 	scopeStr, exposureStr string,
 	riskScore, findingCount int,
 	description sql.NullString,
@@ -700,6 +703,9 @@ func (r *AssetRepository) reconstructAsset(
 
 	if ownerRefStr.Valid {
 		result.SetOwnerRef(ownerRefStr.String)
+	}
+	if subTypeStr != "" {
+		result.SetSubType(subTypeStr)
 	}
 
 	return result, nil

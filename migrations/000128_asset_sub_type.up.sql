@@ -32,7 +32,33 @@ UPDATE asset_types SET category_id = (SELECT id FROM asset_type_categories WHERE
     WHERE code IN ('user_account', 'credential', 'iam_user', 'iam_role', 'service_account');
 
 -- =============================================================================
--- Step 1: Add sub_type column
+-- Step 1: Update CHECK constraint to allow new consolidated types
+-- =============================================================================
+
+-- Drop old constraint that doesn't include new types
+ALTER TABLE assets DROP CONSTRAINT IF EXISTS chk_assets_type;
+
+-- Add new constraint with all types (core + legacy for backward compat)
+ALTER TABLE assets ADD CONSTRAINT chk_assets_type CHECK (
+    asset_type IN (
+        -- Core types (15)
+        'domain', 'subdomain', 'certificate', 'ip_address',
+        'application', 'host', 'container', 'kubernetes',
+        'network', 'service', 'cloud_account', 'storage',
+        'database', 'repository', 'identity', 'unclassified',
+        -- Legacy types (still accepted for backward compat)
+        'website', 'web_application', 'api', 'mobile_app',
+        'compute', 'serverless', 'vpc', 'subnet',
+        'firewall', 'load_balancer',
+        'kubernetes_cluster', 'kubernetes_namespace',
+        'iam_user', 'iam_role', 'service_account',
+        'data_store', 's3_bucket', 'container_registry',
+        'http_service', 'open_port', 'discovered_url'
+    )
+);
+
+-- =============================================================================
+-- Step 2: Add sub_type column
 -- =============================================================================
 
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS sub_type VARCHAR(50);

@@ -29,6 +29,7 @@ var typeToCategory = map[AssetType]Category{
 	AssetTypeWebApplication: CategoryApplication,
 	AssetTypeAPI:            CategoryApplication,
 	AssetTypeMobileApp:      CategoryApplication,
+	AssetTypeApplication:    CategoryApplication, // consolidated type
 
 	// Infrastructure — machines and compute
 	AssetTypeHost:                CategoryInfrastructure,
@@ -37,6 +38,7 @@ var typeToCategory = map[AssetType]Category{
 	AssetTypeContainer:           CategoryInfrastructure,
 	AssetTypeKubernetesCluster:   CategoryInfrastructure,
 	AssetTypeKubernetesNamespace: CategoryInfrastructure,
+	AssetTypeKubernetes:          CategoryInfrastructure, // consolidated type
 
 	// Network — network segments, devices, and services
 	AssetTypeNetwork:       CategoryNetwork,
@@ -66,6 +68,7 @@ var typeToCategory = map[AssetType]Category{
 	AssetTypeIAMUser:        CategoryIdentity,
 	AssetTypeIAMRole:        CategoryIdentity,
 	AssetTypeServiceAccount: CategoryIdentity,
+	AssetTypeIdentity:       CategoryIdentity, // consolidated type
 
 	// Other
 	AssetTypeUnclassified: CategoryOther,
