@@ -48,6 +48,7 @@ type FindingTrendPoint struct {
 type AssetStats struct {
 	Total     int            `json:"total"`
 	ByType    map[string]int `json:"by_type"`
+	BySubType map[string]int `json:"by_sub_type,omitempty"`
 	ByStatus  map[string]int `json:"by_status"`
 	RiskScore float64        `json:"risk_score"`
 }
@@ -159,6 +160,7 @@ func buildDashboardResponse(stats *app.DashboardStats) DashboardStatsResponse {
 		Assets: AssetStats{
 			Total:     stats.AssetCount,
 			ByType:    stats.AssetsByType,
+			BySubType: stats.AssetsBySubType,
 			ByStatus:  stats.AssetsByStatus,
 			RiskScore: stats.AverageRiskScore,
 		},

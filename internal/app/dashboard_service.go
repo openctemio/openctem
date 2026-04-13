@@ -13,6 +13,7 @@ type DashboardStats struct {
 	// Asset stats
 	AssetCount       int
 	AssetsByType     map[string]int
+	AssetsBySubType  map[string]int
 	AssetsByStatus   map[string]int
 	AverageRiskScore float64
 
@@ -104,6 +105,7 @@ type DashboardStatsRepository interface {
 type AssetStatsData struct {
 	Total            int
 	ByType           map[string]int
+	BySubType        map[string]int
 	ByStatus         map[string]int
 	AverageRiskScore float64
 }
@@ -162,6 +164,7 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 	return &DashboardStats{
 		AssetCount:               all.Assets.Total,
 		AssetsByType:             all.Assets.ByType,
+		AssetsBySubType:          all.Assets.BySubType,
 		AssetsByStatus:           all.Assets.ByStatus,
 		AverageRiskScore:         all.Assets.AverageRiskScore,
 		FindingCount:             all.Findings.Total,
