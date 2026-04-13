@@ -163,6 +163,8 @@ type Filter struct {
 	MaxRiskScore  *int          // Filter by maximum risk score
 	HasFindings   *bool         // Filter by whether asset has findings
 	ParentID      *string       // Filter by parent asset ID
+	IsCrownJewel  *bool         // Filter crown jewel assets
+	SubType       *string       // Filter by sub_type
 
 	// Layer 2: Data Scope - filter assets by user's group membership
 	// When set, only assets accessible to this user are returned.

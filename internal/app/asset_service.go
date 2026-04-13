@@ -682,6 +682,8 @@ type ListAssetsInput struct {
 	MinRiskScore  *int     `validate:"omitempty,min=0,max=100"`
 	MaxRiskScore  *int     `validate:"omitempty,min=0,max=100"`
 	HasFindings   *bool    // Filter by whether asset has findings
+	IsCrownJewel  *bool    // Filter crown jewel assets
+	SubType       *string  // Filter by sub_type
 	Sort          string   `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page          int      `validate:"min=0"`
 	PerPage       int      `validate:"min=0,max=100"`
@@ -781,6 +783,16 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	// Has findings filter
 	if input.HasFindings != nil {
 		filter = filter.WithHasFindings(*input.HasFindings)
+	}
+
+	// Crown jewel filter
+	if input.IsCrownJewel != nil {
+		filter.IsCrownJewel = input.IsCrownJewel
+	}
+
+	// Sub-type filter
+	if input.SubType != nil {
+		filter.SubType = input.SubType
 	}
 
 	// Layer 2: Data Scope - non-admin users only see assets in their groups

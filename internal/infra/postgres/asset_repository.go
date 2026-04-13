@@ -822,6 +822,20 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
+	// Crown jewel filter
+	if filter.IsCrownJewel != nil {
+		conditions = append(conditions, fmt.Sprintf("a.is_crown_jewel = $%d", argIndex))
+		args = append(args, *filter.IsCrownJewel)
+		argIndex++
+	}
+
+	// Sub-type filter
+	if filter.SubType != nil {
+		conditions = append(conditions, fmt.Sprintf("a.sub_type = $%d", argIndex))
+		args = append(args, *filter.SubType)
+		argIndex++
+	}
+
 	// Providers filter
 	if len(filter.Providers) > 0 {
 		placeholders := make([]string, len(filter.Providers))

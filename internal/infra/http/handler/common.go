@@ -201,3 +201,10 @@ func parseQueryIntPtr(s string) *int {
 func parseQueryBoolPtr(s string) *bool {
 	return parseQueryBool(s)
 }
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

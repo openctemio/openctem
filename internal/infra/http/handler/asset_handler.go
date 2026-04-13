@@ -320,6 +320,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		MinRiskScore:  parseQueryIntPtr(query.Get("min_risk_score")),
 		MaxRiskScore:  parseQueryIntPtr(query.Get("max_risk_score")),
 		HasFindings:   parseQueryBoolPtr(query.Get("has_findings")),
+		IsCrownJewel:  parseQueryBoolPtr(query.Get("is_crown_jewel")),
+		SubType:       nilIfEmpty(query.Get("sub_type")),
 		Sort:          query.Get("sort"),
 		Page:          parseQueryInt(query.Get("page"), 1),
 		PerPage:       parseQueryInt(query.Get("per_page"), 20),
