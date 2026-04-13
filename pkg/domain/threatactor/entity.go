@@ -75,6 +75,30 @@ type ThreatActorCVE struct {
 	createdAt     time.Time
 }
 
+// Getters
+func (c *ThreatActorCVE) ID() shared.ID            { return c.id }
+func (c *ThreatActorCVE) TenantID() shared.ID       { return c.tenantID }
+func (c *ThreatActorCVE) ThreatActorID() shared.ID  { return c.threatActorID }
+func (c *ThreatActorCVE) CveID() string             { return c.cveID }
+func (c *ThreatActorCVE) Confidence() string         { return c.confidence }
+func (c *ThreatActorCVE) Source() string             { return c.source }
+func (c *ThreatActorCVE) FirstObserved() *time.Time  { return c.firstObserved }
+func (c *ThreatActorCVE) Notes() string              { return c.notes }
+func (c *ThreatActorCVE) CreatedAt() time.Time       { return c.createdAt }
+
+// NewThreatActorCVE creates a new threat actor CVE link.
+func NewThreatActorCVE(tenantID, actorID shared.ID, cveID, confidence, source string) *ThreatActorCVE {
+	return &ThreatActorCVE{
+		id:            shared.NewID(),
+		tenantID:      tenantID,
+		threatActorID: actorID,
+		cveID:         cveID,
+		confidence:    confidence,
+		source:        source,
+		createdAt:     time.Now(),
+	}
+}
+
 // NewThreatActor creates a new threat actor.
 func NewThreatActor(tenantID shared.ID, name string, actorType ActorType) (*ThreatActor, error) {
 	if name == "" {
