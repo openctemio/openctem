@@ -232,6 +232,10 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			SELECT 'astatus' AS grp, status AS key, COUNT(*) AS cnt
 			FROM assets WHERE tenant_id = $1 GROUP BY status
 		),
+		asset_by_sub_type AS (
+			SELECT 'asubtype' AS grp, COALESCE(sub_type, asset_type) AS key, COUNT(*) AS cnt
+			FROM assets WHERE tenant_id = $1 AND sub_type IS NOT NULL AND sub_type != '' GROUP BY key
+		),
 		finding_total AS (
 			SELECT COUNT(*) AS cnt FROM findings WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review')
 		),
@@ -259,6 +263,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		SELECT 'asset_total' AS grp, '' AS key, cnt, 0::float8 AS val FROM asset_total
 		UNION ALL SELECT grp, key, cnt, 0 FROM asset_by_type
 		UNION ALL SELECT grp, key, cnt, 0 FROM asset_by_status
+		UNION ALL SELECT grp, key, cnt, 0 FROM asset_by_sub_type
 		UNION ALL SELECT 'finding_total', '', cnt, 0 FROM finding_total
 		UNION ALL SELECT grp, key, cnt, 0 FROM finding_by_severity
 		UNION ALL SELECT grp, key, cnt, 0 FROM finding_by_status
@@ -284,6 +289,11 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			result.Assets.Total = cnt
 		case "atype":
 			result.Assets.ByType[key] = cnt
+		case "asubtype":
+			if result.Assets.BySubType == nil {
+				result.Assets.BySubType = make(map[string]int)
+			}
+			result.Assets.BySubType[key] = cnt
 		case "astatus":
 			result.Assets.ByStatus[key] = cnt
 		case "finding_total":
