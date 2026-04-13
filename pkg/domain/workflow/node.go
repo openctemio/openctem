@@ -86,6 +86,8 @@ const (
 	// AI Triage triggers
 	TriggerTypeAITriageCompleted TriggerType = "ai_triage_completed"
 	TriggerTypeAITriageFailed    TriggerType = "ai_triage_failed"
+	// Remediation verification
+	TriggerTypeFindingStatusChanged TriggerType = "finding_status_changed"
 )
 
 // IsValid checks if the trigger type is valid.

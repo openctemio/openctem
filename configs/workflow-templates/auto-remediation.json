@@ -187,6 +187,50 @@
       "edges": [
         { "source": "trigger", "target": "notify_retest" }
       ]
+    },
+    {
+      "name": "Remediated → Auto-Verify Scan + Update Status",
+      "description": "When a finding is marked as fix_applied, automatically triggers a verification scan. If scan passes, marks finding as verified.",
+      "category": "verification",
+      "nodes": [
+        {
+          "key": "trigger",
+          "type": "trigger",
+          "label": "Finding Status Changed",
+          "config": {
+            "trigger_type": "finding_updated",
+            "filter": "trigger.changes.new_status == 'fix_applied'"
+          },
+          "position": { "x": 100, "y": 200 }
+        },
+        {
+          "key": "verify_scan",
+          "type": "action",
+          "label": "Trigger Verification Scan",
+          "config": {
+            "action_type": "trigger_scan",
+            "scan_type": "verification",
+            "target_asset_id": "{{trigger.asset_id}}",
+            "scan_profile": "quick_verify"
+          },
+          "position": { "x": 400, "y": 100 }
+        },
+        {
+          "key": "notify_team",
+          "type": "notification",
+          "label": "Notify: Verification Started",
+          "config": {
+            "notification_type": "in_app",
+            "title": "Verification scan started for: {{trigger.title}}",
+            "body": "A verification scan has been triggered to confirm the fix for {{trigger.title}} on asset {{trigger.asset_id}}."
+          },
+          "position": { "x": 400, "y": 300 }
+        }
+      ],
+      "edges": [
+        { "source": "trigger", "target": "verify_scan" },
+        { "source": "trigger", "target": "notify_team" }
+      ]
     }
   ]
 }
