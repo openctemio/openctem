@@ -104,6 +104,9 @@ type Handlers struct {
 	// Remediation Campaigns
 	RemediationCampaign *handler.RemediationCampaignHandler // nil if not initialized
 
+	// Business Units
+	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
+
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
 
@@ -342,6 +345,11 @@ func Register(
 	// Remediation Campaign routes
 	if h.RemediationCampaign != nil {
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync)
+	}
+
+	// Business Unit routes
+	if h.BusinessUnit != nil {
+		registerBusinessUnitRoutes(router, h.BusinessUnit, authMiddleware, userSync)
 	}
 
 	// Integration routes (tenant from JWT token)

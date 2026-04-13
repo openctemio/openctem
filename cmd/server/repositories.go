@@ -72,6 +72,9 @@ type Repositories struct {
 	// Remediation Campaigns
 	RemediationCampaign *postgres.RemediationCampaignRepository
 
+	// Business Units
+	BusinessUnit *postgres.BusinessUnitRepository
+
 	// SLA & Integration
 	SLA                        *postgres.SLAPolicyRepository
 	Integration                *postgres.IntegrationRepository
@@ -214,6 +217,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Remediation Campaigns
 		RemediationCampaign: postgres.NewRemediationCampaignRepository(db),
+
+		// Business Units
+		BusinessUnit: postgres.NewBusinessUnitRepository(db),
 
 		SLA:         postgres.NewSLAPolicyRepository(db),
 		Integration: postgres.NewIntegrationRepository(db),

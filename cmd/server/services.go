@@ -152,6 +152,9 @@ type Services struct {
 	// Remediation Campaigns
 	RemediationCampaign *app.RemediationCampaignService
 
+	// Business Units
+	BusinessUnit *app.BusinessUnitService
+
 	// API Keys & Webhooks
 	APIKey  *app.APIKeyService
 	Webhook *app.WebhookService
@@ -322,6 +325,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
 	s.ThreatActor = app.NewThreatActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
+	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, log)
 
 	s.Compliance = app.NewComplianceService(
 		repos.ComplianceFramework, repos.ComplianceControl,

@@ -149,6 +149,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Remediation Campaigns
 		RemediationCampaign: handler.NewRemediationCampaignHandler(svc.RemediationCampaign, log),
 
+		// Business Units
+		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),
+
 		// API Keys & Webhooks
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
 		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),
