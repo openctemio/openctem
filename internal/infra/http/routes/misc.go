@@ -327,3 +327,18 @@ func registerWebhookRoutes(
 		r.GET("/{id}/deliveries", h.ListDeliveries, middleware.Require(permission.WebhooksRead))
 	}, tenantMiddlewares...)
 }
+
+// registerIncomingWebhookRoutes registers public incoming webhook endpoints.
+// These endpoints are NOT protected by JWT — they are called by external services (e.g. Jira).
+// Tenant routing is done via a ?tenant= query parameter that each external service configures.
+func registerIncomingWebhookRoutes(
+	router Router,
+	jiraHandler *handler.JiraWebhookHandler,
+) {
+	if jiraHandler == nil {
+		return
+	}
+	// Public endpoint — no auth middleware.
+	// Jira requires a 200 response on delivery, so we always accept and process asynchronously.
+	router.POST("/api/v1/webhooks/incoming/jira", jiraHandler.IncomingJiraWebhook)
+}

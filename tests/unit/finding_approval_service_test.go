@@ -1152,3 +1152,9 @@ func (m *mockFindingRepository) FindRelatedCVEs(_ context.Context, _ shared.ID, 
 func (m *mockFindingRepository) ListByStatusAndAssets(_ context.Context, _ shared.ID, _ vulnerability.FindingStatus, _ []shared.ID) ([]*vulnerability.Finding, error) {
 	return nil, nil
 }
+func (m *mockFindingRepository) GetByWorkItemURI(_ context.Context, _ shared.ID, _ string) (*vulnerability.Finding, error) {
+	return nil, nil
+}
+func (m *mockFindingRepository) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
+	return nil
+}

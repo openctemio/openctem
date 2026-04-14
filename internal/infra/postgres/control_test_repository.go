@@ -257,3 +257,70 @@ func (r *ControlTestRepository) GetStatsByFramework(ctx context.Context, tenantI
 
 	return stats, nil
 }
+
+// ListOverdue returns control tests that have not been tested in at least staleDays days,
+// or that have never been tested (last_tested_at IS NULL). Scans across all tenants.
+// Returns at most limit rows ordered by longest-overdue first.
+func (r *ControlTestRepository) ListOverdue(ctx context.Context, staleDays int, limit int) ([]*simulation.OverdueControlTest, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	query := `
+		SELECT tenant_id, id, name, framework,
+		       COALESCE(EXTRACT(DAY FROM NOW() - last_tested_at)::int, $1) AS days_since_tested
+		FROM control_tests
+		WHERE last_tested_at IS NULL
+		   OR last_tested_at < NOW() - ($2 || ' days')::interval
+		ORDER BY days_since_tested DESC
+		LIMIT $3`
+
+	rows, err := r.db.QueryContext(ctx, query, staleDays, staleDays, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list overdue control tests: %w", err)
+	}
+	defer rows.Close()
+
+	results := make([]*simulation.OverdueControlTest, 0)
+	for rows.Next() {
+		var tenantIDStr, idStr, name, framework string
+		var daysSince int
+		if err := rows.Scan(&tenantIDStr, &idStr, &name, &framework, &daysSince); err != nil {
+			return nil, fmt.Errorf("failed to scan overdue control test: %w", err)
+		}
+		tenantID, err := shared.IDFromString(tenantIDStr)
+		if err != nil {
+			continue
+		}
+		ctID, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		results = append(results, &simulation.OverdueControlTest{
+			TenantID:        tenantID,
+			ControlTestID:   ctID,
+			Name:            name,
+			Framework:       framework,
+			DaysSinceTested: daysSince,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate overdue control tests: %w", err)
+	}
+	return results, nil
+}
+
+// MarkOverdue resets a control test's status to 'untested' to signal stale detection coverage.
+// This is a deliberate write — the scheduler only calls it when a test has genuinely lapsed.
+func (r *ControlTestRepository) MarkOverdue(ctx context.Context, tenantID, id shared.ID) error {
+	query := `UPDATE control_tests SET status = $3, updated_at = $4
+		WHERE tenant_id = $1 AND id = $2 AND status NOT IN ('untested')`
+
+	_, err := r.db.ExecContext(ctx, query,
+		tenantID.String(), id.String(),
+		string(simulation.ControlTestStatusUntested), time.Now(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to mark control test overdue: %w", err)
+	}
+	return nil
+}

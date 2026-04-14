@@ -1331,3 +1331,11 @@ func (m *wfActionMockFindingRepo) FindRelatedCVEs(_ context.Context, _ shared.ID
 func (m *wfActionMockFindingRepo) ListByStatusAndAssets(_ context.Context, _ shared.ID, _ vulnerability.FindingStatus, _ []shared.ID) ([]*vulnerability.Finding, error) {
 	return nil, nil
 }
+
+func (m *wfActionMockFindingRepo) GetByWorkItemURI(_ context.Context, _ shared.ID, _ string) (*vulnerability.Finding, error) {
+	return nil, nil
+}
+
+func (m *wfActionMockFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
+	return nil
+}

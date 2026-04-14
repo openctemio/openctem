@@ -397,6 +397,22 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 		delete(input.Properties, key)
 	}
 
+	// Normalize ALL camelCase property keys to snake_case.
+	// Collectors may send either convention; we standardize on snake_case.
+	// Generic converter handles any camelCase key automatically.
+	normalizedProps := make(map[string]any, len(input.Properties))
+	for key, val := range input.Properties {
+		snakeKey := camelToSnakeCase(key)
+		// If both camelCase and snake_case exist, prefer the snake_case value
+		if snakeKey != key {
+			if _, exists := normalizedProps[snakeKey]; exists {
+				continue // snake_case version already set, skip camelCase duplicate
+			}
+		}
+		normalizedProps[snakeKey] = val
+	}
+	input.Properties = normalizedProps
+
 	// Extract DNS fields from nested domain.dns_records → flat properties
 	// Collector sends: {"domain": {"dns_records": [{"type":"A","value":"1.2.3.4","ttl":300}]}}
 	// UI reads flat: record_type, resolved_ip, cname_target, ttl, dns_record_types, resolved_ips
@@ -476,6 +492,36 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 	}
 
 	return input
+}
+
+// camelToSnakeCase converts a camelCase or PascalCase string to snake_case.
+// Examples: "cpuCores" → "cpu_cores", "memoryGB" → "memory_gb", "apiType" → "api_type"
+// Already snake_case or lowercase strings pass through unchanged.
+func camelToSnakeCase(s string) string {
+	if s == "" {
+		return s
+	}
+	var result []byte
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			// Insert underscore before uppercase if:
+			// - not the first character
+			// - AND (previous char is lowercase OR next char is lowercase)
+			// This handles: "memoryGB" → "memory_gb", "apiURL" → "api_url"
+			if i > 0 {
+				prev := s[i-1]
+				if prev >= 'a' && prev <= 'z' {
+					result = append(result, '_')
+				} else if prev >= 'A' && prev <= 'Z' && i+1 < len(s) && s[i+1] >= 'a' && s[i+1] <= 'z' {
+					result = append(result, '_')
+				}
+			}
+			result = append(result, byte(r-'A'+'a'))
+		} else {
+			result = append(result, byte(r))
+		}
+	}
+	return string(result)
 }
 
 // unique returns a deduplicated copy of a string slice, preserving order.

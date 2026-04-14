@@ -159,6 +159,9 @@ type Services struct {
 	APIKey  *app.APIKeyService
 	Webhook *app.WebhookService
 
+	// Jira Bidirectional Sync
+	JiraSync *app.JiraSyncService
+
 	// AI Triage
 	AITriage *app.AITriageService
 
@@ -353,6 +356,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize API Key & Webhook services
 	s.APIKey = app.NewAPIKeyService(repos.APIKey, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
+	s.JiraSync = app.NewJiraSyncService(repos.Finding, log)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)

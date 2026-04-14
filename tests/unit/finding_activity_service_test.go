@@ -1616,3 +1616,11 @@ func (m *stubFindingRepo) FindRelatedCVEs(_ context.Context, _ shared.ID, _ stri
 func (m *stubFindingRepo) ListByStatusAndAssets(_ context.Context, _ shared.ID, _ vulnerability.FindingStatus, _ []shared.ID) ([]*vulnerability.Finding, error) {
 	return nil, nil
 }
+
+func (m *stubFindingRepo) GetByWorkItemURI(_ context.Context, _ shared.ID, _ string) (*vulnerability.Finding, error) {
+	return nil, nil
+}
+
+func (m *stubFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
+	return nil
+}

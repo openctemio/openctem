@@ -152,6 +152,7 @@ func registerVulnerabilityRoutes(
 	router Router,
 	h *handler.VulnerabilityHandler,
 	findingActionsHandler *handler.FindingActionsHandler,
+	jiraHandler *handler.JiraWebhookHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -230,6 +231,12 @@ func registerVulnerabilityRoutes(
 
 		// Data flows (attack paths / taint tracking)
 		r.GET("/{id}/dataflows", h.GetFindingDataFlows, middleware.Require(permission.FindingsRead))
+
+		// Jira ticket linking — store/remove Jira ticket references on findings
+		if jiraHandler != nil {
+			r.POST("/{id}/link-ticket", jiraHandler.LinkTicket, middleware.Require(permission.FindingsWrite))
+			r.DELETE("/{id}/link-ticket", jiraHandler.UnlinkTicket, middleware.Require(permission.FindingsWrite))
+		}
 
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete))

@@ -929,3 +929,11 @@ func (m *mockFindingRepoForScope) FindRelatedCVEs(_ context.Context, _ shared.ID
 func (m *mockFindingRepoForScope) ListByStatusAndAssets(_ context.Context, _ shared.ID, _ vulnerability.FindingStatus, _ []shared.ID) ([]*vulnerability.Finding, error) {
 	return nil, nil
 }
+
+func (m *mockFindingRepoForScope) GetByWorkItemURI(_ context.Context, _ shared.ID, _ string) (*vulnerability.Finding, error) {
+	return nil, nil
+}
+
+func (m *mockFindingRepoForScope) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
+	return nil
+}

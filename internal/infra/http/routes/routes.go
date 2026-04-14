@@ -85,6 +85,9 @@ type Handlers struct {
 	// Finding Lifecycle (closed-loop: fix_applied → verified → resolved)
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
 
+	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
+	JiraWebhook *handler.JiraWebhookHandler // nil if not initialized (no database)
+
 	// Pentest Campaign Management handlers
 	Pentest                *handler.PentestHandler             // nil if not initialized (no database)
 	PentestCampaignRoleQry middleware.CampaignRoleQuerier       // Campaign role resolver for RBAC middleware
@@ -272,8 +275,11 @@ func Register(
 
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
 	if h.Vulnerability != nil {
-		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, authMiddleware, userSync)
+		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, authMiddleware, userSync)
 	}
+
+	// Incoming Jira webhook — public endpoint (no JWT), Jira POSTs status changes here.
+	registerIncomingWebhookRoutes(router, h.JiraWebhook)
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
 	var activityRateLimiter *middleware.FindingActivityRateLimiter

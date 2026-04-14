@@ -795,6 +795,40 @@ func (r *FindingRepository) Delete(ctx context.Context, tenantID, id shared.ID) 
 	return nil
 }
 
+// UpdateWorkItemURIs sets the work_item_uris column for a finding.
+// Only modifies work_item_uris — all other fields are untouched.
+func (r *FindingRepository) UpdateWorkItemURIs(ctx context.Context, tenantID, id shared.ID, uris []string) error {
+	if uris == nil {
+		uris = []string{}
+	}
+	query := `UPDATE findings SET work_item_uris = $3, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2`
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String(), pq.Array(uris))
+	if err != nil {
+		return fmt.Errorf("failed to update work item uris: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return vulnerability.FindingNotFoundError(id)
+	}
+	return nil
+}
+
+// GetByWorkItemURI retrieves a finding that contains the given work item URI.
+// Used by the Jira webhook receiver to route inbound status updates back to findings.
+func (r *FindingRepository) GetByWorkItemURI(ctx context.Context, tenantID shared.ID, uri string) (*vulnerability.Finding, error) {
+	query := r.selectQuery() + ` WHERE tenant_id = $1 AND $2 = ANY(work_item_uris) LIMIT 1`
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), uri)
+	finding, err := r.scanFinding(row, fmt.Errorf("%w: finding not found for work item URI", shared.ErrNotFound))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get finding by work item URI: %w", err)
+	}
+	return finding, nil
+}
+
 // List retrieves findings matching the filter with pagination.
 func (r *FindingRepository) List(ctx context.Context, filter vulnerability.FindingFilter, opts vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
 	baseQuery := r.selectQuery()

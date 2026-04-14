@@ -149,6 +149,63 @@ func TestPromoteKnownProperties_RemoveColumnNames(t *testing.T) {
 	assert.Equal(t, "should-stay", result.Properties["vendor"])
 }
 
+func TestPromoteKnownProperties_CamelToSnakeNormalization(t *testing.T) {
+	input := app.CreateAssetInput{
+		Name: "srv-01",
+		Type: "host",
+		Properties: map[string]any{
+			"cpuCores":    8,
+			"memoryGB":    32,
+			"osVersion":   "22.04",
+			"isVirtual":   true,
+			"openPorts":   []any{"22", "80"},
+			"apiType":     "REST",
+			"baseUrl":     "https://example.com",
+			"vendor":      "Dell",      // already snake_case — stays
+			"record_type": "A",         // already snake_case — stays
+		},
+	}
+
+	result := app.PromoteKnownProperties(input)
+
+	// camelCase keys converted to snake_case
+	assert.Equal(t, 8, result.Properties["cpu_cores"])
+	assert.Equal(t, 32, result.Properties["memory_gb"])
+	assert.Equal(t, "22.04", result.Properties["os_version"])
+	assert.Equal(t, true, result.Properties["is_virtual"])
+	assert.Equal(t, []any{"22", "80"}, result.Properties["open_ports"])
+	assert.Equal(t, "REST", result.Properties["api_type"])
+	assert.Equal(t, "https://example.com", result.Properties["base_url"])
+
+	// Already snake_case or single-word keys unchanged
+	assert.Equal(t, "Dell", result.Properties["vendor"])
+	assert.Equal(t, "A", result.Properties["record_type"])
+
+	// Old camelCase keys removed
+	assert.Nil(t, result.Properties["cpuCores"])
+	assert.Nil(t, result.Properties["memoryGB"])
+	assert.Nil(t, result.Properties["osVersion"])
+	assert.Nil(t, result.Properties["isVirtual"])
+	assert.Nil(t, result.Properties["openPorts"])
+}
+
+func TestPromoteKnownProperties_CamelSnakeDuplicate(t *testing.T) {
+	// When both camelCase and snake_case exist, prefer snake_case
+	input := app.CreateAssetInput{
+		Name: "srv-01",
+		Type: "host",
+		Properties: map[string]any{
+			"cpu_cores": 16,      // snake_case (should win)
+			"cpuCores":  8,       // camelCase (should be dropped)
+		},
+	}
+
+	result := app.PromoteKnownProperties(input)
+
+	assert.Equal(t, 16, result.Properties["cpu_cores"])
+	assert.Nil(t, result.Properties["cpuCores"])
+}
+
 func TestPromoteKnownProperties_EmptyProperties(t *testing.T) {
 	input := app.CreateAssetInput{
 		Name:        "srv-01",
