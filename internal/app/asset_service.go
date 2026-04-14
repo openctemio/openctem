@@ -183,7 +183,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 
 	// Promote known fields from properties into proper columns.
 	// Collectors may send sub_type, scope, etc. inside properties JSONB.
-	input = promoteKnownProperties(input)
+	input = PromoteKnownProperties(input)
 
 	s.logger.Info("creating asset", "name", input.Name)
 
@@ -322,7 +322,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 //   - scope, exposure, criticality → override top-level input fields if empty
 //   - description → override if empty
 //   - tags → merged with input.Tags
-func promoteKnownProperties(input CreateAssetInput) CreateAssetInput {
+func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 	if len(input.Properties) == 0 {
 		return input
 	}

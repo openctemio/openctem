@@ -323,7 +323,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		HasFindings:   parseQueryBoolPtr(query.Get("has_findings")),
 		IsCrownJewel:  parseQueryBoolPtr(query.Get("is_crown_jewel")),
 		SubType:          nilIfEmpty(query.Get("sub_type")),
-		PropertiesFilter: parsePropertiesFilter(query.Get("properties")),
+		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
 		Sort:             query.Get("sort"),
 		Page:          parseQueryInt(query.Get("page"), 1),
 		PerPage:       parseQueryInt(query.Get("per_page"), 20),

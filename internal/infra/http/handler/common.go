@@ -211,7 +211,7 @@ func nilIfEmpty(s string) *string {
 
 // parsePropertiesFilter parses "key:value,key2:value2" into a map.
 // Keys are validated to alphanumeric+underscore only. Max 5 pairs.
-func parsePropertiesFilter(raw string) map[string]string {
+func ParsePropertiesFilter(raw string) map[string]string {
 	if raw == "" {
 		return nil
 	}
