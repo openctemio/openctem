@@ -397,6 +397,19 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 		delete(input.Properties, key)
 	}
 
+	// Auto-detect subdomain: if type is "domain" but root_domain differs from name,
+	// it's actually a subdomain. This prevents collectors from creating subdomains
+	// with the wrong asset_type.
+	if input.Type == "domain" {
+		if rootDomain, ok := input.Properties["root_domain"].(string); ok && rootDomain != "" {
+			cleanRoot := strings.TrimSuffix(rootDomain, ".")
+			cleanName := strings.TrimSuffix(input.Name, ".")
+			if cleanRoot != cleanName && strings.HasSuffix(cleanName, "."+cleanRoot) {
+				input.Type = "subdomain"
+			}
+		}
+	}
+
 	return input
 }
 
