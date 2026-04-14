@@ -403,10 +403,12 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 	normalizedProps := make(map[string]any, len(input.Properties))
 	for key, val := range input.Properties {
 		snakeKey := camelToSnakeCase(key)
+		// Merge singular/plural aliases to canonical plural form
+		snakeKey = normalizePropertyAlias(snakeKey)
 		// If both camelCase and snake_case exist, prefer the snake_case value
 		if snakeKey != key {
 			if _, exists := normalizedProps[snakeKey]; exists {
-				continue // snake_case version already set, skip camelCase duplicate
+				continue // canonical version already set, skip duplicate
 			}
 		}
 		normalizedProps[snakeKey] = val
@@ -522,6 +524,23 @@ func camelToSnakeCase(s string) string {
 		}
 	}
 	return string(result)
+}
+
+// propertyAliases maps singular/legacy property keys to their canonical plural form.
+// This prevents duplicate facets like "nameserver" vs "nameservers".
+var propertyAliases = map[string]string{
+	"nameserver":  "nameservers",
+	"technology":  "technologies",
+	"san":         "sans",
+	"resolved_ip": "resolved_ips",
+}
+
+// normalizePropertyAlias maps known singular keys to their canonical plural form.
+func normalizePropertyAlias(key string) string {
+	if canonical, ok := propertyAliases[key]; ok {
+		return canonical
+	}
+	return key
 }
 
 // unique returns a deduplicated copy of a string slice, preserving order.

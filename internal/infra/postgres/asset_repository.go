@@ -867,11 +867,12 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Properties filter — JSONB containment using parameterized jsonb_build_object (injection-safe)
-	// Uses idx_assets_properties GIN index for efficient lookups
+	// Properties filter — JSONB containment using GIN index.
+	// Uses ->> text comparison for consistent matching across all value types
+	// (booleans, numbers, strings, arrays are all compared as text via ->>).
 	for key, val := range filter.PropertiesFilter {
 		conditions = append(conditions, fmt.Sprintf(
-			"a.properties @> jsonb_build_object($%d::text, $%d::text)", argIndex, argIndex+1))
+			"a.properties ->> $%d = $%d", argIndex, argIndex+1))
 		args = append(args, key, val)
 		argIndex += 2
 	}
