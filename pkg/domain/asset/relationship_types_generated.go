@@ -151,6 +151,10 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 				Sources: []string{ "repository" },
 				Targets: []string{ "container_image" },
 			},
+			{
+				Sources: []string{ "domain" },
+				Targets: []string{ "subdomain" },
+			},
 		},
 	},
 	RelTypeExposes: {
@@ -179,10 +183,10 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 		Category:    "attack_surface_mapping",
 		Direct:      "Resolves To",
 		Inverse:     "Resolved By",
-		Description: "Literal DNS A/AAAA resolution — a domain resolves to an IP record or a load balancer that owns that IP. STRICT semantic: target MUST be the network endpoint, not the server that happens to own the IP. For \"this domain leads to this server / website\" use Exposes. For subdomain → parent domain or CNAME aliases use Cname Of.",
+		Description: "Literal DNS A/AAAA resolution — a domain or subdomain resolves to an IP record or a load balancer that owns that IP. STRICT semantic: target MUST be the network endpoint, not the server that happens to own the IP. For \"this domain leads to this server / website\" use Exposes. For subdomain → parent domain hierarchy use Contains.",
 		Constraints: []RelationshipConstraint{
 			{
-				Sources: []string{ "domain" },
+				Sources: []string{ "domain", "subdomain" },
 				Targets: []string{ "ip_address", "load_balancer" },
 			},
 		},
@@ -192,11 +196,11 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 		Category:    "attack_surface_mapping",
 		Direct:      "CNAME Of",
 		Inverse:     "Has CNAME",
-		Description: "DNS aliasing — this name is a CNAME for that name. Also used for subdomain → parent domain logical relationships. Distinct from Resolves To which captures the final IP/host record.",
+		Description: "DNS CNAME aliasing — this name is a CNAME record pointing to another name. Strictly for actual DNS CNAME records, NOT for subdomain hierarchy (use Contains for that). Distinct from Resolves To which captures the final A/AAAA IP record.",
 		Constraints: []RelationshipConstraint{
 			{
-				Sources: []string{ "domain" },
-				Targets: []string{ "domain" },
+				Sources: []string{ "domain", "subdomain" },
+				Targets: []string{ "domain", "subdomain" },
 			},
 		},
 	},

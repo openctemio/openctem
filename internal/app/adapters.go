@@ -320,3 +320,39 @@ func convertToPipelineValidationResult(r *ValidationResult) *pipeline.Validation
 		Errors: errors,
 	}
 }
+
+// =============================================================================
+// Verification Scan Trigger Adapter
+// =============================================================================
+
+// verificationScanTriggerAdapter adapts scan.Service to FindingActionsService.VerificationScanTrigger.
+type verificationScanTriggerAdapter struct {
+	svc *scan.Service
+}
+
+// NewVerificationScanTriggerAdapter creates an adapter that wraps scan.Service
+// for use as a VerificationScanTrigger.
+func NewVerificationScanTriggerAdapter(svc *scan.Service) VerificationScanTrigger {
+	return &verificationScanTriggerAdapter{svc: svc}
+}
+
+// TriggerVerificationScan implements VerificationScanTrigger.
+func (a *verificationScanTriggerAdapter) TriggerVerificationScan(
+	ctx context.Context, tenantID, createdBy, scannerName, workflowID string, targets []string,
+) (pipelineRunID, scanID string, err error) {
+	result, err := a.svc.QuickScan(ctx, scan.QuickScanInput{
+		TenantID:    tenantID,
+		Targets:     targets,
+		ScannerName: scannerName,
+		WorkflowID:  workflowID,
+		CreatedBy:   createdBy,
+		Tags:        []string{"verification-scan"},
+		Config: map[string]any{
+			"trigger": "verification_scan",
+		},
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return result.PipelineRunID, result.ScanID, nil
+}

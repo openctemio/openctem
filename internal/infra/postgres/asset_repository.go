@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -285,7 +286,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		    compliance_scope = $26, data_classification = $27, pii_data_exposed = $28, phi_data_exposed = $29, regulatory_owner_id = $30,
 		    is_internet_accessible = $31, exposure_changed_at = $32, last_exposure_level = $33,
 		    last_seen = $34, updated_at = $35
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $36
 	`
 
 	updateOwnerRef := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -325,6 +326,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		nullString(string(a.LastExposureLevel())),
 		a.LastSeen(),
 		a.UpdatedAt(),
+		a.TenantID().String(),
 	)
 
 	if err != nil {
@@ -1059,12 +1061,19 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 
 // ListDistinctTags returns distinct tags across all assets for a tenant.
 // Supports prefix filtering for autocomplete and a limit for result size.
-func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error) {
+func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error) {
 	query := `SELECT DISTINCT tag FROM assets, unnest(tags) AS tag WHERE tenant_id = $1`
 	args := []any{tenantID.String()}
+	argIdx := 2
+
+	if len(types) > 0 {
+		query += fmt.Sprintf(` AND asset_type = ANY($%d)`, argIdx)
+		args = append(args, pq.Array(types))
+		argIdx++
+	}
 
 	if prefix != "" {
-		query += ` AND tag ILIKE $2`
+		query += fmt.Sprintf(` AND tag ILIKE $%d`, argIdx)
 		args = append(args, escapeLikePattern(prefix)+"%")
 	}
 
@@ -1230,14 +1239,15 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 // This version collapses everything into one query using a CTE + UNION ALL,
 // trading slightly more complex SQL for an 83% reduction in DB round-trips.
 // PostgreSQL plans a single scan of the filtered CTE for all aggregates.
-func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string) (*asset.AggregateStats, error) {
+func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
 	stats := &asset.AggregateStats{
-		ByType:        make(map[string]int),
-		BySubType:     make(map[string]int),
-		ByStatus:      make(map[string]int),
-		ByCriticality: make(map[string]int),
-		ByScope:       make(map[string]int),
-		ByExposure:    make(map[string]int),
+		ByType:         make(map[string]int),
+		BySubType:      make(map[string]int),
+		ByStatus:       make(map[string]int),
+		ByCriticality:  make(map[string]int),
+		ByScope:        make(map[string]int),
+		ByExposure:     make(map[string]int),
+		MetadataCounts: make(map[string]map[string]int),
 	}
 
 	// Build the WHERE clause once.
@@ -1305,6 +1315,26 @@ SELECT category, key, value FROM (
 ) sub
 `, filterClause)
 
+	// Append metadata count queries for requested JSONB property fields.
+	// Each field adds a UNION ALL that groups by the property value.
+	// Only alphanumeric + underscore field names are allowed (SQL injection safe).
+	validField := regexp.MustCompile(`^[a-z][a-z0-9_]{0,49}$`)
+	for _, field := range countByFields {
+		if !validField.MatchString(field) {
+			continue
+		}
+		// Insert before the closing ") sub" by replacing it
+		query = strings.TrimSuffix(strings.TrimSpace(query), ") sub")
+		query += fmt.Sprintf(`
+  UNION ALL
+  SELECT 'meta:%s', COALESCE(a.properties->>'%s', 'null'), COUNT(*)::float8
+  FROM filtered a
+  WHERE a.properties ? '%s'
+  GROUP BY a.properties->>'%s'
+) sub
+`, field, field, field, field)
+	}
+
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get aggregate stats: %w", err)
@@ -1340,6 +1370,15 @@ SELECT category, key, value FROM (
 			stats.ByScope[key] = int(value)
 		case "exposure":
 			stats.ByExposure[key] = int(value)
+		default:
+			// Handle dynamic metadata counts: "meta:field_name"
+			if strings.HasPrefix(category, "meta:") {
+				field := strings.TrimPrefix(category, "meta:")
+				if stats.MetadataCounts[field] == nil {
+					stats.MetadataCounts[field] = make(map[string]int)
+				}
+				stats.MetadataCounts[field][key] = int(value)
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -1350,94 +1389,102 @@ SELECT category, key, value FROM (
 }
 
 // GetPropertyFacets returns distinct JSONB property keys and their top values.
-// Uses a 2-step approach: first get keys, then get top values per key.
+// Uses a single query that expands JSONB keys and values together, then groups
+// in Go — replacing the previous 1+N query pattern.
 func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]asset.PropertyFacet, error) {
-	// Build WHERE clause
-	where := "WHERE a.tenant_id = $1 AND a.properties IS NOT NULL AND a.properties != '{}'::jsonb"
+	// Build optional extra filter clauses (applied inside the sub-select).
+	extraWhere := ""
 	args := []any{tenantID.String()}
 	idx := 2
 
 	if len(types) > 0 {
-		where += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
+		extraWhere += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
 		args = append(args, pq.Array(types))
 		idx++
 	}
 	if subType != "" {
-		where += fmt.Sprintf(" AND a.sub_type = $%d", idx)
+		extraWhere += fmt.Sprintf(" AND a.sub_type = $%d", idx)
 		args = append(args, subType)
-		idx++
+		// idx++ — not needed after the last param
 	}
 
-	// Step 1: Get top property keys with counts (skip array/object values, only scalar)
-	keysQuery := fmt.Sprintf(`
-		SELECT key, COUNT(*) as cnt
+	// Single query: expand every JSONB key/value pair per asset, then aggregate.
+	// jsonb_object_keys() is a set-returning function; using it twice in the same
+	// SELECT causes a parallel scan that PostgreSQL evaluates consistently.
+	// We filter out known array/object keys and keep only scalar values.
+	query := fmt.Sprintf(`
+		SELECT key, val, COUNT(*) AS cnt
 		FROM (
-			SELECT jsonb_object_keys(a.properties) as key
-			FROM assets a %s
-		) keys
+			SELECT
+				jsonb_object_keys(a.properties)                         AS key,
+				a.properties ->> jsonb_object_keys(a.properties)        AS val
+			FROM assets a
+			WHERE a.tenant_id = $1
+			  AND a.properties IS NOT NULL
+			  AND a.properties != '{}'::jsonb
+			  %s
+		) sub
 		WHERE key NOT IN ('ip_addresses', 'dns_records', 'ports', 'technologies', 'interfaces', 'tags')
-		GROUP BY key
-		HAVING COUNT(*) >= 2
-		ORDER BY cnt DESC
-		LIMIT 15
-	`, where)
+		  AND val IS NOT NULL
+		  AND val != ''
+		GROUP BY key, val
+		ORDER BY key, cnt DESC
+	`, extraWhere)
 
-	keyRows, err := r.db.QueryContext(ctx, keysQuery, args...)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get property keys: %w", err)
+		return nil, fmt.Errorf("failed to get property facets: %w", err)
 	}
-	defer func() { _ = keyRows.Close() }()
+	defer func() { _ = rows.Close() }()
 
-	type keyInfo struct {
-		key   string
-		count int
+	// Group results by key in insertion order; track per-key asset count.
+	type facetAccum struct {
+		values     []string
+		totalCount int // sum of per-value counts (≈ asset count for this key)
 	}
-	keys := make([]keyInfo, 0, 15)
-	for keyRows.Next() {
-		var k string
-		var c int
-		if err := keyRows.Scan(&k, &c); err != nil {
-			return nil, fmt.Errorf("failed to scan key: %w", err)
-		}
-		keys = append(keys, keyInfo{key: k, count: c})
-	}
-	if err := keyRows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating keys: %w", err)
-	}
+	order := make([]string, 0, 15)
+	accum := make(map[string]*facetAccum)
 
-	// Step 2: For each key, get distinct values (top 20)
-	facets := make([]asset.PropertyFacet, 0, len(keys))
-	for _, ki := range keys {
-		valQuery := fmt.Sprintf(`
-			SELECT DISTINCT a.properties->>$%d AS val
-			FROM assets a %s AND a.properties ? $%d
-			AND jsonb_typeof(a.properties->$%d) IN ('string', 'number', 'boolean')
-			ORDER BY val
-			LIMIT 20
-		`, idx, where, idx, idx)
-
-		valArgs := append(args, ki.key) //nolint:gocritic
-		valRows, err := r.db.QueryContext(ctx, valQuery, valArgs...)
-		if err != nil {
-			continue // Skip this key on error
+	for rows.Next() {
+		var key, val string
+		var cnt int
+		if err := rows.Scan(&key, &val, &cnt); err != nil {
+			return nil, fmt.Errorf("failed to scan facet row: %w", err)
 		}
 
-		values := make([]string, 0, 20)
-		for valRows.Next() {
-			var v sql.NullString
-			if err := valRows.Scan(&v); err == nil && v.Valid && v.String != "" {
-				values = append(values, v.String)
-			}
+		if _, seen := accum[key]; !seen {
+			accum[key] = &facetAccum{}
+			order = append(order, key)
 		}
-		_ = valRows.Close()
+		fa := accum[key]
+		fa.totalCount += cnt
+		// Keep only the top 20 values per key (rows are ordered by cnt DESC within each key).
+		if len(fa.values) < 20 {
+			fa.values = append(fa.values, val)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating facet rows: %w", err)
+	}
 
-		if len(values) > 0 {
-			facets = append(facets, asset.PropertyFacet{
-				Key:    ki.key,
-				Label:  formatPropertyLabel(ki.key),
-				Values: values,
-				Count:  ki.count,
-			})
+	// Build facets: skip keys with total_count < 2, limit to top 15 keys by count.
+	const maxKeys = 15
+	const minCount = 2
+
+	facets := make([]asset.PropertyFacet, 0, len(order))
+	for _, key := range order {
+		fa := accum[key]
+		if fa.totalCount < minCount {
+			continue
+		}
+		facets = append(facets, asset.PropertyFacet{
+			Key:    key,
+			Label:  formatPropertyLabel(key),
+			Values: fa.values,
+			Count:  fa.totalCount,
+		})
+		if len(facets) == maxKeys {
+			break
 		}
 	}
 
@@ -1453,4 +1500,50 @@ func formatPropertyLabel(key string) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+// ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
+// Used by attack path scoring to build the full in-memory directed graph.
+// Only the columns needed for scoring are fetched.
+func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) ([]asset.AssetNode, error) {
+	const query = `
+		SELECT
+			a.id,
+			a.name,
+			a.asset_type,
+			a.exposure,
+			a.criticality,
+			a.risk_score,
+			COALESCE(a.is_crown_jewel, FALSE),
+			COALESCE(fc.finding_count, 0)
+		FROM assets a
+		LEFT JOIN (
+			SELECT asset_id, COUNT(*) AS finding_count
+			FROM findings
+			GROUP BY asset_id
+		) fc ON fc.asset_id = a.id
+		WHERE a.tenant_id = $1
+		ORDER BY a.created_at
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list all nodes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var nodes []asset.AssetNode
+	for rows.Next() {
+		var n asset.AssetNode
+		if scanErr := rows.Scan(
+			&n.ID, &n.Name, &n.AssetType, &n.Exposure,
+			&n.Criticality, &n.RiskScore, &n.IsCrownJewel, &n.FindingCount,
+		); scanErr != nil {
+			return nil, fmt.Errorf("scan node: %w", scanErr)
+		}
+		nodes = append(nodes, n)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate nodes: %w", err)
+	}
+	return nodes, nil
 }

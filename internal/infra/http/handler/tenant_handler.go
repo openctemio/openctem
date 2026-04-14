@@ -699,7 +699,7 @@ func (h *TenantHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMemberRole handles PATCH /api/v1/tenants/{tenant}/members/{memberId}
 func (h *TenantHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
-	memberID := r.PathValue("memberId")
+	memberID := r.PathValue("userId")
 	if memberID == "" {
 		apierror.BadRequest("Member ID is required").WriteJSON(w)
 		return
@@ -734,7 +734,7 @@ func (h *TenantHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request)
 
 // RemoveMember handles DELETE /api/v1/tenants/{tenant}/members/{memberId}
 func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
-	memberID := r.PathValue("memberId")
+	memberID := r.PathValue("userId")
 	if memberID == "" {
 		apierror.BadRequest("Member ID is required").WriteJSON(w)
 		return
@@ -751,7 +751,7 @@ func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 
 // SuspendMember handles POST /api/v1/tenants/{tenant}/members/{memberId}/suspend
 func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
-	memberID := r.PathValue("memberId")
+	memberID := r.PathValue("userId")
 	if memberID == "" {
 		apierror.BadRequest("Member ID is required").WriteJSON(w)
 		return
@@ -770,7 +770,7 @@ func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
 
 // ReactivateMember handles POST /api/v1/tenants/{tenant}/members/{memberId}/reactivate
 func (h *TenantHandler) ReactivateMember(w http.ResponseWriter, r *http.Request) {
-	memberID := r.PathValue("memberId")
+	memberID := r.PathValue("userId")
 	if memberID == "" {
 		apierror.BadRequest("Member ID is required").WriteJSON(w)
 		return

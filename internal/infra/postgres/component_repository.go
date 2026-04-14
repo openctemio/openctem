@@ -722,7 +722,10 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 		  AND v.cisa_kev_date_added IS NOT NULL
 		  AND f.status NOT IN ('resolved', 'false_positive')
 	`
-	_ = r.db.QueryRowContext(ctx, kevQuery, tenantID.String()).Scan(&stats.CisaKevComponents)
+	if err := r.db.QueryRowContext(ctx, kevQuery, tenantID.String()).Scan(&stats.CisaKevComponents); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		// Non-critical metric — continue with zero value if query fails
+		stats.CisaKevComponents = 0
+	}
 
 	// License risk breakdown from component_licenses → licenses
 	licenseRiskQuery := `

@@ -55,8 +55,9 @@ type Services struct {
 	Asset             *app.AssetService
 	AssetGroup        *app.AssetGroupService
 	AssetType         *app.AssetTypeService
-	AssetRelationship *app.AssetRelationshipService
-	Scope             *app.ScopeService
+	AssetRelationship      *app.AssetRelationshipService
+	RelationshipSuggestion *app.RelationshipSuggestionService
+	Scope                  *app.ScopeService
 	AttackSurface     *app.AttackSurfaceService
 
 	// Configuration (read-only system config)
@@ -159,6 +160,9 @@ type Services struct {
 	APIKey  *app.APIKeyService
 	Webhook *app.WebhookService
 
+	// Jira Bidirectional Sync
+	JiraSync *app.JiraSyncService
+
 	// AI Triage
 	AITriage *app.AITriageService
 
@@ -224,8 +228,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = app.NewScopeService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
-	s.AttackSurface = app.NewAttackSurfaceService(repos.Asset, log)
+	s.AttackSurface = app.NewAttackSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
+	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 
 	// Initialize finding source service (read-only system configuration)
 	s.FindingSource = app.NewFindingSourceService(repos.FindingSource, repos.FindingSourceCat, log)
@@ -353,6 +358,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize API Key & Webhook services
 	s.APIKey = app.NewAPIKeyService(repos.APIKey, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
+	s.JiraSync = app.NewJiraSyncService(repos.Finding, log)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
@@ -461,6 +467,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithAuditService(scanAuditAdapter),
 		scan.WithProfileRepo(repos.ScanProfile),
 	)
+
+	// Wire verification scan trigger: allows FindingActionsService to launch targeted scans
+	// when a finding transitions to fix_applied and the user requests scan-based verification.
+	s.FindingActions.SetVerificationScanTrigger(app.NewVerificationScanTriggerAdapter(s.Scan))
 
 	// Create adapters for pipeline sub-package
 	pipelineAuditAdapter := app.NewPipelineAuditServiceAdapter(s.Audit)

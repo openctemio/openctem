@@ -196,6 +196,10 @@ func (m *MockRelationshipRepository) CountByType(_ context.Context, _ shared.ID)
 	return out, nil
 }
 
+func (m *MockRelationshipRepository) ListAllEdges(_ context.Context, _ shared.ID) ([]asset.RelationshipEdge, error) {
+	return nil, nil
+}
+
 // AddRelationshipWithAssets adds a pre-built RelationshipWithAssets to the mock store.
 func (m *MockRelationshipRepository) AddRelationshipWithAssets(rwa *asset.RelationshipWithAssets) {
 	m.relationships[rwa.Relationship.ID().String()] = rwa.Relationship

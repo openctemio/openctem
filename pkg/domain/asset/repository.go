@@ -79,7 +79,7 @@ type Repository interface {
 
 	// ListDistinctTags returns distinct tags across all assets for a tenant.
 	// Supports prefix filtering for autocomplete and a limit for result size.
-	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error)
+	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error)
 
 	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
 	// This replaces the N+1 pattern of calling Count() per type.
@@ -98,10 +98,30 @@ type Repository interface {
 
 	// GetAggregateStats computes all asset statistics using SQL aggregation.
 	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string) (*AggregateStats, error)
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
 
 	// GetPropertyFacets returns distinct JSONB property keys and their top values for faceted filtering.
 	GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]PropertyFacet, error)
+
+	// ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
+	// Used exclusively by attack path scoring which needs the full set of assets
+	// in-memory. Columns are minimal (id, name, type, exposure, criticality,
+	// risk_score, is_crown_jewel, finding_count) to keep the query fast.
+	ListAllNodes(ctx context.Context, tenantID shared.ID) ([]AssetNode, error)
+}
+
+// AssetNode is a lightweight representation of an asset used for in-memory
+// graph traversal (attack path scoring). It carries only the fields needed
+// to build adjacency lists and compute path risk scores.
+type AssetNode struct {
+	ID           string
+	Name         string
+	AssetType    string
+	Exposure     string
+	Criticality  string
+	RiskScore    int
+	IsCrownJewel bool
+	FindingCount int
 }
 
 // PropertyFacet represents a property key with its distinct values for filtering UI.
@@ -125,6 +145,8 @@ type AggregateStats struct {
 	FindingsTotal int
 	HighRiskCount int
 	RiskScoreAvg  float64
+	// MetadataCounts: JSONB property value counts. Key=field, Value=map[value]count.
+	MetadataCounts map[string]map[string]int
 }
 
 // AssetTypeStats holds per-type aggregate counts.

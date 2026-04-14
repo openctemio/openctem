@@ -58,7 +58,7 @@ func registerAgentRoutes(
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
 		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
 		// Ingest endpoints use a 50MB body limit (vs 10MB default) for large scan reports
-		r.POST("/ingest", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware)
+		r.POST("/ingest", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware) // Primary CTIS ingest endpoint
 		r.POST("/ingest/check", ingestHandler.CheckFingerprints, ingestBodyLimit, decompressMiddleware)
 		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, ingestBodyLimit, decompressMiddleware)
 		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware)
@@ -263,31 +263,31 @@ func registerToolRoutes(
 
 	// Tenant Tool Config routes (tenant-scoped)
 	router.Group("/api/v1/tenant-tools", func(r Router) {
-		// Bulk operations (must be before /{tool_id} to avoid route conflicts)
-		r.POST("/bulk-enable", h.BulkEnable, middleware.Require(permission.TenantToolsWrite))
-		r.POST("/bulk-disable", h.BulkDisable, middleware.Require(permission.TenantToolsWrite))
+		// Bulk operations (must be before /{toolId} to avoid route conflicts)
+		r.POST("/bulk/enable", h.BulkEnable, middleware.Require(permission.TenantToolsWrite))
+		r.POST("/bulk/disable", h.BulkDisable, middleware.Require(permission.TenantToolsWrite))
 
-		// List all tools with tenant-specific enabled status (must be before /{tool_id})
+		// List all tools with tenant-specific enabled status (must be before /{toolId})
 		r.GET("/all-tools", h.ListAllTools, middleware.Require(permission.TenantToolsRead))
 
 		// Read operations
 		r.GET("/", h.ListTenantConfigs, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{tool_id}", h.GetTenantConfig, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{tool_id}/effective-config", h.GetEffectiveConfig, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{tool_id}/with-config", h.GetToolWithConfig, middleware.Require(permission.TenantToolsRead))
+		r.GET("/{toolId}", h.GetTenantConfig, middleware.Require(permission.TenantToolsRead))
+		r.GET("/{toolId}/effective-config", h.GetEffectiveConfig, middleware.Require(permission.TenantToolsRead))
+		r.GET("/{toolId}/with-config", h.GetToolWithConfig, middleware.Require(permission.TenantToolsRead))
 
 		// Write operations
-		r.PUT("/{tool_id}", h.UpdateTenantConfig, middleware.Require(permission.TenantToolsWrite))
+		r.PUT("/{toolId}", h.UpdateTenantConfig, middleware.Require(permission.TenantToolsWrite))
 
 		// Delete operations
-		r.DELETE("/{tool_id}", h.DeleteTenantConfig, middleware.Require(permission.TenantToolsDelete))
+		r.DELETE("/{toolId}", h.DeleteTenantConfig, middleware.Require(permission.TenantToolsDelete))
+
+		// Stats (consolidated from /tool-stats)
+		r.GET("/stats", h.GetTenantStats, middleware.Require(permission.TenantToolsRead))
+		r.GET("/stats/{toolId}", h.GetToolStats, middleware.Require(permission.TenantToolsRead))
 	}, tenantMiddlewares...)
 
-	// Tool Stats routes (tenant-scoped)
-	router.Group("/api/v1/tool-stats", func(r Router) {
-		r.GET("/", h.GetTenantStats, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{tool_id}", h.GetToolStats, middleware.Require(permission.TenantToolsRead))
-	}, tenantMiddlewares...)
+	// /tool-stats removed — use /tenant-tools/stats
 }
 
 // registerToolCategoryRoutes registers tool category endpoints.
@@ -373,25 +373,20 @@ func registerScanRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Quick scan endpoint - separate from /scans to avoid conflict
-	router.Group("/api/v1/quick-scan", func(r Router) {
-		// Apply rate limiting to quick scans (stricter)
-		if triggerRateLimiter != nil {
-			r.POST("/", h.QuickScan, middleware.Require(permission.ScansWrite), triggerRateLimiter.QuickScanMiddleware())
-		} else {
-			r.POST("/", h.QuickScan, middleware.Require(permission.ScansWrite))
-		}
-	}, tenantMiddlewares...)
-
-	// Scan management overview stats
-	router.Group("/api/v1/scan-management", func(r Router) {
-		r.GET("/stats", h.GetOverviewStats, middleware.Require(permission.ScansRead))
-	}, tenantMiddlewares...)
+	// /quick-scan and /scan-management removed — use /scans/quick and /scans/overview-stats
 
 	// Scan routes - tenant from JWT token
 	router.Group("/api/v1/scans", func(r Router) {
 		// Stats endpoint (must be before /{id} to avoid matching)
 		r.GET("/stats", h.GetStats, middleware.Require(permission.ScansRead))
+		// Overview stats (consolidated from /scan-management/stats)
+		r.GET("/overview-stats", h.GetOverviewStats, middleware.Require(permission.ScansRead))
+		// Quick scan (consolidated from /quick-scan)
+		if triggerRateLimiter != nil {
+			r.POST("/quick", h.QuickScan, middleware.Require(permission.ScansWrite), triggerRateLimiter.QuickScanMiddleware())
+		} else {
+			r.POST("/quick", h.QuickScan, middleware.Require(permission.ScansWrite))
+		}
 
 		// Bulk operations (must be before /{id} to avoid matching)
 		r.POST("/bulk/activate", h.BulkActivate, middleware.Require(permission.ScansWrite))

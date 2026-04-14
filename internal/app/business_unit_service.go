@@ -63,6 +63,39 @@ func (s *BusinessUnitService) List(ctx context.Context, tenantID string, filter 
 	return s.repo.List(ctx, filter, page)
 }
 
+// UpdateBusinessUnitInput holds input for updating a BU.
+type UpdateBusinessUnitInput struct {
+	TenantID    string
+	ID          string
+	Name        string
+	Description string
+	OwnerName   string
+	OwnerEmail  string
+	Tags        []string
+}
+
+// Update updates an existing business unit.
+func (s *BusinessUnitService) Update(ctx context.Context, input UpdateBusinessUnitInput) (*businessunit.BusinessUnit, error) {
+	tid, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	bid, err := shared.IDFromString(input.ID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid business unit id", shared.ErrValidation)
+	}
+	bu, err := s.repo.GetByID(ctx, tid, bid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get business unit: %w", err)
+	}
+	bu.Update(input.Name, input.Description, input.OwnerName, input.OwnerEmail)
+	bu.SetTags(input.Tags)
+	if err := s.repo.Update(ctx, bu); err != nil {
+		return nil, fmt.Errorf("failed to update business unit: %w", err)
+	}
+	return bu, nil
+}
+
 // Delete deletes a BU.
 func (s *BusinessUnitService) Delete(ctx context.Context, tenantID, buID string) error {
 	tid, _ := shared.IDFromString(tenantID)

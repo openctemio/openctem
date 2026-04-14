@@ -156,7 +156,7 @@ func (h *FindingActivityHandler) GetActivity(w http.ResponseWriter, r *http.Requ
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	findingID := r.PathValue("id")
-	activityID := r.PathValue("activity_id")
+	activityID := r.PathValue("activityId")
 	if findingID == "" || activityID == "" {
 		apierror.BadRequest("Finding ID and Activity ID are required").WriteJSON(w)
 		return

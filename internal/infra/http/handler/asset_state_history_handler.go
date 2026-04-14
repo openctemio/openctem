@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -148,12 +149,15 @@ func (h *AssetStateHistoryHandler) ListByAsset(w http.ResponseWriter, r *http.Re
 
 // List handles GET /api/v1/state-history
 // @Summary      List all state history
-// @Description  Retrieves a paginated list of all state changes for the tenant with optional filtering
+// @Description  Retrieves a paginated list of all state changes for the tenant with optional filtering.
+// @Description  Use ?event_type= with comma-separated values to filter by one or more change types
+// @Description  (e.g. ?event_type=appeared,disappeared replaces the old /appearances and /disappearances endpoints).
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        change_type query string false "Filter by change type"
+// @Param        event_type query string false "Comma-separated change types (appeared,disappeared,shadow_it,exposure_changed,...)"
+// @Param        change_type query string false "Filter by single change type (deprecated: use event_type)"
 // @Param        source query string false "Filter by source"
 // @Param        from query string false "Start time (RFC3339)"
 // @Param        to query string false "End time (RFC3339)"
@@ -241,107 +245,62 @@ func (h *AssetStateHistoryHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // RecentAppearances handles GET /api/v1/state-history/appearances
-// @Summary      Get recent asset appearances
-// @Description  Retrieves recently discovered assets (new assets appearing in scans)
+// @Summary      Get recent asset appearances (deprecated)
+// @Description  Deprecated: use GET /state-history?event_type=appeared instead.
+// @Description  Retrieves recently discovered assets (new assets appearing in scans).
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,since=string}
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/appearances [get]
 func (h *AssetStateHistoryHandler) RecentAppearances(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantIDStr := middleware.MustGetTenantID(ctx)
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
-		return
-	}
-
-	since, limit := h.parseSinceAndLimit(r)
-
-	changes, err := h.repo.GetRecentAppearances(ctx, tenantID, since, limit)
-	if err != nil {
-		h.logger.Error("failed to get recent appearances", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	response := make([]StateChangeResponse, len(changes))
-	for i, change := range changes {
-		response[i] = toStateChangeResponse(change)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":  response,
-		"total": len(response),
-		"since": since.Format(time.RFC3339),
-	})
+	// Deprecated: delegates to List with event_type=appeared pre-set.
+	// Use GET /state-history?event_type=appeared instead.
+	h.listWithPresetEventTypes(w, r, asset.StateChangeAppeared)
 }
 
 // RecentDisappearances handles GET /api/v1/state-history/disappearances
-// @Summary      Get recent asset disappearances
-// @Description  Retrieves assets that have disappeared (no longer seen in scans)
+// @Summary      Get recent asset disappearances (deprecated)
+// @Description  Deprecated: use GET /state-history?event_type=disappeared instead.
+// @Description  Retrieves assets that have disappeared (no longer seen in scans).
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,since=string}
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/disappearances [get]
 func (h *AssetStateHistoryHandler) RecentDisappearances(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantIDStr := middleware.MustGetTenantID(ctx)
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
-		return
-	}
-
-	since, limit := h.parseSinceAndLimit(r)
-
-	changes, err := h.repo.GetRecentDisappearances(ctx, tenantID, since, limit)
-	if err != nil {
-		h.logger.Error("failed to get recent disappearances", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	response := make([]StateChangeResponse, len(changes))
-	for i, change := range changes {
-		response[i] = toStateChangeResponse(change)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":  response,
-		"total": len(response),
-		"since": since.Format(time.RFC3339),
-	})
+	// Deprecated: delegates to List with event_type=disappeared pre-set.
+	// Use GET /state-history?event_type=disappeared instead.
+	h.listWithPresetEventTypes(w, r, asset.StateChangeDisappeared)
 }
 
 // ShadowITCandidates handles GET /api/v1/state-history/shadow-it
-// @Summary      Get Shadow IT candidates
-// @Description  Retrieves assets identified as potential Shadow IT (unexpected or unauthorized resources)
+// @Summary      Get Shadow IT candidates (deprecated)
+// @Description  Deprecated: use GET /state-history?event_type=appeared with scope filtering instead.
+// @Description  Retrieves assets identified as potential Shadow IT (appeared with shadow scope).
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,since=string}
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/shadow-it [get]
 func (h *AssetStateHistoryHandler) ShadowITCandidates(w http.ResponseWriter, r *http.Request) {
+	// Deprecated: shadow-it uses a specialized JOIN query (scope='shadow').
+	// Keep delegating to the dedicated repo method for correctness.
 	ctx := r.Context()
 	tenantIDStr := middleware.MustGetTenantID(ctx)
 	tenantID, err := shared.IDFromString(tenantIDStr)
@@ -366,114 +325,81 @@ func (h *AssetStateHistoryHandler) ShadowITCandidates(w http.ResponseWriter, r *
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":  response,
-		"total": len(response),
-		"since": since.Format(time.RFC3339),
+		"data":   response,
+		"total":  len(response),
+		"limit":  limit,
+		"offset": 0,
 	})
 }
 
 // ExposureChanges handles GET /api/v1/state-history/exposure-changes
-// @Summary      Get exposure changes
-// @Description  Retrieves assets that have changed exposure status (public/private/restricted)
+// @Summary      Get exposure changes (deprecated)
+// @Description  Deprecated: use GET /state-history?event_type=exposure_changed,internet_exposure_changed instead.
+// @Description  Retrieves assets that have changed exposure status (public/private/restricted).
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,since=string}
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/exposure-changes [get]
 func (h *AssetStateHistoryHandler) ExposureChanges(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantIDStr := middleware.MustGetTenantID(ctx)
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
-		return
-	}
-
-	since, limit := h.parseSinceAndLimit(r)
-
-	changes, err := h.repo.GetExposureChanges(ctx, tenantID, since, limit)
-	if err != nil {
-		h.logger.Error("failed to get exposure changes", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	response := make([]StateChangeResponse, len(changes))
-	for i, change := range changes {
-		response[i] = toStateChangeResponse(change)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":  response,
-		"total": len(response),
-		"since": since.Format(time.RFC3339),
-	})
+	// Deprecated: delegates to List with event_type=exposure_changed,internet_exposure_changed pre-set.
+	// Use GET /state-history?event_type=exposure_changed,internet_exposure_changed instead.
+	h.listWithPresetEventTypes(w, r, asset.StateChangeExposureChanged, asset.StateChangeInternetExposureChanged)
 }
 
 // NewlyExposed handles GET /api/v1/state-history/newly-exposed
-// @Summary      Get newly exposed assets
-// @Description  Retrieves assets that have recently become publicly exposed
+// @Summary      Get newly exposed assets (deprecated)
+// @Description  Deprecated: use GET /state-history?event_type=internet_exposure_changed instead.
+// @Description  Retrieves assets that have recently become publicly exposed.
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,since=string}
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/newly-exposed [get]
 func (h *AssetStateHistoryHandler) NewlyExposed(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantIDStr := middleware.MustGetTenantID(ctx)
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
-		return
-	}
-
-	since, limit := h.parseSinceAndLimit(r)
-
-	changes, err := h.repo.GetNewlyExposedAssets(ctx, tenantID, since, limit)
-	if err != nil {
-		h.logger.Error("failed to get newly exposed assets", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	response := make([]StateChangeResponse, len(changes))
-	for i, change := range changes {
-		response[i] = toStateChangeResponse(change)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":  response,
-		"total": len(response),
-		"since": since.Format(time.RFC3339),
-	})
+	// Deprecated: delegates to List with event_type=internet_exposure_changed pre-set.
+	// Use GET /state-history?event_type=internet_exposure_changed instead.
+	h.listWithPresetEventTypes(w, r, asset.StateChangeInternetExposureChanged)
 }
 
 // ComplianceChanges handles GET /api/v1/state-history/compliance
-// @Summary      Get compliance-related changes
-// @Description  Retrieves state changes that may affect compliance status
+// @Summary      Get compliance-related changes (deprecated)
+// @Description  Deprecated: use GET /state-history?event_type=compliance_changed,classification_changed,owner_changed instead.
+// @Description  Retrieves state changes that may affect compliance status.
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
-// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,since=string}
+// @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/compliance [get]
 func (h *AssetStateHistoryHandler) ComplianceChanges(w http.ResponseWriter, r *http.Request) {
+	// Deprecated: delegates to List with compliance event types pre-set.
+	// Use GET /state-history?event_type=compliance_changed,classification_changed,owner_changed instead.
+	h.listWithPresetEventTypes(w, r,
+		asset.StateChangeComplianceChanged,
+		asset.StateChangeClassificationChanged,
+		asset.StateChangeOwnerChanged,
+	)
+}
+
+// listWithPresetEventTypes is a shared helper that serves the deprecated specialized endpoints.
+// It sets the given event types as defaults and then falls through to the normal List handler,
+// allowing callers to still override via query params if needed.
+func (h *AssetStateHistoryHandler) listWithPresetEventTypes(w http.ResponseWriter, r *http.Request, defaultTypes ...asset.StateChangeType) {
 	ctx := r.Context()
 	tenantIDStr := middleware.MustGetTenantID(ctx)
 	tenantID, err := shared.IDFromString(tenantIDStr)
@@ -482,11 +408,30 @@ func (h *AssetStateHistoryHandler) ComplianceChanges(w http.ResponseWriter, r *h
 		return
 	}
 
-	since, limit := h.parseSinceAndLimit(r)
+	// Parse options normally — the caller may still pass ?event_type= to override.
+	opts := h.parseListOptions(r)
 
-	changes, err := h.repo.GetComplianceChanges(ctx, tenantID, since, limit)
+	// Apply pre-set defaults only when no explicit event_type / change_type filter was provided.
+	if opts.ChangeType == nil && len(opts.ChangeTypes) == 0 {
+		if len(defaultTypes) == 1 {
+			opts.ChangeType = &defaultTypes[0]
+		} else {
+			opts.ChangeTypes = defaultTypes
+		}
+	}
+
+	// Apply ?since= as a From bound when no explicit ?from= was given (backward compat).
+	if opts.From == nil {
+		since, limit := h.parseSinceAndLimit(r)
+		opts.From = &since
+		if opts.Limit == asset.DefaultListStateHistoryOptions().Limit {
+			opts.Limit = limit
+		}
+	}
+
+	changes, total, err := h.repo.List(ctx, tenantID, opts)
 	if err != nil {
-		h.logger.Error("failed to get compliance changes", "error", err)
+		h.logger.Error("failed to list state history", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
@@ -498,9 +443,10 @@ func (h *AssetStateHistoryHandler) ComplianceChanges(w http.ResponseWriter, r *h
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":  response,
-		"total": len(response),
-		"since": since.Format(time.RFC3339),
+		"data":   response,
+		"total":  total,
+		"limit":  opts.Limit,
+		"offset": opts.Offset,
 	})
 }
 
@@ -636,7 +582,23 @@ func (h *AssetStateHistoryHandler) Stats(w http.ResponseWriter, r *http.Request)
 func (h *AssetStateHistoryHandler) parseListOptions(r *http.Request) asset.ListStateHistoryOptions {
 	opts := asset.DefaultListStateHistoryOptions()
 
-	if v := r.URL.Query().Get("change_type"); v != "" {
+	// event_type supports comma-separated list of change types, e.g. ?event_type=appeared,disappeared
+	// This is the preferred param going forward; change_type is kept for backward compatibility.
+	if v := r.URL.Query().Get("event_type"); v != "" {
+		parts := strings.Split(v, ",")
+		types := make([]asset.StateChangeType, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				types = append(types, asset.StateChangeType(p))
+			}
+		}
+		if len(types) == 1 {
+			opts.ChangeType = &types[0]
+		} else if len(types) > 1 {
+			opts.ChangeTypes = types
+		}
+	} else if v := r.URL.Query().Get("change_type"); v != "" {
 		ct := asset.StateChangeType(v)
 		opts.ChangeType = &ct
 	}

@@ -160,7 +160,7 @@ func (m *mockAttackSurfaceRepo) UpdateFindingCounts(_ context.Context, _ shared.
 	return nil
 }
 
-func (m *mockAttackSurfaceRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ string, _ int) ([]string, error) {
+func (m *mockAttackSurfaceRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ string, _ []string, _ int) ([]string, error) {
 	return []string{}, nil
 }
 
@@ -172,7 +172,7 @@ func (m *mockAttackSurfaceRepo) BulkUpdateStatus(_ context.Context, _ shared.ID,
 	return 0, nil
 }
 
-func (m *mockAttackSurfaceRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string) (*asset.AggregateStats, error) {
+func (m *mockAttackSurfaceRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),
@@ -186,13 +186,64 @@ func (m *mockAttackSurfaceRepo) GetPropertyFacets(_ context.Context, _ shared.ID
 	return nil, nil
 }
 
+func (m *mockAttackSurfaceRepo) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
+	return nil, nil
+}
+
+// =============================================================================
+// Mock Relationship Repository for Attack Surface Service
+// =============================================================================
+
+type mockAttackSurfaceRelRepo struct{}
+
+func (m *mockAttackSurfaceRelRepo) Create(_ context.Context, _ *asset.Relationship) error {
+	return nil
+}
+
+func (m *mockAttackSurfaceRelRepo) GetByID(_ context.Context, _, _ shared.ID) (*asset.RelationshipWithAssets, error) {
+	return nil, shared.ErrNotFound
+}
+
+func (m *mockAttackSurfaceRelRepo) Update(_ context.Context, _ *asset.Relationship) error {
+	return nil
+}
+
+func (m *mockAttackSurfaceRelRepo) Delete(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+
+func (m *mockAttackSurfaceRelRepo) ListByAsset(_ context.Context, _, _ shared.ID, _ asset.RelationshipFilter) ([]*asset.RelationshipWithAssets, int64, error) {
+	return nil, 0, nil
+}
+
+func (m *mockAttackSurfaceRelRepo) Exists(_ context.Context, _, _, _ shared.ID, _ asset.RelationshipType) (bool, error) {
+	return false, nil
+}
+
+func (m *mockAttackSurfaceRelRepo) CountByAsset(_ context.Context, _, _ shared.ID) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockAttackSurfaceRelRepo) CreateBatchIgnoreConflicts(_ context.Context, _ []*asset.Relationship) (int, error) {
+	return 0, nil
+}
+
+func (m *mockAttackSurfaceRelRepo) CountByType(_ context.Context, _ shared.ID) (map[asset.RelationshipType]int64, error) {
+	return nil, nil
+}
+
+func (m *mockAttackSurfaceRelRepo) ListAllEdges(_ context.Context, _ shared.ID) ([]asset.RelationshipEdge, error) {
+	return nil, nil
+}
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
 func newTestAttackSurfaceService(repo *mockAttackSurfaceRepo) *app.AttackSurfaceService {
 	log := logger.NewNop()
-	return app.NewAttackSurfaceService(repo, log)
+	relRepo := &mockAttackSurfaceRelRepo{}
+	return app.NewAttackSurfaceService(repo, relRepo, log)
 }
 
 // makeAttackSurfaceAsset creates a test asset using Reconstitute with the given parameters.

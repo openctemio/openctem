@@ -286,6 +286,50 @@ func (h *FindingActionsHandler) RejectFix(w http.ResponseWriter, r *http.Request
 	h.writeJSON(w, http.StatusOK, result)
 }
 
+// --- Request Verification Scan ---
+
+// RequestVerificationScanRequest is the request body for POST /api/v1/findings/{id}/request-verification.
+type RequestVerificationScanRequest struct {
+	ScannerName string `json:"scanner_name" validate:"omitempty,max=100"`
+	WorkflowID  string `json:"workflow_id"  validate:"omitempty,uuid"`
+}
+
+// RequestVerificationScan handles POST /api/v1/findings/{id}/request-verification
+// Triggers a targeted quick scan on the asset associated with a fix_applied finding.
+func (h *FindingActionsHandler) RequestVerificationScan(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetLocalUserID(r.Context())
+	findingID := chi.URLParam(r, "id")
+
+	if findingID == "" {
+		apierror.BadRequest("finding id is required").WriteJSON(w)
+		return
+	}
+
+	var req RequestVerificationScanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if len(req.ScannerName) > 100 {
+		apierror.BadRequest("scanner_name must be at most 100 characters").WriteJSON(w)
+		return
+	}
+
+	result, err := h.service.RequestVerificationScan(r.Context(), tenantID, userID.String(), app.RequestVerificationScanInput{
+		FindingID:   findingID,
+		ScannerName: req.ScannerName,
+		WorkflowID:  req.WorkflowID,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	h.writeJSON(w, http.StatusAccepted, result)
+}
+
 // --- Auto-Assign ---
 
 // AssignToOwnersRequest is the request body for POST /api/v1/findings/actions/assign-to-owners

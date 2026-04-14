@@ -71,7 +71,8 @@ type Handlers struct {
 	// CTEM Discovery handlers
 	AssetService      *handler.AssetServiceHandler      // nil if not initialized (no database)
 	AssetStateHistory *handler.AssetStateHistoryHandler // nil if not initialized (no database)
-	AssetRelationship *handler.AssetRelationshipHandler // nil if not initialized (no database)
+	AssetRelationship          *handler.AssetRelationshipHandler          // nil if not initialized (no database)
+	RelationshipSuggestion     *handler.RelationshipSuggestionHandler     // nil if not initialized (no database)
 
 	// Access Control handlers
 	Group          *handler.GroupHandler          // nil if not initialized (no database)
@@ -84,6 +85,9 @@ type Handlers struct {
 
 	// Finding Lifecycle (closed-loop: fix_applied → verified → resolved)
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
+
+	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
+	JiraWebhook *handler.JiraWebhookHandler // nil if not initialized (no database)
 
 	// Pentest Campaign Management handlers
 	Pentest                *handler.PentestHandler             // nil if not initialized (no database)
@@ -270,10 +274,18 @@ func Register(
 		registerAssetRelationshipRoutes(router, h.AssetRelationship, authMiddleware, userSync)
 	}
 
+	// Relationship Suggestion routes (auto-generated relationship recommendations)
+	if h.RelationshipSuggestion != nil {
+		registerRelationshipSuggestionRoutes(router, h.RelationshipSuggestion, authMiddleware, userSync)
+	}
+
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
 	if h.Vulnerability != nil {
-		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, authMiddleware, userSync)
+		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, authMiddleware, userSync)
 	}
+
+	// Incoming Jira webhook — public endpoint (no JWT), Jira POSTs status changes here.
+	registerIncomingWebhookRoutes(router, h.JiraWebhook)
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
 	var activityRateLimiter *middleware.FindingActivityRateLimiter

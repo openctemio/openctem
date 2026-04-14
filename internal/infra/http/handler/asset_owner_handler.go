@@ -280,7 +280,7 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 // UpdateOwner handles PUT /api/v1/assets/{id}/owners/{ownerID}
 func (h *AssetOwnerHandler) UpdateOwner(w http.ResponseWriter, r *http.Request) {
 	assetID := r.PathValue("id")
-	ownerID := r.PathValue("ownerID")
+	ownerID := r.PathValue("ownerId")
 	if ownerID == "" {
 		apierror.BadRequest("Owner ID is required").WriteJSON(w)
 		return
@@ -344,7 +344,7 @@ func (h *AssetOwnerHandler) UpdateOwner(w http.ResponseWriter, r *http.Request) 
 // RemoveOwner handles DELETE /api/v1/assets/{id}/owners/{ownerID}
 func (h *AssetOwnerHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) {
 	assetID := r.PathValue("id")
-	ownerID := r.PathValue("ownerID")
+	ownerID := r.PathValue("ownerId")
 	if ownerID == "" {
 		apierror.BadRequest("Owner ID is required").WriteJSON(w)
 		return

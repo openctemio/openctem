@@ -1,0 +1,3 @@
+-- Down migration: No-op (cannot reliably reverse snake_case → camelCase)
+-- The data is still correct, just in a different key format.
+-- If rollback is needed, the frontend fallback reads both formats.

@@ -19,6 +19,7 @@ func registerRemediationCampaignRoutes(
 		r.GET("/", h.List, middleware.Require(permission.FindingsRead))
 		r.POST("/", h.Create, middleware.Require(permission.FindingsWrite))
 		r.GET("/{id}", h.Get, middleware.Require(permission.FindingsRead))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.FindingsWrite))
 		r.PATCH("/{id}/status", h.UpdateStatus, middleware.Require(permission.FindingsWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)

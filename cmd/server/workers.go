@@ -212,6 +212,23 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Threat intel — daily EPSS + KEV refresh (fetches + persists to DB)
+	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
+		svc.ThreatIntel,
+		log.With("controller", "threat-intel-refresh"),
+	))
+
+	// Control test scheduler — daily sweep to mark stale detection coverage as overdue
+	w.ControllerManager.Register(controller.NewControlTestSchedulerController(
+		repos.ControlTest,
+		&controller.ControlTestSchedulerConfig{
+			Interval:  24 * time.Hour,
+			StaleDays: 30,
+			BatchSize: 500,
+			Logger:    log.With("controller", "control-test-scheduler"),
+		},
+	))
+
 	return w, nil
 }
 

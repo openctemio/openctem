@@ -116,6 +116,104 @@ func (h *AttackSurfaceHandler) GetStats(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+// AttackPathScoreResponse represents a single asset with its attack path score.
+type AttackPathScoreResponse struct {
+	AssetID       string  `json:"asset_id"`
+	Name          string  `json:"name"`
+	AssetType     string  `json:"asset_type"`
+	Exposure      string  `json:"exposure"`
+	Criticality   string  `json:"criticality"`
+	RiskScore     int     `json:"risk_score"`
+	IsCrownJewel  bool    `json:"is_crown_jewel"`
+	FindingCount  int     `json:"finding_count"`
+	ReachableFrom int     `json:"reachable_from"`
+	PathScore     float64 `json:"path_score"`
+	IsEntryPoint  bool    `json:"is_entry_point"`
+	IsProtected   bool    `json:"is_protected"`
+}
+
+// AttackPathSummaryResponse holds aggregate attack path metrics.
+type AttackPathSummaryResponse struct {
+	TotalPaths          int  `json:"total_paths"`
+	EntryPoints         int  `json:"entry_points"`
+	ReachableAssets     int  `json:"reachable_assets"`
+	MaxDepth            int  `json:"max_depth"`
+	CriticalReachable   int  `json:"critical_reachable"`
+	CrownJewelsAtRisk   int  `json:"crown_jewels_at_risk"`
+	HasRelationshipData bool `json:"has_relationship_data"`
+}
+
+// AttackPathScoringResponse is the response for the attack path scoring endpoint.
+type AttackPathScoringResponse struct {
+	Summary   AttackPathSummaryResponse `json:"summary"`
+	TopAssets []AttackPathScoreResponse `json:"top_assets"`
+}
+
+// GetAttackPaths computes attack path scoring for the current tenant.
+// @Summary      Get attack path scoring
+// @Description  Computes reachability-based attack path scores for all assets
+// @Tags         Attack Surface
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  AttackPathScoringResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Router       /attack-surface/attack-paths [get]
+func (h *AttackSurfaceHandler) GetAttackPaths(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tenantIDStr := middleware.MustGetTenantID(ctx)
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID format").WriteJSON(w)
+		return
+	}
+
+	result, err := h.service.GetAttackPathScores(ctx, tenantID)
+	if err != nil {
+		h.logger.Error("failed to compute attack path scores", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	// Map to response
+	topAssets := make([]AttackPathScoreResponse, len(result.TopAssets))
+	for i, a := range result.TopAssets {
+		topAssets[i] = AttackPathScoreResponse{
+			AssetID:       a.AssetID,
+			Name:          a.Name,
+			AssetType:     a.AssetType,
+			Exposure:      a.Exposure,
+			Criticality:   a.Criticality,
+			RiskScore:     a.RiskScore,
+			IsCrownJewel:  a.IsCrownJewel,
+			FindingCount:  a.FindingCount,
+			ReachableFrom: a.ReachableFrom,
+			PathScore:     a.PathScore,
+			IsEntryPoint:  a.IsEntryPoint,
+			IsProtected:   a.IsProtected,
+		}
+	}
+
+	response := AttackPathScoringResponse{
+		Summary: AttackPathSummaryResponse{
+			TotalPaths:          result.Summary.TotalPaths,
+			EntryPoints:         result.Summary.EntryPoints,
+			ReachableAssets:     result.Summary.ReachableAssets,
+			MaxDepth:            result.Summary.MaxDepth,
+			CriticalReachable:   result.Summary.CriticalReachable,
+			CrownJewelsAtRisk:   result.Summary.CrownJewelsAtRisk,
+			HasRelationshipData: result.Summary.HasRelationshipData,
+		},
+		TopAssets: topAssets,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
 // toStatsResponse converts service stats to API response.
 func (h *AttackSurfaceHandler) toStatsResponse(stats *app.AttackSurfaceStats) AttackSurfaceStatsResponse {
 	// Convert asset breakdown

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/openctemio/api/pkg/domain/remediation"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -90,6 +91,49 @@ func (s *RemediationCampaignService) ListCampaigns(ctx context.Context, tenantID
 	return s.repo.List(ctx, filter, page)
 }
 
+// UpdateRemediationCampaignInput holds fields for partial campaign update.
+type UpdateRemediationCampaignInput struct {
+	Name        *string
+	Description *string
+	Priority    *string
+	Tags        []string
+	DueDate     *time.Time
+}
+
+// UpdateCampaign updates campaign fields (name, description, priority, tags, due_date).
+func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantID, campaignID string, input UpdateRemediationCampaignInput) (*remediation.Campaign, error) {
+	tid, _ := shared.IDFromString(tenantID)
+	cid, _ := shared.IDFromString(campaignID)
+
+	campaign, err := s.repo.GetByID(ctx, tid, cid)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.Name != nil {
+		campaign.SetName(*input.Name)
+	}
+	if input.Description != nil {
+		campaign.SetDescription(*input.Description)
+	}
+	if input.Priority != nil {
+		campaign.SetPriority(remediation.CampaignPriority(*input.Priority))
+	}
+	if input.Tags != nil {
+		campaign.SetTags(input.Tags)
+	}
+	if input.DueDate != nil {
+		campaign.SetDueDate(input.DueDate)
+	}
+
+	if err := s.repo.Update(ctx, campaign); err != nil {
+		return nil, fmt.Errorf("failed to update campaign: %w", err)
+	}
+
+	s.logger.Info("remediation campaign updated", "id", campaignID)
+	return campaign, nil
+}
+
 // UpdateCampaignStatus transitions campaign status.
 func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, tenantID, campaignID, newStatus string) (*remediation.Campaign, error) {
 	tid, _ := shared.IDFromString(tenantID)
@@ -109,6 +153,12 @@ func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, t
 		err = campaign.StartValidation()
 	case remediation.CampaignStatusCompleted:
 		err = campaign.Complete()
+		// Record risk reduction: resolved / total as a simple risk metric
+		if err == nil && campaign.FindingCount() > 0 {
+			before := float64(campaign.FindingCount())
+			after := float64(campaign.FindingCount() - campaign.ResolvedCount())
+			campaign.RecordRiskReduction(before, after)
+		}
 	case remediation.CampaignStatusCanceled:
 		campaign.Cancel()
 	default:

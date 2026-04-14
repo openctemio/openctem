@@ -31,7 +31,7 @@ func registerAssetRoutes(
 		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
 
 		// Bulk operations (must be before /{id} patterns to avoid route conflicts)
-		r.POST("/bulk-sync", h.BulkSync, middleware.Require(permission.AssetsWrite))
+		r.POST("/bulk/sync", h.BulkSync, middleware.Require(permission.AssetsWrite))
 		r.POST("/bulk/status", h.BulkUpdateStatus, middleware.Require(permission.AssetsWrite))
 
 		// Read operations
@@ -79,8 +79,8 @@ func registerAssetOwnerRoutes(
 	router.Group("/api/v1/assets/{id}/owners", func(r Router) {
 		r.GET("/", h.ListOwners, middleware.Require(permission.AssetsRead))
 		r.POST("/", h.AddOwner, middleware.Require(permission.AssetsWrite))
-		r.PUT("/{ownerID}", h.UpdateOwner, middleware.Require(permission.AssetsWrite))
-		r.DELETE("/{ownerID}", h.RemoveOwner, middleware.Require(permission.AssetsDelete))
+		r.PUT("/{ownerId}", h.UpdateOwner, middleware.Require(permission.AssetsWrite))
+		r.DELETE("/{ownerId}", h.RemoveOwner, middleware.Require(permission.AssetsDelete))
 	}, middlewares...)
 }
 
@@ -277,13 +277,13 @@ func registerFindingSourceRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	// Finding Source Category routes (read-only)
-	router.Group("/api/v1/config/finding-sources/categories", func(r Router) {
+	router.Group("/api/v1/finding-sources/categories", func(r Router) {
 		r.GET("/", h.ListCategories, middleware.Require(permission.FindingsRead))
 		r.GET("/{categoryId}", h.GetCategory, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 
 	// Finding Source routes (read-only)
-	router.Group("/api/v1/config/finding-sources", func(r Router) {
+	router.Group("/api/v1/finding-sources", func(r Router) {
 		r.GET("/", h.ListFindingSources, middleware.Require(permission.FindingsRead))
 		r.GET("/code/{code}", h.GetFindingSourceByCode, middleware.Require(permission.FindingsRead))
 		r.GET("/{id}", h.GetFindingSource, middleware.Require(permission.FindingsRead))
@@ -305,6 +305,9 @@ func registerAttackSurfaceRoutes(
 	// Attack Surface routes
 	router.Group("/api/v1/attack-surface", func(r Router) {
 		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		// Attack path scoring — BFS reachability analysis from public entry points.
+		// Returns top assets ranked by composite path score (reachability × risk × criticality).
+		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 
@@ -403,6 +406,30 @@ func registerAssetRelationshipRoutes(
 		r.GET("/{relationshipId}", h.Get, middleware.Require(permission.AssetsRead))
 		r.PUT("/{relationshipId}", h.Update, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{relationshipId}", h.Delete, middleware.Require(permission.AssetsDelete))
+	}, tenantMiddlewares...)
+}
+
+// registerRelationshipSuggestionRoutes registers relationship suggestion endpoints.
+// Suggestions are auto-generated relationship recommendations based on asset analysis.
+func registerRelationshipSuggestionRoutes(
+	router Router,
+	h *handler.RelationshipSuggestionHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	// Build tenant middleware chain from JWT token
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	// Suggestion routes under /api/v1/relationships/suggestions
+	router.Group("/api/v1/relationships/suggestions", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/count", h.CountPending, middleware.Require(permission.AssetsRead))
+		r.POST("/generate", h.Generate, middleware.Require(permission.AssetsWrite))
+		r.POST("/approve-all", h.ApproveAll, middleware.Require(permission.AssetsWrite))
+		r.POST("/approve-batch", h.ApproveBatch, middleware.Require(permission.AssetsWrite))
+		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.AssetsWrite))
+		r.POST("/{id}/dismiss", h.Dismiss, middleware.Require(permission.AssetsWrite))
+		r.PATCH("/{id}/type", h.UpdateType, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 }
 

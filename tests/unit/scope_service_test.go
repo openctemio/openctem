@@ -314,7 +314,7 @@ func (m *mockAssetRepo) UpdateFindingCounts(_ context.Context, _ shared.ID, _ []
 	return nil
 }
 
-func (m *mockAssetRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ string, _ int) ([]string, error) {
+func (m *mockAssetRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ string, _ []string, _ int) ([]string, error) {
 	return []string{}, nil
 }
 
@@ -334,7 +334,7 @@ func (m *mockAssetRepo) BulkUpdateStatus(_ context.Context, _ shared.ID, _ []sha
 	return 0, nil
 }
 
-func (m *mockAssetRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string) (*asset.AggregateStats, error) {
+func (m *mockAssetRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),
@@ -345,6 +345,10 @@ func (m *mockAssetRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []st
 }
 
 func (m *mockAssetRepo) GetPropertyFacets(_ context.Context, _ shared.ID, _ []string, _ string) ([]asset.PropertyFacet, error) {
+	return nil, nil
+}
+
+func (m *mockAssetRepo) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
 	return nil, nil
 }
 

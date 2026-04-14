@@ -163,7 +163,7 @@ func (h *ThreatIntelHandler) SetSyncEnabled(w http.ResponseWriter, r *http.Reque
 // GET /api/v1/threat-intel/enrich/{cve_id}
 func (h *ThreatIntelHandler) EnrichCVE(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	cveID := chi.URLParam(r, "cve_id")
+	cveID := chi.URLParam(r, "cveId")
 
 	enrichment, err := h.service.EnrichCVE(ctx, cveID)
 	if err != nil {
@@ -215,7 +215,7 @@ func (h *ThreatIntelHandler) EnrichCVEs(w http.ResponseWriter, r *http.Request) 
 // GET /api/v1/threat-intel/epss/{cve_id}
 func (h *ThreatIntelHandler) GetEPSSScore(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	cveID := chi.URLParam(r, "cve_id")
+	cveID := chi.URLParam(r, "cveId")
 
 	score, err := h.service.GetEPSSScore(ctx, cveID)
 	if err != nil {
@@ -234,7 +234,7 @@ func (h *ThreatIntelHandler) GetEPSSScore(w http.ResponseWriter, r *http.Request
 // GET /api/v1/threat-intel/kev/{cve_id}
 func (h *ThreatIntelHandler) GetKEVEntry(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	cveID := chi.URLParam(r, "cve_id")
+	cveID := chi.URLParam(r, "cveId")
 
 	entry, err := h.service.GetKEVEntry(ctx, cveID)
 	if err != nil {

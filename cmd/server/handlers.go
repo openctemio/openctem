@@ -85,12 +85,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:      handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
 		AssetStateHistory: handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
-		AssetRelationship: handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
+		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
+		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:      vulnHandler,
 		FindingActivity:    handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:   handler.NewFindingActionsHandler(svc.FindingActions, log),
+		JiraWebhook:      handler.NewJiraWebhookHandler(svc.JiraSync, log),
 		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:      handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
 		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
