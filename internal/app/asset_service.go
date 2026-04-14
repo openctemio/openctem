@@ -397,20 +397,71 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 		delete(input.Properties, key)
 	}
 
-	// Auto-detect subdomain: if type is "domain" but root_domain differs from name,
-	// it's actually a subdomain. This prevents collectors from creating subdomains
-	// with the wrong asset_type.
+	// Auto-detect subdomain: if type is "domain", check whether the name
+	// looks like a subdomain based on domain level analysis.
+	// Method 1: use root_domain property if provided by collector
+	// Method 2: compute from domain name structure (handles .com.vn, .co.uk, etc.)
 	if input.Type == "domain" {
+		cleanName := strings.TrimSuffix(input.Name, ".")
+
+		// Method 1: collector provides root_domain
 		if rootDomain, ok := input.Properties["root_domain"].(string); ok && rootDomain != "" {
 			cleanRoot := strings.TrimSuffix(rootDomain, ".")
-			cleanName := strings.TrimSuffix(input.Name, ".")
 			if cleanRoot != cleanName && strings.HasSuffix(cleanName, "."+cleanRoot) {
 				input.Type = "subdomain"
 			}
 		}
+
+		// Method 2: compute domain level from name structure
+		// A root domain has exactly 1 label before the effective TLD
+		// e.g., "ipa.com.vn" = root (1 label "ipa" before "com.vn")
+		//        "sub.ipa.com.vn" = subdomain (2 labels before "com.vn")
+		if input.Type == "domain" && isLikelySubdomain(cleanName) {
+			input.Type = "subdomain"
+		}
 	}
 
 	return input
+}
+
+// isLikelySubdomain checks if a domain name has more labels than a typical root domain.
+// Uses known second-level domains (.com.vn, .co.uk, .com.au, etc.) to determine
+// the effective TLD length. If there are >1 labels before the eTLD, it's a subdomain.
+func isLikelySubdomain(name string) bool {
+	parts := strings.Split(name, ".")
+	if len(parts) < 3 {
+		return false // "example.com" = 2 parts, not a subdomain
+	}
+
+	// Known second-level TLDs (eTLD+1 has 3+ parts for root domains)
+	knownSLDs := map[string]bool{
+		"com.vn": true, "net.vn": true, "org.vn": true, "edu.vn": true, "gov.vn": true,
+		"co.uk": true, "org.uk": true, "ac.uk": true,
+		"com.au": true, "net.au": true, "org.au": true,
+		"co.jp": true, "or.jp": true, "ac.jp": true,
+		"co.kr": true, "or.kr": true,
+		"com.br": true, "org.br": true,
+		"co.in": true, "org.in": true, "net.in": true,
+		"com.sg": true, "org.sg": true,
+		"com.my": true, "org.my": true,
+		"co.th": true, "or.th": true,
+		"com.tw": true, "org.tw": true,
+		"co.id": true, "or.id": true,
+		"com.ph": true, "org.ph": true,
+		"co.nz": true, "org.nz": true,
+		"co.za": true, "org.za": true,
+	}
+
+	// Check if last 2 parts form a known SLD
+	last2 := strings.Join(parts[len(parts)-2:], ".")
+	if knownSLDs[last2] {
+		// For .com.vn: "ipa.com.vn" = 3 parts = root; "sub.ipa.com.vn" = 4 parts = subdomain
+		return len(parts) > 3
+	}
+
+	// For simple TLDs (.com, .net, .org, .io, etc.):
+	// "example.com" = 2 parts = root; "sub.example.com" = 3 parts = subdomain
+	return len(parts) > 2
 }
 
 // correlateByIPOrHostname tries to find an existing asset by IP or hostname properties.
