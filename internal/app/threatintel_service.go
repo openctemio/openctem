@@ -49,6 +49,13 @@ func NewThreatIntelService(
 	}
 }
 
+// KEVEscalator auto-escalates findings whose CVEs appear in the CISA KEV catalog.
+type KEVEscalator interface {
+	// EscalateKEVFindings sets severity to 'critical' for open findings
+	// whose cve_id is in the kev_catalog. Returns the number of escalated findings.
+	EscalateKEVFindings(ctx context.Context) (int, error)
+}
+
 // ThreatIntelSyncResult contains the result of a sync operation.
 type ThreatIntelSyncResult struct {
 	Source        string

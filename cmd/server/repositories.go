@@ -147,6 +147,9 @@ type Repositories struct {
 
 	// SSO Identity Providers
 	IdentityProvider *postgres.IdentityProviderRepository
+
+	// KEV Escalation
+	KEVEscalator *postgres.KEVEscalator
 }
 
 // NewRepositories initializes all repositories.
@@ -293,6 +296,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// SSO Identity Providers
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
+
+		// KEV Escalation
+		KEVEscalator: postgres.NewKEVEscalator(db),
 	}
 }
 
