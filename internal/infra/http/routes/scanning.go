@@ -58,7 +58,7 @@ func registerAgentRoutes(
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
 		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
 		// Ingest endpoints use a 50MB body limit (vs 10MB default) for large scan reports
-		r.POST("/ingest", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware) // Deprecated: use /ingest/ctis
+		r.POST("/ingest", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware) // Primary CTIS ingest endpoint
 		r.POST("/ingest/check", ingestHandler.CheckFingerprints, ingestBodyLimit, decompressMiddleware)
 		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, ingestBodyLimit, decompressMiddleware)
 		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware)
@@ -287,11 +287,7 @@ func registerToolRoutes(
 		r.GET("/stats/{tool_id}", h.GetToolStats, middleware.Require(permission.TenantToolsRead))
 	}, tenantMiddlewares...)
 
-	// Deprecated: use GET /api/v1/tenant-tools/stats instead. Kept for backward compat.
-	router.Group("/api/v1/tool-stats", func(r Router) {
-		r.GET("/", h.GetTenantStats, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{tool_id}", h.GetToolStats, middleware.Require(permission.TenantToolsRead))
-	}, tenantMiddlewares...)
+	// /tool-stats removed — use /tenant-tools/stats
 }
 
 // registerToolCategoryRoutes registers tool category endpoints.
@@ -377,20 +373,7 @@ func registerScanRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Deprecated: use POST /api/v1/scans/quick instead. Kept for backward compat.
-	router.Group("/api/v1/quick-scan", func(r Router) {
-		// Apply rate limiting to quick scans (stricter)
-		if triggerRateLimiter != nil {
-			r.POST("/", h.QuickScan, middleware.Require(permission.ScansWrite), triggerRateLimiter.QuickScanMiddleware())
-		} else {
-			r.POST("/", h.QuickScan, middleware.Require(permission.ScansWrite))
-		}
-	}, tenantMiddlewares...)
-
-	// Deprecated: use GET /api/v1/scans/overview-stats instead. Kept for backward compat.
-	router.Group("/api/v1/scan-management", func(r Router) {
-		r.GET("/stats", h.GetOverviewStats, middleware.Require(permission.ScansRead))
-	}, tenantMiddlewares...)
+	// /quick-scan and /scan-management removed — use /scans/quick and /scans/overview-stats
 
 	// Scan routes - tenant from JWT token
 	router.Group("/api/v1/scans", func(r Router) {
