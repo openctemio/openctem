@@ -55,8 +55,9 @@ type Services struct {
 	Asset             *app.AssetService
 	AssetGroup        *app.AssetGroupService
 	AssetType         *app.AssetTypeService
-	AssetRelationship *app.AssetRelationshipService
-	Scope             *app.ScopeService
+	AssetRelationship      *app.AssetRelationshipService
+	RelationshipSuggestion *app.RelationshipSuggestionService
+	Scope                  *app.ScopeService
 	AttackSurface     *app.AttackSurfaceService
 
 	// Configuration (read-only system config)
@@ -229,6 +230,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Scope = app.NewScopeService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
 	s.AttackSurface = app.NewAttackSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
+	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 
 	// Initialize finding source service (read-only system configuration)
 	s.FindingSource = app.NewFindingSourceService(repos.FindingSource, repos.FindingSourceCat, log)

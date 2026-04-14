@@ -409,6 +409,28 @@ func registerAssetRelationshipRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerRelationshipSuggestionRoutes registers relationship suggestion endpoints.
+// Suggestions are auto-generated relationship recommendations based on asset analysis.
+func registerRelationshipSuggestionRoutes(
+	router Router,
+	h *handler.RelationshipSuggestionHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	// Build tenant middleware chain from JWT token
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	// Suggestion routes under /api/v1/relationships/suggestions
+	router.Group("/api/v1/relationships/suggestions", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/count", h.CountPending, middleware.Require(permission.AssetsRead))
+		r.POST("/generate", h.Generate, middleware.Require(permission.AssetsWrite))
+		r.POST("/approve-all", h.ApproveAll, middleware.Require(permission.AssetsWrite))
+		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.AssetsWrite))
+		r.POST("/{id}/dismiss", h.Dismiss, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerAssetStateHistoryRoutes registers asset state history endpoints.
 // State history tracks changes for audit, compliance, and shadow IT detection.
 // Part of the CTEM Discovery phase.

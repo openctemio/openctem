@@ -85,7 +85,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:      handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
 		AssetStateHistory: handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
-		AssetRelationship: handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
+		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
+		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:      vulnHandler,

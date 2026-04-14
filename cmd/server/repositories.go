@@ -23,7 +23,8 @@ type Repositories struct {
 	ScopeSchedule     *postgres.ScopeScheduleRepository
 	AssetService      *postgres.AssetServiceRepository      // CTEM: Network services on assets
 	AssetStateHistory *postgres.AssetStateHistoryRepository // CTEM: State change audit log
-	AssetRelationship *postgres.AssetRelationshipRepository // CTEM: Asset topology graph
+	AssetRelationship          *postgres.AssetRelationshipRepository          // CTEM: Asset topology graph
+	RelationshipSuggestion     *postgres.RelationshipSuggestionRepository     // CTEM: Relationship suggestions
 
 	// Vulnerabilities & Findings
 	Vulnerability    *postgres.VulnerabilityRepository
@@ -168,7 +169,8 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		ScopeSchedule:     postgres.NewScopeScheduleRepository(db),
 		AssetService:      postgres.NewAssetServiceRepository(db),      // CTEM: Network services
 		AssetStateHistory: postgres.NewAssetStateHistoryRepository(db), // CTEM: State change audit
-		AssetRelationship: postgres.NewAssetRelationshipRepository(db), // CTEM: Asset topology graph
+		AssetRelationship:          postgres.NewAssetRelationshipRepository(db),          // CTEM: Asset topology graph
+		RelationshipSuggestion:     postgres.NewRelationshipSuggestionRepository(db),     // CTEM: Relationship suggestions
 
 		// Vulnerabilities & Findings
 		Vulnerability:    postgres.NewVulnerabilityRepository(db),
