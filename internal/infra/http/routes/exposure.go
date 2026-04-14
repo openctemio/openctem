@@ -219,6 +219,12 @@ func registerVulnerabilityRoutes(
 		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsWrite))
 		r.POST("/{id}/verify", h.VerifyFinding, middleware.Require(permission.FindingsWrite))
 
+		// Verification scan automation: trigger a targeted scan on the finding's asset
+		// (only available when finding actions handler is wired)
+		if findingActionsHandler != nil {
+			r.POST("/{id}/request-verification", findingActionsHandler.RequestVerificationScan, middleware.Require(permission.FindingsWrite))
+		}
+
 		// Tags
 		r.PUT("/{id}/tags", h.SetFindingTags, middleware.Require(permission.FindingsWrite))
 

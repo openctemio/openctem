@@ -462,6 +462,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithProfileRepo(repos.ScanProfile),
 	)
 
+	// Wire verification scan trigger: allows FindingActionsService to launch targeted scans
+	// when a finding transitions to fix_applied and the user requests scan-based verification.
+	s.FindingActions.SetVerificationScanTrigger(app.NewVerificationScanTriggerAdapter(s.Scan))
+
 	// Create adapters for pipeline sub-package
 	pipelineAuditAdapter := app.NewPipelineAuditServiceAdapter(s.Audit)
 	pipelineAgentSelectorAdapter := app.NewPipelineAgentSelectorAdapter(s.AgentSelector)
