@@ -299,7 +299,7 @@ func (r *AssetSourceRepository) List(ctx context.Context, filter datasource.Asse
 	if filter.IsPrimary != nil {
 		conditions = append(conditions, fmt.Sprintf("is_primary = $%d", argIdx))
 		args = append(args, *filter.IsPrimary)
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""

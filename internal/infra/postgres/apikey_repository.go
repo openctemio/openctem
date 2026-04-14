@@ -139,7 +139,7 @@ func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apik
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""

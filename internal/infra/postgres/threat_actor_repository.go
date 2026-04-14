@@ -194,7 +194,7 @@ func (r *ThreatActorRepository) List(ctx context.Context, filter threatactor.Fil
 	if filter.Search != nil && *filter.Search != "" {
 		where += fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx)
 		args = append(args, "%"+*filter.Search+"%")
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	var total int

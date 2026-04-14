@@ -190,7 +190,7 @@ func (r *TargetMappingRepository) List(ctx context.Context, filter tool.TargetMa
 	if len(filter.AssetTypes) > 0 {
 		baseQuery += fmt.Sprintf(" AND asset_type = ANY($%d)", argIdx)
 		args = append(args, pq.Array(filter.AssetTypes))
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	// Count total

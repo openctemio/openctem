@@ -190,7 +190,7 @@ func (r *ControlTestRepository) List(ctx context.Context, filter simulation.Cont
 	if filter.Search != nil && *filter.Search != "" {
 		where += fmt.Sprintf(" AND (name ILIKE $%d OR control_name ILIKE $%d)", argIdx, argIdx)
 		args = append(args, "%"+*filter.Search+"%")
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	var total int

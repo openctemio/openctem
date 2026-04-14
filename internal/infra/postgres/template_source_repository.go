@@ -205,7 +205,7 @@ func (r *TemplateSourceRepository) List(ctx context.Context, input ts.ListInput)
 	if input.Enabled != nil {
 		conditions = append(conditions, fmt.Sprintf("enabled = $%d", argIdx))
 		args = append(args, *input.Enabled)
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := " WHERE " + strings.Join(conditions, " AND ")

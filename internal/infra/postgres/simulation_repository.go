@@ -213,7 +213,7 @@ func (r *SimulationRepository) List(ctx context.Context, filter simulation.Simul
 	if filter.Search != nil && *filter.Search != "" {
 		where += fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx)
 		args = append(args, "%"+*filter.Search+"%")
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	// Count

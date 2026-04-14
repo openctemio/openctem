@@ -348,7 +348,7 @@ func (r *DataSourceRepository) List(ctx context.Context, filter datasource.Filte
 			conditions = append(conditions, fmt.Sprintf("capabilities @> $%d::jsonb", argIdx))
 			capJSON, _ := json.Marshal([]string{cap.String()})
 			args = append(args, string(capJSON))
-			argIdx++
+			// argIdx not incremented — no further conditions
 		}
 	}
 
@@ -448,7 +448,7 @@ func (r *DataSourceRepository) Count(ctx context.Context, filter datasource.Filt
 	if filter.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, filter.Status.String())
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""

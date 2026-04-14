@@ -1307,7 +1307,7 @@ func (r *AccessControlRepository) ListAssignmentRules(ctx context.Context, tenan
 	if filter.Search != "" {
 		query += fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx)
 		args = append(args, wrapLikePattern(filter.Search))
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	// Sorting

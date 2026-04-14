@@ -130,7 +130,7 @@ func (r *WebhookRepository) List(ctx context.Context, filter webhook.Filter) (we
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""
@@ -283,7 +283,7 @@ func (r *WebhookRepository) ListDeliveries(ctx context.Context, filter webhook.D
 	if filter.Status != nil {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, string(*filter.Status))
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""

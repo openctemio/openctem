@@ -198,7 +198,7 @@ func (r *AssetStateHistoryRepository) List(ctx context.Context, tenantID shared.
 	if opts.To != nil {
 		conditions = append(conditions, fmt.Sprintf("h.changed_at <= $%d", argIdx))
 		args = append(args, *opts.To)
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""

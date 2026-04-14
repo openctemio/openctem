@@ -261,7 +261,7 @@ func (r *IntegrationRepository) List(ctx context.Context, filter integration.Fil
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""
@@ -362,7 +362,7 @@ func (r *IntegrationRepository) Count(ctx context.Context, filter integration.Fi
 	if filter.Status != nil {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, filter.Status.String())
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""
