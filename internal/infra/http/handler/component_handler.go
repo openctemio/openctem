@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
 	"github.com/openctemio/api/pkg/validator"
 )
 
@@ -282,26 +283,21 @@ func (h *ComponentHandler) GetEcosystemStats(w http.ResponseWriter, r *http.Requ
 func (h *ComponentHandler) GetVulnerableComponents(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	// Accept both "limit" and "per_page" for consistency across API
-	limit := parseQueryInt(r.URL.Query().Get("limit"), 0)
-	if limit == 0 {
-		limit = parseQueryInt(r.URL.Query().Get("per_page"), 10)
-	}
+	query := r.URL.Query()
+	page := pagination.New(
+		parseQueryInt(query.Get("page"), 1),
+		parseQueryInt(query.Get("per_page"), 20),
+	)
 
-	components, err := h.service.GetVulnerableComponents(r.Context(), tenantID, limit)
+	result, err := h.service.GetVulnerableComponents(r.Context(), tenantID, page)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Return empty array instead of null
-	if components == nil {
-		components = []component.VulnerableComponent{}
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(components)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 // GetLicenseStats handles GET /api/v1/components/licenses

@@ -804,20 +804,9 @@ func (r *ComponentRepository) GetEcosystemStats(ctx context.Context, tenantID sh
 	return stats, nil
 }
 
-// GetVulnerableComponents returns components with vulnerability details for a tenant.
-func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenantID shared.ID, limit int) ([]component.VulnerableComponent, error) {
-	if limit <= 0 {
-		limit = 10
-	}
-	if limit > 100 {
-		limit = 100
-	}
-
-	// Query to get vulnerable components with severity breakdown
-	// Note: cisa_kev_date_added IS NOT NULL indicates the vulnerability is in CISA KEV catalog
-	// Note: license is not stored in components table, return empty string
-	// Note: findings.component_id now references components.id directly (not asset_components.id)
-	query := `
+// GetVulnerableComponents returns paginated vulnerable components with severity breakdown.
+func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[component.VulnerableComponent], error) {
+	baseCTE := `
 		WITH component_findings AS (
 			SELECT
 				f.component_id,
@@ -829,6 +818,22 @@ func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenan
 			  AND f.status NOT IN ('resolved', 'false_positive')
 			  AND f.component_id IS NOT NULL
 		)
+	`
+
+	// Count total
+	countQuery := baseCTE + `
+		SELECT COUNT(DISTINCT cf.component_id) FROM component_findings cf
+	`
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String()).Scan(&total); err != nil {
+		return pagination.Result[component.VulnerableComponent]{}, fmt.Errorf("count vulnerable: %w", err)
+	}
+
+	if total == 0 {
+		return pagination.NewResult([]component.VulnerableComponent{}, 0, page), nil
+	}
+
+	query := baseCTE + `
 		SELECT
 			c.id,
 			c.name,
@@ -849,16 +854,18 @@ func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenan
 			COUNT(*) FILTER (WHERE cf.severity = 'critical') DESC,
 			COUNT(*) FILTER (WHERE cf.severity = 'high') DESC,
 			COUNT(*) DESC
-		LIMIT $2
+		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), limit)
+	empty := pagination.NewResult([]component.VulnerableComponent{}, 0, page)
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), page.Limit(), page.Offset())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get vulnerable components: %w", err)
+		return empty, fmt.Errorf("failed to get vulnerable components: %w", err)
 	}
 	defer rows.Close()
 
-	var components []component.VulnerableComponent
+	components := make([]component.VulnerableComponent, 0, page.Limit())
 	for rows.Next() {
 		var vc component.VulnerableComponent
 		if err := rows.Scan(
@@ -875,16 +882,16 @@ func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenan
 			&vc.TotalCount,
 			&vc.InCisaKev,
 		); err != nil {
-			return nil, fmt.Errorf("failed to scan vulnerable component: %w", err)
+			return empty, fmt.Errorf("failed to scan vulnerable component: %w", err)
 		}
 		components = append(components, vc)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error: %w", err)
+		return empty, fmt.Errorf("rows iteration error: %w", err)
 	}
 
-	return components, nil
+	return pagination.NewResult(components, total, page), nil
 }
 
 // GetLicenseStats returns license statistics for a tenant.
