@@ -598,8 +598,9 @@ func (h *AssetServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListPublic handles GET /api/v1/services/public
-// @Summary      List public services
-// @Description  Retrieves a paginated list of publicly exposed services
+// @Summary      List public services (deprecated)
+// @Description  Deprecated: use GET /services?exposure=public instead.
+// @Description  Retrieves a paginated list of publicly exposed services.
 // @Tags         Asset Services
 // @Accept       json
 // @Produce      json
@@ -611,6 +612,8 @@ func (h *AssetServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Failure      500  {object}  apierror.Error
 // @Router       /services/public [get]
 func (h *AssetServiceHandler) ListPublic(w http.ResponseWriter, r *http.Request) {
+	// Deprecated: delegates to List with exposure=public pre-set.
+	// Use GET /services?exposure=public instead.
 	ctx := r.Context()
 	tenantIDStr := middleware.MustGetTenantID(ctx)
 	tenantID, err := shared.IDFromString(tenantIDStr)
@@ -619,25 +622,35 @@ func (h *AssetServiceHandler) ListPublic(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	limit := 50
-	offset := 0
+	opts := asset.DefaultListAssetServicesOptions()
+
+	// Pre-set is_public=true; callers can still override via ?is_public= query param.
+	// This is the backward-compat equivalent of the old /services/public endpoint.
+	if v := r.URL.Query().Get("is_public"); v != "" {
+		isPublic := v == queryParamTrue
+		opts.IsPublic = &isPublic
+	} else {
+		isPublicDefault := true
+		opts.IsPublic = &isPublicDefault
+	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if l, err := strconv.Atoi(v); err == nil && l > 0 {
-			limit = l
+			opts.Limit = l
 		}
 	}
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if o, err := strconv.Atoi(v); err == nil && o >= 0 {
-			offset = o
+			opts.Offset = o
 		}
 	}
 	// Security: Enforce max limit to prevent DoS via large queries
 	const maxLimit = 1000
-	if limit > maxLimit {
-		limit = maxLimit
+	if opts.Limit > maxLimit {
+		opts.Limit = maxLimit
 	}
 
-	services, total, err := h.repo.ListPublic(ctx, tenantID, limit, offset)
+	services, total, err := h.repo.List(ctx, tenantID, opts)
 	if err != nil {
 		h.logger.Error("failed to list public services", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
@@ -653,8 +666,8 @@ func (h *AssetServiceHandler) ListPublic(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":   response,
 		"total":  total,
-		"limit":  limit,
-		"offset": offset,
+		"limit":  opts.Limit,
+		"offset": opts.Offset,
 	})
 }
 

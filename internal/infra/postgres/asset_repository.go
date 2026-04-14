@@ -1350,94 +1350,102 @@ SELECT category, key, value FROM (
 }
 
 // GetPropertyFacets returns distinct JSONB property keys and their top values.
-// Uses a 2-step approach: first get keys, then get top values per key.
+// Uses a single query that expands JSONB keys and values together, then groups
+// in Go — replacing the previous 1+N query pattern.
 func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]asset.PropertyFacet, error) {
-	// Build WHERE clause
-	where := "WHERE a.tenant_id = $1 AND a.properties IS NOT NULL AND a.properties != '{}'::jsonb"
+	// Build optional extra filter clauses (applied inside the sub-select).
+	extraWhere := ""
 	args := []any{tenantID.String()}
 	idx := 2
 
 	if len(types) > 0 {
-		where += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
+		extraWhere += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
 		args = append(args, pq.Array(types))
 		idx++
 	}
 	if subType != "" {
-		where += fmt.Sprintf(" AND a.sub_type = $%d", idx)
+		extraWhere += fmt.Sprintf(" AND a.sub_type = $%d", idx)
 		args = append(args, subType)
-		idx++
+		// idx++ — not needed after the last param
 	}
 
-	// Step 1: Get top property keys with counts (skip array/object values, only scalar)
-	keysQuery := fmt.Sprintf(`
-		SELECT key, COUNT(*) as cnt
+	// Single query: expand every JSONB key/value pair per asset, then aggregate.
+	// jsonb_object_keys() is a set-returning function; using it twice in the same
+	// SELECT causes a parallel scan that PostgreSQL evaluates consistently.
+	// We filter out known array/object keys and keep only scalar values.
+	query := fmt.Sprintf(`
+		SELECT key, val, COUNT(*) AS cnt
 		FROM (
-			SELECT jsonb_object_keys(a.properties) as key
-			FROM assets a %s
-		) keys
+			SELECT
+				jsonb_object_keys(a.properties)                         AS key,
+				a.properties ->> jsonb_object_keys(a.properties)        AS val
+			FROM assets a
+			WHERE a.tenant_id = $1
+			  AND a.properties IS NOT NULL
+			  AND a.properties != '{}'::jsonb
+			  %s
+		) sub
 		WHERE key NOT IN ('ip_addresses', 'dns_records', 'ports', 'technologies', 'interfaces', 'tags')
-		GROUP BY key
-		HAVING COUNT(*) >= 2
-		ORDER BY cnt DESC
-		LIMIT 15
-	`, where)
+		  AND val IS NOT NULL
+		  AND val != ''
+		GROUP BY key, val
+		ORDER BY key, cnt DESC
+	`, extraWhere)
 
-	keyRows, err := r.db.QueryContext(ctx, keysQuery, args...)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get property keys: %w", err)
+		return nil, fmt.Errorf("failed to get property facets: %w", err)
 	}
-	defer func() { _ = keyRows.Close() }()
+	defer func() { _ = rows.Close() }()
 
-	type keyInfo struct {
-		key   string
-		count int
+	// Group results by key in insertion order; track per-key asset count.
+	type facetAccum struct {
+		values     []string
+		totalCount int // sum of per-value counts (≈ asset count for this key)
 	}
-	keys := make([]keyInfo, 0, 15)
-	for keyRows.Next() {
-		var k string
-		var c int
-		if err := keyRows.Scan(&k, &c); err != nil {
-			return nil, fmt.Errorf("failed to scan key: %w", err)
-		}
-		keys = append(keys, keyInfo{key: k, count: c})
-	}
-	if err := keyRows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating keys: %w", err)
-	}
+	order := make([]string, 0, 15)
+	accum := make(map[string]*facetAccum)
 
-	// Step 2: For each key, get distinct values (top 20)
-	facets := make([]asset.PropertyFacet, 0, len(keys))
-	for _, ki := range keys {
-		valQuery := fmt.Sprintf(`
-			SELECT DISTINCT a.properties->>$%d AS val
-			FROM assets a %s AND a.properties ? $%d
-			AND jsonb_typeof(a.properties->$%d) IN ('string', 'number', 'boolean')
-			ORDER BY val
-			LIMIT 20
-		`, idx, where, idx, idx)
-
-		valArgs := append(args, ki.key) //nolint:gocritic
-		valRows, err := r.db.QueryContext(ctx, valQuery, valArgs...)
-		if err != nil {
-			continue // Skip this key on error
+	for rows.Next() {
+		var key, val string
+		var cnt int
+		if err := rows.Scan(&key, &val, &cnt); err != nil {
+			return nil, fmt.Errorf("failed to scan facet row: %w", err)
 		}
 
-		values := make([]string, 0, 20)
-		for valRows.Next() {
-			var v sql.NullString
-			if err := valRows.Scan(&v); err == nil && v.Valid && v.String != "" {
-				values = append(values, v.String)
-			}
+		if _, seen := accum[key]; !seen {
+			accum[key] = &facetAccum{}
+			order = append(order, key)
 		}
-		_ = valRows.Close()
+		fa := accum[key]
+		fa.totalCount += cnt
+		// Keep only the top 20 values per key (rows are ordered by cnt DESC within each key).
+		if len(fa.values) < 20 {
+			fa.values = append(fa.values, val)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating facet rows: %w", err)
+	}
 
-		if len(values) > 0 {
-			facets = append(facets, asset.PropertyFacet{
-				Key:    ki.key,
-				Label:  formatPropertyLabel(ki.key),
-				Values: values,
-				Count:  ki.count,
-			})
+	// Build facets: skip keys with total_count < 2, limit to top 15 keys by count.
+	const maxKeys = 15
+	const minCount = 2
+
+	facets := make([]asset.PropertyFacet, 0, len(order))
+	for _, key := range order {
+		fa := accum[key]
+		if fa.totalCount < minCount {
+			continue
+		}
+		facets = append(facets, asset.PropertyFacet{
+			Key:    key,
+			Label:  formatPropertyLabel(key),
+			Values: fa.values,
+			Count:  fa.totalCount,
+		})
+		if len(facets) == maxKeys {
+			break
 		}
 	}
 
