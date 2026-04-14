@@ -1410,22 +1410,33 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 	}
 
 	// Single query: expand every JSONB key/value pair per asset, then aggregate.
-	// jsonb_object_keys() is a set-returning function; using it twice in the same
-	// SELECT causes a parallel scan that PostgreSQL evaluates consistently.
-	// We filter out known array/object keys and keep only scalar values.
+	// For scalar values: extract via ->> (returns text).
+	// For array values: unwrap via jsonb_array_elements_text (returns individual elements).
+	// This prevents arrays like ["ns1.cloudflare.com","ns2.cloudflare.com"] appearing
+	// as a single facet value.
 	query := fmt.Sprintf(`
 		SELECT key, val, COUNT(*) AS cnt
 		FROM (
-			SELECT
-				jsonb_object_keys(a.properties)                         AS key,
-				a.properties ->> jsonb_object_keys(a.properties)        AS val
-			FROM assets a
+			-- Scalar values (strings, numbers, booleans)
+			SELECT k AS key, a.properties ->> k AS val
+			FROM assets a, jsonb_object_keys(a.properties) AS k
 			WHERE a.tenant_id = $1
 			  AND a.properties IS NOT NULL
 			  AND a.properties != '{}'::jsonb
-			  %s
+			  AND jsonb_typeof(a.properties -> k) != 'array'
+			  AND jsonb_typeof(a.properties -> k) != 'object'
+			  %[1]s
+			UNION ALL
+			-- Array values: unwrap each element
+			SELECT k AS key, jsonb_array_elements_text(a.properties -> k) AS val
+			FROM assets a, jsonb_object_keys(a.properties) AS k
+			WHERE a.tenant_id = $1
+			  AND a.properties IS NOT NULL
+			  AND a.properties != '{}'::jsonb
+			  AND jsonb_typeof(a.properties -> k) = 'array'
+			  %[1]s
 		) sub
-		WHERE key NOT IN ('ip_addresses', 'dns_records', 'ports', 'technologies', 'interfaces', 'tags')
+		WHERE key NOT IN ('dns_records', 'ports', 'interfaces', 'tags')
 		  AND val IS NOT NULL
 		  AND val != ''
 		GROUP BY key, val
