@@ -182,7 +182,11 @@ func (r *RelationshipSuggestionRepository) ListPending(ctx context.Context, tena
 	}
 	defer func() { _ = rows.Close() }()
 
-	suggestions := make([]*relationship.Suggestion, 0, page.Limit())
+	prealloc := page.Limit()
+	if prealloc > 100 {
+		prealloc = 100
+	}
+	suggestions := make([]*relationship.Suggestion, 0, prealloc)
 	for rows.Next() {
 		s, scanErr := r.scanSuggestionWithAssets(rows)
 		if scanErr != nil {
