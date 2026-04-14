@@ -984,7 +984,7 @@ type ListAssetsInput struct {
 	HasFindings   *bool    // Filter by whether asset has findings
 	IsCrownJewel     *bool             // Filter crown jewel assets
 	SubType          *string           // Filter by sub_type
-	PropertiesFilter map[string]string // Filter by JSONB properties key=value pairs (max 5)
+	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 	Sort             string            `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page          int      `validate:"min=0"`
 	PerPage       int      `validate:"min=0,max=100"`

@@ -211,11 +211,12 @@ func nilIfEmpty(s string) *string {
 
 // parsePropertiesFilter parses "key:value,key2:value2" into a map.
 // Keys are validated to alphanumeric+underscore only. Max 5 pairs.
-func ParsePropertiesFilter(raw string) map[string]string {
+func ParsePropertiesFilter(raw string) map[string][]string {
 	if raw == "" {
 		return nil
 	}
-	result := make(map[string]string)
+	result := make(map[string][]string)
+	totalValues := 0
 	for _, pair := range strings.Split(raw, ",") {
 		parts := strings.SplitN(pair, ":", 2)
 		if len(parts) != 2 {
@@ -237,8 +238,9 @@ func ParsePropertiesFilter(raw string) map[string]string {
 		if !safe {
 			continue
 		}
-		result[key] = val
-		if len(result) >= 5 {
+		result[key] = append(result[key], val)
+		totalValues++
+		if totalValues >= 20 || len(result) >= 10 {
 			break
 		}
 	}

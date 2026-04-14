@@ -867,14 +867,32 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Properties filter — JSONB containment using GIN index.
-	// Uses ->> text comparison for consistent matching across all value types
-	// (booleans, numbers, strings, arrays are all compared as text via ->>).
-	for key, val := range filter.PropertiesFilter {
-		conditions = append(conditions, fmt.Sprintf(
-			"a.properties ->> $%d = $%d", argIndex, argIndex+1))
-		args = append(args, key, val)
-		argIndex += 2
+	// Properties filter — AND across keys, OR within values per key.
+	// Uses ->> text comparison for consistent matching across all value types.
+	// For array JSONB values, also checks if the array contains the value.
+	for key, vals := range filter.PropertiesFilter {
+		if len(vals) == 1 {
+			// Single value: simple equality or array containment
+			conditions = append(conditions, fmt.Sprintf(
+				"(a.properties ->> $%d = $%d OR a.properties -> $%d @> to_jsonb($%d::text))",
+				argIndex, argIndex+1, argIndex, argIndex+1))
+			args = append(args, key, vals[0])
+			argIndex += 2
+		} else if len(vals) > 0 {
+			// Multiple values: OR within this key
+			orParts := make([]string, 0, len(vals))
+			keyIdx := argIndex
+			args = append(args, key)
+			argIndex++
+			for _, v := range vals {
+				orParts = append(orParts, fmt.Sprintf(
+					"(a.properties ->> $%d = $%d OR a.properties -> $%d @> to_jsonb($%d::text))",
+					keyIdx, argIndex, keyIdx, argIndex))
+				args = append(args, v)
+				argIndex++
+			}
+			conditions = append(conditions, "("+strings.Join(orParts, " OR ")+")")
+		}
 	}
 
 	// Layer 2: Data Scope - filter by user's group membership
