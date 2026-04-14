@@ -328,6 +328,9 @@ func registerBranchRoutes(
 
 	// Branch routes - tenant from JWT token, scoped to repository
 	router.Group("/api/v1/repositories/{repositoryId}/branches", func(r Router) {
+		// Compare branches (must be before /{branchId} to avoid matching)
+		r.GET("/compare", h.Compare, middleware.Require(permission.AssetsRead))
+
 		// List branches for a repository
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 

@@ -450,5 +450,33 @@ func (h *BranchHandler) GetDefault(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(toBranchResponse(b))
 }
 
+// Compare handles GET /api/v1/repositories/{repositoryId}/branches/compare
+// Compares findings between two branches (base vs compare).
+// Returns new findings (in compare but not in base), resolved (in base but not in compare), and common.
+func (h *BranchHandler) Compare(w http.ResponseWriter, r *http.Request) {
+	repositoryID := r.PathValue("repositoryId")
+	if repositoryID == "" {
+		apierror.BadRequest("Repository ID is required").WriteJSON(w)
+		return
+	}
+
+	baseBranch := r.URL.Query().Get("base")
+	compareBranch := r.URL.Query().Get("compare")
+	if baseBranch == "" || compareBranch == "" {
+		apierror.BadRequest("base and compare query parameters are required").WriteJSON(w)
+		return
+	}
+
+	result, err := h.service.CompareBranches(r.Context(), repositoryID, baseBranch, compareBranch)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
 // Ensure middleware import is used
 var _ = middleware.MustGetTenantID
