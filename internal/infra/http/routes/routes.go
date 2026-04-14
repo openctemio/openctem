@@ -111,6 +111,9 @@ type Handlers struct {
 	// Business Units
 	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
 
+	// Asset Import (Nessus, K8s, CSV)
+	AssetImport *handler.AssetImportHandler // nil if not initialized
+
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
 
@@ -247,6 +250,9 @@ func Register(
 	// Asset routes (tenant from JWT token) - only if handler is initialized
 	if h.Asset != nil {
 		registerAssetRoutes(router, h.Asset, authMiddleware, userSync)
+	}
+	if h.AssetImport != nil {
+		registerAssetImportRoutes(router, h.AssetImport, authMiddleware, userSync)
 	}
 
 	// Asset Owner routes (tenant from JWT token) - nested under assets
