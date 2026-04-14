@@ -296,6 +296,27 @@ func (r *RelationshipSuggestionRepository) ApproveAll(ctx context.Context, tenan
 	return suggestions, nil
 }
 
+// UpdateRelationshipType updates only the relationship_type of a pending suggestion.
+func (r *RelationshipSuggestionRepository) UpdateRelationshipType(ctx context.Context, tenantID, id shared.ID, relType string) error {
+	query := `
+		UPDATE relationship_suggestions
+		SET relationship_type = $3
+		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+	`
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String(), relType)
+	if err != nil {
+		return fmt.Errorf("failed to update suggestion relationship type: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return relationship.ErrSuggestionNotFound
+	}
+	return nil
+}
+
 // =============================================================================
 // Internal helpers
 // =============================================================================

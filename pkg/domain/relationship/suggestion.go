@@ -109,6 +109,15 @@ func (s *Suggestion) Approve(reviewerID shared.ID) {
 	s.reviewedAt = &now
 }
 
+// UpdateRelationshipType changes the suggested relationship type.
+func (s *Suggestion) UpdateRelationshipType(relType string) error {
+	if relType == "" {
+		return fmt.Errorf("%w: relationship type is required", shared.ErrValidation)
+	}
+	s.relationshipType = relType
+	return nil
+}
+
 // Dismiss marks the suggestion as dismissed.
 func (s *Suggestion) Dismiss(reviewerID shared.ID) {
 	s.status = SuggestionDismissed
@@ -154,6 +163,7 @@ type SuggestionRepository interface {
 	DeleteByAssetID(ctx context.Context, tenantID, assetID shared.ID) error
 	DeletePending(ctx context.Context, tenantID shared.ID) error
 	ApproveAll(ctx context.Context, tenantID, reviewerID shared.ID) ([]*Suggestion, error)
+	UpdateRelationshipType(ctx context.Context, tenantID, id shared.ID, relType string) error
 }
 
 // Errors.

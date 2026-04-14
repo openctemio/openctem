@@ -286,7 +286,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		    compliance_scope = $26, data_classification = $27, pii_data_exposed = $28, phi_data_exposed = $29, regulatory_owner_id = $30,
 		    is_internet_accessible = $31, exposure_changed_at = $32, last_exposure_level = $33,
 		    last_seen = $34, updated_at = $35
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $36
 	`
 
 	updateOwnerRef := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -326,6 +326,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		nullString(string(a.LastExposureLevel())),
 		a.LastSeen(),
 		a.UpdatedAt(),
+		a.TenantID().String(),
 	)
 
 	if err != nil {

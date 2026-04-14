@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,15 +19,18 @@ import (
 
 // RelationshipSuggestionHandler handles relationship suggestion HTTP requests.
 type RelationshipSuggestionHandler struct {
-	service *app.RelationshipSuggestionService
-	logger  *logger.Logger
+	service        *app.RelationshipSuggestionService
+	logger         *logger.Logger
+	generateMu     sync.Mutex
+	lastGenerateAt map[string]time.Time // tenant_id -> last generate time
 }
 
 // NewRelationshipSuggestionHandler creates a new RelationshipSuggestionHandler.
 func NewRelationshipSuggestionHandler(svc *app.RelationshipSuggestionService, log *logger.Logger) *RelationshipSuggestionHandler {
 	return &RelationshipSuggestionHandler{
-		service: svc,
-		logger:  log,
+		service:        svc,
+		logger:         log,
+		lastGenerateAt: make(map[string]time.Time),
 	}
 }
 
@@ -187,9 +191,42 @@ func (h *RelationshipSuggestionHandler) ApproveBatch(w http.ResponseWriter, r *h
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "approved", "count": count})
 }
 
+// UpdateType handles PATCH /api/v1/relationships/suggestions/{id}/type
+func (h *RelationshipSuggestionHandler) UpdateType(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	suggestionID := chi.URLParam(r, "id")
+
+	var req struct {
+		RelationshipType string `json:"relationship_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.service.UpdateRelationshipType(r.Context(), tenantID, suggestionID, req.RelationshipType); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}
+
 // Generate handles POST /api/v1/relationships/suggestions/generate
 func (h *RelationshipSuggestionHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
+
+	// Per-tenant cooldown: 1 generate per 30 seconds
+	h.generateMu.Lock()
+	if lastAt, ok := h.lastGenerateAt[tenantID]; ok && time.Since(lastAt) < 30*time.Second {
+		h.generateMu.Unlock()
+		apierror.TooManyRequests("Please wait before scanning again").WriteJSON(w)
+		return
+	}
+	h.lastGenerateAt[tenantID] = time.Now()
+	h.generateMu.Unlock()
 
 	count, err := h.service.GenerateSuggestions(r.Context(), tenantID)
 	if err != nil {

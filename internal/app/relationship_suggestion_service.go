@@ -37,7 +37,7 @@ func NewRelationshipSuggestionService(
 
 // GenerateSuggestions analyzes assets and generates relationship suggestions.
 // It creates suggestions for:
-//   - Subdomain -> parent domain: member_of relationship
+//   - Domain contains subdomain: contains relationship (parent → child)
 //   - Domain/subdomain with resolved_ip -> IP address asset: resolves_to relationship
 func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context, tenantID string) (int, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
@@ -48,65 +48,49 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 	s.logger.Info("generating relationship suggestions", "tenant_id", tenantID)
 
 	// Clean up stale pending suggestions before regenerating.
-	// This ensures re-scan picks up logic changes (e.g., cname_of → member_of).
 	if cleanErr := s.suggestionRepo.DeletePending(ctx, parsedTenantID); cleanErr != nil {
 		s.logger.Warn("failed to clean pending suggestions", "error", cleanErr)
 	}
 
-	// Fetch all domains
-	domainFilter := asset.Filter{
-		TenantID: &tenantID,
-		Types:    []asset.AssetType{asset.AssetTypeDomain},
-	}
-	domainResult, err := s.assetRepo.List(ctx, domainFilter, asset.ListOptions{}, pagination.New(1, 100))
+	// Fetch all assets by type using pagination loop to handle large datasets.
+	domains, err := s.fetchAllAssets(ctx, tenantID, asset.AssetTypeDomain)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list domains: %w", err)
 	}
 
-	// Build a map of domain name -> asset for quick lookup
-	domainMap := make(map[string]*asset.Asset, len(domainResult.Data))
-	for _, d := range domainResult.Data {
-		domainMap[d.Name()] = d
-	}
-
-	// Fetch all subdomains
-	subdomainFilter := asset.Filter{
-		TenantID: &tenantID,
-		Types:    []asset.AssetType{asset.AssetTypeSubdomain},
-	}
-	subdomainResult, err := s.assetRepo.List(ctx, subdomainFilter, asset.ListOptions{}, pagination.New(1, 100))
+	subdomains, err := s.fetchAllAssets(ctx, tenantID, asset.AssetTypeSubdomain)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list subdomains: %w", err)
 	}
 
-	// Fetch all IP address assets for resolves_to suggestions
-	ipFilter := asset.Filter{
-		TenantID: &tenantID,
-		Types:    []asset.AssetType{asset.AssetTypeIPAddress},
-	}
-	ipResult, err := s.assetRepo.List(ctx, ipFilter, asset.ListOptions{}, pagination.New(1, 100))
+	ips, err := s.fetchAllAssets(ctx, tenantID, asset.AssetTypeIPAddress)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list IP addresses: %w", err)
 	}
 
-	// Build IP name -> asset map
-	ipMap := make(map[string]*asset.Asset, len(ipResult.Data))
-	for _, ip := range ipResult.Data {
+	// Build lookup maps
+	domainMap := make(map[string]*asset.Asset, len(domains))
+	for _, d := range domains {
+		domainMap[d.Name()] = d
+	}
+
+	ipMap := make(map[string]*asset.Asset, len(ips))
+	for _, ip := range ips {
 		ipMap[ip.Name()] = ip
 	}
 
 	suggestions := make([]*relationship.Suggestion, 0)
 
-	// Generate subdomain -> domain (member_of) suggestions
-	for _, sub := range subdomainResult.Data {
+	// Generate domain contains subdomain suggestions (parent → child)
+	for _, sub := range subdomains {
 		parentDomain := findParentDomain(sub.Name(), domainMap)
 		if parentDomain != nil {
 			suggestion, suggErr := relationship.NewSuggestion(
 				parsedTenantID,
-				sub.ID(),
 				parentDomain.ID(),
-				string(asset.RelTypeCnameOf),
-				fmt.Sprintf("Subdomain %s belongs to domain %s", sub.Name(), parentDomain.Name()),
+				sub.ID(),
+				string(asset.RelTypeContains),
+				fmt.Sprintf("Domain %s contains subdomain %s", parentDomain.Name(), sub.Name()),
 				0.95,
 			)
 			if suggErr != nil {
@@ -118,9 +102,9 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 	}
 
 	// Generate resolves_to suggestions for domains/subdomains with resolved_ip
-	allDNSAssets := make([]*asset.Asset, 0, len(domainResult.Data)+len(subdomainResult.Data))
-	allDNSAssets = append(allDNSAssets, domainResult.Data...)
-	allDNSAssets = append(allDNSAssets, subdomainResult.Data...)
+	allDNSAssets := make([]*asset.Asset, 0, len(domains)+len(subdomains))
+	allDNSAssets = append(allDNSAssets, domains...)
+	allDNSAssets = append(allDNSAssets, subdomains...)
 
 	for _, dnsAsset := range allDNSAssets {
 		resolvedIP := getResolvedIP(dnsAsset)
@@ -173,7 +157,13 @@ func (s *RelationshipSuggestionService) ListPending(ctx context.Context, tenantI
 }
 
 // ApproveBatch approves multiple suggestions by IDs.
+// Returns (approved count, error). Returns error only if ALL items failed.
 func (s *RelationshipSuggestionService) ApproveBatch(ctx context.Context, tenantID string, ids []string, reviewerID string) (int, error) {
+	const maxBatchSize = 1000
+	if len(ids) > maxBatchSize {
+		return 0, fmt.Errorf("%w: batch size exceeds maximum of %d", shared.ErrValidation, maxBatchSize)
+	}
+
 	approved := 0
 	for _, id := range ids {
 		if err := s.Approve(ctx, tenantID, id, reviewerID); err != nil {
@@ -182,6 +172,11 @@ func (s *RelationshipSuggestionService) ApproveBatch(ctx context.Context, tenant
 		}
 		approved++
 	}
+
+	if approved == 0 && len(ids) > 0 {
+		return 0, fmt.Errorf("failed to approve any of the %d suggestions", len(ids))
+	}
+
 	return approved, nil
 }
 
@@ -295,6 +290,27 @@ func (s *RelationshipSuggestionService) ApproveAll(ctx context.Context, tenantID
 	return len(approved), nil
 }
 
+// UpdateRelationshipType changes the relationship type of a pending suggestion.
+func (s *RelationshipSuggestionService) UpdateRelationshipType(ctx context.Context, tenantID, suggestionID, relType string) error {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	parsedSuggestionID, err := shared.IDFromString(suggestionID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid suggestion ID", shared.ErrValidation)
+	}
+	if relType == "" {
+		return fmt.Errorf("%w: relationship type is required", shared.ErrValidation)
+	}
+	// Validate the relationship type is valid
+	if _, parseErr := asset.ParseRelationshipType(relType); parseErr != nil {
+		return fmt.Errorf("%w: invalid relationship type: %s", shared.ErrValidation, relType)
+	}
+
+	return s.suggestionRepo.UpdateRelationshipType(ctx, parsedTenantID, parsedSuggestionID, relType)
+}
+
 // Dismiss marks a suggestion as dismissed.
 func (s *RelationshipSuggestionService) Dismiss(ctx context.Context, tenantID, suggestionID, reviewerID string) error {
 	parsedTenantID, err := shared.IDFromString(tenantID)
@@ -394,6 +410,29 @@ func getResolvedIP(a *asset.Asset) string {
 	}
 
 	return ""
+}
+
+// fetchAllAssets retrieves all assets of a given type for a tenant, paginating through all pages.
+// This prevents the LIMIT 100 cap from silently truncating large datasets.
+func (s *RelationshipSuggestionService) fetchAllAssets(ctx context.Context, tenantID string, assetType asset.AssetType) ([]*asset.Asset, error) {
+	const pageSize = 100
+	filter := asset.Filter{
+		TenantID: &tenantID,
+		Types:    []asset.AssetType{assetType},
+	}
+
+	var all []*asset.Asset
+	for page := 1; ; page++ {
+		result, err := s.assetRepo.List(ctx, filter, asset.ListOptions{}, pagination.New(page, pageSize))
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, result.Data...)
+		if len(all) >= int(result.Total) || len(result.Data) < pageSize {
+			break
+		}
+	}
+	return all, nil
 }
 
 // isAlreadyExists checks if an error is an "already exists" error.

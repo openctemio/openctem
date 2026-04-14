@@ -429,6 +429,7 @@ func registerRelationshipSuggestionRoutes(
 		r.POST("/approve-batch", h.ApproveBatch, middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/dismiss", h.Dismiss, middleware.Require(permission.AssetsWrite))
+		r.PATCH("/{id}/type", h.UpdateType, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 }
 
