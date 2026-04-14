@@ -250,6 +250,18 @@ func (r *RelationshipSuggestionRepository) DeleteByAssetID(ctx context.Context, 
 	return nil
 }
 
+// DeletePending removes all pending suggestions for a tenant (used before re-scan).
+func (r *RelationshipSuggestionRepository) DeletePending(ctx context.Context, tenantID shared.ID) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM relationship_suggestions WHERE tenant_id = $1 AND status = 'pending'`,
+		tenantID.String(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete pending suggestions: %w", err)
+	}
+	return nil
+}
+
 // ApproveAll marks all pending suggestions as approved and returns them.
 func (r *RelationshipSuggestionRepository) ApproveAll(ctx context.Context, tenantID, reviewerID shared.ID) ([]*relationship.Suggestion, error) {
 	now := time.Now().UTC()

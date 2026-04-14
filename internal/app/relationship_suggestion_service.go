@@ -47,6 +47,12 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 
 	s.logger.Info("generating relationship suggestions", "tenant_id", tenantID)
 
+	// Clean up stale pending suggestions before regenerating.
+	// This ensures re-scan picks up logic changes (e.g., cname_of → member_of).
+	if cleanErr := s.suggestionRepo.DeletePending(ctx, parsedTenantID); cleanErr != nil {
+		s.logger.Warn("failed to clean pending suggestions", "error", cleanErr)
+	}
+
 	// Fetch all domains
 	domainFilter := asset.Filter{
 		TenantID: &tenantID,

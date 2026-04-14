@@ -152,6 +152,7 @@ type SuggestionRepository interface {
 	UpdateStatus(ctx context.Context, s *Suggestion) error
 	CountPending(ctx context.Context, tenantID shared.ID) (int64, error)
 	DeleteByAssetID(ctx context.Context, tenantID, assetID shared.ID) error
+	DeletePending(ctx context.Context, tenantID shared.ID) error
 	ApproveAll(ctx context.Context, tenantID, reviewerID shared.ID) ([]*Suggestion, error)
 }
 
