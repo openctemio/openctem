@@ -157,6 +157,72 @@ func (h *SimulationHandler) DeleteSimulation(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// RunSimulation handles POST /api/v1/simulations/{id}/run.
+func (h *SimulationHandler) RunSimulation(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	simID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	run, err := h.service.RunSimulation(r.Context(), tenantID, simID, actorID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":          run.ID().String(),
+		"status":      string(run.Status()),
+		"result":      string(run.Result()),
+		"detection":   run.DetectionResult(),
+		"prevention":  run.PreventionResult(),
+		"duration_ms": run.DurationMs(),
+		"output":      run.Output(),
+	})
+}
+
+// ListSimulationRuns handles GET /api/v1/simulations/{id}/runs.
+func (h *SimulationHandler) ListSimulationRuns(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	simID := chi.URLParam(r, "id")
+
+	page := pagination.New(
+		parseQueryInt(r.URL.Query().Get("page"), 1),
+		parseQueryInt(r.URL.Query().Get("per_page"), 20),
+	)
+
+	result, err := h.service.ListSimulationRuns(r.Context(), tenantID, simID, page)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	data := make([]map[string]any, 0, len(result.Data))
+	for _, run := range result.Data {
+		data = append(data, map[string]any{
+			"id":          run.ID().String(),
+			"status":      string(run.Status()),
+			"result":      string(run.Result()),
+			"detection":   run.DetectionResult(),
+			"prevention":  run.PreventionResult(),
+			"duration_ms": run.DurationMs(),
+			"started_at":  run.StartedAt(),
+			"completed_at": run.CompletedAt(),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data":        data,
+		"total":       result.Total,
+		"page":        result.Page,
+		"per_page":    result.PerPage,
+		"total_pages": result.TotalPages,
+	})
+}
+
 // ─── Control Test Endpoints ───
 
 // ListControlTests lists all control tests for the tenant.

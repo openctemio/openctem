@@ -358,7 +358,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize API Key & Webhook services
 	s.APIKey = app.NewAPIKeyService(repos.APIKey, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
-	s.JiraSync = app.NewJiraSyncService(repos.Finding, log)
+	s.JiraSync = app.NewJiraSyncService(repos.Finding, nil, log) // nil = Jira client configured via integration settings
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)

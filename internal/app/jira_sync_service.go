@@ -12,25 +12,137 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// JiraClient defines the interface for Jira REST API operations.
+type JiraClient interface {
+	CreateIssue(ctx context.Context, input JiraCreateIssueInput) (*JiraCreateIssueResult, error)
+	TestConnection(ctx context.Context) error
+}
+
+// JiraCreateIssueInput contains fields for creating a Jira issue.
+type JiraCreateIssueInput struct {
+	ProjectKey  string
+	Summary     string
+	Description string
+	IssueType   string
+	Priority    string
+	Labels      []string
+}
+
+// JiraCreateIssueResult contains the response from creating a Jira issue.
+type JiraCreateIssueResult struct {
+	ID        string
+	Key       string
+	BrowseURL string
+}
+
 // JiraSyncService handles bidirectional sync between findings and Jira tickets.
 //
-// Lifecycle:
-//  1. POST /findings/{id}/link-ticket  — records a Jira ticket key + URL on the finding.
-//  2. POST /webhooks/incoming/jira     — receives Jira status-change webhooks and updates
-//     the finding's status accordingly (in_progress / fix_applied / resolved).
-//
-// The integration is intentionally lightweight: no OAuth, no REST API calls from us.
-// Jira pushes status changes to us; users link tickets manually (or via workflow).
+// Capabilities:
+//  1. POST /findings/{id}/link-ticket     — manually link a Jira ticket to a finding
+//  2. POST /findings/{id}/create-ticket   — auto-create Jira ticket from finding
+//  3. POST /webhooks/incoming/jira        — receive Jira status-change webhooks
 type JiraSyncService struct {
 	findingRepo vulnerability.FindingRepository
+	jiraClient  JiraClient
 	logger      *logger.Logger
 }
 
 // NewJiraSyncService creates a new JiraSyncService.
-func NewJiraSyncService(findingRepo vulnerability.FindingRepository, log *logger.Logger) *JiraSyncService {
+func NewJiraSyncService(findingRepo vulnerability.FindingRepository, jiraClient JiraClient, log *logger.Logger) *JiraSyncService {
 	return &JiraSyncService{
 		findingRepo: findingRepo,
+		jiraClient:  jiraClient,
 		logger:      log.With("service", "jira-sync"),
+	}
+}
+
+// CreateTicketInput is the payload for auto-creating a Jira ticket from a finding.
+type CreateTicketInput struct {
+	TenantID   string `json:"tenant_id"`
+	FindingID  string `json:"finding_id"`
+	ProjectKey string `json:"project_key"` // e.g. "SEC"
+	IssueType  string `json:"issue_type"`  // e.g. "Bug"
+}
+
+// CreateTicketFromFinding auto-creates a Jira ticket from a finding and links it.
+func (s *JiraSyncService) CreateTicketFromFinding(ctx context.Context, input CreateTicketInput) (*JiraTicketInfo, error) {
+	if s.jiraClient == nil {
+		return nil, fmt.Errorf("%w: Jira integration not configured", shared.ErrValidation)
+	}
+	if input.ProjectKey == "" {
+		return nil, fmt.Errorf("%w: project_key is required", shared.ErrValidation)
+	}
+
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	findingID, err := shared.IDFromString(input.FindingID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid finding ID", shared.ErrValidation)
+	}
+
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return nil, fmt.Errorf("get finding: %w", err)
+	}
+
+	// Map finding severity to Jira priority
+	priority := mapSeverityToJiraPriority(string(finding.Severity()))
+
+	issueType := input.IssueType
+	if issueType == "" {
+		issueType = "Bug"
+	}
+
+	description := fmt.Sprintf("**Finding:** %s\n**Severity:** %s\n**Status:** %s\n\n%s",
+		finding.Title(), finding.Severity(), finding.Status(), finding.Description())
+
+	result, err := s.jiraClient.CreateIssue(ctx, JiraCreateIssueInput{
+		ProjectKey:  input.ProjectKey,
+		Summary:     fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title()),
+		Description: description,
+		IssueType:   issueType,
+		Priority:    priority,
+		Labels:      []string{"openctem", "security", string(finding.Severity())},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create jira ticket: %w", err)
+	}
+
+	// Auto-link the created ticket to the finding
+	finding.AddWorkItemURI(result.BrowseURL)
+	if err := s.findingRepo.UpdateWorkItemURIs(ctx, tenantID, findingID, finding.WorkItemURIs()); err != nil {
+		s.logger.Error("failed to link created ticket to finding", "error", err, "ticket_key", result.Key)
+	}
+
+	s.logger.Info("jira ticket created from finding",
+		"finding_id", findingID.String(),
+		"ticket_key", result.Key,
+		"ticket_url", result.BrowseURL,
+	)
+
+	return &JiraTicketInfo{
+		FindingID: findingID.String(),
+		TicketKey: result.Key,
+		TicketURL: result.BrowseURL,
+		LinkedAt:  time.Now().UTC(),
+	}, nil
+}
+
+// mapSeverityToJiraPriority maps finding severity to Jira priority name.
+func mapSeverityToJiraPriority(severity string) string {
+	switch strings.ToLower(severity) {
+	case "critical":
+		return "Highest"
+	case "high":
+		return "High"
+	case "medium":
+		return "Medium"
+	case "low":
+		return "Low"
+	default:
+		return "Medium"
 	}
 }
 
