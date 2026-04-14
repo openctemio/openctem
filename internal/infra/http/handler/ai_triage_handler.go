@@ -212,7 +212,7 @@ func (h *AITriageHandler) GetTriageResultByID(w http.ResponseWriter, r *http.Req
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	findingID := r.PathValue("id")
-	triageID := r.PathValue("triage_id")
+	triageID := r.PathValue("triageId")
 	if findingID == "" || triageID == "" {
 		apierror.BadRequest("Finding ID and Triage ID are required").WriteJSON(w)
 		return

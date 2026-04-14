@@ -35,7 +35,7 @@ func registerAdminRoutes(
 
 		// Admin user management (requires super_admin role)
 		if h.AdminUser != nil {
-			router.Group("/api/v1/admin/admins", func(r Router) {
+			router.Group("/api/v1/admin/users", func(r Router) {
 				r.GET("/", h.AdminUser.List)
 				r.POST("/", h.AdminUser.Create)
 				r.GET("/{id}", h.AdminUser.Get)

@@ -72,16 +72,16 @@ func registerThreatIntelRoutes(
 		r.PATCH("/sync/{source}", h.SetSyncEnabled, middleware.Require(permission.VulnerabilitiesWrite))
 
 		// CVE enrichment (combine EPSS + KEV data)
-		r.GET("/enrich/{cve_id}", h.EnrichCVE, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/enrich/{cveId}", h.EnrichCVE, middleware.Require(permission.VulnerabilitiesRead))
 		r.POST("/enrich", h.EnrichCVEs, middleware.Require(permission.VulnerabilitiesRead))
 
-		// EPSS scores (must have stats before {cve_id} to avoid route conflicts)
+		// EPSS scores (must have stats before {cveId} to avoid route conflicts)
 		r.GET("/epss/stats", h.GetEPSSStats, middleware.Require(permission.VulnerabilitiesRead))
-		r.GET("/epss/{cve_id}", h.GetEPSSScore, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/epss/{cveId}", h.GetEPSSScore, middleware.Require(permission.VulnerabilitiesRead))
 
-		// KEV catalog (must have stats before {cve_id} to avoid route conflicts)
+		// KEV catalog (must have stats before {cveId} to avoid route conflicts)
 		r.GET("/kev/stats", h.GetKEVStats, middleware.Require(permission.VulnerabilitiesRead))
-		r.GET("/kev/{cve_id}", h.GetKEVEntry, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/kev/{cveId}", h.GetKEVEntry, middleware.Require(permission.VulnerabilitiesRead))
 	}, baseMiddlewares...)
 }
 
@@ -163,7 +163,7 @@ func registerVulnerabilityRoutes(
 		// Read operations
 		r.GET("/", h.ListVulnerabilities, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/{id}", h.GetVulnerability, middleware.Require(permission.VulnerabilitiesRead))
-		r.GET("/cve/{cve_id}", h.GetVulnerabilityByCVE, middleware.Require(permission.VulnerabilitiesRead))
+		r.GET("/cve/{cveId}", h.GetVulnerabilityByCVE, middleware.Require(permission.VulnerabilitiesRead))
 
 		// Write operations (admin only)
 		r.POST("/", h.CreateVulnerability, middleware.Require(permission.VulnerabilitiesWrite))
@@ -238,8 +238,8 @@ func registerVulnerabilityRoutes(
 	router.Group("/api/v1/findings/{id}/comments", func(r Router) {
 		r.GET("/", h.ListComments, middleware.Require(permission.FindingsRead))
 		r.POST("/", h.AddComment, middleware.Require(permission.FindingsWrite))
-		r.PUT("/{comment_id}", h.UpdateComment, middleware.Require(permission.FindingsWrite))
-		r.DELETE("/{comment_id}", h.DeleteComment, middleware.Require(permission.FindingsWrite))
+		r.PUT("/{commentId}", h.UpdateComment, middleware.Require(permission.FindingsWrite))
+		r.DELETE("/{commentId}", h.DeleteComment, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)
 
 	// Finding approval routes - tenant from JWT token
@@ -280,7 +280,7 @@ func registerFindingActivityRoutes(
 	// Finding activity routes - tenant from JWT token
 	router.Group("/api/v1/findings/{id}/activities", func(r Router) {
 		r.GET("/", h.ListActivities, middleware.Require(permission.FindingsRead))
-		r.GET("/{activity_id}", h.GetActivity, middleware.Require(permission.FindingsRead))
+		r.GET("/{activityId}", h.GetActivity, middleware.Require(permission.FindingsRead))
 		// Note: Activities are created automatically via service hooks, not via direct API
 		// Real-time updates are delivered via WebSocket channel: finding:{id}
 	}, tenantMiddlewares...)
@@ -295,8 +295,8 @@ func registerFindingActivityRoutes(
 // - POST /api/v1/findings/ai-triage/bulk - Bulk triage multiple findings (rate-limited)
 // - GET /api/v1/findings/{id}/ai-triage - Get latest triage result
 // - GET /api/v1/findings/{id}/ai-triage/history - Get triage history
-// - GET /api/v1/findings/{id}/ai-triage/{triage_id} - Get specific triage result
-// - GET /api/v1/ai-triage/config - Get AI configuration info
+// - GET /api/v1/findings/{id}/ai-triage/{triageId} - Get specific triage result
+// - GET /api/v1/findings/ai-triage/config - Get AI configuration info
 func registerAITriageRoutes(
 	router Router,
 	h *handler.AITriageHandler,
@@ -316,14 +316,14 @@ func registerAITriageRoutes(
 
 	// AI triage routes - tenant from JWT token
 	router.Group("/api/v1/findings/{id}/ai-triage", func(r Router) {
-		// Get latest triage result (must be before /{triage_id} to avoid conflicts)
+		// Get latest triage result (must be before /{triageId} to avoid conflicts)
 		r.GET("/", h.GetTriageResult, middleware.Require(permission.FindingsRead))
 
-		// Get triage history (must be before /{triage_id} to avoid conflicts)
+		// Get triage history (must be before /{triageId} to avoid conflicts)
 		r.GET("/history", h.ListTriageHistory, middleware.Require(permission.FindingsRead))
 
 		// Get specific triage result by ID
-		r.GET("/{triage_id}", h.GetTriageResultByID, middleware.Require(permission.FindingsRead))
+		r.GET("/{triageId}", h.GetTriageResultByID, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 
 	// Trigger AI triage for a finding (rate-limited)
@@ -336,5 +336,5 @@ func registerAITriageRoutes(
 		append(postMiddlewares, middleware.Require(permission.FindingsWrite))...)
 
 	// AI triage config endpoint - returns current AI mode, provider, model
-	router.GET("/api/v1/ai-triage/config", h.GetConfig, tenantMiddlewares...)
+	router.GET("/api/v1/findings/ai-triage/config", h.GetConfig, tenantMiddlewares...)
 }

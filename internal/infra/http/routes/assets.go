@@ -31,7 +31,7 @@ func registerAssetRoutes(
 		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
 
 		// Bulk operations (must be before /{id} patterns to avoid route conflicts)
-		r.POST("/bulk-sync", h.BulkSync, middleware.Require(permission.AssetsWrite))
+		r.POST("/bulk/sync", h.BulkSync, middleware.Require(permission.AssetsWrite))
 		r.POST("/bulk/status", h.BulkUpdateStatus, middleware.Require(permission.AssetsWrite))
 
 		// Read operations
@@ -79,8 +79,8 @@ func registerAssetOwnerRoutes(
 	router.Group("/api/v1/assets/{id}/owners", func(r Router) {
 		r.GET("/", h.ListOwners, middleware.Require(permission.AssetsRead))
 		r.POST("/", h.AddOwner, middleware.Require(permission.AssetsWrite))
-		r.PUT("/{ownerID}", h.UpdateOwner, middleware.Require(permission.AssetsWrite))
-		r.DELETE("/{ownerID}", h.RemoveOwner, middleware.Require(permission.AssetsDelete))
+		r.PUT("/{ownerId}", h.UpdateOwner, middleware.Require(permission.AssetsWrite))
+		r.DELETE("/{ownerId}", h.RemoveOwner, middleware.Require(permission.AssetsDelete))
 	}, middlewares...)
 }
 
@@ -277,13 +277,13 @@ func registerFindingSourceRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	// Finding Source Category routes (read-only)
-	router.Group("/api/v1/config/finding-sources/categories", func(r Router) {
+	router.Group("/api/v1/finding-sources/categories", func(r Router) {
 		r.GET("/", h.ListCategories, middleware.Require(permission.FindingsRead))
 		r.GET("/{categoryId}", h.GetCategory, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 
 	// Finding Source routes (read-only)
-	router.Group("/api/v1/config/finding-sources", func(r Router) {
+	router.Group("/api/v1/finding-sources", func(r Router) {
 		r.GET("/", h.ListFindingSources, middleware.Require(permission.FindingsRead))
 		r.GET("/code/{code}", h.GetFindingSourceByCode, middleware.Require(permission.FindingsRead))
 		r.GET("/{id}", h.GetFindingSource, middleware.Require(permission.FindingsRead))

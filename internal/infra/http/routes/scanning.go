@@ -263,28 +263,28 @@ func registerToolRoutes(
 
 	// Tenant Tool Config routes (tenant-scoped)
 	router.Group("/api/v1/tenant-tools", func(r Router) {
-		// Bulk operations (must be before /{tool_id} to avoid route conflicts)
-		r.POST("/bulk-enable", h.BulkEnable, middleware.Require(permission.TenantToolsWrite))
-		r.POST("/bulk-disable", h.BulkDisable, middleware.Require(permission.TenantToolsWrite))
+		// Bulk operations (must be before /{toolId} to avoid route conflicts)
+		r.POST("/bulk/enable", h.BulkEnable, middleware.Require(permission.TenantToolsWrite))
+		r.POST("/bulk/disable", h.BulkDisable, middleware.Require(permission.TenantToolsWrite))
 
-		// List all tools with tenant-specific enabled status (must be before /{tool_id})
+		// List all tools with tenant-specific enabled status (must be before /{toolId})
 		r.GET("/all-tools", h.ListAllTools, middleware.Require(permission.TenantToolsRead))
 
 		// Read operations
 		r.GET("/", h.ListTenantConfigs, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{tool_id}", h.GetTenantConfig, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{tool_id}/effective-config", h.GetEffectiveConfig, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{tool_id}/with-config", h.GetToolWithConfig, middleware.Require(permission.TenantToolsRead))
+		r.GET("/{toolId}", h.GetTenantConfig, middleware.Require(permission.TenantToolsRead))
+		r.GET("/{toolId}/effective-config", h.GetEffectiveConfig, middleware.Require(permission.TenantToolsRead))
+		r.GET("/{toolId}/with-config", h.GetToolWithConfig, middleware.Require(permission.TenantToolsRead))
 
 		// Write operations
-		r.PUT("/{tool_id}", h.UpdateTenantConfig, middleware.Require(permission.TenantToolsWrite))
+		r.PUT("/{toolId}", h.UpdateTenantConfig, middleware.Require(permission.TenantToolsWrite))
 
 		// Delete operations
-		r.DELETE("/{tool_id}", h.DeleteTenantConfig, middleware.Require(permission.TenantToolsDelete))
+		r.DELETE("/{toolId}", h.DeleteTenantConfig, middleware.Require(permission.TenantToolsDelete))
 
 		// Stats (consolidated from /tool-stats)
 		r.GET("/stats", h.GetTenantStats, middleware.Require(permission.TenantToolsRead))
-		r.GET("/stats/{tool_id}", h.GetToolStats, middleware.Require(permission.TenantToolsRead))
+		r.GET("/stats/{toolId}", h.GetToolStats, middleware.Require(permission.TenantToolsRead))
 	}, tenantMiddlewares...)
 
 	// /tool-stats removed — use /tenant-tools/stats

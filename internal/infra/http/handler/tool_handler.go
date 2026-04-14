@@ -938,7 +938,7 @@ func (h *ToolHandler) ListTenantConfigs(w http.ResponseWriter, r *http.Request) 
 // @Security     BearerAuth
 // @Router       /tenant-tools/{tool_id} [get]
 func (h *ToolHandler) GetTenantConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "tool_id")
+	toolID := chi.URLParam(r, "toolId")
 	tenantID := middleware.GetTenantID(r.Context())
 
 	config, err := h.service.GetTenantToolConfig(r.Context(), tenantID, toolID)
@@ -966,7 +966,7 @@ func (h *ToolHandler) GetTenantConfig(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /tenant-tools/{tool_id} [put]
 func (h *ToolHandler) UpdateTenantConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "tool_id")
+	toolID := chi.URLParam(r, "toolId")
 	tenantID := middleware.GetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
@@ -1008,7 +1008,7 @@ func (h *ToolHandler) UpdateTenantConfig(w http.ResponseWriter, r *http.Request)
 // @Security     BearerAuth
 // @Router       /tenant-tools/{tool_id} [delete]
 func (h *ToolHandler) DeleteTenantConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "tool_id")
+	toolID := chi.URLParam(r, "toolId")
 	tenantID := middleware.GetTenantID(r.Context())
 
 	if err := h.service.DeleteTenantToolConfig(r.Context(), tenantID, toolID); err != nil {
@@ -1033,7 +1033,7 @@ func (h *ToolHandler) DeleteTenantConfig(w http.ResponseWriter, r *http.Request)
 // @Security     BearerAuth
 // @Router       /tenant-tools/{tool_id}/effective-config [get]
 func (h *ToolHandler) GetEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "tool_id")
+	toolID := chi.URLParam(r, "toolId")
 	tenantID := middleware.GetTenantID(r.Context())
 
 	config, err := h.service.GetEffectiveToolConfig(r.Context(), tenantID, toolID)
@@ -1207,7 +1207,7 @@ func (h *ToolHandler) ListAllTools(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /tenant-tools/{tool_id}/with-config [get]
 func (h *ToolHandler) GetToolWithConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "tool_id")
+	toolID := chi.URLParam(r, "toolId")
 	tenantID := middleware.GetTenantID(r.Context())
 
 	twc, err := h.service.GetToolWithConfig(r.Context(), tenantID, toolID)
@@ -1287,7 +1287,7 @@ func (h *ToolHandler) GetTenantStats(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /tool-stats/{tool_id} [get]
 func (h *ToolHandler) GetToolStats(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "tool_id")
+	toolID := chi.URLParam(r, "toolId")
 	tenantID := middleware.GetTenantID(r.Context())
 	days := parseQueryInt(r.URL.Query().Get("days"), 30)
 
