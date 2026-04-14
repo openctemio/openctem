@@ -16,6 +16,8 @@ func NewKEVEscalator(db *DB) *KEVEscalator {
 }
 
 // EscalateKEVFindings updates open findings with CVEs in KEV to critical severity.
+// Runs across ALL tenants — this is intentional: KEV is a global catalog from CISA,
+// and any finding with a KEV CVE should be escalated regardless of tenant.
 // Only escalates findings that are not already critical and not in a terminal status.
 // Returns the number of escalated findings.
 func (e *KEVEscalator) EscalateKEVFindings(ctx context.Context) (int, error) {

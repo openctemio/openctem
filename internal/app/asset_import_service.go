@@ -62,14 +62,19 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 		return nil, fmt.Errorf("%w: CSV must have 'name' and 'type' columns", shared.ErrValidation)
 	}
 
+	const maxRows = 100000
+	const maxErrors = 100
+
 	result := &AssetImportResult{}
-	for {
+	for rowNum := 0; rowNum < maxRows; rowNum++ {
 		record, readErr := csvReader.Read()
 		if readErr == io.EOF {
 			break
 		}
 		if readErr != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("row read error: %v", readErr))
+			if len(result.Errors) < maxErrors {
+				result.Errors = append(result.Errors, fmt.Sprintf("row %d: %v", rowNum+2, readErr))
+			}
 			continue
 		}
 

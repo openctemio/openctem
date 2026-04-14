@@ -8,8 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
+
+const maxResponseSize = 10 * 1024 * 1024 // 10MB
 
 // Client is a Jira REST API client.
 type Client struct {
@@ -21,15 +25,25 @@ type Client struct {
 
 // NewClient creates a new Jira client.
 // baseURL should be like "https://myorg.atlassian.net"
-func NewClient(baseURL, email, apiToken string) *Client {
+func NewClient(baseURL, email, apiToken string) (*Client, error) {
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Scheme != "https" {
+		return nil, fmt.Errorf("invalid Jira URL: must use https")
+	}
+	// Block internal/metadata URLs (SSRF protection)
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasPrefix(host, "127.") || strings.HasPrefix(host, "169.254.") || strings.HasPrefix(host, "10.") || strings.HasPrefix(host, "192.168.") {
+		return nil, fmt.Errorf("invalid Jira URL: internal addresses not allowed")
+	}
+
 	return &Client{
-		baseURL:  baseURL,
+		baseURL:  strings.TrimRight(baseURL, "/"),
 		email:    email,
 		apiToken: apiToken,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-	}
+	}, nil
 }
 
 // CreateIssueInput contains fields for creating a Jira issue.
@@ -92,7 +106,7 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
