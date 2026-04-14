@@ -104,6 +104,7 @@ func registerComponentRoutes(
 		r.GET("/ecosystems", h.GetEcosystemStats, middleware.Require(permission.ComponentsRead))
 		r.GET("/vulnerable", h.GetVulnerableComponents, middleware.Require(permission.ComponentsRead))
 		r.GET("/licenses", h.GetLicenseStats, middleware.Require(permission.ComponentsRead))
+		r.GET("/export", h.ExportComponents, middleware.Require(permission.ComponentsRead))
 
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.ComponentsRead))

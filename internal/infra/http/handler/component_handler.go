@@ -300,6 +300,59 @@ func (h *ComponentHandler) GetVulnerableComponents(w http.ResponseWriter, r *htt
 	_ = json.NewEncoder(w).Encode(result)
 }
 
+// ExportComponents handles GET /api/v1/components/export
+// Returns all components for SBOM export. Paginates internally to collect all data.
+func (h *ComponentHandler) ExportComponents(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	// Paginate through all components (100 per page, max 10000 total)
+	var allComponents []*component.Component
+	const maxTotal = 10000
+	for page := 1; len(allComponents) < maxTotal; page++ {
+		result, err := h.service.ListComponents(r.Context(), app.ListComponentsInput{
+			TenantID: tenantID,
+			Page:     page,
+			PerPage:  100,
+		})
+		if err != nil {
+			h.handleServiceError(w, err)
+			return
+		}
+		allComponents = append(allComponents, result.Data...)
+		if len(allComponents) >= int(result.Total) || len(result.Data) < 100 {
+			break
+		}
+	}
+
+	type exportComponent struct {
+		Name               string `json:"name"`
+		Version            string `json:"version"`
+		Ecosystem          string `json:"ecosystem"`
+		PURL               string `json:"purl"`
+		License            string `json:"license,omitempty"`
+		VulnerabilityCount int    `json:"vulnerability_count"`
+	}
+
+	components := make([]exportComponent, 0, len(allComponents))
+	for _, c := range allComponents {
+		components = append(components, exportComponent{
+			Name:               c.Name(),
+			Version:            c.Version(),
+			Ecosystem:          string(c.Ecosystem()),
+			PURL:               c.PURL(),
+			License:            c.License(),
+			VulnerabilityCount: c.VulnerabilityCount(),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data":  components,
+		"total": len(components),
+	})
+}
+
 // GetLicenseStats handles GET /api/v1/components/licenses
 // @Summary      Get license statistics
 // @Description  Retrieves license distribution statistics for the tenant
