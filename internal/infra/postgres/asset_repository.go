@@ -1059,12 +1059,19 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 
 // ListDistinctTags returns distinct tags across all assets for a tenant.
 // Supports prefix filtering for autocomplete and a limit for result size.
-func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error) {
+func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error) {
 	query := `SELECT DISTINCT tag FROM assets, unnest(tags) AS tag WHERE tenant_id = $1`
 	args := []any{tenantID.String()}
+	argIdx := 2
+
+	if len(types) > 0 {
+		query += fmt.Sprintf(` AND asset_type = ANY($%d)`, argIdx)
+		args = append(args, pq.Array(types))
+		argIdx++
+	}
 
 	if prefix != "" {
-		query += ` AND tag ILIKE $2`
+		query += fmt.Sprintf(` AND tag ILIKE $%d`, argIdx)
 		args = append(args, escapeLikePattern(prefix)+"%")
 	}
 

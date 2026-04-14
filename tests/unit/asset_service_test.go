@@ -221,7 +221,7 @@ func (m *MockAssetRepository) UpdateFindingCounts(_ context.Context, _ shared.ID
 	return nil
 }
 
-func (m *MockAssetRepository) ListDistinctTags(_ context.Context, _ shared.ID, _ string, _ int) ([]string, error) {
+func (m *MockAssetRepository) ListDistinctTags(_ context.Context, _ shared.ID, _ string, _ []string, _ int) ([]string, error) {
 	return []string{}, nil
 }
 
@@ -1952,7 +1952,7 @@ func TestAssetService_ListTags_Success(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	tags, err := svc.ListTags(context.Background(), tenantID, "", 50)
+	tags, err := svc.ListTags(context.Background(), tenantID, "", nil, 50)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1964,7 +1964,7 @@ func TestAssetService_ListTags_Success(t *testing.T) {
 func TestAssetService_ListTags_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestService()
 
-	_, err := svc.ListTags(context.Background(), "bad-uuid", "", 50)
+	_, err := svc.ListTags(context.Background(), "bad-uuid", "", nil, 50)
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}
@@ -1978,17 +1978,17 @@ func TestAssetService_ListTags_DefaultLimit(t *testing.T) {
 	tenantID := serviceTenantID.String()
 
 	// Limit <= 0 should default to 50, limit > 100 should default to 50
-	_, err := svc.ListTags(context.Background(), tenantID, "", 0)
+	_, err := svc.ListTags(context.Background(), tenantID, "", nil, 0)
 	if err != nil {
 		t.Fatalf("expected no error with zero limit, got %v", err)
 	}
 
-	_, err = svc.ListTags(context.Background(), tenantID, "", -1)
+	_, err = svc.ListTags(context.Background(), tenantID, "", nil, -1)
 	if err != nil {
 		t.Fatalf("expected no error with negative limit, got %v", err)
 	}
 
-	_, err = svc.ListTags(context.Background(), tenantID, "", 200)
+	_, err = svc.ListTags(context.Background(), tenantID, "", nil, 200)
 	if err != nil {
 		t.Fatalf("expected no error with over-limit, got %v", err)
 	}

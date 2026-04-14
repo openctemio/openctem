@@ -1215,6 +1215,7 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	prefix := r.URL.Query().Get("prefix")
+	types := r.URL.Query()["type"]
 	limitStr := r.URL.Query().Get("limit")
 	limit := 50
 	if limitStr != "" {
@@ -1223,7 +1224,7 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tags, err := h.service.ListTags(r.Context(), tenantID, prefix, limit)
+	tags, err := h.service.ListTags(r.Context(), tenantID, prefix, types, limit)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

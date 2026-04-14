@@ -1122,7 +1122,7 @@ func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types
 	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags, subType)
 }
 
-func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, limit int) ([]string, error) {
+func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, types []string, limit int) ([]string, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -1138,7 +1138,7 @@ func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix str
 		prefix = prefix[:50]
 	}
 
-	return s.repo.ListDistinctTags(ctx, parsedTenantID, prefix, limit)
+	return s.repo.ListDistinctTags(ctx, parsedTenantID, prefix, types, limit)
 }
 
 // ActivateAsset activates an asset.

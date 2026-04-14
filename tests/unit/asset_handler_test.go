@@ -174,7 +174,7 @@ func (m *HandlerMockRepository) UpdateFindingCounts(ctx context.Context, tenantI
 	return nil
 }
 
-func (m *HandlerMockRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error) {
+func (m *HandlerMockRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error) {
 	return []string{}, nil
 }
 

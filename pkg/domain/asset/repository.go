@@ -79,7 +79,7 @@ type Repository interface {
 
 	// ListDistinctTags returns distinct tags across all assets for a tenant.
 	// Supports prefix filtering for autocomplete and a limit for result size.
-	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, limit int) ([]string, error)
+	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error)
 
 	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
 	// This replaces the N+1 pattern of calling Count() per type.
