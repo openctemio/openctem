@@ -397,6 +397,60 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 		delete(input.Properties, key)
 	}
 
+	// Extract DNS fields from nested domain.dns_records → flat properties
+	// Collector sends: {"domain": {"dns_records": [{"type":"A","value":"1.2.3.4","ttl":300}]}}
+	// UI reads flat: record_type, resolved_ip, cname_target, ttl, dns_record_types, resolved_ips
+	if domainObj, ok := input.Properties["domain"].(map[string]any); ok {
+		if records, ok := domainObj["dns_records"].([]any); ok && len(records) > 0 {
+			var recordTypes []string
+			var resolvedIPs []string
+			for _, r := range records {
+				rec, ok := r.(map[string]any)
+				if !ok {
+					continue
+				}
+				recType, _ := rec["type"].(string)
+				recValue, _ := rec["value"].(string)
+				if recType != "" {
+					recordTypes = append(recordTypes, recType)
+				}
+				if recValue != "" && (recType == "A" || recType == "AAAA") {
+					resolvedIPs = append(resolvedIPs, recValue)
+				}
+			}
+			// First record as primary
+			if first, ok := records[0].(map[string]any); ok {
+				if rt, _ := first["type"].(string); rt != "" {
+					input.Properties["record_type"] = rt
+				}
+				if rv, _ := first["value"].(string); rv != "" {
+					rt, _ := first["type"].(string)
+					if rt == "A" || rt == "AAAA" {
+						input.Properties["resolved_ip"] = rv
+					} else if rt == "CNAME" {
+						input.Properties["cname_target"] = rv
+					}
+				}
+				if ttl, ok := first["ttl"]; ok {
+					input.Properties["ttl"] = ttl
+				}
+			}
+			// Aggregates
+			if len(recordTypes) > 0 {
+				input.Properties["dns_record_types"] = strings.Join(unique(recordTypes), ", ")
+			}
+			if len(resolvedIPs) > 0 {
+				input.Properties["resolved_ips"] = strings.Join(unique(resolvedIPs), ", ")
+			}
+			input.Properties["dns_record_count"] = len(records)
+		}
+	}
+
+	// Normalize root_domain (strip trailing dot)
+	if rd, ok := input.Properties["root_domain"].(string); ok && strings.HasSuffix(rd, ".") {
+		input.Properties["root_domain"] = strings.TrimSuffix(rd, ".")
+	}
+
 	// Auto-detect subdomain: if type is "domain", check whether the name
 	// looks like a subdomain based on domain level analysis.
 	// Method 1: use root_domain property if provided by collector
@@ -422,6 +476,19 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 	}
 
 	return input
+}
+
+// unique returns a deduplicated copy of a string slice, preserving order.
+func unique(ss []string) []string {
+	seen := make(map[string]bool, len(ss))
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // isLikelySubdomain checks if a domain name has more labels than a typical root domain.
