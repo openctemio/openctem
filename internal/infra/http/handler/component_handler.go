@@ -282,7 +282,11 @@ func (h *ComponentHandler) GetEcosystemStats(w http.ResponseWriter, r *http.Requ
 func (h *ComponentHandler) GetVulnerableComponents(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	limit := parseQueryInt(r.URL.Query().Get("limit"), 10)
+	// Accept both "limit" and "per_page" for consistency across API
+	limit := parseQueryInt(r.URL.Query().Get("limit"), 0)
+	if limit == 0 {
+		limit = parseQueryInt(r.URL.Query().Get("per_page"), 10)
+	}
 
 	components, err := h.service.GetVulnerableComponents(r.Context(), tenantID, limit)
 	if err != nil {
