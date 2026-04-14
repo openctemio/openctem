@@ -178,9 +178,25 @@ func (r *RefreshTokenRepository) RevokeByUserID(ctx context.Context, userID shar
 	return err
 }
 
-// DeleteExpired deletes all expired tokens.
+// DeleteExpired cleans up tokens that are no longer needed.
+//
+// Three categories are removed:
+//  1. expires_at < NOW()  — fully expired (past 7-day TTL)
+//  2. revoked_at IS NOT NULL — explicitly revoked (logout, session revoke)
+//  3. used_at < NOW() - INTERVAL '1 hour' — rotated tokens older than 1h
+//
+// Category 3 uses a 1-hour grace period (4× the 15-min access token TTL)
+// to preserve reuse detection: if an attacker replays a used token within
+// the grace window, RefreshToken() detects IsUsed() and revokes the entire
+// family. After 1 hour without a replay attempt, the token is safe to delete.
+//
+// Without this cleanup, the table grows ~32 rows/user/day from rotation alone.
+// With cleanup: ~1 active token per device per user at steady state.
 func (r *RefreshTokenRepository) DeleteExpired(ctx context.Context) (int64, error) {
-	query := `DELETE FROM refresh_tokens WHERE expires_at < NOW()`
+	query := `DELETE FROM refresh_tokens
+		WHERE expires_at < NOW()
+		   OR revoked_at IS NOT NULL
+		   OR (used_at IS NOT NULL AND used_at < NOW() - INTERVAL '1 hour')`
 
 	result, err := r.db.ExecContext(ctx, query)
 	if err != nil {

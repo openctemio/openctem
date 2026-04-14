@@ -201,3 +201,46 @@ func parseQueryIntPtr(s string) *int {
 func parseQueryBoolPtr(s string) *bool {
 	return parseQueryBool(s)
 }
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// parsePropertiesFilter parses "key:value,key2:value2" into a map.
+// Keys are validated to alphanumeric+underscore only. Max 5 pairs.
+func ParsePropertiesFilter(raw string) map[string]string {
+	if raw == "" {
+		return nil
+	}
+	result := make(map[string]string)
+	for _, pair := range strings.Split(raw, ",") {
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		if key == "" || val == "" || len(key) > 50 || len(val) > 200 {
+			continue
+		}
+		// Allow only safe key names (alphanumeric + underscore)
+		safe := true
+		for _, c := range key {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+				safe = false
+				break
+			}
+		}
+		if !safe {
+			continue
+		}
+		result[key] = val
+		if len(result) >= 5 {
+			break
+		}
+	}
+	return result
+}

@@ -163,15 +163,16 @@ func (s *AssetService) InvalidateScoringConfigCache(tenantID shared.ID) {
 
 // CreateAssetInput represents the input for creating an asset.
 type CreateAssetInput struct {
-	TenantID    string   `validate:"omitempty,uuid"`
-	Name        string   `validate:"required,min=1,max=255"`
-	Type        string   `validate:"required,asset_type"`
-	Criticality string   `validate:"required,criticality"`
-	Scope       string   `validate:"omitempty,scope"`
-	Exposure    string   `validate:"omitempty,exposure"`
-	Description string   `validate:"max=1000"`
-	Tags        []string `validate:"max=20,dive,max=50"`
-	OwnerRef    string   `validate:"max=500"` // Raw owner from external source
+	TenantID    string         `validate:"omitempty,uuid"`
+	Name        string         `validate:"required,min=1,max=255"`
+	Type        string         `validate:"required,asset_type"`
+	Criticality string         `validate:"required,criticality"`
+	Scope       string         `validate:"omitempty,scope"`
+	Exposure    string         `validate:"omitempty,exposure"`
+	Description string         `validate:"max=1000"`
+	Tags        []string       `validate:"max=20,dive,max=50"`
+	OwnerRef    string         `validate:"max=500"` // Raw owner from external source
+	Properties  map[string]any // JSONB properties (known fields auto-promoted to columns)
 }
 
 // CreateAsset creates a new asset.
@@ -179,6 +180,10 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	// Strip null bytes early — PostgreSQL rejects 0x00 in UTF-8
 	input.Name = strings.ReplaceAll(input.Name, "\x00", "")
 	input.Description = strings.ReplaceAll(input.Description, "\x00", "")
+
+	// Promote known fields from properties into proper columns.
+	// Collectors may send sub_type, scope, etc. inside properties JSONB.
+	input = PromoteKnownProperties(input)
 
 	s.logger.Info("creating asset", "name", input.Name)
 
@@ -201,12 +206,22 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		}
 	}
 
-	exists, err := s.repo.ExistsByName(ctx, tenantID, input.Name)
-	if err != nil {
+	// Upsert: if asset with same name already exists, merge and update instead of rejecting.
+	// This handles re-ingestion, manual re-creation, and multi-source discovery gracefully.
+	existing, err := s.repo.GetByName(ctx, tenantID, input.Name)
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check asset existence: %w", err)
 	}
-	if exists {
-		return nil, asset.AlreadyExistsError(input.Name)
+	if existing != nil {
+		return s.mergeAndUpdateExisting(ctx, existing, input, assetType, criticality, tenantID)
+	}
+
+	// IP/hostname correlation: if input.Name looks like an IP, check if a host with
+	// that IP already exists. If input.Name looks like a hostname, check if an
+	// IP-named asset has that hostname in properties. This correlates ESXi hosts
+	// with Splunk IPs, CMDB records, etc.
+	if correlated := s.correlateByIPOrHostname(ctx, tenantID, input); correlated != nil {
+		return s.mergeAndUpdateExisting(ctx, correlated, input, assetType, criticality, tenantID)
 	}
 
 	a, err := asset.NewAsset(input.Name, assetType, criticality)
@@ -242,6 +257,16 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	}
 	for _, tag := range input.Tags {
 		a.AddTag(tag)
+	}
+
+	// Set properties (already cleaned by promoteKnownProperties)
+	if len(input.Properties) > 0 {
+		// Extract promoted sub_type before setting properties
+		if st, ok := input.Properties["__promoted_sub_type"].(string); ok && st != "" {
+			a.SetSubType(st)
+			delete(input.Properties, "__promoted_sub_type")
+		}
+		a.SetProperties(input.Properties)
 	}
 
 	// Set owner reference from external source and try auto-match
@@ -284,6 +309,226 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 
 	s.logger.Info("asset created", "id", a.ID().String(), "name", a.Name())
 	return a, nil
+}
+
+// promoteKnownProperties extracts well-known fields from Properties JSONB into their
+// proper columns on CreateAssetInput. This allows collectors to send everything in
+// properties (e.g., {"sub_type": "firewall", "vendor": "Cisco"}) and the system
+// auto-promotes recognized fields while keeping the rest as JSONB metadata.
+//
+// Promoted fields (removed from Properties after extraction):
+//   - sub_type → used to set entity.SubType
+//   - type → resolved via TypeAliases (e.g., "firewall" → type=network, sub_type=firewall)
+//   - scope, exposure, criticality → override top-level input fields if empty
+//   - description → override if empty
+//   - tags → merged with input.Tags
+func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
+	if len(input.Properties) == 0 {
+		return input
+	}
+
+	// Helper to extract and remove a string key
+	extractStr := func(key string) string {
+		if v, ok := input.Properties[key]; ok {
+			delete(input.Properties, key)
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+		return ""
+	}
+
+	// sub_type: promote to dedicated field (stored on entity, not in JSONB)
+	if st := extractStr("sub_type"); st != "" {
+		// Store as a tag-like hint — service layer will call entity.SetSubType
+		input.Properties["__promoted_sub_type"] = st
+	}
+
+	// type: if properties contains a type alias (e.g., "firewall"), resolve it
+	if propType := extractStr("type"); propType != "" {
+		if resolved, subType := asset.ResolveTypeAlias(asset.AssetType(propType)); resolved != "" {
+			// Override input.Type with resolved core type
+			input.Type = string(resolved)
+			if subType != "" {
+				input.Properties["__promoted_sub_type"] = subType
+			}
+		}
+	}
+
+	// Override empty top-level fields from properties
+	if input.Scope == "" {
+		if s := extractStr("scope"); s != "" {
+			input.Scope = s
+		}
+	}
+	if input.Exposure == "" {
+		if e := extractStr("exposure"); e != "" {
+			input.Exposure = e
+		}
+	}
+	if input.Description == "" {
+		if d := extractStr("description"); d != "" {
+			input.Description = d
+		}
+	}
+
+	// Merge tags from properties
+	if rawTags, ok := input.Properties["tags"]; ok {
+		delete(input.Properties, "tags")
+		switch t := rawTags.(type) {
+		case []any:
+			for _, v := range t {
+				if s, ok := v.(string); ok && s != "" {
+					input.Tags = append(input.Tags, s)
+				}
+			}
+		case string:
+			for _, s := range strings.Split(t, ",") {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					input.Tags = append(input.Tags, s)
+				}
+			}
+		}
+	}
+
+	// Remove other well-known column names that shouldn't stay in JSONB
+	for _, key := range []string{"name", "tenant_id", "criticality", "status", "owner_ref"} {
+		delete(input.Properties, key)
+	}
+
+	return input
+}
+
+// correlateByIPOrHostname tries to find an existing asset by IP or hostname properties.
+// If input.Name looks like an IP (e.g., "10.0.1.5"), search for hosts with that IP in properties.
+// If input.Name looks like a hostname, search for IP-named assets with that hostname in properties.
+// Returns nil if no correlation found.
+func (s *AssetService) correlateByIPOrHostname(ctx context.Context, tenantID shared.ID, input CreateAssetInput) *asset.Asset {
+	name := input.Name
+
+	// Try IP correlation: name is an IP → find host that has this IP
+	if looksLikeIP(name) {
+		found, err := s.repo.FindByIP(ctx, tenantID, name)
+		if err != nil {
+			s.logger.Warn("IP correlation lookup failed", "ip", name, "error", err)
+			return nil
+		}
+		if found != nil {
+			s.logger.Info("asset correlated by IP", "ip", name, "existing_id", found.ID().String(), "existing_name", found.Name())
+			return found
+		}
+	}
+
+	// Try hostname correlation: name is a hostname → find IP-named asset with this hostname
+	if !looksLikeIP(name) && name != "" {
+		found, err := s.repo.FindByHostname(ctx, tenantID, name)
+		if err != nil {
+			s.logger.Warn("hostname correlation lookup failed", "hostname", name, "error", err)
+			return nil
+		}
+		if found != nil {
+			// Hostname is more descriptive than IP — update the asset name
+			if looksLikeIP(found.Name()) {
+				_ = found.UpdateName(name)
+				s.logger.Info("asset correlated by hostname, renamed from IP",
+					"hostname", name, "old_name", found.Name(), "id", found.ID().String())
+			}
+			return found
+		}
+	}
+
+	return nil
+}
+
+// looksLikeIP returns true if the string looks like an IPv4 or IPv6 address.
+func looksLikeIP(s string) bool {
+	// Simple check: contains dots and all segments are numeric (IPv4)
+	// or contains colons (IPv6)
+	if strings.Contains(s, ":") {
+		return true // IPv6
+	}
+	parts := strings.Split(s, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+		for _, c := range p {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// mergeAndUpdateExisting updates an existing asset with new data from CreateAssetInput.
+// Only non-empty fields from input override the existing values.
+// This implements the "create-or-update" (upsert) pattern for manual asset creation.
+func (s *AssetService) mergeAndUpdateExisting(
+	ctx context.Context,
+	existing *asset.Asset,
+	input CreateAssetInput,
+	_ asset.AssetType,
+	criticality asset.Criticality,
+	tenantID shared.ID,
+) (*asset.Asset, error) {
+	// Update criticality if provided and different
+	if criticality != existing.Criticality() {
+		_ = existing.UpdateCriticality(criticality)
+	}
+
+	// Update description if provided
+	if input.Description != "" {
+		existing.UpdateDescription(input.Description)
+	}
+
+	// Update scope if provided
+	if input.Scope != "" {
+		scope, err := asset.ParseScope(input.Scope)
+		if err == nil {
+			_ = existing.UpdateScope(scope)
+		}
+	}
+
+	// Update exposure if provided
+	if input.Exposure != "" {
+		exposure, err := asset.ParseExposure(input.Exposure)
+		if err == nil {
+			_ = existing.UpdateExposure(exposure)
+		}
+	}
+
+	// Merge tags (add new, keep existing)
+	for _, tag := range input.Tags {
+		existing.AddTag(tag)
+	}
+
+	// Update owner ref if provided
+	if input.OwnerRef != "" {
+		existing.SetOwnerRef(input.OwnerRef)
+		if strings.Contains(input.OwnerRef, "@") && s.userMatcher != nil {
+			if matchedID, err := s.userMatcher.FindUserIDByEmail(ctx, tenantID, input.OwnerRef); err == nil && matchedID != nil {
+				existing.SetOwnerID(matchedID)
+			}
+		}
+	}
+
+	// Mark as seen (updates last_seen)
+	existing.MarkSeen()
+
+	// Recalculate risk score
+	existing.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, tenantID))
+
+	if err := s.repo.Update(ctx, existing); err != nil {
+		return nil, fmt.Errorf("failed to update existing asset: %w", err)
+	}
+
+	s.logger.Info("asset upserted (updated existing)", "id", existing.ID().String(), "name", existing.Name())
+	return existing, nil
 }
 
 // GetAsset retrieves an asset by ID within a tenant.
@@ -465,6 +710,12 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	return a, nil
 }
 
+// SaveAsset persists changes to an asset entity directly.
+// Used by handlers that modify the entity and need to persist without going through UpdateAssetInput.
+func (s *AssetService) SaveAsset(ctx context.Context, a *asset.Asset) error {
+	return s.repo.Update(ctx, a)
+}
+
 // DeleteAsset deletes an asset by ID.
 // Security: Requires tenantID to prevent cross-tenant deletion.
 func (s *AssetService) DeleteAsset(ctx context.Context, assetID string, tenantID string) error {
@@ -535,7 +786,10 @@ type ListAssetsInput struct {
 	MinRiskScore  *int     `validate:"omitempty,min=0,max=100"`
 	MaxRiskScore  *int     `validate:"omitempty,min=0,max=100"`
 	HasFindings   *bool    // Filter by whether asset has findings
-	Sort          string   `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
+	IsCrownJewel     *bool             // Filter crown jewel assets
+	SubType          *string           // Filter by sub_type
+	PropertiesFilter map[string]string // Filter by JSONB properties key=value pairs (max 5)
+	Sort             string            `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page          int      `validate:"min=0"`
 	PerPage       int      `validate:"min=0,max=100"`
 
@@ -636,6 +890,21 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		filter = filter.WithHasFindings(*input.HasFindings)
 	}
 
+	// Crown jewel filter
+	if input.IsCrownJewel != nil {
+		filter.IsCrownJewel = input.IsCrownJewel
+	}
+
+	// Sub-type filter
+	if input.SubType != nil {
+		filter.SubType = input.SubType
+	}
+
+	// Properties filter (JSONB containment)
+	if len(input.PropertiesFilter) > 0 {
+		filter = filter.WithPropertiesFilter(input.PropertiesFilter)
+	}
+
 	// Layer 2: Data Scope - non-admin users only see assets in their groups
 	if !input.IsAdmin && input.ActingUserID != "" {
 		userID, err := shared.IDFromString(input.ActingUserID)
@@ -655,16 +924,25 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	return s.repo.List(ctx, filter, opts, page)
 }
 
-// ListTags returns distinct tags across all assets for a tenant.
-// Supports prefix filtering for autocomplete.
-// GetAssetStats returns aggregated asset statistics using SQL aggregation.
-// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string, tags []string) (*asset.AggregateStats, error) {
+// GetPropertyFacets returns distinct property keys and values for faceted filtering.
+func (s *AssetService) GetPropertyFacets(ctx context.Context, tenantID string, types []string, subType string) ([]asset.PropertyFacet, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags)
+	return s.repo.GetPropertyFacets(ctx, parsedTenantID, types, subType)
+}
+
+// ListTags returns distinct tags across all assets for a tenant.
+// Supports prefix filtering for autocomplete.
+// GetAssetStats returns aggregated asset statistics using SQL aggregation.
+// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string, tags []string, subType string) (*asset.AggregateStats, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags, subType)
 }
 
 func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, limit int) ([]string, error) {
@@ -768,6 +1046,64 @@ func (s *AssetService) ArchiveAsset(ctx context.Context, tenantID, assetID strin
 
 	s.logger.Info("asset archived", "id", assetID)
 	return a, nil
+}
+
+// ArchiveStaleAssets finds and archives assets that haven't been seen for staleDays.
+// Returns the count of archived assets. If dryRun is true, only counts without archiving.
+func (s *AssetService) ArchiveStaleAssets(ctx context.Context, tenantID string, staleDays int, dryRun bool) (int64, error) {
+	if staleDays < 1 {
+		staleDays = 90
+	}
+
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return 0, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -staleDays)
+
+	// Find stale assets: last_seen < cutoff AND status = active
+	filter := asset.Filter{
+		TenantID: &tenantID,
+	}
+	// Use list with pagination to process in batches
+	page := pagination.Pagination{Page: 1, PerPage: 500}
+	result, err := s.repo.List(ctx, filter, asset.ListOptions{}, page)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list assets for lifecycle check: %w", err)
+	}
+
+	var archived int64
+	for _, a := range result.Data {
+		if a.Status() == asset.StatusArchived {
+			continue
+		}
+		lastSeen := a.LastSeen()
+		if lastSeen.IsZero() || lastSeen.After(cutoff) {
+			continue
+		}
+
+		if dryRun {
+			s.logger.Info("would archive stale asset (dry run)",
+				"id", a.ID().String(), "name", a.Name(),
+				"last_seen", lastSeen.Format(time.RFC3339))
+			archived++
+			continue
+		}
+
+		a.Archive()
+		if err := s.repo.Update(ctx, a); err != nil {
+			s.logger.Warn("failed to archive stale asset",
+				"id", a.ID().String(), "error", err)
+			continue
+		}
+		archived++
+		s.logger.Info("archived stale asset",
+			"id", a.ID().String(), "name", a.Name(),
+			"last_seen", lastSeen.Format(time.RFC3339),
+			"stale_days", staleDays)
+	}
+
+	return archived, nil
 }
 
 // BulkUpdateAssetStatusInput represents input for bulk asset status update.

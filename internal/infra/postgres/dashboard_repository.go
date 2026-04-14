@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
@@ -37,10 +38,13 @@ func (r *DashboardRepository) GetAssetStats(ctx context.Context, tenantID shared
 		),
 		total AS (SELECT COUNT(*) AS cnt FROM base),
 		by_type AS (SELECT asset_type, COUNT(*) AS cnt FROM base GROUP BY asset_type),
+		by_sub_type AS (SELECT COALESCE(sub_type, asset_type) AS st, COUNT(*) AS cnt FROM base WHERE sub_type IS NOT NULL AND sub_type != '' GROUP BY st),
 		by_status AS (SELECT status, COUNT(*) AS cnt FROM base GROUP BY status)
 		SELECT 'total' AS category, '' AS key, cnt FROM total
 		UNION ALL
 		SELECT 'type', asset_type, cnt FROM by_type
+		UNION ALL
+		SELECT 'sub_type', st, cnt FROM by_sub_type
 		UNION ALL
 		SELECT 'status', status, cnt FROM by_status
 	`
@@ -62,6 +66,11 @@ func (r *DashboardRepository) GetAssetStats(ctx context.Context, tenantID shared
 			stats.Total = count
 		case "type":
 			stats.ByType[key] = count
+		case "sub_type":
+			if stats.BySubType == nil {
+				stats.BySubType = make(map[string]int)
+			}
+			stats.BySubType[key] = count
 		case "status":
 			stats.ByStatus[key] = count
 		}
@@ -77,10 +86,13 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 		ByStatus:   make(map[string]int),
 	}
 
-	// Single query with CTEs — replaces 4 separate queries
+	// Single query with CTEs — replaces 4 separate queries.
+	// Excludes pentest "draft" and "in_review" statuses (Phase 4 internal workflow,
+	// hidden from the CTEM dashboard until reviewer approves).
 	query := `
 		WITH base AS (
-			SELECT id, severity, status, vulnerability_id FROM findings WHERE tenant_id = $1
+			SELECT id, severity, status, vulnerability_id FROM findings
+			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review')
 		),
 		total AS (SELECT COUNT(*) AS cnt FROM base),
 		by_sev AS (SELECT severity, COUNT(*) AS cnt FROM base GROUP BY severity),
@@ -220,6 +232,10 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			SELECT 'astatus' AS grp, status AS key, COUNT(*) AS cnt
 			FROM assets WHERE tenant_id = $1 GROUP BY status
 		),
+		asset_by_sub_type AS (
+			SELECT 'asubtype' AS grp, COALESCE(sub_type, asset_type) AS key, COUNT(*) AS cnt
+			FROM assets WHERE tenant_id = $1 AND sub_type IS NOT NULL AND sub_type != '' GROUP BY key
+		),
 		finding_total AS (
 			SELECT COUNT(*) AS cnt FROM findings WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review')
 		),
@@ -234,7 +250,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		avg_cvss AS (
 			SELECT COALESCE(AVG(v.cvss_score), 0) AS val
 			FROM findings f LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
-			WHERE f.tenant_id = $1
+			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review')
 		),
 		repo_total AS (
 			SELECT COUNT(*) AS cnt FROM assets WHERE tenant_id = $1 AND asset_type = 'repository'
@@ -247,6 +263,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		SELECT 'asset_total' AS grp, '' AS key, cnt, 0::float8 AS val FROM asset_total
 		UNION ALL SELECT grp, key, cnt, 0 FROM asset_by_type
 		UNION ALL SELECT grp, key, cnt, 0 FROM asset_by_status
+		UNION ALL SELECT grp, key, cnt, 0 FROM asset_by_sub_type
 		UNION ALL SELECT 'finding_total', '', cnt, 0 FROM finding_total
 		UNION ALL SELECT grp, key, cnt, 0 FROM finding_by_severity
 		UNION ALL SELECT grp, key, cnt, 0 FROM finding_by_status
@@ -272,6 +289,11 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			result.Assets.Total = cnt
 		case "atype":
 			result.Assets.ByType[key] = cnt
+		case "asubtype":
+			if result.Assets.BySubType == nil {
+				result.Assets.BySubType = make(map[string]int)
+			}
+			result.Assets.BySubType[key] = cnt
 		case "astatus":
 			result.Assets.ByStatus[key] = cnt
 		case "finding_total":
@@ -353,6 +375,7 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 			ON f.tenant_id = $1
 			AND f.created_at >= m.month_start
 			AND f.created_at < m.month_start + interval '1 month'
+			AND f.status NOT IN ('draft', 'in_review')
 		GROUP BY m.month_start
 		ORDER BY m.month_start ASC`,
 		tenantID.String(), months,
@@ -375,6 +398,83 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 	}
 
 	return trend, nil
+}
+
+// GetMTTRMetrics returns Mean Time To Remediate metrics by severity.
+// MTTR = average time between finding creation and resolution.
+func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID) (map[string]float64, error) {
+	query := `SELECT
+		severity,
+		COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 3600), 0) as avg_hours
+		FROM findings
+		WHERE tenant_id = $1
+		AND status IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
+		AND updated_at > created_at
+		GROUP BY severity`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MTTR metrics: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]float64)
+	for rows.Next() {
+		var severity string
+		var avgHours float64
+		if err := rows.Scan(&severity, &avgHours); err != nil {
+			return nil, fmt.Errorf("failed to scan MTTR: %w", err)
+		}
+		result[severity] = avgHours
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate MTTR: %w", err)
+	}
+	return result, nil
+}
+
+// GetRiskVelocity returns new vs resolved findings per week for trending analysis.
+// Positive velocity = losing ground, negative = improving.
+func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]app.RiskVelocityPoint, error) {
+	if weeks < 1 {
+		weeks = 12
+	}
+	query := `WITH weeks AS (
+		SELECT generate_series(
+			date_trunc('week', NOW() - ($2::int || ' weeks')::interval),
+			date_trunc('week', NOW()),
+			'1 week'::interval
+		) AS week_start
+	)
+	SELECT
+		w.week_start,
+		COALESCE(SUM(CASE WHEN f.created_at >= w.week_start AND f.created_at < w.week_start + '1 week'::interval THEN 1 ELSE 0 END), 0) as new_count,
+		COALESCE(SUM(CASE WHEN f.updated_at >= w.week_start AND f.updated_at < w.week_start + '1 week'::interval
+			AND f.status IN ('resolved', 'verified') THEN 1 ELSE 0 END), 0) as resolved_count
+	FROM weeks w
+	LEFT JOIN findings f ON f.tenant_id = $1
+	GROUP BY w.week_start
+	ORDER BY w.week_start`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), weeks)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get risk velocity: %w", err)
+	}
+	defer rows.Close()
+
+	var points []app.RiskVelocityPoint
+	for rows.Next() {
+		var p app.RiskVelocityPoint
+		if err := rows.Scan(&p.Week, &p.NewCount, &p.ResolvedCount); err != nil {
+			return nil, fmt.Errorf("failed to scan velocity: %w", err)
+		}
+		p.Velocity = p.NewCount - p.ResolvedCount
+		points = append(points, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate velocity: %w", err)
+	}
+	return points, nil
 }
 
 // Global stats methods (not tenant-scoped)
@@ -642,9 +742,13 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 	// Build placeholder string for IN clause
 	placeholders, args := buildInClause(tenantIDs, 0)
 
+	// Exclude pentest "draft" and "in_review" from the CTEM dashboard counts.
+	excludeInternal := " AND status NOT IN ('draft', 'in_review')"
+
 	// Get total count
+	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`,
+		`SELECT COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`+excludeInternal,
 		args...,
 	).Scan(&stats.Total)
 	if err != nil {
@@ -654,7 +758,7 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 	// Get by severity
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT severity, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`) GROUP BY severity`,
+		`SELECT severity, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`+excludeInternal+` GROUP BY severity`,
 		args...,
 	)
 	if err != nil {
@@ -677,7 +781,7 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 	// Get by status
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	rows, err = r.db.QueryContext(ctx,
-		`SELECT status, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`) GROUP BY status`,
+		`SELECT status, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`+excludeInternal+` GROUP BY status`,
 		args...,
 	)
 	if err != nil {
@@ -702,7 +806,7 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COALESCE(AVG(v.cvss_score), 0) FROM findings f
 		 LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
-		 WHERE f.tenant_id IN (`+placeholders+`)`,
+		 WHERE f.tenant_id IN (`+placeholders+`) AND f.status NOT IN ('draft', 'in_review')`,
 		args...,
 	).Scan(&stats.AverageCVSS)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {

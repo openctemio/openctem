@@ -1,7 +1,10 @@
 package main
 
 import (
+	"database/sql"
+
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -124,11 +127,30 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SLA: handler.NewSLAHandler(svc.SLA, v, log),
 
 		// Pentest Campaign Management
-		Pentest:                handler.NewPentestHandler(svc.Pentest, repos.User, log),
+		Pentest: func() *handler.PentestHandler {
+			h := handler.NewPentestHandler(svc.Pentest, repos.User, log)
+			h.SetImportService(app.NewFindingImportService(repos.Finding, log))
+			return h
+		}(),
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
+
+		// File Attachments (shared across pentest/retest/campaign)
+		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, log),
 
 		// Compliance Framework Management
 		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
+
+		// Attack Simulation & Control Testing
+		Simulation: handler.NewSimulationHandler(svc.Simulation, log),
+
+		// Threat Actor Intelligence
+		ThreatActor: handler.NewThreatActorHandler(svc.ThreatActor, log),
+
+		// Remediation Campaigns
+		RemediationCampaign: handler.NewRemediationCampaignHandler(svc.RemediationCampaign, log),
+
+		// Business Units
+		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),
 
 		// API Keys & Webhooks
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
@@ -240,5 +262,14 @@ func newAgentHandlerWithTemplates(
 	}
 	h.SetPublicAPIURL(publicAPIURL)
 
+	return h
+}
+
+// newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
+// membership verification for finding-scoped attachments.
+func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, log *logger.Logger) *handler.AttachmentHandler {
+	h := handler.NewAttachmentHandler(attachSvc, log)
+	h.SetAccessChecker(pentestSvc)
+	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
 	return h
 }

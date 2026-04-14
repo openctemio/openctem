@@ -44,6 +44,11 @@ type Repository interface {
 	// "your access to {tenant} is suspended" instead of bouncing them to
 	// the create-team onboarding screen with no explanation.
 	GetUserSuspendedMemberships(ctx context.Context, userID shared.ID) ([]UserMembership, error)
+	// GetUserMembershipsWithStatus returns BOTH active and suspended
+	// memberships in a single query. The login flow uses this to avoid
+	// the two sequential round trips that GetUserMemberships +
+	// GetUserSuspendedMemberships would cost.
+	GetUserMembershipsWithStatus(ctx context.Context, userID shared.ID) (*UserMembershipsByStatus, error)
 	// GetMemberByEmail retrieves a member by email address within a tenant
 	GetMemberByEmail(ctx context.Context, tenantID shared.ID, email string) (*MemberWithUser, error)
 
@@ -132,4 +137,12 @@ type UserMembership struct {
 	TenantSlug string // Tenant slug for URL-friendly access
 	TenantName string // Tenant display name
 	Role       string // Role in tenant (owner, admin, member, viewer)
+}
+
+// UserMembershipsByStatus partitions a user's memberships by lifecycle
+// status. Returned by GetUserMembershipsWithStatus so the login flow
+// can fetch both lists in a single query.
+type UserMembershipsByStatus struct {
+	Active    []UserMembership
+	Suspended []UserMembership
 }

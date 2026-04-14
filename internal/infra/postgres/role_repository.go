@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/openctemio/api/pkg/domain/role"
 )
 
@@ -483,6 +484,111 @@ func (r *RoleRepository) GetUserRoles(ctx context.Context, tenantID, userID role
 	}
 
 	return roles, nil
+}
+
+// GetUsersRoles returns all roles for multiple users in ONE round trip.
+// Used by enrichMembersWithRoles in the tenant member list handler to
+// avoid the N+1 pattern of calling GetUserRoles per member. The
+// returned map keys are user IDs (string form); each value contains
+// the roles assigned to that user, ordered by hierarchy_level DESC.
+func (r *RoleRepository) GetUsersRoles(
+	ctx context.Context, tenantID role.ID, userIDs []role.ID,
+) (map[string][]*role.Role, error) {
+	result := make(map[string][]*role.Role, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+
+	// Convert to []string for pq.Array
+	userIDStrs := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		userIDStrs[i] = id.String()
+	}
+
+	query := `
+		SELECT ur.user_id,
+		       r.id, r.tenant_id, r.slug, r.name, r.description, r.is_system,
+		       r.hierarchy_level, r.has_full_data_access,
+		       r.created_at, r.updated_at, r.created_by
+		FROM roles r
+		JOIN user_roles ur ON ur.role_id = r.id
+		WHERE ur.tenant_id = $1 AND ur.user_id = ANY($2::uuid[])
+		ORDER BY ur.user_id, r.hierarchy_level DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(userIDStrs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users roles: %w", err)
+	}
+	defer rows.Close()
+
+	// First pass: collect role data per user, accumulate role IDs for
+	// the batch permissions load below.
+	type rowData struct {
+		userID            string
+		roleID            string
+		dbTenantID        sql.NullString
+		slug              string
+		name              string
+		description       sql.NullString
+		isSystem          bool
+		hierarchyLevel    int
+		hasFullDataAccess bool
+		createdAt         time.Time
+		updatedAt         time.Time
+		createdBy         sql.NullString
+	}
+
+	var rowsData []rowData
+	roleIDSet := make(map[string]struct{})
+
+	for rows.Next() {
+		var rd rowData
+		if err := rows.Scan(
+			&rd.userID,
+			&rd.roleID, &rd.dbTenantID, &rd.slug, &rd.name, &rd.description,
+			&rd.isSystem, &rd.hierarchyLevel, &rd.hasFullDataAccess,
+			&rd.createdAt, &rd.updatedAt, &rd.createdBy,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan user role: %w", err)
+		}
+		rowsData = append(rowsData, rd)
+		roleIDSet[rd.roleID] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate user roles: %w", err)
+	}
+
+	if len(rowsData) == 0 {
+		return result, nil
+	}
+
+	// Batch-load permissions for the unique set of role IDs once,
+	// instead of once per role per user.
+	roleIDs := make([]string, 0, len(roleIDSet))
+	for id := range roleIDSet {
+		roleIDs = append(roleIDs, id)
+	}
+	permissionsMap, err := r.getPermissionsBatch(ctx, roleIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Second pass: reconstruct roles and group by user.
+	for _, rd := range rowsData {
+		permissions := permissionsMap[rd.roleID]
+		ro, err := r.reconstructRole(
+			rd.roleID, rd.dbTenantID, rd.slug, rd.name, rd.description,
+			rd.isSystem, rd.hierarchyLevel, rd.hasFullDataAccess,
+			permissions, rd.createdAt, rd.updatedAt, rd.createdBy,
+		)
+		if err != nil {
+			return nil, err
+		}
+		result[rd.userID] = append(result[rd.userID], ro)
+	}
+
+	return result, nil
 }
 
 // GetUserPermissions returns all permissions for a user (UNION of all roles).

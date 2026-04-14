@@ -173,29 +173,55 @@ func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr
 //
 // Resolution order:
 //  1. Tenant setting (if tenantID provided AND setting is "always" or "never")
-//  2. SMTP availability (auto mode):
+//  2. Single-tenant fallback (when tenantID is empty): if the platform has
+//     exactly one active tenant, treat it as the "default" tenant and apply
+//     its setting. Most OSS deployments are single-tenant — without this
+//     branch the admin's "never" setting was ignored at register time
+//     because the new user wasn't a member of any tenant yet.
+//  3. SMTP availability (auto mode):
 //     - tenant SMTP configured → require verification
 //     - system SMTP configured → require verification
 //     - no SMTP at all → SKIP verification (graceful, no chicken-and-egg)
-//  3. Global env config (if smtpChecker not wired) → fallback
+//  4. Global env config (if smtpChecker not wired) → fallback
 func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenantID string) bool {
 	// 1. Per-tenant override (highest priority)
 	if tenantID != "" && s.tenantRepo != nil {
-		tid, err := shared.IDFromString(tenantID)
-		if err == nil {
-			if t, terr := s.tenantRepo.GetByID(ctx, tid); terr == nil && t != nil {
-				switch t.TypedSettings().Security.EmailVerificationMode {
+		if mode, ok := s.lookupTenantVerificationMode(ctx, tenantID); ok {
+			switch mode {
+			case tenant.EmailVerificationAlways:
+				return true
+			case tenant.EmailVerificationNever:
+				return false
+			}
+			// EmailVerificationAuto / empty → fall through to SMTP check
+		}
+	}
+
+	// 2. Single-tenant fallback. When the caller has no tenant context
+	// (typically the self-registration path), look at the platform: if
+	// there's exactly one active tenant, that's almost certainly the
+	// tenant the new user is going to belong to. Use its setting so the
+	// admin's intent is respected.
+	if tenantID == "" && s.tenantRepo != nil {
+		ids, err := s.tenantRepo.ListActiveTenantIDs(ctx)
+		if err == nil && len(ids) == 1 {
+			soleID := ids[0].String()
+			if mode, ok := s.lookupTenantVerificationMode(ctx, soleID); ok {
+				switch mode {
 				case tenant.EmailVerificationAlways:
 					return true
 				case tenant.EmailVerificationNever:
 					return false
 				}
-				// EmailVerificationAuto / empty → fall through to SMTP check
+				// auto → fall through to SMTP check below, with the
+				// resolved tenant id so HasTenantSMTP picks up any
+				// per-tenant SMTP override
+				tenantID = soleID
 			}
 		}
 	}
 
-	// 2. Smart auto-detection via SMTP availability
+	// 3. Smart auto-detection via SMTP availability
 	if s.smtpChecker != nil {
 		if tenantID != "" && s.smtpChecker.HasTenantSMTP(ctx, tenantID) {
 			return true
@@ -209,8 +235,29 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 		return false
 	}
 
-	// 3. Fallback to global env config
+	// 4. Fallback to global env config
 	return s.config.RequireEmailVerification
+}
+
+// lookupTenantVerificationMode resolves a tenant id to its
+// EmailVerificationMode setting. Returns false if the tenant id is
+// invalid or the lookup fails — callers should treat that as "no
+// override" and continue to the next resolution step.
+func (s *AuthService) lookupTenantVerificationMode(
+	ctx context.Context, tenantID string,
+) (tenant.EmailVerificationMode, bool) {
+	if tenantID == "" || s.tenantRepo == nil {
+		return "", false
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return "", false
+	}
+	t, err := s.tenantRepo.GetByID(ctx, tid)
+	if err != nil || t == nil {
+		return "", false
+	}
+	return t.TypedSettings().Security.EmailVerificationMode, true
 }
 
 // RegisterInput represents the input for user registration.
@@ -218,6 +265,13 @@ type RegisterInput struct {
 	Email    string `json:"email" validate:"required,email,max=255"`
 	Password string `json:"password" validate:"required,min=8,max=128"`
 	Name     string `json:"name" validate:"required,max=255"`
+	// InvitationToken is optional: when a user registers via an
+	// invitation link, the client passes the token here so the register
+	// flow can resolve the target tenant and apply that tenant's email
+	// verification rule (instead of the platform default). The token
+	// itself is NOT consumed here — invitation acceptance still happens
+	// in a separate POST /invitations/{token}/accept call.
+	InvitationToken string `json:"invitation_token,omitempty"`
 }
 
 // RegisterResult represents the result of registration.
@@ -276,8 +330,26 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
+	// Resolve tenant context for email verification rule:
+	//   1. If the caller provided an invitation_token (registration via
+	//      invite link), look it up and use the invitation's tenant.
+	//   2. Otherwise pass empty string and let
+	//      shouldRequireEmailVerification fall back to the single-tenant
+	//      heuristic / SMTP check / global env.
+	verificationTenantID := ""
+	if input.InvitationToken != "" && s.tenantRepo != nil {
+		if inv, ierr := s.tenantRepo.GetInvitationByToken(ctx, input.InvitationToken); ierr == nil && inv != nil {
+			verificationTenantID = inv.TenantID().String()
+		}
+		// Failure to look up the invitation is NOT fatal here — we just
+		// fall back to the platform default. Validation of the token
+		// proper happens later when the user POSTs to
+		// /invitations/{token}/accept; surfacing it as a register error
+		// would be confusing ("you can't register because of an invite?").
+	}
+
 	// Generate verification token if required (smart: respects tenant setting + SMTP availability)
-	requireVerification := s.shouldRequireEmailVerification(ctx, "")
+	requireVerification := s.shouldRequireEmailVerification(ctx, verificationTenantID)
 
 	var verificationToken string
 	if requireVerification {
@@ -466,33 +538,30 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	// Generate session ID first so we can include it in the JWT
 	sessionID := shared.NewID()
 
-	// Query user's tenant memberships
-	memberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
+	// Query user's tenant memberships in a SINGLE round trip — both
+	// active (for token exchange) and suspended (for the "your access
+	// is suspended" UI message). The previous code issued two
+	// sequential queries to the same table for opposite filters.
+	var (
+		tenantInfos    []TenantMembershipInfo
+		suspendedInfos []TenantMembershipInfo
+	)
+	memberships, err := s.tenantRepo.GetUserMembershipsWithStatus(ctx, u.ID())
 	if err != nil {
 		s.logger.Error("failed to get user memberships", "error", err)
-		// Continue without memberships - user can still login but won't have tenant access
-		memberships = nil
-	}
-
-	// Convert to TenantMembershipInfo for response
-	tenantInfos := make([]TenantMembershipInfo, 0, len(memberships))
-	for _, m := range memberships {
-		tenantInfos = append(tenantInfos, TenantMembershipInfo{
-			TenantID:   m.TenantID,
-			TenantSlug: m.TenantSlug,
-			TenantName: m.TenantName,
-			Role:       m.Role,
-		})
-	}
-
-	// Also fetch suspended memberships so the client can show a clear
-	// "your access to {tenant} is suspended" message instead of routing
-	// the user into the create-team flow with no explanation. This is a
-	// best-effort lookup — failure does not break login.
-	var suspendedInfos []TenantMembershipInfo
-	if suspended, serr := s.tenantRepo.GetUserSuspendedMemberships(ctx, u.ID()); serr == nil {
-		suspendedInfos = make([]TenantMembershipInfo, 0, len(suspended))
-		for _, m := range suspended {
+		// Continue without memberships — user can still login but won't have tenant access
+	} else {
+		tenantInfos = make([]TenantMembershipInfo, 0, len(memberships.Active))
+		for _, m := range memberships.Active {
+			tenantInfos = append(tenantInfos, TenantMembershipInfo{
+				TenantID:   m.TenantID,
+				TenantSlug: m.TenantSlug,
+				TenantName: m.TenantName,
+				Role:       m.Role,
+			})
+		}
+		suspendedInfos = make([]TenantMembershipInfo, 0, len(memberships.Suspended))
+		for _, m := range memberships.Suspended {
 			suspendedInfos = append(suspendedInfos, TenantMembershipInfo{
 				TenantID:   m.TenantID,
 				TenantSlug: m.TenantSlug,
@@ -500,9 +569,6 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 				Role:       m.Role,
 			})
 		}
-	} else {
-		s.logger.Warn("failed to load suspended memberships at login",
-			"user_id", u.ID().String(), "error", serr)
 	}
 
 	// Generate GLOBAL refresh token (no tenant context)

@@ -55,6 +55,8 @@ type AssetResponse struct {
 	OwnerRef     string              `json:"owner_ref,omitempty"`
 	Name         string              `json:"name"`
 	Type         string              `json:"type"`
+	SubType      string              `json:"sub_type,omitempty"`
+	Category     string              `json:"category"`
 	Provider     string              `json:"provider,omitempty"`
 	ExternalID   string              `json:"external_id,omitempty"`
 	Criticality  string              `json:"criticality"`
@@ -114,14 +116,15 @@ type OwnerBriefResponse struct {
 
 // CreateAssetRequest represents the request to create an asset.
 type CreateAssetRequest struct {
-	Name        string   `json:"name" validate:"required,min=1,max=255"`
-	Type        string   `json:"type" validate:"required,asset_type"`
-	Criticality string   `json:"criticality" validate:"required,criticality"`
-	Scope       string   `json:"scope" validate:"omitempty,scope"`
-	Exposure    string   `json:"exposure" validate:"omitempty,exposure"`
-	Description string   `json:"description" validate:"max=1000"`
-	Tags        []string `json:"tags" validate:"max=20,dive,max=50"`
-	OwnerRef    string   `json:"owner_ref" validate:"max=500"`
+	Name        string         `json:"name" validate:"required,min=1,max=255"`
+	Type        string         `json:"type" validate:"required,asset_type"`
+	Criticality string         `json:"criticality" validate:"required,criticality"`
+	Scope       string         `json:"scope" validate:"omitempty,scope"`
+	Exposure    string         `json:"exposure" validate:"omitempty,exposure"`
+	Description string         `json:"description" validate:"max=1000"`
+	Tags        []string       `json:"tags" validate:"max=20,dive,max=50"`
+	OwnerRef    string         `json:"owner_ref" validate:"max=500"`
+	Properties  map[string]any `json:"properties,omitempty"`
 }
 
 // UpdateAssetRequest represents the request to update an asset.
@@ -154,6 +157,8 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		OwnerRef:     a.OwnerRef(),
 		Name:         a.Name(),
 		Type:         a.Type().String(),
+		SubType:      a.SubType(),
+		Category:     string(a.Category()),
 		Provider:     a.Provider().String(),
 		ExternalID:   a.ExternalID(),
 		Criticality:  a.Criticality().String(),
@@ -316,7 +321,10 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		MinRiskScore:  parseQueryIntPtr(query.Get("min_risk_score")),
 		MaxRiskScore:  parseQueryIntPtr(query.Get("max_risk_score")),
 		HasFindings:   parseQueryBoolPtr(query.Get("has_findings")),
-		Sort:          query.Get("sort"),
+		IsCrownJewel:  parseQueryBoolPtr(query.Get("is_crown_jewel")),
+		SubType:          nilIfEmpty(query.Get("sub_type")),
+		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
+		Sort:             query.Get("sort"),
 		Page:          parseQueryInt(query.Get("page"), 1),
 		PerPage:       parseQueryInt(query.Get("per_page"), 20),
 		ActingUserID:  middleware.GetUserID(r.Context()),
@@ -441,6 +449,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 		Tags:        req.Tags,
 		OwnerRef:    req.OwnerRef,
+		Properties:  req.Properties,
 	}
 
 	a, err := h.service.CreateAsset(r.Context(), input)
@@ -1143,6 +1152,7 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 type AssetStatsResponse struct {
 	Total         int            `json:"total"`
 	ByType        map[string]int `json:"by_type"`
+	BySubType     map[string]int `json:"by_sub_type"`
 	ByStatus      map[string]int `json:"by_status"`
 	ByCriticality map[string]int `json:"by_criticality"`
 	ByScope       map[string]int `json:"by_scope"`
@@ -1171,9 +1181,10 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	typesFilter := parseQueryArray(query.Get("types"))
 	tagsFilter := parseQueryArray(query.Get("tags"))
+	subTypeFilter := query.Get("sub_type")
 
 	// Use service method with SQL aggregation for efficient stats
-	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter, tagsFilter)
+	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter, tagsFilter, subTypeFilter)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1182,6 +1193,7 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats := AssetStatsResponse{
 		Total:         aggStats.Total,
 		ByType:        aggStats.ByType,
+		BySubType:     aggStats.BySubType,
 		ByStatus:      aggStats.ByStatus,
 		ByCriticality: aggStats.ByCriticality,
 		ByScope:       aggStats.ByScope,
@@ -1220,6 +1232,25 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string][]string{"tags": tags})
+}
+
+// GetFacets returns distinct property keys and their values for faceted filtering.
+// Scoped to tenant + optional type filter. Returns top 20 values per key.
+func (h *AssetHandler) GetFacets(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	query := r.URL.Query()
+	types := parseQueryArray(query.Get("types"))
+	subType := query.Get("sub_type")
+
+	facets, err := h.service.GetPropertyFacets(r.Context(), tenantID, types, subType)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(facets)
 }
 
 // SyncResponse represents the response from a sync operation.
@@ -1687,6 +1718,45 @@ func (h *AssetHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// UpdateCrownJewel marks/unmarks an asset as a crown jewel with business impact scoring.
+func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	assetID := r.PathValue("id")
+
+	var req struct {
+		IsCrownJewel        bool    `json:"is_crown_jewel"`
+		BusinessImpactScore float64 `json:"business_impact_score"`
+		BusinessImpactNotes string  `json:"business_impact_notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid JSON body").WriteJSON(w)
+		return
+	}
+
+	a, err := h.service.GetAsset(r.Context(), tenantID, assetID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Store crown jewel data in properties (DB columns added by migration 000126)
+	props := a.Properties()
+	if props == nil {
+		props = make(map[string]any)
+	}
+	props["is_crown_jewel"] = req.IsCrownJewel
+	props["business_impact_score"] = req.BusinessImpactScore
+	props["business_impact_notes"] = req.BusinessImpactNotes
+	a.SetProperties(props)
+
+	if err := h.service.SaveAsset(r.Context(), a); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, toAssetResponse(a))
 }
 
 // Helper functions are defined in common.go

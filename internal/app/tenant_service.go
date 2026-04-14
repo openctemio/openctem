@@ -19,6 +19,15 @@ type EmailJobEnqueuer interface {
 	EnqueueTeamInvitation(ctx context.Context, payload TeamInvitationJobPayload) error
 }
 
+// MemberStatusEmailNotifier sends transactional emails when a
+// membership lifecycle event happens (suspend / reactivate). The
+// concrete implementation is *app.EmailService; we depend on the
+// interface here to keep the dependency direction clean.
+type MemberStatusEmailNotifier interface {
+	SendMemberSuspendedEmail(ctx context.Context, recipientEmail, recipientName, teamName, actorName, tenantID string) error
+	SendMemberReactivatedEmail(ctx context.Context, recipientEmail, recipientName, teamName, actorName, tenantID string) error
+}
+
 // TeamInvitationJobPayload contains data for team invitation email jobs.
 type TeamInvitationJobPayload struct {
 	RecipientEmail string
@@ -40,7 +49,28 @@ type TenantService struct {
 	// Permission sync services for immediate cache invalidation on member removal
 	permCacheSvc   *PermissionCacheService
 	permVersionSvc *PermissionVersionService
-	logger         *logger.Logger
+	// Session service for revoking all sessions of a user when their
+	// access is paused (suspend) or removed. Without this, an existing
+	// browser tab keeps a valid JWT until expiry and the suspension
+	// only takes effect on tenant-scoped routes that hit
+	// RequireMembership middleware. JWT-claim-scoped routes (e.g.
+	// /api/v1/me/*, /api/v1/notifications) would still let the user in.
+	sessionService *SessionService
+	// Membership cache used by RequireMembership middleware. We hold a
+	// reference here so mutations (suspend / reactivate / role change /
+	// remove) can drop the cached entry immediately. nil means caching
+	// is disabled (Redis unavailable) and the middleware reads the
+	// repository directly — invalidation calls become no-ops.
+	membershipCache *MembershipCacheService
+	// Email notifier for membership lifecycle events. Optional — if
+	// nil (or if SMTP is not configured) the suspend/reactivate
+	// operations succeed without sending an email.
+	statusNotifier MemberStatusEmailNotifier
+	// User service for fetching user name + email when sending the
+	// suspend / reactivate notification email. Optional: when unset,
+	// the email is skipped (best-effort).
+	userService *UserService
+	logger      *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -105,6 +135,105 @@ func WithTenantPermissionVersionService(svc *PermissionVersionService) TenantSer
 func (s *TenantService) SetPermissionServices(cacheSvc *PermissionCacheService, versionSvc *PermissionVersionService) {
 	s.permCacheSvc = cacheSvc
 	s.permVersionSvc = versionSvc
+}
+
+// SetSessionService injects the session service so SuspendMember and
+// RemoveMember can revoke all of the user's sessions immediately.
+// Without it, suspended users can still hit JWT-claim-scoped routes
+// (e.g. /api/v1/me/*) until their JWT expires.
+func (s *TenantService) SetSessionService(sessionService *SessionService) {
+	s.sessionService = sessionService
+}
+
+// SetMembershipCache injects the membership cache so mutations
+// (suspend / reactivate / role change / member removal) can drop the
+// cached entry immediately. With the cache wired up, the middleware
+// no longer hits the database on every request — but the same wiring
+// is what guarantees a suspended user gets a 403 on their NEXT
+// request instead of after the cache TTL expires.
+func (s *TenantService) SetMembershipCache(cache *MembershipCacheService) {
+	s.membershipCache = cache
+}
+
+// SetMemberStatusEmailNotifier injects the email notifier used by
+// SuspendMember and ReactivateMember to tell the affected user what
+// happened. Optional: when unset, the operations still succeed but
+// the user is not notified.
+func (s *TenantService) SetMemberStatusEmailNotifier(n MemberStatusEmailNotifier) {
+	s.statusNotifier = n
+}
+
+// SetUserService injects the user service so the suspend/reactivate
+// notifier can resolve a recipient name + email from the user id on
+// the membership row. Optional alongside SetMemberStatusEmailNotifier.
+func (s *TenantService) SetUserService(u *UserService) {
+	s.userService = u
+}
+
+// notifyMemberStatusChange sends an email to the affected user when
+// their membership is suspended or reactivated. Best-effort: any
+// failure (no notifier wired, user lookup fail, SMTP down) is logged
+// at warn level and never returned to the caller, because the audit
+// log is the system of record for the lifecycle event.
+func (s *TenantService) notifyMemberStatusChange(
+	ctx context.Context,
+	suspended bool,
+	tenantID, userID, actorID string,
+) {
+	if s.statusNotifier == nil || s.userService == nil {
+		return
+	}
+
+	// Resolve user name + email.
+	users, err := s.userService.GetUsersByIDs(ctx, []string{userID})
+	if err != nil || len(users) == 0 {
+		s.logger.Warn("status email skipped: user lookup failed",
+			"user_id", userID, "error", err)
+		return
+	}
+	u := users[0]
+	if u.Email() == "" {
+		return
+	}
+
+	// Resolve tenant name (best effort).
+	teamName := "the team"
+	if tid, perr := shared.IDFromString(tenantID); perr == nil {
+		if t, terr := s.repo.GetByID(ctx, tid); terr == nil && t != nil {
+			teamName = t.Name()
+		}
+	}
+
+	// Resolve actor name (best effort).
+	actorName := ""
+	if actorID != "" {
+		if actorUsers, aerr := s.userService.GetUsersByIDs(ctx, []string{actorID}); aerr == nil && len(actorUsers) > 0 {
+			actorName = actorUsers[0].Name()
+		}
+	}
+
+	var notifyErr error
+	if suspended {
+		notifyErr = s.statusNotifier.SendMemberSuspendedEmail(
+			ctx, u.Email(), u.Name(), teamName, actorName, tenantID)
+	} else {
+		notifyErr = s.statusNotifier.SendMemberReactivatedEmail(
+			ctx, u.Email(), u.Name(), teamName, actorName, tenantID)
+	}
+	if notifyErr != nil {
+		s.logger.Warn("status email failed",
+			"user_id", userID, "tenant_id", tenantID, "error", notifyErr)
+	}
+}
+
+// invalidateMembershipCache is the convenience helper used by every
+// mutation that touches role or status. Safe to call when the cache
+// is unset (no-op).
+func (s *TenantService) invalidateMembershipCache(ctx context.Context, tenantID, userID string) {
+	if s.membershipCache == nil {
+		return
+	}
+	s.membershipCache.Invalidate(ctx, tenantID, userID)
 }
 
 // logAudit logs an audit event if audit service is configured.
@@ -392,6 +521,12 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, fmt.Errorf("failed to update member role: %w", err)
 	}
 
+	// Drop the membership cache so the next request reads the new
+	// role instead of the cached old one. The permission cache is
+	// already invalidated separately by the role service when
+	// effective permissions change.
+	s.invalidateMembershipCache(ctx, membership.TenantID().String(), membership.UserID().String())
+
 	s.logger.Info("member role updated", "membership_id", membershipID, "new_role", role)
 
 	// Log audit event
@@ -430,9 +565,11 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 		return err
 	}
 
-	// Immediately invalidate permission cache and version to prevent stale access
-	// This reduces the window of vulnerability from 5 minutes (cache TTL) to 0
+	// Immediately invalidate permission cache, membership cache, and
+	// version to prevent stale access. This reduces the window of
+	// vulnerability from 5 minutes (cache TTL) to 0.
 	s.invalidateUserPermissions(ctx, tenantID, userID)
+	s.invalidateMembershipCache(ctx, tenantID, userID)
 
 	// Wipe any pending invitations the user still has in their inbox
 	// for this tenant. Without this they could re-accept the original
@@ -499,15 +636,43 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
 
-	// Immediately revoke access
+	// Immediately revoke access — four independent kill switches:
+	//
+	//   1. Permission cache invalidation: forces a fresh permission
+	//      lookup on the next tenant-scoped request, which now sees
+	//      the suspended status and 403s.
+	//   2. Membership cache invalidation: drops the cached membership
+	//      so the RequireMembership middleware re-reads the suspended
+	//      status from the DB on the next request instead of waiting
+	//      for the cache TTL to expire.
+	//   3. Session revocation: kills all of this user's active sessions
+	//      and refresh tokens. Without this, JWT-claim-scoped routes
+	//      (/api/v1/me/*, /api/v1/notifications) would still let the
+	//      user in until their JWT expired (~30 min).
+	//   4. Pending invitation cleanup: removes any unaccepted invites
+	//      so the user can't rejoin via a stale link.
 	s.invalidateUserPermissions(ctx, tenantID, userID)
+	s.invalidateMembershipCache(ctx, tenantID, userID)
 
-	// Invalidate pending invitations
+	if s.sessionService != nil {
+		if err := s.sessionService.RevokeAllSessions(ctx, userID, ""); err != nil {
+			// Best effort — log but don't fail the suspend. The
+			// permission cache invalidation above is the primary
+			// kill switch; session revocation is defense in depth.
+			s.logger.Warn("failed to revoke sessions on suspend",
+				"user_id", userID, "error", err)
+		}
+	}
+
 	if deleted, derr := s.repo.DeletePendingInvitationsByUserID(ctx, membership.TenantID(), membership.UserID()); derr != nil {
 		s.logger.Warn("failed to clean up invitations on suspend", "error", derr)
 	} else if deleted > 0 {
 		s.logger.Info("invalidated invitations on suspend", "deleted", deleted)
 	}
+
+	// Best-effort: notify the user via email so they know their
+	// access was paused (and aren't surprised by a 403 next login).
+	s.notifyMemberStatusChange(ctx, true, tenantID, userID, actx.ActorID)
 
 	s.logger.Info("member suspended", "membership_id", membershipID, "user_id", userID)
 
@@ -543,6 +708,20 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
+
+	// Invalidate the permission cache so the user's reactivated state
+	// takes effect immediately. Without this the user could see stale
+	// "empty permissions" (the result of the suspend invalidation) for
+	// up to permCacheTTL (5 minutes). The Increment side-effect also
+	// bumps the user's permission version so any in-flight JWT clients
+	// know to refetch. The membership cache also has to drop its
+	// suspended snapshot so the next RequireMembership check sees
+	// status='active' immediately.
+	s.invalidateUserPermissions(ctx, tenantID, userID)
+	s.invalidateMembershipCache(ctx, tenantID, userID)
+
+	// Best-effort: notify the user via email that their access is back.
+	s.notifyMemberStatusChange(ctx, false, tenantID, userID, actx.ActorID)
 
 	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
 
@@ -1434,5 +1613,6 @@ func (s *TenantService) GetRiskScoringSettings(ctx context.Context, tenantID str
 	}
 
 	settings := t.TypedSettings()
-	return &settings.RiskScoring, nil
+	rs := settings.RiskScoring
+	return &rs, nil
 }

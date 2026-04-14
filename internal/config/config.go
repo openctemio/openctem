@@ -32,6 +32,25 @@ type Config struct {
 	Encryption  EncryptionConfig
 	AITriage    AITriageConfig
 	AgentConfig AgentConfigConfig
+	Storage     StorageConfig
+}
+
+// StorageConfig holds file attachment storage settings.
+// Default: local filesystem at ./data/attachments.
+// Future: S3, MinIO, GCS via provider selection per-tenant.
+type StorageConfig struct {
+	// Provider selects the storage backend: "local" (default), "s3", "minio"
+	Provider string
+	// LocalPath is the filesystem path for the "local" provider.
+	// Default: ./data/attachments
+	// In Docker: mount a volume to persist across container rebuilds.
+	LocalPath string
+	// S3/MinIO settings (future)
+	Bucket    string
+	Region    string
+	Endpoint  string
+	AccessKey string
+	SecretKey string
 }
 
 // AppConfig holds application-level configuration.
@@ -439,6 +458,15 @@ func Load() (*Config, error) {
 		AgentConfig: AgentConfigConfig{
 			TemplatesDir: getEnv("AGENT_CONFIG_TEMPLATES_DIR", "configs/agent-templates"),
 			PublicAPIURL: getEnv("AGENT_PUBLIC_API_URL", ""),
+		},
+		Storage: StorageConfig{
+			Provider:  getEnv("STORAGE_PROVIDER", "local"),
+			LocalPath: getEnv("STORAGE_LOCAL_PATH", "./data/attachments"),
+			Bucket:    getEnv("STORAGE_BUCKET", ""),
+			Region:    getEnv("STORAGE_REGION", ""),
+			Endpoint:  getEnv("STORAGE_ENDPOINT", ""),
+			AccessKey: getEnv("STORAGE_ACCESS_KEY", ""),
+			SecretKey: getEnv("STORAGE_SECRET_KEY", ""),
 		},
 		Server: ServerConfig{
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),

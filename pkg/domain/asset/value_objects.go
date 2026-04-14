@@ -63,9 +63,52 @@ const (
 	AssetTypeHTTPService   AssetType = "http_service"   // HTTP/HTTPS services from HTTPX
 	AssetTypeOpenPort      AssetType = "open_port"      // Individual open ports from Naabu
 	AssetTypeDiscoveredURL AssetType = "discovered_url" // URLs/endpoints from Katana
+
+	// Consolidated types (new core types)
+	AssetTypeApplication AssetType = "application" // Consolidates website, web_application, api, mobile_app
+	AssetTypeIdentity    AssetType = "identity"    // Consolidates iam_user, iam_role, service_account
+	AssetTypeKubernetes  AssetType = "kubernetes"  // Consolidates kubernetes_cluster, kubernetes_namespace
 )
 
-// AllAssetTypes returns all valid asset types.
+// TypeAliases maps legacy types to their consolidated core type + sub_type.
+// Used by ingest processor to normalize incoming data.
+var TypeAliases = map[AssetType]struct {
+	CoreType AssetType
+	SubType  string
+}{
+	"firewall":             {CoreType: AssetTypeNetwork, SubType: "firewall"},
+	"load_balancer":        {CoreType: AssetTypeNetwork, SubType: "load_balancer"},
+	"vpc":                  {CoreType: AssetTypeNetwork, SubType: "vpc"},
+	"subnet":               {CoreType: AssetTypeNetwork, SubType: "subnet"},
+	"compute":              {CoreType: AssetTypeHost, SubType: "compute"},
+	"serverless":           {CoreType: AssetTypeHost, SubType: "serverless"},
+	"website":              {CoreType: AssetTypeApplication, SubType: "website"},
+	"web_application":      {CoreType: AssetTypeApplication, SubType: "web_application"},
+	"api":                  {CoreType: AssetTypeApplication, SubType: "api"},
+	"mobile_app":           {CoreType: AssetTypeApplication, SubType: "mobile_app"},
+	"iam_user":             {CoreType: AssetTypeIdentity, SubType: "iam_user"},
+	"iam_role":             {CoreType: AssetTypeIdentity, SubType: "iam_role"},
+	"service_account":      {CoreType: AssetTypeIdentity, SubType: "service_account"},
+	"data_store":           {CoreType: AssetTypeDatabase, SubType: "data_store"},
+	"s3_bucket":            {CoreType: AssetTypeStorage, SubType: "s3_bucket"},
+	"container_registry":   {CoreType: AssetTypeStorage, SubType: "container_registry"},
+	"kubernetes_cluster":   {CoreType: AssetTypeKubernetes, SubType: "cluster"},
+	"kubernetes_namespace": {CoreType: AssetTypeKubernetes, SubType: "namespace"},
+	"http_service":         {CoreType: AssetTypeService, SubType: "http"},
+	"open_port":            {CoreType: AssetTypeService, SubType: "open_port"},
+	"discovered_url":       {CoreType: AssetTypeService, SubType: "discovered_url"},
+}
+
+// ResolveTypeAlias resolves a legacy type to its core type + sub_type.
+// If no alias exists, returns the original type with empty sub_type.
+func ResolveTypeAlias(t AssetType) (coreType AssetType, subType string) {
+	if alias, ok := TypeAliases[t]; ok {
+		return alias.CoreType, alias.SubType
+	}
+	return t, ""
+}
+
+// AllAssetTypes returns all valid asset types (including legacy for backward compat).
 func AllAssetTypes() []AssetType {
 	return []AssetType{
 		// Discovery/External Attack Surface
@@ -112,6 +155,10 @@ func AllAssetTypes() []AssetType {
 		AssetTypeHTTPService,
 		AssetTypeOpenPort,
 		AssetTypeDiscoveredURL,
+		// Consolidated core types
+		AssetTypeApplication,
+		AssetTypeIdentity,
+		AssetTypeKubernetes,
 	}
 }
 

@@ -130,7 +130,7 @@ func TestRemoveCampaignMember_Success(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, userID, pentest.CampaignRoleTester, nil, time.Now()),
 	}
 
-	err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
+	_, err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     userID.String(),
@@ -159,7 +159,7 @@ func TestRemoveCampaignMember_LastLeadBlocked(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, shared.NewID(), pentest.CampaignRoleObserver, nil, time.Now()),
 	}
 
-	err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
+	_, err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     leadID.String(),
@@ -188,7 +188,7 @@ func TestRemoveCampaignMember_LeadSelfRemoveBlocked(t *testing.T) {
 		pentest.ReconstituteCampaignMember(shared.NewID(), tenantID, campaignID, lead2ID, pentest.CampaignRoleLead, nil, time.Now()),
 	}
 
-	err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
+	_, err := svc.RemoveCampaignMember(ctx, app.CampaignRemoveMemberInput{
 		TenantID:   tenantID.String(),
 		CampaignID: campaignID.String(),
 		UserID:     leadID.String(),
@@ -368,4 +368,31 @@ func (m *teamMockMemberRepo) CountByRoleInTx(_ context.Context, _ *sql.Tx, _, _ 
 
 func (m *teamMockMemberRepo) BatchListByCampaignIDs(_ context.Context, _ string, _ []string) (map[string][]*pentest.CampaignMember, error) {
 	return nil, nil
+}
+
+// RemoveCampaignMemberSafely mock — replays the same validation logic the real
+// repo runs inside its FOR UPDATE transaction so service tests still exercise
+// the lead-integrity / self-remove guards without an actual DB.
+func (m *teamMockMemberRepo) RemoveCampaignMemberSafely(_ context.Context, _, _, targetUserID, actorUserID string) (pentest.CampaignRole, error) {
+	var targetRole pentest.CampaignRole
+	leadCount := 0
+	for _, member := range m.listByCampaign {
+		if member.Role() == pentest.CampaignRoleLead {
+			leadCount++
+		}
+		if member.UserID().String() == targetUserID {
+			targetRole = member.Role()
+		}
+	}
+	if targetRole == "" {
+		return "", pentest.ErrMemberNotFound
+	}
+	if targetRole == pentest.CampaignRoleLead && leadCount <= 1 {
+		return "", pentest.ErrLastLead
+	}
+	if actorUserID != "" && actorUserID == targetUserID && targetRole == pentest.CampaignRoleLead {
+		return "", pentest.ErrLeadSelfRemove
+	}
+	m.deleteByUserIDCalled = true
+	return targetRole, nil
 }

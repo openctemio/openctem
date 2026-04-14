@@ -486,12 +486,24 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	includeUser := includes["user"]
 	includeRoles := includes["roles"]
 
-	// Parse search/pagination parameters
+	// Parse search/pagination parameters. We always go through the
+	// paginated SearchMembersWithUserInfo path when include=user is
+	// set, even if the client did not pass an explicit limit — the
+	// default cap protects the API from accidentally returning every
+	// member of a 50k-tenant in one response. Clients that want more
+	// results must opt in by passing limit=N (capped server-side).
+	const (
+		defaultMemberLimit = 100
+		maxMemberLimit     = 500
+	)
 	search := r.URL.Query().Get("search")
-	limit := 0
+	limit := defaultMemberLimit
 	offset := 0
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			if parsed > maxMemberLimit {
+				parsed = maxMemberLimit
+			}
 			limit = parsed
 		}
 	}
@@ -501,37 +513,21 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Use search endpoint when search/pagination is requested with include=user
-	useSearch := includeUser && (search != "" || limit > 0 || offset > 0)
-
 	if includeUser {
-		var members []*tenant.MemberWithUser
-		var total int
-
-		if useSearch {
-			// Use search with filtering and pagination
-			filters := tenant.MemberSearchFilters{
-				Search: search,
-				Limit:  limit,
-				Offset: offset,
-			}
-			result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
-			if err != nil {
-				h.handleServiceError(w, err)
-				return
-			}
-			members = result.Members
-			total = result.Total
-		} else {
-			// Legacy: list all members without pagination
-			var err error
-			members, err = h.service.ListMembersWithUserInfo(r.Context(), tenantID.String())
-			if err != nil {
-				h.handleServiceError(w, err)
-				return
-			}
-			total = len(members)
+		// Always paginate when include=user. The legacy unpaginated
+		// path was a memory hazard for large tenants.
+		filters := tenant.MemberSearchFilters{
+			Search: search,
+			Limit:  limit,
+			Offset: offset,
 		}
+		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
+		if err != nil {
+			h.handleServiceError(w, err)
+			return
+		}
+		members := result.Members
+		total := result.Total
 
 		response := make([]MemberWithUserResponse, len(members))
 		for i, m := range members {
@@ -587,28 +583,39 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// enrichMembersWithRoles fetches RBAC roles for all members in a single batch operation.
+// enrichMembersWithRoles fetches RBAC roles for all members in ONE
+// batch query, then attaches the role list to each MemberWithUserResponse.
+//
+// The previous implementation looped over members and called
+// GetUserRoles per user — N+1: a tenant with 100 members made 101 DB
+// queries (1 to fetch members + 100 for roles). Now it makes 2:
+// one to load all members, one to load all their roles.
 func (h *TenantHandler) enrichMembersWithRoles(ctx context.Context, tenantID string, members []MemberWithUserResponse) {
 	if h.roleService == nil || len(members) == 0 {
 		return
 	}
 
-	// Fetch roles for each user (using existing service method)
-	// This could be optimized further with a bulk fetch method if needed
+	userIDs := make([]string, 0, len(members))
 	for i := range members {
-		roles, err := h.roleService.GetUserRoles(ctx, tenantID, members[i].UserID)
-		if err != nil {
-			h.logger.Warn("failed to fetch roles for user", "user_id", members[i].UserID, "error", err)
-			continue
-		}
+		userIDs = append(userIDs, members[i].UserID)
+	}
 
-		rbacRoles := make([]MemberRBACRoleResponse, 0, len(roles))
-		for _, role := range roles {
+	rolesByUser, err := h.roleService.GetUsersRoles(ctx, tenantID, userIDs)
+	if err != nil {
+		h.logger.Warn("failed to batch-fetch roles for members",
+			"tenant_id", tenantID, "count", len(userIDs), "error", err)
+		return
+	}
+
+	for i := range members {
+		userRoles := rolesByUser[members[i].UserID]
+		rbacRoles := make([]MemberRBACRoleResponse, 0, len(userRoles))
+		for _, r := range userRoles {
 			rbacRoles = append(rbacRoles, MemberRBACRoleResponse{
-				ID:       role.ID().String(),
-				Name:     role.Name(),
-				Slug:     role.Slug(),
-				IsSystem: role.IsSystem(),
+				ID:       r.ID().String(),
+				Name:     r.Name(),
+				Slug:     r.Slug(),
+				IsSystem: r.IsSystem(),
 			})
 		}
 		members[i].RBACRoles = rbacRoles

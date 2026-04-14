@@ -195,6 +195,14 @@ func (m *mockDashboardRepo) GetFilteredRecentActivity(_ context.Context, tenantI
 	return m.filteredRecentActivity, nil
 }
 
+func (m *mockDashboardRepo) GetMTTRMetrics(_ context.Context, _ shared.ID) (map[string]float64, error) {
+	return map[string]float64{}, nil
+}
+
+func (m *mockDashboardRepo) GetRiskVelocity(_ context.Context, _ shared.ID, _ int) ([]app.RiskVelocityPoint, error) {
+	return nil, nil
+}
+
 // =============================================================================
 // Helper functions
 // =============================================================================

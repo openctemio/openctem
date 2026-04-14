@@ -53,11 +53,27 @@ type Repositories struct {
 	PentestTemplate  *postgres.PentestTemplateRepository
 	PentestReport    *postgres.PentestReportRepository
 
+	// Attachments (file upload metadata)
+	Attachment *postgres.AttachmentRepository
+
 	// Compliance
 	ComplianceFramework  *postgres.ComplianceFrameworkRepository
 	ComplianceControl    *postgres.ComplianceControlRepository
 	ComplianceAssessment *postgres.ComplianceAssessmentRepository
 	ComplianceMapping    *postgres.ComplianceMappingRepository
+
+	// Attack Simulation & Control Testing
+	Simulation  *postgres.SimulationRepository
+	ControlTest *postgres.ControlTestRepository
+
+	// Threat Actor Intelligence
+	ThreatActor *postgres.ThreatActorRepository
+
+	// Remediation Campaigns
+	RemediationCampaign *postgres.RemediationCampaignRepository
+
+	// Business Units
+	BusinessUnit *postgres.BusinessUnitRepository
 
 	// SLA & Integration
 	SLA                        *postgres.SLAPolicyRepository
@@ -183,11 +199,27 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		PentestTemplate: postgres.NewPentestTemplateRepository(db),
 		PentestReport:   postgres.NewPentestReportRepository(db),
 
+		// Attachments
+		Attachment: postgres.NewAttachmentRepository(db),
+
 		// Compliance
 		ComplianceFramework:  postgres.NewComplianceFrameworkRepository(db),
 		ComplianceControl:    postgres.NewComplianceControlRepository(db),
 		ComplianceAssessment: postgres.NewComplianceAssessmentRepository(db),
 		ComplianceMapping:    postgres.NewComplianceMappingRepository(db),
+
+		// Attack Simulation & Control Testing
+		Simulation:  postgres.NewSimulationRepository(db),
+		ControlTest: postgres.NewControlTestRepository(db),
+
+		// Threat Actor Intelligence
+		ThreatActor: postgres.NewThreatActorRepository(db),
+
+		// Remediation Campaigns
+		RemediationCampaign: postgres.NewRemediationCampaignRepository(db),
+
+		// Business Units
+		BusinessUnit: postgres.NewBusinessUnitRepository(db),
 
 		SLA:         postgres.NewSLAPolicyRepository(db),
 		Integration: postgres.NewIntegrationRepository(db),

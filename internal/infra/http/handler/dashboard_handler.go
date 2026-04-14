@@ -48,6 +48,7 @@ type FindingTrendPoint struct {
 type AssetStats struct {
 	Total     int            `json:"total"`
 	ByType    map[string]int `json:"by_type"`
+	BySubType map[string]int `json:"by_sub_type,omitempty"`
 	ByStatus  map[string]int `json:"by_status"`
 	RiskScore float64        `json:"risk_score"`
 }
@@ -159,6 +160,7 @@ func buildDashboardResponse(stats *app.DashboardStats) DashboardStatsResponse {
 		Assets: AssetStats{
 			Total:     stats.AssetCount,
 			ByType:    stats.AssetsByType,
+			BySubType: stats.AssetsBySubType,
 			ByStatus:  stats.AssetsByStatus,
 			RiskScore: stats.AverageRiskScore,
 		},
@@ -206,5 +208,45 @@ func convertActivityItems(items []app.ActivityItem) []ActivityItem {
 	return result
 }
 
-// Ensure DashboardHandler has no unused imports
-var _ = shared.ID{}
+// GetMTTR returns Mean Time To Remediate metrics by severity.
+func (h *DashboardHandler) GetMTTR(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+
+	mttr, err := h.dashboardService.GetMTTRMetrics(r.Context(), tid)
+	if err != nil {
+		h.logger.Error("failed to get MTTR metrics", "error", err)
+		apierror.InternalServerError("failed to get metrics").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, mttr)
+}
+
+// GetRiskVelocity returns weekly new vs resolved finding trends.
+func (h *DashboardHandler) GetRiskVelocity(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+
+	weeks := parseQueryInt(r.URL.Query().Get("weeks"), 12)
+	if weeks < 1 {
+		weeks = 12
+	} else if weeks > 52 {
+		weeks = 52
+	}
+
+	velocity, err := h.dashboardService.GetRiskVelocity(r.Context(), tid, weeks)
+	if err != nil {
+		h.logger.Error("failed to get risk velocity", "error", err)
+		apierror.InternalServerError("failed to get velocity").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, velocity)
+}

@@ -308,7 +308,7 @@ func (r *FindingDataSourceRepository) List(
 	if filter.IsPrimary != nil {
 		conditions = append(conditions, fmt.Sprintf("is_primary = $%d", argIdx))
 		args = append(args, *filter.IsPrimary)
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""

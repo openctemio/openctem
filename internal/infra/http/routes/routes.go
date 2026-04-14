@@ -89,8 +89,23 @@ type Handlers struct {
 	Pentest                *handler.PentestHandler             // nil if not initialized (no database)
 	PentestCampaignRoleQry middleware.CampaignRoleQuerier       // Campaign role resolver for RBAC middleware
 
+	// File Attachments (shared across pentest, retest, campaign)
+	Attachment *handler.AttachmentHandler // nil if not initialized
+
 	// Compliance Framework Management handlers
 	Compliance *handler.ComplianceHandler // nil if not initialized (no database)
+
+	// Attack Simulation & Control Testing
+	Simulation *handler.SimulationHandler // nil if not initialized (no database)
+
+	// Threat Actor Intelligence
+	ThreatActor *handler.ThreatActorHandler // nil if not initialized (no database)
+
+	// Remediation Campaigns
+	RemediationCampaign *handler.RemediationCampaignHandler // nil if not initialized
+
+	// Business Units
+	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
@@ -160,7 +175,16 @@ func Register(
 	authCfg AuthConfig,
 	tenantRepo tenant.Repository,
 	userService *app.UserService,
+	// Optional Redis-backed membership reader. When non-nil it is
+	// used by RequireMembership and RequireActiveMembershipFromJWT
+	// instead of querying the database directly. nil falls back to
+	// tenantRepo (the legacy behaviour).
+	membershipReader middleware.MembershipReader,
 ) {
+	// Pick the membership reader: cache when available, repo otherwise.
+	if membershipReader == nil {
+		membershipReader = tenantRepo
+	}
 	// Create unified auth middleware based on provider
 	unifiedAuthCfg := middleware.UnifiedAuthConfig{
 		Provider:              authCfg.Provider,
@@ -190,6 +214,15 @@ func Register(
 		readRateLimitMiddleware = rl.Middleware()
 	}
 
+	// Initialize the JWT-tenant membership check. This middleware is
+	// appended to every chain returned by buildTokenTenantMiddlewares,
+	// so any token-scoped route automatically rejects suspended users.
+	// Uses the cache reader when wired, otherwise falls back to the
+	// raw tenant repository.
+	if membershipReader != nil {
+		activeMembershipFromJWTMiddleware = middleware.RequireActiveMembershipFromJWT(membershipReader)
+	}
+
 	// UserSync middleware syncs authenticated users to local database
 	// Supports both local auth and OIDC auth
 	var userSync Middleware
@@ -204,7 +237,7 @@ func Register(
 
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
-		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, h.LocalAuth)
+		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized
@@ -289,9 +322,34 @@ func Register(
 		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync, h.PentestCampaignRoleQry)
 	}
 
+	// Attachment routes (file upload/download, shared across pentest/retest/campaign)
+	if h.Attachment != nil {
+		registerAttachmentRoutes(router, h.Attachment, authMiddleware, userSync)
+	}
+
 	// Compliance Framework Management routes (tenant from JWT token)
 	if h.Compliance != nil {
 		registerComplianceRoutes(router, h.Compliance, authMiddleware, userSync)
+	}
+
+	// Attack Simulation & Control Testing routes
+	if h.Simulation != nil {
+		registerSimulationRoutes(router, h.Simulation, authMiddleware, userSync)
+	}
+
+	// Threat Actor Intelligence routes
+	if h.ThreatActor != nil {
+		registerThreatActorRoutes(router, h.ThreatActor, authMiddleware, userSync)
+	}
+
+	// Remediation Campaign routes
+	if h.RemediationCampaign != nil {
+		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync)
+	}
+
+	// Business Unit routes
+	if h.BusinessUnit != nil {
+		registerBusinessUnitRoutes(router, h.BusinessUnit, authMiddleware, userSync)
 	}
 
 	// Integration routes (tenant from JWT token)
@@ -520,6 +578,17 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 // by buildTokenTenantMiddlewares to all tenant-scoped route groups.
 var readRateLimitMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
+// activeMembershipFromJWTMiddleware checks that the user holding the
+// JWT is still an ACTIVE member of the tenant the JWT claims to be
+// scoped to. Set during Register() once tenantRepo is available.
+//
+// Without this, suspended members with a still-valid access token
+// could keep hitting JWT-claim-scoped routes (/api/v1/me/*,
+// /api/v1/notifications, /api/v1/api-keys, /api/v1/scans/...) until
+// the JWT expires. URL-path tenant routes already enforce this via
+// RequireMembership in tenant.go.
+var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
 // This uses tenant ID from JWT claims instead of URL path.
 // Best practice: tenant-scoped access tokens eliminate IDOR by design.
@@ -527,6 +596,13 @@ var readRateLimitMiddleware Middleware //nolint:gochecknoglobals // set once dur
 func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
 	middlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
 	middlewares = append(middlewares, middleware.RequireTenant())
+	// Membership status check — must run AFTER RequireTenant (which
+	// validates the JWT carries a tenant id). Skipped only if Register
+	// did not wire tenantRepo, which would only happen in tests with a
+	// minimal handler set.
+	if activeMembershipFromJWTMiddleware != nil {
+		middlewares = append(middlewares, activeMembershipFromJWTMiddleware)
+	}
 	if readRateLimitMiddleware != nil {
 		middlewares = append(middlewares, readRateLimitMiddleware)
 	}

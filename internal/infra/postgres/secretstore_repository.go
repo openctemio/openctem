@@ -145,7 +145,7 @@ func (r *SecretStoreRepository) List(ctx context.Context, input secretstore.List
 	if input.CredentialType != nil {
 		conditions = append(conditions, fmt.Sprintf("credential_type = $%d", argIdx))
 		args = append(args, string(*input.CredentialType))
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := " WHERE " + strings.Join(conditions, " AND ")

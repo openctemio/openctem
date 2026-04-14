@@ -13,6 +13,7 @@ type DashboardStats struct {
 	// Asset stats
 	AssetCount       int
 	AssetsByType     map[string]int
+	AssetsBySubType  map[string]int
 	AssetsByStatus   map[string]int
 	AverageRiskScore float64
 
@@ -42,6 +43,14 @@ type FindingTrendPoint struct {
 	Medium   int
 	Low      int
 	Info     int
+}
+
+// RiskVelocityPoint represents weekly new vs resolved finding counts.
+type RiskVelocityPoint struct {
+	Week          time.Time `json:"week"`
+	NewCount      int       `json:"new_count"`
+	ResolvedCount int       `json:"resolved_count"`
+	Velocity      int       `json:"velocity"` // new - resolved (positive = losing ground)
 }
 
 // ActivityItem represents a recent activity item.
@@ -81,6 +90,10 @@ type DashboardStatsRepository interface {
 	GetGlobalRepositoryStats(ctx context.Context) (RepositoryStatsData, error)
 	GetGlobalRecentActivity(ctx context.Context, limit int) ([]ActivityItem, error)
 
+	// MTTR & Trending
+	GetMTTRMetrics(ctx context.Context, tenantID shared.ID) (map[string]float64, error)
+	GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error)
+
 	// Filtered stats (by accessible tenant IDs) - for multi-tenant authorization
 	GetFilteredAssetStats(ctx context.Context, tenantIDs []string) (AssetStatsData, error)
 	GetFilteredFindingStats(ctx context.Context, tenantIDs []string) (FindingStatsData, error)
@@ -92,6 +105,7 @@ type DashboardStatsRepository interface {
 type AssetStatsData struct {
 	Total            int
 	ByType           map[string]int
+	BySubType        map[string]int
 	ByStatus         map[string]int
 	AverageRiskScore float64
 }
@@ -150,6 +164,7 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 	return &DashboardStats{
 		AssetCount:               all.Assets.Total,
 		AssetsByType:             all.Assets.ByType,
+		AssetsBySubType:          all.Assets.BySubType,
 		AssetsByStatus:           all.Assets.ByStatus,
 		AverageRiskScore:         all.Assets.AverageRiskScore,
 		FindingCount:             all.Findings.Total,
@@ -162,6 +177,16 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 		RecentActivity:           all.Activity,
 		FindingTrend:             trend,
 	}, nil
+}
+
+// GetMTTRMetrics returns MTTR (Mean Time To Remediate) in hours by severity.
+func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.ID) (map[string]float64, error) {
+	return s.repo.GetMTTRMetrics(ctx, tenantID)
+}
+
+// GetRiskVelocity returns weekly new vs resolved finding counts.
+func (s *DashboardService) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error) {
+	return s.repo.GetRiskVelocity(ctx, tenantID, weeks)
 }
 
 // GetGlobalStats returns global dashboard statistics (not tenant-scoped).

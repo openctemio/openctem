@@ -13,7 +13,9 @@ import (
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/internal/infra/llm"
 	"github.com/openctemio/api/internal/infra/redis"
+	"github.com/openctemio/api/internal/infra/storage"
 	"github.com/openctemio/api/internal/infra/websocket"
+	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/suppression"
 	"github.com/openctemio/api/pkg/email"
@@ -120,6 +122,14 @@ type Services struct {
 	PermVersion *app.PermissionVersionService
 	PermCache   *app.PermissionCacheService
 
+	// Membership cache (Redis-backed wrapper around tenant.Repository
+	// .GetMembership). Read by RequireMembership +
+	// RequireActiveMembershipFromJWT middlewares so the membership
+	// status check on every tenant-scoped request becomes a Redis GET
+	// instead of a DB round trip. Invalidated by TenantService when
+	// role / status / membership rows change.
+	MembershipCache *app.MembershipCacheService
+
 	// Module Service (OSS - all modules enabled, UI metadata only)
 	Module *app.ModuleService
 
@@ -127,10 +137,23 @@ type Services struct {
 	SLA *app.SLAService
 
 	// Pentest
-	Pentest *app.PentestService
+	Pentest    *app.PentestService
+	Attachment *app.AttachmentService
 
 	// Compliance
 	Compliance *app.ComplianceService
+
+	// Attack Simulation & Control Testing
+	Simulation *app.SimulationService
+
+	// Threat Actor Intelligence
+	ThreatActor *app.ThreatActorService
+
+	// Remediation Campaigns
+	RemediationCampaign *app.RemediationCampaignService
+
+	// Business Units
+	BusinessUnit *app.BusinessUnitService
 
 	// API Keys & Webhooks
 	APIKey  *app.APIKeyService
@@ -258,9 +281,52 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire unified finding repository for CTEM integration (pentest findings → findings table)
 	s.Pentest.SetUnifiedFindingRepository(repos.Finding)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	s.Pentest.SetAuditService(s.Audit)                    // audit logging for team changes + status changes
+	s.Pentest.SetFindingActivityService(s.FindingActivity) // finding activity trail
 	// Note: Pentest notification wiring happens later after NotificationService is initialized
 
+	// Initialize Attachment service (file upload/download).
+	// Storage provider selected via STORAGE_PROVIDER env var (default: "local").
+	// Local path configurable via STORAGE_LOCAL_PATH (default: ./data/attachments).
+	// In Docker: mount a volume at the local path to persist across rebuilds.
+	var fileStorage attachment.FileStorage
+	switch cfg.Storage.Provider {
+	case "local", "":
+		storagePath := cfg.Storage.LocalPath
+		if storagePath == "" {
+			storagePath = "./data/attachments"
+		}
+		fileStorage = storage.NewLocalStorage(storagePath)
+		log.Info("attachment storage: local filesystem", "path", storagePath)
+	default:
+		// Future: case "s3", "minio", "gcs" → initialize respective provider
+		log.Warn("unsupported storage provider, falling back to local", "provider", cfg.Storage.Provider)
+		fileStorage = storage.NewLocalStorage("./data/attachments")
+	}
+	s.Attachment = app.NewAttachmentService(repos.Attachment, fileStorage, log)
+	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
+	storageResolver := app.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
+	s.Attachment.SetTenantStorageResolver(storageResolver, func(cfg attachment.StorageConfig) (attachment.FileStorage, error) {
+		switch cfg.Provider {
+		case "local":
+			basePath := cfg.BasePath
+			if basePath == "" {
+				basePath = "./data/attachments"
+			}
+			return storage.NewLocalStorage(basePath), nil
+		case "s3", "minio":
+			return storage.NewS3Storage(cfg.Bucket, cfg.Region, cfg.Endpoint, cfg.AccessKey, cfg.SecretKey)
+		default:
+			return nil, fmt.Errorf("unsupported tenant storage provider: %s", cfg.Provider)
+		}
+	})
+
 	// Initialize Compliance service
+	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
+	s.ThreatActor = app.NewThreatActorService(repos.ThreatActor, log)
+	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
+	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, log)
+
 	s.Compliance = app.NewComplianceService(
 		repos.ComplianceFramework, repos.ComplianceControl,
 		repos.ComplianceAssessment, repos.ComplianceMapping, log,
@@ -508,6 +574,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		return nil, fmt.Errorf("failed to initialize permission cache service: %w", err)
 	}
 
+	// Initialize membership cache. Hard error if Redis is unreachable
+	// at boot — without this cache the RequireMembership middleware
+	// hammers the database on every request.
+	s.MembershipCache, err = app.NewMembershipCacheService(deps.RedisClient, repos.Tenant, log)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize membership cache service: %w", err)
+	}
+
 	s.Role = app.NewRoleService(repos.Role, repos.RolePermission, log,
 		app.WithRoleAuditService(s.Audit),
 		app.WithRolePermissionVersionService(s.PermVersion),
@@ -516,6 +590,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Wire permission services to tenant service
 	s.Tenant.SetPermissionServices(s.PermCache, s.PermVersion)
+
+	// Wire membership cache so mutations (suspend / reactivate / role
+	// change / member removal) can drop the cached entry immediately.
+	s.Tenant.SetMembershipCache(s.MembershipCache)
 
 	// Initialize licensing service (OSS edition - modules from database)
 	s.Module = app.NewModuleService(repos.Module, log)
@@ -592,6 +670,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Wire session service to user service for session revocation on suspension
 	s.User.SetSessionService(s.Session)
 
+	// Wire session service to tenant service so SuspendMember can revoke
+	// all sessions of a suspended user immediately. Without this, the
+	// user's existing JWT continues to work on JWT-claim-scoped routes
+	// (e.g. /api/v1/me/*, /api/v1/notifications) until it expires.
+	s.Tenant.SetSessionService(s.Session)
+
 	// Initialize SSO service for per-tenant identity provider authentication
 	s.SSO = app.NewSSOService(
 		repos.IdentityProvider,
@@ -630,11 +714,12 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 	return nil
 }
 
-// SetEmailEnqueuer sets the email job enqueuer.
-func (s *Services) SetEmailEnqueuer(enqueuer app.EmailJobEnqueuer) {
-	s.EmailEnqueue = enqueuer
-	s.Tenant = app.NewTenantService(nil, nil, app.WithEmailEnqueuer(enqueuer))
-}
+// Note: SetEmailEnqueuer was removed. The previous implementation
+// rebuilt s.Tenant with `app.NewTenantService(nil, nil, ...)`, which
+// dropped the repo and the logger and would panic on any subsequent
+// call. The actual wiring of the email enqueuer happens in main.go
+// where it can also re-attach the permission and session services
+// after the tenant service is reconstructed.
 
 // initEncryptor initializes the credentials encryptor.
 func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, error) {

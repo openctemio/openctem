@@ -168,6 +168,15 @@ const (
 	ActionPipelineRunFailed           Action = "pipeline_run.failed"
 	ActionPipelineRunCanceled         Action = "pipeline_run.canceled"
 
+	// Pentest campaign team actions
+	ActionCampaignMemberAdded       Action = "campaign.member_added"
+	ActionCampaignMemberRemoved     Action = "campaign.member_removed"
+	ActionCampaignMemberRoleChanged Action = "campaign.member_role_changed"
+	ActionCampaignCreated           Action = "campaign.created"
+	ActionCampaignUpdated           Action = "campaign.updated"
+	ActionCampaignStatusChanged     Action = "campaign.status_changed"
+	ActionCampaignDeleted           Action = "campaign.deleted"
+
 	// Scan config actions
 	ActionScanConfigCreated   Action = "scan_config.created"
 	ActionScanConfigUpdated   Action = "scan_config.updated"
@@ -272,7 +281,9 @@ func (a Action) IsValid() bool {
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
 		ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
-		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit:
+		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit,
+		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
+		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
 		return true
 	}
 	return false
@@ -330,6 +341,9 @@ func (a Action) Category() string {
 	case ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit:
 		return "ai_triage"
+	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
+		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
+		return "pentest_campaign"
 	}
 	return "unknown"
 }
@@ -358,6 +372,7 @@ const (
 	ResourceTypePermissionSet    ResourceType = "permission_set"
 	ResourceTypeRole             ResourceType = "role"
 	ResourceTypePipelineTemplate ResourceType = "pipeline_template"
+	ResourceTypeCampaign         ResourceType = "pentest_campaign"
 	ResourceTypePipelineStep     ResourceType = "pipeline_step"
 	ResourceTypePipelineRun      ResourceType = "pipeline_run"
 	ResourceTypeScanConfig       ResourceType = "scan_config"
@@ -387,7 +402,8 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
-		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage:
+		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
+		ResourceTypeCampaign:
 		return true
 	}
 	return false
@@ -453,6 +469,7 @@ func SeverityForAction(a Action) Severity {
 	// High - privilege changes and pipeline failures
 	case ActionUserSuspended, ActionUserDeactivated,
 		ActionMemberRemoved, ActionMemberRoleChanged,
+		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionAgentDeactivated, ActionAgentKeyRegenerated,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
 		ActionCredentialDeleted,
@@ -464,6 +481,8 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated,
 		ActionMemberAdded, ActionInvitationAccepted,
+		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
+		ActionCampaignMemberAdded,
 		ActionRepositoryDeleted, ActionDataExported,
 		ActionAgentCreated, ActionAgentActivated,
 		ActionRoleCreated, ActionRoleUpdated,

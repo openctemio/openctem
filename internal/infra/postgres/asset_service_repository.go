@@ -233,7 +233,7 @@ func (r *AssetServiceRepository) List(ctx context.Context, tenantID shared.ID, o
 		conditions = append(conditions, fmt.Sprintf("s.product ILIKE $%d", argIdx))
 		// Escape LIKE special characters to prevent pattern injection
 		args = append(args, "%"+escapeLikePattern(*opts.Product)+"%")
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	whereClause := ""

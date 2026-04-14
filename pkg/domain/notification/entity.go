@@ -42,11 +42,14 @@ const (
 	TypeScanCompleted       = "scan_completed"
 	TypeScanFailed          = "scan_failed"
 	TypeAssetDiscovered     = "asset_discovered"
-	TypeMemberInvited       = "member_invited"
-	TypeMemberJoined        = "member_joined"
-	TypeRoleChanged         = "role_changed"
-	TypeSLABreach           = "sla_breach"
-	TypeSystemAlert         = "system_alert"
+	TypeMemberInvited           = "member_invited"
+	TypeMemberJoined            = "member_joined"
+	TypeRoleChanged             = "role_changed"
+	TypeCampaignMemberAdded     = "campaign_member_added"
+	TypeCampaignMemberRemoved   = "campaign_member_removed"
+	TypeCampaignMemberRoleChange = "campaign_member_role_change"
+	TypeSLABreach               = "sla_breach"
+	TypeSystemAlert             = "system_alert"
 )
 
 // Notification represents an in-app notification.
@@ -242,6 +245,7 @@ func IsValidType(t string) bool {
 		TypeScanStarted, TypeScanCompleted, TypeScanFailed,
 		TypeAssetDiscovered,
 		TypeMemberInvited, TypeMemberJoined, TypeRoleChanged,
+		TypeCampaignMemberAdded, TypeCampaignMemberRemoved, TypeCampaignMemberRoleChange,
 		TypeSLABreach, TypeSystemAlert:
 		return true
 	}

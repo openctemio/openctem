@@ -296,6 +296,14 @@ func (m *mockAssetRepo) FindRepositoryByRepoName(_ context.Context, _ shared.ID,
 func (m *mockAssetRepo) FindRepositoryByFullName(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
 	return nil, shared.ErrNotFound
 }
+
+func (m *mockAssetRepo) FindByIP(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
+func (m *mockAssetRepo) FindByHostname(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
 func (m *mockAssetRepo) GetByNames(_ context.Context, _ shared.ID, _ []string) (map[string]*asset.Asset, error) {
 	return nil, nil
 }
@@ -326,7 +334,7 @@ func (m *mockAssetRepo) BulkUpdateStatus(_ context.Context, _ shared.ID, _ []sha
 	return 0, nil
 }
 
-func (m *mockAssetRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string) (*asset.AggregateStats, error) {
+func (m *mockAssetRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),
@@ -334,6 +342,10 @@ func (m *mockAssetRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []st
 		ByScope:       make(map[string]int),
 		ByExposure:    make(map[string]int),
 	}, nil
+}
+
+func (m *mockAssetRepo) GetPropertyFacets(_ context.Context, _ shared.ID, _ []string, _ string) ([]asset.PropertyFacet, error) {
+	return nil, nil
 }
 
 // =============================================================================

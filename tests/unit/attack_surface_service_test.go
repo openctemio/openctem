@@ -140,6 +140,14 @@ func (m *mockAttackSurfaceRepo) FindRepositoryByFullName(_ context.Context, _ sh
 	return nil, shared.ErrNotFound
 }
 
+func (m *mockAttackSurfaceRepo) FindByIP(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
+func (m *mockAttackSurfaceRepo) FindByHostname(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
 func (m *mockAttackSurfaceRepo) GetByNames(_ context.Context, _ shared.ID, _ []string) (map[string]*asset.Asset, error) {
 	return make(map[string]*asset.Asset), nil
 }
@@ -164,7 +172,7 @@ func (m *mockAttackSurfaceRepo) BulkUpdateStatus(_ context.Context, _ shared.ID,
 	return 0, nil
 }
 
-func (m *mockAttackSurfaceRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string) (*asset.AggregateStats, error) {
+func (m *mockAttackSurfaceRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),
@@ -172,6 +180,10 @@ func (m *mockAttackSurfaceRepo) GetAggregateStats(_ context.Context, _ shared.ID
 		ByScope:       make(map[string]int),
 		ByExposure:    make(map[string]int),
 	}, nil
+}
+
+func (m *mockAttackSurfaceRepo) GetPropertyFacets(_ context.Context, _ shared.ID, _ []string, _ string) ([]asset.PropertyFacet, error) {
+	return nil, nil
 }
 
 // =============================================================================

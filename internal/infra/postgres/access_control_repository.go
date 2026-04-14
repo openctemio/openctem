@@ -1307,7 +1307,7 @@ func (r *AccessControlRepository) ListAssignmentRules(ctx context.Context, tenan
 	if filter.Search != "" {
 		query += fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx)
 		args = append(args, wrapLikePattern(filter.Search))
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	// Sorting
@@ -2530,7 +2530,7 @@ func (r *AccessControlRepository) ListAssetOwnersWithNames(ctx context.Context, 
 		LEFT JOIN users ab ON ao.assigned_by = ab.id
 		WHERE ao.asset_id = $1
 		  AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $2))
-		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT id FROM tenant_members WHERE tenant_id = $2))
+		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $2))
 		ORDER BY ao.ownership_type = 'primary' DESC, ao.assigned_at ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, assetID.String(), tenantID.String())
@@ -2590,7 +2590,7 @@ func (r *AccessControlRepository) GetPrimaryOwnerBrief(ctx context.Context, tena
 		WHERE ao.asset_id = $1
 		  AND ao.ownership_type = 'primary'
 		  AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $2))
-		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT id FROM tenant_members WHERE tenant_id = $2))
+		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $2))
 		LIMIT 1`
 
 	var brief accesscontrol.OwnerBrief
@@ -2631,7 +2631,7 @@ func (r *AccessControlRepository) GetPrimaryOwnersByAssetIDs(ctx context.Context
 		WHERE ao.asset_id = ANY($1)
 		  AND ao.ownership_type = 'primary'
 		  AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $2))
-		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT id FROM tenant_members WHERE tenant_id = $2))
+		  AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $2))
 		ORDER BY ao.asset_id, ao.assigned_at ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids), tenantID.String())

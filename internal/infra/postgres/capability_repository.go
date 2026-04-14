@@ -335,7 +335,7 @@ func (r *CapabilityRepository) ListByNames(ctx context.Context, tenantID *shared
 	for i, name := range names {
 		placeholders[i] = fmt.Sprintf("$%d", argIdx)
 		args = append(args, name)
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	query := r.selectQuery() + fmt.Sprintf(

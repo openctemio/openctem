@@ -248,6 +248,9 @@ func (m *mockTenantRepo) GetMemberStats(_ context.Context, _ shared.ID) (*tenant
 func (m *mockTenantRepo) GetUserSuspendedMemberships(_ context.Context, _ shared.ID) ([]tenant.UserMembership, error) {
 	return nil, nil
 }
+func (m *mockTenantRepo) GetUserMembershipsWithStatus(_ context.Context, _ shared.ID) (*tenant.UserMembershipsByStatus, error) {
+	return &tenant.UserMembershipsByStatus{}, nil
+}
 
 func (m *mockTenantRepo) GetUserMemberships(_ context.Context, _ shared.ID) ([]tenant.UserMembership, error) {
 	if m.getUserMembershipsErr != nil {

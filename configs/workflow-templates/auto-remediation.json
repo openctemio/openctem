@@ -1,0 +1,236 @@
+{
+  "templates": [
+    {
+      "name": "Critical Finding → Jira Ticket + Slack Alert",
+      "description": "Automatically creates a Jira ticket and sends Slack notification when a critical finding is discovered",
+      "category": "remediation",
+      "nodes": [
+        {
+          "key": "trigger",
+          "type": "trigger",
+          "label": "Finding Created",
+          "config": {
+            "trigger_type": "finding_created"
+          },
+          "position": { "x": 100, "y": 200 }
+        },
+        {
+          "key": "check_severity",
+          "type": "condition",
+          "label": "Is Critical?",
+          "config": {
+            "expression": "trigger.severity == 'critical'"
+          },
+          "position": { "x": 350, "y": 200 }
+        },
+        {
+          "key": "create_ticket",
+          "type": "action",
+          "label": "Create Jira Ticket",
+          "config": {
+            "action_type": "create_ticket",
+            "project": "SEC",
+            "issue_type": "Bug",
+            "priority": "Highest",
+            "title_template": "[CRITICAL] {{trigger.title}}",
+            "description_template": "Severity: {{trigger.severity}}\nCVSS: {{trigger.cvss_score}}\n\n{{trigger.description}}"
+          },
+          "position": { "x": 600, "y": 100 }
+        },
+        {
+          "key": "notify_team",
+          "type": "notification",
+          "label": "Alert Security Team",
+          "config": {
+            "notification_type": "slack",
+            "title": "Critical Finding Detected",
+            "body": "A critical severity finding has been discovered: {{trigger.title}}. Jira ticket created."
+          },
+          "position": { "x": 600, "y": 300 }
+        }
+      ],
+      "edges": [
+        { "source": "trigger", "target": "check_severity" },
+        { "source": "check_severity", "target": "create_ticket", "source_handle": "yes" },
+        { "source": "check_severity", "target": "notify_team", "source_handle": "yes" }
+      ]
+    },
+    {
+      "name": "SLA Breach → Escalation + Priority Update",
+      "description": "When a finding exceeds SLA deadline, escalates by bumping priority and notifying management",
+      "category": "escalation",
+      "nodes": [
+        {
+          "key": "trigger",
+          "type": "trigger",
+          "label": "Finding Updated",
+          "config": {
+            "trigger_type": "finding_updated"
+          },
+          "position": { "x": 100, "y": 200 }
+        },
+        {
+          "key": "check_overdue",
+          "type": "condition",
+          "label": "Is Overdue?",
+          "config": {
+            "expression": "trigger.is_overdue == true"
+          },
+          "position": { "x": 350, "y": 200 }
+        },
+        {
+          "key": "bump_priority",
+          "type": "action",
+          "label": "Bump Priority to Critical",
+          "config": {
+            "action_type": "update_priority",
+            "priority": "critical"
+          },
+          "position": { "x": 600, "y": 100 }
+        },
+        {
+          "key": "notify_manager",
+          "type": "notification",
+          "label": "Notify Manager",
+          "config": {
+            "notification_type": "email",
+            "title": "SLA Breach: {{trigger.title}}",
+            "body": "Finding {{trigger.id}} has exceeded its remediation SLA. Priority has been escalated to Critical."
+          },
+          "position": { "x": 600, "y": 300 }
+        }
+      ],
+      "edges": [
+        { "source": "trigger", "target": "check_overdue" },
+        { "source": "check_overdue", "target": "bump_priority", "source_handle": "yes" },
+        { "source": "bump_priority", "target": "notify_manager" }
+      ]
+    },
+    {
+      "name": "High/Critical Finding → Auto-Assign + Scan Trigger",
+      "description": "Assigns high/critical findings to security team lead and triggers a verification scan",
+      "category": "remediation",
+      "nodes": [
+        {
+          "key": "trigger",
+          "type": "trigger",
+          "label": "Finding Created",
+          "config": {
+            "trigger_type": "finding_created"
+          },
+          "position": { "x": 100, "y": 200 }
+        },
+        {
+          "key": "check_severity",
+          "type": "condition",
+          "label": "Is High or Critical?",
+          "config": {
+            "expression": "trigger.severity in ['critical', 'high']"
+          },
+          "position": { "x": 350, "y": 200 }
+        },
+        {
+          "key": "assign_lead",
+          "type": "action",
+          "label": "Assign to Security Lead",
+          "config": {
+            "action_type": "assign_user",
+            "user_selection": "team_lead"
+          },
+          "position": { "x": 600, "y": 100 }
+        },
+        {
+          "key": "trigger_scan",
+          "type": "action",
+          "label": "Trigger Verification Scan",
+          "config": {
+            "action_type": "trigger_scan",
+            "scan_type": "verification"
+          },
+          "position": { "x": 600, "y": 300 }
+        }
+      ],
+      "edges": [
+        { "source": "trigger", "target": "check_severity" },
+        { "source": "check_severity", "target": "assign_lead", "source_handle": "yes" },
+        { "source": "check_severity", "target": "trigger_scan", "source_handle": "yes" }
+      ]
+    },
+    {
+      "name": "Finding Resolved → Retest Reminder",
+      "description": "When a finding is marked as remediated, schedules a retest reminder after 7 days",
+      "category": "verification",
+      "nodes": [
+        {
+          "key": "trigger",
+          "type": "trigger",
+          "label": "Status Changed",
+          "config": {
+            "trigger_type": "finding_status_changed",
+            "status_filter": "remediation"
+          },
+          "position": { "x": 100, "y": 200 }
+        },
+        {
+          "key": "notify_retest",
+          "type": "notification",
+          "label": "Retest Reminder",
+          "config": {
+            "notification_type": "in_app",
+            "title": "Retest Required: {{trigger.title}}",
+            "body": "Finding {{trigger.id}} has been remediated. Please schedule a retest to verify the fix.",
+            "delay_hours": 168
+          },
+          "position": { "x": 400, "y": 200 }
+        }
+      ],
+      "edges": [
+        { "source": "trigger", "target": "notify_retest" }
+      ]
+    },
+    {
+      "name": "Remediated → Auto-Verify Scan + Update Status",
+      "description": "When a finding is marked as fix_applied, automatically triggers a verification scan. If scan passes, marks finding as verified.",
+      "category": "verification",
+      "nodes": [
+        {
+          "key": "trigger",
+          "type": "trigger",
+          "label": "Finding Status Changed",
+          "config": {
+            "trigger_type": "finding_updated",
+            "filter": "trigger.changes.new_status == 'fix_applied'"
+          },
+          "position": { "x": 100, "y": 200 }
+        },
+        {
+          "key": "verify_scan",
+          "type": "action",
+          "label": "Trigger Verification Scan",
+          "config": {
+            "action_type": "trigger_scan",
+            "scan_type": "verification",
+            "target_asset_id": "{{trigger.asset_id}}",
+            "scan_profile": "quick_verify"
+          },
+          "position": { "x": 400, "y": 100 }
+        },
+        {
+          "key": "notify_team",
+          "type": "notification",
+          "label": "Notify: Verification Started",
+          "config": {
+            "notification_type": "in_app",
+            "title": "Verification scan started for: {{trigger.title}}",
+            "body": "A verification scan has been triggered to confirm the fix for {{trigger.title}} on asset {{trigger.asset_id}}."
+          },
+          "position": { "x": 400, "y": 300 }
+        }
+      ],
+      "edges": [
+        { "source": "trigger", "target": "verify_scan" },
+        { "source": "trigger", "target": "notify_team" }
+      ]
+    }
+  ]
+}

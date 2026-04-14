@@ -139,7 +139,7 @@ func (r *SuppressionRepository) FindByTenant(ctx context.Context, tenantID share
 	if filter.RequestedBy != nil {
 		query += fmt.Sprintf(" AND sr.requested_by = $%d", argIdx)
 		args = append(args, filter.RequestedBy.String())
-		argIdx++
+		// argIdx not incremented — no further conditions
 	}
 
 	if !filter.IncludeExpired {

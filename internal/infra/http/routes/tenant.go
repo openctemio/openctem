@@ -8,13 +8,24 @@ import (
 
 // registerTenantRoutes registers tenant management endpoints.
 // API uses "tenant", UI displays "Team".
+//
+// `tenantRepo` is used for the URL-path tenant lookup (TenantContext
+// resolves slug → id) and for invitation handlers. `membershipReader`
+// is the (possibly cached) reader the RequireMembership middleware
+// uses for the per-request status check — pass the same value as
+// tenantRepo if no cache is available.
 func registerTenantRoutes(
 	router Router,
 	h *handler.TenantHandler,
 	authMiddleware, userSyncMiddleware Middleware,
 	tenantRepo tenant.Repository,
+	membershipReader middleware.MembershipReader,
 	localAuth *handler.LocalAuthHandler,
 ) {
+	if membershipReader == nil {
+		membershipReader = tenantRepo
+	}
+
 	// Build base middleware chain
 	baseMiddlewares := []Middleware{authMiddleware}
 	if userSyncMiddleware != nil {
@@ -39,7 +50,7 @@ func registerTenantRoutes(
 	tenantMiddlewares = append(tenantMiddlewares, baseMiddlewares...)
 	tenantMiddlewares = append(tenantMiddlewares,
 		middleware.TenantContext(tenantRepo),
-		middleware.RequireMembership(tenantRepo))
+		middleware.RequireMembership(membershipReader))
 
 	router.Group("/api/v1/tenants/{tenant}", func(r Router) {
 		// Read operations - any member (viewer+)

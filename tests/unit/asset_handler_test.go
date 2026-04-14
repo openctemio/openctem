@@ -136,6 +136,14 @@ func (m *HandlerMockRepository) FindRepositoryByFullName(ctx context.Context, te
 	return nil, shared.ErrNotFound
 }
 
+func (m *HandlerMockRepository) FindByIP(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
+func (m *HandlerMockRepository) FindByHostname(_ context.Context, _ shared.ID, _ string) (*asset.Asset, error) {
+	return nil, nil
+}
+
 func (m *HandlerMockRepository) GetByNames(ctx context.Context, tenantID shared.ID, names []string) (map[string]*asset.Asset, error) {
 	result := make(map[string]*asset.Asset)
 	for _, a := range m.assets {
@@ -186,7 +194,7 @@ func (m *HandlerMockRepository) BulkUpdateStatus(_ context.Context, _ shared.ID,
 	return 0, nil
 }
 
-func (m *HandlerMockRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string) (*asset.AggregateStats, error) {
+func (m *HandlerMockRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),
@@ -194,6 +202,10 @@ func (m *HandlerMockRepository) GetAggregateStats(_ context.Context, _ shared.ID
 		ByScope:       make(map[string]int),
 		ByExposure:    make(map[string]int),
 	}, nil
+}
+
+func (m *HandlerMockRepository) GetPropertyFacets(_ context.Context, _ shared.ID, _ []string, _ string) ([]asset.PropertyFacet, error) {
+	return nil, nil
 }
 
 func newTestHandler() *handler.AssetHandler {

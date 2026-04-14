@@ -20,6 +20,10 @@ const (
 	TemplateWelcome Template = "welcome"
 	// TemplateTeamInvitation is the team invitation template.
 	TemplateTeamInvitation Template = "team_invitation"
+	// TemplateMemberSuspended notifies a user their tenant access was suspended.
+	TemplateMemberSuspended Template = "member_suspended"
+	// TemplateMemberReactivated notifies a user their tenant access was restored.
+	TemplateMemberReactivated Template = "member_reactivated"
 )
 
 // VerifyEmailData holds data for the email verification template.
@@ -68,6 +72,15 @@ type TeamInvitationData struct {
 	InvitationURL string
 	ExpiresIn     string
 	AppName       string
+}
+
+// MemberStatusChangeData holds data for the suspend/reactivate notifications.
+type MemberStatusChangeData struct {
+	UserName  string
+	TeamName  string
+	ActorName string // Admin who performed the action; may be empty
+	AppURL    string // Where the user can go to see status (login page)
+	AppName   string
 }
 
 // TemplateEngine handles email template rendering.
@@ -141,6 +154,18 @@ func (e *TemplateEngine) registerTemplates() {
 	e.templates[TemplateTeamInvitation] = &templateDef{
 		subjectTmpl: template.Must(template.New("team_invitation_subject").Parse("You've been invited to join {{.TeamName}}")),
 		bodyTmpl:    template.Must(template.New("team_invitation").Parse(teamInvitationTemplate)),
+	}
+
+	// Member Suspended
+	e.templates[TemplateMemberSuspended] = &templateDef{
+		subjectTmpl: template.Must(template.New("member_suspended_subject").Parse("Your access to {{.TeamName}} has been suspended")),
+		bodyTmpl:    template.Must(template.New("member_suspended").Parse(memberSuspendedTemplate)),
+	}
+
+	// Member Reactivated
+	e.templates[TemplateMemberReactivated] = &templateDef{
+		subjectTmpl: template.Must(template.New("member_reactivated_subject").Parse("Your access to {{.TeamName}} has been restored")),
+		bodyTmpl:    template.Must(template.New("member_reactivated").Parse(memberReactivatedTemplate)),
 	}
 }
 
@@ -407,6 +432,103 @@ const teamInvitationTemplate = `<!DOCTYPE html>
 
         <p>If the button doesn't work, copy and paste this link into your browser:</p>
         <p style="word-break: break-all; font-size: 12px; color: #666;">{{.InvitationURL}}</p>
+
+        <div class="footer">
+            <p>&copy; {{.AppName}}. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>`
+
+const memberSuspendedTemplate = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Suspended</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
+        .alert { background: #fff7ed; border: 1px solid #f97316; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .alert-title { color: #c2410c; font-weight: bold; font-size: 16px; margin-bottom: 8px; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
+        .team-name { font-weight: bold; color: #1e40af; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{.AppName}}</div>
+        </div>
+
+        <h2>Your access has been suspended</h2>
+
+        <p>Hi {{.UserName}},</p>
+
+        <div class="alert">
+            <div class="alert-title">Access to <span class="team-name">{{.TeamName}}</span> has been suspended</div>
+            <p style="margin: 0;">An administrator has paused your access to this team. Your active sessions have been signed out and you will not be able to sign in to {{.TeamName}} until your access is restored.</p>
+        </div>
+
+        {{if .ActorName}}
+        <p>This action was performed by <strong>{{.ActorName}}</strong>.</p>
+        {{end}}
+
+        <p><strong>Your data is preserved.</strong> The membership row, your role assignments, and any history of your work in this team remain in place. Reactivation will restore your access exactly as it was.</p>
+
+        <p>If you believe this was a mistake, please contact your team administrator. {{.AppName}} support cannot reverse a tenant administrator's decision on your behalf.</p>
+
+        <div class="footer">
+            <p>&copy; {{.AppName}}. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>`
+
+const memberReactivatedTemplate = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Restored</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #2563eb; }
+        .button { display: inline-block; background: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
+        .alert { background: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .alert-title { color: #047857; font-weight: bold; font-size: 16px; margin-bottom: 8px; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #666; text-align: center; }
+        .team-name { font-weight: bold; color: #047857; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{.AppName}}</div>
+        </div>
+
+        <h2>Welcome back</h2>
+
+        <p>Hi {{.UserName}},</p>
+
+        <div class="alert">
+            <div class="alert-title">Access to <span class="team-name">{{.TeamName}}</span> has been restored</div>
+            <p style="margin: 0;">You can sign in again and pick up where you left off. Your role and permissions are exactly as they were before the suspension.</p>
+        </div>
+
+        {{if .ActorName}}
+        <p>This action was performed by <strong>{{.ActorName}}</strong>.</p>
+        {{end}}
+
+        <div style="text-align: center;">
+            <a href="{{.AppURL}}" class="button">Sign in to {{.AppName}}</a>
+        </div>
+
+        <p>If you weren't expecting this email or if you can't sign in, please contact your team administrator.</p>
 
         <div class="footer">
             <p>&copy; {{.AppName}}. All rights reserved.</p>
