@@ -37,7 +37,7 @@ func NewRelationshipSuggestionService(
 
 // GenerateSuggestions analyzes assets and generates relationship suggestions.
 // It creates suggestions for:
-//   - Subdomain -> parent domain: cname_of relationship
+//   - Subdomain -> parent domain: member_of relationship
 //   - Domain/subdomain with resolved_ip -> IP address asset: resolves_to relationship
 func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context, tenantID string) (int, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
@@ -91,7 +91,7 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 
 	suggestions := make([]*relationship.Suggestion, 0)
 
-	// Generate subdomain -> domain (cname_of) suggestions
+	// Generate subdomain -> domain (member_of) suggestions
 	for _, sub := range subdomainResult.Data {
 		parentDomain := findParentDomain(sub.Name(), domainMap)
 		if parentDomain != nil {
@@ -104,7 +104,7 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 				0.95,
 			)
 			if suggErr != nil {
-				s.logger.Warn("failed to create cname_of suggestion", "error", suggErr)
+				s.logger.Warn("failed to create member_of suggestion", "error", suggErr)
 				continue
 			}
 			suggestions = append(suggestions, suggestion)
