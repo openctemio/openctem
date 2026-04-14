@@ -215,12 +215,8 @@ func (m *Manager) reconcileOnce(ctx context.Context, c Controller) {
 				"items_processed", count,
 				"duration", duration,
 			)
-		} else {
-			m.logger.Debug("controller reconcile completed (no items)",
-				"name", name,
-				"duration", duration,
-			)
 		}
+		// No log when zero items — reduces noise in dev/prod logs
 		if m.metrics != nil {
 			m.metrics.RecordReconcile(name, count, duration, nil)
 		}
