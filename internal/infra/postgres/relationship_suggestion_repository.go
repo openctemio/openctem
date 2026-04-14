@@ -131,12 +131,28 @@ func (r *RelationshipSuggestionRepository) GetByID(ctx context.Context, tenantID
 	return s, nil
 }
 
-// ListPending retrieves pending suggestions for a tenant with pagination.
-func (r *RelationshipSuggestionRepository) ListPending(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[*relationship.Suggestion], error) {
-	// Count total pending
-	countQuery := `SELECT COUNT(*) FROM relationship_suggestions WHERE tenant_id = $1 AND status = 'pending'`
+// ListPending retrieves pending suggestions for a tenant with pagination and optional search.
+func (r *RelationshipSuggestionRepository) ListPending(ctx context.Context, tenantID shared.ID, search string, page pagination.Pagination) (pagination.Result[*relationship.Suggestion], error) {
+	// Build WHERE clause
+	where := "rs.tenant_id = $1 AND rs.status = 'pending'"
+	args := []any{tenantID.String()}
+	idx := 2
+
+	if search != "" {
+		where += fmt.Sprintf(` AND (sa.name ILIKE $%d OR ta.name ILIKE $%d)`, idx, idx)
+		args = append(args, "%"+escapeLikePattern(search)+"%")
+		idx++
+	}
+
+	// Count total
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM relationship_suggestions rs
+		LEFT JOIN assets sa ON rs.source_asset_id = sa.id
+		LEFT JOIN assets ta ON rs.target_asset_id = ta.id
+		WHERE %s`, where)
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String()).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return pagination.Result[*relationship.Suggestion]{}, fmt.Errorf("failed to count suggestions: %w", err)
 	}
 
@@ -145,7 +161,7 @@ func (r *RelationshipSuggestionRepository) ListPending(ctx context.Context, tena
 	}
 
 	// Fetch page with JOINed asset names
-	query := `
+	query := fmt.Sprintf(`
 		SELECT rs.id, rs.tenant_id, rs.source_asset_id, rs.target_asset_id,
 		       rs.relationship_type, rs.reason, rs.confidence, rs.status,
 		       rs.reviewed_by, rs.reviewed_at, rs.created_at,
@@ -154,12 +170,13 @@ func (r *RelationshipSuggestionRepository) ListPending(ctx context.Context, tena
 		FROM relationship_suggestions rs
 		LEFT JOIN assets sa ON rs.source_asset_id = sa.id
 		LEFT JOIN assets ta ON rs.target_asset_id = ta.id
-		WHERE rs.tenant_id = $1 AND rs.status = 'pending'
-		ORDER BY rs.created_at DESC
-		LIMIT $2 OFFSET $3
-	`
+		WHERE %s
+		ORDER BY rs.confidence DESC, rs.created_at DESC
+		LIMIT $%d OFFSET $%d
+	`, where, idx, idx+1)
+	args = append(args, page.Limit(), page.Offset())
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), page.Limit(), page.Offset())
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return pagination.Result[*relationship.Suggestion]{}, fmt.Errorf("failed to list suggestions: %w", err)
 	}

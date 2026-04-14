@@ -156,14 +156,27 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 	return created, nil
 }
 
-// ListPending returns pending suggestions for a tenant.
-func (s *RelationshipSuggestionService) ListPending(ctx context.Context, tenantID string, page pagination.Pagination) (pagination.Result[*relationship.Suggestion], error) {
+// ListPending returns pending suggestions for a tenant, optionally filtered by search.
+func (s *RelationshipSuggestionService) ListPending(ctx context.Context, tenantID string, search string, page pagination.Pagination) (pagination.Result[*relationship.Suggestion], error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return pagination.Result[*relationship.Suggestion]{}, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	return s.suggestionRepo.ListPending(ctx, parsedTenantID, page)
+	return s.suggestionRepo.ListPending(ctx, parsedTenantID, search, page)
+}
+
+// ApproveBatch approves multiple suggestions by IDs.
+func (s *RelationshipSuggestionService) ApproveBatch(ctx context.Context, tenantID string, ids []string, reviewerID string) (int, error) {
+	approved := 0
+	for _, id := range ids {
+		if err := s.Approve(ctx, tenantID, id, reviewerID); err != nil {
+			s.logger.Warn("failed to approve suggestion in batch", "id", id, "error", err)
+			continue
+		}
+		approved++
+	}
+	return approved, nil
 }
 
 // Approve approves a suggestion and creates the real relationship.

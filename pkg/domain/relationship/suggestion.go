@@ -148,7 +148,7 @@ type SuggestionRepository interface {
 	Create(ctx context.Context, s *Suggestion) error
 	CreateBatch(ctx context.Context, suggestions []*Suggestion) (int, error)
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*Suggestion, error)
-	ListPending(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[*Suggestion], error)
+	ListPending(ctx context.Context, tenantID shared.ID, search string, page pagination.Pagination) (pagination.Result[*Suggestion], error)
 	UpdateStatus(ctx context.Context, s *Suggestion) error
 	CountPending(ctx context.Context, tenantID shared.ID) (int64, error)
 	DeleteByAssetID(ctx context.Context, tenantID, assetID shared.ID) error

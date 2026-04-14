@@ -426,6 +426,7 @@ func registerRelationshipSuggestionRoutes(
 		r.GET("/count", h.CountPending, middleware.Require(permission.AssetsRead))
 		r.POST("/generate", h.Generate, middleware.Require(permission.AssetsWrite))
 		r.POST("/approve-all", h.ApproveAll, middleware.Require(permission.AssetsWrite))
+		r.POST("/approve-batch", h.ApproveBatch, middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/dismiss", h.Dismiss, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)

@@ -66,7 +66,8 @@ func (h *RelationshipSuggestionHandler) List(w http.ResponseWriter, r *http.Requ
 		parseQueryInt(query.Get("per_page"), 20),
 	)
 
-	result, err := h.service.ListPending(r.Context(), tenantID, page)
+	search := query.Get("search")
+	result, err := h.service.ListPending(r.Context(), tenantID, search, page)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -143,6 +144,39 @@ func (h *RelationshipSuggestionHandler) ApproveAll(w http.ResponseWriter, r *htt
 	}
 
 	count, err := h.service.ApproveAll(r.Context(), tenantID, reviewerID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "approved", "count": count})
+}
+
+// ApproveBatch handles POST /api/v1/relationships/suggestions/approve-batch
+func (h *RelationshipSuggestionHandler) ApproveBatch(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	reviewerID := middleware.GetUserID(r.Context())
+
+	if reviewerID == "" {
+		apierror.Unauthorized("user ID required").WriteJSON(w)
+		return
+	}
+
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if len(req.IDs) == 0 {
+		apierror.BadRequest("ids array is required").WriteJSON(w)
+		return
+	}
+
+	count, err := h.service.ApproveBatch(r.Context(), tenantID, req.IDs, reviewerID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
