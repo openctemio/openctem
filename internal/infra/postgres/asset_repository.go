@@ -1299,7 +1299,7 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	// asset id set so we never touch findings rows for assets we filtered out.
 	query := fmt.Sprintf(`
 WITH filtered AS (
-  SELECT a.id, a.asset_type, a.sub_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score
+  SELECT a.id, a.asset_type, a.sub_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score, a.properties
   FROM assets a
   %s
 ),
