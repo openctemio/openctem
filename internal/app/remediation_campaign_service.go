@@ -153,6 +153,12 @@ func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, t
 		err = campaign.StartValidation()
 	case remediation.CampaignStatusCompleted:
 		err = campaign.Complete()
+		// Record risk reduction: resolved / total as a simple risk metric
+		if err == nil && campaign.FindingCount() > 0 {
+			before := float64(campaign.FindingCount())
+			after := float64(campaign.FindingCount() - campaign.ResolvedCount())
+			campaign.RecordRiskReduction(before, after)
+		}
 	case remediation.CampaignStatusCanceled:
 		campaign.Cancel()
 	default:

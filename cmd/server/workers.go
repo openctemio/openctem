@@ -212,9 +212,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
-	// Threat intel — daily EPSS + KEV refresh
+	// Threat intel — daily EPSS + KEV refresh (fetches + persists to DB)
 	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
-		app.NewThreatIntelRefresher(log.With("service", "threat-intel-refresh")),
+		svc.ThreatIntel,
 		log.With("controller", "threat-intel-refresh"),
 	))
 

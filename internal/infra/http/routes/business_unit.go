@@ -19,6 +19,7 @@ func registerBusinessUnitRoutes(
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 		r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
 		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/assets", h.AddAsset, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{id}/assets/{assetId}", h.RemoveAsset, middleware.Require(permission.AssetsWrite))

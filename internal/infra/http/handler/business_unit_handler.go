@@ -68,6 +68,26 @@ func (h *BusinessUnitHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toBUResp(bu))
 }
 
+// Update updates a business unit.
+func (h *BusinessUnitHandler) Update(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	buID := chi.URLParam(r, "id")
+	var req CreateBURequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	bu, err := h.service.Update(r.Context(), app.UpdateBusinessUnitInput{
+		TenantID: tenantID, ID: buID, Name: req.Name, Description: req.Description,
+		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail, Tags: req.Tags,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toBUResp(bu))
+}
+
 // Delete deletes a business unit.
 func (h *BusinessUnitHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
