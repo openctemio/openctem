@@ -69,7 +69,4 @@ cmd/server/server
 
 vendor
 go.work
-go.work.sum
-
-# User-uploaded attachments
-data/
+go.work.sumdata/
