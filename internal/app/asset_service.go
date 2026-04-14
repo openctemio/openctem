@@ -163,15 +163,16 @@ func (s *AssetService) InvalidateScoringConfigCache(tenantID shared.ID) {
 
 // CreateAssetInput represents the input for creating an asset.
 type CreateAssetInput struct {
-	TenantID    string   `validate:"omitempty,uuid"`
-	Name        string   `validate:"required,min=1,max=255"`
-	Type        string   `validate:"required,asset_type"`
-	Criticality string   `validate:"required,criticality"`
-	Scope       string   `validate:"omitempty,scope"`
-	Exposure    string   `validate:"omitempty,exposure"`
-	Description string   `validate:"max=1000"`
-	Tags        []string `validate:"max=20,dive,max=50"`
-	OwnerRef    string   `validate:"max=500"` // Raw owner from external source
+	TenantID    string         `validate:"omitempty,uuid"`
+	Name        string         `validate:"required,min=1,max=255"`
+	Type        string         `validate:"required,asset_type"`
+	Criticality string         `validate:"required,criticality"`
+	Scope       string         `validate:"omitempty,scope"`
+	Exposure    string         `validate:"omitempty,exposure"`
+	Description string         `validate:"max=1000"`
+	Tags        []string       `validate:"max=20,dive,max=50"`
+	OwnerRef    string         `validate:"max=500"` // Raw owner from external source
+	Properties  map[string]any // JSONB properties (known fields auto-promoted to columns)
 }
 
 // CreateAsset creates a new asset.
@@ -179,6 +180,10 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	// Strip null bytes early — PostgreSQL rejects 0x00 in UTF-8
 	input.Name = strings.ReplaceAll(input.Name, "\x00", "")
 	input.Description = strings.ReplaceAll(input.Description, "\x00", "")
+
+	// Promote known fields from properties into proper columns.
+	// Collectors may send sub_type, scope, etc. inside properties JSONB.
+	input = promoteKnownProperties(input)
 
 	s.logger.Info("creating asset", "name", input.Name)
 
@@ -254,6 +259,16 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		a.AddTag(tag)
 	}
 
+	// Set properties (already cleaned by promoteKnownProperties)
+	if len(input.Properties) > 0 {
+		// Extract promoted sub_type before setting properties
+		if st, ok := input.Properties["__promoted_sub_type"].(string); ok && st != "" {
+			a.SetSubType(st)
+			delete(input.Properties, "__promoted_sub_type")
+		}
+		a.SetProperties(input.Properties)
+	}
+
 	// Set owner reference from external source and try auto-match
 	if input.OwnerRef != "" {
 		a.SetOwnerRef(input.OwnerRef)
@@ -294,6 +309,95 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 
 	s.logger.Info("asset created", "id", a.ID().String(), "name", a.Name())
 	return a, nil
+}
+
+// promoteKnownProperties extracts well-known fields from Properties JSONB into their
+// proper columns on CreateAssetInput. This allows collectors to send everything in
+// properties (e.g., {"sub_type": "firewall", "vendor": "Cisco"}) and the system
+// auto-promotes recognized fields while keeping the rest as JSONB metadata.
+//
+// Promoted fields (removed from Properties after extraction):
+//   - sub_type → used to set entity.SubType
+//   - type → resolved via TypeAliases (e.g., "firewall" → type=network, sub_type=firewall)
+//   - scope, exposure, criticality → override top-level input fields if empty
+//   - description → override if empty
+//   - tags → merged with input.Tags
+func promoteKnownProperties(input CreateAssetInput) CreateAssetInput {
+	if len(input.Properties) == 0 {
+		return input
+	}
+
+	// Helper to extract and remove a string key
+	extractStr := func(key string) string {
+		if v, ok := input.Properties[key]; ok {
+			delete(input.Properties, key)
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+		return ""
+	}
+
+	// sub_type: promote to dedicated field (stored on entity, not in JSONB)
+	if st := extractStr("sub_type"); st != "" {
+		// Store as a tag-like hint — service layer will call entity.SetSubType
+		input.Properties["__promoted_sub_type"] = st
+	}
+
+	// type: if properties contains a type alias (e.g., "firewall"), resolve it
+	if propType := extractStr("type"); propType != "" {
+		if resolved, subType := asset.ResolveTypeAlias(asset.AssetType(propType)); resolved != "" {
+			// Override input.Type with resolved core type
+			input.Type = string(resolved)
+			if subType != "" {
+				input.Properties["__promoted_sub_type"] = subType
+			}
+		}
+	}
+
+	// Override empty top-level fields from properties
+	if input.Scope == "" {
+		if s := extractStr("scope"); s != "" {
+			input.Scope = s
+		}
+	}
+	if input.Exposure == "" {
+		if e := extractStr("exposure"); e != "" {
+			input.Exposure = e
+		}
+	}
+	if input.Description == "" {
+		if d := extractStr("description"); d != "" {
+			input.Description = d
+		}
+	}
+
+	// Merge tags from properties
+	if rawTags, ok := input.Properties["tags"]; ok {
+		delete(input.Properties, "tags")
+		switch t := rawTags.(type) {
+		case []any:
+			for _, v := range t {
+				if s, ok := v.(string); ok && s != "" {
+					input.Tags = append(input.Tags, s)
+				}
+			}
+		case string:
+			for _, s := range strings.Split(t, ",") {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					input.Tags = append(input.Tags, s)
+				}
+			}
+		}
+	}
+
+	// Remove other well-known column names that shouldn't stay in JSONB
+	for _, key := range []string{"name", "tenant_id", "criticality", "status", "owner_ref"} {
+		delete(input.Properties, key)
+	}
+
+	return input
 }
 
 // correlateByIPOrHostname tries to find an existing asset by IP or hostname properties.

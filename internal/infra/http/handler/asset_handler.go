@@ -116,14 +116,15 @@ type OwnerBriefResponse struct {
 
 // CreateAssetRequest represents the request to create an asset.
 type CreateAssetRequest struct {
-	Name        string   `json:"name" validate:"required,min=1,max=255"`
-	Type        string   `json:"type" validate:"required,asset_type"`
-	Criticality string   `json:"criticality" validate:"required,criticality"`
-	Scope       string   `json:"scope" validate:"omitempty,scope"`
-	Exposure    string   `json:"exposure" validate:"omitempty,exposure"`
-	Description string   `json:"description" validate:"max=1000"`
-	Tags        []string `json:"tags" validate:"max=20,dive,max=50"`
-	OwnerRef    string   `json:"owner_ref" validate:"max=500"`
+	Name        string         `json:"name" validate:"required,min=1,max=255"`
+	Type        string         `json:"type" validate:"required,asset_type"`
+	Criticality string         `json:"criticality" validate:"required,criticality"`
+	Scope       string         `json:"scope" validate:"omitempty,scope"`
+	Exposure    string         `json:"exposure" validate:"omitempty,exposure"`
+	Description string         `json:"description" validate:"max=1000"`
+	Tags        []string       `json:"tags" validate:"max=20,dive,max=50"`
+	OwnerRef    string         `json:"owner_ref" validate:"max=500"`
+	Properties  map[string]any `json:"properties,omitempty"`
 }
 
 // UpdateAssetRequest represents the request to update an asset.
@@ -448,6 +449,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 		Tags:        req.Tags,
 		OwnerRef:    req.OwnerRef,
+		Properties:  req.Properties,
 	}
 
 	a, err := h.service.CreateAsset(r.Context(), input)

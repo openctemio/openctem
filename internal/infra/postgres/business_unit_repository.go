@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -112,8 +113,10 @@ func (r *BusinessUnitRepository) List(ctx context.Context, filter businessunit.F
 	}
 	if filter.Search != nil && *filter.Search != "" {
 		where += fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx)
-		args = append(args, "%"+*filter.Search+"%")
-		argIdx++
+		// Escape LIKE special characters to prevent wildcard injection
+		escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(*filter.Search)
+		args = append(args, "%"+escaped+"%")
+		// argIdx not incremented — no further conditions
 	}
 	var total int
 	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM business_units "+where, args...).Scan(&total); err != nil {
