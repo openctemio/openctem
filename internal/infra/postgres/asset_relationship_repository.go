@@ -499,4 +499,36 @@ func (r *AssetRelationshipRepository) applyDirectionFilter(conditions string, qu
 	return " AND FALSE"
 }
 
+// ListAllEdges fetches every relationship for the tenant as lightweight graph
+// edges. Used exclusively by attack path scoring which needs the full directed
+// graph in-memory. Columns are minimal to keep the query fast.
+func (r *AssetRelationshipRepository) ListAllEdges(ctx context.Context, tenantID shared.ID) ([]asset.RelationshipEdge, error) {
+	const query = `
+		SELECT source_asset_id, target_asset_id, relationship_type, impact_weight
+		FROM asset_relationships
+		WHERE tenant_id = $1
+		ORDER BY created_at
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list all edges: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var edges []asset.RelationshipEdge
+	for rows.Next() {
+		var e asset.RelationshipEdge
+		var relType string
+		if scanErr := rows.Scan(&e.SourceAssetID, &e.TargetAssetID, &relType, &e.ImpactWeight); scanErr != nil {
+			return nil, fmt.Errorf("scan edge: %w", scanErr)
+		}
+		e.Type = asset.RelationshipType(relType)
+		edges = append(edges, e)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate edges: %w", err)
+	}
+	return edges, nil
+}
+
 // Note: nullString is defined in helpers.go

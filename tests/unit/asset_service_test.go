@@ -270,6 +270,10 @@ func (m *MockAssetRepository) GetPropertyFacets(_ context.Context, _ shared.ID, 
 	return nil, nil
 }
 
+func (m *MockAssetRepository) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
+	return nil, nil
+}
+
 // =============================================================================
 // Mock Repository Extension Repository
 // =============================================================================

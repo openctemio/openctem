@@ -88,15 +88,22 @@ type AttackSurfaceStatsData struct {
 // AttackSurfaceService provides attack surface operations.
 type AttackSurfaceService struct {
 	assetRepo asset.Repository
+	relRepo   asset.RelationshipRepository
 	logger    *logger.Logger
 }
 
 // NewAttackSurfaceService creates a new AttackSurfaceService.
-func NewAttackSurfaceService(assetRepo asset.Repository, log *logger.Logger) *AttackSurfaceService {
+func NewAttackSurfaceService(assetRepo asset.Repository, relRepo asset.RelationshipRepository, log *logger.Logger) *AttackSurfaceService {
 	return &AttackSurfaceService{
 		assetRepo: assetRepo,
+		relRepo:   relRepo,
 		logger:    log.With("service", "attack_surface"),
 	}
+}
+
+// GetAttackPathScores computes attack path scoring for the tenant.
+func (s *AttackSurfaceService) GetAttackPathScores(ctx context.Context, tenantID shared.ID) (*AttackPathScoringResult, error) {
+	return s.ComputeAttackPathScores(ctx, tenantID, s.relRepo)
 }
 
 // GetStats returns attack surface statistics for a tenant.

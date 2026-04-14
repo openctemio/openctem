@@ -208,6 +208,10 @@ func (m *HandlerMockRepository) GetPropertyFacets(_ context.Context, _ shared.ID
 	return nil, nil
 }
 
+func (m *HandlerMockRepository) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
+	return nil, nil
+}
+
 func newTestHandler() *handler.AssetHandler {
 	repo := NewHandlerMockRepository()
 	log := logger.NewDevelopment()

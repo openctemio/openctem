@@ -224,7 +224,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = app.NewScopeService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
-	s.AttackSurface = app.NewAttackSurfaceService(repos.Asset, log)
+	s.AttackSurface = app.NewAttackSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 
 	// Initialize finding source service (read-only system configuration)

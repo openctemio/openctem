@@ -102,6 +102,26 @@ type Repository interface {
 
 	// GetPropertyFacets returns distinct JSONB property keys and their top values for faceted filtering.
 	GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]PropertyFacet, error)
+
+	// ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
+	// Used exclusively by attack path scoring which needs the full set of assets
+	// in-memory. Columns are minimal (id, name, type, exposure, criticality,
+	// risk_score, is_crown_jewel, finding_count) to keep the query fast.
+	ListAllNodes(ctx context.Context, tenantID shared.ID) ([]AssetNode, error)
+}
+
+// AssetNode is a lightweight representation of an asset used for in-memory
+// graph traversal (attack path scoring). It carries only the fields needed
+// to build adjacency lists and compute path risk scores.
+type AssetNode struct {
+	ID           string
+	Name         string
+	AssetType    string
+	Exposure     string
+	Criticality  string
+	RiskScore    int
+	IsCrownJewel bool
+	FindingCount int
 }
 
 // PropertyFacet represents a property key with its distinct values for filtering UI.

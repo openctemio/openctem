@@ -305,6 +305,9 @@ func registerAttackSurfaceRoutes(
 	// Attack Surface routes
 	router.Group("/api/v1/attack-surface", func(r Router) {
 		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		// Attack path scoring — BFS reachability analysis from public entry points.
+		// Returns top assets ranked by composite path score (reachability × risk × criticality).
+		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 

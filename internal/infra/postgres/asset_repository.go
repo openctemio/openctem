@@ -1462,3 +1462,49 @@ func formatPropertyLabel(key string) string {
 	}
 	return strings.Join(words, " ")
 }
+
+// ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
+// Used by attack path scoring to build the full in-memory directed graph.
+// Only the columns needed for scoring are fetched.
+func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) ([]asset.AssetNode, error) {
+	const query = `
+		SELECT
+			a.id,
+			a.name,
+			a.asset_type,
+			a.exposure,
+			a.criticality,
+			a.risk_score,
+			COALESCE(a.is_crown_jewel, FALSE),
+			COALESCE(fc.finding_count, 0)
+		FROM assets a
+		LEFT JOIN (
+			SELECT asset_id, COUNT(*) AS finding_count
+			FROM findings
+			GROUP BY asset_id
+		) fc ON fc.asset_id = a.id
+		WHERE a.tenant_id = $1
+		ORDER BY a.created_at
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list all nodes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var nodes []asset.AssetNode
+	for rows.Next() {
+		var n asset.AssetNode
+		if scanErr := rows.Scan(
+			&n.ID, &n.Name, &n.AssetType, &n.Exposure,
+			&n.Criticality, &n.RiskScore, &n.IsCrownJewel, &n.FindingCount,
+		); scanErr != nil {
+			return nil, fmt.Errorf("scan node: %w", scanErr)
+		}
+		nodes = append(nodes, n)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate nodes: %w", err)
+	}
+	return nodes, nil
+}

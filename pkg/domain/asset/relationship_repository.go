@@ -41,6 +41,22 @@ type RelationshipRepository interface {
 	// types are actually being used and trim or extend the registry
 	// based on real data instead of guessing.
 	CountByType(ctx context.Context, tenantID shared.ID) (map[RelationshipType]int64, error)
+
+	// ListAllEdges fetches every relationship for the tenant as lightweight
+	// graph edges. This is used by attack path scoring which needs the full
+	// graph in-memory. The result is intentionally minimal (just IDs + type)
+	// so the query is fast even for large tenants.
+	ListAllEdges(ctx context.Context, tenantID shared.ID) ([]RelationshipEdge, error)
+}
+
+// RelationshipEdge is a lightweight representation of a relationship used
+// for in-memory graph traversal (attack path scoring). It carries only the
+// fields needed to build the adjacency list — no heavy asset data.
+type RelationshipEdge struct {
+	SourceAssetID string
+	TargetAssetID string
+	Type          RelationshipType
+	ImpactWeight  int
 }
 
 // RelationshipFilter defines filtering options for relationship queries.
