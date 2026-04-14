@@ -30,6 +30,11 @@ type Suggestion struct {
 	reviewedBy       *shared.ID
 	reviewedAt       *time.Time
 	createdAt        time.Time
+	// Enrichment fields (populated by JOINs, not stored)
+	sourceAssetName string
+	sourceAssetType string
+	targetAssetName string
+	targetAssetType string
 }
 
 // NewSuggestion creates a new Suggestion with validation.
@@ -125,6 +130,18 @@ func (s *Suggestion) Status() string           { return s.status }
 func (s *Suggestion) ReviewedBy() *shared.ID   { return s.reviewedBy }
 func (s *Suggestion) ReviewedAt() *time.Time   { return s.reviewedAt }
 func (s *Suggestion) CreatedAt() time.Time     { return s.createdAt }
+func (s *Suggestion) SourceAssetName() string  { return s.sourceAssetName }
+func (s *Suggestion) SourceAssetType() string  { return s.sourceAssetType }
+func (s *Suggestion) TargetAssetName() string  { return s.targetAssetName }
+func (s *Suggestion) TargetAssetType() string  { return s.targetAssetType }
+
+// SetAssetInfo sets enrichment fields (called by repository after JOIN).
+func (s *Suggestion) SetAssetInfo(srcName, srcType, tgtName, tgtType string) {
+	s.sourceAssetName = srcName
+	s.sourceAssetType = srcType
+	s.targetAssetName = tgtName
+	s.targetAssetType = tgtType
+}
 
 // SuggestionRepository defines the persistence interface for suggestions.
 type SuggestionRepository interface {

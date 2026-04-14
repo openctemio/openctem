@@ -144,14 +144,18 @@ func (r *RelationshipSuggestionRepository) ListPending(ctx context.Context, tena
 		return pagination.NewResult(make([]*relationship.Suggestion, 0), 0, page), nil
 	}
 
-	// Fetch page
+	// Fetch page with JOINed asset names
 	query := `
-		SELECT id, tenant_id, source_asset_id, target_asset_id,
-		       relationship_type, reason, confidence, status,
-		       reviewed_by, reviewed_at, created_at
-		FROM relationship_suggestions
-		WHERE tenant_id = $1 AND status = 'pending'
-		ORDER BY created_at DESC
+		SELECT rs.id, rs.tenant_id, rs.source_asset_id, rs.target_asset_id,
+		       rs.relationship_type, rs.reason, rs.confidence, rs.status,
+		       rs.reviewed_by, rs.reviewed_at, rs.created_at,
+		       COALESCE(sa.name, ''), COALESCE(sa.asset_type, ''),
+		       COALESCE(ta.name, ''), COALESCE(ta.asset_type, '')
+		FROM relationship_suggestions rs
+		LEFT JOIN assets sa ON rs.source_asset_id = sa.id
+		LEFT JOIN assets ta ON rs.target_asset_id = ta.id
+		WHERE rs.tenant_id = $1 AND rs.status = 'pending'
+		ORDER BY rs.created_at DESC
 		LIMIT $2 OFFSET $3
 	`
 
@@ -163,7 +167,7 @@ func (r *RelationshipSuggestionRepository) ListPending(ctx context.Context, tena
 
 	suggestions := make([]*relationship.Suggestion, 0, page.Limit())
 	for rows.Next() {
-		s, scanErr := r.scanSuggestion(rows)
+		s, scanErr := r.scanSuggestionWithAssets(rows)
 		if scanErr != nil {
 			return pagination.Result[*relationship.Suggestion]{}, fmt.Errorf("failed to scan suggestion: %w", scanErr)
 		}
@@ -315,4 +319,44 @@ func (r *RelationshipSuggestionRepository) scanSuggestion(row suggestionScanner)
 		reviewedAt,
 		createdAt,
 	), nil
+}
+
+// scanSuggestionWithAssets scans a suggestion row that includes JOINed asset name/type columns.
+func (r *RelationshipSuggestionRepository) scanSuggestionWithAssets(row suggestionScanner) (*relationship.Suggestion, error) {
+	var (
+		id, tenantID, sourceAssetID, targetAssetID string
+		relType, reason, status                    string
+		confidence                                 float64
+		reviewedByStr                              sql.NullString
+		reviewedAt                                 *time.Time
+		createdAt                                  time.Time
+		srcName, srcType, tgtName, tgtType         string
+	)
+
+	err := row.Scan(
+		&id, &tenantID, &sourceAssetID, &targetAssetID,
+		&relType, &reason, &confidence, &status,
+		&reviewedByStr, &reviewedAt, &createdAt,
+		&srcName, &srcType, &tgtName, &tgtType,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var reviewedBy *shared.ID
+	if reviewedByStr.Valid {
+		parsedID := shared.MustIDFromString(reviewedByStr.String)
+		reviewedBy = &parsedID
+	}
+
+	s := relationship.ReconstituteSuggestion(
+		shared.MustIDFromString(id),
+		shared.MustIDFromString(tenantID),
+		shared.MustIDFromString(sourceAssetID),
+		shared.MustIDFromString(targetAssetID),
+		relType, reason, confidence, status,
+		reviewedBy, reviewedAt, createdAt,
+	)
+	s.SetAssetInfo(srcName, srcType, tgtName, tgtType)
+	return s, nil
 }

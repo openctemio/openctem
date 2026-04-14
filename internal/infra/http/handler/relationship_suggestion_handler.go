@@ -38,7 +38,11 @@ func NewRelationshipSuggestionHandler(svc *app.RelationshipSuggestionService, lo
 type SuggestionResponse struct {
 	ID               string     `json:"id"`
 	SourceAssetID    string     `json:"source_asset_id"`
+	SourceAssetName  string     `json:"source_asset_name"`
+	SourceAssetType  string     `json:"source_asset_type"`
 	TargetAssetID    string     `json:"target_asset_id"`
+	TargetAssetName  string     `json:"target_asset_name"`
+	TargetAssetType  string     `json:"target_asset_type"`
 	RelationshipType string     `json:"relationship_type"`
 	Reason           string     `json:"reason"`
 	Confidence       float64    `json:"confidence"`
@@ -187,7 +191,11 @@ func toSuggestionResponse(s *relationship.Suggestion) SuggestionResponse {
 	resp := SuggestionResponse{
 		ID:               s.ID().String(),
 		SourceAssetID:    s.SourceAssetID().String(),
+		SourceAssetName:  s.SourceAssetName(),
+		SourceAssetType:  s.SourceAssetType(),
 		TargetAssetID:    s.TargetAssetID().String(),
+		TargetAssetName:  s.TargetAssetName(),
+		TargetAssetType:  s.TargetAssetType(),
 		RelationshipType: s.RelationshipType(),
 		Reason:           s.Reason(),
 		Confidence:       s.Confidence(),
