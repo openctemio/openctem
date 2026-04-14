@@ -128,6 +128,31 @@ func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
 }
 
+// Update updates campaign fields (name, description, priority, tags, due_date).
+func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var req UpdateRemCampaignRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	campaign, err := h.service.UpdateCampaign(r.Context(), tenantID, id, app.UpdateRemediationCampaignInput{
+		Name:        req.Name,
+		Description: req.Description,
+		Priority:    req.Priority,
+		Tags:        req.Tags,
+		DueDate:     req.DueDate,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
+}
+
 // Delete deletes a campaign.
 func (h *RemediationCampaignHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -161,6 +186,14 @@ type CreateRemCampaignRequest struct {
 	FindingFilter map[string]any `json:"finding_filter"`
 	AssignedTo    string         `json:"assigned_to"`
 	Tags          []string       `json:"tags"`
+}
+
+type UpdateRemCampaignRequest struct {
+	Name        *string    `json:"name,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	Priority    *string    `json:"priority,omitempty"`
+	Tags        []string   `json:"tags,omitempty"`
+	DueDate     *time.Time `json:"due_date,omitempty"`
 }
 
 type RemediationCampaignResponse struct {

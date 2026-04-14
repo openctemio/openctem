@@ -212,6 +212,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Threat intel — daily EPSS + KEV refresh
+	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
+		app.NewThreatIntelRefresher(log.With("service", "threat-intel-refresh")),
+		log.With("controller", "threat-intel-refresh"),
+	))
+
 	return w, nil
 }
 

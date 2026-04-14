@@ -158,6 +158,30 @@ func (c *Campaign) SetTimeline(startDate, dueDate *time.Time) {
 	c.updatedAt = time.Now()
 }
 
+// SetName sets campaign name.
+func (c *Campaign) SetName(name string) {
+	c.name = name
+	c.updatedAt = time.Now()
+}
+
+// SetDescription sets campaign description.
+func (c *Campaign) SetDescription(desc string) {
+	c.description = desc
+	c.updatedAt = time.Now()
+}
+
+// SetPriority sets campaign priority.
+func (c *Campaign) SetPriority(p CampaignPriority) {
+	c.priority = p
+	c.updatedAt = time.Now()
+}
+
+// SetDueDate sets campaign due date.
+func (c *Campaign) SetDueDate(d *time.Time) {
+	c.dueDate = d
+	c.updatedAt = time.Now()
+}
+
 // SetTags sets campaign tags.
 func (c *Campaign) SetTags(tags []string) {
 	c.tags = tags
