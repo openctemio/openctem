@@ -194,7 +194,7 @@ func (m *HandlerMockRepository) BulkUpdateStatus(_ context.Context, _ shared.ID,
 	return 0, nil
 }
 
-func (m *HandlerMockRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string) (*asset.AggregateStats, error) {
+func (m *HandlerMockRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),

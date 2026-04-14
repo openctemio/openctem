@@ -1114,12 +1114,12 @@ func (s *AssetService) GetPropertyFacets(ctx context.Context, tenantID string, t
 // Supports prefix filtering for autocomplete.
 // GetAssetStats returns aggregated asset statistics using SQL aggregation.
 // Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string, tags []string, subType string) (*asset.AggregateStats, error) {
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID string, types []string, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags, subType)
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, types, tags, subType, countByFields...)
 }
 
 func (s *AssetService) ListTags(ctx context.Context, tenantID string, prefix string, types []string, limit int) ([]string, error) {

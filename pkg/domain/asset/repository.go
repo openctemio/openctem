@@ -98,7 +98,7 @@ type Repository interface {
 
 	// GetAggregateStats computes all asset statistics using SQL aggregation.
 	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string) (*AggregateStats, error)
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
 
 	// GetPropertyFacets returns distinct JSONB property keys and their top values for faceted filtering.
 	GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]PropertyFacet, error)
@@ -145,6 +145,8 @@ type AggregateStats struct {
 	FindingsTotal int
 	HighRiskCount int
 	RiskScoreAvg  float64
+	// MetadataCounts: JSONB property value counts. Key=field, Value=map[value]count.
+	MetadataCounts map[string]map[string]int
 }
 
 // AssetTypeStats holds per-type aggregate counts.

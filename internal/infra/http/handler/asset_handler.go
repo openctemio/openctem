@@ -1160,7 +1160,8 @@ type AssetStatsResponse struct {
 	WithFindings  int            `json:"with_findings"`
 	RiskScoreAvg  float64        `json:"risk_score_avg"`
 	FindingsTotal int            `json:"findings_total"`
-	HighRiskCount int            `json:"high_risk_count"` // Assets with risk_score >= 70
+	HighRiskCount  int                       `json:"high_risk_count"`
+	MetadataCounts map[string]map[string]int `json:"metadata_counts,omitempty"`
 }
 
 // GetStats handles GET /api/v1/assets/stats
@@ -1183,25 +1184,29 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	tagsFilter := parseQueryArray(query.Get("tags"))
 	subTypeFilter := query.Get("sub_type")
 
+	// Parse count_by fields for metadata counting (e.g., ?count_by=is_virtual,os,ssl)
+	countByFields := parseQueryArray(query.Get("count_by"))
+
 	// Use service method with SQL aggregation for efficient stats
-	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter, tagsFilter, subTypeFilter)
+	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter, tagsFilter, subTypeFilter, countByFields...)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
 	stats := AssetStatsResponse{
-		Total:         aggStats.Total,
-		ByType:        aggStats.ByType,
-		BySubType:     aggStats.BySubType,
-		ByStatus:      aggStats.ByStatus,
-		ByCriticality: aggStats.ByCriticality,
-		ByScope:       aggStats.ByScope,
-		ByExposure:    aggStats.ByExposure,
-		WithFindings:  aggStats.WithFindings,
-		FindingsTotal: aggStats.FindingsTotal,
-		HighRiskCount: aggStats.HighRiskCount,
-		RiskScoreAvg:  aggStats.RiskScoreAvg,
+		Total:          aggStats.Total,
+		ByType:         aggStats.ByType,
+		BySubType:      aggStats.BySubType,
+		ByStatus:       aggStats.ByStatus,
+		ByCriticality:  aggStats.ByCriticality,
+		ByScope:        aggStats.ByScope,
+		ByExposure:     aggStats.ByExposure,
+		WithFindings:   aggStats.WithFindings,
+		FindingsTotal:  aggStats.FindingsTotal,
+		HighRiskCount:  aggStats.HighRiskCount,
+		RiskScoreAvg:   aggStats.RiskScoreAvg,
+		MetadataCounts: aggStats.MetadataCounts,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

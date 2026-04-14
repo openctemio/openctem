@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -1237,14 +1238,15 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 // This version collapses everything into one query using a CTE + UNION ALL,
 // trading slightly more complex SQL for an 83% reduction in DB round-trips.
 // PostgreSQL plans a single scan of the filtered CTE for all aggregates.
-func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string) (*asset.AggregateStats, error) {
+func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
 	stats := &asset.AggregateStats{
-		ByType:        make(map[string]int),
-		BySubType:     make(map[string]int),
-		ByStatus:      make(map[string]int),
-		ByCriticality: make(map[string]int),
-		ByScope:       make(map[string]int),
-		ByExposure:    make(map[string]int),
+		ByType:         make(map[string]int),
+		BySubType:      make(map[string]int),
+		ByStatus:       make(map[string]int),
+		ByCriticality:  make(map[string]int),
+		ByScope:        make(map[string]int),
+		ByExposure:     make(map[string]int),
+		MetadataCounts: make(map[string]map[string]int),
 	}
 
 	// Build the WHERE clause once.
@@ -1312,6 +1314,26 @@ SELECT category, key, value FROM (
 ) sub
 `, filterClause)
 
+	// Append metadata count queries for requested JSONB property fields.
+	// Each field adds a UNION ALL that groups by the property value.
+	// Only alphanumeric + underscore field names are allowed (SQL injection safe).
+	validField := regexp.MustCompile(`^[a-z][a-z0-9_]{0,49}$`)
+	for _, field := range countByFields {
+		if !validField.MatchString(field) {
+			continue
+		}
+		// Insert before the closing ") sub" by replacing it
+		query = strings.TrimSuffix(strings.TrimSpace(query), ") sub")
+		query += fmt.Sprintf(`
+  UNION ALL
+  SELECT 'meta:%s', COALESCE(a.properties->>'%s', 'null'), COUNT(*)::float8
+  FROM filtered a
+  WHERE a.properties ? '%s'
+  GROUP BY a.properties->>'%s'
+) sub
+`, field, field, field, field)
+	}
+
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get aggregate stats: %w", err)
@@ -1347,6 +1369,15 @@ SELECT category, key, value FROM (
 			stats.ByScope[key] = int(value)
 		case "exposure":
 			stats.ByExposure[key] = int(value)
+		default:
+			// Handle dynamic metadata counts: "meta:field_name"
+			if strings.HasPrefix(category, "meta:") {
+				field := strings.TrimPrefix(category, "meta:")
+				if stats.MetadataCounts[field] == nil {
+					stats.MetadataCounts[field] = make(map[string]int)
+				}
+				stats.MetadataCounts[field][key] = int(value)
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {

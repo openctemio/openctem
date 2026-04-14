@@ -256,7 +256,7 @@ func (m *MockAssetRepository) BulkUpdateStatus(_ context.Context, _ shared.ID, i
 	return updated, nil
 }
 
-func (m *MockAssetRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string) (*asset.AggregateStats, error) {
+func (m *MockAssetRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),
