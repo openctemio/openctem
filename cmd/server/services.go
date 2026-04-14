@@ -74,7 +74,8 @@ type Services struct {
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
-	Component *app.ComponentService
+	Component  *app.ComponentService
+	SBOMImport *app.SBOMImportService
 	Branch    *app.BranchService
 
 	// Dashboard
@@ -245,6 +246,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize component & branch services
 	s.Component = app.NewComponentService(repos.Component, log)
+	s.SBOMImport = app.NewSBOMImportService(repos.Component, log)
 	s.Branch = app.NewBranchService(repos.Branch, log)
 
 	// Initialize vulnerability & exposure services

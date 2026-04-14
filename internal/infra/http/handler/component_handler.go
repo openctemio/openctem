@@ -18,17 +18,19 @@ import (
 
 // ComponentHandler handles component-related HTTP requests.
 type ComponentHandler struct {
-	service   *app.ComponentService
-	validator *validator.Validator
-	logger    *logger.Logger
+	service    *app.ComponentService
+	sbomImport *app.SBOMImportService
+	validator  *validator.Validator
+	logger     *logger.Logger
 }
 
 // NewComponentHandler creates a new component handler.
-func NewComponentHandler(svc *app.ComponentService, v *validator.Validator, log *logger.Logger) *ComponentHandler {
+func NewComponentHandler(svc *app.ComponentService, sbomImport *app.SBOMImportService, v *validator.Validator, log *logger.Logger) *ComponentHandler {
 	return &ComponentHandler{
-		service:   svc,
-		validator: v,
-		logger:    log,
+		service:    svc,
+		sbomImport: sbomImport,
+		validator:  v,
+		logger:     log,
 	}
 }
 
@@ -351,6 +353,31 @@ func (h *ComponentHandler) ExportComponents(w http.ResponseWriter, r *http.Reque
 		"data":  components,
 		"total": len(components),
 	})
+}
+
+// ImportSBOM handles POST /api/v1/components/import
+// Accepts CycloneDX JSON or SPDX JSON file upload.
+// Requires asset_id query parameter to link imported components.
+func (h *ComponentHandler) ImportSBOM(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	assetID := r.URL.Query().Get("asset_id")
+	if assetID == "" {
+		apierror.BadRequest("asset_id query parameter is required").WriteJSON(w)
+		return
+	}
+
+	// Limit to 50MB
+	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024)
+
+	result, err := h.sbomImport.ImportSBOM(r.Context(), tenantID, assetID, r.Body)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 // GetLicenseStats handles GET /api/v1/components/licenses
