@@ -728,4 +728,31 @@ git commit -m "fix(security): add input validation
 
 ---
 
-**Last Updated**: 2026-03-17
+## Recent Changes (2026-04-15)
+
+### Asset Identity Resolution (RFC-001)
+- Asset names normalized automatically in `NewAsset()` constructor (16 asset types)
+- IP correlation for host dedup (`internal/app/ingest/correlator.go`)
+- Aliases stored in `properties.aliases[]` when assets renamed
+- Admin dedup review: `GET/POST /api/v1/assets/dedup/reviews`
+- Per-tenant config: `tenant.Settings.AssetIdentity`
+- See `docs/architecture/asset-identity-resolution.md`
+
+### API Decoupled from SDK-Go (RFC-002)
+- API imports `github.com/openctemio/ctis` (4K lines, zero deps) instead of SDK-Go (50K lines)
+- Adapters copied to `internal/infra/adapters/`
+- Branch: `feat/decouple-sdk` (pending merge)
+- See `docs/architecture/api-ctis-decoupling.md`
+
+### Asset metadata column removed
+- `metadata` JSONB merged into `properties` (migration 000140)
+- Entity: `Metadata()` and `SetMetadata()` removed
+- API response: only `properties` field (no more `metadata`)
+
+### Sub-type promotion
+- Ingest now resolves TypeAliases and promotes `sub_type` from properties
+- Migration 000141 backfills existing data
+
+### Migrations: 141 total (000001–000141)
+
+**Last Updated**: 2026-04-15

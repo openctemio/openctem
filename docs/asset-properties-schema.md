@@ -12,7 +12,7 @@ The schema varies by `asset_type` - each type has specific properties relevant t
 │ id, tenant_id, name, asset_type, criticality, status, ...                   │
 │ ┌─────────────────────────────────────────────────────────────────────────┐ │
 │ │ properties JSONB - Type-specific data (varies by asset_type)            │ │
-│ │ metadata JSONB   - Custom tags, labels, annotations                     │ │
+│ │ properties JSONB - All asset properties (merged, single column)             │ │
 │ └─────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │

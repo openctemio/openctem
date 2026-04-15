@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
-	"github.com/openctemio/sdk-go/pkg/ctis"
+	"github.com/openctemio/ctis"
 )
 
 // AssetProcessor handles batch asset processing.

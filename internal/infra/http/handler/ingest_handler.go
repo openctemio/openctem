@@ -17,11 +17,23 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/sdk-go/pkg/adapters"
-	"github.com/openctemio/sdk-go/pkg/chunk"
-	"github.com/openctemio/sdk-go/pkg/core"
-	"github.com/openctemio/sdk-go/pkg/ctis"
+	"github.com/openctemio/api/internal/infra/adapters"
+	"github.com/openctemio/api/internal/infra/adapters/core"
+	"github.com/openctemio/ctis"
 )
+
+// ChunkData represents a chunk of a large CTIS report.
+// Inlined from sdk-go/pkg/chunk to remove SDK dependency.
+type ChunkData struct {
+	ReportID    string               `json:"report_id"`
+	ChunkIndex  int                  `json:"chunk_index"`
+	TotalChunks int                  `json:"total_chunks"`
+	Tool        *ctis.Tool           `json:"tool,omitempty"`
+	Metadata    *ctis.ReportMetadata `json:"metadata,omitempty"`
+	Assets      []ctis.Asset         `json:"assets,omitempty"`
+	Findings    []ctis.Finding       `json:"findings,omitempty"`
+	IsFinal     bool                 `json:"is_final"`
+}
 
 // contextKey is a custom type for context keys.
 type contextKey string
@@ -696,7 +708,7 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Unmarshal chunk data
-	var chunkData chunk.ChunkData
+	var chunkData ChunkData
 	if err := json.Unmarshal(decompressedData, &chunkData); err != nil {
 		h.logger.Debug("failed to unmarshal chunk data", "error", err)
 		apierror.BadRequest("Invalid chunk data format").WriteJSON(w)

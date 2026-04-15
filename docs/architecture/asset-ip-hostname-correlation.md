@@ -1,5 +1,7 @@
 # Asset IP-Hostname Correlation
 
+> **Status**: SUPERSEDED by [RFC-001 Asset Identity Resolution](asset-identity-resolution.md). This document describes the original 2-layer approach. The current system uses a 4-layer approach with name normalization, IP correlation, extended correlation, and admin merge tools.
+
 ## Problem
 
 Assets arrive from multiple sources with different identifiers for the same machine:
