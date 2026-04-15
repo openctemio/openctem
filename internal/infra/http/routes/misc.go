@@ -49,6 +49,9 @@ func registerDashboardRoutes(
 		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead))
 		r.GET("/data-quality", h.GetDataQuality, middleware.Require(permission.DashboardRead))
 		r.GET("/risk-trend", h.GetRiskTrend, middleware.Require(permission.DashboardRead))
+		r.GET("/executive-summary", h.GetExecutiveSummary, middleware.Require(permission.DashboardRead))
+		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead))
+		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead))
 	}, tenantMiddlewares...)
 }
 

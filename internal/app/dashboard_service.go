@@ -104,6 +104,13 @@ type DashboardStatsRepository interface {
 	GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error)
 	// Risk Trend (RFC-005 Gap 4)
 	GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]RiskTrendPoint, error)
+
+	// Executive Summary (Phase 2)
+	GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*ExecutiveSummary, error)
+	// MTTR Analytics (Phase 2)
+	GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*MTTRAnalytics, error)
+	// Process Metrics (Phase 2)
+	GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProcessMetrics, error)
 }
 
 // DataQualityScorecard holds data quality metrics (RFC-005 Gap 5).
@@ -272,6 +279,71 @@ func (s *DashboardService) GetGlobalStats(ctx context.Context) (*DashboardStats,
 		RecentActivity:           activity,
 		FindingTrend:             []FindingTrendPoint{},
 	}, nil
+}
+
+// ExecutiveSummary holds executive-level metrics for a time period.
+type ExecutiveSummary struct {
+	Period            string    `json:"period"`
+	RiskScoreCurrent  float64   `json:"risk_score_current"`
+	RiskScoreChange   float64   `json:"risk_score_change"`
+	FindingsTotal     int       `json:"findings_total"`
+	FindingsResolved  int       `json:"findings_resolved_period"`
+	FindingsNew       int       `json:"findings_new_period"`
+	P0Open            int       `json:"p0_open"`
+	P0Resolved        int       `json:"p0_resolved_period"`
+	P1Open            int       `json:"p1_open"`
+	P1Resolved        int       `json:"p1_resolved_period"`
+	SLACompliancePct  float64   `json:"sla_compliance_pct"`
+	SLABreached       int       `json:"sla_breached"`
+	MTTRCriticalHrs   float64   `json:"mttr_critical_hours"`
+	MTTRHighHrs       float64   `json:"mttr_high_hours"`
+	CrownJewelsAtRisk int       `json:"crown_jewels_at_risk"`
+	TopRisks          []TopRisk `json:"top_risks"`
+}
+
+// TopRisk represents a high-priority open finding for executive view.
+type TopRisk struct {
+	FindingTitle  string   `json:"title"`
+	Severity      string   `json:"severity"`
+	PriorityClass string   `json:"priority_class"`
+	AssetName     string   `json:"asset_name"`
+	EPSSScore     *float64 `json:"epss_score"`
+	IsInKEV       bool     `json:"is_in_kev"`
+}
+
+// MTTRAnalytics holds MTTR breakdown by severity and priority class.
+type MTTRAnalytics struct {
+	BySeverity      map[string]float64 `json:"by_severity"`
+	ByPriorityClass map[string]float64 `json:"by_priority_class"`
+	Overall         float64            `json:"overall_hours"`
+	SampleSize      int                `json:"sample_size"`
+}
+
+// ProcessMetrics holds process efficiency metrics.
+type ProcessMetrics struct {
+	ApprovalAvgHours     float64 `json:"approval_avg_hours"`
+	ApprovalCount        int     `json:"approval_count"`
+	RetestAvgHours       float64 `json:"retest_avg_hours"`
+	RetestCount          int     `json:"retest_count"`
+	StaleAssets          int     `json:"stale_assets"`
+	StaleAssetsPct       float64 `json:"stale_assets_pct"`
+	FindingsWithoutOwner int     `json:"findings_without_owner"`
+	AvgTimeToAssignHours float64 `json:"avg_time_to_assign_hours"`
+}
+
+// GetProcessMetrics returns process efficiency metrics.
+func (s *DashboardService) GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProcessMetrics, error) {
+	return s.repo.GetProcessMetrics(ctx, tenantID, days)
+}
+
+// GetExecutiveSummary returns executive-level metrics for a time period.
+func (s *DashboardService) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*ExecutiveSummary, error) {
+	return s.repo.GetExecutiveSummary(ctx, tenantID, days)
+}
+
+// GetMTTRAnalytics returns MTTR breakdown by severity and priority class.
+func (s *DashboardService) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*MTTRAnalytics, error) {
+	return s.repo.GetMTTRAnalytics(ctx, tenantID, days)
 }
 
 // GetStatsForTenants returns dashboard statistics filtered by accessible tenant IDs.

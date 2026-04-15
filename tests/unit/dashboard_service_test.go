@@ -211,6 +211,18 @@ func (m *mockDashboardRepo) GetRiskTrend(_ context.Context, _ shared.ID, _ int) 
 	return nil, nil
 }
 
+func (m *mockDashboardRepo) GetExecutiveSummary(_ context.Context, _ shared.ID, _ int) (*app.ExecutiveSummary, error) {
+	return &app.ExecutiveSummary{}, nil
+}
+
+func (m *mockDashboardRepo) GetMTTRAnalytics(_ context.Context, _ shared.ID, _ int) (*app.MTTRAnalytics, error) {
+	return &app.MTTRAnalytics{BySeverity: map[string]float64{}, ByPriorityClass: map[string]float64{}}, nil
+}
+
+func (m *mockDashboardRepo) GetProcessMetrics(_ context.Context, _ shared.ID, _ int) (*app.ProcessMetrics, error) {
+	return &app.ProcessMetrics{}, nil
+}
+
 // =============================================================================
 // Helper functions
 // =============================================================================

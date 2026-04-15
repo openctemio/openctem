@@ -1034,3 +1034,240 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 	sc.TotalFindings = findingTotal
 	return &sc, nil
 }
+
+// GetExecutiveSummary returns executive-level metrics for a time period using CTEs.
+func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*app.ExecutiveSummary, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+
+	query := `
+		WITH open_findings AS (
+			SELECT id, severity, priority_class, epss_score, is_in_kev,
+				title, asset_id, created_at, resolved_at, sla_status, first_detected_at
+			FROM findings
+			WHERE tenant_id = $1 AND status NOT IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
+		),
+		resolved_in_period AS (
+			SELECT severity, priority_class, resolved_at, first_detected_at
+			FROM findings
+			WHERE tenant_id = $1
+				AND status IN ('resolved', 'verified')
+				AND resolved_at >= NOW() - ($2::int || ' days')::interval
+		),
+		new_in_period AS (
+			SELECT id FROM findings
+			WHERE tenant_id = $1 AND created_at >= NOW() - ($2::int || ' days')::interval
+		),
+		risk_score AS (
+			SELECT COALESCE(AVG(risk_score), 0) AS current_score FROM assets WHERE tenant_id = $1
+		),
+		crown_jewels AS (
+			SELECT COUNT(DISTINCT a.id) AS cnt
+			FROM assets a
+			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1
+				AND f.status NOT IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
+			WHERE a.tenant_id = $1 AND a.is_crown_jewel = TRUE
+		),
+		mttr_critical AS (
+			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
+			FROM resolved_in_period WHERE severity = 'critical' AND first_detected_at IS NOT NULL
+		),
+		mttr_high AS (
+			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
+			FROM resolved_in_period WHERE severity = 'high' AND first_detected_at IS NOT NULL
+		)
+		SELECT
+			rs.current_score,
+			(SELECT COUNT(*) FROM open_findings),
+			(SELECT COUNT(*) FROM resolved_in_period),
+			(SELECT COUNT(*) FROM new_in_period),
+			(SELECT COUNT(*) FROM open_findings WHERE priority_class = 'P0'),
+			(SELECT COUNT(*) FROM resolved_in_period WHERE priority_class = 'P0'),
+			(SELECT COUNT(*) FROM open_findings WHERE priority_class = 'P1'),
+			(SELECT COUNT(*) FROM resolved_in_period WHERE priority_class = 'P1'),
+			CASE WHEN (SELECT COUNT(*) FROM open_findings) > 0
+				THEN (SELECT COUNT(*) FROM open_findings WHERE sla_status != 'breached') * 100.0 / (SELECT COUNT(*) FROM open_findings)
+				ELSE 100.0 END,
+			(SELECT COUNT(*) FROM open_findings WHERE sla_status = 'breached'),
+			mc.hrs,
+			mh.hrs,
+			cj.cnt
+		FROM risk_score rs, mttr_critical mc, mttr_high mh, crown_jewels cj
+	`
+
+	summary := &app.ExecutiveSummary{
+		Period: fmt.Sprintf("%d days", days),
+	}
+
+	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
+		&summary.RiskScoreCurrent,
+		&summary.FindingsTotal,
+		&summary.FindingsResolved,
+		&summary.FindingsNew,
+		&summary.P0Open,
+		&summary.P0Resolved,
+		&summary.P1Open,
+		&summary.P1Resolved,
+		&summary.SLACompliancePct,
+		&summary.SLABreached,
+		&summary.MTTRCriticalHrs,
+		&summary.MTTRHighHrs,
+		&summary.CrownJewelsAtRisk,
+	)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("executive summary: %w", err)
+	}
+
+	// Top 5 risks: open findings ordered by priority class, EPSS score
+	topQuery := `
+		SELECT f.title, f.severity, COALESCE(f.priority_class, 'P3') AS priority_class,
+			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
+		FROM findings f
+		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
+		WHERE f.tenant_id = $1 AND f.status NOT IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
+		ORDER BY f.priority_class ASC NULLS LAST, f.epss_score DESC NULLS LAST
+		LIMIT 5
+	`
+
+	rows, err := r.db.QueryContext(ctx, topQuery, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("executive summary top risks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	topRisks := make([]app.TopRisk, 0, 5)
+	for rows.Next() {
+		var tr app.TopRisk
+		if err := rows.Scan(&tr.FindingTitle, &tr.Severity, &tr.PriorityClass,
+			&tr.AssetName, &tr.EPSSScore, &tr.IsInKEV); err != nil {
+			return nil, fmt.Errorf("scan top risk: %w", err)
+		}
+		topRisks = append(topRisks, tr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate top risks: %w", err)
+	}
+	summary.TopRisks = topRisks
+
+	return summary, nil
+}
+
+// GetMTTRAnalytics returns MTTR breakdown by severity, priority class, and overall.
+func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*app.MTTRAnalytics, error) {
+	if days <= 0 || days > 365 {
+		days = 90
+	}
+
+	query := `
+		SELECT
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE severity = 'critical' AND first_detected_at IS NOT NULL), 0) AS mttr_critical,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE severity = 'high' AND first_detected_at IS NOT NULL), 0) AS mttr_high,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE severity = 'medium' AND first_detected_at IS NOT NULL), 0) AS mttr_medium,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE severity = 'low' AND first_detected_at IS NOT NULL), 0) AS mttr_low,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE priority_class = 'P0' AND first_detected_at IS NOT NULL), 0) AS mttr_p0,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE priority_class = 'P1' AND first_detected_at IS NOT NULL), 0) AS mttr_p1,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE priority_class = 'P2' AND first_detected_at IS NOT NULL), 0) AS mttr_p2,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE priority_class = 'P3' AND first_detected_at IS NOT NULL), 0) AS mttr_p3,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE first_detected_at IS NOT NULL), 0) AS mttr_overall,
+			COUNT(*) AS sample_size
+		FROM findings
+		WHERE tenant_id = $1
+			AND status IN ('resolved', 'verified')
+			AND resolved_at >= NOW() - ($2::int || ' days')::interval
+			AND resolved_at IS NOT NULL
+	`
+
+	var (
+		mttrCritical, mttrHigh, mttrMedium, mttrLow             float64
+		mttrP0, mttrP1, mttrP2, mttrP3                         float64
+		mttrOverall                                             float64
+		sampleSize                                              int
+	)
+
+	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
+		&mttrCritical, &mttrHigh, &mttrMedium, &mttrLow,
+		&mttrP0, &mttrP1, &mttrP2, &mttrP3,
+		&mttrOverall, &sampleSize,
+	)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("mttr analytics: %w", err)
+	}
+
+	result := &app.MTTRAnalytics{
+		BySeverity: map[string]float64{
+			"critical": mttrCritical,
+			"high":     mttrHigh,
+			"medium":   mttrMedium,
+			"low":      mttrLow,
+		},
+		ByPriorityClass: map[string]float64{
+			"P0": mttrP0,
+			"P1": mttrP1,
+			"P2": mttrP2,
+			"P3": mttrP3,
+		},
+		Overall:    mttrOverall,
+		SampleSize: sampleSize,
+	}
+
+	return result, nil
+}
+
+// GetProcessMetrics computes process efficiency metrics for a tenant.
+func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*app.ProcessMetrics, error) {
+	if days <= 0 || days > 365 {
+		days = 90
+	}
+	query := `
+		WITH approval_stats AS (
+			SELECT
+				COALESCE(AVG(EXTRACT(epoch FROM updated_at - created_at) / 3600), 0) AS avg_hours,
+				COUNT(*) AS total
+			FROM finding_status_approvals
+			WHERE tenant_id = $1 AND status IN ('approved','rejected')
+			AND created_at >= NOW() - ($2 || ' days')::interval
+		),
+		stale_stats AS (
+			SELECT
+				COUNT(*) FILTER(WHERE last_seen < NOW() - INTERVAL '7 days') AS stale,
+				COUNT(*) AS total
+			FROM assets WHERE tenant_id = $1 AND status != 'archived'
+		),
+		assign_stats AS (
+			SELECT
+				COUNT(*) FILTER(WHERE assigned_to IS NULL AND status NOT IN ('closed','resolved','false_positive','verified')) AS unassigned,
+				COALESCE(AVG(EXTRACT(epoch FROM assigned_at - created_at) / 3600) FILTER(WHERE assigned_at IS NOT NULL), 0) AS avg_assign_hours
+			FROM findings WHERE tenant_id = $1
+			AND created_at >= NOW() - ($2 || ' days')::interval
+		)
+		SELECT
+			a.avg_hours, a.total,
+			0::float8, 0,
+			s.stale,
+			CASE WHEN s.total > 0 THEN s.stale * 100.0 / s.total ELSE 0 END,
+			as2.unassigned,
+			as2.avg_assign_hours
+		FROM approval_stats a, stale_stats s, assign_stats as2
+	`
+	var m app.ProcessMetrics
+	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
+		&m.ApprovalAvgHours, &m.ApprovalCount,
+		&m.RetestAvgHours, &m.RetestCount,
+		&m.StaleAssets, &m.StaleAssetsPct,
+		&m.FindingsWithoutOwner, &m.AvgTimeToAssignHours,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("process metrics: %w", err)
+	}
+	return &m, nil
+}

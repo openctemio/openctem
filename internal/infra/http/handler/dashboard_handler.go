@@ -195,6 +195,75 @@ func convertFindingTrend(points []app.FindingTrendPoint) []FindingTrendPoint {
 	return result
 }
 
+// GetExecutiveSummary returns executive-level metrics for a time period.
+func (h *DashboardHandler) GetExecutiveSummary(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+
+	days := parseQueryInt(r.URL.Query().Get("days"), 30)
+	if days < 1 {
+		days = 30
+	} else if days > 365 {
+		days = 365
+	}
+
+	summary, err := h.dashboardService.GetExecutiveSummary(r.Context(), tid, days)
+	if err != nil {
+		h.logger.Error("failed to get executive summary", "error", err)
+		apierror.InternalServerError("failed to get executive summary").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+// GetMTTRAnalytics returns MTTR breakdown by severity and priority class.
+func (h *DashboardHandler) GetMTTRAnalytics(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+
+	days := parseQueryInt(r.URL.Query().Get("days"), 90)
+	if days < 1 {
+		days = 90
+	} else if days > 365 {
+		days = 365
+	}
+
+	analytics, err := h.dashboardService.GetMTTRAnalytics(r.Context(), tid, days)
+	if err != nil {
+		h.logger.Error("failed to get MTTR analytics", "error", err)
+		apierror.InternalServerError("failed to get MTTR analytics").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, analytics)
+}
+
+// GetProcessMetrics returns process efficiency metrics (Phase 2).
+func (h *DashboardHandler) GetProcessMetrics(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+
+	days := parseQueryInt(r.URL.Query().Get("days"), 90)
+	metrics, err := h.dashboardService.GetProcessMetrics(r.Context(), tid, days)
+	if err != nil {
+		h.logger.Error("failed to get process metrics", "error", err)
+		apierror.InternalServerError("failed to get process metrics").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, metrics)
+}
+
 func convertActivityItems(items []app.ActivityItem) []ActivityItem {
 	result := make([]ActivityItem, len(items))
 	for i, item := range items {
