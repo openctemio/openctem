@@ -34,11 +34,11 @@ CREATE TABLE IF NOT EXISTS asset_merge_log (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_asset_merge_log_tenant ON asset_merge_log(tenant_id);
-CREATE INDEX idx_asset_merge_log_kept ON asset_merge_log(kept_asset_id);
-CREATE INDEX idx_asset_merge_log_merged ON asset_merge_log(merged_asset_id)
+CREATE INDEX IF NOT EXISTS idx_asset_merge_log_tenant ON asset_merge_log(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_asset_merge_log_kept ON asset_merge_log(kept_asset_id);
+CREATE INDEX IF NOT EXISTS idx_asset_merge_log_merged ON asset_merge_log(merged_asset_id)
     WHERE merged_asset_id IS NOT NULL;
-CREATE INDEX idx_asset_merge_log_created ON asset_merge_log(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_asset_merge_log_created ON asset_merge_log(tenant_id, created_at DESC);
 
 -- ============================================================
 -- 2. Asset Dedup Review — admin queue for duplicate groups
@@ -69,8 +69,8 @@ CREATE TABLE IF NOT EXISTS asset_dedup_review (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_asset_dedup_review_tenant ON asset_dedup_review(tenant_id);
-CREATE INDEX idx_asset_dedup_review_status ON asset_dedup_review(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_asset_dedup_review_tenant ON asset_dedup_review(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_asset_dedup_review_status ON asset_dedup_review(tenant_id, status);
 
 -- ============================================================
 -- 3. Index for alias search (properties->'aliases')
