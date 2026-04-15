@@ -403,7 +403,7 @@ func TestAssetService_CreateAsset_Success(t *testing.T) {
 	svc, repo := newTestService()
 
 	input := app.CreateAssetInput{
-		Name:        "Test Server",
+		Name:        "test-server-01",
 		Type:        "host",
 		Criticality: "high",
 		Description: "Test description",
@@ -415,8 +415,8 @@ func TestAssetService_CreateAsset_Success(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if a.Name() != input.Name {
-		t.Errorf("expected name %s, got %s", input.Name, a.Name())
+	if a.Name() != asset.NormalizeName(input.Name, asset.AssetType(input.Type), "") {
+		t.Errorf("expected name %s, got %s", asset.NormalizeName(input.Name, asset.AssetType(input.Type), ""), a.Name())
 	}
 	if a.Type().String() != input.Type {
 		t.Errorf("expected type %s, got %s", input.Type, a.Type().String())
@@ -794,8 +794,8 @@ func TestAssetService_GetAsset_Success(t *testing.T) {
 	if a.ID() != created.ID() {
 		t.Errorf("expected ID %s, got %s", created.ID(), a.ID())
 	}
-	if a.Name() != "Test Asset" {
-		t.Errorf("expected name Test Asset, got %s", a.Name())
+	if a.Name() != asset.NormalizeName("Test Asset", asset.AssetTypeHost, "") {
+		t.Errorf("expected name test asset, got %s", a.Name())
 	}
 }
 
@@ -843,7 +843,7 @@ func TestAssetService_GetAsset_CrossTenantIsolation(t *testing.T) {
 	tenantB := shared.NewID().String()
 
 	// Create asset in tenant A
-	created := createAssetForTest(t, svc, tenantA, "Tenant A Asset")
+	created := createAssetForTest(t, svc, tenantA, "tenant-a-asset")
 
 	// Try to access from tenant B
 	_, err := svc.GetAsset(context.Background(), tenantB, created.ID().String())
@@ -859,8 +859,8 @@ func TestAssetService_GetAsset_CrossTenantIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("should be accessible from correct tenant: %v", err)
 	}
-	if a.Name() != "Tenant A Asset" {
-		t.Errorf("expected name 'Tenant A Asset', got %s", a.Name())
+	if a.Name() != "tenant-a-asset" {
+		t.Errorf("expected name 'tenant-a-asset', got %s", a.Name())
 	}
 }
 
@@ -889,7 +889,7 @@ func TestAssetService_UpdateAsset_Success(t *testing.T) {
 
 	created := createAssetForTest(t, svc, tenantID, "Original Name")
 
-	newName := "Updated Name"
+	newName := "updated-name"
 	newCrit := "medium"
 	updateInput := app.UpdateAssetInput{
 		Name:        &newName,
@@ -925,7 +925,7 @@ func TestAssetService_UpdateAsset_PartialUpdate(t *testing.T) {
 	}
 
 	// Update only name
-	newName := "New Name"
+	newName := "new name"
 	updated, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, app.UpdateAssetInput{
 		Name: &newName,
 	})
@@ -964,7 +964,7 @@ func TestAssetService_UpdateAsset_AllFields(t *testing.T) {
 	}
 
 	updateInput := app.UpdateAssetInput{
-		Name:        strPtr("Renamed Asset"),
+		Name:        strPtr("renamed asset"),
 		Criticality: strPtr("critical"),
 		Scope:       strPtr("external"),
 		Exposure:    strPtr("public"),
@@ -977,8 +977,8 @@ func TestAssetService_UpdateAsset_AllFields(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if updated.Name() != "Renamed Asset" {
-		t.Errorf("expected name Renamed Asset, got %s", updated.Name())
+	if updated.Name() != "renamed asset" {
+		t.Errorf("expected name renamed asset, got %s", updated.Name())
 	}
 	if updated.Criticality().String() != "critical" {
 		t.Errorf("expected criticality critical, got %s", updated.Criticality().String())
@@ -1002,7 +1002,7 @@ func TestAssetService_UpdateAsset_NotFound(t *testing.T) {
 	tenantID := serviceTenantID.String()
 
 	_, err := svc.UpdateAsset(context.Background(), shared.NewID().String(), tenantID, app.UpdateAssetInput{
-		Name: strPtr("Updated Name"),
+		Name: strPtr("updated-name"),
 	})
 	if err == nil {
 		t.Fatal("expected error for non-existent asset")
@@ -1017,7 +1017,7 @@ func TestAssetService_UpdateAsset_InvalidID(t *testing.T) {
 	tenantID := serviceTenantID.String()
 
 	_, err := svc.UpdateAsset(context.Background(), "not-a-uuid", tenantID, app.UpdateAssetInput{
-		Name: strPtr("Updated Name"),
+		Name: strPtr("updated-name"),
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
@@ -1031,7 +1031,7 @@ func TestAssetService_UpdateAsset_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestService()
 
 	_, err := svc.UpdateAsset(context.Background(), shared.NewID().String(), "not-a-uuid", app.UpdateAssetInput{
-		Name: strPtr("Updated Name"),
+		Name: strPtr("updated-name"),
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
@@ -1090,7 +1090,7 @@ func TestAssetService_UpdateAsset_RepoUpdateError(t *testing.T) {
 	repo.updateErr = errors.New("disk full")
 
 	_, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, app.UpdateAssetInput{
-		Name: strPtr("New Name"),
+		Name: strPtr("new name"),
 	})
 	if err == nil {
 		t.Fatal("expected error when repo.Update fails")
@@ -2029,7 +2029,7 @@ func TestAssetService_UpdateAsset_CallsRepoCorrectly(t *testing.T) {
 	repo.updateCalls = 0
 
 	_, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, app.UpdateAssetInput{
-		Name: strPtr("New Name"),
+		Name: strPtr("new name"),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

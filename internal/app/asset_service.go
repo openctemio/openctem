@@ -206,6 +206,12 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		}
 	}
 
+	// Normalize name before lookup so it matches existing normalized assets (RFC-001)
+	normalizedName := asset.NormalizeName(input.Name, assetType, "")
+	if normalizedName != "" {
+		input.Name = normalizedName
+	}
+
 	// Upsert: if asset with same name already exists, merge and update instead of rejecting.
 	// This handles re-ingestion, manual re-creation, and multi-source discovery gracefully.
 	existing, err := s.repo.GetByName(ctx, tenantID, input.Name)

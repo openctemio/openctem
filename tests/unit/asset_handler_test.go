@@ -246,8 +246,8 @@ func TestAssetHandler_Create_Success(t *testing.T) {
 	var response map[string]any
 	json.Unmarshal(rec.Body.Bytes(), &response)
 
-	if response["name"] != "Test Asset" {
-		t.Errorf("expected name 'Test Asset', got %v", response["name"])
+	if response["name"] != "test asset" {
+		t.Errorf("expected name 'test asset', got %v", response["name"])
 	}
 }
 
@@ -382,7 +382,7 @@ func TestAssetHandler_Update_Success(t *testing.T) {
 
 	// Create asset
 	createBody := map[string]any{
-		"name":        "Original Name",
+		"name":        "original name",
 		"type":        "host",
 		"criticality": "high",
 	}
@@ -399,7 +399,7 @@ func TestAssetHandler_Update_Success(t *testing.T) {
 
 	// Update asset
 	updateBody := map[string]any{
-		"name":        "Updated Name",
+		"name":        "updated name",
 		"criticality": "medium",
 	}
 	updateJson, _ := json.Marshal(updateBody)
@@ -418,8 +418,8 @@ func TestAssetHandler_Update_Success(t *testing.T) {
 	var response map[string]any
 	json.Unmarshal(rec.Body.Bytes(), &response)
 
-	if response["name"] != "Updated Name" {
-		t.Errorf("expected name 'Updated Name', got %v", response["name"])
+	if response["name"] != "updated name" {
+		t.Errorf("expected name 'updated name', got %v", response["name"])
 	}
 }
 
@@ -428,7 +428,7 @@ func TestAssetHandler_Update_PartialFields(t *testing.T) {
 
 	// Create asset
 	createBody := map[string]any{
-		"name":        "Original Name",
+		"name":        "original name",
 		"type":        "host",
 		"criticality": "high",
 		"description": "Original description",
@@ -465,8 +465,8 @@ func TestAssetHandler_Update_PartialFields(t *testing.T) {
 	json.Unmarshal(rec.Body.Bytes(), &response)
 
 	// Name should remain unchanged
-	if response["name"] != "Original Name" {
-		t.Errorf("expected name to remain 'Original Name', got %v", response["name"])
+	if response["name"] != "original name" {
+		t.Errorf("expected name to remain 'original name', got %v", response["name"])
 	}
 	if response["criticality"] != "low" {
 		t.Errorf("expected criticality 'low', got %v", response["criticality"])
