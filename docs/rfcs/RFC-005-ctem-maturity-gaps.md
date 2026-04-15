@@ -10,9 +10,9 @@
 
 ---
 
-## Tổng quan
+## Overview
 
-RFC này cover 7 gaps còn lại để đưa OpenCTEM từ 67% lên ~90% CTEM compliance. Mỗi gap là một feature độc lập, có thể implement theo thứ tự bất kỳ (trừ Gap 9 phải trước Gap 3).
+This RFC covers 7 remaining gaps to bring OpenCTEM from 67% to ~90% CTEM compliance. Each gap is an independent feature and can be implemented in any order (except Gap 9 must come before Gap 3).
 
 | Gap | Feature | Stage | Effort | Migration |
 |-----|---------|-------|--------|-----------|
@@ -28,9 +28,9 @@ RFC này cover 7 gaps còn lại để đưa OpenCTEM từ 67% lên ~90% CTEM co
 
 ## Gap 3: CTEM Cycle Entity
 
-### Mục tiêu
+### Objectives
 
-Một CTEM cycle là đợt assessment có thời hạn (thường quarterly). Mỗi cycle ghi nhận: scope gì, tìm thấy gì, fix được gì. Đây là backbone để đo improvement over time.
+A CTEM cycle is a time-bounded assessment period (typically quarterly). Each cycle records: what was scoped, what was discovered, what was remediated. This is the backbone for measuring improvement over time.
 
 ### Schema
 
@@ -88,7 +88,7 @@ type Cycle struct {
     id        shared.ID
     tenantID  shared.ID
     name      string
-    status    CycleStatus  // planning → active → review → closed
+    status    CycleStatus  // planning -> active -> review -> closed
     startDate *time.Time
     endDate   *time.Time
     charter   Charter      // JSONB struct
@@ -101,16 +101,16 @@ type Charter struct {
     Objectives         []string `json:"objectives"`
 }
 
-func (c *Cycle) Activate()  error  // planning → active, snapshots scope
-func (c *Cycle) StartReview() error // active → review
-func (c *Cycle) Close(metrics) error // review → closed, requires metrics
+func (c *Cycle) Activate()  error  // planning -> active, snapshots scope
+func (c *Cycle) StartReview() error // active -> review
+func (c *Cycle) Close(metrics) error // review -> closed, requires metrics
 ```
 
 ### Service Logic
 
-- `Activate()` → freeze current scope targets + matching assets into `ctem_cycle_scope_snapshots`
-- `Close()` → compute metrics by querying findings created/resolved within cycle timeframe
-- Metrics tính: risk score trước/sau, findings discovered/resolved, MTTR, SLA compliance %
+- `Activate()` -> freeze current scope targets + matching assets into `ctem_cycle_scope_snapshots`
+- `Close()` -> compute metrics by querying findings created/resolved within cycle timeframe
+- Metrics computed: risk score before/after, findings discovered/resolved, MTTR, SLA compliance %
 
 ### API
 
@@ -135,9 +135,9 @@ GET    /api/v1/ctem-cycles/{id}/metrics        — Metrics detail
 
 ## Gap 4: Risk Trend / Outcome Metrics
 
-### Mục tiêu
+### Objectives
 
-Time-series data cho executive dashboards. ctem.org: "Risk Reduction Metrics: Trend lines reflect validated exposure reduction, not discovery volume."
+Time-series data for executive dashboards. ctem.org: "Risk Reduction Metrics: Trend lines reflect validated exposure reduction, not discovery volume."
 
 ### Schema
 
@@ -175,7 +175,7 @@ CREATE INDEX idx_risk_snapshots_range
 
 New controller `risk_snapshot_controller.go`:
 - Interval: daily (2 AM)
-- For each tenant: aggregate from findings, assets, exposures → insert 1 row
+- For each tenant: aggregate from findings, assets, exposures -> insert 1 row
 - MTTR calculated: AVG(resolved_at - first_detected_at) for findings resolved today, grouped by severity
 
 ### API (extend dashboard handler)
@@ -197,9 +197,9 @@ GET /api/v1/dashboard/priority-trend?range=90d      — P0/P1/P2/P3 open counts 
 
 ## Gap 5: Data Quality Scorecard
 
-### Mục tiêu
+### Objectives
 
-ctem.org Data Quality targets: "% assets with assigned owner ≥ 95%, % exposures with evidence ≥ 90%, median last-seen age < 48h, dedup rate trending up."
+ctem.org Data Quality targets: "% assets with assigned owner >= 95%, % exposures with evidence >= 90%, median last-seen age < 48h, dedup rate trending up."
 
 ### Schema
 
@@ -239,14 +239,14 @@ GET /api/v1/dashboard/data-quality
 ### UI
 
 - 5 gauge/progress widgets on dashboard or dedicated `/insights/data-quality` page
-- Color coded: green (≥ target), yellow (approaching), red (below)
+- Color coded: green (>= target), yellow (approaching), red (below)
 - Targets configurable per-tenant in settings
 
 ---
 
 ## Gap 6: Compensating Controls
 
-### Mục tiêu
+### Objectives
 
 ctem.org: "Valid compensating controls require defensible documentation: segmentation, identity controls, runtime protections, detection with proven coverage."
 
@@ -311,13 +311,13 @@ func (c *CompensatingControl) IsEffective() bool {
 }
 ```
 
-### Integration vào Risk Formula
+### Integration into Risk Formula
 
-Trong `priority.go` ClassifyPriority:
+In `priority.go` ClassifyPriority:
 ```go
-// isProtected = có ≥1 compensating control effective trên asset
-// controlReductionFactor = max reduction_factor của effective controls
-// P1 → P2 nếu isProtected && controlReductionFactor ≥ 0.3
+// isProtected = has >=1 effective compensating control on the asset
+// controlReductionFactor = max reduction_factor of effective controls
+// P1 -> P2 if isProtected && controlReductionFactor >= 0.3
 ```
 
 ### API
@@ -340,9 +340,9 @@ POST        /api/v1/compensating-controls/{id}/findings  — Link findings
 
 ## Gap 7: Automated SLA Escalation Job
 
-### Mục tiêu
+### Objectives
 
-SLA policies exist nhưng không có enforcement. ctem.org: "Priority-based due dates assigned to tickets."
+SLA policies exist but have no enforcement. ctem.org: "Priority-based due dates assigned to tickets."
 
 ### Schema
 
@@ -373,8 +373,8 @@ func (c *SLAEscalationController) Reconcile(ctx) error {
 
 ### Integration
 
-- Sử dụng existing `NotificationService.EnqueueNotificationInTx()`
-- Sử dụng existing `SLAPolicy.EscalationConfig` JSONB
+- Uses existing `NotificationService.EnqueueNotificationInTx()`
+- Uses existing `SLAPolicy.EscalationConfig` JSONB
 - Add "sla_breach" to `notification.AllKnownEventTypes()`
 
 ### UI
@@ -386,7 +386,7 @@ func (c *SLAEscalationController) Reconcile(ctx) error {
 
 ## Gap 8: Verification Checklist
 
-### Mục tiêu
+### Objectives
 
 ctem.org: "Exposure no longer observable, ownership and status updated, validation artifacts attached, monitoring rule added, regression test scheduled."
 
@@ -413,7 +413,7 @@ CREATE TABLE finding_verification_checklists (
 
 ### Service Logic
 
-- Auto-create checklist khi finding transitions to `fix_applied`
+- Auto-create checklist when a finding transitions to `fix_applied`
 - Gate transition to `verified`/`closed`: checklist must exist AND `IsComplete()`
 - `IsComplete()`: all non-NULL boolean fields must be true
 
@@ -434,9 +434,9 @@ PUT /api/v1/findings/{id}/verification-checklist
 
 ## Gap 9: Threat Model / Attacker Profiles
 
-### Mục tiêu
+### Objectives
 
-ctem.org: "Threat assumptions: external attacker with commodity tooling, external with stolen credentials, third-party compromise." Mỗi CTEM cycle cần declare threat model.
+ctem.org: "Threat assumptions: external attacker with commodity tooling, external with stolen credentials, third-party compromise." Each CTEM cycle needs to declare a threat model.
 
 ### Schema
 
@@ -549,7 +549,7 @@ Phase 3 — CTEM Cycle (~1.5 weeks):
 | 000149 | 8 | finding_verification_checklists |
 | 000150 | 9 | attacker_profiles, ctem_cycle_attacker_profiles |
 
-*Lưu ý: 000142 thuộc RFC-004 (Priority Classes)*
+*Note: 000142 belongs to RFC-004 (Priority Classes)*
 
 ### Permissions
 
@@ -579,29 +579,29 @@ Phase 3 — CTEM Cycle (~1.5 weeks):
 
 ## Appendix: CTEM Differentiators (from ctem.org/docs/comparisons)
 
-### OpenCTEM phải thể hiện rõ mình là Operating Model, không phải Tool
+### OpenCTEM must clearly demonstrate it is an Operating Model, not a Tool
 
 > "CTEM is a program structure, not a replacement for your existing tools."
 > "Most security programs fail not at discovery, but at converting exposure insight into sustained operational change."
 
-### Differentiators so với VM/EASM/Pentesting đã có và chưa có
+### Differentiators compared to VM/EASM/Pentesting — existing and missing
 
 | Differentiator | Status | Notes |
 |---|---|---|
-| Non-CVE exposures (misconfig, identity, secrets, SaaS) | ✅ | 20+ exposure event types |
-| Business-context prioritization (not CVSS-only) | ❌ → RFC-004 | Priority classes P0-P3 |
-| Validation as first-class stage (not just rescan) | ✅ | Pentest + simulation + control tests |
-| Outcome metrics (exposure reduction, not ticket count) | ❌ → RFC-005 Gap 4 | Risk trend / MTTR / SLA compliance |
-| Continuous iterative cycles (not annual) | ❌ → RFC-005 Gap 3 | CTEM Cycle entity |
-| Cross-functional mobilization (not security-only) | ✅ | Jira integration + team assignment |
-| Attack path analysis | ✅ | BFS reachability scoring |
-| Compensating controls in risk formula | ❌ → RFC-005 Gap 6 | Control reduction factor |
-| Data quality governance | ❌ → RFC-005 Gap 5 | Scorecard metrics |
+| Non-CVE exposures (misconfig, identity, secrets, SaaS) | Done | 20+ exposure event types |
+| Business-context prioritization (not CVSS-only) | Missing -> RFC-004 | Priority classes P0-P3 |
+| Validation as first-class stage (not just rescan) | Done | Pentest + simulation + control tests |
+| Outcome metrics (exposure reduction, not ticket count) | Missing -> RFC-005 Gap 4 | Risk trend / MTTR / SLA compliance |
+| Continuous iterative cycles (not annual) | Missing -> RFC-005 Gap 3 | CTEM Cycle entity |
+| Cross-functional mobilization (not security-only) | Done | Jira integration + team assignment |
+| Attack path analysis | Done | BFS reachability scoring |
+| Compensating controls in risk formula | Missing -> RFC-005 Gap 6 | Control reduction factor |
+| Data quality governance | Missing -> RFC-005 Gap 5 | Scorecard metrics |
 
 ### CTEM-Aligned Metrics Framework (update Gap 4)
 
-| Category | VM-Aligned (hiện có) | CTEM-Aligned (thêm vào risk_snapshots) |
-|----------|---------------------|----------------------------------------|
+| Category | VM-Aligned (existing) | CTEM-Aligned (to add in risk_snapshots) |
+|----------|----------------------|----------------------------------------|
 | Speed | MTTR by severity | MTTR for validated P0/P1; time-to-break attack paths |
 | Quality | False positive rate | Validation yield; recurrence/regression rate |
 | Risk Reduction | Vuln count | Reduction in reachable exposure to crown jewels |
@@ -610,7 +610,7 @@ Phase 3 — CTEM Cycle (~1.5 weeks):
 
 ### Executive Reporting Shift
 
-Thay vì: "We closed 1,200 vulnerabilities this quarter"
+Instead of: "We closed 1,200 vulnerabilities this quarter"
 
 Report: "Eliminated X externally reachable paths to payment systems, reduced P0 exposure in identity admin workflows by Y%, MTTR for validated exploitable findings improved from Z to W days"
 
@@ -627,7 +627,7 @@ Report: "Eliminated X externally reachable paths to payment systems, reduced P0 
 
 ---
 
-## Tham khảo
+## References
 
 - [ctem.org — Getting Started](https://ctem.org/docs/getting-started)
 - [ctem.org — Scoping](https://ctem.org/docs/stages/ctem-scoping)

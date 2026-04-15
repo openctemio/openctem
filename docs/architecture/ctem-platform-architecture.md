@@ -1,247 +1,266 @@
 # OpenCTEM Platform Architecture — CTEM 5-Stage Workflow
 
-> Tài liệu này mô tả cách OpenCTEM thực hiện 5 giai đoạn CTEM theo framework ctem.org,
-> các tính năng tương ứng, và cách chúng kết nối với nhau.
+> This document describes how OpenCTEM implements the 5 CTEM stages per the ctem.org framework,
+> which features map to each stage, and how they connect end-to-end.
 
-## Tổng quan
+## Overview
 
-CTEM (Continuous Threat Exposure Management) là operating model 5 giai đoạn:
+CTEM (Continuous Threat Exposure Management) is Gartner's 5-stage operating model
+for continuously reducing material cyber risk:
 
 ```
 ┌─────────┐   ┌───────────┐   ┌──────────────┐   ┌────────────┐   ┌──────────────┐
 │ SCOPING │ → │ DISCOVERY │ → │PRIORITIZATION│ → │ VALIDATION │ → │ MOBILIZATION │
 │         │   │           │   │              │   │            │   │              │
-│ Xác định│   │ Phát hiện │   │ Xếp hạng ưu │   │ Xác minh   │   │ Thực hiện    │
-│ phạm vi │   │ tài sản & │   │ tiên theo    │   │ khả năng   │   │ khắc phục    │
-│ đánh giá│   │ lỗ hổng   │   │ rủi ro thực  │   │ khai thác  │   │ đo lường     │
+│ Define  │   │ Enumerate │   │ Rank by real │   │ Prove      │   │ Drive fixes  │
+│ what to │   │ assets &  │   │ business     │   │ actual     │   │ to completion│
+│ protect │   │ exposures │   │ risk         │   │ exploitab. │   │ & measure    │
 └─────────┘   └───────────┘   └──────────────┘   └────────────┘   └──────────────┘
      ↑                                                                    │
-     └────────────────── Cycle lặp lại (quarterly) ──────────────────────┘
+     └───────────────── Iterative cycle (quarterly) ─────────────────────┘
 ```
 
-## Stage 1: Scoping — "Đánh giá gì, cho ai?"
-
-### Mục đích
-Xác định phạm vi đánh giá: tài sản nào quan trọng, threat model nào áp dụng,
-đo lường thành công bằng gì.
-
-### Tính năng
-
-| Feature | Mô tả | Tại sao cần |
-|---------|-------|-------------|
-| **CTEM Cycles** | Đợt đánh giá có thời hạn (planning→active→review→closed) | Đo improvement qua từng cycle, không đánh giá vô tận |
-| **Scope Targets** | Pattern-based rules xác định tài sản nào in-scope (19 target types) | Tập trung vào attack surface quan trọng |
-| **Business Units** | Nhóm tài sản theo tổ chức (Engineering, Security Ops...) | Map tài sản → business context |
-| **Crown Jewels** | Đánh dấu tài sản quan trọng nhất (is_crown_jewel + business_impact_score) | Priority P0 khi crown jewel bị threat |
-| **Attacker Profiles** | 4 mô hình threat: external, stolen creds, insider, supplier | Xác định threat model cho mỗi cycle |
-| **Scope Exclusions** | Loại trừ tài sản/pattern khỏi scope với lý do | Tránh noise, tập trung resource |
-
-### Luồng hoạt động
-
-```
-1. Tạo CTEM Cycle → status: planning
-2. Set charter (business priorities, objectives)
-3. Link attacker profiles (threat model)
-4. Review scope targets
-5. Activate → status: active, scope snapshot frozen
-```
-
-### Tables: `ctem_cycles`, `ctem_cycle_scope_snapshots`, `ctem_cycle_attacker_profiles`, 
-`scope_targets`, `scope_exclusions`, `business_units`, `attacker_profiles`
+**Key distinction from Vulnerability Management:**
+CTEM answers "What exposures meaningfully increase the probability of a business-impacting incident?"
+— not just "What CVEs do we have?"
 
 ---
 
-## Stage 2: Discovery — "Có gì? Lỗ hổng ở đâu?"
+## Stage 1: Scoping — "What to protect, and why?"
 
-### Mục đích
-Phát hiện tất cả tài sản và exposure (không chỉ CVE — còn misconfig, secrets,
-identity weakness, SaaS posture).
+### Purpose
+Define the assessment boundary: which assets matter most, what threat models apply,
+and how to measure success. Scoping prevents CTEM from becoming an unbounded backlog.
 
-### Tính năng
+### Features
 
-| Feature | Mô tả | Tại sao cần |
-|---------|-------|-------------|
-| **Asset Inventory** | 16 asset types, normalization, IP correlation, dedup | Biết bạn có gì |
+| Feature | Description | Why it matters |
+|---------|-------------|----------------|
+| **CTEM Cycles** | Time-boxed assessment periods (planning → active → review → closed) | Measures improvement over time; prevents drift |
+| **Scope Targets** | Pattern-based rules defining in-scope assets (19 target types) | Focuses discovery on what matters |
+| **Business Units** | Organizational grouping of assets with risk aggregation | Maps assets to business context |
+| **Crown Jewels** | High-impact assets marked with `is_crown_jewel` + business_impact_score | Drives P0 priority when threatened |
+| **Attacker Profiles** | 4 threat model types: external, stolen creds, insider, supply chain | Defines what adversaries to test against |
+| **Scope Exclusions** | Explicit out-of-scope rules with justification + expiration | Avoids noise, documents decisions |
+
+### Workflow
+
+```
+1. Create CTEM Cycle → status: planning
+2. Set charter (business priorities, risk appetite, objectives)
+3. Link attacker profiles (threat model for this cycle)
+4. Review/update scope targets and exclusions
+5. Activate cycle → status: active, scope snapshot frozen
+   ... run through Discovery → Prioritization → Validation → Mobilization ...
+6. Start review → status: review
+7. Close cycle → status: closed, metrics computed automatically
+```
+
+### Tables
+`ctem_cycles`, `ctem_cycle_scope_snapshots`, `ctem_cycle_metrics`,
+`ctem_cycle_attacker_profiles`, `attacker_profiles`,
+`scope_targets`, `scope_exclusions`, `business_units`, `business_unit_assets`
+
+---
+
+## Stage 2: Discovery — "What do we own? What's exposed?"
+
+### Purpose
+Enumerate all assets within scope and identify exposures — not just CVEs, but also
+misconfigurations, identity weaknesses, leaked credentials, and control gaps.
+
+### Features
+
+| Feature | Description | Why it matters |
+|---------|-------------|----------------|
+| **Asset Inventory** | 16 asset types with type-specific normalization and dedup | Know what you own |
 | **Asset Relationships** | 16 relationship types (runs_on, depends_on, exposes...) | Map attack paths |
-| **Finding Ingestion** | CTIS format, 17 source types, fingerprint dedup | Tập hợp findings từ nhiều scanner |
-| **Exposure Events** | 20+ event types (port_open, bucket_public, credential_leak...) | Track thay đổi attack surface |
-| **Data Quality Scorecard** | Asset ownership %, evidence %, freshness, dedup rate | Đảm bảo data đủ tốt để ra quyết định |
-| **Asset Normalization** | DNS lowercase, IP canonical, URL normalize... | Dedup chính xác |
+| **Finding Ingestion** | CTIS format, 17 source types, fingerprint-based dedup | Aggregate from multiple scanners |
+| **Exposure Events** | 20+ event types (port changes, bucket exposure, credential leak...) | Track attack surface changes |
+| **Data Quality Scorecard** | Asset ownership %, evidence %, freshness, dedup rate | Ensure data quality supports decisions |
+| **IP Correlation** | Match hosts by IP across scanners for dedup | Reduce duplicate assets |
 
-### Luồng hoạt động
+### Ingestion Pipeline
 
 ```
-Agent scan → CTIS report → Ingest API
-  → Normalize asset name (16 type handlers)
-  → IP correlation (host dedup)
-  → Fingerprint dedup (finding)
-  → Enrich with EPSS/KEV
-  → Classify priority P0-P3
-  → Persist to DB
+Agent scan → CTIS report → POST /api/v1/ingest
+  → Step 1: Normalize asset name (16 type-specific handlers)
+  → Step 2: IP correlation for host dedup
+  → Step 3: Fingerprint dedup for findings
+  → Step 4: Enrich with EPSS score + KEV status
+  → Step 5: Classify priority P0-P3
+  → Step 6: Persist to database
 ```
 
-### Tables: `assets`, `findings`, `exposure_events`, `asset_relationships`, `asset_merge_log`
+### Tables
+`assets`, `findings`, `exposure_events`, `asset_relationships`,
+`asset_merge_log`, `asset_dedup_review`
 
 ---
 
-## Stage 3: Prioritization — "Fix cái nào trước?"
+## Stage 3: Prioritization — "What to fix first?"
 
-### Mục đích
-Xếp hạng findings theo business impact + exploit likelihood + reachability,
-KHÔNG chỉ theo CVSS severity.
+### Purpose
+Rank findings by actual business risk — combining exploit evidence, reachability,
+asset criticality, and compensating controls. NOT just by CVSS severity.
 
-### Tính năng
+### Features
 
-| Feature | Mô tả | Tại sao cần |
-|---------|-------|-------------|
-| **Priority Classes P0-P3** | P0=immediate, P1=urgent, P2=scheduled, P3=track | CTEM yêu cầu priority class, không chỉ severity |
-| **EPSS Enrichment** | Exploit probability (0-100%) từ FIRST.org | "Likely to be exploited?" — CVSS không trả lời |
-| **KEV Enrichment** | CISA Known Exploited Vulnerabilities catalog | "Already being exploited in the wild?" |
-| **Override Rules** | Per-tenant rules: KEV+reachable+crown_jewel = P0 | Tùy chỉnh theo risk appetite |
-| **Attack Path Scoring** | BFS reachability từ internet → crown jewels | "Can attacker actually reach this?" |
-| **Compensating Controls** | Controls giảm risk: WAF, segmentation, MFA... | P1 → P2 nếu có control effective |
-| **Risk Scoring** | Configurable per-tenant: exposure × criticality × findings | Asset-level risk score |
+| Feature | Description | Why it matters |
+|---------|-------------|----------------|
+| **Priority Classes P0-P3** | P0=immediate, P1=urgent, P2=scheduled, P3=track | Clear action tiers with SLAs |
+| **EPSS Enrichment** | Exploit Prediction Scoring System (0-100% probability) | "How likely is this to be exploited?" |
+| **KEV Enrichment** | CISA Known Exploited Vulnerabilities catalog | "Is this already being exploited in the wild?" |
+| **Override Rules** | Per-tenant configurable rules (e.g., KEV + reachable = P0) | Customize to organization's risk appetite |
+| **Attack Path Scoring** | BFS reachability from internet entry points to crown jewels | "Can an attacker actually reach this?" |
+| **Compensating Controls** | Security controls that reduce effective risk (WAF, segmentation...) | P1 downgrades to P2 if effective controls present |
+| **Risk Scoring** | Configurable per-tenant: exposure x criticality x findings | Asset-level risk aggregation |
 
-### Classification Logic
+### Priority Classification Logic
 
 ```
 P0: KEV + (reachable OR crown_jewel)
-    → "Đang bị exploit, phải fix ngay"
-    → SLA: 7 ngày
+    "Actively exploited, attacker can reach it" → SLA: 7 days
 
-P1: EPSS ≥ 0.1 + reachable + critical asset + no controls
-    → "Rất có khả năng bị exploit, tài sản quan trọng"
-    → SLA: 30 ngày
+P1: EPSS >= 10% + reachable + critical/high asset + no controls
+    "High exploitation probability, important target" → SLA: 30 days
 
-P2: Medium risk + có compensating controls
-    HOẶC Critical severity nhưng unreachable
-    → "Có risk nhưng đã có giải pháp tạm"
-    → SLA: 60 ngày
+P2: Medium risk with controls, OR critical but unreachable
+    "Notable risk but mitigated or contained" → SLA: 60 days
 
-P3: Low risk, unreachable, informational
-    → "Track, fix khi có cơ hội"
-    → SLA: Opportunistic
+P3: Low risk, unreachable, or informational
+    "Track and fix opportunistically" → SLA: 180 days
 ```
 
-### Tables: `findings` (priority_class, epss_score, is_in_kev, is_reachable),
-`priority_override_rules`, `priority_class_audit_log`, `compensating_controls`
+### Tables
+`findings` (priority_class, epss_score, is_in_kev, is_reachable),
+`priority_override_rules`, `priority_class_audit_log`,
+`compensating_controls`, `sla_policies`
 
 ---
 
-## Stage 4: Validation — "Thực sự exploit được không?"
+## Stage 4: Validation — "Can attackers actually exploit this?"
 
-### Mục đích
-Chứng minh findings thực sự có thể exploit trong môi trường cụ thể,
-không chỉ "theoretically risky".
+### Purpose
+Prove that theoretical vulnerabilities pose genuine risk in your specific environment.
+Test whether security controls detect and respond as designed.
 
-### Tính năng
+### Features
 
-| Feature | Mô tả | Tại sao cần |
-|---------|-------|-------------|
-| **Pentest Campaigns** | Full pentest lifecycle: scope, execute, report | Chứng minh exploit path |
+| Feature | Description | Why it matters |
+|---------|-------------|----------------|
+| **Pentest Campaigns** | Full lifecycle: scope, execute, report, retest | Prove exploitation paths |
 | **Pentest Findings** | PoC code, evidence, request/response capture | Engineering-grade proof |
-| **Retests** | Verify fix actually works (pending→passed/failed) | Đảm bảo fix hiệu quả |
+| **Retests** | Verify fixes work (pending → passed/failed) | Confirm remediation effectiveness |
 | **Attack Simulations** | Automated simulation with MITRE ATT&CK mapping | Continuous validation |
-| **Control Tests** | Test framework controls (CIS, NIST, ISO 27001) | "Do defenses work?" |
-| **Verification Checklist** | Structured closure: exposure cleared, evidence, monitoring | Prevent premature closure |
-| **MITRE Coverage** | Simulation coverage by tactic/technique | Gap analysis |
+| **Control Tests** | Test security controls against frameworks (CIS, NIST, ISO) | "Do our defenses actually work?" |
+| **Verification Checklist** | Structured closure criteria before marking verified | Prevent premature closure |
 
-### Luồng hoạt động
+### Verification Checklist (gates verified/closed transition)
 
 ```
-Finding P0/P1 → Pentest campaign
-  → Tester validates exploitability
-  → Record evidence + PoC
-  → Fix applied → Retest
-  → Verification checklist:
-    ☑ Exposure cleared
-    ☑ Evidence attached  
-    ☑ Register updated
-    ☑ Monitoring added
-    ☑ Regression scheduled
-  → Mark verified/closed
+Required (all must be true):
+  [x] Exposure cleared — no longer observable from attacker perspective
+  [x] Evidence attached — proof of fix documented
+  [x] Register updated — status updated in exposure register
+
+Optional (NULL = not applicable):
+  [ ] Monitoring added — alerting/SIEM rule for regression
+  [ ] Regression scheduled — recurring check scheduled
 ```
 
-### Tables: `pentest_campaigns`, `pentest_findings`, `pentest_retests`,
+### Tables
+`pentest_campaigns`, `pentest_findings`, `pentest_retests`,
 `attack_simulations`, `control_tests`, `finding_verification_checklists`
 
 ---
 
-## Stage 5: Mobilization — "Ai fix? Bao giờ xong?"
+## Stage 5: Mobilization — "Drive fixes to completion"
 
-### Mục đích
-Chuyển findings thành action — assign owner, track SLA, enforce deadline,
-đo outcome (risk reduction, không phải ticket count).
+### Purpose
+Convert prioritized, validated findings into executed remediation with clear ownership,
+enforceable SLAs, and measurable risk reduction — not just ticket creation.
 
-### Tính năng
+### Features
 
-| Feature | Mô tả | Tại sao cần |
-|---------|-------|-------------|
-| **SLA Policies** | Deadline theo severity + priority class | Accountability |
-| **SLA Escalation** | Auto-detect overdue, mark breached, send notification | Enforce deadlines |
-| **Remediation Campaigns** | Group findings → campaign, track progress, risk before/after | Measure outcome |
-| **Jira Integration** | Create ticket from finding, severity→priority mapping | Meet teams where they work |
-| **Approval Workflow** | Risk acceptance with expiration, self-approval prevention | Governance |
-| **Risk Trend Metrics** | Daily snapshots: risk score, MTTR, SLA compliance, P0-P3 counts | Executive reporting |
-| **Notification Outbox** | Multi-channel: Slack, Teams, Email, Webhook | Keep team informed |
+| Feature | Description | Why it matters |
+|---------|-------------|----------------|
+| **SLA Policies** | Deadlines by severity + priority class (P0=7d, P1=30d...) | Enforceable accountability |
+| **SLA Escalation** | Auto-detect overdue findings, mark breached, notify | No findings slip through cracks |
+| **Remediation Campaigns** | Group findings, track progress, measure risk before/after | Outcome-based tracking |
+| **Jira Integration** | Create tickets from findings, severity to priority mapping | Meet teams where they work |
+| **Approval Workflow** | Risk acceptance with expiration, self-approval prevention | Governance of residual risk |
+| **Risk Trend Metrics** | Daily snapshots: risk score, MTTR, SLA compliance, P0-P3 | Executive reporting |
 
-### Outcome Metrics (không phải activity metrics)
+### Outcome Metrics (not activity metrics)
 
-```
-Thay vì: "We closed 1,200 vulnerabilities"
+| Category | Metric | Source |
+|----------|--------|--------|
+| **Speed** | MTTR for validated P0/P1 exposures | risk_snapshots.mttr_critical_hours |
+| **Quality** | Regression rate (remediated findings reappearing) | findings.status transitions |
+| **Risk Reduction** | Reduction in reachable exposure to crown jewels | risk_snapshots.p0_open trend |
+| **Governance** | SLA compliance rate | risk_snapshots.sla_compliance_pct |
+| **Coverage** | % crown jewels + identities in CTEM scope | data quality scorecard |
 
-Report: 
-  "Eliminated 3 externally reachable paths to payment database (P0→0)
-   Reduced P1 exposure in identity admin from 12 to 2 (83%)
-   MTTR for validated exploitable findings: 5 days (down from 22)
-   SLA compliance: 94% (up from 71%)"
-```
-
-### Tables: `sla_policies`, `remediation_campaigns`, `risk_snapshots`,
+### Tables
+`sla_policies`, `remediation_campaigns`, `risk_snapshots`,
 `notification_outbox`, `finding_status_approvals`
 
 ---
 
-## Tổng quan Database Schema (148 migrations)
+## Background Controllers
+
+| Controller | Interval | Purpose |
+|-----------|----------|---------|
+| `threat-intel-refresh` | 24h | Sync EPSS scores + KEV catalog from FIRST.org and CISA |
+| `sla-escalation` | 15m | Detect overdue findings, mark as breached, trigger notifications |
+| `risk-snapshot` | 6h | Compute daily risk/MTTR/SLA/priority metrics per tenant |
+| `approval-expiration` | 1h | Expire time-bound risk acceptances |
+| `scan-retry` | 5m | Retry failed scans with exponential backoff |
+| `agent-health` | 1m | Monitor agent heartbeats, mark unhealthy |
+
+---
+
+## Database Schema Summary (148 migrations)
 
 ```
-Scoping:
+Scoping (Stage 1):
   ctem_cycles, ctem_cycle_scope_snapshots, ctem_cycle_metrics,
   ctem_cycle_attacker_profiles, attacker_profiles,
   scope_targets, scope_exclusions, scan_schedules,
   business_units, business_unit_assets
 
-Discovery:
-  assets, asset_relationships, asset_merge_log, asset_dedup_review,
-  findings, exposure_events, exposures,
+Discovery (Stage 2):
+  assets, findings, exposure_events, exposures,
+  asset_relationships, asset_merge_log, asset_dedup_review,
   epss_scores, kev_catalog, threat_intel_sync_status
 
-Prioritization:
+Prioritization (Stage 3):
   priority_override_rules, priority_class_audit_log,
   compensating_controls, compensating_control_assets, compensating_control_findings,
   sla_policies
 
-Validation:
+Validation (Stage 4):
   pentest_campaigns, pentest_findings, pentest_retests,
   attack_simulations, attack_simulation_runs, control_tests,
   finding_verification_checklists
 
-Mobilization:
+Mobilization (Stage 5):
   remediation_campaigns, finding_status_approvals,
   notification_outbox, notification_events,
   risk_snapshots, audit_logs
 ```
 
-## Background Controllers
+---
 
-| Controller | Interval | Mô tả |
-|-----------|----------|-------|
-| `threat-intel-refresh` | 24h | Sync EPSS + KEV từ FIRST.org/CISA |
-| `sla-escalation` | 15m | Mark overdue findings as breached |
-| `risk-snapshot` | 6h | Compute daily risk/MTTR/SLA metrics |
-| `approval-expiration` | 1h | Expire time-bound risk acceptances |
-| `scan-retry` | 5m | Retry failed scans |
-| `agent-health` | 1m | Check agent heartbeats |
+## References
+
+- [ctem.org — Getting Started](https://ctem.org/docs/getting-started)
+- [ctem.org — 5 Stages](https://ctem.org/docs/stages/)
+- [ctem.org — CTEM vs Vulnerability Management](https://ctem.org/docs/comparisons/ctem-vs-vulnerability-management)
+- [FIRST EPSS](https://www.first.org/epss)
+- [CISA KEV Catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
+- [MITRE ATT&CK](https://attack.mitre.org/)
 
 ---
 

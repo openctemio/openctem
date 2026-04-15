@@ -21,37 +21,37 @@
 
 ---
 
-## 1. Vấn đề
+## 1. Problem
 
-ctem.org yêu cầu: "Prioritization turns discovery data into an ordered plan. The objective is not to fix everything — it is to address the exposures most likely to be exploited and most damaging to the business."
+ctem.org requires: "Prioritization turns discovery data into an ordered plan. The objective is not to fix everything — it is to address the exposures most likely to be exploited and most damaging to the business."
 
-Hiện tại OpenCTEM:
-- **Chỉ có severity** (critical/high/medium/low/info) — đây là thuộc tính kỹ thuật, không phải business priority
-- **EPSS đã sync** nhưng chưa feed vào risk formula hoặc findings
-- **KEV đã sync** nhưng chỉ escalate severity thô (`KEVEscalator` set severity = critical cho mọi KEV)
-- **Attack path scoring** đã có BFS reachability nhưng chưa map vào findings
-- **Không có override rules** — không thể tự động "KEV + reachable + crown jewel = P0"
-- **SLA gắn với severity**, không phải priority class
+Currently OpenCTEM:
+- **Only has severity** (critical/high/medium/low/info) — this is a technical attribute, not a business priority
+- **EPSS is synced** but does not feed into the risk formula or findings
+- **KEV is synced** but only performs crude severity escalation (`KEVEscalator` sets severity = critical for all KEV entries)
+- **Attack path scoring** already has BFS reachability but does not map it into findings
+- **No override rules** — cannot automatically determine "KEV + reachable + crown jewel = P0"
+- **SLA is tied to severity**, not priority class
 
-Kết quả: team remediation nhận 1 danh sách dài findings sorted by severity, không biết cái nào thực sự dangerous.
+Result: the remediation team receives a long list of findings sorted by severity, with no way to know which ones are actually dangerous.
 
 ---
 
-## 2. Thiết kế: Priority Classification Model
+## 2. Design: Priority Classification Model
 
-### 2.1 Priority Classes (theo ctem.org)
+### 2.1 Priority Classes (per ctem.org)
 
-| Class | Định nghĩa | Default SLA |
-|-------|-------------|-------------|
-| **P0** | Known exploited (KEV) **AND** reachable **OR** validated exploit path tới crown-jewel asset | 7 ngày |
-| **P1** | High EPSS (≥0.1), reachable, high-impact service, limited compensating controls | 30 ngày |
-| **P2** | Medium likelihood/impact, có compensating controls | 60 ngày |
-| **P3** | Low likelihood/impact, hoặc unreachable | Track; fix opportunistically |
+| Class | Definition | Default SLA |
+|-------|------------|-------------|
+| **P0** | Known exploited (KEV) **AND** reachable **OR** validated exploit path to crown-jewel asset | 7 days |
+| **P1** | High EPSS (>=0.1), reachable, high-impact service, limited compensating controls | 30 days |
+| **P2** | Medium likelihood/impact, has compensating controls | 60 days |
+| **P3** | Low likelihood/impact, or unreachable | Track; fix opportunistically |
 
 ### 2.2 Classification Formula
 
 ```
-PriorityScore = (Impact + Likelihood + ExposureConditions) × (1 - ControlReductionFactor)
+PriorityScore = (Impact + Likelihood + ExposureConditions) x (1 - ControlReductionFactor)
 ```
 
 Inputs:
@@ -260,7 +260,7 @@ func (r *PriorityOverrideRule) Matches(ctx PriorityContext) bool
 
 ### 4.3 Modify: `pkg/domain/vulnerability/finding.go`
 
-Thêm fields (private, with getters/setters):
+Add fields (private, with getters/setters):
 
 ```go
 epssScore              *float64
@@ -344,19 +344,19 @@ func (s *ThreatIntelService) EnrichFindings(ctx, findings []*Finding) error {
 
 ```
 Finding Created (ingest or manual)
-  → EnrichFindings() — set epss_score, is_in_kev
-  → ClassifyFinding() — compute priority class + SLA
-  → Persist
+  -> EnrichFindings() — set epss_score, is_in_kev
+  -> ClassifyFinding() — compute priority class + SLA
+  -> Persist
 
 EPSS/KEV Sync Complete
-  → ReclassifyOpen() — re-evaluate all open findings
+  -> ReclassifyOpen() — re-evaluate all open findings
 
 Override Rule Changed
-  → ReclassifyOpen() — re-evaluate affected findings
+  -> ReclassifyOpen() — re-evaluate affected findings
 
 Attack Path Recomputed
-  → Update is_reachable on affected findings
-  → ReclassifyOpen() for affected assets
+  -> Update is_reachable on affected findings
+  -> ReclassifyOpen() for affected assets
 ```
 
 ---
@@ -419,29 +419,29 @@ P3 = Gray badge
 
 ### 7.2 Finding List Table
 
-- Thêm cột "Priority" (sortable, filterable P0/P1/P2/P3)
+- Add "Priority" column (sortable, filterable P0/P1/P2/P3)
 - Filter dropdown: priority class, is_in_kev, EPSS range, is_reachable
 - Default sort: priority_class ASC, severity DESC
 
 ### 7.3 Finding Detail
 
-- Header: PriorityClassBadge bên cạnh SeverityBadge
+- Header: PriorityClassBadge next to SeverityBadge
 - New card "Threat Intelligence":
   - EPSS score gauge (0-100%)
   - KEV badge (if applicable) with due date
   - Reachability status (internet/internal/segmented)
   - Priority classification reason (human-readable)
-- Override button (admin only) mở dialog: select class + write reason
+- Override button (admin only) opens dialog: select class + write reason
 
 ### 7.4 Priority Rules Settings Page
 
 - Table of rules with name, target class, conditions, active/inactive toggle
 - Create/Edit dialog with condition builder (field dropdown + operator + value)
 - Seed 4 default rules on first visit:
-  1. KEV + Reachable + Crown Jewel → P0
-  2. KEV + Reachable → P0
-  3. EPSS ≥ 0.3 + Reachable + Critical Asset → P1
-  4. EPSS ≥ 0.1 + Reachable + High Asset → P1
+  1. KEV + Reachable + Crown Jewel -> P0
+  2. KEV + Reachable -> P0
+  3. EPSS >= 0.3 + Reachable + Critical Asset -> P1
+  4. EPSS >= 0.1 + Reachable + High Asset -> P1
 
 ---
 
@@ -449,12 +449,12 @@ P3 = Gray badge
 
 | Phase | Scope | Effort |
 |-------|-------|--------|
-| **1. Schema + Domain** | Migration 000142, priority.go, priority_rule.go, finding fields | 2-3 ngày |
-| **2. Enrichment Pipeline** | EnrichFindings(), persist to DB, wire vào CreateFinding | 2 ngày |
-| **3. Classification Engine** | ClassifyPriority(), PriorityClassificationService, override rule evaluation, audit log | 3 ngày |
-| **4. SLA Integration** | Priority-based SLA days, recalculate deadline | 1 ngày |
-| **5. API Layer** | FindingResponse, filters, priority handler, rules CRUD, routes | 2 ngày |
-| **6. UI** | Badge, list column/filters, detail enrichment card, rules settings page | 3 ngày |
+| **1. Schema + Domain** | Migration 000142, priority.go, priority_rule.go, finding fields | 2-3 days |
+| **2. Enrichment Pipeline** | EnrichFindings(), persist to DB, wire into CreateFinding | 2 days |
+| **3. Classification Engine** | ClassifyPriority(), PriorityClassificationService, override rule evaluation, audit log | 3 days |
+| **4. SLA Integration** | Priority-based SLA days, recalculate deadline | 1 day |
+| **5. API Layer** | FindingResponse, filters, priority handler, rules CRUD, routes | 2 days |
+| **6. UI** | Badge, list column/filters, detail enrichment card, rules settings page | 3 days |
 
 ---
 
@@ -473,17 +473,17 @@ P3 = Gray badge
 
 ---
 
-## 10. Migration từ KEVEscalator
+## 10. Migration from KEVEscalator
 
-Hiện tại `KEVEscalator.EscalateKEVFindings()` trong `threat_intel_refresh.go` chạy cross-tenant UPDATE set severity=critical cho mọi KEV finding. Sau khi RFC-004 deploy:
+Currently `KEVEscalator.EscalateKEVFindings()` in `threat_intel_refresh.go` runs a cross-tenant UPDATE setting severity=critical for all KEV findings. After RFC-004 is deployed:
 
-1. Phase 1: Chạy song song — KEVEscalator vẫn set severity, PriorityClassification set P0
+1. Phase 1: Run in parallel — KEVEscalator still sets severity, PriorityClassification sets P0
 2. Phase 2: Disable KEVEscalator — priority class subsumes severity escalation
 3. Phase 3: Remove KEVEscalator code
 
 ---
 
-## Tham khảo
+## References
 
 - [ctem.org — Prioritization Stage](https://ctem.org/docs/stages/ctem-prioritization)
 - EPSS: https://www.first.org/epss
