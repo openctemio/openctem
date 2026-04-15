@@ -19,7 +19,7 @@ import (
 
 const (
 	// EPSS data source URL (gzipped CSV)
-	epssURL = "https://epss.cyentia.com/epss_scores-current.csv.gz"
+	epssURL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
 
 	// KEV catalog URL (JSON)
 	kevURL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
@@ -221,6 +221,7 @@ func (s *ThreatIntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	req.Header.Set("User-Agent", "OpenCTEM/1.0 (https://github.com/openctemio)")
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -329,6 +330,7 @@ func (s *ThreatIntelService) fetchKEVData(ctx context.Context) ([]*threatintel.K
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	req.Header.Set("User-Agent", "OpenCTEM/1.0 (https://github.com/openctemio)")
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
