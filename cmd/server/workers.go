@@ -219,6 +219,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "threat-intel-refresh"),
 	))
 
+	// SLA escalation — marks overdue findings as breached every 15 min (RFC-005 Gap 7)
+	w.ControllerManager.Register(controller.NewSLAEscalationController(
+		deps.DB,
+		log.With("controller", "sla-escalation"),
+	))
+
+	// Risk snapshot — computes daily risk/MTTR/SLA metrics per tenant (RFC-005 Gap 4)
+	w.ControllerManager.Register(controller.NewRiskSnapshotController(
+		deps.DB,
+		log.With("controller", "risk-snapshot"),
+	))
+
 	// Control test scheduler — daily sweep to mark stale detection coverage as overdue
 	w.ControllerManager.Register(controller.NewControlTestSchedulerController(
 		repos.ControlTest,
