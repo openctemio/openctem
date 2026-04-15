@@ -1583,7 +1583,11 @@ func (h *TenantHandler) RecalculateRiskScores(w http.ResponseWriter, r *http.Req
 	tenantKey := tenantID.String()
 	now := time.Now()
 	if lastRun, ok := recalculateLastRun.Load(tenantKey); ok {
-		lastTime := lastRun.(time.Time)
+		lastTime, ok := lastRun.(time.Time)
+		if !ok {
+			recalculateLastRun.Delete(tenantKey)
+			lastTime = time.Time{}
+		}
 		elapsed := now.Sub(lastTime)
 		if elapsed < recalculateCooldown {
 			retryAfter := int(math.Ceil(recalculateCooldown.Seconds() - elapsed.Seconds()))
