@@ -23,9 +23,42 @@ type Settings struct {
 	API      APISettings      `json:"api"`
 	Branding BrandingSettings `json:"branding"`
 	Branch   BranchSettings   `json:"branch"`
-	AI          AISettings          `json:"ai"`
-	RiskScoring RiskScoringSettings `json:"risk_scoring"`
-	Pentest     PentestSettings     `json:"pentest"`
+	AI             AISettings             `json:"ai"`
+	RiskScoring    RiskScoringSettings    `json:"risk_scoring"`
+	Pentest        PentestSettings        `json:"pentest"`
+	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
+}
+
+// AssetIdentitySettings controls asset dedup behavior per tenant.
+// RFC-001: Asset Identity Resolution & Deduplication.
+type AssetIdentitySettings struct {
+	// StaleAssetDays is the number of days after which an asset is considered stale
+	// for IP correlation. If an existing asset hasn't been seen in this many days
+	// and the incoming asset has a different name, they won't be auto-merged.
+	// This prevents false merges due to IP reuse (DHCP).
+	// 0 = use system default (30 days).
+	StaleAssetDays int `json:"stale_asset_days,omitempty"`
+
+	// MaxIPsPerAsset limits the number of IPs stored per asset.
+	// Assets with more IPs than this skip IP correlation (prevents DoS).
+	// 0 = use system default (20).
+	MaxIPsPerAsset int `json:"max_ips_per_asset,omitempty"`
+}
+
+// EffectiveStaleAssetDays returns the stale threshold, falling back to system default.
+func (s AssetIdentitySettings) EffectiveStaleAssetDays(systemDefault int) int {
+	if s.StaleAssetDays > 0 {
+		return s.StaleAssetDays
+	}
+	return systemDefault
+}
+
+// EffectiveMaxIPsPerAsset returns the max IPs limit, falling back to system default.
+func (s AssetIdentitySettings) EffectiveMaxIPsPerAsset(systemDefault int) int {
+	if s.MaxIPsPerAsset > 0 {
+		return s.MaxIPsPerAsset
+	}
+	return systemDefault
 }
 
 // BranchSettings contains branch naming convention configuration.

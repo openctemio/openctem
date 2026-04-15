@@ -1828,3 +1828,72 @@ func toTenantModuleListResponse(config *app.TenantModuleConfigOutput) TenantModu
 		},
 	}
 }
+
+// =============================================================================
+// Asset Identity Settings Endpoints (RFC-001)
+// =============================================================================
+
+// GetAssetIdentitySettings handles GET /api/v1/tenants/{tenant}/settings/asset-identity
+func (h *TenantHandler) GetAssetIdentitySettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	settings, err := h.service.GetTenantSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(settings.AssetIdentity)
+}
+
+// UpdateAssetIdentitySettings handles PATCH /api/v1/tenants/{tenant}/settings/asset-identity
+func (h *TenantHandler) UpdateAssetIdentitySettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	var req struct {
+		StaleAssetDays int `json:"stale_asset_days"`
+		MaxIPsPerAsset int `json:"max_ips_per_asset"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// Validate bounds
+	if req.StaleAssetDays < 0 || req.StaleAssetDays > 365 {
+		apierror.BadRequest("stale_asset_days must be 0-365 (0 = system default)").WriteJSON(w)
+		return
+	}
+	if req.MaxIPsPerAsset < 0 || req.MaxIPsPerAsset > 100 {
+		apierror.BadRequest("max_ips_per_asset must be 0-100 (0 = system default)").WriteJSON(w)
+		return
+	}
+
+	settings, err := h.service.GetTenantSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	settings.AssetIdentity.StaleAssetDays = req.StaleAssetDays
+	settings.AssetIdentity.MaxIPsPerAsset = req.MaxIPsPerAsset
+
+	actx := h.buildAuditContext(r)
+	updated, err := h.service.UpdateTenantSettings(r.Context(), tenantID.String(), *settings, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(updated.AssetIdentity)
+}

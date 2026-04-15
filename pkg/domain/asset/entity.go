@@ -2,7 +2,6 @@ package asset
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -74,8 +73,8 @@ type Asset struct {
 
 // NewAsset creates a new Asset entity.
 func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset, error) {
-	// Strip null bytes — PostgreSQL rejects 0x00 in UTF-8 strings
-	name = strings.ReplaceAll(name, "\x00", "")
+	// Normalize name to canonical form (RFC-001: Asset Identity Resolution)
+	name = NormalizeName(name, assetType, "")
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
 	}
@@ -329,14 +328,56 @@ func (a *Asset) UpdatedAt() time.Time {
 	return a.updatedAt
 }
 
-// UpdateName updates the asset name.
+// UpdateName updates the asset name with normalization.
+// Stores the old name as an alias for search compatibility.
 func (a *Asset) UpdateName(name string) error {
+	name = NormalizeName(name, a.assetType, a.SubType())
 	if name == "" {
 		return fmt.Errorf("%w: name is required", shared.ErrValidation)
 	}
+	if name == a.name {
+		return nil // No change
+	}
+	// Store old name as alias
+	a.addAlias(a.name)
 	a.name = name
 	a.updatedAt = time.Now().UTC()
 	return nil
+}
+
+// addAlias stores an old name for search compatibility.
+func (a *Asset) addAlias(oldName string) {
+	if oldName == "" {
+		return
+	}
+	if a.properties == nil {
+		a.properties = make(map[string]any)
+	}
+	var aliases []string
+	if existing, ok := a.properties["aliases"]; ok {
+		switch v := existing.(type) {
+		case []string:
+			aliases = v
+		case []any:
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					aliases = append(aliases, s)
+				}
+			}
+		}
+	}
+	// Check duplicate
+	for _, alias := range aliases {
+		if alias == oldName {
+			return
+		}
+	}
+	aliases = append(aliases, oldName)
+	// Max 10 aliases
+	if len(aliases) > 10 {
+		aliases = aliases[len(aliases)-10:]
+	}
+	a.properties["aliases"] = aliases
 }
 
 // UpdateCriticality updates the asset criticality.

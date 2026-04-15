@@ -99,6 +99,11 @@ func (s *Service) SetRelationshipRepository(repo asset.RelationshipRepository) {
 	s.assetProcessor.SetRelationshipRepository(repo)
 }
 
+// SetCorrelator sets the asset correlator for IP-based deduplication (RFC-001).
+func (s *Service) SetCorrelator(c *AssetCorrelator) {
+	s.assetProcessor.SetCorrelator(c)
+}
+
 // SetActivityService sets the finding activity service for audit trail during ingestion.
 func (s *Service) SetActivityService(activityService *app.FindingActivityService) {
 	s.activityService = activityService
@@ -151,8 +156,24 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		ReportID: report.Metadata.ID,
 	}
 
+	// Load tenant settings once for both asset processing and finding processing
+	var tenantRules branch.BranchTypeRules
+	var assetIdentityCfg *CorrelationConfig
+	if s.tenantRepo != nil {
+		if t, err := s.tenantRepo.GetByID(ctx, tenantID); err == nil && t != nil {
+			settings := t.TypedSettings()
+			tenantRules = settings.Branch.TypeRules
+			// Per-tenant asset identity config (RFC-001)
+			aiSettings := settings.AssetIdentity
+			cfg := s.assetProcessor.defaultCorrelationConfig().WithTenantOverrides(
+				aiSettings.StaleAssetDays, aiSettings.MaxIPsPerAsset,
+			)
+			assetIdentityCfg = &cfg
+		}
+	}
+
 	// Step 1: Process assets using batch operations
-	assetMap, err := s.assetProcessor.ProcessBatch(ctx, tenantID, report, output)
+	assetMap, err := s.assetProcessor.ProcessBatch(ctx, tenantID, report, output, assetIdentityCfg)
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", err)
 		// Continue with partial results
@@ -163,14 +184,6 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		"assets_updated", output.AssetsUpdated,
 		"asset_map_size", len(assetMap),
 	)
-
-	// Load tenant branch type rules for configurable branch detection
-	var tenantRules branch.BranchTypeRules
-	if s.tenantRepo != nil {
-		if t, err := s.tenantRepo.GetByID(ctx, tenantID); err == nil && t != nil {
-			tenantRules = t.TypedSettings().Branch.TypeRules
-		}
-	}
 
 	// Step 2: Process findings using batch operations (if findingRepo is available)
 	if s.findingRepo != nil && len(report.Findings) > 0 {

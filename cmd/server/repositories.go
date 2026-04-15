@@ -153,6 +153,9 @@ type Repositories struct {
 
 	// Report Schedules
 	ReportSchedule *postgres.ReportScheduleRepository
+
+	// Asset Dedup (RFC-001)
+	AssetDedup *postgres.AssetDedupRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -305,6 +308,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Report Schedules
 		ReportSchedule: postgres.NewReportScheduleRepository(db),
+
+		// Asset Dedup (RFC-001)
+		AssetDedup: postgres.NewAssetDedupRepository(db),
 	}
 }
 

@@ -206,6 +206,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminAudit:         handler.NewAdminAuditHandler(repos.AdminAuditLog, log),
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
+		// Asset Dedup Review (RFC-001)
+		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
+
 		// Platform Stats (tenant-scoped platform agent statistics)
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
 

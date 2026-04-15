@@ -143,6 +143,7 @@ type Handlers struct {
 	AdminUser          *handler.AdminUserHandler
 	AdminAudit         *handler.AdminAuditHandler
 	AdminTargetMapping *handler.AdminTargetMappingHandler
+	AdminDedup         *handler.AdminDedupHandler // RFC-001: Asset dedup review
 
 	// SSO handler (per-tenant SSO authentication)
 	SSO *handler.SSOHandler // nil if not initialized
@@ -279,6 +280,11 @@ func Register(
 	// Asset Relationship routes (CTEM Discovery - attack surface topology graph)
 	if h.AssetRelationship != nil {
 		registerAssetRelationshipRoutes(router, h.AssetRelationship, authMiddleware, userSync)
+	}
+
+	// Asset Dedup Review routes (RFC-001: merge duplicate assets)
+	if h.AdminDedup != nil {
+		registerAssetDedupRoutes(router, h.AdminDedup, authMiddleware, userSync)
 	}
 
 	// Relationship Suggestion routes (auto-generated relationship recommendations)

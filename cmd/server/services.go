@@ -398,6 +398,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)    // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship) // Wire subdomain-to-domain relationships
 	s.Ingest.SetActivityService(s.FindingActivity)              // Wire activity logging for auto-resolve/reopen
+	// Wire IP correlation for host dedup (RFC-001)
+	// System defaults; per-tenant overrides come from tenant settings at ingest time
+	s.Ingest.SetCorrelator(ingest.NewAssetCorrelator(repos.Asset, log, ingest.CorrelationConfig{
+		StaleAssetDays: 30,
+		MaxIPsPerAsset: 20,
+	}))
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
