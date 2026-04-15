@@ -92,22 +92,25 @@ SELECT
     d.asset_type,
     d.ids[1],
     d.names[1],
-    d.finding_counts[1],
+    d.fc[1],
     d.ids[2:],
     d.names[2:],
-    COALESCE((SELECT SUM(x) FROM unnest(d.finding_counts[2:]) AS x), 0),
+    COALESCE((SELECT SUM(x) FROM unnest(d.fc[2:]) AS x), 0),
     'pending'
 FROM (
     SELECT
-        tenant_id,
-        asset_type,
-        name AS normalized_name,
-        array_agg(id ORDER BY finding_count DESC, created_at ASC) AS ids,
-        array_agg(name ORDER BY finding_count DESC, created_at ASC) AS names,
-        array_agg(finding_count ORDER BY finding_count DESC, created_at ASC) AS finding_counts
-    FROM assets
-    WHERE asset_type IN ('domain', 'subdomain', 'host', 'repository', 'code_repo')
-    GROUP BY tenant_id, asset_type, name
+        a.tenant_id,
+        a.asset_type,
+        a.name AS normalized_name,
+        array_agg(a.id ORDER BY COALESCE(fc.cnt, 0) DESC, a.created_at ASC) AS ids,
+        array_agg(a.name ORDER BY COALESCE(fc.cnt, 0) DESC, a.created_at ASC) AS names,
+        array_agg(COALESCE(fc.cnt, 0)::int ORDER BY COALESCE(fc.cnt, 0) DESC, a.created_at ASC) AS fc
+    FROM assets a
+    LEFT JOIN (
+        SELECT asset_id, COUNT(*) AS cnt FROM findings GROUP BY asset_id
+    ) fc ON fc.asset_id = a.id
+    WHERE a.asset_type IN ('domain', 'subdomain', 'host', 'repository', 'code_repo')
+    GROUP BY a.tenant_id, a.asset_type, a.name
     HAVING COUNT(*) > 1
 ) d
 ON CONFLICT DO NOTHING;
