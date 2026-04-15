@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/websocket"
+	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/keycloak"
@@ -401,9 +402,14 @@ func Register(
 		registerCTEMCycleRoutes(router, h.CTEMCycle, authMiddleware, userSync)
 	}
 
-	// Verification Checklist routes (RFC-005)
+	// Verification Checklist routes (RFC-005) — added to findings group
 	if h.VerificationChecklist != nil {
-		registerVerificationChecklistRoutes(router, h.VerificationChecklist, authMiddleware, userSync)
+		vcHandler := h.VerificationChecklist
+		tenantMW := buildTokenTenantMiddlewares(authMiddleware, userSync)
+		router.Group("/api/v1/verification-checklists", func(r Router) {
+			r.GET("/{findingId}", vcHandler.Get, middleware.Require(permission.VulnerabilitiesRead))
+			r.PUT("/{findingId}", vcHandler.Update, middleware.Require(permission.VulnerabilitiesWrite))
+		}, tenantMW...)
 	}
 
 	// Integration routes (tenant from JWT token)
