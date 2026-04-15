@@ -251,6 +251,25 @@ func (h *DashboardHandler) GetRiskVelocity(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, velocity)
 }
 
+// GetRiskTrend returns risk trend time-series (RFC-005 Gap 4).
+func (h *DashboardHandler) GetRiskTrend(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+
+	days := parseQueryInt(r.URL.Query().Get("days"), 90)
+	points, err := h.dashboardService.GetRiskTrend(r.Context(), tid, days)
+	if err != nil {
+		h.logger.Error("failed to get risk trend", "error", err)
+		apierror.InternalServerError("failed to get risk trend").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, points)
+}
+
 // GetDataQuality returns data quality scorecard metrics (RFC-005 Gap 5).
 func (h *DashboardHandler) GetDataQuality(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())

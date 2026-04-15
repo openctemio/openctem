@@ -102,6 +102,8 @@ type DashboardStatsRepository interface {
 
 	// Data Quality Scorecard (RFC-005)
 	GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error)
+	// Risk Trend (RFC-005 Gap 4)
+	GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]RiskTrendPoint, error)
 }
 
 // DataQualityScorecard holds data quality metrics (RFC-005 Gap 5).
@@ -205,6 +207,23 @@ func (s *DashboardService) GetRiskVelocity(ctx context.Context, tenantID shared.
 // GetDataQualityScorecard returns data quality metrics (RFC-005 Gap 5).
 func (s *DashboardService) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error) {
 	return s.repo.GetDataQualityScorecard(ctx, tenantID)
+}
+
+// GetRiskTrend returns risk snapshot time-series (RFC-005 Gap 4).
+func (s *DashboardService) GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]RiskTrendPoint, error) {
+	return s.repo.GetRiskTrend(ctx, tenantID, days)
+}
+
+// RiskTrendPoint represents a single point in a risk trend time-series.
+type RiskTrendPoint struct {
+	Date             string  `json:"date"`
+	RiskScoreAvg     float64 `json:"risk_score_avg"`
+	FindingsOpen     int     `json:"findings_open"`
+	SLACompliancePct float64 `json:"sla_compliance_pct"`
+	P0Open           int     `json:"p0_open"`
+	P1Open           int     `json:"p1_open"`
+	P2Open           int     `json:"p2_open"`
+	P3Open           int     `json:"p3_open"`
 }
 
 // GetGlobalStats returns global dashboard statistics (not tenant-scoped).

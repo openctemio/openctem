@@ -207,6 +207,10 @@ func (m *mockDashboardRepo) GetDataQualityScorecard(_ context.Context, _ shared.
 	return &app.DataQualityScorecard{}, nil
 }
 
+func (m *mockDashboardRepo) GetRiskTrend(_ context.Context, _ shared.ID, _ int) ([]app.RiskTrendPoint, error) {
+	return nil, nil
+}
+
 // =============================================================================
 // Helper functions
 // =============================================================================

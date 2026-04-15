@@ -951,6 +951,38 @@ func joinStrings(strs []string, sep string) string {
 	return string(b)
 }
 
+// GetRiskTrend returns risk snapshot time-series for a tenant.
+func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]app.RiskTrendPoint, error) {
+	if days <= 0 || days > 365 {
+		days = 90
+	}
+	query := `
+		SELECT snapshot_date, risk_score_avg, findings_open, sla_compliance_pct,
+			p0_open, p1_open, p2_open, p3_open
+		FROM risk_snapshots
+		WHERE tenant_id = $1 AND snapshot_date >= CURRENT_DATE - $2
+		ORDER BY snapshot_date ASC
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), days)
+	if err != nil {
+		return nil, fmt.Errorf("risk trend: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var points []app.RiskTrendPoint
+	for rows.Next() {
+		var p app.RiskTrendPoint
+		var d time.Time
+		if err := rows.Scan(&d, &p.RiskScoreAvg, &p.FindingsOpen, &p.SLACompliancePct,
+			&p.P0Open, &p.P1Open, &p.P2Open, &p.P3Open); err != nil {
+			return nil, fmt.Errorf("scan risk trend: %w", err)
+		}
+		p.Date = d.Format("2006-01-02")
+		points = append(points, p)
+	}
+	return points, nil
+}
+
 // GetDataQualityScorecard computes data quality metrics for a tenant.
 // Uses a single CTE query for efficiency.
 func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*app.DataQualityScorecard, error) {
