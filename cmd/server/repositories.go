@@ -150,6 +150,9 @@ type Repositories struct {
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
+
+	// Report Schedules
+	ReportSchedule *postgres.ReportScheduleRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -299,6 +302,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),
+
+		// Report Schedules
+		ReportSchedule: postgres.NewReportScheduleRepository(db),
 	}
 }
 

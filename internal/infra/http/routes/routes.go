@@ -107,6 +107,7 @@ type Handlers struct {
 
 	// Remediation Campaigns
 	RemediationCampaign *handler.RemediationCampaignHandler // nil if not initialized
+	ReportSchedule      *handler.ReportScheduleHandler      // nil if not initialized
 
 	// Business Units
 	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
@@ -363,6 +364,9 @@ func Register(
 	// Remediation Campaign routes
 	if h.RemediationCampaign != nil {
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync)
+	}
+	if h.ReportSchedule != nil {
+		registerReportScheduleRoutes(router, h.ReportSchedule, authMiddleware, userSync)
 	}
 
 	// Business Unit routes
