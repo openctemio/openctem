@@ -112,6 +112,11 @@ type Handlers struct {
 	// Business Units
 	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
 
+	// CTEM RFC-005 handlers (direct SQL, no DDD repo layer yet)
+	CompensatingControl *handler.CompensatingControlHandler // nil if not initialized
+	AttackerProfile     *handler.AttackerProfileHandler     // nil if not initialized
+	CTEMCycle           *handler.CTEMCycleHandler           // nil if not initialized
+
 	// Asset Import (Nessus, K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
 
@@ -378,6 +383,21 @@ func Register(
 	// Business Unit routes
 	if h.BusinessUnit != nil {
 		registerBusinessUnitRoutes(router, h.BusinessUnit, authMiddleware, userSync)
+	}
+
+	// Compensating Control routes (RFC-005)
+	if h.CompensatingControl != nil {
+		registerCompensatingControlRoutes(router, h.CompensatingControl, authMiddleware, userSync)
+	}
+
+	// Attacker Profile routes (RFC-005)
+	if h.AttackerProfile != nil {
+		registerAttackerProfileRoutes(router, h.AttackerProfile, authMiddleware, userSync)
+	}
+
+	// CTEM Cycle routes (RFC-005)
+	if h.CTEMCycle != nil {
+		registerCTEMCycleRoutes(router, h.CTEMCycle, authMiddleware, userSync)
 	}
 
 	// Integration routes (tenant from JWT token)
