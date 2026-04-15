@@ -99,6 +99,19 @@ type DashboardStatsRepository interface {
 	GetFilteredFindingStats(ctx context.Context, tenantIDs []string) (FindingStatsData, error)
 	GetFilteredRepositoryStats(ctx context.Context, tenantIDs []string) (RepositoryStatsData, error)
 	GetFilteredRecentActivity(ctx context.Context, tenantIDs []string, limit int) ([]ActivityItem, error)
+
+	// Data Quality Scorecard (RFC-005)
+	GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error)
+}
+
+// DataQualityScorecard holds data quality metrics (RFC-005 Gap 5).
+type DataQualityScorecard struct {
+	AssetOwnershipPct  float64 `json:"asset_ownership_pct"`
+	FindingEvidencePct float64 `json:"finding_evidence_pct"`
+	MedianLastSeenDays float64 `json:"median_last_seen_days"`
+	DeduplicationRate  float64 `json:"deduplication_rate"`
+	TotalAssets        int     `json:"total_assets"`
+	TotalFindings      int     `json:"total_findings"`
 }
 
 // AssetStatsData holds raw asset statistics from repository.
@@ -187,6 +200,11 @@ func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.I
 // GetRiskVelocity returns weekly new vs resolved finding counts.
 func (s *DashboardService) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error) {
 	return s.repo.GetRiskVelocity(ctx, tenantID, weeks)
+}
+
+// GetDataQualityScorecard returns data quality metrics (RFC-005 Gap 5).
+func (s *DashboardService) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error) {
+	return s.repo.GetDataQualityScorecard(ctx, tenantID)
 }
 
 // GetGlobalStats returns global dashboard statistics (not tenant-scoped).

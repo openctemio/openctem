@@ -250,3 +250,21 @@ func (h *DashboardHandler) GetRiskVelocity(w http.ResponseWriter, r *http.Reques
 	}
 	writeJSON(w, http.StatusOK, velocity)
 }
+
+// GetDataQuality returns data quality scorecard metrics (RFC-005 Gap 5).
+func (h *DashboardHandler) GetDataQuality(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+
+	scorecard, err := h.dashboardService.GetDataQualityScorecard(r.Context(), tid)
+	if err != nil {
+		h.logger.Error("failed to get data quality scorecard", "error", err)
+		apierror.InternalServerError("failed to get data quality").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, scorecard)
+}

@@ -203,6 +203,10 @@ func (m *mockDashboardRepo) GetRiskVelocity(_ context.Context, _ shared.ID, _ in
 	return nil, nil
 }
 
+func (m *mockDashboardRepo) GetDataQualityScorecard(_ context.Context, _ shared.ID) (*app.DataQualityScorecard, error) {
+	return &app.DataQualityScorecard{}, nil
+}
+
 // =============================================================================
 // Helper functions
 // =============================================================================

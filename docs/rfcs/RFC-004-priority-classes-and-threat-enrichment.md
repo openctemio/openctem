@@ -1,6 +1,6 @@
 # RFC-004: Priority Classes P0-P3 + EPSS/KEV Enrichment
 
-- **Status**: In Progress
+- **Status**: Completed
 - **Created**: 2026-04-15
 - **Priority**: Critical
 - **Depends on**: EPSS/KEV sync (existing), Attack Path Scoring (existing)
@@ -15,8 +15,8 @@
 | 2. Enrichment Pipeline | Repository persistence, EnrichFindings(), wire into ingest | Done |
 | 3. Classification Engine | ClassifyPriority service, override rules, audit log | Done |
 | 4. SLA Integration | Priority-based SLA days, deadline recalculation | Done (schema) |
-| 5. API Layer | FindingResponse, filters, priority handler, rules CRUD | Done (response fields) |
-| 6. UI | Badge, list column, detail card, rules settings | Pending |
+| 5. API Layer | FindingResponse, filters, priority handler, rules CRUD | Done |
+| 6. UI | Badge, list column, enrichment types | Done |
 - **Reference**: https://ctem.org/docs/stages/ctem-prioritization
 
 ---
