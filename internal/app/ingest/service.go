@@ -116,6 +116,11 @@ func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	s.findingProcessor.SetFindingCreatedCallback(callback)
 }
 
+// SetPriorityClassifier sets the priority classification service (RFC-004).
+func (s *Service) SetPriorityClassifier(classifier PriorityClassifier) {
+	s.findingProcessor.SetPriorityClassifier(classifier)
+}
+
 // =============================================================================
 // Main Ingestion Methods
 // =============================================================================

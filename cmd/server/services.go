@@ -570,6 +570,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// when new findings are created during ingestion
 	s.Ingest.SetFindingCreatedCallback(s.WorkflowDispatcher.DispatchFindingsCreated)
 
+	// Wire priority classification into ingest (RFC-004)
+	s.Ingest.SetPriorityClassifier(s.PriorityClassification)
+
 	// Initialize suppression service (platform-controlled false positive management)
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 

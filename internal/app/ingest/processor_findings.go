@@ -35,8 +35,16 @@ type FindingProcessor struct {
 	// findingCreatedCallback is called after findings are successfully created
 	findingCreatedCallback FindingCreatedCallback
 
+	// priorityClassifier enriches + classifies findings after creation (RFC-004)
+	priorityClassifier PriorityClassifier
+
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
+}
+
+// PriorityClassifier enriches findings with EPSS/KEV and assigns priority class.
+type PriorityClassifier interface {
+	EnrichAndClassifyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, assets map[shared.ID]*asset.Asset) error
 }
 
 // activityRecorder is the subset of FindingActivityService needed by the processor.
@@ -72,6 +80,11 @@ func (p *FindingProcessor) SetActivityService(svc activityRecorder) {
 // SetFindingCreatedCallback sets the callback for when findings are created.
 func (p *FindingProcessor) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	p.findingCreatedCallback = callback
+}
+
+// SetPriorityClassifier sets the priority classification service (RFC-004).
+func (p *FindingProcessor) SetPriorityClassifier(classifier PriorityClassifier) {
+	p.priorityClassifier = classifier
 }
 
 // ProcessBatch processes all findings using batch operations.
@@ -317,7 +330,39 @@ func (p *FindingProcessor) ProcessBatch(
 				p.persistDataFlows(ctx, newFindings)
 			}
 
-			// Step 4c: Trigger workflow events for newly created findings
+			// Step 4c: Enrich with EPSS/KEV + classify priority (RFC-004)
+			if p.priorityClassifier != nil && result.Created > 0 {
+				createdForEnrich := make([]*vulnerability.Finding, 0, result.Created)
+				for i, f := range newFindings {
+					if result.Errors == nil || result.Errors[i] == "" {
+						createdForEnrich = append(createdForEnrich, f)
+					}
+				}
+				if len(createdForEnrich) > 0 {
+					// Build asset map for classification context
+					assetIDs := make(map[shared.ID]*asset.Asset)
+					for _, f := range createdForEnrich {
+						if _, ok := assetIDs[f.AssetID()]; !ok {
+							a, err := p.assetRepo.GetByID(ctx, tenantID, f.AssetID())
+							if err == nil {
+								assetIDs[f.AssetID()] = a
+							}
+						}
+					}
+					if err := p.priorityClassifier.EnrichAndClassifyBatch(ctx, tenantID, createdForEnrich, assetIDs); err != nil {
+						p.logger.Warn("priority classification failed", "error", err)
+					} else {
+						// Persist enriched findings (update EPSS/KEV/priority fields)
+						for _, f := range createdForEnrich {
+							if updateErr := p.repo.Update(ctx, f); updateErr != nil {
+								p.logger.Warn("failed to persist enriched finding", "id", f.ID(), "error", updateErr)
+							}
+						}
+					}
+				}
+			}
+
+			// Step 4d: Trigger workflow events for newly created findings
 			if p.findingCreatedCallback != nil && result.Created > 0 {
 				// Only include successfully created findings (exclude failed ones)
 				createdFindings := make([]*vulnerability.Finding, 0, result.Created)

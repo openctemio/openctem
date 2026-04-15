@@ -209,6 +209,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Asset Dedup Review (RFC-001)
 		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
 
+		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
+		CompensatingControl: handler.NewCompensatingControlHandler(deps.DB.DB, log),
+		AttackerProfile:     handler.NewAttackerProfileHandler(deps.DB.DB, log),
+		CTEMCycle:           handler.NewCTEMCycleHandler(deps.DB.DB, log),
+
 		// Platform Stats (tenant-scoped platform agent statistics)
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
 
