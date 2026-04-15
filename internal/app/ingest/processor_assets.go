@@ -1210,7 +1210,9 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	ctisAsset *ctis.Asset,
 	tool *ctis.Tool,
 ) (*asset.Asset, error) {
-	assetType := mapCTISAssetType(ctisAsset.Type)
+	rawType := mapCTISAssetType(ctisAsset.Type)
+	// Resolve type aliases: e.g., "firewall" → type=network, sub_type=firewall
+	coreType, subType := asset.ResolveTypeAlias(rawType)
 	criticality := mapCTISCriticality(ctisAsset.Criticality)
 
 	name := getAssetName(ctisAsset)
@@ -1229,9 +1231,14 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		name = name[:maxNameLength]
 	}
 
-	newAsset, err := asset.NewAsset(name, assetType, criticality)
+	newAsset, err := asset.NewAsset(name, coreType, criticality)
 	if err != nil {
 		return nil, err
+	}
+
+	// Set sub_type from TypeAliases or from properties
+	if subType != "" {
+		newAsset.SetSubType(subType)
 	}
 
 	newAsset.SetTenantID(tenantID)
@@ -1263,6 +1270,14 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	}
 	for _, tag := range tags {
 		newAsset.AddTag(tag)
+	}
+
+	// Promote sub_type from properties if not already set via TypeAliases
+	if newAsset.SubType() == "" {
+		if st, ok := ctisAsset.Properties["sub_type"].(string); ok && st != "" {
+			newAsset.SetSubType(st)
+			delete(ctisAsset.Properties, "sub_type")
+		}
 	}
 
 	// Set discovery info
