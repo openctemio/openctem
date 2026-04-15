@@ -865,7 +865,12 @@ func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenan
 	}
 	defer rows.Close()
 
-	components := make([]component.VulnerableComponent, 0, page.Limit())
+	// Cap pre-allocation to prevent excessive memory from user input
+	prealloc := page.Limit()
+	if prealloc > 100 {
+		prealloc = 100
+	}
+	components := make([]component.VulnerableComponent, 0, prealloc)
 	for rows.Next() {
 		var vc component.VulnerableComponent
 		if err := rows.Scan(
