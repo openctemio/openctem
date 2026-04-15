@@ -1,5 +1,7 @@
 # RFC-001 Review: Multi-Perspective Assessment & Final Implementation Plan
 
+> **Status**: Completed — Feature doc: [docs/architecture/asset-identity-resolution.md](../architecture/asset-identity-resolution.md)
+
 ---
 
 ## Part 1: PM / Tech Lead / BA Assessment
@@ -697,12 +699,13 @@ POST /api/v1/admin/assets/scan-duplicates        — trigger new scan
 
 | Phase | Days | Risk | Status |
 |---|---|---|---|
-| Phase 0: Foundation | 1 | None | DONE - migration 000138, config, feature flags |
-| Phase 1a: Normalize Code | 3 | Low | DONE - normalize.go (16 type handlers), 100+ tests, wired into NewAsset/UpdateName, aliases |
-| Phase 1b: Data Migration | 2 | Medium | DONE - migration 000139, dedup review table, bash test script |
-| Phase 2: IP Correlation | 4 | Medium | DONE - correlator.go, FindByIPs batch query, wired into ProcessBatch, unit tests |
-| Phase 3: Extended Correlation | 3 | Low | DONE - SDK-Go normalize.go + tests, agent 5 parsers normalized |
-| Phase 4: Admin + UX | 2 | None | DONE - dedup review endpoints, merge logic (12 FK tables), asset_dedup_repository, routes |
+| Phase 0: Foundation | 1 | None | COMPLETE |
+| Phase 1a: Normalize Code | 3 | Low | COMPLETE — 158 test cases |
+| Phase 1b: Data Migration | 2 | Medium | COMPLETE |
+| Phase 2: IP Correlation | 4 | Medium | COMPLETE — wired into ProcessBatch + per-tenant config |
+| Phase 3: Extended Correlation | 3 | Low | COMPLETE — repo/cloud/IAM/cert + Agent 5 parsers |
+| Phase 4: Admin + UX | 2 | None | COMPLETE — endpoints + merge history + form preview |
+| **Post-impl** | - | - | COMPLETE — CI fix, test expectations updated, pushed all 4 repos |
 | **Total** | **15 days** | | |
 
 Buffer: +3 days for unexpected issues = **18 days total**.

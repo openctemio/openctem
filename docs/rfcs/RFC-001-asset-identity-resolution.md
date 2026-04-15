@@ -1,6 +1,6 @@
 # RFC-001: Asset Identity Resolution & Deduplication
 
-- **Status**: Implemented
+- **Status**: Completed — moved to [docs/architecture/asset-identity-resolution.md](../architecture/asset-identity-resolution.md)
 - **Author**: OpenCTEM Core Team
 - **Created**: 2026-04-15
 - **Updated**: 2026-04-15
