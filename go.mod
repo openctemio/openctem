@@ -10,7 +10,6 @@ require (
 	github.com/hibiken/asynq v0.26.0
 	github.com/klauspost/compress v1.18.5
 	github.com/lib/pq v1.12.3
-	github.com/openctemio/sdk-go v0.2.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.18.0
 	golang.org/x/crypto v0.50.0
@@ -110,3 +109,7 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.47.0 // indirect
 )
+
+require github.com/openctemio/ctis v1.0.0
+
+replace github.com/openctemio/ctis v1.0.0 => ../ctis
