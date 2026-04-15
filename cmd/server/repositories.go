@@ -156,6 +156,12 @@ type Repositories struct {
 
 	// Asset Dedup (RFC-001)
 	AssetDedup *postgres.AssetDedupRepository
+
+	// Priority Classification (RFC-004)
+	PriorityRule  *postgres.PriorityRuleRepository
+	PriorityAudit *postgres.PriorityAuditRepository
+	EPSSAdapter   *postgres.EPSSAdapter
+	KEVAdapter    *postgres.KEVAdapter
 }
 
 // NewRepositories initializes all repositories.
@@ -311,6 +317,10 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Asset Dedup (RFC-001)
 		AssetDedup: postgres.NewAssetDedupRepository(db),
+
+		// Priority Classification (RFC-004)
+		PriorityRule:  postgres.NewPriorityRuleRepository(db),
+		PriorityAudit: postgres.NewPriorityAuditRepository(db),
 	}
 }
 

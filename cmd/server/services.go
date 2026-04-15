@@ -8,6 +8,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/app/pipeline"
+	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/jobs"
@@ -139,6 +140,9 @@ type Services struct {
 
 	// SLA
 	SLA *app.SLAService
+
+	// Priority Classification (RFC-004)
+	PriorityClassification *app.PriorityClassificationService
 
 	// Pentest
 	Pentest    *app.PentestService
@@ -282,6 +286,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize SLA service
 	s.SLA = app.NewSLAService(repos.SLA, log)
+
+	// Initialize Priority Classification service (RFC-004)
+	epssAdapter := postgres.NewEPSSAdapter(repos.ThreatIntel.EPSS().(*postgres.EPSSRepository))
+	kevAdapter := postgres.NewKEVAdapter(repos.ThreatIntel.KEV().(*postgres.KEVRepository))
+	s.PriorityClassification = app.NewPriorityClassificationService(
+		repos.Finding, repos.Asset,
+		epssAdapter, kevAdapter,
+		repos.PriorityRule, repos.PriorityAudit, log,
+	)
 
 	// Initialize Pentest service
 	s.Pentest = app.NewPentestService(
