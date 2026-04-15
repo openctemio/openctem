@@ -66,3 +66,18 @@ func registerCTEMCycleRoutes(
 		r.POST("/{id}/profiles", h.LinkProfile, middleware.Require(permission.ScopeWrite))
 	}, tenantMiddlewares...)
 }
+
+// registerVerificationChecklistRoutes registers finding verification checklist routes.
+func registerVerificationChecklistRoutes(
+	router Router,
+	h *handler.VerificationChecklistHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/findings", func(r Router) {
+		r.GET("/{findingId}/verification-checklist", h.Get, middleware.Require(permission.VulnerabilitiesRead))
+		r.PUT("/{findingId}/verification-checklist", h.Update, middleware.Require(permission.VulnerabilitiesWrite))
+	}, tenantMiddlewares...)
+}

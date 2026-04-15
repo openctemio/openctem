@@ -116,6 +116,7 @@ type Handlers struct {
 	CompensatingControl *handler.CompensatingControlHandler // nil if not initialized
 	AttackerProfile     *handler.AttackerProfileHandler     // nil if not initialized
 	CTEMCycle           *handler.CTEMCycleHandler           // nil if not initialized
+	VerificationChecklist *handler.VerificationChecklistHandler // nil if not initialized
 
 	// Asset Import (Nessus, K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
@@ -398,6 +399,11 @@ func Register(
 	// CTEM Cycle routes (RFC-005)
 	if h.CTEMCycle != nil {
 		registerCTEMCycleRoutes(router, h.CTEMCycle, authMiddleware, userSync)
+	}
+
+	// Verification Checklist routes (RFC-005)
+	if h.VerificationChecklist != nil {
+		registerVerificationChecklistRoutes(router, h.VerificationChecklist, authMiddleware, userSync)
 	}
 
 	// Integration routes (tenant from JWT token)
