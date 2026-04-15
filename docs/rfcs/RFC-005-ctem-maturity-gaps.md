@@ -1,6 +1,6 @@
 # RFC-005: CTEM Maturity Gaps — Cycles, Metrics, Controls, Escalation
 
-- **Status**: Draft
+- **Status**: In Progress (Phase 1 complete)
 - **Created**: 2026-04-15
 - **Priority**: High
 - **Depends on**: RFC-004 (Priority Classes)
@@ -18,11 +18,11 @@ RFC này cover 7 gaps còn lại để đưa OpenCTEM từ 67% lên ~90% CTEM co
 |-----|---------|-------|--------|-----------|
 | 3 | CTEM Cycle Entity | Scoping | High | 000143-000144 |
 | 4 | Risk Trend / Outcome Metrics | All | Medium | 000145 |
-| 5 | Data Quality Scorecard | Discovery | Low | None |
-| 6 | Compensating Controls | Prioritization | Medium | 000146-000147 |
-| 7 | Automated SLA Escalation | Mobilization | Low | 000148 |
-| 8 | Verification Checklist | Validation | Low | 000149 |
-| 9 | Threat Model / Attacker Profiles | Scoping | Medium | 000150 |
+| 5 | Data Quality Scorecard | Discovery | Low | None | **Done** |
+| 6 | Compensating Controls | Prioritization | Medium | 000145-000146 | Pending |
+| 7 | Automated SLA Escalation | Mobilization | Low | 000143 | **Done** |
+| 8 | Verification Checklist | Validation | Low | 000144 | **Done** |
+| 9 | Threat Model / Attacker Profiles | Scoping | Medium | 000149 | Pending |
 
 ---
 
