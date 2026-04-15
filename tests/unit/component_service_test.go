@@ -200,8 +200,11 @@ func (m *mockComponentRepo) GetEcosystemStats(_ context.Context, _ shared.ID) ([
 	return m.getEcosystemStatsResult, m.getEcosystemStatsErr
 }
 
-func (m *mockComponentRepo) GetVulnerableComponents(_ context.Context, _ shared.ID, _ int) ([]component.VulnerableComponent, error) {
-	return m.getVulnerableResult, m.getVulnerableErr
+func (m *mockComponentRepo) GetVulnerableComponents(_ context.Context, _ shared.ID, page pagination.Pagination) (pagination.Result[component.VulnerableComponent], error) {
+	if m.getVulnerableErr != nil {
+		return pagination.Result[component.VulnerableComponent]{}, m.getVulnerableErr
+	}
+	return pagination.NewResult(m.getVulnerableResult, int64(len(m.getVulnerableResult)), page), nil
 }
 
 func (m *mockComponentRepo) GetLicenseStats(_ context.Context, _ shared.ID) ([]component.LicenseStats, error) {
@@ -1003,17 +1006,17 @@ func TestGetVulnerableComponents_Success(t *testing.T) {
 		},
 	}
 
-	result, err := svc.GetVulnerableComponents(context.Background(), shared.NewID().String(), 10)
+	result, err := svc.GetVulnerableComponents(context.Background(), shared.NewID().String(), pagination.New(1, 20))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if len(result) != 1 {
-		t.Errorf("expected 1 vulnerable component, got %d", len(result))
+	if len(result.Data) != 1 {
+		t.Errorf("expected 1 vulnerable component, got %d", len(result.Data))
 	}
-	if result[0].Name != "log4j" {
-		t.Errorf("expected name log4j, got %s", result[0].Name)
+	if result.Data[0].Name != "log4j" {
+		t.Errorf("expected name log4j, got %s", result.Data[0].Name)
 	}
-	if !result[0].InCisaKev {
+	if !result.Data[0].InCisaKev {
 		t.Error("expected InCisaKev to be true")
 	}
 }
@@ -1022,7 +1025,7 @@ func TestGetVulnerableComponents_InvalidTenantID(t *testing.T) {
 	repo := newMockComponentRepo()
 	svc := newComponentService(repo)
 
-	_, err := svc.GetVulnerableComponents(context.Background(), "invalid", 10)
+	_, err := svc.GetVulnerableComponents(context.Background(), "invalid", pagination.New(1, 20))
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}

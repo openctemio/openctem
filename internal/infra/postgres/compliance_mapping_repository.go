@@ -48,7 +48,10 @@ func (r *ComplianceMappingRepository) Delete(ctx context.Context, tenantID, id s
 	if err != nil {
 		return fmt.Errorf("failed to delete mapping: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return compliance.ErrMappingNotFound
 	}

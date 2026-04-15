@@ -284,7 +284,10 @@ func (r *ScopeScheduleRepository) Update(ctx context.Context, schedule *scope.Sc
 		return fmt.Errorf("failed to update scan schedule: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return scope.ErrScheduleNotFound
 	}
@@ -300,7 +303,10 @@ func (r *ScopeScheduleRepository) Delete(ctx context.Context, tenantID, id share
 		return fmt.Errorf("failed to delete scan schedule: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return scope.ErrScheduleNotFound
 	}

@@ -206,6 +206,12 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		}
 	}
 
+	// Normalize name before lookup so it matches existing normalized assets (RFC-001)
+	normalizedName := asset.NormalizeName(input.Name, assetType, "")
+	if normalizedName != "" {
+		input.Name = normalizedName
+	}
+
 	// Upsert: if asset with same name already exists, merge and update instead of rejecting.
 	// This handles re-ingestion, manual re-creation, and multi-source discovery gracefully.
 	existing, err := s.repo.GetByName(ctx, tenantID, input.Name)
@@ -403,10 +409,12 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 	normalizedProps := make(map[string]any, len(input.Properties))
 	for key, val := range input.Properties {
 		snakeKey := camelToSnakeCase(key)
+		// Merge singular/plural aliases to canonical plural form
+		snakeKey = normalizePropertyAlias(snakeKey)
 		// If both camelCase and snake_case exist, prefer the snake_case value
 		if snakeKey != key {
 			if _, exists := normalizedProps[snakeKey]; exists {
-				continue // snake_case version already set, skip camelCase duplicate
+				continue // canonical version already set, skip duplicate
 			}
 		}
 		normalizedProps[snakeKey] = val
@@ -522,6 +530,23 @@ func camelToSnakeCase(s string) string {
 		}
 	}
 	return string(result)
+}
+
+// propertyAliases maps singular/legacy property keys to their canonical plural form.
+// This prevents duplicate facets like "nameserver" vs "nameservers".
+var propertyAliases = map[string]string{
+	"nameserver":  "nameservers",
+	"technology":  "technologies",
+	"san":         "sans",
+	"resolved_ip": "resolved_ips",
+}
+
+// normalizePropertyAlias maps known singular keys to their canonical plural form.
+func normalizePropertyAlias(key string) string {
+	if canonical, ok := propertyAliases[key]; ok {
+		return canonical
+	}
+	return key
 }
 
 // unique returns a deduplicated copy of a string slice, preserving order.
@@ -965,7 +990,7 @@ type ListAssetsInput struct {
 	HasFindings   *bool    // Filter by whether asset has findings
 	IsCrownJewel     *bool             // Filter crown jewel assets
 	SubType          *string           // Filter by sub_type
-	PropertiesFilter map[string]string // Filter by JSONB properties key=value pairs (max 5)
+	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 	Sort             string            `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page          int      `validate:"min=0"`
 	PerPage       int      `validate:"min=0,max=100"`

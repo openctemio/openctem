@@ -236,6 +236,7 @@ func registerVulnerabilityRoutes(
 		if jiraHandler != nil {
 			r.POST("/{id}/link-ticket", jiraHandler.LinkTicket, middleware.Require(permission.FindingsWrite))
 			r.DELETE("/{id}/link-ticket", jiraHandler.UnlinkTicket, middleware.Require(permission.FindingsWrite))
+			r.POST("/{id}/create-ticket", jiraHandler.CreateTicket, middleware.Require(permission.FindingsWrite))
 		}
 
 		// Delete operations

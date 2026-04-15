@@ -199,7 +199,7 @@ type Filter struct {
 	ParentID      *string       // Filter by parent asset ID
 	IsCrownJewel       *bool             // Filter crown jewel assets
 	SubType            *string           // Filter by sub_type
-	PropertiesFilter   map[string]string // Filter by JSONB properties key=value (AND, containment)
+	PropertiesFilter   map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// Layer 2: Data Scope - filter assets by user's group membership
 	// When set, only assets accessible to this user are returned.
@@ -345,8 +345,8 @@ func (f Filter) WithDataScopeUserID(id shared.ID) Filter {
 	return f
 }
 
-// WithPropertiesFilter adds JSONB properties key=value filter pairs.
-func (f Filter) WithPropertiesFilter(kv map[string]string) Filter {
+// WithPropertiesFilter adds JSONB properties key=values filter pairs.
+func (f Filter) WithPropertiesFilter(kv map[string][]string) Filter {
 	f.PropertiesFilter = kv
 	return f
 }

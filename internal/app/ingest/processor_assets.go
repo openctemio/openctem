@@ -20,6 +20,7 @@ type AssetProcessor struct {
 	repo           asset.Repository
 	repoExtRepo    asset.RepositoryExtensionRepository
 	relRepo        asset.RelationshipRepository
+	correlator     *AssetCorrelator // RFC-001: IP-based correlation (nil = disabled)
 	propsValidator *validator.PropertiesValidator
 	logger         *logger.Logger
 }
@@ -43,6 +44,20 @@ func (p *AssetProcessor) SetRelationshipRepository(repo asset.RelationshipReposi
 	p.relRepo = repo
 }
 
+// SetCorrelator sets the asset correlator for IP-based deduplication.
+// When nil (default), IP correlation is disabled.
+func (p *AssetProcessor) SetCorrelator(c *AssetCorrelator) {
+	p.correlator = c
+}
+
+// defaultCorrelationConfig returns the system default correlation config.
+func (p *AssetProcessor) defaultCorrelationConfig() CorrelationConfig {
+	if p.correlator != nil {
+		return p.correlator.config
+	}
+	return CorrelationConfig{StaleAssetDays: 30, MaxIPsPerAsset: 20}
+}
+
 // ProcessBatch processes all assets using batch operations.
 // Returns a map of asset ID (from CTIS) -> domain asset ID for finding association.
 //
@@ -58,6 +73,7 @@ func (p *AssetProcessor) ProcessBatch(
 	tenantID shared.ID,
 	report *ctis.Report,
 	output *Output,
+	tenantCfg *CorrelationConfig, // nil = use system defaults
 ) (map[string]shared.ID, error) {
 	assetMap := make(map[string]shared.ID)
 
@@ -98,6 +114,7 @@ func (p *AssetProcessor) ProcessBatch(
 	}
 
 	// Step 1: Collect all asset names for batch lookup
+	// Names are normalized via NormalizeName inside getAssetName → NewAsset constructor
 	names := make([]string, 0, len(report.Assets))
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
@@ -109,6 +126,13 @@ func (p *AssetProcessor) ProcessBatch(
 				"asset_type", ctisAsset.Type,
 			)
 			addError(output, fmt.Sprintf("asset %d: name/value is required", i))
+			continue
+		}
+		// Normalize name before lookup so it matches existing normalized assets
+		assetType := mapCTISAssetType(ctisAsset.Type)
+		coreType, subType := asset.ResolveTypeAlias(assetType)
+		name = asset.NormalizeName(name, coreType, subType)
+		if name == "" {
 			continue
 		}
 		names = append(names, name)
@@ -131,6 +155,7 @@ func (p *AssetProcessor) ProcessBatch(
 	)
 
 	// Step 3: Separate new vs existing assets
+	// With IP correlation: if name doesn't match but IPs do, merge into existing.
 	newAssets := make([]*asset.Asset, 0)
 	updateAssets := make([]*asset.Asset, 0)
 
@@ -141,22 +166,117 @@ func (p *AssetProcessor) ProcessBatch(
 			continue
 		}
 
-		if existing, ok := existingMap[name]; ok {
-			// Update existing asset
+		// Normalize name (same as Step 1)
+		assetType := mapCTISAssetType(ctisAsset.Type)
+		coreType, subType := asset.ResolveTypeAlias(assetType)
+		normalizedName := asset.NormalizeName(name, coreType, subType)
+		if normalizedName == "" {
+			continue
+		}
+
+		if existing, ok := existingMap[normalizedName]; ok {
+			// Name match → merge (existing behavior)
 			p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
 			updateAssets = append(updateAssets, existing)
 			assetMap[ctisAsset.ID] = existing.ID()
+		} else if p.correlator != nil && (coreType == asset.AssetTypeHost || coreType == asset.AssetTypeIPAddress) {
+			// No name match for host/ip → try IP correlation (RFC-001 Phase 2)
+			props := p.buildPropertiesFromCTIS(ctisAsset)
+			var corrArgs []CorrelationConfig
+			if tenantCfg != nil {
+				corrArgs = append(corrArgs, *tenantCfg)
+			}
+			result, corrErr := p.correlator.CorrelateHost(ctx, tenantID, normalizedName, props, corrArgs...)
+			if corrErr != nil {
+				p.logger.Warn("IP correlation failed, creating new asset",
+					"name", normalizedName, "error", corrErr)
+			}
+
+			if result != nil && result.Matched != nil {
+				// IP match found → merge into existing
+				existing := result.Matched
+				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
+				updateAssets = append(updateAssets, existing)
+				assetMap[ctisAsset.ID] = existing.ID()
+
+				if result.ShouldRename {
+					if err := existing.UpdateName(result.NewName); err == nil {
+						p.logger.Info("asset renamed via IP correlation",
+							"id", existing.ID().String(),
+							"old_name", existing.Name(),
+							"new_name", result.NewName,
+							"correlation_type", result.CorrelationType,
+						)
+					}
+				}
+
+				// Cache for later assets in same batch
+				existingMap[normalizedName] = existing
+			} else {
+				// No correlation → create new
+				newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
+				if createErr != nil {
+					addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, normalizedName, createErr))
+					continue
+				}
+				newAssets = append(newAssets, newAsset)
+				assetMap[ctisAsset.ID] = newAsset.ID()
+				existingMap[normalizedName] = newAsset
+			}
+		} else if p.correlator != nil {
+			// Extended correlation for other asset types (RFC-001 Phase 3)
+			var result *CorrelationResult
+			var corrErr error
+
+			switch coreType {
+			case asset.AssetTypeRepository:
+				result, corrErr = p.correlator.CorrelateRepository(ctx, tenantID, normalizedName, "")
+			case asset.AssetTypeCloudAccount, asset.AssetTypeIdentity,
+				asset.AssetTypeIAMUser, asset.AssetTypeIAMRole, asset.AssetTypeServiceAccount:
+				// Try external_id from properties (account_id, arn, etc.)
+				props := p.buildPropertiesFromCTIS(ctisAsset)
+				externalID := ""
+				if v, ok := props["account_id"].(string); ok && v != "" {
+					externalID = v
+				} else if v, ok := props["arn"].(string); ok && v != "" {
+					externalID = v
+				}
+				result, corrErr = p.correlator.CorrelateByExternalID(ctx, tenantID, externalID)
+			case asset.AssetTypeCertificate:
+				props := p.buildPropertiesFromCTIS(ctisAsset)
+				result, corrErr = p.correlator.CorrelateCertificate(ctx, tenantID, props)
+			}
+
+			if corrErr != nil {
+				p.logger.Warn("extended correlation failed", "name", normalizedName, "type", coreType, "error", corrErr)
+			}
+
+			if result != nil && result.Matched != nil {
+				existing := result.Matched
+				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
+				updateAssets = append(updateAssets, existing)
+				assetMap[ctisAsset.ID] = existing.ID()
+				existingMap[normalizedName] = existing
+			} else {
+				newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
+				if createErr != nil {
+					addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, normalizedName, createErr))
+					continue
+				}
+				newAssets = append(newAssets, newAsset)
+				assetMap[ctisAsset.ID] = newAsset.ID()
+				existingMap[normalizedName] = newAsset
+			}
 		} else {
-			// Create new asset
-			newAsset, err := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
-			if err != nil {
-				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, name, err))
+			// Correlator disabled → create new
+			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
+			if createErr != nil {
+				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, normalizedName, createErr))
 				continue
 			}
 			newAssets = append(newAssets, newAsset)
 			assetMap[ctisAsset.ID] = newAsset.ID()
-			// Also add to existing map to handle duplicates in same batch
-			existingMap[name] = newAsset
+			existingMap[normalizedName] = newAsset
 		}
 	}
 

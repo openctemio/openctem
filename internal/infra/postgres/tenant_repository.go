@@ -106,7 +106,10 @@ func (r *TenantRepository) Update(ctx context.Context, t *tenant.Tenant) error {
 		return fmt.Errorf("failed to update tenant: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return shared.ErrNotFound
 	}
@@ -123,7 +126,10 @@ func (r *TenantRepository) Delete(ctx context.Context, id shared.ID) error {
 		return fmt.Errorf("failed to delete tenant: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return shared.ErrNotFound
 	}
@@ -344,7 +350,10 @@ func (r *TenantRepository) UpdateMembershipStatus(ctx context.Context, m *tenant
 	if err != nil {
 		return fmt.Errorf("update membership status: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return shared.ErrNotFound
 	}
@@ -375,7 +384,10 @@ func (r *TenantRepository) DeleteMembership(ctx context.Context, id shared.ID) e
 		return fmt.Errorf("failed to delete membership: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return shared.ErrNotFound
 	}
@@ -792,9 +804,9 @@ func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.I
 	`
 
 	var (
-		total, active                              int
-		owners, admins, membersCount, viewers      int
-		pendingInvites                             int
+		total, active                         int
+		owners, admins, membersCount, viewers int
+		pendingInvites                        int
 	)
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
 		&total, &active,
@@ -1025,7 +1037,10 @@ func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Inv
 		return fmt.Errorf("failed to update invitation: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return shared.ErrNotFound
 	}
@@ -1042,7 +1057,10 @@ func (r *TenantRepository) DeleteInvitation(ctx context.Context, id shared.ID) e
 		return fmt.Errorf("failed to delete invitation: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return shared.ErrNotFound
 	}
@@ -1150,7 +1168,10 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 			return fmt.Errorf("failed to update invitation: %w", err)
 		}
 
-		rows, _ := result.RowsAffected()
+		rows, rowErr := result.RowsAffected()
+		if rowErr != nil {
+			return fmt.Errorf("rows affected: %w", rowErr)
+		}
 		if rows == 0 {
 			return shared.ErrNotFound
 		}

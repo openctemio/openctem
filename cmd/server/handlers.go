@@ -73,7 +73,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
-		Component:     handler.NewComponentHandler(svc.Component, v, log),
+		Component:     handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
 		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
@@ -87,6 +87,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetStateHistory: handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
+		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, log),
+		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:      vulnHandler,
@@ -203,6 +205,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminUser:          handler.NewAdminUserHandler(repos.Admin, log),
 		AdminAudit:         handler.NewAdminAuditHandler(repos.AdminAuditLog, log),
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
+
+		// Asset Dedup Review (RFC-001)
+		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
 
 		// Platform Stats (tenant-scoped platform agent statistics)
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),

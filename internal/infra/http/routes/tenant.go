@@ -79,6 +79,10 @@ func registerTenantRoutes(
 		r.GET("/settings/pentest", h.GetPentestSettings, middleware.RequireTeamAdmin())
 		r.PATCH("/settings/pentest", h.UpdatePentestSettings, middleware.RequireTeamAdmin())
 
+		// Asset identity settings (admin+) — RFC-001
+		r.GET("/settings/asset-identity", h.GetAssetIdentitySettings, middleware.RequireTeamAdmin())
+		r.PATCH("/settings/asset-identity", h.UpdateAssetIdentitySettings, middleware.RequireTeamAdmin())
+
 		// Risk scoring settings (admin+)
 		r.GET("/settings/risk-scoring", h.GetRiskScoringSettings, middleware.RequireTeamAdmin())
 		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin())

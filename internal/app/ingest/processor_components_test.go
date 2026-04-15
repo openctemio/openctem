@@ -114,8 +114,8 @@ func (m *MockComponentRepository) GetEcosystemStats(ctx context.Context, tenantI
 	return nil, nil
 }
 
-func (m *MockComponentRepository) GetVulnerableComponents(ctx context.Context, tenantID shared.ID, limit int) ([]component.VulnerableComponent, error) {
-	return nil, nil
+func (m *MockComponentRepository) GetVulnerableComponents(_ context.Context, _ shared.ID, page pagination.Pagination) (pagination.Result[component.VulnerableComponent], error) {
+	return pagination.NewResult([]component.VulnerableComponent{}, 0, page), nil
 }
 
 func (m *MockComponentRepository) GetLicenseStats(ctx context.Context, tenantID shared.ID) ([]component.LicenseStats, error) {

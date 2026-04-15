@@ -501,3 +501,82 @@ func nullIntPtr(v *int) interface{} {
 	}
 	return *v
 }
+
+// CompareBranches compares findings between two branches by fingerprint.
+func (r *BranchRepository) CompareBranches(ctx context.Context, repositoryID shared.ID, baseBranch, compareBranch string) (*branch.BranchComparison, error) {
+	query := `
+		WITH base_findings AS (
+			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
+			FROM findings f
+			JOIN repository_branches rb ON f.branch_id = rb.id
+			WHERE rb.repository_id = $1 AND rb.name = $2
+			  AND f.status NOT IN ('resolved', 'false_positive')
+		),
+		compare_findings AS (
+			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
+			FROM findings f
+			JOIN repository_branches rb ON f.branch_id = rb.id
+			WHERE rb.repository_id = $1 AND rb.name = $3
+			  AND f.status NOT IN ('resolved', 'false_positive')
+		)
+		SELECT
+			(SELECT COUNT(*) FROM compare_findings cf WHERE cf.fingerprint NOT IN (SELECT fingerprint FROM base_findings)) as new_count,
+			(SELECT COUNT(*) FROM base_findings bf WHERE bf.fingerprint NOT IN (SELECT fingerprint FROM compare_findings)) as resolved_count,
+			(SELECT COUNT(*) FROM compare_findings cf WHERE cf.fingerprint IN (SELECT fingerprint FROM base_findings)) as common_count
+	`
+
+	result := &branch.BranchComparison{
+		BaseBranch:    baseBranch,
+		CompareBranch: compareBranch,
+		NewBySeverity: make(map[string]int),
+	}
+
+	err := r.db.QueryRowContext(ctx, query, repositoryID.String(), baseBranch, compareBranch).Scan(
+		&result.NewFindings,
+		&result.ResolvedFindings,
+		&result.CommonFindings,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compare branches: %w", err)
+	}
+
+	// Get new findings details (in compare but not in base)
+	detailQuery := `
+		SELECT cf.id, cf.title, cf.severity, COALESCE(cf.file_path, ''), cf.source
+		FROM (
+			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
+			FROM findings f
+			JOIN repository_branches rb ON f.branch_id = rb.id
+			WHERE rb.repository_id = $1 AND rb.name = $3
+			  AND f.status NOT IN ('resolved', 'false_positive')
+		) cf
+		WHERE cf.fingerprint NOT IN (
+			SELECT f.fingerprint FROM findings f
+			JOIN repository_branches rb ON f.branch_id = rb.id
+			WHERE rb.repository_id = $1 AND rb.name = $2
+			  AND f.status NOT IN ('resolved', 'false_positive')
+		)
+		ORDER BY CASE cf.severity
+			WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4
+		END
+		LIMIT 50
+	`
+
+	rows, err := r.db.QueryContext(ctx, detailQuery, repositoryID.String(), baseBranch, compareBranch)
+	if err != nil {
+		return result, nil // Non-critical, return counts without details
+	}
+	defer func() { _ = rows.Close() }()
+
+	result.NewItems = make([]branch.ComparisonFinding, 0)
+	for rows.Next() {
+		var f branch.ComparisonFinding
+		if err := rows.Scan(&f.ID, &f.Title, &f.Severity, &f.FilePath, &f.Source); err != nil {
+			continue
+		}
+		result.NewItems = append(result.NewItems, f)
+		result.NewBySeverity[f.Severity]++
+	}
+
+	return result, nil
+}

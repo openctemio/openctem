@@ -56,6 +56,7 @@ type Services struct {
 	AssetGroup        *app.AssetGroupService
 	AssetType         *app.AssetTypeService
 	AssetRelationship      *app.AssetRelationshipService
+	AssetImport            *app.AssetImportService
 	RelationshipSuggestion *app.RelationshipSuggestionService
 	Scope                  *app.ScopeService
 	AttackSurface     *app.AttackSurfaceService
@@ -73,7 +74,9 @@ type Services struct {
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
-	Component *app.ComponentService
+	Component  *app.ComponentService
+	SBOMImport     *app.SBOMImportService
+	ReportSchedule *app.ReportScheduleService
 	Branch    *app.BranchService
 
 	// Dashboard
@@ -231,6 +234,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AttackSurface = app.NewAttackSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
+	s.AssetImport = app.NewAssetImportService(repos.Asset, log)
 
 	// Initialize finding source service (read-only system configuration)
 	s.FindingSource = app.NewFindingSourceService(repos.FindingSource, repos.FindingSourceCat, log)
@@ -243,6 +247,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize component & branch services
 	s.Component = app.NewComponentService(repos.Component, log)
+	s.SBOMImport = app.NewSBOMImportService(repos.Component, log)
+	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
 	s.Branch = app.NewBranchService(repos.Branch, log)
 
 	// Initialize vulnerability & exposure services
@@ -358,7 +364,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize API Key & Webhook services
 	s.APIKey = app.NewAPIKeyService(repos.APIKey, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
-	s.JiraSync = app.NewJiraSyncService(repos.Finding, log)
+	s.JiraSync = app.NewJiraSyncService(repos.Finding, nil, log) // nil = Jira client configured via integration settings
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
@@ -392,6 +398,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)    // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship) // Wire subdomain-to-domain relationships
 	s.Ingest.SetActivityService(s.FindingActivity)              // Wire activity logging for auto-resolve/reopen
+	// Wire IP correlation for host dedup (RFC-001)
+	// System defaults; per-tenant overrides come from tenant settings at ingest time
+	s.Ingest.SetCorrelator(ingest.NewAssetCorrelator(repos.Asset, log, ingest.CorrelationConfig{
+		StaleAssetDays: 30,
+		MaxIPsPerAsset: 20,
+	}))
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)

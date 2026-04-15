@@ -34,6 +34,8 @@ func registerAssetRoutes(
 		r.POST("/bulk/sync", h.BulkSync, middleware.Require(permission.AssetsWrite))
 		r.POST("/bulk/status", h.BulkUpdateStatus, middleware.Require(permission.AssetsWrite))
 
+		// Import operations are registered separately via registerAssetImportRoutes
+
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
@@ -102,6 +104,8 @@ func registerComponentRoutes(
 		r.GET("/ecosystems", h.GetEcosystemStats, middleware.Require(permission.ComponentsRead))
 		r.GET("/vulnerable", h.GetVulnerableComponents, middleware.Require(permission.ComponentsRead))
 		r.GET("/licenses", h.GetLicenseStats, middleware.Require(permission.ComponentsRead))
+		r.GET("/export", h.ExportComponents, middleware.Require(permission.ComponentsRead))
+		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite))
 
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.ComponentsRead))
@@ -324,6 +328,9 @@ func registerBranchRoutes(
 
 	// Branch routes - tenant from JWT token, scoped to repository
 	router.Group("/api/v1/repositories/{repositoryId}/branches", func(r Router) {
+		// Compare branches (must be before /{branchId} to avoid matching)
+		r.GET("/compare", h.Compare, middleware.Require(permission.AssetsRead))
+
 		// List branches for a repository
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 
@@ -471,5 +478,21 @@ func registerAssetStateHistoryRoutes(
 	// Asset-scoped state history routes
 	router.Group("/api/v1/assets/{id}/state-history", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
+// registerAssetImportRoutes registers bulk asset import endpoints.
+func registerAssetImportRoutes(
+	router Router,
+	h *handler.AssetImportHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/assets/import", func(r Router) {
+		r.POST("/csv", h.ImportCSV, middleware.Require(permission.AssetsWrite))
+		r.POST("/nessus", h.ImportNessus, middleware.Require(permission.AssetsWrite))
+		r.POST("/kubernetes", h.ImportKubernetes, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 }

@@ -12,22 +12,25 @@ import (
 	"github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
 	"github.com/openctemio/api/pkg/validator"
 )
 
 // ComponentHandler handles component-related HTTP requests.
 type ComponentHandler struct {
-	service   *app.ComponentService
-	validator *validator.Validator
-	logger    *logger.Logger
+	service    *app.ComponentService
+	sbomImport *app.SBOMImportService
+	validator  *validator.Validator
+	logger     *logger.Logger
 }
 
 // NewComponentHandler creates a new component handler.
-func NewComponentHandler(svc *app.ComponentService, v *validator.Validator, log *logger.Logger) *ComponentHandler {
+func NewComponentHandler(svc *app.ComponentService, sbomImport *app.SBOMImportService, v *validator.Validator, log *logger.Logger) *ComponentHandler {
 	return &ComponentHandler{
-		service:   svc,
-		validator: v,
-		logger:    log,
+		service:    svc,
+		sbomImport: sbomImport,
+		validator:  v,
+		logger:     log,
 	}
 }
 
@@ -282,22 +285,99 @@ func (h *ComponentHandler) GetEcosystemStats(w http.ResponseWriter, r *http.Requ
 func (h *ComponentHandler) GetVulnerableComponents(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	limit := parseQueryInt(r.URL.Query().Get("limit"), 10)
+	query := r.URL.Query()
+	page := pagination.New(
+		parseQueryInt(query.Get("page"), 1),
+		parseQueryInt(query.Get("per_page"), 20),
+	)
 
-	components, err := h.service.GetVulnerableComponents(r.Context(), tenantID, limit)
+	result, err := h.service.GetVulnerableComponents(r.Context(), tenantID, page)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Return empty array instead of null
-	if components == nil {
-		components = []component.VulnerableComponent{}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// ExportComponents handles GET /api/v1/components/export
+// Returns all components for SBOM export. Paginates internally to collect all data.
+func (h *ComponentHandler) ExportComponents(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	// Paginate through all components (100 per page, max 10000 total)
+	var allComponents []*component.Component
+	const maxTotal = 10000
+	for page := 1; len(allComponents) < maxTotal; page++ {
+		result, err := h.service.ListComponents(r.Context(), app.ListComponentsInput{
+			TenantID: tenantID,
+			Page:     page,
+			PerPage:  100,
+		})
+		if err != nil {
+			h.handleServiceError(w, err)
+			return
+		}
+		allComponents = append(allComponents, result.Data...)
+		if len(allComponents) >= int(result.Total) || len(result.Data) < 100 {
+			break
+		}
+	}
+
+	type exportComponent struct {
+		Name               string `json:"name"`
+		Version            string `json:"version"`
+		Ecosystem          string `json:"ecosystem"`
+		PURL               string `json:"purl"`
+		License            string `json:"license,omitempty"`
+		VulnerabilityCount int    `json:"vulnerability_count"`
+	}
+
+	components := make([]exportComponent, 0, len(allComponents))
+	for _, c := range allComponents {
+		components = append(components, exportComponent{
+			Name:               c.Name(),
+			Version:            c.Version(),
+			Ecosystem:          string(c.Ecosystem()),
+			PURL:               c.PURL(),
+			License:            c.License(),
+			VulnerabilityCount: c.VulnerabilityCount(),
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(components)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data":  components,
+		"total": len(components),
+	})
+}
+
+// ImportSBOM handles POST /api/v1/components/import
+// Accepts CycloneDX JSON or SPDX JSON file upload.
+// Requires asset_id query parameter to link imported components.
+func (h *ComponentHandler) ImportSBOM(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	assetID := r.URL.Query().Get("asset_id")
+	if assetID == "" {
+		apierror.BadRequest("asset_id query parameter is required").WriteJSON(w)
+		return
+	}
+
+	// Limit to 50MB
+	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024)
+
+	result, err := h.sbomImport.ImportSBOM(r.Context(), tenantID, assetID, r.Body)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 // GetLicenseStats handles GET /api/v1/components/licenses

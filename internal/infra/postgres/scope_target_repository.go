@@ -145,7 +145,10 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 		return fmt.Errorf("failed to update scope target: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return scope.ErrTargetNotFound
 	}
@@ -161,7 +164,10 @@ func (r *ScopeTargetRepository) Delete(ctx context.Context, tenantID, id shared.
 		return fmt.Errorf("failed to delete scope target: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return scope.ErrTargetNotFound
 	}

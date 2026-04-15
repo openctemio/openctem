@@ -4,6 +4,7 @@ package reportschedule
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -46,6 +47,15 @@ func NewReportSchedule(tenantID shared.ID, name, reportType, format, cron string
 	}
 	if cron == "" {
 		return nil, fmt.Errorf("%w: cron expression is required", shared.ErrValidation)
+	}
+	if len(cron) > 200 {
+		return nil, fmt.Errorf("%w: cron expression too long", shared.ErrValidation)
+	}
+	if reportType == "" {
+		return nil, fmt.Errorf("%w: report type is required", shared.ErrValidation)
+	}
+	if format == "" {
+		return nil, fmt.Errorf("%w: format is required", shared.ErrValidation)
 	}
 	now := time.Now()
 	return &ReportSchedule{
@@ -164,6 +174,26 @@ func (s *ReportSchedule) Activate() { s.isActive = true; s.updatedAt = time.Now(
 
 // Deactivate disables the schedule.
 func (s *ReportSchedule) Deactivate() { s.isActive = false; s.updatedAt = time.Now() }
+
+// ValidateRecipients validates a list of recipients.
+func ValidateRecipients(recipients []Recipient) error {
+	if len(recipients) > 50 {
+		return fmt.Errorf("%w: max 50 recipients allowed", shared.ErrValidation)
+	}
+	for _, r := range recipients {
+		if r.Email == "" {
+			return fmt.Errorf("%w: recipient email is required", shared.ErrValidation)
+		}
+		if len(r.Email) > 254 {
+			return fmt.Errorf("%w: recipient email too long", shared.ErrValidation)
+		}
+		// Basic email format check
+		if !strings.Contains(r.Email, "@") || strings.ContainsAny(r.Email, " \n\r\t") {
+			return fmt.Errorf("%w: invalid recipient email format", shared.ErrValidation)
+		}
+	}
+	return nil
+}
 
 // SetCreatedBy sets the creator.
 func (s *ReportSchedule) SetCreatedBy(userID shared.ID) { s.createdBy = &userID }

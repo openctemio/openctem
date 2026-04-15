@@ -333,14 +333,14 @@ func (s *ComponentService) GetEcosystemStats(ctx context.Context, tenantID strin
 	return s.repo.GetEcosystemStats(ctx, parsedTenantID)
 }
 
-// GetVulnerableComponents retrieves vulnerable components with details for a tenant.
-func (s *ComponentService) GetVulnerableComponents(ctx context.Context, tenantID string, limit int) ([]component.VulnerableComponent, error) {
+// GetVulnerableComponents retrieves paginated vulnerable components for a tenant.
+func (s *ComponentService) GetVulnerableComponents(ctx context.Context, tenantID string, page pagination.Pagination) (pagination.Result[component.VulnerableComponent], error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		return pagination.Result[component.VulnerableComponent]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	return s.repo.GetVulnerableComponents(ctx, parsedTenantID, limit)
+	return s.repo.GetVulnerableComponents(ctx, parsedTenantID, page)
 }
 
 // DeleteAssetComponents deletes all components for an asset.

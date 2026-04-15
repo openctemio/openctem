@@ -107,9 +107,13 @@ type Handlers struct {
 
 	// Remediation Campaigns
 	RemediationCampaign *handler.RemediationCampaignHandler // nil if not initialized
+	ReportSchedule      *handler.ReportScheduleHandler      // nil if not initialized
 
 	// Business Units
 	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
+
+	// Asset Import (Nessus, K8s, CSV)
+	AssetImport *handler.AssetImportHandler // nil if not initialized
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
@@ -139,6 +143,7 @@ type Handlers struct {
 	AdminUser          *handler.AdminUserHandler
 	AdminAudit         *handler.AdminAuditHandler
 	AdminTargetMapping *handler.AdminTargetMappingHandler
+	AdminDedup         *handler.AdminDedupHandler // RFC-001: Asset dedup review
 
 	// SSO handler (per-tenant SSO authentication)
 	SSO *handler.SSOHandler // nil if not initialized
@@ -248,6 +253,9 @@ func Register(
 	if h.Asset != nil {
 		registerAssetRoutes(router, h.Asset, authMiddleware, userSync)
 	}
+	if h.AssetImport != nil {
+		registerAssetImportRoutes(router, h.AssetImport, authMiddleware, userSync)
+	}
 
 	// Asset Owner routes (tenant from JWT token) - nested under assets
 	if h.AssetOwner != nil {
@@ -272,6 +280,11 @@ func Register(
 	// Asset Relationship routes (CTEM Discovery - attack surface topology graph)
 	if h.AssetRelationship != nil {
 		registerAssetRelationshipRoutes(router, h.AssetRelationship, authMiddleware, userSync)
+	}
+
+	// Asset Dedup Review routes (RFC-001: merge duplicate assets)
+	if h.AdminDedup != nil {
+		registerAssetDedupRoutes(router, h.AdminDedup, authMiddleware, userSync)
 	}
 
 	// Relationship Suggestion routes (auto-generated relationship recommendations)
@@ -357,6 +370,9 @@ func Register(
 	// Remediation Campaign routes
 	if h.RemediationCampaign != nil {
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync)
+	}
+	if h.ReportSchedule != nil {
+		registerReportScheduleRoutes(router, h.ReportSchedule, authMiddleware, userSync)
 	}
 
 	// Business Unit routes

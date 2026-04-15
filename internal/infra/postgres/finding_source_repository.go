@@ -140,7 +140,10 @@ func (r *FindingSourceCategoryRepository) Update(ctx context.Context, c *finding
 		return fmt.Errorf("update finding source category: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return findingsource.ErrCategoryNotFound
 	}
@@ -166,7 +169,10 @@ func (r *FindingSourceCategoryRepository) Delete(ctx context.Context, id shared.
 		return fmt.Errorf("delete finding source category: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return findingsource.ErrCategoryNotFound
 	}

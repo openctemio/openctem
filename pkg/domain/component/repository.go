@@ -51,8 +51,8 @@ type Repository interface {
 	// GetEcosystemStats retrieves per-ecosystem statistics.
 	GetEcosystemStats(ctx context.Context, tenantID shared.ID) ([]EcosystemStats, error)
 
-	// GetVulnerableComponents retrieves components with vulnerability details.
-	GetVulnerableComponents(ctx context.Context, tenantID shared.ID, limit int) ([]VulnerableComponent, error)
+	// GetVulnerableComponents retrieves paginated vulnerable components with severity breakdown.
+	GetVulnerableComponents(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[VulnerableComponent], error)
 
 	// GetLicenseStats retrieves license statistics for a tenant.
 	GetLicenseStats(ctx context.Context, tenantID shared.ID) ([]LicenseStats, error)

@@ -147,6 +147,15 @@ type Repositories struct {
 
 	// SSO Identity Providers
 	IdentityProvider *postgres.IdentityProviderRepository
+
+	// KEV Escalation
+	KEVEscalator *postgres.KEVEscalator
+
+	// Report Schedules
+	ReportSchedule *postgres.ReportScheduleRepository
+
+	// Asset Dedup (RFC-001)
+	AssetDedup *postgres.AssetDedupRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -293,6 +302,15 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// SSO Identity Providers
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
+
+		// KEV Escalation
+		KEVEscalator: postgres.NewKEVEscalator(db),
+
+		// Report Schedules
+		ReportSchedule: postgres.NewReportScheduleRepository(db),
+
+		// Asset Dedup (RFC-001)
+		AssetDedup: postgres.NewAssetDedupRepository(db),
 	}
 }
 

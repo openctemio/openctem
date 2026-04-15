@@ -386,6 +386,18 @@ func (s *BranchService) UpdateBranchScanStatus(ctx context.Context, branchID, re
 }
 
 // CountRepositoryBranches counts branches for a repository.
+// CompareBranches compares findings between two branches.
+func (s *BranchService) CompareBranches(ctx context.Context, repositoryID, baseBranch, compareBranch string) (*branch.BranchComparison, error) {
+	parsedRepoID, err := shared.IDFromString(repositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid repository id", shared.ErrValidation)
+	}
+	if baseBranch == "" || compareBranch == "" {
+		return nil, fmt.Errorf("%w: base and compare branch names are required", shared.ErrValidation)
+	}
+	return s.repo.CompareBranches(ctx, parsedRepoID, baseBranch, compareBranch)
+}
+
 func (s *BranchService) CountRepositoryBranches(ctx context.Context, repositoryID string) (int64, error) {
 	parsedRepositoryID, err := shared.IDFromString(repositoryID)
 	if err != nil {

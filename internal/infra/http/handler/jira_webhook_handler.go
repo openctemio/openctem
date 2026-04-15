@@ -116,6 +116,44 @@ func (h *JiraWebhookHandler) UnlinkTicket(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// CreateTicketRequest is the request body for POST /api/v1/findings/{id}/create-ticket.
+type CreateTicketRequest struct {
+	ProjectKey string `json:"project_key"`
+	IssueType  string `json:"issue_type,omitempty"`
+}
+
+// CreateTicket handles POST /api/v1/findings/{id}/create-ticket.
+// Auto-creates a Jira ticket from a finding and links it.
+func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	findingID := chi.URLParam(r, "id")
+	if findingID == "" {
+		apierror.BadRequest("finding id is required").WriteJSON(w)
+		return
+	}
+
+	var req CreateTicketRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	result, err := h.service.CreateTicketFromFinding(r.Context(), app.CreateTicketInput{
+		TenantID:   tenantID,
+		FindingID:  findingID,
+		ProjectKey: req.ProjectKey,
+		IssueType:  req.IssueType,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
 // IncomingJiraWebhook handles POST /api/v1/webhooks/incoming/jira.
 // This is a PUBLIC endpoint (no JWT) intended to receive Jira webhook deliveries.
 // Tenant routing is via the ?tenant= query param — each Jira project configures one endpoint per tenant.

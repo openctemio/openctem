@@ -22,6 +22,8 @@ func registerSimulationRoutes(
 		r.GET("/{id}", h.GetSimulation, middleware.Require(permission.PentestRead))
 		r.PUT("/{id}", h.UpdateSimulation, middleware.Require(permission.PentestWrite))
 		r.DELETE("/{id}", h.DeleteSimulation, middleware.Require(permission.PentestWrite))
+		r.POST("/{id}/run", h.RunSimulation, middleware.Require(permission.PentestWrite))
+		r.GET("/{id}/runs", h.ListSimulationRuns, middleware.Require(permission.PentestRead))
 	}, tenantMiddlewares...)
 
 	// Control Tests

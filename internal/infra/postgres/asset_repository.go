@@ -125,6 +125,57 @@ func (r *AssetRepository) GetByExternalID(ctx context.Context, tenantID shared.I
 	return r.scanAsset(row, shared.ID{})
 }
 
+// FindByExternalID finds an asset by external_id across all providers.
+// Used for correlation (RFC-001) when provider is unknown.
+// Returns nil (no error) if not found.
+func (r *AssetRepository) FindByExternalID(ctx context.Context, tenantID shared.ID, externalID string) (*asset.Asset, error) {
+	if externalID == "" {
+		return nil, nil
+	}
+	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.external_id = $2 LIMIT 1"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), externalID)
+	a, err := r.scanAsset(row, shared.ID{})
+	if err != nil {
+		if errors.Is(err, asset.ErrAssetNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find by external_id: %w", err)
+	}
+	return a, nil
+}
+
+// FindByPropertyValue finds an asset by a specific top-level property value.
+// Used for correlation (RFC-001) — e.g., certificate fingerprint.
+// Only allows pre-defined safe keys to prevent injection.
+// Returns nil (no error) if not found.
+func (r *AssetRepository) FindByPropertyValue(ctx context.Context, tenantID shared.ID, key, value string) (*asset.Asset, error) {
+	if key == "" || value == "" {
+		return nil, nil
+	}
+	// Whitelist safe property keys for correlation
+	safeKeys := map[string]bool{
+		"fingerprint":   true,
+		"serial_number": true,
+		"account_id":    true,
+		"arn":           true,
+		"bundle_id":     true,
+	}
+	if !safeKeys[key] {
+		return nil, fmt.Errorf("unsupported property key for correlation: %s", key)
+	}
+
+	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.properties->>'" + key + "' = $2 LIMIT 1"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), value)
+	a, err := r.scanAsset(row, shared.ID{})
+	if err != nil {
+		if errors.Is(err, asset.ErrAssetNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find by property %s: %w", key, err)
+	}
+	return a, nil
+}
+
 // GetByName retrieves an asset by name within a tenant.
 func (r *AssetRepository) GetByName(ctx context.Context, tenantID shared.ID, name string) (*asset.Asset, error) {
 	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.name = $2"
@@ -175,6 +226,83 @@ func (r *AssetRepository) FindByHostname(ctx context.Context, tenantID shared.ID
 		return nil, fmt.Errorf("failed to find asset by hostname: %w", err)
 	}
 	return a, nil
+}
+
+// FindByIPs finds all assets that have ANY of the given IPs.
+// Returns map[ip][]Asset — an IP can match multiple assets.
+// Uses GIN index on properties->'ip_addresses' for performance.
+// Part of RFC-001: Asset Identity Resolution.
+func (r *AssetRepository) FindByIPs(ctx context.Context, tenantID shared.ID, ips []string) (map[string][]*asset.Asset, error) {
+	if len(ips) == 0 {
+		return make(map[string][]*asset.Asset), nil
+	}
+
+	query := r.selectQuery() + ` WHERE a.tenant_id = $1
+		AND a.asset_type IN ('host', 'ip_address')
+		AND (
+			a.name = ANY($2)
+			OR a.properties->>'ip' = ANY($2)
+			OR a.properties->'ip_address'->>'address' = ANY($2)
+			OR a.properties->'ip_addresses' ?| $2
+		)`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(ips))
+	if err != nil {
+		return nil, fmt.Errorf("failed to find assets by IPs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[string][]*asset.Asset)
+	for rows.Next() {
+		a, scanErr := r.scanAssetFromRows(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		// Map this asset to each IP it matches
+		for _, ip := range ips {
+			if assetMatchesIP(a, ip) {
+				result[ip] = append(result[ip], a)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate assets by IPs: %w", err)
+	}
+	return result, nil
+}
+
+// assetMatchesIP checks if an asset contains the given IP.
+func assetMatchesIP(a *asset.Asset, ip string) bool {
+	if a.Name() == ip {
+		return true
+	}
+	props := a.Properties()
+	if props == nil {
+		return false
+	}
+	if v, ok := props["ip"].(string); ok && v == ip {
+		return true
+	}
+	if ipAddr, ok := props["ip_address"].(map[string]any); ok {
+		if addr, ok := ipAddr["address"].(string); ok && addr == ip {
+			return true
+		}
+	}
+	if ips, ok := props["ip_addresses"].([]any); ok {
+		for _, v := range ips {
+			if s, ok := v.(string); ok && s == ip {
+				return true
+			}
+		}
+	}
+	if ips, ok := props["ip_addresses"].([]string); ok {
+		for _, s := range ips {
+			if s == ip {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // FindRepositoryByRepoName finds a repository asset whose name ends with the given repo name.
@@ -794,12 +922,15 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Full-text search across name and description
+	// Full-text search across name, description, and aliases (RFC-001)
 	if filter.Search != nil && *filter.Search != "" {
 		searchPattern := wrapLikePattern(*filter.Search)
-		conditions = append(conditions, fmt.Sprintf("(a.name ILIKE $%d OR a.description ILIKE $%d)", argIndex, argIndex+1))
-		args = append(args, searchPattern, searchPattern)
-		argIndex += 2
+		conditions = append(conditions, fmt.Sprintf(
+			"(a.name ILIKE $%d OR a.description ILIKE $%d OR a.properties->'aliases' ? $%d)",
+			argIndex, argIndex+1, argIndex+2,
+		))
+		args = append(args, searchPattern, searchPattern, *filter.Search)
+		argIndex += 3
 	}
 
 	// Risk score range filters
@@ -867,13 +998,32 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Properties filter — JSONB containment using parameterized jsonb_build_object (injection-safe)
-	// Uses idx_assets_properties GIN index for efficient lookups
-	for key, val := range filter.PropertiesFilter {
-		conditions = append(conditions, fmt.Sprintf(
-			"a.properties @> jsonb_build_object($%d::text, $%d::text)", argIndex, argIndex+1))
-		args = append(args, key, val)
-		argIndex += 2
+	// Properties filter — AND across keys, OR within values per key.
+	// Uses ->> text comparison for consistent matching across all value types.
+	// For array JSONB values, also checks if the array contains the value.
+	for key, vals := range filter.PropertiesFilter {
+		if len(vals) == 1 {
+			// Single value: simple equality or array containment
+			conditions = append(conditions, fmt.Sprintf(
+				"(a.properties ->> $%d = $%d OR a.properties -> $%d @> to_jsonb($%d::text))",
+				argIndex, argIndex+1, argIndex, argIndex+1))
+			args = append(args, key, vals[0])
+			argIndex += 2
+		} else if len(vals) > 0 {
+			// Multiple values: OR within this key
+			orParts := make([]string, 0, len(vals))
+			keyIdx := argIndex
+			args = append(args, key)
+			argIndex++
+			for _, v := range vals {
+				orParts = append(orParts, fmt.Sprintf(
+					"(a.properties ->> $%d = $%d OR a.properties -> $%d @> to_jsonb($%d::text))",
+					keyIdx, argIndex, keyIdx, argIndex))
+				args = append(args, v)
+				argIndex++
+			}
+			conditions = append(conditions, "("+strings.Join(orParts, " OR ")+")")
+		}
 	}
 
 	// Layer 2: Data Scope - filter by user's group membership
@@ -1280,7 +1430,7 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	// asset id set so we never touch findings rows for assets we filtered out.
 	query := fmt.Sprintf(`
 WITH filtered AS (
-  SELECT a.id, a.asset_type, a.sub_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score
+  SELECT a.id, a.asset_type, a.sub_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score, a.properties
   FROM assets a
   %s
 ),
@@ -1409,22 +1559,33 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 	}
 
 	// Single query: expand every JSONB key/value pair per asset, then aggregate.
-	// jsonb_object_keys() is a set-returning function; using it twice in the same
-	// SELECT causes a parallel scan that PostgreSQL evaluates consistently.
-	// We filter out known array/object keys and keep only scalar values.
+	// For scalar values: extract via ->> (returns text).
+	// For array values: unwrap via jsonb_array_elements_text (returns individual elements).
+	// This prevents arrays like ["ns1.cloudflare.com","ns2.cloudflare.com"] appearing
+	// as a single facet value.
 	query := fmt.Sprintf(`
 		SELECT key, val, COUNT(*) AS cnt
 		FROM (
-			SELECT
-				jsonb_object_keys(a.properties)                         AS key,
-				a.properties ->> jsonb_object_keys(a.properties)        AS val
-			FROM assets a
+			-- Scalar values (strings, numbers, booleans)
+			SELECT k AS key, a.properties ->> k AS val
+			FROM assets a, jsonb_object_keys(a.properties) AS k
 			WHERE a.tenant_id = $1
 			  AND a.properties IS NOT NULL
 			  AND a.properties != '{}'::jsonb
-			  %s
+			  AND jsonb_typeof(a.properties -> k) != 'array'
+			  AND jsonb_typeof(a.properties -> k) != 'object'
+			  %[1]s
+			UNION ALL
+			-- Array values: unwrap each element
+			SELECT k AS key, jsonb_array_elements_text(a.properties -> k) AS val
+			FROM assets a, jsonb_object_keys(a.properties) AS k
+			WHERE a.tenant_id = $1
+			  AND a.properties IS NOT NULL
+			  AND a.properties != '{}'::jsonb
+			  AND jsonb_typeof(a.properties -> k) = 'array'
+			  %[1]s
 		) sub
-		WHERE key NOT IN ('ip_addresses', 'dns_records', 'ports', 'technologies', 'interfaces', 'tags')
+		WHERE key NOT IN ('dns_records', 'ports', 'interfaces', 'tags')
 		  AND val IS NOT NULL
 		  AND val != ''
 		GROUP BY key, val
