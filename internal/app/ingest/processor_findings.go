@@ -339,17 +339,19 @@ func (p *FindingProcessor) ProcessBatch(
 					}
 				}
 				if len(createdForEnrich) > 0 {
-					// Build asset map for classification context
-					assetIDs := make(map[shared.ID]*asset.Asset)
+					// Build asset map for classification context.
+					// Uses dedup map so each unique asset is fetched once.
+					// Typical batch has 1-5 unique assets — acceptable for now.
+					assetMap := make(map[shared.ID]*asset.Asset)
 					for _, f := range createdForEnrich {
-						if _, ok := assetIDs[f.AssetID()]; !ok {
+						if _, ok := assetMap[f.AssetID()]; !ok {
 							a, err := p.assetRepo.GetByID(ctx, tenantID, f.AssetID())
 							if err == nil {
-								assetIDs[f.AssetID()] = a
+								assetMap[f.AssetID()] = a
 							}
 						}
 					}
-					if err := p.priorityClassifier.EnrichAndClassifyBatch(ctx, tenantID, createdForEnrich, assetIDs); err != nil {
+					if err := p.priorityClassifier.EnrichAndClassifyBatch(ctx, tenantID, createdForEnrich, assetMap); err != nil {
 						p.logger.Warn("priority classification failed", "error", err)
 					} else {
 						// Persist enriched findings (update EPSS/KEV/priority fields)

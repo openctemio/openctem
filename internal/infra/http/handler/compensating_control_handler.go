@@ -314,11 +314,13 @@ func (h *CompensatingControlHandler) LinkAssets(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Link only assets that belong to the same tenant
 	for _, assetID := range req.AssetIDs {
 		_, err := h.db.ExecContext(r.Context(),
 			`INSERT INTO compensating_control_assets (control_id, asset_id)
-			 VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			id, assetID,
+			 SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM assets WHERE id = $2 AND tenant_id = $3)
+			 ON CONFLICT DO NOTHING`,
+			id, assetID, tenantID,
 		)
 		if err != nil {
 			h.logger.Error("compensating control link asset", "error", err, "asset_id", assetID)
@@ -353,11 +355,13 @@ func (h *CompensatingControlHandler) LinkFindings(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Link only findings that belong to the same tenant
 	for _, findingID := range req.FindingIDs {
 		_, err := h.db.ExecContext(r.Context(),
 			`INSERT INTO compensating_control_findings (control_id, finding_id)
-			 VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			id, findingID,
+			 SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM findings WHERE id = $2 AND tenant_id = $3)
+			 ON CONFLICT DO NOTHING`,
+			id, findingID, tenantID,
 		)
 		if err != nil {
 			h.logger.Error("compensating control link finding", "error", err, "finding_id", findingID)

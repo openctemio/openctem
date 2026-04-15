@@ -372,11 +372,13 @@ func (h *CTEMCycleHandler) LinkProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Link only profiles that belong to the same tenant
 	for _, profileID := range req.ProfileIDs {
 		_, err := h.db.ExecContext(r.Context(),
 			`INSERT INTO ctem_cycle_attacker_profiles (cycle_id, profile_id)
-			 VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			id, profileID,
+			 SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM attacker_profiles WHERE id = $2 AND tenant_id = $3)
+			 ON CONFLICT DO NOTHING`,
+			id, profileID, tenantID,
 		)
 		if err != nil {
 			h.logger.Error("ctem cycle link profile", "error", err, "profile_id", profileID)
