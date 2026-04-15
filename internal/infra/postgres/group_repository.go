@@ -181,7 +181,10 @@ func (r *GroupRepository) Update(ctx context.Context, g *group.Group) error {
 		return fmt.Errorf("failed to update group: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return group.ErrGroupNotFound
 	}
@@ -198,7 +201,10 @@ func (r *GroupRepository) Delete(ctx context.Context, id shared.ID) error {
 		return fmt.Errorf("failed to delete group: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return group.ErrGroupNotFound
 	}
@@ -371,7 +377,10 @@ func (r *GroupRepository) UpdateMember(ctx context.Context, member *group.Member
 		return fmt.Errorf("failed to update member: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return group.ErrMemberNotFound
 	}
@@ -388,7 +397,10 @@ func (r *GroupRepository) RemoveMember(ctx context.Context, groupID, userID shar
 		return fmt.Errorf("failed to remove member: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return group.ErrMemberNotFound
 	}

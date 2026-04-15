@@ -86,7 +86,10 @@ func (r *ComplianceFrameworkRepository) Update(ctx context.Context, tenantID sha
 	if err != nil {
 		return fmt.Errorf("failed to update framework: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return compliance.ErrFrameworkNotFound
 	}
@@ -102,7 +105,10 @@ func (r *ComplianceFrameworkRepository) Delete(ctx context.Context, tenantID, id
 	if err != nil {
 		return fmt.Errorf("failed to delete framework: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return compliance.ErrFrameworkNotFound
 	}

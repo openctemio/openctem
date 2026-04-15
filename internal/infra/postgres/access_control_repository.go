@@ -395,8 +395,8 @@ func (r *AccessControlRepository) ListAssetOwnersByGroupWithDetails(ctx context.
 	for rows.Next() {
 		var (
 			idStr, assetIDStr, ownershipType, assignedAt string
-			groupIDStr, userIDStr, assignedByStr          *string
-			assetName, assetType, assetStatus             string
+			groupIDStr, userIDStr, assignedByStr         *string
+			assetName, assetType, assetStatus            string
 		)
 		if err := rows.Scan(&idStr, &assetIDStr, &groupIDStr, &userIDStr, &ownershipType, &assignedAt, &assignedByStr,
 			&assetName, &assetType, &assetStatus); err != nil {
@@ -2029,7 +2029,10 @@ func (r *AccessControlRepository) BulkDeleteAutoAssignedForAssets(ctx context.Co
 		if err != nil {
 			return totalRemoved, fmt.Errorf("failed to bulk delete auto-assigned assets: %w", err)
 		}
-		rows, _ := result.RowsAffected()
+		rows, rowErr := result.RowsAffected()
+		if rowErr != nil {
+			return totalRemoved, fmt.Errorf("rows affected: %w", rowErr)
+		}
 		totalRemoved += int(rows)
 	}
 

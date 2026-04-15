@@ -130,7 +130,10 @@ func (r *TargetMappingRepository) Update(ctx context.Context, m *tool.TargetAsse
 		return fmt.Errorf("failed to update target mapping: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return fmt.Errorf("target mapping not found: %s", m.ID)
 	}
@@ -147,7 +150,10 @@ func (r *TargetMappingRepository) Delete(ctx context.Context, id shared.ID) erro
 		return fmt.Errorf("failed to delete target mapping: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return fmt.Errorf("target mapping not found: %s", id)
 	}

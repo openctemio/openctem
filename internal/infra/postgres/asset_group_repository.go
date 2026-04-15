@@ -205,7 +205,10 @@ func (r *AssetGroupRepository) Update(ctx context.Context, g *assetgroup.AssetGr
 		return fmt.Errorf("update asset group: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return shared.ErrNotFound
 	}
@@ -221,7 +224,10 @@ func (r *AssetGroupRepository) Delete(ctx context.Context, id shared.ID) error {
 		return fmt.Errorf("delete asset group: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return shared.ErrNotFound
 	}

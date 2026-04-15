@@ -140,7 +140,10 @@ func (r *AssetTypeCategoryRepository) Update(ctx context.Context, c *assettype.C
 		return fmt.Errorf("update category: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return assettype.ErrCategoryNotFound
 	}
@@ -166,7 +169,10 @@ func (r *AssetTypeCategoryRepository) Delete(ctx context.Context, id shared.ID) 
 		return fmt.Errorf("delete category: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return assettype.ErrCategoryNotFound
 	}

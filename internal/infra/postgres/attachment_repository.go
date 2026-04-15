@@ -55,9 +55,9 @@ func (r *AttachmentRepository) GetByID(ctx context.Context, tenantID, id shared.
 	var (
 		idStr, tenantStr, filename, contentType, storageKey string
 		uploadedByStr, contextType, contextID               string
-		contentHash, storageProvider                          sql.NullString
-		size                                                 int64
-		createdAt                                            time.Time
+		contentHash, storageProvider                        sql.NullString
+		size                                                int64
+		createdAt                                           time.Time
 	)
 
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String()).Scan(
@@ -89,7 +89,10 @@ func (r *AttachmentRepository) Delete(ctx context.Context, tenantID, id shared.I
 	if err != nil {
 		return fmt.Errorf("failed to delete attachment: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return attachment.ErrNotFound
 	}
@@ -112,9 +115,9 @@ func (r *AttachmentRepository) ListByContext(ctx context.Context, tenantID share
 		var (
 			idStr, tenantStr, filename, contentType, storageKey string
 			uploadedByStr, ctxType, ctxID                       string
-			hashVal, providerVal                                 sql.NullString
-			size                                                 int64
-			createdAt                                            time.Time
+			hashVal, providerVal                                sql.NullString
+			size                                                int64
+			createdAt                                           time.Time
 		)
 		if err := rows.Scan(
 			&idStr, &tenantStr, &filename, &contentType, &size, &storageKey,
@@ -151,9 +154,9 @@ func (r *AttachmentRepository) FindByHash(ctx context.Context, tenantID shared.I
 	var (
 		idStr, tenantStr, filename, ct, storageKey string
 		uploadedByStr, ctxType, ctxID              string
-		hashVal                                     sql.NullString
-		size                                        int64
-		createdAt                                   time.Time
+		hashVal                                    sql.NullString
+		size                                       int64
+		createdAt                                  time.Time
 	)
 	var provVal sql.NullString
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), contextType, contextID, contentHash).Scan(

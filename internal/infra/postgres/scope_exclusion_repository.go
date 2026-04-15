@@ -161,7 +161,10 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 		return fmt.Errorf("failed to update scope exclusion: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return scope.ErrExclusionNotFound
 	}
@@ -177,7 +180,10 @@ func (r *ScopeExclusionRepository) Delete(ctx context.Context, tenantID, id shar
 		return fmt.Errorf("failed to delete scope exclusion: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return scope.ErrExclusionNotFound
 	}

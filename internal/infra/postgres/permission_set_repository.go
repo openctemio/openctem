@@ -154,7 +154,10 @@ func (r *PermissionSetRepository) Update(ctx context.Context, ps *permissionset.
 		return fmt.Errorf("failed to update permission set: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return permissionset.ErrPermissionSetNotFound
 	}
@@ -189,7 +192,10 @@ func (r *PermissionSetRepository) Delete(ctx context.Context, id shared.ID) erro
 		return fmt.Errorf("failed to delete permission set: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, rowErr := result.RowsAffected()
+	if rowErr != nil {
+		return fmt.Errorf("rows affected: %w", rowErr)
+	}
 	if rows == 0 {
 		return permissionset.ErrPermissionSetNotFound
 	}
