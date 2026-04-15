@@ -1336,6 +1336,19 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
 	existing.SetProperties(mergedProps)
 
+	// Promote sub_type if existing asset doesn't have one
+	if existing.SubType() == "" {
+		// Try explicit sub_type from CTIS properties
+		if st, ok := ctisAsset.Properties["sub_type"].(string); ok && st != "" {
+			existing.SetSubType(st)
+		} else if ctisAsset.Type != "" {
+			// Try TypeAliases inference (e.g., "firewall" → network + firewall)
+			if _, subType := asset.ResolveTypeAlias(asset.AssetType(ctisAsset.Type)); subType != "" {
+				existing.SetSubType(subType)
+			}
+		}
+	}
+
 	// Update discovery tool if not set
 	if existing.DiscoveryTool() == "" && tool != nil {
 		existing.SetDiscoveryTool(tool.Name)

@@ -44,10 +44,11 @@ func (h *AdminDedupHandler) ListPending(w http.ResponseWriter, r *http.Request) 
 
 // Approve handles POST /api/v1/admin/assets/dedup-review/{id}/approve
 func (h *AdminDedupHandler) Approve(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	reviewID := r.PathValue("id")
 	userID := middleware.GetUserID(r.Context())
 
-	if err := h.repo.ApproveAndMerge(r.Context(), reviewID, userID); err != nil {
+	if err := h.repo.ApproveAndMerge(r.Context(), tenantID, reviewID, userID); err != nil {
 		h.logger.Error("failed to approve merge", "review_id", reviewID, "error", err)
 		apierror.InternalServerError("failed to execute merge").WriteJSON(w)
 		return
@@ -61,10 +62,11 @@ func (h *AdminDedupHandler) Approve(w http.ResponseWriter, r *http.Request) {
 
 // Reject handles POST /api/v1/admin/assets/dedup-review/{id}/reject
 func (h *AdminDedupHandler) Reject(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	reviewID := r.PathValue("id")
 	userID := middleware.GetUserID(r.Context())
 
-	if err := h.repo.RejectReview(r.Context(), reviewID, userID); err != nil {
+	if err := h.repo.RejectReview(r.Context(), tenantID, reviewID, userID); err != nil {
 		h.logger.Error("failed to reject review", "review_id", reviewID, "error", err)
 		apierror.InternalServerError("failed to reject review").WriteJSON(w)
 		return

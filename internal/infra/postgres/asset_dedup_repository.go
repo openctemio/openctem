@@ -74,21 +74,22 @@ func (r *AssetDedupRepository) ListPendingReviews(ctx context.Context, tenantID 
 
 // ApproveAndMerge executes a merge: moves findings/services/relationships from
 // merge assets into the keep asset, then deletes merge assets.
-func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, reviewID string, reviewedBy string) error {
+// tenantID is verified against the review to prevent cross-tenant access.
+func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID string, reviewID string, reviewedBy string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Lock and get the review
+	// Lock and get the review — tenant_id enforced
 	var rev AssetDedupReview
 	err = tx.QueryRowContext(ctx, `
 		SELECT id, tenant_id, keep_asset_id, merge_asset_ids, status
 		FROM asset_dedup_review
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $2
 		FOR UPDATE
-	`, reviewID).Scan(&rev.ID, &rev.TenantID, &rev.KeepAssetID, pq.Array(&rev.MergeAssetIDs), &rev.Status)
+	`, reviewID, tenantID).Scan(&rev.ID, &rev.TenantID, &rev.KeepAssetID, pq.Array(&rev.MergeAssetIDs), &rev.Status)
 	if err != nil {
 		return fmt.Errorf("get review: %w", err)
 	}
@@ -100,7 +101,7 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, reviewID str
 	mergeIDs := rev.MergeAssetIDs
 
 	// Move references from merge assets to keep asset
-	// Each table that references asset_id needs UPDATE
+	// All UPDATEs include tenant_id to prevent cross-tenant data corruption
 	tables := []struct {
 		table  string
 		column string
@@ -116,13 +117,12 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, reviewID str
 
 	for _, t := range tables {
 		query := fmt.Sprintf(
-			"UPDATE %s SET %s = $1 WHERE %s = ANY($2)",
+			"UPDATE %s SET %s = $1 WHERE %s = ANY($2) AND tenant_id = $3",
 			t.table, t.column, t.column,
 		)
-		_, err = tx.ExecContext(ctx, query, keepID, pq.Array(mergeIDs))
+		_, err = tx.ExecContext(ctx, query, keepID, pq.Array(mergeIDs), tenantID)
 		if err != nil {
 			// Table might not exist (optional features) — log but don't fail
-			// Check if it's a "relation does not exist" error
 			if isUndefinedTableError(err) {
 				continue
 			}
@@ -130,13 +130,13 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, reviewID str
 		}
 	}
 
-	// Update finding_count on keep asset
+	// Update finding_count on keep asset — tenant_id enforced
 	_, err = tx.ExecContext(ctx, `
 		UPDATE assets SET
-			finding_count = (SELECT COUNT(*) FROM findings WHERE asset_id = $1),
+			finding_count = (SELECT COUNT(*) FROM findings WHERE asset_id = $1 AND tenant_id = $2),
 			updated_at = NOW()
-		WHERE id = $1
-	`, keepID)
+		WHERE id = $1 AND tenant_id = $2
+	`, keepID, tenantID)
 	if err != nil {
 		return fmt.Errorf("update finding count: %w", err)
 	}
@@ -186,15 +186,16 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, reviewID str
 }
 
 // RejectReview marks a review as rejected (keep assets separate).
-func (r *AssetDedupRepository) RejectReview(ctx context.Context, reviewID string, reviewedBy string) error {
+// tenantID is verified to prevent cross-tenant access.
+func (r *AssetDedupRepository) RejectReview(ctx context.Context, tenantID string, reviewID string, reviewedBy string) error {
 	now := time.Now()
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE asset_dedup_review SET
 			status = 'rejected',
-			reviewed_by = $2,
-			reviewed_at = $3
-		WHERE id = $1 AND status = 'pending'
-	`, reviewID, reviewedBy, now)
+			reviewed_by = $3,
+			reviewed_at = $4
+		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
+	`, reviewID, tenantID, reviewedBy, now)
 	return err
 }
 
