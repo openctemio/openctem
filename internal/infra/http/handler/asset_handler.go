@@ -68,7 +68,6 @@ type AssetResponse struct {
 	FindingSeverityCounts *FindingSeverityResponse  `json:"finding_severity_counts,omitempty"`
 	Description           string                   `json:"description,omitempty"`
 	Tags         []string            `json:"tags,omitempty"`
-	Metadata     map[string]any      `json:"metadata,omitempty"`
 	Properties   map[string]any      `json:"properties,omitempty"`
 	PrimaryOwner *OwnerBriefResponse `json:"primary_owner,omitempty"`
 
@@ -169,7 +168,6 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		FindingCount: a.FindingCount(),
 		Description:  a.Description(),
 		Tags:         a.Tags(),
-		Metadata:     a.Metadata(),
 		Properties:   a.Properties(),
 
 		// Discovery

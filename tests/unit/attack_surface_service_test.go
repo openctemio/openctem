@@ -270,7 +270,6 @@ func makeAttackSurfaceAsset(
 		findingCount,          // findingCount
 		"test description",    // description
 		nil,                   // tags
-		nil,                   // metadata
 		nil,                   // properties
 		asset.ProviderManual,  // provider
 		"",                    // externalID

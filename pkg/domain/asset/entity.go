@@ -34,9 +34,8 @@ type Asset struct {
 	findingCount          int
 	findingSeverityCounts *FindingSeverityCounts
 	description           string
-	tags                  []string
-	metadata              map[string]any
-	properties            map[string]any // Type-specific properties (JSONB)
+	tags       []string
+	properties map[string]any // All asset properties (merged metadata + properties)
 
 	// External provider info
 	provider       Provider
@@ -96,9 +95,8 @@ func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset
 		exposure:     ExposureUnknown,
 		riskScore:    0,
 		findingCount: 0,
-		tags:         make([]string, 0),
-		metadata:     make(map[string]any),
-		properties:   make(map[string]any),
+		tags:       make([]string, 0),
+		properties: make(map[string]any),
 		syncStatus:   SyncStatusSynced,
 		firstSeen:    now,
 		lastSeen:     now,
@@ -133,7 +131,6 @@ func Reconstitute(
 	findingCount int,
 	description string,
 	tags []string,
-	metadata map[string]any,
 	properties map[string]any,
 	provider Provider,
 	externalID string,
@@ -160,9 +157,6 @@ func Reconstitute(
 	if tags == nil {
 		tags = make([]string, 0)
 	}
-	if metadata == nil {
-		metadata = make(map[string]any)
-	}
 	if properties == nil {
 		properties = make(map[string]any)
 	}
@@ -183,9 +177,8 @@ func Reconstitute(
 		riskScore:       riskScore,
 		findingCount:    findingCount,
 		description:     description,
-		tags:            tags,
-		metadata:        metadata,
-		properties:      properties,
+		tags:       tags,
+		properties: properties,
 		provider:        provider,
 		externalID:      externalID,
 		classification:  classification,
@@ -310,13 +303,6 @@ func (a *Asset) Tags() []string {
 }
 
 // Metadata returns the asset metadata.
-func (a *Asset) Metadata() map[string]any {
-	result := make(map[string]any, len(a.metadata))
-	for k, v := range a.metadata {
-		result[k] = v
-	}
-	return result
-}
 
 // CreatedAt returns the creation timestamp.
 func (a *Asset) CreatedAt() time.Time {
@@ -512,13 +498,6 @@ func (a *Asset) RemoveTag(tag string) {
 }
 
 // SetMetadata sets a metadata key-value pair.
-func (a *Asset) SetMetadata(key string, value any) {
-	if key == "" {
-		return
-	}
-	a.metadata[key] = value
-	a.updatedAt = time.Now().UTC()
-}
 
 // Activate activates the asset.
 func (a *Asset) Activate() {
