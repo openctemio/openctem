@@ -46,12 +46,33 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Separate triggers for INSERT/UPDATE vs DELETE because
+-- DELETE triggers cannot reference NEW in WHEN condition.
 DROP TRIGGER IF EXISTS trg_update_branch_finding_counts ON findings;
-CREATE TRIGGER trg_update_branch_finding_counts
-  AFTER INSERT OR UPDATE OF status, severity, branch_id OR DELETE
+DROP TRIGGER IF EXISTS trg_update_branch_finding_counts_delete ON findings;
+
+-- INSERT: only NEW available
+CREATE TRIGGER trg_update_branch_finding_counts_insert
+  AFTER INSERT
   ON findings
   FOR EACH ROW
-  WHEN (COALESCE(NEW.branch_id, OLD.branch_id) IS NOT NULL)
+  WHEN (NEW.branch_id IS NOT NULL)
+  EXECUTE FUNCTION update_branch_finding_counts();
+
+-- UPDATE: both NEW and OLD available
+CREATE TRIGGER trg_update_branch_finding_counts_update
+  AFTER UPDATE OF status, severity, branch_id
+  ON findings
+  FOR EACH ROW
+  WHEN (NEW.branch_id IS NOT NULL OR OLD.branch_id IS NOT NULL)
+  EXECUTE FUNCTION update_branch_finding_counts();
+
+-- DELETE: only OLD available
+CREATE TRIGGER trg_update_branch_finding_counts_delete
+  AFTER DELETE
+  ON findings
+  FOR EACH ROW
+  WHEN (OLD.branch_id IS NOT NULL)
   EXECUTE FUNCTION update_branch_finding_counts();
 
 -- =============================================================================
