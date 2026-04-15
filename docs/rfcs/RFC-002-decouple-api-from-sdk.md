@@ -1,6 +1,6 @@
 # RFC-002: Decouple API from SDK-Go — Extract CTIS Shared Types
 
-- **Status**: Draft
+- **Status**: Completed — feature doc: [docs/architecture/api-ctis-decoupling.md](../architecture/api-ctis-decoupling.md)
 - **Created**: 2026-04-15
 - **Problem**: API phụ thuộc SDK-Go (client library, 50K lines). Mỗi lần update SDK → phải update API go.mod → rebuild → retest. Ngược chiều dependency: backend source-of-truth phụ thuộc client lib.
 
