@@ -12,6 +12,10 @@ import (
 // SLAEscalationController periodically checks for overdue findings
 // and updates their sla_status to 'breached'. Runs every 15 minutes.
 //
+// Note: This operates across all tenants intentionally — it's a system-level
+// background job that marks overdue findings within their own rows.
+// Each finding's tenant_id remains unchanged.
+//
 // RFC-005 Gap 7: Automated SLA Escalation.
 type SLAEscalationController struct {
 	db     *sql.DB
@@ -34,8 +38,8 @@ func (c *SLAEscalationController) Interval() time.Duration { return 15 * time.Mi
 
 // Reconcile checks for overdue findings and marks them as breached.
 func (c *SLAEscalationController) Reconcile(ctx context.Context) (int, error) {
-	// Find findings past SLA deadline that aren't already breached
-	query := `
+	// Mark overdue findings as breached (operates on individual rows, tenant_id unchanged)
+	breachQuery := `
 		UPDATE findings SET
 			sla_status = 'breached',
 			updated_at = NOW()
@@ -43,21 +47,32 @@ func (c *SLAEscalationController) Reconcile(ctx context.Context) (int, error) {
 		  AND sla_deadline IS NOT NULL
 		  AND (sla_status IS NULL OR sla_status NOT IN ('breached', 'not_applicable'))
 		  AND status NOT IN ('closed', 'resolved', 'false_positive', 'verified')
+		RETURNING tenant_id
 	`
 
-	result, err := c.db.ExecContext(ctx, query)
+	rows, err := c.db.QueryContext(ctx, breachQuery)
 	if err != nil {
 		return 0, fmt.Errorf("sla escalation: %w", err)
 	}
+	defer func() { _ = rows.Close() }()
 
-	breached, _ := result.RowsAffected()
-	if breached > 0 {
+	breachedByTenant := make(map[string]int)
+	total := 0
+	for rows.Next() {
+		var tenantID string
+		if err := rows.Scan(&tenantID); err == nil {
+			breachedByTenant[tenantID]++
+			total++
+		}
+	}
+
+	for tid, count := range breachedByTenant {
 		c.logger.Warn("SLA breached findings detected",
-			"count", breached,
+			"tenant_id", tid, "count", count,
 		)
 	}
 
-	// Also mark findings approaching deadline as warning
+	// Mark findings approaching deadline (within 3 days) as warning
 	warningQuery := `
 		UPDATE findings SET
 			sla_status = 'warning',
@@ -79,5 +94,5 @@ func (c *SLAEscalationController) Reconcile(ctx context.Context) (int, error) {
 		}
 	}
 
-	return int(breached), nil
+	return total, nil
 }
