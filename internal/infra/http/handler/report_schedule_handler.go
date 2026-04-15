@@ -58,9 +58,16 @@ func toReportScheduleResponse(s *reportschedule.ReportSchedule) reportScheduleRe
 // List handles GET /api/v1/reports/schedules
 func (h *ReportScheduleHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
+	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
+	if perPage > 100 {
+		perPage = 100
+	}
+	if perPage < 1 {
+		perPage = 1
+	}
 	page := pagination.New(
 		parseQueryInt(r.URL.Query().Get("page"), 1),
-		parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		perPage,
 	)
 
 	result, err := h.service.ListSchedules(r.Context(), tenantID, page)

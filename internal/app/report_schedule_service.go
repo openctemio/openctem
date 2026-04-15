@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/openctemio/api/pkg/domain/reportschedule"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -42,6 +43,20 @@ func (s *ReportScheduleService) CreateSchedule(ctx context.Context, input Create
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+
+	if input.Timezone != "" {
+		if _, err := time.LoadLocation(input.Timezone); err != nil {
+			return nil, fmt.Errorf("%w: invalid timezone: %s", shared.ErrValidation, input.Timezone)
+		}
+	}
+
+	if err := reportschedule.ValidateRecipients(input.Recipients); err != nil {
+		return nil, err
+	}
+
+	if len(input.Options) > 100 {
+		return nil, fmt.Errorf("%w: max 100 options fields", shared.ErrValidation)
 	}
 
 	schedule, err := reportschedule.NewReportSchedule(tenantID, input.Name, input.ReportType, input.Format, input.CronExpression)

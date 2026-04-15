@@ -225,7 +225,7 @@ func (r *RemediationCampaignRepository) List(ctx context.Context, filter remedia
 	}
 	if filter.Search != nil && *filter.Search != "" {
 		where += fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx)
-		args = append(args, "%"+*filter.Search+"%")
+		args = append(args, "%"+escapeLikePattern(*filter.Search)+"%")
 		// argIdx not incremented — no further conditions
 	}
 
