@@ -343,6 +343,37 @@ const (
 )
 
 // =============================================================================
+// CTEM (Continuous Threat Exposure Management) MODULE
+// RFC-004 + RFC-005 features
+// =============================================================================
+
+const (
+	// CTEM Cycles — time-boxed assessment periods (RFC-005 Gap 3)
+	CTEMCyclesRead  Permission = "ctem:cycles:read"
+	CTEMCyclesWrite Permission = "ctem:cycles:write"
+
+	// Attacker Profiles — threat model profiles (RFC-005 Gap 9)
+	AttackerProfilesRead  Permission = "ctem:attacker_profiles:read"
+	AttackerProfilesWrite Permission = "ctem:attacker_profiles:write"
+
+	// Business Services — business capability mapping (Phase 3)
+	BusinessServicesRead  Permission = "ctem:business_services:read"
+	BusinessServicesWrite Permission = "ctem:business_services:write"
+
+	// Compensating Controls — risk-mitigating controls (RFC-005 Gap 6)
+	CompensatingControlsRead  Permission = "ctem:compensating_controls:read"
+	CompensatingControlsWrite Permission = "ctem:compensating_controls:write"
+
+	// Priority Override Rules — per-tenant classification rules (RFC-004)
+	PriorityRulesRead  Permission = "ctem:priority_rules:read"
+	PriorityRulesWrite Permission = "ctem:priority_rules:write"
+
+	// Verification Checklist — finding closure criteria (RFC-005 Gap 8)
+	VerificationChecklistsRead  Permission = "ctem:verification_checklists:read"
+	VerificationChecklistsWrite Permission = "ctem:verification_checklists:write"
+)
+
+// =============================================================================
 // AI TRIAGE MODULE
 // =============================================================================
 
@@ -463,6 +494,14 @@ func AllPermissions() []Permission {
 
 		// AI Triage module
 		AITriageRead, AITriageTrigger,
+
+		// CTEM module (RFC-004 + RFC-005)
+		CTEMCyclesRead, CTEMCyclesWrite,
+		AttackerProfilesRead, AttackerProfilesWrite,
+		BusinessServicesRead, BusinessServicesWrite,
+		CompensatingControlsRead, CompensatingControlsWrite,
+		PriorityRulesRead, PriorityRulesWrite,
+		VerificationChecklistsRead, VerificationChecklistsWrite,
 	}
 }
 

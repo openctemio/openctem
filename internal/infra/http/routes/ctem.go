@@ -16,14 +16,14 @@ func registerCompensatingControlRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	router.Group("/api/v1/compensating-controls", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.FindingsRead))
-		r.POST("/", h.Create, middleware.Require(permission.FindingsWrite))
-		r.GET("/{id}", h.Get, middleware.Require(permission.FindingsRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.FindingsWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.FindingsWrite))
-		r.POST("/{id}/test", h.RecordTest, middleware.Require(permission.FindingsWrite))
-		r.POST("/{id}/assets", h.LinkAssets, middleware.Require(permission.FindingsWrite))
-		r.POST("/{id}/findings", h.LinkFindings, middleware.Require(permission.FindingsWrite))
+		r.GET("/", h.List, middleware.Require(permission.CompensatingControlsRead))
+		r.POST("/", h.Create, middleware.Require(permission.CompensatingControlsWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.CompensatingControlsRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.CompensatingControlsWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.CompensatingControlsWrite))
+		r.POST("/{id}/test", h.RecordTest, middleware.Require(permission.CompensatingControlsWrite))
+		r.POST("/{id}/assets", h.LinkAssets, middleware.Require(permission.CompensatingControlsWrite))
+		r.POST("/{id}/findings", h.LinkFindings, middleware.Require(permission.CompensatingControlsWrite))
 	}, tenantMiddlewares...)
 }
 
@@ -37,11 +37,11 @@ func registerAttackerProfileRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	router.Group("/api/v1/attacker-profiles", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
-		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
-		r.GET("/{id}", h.Get, middleware.Require(permission.ScopeRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.ScopeWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
+		r.GET("/", h.List, middleware.Require(permission.AttackerProfilesRead))
+		r.POST("/", h.Create, middleware.Require(permission.AttackerProfilesWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.AttackerProfilesRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.AttackerProfilesWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AttackerProfilesWrite))
 	}, tenantMiddlewares...)
 }
 
@@ -55,14 +55,14 @@ func registerBusinessServiceRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	router.Group("/api/v1/business-services", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
-		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
-		r.GET("/{id}", h.Get, middleware.Require(permission.ScopeRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.ScopeWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/assets", h.LinkAsset, middleware.Require(permission.ScopeWrite))
-		r.GET("/{id}/assets", h.ListAssets, middleware.Require(permission.ScopeRead))
-		r.DELETE("/{id}/assets/{assetId}", h.UnlinkAsset, middleware.Require(permission.ScopeWrite))
+		r.GET("/", h.List, middleware.Require(permission.BusinessServicesRead))
+		r.POST("/", h.Create, middleware.Require(permission.BusinessServicesWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.BusinessServicesRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.BusinessServicesWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.BusinessServicesWrite))
+		r.POST("/{id}/assets", h.LinkAsset, middleware.Require(permission.BusinessServicesWrite))
+		r.GET("/{id}/assets", h.ListAssets, middleware.Require(permission.BusinessServicesRead))
+		r.DELETE("/{id}/assets/{assetId}", h.UnlinkAsset, middleware.Require(permission.BusinessServicesWrite))
 	}, tenantMiddlewares...)
 }
 
@@ -76,15 +76,14 @@ func registerCTEMCycleRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	router.Group("/api/v1/ctem-cycles", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
-		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
-		r.GET("/{id}", h.Get, middleware.Require(permission.ScopeRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/start-review", h.StartReview, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/close", h.Close, middleware.Require(permission.ScopeWrite))
-		r.GET("/{id}/scope", h.GetScope, middleware.Require(permission.ScopeRead))
-		r.POST("/{id}/profiles", h.LinkProfile, middleware.Require(permission.ScopeWrite))
+		r.GET("/", h.List, middleware.Require(permission.CTEMCyclesRead))
+		r.POST("/", h.Create, middleware.Require(permission.CTEMCyclesWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.CTEMCyclesRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.CTEMCyclesWrite))
+		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.CTEMCyclesWrite))
+		r.POST("/{id}/start-review", h.StartReview, middleware.Require(permission.CTEMCyclesWrite))
+		r.POST("/{id}/close", h.Close, middleware.Require(permission.CTEMCyclesWrite))
+		r.GET("/{id}/scope", h.GetScope, middleware.Require(permission.CTEMCyclesRead))
+		r.POST("/{id}/profiles", h.LinkProfile, middleware.Require(permission.CTEMCyclesWrite))
 	}, tenantMiddlewares...)
 }
-

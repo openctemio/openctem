@@ -415,8 +415,8 @@ func Register(
 		vcHandler := h.VerificationChecklist
 		tenantMW := buildTokenTenantMiddlewares(authMiddleware, userSync)
 		router.Group("/api/v1/verification-checklists", func(r Router) {
-			r.GET("/{findingId}", vcHandler.Get, middleware.Require(permission.VulnerabilitiesRead))
-			r.PUT("/{findingId}", vcHandler.Update, middleware.Require(permission.VulnerabilitiesWrite))
+			r.GET("/{findingId}", vcHandler.Get, middleware.Require(permission.VerificationChecklistsRead))
+			r.PUT("/{findingId}", vcHandler.Update, middleware.Require(permission.VerificationChecklistsWrite))
 		}, tenantMW...)
 	}
 
