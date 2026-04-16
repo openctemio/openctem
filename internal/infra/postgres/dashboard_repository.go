@@ -1251,7 +1251,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 	query := `
 		WITH approval_stats AS (
 			SELECT
-				COALESCE(AVG(EXTRACT(epoch FROM updated_at - created_at) / 3600), 0) AS avg_hours,
+				COALESCE(AVG(EXTRACT(epoch FROM COALESCE(approved_at, rejected_at) - created_at) / 3600), 0) AS avg_hours,
 				COUNT(*) AS total
 			FROM finding_status_approvals
 			WHERE tenant_id = $1 AND status IN ('approved','rejected')
