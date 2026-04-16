@@ -45,6 +45,27 @@ func registerAttackerProfileRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerBusinessServiceRoutes registers business service CRUD routes.
+func registerBusinessServiceRoutes(
+	router Router,
+	h *handler.BusinessServiceHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/business-services", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
+		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ScopeRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.ScopeWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeWrite))
+		r.POST("/{id}/assets", h.LinkAsset, middleware.Require(permission.ScopeWrite))
+		r.GET("/{id}/assets", h.ListAssets, middleware.Require(permission.ScopeRead))
+		r.DELETE("/{id}/assets/{assetId}", h.UnlinkAsset, middleware.Require(permission.ScopeWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerCTEMCycleRoutes registers CTEM cycle management routes.
 func registerCTEMCycleRoutes(
 	router Router,

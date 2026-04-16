@@ -298,6 +298,8 @@ type ExecutiveSummary struct {
 	MTTRCriticalHrs   float64   `json:"mttr_critical_hours"`
 	MTTRHighHrs       float64   `json:"mttr_high_hours"`
 	CrownJewelsAtRisk int       `json:"crown_jewels_at_risk"`
+	RegressionCount   int       `json:"regression_count"`
+	RegressionRatePct float64   `json:"regression_rate_pct"`
 	TopRisks          []TopRisk `json:"top_risks"`
 }
 

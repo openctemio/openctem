@@ -1055,6 +1055,15 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 				AND status IN ('resolved', 'verified')
 				AND resolved_at >= NOW() - ($2::int || ' days')::interval
 		),
+		total_resolved AS (
+			SELECT COUNT(*) AS cnt FROM findings
+			WHERE tenant_id = $1 AND status IN ('resolved', 'verified')
+		),
+		regressions AS (
+			SELECT COUNT(*) AS cnt FROM findings
+			WHERE tenant_id = $1 AND is_regression = true
+			  AND last_reopened_at >= NOW() - ($2::int || ' days')::interval
+		),
 		new_in_period AS (
 			SELECT id FROM findings
 			WHERE tenant_id = $1 AND created_at >= NOW() - ($2::int || ' days')::interval
@@ -1092,14 +1101,18 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			(SELECT COUNT(*) FROM open_findings WHERE sla_status = 'breached'),
 			mc.hrs,
 			mh.hrs,
-			cj.cnt
-		FROM risk_score rs, mttr_critical mc, mttr_high mh, crown_jewels cj
+			cj.cnt,
+			reg.cnt,
+			tr.cnt
+		FROM risk_score rs, mttr_critical mc, mttr_high mh, crown_jewels cj,
+		     regressions reg, total_resolved tr
 	`
 
 	summary := &app.ExecutiveSummary{
 		Period: fmt.Sprintf("%d days", days),
 	}
 
+	var totalResolved int
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
 		&summary.RiskScoreCurrent,
 		&summary.FindingsTotal,
@@ -1114,9 +1127,16 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		&summary.MTTRCriticalHrs,
 		&summary.MTTRHighHrs,
 		&summary.CrownJewelsAtRisk,
+		&summary.RegressionCount,
+		&totalResolved,
 	)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("executive summary: %w", err)
+	}
+
+	// Regression rate: regressions / total_resolved (% of resolved findings that were reopened).
+	if totalResolved > 0 {
+		summary.RegressionRatePct = float64(summary.RegressionCount) * 100.0 / float64(totalResolved)
 	}
 
 	// Top 5 risks: open findings ordered by priority class, EPSS score

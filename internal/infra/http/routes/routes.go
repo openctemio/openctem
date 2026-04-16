@@ -113,6 +113,9 @@ type Handlers struct {
 	// Business Units
 	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
 
+	// Business Services (distinct from Business Units — represent business capabilities)
+	BusinessService *handler.BusinessServiceHandler // nil if not initialized
+
 	// CTEM RFC-005 handlers (direct SQL, no DDD repo layer yet)
 	CompensatingControl *handler.CompensatingControlHandler // nil if not initialized
 	AttackerProfile     *handler.AttackerProfileHandler     // nil if not initialized
@@ -385,6 +388,11 @@ func Register(
 	// Business Unit routes
 	if h.BusinessUnit != nil {
 		registerBusinessUnitRoutes(router, h.BusinessUnit, authMiddleware, userSync)
+	}
+
+	// Business Service routes (Phase 3 — business capability management)
+	if h.BusinessService != nil {
+		registerBusinessServiceRoutes(router, h.BusinessService, authMiddleware, userSync)
 	}
 
 	// Compensating Control routes (RFC-005)
