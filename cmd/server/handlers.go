@@ -217,6 +217,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackerProfile:     handler.NewAttackerProfileHandler(deps.DB.DB, log),
 		CTEMCycle:              handler.NewCTEMCycleHandler(deps.DB.DB, log),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
+		PriorityRule:          handler.NewPriorityRuleHandler(deps.DB.DB, log),
 
 		// Platform Stats (tenant-scoped platform agent statistics)
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),

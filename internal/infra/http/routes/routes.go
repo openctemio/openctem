@@ -121,6 +121,7 @@ type Handlers struct {
 	AttackerProfile     *handler.AttackerProfileHandler     // nil if not initialized
 	CTEMCycle           *handler.CTEMCycleHandler           // nil if not initialized
 	VerificationChecklist *handler.VerificationChecklistHandler // nil if not initialized
+	PriorityRule         *handler.PriorityRuleHandler            // nil if not initialized
 
 	// Asset Import (Nessus, K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
@@ -408,6 +409,11 @@ func Register(
 	// CTEM Cycle routes (RFC-005)
 	if h.CTEMCycle != nil {
 		registerCTEMCycleRoutes(router, h.CTEMCycle, authMiddleware, userSync)
+	}
+
+	// Priority Rule routes (RFC-004)
+	if h.PriorityRule != nil {
+		registerPriorityRuleRoutes(router, h.PriorityRule, authMiddleware, userSync)
 	}
 
 	// Verification Checklist routes (RFC-005) — added to findings group

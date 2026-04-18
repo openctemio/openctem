@@ -66,6 +66,24 @@ func registerBusinessServiceRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerPriorityRuleRoutes registers priority override rule CRUD routes.
+func registerPriorityRuleRoutes(
+	router Router,
+	h *handler.PriorityRuleHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/priority-rules", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.PriorityRulesRead))
+		r.POST("/", h.Create, middleware.Require(permission.PriorityRulesWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.PriorityRulesRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.PriorityRulesWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.PriorityRulesWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerCTEMCycleRoutes registers CTEM cycle management routes.
 func registerCTEMCycleRoutes(
 	router Router,
