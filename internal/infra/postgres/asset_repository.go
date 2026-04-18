@@ -1625,12 +1625,45 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 	return facets, nil
 }
 
-// formatPropertyLabel converts snake_case key to Title Case label.
+// formatPropertyLabel converts snake_case or camelCase key to Title Case label.
+// Handles: snake_case, camelCase, PascalCase, ALLCAPS, and mixtures.
 func formatPropertyLabel(key string) string {
-	words := strings.Split(key, "_")
+	// Step 1: insert space before uppercase letters in camelCase/PascalCase
+	// but NOT between consecutive uppercase (e.g., "BIOS" stays "BIOS")
+	var b strings.Builder
+	for i, r := range key {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			prev := rune(key[i-1])
+			// Insert space if prev is lowercase, OR prev is uppercase but next (if exists) is lowercase
+			// This handles: "camelCase" -> "camel Case", "BIOSUuid" -> "BIOS Uuid"
+			if prev >= 'a' && prev <= 'z' {
+				b.WriteRune(' ')
+			} else if prev >= 'A' && prev <= 'Z' && i+1 < len(key) && key[i+1] >= 'a' && key[i+1] <= 'z' {
+				b.WriteRune(' ')
+			}
+		}
+		b.WriteRune(r)
+	}
+	result := b.String()
+
+	// Step 2: replace underscores with spaces
+	result = strings.ReplaceAll(result, "_", " ")
+
+	// Step 3: title case each word
+	words := strings.Fields(result) // splits on any whitespace
 	for i, w := range words {
 		if len(w) > 0 {
-			words[i] = strings.ToUpper(w[:1]) + w[1:]
+			// Keep ALL_CAPS words as-is (acronyms like BIOS, UUID, IP)
+			allUpper := true
+			for _, c := range w {
+				if c < 'A' || c > 'Z' {
+					allUpper = false
+					break
+				}
+			}
+			if !allUpper {
+				words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
+			}
 		}
 	}
 	return strings.Join(words, " ")
