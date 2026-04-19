@@ -295,6 +295,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		epssAdapter, kevAdapter,
 		repos.PriorityRule, repos.PriorityAudit, log,
 	)
+	// Wire compensating controls into priority classification (RFC-005 Gap 6)
+	s.PriorityClassification.SetControlLookup(postgres.NewCompensatingControlLookupRepo(deps.DB))
 
 	// Initialize Pentest service
 	s.Pentest = app.NewPentestService(

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
@@ -206,10 +207,64 @@ func (r *PriorityAuditRepository) LogChange(ctx context.Context, entry app.Prior
 	return err
 }
 
+// CompensatingControlLookupRepo provides batch effective control lookups.
+type CompensatingControlLookupRepo struct {
+	db *sql.DB
+}
+
+// NewCompensatingControlLookupRepo creates a new lookup adapter.
+func NewCompensatingControlLookupRepo(db *sql.DB) *CompensatingControlLookupRepo {
+	return &CompensatingControlLookupRepo{db: db}
+}
+
+// GetEffectiveForAssets returns max reduction_factor per asset with active,
+// tested-passing, non-expired controls.
+func (r *CompensatingControlLookupRepo) GetEffectiveForAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]float64, error) {
+	if len(assetIDs) == 0 {
+		return map[shared.ID]float64{}, nil
+	}
+
+	idStrings := make([]string, len(assetIDs))
+	for i, id := range assetIDs {
+		idStrings[i] = id.String()
+	}
+
+	query := `
+		SELECT cca.asset_id, MAX(cc.reduction_factor)
+		FROM compensating_controls cc
+		JOIN compensating_control_assets cca ON cca.control_id = cc.id
+		WHERE cc.tenant_id = $1
+		  AND cca.asset_id = ANY($2)
+		  AND cc.status = 'active'
+		  AND (cc.test_result IS NULL OR cc.test_result != 'fail')
+		  AND (cc.expires_at IS NULL OR cc.expires_at > NOW())
+		GROUP BY cca.asset_id
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(idStrings))
+	if err != nil {
+		return nil, fmt.Errorf("compensating controls lookup: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[shared.ID]float64)
+	for rows.Next() {
+		var aidStr string
+		var factor float64
+		if err := rows.Scan(&aidStr, &factor); err != nil {
+			continue
+		}
+		if aid, err := shared.IDFromString(aidStr); err == nil {
+			result[aid] = factor
+		}
+	}
+	return result, nil
+}
+
 // Verify interface compliance
 var (
-	_ app.EPSSRepository          = (*EPSSAdapter)(nil)
-	_ app.KEVRepository           = (*KEVAdapter)(nil)
-	_ app.PriorityRuleRepository  = (*PriorityRuleRepository)(nil)
-	_ app.PriorityAuditRepository = (*PriorityAuditRepository)(nil)
+	_ app.EPSSRepository              = (*EPSSAdapter)(nil)
+	_ app.KEVRepository               = (*KEVAdapter)(nil)
+	_ app.PriorityRuleRepository      = (*PriorityRuleRepository)(nil)
+	_ app.PriorityAuditRepository     = (*PriorityAuditRepository)(nil)
+	_ app.CompensatingControlLookup   = (*CompensatingControlLookupRepo)(nil)
 )

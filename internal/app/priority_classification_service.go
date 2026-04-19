@@ -15,13 +15,19 @@ import (
 // It enriches findings with EPSS/KEV data, evaluates override rules,
 // and applies the default CTEM classification logic.
 type PriorityClassificationService struct {
-	findingRepo  vulnerability.FindingRepository
-	assetRepo    asset.Repository
-	epssRepo     EPSSRepository
-	kevRepo      KEVRepository
-	ruleRepo     PriorityRuleRepository
-	auditRepo    PriorityAuditRepository
-	logger       *logger.Logger
+	findingRepo   vulnerability.FindingRepository
+	assetRepo     asset.Repository
+	epssRepo      EPSSRepository
+	kevRepo       KEVRepository
+	ruleRepo      PriorityRuleRepository
+	auditRepo     PriorityAuditRepository
+	controlLookup CompensatingControlLookup // optional, may be nil
+	logger        *logger.Logger
+}
+
+// SetControlLookup wires the compensating control lookup for priority calculation.
+func (s *PriorityClassificationService) SetControlLookup(lookup CompensatingControlLookup) {
+	s.controlLookup = lookup
 }
 
 // EPSSRepository provides EPSS score lookups.
@@ -42,6 +48,13 @@ type PriorityRuleRepository interface {
 // PriorityAuditRepository records priority changes.
 type PriorityAuditRepository interface {
 	LogChange(ctx context.Context, entry PriorityAuditEntry) error
+}
+
+// CompensatingControlLookup provides lookups for effective controls on assets/findings.
+type CompensatingControlLookup interface {
+	// GetEffectiveForAssets returns max reduction_factor per asset with active+effective controls.
+	// Returns map[assetID]reductionFactor (0.0-1.0).
+	GetEffectiveForAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]float64, error)
 }
 
 // EPSSData holds EPSS score for a CVE.
@@ -197,6 +210,20 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		s.logger.Warn("failed to load override rules", "error", err)
 	}
 
+	// Batch lookup compensating controls for all asset IDs
+	controlReduction := make(map[shared.ID]float64)
+	if s.controlLookup != nil && len(assets) > 0 {
+		assetIDList := make([]shared.ID, 0, len(assets))
+		for aid := range assets {
+			assetIDList = append(assetIDList, aid)
+		}
+		if m, err := s.controlLookup.GetEffectiveForAssets(ctx, tenantID, assetIDList); err == nil {
+			controlReduction = m
+		} else {
+			s.logger.Warn("failed to batch lookup compensating controls", "error", err)
+		}
+	}
+
 	// Enrich + classify each finding
 	for _, f := range findings {
 		// Enrich with EPSS
@@ -224,6 +251,10 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		}
 
 		pctx := s.buildPriorityContext(f, a)
+		if reduction, ok := controlReduction[f.AssetID()]; ok && reduction > 0 {
+			pctx.IsProtected = true
+			pctx.ControlReductionFactor = reduction
+		}
 
 		var classification vulnerability.PriorityClassification
 		matched := false
