@@ -219,6 +219,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "threat-intel-refresh"),
 	))
 
+	// Owner resolution — resolve owner_ref (email) to owner_id for assets
+	w.ControllerManager.Register(controller.NewOwnerResolutionController(
+		deps.DB,
+		log.With("controller", "owner-resolution"),
+	))
+
 	// SLA escalation — marks overdue findings as breached every 15 min (RFC-005 Gap 7)
 	w.ControllerManager.Register(controller.NewSLAEscalationController(
 		deps.DB,
