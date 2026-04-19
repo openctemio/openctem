@@ -241,6 +241,15 @@ func (h *Hub) authorizeSubscription(client *Client, channel string) bool {
 
 // broadcastToChannel sends a message to all clients subscribed to a channel.
 func (h *Hub) broadcastToChannel(msg *BroadcastMessage) {
+	// SECURITY: Reject broadcasts without tenant context to prevent
+	// cross-tenant data leakage. All broadcasts must be explicitly tenant-scoped.
+	if msg.TenantID == "" {
+		h.logger.Error("refusing broadcast without tenant_id",
+			"channel", msg.Channel,
+		)
+		return
+	}
+
 	h.mu.RLock()
 	clients, ok := h.channels[msg.Channel]
 	if !ok || len(clients) == 0 {
@@ -251,8 +260,8 @@ func (h *Hub) broadcastToChannel(msg *BroadcastMessage) {
 	// Copy client list to avoid holding lock during send
 	clientList := make([]*Client, 0, len(clients))
 	for client := range clients {
-		// Filter by tenant if specified
-		if msg.TenantID != "" && client.TenantID != msg.TenantID {
+		// SECURITY: Strict tenant isolation — client must belong to the same tenant
+		if client.TenantID != msg.TenantID {
 			continue
 		}
 		clientList = append(clientList, client)

@@ -764,7 +764,12 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 // initEncryptor initializes the credentials encryptor.
 func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, error) {
 	if !cfg.Encryption.IsConfigured() {
-		log.Warn("APP_ENCRYPTION_KEY not configured - credentials will be stored in plaintext")
+		// Refuse to start in production without encryption key.
+		// Plaintext credentials in production is a CRITICAL security risk.
+		if cfg.App.Env == config.EnvProduction {
+			return nil, fmt.Errorf("APP_ENCRYPTION_KEY is required in production (APP_ENV=production); refusing to start with plaintext credentials")
+		}
+		log.Warn("APP_ENCRYPTION_KEY not configured - credentials will be stored in plaintext (DEVELOPMENT ONLY)")
 		return crypto.NewNoOpEncryptor(), nil
 	}
 
