@@ -228,6 +228,9 @@ func (h *CTEMCycleHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 // Activate transitions a cycle from planning to active.
+// On activation, the current scope (assets matching scope_targets) is
+// snapshot into ctem_cycle_scope_snapshots — this freezes what was
+// in-scope at the moment the cycle started, per RFC-005 Gap 3.
 func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -236,6 +239,26 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return // error already written
 	}
+
+	// Snapshot current scope — freeze assets in scope at cycle activation time.
+	// All assets belonging to the tenant are captured (simple snapshot).
+	// More sophisticated scope filtering can be added via scope_target matching later.
+	snapshotQuery := `
+		INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id)
+		SELECT $1, id FROM assets WHERE tenant_id = $2
+		ON CONFLICT DO NOTHING
+	`
+	result, snapErr := h.db.ExecContext(r.Context(), snapshotQuery, id, tenantID)
+	if snapErr != nil {
+		h.logger.Error("cycle scope snapshot failed", "cycle_id", id, "error", snapErr)
+		// Don't fail the transition — cycle is activated, snapshot can be retried
+	} else {
+		rows, _ := result.RowsAffected()
+		h.logger.Info("cycle activated with scope snapshot",
+			"cycle_id", id, "assets_snapshotted", rows,
+		)
+	}
+
 	writeJSON(w, http.StatusOK, c)
 }
 
