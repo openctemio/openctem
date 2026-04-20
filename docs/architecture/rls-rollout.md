@@ -85,5 +85,7 @@ Two properties worth understanding:
 | 19 | audit_logs | audit |
 | 20 | notification_outbox | notifications |
 
-Remaining ~42 tenant-scoped tables are covered by a follow-up
-migration once this first batch has been validated in production.
+Remaining ~125 tenant-scoped tables are covered by migration
+`000158_rls_policies_shadow_remaining.up.sql` using the same
+shadow-mode pattern. Ops enables RLS per table on its own schedule
+after validating read-path coverage (see procedure above).
