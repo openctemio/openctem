@@ -46,7 +46,7 @@ type iocResponse struct {
 	TenantID        string  `json:"tenant_id"`
 	Type            string  `json:"type"`
 	Value           string  `json:"value"`
-	Normalised      string  `json:"normalised"`
+	Normalized      string  `json:"normalized"`
 	Source          string  `json:"source,omitempty"`
 	SourceFindingID *string `json:"source_finding_id,omitempty"`
 	Active          bool    `json:"active"`
@@ -261,7 +261,7 @@ func toIOCResponse(ind *ioc.Indicator) iocResponse {
 		TenantID:    ind.TenantID.String(),
 		Type:        string(ind.Type),
 		Value:       ind.Value,
-		Normalised:  ind.Normalised,
+		Normalized:  ind.Normalized,
 		Source:      string(ind.Source),
 		Active:      ind.Active,
 		Confidence:  ind.Confidence,

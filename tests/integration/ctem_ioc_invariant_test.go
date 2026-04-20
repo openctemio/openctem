@@ -52,14 +52,14 @@ func (r *memIOCRepo) GetByID(_ context.Context, tenantID, id shared.ID) (*iocdom
 func (r *memIOCRepo) FindActiveByValues(_ context.Context, tenantID shared.ID, cands []iocdom.Candidate) ([]*iocdom.Indicator, error) {
 	want := make(map[string]bool, len(cands))
 	for _, c := range cands {
-		want[string(c.Type)+":"+c.Normalised] = true
+		want[string(c.Type)+":"+c.Normalized] = true
 	}
 	var hits []*iocdom.Indicator
 	for _, ind := range r.inds {
 		if !ind.Active || ind.TenantID != tenantID {
 			continue
 		}
-		if want[string(ind.Type)+":"+ind.Normalised] {
+		if want[string(ind.Type)+":"+ind.Normalized] {
 			hits = append(hits, ind)
 		}
 	}
@@ -149,7 +149,7 @@ func TestCTEM_B6_RuntimeMatchReopensClosedFinding(t *testing.T) {
 		TenantID:        tenantID,
 		Type:            iocdom.TypeIP,
 		Value:           "185.220.101.42",
-		Normalised:      "185.220.101.42",
+		Normalized:      "185.220.101.42",
 		SourceFindingID: &fid,
 		Active:          true,
 	}
@@ -226,7 +226,7 @@ func TestCTEM_B6_NoReopenWhenFindingAlreadyOpen(t *testing.T) {
 		TenantID:        tenantID,
 		Type:            iocdom.TypeDomain,
 		Value:           "evil.example.com",
-		Normalised:      "evil.example.com",
+		Normalized:      "evil.example.com",
 		SourceFindingID: &fid,
 		Active:          true,
 	}
@@ -264,7 +264,7 @@ func TestCTEM_B6_ThreatFeedIOCRecordsMatchWithoutReopen(t *testing.T) {
 		TenantID:   tenantID,
 		Type:       iocdom.TypeFileHash,
 		Value:      "DEADBEEFCAFE",
-		Normalised: "deadbeefcafe",
+		Normalized: "deadbeefcafe",
 		Active:     true,
 		// SourceFindingID intentionally nil
 	}
@@ -297,7 +297,7 @@ func TestCTEM_B6_InactiveIOCIsIgnored(t *testing.T) {
 		TenantID:        tenantID,
 		Type:            iocdom.TypeIP,
 		Value:           "1.2.3.4",
-		Normalised:      "1.2.3.4",
+		Normalized:      "1.2.3.4",
 		SourceFindingID: &fid,
 		Active:          false, // soft-deleted
 	}
@@ -330,7 +330,7 @@ func TestCTEM_B6_CrossTenantIOCIsolated(t *testing.T) {
 		TenantID:        tenantA,
 		Type:            iocdom.TypeIP,
 		Value:           "1.2.3.4",
-		Normalised:      "1.2.3.4",
+		Normalized:      "1.2.3.4",
 		SourceFindingID: &fid,
 		Active:          true,
 	}

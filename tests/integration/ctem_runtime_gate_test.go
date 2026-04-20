@@ -53,7 +53,7 @@ func TestCTEM_Q3_BatchIngestProducesStableMatchCount(t *testing.T) {
 		TenantID:        tenantID,
 		Type:            iocdom.TypeIP,
 		Value:           "185.220.101.42",
-		Normalised:      "185.220.101.42",
+		Normalized:      "185.220.101.42",
 		SourceFindingID: &fid,
 		Active:          true,
 	}
@@ -62,7 +62,7 @@ func TestCTEM_Q3_BatchIngestProducesStableMatchCount(t *testing.T) {
 		TenantID:   tenantID,
 		Type:       iocdom.TypeFileHash,
 		Value:      "DEADBEEFCAFE",
-		Normalised: "deadbeefcafe",
+		Normalized: "deadbeefcafe",
 		Active:     true, // threat feed, no source finding
 	}
 	indStale := &iocdom.Indicator{
@@ -70,7 +70,7 @@ func TestCTEM_Q3_BatchIngestProducesStableMatchCount(t *testing.T) {
 		TenantID:   tenantID,
 		Type:       iocdom.TypeDomain,
 		Value:      "old-iocs.example.com",
-		Normalised: "old-iocs.example.com",
+		Normalized: "old-iocs.example.com",
 		Active:     false, // soft-deleted → must NEVER match
 	}
 
@@ -156,7 +156,7 @@ func TestCTEM_Q3_ContinuousIngestProven(t *testing.T) {
 		TenantID:   tenantID,
 		Type:       iocdom.TypeDomain,
 		Value:      "persistent.example.com",
-		Normalised: "persistent.example.com",
+		Normalized: "persistent.example.com",
 		Active:     true,
 	}
 	repo := &memIOCRepo{inds: []*iocdom.Indicator{ind}}
@@ -205,7 +205,7 @@ func TestCTEM_Q3_SoftDeleteStopsMatchesImmediately(t *testing.T) {
 		TenantID:   tenantID,
 		Type:       iocdom.TypeIP,
 		Value:      "192.0.2.1",
-		Normalised: "192.0.2.1",
+		Normalized: "192.0.2.1",
 		Active:     true,
 	}
 	repo := &memIOCRepo{inds: []*iocdom.Indicator{ind}}
@@ -251,7 +251,7 @@ func TestCTEM_Q3_ConcurrentIngestStaysConsistent(t *testing.T) {
 		TenantID:   tenantID,
 		Type:       iocdom.TypeIP,
 		Value:      "1.2.3.4",
-		Normalised: "1.2.3.4",
+		Normalized: "1.2.3.4",
 		Active:     true,
 	}
 	// This in-mem repo is not thread-safe on the matches slice — use a
@@ -312,7 +312,7 @@ func TestCTEM_Q3_ReopenMessageCarriesIOCContext(t *testing.T) {
 		TenantID:        tenantID,
 		Type:            iocdom.TypeIP,
 		Value:           "203.0.113.99",
-		Normalised:      "203.0.113.99",
+		Normalized:      "203.0.113.99",
 		SourceFindingID: &fid,
 		Active:          true,
 	}

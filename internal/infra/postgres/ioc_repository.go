@@ -24,13 +24,13 @@ func NewIOCRepository(db *DB) *IOCRepository {
 }
 
 const iocSelectColumns = `
-	id, tenant_id, ioc_type, value, value_normalised,
+	id, tenant_id, ioc_type, value, value_normalized,
 	source_finding_id, source, active, confidence,
 	first_seen_at, last_seen_at, created_at, updated_at
 `
 
 // Create inserts a new indicator. On conflict (tenant, type,
-// normalised) it refreshes last_seen_at so a re-import bumps freshness
+// normalized) it refreshes last_seen_at so a re-import bumps freshness
 // without producing duplicates.
 func (r *IOCRepository) Create(ctx context.Context, ind *ioc.Indicator) error {
 	var sourceFindingID any
@@ -43,11 +43,11 @@ func (r *IOCRepository) Create(ctx context.Context, ind *ioc.Indicator) error {
 	}
 	const q = `
 		INSERT INTO iocs (
-			id, tenant_id, ioc_type, value, value_normalised,
+			id, tenant_id, ioc_type, value, value_normalized,
 			source_finding_id, source, active, confidence,
 			first_seen_at, last_seen_at, created_at, updated_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-		ON CONFLICT (tenant_id, ioc_type, value_normalised)
+		ON CONFLICT (tenant_id, ioc_type, value_normalized)
 		DO UPDATE SET
 			last_seen_at = EXCLUDED.last_seen_at,
 			active       = TRUE,
@@ -58,7 +58,7 @@ func (r *IOCRepository) Create(ctx context.Context, ind *ioc.Indicator) error {
 		ind.TenantID.String(),
 		string(ind.Type),
 		ind.Value,
-		ind.Normalised,
+		ind.Normalized,
 		sourceFindingID,
 		sourceStr,
 		ind.Active,
@@ -81,30 +81,30 @@ func (r *IOCRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*i
 	return scanIndicator(row)
 }
 
-// FindActiveByValues bulk-matches a set of (type, normalised) pairs.
+// FindActiveByValues bulk-matches a set of (type, normalized) pairs.
 // One query, index-backed — the correlator's hot path.
 func (r *IOCRepository) FindActiveByValues(ctx context.Context, tenantID shared.ID, candidates []ioc.Candidate) ([]*ioc.Indicator, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
 
-	// Parameters: $1 = tenant_id, then pairs of (type, normalised)
+	// Parameters: $1 = tenant_id, then pairs of (type, normalized)
 	// for each candidate; built via a VALUES list the planner can
 	// hash-join against the unique index on
-	// (tenant_id, ioc_type, value_normalised).
+	// (tenant_id, ioc_type, value_normalized).
 	args := make([]any, 0, 1+2*len(candidates))
 	args = append(args, tenantID.String())
 
 	placeholders := make([]string, 0, len(candidates))
 	for i, c := range candidates {
 		placeholders = append(placeholders, fmt.Sprintf("($%d,$%d)", 2+2*i, 3+2*i))
-		args = append(args, string(c.Type), c.Normalised)
+		args = append(args, string(c.Type), c.Normalized)
 	}
 	q := fmt.Sprintf(`
 		SELECT %s FROM iocs
 		WHERE tenant_id = $1
 		  AND active = TRUE
-		  AND (ioc_type, value_normalised) IN (VALUES %s)
+		  AND (ioc_type, value_normalized) IN (VALUES %s)
 	`, iocSelectColumns, strings.Join(placeholders, ","))
 
 	rows, err := r.db.QueryContext(ctx, q, args...)
@@ -217,7 +217,7 @@ func scanIndicator(sc iocRowScanner) (*ioc.Indicator, error) {
 		&tenantID,
 		&iocType,
 		&ind.Value,
-		&ind.Normalised,
+		&ind.Normalized,
 		&sourceFindingID,
 		&source,
 		&ind.Active,

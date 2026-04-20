@@ -11,7 +11,7 @@
 --     their network with completely different context; leaking across
 --     tenants would false-positive everyone at once.
 --
---   - `value_normalised` is the column the correlator queries. Lower-
+--   - `value_normalized` is the column the correlator queries. Lower-
 --     case + whitespace-stripped so "1.2.3.4" and " 1.2.3.4 " dedup.
 --     Raw `value` is kept for display.
 --
@@ -23,7 +23,7 @@
 --     a stale indicator (eg. EDR signature decayed) without deleting
 --     the history row.
 --
---   - (tenant_id, ioc_type, value_normalised) compound unique index —
+--   - (tenant_id, ioc_type, value_normalized) compound unique index —
 --     prevents duplicate indicators per tenant and is the exact
 --     shape the correlator looks up on.
 
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS iocs (
     tenant_id          UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     ioc_type           VARCHAR(20) NOT NULL,
     value              TEXT NOT NULL,
-    value_normalised   TEXT NOT NULL,
+    value_normalized   TEXT NOT NULL,
     source_finding_id  UUID REFERENCES findings(id) ON DELETE SET NULL,
     source             VARCHAR(40),                 -- "scan_finding" | "threat_feed" | "manual"
     active             BOOLEAN NOT NULL DEFAULT TRUE,
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS iocs (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_iocs_tenant_type_value
-    ON iocs(tenant_id, ioc_type, value_normalised);
+    ON iocs(tenant_id, ioc_type, value_normalized);
 
 CREATE INDEX IF NOT EXISTS idx_iocs_source_finding
     ON iocs(source_finding_id)

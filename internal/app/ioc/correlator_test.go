@@ -37,13 +37,13 @@ func TestExtractCandidates_NetworkConnectExtractsIPAndDomain(t *testing.T) {
 	// Domain must be lowercased by Normalise.
 	found := map[string]bool{}
 	for _, c := range cs {
-		found[string(c.Type)+":"+c.Normalised] = true
+		found[string(c.Type)+":"+c.Normalized] = true
 	}
 	if !found["ip:185.220.101.42"] {
 		t.Fatalf("missing IP candidate: %+v", cs)
 	}
 	if !found["domain:evil.example.com"] {
-		t.Fatalf("domain not normalised to lowercase: %+v", cs)
+		t.Fatalf("domain not normalized to lowercase: %+v", cs)
 	}
 }
 
@@ -108,14 +108,14 @@ func (f *fakeIOCRepo) FindActiveByValues(_ context.Context, _ shared.ID, cands [
 	if f.lookupErr != nil {
 		return nil, f.lookupErr
 	}
-	// Return any indicator whose (type, normalised) appears in candidates.
+	// Return any indicator whose (type, normalized) appears in candidates.
 	want := make(map[string]bool, len(cands))
 	for _, c := range cands {
-		want[string(c.Type)+":"+c.Normalised] = true
+		want[string(c.Type)+":"+c.Normalized] = true
 	}
 	var hits []*iocdom.Indicator
 	for _, ind := range f.indicators {
-		if want[string(ind.Type)+":"+ind.Normalised] {
+		if want[string(ind.Type)+":"+ind.Normalized] {
 			hits = append(hits, ind)
 		}
 	}
@@ -148,12 +148,12 @@ func (r *fakeReopener) ReopenForIOCMatch(_ context.Context, _, findingID shared.
 	return r.reopened, r.err
 }
 
-func makeIOC(t iocdom.Type, normalised string, source *shared.ID) *iocdom.Indicator {
+func makeIOC(t iocdom.Type, normalized string, source *shared.ID) *iocdom.Indicator {
 	return &iocdom.Indicator{
 		ID:              shared.NewID(),
 		Type:            t,
-		Value:           normalised,
-		Normalised:      normalised,
+		Value:           normalized,
+		Normalized:      normalized,
 		SourceFindingID: source,
 		Active:          true,
 	}

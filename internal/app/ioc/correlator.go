@@ -172,7 +172,7 @@ func ExtractCandidates(event TelemetryEvent) []iocdom.Candidate {
 		if norm == "" {
 			return
 		}
-		out = append(out, iocdom.Candidate{Type: t, Normalised: norm})
+		out = append(out, iocdom.Candidate{Type: t, Normalized: norm})
 	}
 
 	// IPs

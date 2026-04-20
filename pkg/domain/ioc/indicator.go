@@ -60,17 +60,17 @@ const (
 var ErrInvalidType = errors.New("ioc: invalid type")
 
 // ErrEmptyValue is returned by NewIndicator when value is empty
-// after normalisation.
+// after normalization.
 var ErrEmptyValue = errors.New("ioc: value required")
 
 // Indicator is one IOC row. The correlator looks it up by
-// (TenantID, Type, Normalised) — never by raw Value.
+// (TenantID, Type, Normalized) — never by raw Value.
 type Indicator struct {
 	ID              shared.ID
 	TenantID        shared.ID
 	Type            Type
 	Value           string  // display value
-	Normalised      string  // matching value (lowercase, stripped)
+	Normalized      string  // matching value (lowercase, stripped)
 	SourceFindingID *shared.ID
 	Source          Source
 	Active          bool
@@ -97,7 +97,7 @@ func NewIndicator(tenantID shared.ID, t Type, value string, src Source) (*Indica
 		TenantID:    tenantID,
 		Type:        t,
 		Value:       strings.TrimSpace(value),
-		Normalised:  norm,
+		Normalized:  norm,
 		Source:      src,
 		Active:      true,
 		Confidence:  75,
@@ -141,11 +141,11 @@ type Match struct {
 // Repository is the persistence contract.
 type Repository interface {
 	// Create inserts a new indicator. Duplicate key on
-	// (tenant_id, type, normalised) should update last_seen_at only.
+	// (tenant_id, type, normalized) should update last_seen_at only.
 	Create(ctx context.Context, ind *Indicator) error
 	// GetByID loads one. Tenant-scoped.
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*Indicator, error)
-	// FindActiveByValues bulk-matches a set of (type, normalised)
+	// FindActiveByValues bulk-matches a set of (type, normalized)
 	// candidates — this is the correlator's hot path.
 	FindActiveByValues(ctx context.Context, tenantID shared.ID, candidates []Candidate) ([]*Indicator, error)
 	// RecordMatch appends an ioc_matches row.
@@ -156,9 +156,9 @@ type Repository interface {
 	Deactivate(ctx context.Context, tenantID, id shared.ID) error
 }
 
-// Candidate is a (type, normalised_value) pair the correlator
+// Candidate is a (type, normalized_value) pair the correlator
 // extracts from a telemetry event and hands to the repo.
 type Candidate struct {
 	Type       Type
-	Normalised string
+	Normalized string
 }
