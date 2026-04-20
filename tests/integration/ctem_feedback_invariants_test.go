@@ -1,13 +1,12 @@
 package integration
 
-// Q1 gate (task #328) — integration coverage for the five feedback
-// invariants that Q1 promised the CTEM loop closes on:
+// Integration coverage for the five feedback edges of the CTEM loop:
 //
-//   F3  priority_class drives SLA deadline
-//   B1  reclassification sweep re-runs after control/asset change
-//   B3  Jira "Done" triggers verification rescan
-//   B4  SLA breach fans out to notification outbox
-//   B5  CTEM cycle Close writes an audit-trail entry
+//   priority_class drives SLA deadline                  (invariant F3)
+//   reclassification sweep re-runs after control change (invariant B1)
+//   Jira "Done" triggers verification rescan            (invariant B3)
+//   SLA breach fans out to notification outbox          (invariant B4)
+//   audit chain is deterministic and detects tamper     (invariant B5)
 //
 // These are NOT new unit tests for the wires (those live next to each
 // wire — sla.Applier, reclassify.MemoryQueue, jira.RescanHook,
@@ -17,8 +16,9 @@ package integration
 // future refactor that silently breaks the contract still fails here.
 //
 // Fakes are intentionally narrow — spinning a real Postgres/Redis graph
-// per test is what ../integration/ CI does; this file proves the
-// in-process wire is correct regardless of the store behind it.
+// per test is what the other integration tests in this directory do;
+// this file proves the in-process wire is correct regardless of the
+// store behind it.
 
 import (
 	"context"
@@ -73,12 +73,12 @@ func (f *fakeSLACalc) CalculateSLADeadlineForPriority(
 	return detectedAt.Add(time.Duration(h) * time.Hour), nil
 }
 
-// TestQ1_F3_PriorityClassDrivesSLADeadline asserts the CTEM invariant
+// TestCTEM_F3_PriorityClassDrivesSLADeadline asserts the CTEM invariant
 // that a finding's priority_class (set at classification time) flows
 // through to sla_deadline — i.e. the SLA column is not NULL after
 // ingest. Before the F3 wire landed, sla_deadline stayed NULL so no
 // breach ever fired.
-func TestQ1_F3_PriorityClassDrivesSLADeadline(t *testing.T) {
+func TestCTEM_F3_PriorityClassDrivesSLADeadline(t *testing.T) {
 	tenantID := shared.NewID()
 	calc := &fakeSLACalc{
 		hoursByClass: map[string]int{
@@ -158,12 +158,12 @@ func (r *recordingReclassifier) ReclassifyForRequest(_ context.Context, req cont
 	return r.perCall, r.returnErr
 }
 
-// TestQ1_B1_ControlChangeReaches Reclassifier confirms a single
+// TestCTEM_B1_ControlChangeReaches Reclassifier confirms a single
 // PublishChange propagates through the in-memory queue and surfaces at
 // the reclassifier with the correct scope. Breakage here means the
 // sweep loop stops running — findings become stale when controls or
 // asset context change.
-func TestQ1_B1_ControlChangeReachesReclassifier(t *testing.T) {
+func TestCTEM_B1_ControlChangeReachesReclassifier(t *testing.T) {
 	tenantID := shared.NewID()
 	affectedAssets := []shared.ID{shared.NewID(), shared.NewID(), shared.NewID()}
 
@@ -222,10 +222,10 @@ func TestQ1_B1_ControlChangeReachesReclassifier(t *testing.T) {
 	}
 }
 
-// TestQ1_B1_PublisherDropsEmptyScope protects against an accidental
+// TestCTEM_B1_PublisherDropsEmptyScope protects against an accidental
 // sweep-everything publish — the publisher must refuse to enqueue when
 // no assets are named.
-func TestQ1_B1_PublisherDropsEmptyScope(t *testing.T) {
+func TestCTEM_B1_PublisherDropsEmptyScope(t *testing.T) {
 	queue := reclassify.NewMemoryQueue()
 	publisher := controller.NewControlChangePublisher(queue, logger.NewNop())
 
@@ -270,10 +270,10 @@ func (r *fakeRescanRequester) RequestVerificationScan(_ context.Context, tenantI
 	return &app.RequestVerificationScanResult{FindingID: input.FindingID}, nil
 }
 
-// TestQ1_B3_JiraDoneTriggersRescan wires the Jira sync-service hook to
+// TestCTEM_B3_JiraDoneTriggersRescan wires the Jira sync-service hook to
 // the finding-actions requester and asserts the downstream scan call
 // happened with the right scanner name.
-func TestQ1_B3_JiraDoneTriggersRescan(t *testing.T) {
+func TestCTEM_B3_JiraDoneTriggersRescan(t *testing.T) {
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
 
@@ -319,11 +319,11 @@ func TestQ1_B3_JiraDoneTriggersRescan(t *testing.T) {
 	}
 }
 
-// TestQ1_B3_JiraDoneSkipsWhenScannerMissing keeps the hook silent for
+// TestCTEM_B3_JiraDoneSkipsWhenScannerMissing keeps the hook silent for
 // legacy findings — manually logged findings may land with no
 // tool_name; auto-rescan has no scanner to target, so the hook must
 // no-op (not error) so the Jira webhook itself still succeeds.
-func TestQ1_B3_JiraDoneSkipsWhenScannerMissing(t *testing.T) {
+func TestCTEM_B3_JiraDoneSkipsWhenScannerMissing(t *testing.T) {
 	// Build a finding, then blank its tool name via the setter path
 	// domain exposes (we can't construct one with empty tool_name —
 	// NewFinding forbids it).
@@ -370,11 +370,11 @@ func (f *fakeOutbox) Enqueue(_ context.Context, params outbox.EnqueueParams) err
 	return f.returnErr
 }
 
-// TestQ1_B4_SLABreachFansOutToOutbox drives a breach event through the
+// TestCTEM_B4_SLABreachFansOutToOutbox drives a breach event through the
 // adapter and asserts the outbox received a notification with the
 // right shape. Downstream channels (Slack/email/webhook) all consume
 // the outbox, so this test proves escalation "got into the pipe".
-func TestQ1_B4_SLABreachFansOutToOutbox(t *testing.T) {
+func TestCTEM_B4_SLABreachFansOutToOutbox(t *testing.T) {
 	enq := &fakeOutbox{}
 	adapter := appsla.NewBreachOutboxAdapter(enq)
 
@@ -419,10 +419,10 @@ func TestQ1_B4_SLABreachFansOutToOutbox(t *testing.T) {
 	}
 }
 
-// TestQ1_B4_OutboxErrorSurfacesSoRetriesHappen ensures the adapter
+// TestCTEM_B4_OutboxErrorSurfacesSoRetriesHappen ensures the adapter
 // does NOT swallow outbox errors — if it did, breaches would appear
 // published while silently dropped, killing B4.
-func TestQ1_B4_OutboxErrorSurfacesSoRetriesHappen(t *testing.T) {
+func TestCTEM_B4_OutboxErrorSurfacesSoRetriesHappen(t *testing.T) {
 	boom := errors.New("outbox down")
 	adapter := appsla.NewBreachOutboxAdapter(&fakeOutbox{returnErr: boom})
 	err := adapter.Publish(context.Background(), controller.SLABreachEvent{
@@ -440,15 +440,15 @@ func TestQ1_B4_OutboxErrorSurfacesSoRetriesHappen(t *testing.T) {
 // Full cycle-close behaviour (scope snapshot, stage tallies, audit log
 // fan-out) lives in ctem_cycle_handler and ctem_cycle_service which
 // need a real DB. What we CAN prove in-process is the primitive every
-// audit entry funnels through — the hash-chain — since the Q1 gate
+// audit entry funnels through — the hash-chain — since the gate
 // promise is "audit entries are linked, not orphans".
 // -----------------------------------------------------------------------------
 
-// TestQ1_B5_AuditChainIsDeterministicAndLinked asserts the hash-chain
+// TestCTEM_B5_AuditChainIsDeterministicAndLinked asserts the hash-chain
 // primitive the audit service uses: same inputs always yield the same
 // hash, and a different prev_hash yields a different current hash.
 // If this breaks, tamper-evidence of the close audit trail is gone.
-func TestQ1_B5_AuditChainIsDeterministicAndLinked(t *testing.T) {
+func TestCTEM_B5_AuditChainIsDeterministicAndLinked(t *testing.T) {
 	ts := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
 	auditID := "audit-" + shared.NewID().String()
 	payload := `{"action":"ctem_cycle_closed","cycle_id":"c1"}`
@@ -476,11 +476,11 @@ func TestQ1_B5_AuditChainIsDeterministicAndLinked(t *testing.T) {
 	}
 }
 
-// TestQ1_B5_AuditChainDetectsTamper simulates the VerifyChain
+// TestCTEM_B5_AuditChainDetectsTamper simulates the VerifyChain
 // behaviour: a chain with a mutated middle entry must recompute to
 // something different from what was persisted. This is what the
 // GET /audit-logs/verify endpoint relies on to return 409.
-func TestQ1_B5_AuditChainDetectsTamper(t *testing.T) {
+func TestCTEM_B5_AuditChainDetectsTamper(t *testing.T) {
 	ts := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
 	entries := []struct {
 		id      string

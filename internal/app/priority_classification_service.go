@@ -29,11 +29,11 @@ type PriorityClassificationService struct {
 	// default; classification still runs).
 	changePublisher PriorityChangePublisher
 	// optional flood guard that suppresses downstream fan-out
-	// on P0 bursts. Nil → always fan out (legacy behaviour, unsafe on
-	// noisy tenants). Classification itself is NEVER altered by the
-	// guard — only the event emission.
-	p0Guard *P0FloodGuard
-	logger  *logger.Logger
+	// on bursts at the highest priority class. Nil → always fan out
+	// (legacy behaviour, unsafe on noisy tenants). Classification
+	// itself is NEVER altered by the guard — only the event emission.
+	priorityFloodGuard *PriorityFloodGuard
+	logger             *logger.Logger
 }
 
 // SetControlLookup wires the compensating control lookup for priority calculation.
@@ -47,11 +47,11 @@ func (s *PriorityClassificationService) SetChangePublisher(p PriorityChangePubli
 	s.changePublisher = p
 }
 
-// SetP0FloodGuard wires the anti-flap budget used to suppress P0
-// downstream fan-out under noisy-scanner bursts. Nil disables the
-// guard. Safe to call after construction.
-func (s *PriorityClassificationService) SetP0FloodGuard(g *P0FloodGuard) {
-	s.p0Guard = g
+// SetPriorityFloodGuard wires the anti-flap budget used to suppress
+// downstream fan-out on top-class bursts from noisy scanners. Nil
+// disables the guard. Safe to call after construction.
+func (s *PriorityClassificationService) SetPriorityFloodGuard(g *PriorityFloodGuard) {
+	s.priorityFloodGuard = g
 }
 
 // EPSSRepository provides EPSS score lookups.
@@ -265,26 +265,26 @@ func (s *PriorityClassificationService) publishIfChanged(
 		return // no transition
 	}
 
-	// anti-flap — when the tenant has burned its rolling P0
-	// budget we RECORD the classification (already done above) but
-	// SKIP the fan-out event, so Jira/outbox/notifications don't
-	// drown in a scanner-induced flood. Non-P0 classes are never
-	// throttled.
-	if s.p0Guard != nil {
-		shouldFanOut, err := s.p0Guard.ShouldFanOut(ctx, tenantID, c.Class)
+	// anti-flap — when the tenant has burned its rolling budget at
+	// the protected class we RECORD the classification (already done
+	// above) but SKIP the fan-out event, so Jira/outbox/notifications
+	// don't drown in a scanner-induced flood. Classes below the
+	// protected one are never throttled.
+	if s.priorityFloodGuard != nil {
+		shouldFanOut, err := s.priorityFloodGuard.ShouldFanOut(ctx, tenantID, c.Class)
 		if err != nil {
-			if errors.Is(err, ErrP0FloodSuppressed) {
-				s.logger.Warn("priority_changed fan-out suppressed by P0 flood guard",
+			if errors.Is(err, ErrPriorityFloodSuppressed) {
+				s.logger.Warn("priority_changed fan-out suppressed by flood guard",
 					"tenant_id", tenantID.String(),
 					"finding_id", findingID.String(),
 					"class", string(c.Class),
-					"budget_usage", s.p0Guard.CurrentUsage(tenantID),
+					"budget_usage", s.priorityFloodGuard.CurrentUsage(tenantID),
 				)
 				return
 			}
 			// Any other error (ctx cancelled) → don't publish, but let
 			// caller see via log. Classification is already recorded.
-			s.logger.Warn("P0 flood guard error; skipping publish",
+			s.logger.Warn("priority flood guard error; skipping publish",
 				"finding_id", findingID, "error", err)
 			return
 		}
@@ -308,8 +308,8 @@ func (s *PriorityClassificationService) publishIfChanged(
 		// Refund the slot so a transient publish failure doesn't
 		// permanently burn budget. On retry the caller should re-run
 		// classification → ShouldFanOut → Publish.
-		if s.p0Guard != nil && c.Class == "P0" {
-			s.p0Guard.Refund(tenantID)
+		if s.priorityFloodGuard != nil && c.Class == vulnerability.PriorityP0 {
+			s.priorityFloodGuard.Refund(tenantID)
 		}
 	}
 }

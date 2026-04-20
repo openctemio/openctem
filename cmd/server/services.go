@@ -344,10 +344,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire compensating controls into priority classification (RFC-005 Gap 6)
 	s.PriorityClassification.SetControlLookup(postgres.NewCompensatingControlLookupRepo(deps.DB))
 
-	// anti-flap P0 flood guard. Caps per-tenant P0 fan-out at
-	// 50/hour — protects Jira/outbox from scanner-induced bursts while
-	// keeping the P0 classification itself intact on the dashboard.
-	s.PriorityClassification.SetP0FloodGuard(app.NewP0FloodGuard(app.P0FloodConfig{}))
+	// anti-flap priority flood guard. Caps per-tenant top-class
+	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
+	// bursts while keeping the classification itself intact on the
+	// dashboard.
+	s.PriorityClassification.SetPriorityFloodGuard(app.NewPriorityFloodGuard(app.PriorityFloodConfig{}))
 
 	// B1/B2 reclassification pipeline wiring:
 	//   producers → ControlChangePublisher → MemoryQueue

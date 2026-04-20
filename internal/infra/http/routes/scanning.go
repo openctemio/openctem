@@ -82,10 +82,10 @@ func registerAgentRoutes(
 			r.GET("/scans/{id}", scanSessionHandler.GetScan)
 		}
 
-		// Runtime telemetry (Q3/WS-B #343). Batched EDR/XDR events
-		// from endpoint agents — feeds IOC correlator + CTEM maturity
-		// dashboards. Same agent API-key auth as the other ingest
-		// endpoints; 50 MB body limit for backlogged batches.
+		// Runtime telemetry — batched EDR/XDR events from endpoint
+		// agents. Feeds the IOC correlator and CTEM maturity dashboards.
+		// Same agent API-key auth as the other ingest endpoints; 50 MB
+		// body limit for backlogged batches.
 		if runtimeTelemetryHandler != nil {
 			r.POST("/runtime-telemetry/events", runtimeTelemetryHandler.Ingest, ingestBodyLimit, decompressMiddleware)
 		}
