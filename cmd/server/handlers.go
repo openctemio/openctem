@@ -124,7 +124,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Command: commandHandler,
 		Agent:   newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
 		Ingest:           handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
-		RuntimeTelemetry: handler.NewRuntimeTelemetryHandler(deps.DB.DB, log),
+		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
@@ -311,5 +311,17 @@ func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pente
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
+	return h
+}
+
+// newRuntimeTelemetryHandlerWithCorrelator wires the IOC correlator
+// into the runtime-telemetry ingest path. The handler is nil-safe
+// without a correlator, but leaving it nil kills invariant B6 —
+// telemetry is stored but never matched.
+func newRuntimeTelemetryHandlerWithCorrelator(deps *HandlerDeps, svc *Services, log *logger.Logger) *handler.RuntimeTelemetryHandler {
+	h := handler.NewRuntimeTelemetryHandler(deps.DB.DB, log)
+	if svc.IOCCorrelator != nil {
+		h.SetCorrelator(svc.IOCCorrelator)
+	}
 	return h
 }

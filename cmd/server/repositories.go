@@ -162,6 +162,9 @@ type Repositories struct {
 	PriorityAudit *postgres.PriorityAuditRepository
 	EPSSAdapter   *postgres.EPSSAdapter
 	KEVAdapter    *postgres.KEVAdapter
+
+	// Indicators of Compromise (B6 runtime loop, migration 000156)
+	IOC *postgres.IOCRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -321,6 +324,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		// Priority Classification (RFC-004)
 		PriorityRule:  postgres.NewPriorityRuleRepository(db),
 		PriorityAudit: postgres.NewPriorityAuditRepository(db),
+
+		// B6 runtime loop — IOC catalogue + match log (migration 000156).
+		IOC: postgres.NewIOCRepository(db),
 	}
 }
 

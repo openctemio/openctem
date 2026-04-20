@@ -12,9 +12,9 @@ import (
 )
 
 // FindingRepo is the narrow surface the adapter needs — load +
-// persist. vulnerability.FindingRepository satisfies it structurally.
+// persist. *postgres.FindingRepository satisfies it structurally.
 type FindingRepo interface {
-	GetByID(ctx context.Context, id shared.ID) (*vulnerability.Finding, error)
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error)
 	Update(ctx context.Context, f *vulnerability.Finding) error
 }
 
@@ -49,13 +49,13 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 	tenantID, findingID shared.ID,
 	reason string,
 ) (bool, error) {
-	f, err := a.findings.GetByID(ctx, findingID)
+	f, err := a.findings.GetByID(ctx, tenantID, findingID)
 	if err != nil {
 		return false, fmt.Errorf("load finding: %w", err)
 	}
-	// Tenant guard — defence in depth. The telemetry handler already
-	// scopes to the agent's tenant, but a mislabelled IOC row could
-	// still point at a finding in another tenant. Refuse to act.
+	// Defence in depth — the tenant-scoped GetByID already guarantees
+	// the finding belongs to this tenant, but re-check so a mis-sized
+	// mock in tests can't hide a real bug.
 	if f.TenantID() != tenantID {
 		return false, errors.New("ioc reopen: tenant mismatch")
 	}

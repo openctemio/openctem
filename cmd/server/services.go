@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/app/attack"
 	"github.com/openctemio/api/internal/app/pipeline"
+	iocapp "github.com/openctemio/api/internal/app/ioc"
 	"github.com/openctemio/api/internal/app/reclassify"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/infra/controller"
@@ -184,6 +185,12 @@ type Services struct {
 	ReclassifyQueue       *reclassify.MemoryQueue
 	ControlChangePub      *controller.ControlChangePublisher
 	Reclassifier          *reclassify.Reclassifier
+
+	// B6 runtime loop — indicator catalogue + correlator.
+	// Handlers.go hooks the correlator into RuntimeTelemetryHandler so
+	// every accepted event is matched against active IOCs.
+	IOCRepo    *postgres.IOCRepository
+	IOCCorrelator *iocapp.Correlator
 
 	// bulk-action guard (attached to finding bulk handlers).
 	BulkGuard *app.BulkGuard
@@ -360,6 +367,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Reclassifier = reclassify.NewReclassifier(
 		repos.Finding, repos.Asset, s.PriorityClassification, log,
 	)
+
+	// B6 runtime loop — IOC catalogue + correlator. The correlator is
+	// attached to the runtime telemetry handler in handlers.go so every
+	// accepted event is matched against active IOCs. Match side effects:
+	//   - ioc_matches row (always, per hit)
+	//   - closed finding auto-reopen via reopen_adapter (when IOC links
+	//     back to a finding)
+	s.IOCRepo = repos.IOC
+	iocReopener := iocapp.NewFindingReopener(repos.Finding, s.Audit)
+	s.IOCCorrelator = iocapp.NewCorrelator(s.IOCRepo, iocReopener, log)
 
 	// bulk-action safety rail. Defaults: 500 rows/request,
 	// 10k rows/tenant/hour. Attached to bulk finding handlers below.
