@@ -359,6 +359,16 @@ func (v *NucleiValidator) hasDangerousPatterns(content []byte) bool {
 		"base64 -d", // Base64 decode (often used to obfuscate)
 		"eval(",
 		"exec(",
+		// Nuclei-specific protocols that execute arbitrary code on the
+		// scanner host. These are YAML top-level keys; we block the
+		// lowercased literal to prevent the payload template being
+		// accepted. Scanners MUST be invoked with `-protocols` allowlist
+		// excluding these as a defense in depth — the blocklist here is
+		// the first line.
+		"\ncode:",        // engine: sh|python|... + source (RCE by design)
+		"\nheadless:",    // browser + chrome JS injection (network pivot)
+		"\njavascript:",  // in-template JS execution
+		"protocol: code", // explicit code protocol declaration
 	}
 
 	for _, pattern := range dangerousStrings {
