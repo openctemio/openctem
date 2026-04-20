@@ -25,6 +25,8 @@
 │  Mobile App  │                    │  - /api/v1/pipelines/*              │
 │  CLI         │                    │  - /api/v1/findings/*               │
 └──────────────┘                    │  - /api/v1/agent/* (agent API)      │
+                                    │  - /api/v1/telemetry-events         │
+                                    │  - /api/v1/audit-logs/verify        │
                                     └──────────────┬──────────────────────┘
                                                    │
                         ┌──────────────────────────┼──────────────────────────┐

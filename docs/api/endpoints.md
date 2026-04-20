@@ -187,6 +187,7 @@ Base URL: `http://localhost:8080/api/v1`
 |--------|----------|-------------|------------|
 | GET | `/audit-logs` | List audit logs | `audit:read` |
 | GET | `/audit-logs/stats` | Get audit statistics | `audit:read` |
+| GET | `/audit-logs/verify` | Verify hash-chain integrity. Returns 200 OK when the chain is intact, 409 Conflict with the offending entry when a break is detected. | admin only |
 | GET | `/audit-logs/:id` | Get single audit log | `audit:read` |
 | GET | `/audit-logs/resource/:type/:id` | Get resource history | `audit:read` |
 | GET | `/audit-logs/user/:id` | Get user activity | `audit:read` |
@@ -856,6 +857,32 @@ Admin endpoints for managing bootstrap tokens.
 | GET | `/admin/platform/bootstrap-tokens` | List tokens | Admin |
 | POST | `/admin/platform/bootstrap-tokens` | Create token | Admin |
 | DELETE | `/admin/platform/bootstrap-tokens/{id}` | Revoke token | Admin |
+
+### Runtime Telemetry (Agent API Key Auth)
+
+Endpoint for endpoint-agents (EDR/XDR style) to push runtime observations.
+Feeds the IOC correlator (invariant B6 — runtime hits on known IOCs auto-reopen
+the originating finding).
+
+| Method | Endpoint | Description | Permission |
+|--------|----------|-------------|------------|
+| POST | `/telemetry-events` | Batch-ingest runtime events. Body: `{"events":[{"event_type":"network_connect","observed_at":"<rfc3339>","properties":{"remote_ip":"..."}}]}`. Max 100 events/request, 50 MB body limit. Returns 202 Accepted on partial/full success, 400 when the whole batch is rejected. | Agent API key |
+
+Recognised `event_type` values: `process_start`, `process_stop`,
+`network_connect`, `file_write`, `file_delete`, `dns_query`, `auth_attempt`,
+`kernel_module_load`, `other` (see migration 000155).
+
+### IOC Catalogue (Internal, no public HTTP CRUD yet)
+
+Indicators (IP, domain, URL, file hash, process name, user agent) are matched
+against runtime telemetry to close the CTEM loop. A match on an indicator linked
+to a closed finding auto-reopens it (invariant B6).
+
+As of migration 000156 the catalogue and match log live at
+`pkg/domain/ioc/` + `internal/app/ioc/` + `internal/infra/postgres/ioc_repository.go`.
+HTTP CRUD is not yet wired — indicators are seeded by internal callers
+(scan finding publishers, threat-feed ingest). Public `/iocs` routes will
+land in a follow-up task; do not consume them yet.
 
 ---
 
