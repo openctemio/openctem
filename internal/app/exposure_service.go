@@ -1,10 +1,11 @@
 package app
 
 import (
-	"github.com/openctemio/api/internal/app/outbox"
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/openctemio/api/internal/app/outbox"
 
 	"github.com/google/uuid"
 	"github.com/openctemio/api/pkg/domain/exposure"
@@ -385,29 +386,38 @@ type ChangeStateInput struct {
 	Reason     string `validate:"max=500"`
 }
 
-// ResolveExposure marks an exposure event as resolved.
-func (s *ExposureService) ResolveExposure(ctx context.Context, exposureID, userID, notes string) (*exposure.ExposureEvent, error) {
-	return s.changeState(ctx, exposureID, userID, exposure.StateResolved, notes)
+// ResolveExposure marks an exposure event as resolved. tenantID is
+// required — the lookup is scoped to (tenantID, exposureID) so a caller
+// from tenant A cannot flip an exposure owned by tenant B.
+func (s *ExposureService) ResolveExposure(ctx context.Context, tenantID, exposureID, userID, notes string) (*exposure.ExposureEvent, error) {
+	return s.changeState(ctx, tenantID, exposureID, userID, exposure.StateResolved, notes)
 }
 
 // AcceptExposure marks an exposure event as accepted risk.
-func (s *ExposureService) AcceptExposure(ctx context.Context, exposureID, userID, notes string) (*exposure.ExposureEvent, error) {
-	return s.changeState(ctx, exposureID, userID, exposure.StateAccepted, notes)
+func (s *ExposureService) AcceptExposure(ctx context.Context, tenantID, exposureID, userID, notes string) (*exposure.ExposureEvent, error) {
+	return s.changeState(ctx, tenantID, exposureID, userID, exposure.StateAccepted, notes)
 }
 
 // MarkFalsePositive marks an exposure event as a false positive.
-func (s *ExposureService) MarkFalsePositive(ctx context.Context, exposureID, userID, notes string) (*exposure.ExposureEvent, error) {
-	return s.changeState(ctx, exposureID, userID, exposure.StateFalsePositive, notes)
+func (s *ExposureService) MarkFalsePositive(ctx context.Context, tenantID, exposureID, userID, notes string) (*exposure.ExposureEvent, error) {
+	return s.changeState(ctx, tenantID, exposureID, userID, exposure.StateFalsePositive, notes)
 }
 
-// ReactivateExposure marks an exposure event as active again.
-func (s *ExposureService) ReactivateExposure(ctx context.Context, exposureID, userID string) (*exposure.ExposureEvent, error) {
+// ReactivateExposure marks an exposure event as active again. tenantID
+// is required — prevents IDOR where user in tenant A reactivates a
+// resolved exposure in tenant B (restarts their SLA clock, floods
+// their SOC with re-alerts).
+func (s *ExposureService) ReactivateExposure(ctx context.Context, tenantID, exposureID, userID string) (*exposure.ExposureEvent, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(exposureID)
 	if err != nil {
 		return nil, shared.ErrNotFound
 	}
 
-	event, err := s.repo.GetByID(ctx, parsedID)
+	event, err := s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +452,11 @@ func (s *ExposureService) ReactivateExposure(ctx context.Context, exposureID, us
 	return event, nil
 }
 
-func (s *ExposureService) changeState(ctx context.Context, exposureID, userID string, newState exposure.State, notes string) (*exposure.ExposureEvent, error) {
+func (s *ExposureService) changeState(ctx context.Context, tenantID, exposureID, userID string, newState exposure.State, notes string) (*exposure.ExposureEvent, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	parsedEventID, err := shared.IDFromString(exposureID)
 	if err != nil {
 		return nil, shared.ErrNotFound
@@ -453,7 +467,7 @@ func (s *ExposureService) changeState(ctx context.Context, exposureID, userID st
 		return nil, fmt.Errorf("%w: invalid user ID", shared.ErrValidation)
 	}
 
-	event, err := s.repo.GetByID(ctx, parsedEventID)
+	event, err := s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedEventID)
 	if err != nil {
 		return nil, err
 	}

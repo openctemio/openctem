@@ -445,13 +445,14 @@ func (h *ExposureHandler) BulkIngest(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /exposures/{id}/resolve [post]
 func (h *ExposureHandler) Resolve(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	exposureID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())
 
 	var req ChangeStateRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
 
-	event, err := h.service.ResolveExposure(r.Context(), exposureID, userID, req.Reason)
+	event, err := h.service.ResolveExposure(r.Context(), tenantID, exposureID, userID, req.Reason)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -477,13 +478,14 @@ func (h *ExposureHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /exposures/{id}/accept [post]
 func (h *ExposureHandler) Accept(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	exposureID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())
 
 	var req ChangeStateRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
 
-	event, err := h.service.AcceptExposure(r.Context(), exposureID, userID, req.Reason)
+	event, err := h.service.AcceptExposure(r.Context(), tenantID, exposureID, userID, req.Reason)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -509,13 +511,14 @@ func (h *ExposureHandler) Accept(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /exposures/{id}/false-positive [post]
 func (h *ExposureHandler) MarkFalsePositive(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	exposureID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())
 
 	var req ChangeStateRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
 
-	event, err := h.service.MarkFalsePositive(r.Context(), exposureID, userID, req.Reason)
+	event, err := h.service.MarkFalsePositive(r.Context(), tenantID, exposureID, userID, req.Reason)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -540,10 +543,11 @@ func (h *ExposureHandler) MarkFalsePositive(w http.ResponseWriter, r *http.Reque
 // @Security     BearerAuth
 // @Router       /exposures/{id}/reactivate [post]
 func (h *ExposureHandler) Reactivate(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	exposureID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())
 
-	event, err := h.service.ReactivateExposure(r.Context(), exposureID, userID)
+	event, err := h.service.ReactivateExposure(r.Context(), tenantID, exposureID, userID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
