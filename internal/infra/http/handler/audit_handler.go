@@ -32,6 +32,48 @@ func NewAuditHandler(svc *app.AuditService, v *validator.Validator, log *logger.
 	}
 }
 
+// VerifyChain walks the tenant's audit hash-chain and reports any
+// tamper evidence. Tenant-admin scoped; returns JSON with OK + breaks.
+//
+// GET /api/v1/audit/verify[?limit=10000]
+func (h *AuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := middleware.GetTenantID(r.Context())
+	if tenantIDStr == "" {
+		apierror.Unauthorized("tenant required").WriteJSON(w)
+		return
+	}
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+
+	limit := 0
+	if q := r.URL.Query().Get("limit"); q != "" {
+		// Accept any parseable int; non-positive falls through to service default.
+		if n, err := strconv.Atoi(q); err == nil {
+			limit = n
+		}
+	}
+
+	result, err := h.service.VerifyChain(r.Context(), tenantID, limit)
+	if err != nil {
+		h.logger.Error("audit chain verify failed",
+			"tenant_id", tenantIDStr, "error", err)
+		apierror.InternalServerError("verify failed").WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if !result.OK {
+		// 409 signals "state is inconsistent"; body carries details.
+		w.WriteHeader(http.StatusConflict)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	_ = json.NewEncoder(w).Encode(result)
+}
+
 // =============================================================================
 // Response Types
 // =============================================================================

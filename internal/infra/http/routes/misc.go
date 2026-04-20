@@ -86,6 +86,13 @@ func registerAuditRoutes(
 
 		// Get user activity
 		r.GET("/user/{id}", h.GetUserActivity, middleware.Require(permission.AuditRead))
+
+		// Verify the tamper-evident hash-chain for the tenant's audit
+		// log. Returns 200 { ok: true, ... } when intact, 409 with a
+		// breaks[] list when any entry fails. Admin-only: a compromised
+		// operator should not be able to dismiss a chain break by
+		// running verify with wider permissions than read.
+		r.GET("/verify", h.VerifyChain, middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 }
 

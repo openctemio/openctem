@@ -148,6 +148,103 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 	return nil
 }
 
+// ChainBreak describes a single inconsistency discovered while
+// walking the audit hash-chain for a tenant.
+type ChainBreak struct {
+	AuditLogID    string
+	ChainPosition int64
+	ExpectedHash  string // hash recomputed from the audit_log row
+	ActualHash    string // hash stored in audit_log_chain
+	Reason        string // "hash_mismatch" | "prev_hash_mismatch" | "audit_log_missing"
+}
+
+// ChainVerifyResult is the outcome of a VerifyChain call.
+// OK is true iff Breaks is empty.
+type ChainVerifyResult struct {
+	TenantID string
+	Total    int
+	Verified int
+	Breaks   []ChainBreak
+	OK       bool
+}
+
+// VerifyChain walks the audit_log_chain entries for a tenant in
+// chain_position order and confirms each stored hash matches the hash
+// recomputed from the original audit_logs row. A single tampered audit
+// row surfaces as (at least) one break; downstream entries typically
+// break too because prev_hash no longer links.
+//
+// Limit bounds memory for large tenants; pagination support is a
+// follow-up. Zero/negative limit means "use default 10_000".
+func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limit int) (*ChainVerifyResult, error) {
+	if limit <= 0 {
+		limit = 10_000
+	}
+	entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list chain entries: %w", err)
+	}
+
+	res := &ChainVerifyResult{
+		TenantID: tenantID.String(),
+		Total:    len(entries),
+	}
+	var prevStored string
+	for _, e := range entries {
+		// 1. Fetch the original audit_log. If it's gone, flag it — a
+		//    deleted row is a tamper signal (FK ON DELETE RESTRICT
+		//    blocks it in production but not in every path).
+		log, err := s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
+		if err != nil {
+			res.Breaks = append(res.Breaks, ChainBreak{
+				AuditLogID:    e.AuditLogID.String(),
+				ChainPosition: e.ChainPosition,
+				ExpectedHash:  "",
+				ActualHash:    e.Hash,
+				Reason:        "audit_log_missing",
+			})
+			prevStored = e.Hash
+			continue
+		}
+
+		// 2. Recompute hash from the audit_log fields + stored prev_hash.
+		payload := fmt.Sprintf("%s|%s|%s|%s",
+			log.Action().String(),
+			log.ResourceType().String(),
+			log.ResourceID(),
+			log.Result().String(),
+		)
+		expected := cryptopkg.ComputeAuditChainHash(e.PrevHash, log.ID().String(), payload, log.Timestamp())
+
+		if expected != e.Hash {
+			res.Breaks = append(res.Breaks, ChainBreak{
+				AuditLogID:    e.AuditLogID.String(),
+				ChainPosition: e.ChainPosition,
+				ExpectedHash:  expected,
+				ActualHash:    e.Hash,
+				Reason:        "hash_mismatch",
+			})
+		} else if e.ChainPosition > 1 && e.PrevHash != prevStored {
+			// 3. prev_hash link check. We intentionally do this ONLY
+			//    when the hash itself was OK — a hash_mismatch already
+			//    tells the whole story; prepending a prev-hash break
+			//    would double-count.
+			res.Breaks = append(res.Breaks, ChainBreak{
+				AuditLogID:    e.AuditLogID.String(),
+				ChainPosition: e.ChainPosition,
+				ExpectedHash:  prevStored,
+				ActualHash:    e.PrevHash,
+				Reason:        "prev_hash_mismatch",
+			})
+		} else {
+			res.Verified++
+		}
+		prevStored = e.Hash
+	}
+	res.OK = len(res.Breaks) == 0
+	return res, nil
+}
+
 // appendChainEntry computes the next hash in the per-tenant chain and
 // persists it. Safe to call with any audit_log; rows without a tenant
 // ID are skipped (the chain is per-tenant).
