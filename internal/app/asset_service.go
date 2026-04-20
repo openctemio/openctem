@@ -30,6 +30,12 @@ const (
 
 	// maxRecalcAssets is the maximum number of assets allowed for recalculation.
 	maxRecalcAssets = 100000
+
+	// scopeEvalTimeout bounds how long a detached scope-rule evaluation
+	// goroutine waits on its downstream DB queries. Under a burst of
+	// asset creates (bulk import, ingest pipeline) unbounded context
+	// lets goroutines pile up and drain the process of memory.
+	scopeEvalTimeout = 30 * time.Second
 )
 
 // scoringConfigEntry is a cached scoring config for a tenant.
@@ -307,7 +313,13 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 					s.logger.Error("panic in scope rule evaluation", "asset_id", assetID.String(), "recover", r)
 				}
 			}()
-			if err := s.scopeRuleEvaluator(context.Background(), tid, assetID, tags, nil); err != nil {
+			// Detach from request ctx (evaluator must outlive the HTTP
+			// request) but cap at scopeEvalTimeout — if rule evaluation
+			// hangs on a slow DB query, unbounded goroutines would pile
+			// up under a burst of asset creates and exhaust memory.
+			ctx, cancel := context.WithTimeout(context.Background(), scopeEvalTimeout)
+			defer cancel()
+			if err := s.scopeRuleEvaluator(ctx, tid, assetID, tags, nil); err != nil {
 				s.logger.Warn("scope rule evaluation failed after asset create",
 					"asset_id", assetID.String(), "error", err)
 			}
@@ -902,7 +914,13 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 					s.logger.Error("panic in scope rule evaluation", "asset_id", assetID.String(), "recover", r)
 				}
 			}()
-			if err := s.scopeRuleEvaluator(context.Background(), tid, assetID, tags, nil); err != nil {
+			// Detach from request ctx (evaluator must outlive the HTTP
+			// request) but cap at scopeEvalTimeout — if rule evaluation
+			// hangs on a slow DB query, unbounded goroutines would pile
+			// up under a burst of asset creates and exhaust memory.
+			ctx, cancel := context.WithTimeout(context.Background(), scopeEvalTimeout)
+			defer cancel()
+			if err := s.scopeRuleEvaluator(ctx, tid, assetID, tags, nil); err != nil {
 				s.logger.Warn("scope rule evaluation failed after asset update",
 					"asset_id", assetID.String(), "error", err)
 			}
