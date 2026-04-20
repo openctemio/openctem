@@ -401,3 +401,7 @@ func (m *MockFindingRepoForLifecycle) GetByWorkItemURI(_ context.Context, _ shar
 func (m *MockFindingRepoForLifecycle) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
 	return nil
 }
+
+func (m *MockFindingRepoForLifecycle) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
+	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
+}

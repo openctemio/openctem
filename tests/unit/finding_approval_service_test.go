@@ -293,6 +293,9 @@ func (m *mockVulnerabilityRepository) Count(_ context.Context, _ vulnerability.V
 func (m *mockVulnerabilityRepository) UpsertByCVE(_ context.Context, _ *vulnerability.Vulnerability) error {
 	return nil
 }
+func (m *mockVulnerabilityRepository) UpsertBatchByCVE(_ context.Context, _ []*vulnerability.Vulnerability) error {
+	return nil
+}
 func (m *mockVulnerabilityRepository) ExistsByCVE(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }
@@ -1157,4 +1160,8 @@ func (m *mockFindingRepository) GetByWorkItemURI(_ context.Context, _ shared.ID,
 }
 func (m *mockFindingRepository) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
 	return nil
+}
+
+func (m *mockFindingRepository) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
+	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
 }

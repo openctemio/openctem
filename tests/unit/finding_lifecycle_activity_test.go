@@ -169,6 +169,10 @@ func (s *stubFindingRepo) EnrichBatchByFingerprints(_ context.Context, _ shared.
 	return 0, nil
 }
 
+func (s *stubFindingRepo) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
+	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
+}
+
 // =============================================================================
 // RecordBatchAutoResolved Tests
 // =============================================================================

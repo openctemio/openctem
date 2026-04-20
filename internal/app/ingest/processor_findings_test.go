@@ -1,11 +1,17 @@
 package ingest
 
 import (
+	"context"
+	"database/sql"
 	"strings"
 	"testing"
 
+	"github.com/openctemio/api/pkg/domain/agent"
+	"github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
 	"github.com/openctemio/sdk-go/pkg/ctis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1127,4 +1133,254 @@ func TestMapCTISDataFlowToDomain_MultipleSources(t *testing.T) {
 	assert.Equal(t, "input1", result.Steps[0].Label)
 	assert.Equal(t, "input2", result.Steps[1].Label)
 	assert.Equal(t, "input3", result.Steps[2].Label)
+}
+
+// =============================================================================
+// stubFindingRepository — minimal in-memory stub for ProcessBatch tests
+// =============================================================================
+
+type stubFindingRepository struct {
+	created []*vulnerability.Finding
+}
+
+func (s *stubFindingRepository) CheckFingerprintsExist(_ context.Context, _ shared.ID, fingerprints []string) (map[string]bool, error) {
+	m := make(map[string]bool, len(fingerprints))
+	for _, fp := range fingerprints {
+		m[fp] = false // all are new
+	}
+	return m, nil
+}
+
+func (s *stubFindingRepository) CreateBatchWithResult(_ context.Context, findings []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
+	s.created = append(s.created, findings...)
+	return &vulnerability.BatchCreateResult{Created: len(findings)}, nil
+}
+
+func (s *stubFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]shared.ID, error) {
+	return map[string]shared.ID{}, nil
+}
+
+// Remaining interface stubs (unused by ProcessBatch)
+func (s *stubFindingRepository) Create(_ context.Context, _ *vulnerability.Finding) error { return nil }
+func (s *stubFindingRepository) CreateInTx(_ context.Context, _ *sql.Tx, _ *vulnerability.Finding) error {
+	return nil
+}
+func (s *stubFindingRepository) CreateBatch(_ context.Context, _ []*vulnerability.Finding) error {
+	return nil
+}
+func (s *stubFindingRepository) GetByID(_ context.Context, _, _ shared.ID) (*vulnerability.Finding, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) GetByIDs(_ context.Context, _ shared.ID, _ []shared.ID) ([]*vulnerability.Finding, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) Update(_ context.Context, _ *vulnerability.Finding) error {
+	return nil
+}
+func (s *stubFindingRepository) Delete(_ context.Context, _, _ shared.ID) error { return nil }
+func (s *stubFindingRepository) List(_ context.Context, _ vulnerability.FindingFilter, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+	return pagination.Result[*vulnerability.Finding]{}, nil
+}
+func (s *stubFindingRepository) ListByAssetID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+	return pagination.Result[*vulnerability.Finding]{}, nil
+}
+func (s *stubFindingRepository) ListByVulnerabilityID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+	return pagination.Result[*vulnerability.Finding]{}, nil
+}
+func (s *stubFindingRepository) ListByComponentID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+	return pagination.Result[*vulnerability.Finding]{}, nil
+}
+func (s *stubFindingRepository) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
+	return 0, nil
+}
+func (s *stubFindingRepository) CountByAssetID(_ context.Context, _, _ shared.ID) (int64, error) {
+	return 0, nil
+}
+func (s *stubFindingRepository) CountOpenByAssetID(_ context.Context, _, _ shared.ID) (int64, error) {
+	return 0, nil
+}
+func (s *stubFindingRepository) GetByFingerprint(_ context.Context, _ shared.ID, _ string) (*vulnerability.Finding, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) ExistsByFingerprint(_ context.Context, _ shared.ID, _ string) (bool, error) {
+	return false, nil
+}
+func (s *stubFindingRepository) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _ string) (int64, error) {
+	return 0, nil
+}
+func (s *stubFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Context, _ shared.ID, _ map[string]string) (int64, error) {
+	return 0, nil
+}
+func (s *stubFindingRepository) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]int64, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID) error {
+	return nil
+}
+func (s *stubFindingRepository) DeleteByAssetID(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
+func (s *stubFindingRepository) DeleteByScanID(_ context.Context, _ shared.ID, _ string) error {
+	return nil
+}
+func (s *stubFindingRepository) GetStats(_ context.Context, _ shared.ID, _ *shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) CountBySeverityForScan(_ context.Context, _ shared.ID, _ string) (vulnerability.SeverityCounts, error) {
+	return vulnerability.SeverityCounts{}, nil
+}
+func (s *stubFindingRepository) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) ExpireFeatureBranchFindings(_ context.Context, _ shared.ID, _ int) (int64, error) {
+	return 0, nil
+}
+func (s *stubFindingRepository) ExistsByIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]bool, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) GetByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]*vulnerability.Finding, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) EnrichBatchByFingerprints(_ context.Context, _ shared.ID, _ []*vulnerability.Finding, _ string) (int64, error) {
+	return 0, nil
+}
+func (s *stubFindingRepository) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
+	return pagination.Result[*vulnerability.FindingGroup]{}, nil
+}
+func (s *stubFindingRepository) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+	return 0, nil
+}
+func (s *stubFindingRepository) FindRelatedCVEs(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter) ([]vulnerability.RelatedCVE, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) ListByStatusAndAssets(_ context.Context, _ shared.ID, _ vulnerability.FindingStatus, _ []shared.ID) ([]*vulnerability.Finding, error) {
+	return nil, nil
+}
+func (s *stubFindingRepository) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
+	return nil
+}
+func (s *stubFindingRepository) GetByWorkItemURI(_ context.Context, _ shared.ID, _ string) (*vulnerability.Finding, error) {
+	return nil, nil
+}
+
+func (s *stubFindingRepository) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
+	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
+}
+
+// =============================================================================
+// helpers for ProcessBatch cveMap tests
+// =============================================================================
+
+// newTestFindingProcessor creates a FindingProcessor backed by a stubFindingRepository.
+func newTestFindingProcessor(t *testing.T) (*FindingProcessor, *stubFindingRepository) {
+	t.Helper()
+	repo := &stubFindingRepository{}
+	log := logger.NewNop()
+	p := NewFindingProcessor(repo, nil, nil, log)
+	return p, repo
+}
+
+// buildMinimalReport returns a *ctis.Report with a single finding that has the given CVE ID.
+func buildMinimalReport(cveID string) *ctis.Report {
+	return &ctis.Report{
+		Metadata: ctis.ReportMetadata{ID: "scan-test-001"},
+		Tool:     &ctis.Tool{Name: "test-tool"},
+		Findings: []ctis.Finding{
+			{
+				RuleID:   "SCA-001",
+				Title:    "Vulnerable dependency",
+				Severity: "high",
+				Vulnerability: &ctis.VulnerabilityDetails{
+					CVEID: cveID,
+				},
+			},
+		},
+	}
+}
+
+// buildMinimalReportNoVuln returns a *ctis.Report with a single finding that has no Vulnerability block.
+func buildMinimalReportNoVuln() *ctis.Report {
+	return &ctis.Report{
+		Metadata: ctis.ReportMetadata{ID: "scan-test-002"},
+		Tool:     &ctis.Tool{Name: "test-tool"},
+		Findings: []ctis.Finding{
+			{
+				RuleID:   "SAST-001",
+				Title:    "XSS vulnerability",
+				Severity: "medium",
+				// Vulnerability is nil
+			},
+		},
+	}
+}
+
+// newTestAgent returns a minimal *agent.Agent for use in ProcessBatch tests.
+func newTestAgent(t *testing.T, tenantID shared.ID) *agent.Agent {
+	t.Helper()
+	agt, err := agent.NewAgent(tenantID, "test-agent", agent.AgentTypeRunner, "", nil, nil, agent.ExecutionModeStandalone)
+	require.NoError(t, err)
+	return agt
+}
+
+// =============================================================================
+// ProcessBatch cveMap stamping tests
+// =============================================================================
+
+func TestFindingProcessor_StampsVulnerabilityIDFromMap(t *testing.T) {
+	p, repo := newTestFindingProcessor(t)
+	tenantID := shared.NewID()
+	assetID := shared.NewID()
+	agt := newTestAgent(t, tenantID)
+
+	cveID := "CVE-2099-3001"
+	vulnID := shared.NewID()
+	cveMap := map[string]shared.ID{cveID: vulnID}
+
+	report := buildMinimalReport(cveID)
+	assetMap := map[string]shared.ID{"asset-ref": assetID}
+	output := &Output{}
+
+	err := p.ProcessBatch(context.Background(), agt, tenantID, report, assetMap, branch.BranchTypeRules{}, output, cveMap)
+	require.NoError(t, err)
+	require.Len(t, repo.created, 1)
+
+	got := repo.created[0]
+	require.NotNil(t, got.VulnerabilityID(), "VulnerabilityID should be set when CVE is in cveMap")
+	assert.Equal(t, vulnID, *got.VulnerabilityID())
+}
+
+func TestFindingProcessor_NoStampWhenCVENotInMap(t *testing.T) {
+	p, repo := newTestFindingProcessor(t)
+	tenantID := shared.NewID()
+	assetID := shared.NewID()
+	agt := newTestAgent(t, tenantID)
+
+	report := buildMinimalReport("CVE-2099-3002")
+	assetMap := map[string]shared.ID{"asset-ref": assetID}
+	output := &Output{}
+
+	// cveMap does not contain CVE-2099-3002
+	err := p.ProcessBatch(context.Background(), agt, tenantID, report, assetMap, branch.BranchTypeRules{}, output, map[string]shared.ID{})
+	require.NoError(t, err)
+	require.Len(t, repo.created, 1)
+	assert.Nil(t, repo.created[0].VulnerabilityID(), "VulnerabilityID should not be set when CVE is absent from cveMap")
+}
+
+func TestFindingProcessor_NoStampWhenVulnerabilityAbsent(t *testing.T) {
+	p, repo := newTestFindingProcessor(t)
+	tenantID := shared.NewID()
+	assetID := shared.NewID()
+	agt := newTestAgent(t, tenantID)
+
+	report := buildMinimalReportNoVuln()
+	assetMap := map[string]shared.ID{"asset-ref": assetID}
+	output := &Output{}
+
+	err := p.ProcessBatch(context.Background(), agt, tenantID, report, assetMap, branch.BranchTypeRules{}, output, map[string]shared.ID{})
+	require.NoError(t, err)
+	require.Len(t, repo.created, 1)
+	assert.Nil(t, repo.created[0].VulnerabilityID(), "VulnerabilityID should not be set when finding has no Vulnerability block")
 }

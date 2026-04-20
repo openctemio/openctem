@@ -85,6 +85,7 @@ func (p *FindingProcessor) ProcessBatch(
 	assetMap map[string]shared.ID,
 	tenantRules branch.BranchTypeRules,
 	output *Output,
+	cveMap map[string]shared.ID,
 ) error {
 	if len(report.Findings) == 0 {
 		return nil
@@ -222,7 +223,7 @@ func (p *FindingProcessor) ProcessBatch(
 				existingSnippets[fm.fingerprint] = fm.finding.Location.Snippet
 			}
 			// Build Finding from scan data for enrichment
-			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint)
+			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, cveMap)
 			if err == nil {
 				existingNewData = append(existingNewData, newData)
 			} else {
@@ -230,7 +231,7 @@ func (p *FindingProcessor) ProcessBatch(
 				unenrichedFingerprints = append(unenrichedFingerprints, fm.fingerprint)
 			}
 		} else {
-			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint)
+			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, cveMap)
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
 				output.FindingsSkipped++
@@ -478,6 +479,7 @@ func (p *FindingProcessor) buildFinding(
 	report *ctis.Report,
 	ctisFinding *ctis.Finding,
 	fp string,
+	cveMap map[string]shared.ID,
 ) (*vulnerability.Finding, error) {
 	// Map severity
 	sev := vulnerability.SeverityMedium
@@ -554,6 +556,13 @@ func (p *FindingProcessor) buildFinding(
 
 	// Link to component via PURL (for SCA findings)
 	p.linkFindingToComponent(ctx, f, ctisFinding)
+
+	// Stamp VulnerabilityID from cveMap if the finding references a known CVE
+	if ctisFinding.Vulnerability != nil {
+		if id, ok := cveMap[ctisFinding.Vulnerability.CVEID]; ok && !id.IsZero() {
+			f.SetVulnerabilityID(id)
+		}
+	}
 
 	return f, nil
 }
