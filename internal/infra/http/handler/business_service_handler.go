@@ -33,12 +33,7 @@ func NewBusinessServiceHandler(db *sql.DB, log *logger.Logger) *BusinessServiceH
 func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
-	}
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 
 	var total int64
@@ -69,7 +64,7 @@ func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	items := make([]BusinessServiceResponse, 0, cappedPerPage(perPage))
+	items := make([]BusinessServiceResponse, 0, perPage)
 	for rows.Next() {
 		bs, err := scanBusinessService(rows)
 		if err != nil {

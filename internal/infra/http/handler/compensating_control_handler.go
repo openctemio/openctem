@@ -110,12 +110,7 @@ func (h *CompensatingControlHandler) enqueueReclassifyForAssets(
 func (h *CompensatingControlHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
-	}
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 
 	// Count total
@@ -146,7 +141,7 @@ func (h *CompensatingControlHandler) List(w http.ResponseWriter, r *http.Request
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]CompensatingControlResponse, 0, cappedPerPage(perPage))
+	items := make([]CompensatingControlResponse, 0, perPage)
 	for rows.Next() {
 		var c CompensatingControlResponse
 		var desc, testResult, testEvidence, createdBy sql.NullString

@@ -178,10 +178,32 @@ func parseQueryInt(s string, defaultVal int) int {
 // statically at every make([]T, 0, cappedPerPage(...)) call site.
 const MaxPerPage = 100
 
-// cappedPerPage enforces [1, MaxPerPage] on a user-supplied per_page
-// value before the value is used as a make() capacity. Handlers MUST
-// use this helper for slice pre-allocation so an attacker can't force
-// the process to allocate hundreds of MB from a single request.
+// parseQueryIntBounded parses a query parameter as an integer and
+// clamps the result to [minVal, maxVal]. Returns defaultVal when
+// input is empty or invalid.
+//
+// Preferred over parseQueryInt+manual-clamp for values that end up in
+// make() / array sizing — CodeQL's data-flow analyser recognises the
+// bound at the parse site, preventing go/uncontrolled-allocation-size
+// false positives.
+func parseQueryIntBounded(s string, defaultVal, minVal, maxVal int) int {
+	if minVal > maxVal {
+		return defaultVal
+	}
+	val := parseQueryInt(s, defaultVal)
+	if val < minVal {
+		return minVal
+	}
+	if val > maxVal {
+		return maxVal
+	}
+	return val
+}
+
+// cappedPerPage enforces [1, MaxPerPage] on an already-parsed per_page
+// value before it's used as a make() capacity. Kept for call sites
+// that parse `per_page` separately (legacy pattern); new code should
+// use parseQueryIntBounded directly.
 func cappedPerPage(perPage int) int {
 	if perPage < 1 {
 		return 1
