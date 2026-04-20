@@ -147,7 +147,6 @@ func TestCTEM_F3_PriorityClassDrivesSLADeadline(t *testing.T) {
 type recordingReclassifier struct {
 	calls     int32
 	lastReq   controller.ReclassifyRequest
-	nCalls    int32
 	perCall   int
 	returnErr error
 }

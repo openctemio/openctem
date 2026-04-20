@@ -104,9 +104,7 @@ func computeHMAC(body []byte, secret string) string {
 // returns the lowercase hex portion. Returns "" on malformed input.
 func normalizeSig(h string) string {
 	h = strings.TrimSpace(h)
-	if strings.HasPrefix(h, "sha256=") {
-		h = strings.TrimPrefix(h, "sha256=")
-	}
+	h = strings.TrimPrefix(h, "sha256=")
 	h = strings.ToLower(h)
 	if _, err := hex.DecodeString(h); err != nil {
 		return ""

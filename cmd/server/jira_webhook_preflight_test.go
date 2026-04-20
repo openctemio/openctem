@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"testing"
 
@@ -19,29 +18,11 @@ import (
 //   3. secret empty + Jira exists + dev → WARN (no error)
 //   4. secret empty + Jira exists + production → ErrJiraWebhookSecretMissing
 
-// fakeProbe implements jiraIntegrationProbe. It is NOT a full sql.DB
-// stand-in — it only honours the single query the preflight issues.
-type fakeProbe struct {
-	calls int
-	// returnRow: true  → QueryRowContext returns a row that scans into dummy=1
-	//            false → QueryRowContext returns sql.ErrNoRows on Scan
-	returnRow bool
-}
-
-func (f *fakeProbe) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Row {
-	f.calls++
-	// database/sql has no public constructor for *sql.Row; test our logic by
-	// opening a throwaway in-memory-ish connection. We cheat by using a
-	// helper DB that answers the exact query we want via sql.Open + a
-	// registered driver. Too much plumbing — instead, return nil so the
-	// preflight's Scan panics if ever called... that is also too brittle.
-	//
-	// The cleanest move: the preflight only cares about Scan's outcome.
-	// We give it a *sql.Row whose only contract is what Scan returns.
-	// database/sql exposes no way to build one, so we switch the probe
-	// interface to expose Scan directly via a "scanner" abstraction.
-	panic("unreachable — the test must not call this path; use scannerProbe instead")
-}
+// NOTE: an earlier design iteration used a fakeProbe / scannerProbe
+// indirection to stub out sql.Row. It was removed once the preflight's
+// branching logic was unit-tested directly against its exported
+// sentinel errors — the DB layer is covered by the integration suite
+// when the harness lands.
 
 // scannerProbe is a second layer of indirection: it bypasses *sql.Row
 // entirely. We rewrite the preflight to use it, keeping the production

@@ -231,8 +231,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// B1/B2 priority reclassification sweep — drains the in-memory
 	// queue populated by ControlChangePublisher (and future EPSS/KEV/
 	// rule producers) and re-runs ClassifyFinding on the scoped set.
-	// Nil-safe if the pipeline isn't wired (queue/reclassifier nil).
-	if svc != nil && svc.ReclassifyQueue != nil && svc.Reclassifier != nil {
+	// Nil-safe only against a missing queue/reclassifier — svc itself
+	// is a required argument to NewWorkers (an earlier redundant
+	// svc != nil check confused staticcheck; the function dereferences
+	// svc unconditionally above this point).
+	if svc.ReclassifyQueue != nil && svc.Reclassifier != nil {
 		w.ControllerManager.Register(controller.NewPriorityReclassifyController(
 			svc.ReclassifyQueue,
 			svc.Reclassifier,
