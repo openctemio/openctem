@@ -56,7 +56,7 @@ type ingestResponse struct {
 	Errors   []string `json:"errors,omitempty"`
 }
 
-// Ingest handles POST /api/v1/runtime-telemetry/events.
+// Ingest handles POST /api/v1/telemetry-events.
 //
 // The body is always a batch (array wrapped in {"events": [...]}) so
 // the contract does not branch between single/multi. Size cap is 100

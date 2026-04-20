@@ -87,7 +87,7 @@ func registerAgentRoutes(
 		// Same agent API-key auth as the other ingest endpoints; 50 MB
 		// body limit for backlogged batches.
 		if runtimeTelemetryHandler != nil {
-			r.POST("/runtime-telemetry/events", runtimeTelemetryHandler.Ingest, ingestBodyLimit, decompressMiddleware)
+			r.POST("/telemetry-events", runtimeTelemetryHandler.Ingest, ingestBodyLimit, decompressMiddleware)
 		}
 	}, baseMiddleware)
 }
