@@ -287,6 +287,84 @@ func TestCorrelator_MultipleHitsEachRecorded(t *testing.T) {
 	}
 }
 
+// countingRepo tracks FindActiveByValues call count so batch tests
+// can prove N events → 1 DB lookup.
+type countingRepo struct {
+	*fakeIOCRepo
+	lookupCalls int32
+}
+
+func (c *countingRepo) FindActiveByValues(ctx context.Context, tenantID shared.ID, cands []iocdom.Candidate) ([]*iocdom.Indicator, error) {
+	atomic.AddInt32(&c.lookupCalls, 1)
+	return c.fakeIOCRepo.FindActiveByValues(ctx, tenantID, cands)
+}
+
+func TestCorrelateBatch_SingleLookupForNEvents(t *testing.T) {
+	ind := makeIOC(iocdom.TypeIP, "185.220.101.42", nil)
+	inner := &fakeIOCRepo{indicators: []*iocdom.Indicator{ind}}
+	repo := &countingRepo{fakeIOCRepo: inner}
+	c := NewCorrelator(repo, &fakeReopener{}, logger.NewNop())
+
+	events := make([]TelemetryEvent, 10)
+	for i := range events {
+		events[i] = TelemetryEvent{
+			ID:         shared.NewID(),
+			Properties: map[string]any{telemetry.PropRemoteIP: "185.220.101.42"},
+		}
+	}
+
+	result, err := c.CorrelateBatch(context.Background(), shared.NewID(), events)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if atomic.LoadInt32(&repo.lookupCalls) != 1 {
+		t.Fatalf("want exactly 1 lookup for 10 events (dedup + batch), got %d", repo.lookupCalls)
+	}
+	if len(result) != 10 {
+		t.Fatalf("want per-event results for all 10 hits, got %d", len(result))
+	}
+	if len(inner.matches) != 10 {
+		t.Fatalf("match rows = %d, want 10", len(inner.matches))
+	}
+}
+
+func TestCorrelateBatch_MixedEvents_OnlyHitsInResult(t *testing.T) {
+	ind := makeIOC(iocdom.TypeIP, "1.2.3.4", nil)
+	repo := &fakeIOCRepo{indicators: []*iocdom.Indicator{ind}}
+	c := NewCorrelator(repo, &fakeReopener{}, logger.NewNop())
+
+	events := []TelemetryEvent{
+		{ID: shared.NewID(), Properties: map[string]any{telemetry.PropRemoteIP: "1.2.3.4"}},    // hit
+		{ID: shared.NewID(), Properties: map[string]any{telemetry.PropRemoteIP: "9.9.9.9"}},    // miss
+		{ID: shared.NewID(), Properties: map[string]any{telemetry.PropProcessName: "systemd"}}, // miss
+	}
+
+	result, err := c.CorrelateBatch(context.Background(), shared.NewID(), events)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("want 1 event in result (the hit), got %d", len(result))
+	}
+	if len(repo.matches) != 1 {
+		t.Fatalf("match rows = %d, want 1", len(repo.matches))
+	}
+}
+
+func TestCorrelateBatch_EmptySlice_NoLookup(t *testing.T) {
+	inner := &fakeIOCRepo{}
+	repo := &countingRepo{fakeIOCRepo: inner}
+	c := NewCorrelator(repo, &fakeReopener{}, logger.NewNop())
+
+	_, err := c.CorrelateBatch(context.Background(), shared.NewID(), nil)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if atomic.LoadInt32(&repo.lookupCalls) != 0 {
+		t.Fatalf("empty batch must not hit DB; got %d calls", repo.lookupCalls)
+	}
+}
+
 func TestCorrelator_LookupErrorReturned(t *testing.T) {
 	// A lookup failure is fatal — the caller needs to know ingest
 	// didn't surface any correlation results.

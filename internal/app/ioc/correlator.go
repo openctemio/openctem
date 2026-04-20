@@ -102,6 +102,89 @@ func (c *Correlator) Correlate(
 	return hits, nil
 }
 
+// CorrelateBatch correlates N events in ONE IOC lookup instead of N.
+// The handler should use this for agent batches (up to 100 events) so
+// the ingest path is not N DB roundtrips.
+//
+// Per-event error isolation preserved: a hit on event A that fails
+// its reopen never blocks the match row on event B.
+//
+// Returns a map keyed by telemetry event ID → the indicators that
+// matched THAT event, so callers can build per-event metrics.
+func (c *Correlator) CorrelateBatch(
+	ctx context.Context,
+	tenantID shared.ID,
+	events []TelemetryEvent,
+) (map[shared.ID][]*iocdom.Indicator, error) {
+	if len(events) == 0 {
+		return nil, nil
+	}
+
+	// Step 1 — extract candidates from every event, deduping so the
+	// lookup query stays small even when all events share the same IP.
+	// candidatesByEvent lets us attribute each hit back to the event(s)
+	// that produced it.
+	seen := make(map[string]iocdom.Candidate) // dedup key: "type:normalized"
+	candidatesByEvent := make(map[shared.ID][]iocdom.Candidate, len(events))
+	for _, ev := range events {
+		cs := ExtractCandidates(ev)
+		if len(cs) == 0 || ev.ID.IsZero() {
+			continue
+		}
+		candidatesByEvent[ev.ID] = cs
+		for _, cand := range cs {
+			key := string(cand.Type) + ":" + cand.Normalized
+			seen[key] = cand
+		}
+	}
+	if len(seen) == 0 {
+		return nil, nil
+	}
+
+	// Step 2 — single DB lookup across all unique candidates.
+	uniq := make([]iocdom.Candidate, 0, len(seen))
+	for _, c := range seen {
+		uniq = append(uniq, c)
+	}
+	allHits, err := c.iocs.FindActiveByValues(ctx, tenantID, uniq)
+	if err != nil {
+		return nil, fmt.Errorf("ioc batch lookup: %w", err)
+	}
+	if len(allHits) == 0 {
+		return map[shared.ID][]*iocdom.Indicator{}, nil
+	}
+
+	// Step 3 — build a per-(type, normalized) → indicator index so we
+	// can attribute each indicator to the events that matched it.
+	byKey := make(map[string]*iocdom.Indicator, len(allHits))
+	for _, ind := range allHits {
+		byKey[string(ind.Type)+":"+ind.Normalized] = ind
+	}
+
+	// Step 4 — for each event, fire handleHit on the indicators that
+	// match that specific event's candidates.
+	result := make(map[shared.ID][]*iocdom.Indicator, len(events))
+	for _, ev := range events {
+		cs := candidatesByEvent[ev.ID]
+		if len(cs) == 0 {
+			continue
+		}
+		var eventHits []*iocdom.Indicator
+		for _, cand := range cs {
+			ind, ok := byKey[string(cand.Type)+":"+cand.Normalized]
+			if !ok {
+				continue
+			}
+			eventHits = append(eventHits, ind)
+			c.handleHit(ctx, tenantID, ev, ind)
+		}
+		if len(eventHits) > 0 {
+			result[ev.ID] = eventHits
+		}
+	}
+	return result, nil
+}
+
 // handleHit records the match row and drives the reopen path when
 // the IOC links back to a finding. Per-match failures are logged but
 // not propagated — the rest of the batch must keep processing.

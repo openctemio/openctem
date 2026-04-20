@@ -97,14 +97,19 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 	// the obvious optimisation once ingest rate demands it; the per-row
 	// variant keeps the error message list precise for now.
 	//
-	// RETURNING id so the correlator (if wired) can link any ioc_matches
-	// row it records to the originating telemetry event.
+	// RETURNING id so the correlator can link any ioc_matches row it
+	// records to the originating telemetry event.
 	const q = `
 		INSERT INTO runtime_telemetry_events
 		       (tenant_id, agent_id, endpoint_asset_id, event_type, severity, observed_at, properties)
 		VALUES ($1, $2, NULLIF($3,'')::uuid, $4, COALESCE(NULLIF($5,''),'info'), $6, $7)
 		RETURNING id
 	`
+
+	// Accumulate accepted events so we can correlate the WHOLE batch in
+	// one DB lookup instead of one lookup per event (N → 1 roundtrips).
+	var accepted []iocapp.TelemetryEvent
+
 	for i, ev := range req.Events {
 		if ev.EventType == "" {
 			resp.Rejected++
@@ -145,25 +150,27 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 		}
 		resp.Accepted++
 
-		// B6 wire: forward the accepted event to the IOC correlator.
-		// Errors here are logged but never block ingest — the event is
-		// durably stored; correlation is best-effort on top.
-		if h.correlator != nil && agt.TenantID != nil {
-			eventID, parseErr := shared.IDFromString(eventIDStr)
-			if parseErr == nil {
-				_, corrErr := h.correlator.Correlate(r.Context(), *agt.TenantID, iocapp.TelemetryEvent{
-					ID:         eventID,
-					EventType:  ev.EventType,
-					Properties: ev.Properties,
-				})
-				if corrErr != nil {
-					h.logger.Warn("ioc correlate failed",
-						"tenant_id", agt.TenantID.String(),
-						"event_id", eventIDStr,
-						"error", corrErr,
-					)
-				}
-			}
+		if eventID, parseErr := shared.IDFromString(eventIDStr); parseErr == nil {
+			accepted = append(accepted, iocapp.TelemetryEvent{
+				ID:         eventID,
+				EventType:  ev.EventType,
+				Properties: ev.Properties,
+			})
+		}
+	}
+
+	// B6 wire: ONE batch correlate call for the whole accepted slice.
+	// Correlator dedups candidates internally and runs a single
+	// FindActiveByValues query; errors here are logged but never block
+	// ingest — events are durably stored and correlation is best-effort
+	// on top.
+	if h.correlator != nil && agt.TenantID != nil && len(accepted) > 0 {
+		if _, corrErr := h.correlator.CorrelateBatch(r.Context(), *agt.TenantID, accepted); corrErr != nil {
+			h.logger.Warn("ioc batch correlate failed",
+				"tenant_id", agt.TenantID.String(),
+				"event_count", len(accepted),
+				"error", corrErr,
+			)
 		}
 	}
 
