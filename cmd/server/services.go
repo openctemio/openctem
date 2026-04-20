@@ -178,14 +178,14 @@ type Services struct {
 	// Priority Classification (RFC-004)
 	PriorityClassification *app.PriorityClassificationService
 
-	// B1/B2 (Q1/WS-C) reclassification pipeline — memory queue,
+	// B1/B2 reclassification pipeline — memory queue,
 	// publisher (called from control CRUD), reclassifier (consumed
 	// by the PriorityReclassifyController registered in workers.go).
 	ReclassifyQueue       *reclassify.MemoryQueue
 	ControlChangePub      *controller.ControlChangePublisher
 	Reclassifier          *reclassify.Reclassifier
 
-	// Q2/WS-E bulk-action guard (attached to finding bulk handlers).
+	// bulk-action guard (attached to finding bulk handlers).
 	BulkGuard *app.BulkGuard
 
 	// Pentest
@@ -344,7 +344,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire compensating controls into priority classification (RFC-005 Gap 6)
 	s.PriorityClassification.SetControlLookup(postgres.NewCompensatingControlLookupRepo(deps.DB))
 
-	// Q4/WS-C: anti-flap P0 flood guard. Caps per-tenant P0 fan-out at
+	// anti-flap P0 flood guard. Caps per-tenant P0 fan-out at
 	// 50/hour — protects Jira/outbox from scanner-induced bursts while
 	// keeping the P0 classification itself intact on the dashboard.
 	s.PriorityClassification.SetP0FloodGuard(app.NewP0FloodGuard(app.P0FloodConfig{}))
@@ -360,7 +360,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.Finding, repos.Asset, s.PriorityClassification, log,
 	)
 
-	// Q2/WS-E bulk-action safety rail. Defaults: 500 rows/request,
+	// bulk-action safety rail. Defaults: 500 rows/request,
 	// 10k rows/tenant/hour. Attached to bulk finding handlers below.
 	s.BulkGuard = app.NewBulkGuard(app.BulkGuardConfig{})
 
@@ -565,7 +565,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// when a finding transitions to fix_applied and the user requests scan-based verification.
 	s.FindingActions.SetVerificationScanTrigger(app.NewVerificationScanTriggerAdapter(s.Scan))
 
-	// B3 wire (Q1/WS-E): when a Jira "Done" webhook arrives and the
+	// B3 wire: when a Jira "Done" webhook arrives and the
 	// finding transitions to fix_applied, automatically trigger a
 	// verification scan via FindingActions. Per-finding 24h cooldown
 	// prevents scanner thrash from chatty Jira automation rules.
@@ -652,7 +652,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire priority classification into ingest (RFC-004)
 	s.Ingest.SetPriorityClassifier(s.PriorityClassification)
 
-	// F3 wire (Q1/WS-C): every ingest now computes an SLA deadline using
+	// F3 wire: every ingest now computes an SLA deadline using
 	// priority class (falls back to severity) right after classification.
 	// Without this wire the sla_deadline column stays NULL on new rows
 	// and the sla_escalation controller has nothing to breach on.

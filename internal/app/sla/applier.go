@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
-// F3 wire (Q1/WS-C): concrete Applier that the ingest processor calls
+// F3 wire: concrete Applier that the ingest processor calls
 // to compute and attach a deadline to each newly-classified finding.
 //
 // This is the "wire" that turns F3 from a domain primitive

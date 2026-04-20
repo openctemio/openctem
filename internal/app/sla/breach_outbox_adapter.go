@@ -1,4 +1,4 @@
-// B4 wire (Q1/WS-E): SLA breach events → notification outbox. Lives
+// B4 wire: SLA breach events → notification outbox. Lives
 // alongside sla.Service/Applier so a single `sla` package owns both
 // deadline computation and breach fan-out. Previously a separate
 // `slabreach` subpackage to dodge an (outdated) import-cycle concern.

@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
-// Q2/WS-D post-refactor: Retest dispatches a job to an agent via the
+// post-refactor: Retest dispatches a job to an agent via the
 // ValidationDispatcher interface. The fake dispatcher returns canned
 // Evidence so we can pin the finding-status reconciliation.
 

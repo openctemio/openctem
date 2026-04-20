@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Q2/WS-C: priority-aware queue ordering.
+// priority-aware queue ordering.
 //
 // The existing platform-job queue (scan retries, ingest backlog,
 // notification fan-out) pulls by FIFO. After F3 + reclassify sweep

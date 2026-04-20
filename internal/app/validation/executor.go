@@ -2,7 +2,7 @@
 // WHAT counts as evidence, WHO gates it — but NOT HOW a technique
 // runs.
 //
-// Q2/WS-D, architectural note: OpenCTEM is agent-based. The API is an
+// Architectural note: OpenCTEM is agent-based. The API is an
 // ORCHESTRATOR, not an executor. Actual exploit execution, cloud
 // probes, and adversary emulation run on the agent that lives in the
 // tenant's network, has tenant-local credentials, and can legally

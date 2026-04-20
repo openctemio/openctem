@@ -6,7 +6,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// Q4/WS-E: TryAutoComplete invariants. The campaign must advance to
+// TryAutoComplete invariants. The campaign must advance to
 // completed ONLY when (1) all findings are resolved AND (2) the
 // current state permits the transition.
 

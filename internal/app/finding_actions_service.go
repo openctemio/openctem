@@ -63,7 +63,7 @@ func NewFindingActionsService(
 // that through to TransitionStatusWithChecklist, which will reject the
 // transition with ErrValidation if a checklist was required.
 //
-// F4 (Q2/WS-E): gates FixApplied → Resolved / Resolved → Verified on the
+// F4: gates FixApplied → Resolved / Resolved → Verified on the
 // tenant's verification checklist. Checklist rows are owned by the HTTP
 // handler (raw SQL on finding_verification_checklists); this loader is
 // the read-only backdoor the service layer uses to enforce the gate

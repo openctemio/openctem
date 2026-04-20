@@ -2,7 +2,7 @@ package asset
 
 import "testing"
 
-// Q3/WS-B: first-class endpoint asset type tests. Locks the minimum
+// first-class endpoint asset type tests. Locks the minimum
 // contract so regressions in the enum / category / normalizer are
 // caught immediately.
 

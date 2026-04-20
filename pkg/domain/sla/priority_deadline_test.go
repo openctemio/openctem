@@ -7,7 +7,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// F3 (Q1/WS-C): priority class must drive SLA deadline; severity is the
+// F3: priority class must drive SLA deadline; severity is the
 // fallback only when the finding has no priority class yet. These tests
 // pin down the contract.
 

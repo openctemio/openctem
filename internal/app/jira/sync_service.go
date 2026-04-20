@@ -46,7 +46,7 @@ type SyncService struct {
 	jiraClient  Client
 	logger      *logger.Logger
 
-	// B3 (Q1/WS-E): optional hook fired when a Jira webhook transitions
+	// B3: optional hook fired when a Jira webhook transitions
 	// a finding into `fix_applied`. Wired to the verification-scan
 	// trigger to close the "Jira Done → auto rescan" feedback edge
 	// without a manual Verify button click.
@@ -356,7 +356,7 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		"finding_status", newFindingStatus,
 	)
 
-	// B3 (Q1/WS-E): fire the verification-scan hook on transition to
+	// B3: fire the verification-scan hook on transition to
 	// fix_applied. This closes the "Jira Done → auto rescan" feedback
 	// edge. Hook errors are logged but not propagated — the Jira ACK
 	// must succeed regardless (Jira retries aggressively on non-2xx).

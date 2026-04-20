@@ -8,7 +8,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// Q1/WS-A: registry + framework-level tests.
+// registry + framework-level tests.
 
 // stubConnector is a minimal Connector for registry tests.
 type stubConnector struct {

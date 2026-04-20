@@ -1,7 +1,7 @@
 // Package connector defines the common contract for cloud / infra
 // asset-inventory connectors (AWS, GCP, Azure, Kubernetes, git-host).
 //
-// Q1/WS-A (invariant F1): the product claims to support discovering
+// (invariant F1): the product claims to support discovering
 // assets from cloud providers. This package is the seam — providers
 // implement Connector; the discovery pipeline consumes them uniformly.
 //

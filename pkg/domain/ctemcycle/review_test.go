@@ -6,7 +6,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// B5 (Q1/WS-E): unit tests for the review-phase domain types.
+// B5: unit tests for the review-phase domain types.
 // The handler-layer integration test (SQL for the delta + metrics)
 // lives in tests/integration/ once the DB harness lands.
 

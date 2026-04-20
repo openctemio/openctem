@@ -21,7 +21,7 @@ import (
 type CompensatingControlHandler struct {
 	db     *sql.DB
 	logger *logger.Logger
-	// B2 (Q2/WS-C): optional. When set, mutations enqueue a
+	// B2: optional. When set, mutations enqueue a
 	// reclassify sweep for the assets this control protects so
 	// priority reflects changed protection promptly. Nil = legacy
 	// no-fan-out behaviour.

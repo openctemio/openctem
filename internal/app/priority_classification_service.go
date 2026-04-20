@@ -24,11 +24,11 @@ type PriorityClassificationService struct {
 	ruleRepo      PriorityRuleRepository
 	auditRepo     PriorityAuditRepository
 	controlLookup CompensatingControlLookup // optional, may be nil
-	// F3 / Q1-WS-C: optional publisher that fires a priority-changed
+	// F3 / optional publisher that fires a priority-changed
 	// event whenever class transitions. Nil → no publishing (safe
 	// default; classification still runs).
 	changePublisher PriorityChangePublisher
-	// Q4/WS-C: optional flood guard that suppresses downstream fan-out
+	// optional flood guard that suppresses downstream fan-out
 	// on P0 bursts. Nil → always fan out (legacy behaviour, unsafe on
 	// noisy tenants). Classification itself is NEVER altered by the
 	// guard — only the event emission.
@@ -79,7 +79,7 @@ type PriorityAuditRepository interface {
 // service, assignment-rule service, dashboard live feed) subscribe via
 // the outbox.
 //
-// Q1/WS-C (F3, B1, B2): emission is the mechanism that wires the
+// (F3, B1, B2): emission is the mechanism that wires the
 // reclassification sweep to the rest of the system. Without this
 // event, a priority change is a silent dashboard update — an operator
 // can miss that a P3 just became P0.
@@ -155,7 +155,7 @@ func NewPriorityClassificationService(
 
 // ClassifyFinding computes priority for a single finding.
 //
-// Q4/WS-G (O1 invariant): emits ctem_stage_* metrics so dashboards and
+// (O1 invariant): emits ctem_stage_* metrics so dashboards and
 // alert rules have real numbers for the Prioritization stage. Skipped
 // on manual overrides — those bypass the stage entirely.
 func (s *PriorityClassificationService) ClassifyFinding(
@@ -240,7 +240,7 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	}
 	telemetry.ObserveStageOut(telemetry.StagePrioritization, tenantID.String(), outcome)
 
-	// F3 / Q1-WS-C: emit priority_changed event on actual transition.
+	// F3 / emit priority_changed event on actual transition.
 	// First classification (previousClass == nil) also emits so
 	// downstream services can react to "first P0 detected".
 	s.publishIfChanged(ctx, tenantID, finding.ID(), previousClass, classification)
@@ -265,7 +265,7 @@ func (s *PriorityClassificationService) publishIfChanged(
 		return // no transition
 	}
 
-	// Q4/WS-C: anti-flap — when the tenant has burned its rolling P0
+	// anti-flap — when the tenant has burned its rolling P0
 	// budget we RECORD the classification (already done above) but
 	// SKIP the fan-out event, so Jira/outbox/notifications don't
 	// drown in a scanner-induced flood. Non-P0 classes are never
@@ -423,7 +423,7 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 
 		previousClass := f.PriorityClass()
 		f.SetPriorityClassification(classification.Class, classification.Reason)
-		// Q1/WS-C: batch classification also emits change events so the
+		// batch classification also emits change events so the
 		// reclassification sweep (a future task) reuses the same path
 		// and downstream consumers see every transition.
 		s.publishIfChanged(ctx, tenantID, f.ID(), previousClass, classification)

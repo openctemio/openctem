@@ -313,7 +313,7 @@ func (s *Service) ListTenantPolicies(ctx context.Context, tenantID string) ([]*s
 // CalculateSLADeadlineForPriority computes the SLA deadline honouring CTEM
 // priority class first (P0..P3) with a fallback to severity-based days.
 //
-// F3 (Q1/WS-C): this is the canonical entry point for new code. Prefer it
+// F3: this is the canonical entry point for new code. Prefer it
 // over CalculateSLADeadline, which retains the severity-only path for
 // backward compatibility with legacy callers that have no priority class.
 func (s *Service) CalculateSLADeadlineForPriority(

@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// Q2/WS-E (Bulk-action safety rails).
+// (Bulk-action safety rails).
 //
 // Problem: bulk operations on findings (bulk-fix-applied, bulk-verify,
 // bulk-accept, bulk-close) can, on a large tenant, touch tens of

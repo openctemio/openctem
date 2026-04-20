@@ -20,7 +20,7 @@ type Policy struct {
 	mediumDays          int
 	lowDays             int
 	infoDays            int
-	// F3 (Q1/WS-C): priority-class-driven SLA days. When a finding has a
+	// F3: priority-class-driven SLA days. When a finding has a
 	// PriorityClass (P0..P3), these take precedence over severity-based
 	// days. Columns exist in migration 000142 but were previously
 	// unread — a false CTEM signal flagged in the framework audit.
@@ -139,7 +139,7 @@ func Reconstitute(
 		lowDays:             lowDays,
 		infoDays:            infoDays,
 		// Priority-class days default to DefaultPriorityDays for rows
-		// persisted before Q1/WS-C. Callers that need custom values
+		// persisted by legacy callers. Callers that need custom values
 		// should set them via WithPriorityDays after Reconstitute.
 		p0Days:              DefaultPriorityDays["P0"],
 		p1Days:              DefaultPriorityDays["P1"],
@@ -261,7 +261,7 @@ func (p *Policy) CalculateDeadline(severity string, detectedAt time.Time) time.T
 // class first, falling back to severity when the priority class is
 // empty or unknown (legacy findings without a class yet).
 //
-// F3 (Q1/WS-C): this is the single entry point that downstream services
+// F3: this is the single entry point that downstream services
 // SHOULD use. It closes the fake-signal gap where p0..p3 days existed
 // in the schema but were not read.
 func (p *Policy) CalculateDeadlineFor(priorityClass, severity string, detectedAt time.Time) time.Time {

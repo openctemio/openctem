@@ -2,7 +2,7 @@
 // write routes (POST/PUT/PATCH/DELETE) registered in the routes
 // package without a middleware.Require* wrapper.
 //
-// Q3/WS-F: this is the S3 invariant enforcement — every tenant-user
+// this is the S3 invariant enforcement — every tenant-user
 // write MUST have a permission check. The route-permission audit in
 // docs/audits/2026-04-route-permission-audit.md confirmed no gaps
 // exist today; this linter keeps it that way.

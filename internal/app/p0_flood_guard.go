@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
-// Q4/WS-C: P0 flood protection (anti-flap).
+// P0 flood protection (anti-flap).
 //
 // Problem scenario: a noisy scanner (misconfigured rule, upstream
 // catalog error in EPSS/KEV) produces a burst of 10k+ findings that

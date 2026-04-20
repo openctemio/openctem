@@ -8,7 +8,7 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// Q2/WS-C (invariant B2): compensating-control change → reclassification.
+// (invariant B2): compensating-control change → reclassification.
 //
 // Placed in the controller package (rather than app) because the queue
 // lives here and the app-layer import would otherwise cycle. The

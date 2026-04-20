@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// Q2/WS-E: unit tests for the bulk-action guard. Full handler-level
+// unit tests for the bulk-action guard. Full handler-level
 // integration (the "operator approved" flag is set from middleware) is
 // covered in the respective handler tests once the middleware lands.
 

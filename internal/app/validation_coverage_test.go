@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Q4/WS-D: SLO-enforcement tests.
+// SLO-enforcement tests.
 
 func TestCoverage_Pct(t *testing.T) {
 	c := ValidationCoverage{

@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// Q1/WS-C (F3, B1, B2): the priority-change publisher is the mechanism
+// (F3, B1, B2): the priority-change publisher is the mechanism
 // that wires reclassification to downstream systems (notifications,
 // assignment-rule re-routing, dashboard live feed).
 //

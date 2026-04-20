@@ -64,7 +64,7 @@ const (
 	AssetTypeOpenPort      AssetType = "open_port"      // Individual open ports from Naabu
 	AssetTypeDiscoveredURL AssetType = "discovered_url" // URLs/endpoints from Katana
 
-	// Endpoint — Q3/WS-B: first-class endpoint asset. An endpoint is a
+	// Endpoint — first-class endpoint asset. An endpoint is a
 	// physical/virtual user-operated device (laptop, workstation, mobile
 	// handset, kiosk). Distinct from Host (server infra) because
 	// endpoints live in the human-operated edge of the attack surface

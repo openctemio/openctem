@@ -356,7 +356,7 @@ func (h *CTEMCycleHandler) StartReview(w http.ResponseWriter, r *http.Request) {
 
 // Close transitions a cycle from review to closed.
 //
-// Q4/WS-D gate: before closing, compute validation-evidence coverage
+// gate: before closing, compute validation-evidence coverage
 // for findings that reached a terminal state within the cycle window.
 // If any enforced priority class is under its SLO threshold, the
 // close is rejected with 422 so the operator can either attach

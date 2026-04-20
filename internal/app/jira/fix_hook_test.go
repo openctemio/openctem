@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// B3 (Q1/WS-E): verify the post-fix hook wiring — setter works, nil is
+// B3: verify the post-fix hook wiring — setter works, nil is
 // safe, hook receives tenant + finding id, hook errors do not escape.
 //
 // Full end-to-end test (Jira webhook → hook → scan triggered) lives in

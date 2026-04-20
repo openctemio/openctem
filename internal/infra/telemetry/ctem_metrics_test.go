@@ -7,9 +7,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// Q1/WS-G: unit tests for the CTEM stage metrics. These verify that
+// unit tests for the CTEM stage metrics. These verify that
 // every canonical stage has metrics defined and the label set is
-// locked — the SLOs in Q4/WS-G alert on these exact series.
+// locked — the SLOs in alert on these exact series.
 //
 // We use testutil.ToFloat64 rather than parsing exposition text —
 // simpler and less brittle when Prom updates its format.

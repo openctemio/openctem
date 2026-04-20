@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/api/tools/lint/routeperm"
 )
 
-// Q3/WS-F: analysistest drives two fixture packages.
+// analysistest drives two fixture packages.
 //  - "flagged" has POST/PUT/etc without middleware.Require → must flag.
 //  - "safe" covers every acceptable pattern (Require present, opt-out
 //    comment, non-write method).

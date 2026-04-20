@@ -243,7 +243,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	// SLA escalation — marks overdue findings as breached every 15 min (RFC-005 Gap 7).
-	// B4 (Q1/WS-E): attach outbox publisher so each breach fans out as
+	// B4: attach outbox publisher so each breach fans out as
 	// a notification. Nil-safe when Outbox service isn't configured.
 	slaEscalation := controller.NewSLAEscalationController(
 		deps.DB,

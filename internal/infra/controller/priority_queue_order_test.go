@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Q2/WS-C: tests for the priority-aware queue ordering algorithm.
+// tests for the priority-aware queue ordering algorithm.
 
 func TestOrderBatch_Empty(t *testing.T) {
 	got := OrderBatch(nil, OrderConfig{})

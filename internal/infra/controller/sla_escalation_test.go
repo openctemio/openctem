@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// B4 (Q1/WS-E): unit-level assertions for the breach-publisher contract.
+// B4: unit-level assertions for the breach-publisher contract.
 // The DB → UPDATE → RETURNING path is covered by integration tests
 // (needs real Postgres); here we lock in the publisher behaviour + the
 // setter wiring.

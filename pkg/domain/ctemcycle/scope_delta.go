@@ -7,7 +7,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// B7 (Q4/WS-E): mid-cycle scope delta.
+// B7: mid-cycle scope delta.
 //
 // Activate() freezes the asset snapshot. During an active cycle,
 // assets get added (new cloud instances, new services onboarded)

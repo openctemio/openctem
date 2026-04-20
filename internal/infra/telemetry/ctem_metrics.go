@@ -1,7 +1,7 @@
 // Package telemetry exposes Prometheus metrics for every CTEM stage so
-// the loop-closure SLOs in Q4/WS-G have real numbers to alert on.
+// the loop-closure SLOs in have real numbers to alert on.
 //
-// Q1/WS-G (invariant O1): one counter-in, one counter-out, one latency
+// (invariant O1): one counter-in, one counter-out, one latency
 // histogram per CTEM stage. Labels are tightly restricted to keep
 // cardinality bounded — tenant_id is included because operators need
 // per-tenant drill-down, but priority/severity are NOT labels on the

@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// B1 + B2 (Q1/WS-C): unit tests for the reclassify sweep controller.
+// B1 + B2: unit tests for the reclassify sweep controller.
 // Full integration (real queue + real DB + real classifier) lives in
 // tests/integration/; here we lock in the dispatcher contract.
 

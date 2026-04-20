@@ -8,7 +8,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
-// Q2/WS-D (invariant F4): proof-of-fix retest, agent-dispatch model.
+// (invariant F4): proof-of-fix retest, agent-dispatch model.
 //
 // When a finding transitions to `fix_applied`, the API queues a
 // validation job for the agent that most recently produced its

@@ -6,7 +6,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// B5 (Q1/WS-E): the cycle "review" phase does actual work, not just a
+// B5: the cycle "review" phase does actual work, not just a
 // status flip.
 //
 // Three concerns come together when a cycle transitions active → review:

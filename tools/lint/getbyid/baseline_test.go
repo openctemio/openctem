@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Q1/WS-F: regression test for the F-310 linter baseline.
+// regression test for the F-310 linter baseline.
 //
 // Strategy: run the analyzer against the postgres repo package and
 // assert the number of diagnostics matches the agreed ceiling. When

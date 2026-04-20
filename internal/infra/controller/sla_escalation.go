@@ -14,7 +14,7 @@ import (
 // the `breached` SLA state. Downstream consumers (notification outbox,
 // Jira commenter, PagerDuty router) subscribe via the publisher.
 //
-// B4 (Q1/WS-E): closes the feedback edge where SLA status was
+// B4: closes the feedback edge where SLA status was
 // previously computed but never acted on. Dedup via the SLA breach
 // transition itself — a second controller run won't re-emit because
 // rows already in `breached` state don't match the UPDATE WHERE clause.
@@ -39,7 +39,7 @@ type SLABreachPublisher interface {
 // background job that marks overdue findings within their own rows.
 // Each finding's tenant_id remains unchanged.
 //
-// RFC-005 Gap 7 + B4 (Q1/WS-E): Automated SLA Escalation with publisher.
+// RFC-005 Gap 7 + B4: Automated SLA Escalation with publisher.
 type SLAEscalationController struct {
 	db     *sql.DB
 	logger *logger.Logger

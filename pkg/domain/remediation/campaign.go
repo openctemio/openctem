@@ -214,7 +214,7 @@ func (c *Campaign) AllFindingsResolved() bool {
 }
 
 // TryAutoComplete attempts the active/validating → completed
-// transition when all findings are resolved. Q4/WS-E: this is what
+// transition when all findings are resolved. this is what
 // turns "every finding in my campaign hit resolved" into an actual
 // campaign-level event without an operator clicking Complete.
 //

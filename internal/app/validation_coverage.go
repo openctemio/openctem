@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// Q4/WS-D: validation coverage SLO.
+// validation coverage SLO.
 //
 // Scope note to avoid confusion with the validation/ package:
 //
@@ -76,7 +76,7 @@ type CoverageThresholds struct {
 	P3 float64
 }
 
-// DefaultThresholds matches the Q4/WS-D commitment: full coverage
+// DefaultThresholds matches the commitment: full coverage
 // on P0/P1, 80% on P2, optional on P3.
 var DefaultThresholds = CoverageThresholds{
 	P0: 100,

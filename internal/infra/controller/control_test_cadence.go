@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// Q4/WS-D: control test cadence controller.
+// control test cadence controller.
 //
 // Every compensating control has a test cadence (e.g. "test this
 // WAF rule every 30 days"). This controller runs periodically to:

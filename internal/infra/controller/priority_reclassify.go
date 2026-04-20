@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// B1 + B2 (Q1/WS-C): periodic sweep that reclassifies open findings so
+// B1 + B2: periodic sweep that reclassifies open findings so
 // EPSS / KEV / rule / compensating-control changes take effect without
 // waiting for the next ingest.
 //

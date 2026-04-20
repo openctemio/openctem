@@ -9,7 +9,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// Q2/WS-D: Evidence storage.
+// Evidence storage.
 //
 // Every executor produces Evidence; every Evidence row is persisted
 // with tenant scope so the UI can show "what was checked, when, with

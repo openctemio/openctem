@@ -99,7 +99,7 @@ func (p *FindingProcessor) SetPriorityClassifier(classifier PriorityClassifier) 
 	p.priorityClassifier = classifier
 }
 
-// SetSLAApplier wires the SLA-deadline calculator. F3 (Q1/WS-C): the
+// SetSLAApplier wires the SLA-deadline calculator. F3: the
 // applier is invoked AFTER priority classification so priority class
 // drives the deadline; when the applier is nil the pipeline behaves
 // as before (sla_deadline left NULL).

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Q2/WS-D (post-refactor): tests the API-side selection policy.
+// (post-refactor): tests the API-side selection policy.
 // No in-process executor runs here — Select picks the ExecutorKind
 // string that the dispatcher will queue for the agent.
 

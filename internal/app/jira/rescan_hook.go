@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// B3 wire (Q1/WS-E): when a Jira "Done" webhook transitions a finding
+// B3 wire: when a Jira "Done" webhook transitions a finding
 // to `fix_applied`, automatically trigger a verification scan that
 // either confirms the fix (→ resolved) or reverts (→ in_progress).
 //
