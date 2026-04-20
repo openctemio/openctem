@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/api/internal/infra/telemetry"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
@@ -153,6 +154,10 @@ func NewPriorityClassificationService(
 }
 
 // ClassifyFinding computes priority for a single finding.
+//
+// Q4/WS-G (O1 invariant): emits ctem_stage_* metrics so dashboards and
+// alert rules have real numbers for the Prioritization stage. Skipped
+// on manual overrides — those bypass the stage entirely.
 func (s *PriorityClassificationService) ClassifyFinding(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -163,6 +168,19 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	if finding.PriorityClassOverride() {
 		return nil
 	}
+
+	// O1: mark entry into the Prioritization stage. Priority label
+	// uses the class BEFORE classification so the counter reflects
+	// "what came in", not "what we just decided".
+	stageStart := time.Now()
+	prevLabel := ""
+	if pc := finding.PriorityClass(); pc != nil {
+		prevLabel = string(*pc)
+	}
+	telemetry.ObserveStageIn(telemetry.StagePrioritization, tenantID.String(), prevLabel)
+	defer func() {
+		telemetry.ObserveStageLatency(telemetry.StagePrioritization, tenantID.String(), time.Since(stageStart))
+	}()
 
 	// Build priority context
 	pctx := s.buildPriorityContext(finding, assetEntity)
@@ -212,6 +230,15 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	if err := s.auditRepo.LogChange(ctx, entry); err != nil {
 		s.logger.Warn("failed to log priority audit", "finding_id", finding.ID(), "error", err)
 	}
+
+	// O1: mark exit from Prioritization. Transition vs no-transition
+	// maps to advanced vs deferred — re-confirming the same class is
+	// still "work done" but doesn't feed the downstream stages.
+	outcome := telemetry.OutcomeAdvanced
+	if previousClass != nil && *previousClass == classification.Class {
+		outcome = telemetry.OutcomeDeferred
+	}
+	telemetry.ObserveStageOut(telemetry.StagePrioritization, tenantID.String(), outcome)
 
 	// F3 / Q1-WS-C: emit priority_changed event on actual transition.
 	// First classification (previousClass == nil) also emits so
