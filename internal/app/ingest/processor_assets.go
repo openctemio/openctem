@@ -1286,10 +1286,10 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	if tool != nil {
 		discoveryTool = tool.Name
 	}
-	if source, ok := ctisAsset.Properties["discovery_source"].(string); ok {
+	if source, ok := ctisAsset.Properties[asset.PropKeyDiscoverySource].(string); ok {
 		discoverySource = source
 	}
-	if toolName, ok := ctisAsset.Properties["discovery_tool"].(string); ok {
+	if toolName, ok := ctisAsset.Properties[asset.PropKeyDiscoveryTool].(string); ok {
 		discoveryTool = toolName
 	}
 
@@ -1367,7 +1367,7 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 		}
 
 		// Skip discovery fields (handled separately)
-		if k == "discovery_source" || k == "discovery_tool" {
+		if k == asset.PropKeyDiscoverySource || k == asset.PropKeyDiscoveryTool {
 			continue
 		}
 

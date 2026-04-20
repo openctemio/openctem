@@ -138,28 +138,39 @@ func (s *AgentConfigTemplateService) Render(data AgentTemplateData) (*RenderedTe
 
 var slugRegexp = regexp.MustCompile(`[^a-z0-9-]+`)
 
+// Tool-name normalization table — raw tool name → scanner name the
+// agent config template expects. Kept as one source of truth so both
+// template helpers normalise consistently.
+var toolToScannerName = map[string]string{
+	"trivy": "trivy-fs",
+}
+
+// defaultToolName is the fallback used by firstTool when the template
+// receives an empty tool list.
+const defaultToolName = "semgrep"
+
+// normalizeToolName applies toolToScannerName, returning the input
+// unchanged when no mapping exists.
+func normalizeToolName(tool string) string {
+	if mapped, ok := toolToScannerName[tool]; ok {
+		return mapped
+	}
+	return tool
+}
+
 // templateFuncs are the functions exposed to templates.
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
-		// toScannerName maps a tool name to its scanner name (e.g., "trivy" -> "trivy-fs").
-		"toScannerName": func(tool string) string {
-			switch tool {
-			case "trivy":
-				return "trivy-fs"
-			default:
-				return tool
-			}
-		},
-		// firstTool returns the first tool in the list, or "semgrep" if empty.
+		// toScannerName maps a tool name to its scanner name
+		// (e.g., "trivy" -> "trivy-fs").
+		"toScannerName": normalizeToolName,
+		// firstTool returns the first tool in the list, or
+		// defaultToolName if empty.
 		"firstTool": func(tools []string) string {
 			if len(tools) == 0 {
-				return "semgrep"
+				return defaultToolName
 			}
-			tool := tools[0]
-			if tool == "trivy" {
-				return "trivy-fs"
-			}
-			return tool
+			return normalizeToolName(tools[0])
 		},
 		// slugify converts a name to a docker-friendly slug.
 		"slugify": func(name string) string {

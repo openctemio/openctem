@@ -139,10 +139,10 @@ func BuildDomainMetadata(domain string, discoverySource string) map[string]any {
 	isWildcard := IsWildcardDomain(domain)
 
 	return map[string]any{
-		"root_domain":      rootDomain,
-		"domain_level":     level,
-		"parent_domain":    parentDomain,
-		"is_wildcard":      isWildcard,
-		"discovery_source": discoverySource,
+		"root_domain":          rootDomain,
+		"domain_level":         level,
+		"parent_domain":        parentDomain,
+		"is_wildcard":          isWildcard,
+		PropKeyDiscoverySource: discoverySource,
 	}
 }

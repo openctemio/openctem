@@ -68,6 +68,11 @@ func New(cfg Config) *Logger {
 	}
 }
 
+// headerAuthorization is the HTTP Authorization header name as it
+// appears after lowercasing — used both in sensitiveKeys and in the
+// separate "mask first N chars, keep prefix" branch of ReplaceAttr.
+const headerAuthorization = "authorization"
+
 // sensitiveKeys contains keys that should be masked in logs.
 // This list is comprehensive to prevent accidental credential leakage.
 var sensitiveKeys = map[string]bool{
@@ -77,7 +82,7 @@ var sensitiveKeys = map[string]bool{
 	"pwd":           true,
 	"secret":        true,
 	"token":         true,
-	"authorization": true,
+	headerAuthorization: true,
 	"auth":          true,
 	"bearer":        true,
 	"api_key":       true,
@@ -177,7 +182,7 @@ func sanitizeAttr(_ []string, a slog.Attr) slog.Attr {
 	}
 
 	// Mask Authorization header values
-	if key == "authorization" || strings.HasSuffix(key, "_token") {
+	if key == headerAuthorization || strings.HasSuffix(key, "_token") {
 		if str, ok := a.Value.Any().(string); ok {
 			if len(str) > 10 {
 				return slog.String(a.Key, str[:10]+"...[REDACTED]")

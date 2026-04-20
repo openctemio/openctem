@@ -132,7 +132,7 @@ func (r *Runner) Up(ctx context.Context) error {
 	fmt.Printf("Running %d migrations for edition '%s'...\n", len(pending), r.edition)
 
 	for _, version := range pending {
-		if err := r.runMigration(ctx, version, "up"); err != nil {
+		if err := r.runMigration(ctx, version, directionUp); err != nil {
 			return fmt.Errorf("migration %s failed: %w", version, err)
 		}
 		fmt.Printf("  Applied: %s\n", version)
@@ -161,7 +161,7 @@ func (r *Runner) Down(ctx context.Context) error {
 		return fmt.Errorf("migration %s is not for edition %s", last.Version, r.edition)
 	}
 
-	if err := r.runMigration(ctx, last.Version, "down"); err != nil {
+	if err := r.runMigration(ctx, last.Version, directionDown); err != nil {
 		return fmt.Errorf("rollback %s failed: %w", last.Version, err)
 	}
 
@@ -174,6 +174,12 @@ func (r *Runner) Down(ctx context.Context) error {
 	fmt.Printf("Rolled back: %s\n", last.Version)
 	return nil
 }
+
+// Migration file suffixes. Files are named <version>_<name>.<direction>.sql.
+const (
+	directionUp   = "up"
+	directionDown = "down"
+)
 
 // runMigration executes a single migration.
 func (r *Runner) runMigration(ctx context.Context, version, direction string) error {
@@ -204,7 +210,7 @@ func (r *Runner) runMigration(ctx context.Context, version, direction string) er
 	}
 
 	// Record migration (only for 'up')
-	if direction == "up" {
+	if direction == directionUp {
 		edition := GetMigrationEdition(version)
 		_, err = tx.ExecContext(ctx,
 			"INSERT INTO schema_migrations (version, edition) VALUES ($1, $2)",
