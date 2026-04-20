@@ -63,6 +63,13 @@ type Config struct {
 	ChannelID   string       // For Slack
 	APIEndpoint string       // Custom API endpoint
 	Email       *EmailConfig // For Email (SMTP)
+
+	// AllowLoopback disables the SSRF guard's private-IP block. Only
+	// set true in unit tests that target httptest.NewServer (binds to
+	// 127.0.0.1). Production tenants MUST NOT set this — WebhookURL
+	// is tenant-controlled and the guard is the sole defense against
+	// IMDS / internal-network exfil. Default zero-value is safe.
+	AllowLoopback bool
 }
 
 // Provider represents a notification provider.

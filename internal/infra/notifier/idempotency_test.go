@@ -85,7 +85,7 @@ func TestWebhook_SendsIdempotencyKey(t *testing.T) {
 	srv := runProvider(t, "outbox-123", "ok")
 	defer srv.Close()
 
-	client, err := NewWebhookClient(Config{WebhookURL: srv.URL})
+	client, err := NewWebhookClient(Config{WebhookURL: srv.URL, AllowLoopback: true})
 	if err != nil {
 		t.Fatalf("new webhook: %v", err)
 	}
