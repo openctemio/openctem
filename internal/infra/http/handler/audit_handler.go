@@ -48,13 +48,10 @@ func (h *AuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := 0
-	if q := r.URL.Query().Get("limit"); q != "" {
-		// Accept any parseable int; non-positive falls through to service default.
-		if n, err := strconv.Atoi(q); err == nil {
-			limit = n
-		}
-	}
+	// Cap at the handler boundary so CodeQL's data-flow analysis sees the
+	// bound at the first sink; service + repo re-cap as defense in depth.
+	const maxVerifyChainLimit = 10_000
+	limit := parseQueryIntBounded(r.URL.Query().Get("limit"), 0, 0, maxVerifyChainLimit)
 
 	result, err := h.service.VerifyChain(r.Context(), tenantID, limit)
 	if err != nil {

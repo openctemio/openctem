@@ -175,10 +175,16 @@ type ChainVerifyResult struct {
 // break too because prev_hash no longer links.
 //
 // Limit bounds memory for large tenants; pagination support is a
-// follow-up. Zero/negative limit means "use default 10_000".
+// follow-up. Zero/negative limit means "use default 10_000". Values
+// above maxVerifyChainLimit are clamped — same cap is also enforced at
+// the handler and repository layers (defense in depth, closes CodeQL
+// go/uncontrolled-allocation-size sink at the make() site).
 func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limit int) (*ChainVerifyResult, error) {
+	const maxVerifyChainLimit = 10_000
 	if limit <= 0 {
-		limit = 10_000
+		limit = maxVerifyChainLimit
+	} else if limit > maxVerifyChainLimit {
+		limit = maxVerifyChainLimit
 	}
 	entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, limit)
 	if err != nil {

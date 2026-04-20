@@ -632,8 +632,12 @@ func (r *AuditRepository) AppendChainEntry(ctx context.Context, e audit.ChainEnt
 // ListChainEntries returns chain rows ordered by position ASC. Used by
 // the verify endpoint to walk the chain.
 func (r *AuditRepository) ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]audit.ChainEntry, error) {
+	const defaultChainEntriesLimit = 1000
+	const maxChainEntriesLimit = 10_000
 	if limit <= 0 {
-		limit = 1000
+		limit = defaultChainEntriesLimit
+	} else if limit > maxChainEntriesLimit {
+		limit = maxChainEntriesLimit
 	}
 	const q = `
 		SELECT audit_log_id, tenant_id, prev_hash, hash, chain_position, created_at
