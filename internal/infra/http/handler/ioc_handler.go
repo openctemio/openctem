@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,16 +12,31 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/ioc"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// maxIOCRequestBody caps the JSON body size on IOC Create. Prevents a
+// malicious client from exhausting memory with a giant body before
+// json.Decode fails.
+const maxIOCRequestBody = 64 * 1024 // 64 KB — an IOC is tiny
+
+// FindingTenantChecker is the narrow surface IOCHandler needs to verify
+// that a user-supplied source_finding_id actually belongs to the
+// caller's tenant. *postgres.FindingRepository satisfies this; a nil
+// checker skips the check (tests only).
+type FindingTenantChecker interface {
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error)
+}
 
 // IOCHandler exposes CRUD for the tenant's indicator-of-compromise
 // catalogue. The read/write permissions are reused from threat_intel
 // because an IOC is, semantically, a piece of threat intel the
 // tenant wants correlated against runtime telemetry.
 type IOCHandler struct {
-	repo   ioc.Repository
-	logger *logger.Logger
+	repo     ioc.Repository
+	findings FindingTenantChecker // optional — skip cross-tenant verify in unit tests
+	logger   *logger.Logger
 }
 
 // NewIOCHandler wires the repo.
@@ -29,6 +45,16 @@ func NewIOCHandler(repo ioc.Repository, log *logger.Logger) *IOCHandler {
 		repo:   repo,
 		logger: log.With("handler", "ioc"),
 	}
+}
+
+// SetFindingChecker wires the tenant-scoped finding lookup that
+// validates source_finding_id on Create. Callers SHOULD set this
+// outside of unit tests — without it, a client can submit a
+// source_finding_id pointing at another tenant's finding, and the
+// B6 correlator would then reopen that other tenant's finding on
+// the attacker's runtime event (cross-tenant write).
+func (h *IOCHandler) SetFindingChecker(c FindingTenantChecker) {
+	h.findings = c
 }
 
 // iocCreateRequest is the wire format for POST /iocs.
@@ -62,6 +88,10 @@ func (h *IOCHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cap body size before Decode so a malicious client can't OOM the
+	// process with a giant body. MaxBytesReader returns an error on
+	// Decode once the limit is hit.
+	r.Body = http.MaxBytesReader(w, r.Body, maxIOCRequestBody)
 	var req iocCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid JSON body").WriteJSON(w)
@@ -96,6 +126,26 @@ func (h *IOCHandler) Create(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			apierror.BadRequest("invalid source_finding_id").WriteJSON(w)
 			return
+		}
+		// Cross-tenant guard. Without this a client from tenant A could
+		// submit an IOC pointing at a finding in tenant B; the B6
+		// correlator would then reopen tenant B's finding when tenant A
+		// reported a matching runtime event. Must verify the finding
+		// actually belongs to the caller.
+		if h.findings != nil {
+			if _, err := h.findings.GetByID(r.Context(), tenantID, fid); err != nil {
+				if errors.Is(err, shared.ErrNotFound) {
+					apierror.NotFound("source_finding_id not found in this tenant").WriteJSON(w)
+					return
+				}
+				h.logger.Error("ioc create: verify source finding failed",
+					"tenant_id", tenantID.String(),
+					"finding_id", fid.String(),
+					"error", err,
+				)
+				apierror.InternalServerError("failed to verify source_finding_id").WriteJSON(w)
+				return
+			}
 		}
 		ind.SourceFindingID = &fid
 	}

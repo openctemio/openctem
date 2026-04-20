@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/ioc"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -330,6 +331,76 @@ func TestIOCHandler_Delete_Deactivates(t *testing.T) {
 	}
 	if got.Active {
 		t.Fatal("Active must be false after DELETE (soft delete contract)")
+	}
+}
+
+// fakeFindingChecker satisfies FindingTenantChecker. Returns ErrNotFound
+// when the requested finding's tenant doesn't match — that's what the
+// real repository does when GetByID scopes by tenant.
+type fakeFindingChecker struct {
+	// ownedByTenant maps finding_id → tenant_id that owns it.
+	ownedByTenant map[string]shared.ID
+}
+
+func (f *fakeFindingChecker) GetByID(_ context.Context, tenantID, findingID shared.ID) (*vulnerability.Finding, error) {
+	owner, ok := f.ownedByTenant[findingID.String()]
+	if !ok || owner != tenantID {
+		return nil, shared.ErrNotFound
+	}
+	// Tests only care about the tenant-match signal, not the finding
+	// body — return a minimal Finding.
+	fnd, _ := vulnerability.NewFinding(tenantID, shared.NewID(),
+		vulnerability.FindingSourceManual, "test-tool",
+		vulnerability.SeverityLow, "test")
+	return fnd, nil
+}
+
+// P0 SECURITY: cross-tenant finding poisoning. Without the finding
+// check, tenant A could submit an IOC pointing at tenant B's finding.
+// On runtime match, the B6 correlator would reopen B's finding —
+// cross-tenant write through the CTEM loop.
+func TestIOCHandler_Create_CrossTenantSourceFinding_Returns404(t *testing.T) {
+	h, _ := newTestIOCHandler(t)
+
+	tenantA := shared.NewID()
+	tenantB := shared.NewID()
+	bFindingID := shared.NewID()
+
+	// Set up checker so bFindingID is owned by tenantB.
+	h.SetFindingChecker(&fakeFindingChecker{
+		ownedByTenant: map[string]shared.ID{
+			bFindingID.String(): tenantB,
+		},
+	})
+
+	body := `{"type":"ip","value":"1.2.3.4","source_finding_id":"` + bFindingID.String() + `"}`
+	w := httptest.NewRecorder()
+	// Request made as tenantA.
+	h.Create(w, requestWithTenant("POST", "/iocs", body, tenantA))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (cross-tenant must be rejected). body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestIOCHandler_Create_OwnTenantSourceFinding_Returns201(t *testing.T) {
+	h, _ := newTestIOCHandler(t)
+
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+
+	h.SetFindingChecker(&fakeFindingChecker{
+		ownedByTenant: map[string]shared.ID{
+			findingID.String(): tenantID,
+		},
+	})
+
+	body := `{"type":"ip","value":"1.2.3.4","source_finding_id":"` + findingID.String() + `"}`
+	w := httptest.NewRecorder()
+	h.Create(w, requestWithTenant("POST", "/iocs", body, tenantID))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201. body=%s", w.Code, w.Body.String())
 	}
 }
 

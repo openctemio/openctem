@@ -125,7 +125,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Agent:            newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
 		Ingest:           handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
-		IOC:              handler.NewIOCHandler(deps.Repos.IOC, log),
+		IOC:              newIOCHandlerWithFindingCheck(deps, log),
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
@@ -324,5 +324,16 @@ func newRuntimeTelemetryHandlerWithCorrelator(deps *HandlerDeps, svc *Services, 
 	if svc.IOCCorrelator != nil {
 		h.SetCorrelator(svc.IOCCorrelator)
 	}
+	return h
+}
+
+// newIOCHandlerWithFindingCheck wires the tenant-scoped finding repo
+// into the IOC handler so POST /iocs can verify source_finding_id
+// belongs to the caller. Without this check a client in tenant A
+// could submit an IOC pointing at a finding in tenant B and trick the
+// B6 correlator into reopening tenant B's finding.
+func newIOCHandlerWithFindingCheck(deps *HandlerDeps, log *logger.Logger) *handler.IOCHandler {
+	h := handler.NewIOCHandler(deps.Repos.IOC, log)
+	h.SetFindingChecker(deps.Repos.Finding)
 	return h
 }
