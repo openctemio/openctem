@@ -1,4 +1,4 @@
-package app
+package agent
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/openctemio/api/internal/infra/redis"
-	"github.com/openctemio/api/pkg/domain/agent"
+	agentdom "github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -36,7 +36,7 @@ var (
 
 // AgentSelector handles intelligent agent selection for job execution.
 type AgentSelector struct {
-	agentRepo   agent.Repository
+	agentRepo   agentdom.Repository
 	commandRepo command.Repository
 	agentState  *redis.AgentStateStore
 	logger      *logger.Logger
@@ -44,7 +44,7 @@ type AgentSelector struct {
 
 // NewAgentSelector creates a new AgentSelector.
 func NewAgentSelector(
-	agentRepo agent.Repository,
+	agentRepo agentdom.Repository,
 	commandRepo command.Repository,
 	agentState *redis.AgentStateStore,
 	log *logger.Logger,
@@ -69,7 +69,7 @@ type SelectAgentRequest struct {
 
 // SelectAgentResult represents the result of agent selection.
 type SelectAgentResult struct {
-	Agent   *agent.Agent
+	Agent   *agentdom.Agent
 	Queued  bool
 	Message string
 }
@@ -107,12 +107,12 @@ func (s *AgentSelector) selectTenantAgent(ctx context.Context, req SelectAgentRe
 }
 
 // selectLeastLoaded selects the agent with the lowest load.
-func (s *AgentSelector) selectLeastLoaded(agents []*agent.Agent) *agent.Agent {
+func (s *AgentSelector) selectLeastLoaded(agents []*agentdom.Agent) *agentdom.Agent {
 	if len(agents) == 0 {
 		return nil
 	}
 
-	var best *agent.Agent
+	var best *agentdom.Agent
 	bestLoad := float64(1.0) // Start with 100% load
 
 	for _, a := range agents {

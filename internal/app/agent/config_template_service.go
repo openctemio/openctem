@@ -1,4 +1,4 @@
-package app
+package agent
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/agent"
+	agentdom "github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -35,7 +35,7 @@ type AgentConfigTemplateService struct {
 
 // AgentTemplateData is the data passed to every agent config template.
 type AgentTemplateData struct {
-	Agent       *agent.Agent
+	Agent       *agentdom.Agent
 	APIKey      string // May be empty if not freshly created/regenerated
 	BaseURL     string // Public API URL agents should connect to
 	GeneratedAt string // RFC3339 timestamp
