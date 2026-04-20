@@ -872,17 +872,25 @@ Recognised `event_type` values: `process_start`, `process_stop`,
 `network_connect`, `file_write`, `file_delete`, `dns_query`, `auth_attempt`,
 `kernel_module_load`, `other` (see migration 000155).
 
-### IOC Catalogue (Internal, no public HTTP CRUD yet)
+### IOC Catalogue (Tenant-scoped)
 
 Indicators (IP, domain, URL, file hash, process name, user agent) are matched
 against runtime telemetry to close the CTEM loop. A match on an indicator linked
 to a closed finding auto-reopens it (invariant B6).
 
-As of migration 000156 the catalogue and match log live at
-`pkg/domain/ioc/` + `internal/app/ioc/` + `internal/infra/postgres/ioc_repository.go`.
-HTTP CRUD is not yet wired — indicators are seeded by internal callers
-(scan finding publishers, threat-feed ingest). Public `/iocs` routes will
-land in a follow-up task; do not consume them yet.
+Permissions reuse `threat_intel:read` / `threat_intel:write` — an IOC is
+semantically a tenant-scoped piece of threat intel.
+
+| Method | Endpoint | Description | Permission |
+|--------|----------|-------------|------------|
+| GET | `/iocs?limit=50&offset=0` | List indicators (most recently seen first). Hard cap 200/page. | `threat_intel:read` |
+| POST | `/iocs` | Register a new indicator. Body: `{"type":"ip\|domain\|url\|file_hash\|process_name\|user_agent","value":"...","source":"manual\|scan_finding\|threat_feed","source_finding_id":"<uuid-optional>","confidence":75}`. | `threat_intel:write` |
+| GET | `/iocs/{id}` | Get a single indicator | `threat_intel:read` |
+| DELETE | `/iocs/{id}` | Soft-delete (sets `active=false`). Match history in `ioc_matches` is preserved. | `threat_intel:write` |
+
+Schema: migration 000156. Correlator: `internal/app/ioc/correlator.go`. An
+indicator with `source_finding_id` set is what makes B6 loop-closing — a
+runtime match on that IOC reopens the linked finding to `confirmed`.
 
 ---
 

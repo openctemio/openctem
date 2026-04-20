@@ -51,6 +51,7 @@ type Handlers struct {
 	Command         *handler.CommandHandler         // nil if not initialized (no database)
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
 	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint agents
+	IOC              *handler.IOCHandler              // nil if not initialized - IOC catalogue (feeds B6 correlator)
 	Agent           *handler.AgentHandler           // nil if not initialized (no database)
 	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
 	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
@@ -381,6 +382,11 @@ func Register(
 	// Threat Actor Intelligence routes
 	if h.ThreatActor != nil {
 		registerThreatActorRoutes(router, h.ThreatActor, authMiddleware, userSync)
+	}
+
+	// Indicators of Compromise (IOC catalogue, feeds B6 correlator)
+	if h.IOC != nil {
+		registerIOCRoutes(router, h.IOC, authMiddleware, userSync)
 	}
 
 	// Remediation Campaign routes

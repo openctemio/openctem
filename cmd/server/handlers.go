@@ -125,6 +125,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Agent:   newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
 		Ingest:           handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
+		IOC:              handler.NewIOCHandler(deps.Repos.IOC, log),
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
