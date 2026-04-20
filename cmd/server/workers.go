@@ -282,6 +282,34 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Platform job queue priority rebalancing. Without this the platform
+	// command queue stays strictly FIFO and a noisy tenant can starve
+	// quieter ones. Runs every 60 s — cheap SQL update, safe default.
+	w.ControllerManager.Register(controller.NewQueuePriorityController(
+		repos.Command,
+		&controller.QueuePriorityControllerConfig{
+			Interval: 60 * time.Second,
+			Logger:   log.With("controller", "queue-priority"),
+		},
+	))
+
+	// Admin-audit-log retention. Complements DataExpirationController
+	// (which handles tenant audit_logs) by pruning the platform-level
+	// admin_audit_logs table on the same 365-day window. Starts in
+	// DryRun: true so the first production rollout just logs what
+	// WOULD be deleted — an operator promotes to DryRun:false after
+	// confirming the counts look right.
+	w.ControllerManager.Register(controller.NewAuditRetentionController(
+		repos.AdminAuditLog,
+		&controller.AuditRetentionControllerConfig{
+			Interval:      24 * time.Hour,
+			RetentionDays: 365,
+			BatchSize:     10000,
+			DryRun:        true,
+			Logger:        log.With("controller", "admin-audit-retention"),
+		},
+	))
+
 	return w, nil
 }
 

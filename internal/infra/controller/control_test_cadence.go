@@ -23,6 +23,17 @@ import (
 //
 // The DB operations live in the repository layer; this file is the
 // controller wrapper + the event wiring.
+//
+// NOT WIRED: this controller is not registered in cmd/server/workers.go
+// because the ControlTestSink methods it depends on are not implemented
+// on postgres.ControlTestRepository — the repo has a different
+// MarkOverdue signature (ctx, tenantID, id) that is called by the UI
+// per-row, and ExpireWithGrace doesn't exist at all. A future PR that
+// turns on this controller needs to:
+//   1. Add batch MarkOverdue(ctx, now) (int64, error) to the repo
+//   2. Add ExpireWithGrace(ctx, now, grace) ([]ExpiredControl, error)
+//   3. Register the controller in workers.go with the
+//      ControlChangePublisher so expired-control reclassification fires.
 
 // ControlTestSink is the narrow store surface the controller needs.
 type ControlTestSink interface {
