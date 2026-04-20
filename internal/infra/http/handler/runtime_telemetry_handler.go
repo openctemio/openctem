@@ -46,11 +46,11 @@ func (h *RuntimeTelemetryHandler) SetCorrelator(c *iocapp.Correlator) {
 // migration, not in Go, so new event types land as a migration-only
 // change.
 type runtimeEventIn struct {
-	EndpointAssetID string                 `json:"endpoint_asset_id,omitempty"` // may be empty during onboarding
-	EventType       string                 `json:"event_type"`                   // required, see migration CHECK
-	Severity        string                 `json:"severity,omitempty"`           // info|low|medium|high|critical, default info
-	ObservedAt      time.Time              `json:"observed_at"`                  // when the event happened on the endpoint
-	Properties      map[string]any         `json:"properties,omitempty"`
+	EndpointAssetID string         `json:"endpoint_asset_id,omitempty"` // may be empty during onboarding
+	EventType       string         `json:"event_type"`                  // required, see migration CHECK
+	Severity        string         `json:"severity,omitempty"`          // info|low|medium|high|critical, default info
+	ObservedAt      time.Time      `json:"observed_at"`                 // when the event happened on the endpoint
+	Properties      map[string]any `json:"properties,omitempty"`
 }
 
 // ingestRequest supports both single-event and batched submissions. A
@@ -110,6 +110,12 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 	// one DB lookup instead of one lookup per event (N → 1 roundtrips).
 	var accepted []iocapp.TelemetryEvent
 
+	// Cache of validated (tenant, asset) pairs within this request so a
+	// 100-event batch that targets 3 distinct assets only hits the DB 3
+	// times instead of 100. Value: true = belongs to agent's tenant,
+	// false = does NOT → reject.
+	assetOK := make(map[string]bool)
+
 	for i, ev := range req.Events {
 		if ev.EventType == "" {
 			resp.Rejected++
@@ -120,6 +126,36 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			resp.Rejected++
 			resp.Errors = append(resp.Errors, eventErr(i, "observed_at required"))
 			continue
+		}
+		// Cross-tenant asset-id guard. Without this, a compromised agent
+		// in tenant A could submit telemetry with endpoint_asset_id
+		// belonging to tenant B — the FK check passes (asset exists)
+		// but the row ends up linking tenant A's telemetry to tenant B's
+		// asset, leaking data when the UI queries events by asset id.
+		//
+		// Empty endpoint_asset_id is allowed (onboarding path before
+		// an asset is created) — only validate when set.
+		if ev.EndpointAssetID != "" {
+			ok, cached := assetOK[ev.EndpointAssetID]
+			if !cached {
+				var exists bool
+				qaErr := h.db.QueryRowContext(r.Context(),
+					`SELECT EXISTS (SELECT 1 FROM assets WHERE id = $1 AND tenant_id = $2)`,
+					ev.EndpointAssetID, agt.TenantID.String(),
+				).Scan(&exists)
+				if qaErr != nil {
+					resp.Rejected++
+					resp.Errors = append(resp.Errors, eventErr(i, "asset ownership check failed"))
+					continue
+				}
+				ok = exists
+				assetOK[ev.EndpointAssetID] = ok
+			}
+			if !ok {
+				resp.Rejected++
+				resp.Errors = append(resp.Errors, eventErr(i, "endpoint_asset_id not found in tenant"))
+				continue
+			}
 		}
 		propsJSON, err := json.Marshal(nilMapToEmpty(ev.Properties))
 		if err != nil {
