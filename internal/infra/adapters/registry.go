@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/infra/adapters/core"
 	"github.com/openctemio/api/internal/infra/adapters/gitleaks"
 	"github.com/openctemio/api/internal/infra/adapters/nuclei"
+	"github.com/openctemio/api/internal/infra/adapters/recon"
 	"github.com/openctemio/api/internal/infra/adapters/sarif"
 	"github.com/openctemio/api/internal/infra/adapters/semgrep"
 	"github.com/openctemio/api/internal/infra/adapters/trivy"
@@ -40,6 +41,9 @@ func NewRegistry() *Registry {
 	r.Register(gitleaks.NewAdapter())
 	r.Register(vuls.NewAdapter())
 	r.Register(sarif.NewAdapter())
+	// Recon adapter — subdomain/DNS/port/http_probe/url_crawl outputs
+	// go through the same unified ingest path as vuln scanners.
+	r.Register(recon.NewAdapter())
 
 	return r
 }

@@ -23,6 +23,7 @@ func TestNewRegistry_HasExpectedAdapters(t *testing.T) {
 	want := []string{
 		"gitleaks",
 		"nuclei",
+		"recon", // subdomain/DNS/port/http_probe/url_crawl adapter.
 		"sarif", // P0-1 — previously built but unregistered.
 		"semgrep",
 		"trivy",
