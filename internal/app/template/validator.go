@@ -300,8 +300,70 @@ func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
 		result.AddError("content", "potentially dangerous patterns detected", "DANGEROUS_PATTERN")
 	}
 
+	// Validate every regex inside matchers for ReDoS (catastrophic
+	// backtracking). A template can declare multiple protocol blocks
+	// (http, dns, network, ...), each with its own matchers[*]. A
+	// single unsafe regex can burn a scanner-worker CPU for minutes,
+	// starving other tenants on the same agent pool.
+	v.validateMatcherRegexes(tpl, result)
+
 	result.RuleCount = 1 // Nuclei templates are typically single templates
 	return result
+}
+
+// validateMatcherRegexes walks every matcher block in a Nuclei
+// template and runs isRegexSafe on regex-type matchers. Rejects both
+// syntactically-invalid regexes and patterns with known ReDoS shapes
+// (nested quantifiers, alternation with overlap, etc.).
+func (v *NucleiValidator) validateMatcherRegexes(tpl map[string]any, result *ValidationResult) {
+	protocols := []string{"http", "requests", "dns", "network", "headless", "ssl", "websocket", "whois", "code", "javascript"}
+	for _, proto := range protocols {
+		blocks, ok := tpl[proto].([]any)
+		if !ok {
+			continue
+		}
+		for i, b := range blocks {
+			block, ok := b.(map[string]any)
+			if !ok {
+				continue
+			}
+			matchers, ok := block["matchers"].([]any)
+			if !ok {
+				continue
+			}
+			for j, m := range matchers {
+				matcher, ok := m.(map[string]any)
+				if !ok {
+					continue
+				}
+				if typeVal, _ := matcher["type"].(string); typeVal != "regex" {
+					continue
+				}
+				regexes, ok := matcher["regex"].([]any)
+				if !ok {
+					// `regex:` may also be a single string
+					if s, isStr := matcher["regex"].(string); isStr {
+						regexes = []any{s}
+					} else {
+						continue
+					}
+				}
+				for k, r := range regexes {
+					pat, ok := r.(string)
+					if !ok {
+						continue
+					}
+					if safe, reason := isRegexSafe(pat); !safe {
+						result.AddError(
+							fmt.Sprintf("%s[%d].matchers[%d].regex[%d]", proto, i, j, k),
+							fmt.Sprintf("unsafe regex: %s", reason),
+							"UNSAFE_REGEX",
+						)
+					}
+				}
+			}
+		}
+	}
 }
 
 // CountRules returns 1 for Nuclei (each file is one template).
