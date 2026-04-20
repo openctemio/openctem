@@ -172,20 +172,16 @@ func parseQueryInt(s string, defaultVal int) int {
 	return val
 }
 
-// MaxPerPage is the hard ceiling every paginated list handler enforces
-// on the `per_page` query parameter. Kept here so the cap is one
-// source of truth and so CodeQL's data-flow analysis can verify it
-// statically at every make([]T, 0, cappedPerPage(...)) call site.
+// MaxPerPage is the hard ceiling every paginated list handler
+// enforces on the `per_page` query parameter. Use with
+// parseQueryIntBounded so CodeQL's data-flow analysis sees the bound
+// at the parse site — prevents go/uncontrolled-allocation-size false
+// positives in make() calls downstream.
 const MaxPerPage = 100
 
 // parseQueryIntBounded parses a query parameter as an integer and
 // clamps the result to [minVal, maxVal]. Returns defaultVal when
 // input is empty or invalid.
-//
-// Preferred over parseQueryInt+manual-clamp for values that end up in
-// make() / array sizing — CodeQL's data-flow analyser recognises the
-// bound at the parse site, preventing go/uncontrolled-allocation-size
-// false positives.
 func parseQueryIntBounded(s string, defaultVal, minVal, maxVal int) int {
 	if minVal > maxVal {
 		return defaultVal
@@ -198,20 +194,6 @@ func parseQueryIntBounded(s string, defaultVal, minVal, maxVal int) int {
 		return maxVal
 	}
 	return val
-}
-
-// cappedPerPage enforces [1, MaxPerPage] on an already-parsed per_page
-// value before it's used as a make() capacity. Kept for call sites
-// that parse `per_page` separately (legacy pattern); new code should
-// use parseQueryIntBounded directly.
-func cappedPerPage(perPage int) int {
-	if perPage < 1 {
-		return 1
-	}
-	if perPage > MaxPerPage {
-		return MaxPerPage
-	}
-	return perPage
 }
 
 // parseQueryBool parses a query parameter as a boolean pointer.
