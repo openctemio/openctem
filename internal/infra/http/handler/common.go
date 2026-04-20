@@ -172,6 +172,26 @@ func parseQueryInt(s string, defaultVal int) int {
 	return val
 }
 
+// MaxPerPage is the hard ceiling every paginated list handler enforces
+// on the `per_page` query parameter. Kept here so the cap is one
+// source of truth and so CodeQL's data-flow analysis can verify it
+// statically at every make([]T, 0, cappedPerPage(...)) call site.
+const MaxPerPage = 100
+
+// cappedPerPage enforces [1, MaxPerPage] on a user-supplied per_page
+// value before the value is used as a make() capacity. Handlers MUST
+// use this helper for slice pre-allocation so an attacker can't force
+// the process to allocate hundreds of MB from a single request.
+func cappedPerPage(perPage int) int {
+	if perPage < 1 {
+		return 1
+	}
+	if perPage > MaxPerPage {
+		return MaxPerPage
+	}
+	return perPage
+}
+
 // parseQueryBool parses a query parameter as a boolean pointer.
 // Returns nil if the input is empty, otherwise returns a pointer to the boolean value.
 // Accepts "true", "1" as true; anything else as false.

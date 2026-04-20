@@ -67,7 +67,7 @@ func (h *CTEMCycleHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]CTEMCycleResponse, 0, perPage)
+	items := make([]CTEMCycleResponse, 0, cappedPerPage(perPage))
 	for rows.Next() {
 		c, err := h.scanCycle(rows)
 		if err != nil {

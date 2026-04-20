@@ -146,7 +146,7 @@ func (h *CompensatingControlHandler) List(w http.ResponseWriter, r *http.Request
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]CompensatingControlResponse, 0, perPage)
+	items := make([]CompensatingControlResponse, 0, cappedPerPage(perPage))
 	for rows.Next() {
 		var c CompensatingControlResponse
 		var desc, testResult, testEvidence, createdBy sql.NullString

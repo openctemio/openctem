@@ -63,7 +63,7 @@ func (h *AttackerProfileHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]AttackerProfileResponse, 0, perPage)
+	items := make([]AttackerProfileResponse, 0, cappedPerPage(perPage))
 	for rows.Next() {
 		var p AttackerProfileResponse
 		var desc, assumptions, createdBy sql.NullString
