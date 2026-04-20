@@ -10,7 +10,6 @@ import (
 	"github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/templatesource"
 )
 
 // =============================================================================
@@ -187,32 +186,9 @@ func (a *pipelineAgentSelectorAdapter) CanUsePlatformAgents(ctx context.Context,
 	return false, "Platform agents not available in OSS edition"
 }
 
-// =============================================================================
-// Template Syncer Adapter
-// =============================================================================
-
-// scanTemplateSyncerAdapter adapts TemplateSyncer to scan.TemplateSyncer interface.
-type scanTemplateSyncerAdapter struct {
-	syncer *TemplateSyncer
-}
-
-// NewScanTemplateSyncerAdapter creates an adapter for the scan package's TemplateSyncer interface.
-func NewScanTemplateSyncerAdapter(syncer *TemplateSyncer) scan.TemplateSyncer {
-	return &scanTemplateSyncerAdapter{syncer: syncer}
-}
-
-// SyncSource implements scan.TemplateSyncer.
-func (a *scanTemplateSyncerAdapter) SyncSource(ctx context.Context, source *templatesource.TemplateSource) (*scan.TemplateSyncResult, error) {
-	result, err := a.syncer.SyncSource(ctx, source)
-	if err != nil {
-		return nil, err
-	}
-	return &scan.TemplateSyncResult{
-		Success:        result.Success,
-		TemplatesFound: result.TemplatesFound,
-		TemplatesAdded: result.TemplatesAdded,
-	}, nil
-}
+// Template Syncer adapter lives in internal/app/template/scan_adapter.go
+// (moved there because `template` imports `app` for SecretStoreService
+// and metrics — keeping the adapter here would introduce a cycle).
 
 // =============================================================================
 // Security Validator Adapters

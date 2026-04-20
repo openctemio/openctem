@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/openctemio/api/internal/app/validators"
+	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -95,7 +95,7 @@ func (s *ScannerTemplateService) CreateTemplate(ctx context.Context, input Creat
 	}
 
 	// Validate template content
-	validationResult := validators.ValidateTemplate(templateType, content)
+	validationResult := template.ValidateTemplate(templateType, content)
 	if !validationResult.Valid {
 		return nil, shared.NewDomainError("VALIDATION", validationResult.ErrorMessages(), shared.ErrValidation)
 	}
@@ -201,13 +201,13 @@ func (s *ScannerTemplateService) UpdateTemplate(ctx context.Context, input Updat
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	template, err := s.GetTemplate(ctx, input.TenantID, input.TemplateID)
+	tmpl, err := s.GetTemplate(ctx, input.TenantID, input.TemplateID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Validate ownership
-	if err := template.CanManage(tenantID); err != nil {
+	if err := tmpl.CanManage(tenantID); err != nil {
 		return nil, err
 	}
 
@@ -220,34 +220,34 @@ func (s *ScannerTemplateService) UpdateTemplate(ctx context.Context, input Updat
 		}
 
 		// Validate new content
-		validationResult := validators.ValidateTemplate(template.TemplateType, content)
+		validationResult := template.ValidateTemplate(tmpl.TemplateType, content)
 		if !validationResult.Valid {
 			return nil, shared.NewDomainError("VALIDATION", validationResult.ErrorMessages(), shared.ErrValidation)
 		}
 
 		// Update rule count and metadata
-		template.RuleCount = validationResult.RuleCount
+		tmpl.RuleCount = validationResult.RuleCount
 		for k, v := range validationResult.Metadata {
-			template.SetMetadata(k, v)
+			tmpl.SetMetadata(k, v)
 		}
 	}
 
 	// Update template
-	if err := template.Update(input.Name, input.Description, content, input.Tags); err != nil {
+	if err := tmpl.Update(input.Name, input.Description, content, input.Tags); err != nil {
 		return nil, err
 	}
 
 	// Re-sign if content changed
 	if content != nil {
 		signature := scannertemplate.ComputeSignature(content, s.signingSecret)
-		template.SetSignature(signature)
+		tmpl.SetSignature(signature)
 	}
 
-	if err := s.repo.Update(ctx, template); err != nil {
+	if err := s.repo.Update(ctx, tmpl); err != nil {
 		return nil, err
 	}
 
-	return template, nil
+	return tmpl, nil
 }
 
 // DeleteTemplate deletes a scanner template.
@@ -279,7 +279,7 @@ type ValidateTemplateInput struct {
 }
 
 // ValidateTemplate validates template content without saving.
-func (s *ScannerTemplateService) ValidateTemplate(ctx context.Context, input ValidateTemplateInput) (*validators.ValidationResult, error) {
+func (s *ScannerTemplateService) ValidateTemplate(ctx context.Context, input ValidateTemplateInput) (*template.ValidationResult, error) {
 	templateType := scannertemplate.TemplateType(input.TemplateType)
 	if !templateType.IsValid() {
 		return nil, fmt.Errorf("%w: invalid template type", shared.ErrValidation)
@@ -292,12 +292,12 @@ func (s *ScannerTemplateService) ValidateTemplate(ctx context.Context, input Val
 
 	// Check size limit
 	if int64(len(content)) > templateType.MaxSize() {
-		result := &validators.ValidationResult{Valid: false}
+		result := &template.ValidationResult{Valid: false}
 		result.AddError("content", fmt.Sprintf("content exceeds maximum size of %d bytes", templateType.MaxSize()), "SIZE_EXCEEDED")
 		return result, nil
 	}
 
-	return validators.ValidateTemplate(templateType, content), nil
+	return template.ValidateTemplate(templateType, content), nil
 }
 
 // DownloadTemplate returns the template content for download.

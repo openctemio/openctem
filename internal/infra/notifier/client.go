@@ -17,6 +17,14 @@ type Message struct {
 	FooterText  string            // Optional footer text
 	IconURL     string            // Optional icon URL
 	Attachments []Attachment      // Optional attachments
+
+	// IdempotencyKey is an opaque identifier the sender uses for
+	// provider-side deduplication (F-6). When non-empty, HTTP-based
+	// providers (Slack, Teams, generic webhook) attach it as the
+	// Idempotency-Key header so the receiving system can reject a
+	// duplicate delivery that follows a worker crash + UnlockStale
+	// re-queue. Providers that do not support dedup can ignore it.
+	IdempotencyKey string
 }
 
 // Attachment represents a message attachment.

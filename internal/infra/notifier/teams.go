@@ -99,6 +99,10 @@ func (c *TeamsClient) Send(ctx context.Context, msg Message) (*SendResult, error
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// F-6: idempotency key for duplicate-delivery suppression.
+	if msg.IdempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", msg.IdempotencyKey)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -1,30 +1,30 @@
 package handler
 
 import (
+	"github.com/openctemio/api/internal/app/tool"
 	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tool"
+	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
 )
 
 // ToolHandler handles HTTP requests for tool registry.
 type ToolHandler struct {
-	service   *app.ToolService
+	service   *tool.Service
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewToolHandler creates a new ToolHandler.
-func NewToolHandler(service *app.ToolService, v *validator.Validator, log *logger.Logger) *ToolHandler {
+func NewToolHandler(service *tool.Service, v *validator.Validator, log *logger.Logger) *ToolHandler {
 	return &ToolHandler{
 		service:   service,
 		validator: v,
@@ -214,7 +214,7 @@ type TenantToolStatsResponse struct {
 // @Security     BearerAuth
 // @Router       /tools [get]
 func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
-	input := app.ListToolsInput{
+	input := tool.ListInput{
 		Category: r.URL.Query().Get("category"),
 		Search:   r.URL.Query().Get("search"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
@@ -338,7 +338,7 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateToolInput{
+	input := tool.CreateInput{
 		Name:             req.Name,
 		DisplayName:      req.DisplayName,
 		Description:      req.Description,
@@ -398,7 +398,7 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateToolInput{
+	input := tool.UpdateInput{
 		ToolID:           toolID,
 		DisplayName:      req.DisplayName,
 		Description:      req.Description,
@@ -527,7 +527,7 @@ func (h *ToolHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /tools/platform [get]
 func (h *ToolHandler) ListPlatformTools(w http.ResponseWriter, r *http.Request) {
-	input := app.ListPlatformToolsInput{
+	input := tool.ListPlatformToolsInput{
 		Category: r.URL.Query().Get("category"),
 		Search:   r.URL.Query().Get("search"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
@@ -594,7 +594,7 @@ func (h *ToolHandler) ListPlatformTools(w http.ResponseWriter, r *http.Request) 
 func (h *ToolHandler) ListCustomTools(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
-	input := app.ListCustomToolsInput{
+	input := tool.ListCustomToolsInput{
 		TenantID: tenantID,
 		Category: r.URL.Query().Get("category"),
 		Search:   r.URL.Query().Get("search"),
@@ -665,7 +665,7 @@ func (h *ToolHandler) CreateCustomTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateCustomToolInput{
+	input := tool.CreateCustomToolInput{
 		TenantID:         tenantID,
 		CreatedBy:        userID,
 		Name:             req.Name,
@@ -756,7 +756,7 @@ func (h *ToolHandler) UpdateCustomTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateCustomToolInput{
+	input := tool.UpdateCustomToolInput{
 		TenantID:         tenantID,
 		ToolID:           toolID,
 		DisplayName:      req.DisplayName,
@@ -890,7 +890,7 @@ func (h *ToolHandler) DeactivateCustomTool(w http.ResponseWriter, r *http.Reques
 func (h *ToolHandler) ListTenantConfigs(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
-	input := app.ListTenantToolConfigsInput{
+	input := tool.ListTenantToolConfigsInput{
 		TenantID: tenantID,
 		ToolID:   r.URL.Query().Get("tool_id"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
@@ -976,7 +976,7 @@ func (h *ToolHandler) UpdateTenantConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input := app.UpdateTenantToolConfigInput{
+	input := tool.UpdateTenantToolConfigInput{
 		TenantID:  tenantID,
 		ToolID:    toolID,
 		Config:    req.Config,
@@ -1072,7 +1072,7 @@ func (h *ToolHandler) BulkEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.BulkEnableToolsInput{
+	input := tool.BulkEnableToolsInput{
 		TenantID: tenantID,
 		ToolIDs:  req.ToolIDs,
 	}
@@ -1111,7 +1111,7 @@ func (h *ToolHandler) BulkDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.BulkDisableToolsInput{
+	input := tool.BulkDisableToolsInput{
 		TenantID: tenantID,
 		ToolIDs:  req.ToolIDs,
 	}
@@ -1144,7 +1144,7 @@ func (h *ToolHandler) BulkDisable(w http.ResponseWriter, r *http.Request) {
 func (h *ToolHandler) ListAllTools(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
-	input := app.ListToolsWithConfigInput{
+	input := tool.ListToolsWithConfigInput{
 		TenantID: tenantID,
 		Category: r.URL.Query().Get("category"),
 		Search:   r.URL.Query().Get("search"),
@@ -1323,7 +1323,7 @@ func (h *ToolHandler) GetToolStats(w http.ResponseWriter, r *http.Request) {
 // Helper Functions
 // =============================================================================
 
-func toToolResponse(t *tool.Tool) *ToolResponse {
+func toToolResponse(t *tooldom.Tool) *ToolResponse {
 	resp := &ToolResponse{
 		ID:               t.ID.String(),
 		Name:             t.Name,
@@ -1391,7 +1391,7 @@ func toToolResponse(t *tool.Tool) *ToolResponse {
 }
 
 // toToolResponseWithCategory converts tool to response with embedded category.
-func toToolResponseWithCategory(t *tool.Tool, cat *tool.EmbeddedCategory) *ToolResponse {
+func toToolResponseWithCategory(t *tooldom.Tool, cat *tooldom.EmbeddedCategory) *ToolResponse {
 	resp := toToolResponse(t)
 	if cat != nil {
 		resp.Category = &EmbeddedCategoryResponse{
@@ -1405,7 +1405,7 @@ func toToolResponseWithCategory(t *tool.Tool, cat *tool.EmbeddedCategory) *ToolR
 	return resp
 }
 
-func toTenantToolConfigResponse(c *tool.TenantToolConfig) *TenantToolConfigResponse {
+func toTenantToolConfigResponse(c *tooldom.TenantToolConfig) *TenantToolConfigResponse {
 	resp := &TenantToolConfigResponse{
 		ID:        c.ID.String(),
 		TenantID:  c.TenantID.String(),
@@ -1451,7 +1451,7 @@ func toTenantToolConfigResponse(c *tool.TenantToolConfig) *TenantToolConfigRespo
 	return resp
 }
 
-func toTenantToolStatsResponse(s *tool.TenantToolStats) *TenantToolStatsResponse {
+func toTenantToolStatsResponse(s *tooldom.TenantToolStats) *TenantToolStatsResponse {
 	resp := &TenantToolStatsResponse{
 		TenantID:       s.TenantID.String(),
 		TotalRuns:      s.TotalRuns,

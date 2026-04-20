@@ -1,24 +1,24 @@
 package unit
 
 import (
+	"github.com/openctemio/api/internal/app/command"
 	"context"
 	"encoding/json"
 	"errors"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/domain/command"
+	commanddom "github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )
 
 // =============================================================================
-// Mock: command.Repository (prefixed with cmd)
+// Mock: commanddom.Repository (prefixed with cmd)
 // =============================================================================
 
 type cmdMockRepo struct {
-	commands map[string]*command.Command
+	commands map[string]*commanddom.Command
 
 	// Error overrides
 	createErr             error
@@ -29,7 +29,7 @@ type cmdMockRepo struct {
 	getPendingErr         error
 	expireErr             error
 	expireCount           int64
-	findExpiredResult     []*command.Command
+	findExpiredResult     []*commanddom.Command
 	findExpiredErr        error
 	getByAuthTokenHashErr error
 	countActiveErr        error
@@ -50,10 +50,10 @@ type cmdMockRepo struct {
 }
 
 func newCmdMockRepo() *cmdMockRepo {
-	return &cmdMockRepo{commands: make(map[string]*command.Command)}
+	return &cmdMockRepo{commands: make(map[string]*commanddom.Command)}
 }
 
-func (m *cmdMockRepo) Create(_ context.Context, cmd *command.Command) error {
+func (m *cmdMockRepo) Create(_ context.Context, cmd *commanddom.Command) error {
 	if m.createErr != nil {
 		return m.createErr
 	}
@@ -61,7 +61,7 @@ func (m *cmdMockRepo) Create(_ context.Context, cmd *command.Command) error {
 	return nil
 }
 
-func (m *cmdMockRepo) GetByID(_ context.Context, id shared.ID) (*command.Command, error) {
+func (m *cmdMockRepo) GetByID(_ context.Context, id shared.ID) (*commanddom.Command, error) {
 	c, ok := m.commands[id.String()]
 	if !ok {
 		return nil, shared.ErrNotFound
@@ -69,7 +69,7 @@ func (m *cmdMockRepo) GetByID(_ context.Context, id shared.ID) (*command.Command
 	return c, nil
 }
 
-func (m *cmdMockRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*command.Command, error) {
+func (m *cmdMockRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*commanddom.Command, error) {
 	if m.getByTenantAndIDErr != nil {
 		return nil, m.getByTenantAndIDErr
 	}
@@ -83,13 +83,13 @@ func (m *cmdMockRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID
 	return c, nil
 }
 
-func (m *cmdMockRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, limit int) ([]*command.Command, error) {
+func (m *cmdMockRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, limit int) ([]*commanddom.Command, error) {
 	if m.getPendingErr != nil {
 		return nil, m.getPendingErr
 	}
-	result := make([]*command.Command, 0)
+	result := make([]*commanddom.Command, 0)
 	for _, c := range m.commands {
-		if c.Status == command.CommandStatusPending {
+		if c.Status == commanddom.CommandStatusPending {
 			result = append(result, c)
 			if len(result) >= limit {
 				break
@@ -99,16 +99,16 @@ func (m *cmdMockRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shar
 	return result, nil
 }
 
-func (m *cmdMockRepo) List(_ context.Context, _ command.Filter, page pagination.Pagination) (pagination.Result[*command.Command], error) {
+func (m *cmdMockRepo) List(_ context.Context, _ commanddom.Filter, page pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
 	if m.listErr != nil {
-		return pagination.Result[*command.Command]{}, m.listErr
+		return pagination.Result[*commanddom.Command]{}, m.listErr
 	}
-	result := make([]*command.Command, 0, len(m.commands))
+	result := make([]*commanddom.Command, 0, len(m.commands))
 	for _, c := range m.commands {
 		result = append(result, c)
 	}
 	total := int64(len(result))
-	return pagination.Result[*command.Command]{
+	return pagination.Result[*commanddom.Command]{
 		Data:       result,
 		Total:      total,
 		Page:       page.Page,
@@ -117,7 +117,7 @@ func (m *cmdMockRepo) List(_ context.Context, _ command.Filter, page pagination.
 	}, nil
 }
 
-func (m *cmdMockRepo) Update(_ context.Context, cmd *command.Command) error {
+func (m *cmdMockRepo) Update(_ context.Context, cmd *commanddom.Command) error {
 	if m.updateErr != nil {
 		return m.updateErr
 	}
@@ -140,14 +140,14 @@ func (m *cmdMockRepo) ExpireOldCommands(_ context.Context) (int64, error) {
 	return m.expireCount, nil
 }
 
-func (m *cmdMockRepo) FindExpired(_ context.Context) ([]*command.Command, error) {
+func (m *cmdMockRepo) FindExpired(_ context.Context) ([]*commanddom.Command, error) {
 	if m.findExpiredErr != nil {
 		return nil, m.findExpiredErr
 	}
 	return m.findExpiredResult, nil
 }
 
-func (m *cmdMockRepo) GetByAuthTokenHash(_ context.Context, _ string) (*command.Command, error) {
+func (m *cmdMockRepo) GetByAuthTokenHash(_ context.Context, _ string) (*commanddom.Command, error) {
 	if m.getByAuthTokenHashErr != nil {
 		return nil, m.getByAuthTokenHashErr
 	}
@@ -175,14 +175,14 @@ func (m *cmdMockRepo) CountQueuedPlatformJobs(_ context.Context) (int, error) {
 	return 0, nil
 }
 
-func (m *cmdMockRepo) GetQueuedPlatformJobs(_ context.Context, _ int) ([]*command.Command, error) {
+func (m *cmdMockRepo) GetQueuedPlatformJobs(_ context.Context, _ int) ([]*commanddom.Command, error) {
 	if m.getQueuedErr != nil {
 		return nil, m.getQueuedErr
 	}
 	return nil, nil
 }
 
-func (m *cmdMockRepo) GetNextPlatformJob(_ context.Context, _ shared.ID, _ []string, _ []string) (*command.Command, error) {
+func (m *cmdMockRepo) GetNextPlatformJob(_ context.Context, _ shared.ID, _ []string, _ []string) (*commanddom.Command, error) {
 	if m.getNextErr != nil {
 		return nil, m.getNextErr
 	}
@@ -210,28 +210,28 @@ func (m *cmdMockRepo) ExpireOldPlatformJobs(_ context.Context, _ int) (int64, er
 	return 0, nil
 }
 
-func (m *cmdMockRepo) GetQueuePosition(_ context.Context, _ shared.ID) (*command.QueuePosition, error) {
+func (m *cmdMockRepo) GetQueuePosition(_ context.Context, _ shared.ID) (*commanddom.QueuePosition, error) {
 	if m.getQueuePositionErr != nil {
 		return nil, m.getQueuePositionErr
 	}
-	return &command.QueuePosition{Position: 1, TotalQueued: 1}, nil
+	return &commanddom.QueuePosition{Position: 1, TotalQueued: 1}, nil
 }
 
-func (m *cmdMockRepo) ListPlatformJobsByTenant(_ context.Context, _ shared.ID, page pagination.Pagination) (pagination.Result[*command.Command], error) {
+func (m *cmdMockRepo) ListPlatformJobsByTenant(_ context.Context, _ shared.ID, page pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
 	if m.listPlatformTenantErr != nil {
-		return pagination.Result[*command.Command]{}, m.listPlatformTenantErr
+		return pagination.Result[*commanddom.Command]{}, m.listPlatformTenantErr
 	}
-	return pagination.Result[*command.Command]{Page: page.Page, PerPage: page.PerPage}, nil
+	return pagination.Result[*commanddom.Command]{Page: page.Page, PerPage: page.PerPage}, nil
 }
 
-func (m *cmdMockRepo) ListPlatformJobsAdmin(_ context.Context, _ *shared.ID, _ *shared.ID, _ *command.CommandStatus, page pagination.Pagination) (pagination.Result[*command.Command], error) {
+func (m *cmdMockRepo) ListPlatformJobsAdmin(_ context.Context, _ *shared.ID, _ *shared.ID, _ *commanddom.CommandStatus, page pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
 	if m.listPlatformAdminErr != nil {
-		return pagination.Result[*command.Command]{}, m.listPlatformAdminErr
+		return pagination.Result[*commanddom.Command]{}, m.listPlatformAdminErr
 	}
-	return pagination.Result[*command.Command]{Page: page.Page, PerPage: page.PerPage}, nil
+	return pagination.Result[*commanddom.Command]{Page: page.Page, PerPage: page.PerPage}, nil
 }
 
-func (m *cmdMockRepo) GetPlatformJobsByAgent(_ context.Context, _ shared.ID, _ *command.CommandStatus) ([]*command.Command, error) {
+func (m *cmdMockRepo) GetPlatformJobsByAgent(_ context.Context, _ shared.ID, _ *commanddom.CommandStatus) ([]*commanddom.Command, error) {
 	if m.getPlatformByAgentErr != nil {
 		return nil, m.getPlatformByAgentErr
 	}
@@ -252,11 +252,11 @@ func (m *cmdMockRepo) FailExhaustedCommands(_ context.Context, _ int) (int64, er
 	return 0, nil
 }
 
-func (m *cmdMockRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (command.CommandStats, error) {
+func (m *cmdMockRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (commanddom.CommandStats, error) {
 	if m.getStatsByTenantErr != nil {
-		return command.CommandStats{}, m.getStatsByTenantErr
+		return commanddom.CommandStats{}, m.getStatsByTenantErr
 	}
-	return command.CommandStats{}, nil
+	return commanddom.CommandStats{}, nil
 }
 
 func (m *cmdMockRepo) CancelByPipelineRunID(_ context.Context, _ shared.ID, _ shared.ID) (int64, error) {
@@ -271,8 +271,8 @@ func newCmdTestLogger() *logger.Logger {
 	return logger.New(logger.Config{Level: "error"})
 }
 
-func newCmdTestService(repo command.Repository) *app.CommandService {
-	return app.NewCommandService(repo, newCmdTestLogger())
+func newCmdTestService(repo commanddom.Repository) *command.Service {
+	return command.NewService(repo, newCmdTestLogger())
 }
 
 func newCmdTestTenantID() string {
@@ -280,14 +280,14 @@ func newCmdTestTenantID() string {
 }
 
 // createTestCommand creates a command in the repo and returns its ID as string.
-func createTestCommand(t *testing.T, svc *app.CommandService, tenantID string, cmdType string, priority string) *command.Command {
+func createTestCommand(t *testing.T, svc *command.Service, tenantID string, cmdType string, priority string) *commanddom.Command {
 	t.Helper()
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: tenantID,
 		Type:     cmdType,
 		Priority: priority,
 	}
-	cmd, err := svc.CreateCommand(context.Background(), input)
+	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("failed to create test command: %v", err)
 	}
@@ -303,27 +303,27 @@ func TestCommandService_CreateCommand_Success(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: tenantID,
 		Type:     "scan",
 		Priority: "high",
 		Payload:  json.RawMessage(`{"target":"example.com"}`),
 	}
 
-	cmd, err := svc.CreateCommand(context.Background(), input)
+	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if cmd == nil {
 		t.Fatal("expected command, got nil")
 	}
-	if cmd.Type != command.CommandTypeScan {
+	if cmd.Type != commanddom.CommandTypeScan {
 		t.Errorf("expected type scan, got %s", cmd.Type)
 	}
-	if cmd.Priority != command.CommandPriorityHigh {
+	if cmd.Priority != commanddom.CommandPriorityHigh {
 		t.Errorf("expected priority high, got %s", cmd.Priority)
 	}
-	if cmd.Status != command.CommandStatusPending {
+	if cmd.Status != commanddom.CommandStatusPending {
 		t.Errorf("expected status pending, got %s", cmd.Status)
 	}
 	if string(cmd.Payload) != `{"target":"example.com"}` {
@@ -339,11 +339,11 @@ func TestCommandService_CreateCommand_AllTypes(t *testing.T) {
 			svc := newCmdTestService(repo)
 			tenantID := newCmdTestTenantID()
 
-			input := app.CreateCommandInput{
+			input := command.CreateInput{
 				TenantID: tenantID,
 				Type:     cmdType,
 			}
-			cmd, err := svc.CreateCommand(context.Background(), input)
+			cmd, err := svc.Create(context.Background(), input)
 			if err != nil {
 				t.Fatalf("expected no error for type %s, got %v", cmdType, err)
 			}
@@ -362,12 +362,12 @@ func TestCommandService_CreateCommand_AllPriorities(t *testing.T) {
 			svc := newCmdTestService(repo)
 			tenantID := newCmdTestTenantID()
 
-			input := app.CreateCommandInput{
+			input := command.CreateInput{
 				TenantID: tenantID,
 				Type:     "scan",
 				Priority: p,
 			}
-			cmd, err := svc.CreateCommand(context.Background(), input)
+			cmd, err := svc.Create(context.Background(), input)
 			if err != nil {
 				t.Fatalf("expected no error for priority %s, got %v", p, err)
 			}
@@ -383,16 +383,16 @@ func TestCommandService_CreateCommand_DefaultPriority(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: tenantID,
 		Type:     "scan",
 		// Priority omitted
 	}
-	cmd, err := svc.CreateCommand(context.Background(), input)
+	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if cmd.Priority != command.CommandPriorityNormal {
+	if cmd.Priority != commanddom.CommandPriorityNormal {
 		t.Errorf("expected default priority normal, got %s", cmd.Priority)
 	}
 }
@@ -403,12 +403,12 @@ func TestCommandService_CreateCommand_WithAgentID(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 	agentID := shared.NewID().String()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: tenantID,
 		AgentID:  agentID,
 		Type:     "scan",
 	}
-	cmd, err := svc.CreateCommand(context.Background(), input)
+	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -425,12 +425,12 @@ func TestCommandService_CreateCommand_WithExpiration(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID:  tenantID,
 		Type:      "scan",
 		ExpiresIn: 3600, // 1 hour
 	}
-	cmd, err := svc.CreateCommand(context.Background(), input)
+	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -444,11 +444,11 @@ func TestCommandService_CreateCommand_NoExpiration(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: tenantID,
 		Type:     "scan",
 	}
-	cmd, err := svc.CreateCommand(context.Background(), input)
+	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -461,11 +461,11 @@ func TestCommandService_CreateCommand_InvalidTenantID(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: "invalid-uuid",
 		Type:     "scan",
 	}
-	_, err := svc.CreateCommand(context.Background(), input)
+	_, err := svc.Create(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}
@@ -479,12 +479,12 @@ func TestCommandService_CreateCommand_InvalidAgentID(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: tenantID,
 		AgentID:  "not-a-uuid",
 		Type:     "scan",
 	}
-	_, err := svc.CreateCommand(context.Background(), input)
+	_, err := svc.Create(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error for invalid agent ID")
 	}
@@ -499,11 +499,11 @@ func TestCommandService_CreateCommand_RepoError(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: tenantID,
 		Type:     "scan",
 	}
-	_, err := svc.CreateCommand(context.Background(), input)
+	_, err := svc.Create(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -514,11 +514,11 @@ func TestCommandService_CreateCommand_EmptyType(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: tenantID,
 		Type:     "",
 	}
-	_, err := svc.CreateCommand(context.Background(), input)
+	_, err := svc.Create(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error for empty command type")
 	}
@@ -535,7 +535,7 @@ func TestCommandService_GetCommand_Success(t *testing.T) {
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
-	got, err := svc.GetCommand(context.Background(), tenantID, created.ID.String())
+	got, err := svc.Get(context.Background(), tenantID, created.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -550,7 +550,7 @@ func TestCommandService_GetCommand_NotFound(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 	missingID := shared.NewID().String()
 
-	_, err := svc.GetCommand(context.Background(), tenantID, missingID)
+	_, err := svc.Get(context.Background(), tenantID, missingID)
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -563,7 +563,7 @@ func TestCommandService_GetCommand_InvalidTenantID(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 
-	_, err := svc.GetCommand(context.Background(), "bad-id", shared.NewID().String())
+	_, err := svc.Get(context.Background(), "bad-id", shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -577,7 +577,7 @@ func TestCommandService_GetCommand_InvalidCommandID(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	_, err := svc.GetCommand(context.Background(), tenantID, "bad-command-id")
+	_, err := svc.Get(context.Background(), tenantID, "bad-command-id")
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -594,7 +594,7 @@ func TestCommandService_GetCommand_WrongTenant(t *testing.T) {
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
-	_, err := svc.GetCommand(context.Background(), otherTenantID, created.ID.String())
+	_, err := svc.Get(context.Background(), otherTenantID, created.ID.String())
 	if err == nil {
 		t.Fatal("expected error for wrong tenant")
 	}
@@ -612,12 +612,12 @@ func TestCommandService_ListCommands_Success(t *testing.T) {
 	createTestCommand(t, svc, tenantID, "scan", "normal")
 	createTestCommand(t, svc, tenantID, "collect", "high")
 
-	input := app.ListCommandsInput{
+	input := command.ListInput{
 		TenantID: tenantID,
 		Page:     1,
 		PerPage:  10,
 	}
-	result, err := svc.ListCommands(context.Background(), input)
+	result, err := svc.List(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -632,7 +632,7 @@ func TestCommandService_ListCommands_WithFilters(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 	agentID := shared.NewID().String()
 
-	input := app.ListCommandsInput{
+	input := command.ListInput{
 		TenantID: tenantID,
 		AgentID:  agentID,
 		Type:     "scan",
@@ -641,7 +641,7 @@ func TestCommandService_ListCommands_WithFilters(t *testing.T) {
 		Page:     1,
 		PerPage:  10,
 	}
-	_, err := svc.ListCommands(context.Background(), input)
+	_, err := svc.List(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error with filters, got %v", err)
 	}
@@ -651,12 +651,12 @@ func TestCommandService_ListCommands_InvalidTenantID(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 
-	input := app.ListCommandsInput{
+	input := command.ListInput{
 		TenantID: "bad",
 		Page:     1,
 		PerPage:  10,
 	}
-	_, err := svc.ListCommands(context.Background(), input)
+	_, err := svc.List(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -670,13 +670,13 @@ func TestCommandService_ListCommands_InvalidAgentID(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.ListCommandsInput{
+	input := command.ListInput{
 		TenantID: tenantID,
 		AgentID:  "not-uuid",
 		Page:     1,
 		PerPage:  10,
 	}
-	_, err := svc.ListCommands(context.Background(), input)
+	_, err := svc.List(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -691,12 +691,12 @@ func TestCommandService_ListCommands_RepoError(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.ListCommandsInput{
+	input := command.ListInput{
 		TenantID: tenantID,
 		Page:     1,
 		PerPage:  10,
 	}
-	_, err := svc.ListCommands(context.Background(), input)
+	_, err := svc.List(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -713,11 +713,11 @@ func TestCommandService_PollCommands_Success(t *testing.T) {
 
 	createTestCommand(t, svc, tenantID, "scan", "normal")
 
-	input := app.PollCommandsInput{
+	input := command.PollInput{
 		TenantID: tenantID,
 		Limit:    10,
 	}
-	cmds, err := svc.PollCommands(context.Background(), input)
+	cmds, err := svc.Poll(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -732,12 +732,12 @@ func TestCommandService_PollCommands_WithAgentID(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 	agentID := shared.NewID().String()
 
-	input := app.PollCommandsInput{
+	input := command.PollInput{
 		TenantID: tenantID,
 		AgentID:  agentID,
 		Limit:    10,
 	}
-	_, err := svc.PollCommands(context.Background(), input)
+	_, err := svc.Poll(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -749,11 +749,11 @@ func TestCommandService_PollCommands_DefaultLimit(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	// Limit <= 0 should default to 10
-	input := app.PollCommandsInput{
+	input := command.PollInput{
 		TenantID: tenantID,
 		Limit:    0,
 	}
-	_, err := svc.PollCommands(context.Background(), input)
+	_, err := svc.Poll(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -764,11 +764,11 @@ func TestCommandService_PollCommands_LimitCappedAt100(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.PollCommandsInput{
+	input := command.PollInput{
 		TenantID: tenantID,
 		Limit:    200, // Should be capped to 100
 	}
-	_, err := svc.PollCommands(context.Background(), input)
+	_, err := svc.Poll(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -778,11 +778,11 @@ func TestCommandService_PollCommands_InvalidTenantID(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 
-	input := app.PollCommandsInput{
+	input := command.PollInput{
 		TenantID: "bad-uuid",
 		Limit:    10,
 	}
-	_, err := svc.PollCommands(context.Background(), input)
+	_, err := svc.Poll(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -796,12 +796,12 @@ func TestCommandService_PollCommands_InvalidAgentID(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.PollCommandsInput{
+	input := command.PollInput{
 		TenantID: tenantID,
 		AgentID:  "not-valid",
 		Limit:    10,
 	}
-	_, err := svc.PollCommands(context.Background(), input)
+	_, err := svc.Poll(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -816,11 +816,11 @@ func TestCommandService_PollCommands_RepoError(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.PollCommandsInput{
+	input := command.PollInput{
 		TenantID: tenantID,
 		Limit:    10,
 	}
-	_, err := svc.PollCommands(context.Background(), input)
+	_, err := svc.Poll(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -837,11 +837,11 @@ func TestCommandService_AcknowledgeCommand_Success(t *testing.T) {
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
-	acked, err := svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
+	acked, err := svc.Acknowledge(context.Background(), tenantID, created.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if acked.Status != command.CommandStatusAcknowledged {
+	if acked.Status != commanddom.CommandStatusAcknowledged {
 		t.Errorf("expected status acknowledged, got %s", acked.Status)
 	}
 	if acked.AcknowledgedAt == nil {
@@ -857,13 +857,13 @@ func TestCommandService_AcknowledgeCommand_AlreadyAcknowledged(t *testing.T) {
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
 	// Acknowledge once
-	_, err := svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, created.ID.String())
 	if err != nil {
 		t.Fatalf("first acknowledge failed: %v", err)
 	}
 
 	// Try to acknowledge again - should fail
-	_, err = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
+	_, err = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
 	if err == nil {
 		t.Fatal("expected error when acknowledging already acknowledged command")
 	}
@@ -877,11 +877,11 @@ func TestCommandService_AcknowledgeCommand_RunningCommand(t *testing.T) {
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
 	// Move to acknowledged, then running
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
 
 	// Try to acknowledge a running command
-	_, err := svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, created.ID.String())
 	if err == nil {
 		t.Fatal("expected error when acknowledging running command")
 	}
@@ -893,7 +893,7 @@ func TestCommandService_AcknowledgeCommand_NotFound(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 	missingID := shared.NewID().String()
 
-	_, err := svc.AcknowledgeCommand(context.Background(), tenantID, missingID)
+	_, err := svc.Acknowledge(context.Background(), tenantID, missingID)
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -907,7 +907,7 @@ func TestCommandService_AcknowledgeCommand_UpdateError(t *testing.T) {
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 	repo.updateErr = errors.New("update failed")
 
-	_, err := svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, created.ID.String())
 	if err == nil {
 		t.Fatal("expected error from repo update")
 	}
@@ -923,13 +923,13 @@ func TestCommandService_StartCommand_Success(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
 
-	started, err := svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	started, err := svc.Start(context.Background(), tenantID, created.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if started.Status != command.CommandStatusRunning {
+	if started.Status != commanddom.CommandStatusRunning {
 		t.Errorf("expected status running, got %s", started.Status)
 	}
 	if started.StartedAt == nil {
@@ -945,7 +945,7 @@ func TestCommandService_StartCommand_NotAcknowledged(t *testing.T) {
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
 	// Try to start a pending command (not acknowledged)
-	_, err := svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, created.ID.String())
 	if err == nil {
 		t.Fatal("expected error when starting non-acknowledged command")
 	}
@@ -957,11 +957,11 @@ func TestCommandService_StartCommand_AlreadyRunning(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
 
 	// Try to start again
-	_, err := svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, created.ID.String())
 	if err == nil {
 		t.Fatal("expected error when starting already running command")
 	}
@@ -972,7 +972,7 @@ func TestCommandService_StartCommand_NotFound(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	_, err := svc.StartCommand(context.Background(), tenantID, shared.NewID().String())
+	_, err := svc.Start(context.Background(), tenantID, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -984,10 +984,10 @@ func TestCommandService_StartCommand_UpdateError(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
 
 	repo.updateErr = errors.New("update failed")
-	_, err := svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, created.ID.String())
 	if err == nil {
 		t.Fatal("expected error from repo update")
 	}
@@ -1003,20 +1003,20 @@ func TestCommandService_CompleteCommand_Success(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
 
 	result := json.RawMessage(`{"found":42}`)
-	input := app.CompleteCommandInput{
+	input := command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: created.ID.String(),
 		Result:    result,
 	}
-	completed, err := svc.CompleteCommand(context.Background(), input)
+	completed, err := svc.Complete(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if completed.Status != command.CommandStatusCompleted {
+	if completed.Status != commanddom.CommandStatusCompleted {
 		t.Errorf("expected status completed, got %s", completed.Status)
 	}
 	if completed.CompletedAt == nil {
@@ -1034,11 +1034,11 @@ func TestCommandService_CompleteCommand_NotRunning(t *testing.T) {
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
-	input := app.CompleteCommandInput{
+	input := command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: created.ID.String(),
 	}
-	_, err := svc.CompleteCommand(context.Background(), input)
+	_, err := svc.Complete(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error when completing non-running command")
 	}
@@ -1050,17 +1050,17 @@ func TestCommandService_CompleteCommand_AlreadyCompleted(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
 
-	input := app.CompleteCommandInput{
+	input := command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: created.ID.String(),
 	}
-	_, _ = svc.CompleteCommand(context.Background(), input)
+	_, _ = svc.Complete(context.Background(), input)
 
 	// Try to complete again
-	_, err := svc.CompleteCommand(context.Background(), input)
+	_, err := svc.Complete(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error when completing already completed command")
 	}
@@ -1071,11 +1071,11 @@ func TestCommandService_CompleteCommand_NotFound(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CompleteCommandInput{
+	input := command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: shared.NewID().String(),
 	}
-	_, err := svc.CompleteCommand(context.Background(), input)
+	_, err := svc.Complete(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -1087,15 +1087,15 @@ func TestCommandService_CompleteCommand_UpdateError(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
 
 	repo.updateErr = errors.New("update failed")
-	input := app.CompleteCommandInput{
+	input := command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: created.ID.String(),
 	}
-	_, err := svc.CompleteCommand(context.Background(), input)
+	_, err := svc.Complete(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error from repo update")
 	}
@@ -1112,16 +1112,16 @@ func TestCommandService_FailCommand_Success(t *testing.T) {
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
-	input := app.FailCommandInput{
+	input := command.FailInput{
 		TenantID:     tenantID,
 		CommandID:    created.ID.String(),
 		ErrorMessage: "scanner crashed",
 	}
-	failed, err := svc.FailCommand(context.Background(), input)
+	failed, err := svc.Fail(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if failed.Status != command.CommandStatusFailed {
+	if failed.Status != commanddom.CommandStatusFailed {
 		t.Errorf("expected status failed, got %s", failed.Status)
 	}
 	if failed.ErrorMessage != "scanner crashed" {
@@ -1138,19 +1138,19 @@ func TestCommandService_FailCommand_FromRunning(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
 
-	input := app.FailCommandInput{
+	input := command.FailInput{
 		TenantID:     tenantID,
 		CommandID:    created.ID.String(),
 		ErrorMessage: "timeout",
 	}
-	failed, err := svc.FailCommand(context.Background(), input)
+	failed, err := svc.Fail(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if failed.Status != command.CommandStatusFailed {
+	if failed.Status != commanddom.CommandStatusFailed {
 		t.Errorf("expected status failed, got %s", failed.Status)
 	}
 }
@@ -1160,11 +1160,11 @@ func TestCommandService_FailCommand_NotFound(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.FailCommandInput{
+	input := command.FailInput{
 		TenantID:  tenantID,
 		CommandID: shared.NewID().String(),
 	}
-	_, err := svc.FailCommand(context.Background(), input)
+	_, err := svc.Fail(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -1178,12 +1178,12 @@ func TestCommandService_FailCommand_UpdateError(t *testing.T) {
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 	repo.updateErr = errors.New("update failed")
 
-	input := app.FailCommandInput{
+	input := command.FailInput{
 		TenantID:     tenantID,
 		CommandID:    created.ID.String(),
 		ErrorMessage: "error",
 	}
-	_, err := svc.FailCommand(context.Background(), input)
+	_, err := svc.Fail(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error from repo update")
 	}
@@ -1204,7 +1204,7 @@ func TestCommandService_CancelCommand_FromPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if canceled.Status != command.CommandStatusCanceled {
+	if canceled.Status != commanddom.CommandStatusCanceled {
 		t.Errorf("expected status canceled, got %s", canceled.Status)
 	}
 	if canceled.CompletedAt == nil {
@@ -1218,13 +1218,13 @@ func TestCommandService_CancelCommand_FromAcknowledged(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
 
 	canceled, err := svc.CancelCommand(context.Background(), tenantID, created.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if canceled.Status != command.CommandStatusCanceled {
+	if canceled.Status != commanddom.CommandStatusCanceled {
 		t.Errorf("expected status canceled, got %s", canceled.Status)
 	}
 }
@@ -1235,14 +1235,14 @@ func TestCommandService_CancelCommand_FromRunning(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
 
 	canceled, err := svc.CancelCommand(context.Background(), tenantID, created.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if canceled.Status != command.CommandStatusCanceled {
+	if canceled.Status != commanddom.CommandStatusCanceled {
 		t.Errorf("expected status canceled, got %s", canceled.Status)
 	}
 }
@@ -1253,9 +1253,9 @@ func TestCommandService_CancelCommand_CompletedCannotBeCanceled(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.CompleteCommand(context.Background(), app.CompleteCommandInput{
+	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: created.ID.String(),
 	})
@@ -1272,7 +1272,7 @@ func TestCommandService_CancelCommand_FromFailed(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.FailCommand(context.Background(), app.FailCommandInput{
+	_, _ = svc.Fail(context.Background(), command.FailInput{
 		TenantID:     tenantID,
 		CommandID:    created.ID.String(),
 		ErrorMessage: "error",
@@ -1283,7 +1283,7 @@ func TestCommandService_CancelCommand_FromFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error canceling failed command, got %v", err)
 	}
-	if canceled.Status != command.CommandStatusCanceled {
+	if canceled.Status != commanddom.CommandStatusCanceled {
 		t.Errorf("expected status canceled, got %s", canceled.Status)
 	}
 }
@@ -1330,7 +1330,7 @@ func TestCommandService_DeleteCommand_Success(t *testing.T) {
 	}
 
 	// Verify it's gone
-	_, err = svc.GetCommand(context.Background(), tenantID, created.ID.String())
+	_, err = svc.Get(context.Background(), tenantID, created.ID.String())
 	if err == nil {
 		t.Fatal("expected not found after delete")
 	}
@@ -1456,30 +1456,30 @@ func TestCommandService_FullLifecycle_PendingToCompleted(t *testing.T) {
 
 	// Create (pending)
 	cmd := createTestCommand(t, svc, tenantID, "scan", "high")
-	if cmd.Status != command.CommandStatusPending {
+	if cmd.Status != commanddom.CommandStatusPending {
 		t.Fatalf("expected pending, got %s", cmd.Status)
 	}
 
 	// Acknowledge
-	cmd, err := svc.AcknowledgeCommand(context.Background(), tenantID, cmd.ID.String())
+	cmd, err := svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
 	if err != nil {
 		t.Fatalf("acknowledge failed: %v", err)
 	}
-	if cmd.Status != command.CommandStatusAcknowledged {
+	if cmd.Status != commanddom.CommandStatusAcknowledged {
 		t.Fatalf("expected acknowledged, got %s", cmd.Status)
 	}
 
 	// Start
-	cmd, err = svc.StartCommand(context.Background(), tenantID, cmd.ID.String())
+	cmd, err = svc.Start(context.Background(), tenantID, cmd.ID.String())
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
-	if cmd.Status != command.CommandStatusRunning {
+	if cmd.Status != commanddom.CommandStatusRunning {
 		t.Fatalf("expected running, got %s", cmd.Status)
 	}
 
 	// Complete
-	cmd, err = svc.CompleteCommand(context.Background(), app.CompleteCommandInput{
+	cmd, err = svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
 		Result:    json.RawMessage(`{"success":true}`),
@@ -1487,7 +1487,7 @@ func TestCommandService_FullLifecycle_PendingToCompleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("complete failed: %v", err)
 	}
-	if cmd.Status != command.CommandStatusCompleted {
+	if cmd.Status != commanddom.CommandStatusCompleted {
 		t.Fatalf("expected completed, got %s", cmd.Status)
 	}
 }
@@ -1499,10 +1499,10 @@ func TestCommandService_FullLifecycle_PendingToFailed(t *testing.T) {
 
 	cmd := createTestCommand(t, svc, tenantID, "collect", "critical")
 
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
 
-	failed, err := svc.FailCommand(context.Background(), app.FailCommandInput{
+	failed, err := svc.Fail(context.Background(), command.FailInput{
 		TenantID:     tenantID,
 		CommandID:    cmd.ID.String(),
 		ErrorMessage: "connection refused",
@@ -1510,7 +1510,7 @@ func TestCommandService_FullLifecycle_PendingToFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fail failed: %v", err)
 	}
-	if failed.Status != command.CommandStatusFailed {
+	if failed.Status != commanddom.CommandStatusFailed {
 		t.Errorf("expected failed, got %s", failed.Status)
 	}
 	if failed.ErrorMessage != "connection refused" {
@@ -1529,7 +1529,7 @@ func TestCommandService_FullLifecycle_PendingToCanceled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cancel failed: %v", err)
 	}
-	if canceled.Status != command.CommandStatusCanceled {
+	if canceled.Status != commanddom.CommandStatusCanceled {
 		t.Errorf("expected canceled, got %s", canceled.Status)
 	}
 }
@@ -1546,7 +1546,7 @@ func TestCommandService_InvalidTransition_StartFromPending(t *testing.T) {
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
 
 	// Cannot start directly from pending (must acknowledge first)
-	_, err := svc.StartCommand(context.Background(), tenantID, cmd.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, cmd.ID.String())
 	if err == nil {
 		t.Fatal("expected error: cannot start from pending")
 	}
@@ -1559,7 +1559,7 @@ func TestCommandService_InvalidTransition_CompleteFromPending(t *testing.T) {
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
 
-	_, err := svc.CompleteCommand(context.Background(), app.CompleteCommandInput{
+	_, err := svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
 	})
@@ -1574,9 +1574,9 @@ func TestCommandService_InvalidTransition_CompleteFromAcknowledged(t *testing.T)
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
 
-	_, err := svc.CompleteCommand(context.Background(), app.CompleteCommandInput{
+	_, err := svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
 	})
@@ -1591,14 +1591,14 @@ func TestCommandService_InvalidTransition_AcknowledgeFromCompleted(t *testing.T)
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.CompleteCommand(context.Background(), app.CompleteCommandInput{
+	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
 	})
 
-	_, err := svc.AcknowledgeCommand(context.Background(), tenantID, cmd.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
 	if err == nil {
 		t.Fatal("expected error: cannot acknowledge completed command")
 	}
@@ -1610,14 +1610,14 @@ func TestCommandService_InvalidTransition_StartFromCompleted(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.CompleteCommand(context.Background(), app.CompleteCommandInput{
+	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
 	})
 
-	_, err := svc.StartCommand(context.Background(), tenantID, cmd.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, cmd.ID.String())
 	if err == nil {
 		t.Fatal("expected error: cannot start completed command")
 	}
@@ -1629,9 +1629,9 @@ func TestCommandService_InvalidTransition_CancelCompleted(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.CompleteCommand(context.Background(), app.CompleteCommandInput{
+	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
 	})
@@ -1655,26 +1655,26 @@ func TestCommandService_MultipleCommands_IndependentState(t *testing.T) {
 	cmd2 := createTestCommand(t, svc, tenantID, "collect", "low")
 
 	// Acknowledge cmd1 only
-	_, err := svc.AcknowledgeCommand(context.Background(), tenantID, cmd1.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, cmd1.ID.String())
 	if err != nil {
 		t.Fatalf("failed to acknowledge cmd1: %v", err)
 	}
 
 	// Verify cmd2 is still pending
-	got2, err := svc.GetCommand(context.Background(), tenantID, cmd2.ID.String())
+	got2, err := svc.Get(context.Background(), tenantID, cmd2.ID.String())
 	if err != nil {
 		t.Fatalf("failed to get cmd2: %v", err)
 	}
-	if got2.Status != command.CommandStatusPending {
+	if got2.Status != commanddom.CommandStatusPending {
 		t.Errorf("cmd2 should still be pending, got %s", got2.Status)
 	}
 
 	// Verify cmd1 is acknowledged
-	got1, err := svc.GetCommand(context.Background(), tenantID, cmd1.ID.String())
+	got1, err := svc.Get(context.Background(), tenantID, cmd1.ID.String())
 	if err != nil {
 		t.Fatalf("failed to get cmd1: %v", err)
 	}
-	if got1.Status != command.CommandStatusAcknowledged {
+	if got1.Status != commanddom.CommandStatusAcknowledged {
 		t.Errorf("cmd1 should be acknowledged, got %s", got1.Status)
 	}
 }
@@ -1688,7 +1688,7 @@ func TestCommandService_TenantIsolation(t *testing.T) {
 	cmd1 := createTestCommand(t, svc, tenant1, "scan", "normal")
 
 	// Tenant 2 should not see tenant 1's command
-	_, err := svc.GetCommand(context.Background(), tenant2, cmd1.ID.String())
+	_, err := svc.Get(context.Background(), tenant2, cmd1.ID.String())
 	if err == nil {
 		t.Fatal("expected error: tenant 2 should not access tenant 1 command")
 	}
@@ -1700,7 +1700,7 @@ func TestCommandService_TenantIsolation(t *testing.T) {
 	}
 
 	// Tenant 2 should not be able to acknowledge tenant 1's command
-	_, err = svc.AcknowledgeCommand(context.Background(), tenant2, cmd1.ID.String())
+	_, err = svc.Acknowledge(context.Background(), tenant2, cmd1.ID.String())
 	if err == nil {
 		t.Fatal("expected error: tenant 2 should not acknowledge tenant 1 command")
 	}
@@ -1715,11 +1715,11 @@ func TestCommandService_CreateCommand_NilPayload(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID: tenantID,
 		Type:     "health_check",
 	}
-	cmd, err := svc.CreateCommand(context.Background(), input)
+	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error with nil payload, got %v", err)
 	}
@@ -1734,10 +1734,10 @@ func TestCommandService_CompleteCommand_NilResult(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.AcknowledgeCommand(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.StartCommand(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
 
-	completed, err := svc.CompleteCommand(context.Background(), app.CompleteCommandInput{
+	completed, err := svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
 		// Result omitted
@@ -1745,7 +1745,7 @@ func TestCommandService_CompleteCommand_NilResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error with nil result, got %v", err)
 	}
-	if completed.Status != command.CommandStatusCompleted {
+	if completed.Status != commanddom.CommandStatusCompleted {
 		t.Errorf("expected completed, got %s", completed.Status)
 	}
 }
@@ -1757,16 +1757,16 @@ func TestCommandService_FailCommand_EmptyErrorMessage(t *testing.T) {
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
 
-	input := app.FailCommandInput{
+	input := command.FailInput{
 		TenantID:     tenantID,
 		CommandID:    cmd.ID.String(),
 		ErrorMessage: "",
 	}
-	failed, err := svc.FailCommand(context.Background(), input)
+	failed, err := svc.Fail(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error with empty error message, got %v", err)
 	}
-	if failed.Status != command.CommandStatusFailed {
+	if failed.Status != commanddom.CommandStatusFailed {
 		t.Errorf("expected failed, got %s", failed.Status)
 	}
 }
@@ -1776,11 +1776,11 @@ func TestCommandService_PollCommands_NegativeLimit(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.PollCommandsInput{
+	input := command.PollInput{
 		TenantID: tenantID,
 		Limit:    -5,
 	}
-	_, err := svc.PollCommands(context.Background(), input)
+	_, err := svc.Poll(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error for negative limit (should default), got %v", err)
 	}
@@ -1791,12 +1791,12 @@ func TestCommandService_CreateCommand_ZeroExpiresIn(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID:  tenantID,
 		Type:      "scan",
 		ExpiresIn: 0,
 	}
-	cmd, err := svc.CreateCommand(context.Background(), input)
+	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1810,12 +1810,12 @@ func TestCommandService_CreateCommand_NegativeExpiresIn(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	input := app.CreateCommandInput{
+	input := command.CreateInput{
 		TenantID:  tenantID,
 		Type:      "scan",
 		ExpiresIn: -100,
 	}
-	cmd, err := svc.CreateCommand(context.Background(), input)
+	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1831,7 +1831,7 @@ func TestCommandService_GetCommand_RepoError(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	_, err := svc.GetCommand(context.Background(), tenantID, shared.NewID().String())
+	_, err := svc.Get(context.Background(), tenantID, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}

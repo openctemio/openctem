@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/api/internal/app/outbox"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/workflow"
@@ -30,7 +31,7 @@ type WorkflowExecutor struct {
 	conditionEvaluator  ConditionEvaluator
 
 	// Services for actions
-	notificationService *OutboxService
+	notificationService *outbox.Service
 	integrationService  *IntegrationService
 	auditService        *AuditService
 
@@ -78,7 +79,7 @@ const (
 type WorkflowExecutorOption func(*WorkflowExecutor)
 
 // WithExecutorOutboxService sets the notification service.
-func WithExecutorOutboxService(svc *OutboxService) WorkflowExecutorOption {
+func WithExecutorOutboxService(svc *outbox.Service) WorkflowExecutorOption {
 	return func(e *WorkflowExecutor) {
 		e.notificationService = svc
 	}

@@ -38,6 +38,11 @@ type FindingProcessor struct {
 	// priorityClassifier enriches + classifies findings after creation (RFC-004)
 	priorityClassifier PriorityClassifier
 
+	// slaApplier (F3 wire): computes and sets the SLA deadline on each
+	// classified finding using priority class first, severity fallback.
+	// Nil-safe: when not wired, findings get NULL sla_deadline as before.
+	slaApplier SLAApplier
+
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
 }
@@ -45,6 +50,13 @@ type FindingProcessor struct {
 // PriorityClassifier enriches findings with EPSS/KEV and assigns priority class.
 type PriorityClassifier interface {
 	EnrichAndClassifyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, assets map[shared.ID]*asset.Asset) error
+}
+
+// SLAApplier computes SLA deadline for each finding and writes it via
+// Finding.SetSLADeadline. MUST run AFTER priority classification so
+// the P0..P3 class drives the deadline (F3 invariant).
+type SLAApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
 
 // activityRecorder is the subset of FindingActivityService needed by the processor.
@@ -85,6 +97,14 @@ func (p *FindingProcessor) SetFindingCreatedCallback(callback FindingCreatedCall
 // SetPriorityClassifier sets the priority classification service (RFC-004).
 func (p *FindingProcessor) SetPriorityClassifier(classifier PriorityClassifier) {
 	p.priorityClassifier = classifier
+}
+
+// SetSLAApplier wires the SLA-deadline calculator. F3 (Q1/WS-C): the
+// applier is invoked AFTER priority classification so priority class
+// drives the deadline; when the applier is nil the pipeline behaves
+// as before (sla_deadline left NULL).
+func (p *FindingProcessor) SetSLAApplier(applier SLAApplier) {
+	p.slaApplier = applier
 }
 
 // ProcessBatch processes all findings using batch operations.
@@ -354,7 +374,16 @@ func (p *FindingProcessor) ProcessBatch(
 					if err := p.priorityClassifier.EnrichAndClassifyBatch(ctx, tenantID, createdForEnrich, assetMap); err != nil {
 						p.logger.Warn("priority classification failed", "error", err)
 					} else {
-						// Persist enriched findings (update EPSS/KEV/priority fields)
+						// F3 wire: apply SLA deadline now that priority
+						// class is set. Failure is non-fatal — findings
+						// persist without a deadline and the SLA
+						// escalation controller surfaces them as NULL.
+						if p.slaApplier != nil {
+							if err := p.slaApplier.ApplyBatch(ctx, tenantID, createdForEnrich); err != nil {
+								p.logger.Warn("sla deadline apply failed", "error", err)
+							}
+						}
+						// Persist enriched findings (update EPSS/KEV/priority/SLA fields)
 						for _, f := range createdForEnrich {
 							if updateErr := p.repo.Update(ctx, f); updateErr != nil {
 								p.logger.Warn("failed to persist enriched finding", "id", f.ID(), "error", updateErr)

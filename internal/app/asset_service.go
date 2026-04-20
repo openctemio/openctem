@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"errors"
 	"fmt"
@@ -52,7 +53,7 @@ type AssetService struct {
 	scoringCache   map[string]scoringConfigEntry // keyed by tenantID string
 
 	// Scope rule evaluator callback (set by services.go wiring)
-	scopeRuleEvaluator ScopeRuleEvaluatorFunc
+	scopeRuleEvaluator scope.RuleEvaluatorFunc
 
 	// User matcher for auto-resolving owner_ref to owner_id
 	userMatcher UserMatcher
@@ -104,7 +105,7 @@ func (s *AssetService) SetRedisClient(client *redis.Client) {
 
 // SetScopeRuleEvaluator sets the scope rule evaluator callback.
 // When set, asset create/update will trigger async scope rule evaluation.
-func (s *AssetService) SetScopeRuleEvaluator(fn ScopeRuleEvaluatorFunc) {
+func (s *AssetService) SetScopeRuleEvaluator(fn scope.RuleEvaluatorFunc) {
 	s.scopeRuleEvaluator = fn
 }
 

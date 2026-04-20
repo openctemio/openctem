@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"fmt"
 
@@ -16,7 +17,7 @@ type AssetGroupService struct {
 	logger *logger.Logger
 
 	// Scope rule reconciler callback (set by services.go wiring)
-	scopeRuleReconciler ScopeRuleGroupReconcilerFunc
+	scopeRuleReconciler scope.RuleGroupReconcilerFunc
 }
 
 // NewAssetGroupService creates a new asset group service.
@@ -29,7 +30,7 @@ func NewAssetGroupService(repo assetgroup.Repository, log *logger.Logger) *Asset
 
 // SetScopeRuleReconciler sets the scope rule reconciler callback.
 // Called when asset group membership changes to re-evaluate scope rules.
-func (s *AssetGroupService) SetScopeRuleReconciler(fn ScopeRuleGroupReconcilerFunc) {
+func (s *AssetGroupService) SetScopeRuleReconciler(fn scope.RuleGroupReconcilerFunc) {
 	s.scopeRuleReconciler = fn
 }
 

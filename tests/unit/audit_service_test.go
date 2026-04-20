@@ -153,7 +153,11 @@ func (m *mockAuditRepo) DeleteOlderThan(_ context.Context, before time.Time) (in
 	return m.deleteOlderCount, nil
 }
 
-func (m *mockAuditRepo) GetLatestByResource(_ context.Context, resourceType audit.ResourceType, resourceID string) (*audit.AuditLog, error) {
+func (m *mockAuditRepo) DeleteOlderThanForTenant(_ context.Context, _ shared.ID, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockAuditRepo) GetLatestByResource(_ context.Context, _ shared.ID, resourceType audit.ResourceType, resourceID string) (*audit.AuditLog, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.getLatestCalls++
@@ -191,7 +195,7 @@ func (m *mockAuditRepo) ListByActor(_ context.Context, actorID shared.ID, page p
 	}, nil
 }
 
-func (m *mockAuditRepo) ListByResource(_ context.Context, resourceType audit.ResourceType, resourceID string, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (m *mockAuditRepo) ListByResource(_ context.Context, _ shared.ID, resourceType audit.ResourceType, resourceID string, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.listByResourceCalls++
@@ -663,7 +667,8 @@ func TestAuditService_GetResourceHistory_Success(t *testing.T) {
 	}
 	repo.logs[log.ID()] = log
 
-	result, err := svc.GetResourceHistory(ctx, "user", "user-42", 1, 20)
+	tid := shared.NewID()
+	result, err := svc.GetResourceHistory(ctx, tid, "user", "user-42", 1, 20)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1050,7 +1055,7 @@ func TestNewDeniedEvent_EmptyReason(t *testing.T) {
 }
 
 // =============================================================================
-// AuditEvent Builder Tests
+// audit.Event Builder Tests
 // =============================================================================
 
 func TestAuditEvent_BuilderChain(t *testing.T) {

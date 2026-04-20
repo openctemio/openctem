@@ -218,7 +218,8 @@ func (r *TemplateSourceRepository) List(ctx context.Context, input ts.ListInput)
 		return nil, fmt.Errorf("failed to count template sources: %w", err)
 	}
 
-	// Sorting
+	// F-D1 hardening: switch-allowlist on sortBy + binary ASC/DESC on
+	// sortOrder. See secretstore_repository for the same pattern note.
 	sortBy := "created_at"
 	if input.SortBy != "" {
 		switch input.SortBy {

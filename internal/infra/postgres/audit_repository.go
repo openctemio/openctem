@@ -251,7 +251,9 @@ func (r *AuditRepository) Count(ctx context.Context, filter audit.Filter) (int64
 	return count, nil
 }
 
-// DeleteOlderThan deletes audit logs older than the specified time.
+// DeleteOlderThan deletes audit logs older than the specified time ACROSS ALL
+// TENANTS. See the interface doc (F-3) — this is a platform-privileged
+// operation, safe only from operator-driven background jobs.
 func (r *AuditRepository) DeleteOlderThan(ctx context.Context, before time.Time) (int64, error) {
 	query := `DELETE FROM audit_logs WHERE logged_at < $1 AND severity NOT IN ('high', 'critical')`
 
@@ -268,10 +270,30 @@ func (r *AuditRepository) DeleteOlderThan(ctx context.Context, before time.Time)
 	return count, nil
 }
 
-// GetLatestByResource retrieves the latest audit log for a resource.
-func (r *AuditRepository) GetLatestByResource(ctx context.Context, resourceType audit.ResourceType, resourceID string) (*audit.AuditLog, error) {
-	query := r.selectQuery() + ` WHERE resource_type = $1 AND resource_id = $2 ORDER BY logged_at DESC LIMIT 1`
-	row := r.db.QueryRowContext(ctx, query, resourceType.String(), resourceID)
+// DeleteOlderThanForTenant deletes audit logs older than the specified time,
+// scoped to a single tenant. High/critical severity entries are preserved
+// (F-3 per-tenant retention variant).
+func (r *AuditRepository) DeleteOlderThanForTenant(ctx context.Context, tenantID shared.ID, before time.Time) (int64, error) {
+	query := `DELETE FROM audit_logs WHERE tenant_id = $1 AND logged_at < $2 AND severity NOT IN ('high', 'critical')`
+
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), before)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete old audit logs: %w", err)
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetLatestByResource retrieves the latest audit log for a resource within a tenant.
+// tenantID is required to prevent cross-tenant reads (F-2).
+func (r *AuditRepository) GetLatestByResource(ctx context.Context, tenantID shared.ID, resourceType audit.ResourceType, resourceID string) (*audit.AuditLog, error) {
+	query := r.selectQuery() + ` WHERE tenant_id = $1 AND resource_type = $2 AND resource_id = $3 ORDER BY logged_at DESC LIMIT 1`
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), resourceType.String(), resourceID)
 
 	log, err := r.scanAuditLog(row, nil)
 	if err != nil {
@@ -289,9 +311,11 @@ func (r *AuditRepository) ListByActor(ctx context.Context, actorID shared.ID, pa
 	return r.List(ctx, filter, page)
 }
 
-// ListByResource retrieves audit logs for a specific resource.
-func (r *AuditRepository) ListByResource(ctx context.Context, resourceType audit.ResourceType, resourceID string, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+// ListByResource retrieves audit logs for a specific resource within a tenant.
+// tenantID is required to prevent cross-tenant reads (F-2).
+func (r *AuditRepository) ListByResource(ctx context.Context, tenantID shared.ID, resourceType audit.ResourceType, resourceID string, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	filter := audit.NewFilter().
+		WithTenantID(tenantID).
 		WithResourceTypes(resourceType).
 		WithResourceID(resourceID)
 	return r.List(ctx, filter, page)

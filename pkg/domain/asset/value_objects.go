@@ -64,6 +64,20 @@ const (
 	AssetTypeOpenPort      AssetType = "open_port"      // Individual open ports from Naabu
 	AssetTypeDiscoveredURL AssetType = "discovered_url" // URLs/endpoints from Katana
 
+	// Endpoint — Q3/WS-B: first-class endpoint asset. An endpoint is a
+	// physical/virtual user-operated device (laptop, workstation, mobile
+	// handset, kiosk). Distinct from Host (server infra) because
+	// endpoints live in the human-operated edge of the attack surface
+	// where phishing-executed malware and stolen credentials land
+	// first, and where runtime telemetry (EDR, XDR) is emitted.
+	//
+	// Treated as its own core type (not a Host sub-type) because:
+	//   - Priority / SLA policies differ (endpoint compromise ≠ server
+	//     compromise: exposure scope, regulated-data proximity).
+	//   - Runtime telemetry ingest (#343) flows through endpoints.
+	//   - CTEM maturity dashboards report endpoint coverage separately.
+	AssetTypeEndpoint AssetType = "endpoint"
+
 	// Consolidated types (new core types)
 	AssetTypeApplication AssetType = "application" // Consolidates website, web_application, api, mobile_app
 	AssetTypeIdentity    AssetType = "identity"    // Consolidates iam_user, iam_role, service_account
@@ -135,6 +149,7 @@ func AllAssetTypes() []AssetType {
 		AssetTypeContainer,
 		AssetTypeKubernetesCluster,
 		AssetTypeKubernetesNamespace,
+		AssetTypeEndpoint,
 		// Data
 		AssetTypeDatabase,
 		AssetTypeDataStore,

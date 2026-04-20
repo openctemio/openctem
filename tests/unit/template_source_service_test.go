@@ -1,12 +1,12 @@
 package unit
 
 import (
+	"github.com/openctemio/api/internal/app/template"
 	"context"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/shared"
 	ts "github.com/openctemio/api/pkg/domain/templatesource"
@@ -142,13 +142,13 @@ func (m *tmplSrcMockRepo) CountByTenant(_ context.Context, _ shared.ID) (int, er
 // Helpers
 // ============================================================================
 
-func newTmplSrcService(repo ts.Repository) *app.TemplateSourceService {
+func newTmplSrcService(repo ts.Repository) *template.SourceService {
 	log := logger.NewNop()
-	return app.NewTemplateSourceService(repo, log)
+	return template.NewSourceService(repo, log)
 }
 
-func tmplSrcValidGitInput(tenantID string) app.CreateTemplateSourceInput {
-	return app.CreateTemplateSourceInput{
+func tmplSrcValidGitInput(tenantID string) template.CreateSourceInput {
+	return template.CreateSourceInput{
 		TenantID:     tenantID,
 		Name:         "My Git Templates",
 		SourceType:   "git",
@@ -215,7 +215,7 @@ func TestTemplateSourceService_CreateSource_S3(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := app.CreateTemplateSourceInput{
+	input := template.CreateSourceInput{
 		TenantID:     tenantID.String(),
 		Name:         "S3 Templates",
 		SourceType:   "s3",
@@ -245,7 +245,7 @@ func TestTemplateSourceService_CreateSource_HTTP(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := app.CreateTemplateSourceInput{
+	input := template.CreateSourceInput{
 		TenantID:     tenantID.String(),
 		Name:         "HTTP Templates",
 		SourceType:   "http",
@@ -396,7 +396,7 @@ func TestTemplateSourceService_CreateSource_S3MissingConfig(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := app.CreateTemplateSourceInput{
+	input := template.CreateSourceInput{
 		TenantID:     tenantID.String(),
 		Name:         "S3 Source",
 		SourceType:   "s3",
@@ -416,7 +416,7 @@ func TestTemplateSourceService_CreateSource_HTTPMissingConfig(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := app.CreateTemplateSourceInput{
+	input := template.CreateSourceInput{
 		TenantID:     tenantID.String(),
 		Name:         "HTTP Source",
 		SourceType:   "http",
@@ -631,7 +631,7 @@ func TestTemplateSourceService_ListSources_Success(t *testing.T) {
 	tmplSrcAddSource(repo, tenantID, "Source A")
 	tmplSrcAddSource(repo, tenantID, "Source B")
 
-	input := app.ListTemplateSourcesInput{
+	input := template.ListSourcesInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PageSize: 20,
@@ -651,7 +651,7 @@ func TestTemplateSourceService_ListSources_InvalidTenantID(t *testing.T) {
 	svc := newTmplSrcService(repo)
 	ctx := context.Background()
 
-	input := app.ListTemplateSourcesInput{TenantID: "bad-uuid"}
+	input := template.ListSourcesInput{TenantID: "bad-uuid"}
 
 	_, err := svc.ListSources(ctx, input)
 	if err == nil {
@@ -672,7 +672,7 @@ func TestTemplateSourceService_ListSources_WithFilters(t *testing.T) {
 	templateType := "nuclei"
 	enabled := true
 
-	input := app.ListTemplateSourcesInput{
+	input := template.ListSourcesInput{
 		TenantID:     tenantID.String(),
 		SourceType:   &sourceType,
 		TemplateType: &templateType,
@@ -692,7 +692,7 @@ func TestTemplateSourceService_ListSources_RepoError(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := app.ListTemplateSourcesInput{TenantID: tenantID.String()}
+	input := template.ListSourcesInput{TenantID: tenantID.String()}
 
 	_, err := svc.ListSources(ctx, input)
 	if err == nil {
@@ -717,7 +717,7 @@ func TestTemplateSourceService_UpdateSource_Success(t *testing.T) {
 	cacheTTL := 240
 	autoSync := false
 
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID:        tenantID.String(),
 		SourceID:        src.ID.String(),
 		Name:            newName,
@@ -750,7 +750,7 @@ func TestTemplateSourceService_UpdateSource_InvalidTenantID(t *testing.T) {
 	svc := newTmplSrcService(repo)
 	ctx := context.Background()
 
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID: "bad",
 		SourceID: shared.NewID().String(),
 	}
@@ -767,7 +767,7 @@ func TestTemplateSourceService_UpdateSource_NotFound(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID: tenantID.String(),
 		SourceID: shared.NewID().String(),
 	}
@@ -787,7 +787,7 @@ func TestTemplateSourceService_UpdateSource_WrongTenant(t *testing.T) {
 
 	src := tmplSrcAddSource(repo, tenantID, "Source")
 
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID: otherTenant.String(),
 		SourceID: src.ID.String(),
 	}
@@ -806,7 +806,7 @@ func TestTemplateSourceService_UpdateSource_WithGitConfig(t *testing.T) {
 
 	src := tmplSrcAddSource(repo, tenantID, "Git Source")
 
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID: tenantID.String(),
 		SourceID: src.ID.String(),
 		GitConfig: &ts.GitSourceConfig{
@@ -833,7 +833,7 @@ func TestTemplateSourceService_UpdateSource_SetCredential(t *testing.T) {
 	src := tmplSrcAddSource(repo, tenantID, "Source")
 	credID := shared.NewID().String()
 
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID:     tenantID.String(),
 		SourceID:     src.ID.String(),
 		CredentialID: &credID,
@@ -860,7 +860,7 @@ func TestTemplateSourceService_UpdateSource_ClearCredential(t *testing.T) {
 	repo.sources[src.ID.String()] = src
 
 	emptyStr := ""
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID:     tenantID.String(),
 		SourceID:     src.ID.String(),
 		CredentialID: &emptyStr,
@@ -884,7 +884,7 @@ func TestTemplateSourceService_UpdateSource_InvalidCredentialID(t *testing.T) {
 	src := tmplSrcAddSource(repo, tenantID, "Source")
 	badCred := "not-a-uuid"
 
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID:     tenantID.String(),
 		SourceID:     src.ID.String(),
 		CredentialID: &badCred,
@@ -908,7 +908,7 @@ func TestTemplateSourceService_UpdateSource_RepoUpdateError(t *testing.T) {
 
 	src := tmplSrcAddSource(repo, tenantID, "Source")
 
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID: tenantID.String(),
 		SourceID: src.ID.String(),
 		Name:     "New Name",
@@ -1297,7 +1297,7 @@ func TestTemplateSourceService_SetTemplateSyncer(t *testing.T) {
 // ============================================================================
 
 func TestTemplateSourceService_MaxSourcesPerTenant(t *testing.T) {
-	if app.MaxSourcesPerTenant != 50 {
-		t.Errorf("expected MaxSourcesPerTenant to be 50, got %d", app.MaxSourcesPerTenant)
+	if template.MaxSourcesPerTenant != 50 {
+		t.Errorf("expected MaxSourcesPerTenant to be 50, got %d", template.MaxSourcesPerTenant)
 	}
 }

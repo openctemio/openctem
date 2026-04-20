@@ -76,6 +76,8 @@ func (r *RuleSourceRepository) Create(ctx context.Context, source *rule.Source) 
 }
 
 // GetByID retrieves a source by ID.
+//
+//getbyid:unsafe - Rule sources are a shared catalog; no tenant_id column.
 func (r *RuleSourceRepository) GetByID(ctx context.Context, id shared.ID) (*rule.Source, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())

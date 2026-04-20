@@ -767,7 +767,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		if err != nil {
 			response.Jobs = append(response.Jobs, BulkTriageJob{
 				FindingID: findingIDStr,
-				Status:    notificationStatusFailed,
+				Status:    "failed",
 				Error:     "invalid finding id",
 			})
 			response.Failed++
@@ -793,7 +793,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 
 		// Check if finding exists (from batch result)
 		if !existsMap[findingID] {
-			job.Status = notificationStatusFailed
+			job.Status = "failed"
 			job.Error = "finding not found"
 			response.Jobs = append(response.Jobs, job)
 			response.Failed++
@@ -803,7 +803,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		// Create triage result
 		result, err := aitriage.NewTriageResult(tenantID, findingID, aitriage.TriageTypeBulk, userID)
 		if err != nil {
-			job.Status = notificationStatusFailed
+			job.Status = "failed"
 			job.Error = "failed to create triage job"
 			response.Jobs = append(response.Jobs, job)
 			response.Failed++
@@ -811,7 +811,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 		}
 
 		if err := s.triageRepo.Create(ctx, result); err != nil {
-			job.Status = notificationStatusFailed
+			job.Status = "failed"
 			job.Error = "failed to save triage job"
 			response.Jobs = append(response.Jobs, job)
 			response.Failed++
@@ -820,7 +820,7 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 
 		// Enqueue for processing
 		if err := s.enqueueTriageJob(ctx, result.ID(), tenantID, findingID, 0); err != nil {
-			job.Status = notificationStatusFailed
+			job.Status = "failed"
 			job.Error = "failed to enqueue job"
 			_ = result.MarkFailed("failed to enqueue job: " + err.Error())
 			_ = s.triageRepo.Update(ctx, result)

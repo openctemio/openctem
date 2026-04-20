@@ -33,6 +33,17 @@ type Config struct {
 	AITriage    AITriageConfig
 	AgentConfig AgentConfigConfig
 	Storage     StorageConfig
+	Webhooks    WebhooksConfig
+}
+
+// WebhooksConfig holds shared secrets for incoming webhook HMAC verification (F-1).
+// These are platform-wide fallbacks; per-integration secrets can be layered on
+// top via the integration repository when that abstraction is added.
+type WebhooksConfig struct {
+	// JiraSecret is the HMAC-SHA256 secret used to verify inbound Jira webhooks
+	// at POST /api/v1/webhooks/incoming/jira. REQUIRED — if empty, the endpoint
+	// rejects all requests (fail closed).
+	JiraSecret string
 }
 
 // StorageConfig holds file attachment storage settings.
@@ -556,7 +567,9 @@ func Load() (*Config, error) {
 			HTTPTimeout:         getEnvDuration("KEYCLOAK_HTTP_TIMEOUT", 10*time.Second),
 		},
 		CORS: CORSConfig{
-			AllowedOrigins: getEnvSlice("CORS_ALLOWED_ORIGINS", []string{"*"}),
+			// F-12: Default to localhost dev origin instead of wildcard. Production
+			// validation in middleware/middleware.go rejects "*" regardless.
+			AllowedOrigins: getEnvSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
 			AllowedMethods: getEnvSlice("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}),
 			AllowedHeaders: getEnvSlice("CORS_ALLOWED_HEADERS", []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-Admin-API-Key"}),
 			MaxAge:         getEnvInt("CORS_MAX_AGE", 86400),
@@ -621,6 +634,11 @@ func Load() (*Config, error) {
 		Encryption: EncryptionConfig{
 			Key:       getEnv("APP_ENCRYPTION_KEY", ""),
 			KeyFormat: getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
+		},
+		Webhooks: WebhooksConfig{
+			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
+			// middleware fails closed if empty.
+			JiraSecret: getEnv("JIRA_WEBHOOK_SECRET", ""),
 		},
 		AITriage: AITriageConfig{
 			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),

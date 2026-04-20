@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/infra/adapters/core"
 	"github.com/openctemio/api/internal/infra/adapters/gitleaks"
 	"github.com/openctemio/api/internal/infra/adapters/nuclei"
+	"github.com/openctemio/api/internal/infra/adapters/sarif"
 	"github.com/openctemio/api/internal/infra/adapters/semgrep"
 	"github.com/openctemio/api/internal/infra/adapters/trivy"
 	"github.com/openctemio/api/internal/infra/adapters/vuls"
@@ -28,12 +29,17 @@ func NewRegistry() *Registry {
 		adapters: make(map[string]core.Adapter),
 	}
 
-	// Register built-in adapters
+	// Register built-in adapters.
+	// P0-1: SARIF adapter (661 LoC built, previously unregistered — a "fake
+	// CTEM signal" per the framework audit). Now wired so SAST/DAST tools
+	// that emit SARIF (CodeQL, Bandit, various IDE integrations) are
+	// ingestible without bespoke code.
 	r.Register(trivy.NewAdapter())
 	r.Register(nuclei.NewAdapter())
 	r.Register(semgrep.NewAdapter())
 	r.Register(gitleaks.NewAdapter())
 	r.Register(vuls.NewAdapter())
+	r.Register(sarif.NewAdapter())
 
 	return r
 }

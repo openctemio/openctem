@@ -73,6 +73,8 @@ func (r *RuleBundleRepository) Create(ctx context.Context, bundle *rule.Bundle) 
 }
 
 // GetByID retrieves a bundle by ID.
+//
+//getbyid:unsafe - Rule bundles are a shared catalog; no tenant_id column.
 func (r *RuleBundleRepository) GetByID(ctx context.Context, id shared.ID) (*rule.Bundle, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())

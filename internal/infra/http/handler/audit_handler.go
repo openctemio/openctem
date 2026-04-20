@@ -327,6 +327,13 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// F-2: tenant scope is mandatory for resource audit history.
+	tenantID, ok := middleware.GetTenantIDFromContext(r.Context())
+	if !ok {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return
+	}
+
 	// Parse pagination
 	query := r.URL.Query()
 	page := 0
@@ -343,7 +350,7 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	result, err := h.service.GetResourceHistory(r.Context(), resourceType, resourceID, page, perPage)
+	result, err := h.service.GetResourceHistory(r.Context(), tenantID, resourceType, resourceID, page, perPage)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

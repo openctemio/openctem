@@ -121,7 +121,10 @@ func (r *AgentRepository) CountByTenant(ctx context.Context, tenantID shared.ID)
 	return count, nil
 }
 
-// GetByID retrieves an agent by its ID.
+// GetByID retrieves an agent by its ID without tenant scoping.
+//
+// F-5: UNSAFE for user-facing handlers — see interface doc. Use
+// GetByTenantAndID from handlers that authorize on a user JWT.
 func (r *AgentRepository) GetByID(ctx context.Context, id shared.ID) (*agent.Agent, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
@@ -136,6 +139,9 @@ func (r *AgentRepository) GetByTenantAndID(ctx context.Context, tenantID, id sha
 }
 
 // GetByAPIKeyHash retrieves an agent by API key hash.
+//
+// F-5: Tenant scope intentionally omitted — the hash IS the authentication
+// material. Must only be used from the platform-auth middleware.
 func (r *AgentRepository) GetByAPIKeyHash(ctx context.Context, hash string) (*agent.Agent, error) {
 	query := r.selectQuery() + " WHERE api_key_hash = $1"
 	row := r.db.QueryRowContext(ctx, query, hash)

@@ -1,12 +1,12 @@
 package unit
 
 import (
+	"github.com/openctemio/api/internal/app/assignment"
 	"context"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/group"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -201,9 +201,9 @@ func (m *mockGroupRepoForRules) ListGroupsWithPermissionSet(_ context.Context, _
 // Helpers
 // =============================================================================
 
-func newAssignmentRuleService(acRepo *mockACRepoForRules, groupRepo *mockGroupRepoForRules) *app.AssignmentRuleService {
+func newAssignmentRuleService(acRepo *mockACRepoForRules, groupRepo *mockGroupRepoForRules) *assignment.RuleService {
 	log := logger.New(logger.Config{Level: "error"})
-	return app.NewAssignmentRuleService(acRepo, groupRepo, log)
+	return assignment.NewRuleService(acRepo, groupRepo, log)
 }
 
 func makeActiveGroup(tenantID shared.ID) *group.Group {
@@ -252,7 +252,7 @@ func TestCreateRule_Success(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{getByIDResult: activeGroup}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      tenantID.String(),
 		Name:          "Auto-assign web assets",
 		Description:   "Route web assets to security team",
@@ -284,7 +284,7 @@ func TestCreateRule_InvalidTenantID(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      "not-a-uuid",
 		Name:          "Test",
 		TargetGroupID: shared.NewID().String(),
@@ -304,7 +304,7 @@ func TestCreateRule_InvalidTargetGroupID(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      shared.NewID().String(),
 		Name:          "Test",
 		TargetGroupID: "invalid",
@@ -324,7 +324,7 @@ func TestCreateRule_TargetGroupNotFound(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{getByIDErr: group.ErrGroupNotFound}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      shared.NewID().String(),
 		Name:          "Test",
 		TargetGroupID: shared.NewID().String(),
@@ -347,7 +347,7 @@ func TestCreateRule_TargetGroupInactive(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{getByIDResult: inactiveGroup}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      tenantID.String(),
 		Name:          "Test",
 		TargetGroupID: shared.NewID().String(),
@@ -370,7 +370,7 @@ func TestCreateRule_RepoError(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{getByIDResult: activeGroup}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      tenantID.String(),
 		Name:          "Test Rule",
 		TargetGroupID: shared.NewID().String(),
@@ -453,7 +453,7 @@ func TestUpdateRule_Success(t *testing.T) {
 	newPriority := 20
 	isActive := false
 
-	input := app.UpdateRuleInput{
+	input := assignment.UpdateRuleInput{
 		Name:        &newName,
 		Description: &newDesc,
 		Priority:    &newPriority,
@@ -493,7 +493,7 @@ func TestUpdateRule_ChangeTargetGroup(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	newTargetGroupID := newGroupID.String()
-	input := app.UpdateRuleInput{
+	input := assignment.UpdateRuleInput{
 		TargetGroupID: &newTargetGroupID,
 	}
 
@@ -519,7 +519,7 @@ func TestUpdateRule_TargetGroupInactive(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	newTargetGroupID := shared.NewID().String()
-	input := app.UpdateRuleInput{
+	input := assignment.UpdateRuleInput{
 		TargetGroupID: &newTargetGroupID,
 	}
 
@@ -537,7 +537,7 @@ func TestUpdateRule_InvalidID(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	_, err := svc.UpdateRule(context.Background(), shared.NewID().String(), "invalid", app.UpdateRuleInput{})
+	_, err := svc.UpdateRule(context.Background(), shared.NewID().String(), "invalid", assignment.UpdateRuleInput{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -551,7 +551,7 @@ func TestUpdateRule_NotFound(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	_, err := svc.UpdateRule(context.Background(), shared.NewID().String(), shared.NewID().String(), app.UpdateRuleInput{})
+	_, err := svc.UpdateRule(context.Background(), shared.NewID().String(), shared.NewID().String(), assignment.UpdateRuleInput{})
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -569,7 +569,7 @@ func TestUpdateRule_EmptyName(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	emptyName := ""
-	input := app.UpdateRuleInput{Name: &emptyName}
+	input := assignment.UpdateRuleInput{Name: &emptyName}
 
 	_, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err == nil {
@@ -642,7 +642,7 @@ func TestListRules_Success(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID: tenantID.String(),
 		Limit:    10,
 	}
@@ -669,7 +669,7 @@ func TestListRules_DefaultLimit(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID: tenantID.String(),
 		// Limit = 0 should default to 50
 	}
@@ -685,7 +685,7 @@ func TestListRules_InvalidTenantID(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID: "invalid",
 	}
 
@@ -711,7 +711,7 @@ func TestListRules_WithFilters(t *testing.T) {
 
 	isActive := true
 	tgid := targetGroupID.String()
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID:      tenantID.String(),
 		IsActive:      &isActive,
 		TargetGroupID: &tgid,
@@ -740,7 +740,7 @@ func TestListRules_InvalidTargetGroupID(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	invalidID := "not-uuid"
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID:      shared.NewID().String(),
 		TargetGroupID: &invalidID,
 	}
@@ -825,7 +825,7 @@ func TestCreateRule_WithAllOptions(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{getByIDResult: activeGroup}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:    tenantID.String(),
 		Name:        "Full Rule",
 		Description: "Complete rule with all options",
@@ -878,7 +878,7 @@ func TestCreateRule_WithNilCreatedBy(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{getByIDResult: activeGroup}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      tenantID.String(),
 		Name:          "No Creator Rule",
 		TargetGroupID: shared.NewID().String(),
@@ -903,7 +903,7 @@ func TestCreateRule_WithInvalidCreatedBy(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{getByIDResult: activeGroup}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      tenantID.String(),
 		Name:          "Bad Creator Rule",
 		TargetGroupID: shared.NewID().String(),
@@ -927,7 +927,7 @@ func TestCreateRule_EmptyName(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{getByIDResult: activeGroup}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      tenantID.String(),
 		Name:          "", // empty
 		TargetGroupID: shared.NewID().String(),
@@ -955,7 +955,7 @@ func TestUpdateRule_PartialUpdate_OnlyName(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	newName := "Only Name Changed"
-	input := app.UpdateRuleInput{Name: &newName}
+	input := assignment.UpdateRuleInput{Name: &newName}
 
 	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
@@ -983,7 +983,7 @@ func TestUpdateRule_Activate(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	isActive := true
-	input := app.UpdateRuleInput{IsActive: &isActive}
+	input := assignment.UpdateRuleInput{IsActive: &isActive}
 
 	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
@@ -1007,7 +1007,7 @@ func TestUpdateRule_UpdateConditions(t *testing.T) {
 		FindingSeverity: []string{"critical"},
 		AssetTags:       []string{"staging"},
 	}
-	input := app.UpdateRuleInput{Conditions: &newConditions}
+	input := assignment.UpdateRuleInput{Conditions: &newConditions}
 
 	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
@@ -1033,7 +1033,7 @@ func TestUpdateRule_UpdateOptions(t *testing.T) {
 		NotifyGroup:        true,
 		SetFindingPriority: "high",
 	}
-	input := app.UpdateRuleInput{Options: &newOptions}
+	input := assignment.UpdateRuleInput{Options: &newOptions}
 
 	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
@@ -1053,7 +1053,7 @@ func TestUpdateRule_InvalidTargetGroupID(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	invalidID := "not-a-uuid"
-	input := app.UpdateRuleInput{TargetGroupID: &invalidID}
+	input := assignment.UpdateRuleInput{TargetGroupID: &invalidID}
 
 	_, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err == nil {
@@ -1073,7 +1073,7 @@ func TestUpdateRule_TargetGroupNotFound(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	newGroupID := shared.NewID().String()
-	input := app.UpdateRuleInput{TargetGroupID: &newGroupID}
+	input := assignment.UpdateRuleInput{TargetGroupID: &newGroupID}
 
 	_, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err == nil {
@@ -1096,7 +1096,7 @@ func TestUpdateRule_RepoError(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	newName := "Should Fail"
-	input := app.UpdateRuleInput{Name: &newName}
+	input := assignment.UpdateRuleInput{Name: &newName}
 
 	_, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err == nil {
@@ -1113,7 +1113,7 @@ func TestUpdateRule_NoFieldsChanged(t *testing.T) {
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
 	// Empty update input - no fields to change
-	input := app.UpdateRuleInput{}
+	input := assignment.UpdateRuleInput{}
 
 	rule, err := svc.UpdateRule(context.Background(), tenantID.String(), existingRule.ID().String(), input)
 	if err != nil {
@@ -1139,7 +1139,7 @@ func TestListRules_ListRepoError(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID: shared.NewID().String(),
 	}
 
@@ -1157,7 +1157,7 @@ func TestListRules_CountRepoError(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID: shared.NewID().String(),
 	}
 
@@ -1175,7 +1175,7 @@ func TestListRules_EmptyResult(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID: shared.NewID().String(),
 		Limit:    10,
 	}
@@ -1200,7 +1200,7 @@ func TestListRules_NegativeLimit(t *testing.T) {
 	groupRepo := &mockGroupRepoForRules{}
 	svc := newAssignmentRuleService(acRepo, groupRepo)
 
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID: shared.NewID().String(),
 		Limit:    -5, // negative should default to 50
 	}
@@ -1261,8 +1261,8 @@ func TestTestRule_WithEngineWired_MatchesFindings(t *testing.T) {
 	}
 
 	log := logger.New(logger.Config{Level: "error"})
-	svc := app.NewAssignmentRuleService(acRepo, groupRepo, log)
-	engine := app.NewAssignmentEngine(acRepo, log)
+	svc := assignment.NewRuleService(acRepo, groupRepo, log)
+	engine := assignment.NewEngine(acRepo, log)
 	svc.SetAssignmentEngine(engine)
 	svc.SetFindingRepository(findingRepo)
 
@@ -1302,8 +1302,8 @@ func TestTestRule_WithEngineWired_NoMatches(t *testing.T) {
 	}
 
 	log := logger.New(logger.Config{Level: "error"})
-	svc := app.NewAssignmentRuleService(acRepo, groupRepo, log)
-	engine := app.NewAssignmentEngine(acRepo, log)
+	svc := assignment.NewRuleService(acRepo, groupRepo, log)
+	engine := assignment.NewEngine(acRepo, log)
 	svc.SetAssignmentEngine(engine)
 	svc.SetFindingRepository(findingRepo)
 
@@ -1333,8 +1333,8 @@ func TestTestRule_WithEngineWired_FindingRepoError(t *testing.T) {
 	findingRepo := &mockFindingRepoForRules{listErr: errors.New("db error")}
 
 	log := logger.New(logger.Config{Level: "error"})
-	svc := app.NewAssignmentRuleService(acRepo, groupRepo, log)
-	engine := app.NewAssignmentEngine(acRepo, log)
+	svc := assignment.NewRuleService(acRepo, groupRepo, log)
+	engine := assignment.NewEngine(acRepo, log)
 	svc.SetAssignmentEngine(engine)
 	svc.SetFindingRepository(findingRepo)
 
@@ -1376,8 +1376,8 @@ func TestTestRule_WithEngineWired_SampleCappedAt5(t *testing.T) {
 	}
 
 	log := logger.New(logger.Config{Level: "error"})
-	svc := app.NewAssignmentRuleService(acRepo, groupRepo, log)
-	engine := app.NewAssignmentEngine(acRepo, log)
+	svc := assignment.NewRuleService(acRepo, groupRepo, log)
+	engine := assignment.NewEngine(acRepo, log)
 	svc.SetAssignmentEngine(engine)
 	svc.SetFindingRepository(findingRepo)
 

@@ -1,13 +1,13 @@
 package jobs
 
 import (
+	"github.com/openctemio/api/internal/app/threat"
 	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -26,12 +26,12 @@ type ThreatIntelSyncPayload struct {
 
 // ThreatIntelTaskHandler handles threat intel background tasks.
 type ThreatIntelTaskHandler struct {
-	service *app.ThreatIntelService
+	service *threat.IntelService
 	logger  *logger.Logger
 }
 
 // NewThreatIntelTaskHandler creates a new ThreatIntelTaskHandler.
-func NewThreatIntelTaskHandler(service *app.ThreatIntelService, log *logger.Logger) *ThreatIntelTaskHandler {
+func NewThreatIntelTaskHandler(service *threat.IntelService, log *logger.Logger) *ThreatIntelTaskHandler {
 	return &ThreatIntelTaskHandler{
 		service: service,
 		logger:  log.With("component", "threatintel_task_handler"),

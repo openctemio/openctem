@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"github.com/openctemio/api/internal/app/apikey"
 	"context"
 	"errors"
 	"fmt"
@@ -9,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/apikey"
+	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -22,7 +22,7 @@ import (
 
 type mockAPIKeyRepo struct {
 	mu   sync.Mutex
-	keys map[shared.ID]*apikey.APIKey
+	keys map[shared.ID]*apikeydom.APIKey
 
 	// Error overrides
 	createErr  error
@@ -41,16 +41,16 @@ type mockAPIKeyRepo struct {
 	deleteCalls  int
 
 	// Last filter passed to List
-	lastFilter apikey.Filter
+	lastFilter apikeydom.Filter
 }
 
 func newMockAPIKeyRepo() *mockAPIKeyRepo {
 	return &mockAPIKeyRepo{
-		keys: make(map[shared.ID]*apikey.APIKey),
+		keys: make(map[shared.ID]*apikeydom.APIKey),
 	}
 }
 
-func (m *mockAPIKeyRepo) Create(_ context.Context, key *apikey.APIKey) error {
+func (m *mockAPIKeyRepo) Create(_ context.Context, key *apikeydom.APIKey) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.createCalls++
@@ -61,7 +61,7 @@ func (m *mockAPIKeyRepo) Create(_ context.Context, key *apikey.APIKey) error {
 	return nil
 }
 
-func (m *mockAPIKeyRepo) GetByID(_ context.Context, id, tenantID shared.ID) (*apikey.APIKey, error) {
+func (m *mockAPIKeyRepo) GetByID(_ context.Context, id, tenantID shared.ID) (*apikeydom.APIKey, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.getByIDCalls++
@@ -70,16 +70,16 @@ func (m *mockAPIKeyRepo) GetByID(_ context.Context, id, tenantID shared.ID) (*ap
 	}
 	key, ok := m.keys[id]
 	if !ok {
-		return nil, apikey.ErrAPIKeyNotFound
+		return nil, apikeydom.ErrAPIKeyNotFound
 	}
 	// Enforce tenant isolation
 	if key.TenantID() != tenantID {
-		return nil, apikey.ErrAPIKeyNotFound
+		return nil, apikeydom.ErrAPIKeyNotFound
 	}
 	return key, nil
 }
 
-func (m *mockAPIKeyRepo) GetByHash(_ context.Context, hash string) (*apikey.APIKey, error) {
+func (m *mockAPIKeyRepo) GetByHash(_ context.Context, hash string) (*apikeydom.APIKey, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.getHashCalls++
@@ -91,19 +91,19 @@ func (m *mockAPIKeyRepo) GetByHash(_ context.Context, hash string) (*apikey.APIK
 			return key, nil
 		}
 	}
-	return nil, apikey.ErrAPIKeyNotFound
+	return nil, apikeydom.ErrAPIKeyNotFound
 }
 
-func (m *mockAPIKeyRepo) List(_ context.Context, filter apikey.Filter) (apikey.ListResult, error) {
+func (m *mockAPIKeyRepo) List(_ context.Context, filter apikeydom.Filter) (apikeydom.ListResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.listCalls++
 	m.lastFilter = filter
 	if m.listErr != nil {
-		return apikey.ListResult{}, m.listErr
+		return apikeydom.ListResult{}, m.listErr
 	}
 
-	data := make([]*apikey.APIKey, 0, len(m.keys))
+	data := make([]*apikeydom.APIKey, 0, len(m.keys))
 	for _, key := range m.keys {
 		if filter.TenantID != nil && key.TenantID() != *filter.TenantID {
 			continue
@@ -141,7 +141,7 @@ func (m *mockAPIKeyRepo) List(_ context.Context, filter apikey.Filter) (apikey.L
 		totalPages++
 	}
 
-	return apikey.ListResult{
+	return apikeydom.ListResult{
 		Data:       data[start:end],
 		Total:      total,
 		Page:       page,
@@ -150,7 +150,7 @@ func (m *mockAPIKeyRepo) List(_ context.Context, filter apikey.Filter) (apikey.L
 	}, nil
 }
 
-func (m *mockAPIKeyRepo) Update(_ context.Context, key *apikey.APIKey) error {
+func (m *mockAPIKeyRepo) Update(_ context.Context, key *apikeydom.APIKey) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.updateCalls++
@@ -170,10 +170,10 @@ func (m *mockAPIKeyRepo) Delete(_ context.Context, id, tenantID shared.ID) error
 	}
 	key, ok := m.keys[id]
 	if !ok {
-		return apikey.ErrAPIKeyNotFound
+		return apikeydom.ErrAPIKeyNotFound
 	}
 	if key.TenantID() != tenantID {
-		return apikey.ErrAPIKeyNotFound
+		return apikeydom.ErrAPIKeyNotFound
 	}
 	delete(m.keys, id)
 	return nil
@@ -220,9 +220,9 @@ func (m *apikeyMockEncryptor) DecryptString(encoded string) (string, error) {
 // Helper: create APIKeyService for tests
 // =============================================================================
 
-func newTestAPIKeyService(repo *mockAPIKeyRepo) *app.APIKeyService {
+func newTestAPIKeyService(repo *mockAPIKeyRepo) *apikey.Service {
 	log := logger.NewNop()
-	return app.NewAPIKeyService(repo, log)
+	return apikey.NewService(repo, log)
 }
 
 // =============================================================================
@@ -236,19 +236,19 @@ func TestCreateAPIKey(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		input     app.CreateAPIKeyInput
+		input     apikey.CreateInput
 		repoErr   error
 		wantErr   bool
 		errTarget error
-		check     func(t *testing.T, result *app.CreateAPIKeyResult, repo *mockAPIKeyRepo)
+		check     func(t *testing.T, result *apikey.CreateResult, repo *mockAPIKeyRepo)
 	}{
 		{
 			name: "success - minimal input",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID: tenantID.String(),
 				Name:     "My API Key",
 			},
-			check: func(t *testing.T, result *app.CreateAPIKeyResult, repo *mockAPIKeyRepo) {
+			check: func(t *testing.T, result *apikey.CreateResult, repo *mockAPIKeyRepo) {
 				if result == nil {
 					t.Fatal("expected non-nil result")
 				}
@@ -267,7 +267,7 @@ func TestCreateAPIKey(t *testing.T) {
 				if result.Key.TenantID() != tenantID {
 					t.Errorf("expected tenantID %s, got %s", tenantID, result.Key.TenantID())
 				}
-				if result.Key.Status() != apikey.StatusActive {
+				if result.Key.Status() != apikeydom.StatusActive {
 					t.Errorf("expected status active, got %s", result.Key.Status())
 				}
 				if result.Key.KeyPrefix() == "" {
@@ -290,7 +290,7 @@ func TestCreateAPIKey(t *testing.T) {
 		},
 		{
 			name: "success - full input with all optional fields",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID:      tenantID.String(),
 				UserID:        userID.String(),
 				Name:          "Full API Key",
@@ -300,7 +300,7 @@ func TestCreateAPIKey(t *testing.T) {
 				ExpiresInDays: 30,
 				CreatedBy:     createdBy.String(),
 			},
-			check: func(t *testing.T, result *app.CreateAPIKeyResult, _ *mockAPIKeyRepo) {
+			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				key := result.Key
 				if key.Description() != "A detailed description" {
 					t.Errorf("expected description, got %q", key.Description())
@@ -336,7 +336,7 @@ func TestCreateAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - invalid tenant ID",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID: "not-a-uuid",
 				Name:     "Test Key",
 			},
@@ -345,7 +345,7 @@ func TestCreateAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - empty tenant ID",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID: "",
 				Name:     "Test Key",
 			},
@@ -354,7 +354,7 @@ func TestCreateAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - repo create fails",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID: tenantID.String(),
 				Name:     "Test Key",
 			},
@@ -363,21 +363,21 @@ func TestCreateAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - repo returns name conflict",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID: tenantID.String(),
 				Name:     "Duplicate Key",
 			},
-			repoErr: apikey.ErrAPIKeyNameExists,
+			repoErr: apikeydom.ErrAPIKeyNameExists,
 			wantErr: true,
 		},
 		{
 			name: "success - invalid user ID is silently ignored",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID: tenantID.String(),
 				Name:     "Key with bad user ID",
 				UserID:   "not-a-uuid",
 			},
-			check: func(t *testing.T, result *app.CreateAPIKeyResult, _ *mockAPIKeyRepo) {
+			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				// Invalid user ID is silently ignored (err == nil check in code)
 				if result.Key.UserID() != nil {
 					t.Errorf("expected nil user ID for invalid input, got %v", result.Key.UserID())
@@ -386,12 +386,12 @@ func TestCreateAPIKey(t *testing.T) {
 		},
 		{
 			name: "success - invalid created_by is silently ignored",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID:  tenantID.String(),
 				Name:      "Key with bad created by",
 				CreatedBy: "invalid",
 			},
-			check: func(t *testing.T, result *app.CreateAPIKeyResult, _ *mockAPIKeyRepo) {
+			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				if result.Key.CreatedBy() != nil {
 					t.Errorf("expected nil created_by for invalid input, got %v", result.Key.CreatedBy())
 				}
@@ -399,12 +399,12 @@ func TestCreateAPIKey(t *testing.T) {
 		},
 		{
 			name: "success - zero rate limit uses default",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID:  tenantID.String(),
 				Name:      "Default rate limit key",
 				RateLimit: 0,
 			},
-			check: func(t *testing.T, result *app.CreateAPIKeyResult, _ *mockAPIKeyRepo) {
+			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				if result.Key.RateLimit() != 1000 {
 					t.Errorf("expected default rate limit 1000, got %d", result.Key.RateLimit())
 				}
@@ -412,12 +412,12 @@ func TestCreateAPIKey(t *testing.T) {
 		},
 		{
 			name: "success - no expiration when expires_in_days is 0",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID:      tenantID.String(),
 				Name:          "No expiry key",
 				ExpiresInDays: 0,
 			},
-			check: func(t *testing.T, result *app.CreateAPIKeyResult, _ *mockAPIKeyRepo) {
+			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				if result.Key.ExpiresAt() != nil {
 					t.Errorf("expected nil expires_at, got %v", result.Key.ExpiresAt())
 				}
@@ -425,12 +425,12 @@ func TestCreateAPIKey(t *testing.T) {
 		},
 		{
 			name: "success - empty scopes stay empty",
-			input: app.CreateAPIKeyInput{
+			input: apikey.CreateInput{
 				TenantID: tenantID.String(),
 				Name:     "No scope key",
 				Scopes:   []string{},
 			},
-			check: func(t *testing.T, result *app.CreateAPIKeyResult, _ *mockAPIKeyRepo) {
+			check: func(t *testing.T, result *apikey.CreateResult, _ *mockAPIKeyRepo) {
 				if len(result.Key.Scopes()) != 0 {
 					t.Errorf("expected 0 scopes, got %d", len(result.Key.Scopes()))
 				}
@@ -444,7 +444,7 @@ func TestCreateAPIKey(t *testing.T) {
 			repo.createErr = tc.repoErr
 			svc := newTestAPIKeyService(repo)
 
-			result, err := svc.CreateAPIKey(context.Background(), tc.input)
+			result, err := svc.Create(context.Background(), tc.input)
 
 			if tc.wantErr {
 				if err == nil {
@@ -473,7 +473,7 @@ func TestCreateAPIKey_UniquePlaintext(t *testing.T) {
 	tenantID := shared.NewID()
 
 	// Create two keys and verify they have unique plaintexts
-	result1, err := svc.CreateAPIKey(context.Background(), app.CreateAPIKeyInput{
+	result1, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(),
 		Name:     "Key 1",
 	})
@@ -481,7 +481,7 @@ func TestCreateAPIKey_UniquePlaintext(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	result2, err := svc.CreateAPIKey(context.Background(), app.CreateAPIKeyInput{
+	result2, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(),
 		Name:     "Key 2",
 	})
@@ -512,19 +512,19 @@ func TestListAPIKeys(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		input     app.ListAPIKeysInput
+		input     apikey.ListInput
 		setup     func(repo *mockAPIKeyRepo)
 		repoErr   error
 		wantErr   bool
 		errTarget error
-		check     func(t *testing.T, result apikey.ListResult, repo *mockAPIKeyRepo)
+		check     func(t *testing.T, result apikeydom.ListResult, repo *mockAPIKeyRepo)
 	}{
 		{
 			name: "success - empty list",
-			input: app.ListAPIKeysInput{
+			input: apikey.ListInput{
 				TenantID: tenantID.String(),
 			},
-			check: func(t *testing.T, result apikey.ListResult, _ *mockAPIKeyRepo) {
+			check: func(t *testing.T, result apikeydom.ListResult, _ *mockAPIKeyRepo) {
 				if len(result.Data) != 0 {
 					t.Errorf("expected 0 keys, got %d", len(result.Data))
 				}
@@ -532,18 +532,18 @@ func TestListAPIKeys(t *testing.T) {
 		},
 		{
 			name: "success - returns keys for tenant",
-			input: app.ListAPIKeysInput{
+			input: apikey.ListInput{
 				TenantID: tenantID.String(),
 			},
 			setup: func(repo *mockAPIKeyRepo) {
-				k1 := apikey.NewAPIKey(shared.NewID(), tenantID, "Key 1", "hash1", "prefix01")
-				k2 := apikey.NewAPIKey(shared.NewID(), tenantID, "Key 2", "hash2", "prefix02")
-				k3 := apikey.NewAPIKey(shared.NewID(), otherTenantID, "Other Key", "hash3", "prefix03")
+				k1 := apikeydom.NewAPIKey(shared.NewID(), tenantID, "Key 1", "hash1", "prefix01")
+				k2 := apikeydom.NewAPIKey(shared.NewID(), tenantID, "Key 2", "hash2", "prefix02")
+				k3 := apikeydom.NewAPIKey(shared.NewID(), otherTenantID, "Other Key", "hash3", "prefix03")
 				repo.keys[k1.ID()] = k1
 				repo.keys[k2.ID()] = k2
 				repo.keys[k3.ID()] = k3
 			},
-			check: func(t *testing.T, result apikey.ListResult, _ *mockAPIKeyRepo) {
+			check: func(t *testing.T, result apikeydom.ListResult, _ *mockAPIKeyRepo) {
 				if len(result.Data) != 2 {
 					t.Errorf("expected 2 keys for tenant, got %d", len(result.Data))
 				}
@@ -551,30 +551,30 @@ func TestListAPIKeys(t *testing.T) {
 		},
 		{
 			name: "success - with status filter",
-			input: app.ListAPIKeysInput{
+			input: apikey.ListInput{
 				TenantID: tenantID.String(),
 				Status:   "active",
 			},
 			setup: func(repo *mockAPIKeyRepo) {
-				k1 := apikey.NewAPIKey(shared.NewID(), tenantID, "Active Key", "hash1", "prefix01")
+				k1 := apikeydom.NewAPIKey(shared.NewID(), tenantID, "Active Key", "hash1", "prefix01")
 				repo.keys[k1.ID()] = k1
 			},
-			check: func(t *testing.T, _ apikey.ListResult, repo *mockAPIKeyRepo) {
+			check: func(t *testing.T, _ apikeydom.ListResult, repo *mockAPIKeyRepo) {
 				if repo.lastFilter.Status == nil {
 					t.Fatal("expected status filter to be set")
 				}
-				if *repo.lastFilter.Status != apikey.StatusActive {
+				if *repo.lastFilter.Status != apikeydom.StatusActive {
 					t.Errorf("expected status filter 'active', got %q", *repo.lastFilter.Status)
 				}
 			},
 		},
 		{
 			name: "success - with search filter",
-			input: app.ListAPIKeysInput{
+			input: apikey.ListInput{
 				TenantID: tenantID.String(),
 				Search:   "production",
 			},
-			check: func(t *testing.T, _ apikey.ListResult, repo *mockAPIKeyRepo) {
+			check: func(t *testing.T, _ apikeydom.ListResult, repo *mockAPIKeyRepo) {
 				if repo.lastFilter.Search != "production" {
 					t.Errorf("expected search 'production', got %q", repo.lastFilter.Search)
 				}
@@ -582,14 +582,14 @@ func TestListAPIKeys(t *testing.T) {
 		},
 		{
 			name: "success - with pagination",
-			input: app.ListAPIKeysInput{
+			input: apikey.ListInput{
 				TenantID:  tenantID.String(),
 				Page:      2,
 				PerPage:   10,
 				SortBy:    "name",
 				SortOrder: "asc",
 			},
-			check: func(t *testing.T, _ apikey.ListResult, repo *mockAPIKeyRepo) {
+			check: func(t *testing.T, _ apikeydom.ListResult, repo *mockAPIKeyRepo) {
 				if repo.lastFilter.Page != 2 {
 					t.Errorf("expected page 2, got %d", repo.lastFilter.Page)
 				}
@@ -606,11 +606,11 @@ func TestListAPIKeys(t *testing.T) {
 		},
 		{
 			name: "success - no status filter when empty",
-			input: app.ListAPIKeysInput{
+			input: apikey.ListInput{
 				TenantID: tenantID.String(),
 				Status:   "",
 			},
-			check: func(t *testing.T, _ apikey.ListResult, repo *mockAPIKeyRepo) {
+			check: func(t *testing.T, _ apikeydom.ListResult, repo *mockAPIKeyRepo) {
 				if repo.lastFilter.Status != nil {
 					t.Error("expected nil status filter for empty input")
 				}
@@ -618,7 +618,7 @@ func TestListAPIKeys(t *testing.T) {
 		},
 		{
 			name: "error - invalid tenant ID",
-			input: app.ListAPIKeysInput{
+			input: apikey.ListInput{
 				TenantID: "bad-id",
 			},
 			wantErr:   true,
@@ -626,7 +626,7 @@ func TestListAPIKeys(t *testing.T) {
 		},
 		{
 			name: "error - repo fails",
-			input: app.ListAPIKeysInput{
+			input: apikey.ListInput{
 				TenantID: tenantID.String(),
 			},
 			repoErr: errors.New("db error"),
@@ -643,7 +643,7 @@ func TestListAPIKeys(t *testing.T) {
 			}
 			svc := newTestAPIKeyService(repo)
 
-			result, err := svc.ListAPIKeys(context.Background(), tc.input)
+			result, err := svc.List(context.Background(), tc.input)
 
 			if tc.wantErr {
 				if err == nil {
@@ -683,17 +683,17 @@ func TestGetAPIKey(t *testing.T) {
 		repoErr     error
 		wantErr     bool
 		errTarget   error
-		check       func(t *testing.T, key *apikey.APIKey)
+		check       func(t *testing.T, key *apikeydom.APIKey)
 	}{
 		{
 			name:        "success - returns key",
 			id:          keyID.String(),
 			tenantIDStr: tenantID.String(),
 			setup: func(repo *mockAPIKeyRepo) {
-				k := apikey.NewAPIKey(keyID, tenantID, "Test Key", "hash", "prefix00")
+				k := apikeydom.NewAPIKey(keyID, tenantID, "Test Key", "hash", "prefix00")
 				repo.keys[keyID] = k
 			},
-			check: func(t *testing.T, key *apikey.APIKey) {
+			check: func(t *testing.T, key *apikeydom.APIKey) {
 				if key == nil {
 					t.Fatal("expected non-nil key")
 				}
@@ -717,7 +717,7 @@ func TestGetAPIKey(t *testing.T) {
 			id:          keyID.String(),
 			tenantIDStr: otherTenantID.String(),
 			setup: func(repo *mockAPIKeyRepo) {
-				k := apikey.NewAPIKey(keyID, tenantID, "Test Key", "hash", "prefix00")
+				k := apikeydom.NewAPIKey(keyID, tenantID, "Test Key", "hash", "prefix00")
 				repo.keys[keyID] = k
 			},
 			wantErr:   true,
@@ -762,7 +762,7 @@ func TestGetAPIKey(t *testing.T) {
 			}
 			svc := newTestAPIKeyService(repo)
 
-			key, err := svc.GetAPIKey(context.Background(), tc.id, tc.tenantIDStr)
+			key, err := svc.Get(context.Background(), tc.id, tc.tenantIDStr)
 
 			if tc.wantErr {
 				if err == nil {
@@ -797,27 +797,27 @@ func TestRevokeAPIKey(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		input     app.RevokeAPIKeyInput
+		input     apikey.RevokeInput
 		setup     func(repo *mockAPIKeyRepo)
 		getErr    error
 		updateErr error
 		wantErr   bool
 		errTarget error
-		check     func(t *testing.T, key *apikey.APIKey, repo *mockAPIKeyRepo)
+		check     func(t *testing.T, key *apikeydom.APIKey, repo *mockAPIKeyRepo)
 	}{
 		{
 			name: "success - revokes active key",
-			input: app.RevokeAPIKeyInput{
+			input: apikey.RevokeInput{
 				ID:        keyID.String(),
 				TenantID:  tenantID.String(),
 				RevokedBy: revokerID.String(),
 			},
 			setup: func(repo *mockAPIKeyRepo) {
-				k := apikey.NewAPIKey(keyID, tenantID, "Active Key", "hash", "prefix00")
+				k := apikeydom.NewAPIKey(keyID, tenantID, "Active Key", "hash", "prefix00")
 				repo.keys[keyID] = k
 			},
-			check: func(t *testing.T, key *apikey.APIKey, repo *mockAPIKeyRepo) {
-				if key.Status() != apikey.StatusRevoked {
+			check: func(t *testing.T, key *apikeydom.APIKey, repo *mockAPIKeyRepo) {
+				if key.Status() != apikeydom.StatusRevoked {
 					t.Errorf("expected status revoked, got %s", key.Status())
 				}
 				if key.RevokedAt() == nil {
@@ -836,13 +836,13 @@ func TestRevokeAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - already revoked key",
-			input: app.RevokeAPIKeyInput{
+			input: apikey.RevokeInput{
 				ID:        keyID.String(),
 				TenantID:  tenantID.String(),
 				RevokedBy: revokerID.String(),
 			},
 			setup: func(repo *mockAPIKeyRepo) {
-				k := apikey.NewAPIKey(keyID, tenantID, "Revoked Key", "hash", "prefix00")
+				k := apikeydom.NewAPIKey(keyID, tenantID, "Revoked Key", "hash", "prefix00")
 				_ = k.Revoke(revokerID) // Pre-revoke it
 				repo.keys[keyID] = k
 			},
@@ -851,7 +851,7 @@ func TestRevokeAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - invalid key ID",
-			input: app.RevokeAPIKeyInput{
+			input: apikey.RevokeInput{
 				ID:        "bad",
 				TenantID:  tenantID.String(),
 				RevokedBy: revokerID.String(),
@@ -861,7 +861,7 @@ func TestRevokeAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - invalid tenant ID",
-			input: app.RevokeAPIKeyInput{
+			input: apikey.RevokeInput{
 				ID:        keyID.String(),
 				TenantID:  "bad",
 				RevokedBy: revokerID.String(),
@@ -871,13 +871,13 @@ func TestRevokeAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - invalid revoked_by ID",
-			input: app.RevokeAPIKeyInput{
+			input: apikey.RevokeInput{
 				ID:        keyID.String(),
 				TenantID:  tenantID.String(),
 				RevokedBy: "bad",
 			},
 			setup: func(repo *mockAPIKeyRepo) {
-				k := apikey.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
+				k := apikeydom.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
 				repo.keys[keyID] = k
 			},
 			wantErr:   true,
@@ -885,7 +885,7 @@ func TestRevokeAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - key not found",
-			input: app.RevokeAPIKeyInput{
+			input: apikey.RevokeInput{
 				ID:        shared.NewID().String(),
 				TenantID:  tenantID.String(),
 				RevokedBy: revokerID.String(),
@@ -895,13 +895,13 @@ func TestRevokeAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - cross-tenant isolation",
-			input: app.RevokeAPIKeyInput{
+			input: apikey.RevokeInput{
 				ID:        keyID.String(),
 				TenantID:  otherTenantID.String(),
 				RevokedBy: revokerID.String(),
 			},
 			setup: func(repo *mockAPIKeyRepo) {
-				k := apikey.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
+				k := apikeydom.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
 				repo.keys[keyID] = k
 			},
 			wantErr:   true,
@@ -909,7 +909,7 @@ func TestRevokeAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - repo GetByID fails",
-			input: app.RevokeAPIKeyInput{
+			input: apikey.RevokeInput{
 				ID:        keyID.String(),
 				TenantID:  tenantID.String(),
 				RevokedBy: revokerID.String(),
@@ -919,13 +919,13 @@ func TestRevokeAPIKey(t *testing.T) {
 		},
 		{
 			name: "error - repo Update fails",
-			input: app.RevokeAPIKeyInput{
+			input: apikey.RevokeInput{
 				ID:        keyID.String(),
 				TenantID:  tenantID.String(),
 				RevokedBy: revokerID.String(),
 			},
 			setup: func(repo *mockAPIKeyRepo) {
-				k := apikey.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
+				k := apikeydom.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
 				repo.keys[keyID] = k
 			},
 			updateErr: errors.New("write failure"),
@@ -943,7 +943,7 @@ func TestRevokeAPIKey(t *testing.T) {
 			}
 			svc := newTestAPIKeyService(repo)
 
-			key, err := svc.RevokeAPIKey(context.Background(), tc.input)
+			key, err := svc.Revoke(context.Background(), tc.input)
 
 			if tc.wantErr {
 				if err == nil {
@@ -990,7 +990,7 @@ func TestDeleteAPIKey(t *testing.T) {
 			id:          keyID.String(),
 			tenantIDStr: tenantID.String(),
 			setup: func(repo *mockAPIKeyRepo) {
-				k := apikey.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
+				k := apikeydom.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
 				repo.keys[keyID] = k
 			},
 			check: func(t *testing.T, repo *mockAPIKeyRepo) {
@@ -1028,7 +1028,7 @@ func TestDeleteAPIKey(t *testing.T) {
 			id:          keyID.String(),
 			tenantIDStr: otherTenantID.String(),
 			setup: func(repo *mockAPIKeyRepo) {
-				k := apikey.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
+				k := apikeydom.NewAPIKey(keyID, tenantID, "Key", "hash", "prefix00")
 				repo.keys[keyID] = k
 			},
 			wantErr:   true,
@@ -1052,7 +1052,7 @@ func TestDeleteAPIKey(t *testing.T) {
 			}
 			svc := newTestAPIKeyService(repo)
 
-			err := svc.DeleteAPIKey(context.Background(), tc.id, tc.tenantIDStr)
+			err := svc.Delete(context.Background(), tc.id, tc.tenantIDStr)
 
 			if tc.wantErr {
 				if err == nil {
@@ -1134,9 +1134,9 @@ func TestAPIKeyEncryptionService_EncryptAPIKey(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := app.NewAPIKeyEncryptionService(tc.encryptor)
+			svc := apikey.NewEncryptionService(tc.encryptor)
 
-			output, err := svc.EncryptAPIKey(tc.input)
+			output, err := svc.Encrypt(tc.input)
 
 			if tc.wantErr {
 				if err == nil {
@@ -1210,9 +1210,9 @@ func TestAPIKeyEncryptionService_DecryptAPIKey(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := app.NewAPIKeyEncryptionService(tc.encryptor)
+			svc := apikey.NewEncryptionService(tc.encryptor)
 
-			output, err := svc.DecryptAPIKey(tc.input)
+			output, err := svc.Decrypt(tc.input)
 
 			if tc.wantErr {
 				if err == nil {
@@ -1237,7 +1237,7 @@ func TestAPIKeyEncryptionService_DecryptAPIKey(t *testing.T) {
 // =============================================================================
 
 func TestAPIKeyEncryptionService_IsEncrypted(t *testing.T) {
-	svc := app.NewAPIKeyEncryptionService(nil)
+	svc := apikey.NewEncryptionService(nil)
 
 	tests := []struct {
 		name string
@@ -1335,7 +1335,7 @@ func TestMaskAPIKey(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := app.MaskAPIKey(tc.key)
+			got := apikey.MaskAPIKey(tc.key)
 			if got != tc.want {
 				t.Errorf("MaskAPIKey(%q) = %q, want %q", tc.key, got, tc.want)
 			}
@@ -1349,11 +1349,11 @@ func TestMaskAPIKey(t *testing.T) {
 
 func TestAPIKeyEncryptionService_Roundtrip(t *testing.T) {
 	enc := newAPIKeyMockEncryptor()
-	svc := app.NewAPIKeyEncryptionService(enc)
+	svc := apikey.NewEncryptionService(enc)
 
 	original := "oct_test_roundtrip_key_12345"
 
-	encrypted, err := svc.EncryptAPIKey(original)
+	encrypted, err := svc.Encrypt(original)
 	if err != nil {
 		t.Fatalf("encrypt error: %v", err)
 	}
@@ -1362,7 +1362,7 @@ func TestAPIKeyEncryptionService_Roundtrip(t *testing.T) {
 		t.Errorf("expected encrypted result to be detected as encrypted")
 	}
 
-	decrypted, err := svc.DecryptAPIKey(encrypted)
+	decrypted, err := svc.Decrypt(encrypted)
 	if err != nil {
 		t.Fatalf("decrypt error: %v", err)
 	}
@@ -1392,10 +1392,10 @@ func TestAPIKeyEncryptionService_Roundtrip_RealCipher(t *testing.T) {
 		t.Fatalf("failed to create cipher: %v", err)
 	}
 
-	svc := app.NewAPIKeyEncryptionService(cipher)
+	svc := apikey.NewEncryptionService(cipher)
 	original := "oct_real_encryption_test_key"
 
-	encrypted, err := svc.EncryptAPIKey(original)
+	encrypted, err := svc.Encrypt(original)
 	if err != nil {
 		t.Fatalf("encrypt error: %v", err)
 	}
@@ -1404,7 +1404,7 @@ func TestAPIKeyEncryptionService_Roundtrip_RealCipher(t *testing.T) {
 		t.Errorf("expected enc:v1: prefix, got %q", encrypted[:10])
 	}
 
-	decrypted, err := svc.DecryptAPIKey(encrypted)
+	decrypted, err := svc.Decrypt(encrypted)
 	if err != nil {
 		t.Fatalf("decrypt error: %v", err)
 	}
@@ -1426,7 +1426,7 @@ func TestAPIKeyService_CrossTenantIsolation(t *testing.T) {
 	tenantB := shared.NewID()
 
 	// Create key for tenant A
-	resultA, err := svc.CreateAPIKey(context.Background(), app.CreateAPIKeyInput{
+	resultA, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantA.String(),
 		Name:     "Tenant A Key",
 	})
@@ -1435,7 +1435,7 @@ func TestAPIKeyService_CrossTenantIsolation(t *testing.T) {
 	}
 
 	// Create key for tenant B
-	_, err = svc.CreateAPIKey(context.Background(), app.CreateAPIKeyInput{
+	_, err = svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantB.String(),
 		Name:     "Tenant B Key",
 	})
@@ -1444,7 +1444,7 @@ func TestAPIKeyService_CrossTenantIsolation(t *testing.T) {
 	}
 
 	t.Run("GetAPIKey - tenant B cannot access tenant A key", func(t *testing.T) {
-		_, err := svc.GetAPIKey(context.Background(), resultA.Key.ID().String(), tenantB.String())
+		_, err := svc.Get(context.Background(), resultA.Key.ID().String(), tenantB.String())
 		if err == nil {
 			t.Fatal("expected error when accessing cross-tenant key")
 		}
@@ -1454,7 +1454,7 @@ func TestAPIKeyService_CrossTenantIsolation(t *testing.T) {
 	})
 
 	t.Run("RevokeAPIKey - tenant B cannot revoke tenant A key", func(t *testing.T) {
-		_, err := svc.RevokeAPIKey(context.Background(), app.RevokeAPIKeyInput{
+		_, err := svc.Revoke(context.Background(), apikey.RevokeInput{
 			ID:        resultA.Key.ID().String(),
 			TenantID:  tenantB.String(),
 			RevokedBy: shared.NewID().String(),
@@ -1468,7 +1468,7 @@ func TestAPIKeyService_CrossTenantIsolation(t *testing.T) {
 	})
 
 	t.Run("DeleteAPIKey - tenant B cannot delete tenant A key", func(t *testing.T) {
-		err := svc.DeleteAPIKey(context.Background(), resultA.Key.ID().String(), tenantB.String())
+		err := svc.Delete(context.Background(), resultA.Key.ID().String(), tenantB.String())
 		if err == nil {
 			t.Fatal("expected error when deleting cross-tenant key")
 		}
@@ -1478,7 +1478,7 @@ func TestAPIKeyService_CrossTenantIsolation(t *testing.T) {
 	})
 
 	t.Run("ListAPIKeys - returns only own tenant keys", func(t *testing.T) {
-		resultList, err := svc.ListAPIKeys(context.Background(), app.ListAPIKeysInput{
+		resultList, err := svc.List(context.Background(), apikey.ListInput{
 			TenantID: tenantA.String(),
 		})
 		if err != nil {
@@ -1493,11 +1493,11 @@ func TestAPIKeyService_CrossTenantIsolation(t *testing.T) {
 
 	// Verify tenant A key was not deleted or modified by tenant B attempts
 	t.Run("tenant A key remains accessible after cross-tenant attempts", func(t *testing.T) {
-		key, err := svc.GetAPIKey(context.Background(), resultA.Key.ID().String(), tenantA.String())
+		key, err := svc.Get(context.Background(), resultA.Key.ID().String(), tenantA.String())
 		if err != nil {
 			t.Fatalf("expected key to still exist: %v", err)
 		}
-		if key.Status() != apikey.StatusActive {
+		if key.Status() != apikeydom.StatusActive {
 			t.Errorf("expected key to still be active, got %s", key.Status())
 		}
 	})
@@ -1514,7 +1514,7 @@ func TestCreateAPIKey_HashIsDeterministicForSamePlaintext(t *testing.T) {
 	repo := newMockAPIKeyRepo()
 	svc := newTestAPIKeyService(repo)
 
-	result, err := svc.CreateAPIKey(context.Background(), app.CreateAPIKeyInput{
+	result, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: shared.NewID().String(),
 		Name:     "Hash Test Key",
 	})
@@ -1545,7 +1545,7 @@ func TestCreateAPIKey_ConcurrentCreation(t *testing.T) {
 
 	const numKeys = 20
 	type result struct {
-		res *app.CreateAPIKeyResult
+		res *apikey.CreateResult
 		err error
 	}
 
@@ -1553,7 +1553,7 @@ func TestCreateAPIKey_ConcurrentCreation(t *testing.T) {
 
 	for i := 0; i < numKeys; i++ {
 		go func(idx int) {
-			r, err := svc.CreateAPIKey(context.Background(), app.CreateAPIKeyInput{
+			r, err := svc.Create(context.Background(), apikey.CreateInput{
 				TenantID: tenantID.String(),
 				Name:     fmt.Sprintf("Concurrent Key %d", idx),
 			})
@@ -1594,7 +1594,7 @@ func TestCreateAPIKey_PlaintextFormat(t *testing.T) {
 	repo := newMockAPIKeyRepo()
 	svc := newTestAPIKeyService(repo)
 
-	result, err := svc.CreateAPIKey(context.Background(), app.CreateAPIKeyInput{
+	result, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: shared.NewID().String(),
 		Name:     "Format Test",
 	})
@@ -1635,7 +1635,7 @@ func TestAPIKeyService_RevokeAndDeleteWorkflow(t *testing.T) {
 	revokerID := shared.NewID()
 
 	// Step 1: Create
-	result, err := svc.CreateAPIKey(context.Background(), app.CreateAPIKeyInput{
+	result, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(),
 		Name:     "Workflow Key",
 	})
@@ -1646,16 +1646,16 @@ func TestAPIKeyService_RevokeAndDeleteWorkflow(t *testing.T) {
 	keyIDStr := result.Key.ID().String()
 
 	// Step 2: Verify active
-	key, err := svc.GetAPIKey(context.Background(), keyIDStr, tenantID.String())
+	key, err := svc.Get(context.Background(), keyIDStr, tenantID.String())
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if key.Status() != apikey.StatusActive {
+	if key.Status() != apikeydom.StatusActive {
 		t.Fatalf("expected active, got %s", key.Status())
 	}
 
 	// Step 3: Revoke
-	revokedKey, err := svc.RevokeAPIKey(context.Background(), app.RevokeAPIKeyInput{
+	revokedKey, err := svc.Revoke(context.Background(), apikey.RevokeInput{
 		ID:        keyIDStr,
 		TenantID:  tenantID.String(),
 		RevokedBy: revokerID.String(),
@@ -1663,12 +1663,12 @@ func TestAPIKeyService_RevokeAndDeleteWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
-	if revokedKey.Status() != apikey.StatusRevoked {
+	if revokedKey.Status() != apikeydom.StatusRevoked {
 		t.Fatalf("expected revoked, got %s", revokedKey.Status())
 	}
 
 	// Step 4: Cannot revoke again
-	_, err = svc.RevokeAPIKey(context.Background(), app.RevokeAPIKeyInput{
+	_, err = svc.Revoke(context.Background(), apikey.RevokeInput{
 		ID:        keyIDStr,
 		TenantID:  tenantID.String(),
 		RevokedBy: revokerID.String(),
@@ -1681,13 +1681,13 @@ func TestAPIKeyService_RevokeAndDeleteWorkflow(t *testing.T) {
 	}
 
 	// Step 5: Can still delete a revoked key
-	err = svc.DeleteAPIKey(context.Background(), keyIDStr, tenantID.String())
+	err = svc.Delete(context.Background(), keyIDStr, tenantID.String())
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
 	// Step 6: Verify deleted
-	_, err = svc.GetAPIKey(context.Background(), keyIDStr, tenantID.String())
+	_, err = svc.Get(context.Background(), keyIDStr, tenantID.String())
 	if err == nil {
 		t.Fatal("expected error after delete")
 	}

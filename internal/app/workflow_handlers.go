@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/openctemio/api/internal/app/outbox"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -583,7 +584,7 @@ func (h *HTTPRequestHandler) isBlockedIP(ip net.IP) bool {
 
 // DefaultNotificationHandler handles notification actions using the notification service.
 type DefaultNotificationHandler struct {
-	notificationService *OutboxService
+	notificationService *outbox.Service
 	integrationService  *IntegrationService
 	logger              *logger.Logger
 }
@@ -638,7 +639,7 @@ func (h *DefaultNotificationHandler) Send(ctx context.Context, input *Notificati
 	case workflow.NotificationTypeEmail:
 		// Email notifications go through notification service
 		if h.notificationService != nil {
-			err := h.notificationService.EnqueueNotification(ctx, EnqueueNotificationParams{
+			err := h.notificationService.Enqueue(ctx, outbox.EnqueueParams{
 				TenantID:      input.TenantID,
 				EventType:     "workflow_notification",
 				AggregateType: "workflow",
@@ -702,7 +703,7 @@ func (h *DefaultNotificationHandler) Send(ctx context.Context, input *Notificati
 
 	// Default: use notification service outbox
 	if h.notificationService != nil {
-		err := h.notificationService.EnqueueNotification(ctx, EnqueueNotificationParams{
+		err := h.notificationService.Enqueue(ctx, outbox.EnqueueParams{
 			TenantID:      input.TenantID,
 			EventType:     "workflow_notification",
 			AggregateType: "workflow",

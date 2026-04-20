@@ -73,6 +73,12 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "OpenCTEM-Notification/1.0")
+	// F-6: idempotency key for duplicate-delivery suppression.
+	if msg.IdempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", msg.IdempotencyKey)
+		// Also surface in the JSON body so receivers that read it from
+		// the payload (rather than headers) can dedupe too.
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

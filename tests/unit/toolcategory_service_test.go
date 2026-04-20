@@ -1,12 +1,12 @@
 package unit
 
 import (
+	"github.com/openctemio/api/internal/app/tool"
 	"context"
 	"errors"
 	"sync"
 	"testing"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/toolcategory"
 	"github.com/openctemio/api/pkg/logger"
@@ -201,10 +201,10 @@ func (m *toolCatMockRepo) addCategory(cat *toolcategory.ToolCategory) {
 // Helper: create service
 // =============================================================================
 
-func newToolCatTestService() (*app.ToolCategoryService, *toolCatMockRepo) {
+func newToolCatTestService() (*tool.CategoryService, *toolCatMockRepo) {
 	repo := newToolCatMockRepo()
 	log := logger.NewNop()
-	svc := app.NewToolCategoryService(repo, nil, log)
+	svc := tool.NewCategoryService(repo, nil, log)
 	return svc, repo
 }
 
@@ -235,7 +235,7 @@ func TestToolCatListCategories_Success(t *testing.T) {
 	toolCatCreatePlatformCategory(repo, "sast", "SAST")
 	toolCatCreateTenantCategory(repo, tenantID, "my-cat", "My Category")
 
-	result, err := svc.ListCategories(ctx, app.ListCategoriesInput{
+	result, err := svc.ListCategories(ctx, tool.ListCategoriesInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PerPage:  20,
@@ -257,7 +257,7 @@ func TestToolCatListCategories_NoTenantID(t *testing.T) {
 
 	toolCatCreatePlatformCategory(repo, "sast", "SAST")
 
-	result, err := svc.ListCategories(ctx, app.ListCategoriesInput{
+	result, err := svc.ListCategories(ctx, tool.ListCategoriesInput{
 		Page:    1,
 		PerPage: 20,
 	})
@@ -273,7 +273,7 @@ func TestToolCatListCategories_InvalidTenantID(t *testing.T) {
 	svc, _ := newToolCatTestService()
 	ctx := context.Background()
 
-	_, err := svc.ListCategories(ctx, app.ListCategoriesInput{
+	_, err := svc.ListCategories(ctx, tool.ListCategoriesInput{
 		TenantID: "not-a-uuid",
 		Page:     1,
 		PerPage:  20,
@@ -292,7 +292,7 @@ func TestToolCatListCategories_RepoError(t *testing.T) {
 
 	repo.listErr = errors.New("database error")
 
-	_, err := svc.ListCategories(ctx, app.ListCategoriesInput{
+	_, err := svc.ListCategories(ctx, tool.ListCategoriesInput{
 		Page:    1,
 		PerPage: 20,
 	})
@@ -305,7 +305,7 @@ func TestToolCatListCategories_WithSearch(t *testing.T) {
 	svc, repo := newToolCatTestService()
 	ctx := context.Background()
 
-	_, err := svc.ListCategories(ctx, app.ListCategoriesInput{
+	_, err := svc.ListCategories(ctx, tool.ListCategoriesInput{
 		Search:  "sast",
 		Page:    1,
 		PerPage: 20,
@@ -323,7 +323,7 @@ func TestToolCatListCategories_WithIsBuiltinFilter(t *testing.T) {
 	ctx := context.Background()
 
 	isBuiltin := true
-	_, err := svc.ListCategories(ctx, app.ListCategoriesInput{
+	_, err := svc.ListCategories(ctx, tool.ListCategoriesInput{
 		IsBuiltin: &isBuiltin,
 		Page:      1,
 		PerPage:   20,
@@ -464,7 +464,7 @@ func TestToolCatCreateCategory_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	cat, err := svc.CreateCategory(ctx, app.CreateCategoryInput{
+	cat, err := svc.CreateCategory(ctx, tool.CreateCategoryInput{
 		TenantID:    tenantID.String(),
 		CreatedBy:   userID.String(),
 		Name:        "my-custom",
@@ -510,7 +510,7 @@ func TestToolCatCreateCategory_DefaultIconAndColor(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	cat, err := svc.CreateCategory(ctx, app.CreateCategoryInput{
+	cat, err := svc.CreateCategory(ctx, tool.CreateCategoryInput{
 		TenantID:    tenantID.String(),
 		CreatedBy:   userID.String(),
 		Name:        "no-icon",
@@ -531,7 +531,7 @@ func TestToolCatCreateCategory_InvalidTenantID(t *testing.T) {
 	svc, _ := newToolCatTestService()
 	ctx := context.Background()
 
-	_, err := svc.CreateCategory(ctx, app.CreateCategoryInput{
+	_, err := svc.CreateCategory(ctx, tool.CreateCategoryInput{
 		TenantID:    "bad",
 		CreatedBy:   shared.NewID().String(),
 		Name:        "test",
@@ -549,7 +549,7 @@ func TestToolCatCreateCategory_InvalidCreatedBy(t *testing.T) {
 	svc, _ := newToolCatTestService()
 	ctx := context.Background()
 
-	_, err := svc.CreateCategory(ctx, app.CreateCategoryInput{
+	_, err := svc.CreateCategory(ctx, tool.CreateCategoryInput{
 		TenantID:    shared.NewID().String(),
 		CreatedBy:   "bad",
 		Name:        "test",
@@ -570,7 +570,7 @@ func TestToolCatCreateCategory_DuplicatePlatformName(t *testing.T) {
 	// Pre-set platform name as existing
 	repo.existsByNameResults["sast"] = true
 
-	_, err := svc.CreateCategory(ctx, app.CreateCategoryInput{
+	_, err := svc.CreateCategory(ctx, tool.CreateCategoryInput{
 		TenantID:    shared.NewID().String(),
 		CreatedBy:   shared.NewID().String(),
 		Name:        "sast",
@@ -592,7 +592,7 @@ func TestToolCatCreateCategory_DuplicateTenantName(t *testing.T) {
 	// Create an existing tenant category
 	toolCatCreateTenantCategory(repo, tenantID, "my-cat", "My Category")
 
-	_, err := svc.CreateCategory(ctx, app.CreateCategoryInput{
+	_, err := svc.CreateCategory(ctx, tool.CreateCategoryInput{
 		TenantID:    tenantID.String(),
 		CreatedBy:   shared.NewID().String(),
 		Name:        "my-cat",
@@ -612,7 +612,7 @@ func TestToolCatCreateCategory_PlatformCheckError(t *testing.T) {
 
 	repo.existsByNameErr = errors.New("db error")
 
-	_, err := svc.CreateCategory(ctx, app.CreateCategoryInput{
+	_, err := svc.CreateCategory(ctx, tool.CreateCategoryInput{
 		TenantID:    shared.NewID().String(),
 		CreatedBy:   shared.NewID().String(),
 		Name:        "test-cat",
@@ -629,7 +629,7 @@ func TestToolCatCreateCategory_RepoCreateError(t *testing.T) {
 
 	repo.createErr = errors.New("db error")
 
-	_, err := svc.CreateCategory(ctx, app.CreateCategoryInput{
+	_, err := svc.CreateCategory(ctx, tool.CreateCategoryInput{
 		TenantID:    shared.NewID().String(),
 		CreatedBy:   shared.NewID().String(),
 		Name:        "test-cat",
@@ -651,7 +651,7 @@ func TestToolCatUpdateCategory_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	cat := toolCatCreateTenantCategory(repo, tenantID, "my-cat", "Old Name")
 
-	updated, err := svc.UpdateCategory(ctx, app.UpdateCategoryInput{
+	updated, err := svc.UpdateCategory(ctx, tool.UpdateCategoryInput{
 		TenantID:    tenantID.String(),
 		ID:          cat.ID.String(),
 		DisplayName: "New Name",
@@ -686,7 +686,7 @@ func TestToolCatUpdateCategory_DefaultIconAndColor(t *testing.T) {
 	tenantID := shared.NewID()
 	cat := toolCatCreateTenantCategory(repo, tenantID, "my-cat", "Name")
 
-	updated, err := svc.UpdateCategory(ctx, app.UpdateCategoryInput{
+	updated, err := svc.UpdateCategory(ctx, tool.UpdateCategoryInput{
 		TenantID:    tenantID.String(),
 		ID:          cat.ID.String(),
 		DisplayName: "Name",
@@ -706,7 +706,7 @@ func TestToolCatUpdateCategory_InvalidTenantID(t *testing.T) {
 	svc, _ := newToolCatTestService()
 	ctx := context.Background()
 
-	_, err := svc.UpdateCategory(ctx, app.UpdateCategoryInput{
+	_, err := svc.UpdateCategory(ctx, tool.UpdateCategoryInput{
 		TenantID:    "bad",
 		ID:          shared.NewID().String(),
 		DisplayName: "Test",
@@ -723,7 +723,7 @@ func TestToolCatUpdateCategory_InvalidCategoryID(t *testing.T) {
 	svc, _ := newToolCatTestService()
 	ctx := context.Background()
 
-	_, err := svc.UpdateCategory(ctx, app.UpdateCategoryInput{
+	_, err := svc.UpdateCategory(ctx, tool.UpdateCategoryInput{
 		TenantID:    shared.NewID().String(),
 		ID:          "bad",
 		DisplayName: "Test",
@@ -740,7 +740,7 @@ func TestToolCatUpdateCategory_NotFound(t *testing.T) {
 	svc, _ := newToolCatTestService()
 	ctx := context.Background()
 
-	_, err := svc.UpdateCategory(ctx, app.UpdateCategoryInput{
+	_, err := svc.UpdateCategory(ctx, tool.UpdateCategoryInput{
 		TenantID:    shared.NewID().String(),
 		ID:          shared.NewID().String(),
 		DisplayName: "Test",
@@ -756,7 +756,7 @@ func TestToolCatUpdateCategory_CannotModifyPlatformCategory(t *testing.T) {
 
 	cat := toolCatCreatePlatformCategory(repo, "sast", "SAST")
 
-	_, err := svc.UpdateCategory(ctx, app.UpdateCategoryInput{
+	_, err := svc.UpdateCategory(ctx, tool.UpdateCategoryInput{
 		TenantID:    shared.NewID().String(),
 		ID:          cat.ID.String(),
 		DisplayName: "Hacked",
@@ -777,7 +777,7 @@ func TestToolCatUpdateCategory_CannotModifyOtherTenantCategory(t *testing.T) {
 	tenantB := shared.NewID()
 	cat := toolCatCreateTenantCategory(repo, tenantA, "tenant-a-cat", "Tenant A Cat")
 
-	_, err := svc.UpdateCategory(ctx, app.UpdateCategoryInput{
+	_, err := svc.UpdateCategory(ctx, tool.UpdateCategoryInput{
 		TenantID:    tenantB.String(),
 		ID:          cat.ID.String(),
 		DisplayName: "Stolen",
@@ -798,7 +798,7 @@ func TestToolCatUpdateCategory_RepoUpdateError(t *testing.T) {
 	cat := toolCatCreateTenantCategory(repo, tenantID, "my-cat", "Name")
 	repo.updateErr = errors.New("db error")
 
-	_, err := svc.UpdateCategory(ctx, app.UpdateCategoryInput{
+	_, err := svc.UpdateCategory(ctx, tool.UpdateCategoryInput{
 		TenantID:    tenantID.String(),
 		ID:          cat.ID.String(),
 		DisplayName: "Updated",

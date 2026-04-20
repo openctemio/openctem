@@ -20,6 +20,14 @@ type Policy struct {
 	mediumDays          int
 	lowDays             int
 	infoDays            int
+	// F3 (Q1/WS-C): priority-class-driven SLA days. When a finding has a
+	// PriorityClass (P0..P3), these take precedence over severity-based
+	// days. Columns exist in migration 000142 but were previously
+	// unread — a false CTEM signal flagged in the framework audit.
+	p0Days              int
+	p1Days              int
+	p2Days              int
+	p3Days              int
 	warningThresholdPct int
 	escalationEnabled   bool
 	escalationConfig    map[string]any
@@ -35,6 +43,17 @@ var DefaultSLADays = map[string]int{
 	"medium":   30,
 	"low":      60,
 	"info":     90,
+}
+
+// DefaultPriorityDays is the default remediation window per CTEM priority
+// class. These are tighter than severity-based defaults because priority
+// class is supposed to express "how much does this matter now given the
+// business context + exploit landscape".
+var DefaultPriorityDays = map[string]int{
+	"P0": 2,  // Exploited-in-wild on a crown jewel — near-immediate.
+	"P1": 5,  // High EPSS + reachable + critical asset.
+	"P2": 15, // Mitigated by compensating control OR unreachable critical.
+	"P3": 30, // Everything else.
 }
 
 // NewPolicy creates a new SLA Policy with default values.
@@ -60,6 +79,10 @@ func NewPolicy(
 		mediumDays:          DefaultSLADays["medium"],
 		lowDays:             DefaultSLADays["low"],
 		infoDays:            DefaultSLADays["info"],
+		p0Days:              DefaultPriorityDays["P0"],
+		p1Days:              DefaultPriorityDays["P1"],
+		p2Days:              DefaultPriorityDays["P2"],
+		p3Days:              DefaultPriorityDays["P3"],
 		warningThresholdPct: 80,
 		escalationEnabled:   false,
 		escalationConfig:    make(map[string]any),
@@ -115,6 +138,13 @@ func Reconstitute(
 		mediumDays:          mediumDays,
 		lowDays:             lowDays,
 		infoDays:            infoDays,
+		// Priority-class days default to DefaultPriorityDays for rows
+		// persisted before Q1/WS-C. Callers that need custom values
+		// should set them via WithPriorityDays after Reconstitute.
+		p0Days:              DefaultPriorityDays["P0"],
+		p1Days:              DefaultPriorityDays["P1"],
+		p2Days:              DefaultPriorityDays["P2"],
+		p3Days:              DefaultPriorityDays["P3"],
 		warningThresholdPct: warningThresholdPct,
 		escalationEnabled:   escalationEnabled,
 		escalationConfig:    escalationConfig,
@@ -122,6 +152,26 @@ func Reconstitute(
 		createdAt:           createdAt,
 		updatedAt:           updatedAt,
 	}
+}
+
+// WithPriorityDays attaches priority-class SLA days to a reconstituted
+// Policy. Zero values keep the default — a persisted value of 0 is
+// treated as "inherit default" so the column can be safely added to
+// existing rows without breaking anything.
+func (p *Policy) WithPriorityDays(p0, p1, p2, p3 int) *Policy {
+	if p0 > 0 {
+		p.p0Days = p0
+	}
+	if p1 > 0 {
+		p.p1Days = p1
+	}
+	if p2 > 0 {
+		p.p2Days = p2
+	}
+	if p3 > 0 {
+		p.p3Days = p3
+	}
+	return p
 }
 
 // Getters
@@ -151,6 +201,18 @@ func (p *Policy) EscalationConfig() map[string]any {
 	return config
 }
 
+// P0Days returns the priority-class P0 SLA days.
+func (p *Policy) P0Days() int { return p.p0Days }
+
+// P1Days returns the priority-class P1 SLA days.
+func (p *Policy) P1Days() int { return p.p1Days }
+
+// P2Days returns the priority-class P2 SLA days.
+func (p *Policy) P2Days() int { return p.p2Days }
+
+// P3Days returns the priority-class P3 SLA days.
+func (p *Policy) P3Days() int { return p.p3Days }
+
 // GetDaysForSeverity returns the remediation days for a given severity.
 func (p *Policy) GetDaysForSeverity(severity string) int {
 	switch severity {
@@ -169,10 +231,44 @@ func (p *Policy) GetDaysForSeverity(severity string) int {
 	}
 }
 
-// CalculateDeadline calculates the SLA deadline for a finding.
+// GetDaysForPriorityClass returns the remediation days for a CTEM
+// priority class (P0..P3). Returns 0 for unrecognised values so the
+// caller can fall back to severity-based days.
+func (p *Policy) GetDaysForPriorityClass(priorityClass string) int {
+	switch priorityClass {
+	case "P0":
+		return p.p0Days
+	case "P1":
+		return p.p1Days
+	case "P2":
+		return p.p2Days
+	case "P3":
+		return p.p3Days
+	default:
+		return 0
+	}
+}
+
+// CalculateDeadline calculates the SLA deadline using severity only.
+// Retained for backward compatibility; prefer CalculateDeadlineFor for
+// priority-aware deadlines.
 func (p *Policy) CalculateDeadline(severity string, detectedAt time.Time) time.Time {
 	days := p.GetDaysForSeverity(severity)
 	return detectedAt.Add(time.Duration(days) * 24 * time.Hour)
+}
+
+// CalculateDeadlineFor computes the SLA deadline honouring CTEM priority
+// class first, falling back to severity when the priority class is
+// empty or unknown (legacy findings without a class yet).
+//
+// F3 (Q1/WS-C): this is the single entry point that downstream services
+// SHOULD use. It closes the fake-signal gap where p0..p3 days existed
+// in the schema but were not read.
+func (p *Policy) CalculateDeadlineFor(priorityClass, severity string, detectedAt time.Time) time.Time {
+	if days := p.GetDaysForPriorityClass(priorityClass); days > 0 {
+		return detectedAt.Add(time.Duration(days) * 24 * time.Hour)
+	}
+	return p.CalculateDeadline(severity, detectedAt)
 }
 
 // Mutators

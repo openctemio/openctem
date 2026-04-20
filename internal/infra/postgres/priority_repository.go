@@ -187,6 +187,39 @@ func NewPriorityAuditRepository(db *DB) *PriorityAuditRepository {
 	return &PriorityAuditRepository{db: db}
 }
 
+// CountOlderThan reports how many priority audit rows are older than before.
+// Used by the retention controller to report work-to-do before deleting.
+func (r *PriorityAuditRepository) CountOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	var count int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM priority_class_audit_log WHERE created_at < $1`,
+		before,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count old priority audit rows: %w", err)
+	}
+	return count, nil
+}
+
+// DeleteOlderThan removes priority audit rows older than before, across all
+// tenants. Intended for the platform retention controller (F-13). Per-tenant
+// retention can be layered later via DeleteOlderThanForTenant when tenant
+// policy configuration exists.
+func (r *PriorityAuditRepository) DeleteOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	res, err := r.db.ExecContext(ctx,
+		`DELETE FROM priority_class_audit_log WHERE created_at < $1`,
+		before,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete old priority audit rows: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	return n, nil
+}
+
 func (r *PriorityAuditRepository) LogChange(ctx context.Context, entry app.PriorityAuditEntry) error {
 	query := `
 		INSERT INTO priority_class_audit_log (tenant_id, finding_id, previous_class, new_class,

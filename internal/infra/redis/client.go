@@ -165,6 +165,23 @@ func (c *Client) SetNX(ctx context.Context, key, value string, ttl time.Duration
 	return result == "OK", nil
 }
 
+// GetDel atomically reads and deletes a key, returning the stored value.
+// Returns ("", false, nil) when the key does not exist. Used by the single-
+// use WebSocket ticket flow (F-8) where replay must be impossible.
+func (c *Client) GetDel(ctx context.Context, key string) (string, bool, error) {
+	if key == "" {
+		return "", false, errors.New("key is required")
+	}
+	val, err := c.client.GetDel(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("redis getdel: %w", err)
+	}
+	return val, true, nil
+}
+
 // Del deletes one or more keys.
 func (c *Client) Del(ctx context.Context, keys ...string) error {
 	if len(keys) == 0 {

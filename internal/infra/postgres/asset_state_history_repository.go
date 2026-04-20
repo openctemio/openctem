@@ -213,7 +213,8 @@ func (r *AssetStateHistoryRepository) List(ctx context.Context, tenantID shared.
 		return nil, 0, fmt.Errorf("failed to count state changes: %w", err)
 	}
 
-	// Sorting (default: changed_at DESC)
+	// F-D1 hardening: sortOrder is a binary literal ("ASC" | "DESC"); sort
+	// column is fixed (h.changed_at). No attacker input reaches the format.
 	sortOrder := sortOrderDESC
 	if opts.SortOrder == sortOrderAscLower {
 		sortOrder = sortOrderASC

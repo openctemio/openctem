@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/domain/permission"
+	"github.com/openctemio/api/pkg/logger"
 )
 
 // registerHealthRoutes registers health check endpoints.
@@ -247,13 +248,24 @@ func registerWebSocketRoutes(
 	h *websocket.Handler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	wsTicketMiddleware Middleware, // F-8: non-nil when the single-use ticket path is enabled.
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// F-8: When the single-use ticket middleware is wired (Redis available),
+	// use it as the ONLY authenticator for /ws. This prevents replay-via-URL
+	// because each ticket is atomically consumed on first redemption. We
+	// intentionally skip the JWT auth chain here so that a leaked query-
+	// string token is no longer an accepted credential for WS upgrades.
+	if wsTicketMiddleware != nil {
+		router.Group("/api/v1/ws", func(r Router) {
+			r.GET("/", h.ServeWS)
+		}, wsTicketMiddleware)
+		return
+	}
 
-	// WebSocket endpoint - single connection for all real-time features
-	// GET /api/v1/ws
-	// Authentication: Bearer token in Authorization header
+	// Fallback: build tenant middleware chain from JWT token. Only used
+	// when Redis / WSTicketService is not configured — operators running
+	// without Redis inherit the old short-lived-JWT-in-URL behaviour.
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/ws", func(r Router) {
 		r.GET("/", h.ServeWS)
 	}, tenantMiddlewares...)
@@ -334,17 +346,37 @@ func registerWebhookRoutes(
 	}, tenantMiddlewares...)
 }
 
+// F-1: wire HMAC verification around the Jira webhook. The tenant query
+// param remains for routing, but the middleware now requires a valid
+// HMAC-SHA256 of the body signed with JIRA_WEBHOOK_SECRET before the
+// handler runs — preventing cross-tenant spoofing by external callers.
+
 // registerIncomingWebhookRoutes registers public incoming webhook endpoints.
 // These endpoints are NOT protected by JWT — they are called by external services (e.g. Jira).
 // Tenant routing is done via a ?tenant= query parameter that each external service configures.
+//
+// F-1: each endpoint is now wrapped in middleware.VerifyHMAC using a
+// provider-specific shared secret. Requests without a valid
+// X-OpenCTEM-Signature over the raw body are rejected before the handler
+// runs, preventing cross-tenant spoofing.
 func registerIncomingWebhookRoutes(
 	router Router,
 	jiraHandler *handler.JiraWebhookHandler,
+	jiraSecret string,
+	log *logger.Logger,
 ) {
 	if jiraHandler == nil {
 		return
 	}
-	// Public endpoint — no auth middleware.
-	// Jira requires a 200 response on delivery, so we always accept and process asynchronously.
-	router.POST("/api/v1/webhooks/incoming/jira", jiraHandler.IncomingJiraWebhook)
+	// If the platform secret is empty the middleware fails closed (rejects
+	// every request), so the endpoint is never reachable without explicit
+	// configuration.
+	hmacMW := middleware.VerifyHMAC(
+		"X-OpenCTEM-Signature",
+		func(*http.Request) (string, bool) {
+			return jiraSecret, jiraSecret != ""
+		},
+		log,
+	)
+	router.POST("/api/v1/webhooks/incoming/jira", jiraHandler.IncomingJiraWebhook, hmacMW)
 }

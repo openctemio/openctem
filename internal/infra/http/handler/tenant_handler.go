@@ -245,7 +245,7 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 // Helpers
 // =============================================================================
 
-// buildAuditContext builds an AuditContext from the HTTP request.
+// buildAuditContext builds an app.AuditContext from the HTTP request.
 func (h *TenantHandler) buildAuditContext(r *http.Request) app.AuditContext {
 	actx := app.AuditContext{
 		ActorIP:   r.RemoteAddr,

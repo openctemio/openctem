@@ -341,10 +341,11 @@ func (s *AuditService) GetAuditLog(ctx context.Context, auditLogID string) (*aud
 	return s.auditRepo.GetByID(ctx, parsedID)
 }
 
-// GetResourceHistory retrieves audit history for a specific resource.
-func (s *AuditService) GetResourceHistory(ctx context.Context, resourceType, resourceID string, page, perPage int) (pagination.Result[*audit.AuditLog], error) {
+// GetResourceHistory retrieves audit history for a specific resource within a tenant.
+// tenantID MUST be provided to prevent cross-tenant reads (F-2).
+func (s *AuditService) GetResourceHistory(ctx context.Context, tenantID shared.ID, resourceType, resourceID string, page, perPage int) (pagination.Result[*audit.AuditLog], error) {
 	p := pagination.New(page, perPage)
-	return s.auditRepo.ListByResource(ctx, audit.ResourceType(resourceType), resourceID, p)
+	return s.auditRepo.ListByResource(ctx, tenantID, audit.ResourceType(resourceType), resourceID, p)
 }
 
 // GetUserActivity retrieves audit logs for a specific user.

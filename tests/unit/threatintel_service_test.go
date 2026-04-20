@@ -1,12 +1,12 @@
 package unit
 
 import (
+	"github.com/openctemio/api/internal/app/threat"
 	"context"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/threatintel"
 	"github.com/openctemio/api/pkg/logger"
@@ -348,9 +348,9 @@ func (m *threatIntelMockRepo) EnrichCVE(_ context.Context, cveID string) (*threa
 // Helpers
 // ============================================================================
 
-func newThreatIntelService(repo threatintel.ThreatIntelRepository) *app.ThreatIntelService {
+func newThreatIntelService(repo threatintel.ThreatIntelRepository) *threat.IntelService {
 	log := logger.NewNop()
-	return app.NewThreatIntelService(repo, log)
+	return threat.NewIntelService(repo, log)
 }
 
 func threatIntelAddEPSSScore(repo *threatIntelMockRepo, cveID string, score, percentile float64) *threatintel.EPSSScore {

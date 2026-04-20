@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lib/pq"
+	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/logger"
@@ -228,9 +232,18 @@ func (h *CTEMCycleHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 // Activate transitions a cycle from planning to active.
-// On activation, the current scope (assets matching scope_targets) is
-// snapshot into ctem_cycle_scope_snapshots — this freezes what was
-// in-scope at the moment the cycle started, per RFC-005 Gap 3.
+// On activation, the current scope is snapshot into ctem_cycle_scope_snapshots —
+// this freezes what was in-scope at the moment the cycle started, per RFC-005 Gap 3.
+//
+// P0-3: scope_target_id is no longer dead. When the cycle's Charter specifies
+// `in_scope_services` (business-service IDs), the snapshot is filtered to
+// assets linked to those services via `business_service_assets`. Each
+// snapshot row records which business service pulled it in (scope_target_id),
+// enabling per-service cycle metrics and CTEM-correct targeted scoping
+// instead of "freeze everything the tenant owns".
+//
+// Fallback: when `in_scope_services` is empty, behaviour is unchanged —
+// every tenant asset is snapshotted and scope_target_id is NULL.
 func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -240,26 +253,93 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		return // error already written
 	}
 
-	// Snapshot current scope — freeze assets in scope at cycle activation time.
-	// All assets belonging to the tenant are captured (simple snapshot).
-	// More sophisticated scope filtering can be added via scope_target matching later.
-	snapshotQuery := `
-		INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id)
-		SELECT $1, id FROM assets WHERE tenant_id = $2
-		ON CONFLICT DO NOTHING
-	`
-	result, snapErr := h.db.ExecContext(r.Context(), snapshotQuery, id, tenantID)
+	// Pull the Charter so we can read in_scope_services. The charter is
+	// stored as JSONB on ctem_cycles.
+	var charterRaw []byte
+	if err := h.db.QueryRowContext(r.Context(),
+		`SELECT charter FROM ctem_cycles WHERE id = $1 AND tenant_id = $2`,
+		id, tenantID,
+	).Scan(&charterRaw); err != nil {
+		h.logger.Warn("cycle charter fetch failed; falling back to all-assets snapshot",
+			"cycle_id", id, "error", err)
+		charterRaw = nil
+	}
+	inScopeServices := extractInScopeServices(charterRaw)
+
+	var (
+		result     sql.Result
+		snapErr    error
+		scopedRows int64
+	)
+
+	if len(inScopeServices) > 0 {
+		// Targeted scope: only assets linked to the named business services.
+		// scope_target_id = the business_service_id that selected the asset.
+		// ON CONFLICT (cycle_id, asset_id) keeps the first service that
+		// included the asset so a composite unique index would dedupe.
+		scopedQuery := `
+			INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id, scope_target_id)
+			SELECT $1, bsa.asset_id, bsa.service_id
+			  FROM business_service_assets bsa
+			  JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $2
+			 WHERE bsa.service_id = ANY($3::uuid[])
+			ON CONFLICT DO NOTHING
+		`
+		result, snapErr = h.db.ExecContext(r.Context(), scopedQuery, id, tenantID, pq.Array(inScopeServices))
+	} else {
+		// No scope filter declared → legacy behaviour: freeze every asset.
+		allQuery := `
+			INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id)
+			SELECT $1, id FROM assets WHERE tenant_id = $2
+			ON CONFLICT DO NOTHING
+		`
+		result, snapErr = h.db.ExecContext(r.Context(), allQuery, id, tenantID)
+	}
+
 	if snapErr != nil {
 		h.logger.Error("cycle scope snapshot failed", "cycle_id", id, "error", snapErr)
 		// Don't fail the transition — cycle is activated, snapshot can be retried
-	} else {
-		rows, _ := result.RowsAffected()
+	} else if result != nil {
+		scopedRows, _ = result.RowsAffected()
 		h.logger.Info("cycle activated with scope snapshot",
-			"cycle_id", id, "assets_snapshotted", rows,
+			"cycle_id", id,
+			"assets_snapshotted", scopedRows,
+			"scope_mode", scopeModeLabel(inScopeServices),
+			"services_in_scope", len(inScopeServices),
 		)
 	}
 
 	writeJSON(w, http.StatusOK, c)
+}
+
+// extractInScopeServices reads Charter.in_scope_services from raw JSONB.
+// Returns nil on any parse failure so the caller falls back to the "all
+// assets" snapshot path rather than activating with an empty scope.
+func extractInScopeServices(raw []byte) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var charter struct {
+		InScopeServices []string `json:"in_scope_services"`
+	}
+	if err := json.Unmarshal(raw, &charter); err != nil {
+		return nil
+	}
+	// Filter out empty strings defensively.
+	out := make([]string, 0, len(charter.InScopeServices))
+	for _, s := range charter.InScopeServices {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func scopeModeLabel(inScope []string) string {
+	if len(inScope) > 0 {
+		return "targeted"
+	}
+	return "all-tenant-assets"
 }
 
 // StartReview transitions a cycle from active to review.
@@ -275,10 +355,55 @@ func (h *CTEMCycleHandler) StartReview(w http.ResponseWriter, r *http.Request) {
 }
 
 // Close transitions a cycle from review to closed.
+//
+// Q4/WS-D gate: before closing, compute validation-evidence coverage
+// for findings that reached a terminal state within the cycle window.
+// If any enforced priority class is under its SLO threshold, the
+// close is rejected with 422 so the operator can either attach
+// evidence or explicitly accept the breach (future: cycle charter).
+//
+// Enforcement mode is controlled by env CTEM_ENFORCE_COVERAGE_SLO
+// (default: false → advisory). This preserves compatibility while
+// the evidence-store rollout is in progress; flip to true once every
+// tenant has the simulation_evidence table populated.
 func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
+
+	// Load cycle window first — need start_date/end_date for coverage query.
+	var cycleStart, cycleEnd sql.NullString
+	if err := h.db.QueryRowContext(r.Context(),
+		`SELECT start_date, end_date FROM ctem_cycles
+		  WHERE tenant_id = $1 AND id = $2 AND status = 'review'`,
+		tenantID, id,
+	).Scan(&cycleStart, &cycleEnd); err != nil {
+		if err == sql.ErrNoRows { //nolint:errorlint
+			apierror.BadRequest("cycle not found or not in review status").WriteJSON(w)
+			return
+		}
+		h.logger.Error("ctem cycle close: load window", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	// Compute coverage and apply SLO.
+	coverage, covErr := h.computeValidationCoverage(r.Context(), tenantID, cycleStart.String, cycleEnd.String)
+	if covErr != nil {
+		h.logger.Warn("validation coverage query failed; allowing close",
+			"cycle_id", id, "error", covErr)
+	} else if sloErr := app.Enforce(coverage, app.DefaultThresholds); sloErr != nil {
+		enforce := os.Getenv("CTEM_ENFORCE_COVERAGE_SLO") == "true"
+		if enforce {
+			h.logger.Warn("cycle close blocked by coverage SLO",
+				"cycle_id", id, "tenant_id", tenantID, "breach", sloErr.Error())
+			apierror.BadRequest(sloErr.Error()).WriteJSON(w)
+			return
+		}
+		// Advisory mode: log so operators can see the gap without being blocked.
+		h.logger.Warn("cycle close: coverage SLO below threshold (advisory, not enforced)",
+			"cycle_id", id, "tenant_id", tenantID, "breach", sloErr.Error())
+	}
 
 	var c CTEMCycleResponse
 	var startDate, endDate sql.NullString
@@ -320,6 +445,100 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, c)
+}
+
+// computeValidationCoverage counts, for findings that reached a
+// terminal state (resolved | verified | accepted | false_positive)
+// within the cycle window, how many have a validation evidence
+// record attached.
+//
+// The evidence source is currently the pentest_findings.evidence
+// JSONB column (non-empty array = evidence present). When the
+// dedicated simulation_evidence table lands (see
+// internal/app/validation/evidence_store.go), this query should be
+// extended with a UNION to include scripted/agent evidence.
+//
+// An empty cycle window (NULL start/end) means "everything to date" —
+// the query uses IS NULL guards so the cycle's intent survives even
+// when dates were never set.
+func (h *CTEMCycleHandler) computeValidationCoverage(
+	ctx context.Context,
+	tenantID, startDate, endDate string,
+) (app.ValidationCoverage, error) {
+	var c app.ValidationCoverage
+	// Build date-window clause tolerating empty strings.
+	windowSQL := ""
+	args := []any{tenantID}
+	argN := 2
+	if startDate != "" {
+		windowSQL += " AND f.updated_at >= $" + itoa(argN)
+		args = append(args, startDate)
+		argN++
+	}
+	if endDate != "" {
+		windowSQL += " AND f.updated_at < ($" + itoa(argN) + "::date + INTERVAL '1 day')"
+		args = append(args, endDate)
+	}
+	q := `
+		SELECT
+		  COALESCE(f.priority_class, '') AS pc,
+		  COUNT(*) AS total,
+		  SUM(CASE WHEN pf.finding_id IS NOT NULL THEN 1 ELSE 0 END) AS with_ev
+		FROM findings f
+		LEFT JOIN pentest_findings pf
+		  ON pf.finding_id = f.id
+		 AND jsonb_array_length(COALESCE(pf.evidence, '[]'::jsonb)) > 0
+		WHERE f.tenant_id = $1
+		  AND f.status IN ('resolved','verified','accepted','false_positive')` + windowSQL + `
+		GROUP BY COALESCE(f.priority_class, '')
+	`
+	rows, err := h.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return c, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var pc string
+		var total, withEv int
+		if err := rows.Scan(&pc, &total, &withEv); err != nil {
+			return c, err
+		}
+		switch pc {
+		case "P0":
+			c.P0Total, c.P0WithEvidence = total, withEv
+		case "P1":
+			c.P1Total, c.P1WithEvidence = total, withEv
+		case "P2":
+			c.P2Total, c.P2WithEvidence = total, withEv
+		case "P3":
+			c.P3Total, c.P3WithEvidence = total, withEv
+		}
+	}
+	return c, rows.Err()
+}
+
+// itoa is a tiny, allocation-free int→string for building SQL
+// placeholders ($2, $3, ...). Avoids pulling in strconv just for this.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
 }
 
 // GetScope retrieves the scope snapshot for a cycle.

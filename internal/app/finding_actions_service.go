@@ -58,6 +58,72 @@ func NewFindingActionsService(
 	}
 }
 
+// loadVerificationChecklist loads the structured closure checklist for a
+// finding. Returns (nil, nil) when the row is absent — the caller passes
+// that through to TransitionStatusWithChecklist, which will reject the
+// transition with ErrValidation if a checklist was required.
+//
+// F4 (Q2/WS-E): gates FixApplied → Resolved / Resolved → Verified on the
+// tenant's verification checklist. Checklist rows are owned by the HTTP
+// handler (raw SQL on finding_verification_checklists); this loader is
+// the read-only backdoor the service layer uses to enforce the gate
+// without introducing a new domain repository.
+func (s *FindingActionsService) loadVerificationChecklist(
+	ctx context.Context,
+	tenantID, findingID shared.ID,
+) (*vulnerability.VerificationChecklist, error) {
+	const q = `
+		SELECT id, tenant_id, finding_id, exposure_cleared, evidence_attached,
+		       register_updated, monitoring_added, regression_scheduled,
+		       COALESCE(notes, ''), completed_by, completed_at,
+		       created_at, updated_at
+		FROM finding_verification_checklists
+		WHERE tenant_id = $1 AND finding_id = $2
+	`
+	var (
+		data                vulnerability.VerificationChecklistData
+		monitoringAdded     sql.NullBool
+		regressionScheduled sql.NullBool
+		completedBy         sql.NullString
+		completedAt         sql.NullTime
+		idStr, tidStr, fidStr string
+	)
+	err := s.db.QueryRowContext(ctx, q, tenantID.String(), findingID.String()).Scan(
+		&idStr, &tidStr, &fidStr,
+		&data.ExposureCleared, &data.EvidenceAttached, &data.RegisterUpdated,
+		&monitoringAdded, &regressionScheduled,
+		&data.Notes, &completedBy, &completedAt,
+		&data.CreatedAt, &data.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows { //nolint:errorlint
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load verification checklist: %w", err)
+	}
+	data.ID, _ = shared.IDFromString(idStr)
+	data.TenantID, _ = shared.IDFromString(tidStr)
+	data.FindingID, _ = shared.IDFromString(fidStr)
+	if monitoringAdded.Valid {
+		v := monitoringAdded.Bool
+		data.MonitoringAdded = &v
+	}
+	if regressionScheduled.Valid {
+		v := regressionScheduled.Bool
+		data.RegressionScheduled = &v
+	}
+	if completedBy.Valid {
+		if id, err := shared.IDFromString(completedBy.String); err == nil {
+			data.CompletedBy = &id
+		}
+	}
+	if completedAt.Valid {
+		t := completedAt.Time
+		data.CompletedAt = &t
+	}
+	return vulnerability.ReconstituteVerificationChecklist(data), nil
+}
+
 // SetVerificationScanTrigger wires the scan trigger (called after both services are initialized).
 func (s *FindingActionsService) SetVerificationScanTrigger(trigger VerificationScanTrigger) {
 	s.scanTrigger = trigger
@@ -332,7 +398,17 @@ func (s *FindingActionsService) BulkVerify(
 		if uidErr != nil {
 			return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
 		}
-		if err := f.TransitionStatus(vulnerability.FindingStatusResolved, resolution, &uid); err != nil {
+		// F4: FixApplied → Resolved goes through the checklist gate. A
+		// missing/incomplete checklist is returned to the operator so
+		// they can fill it before retrying — the domain layer owns
+		// the rejection message.
+		checklist, err := s.loadVerificationChecklist(ctx, tid, fid)
+		if err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+			continue
+		}
+		if err := f.TransitionStatusWithChecklist(vulnerability.FindingStatusResolved, resolution, &uid, checklist); err != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue

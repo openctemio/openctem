@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,12 +23,34 @@ type PriorityClassificationService struct {
 	ruleRepo      PriorityRuleRepository
 	auditRepo     PriorityAuditRepository
 	controlLookup CompensatingControlLookup // optional, may be nil
-	logger        *logger.Logger
+	// F3 / Q1-WS-C: optional publisher that fires a priority-changed
+	// event whenever class transitions. Nil → no publishing (safe
+	// default; classification still runs).
+	changePublisher PriorityChangePublisher
+	// Q4/WS-C: optional flood guard that suppresses downstream fan-out
+	// on P0 bursts. Nil → always fan out (legacy behaviour, unsafe on
+	// noisy tenants). Classification itself is NEVER altered by the
+	// guard — only the event emission.
+	p0Guard *P0FloodGuard
+	logger  *logger.Logger
 }
 
 // SetControlLookup wires the compensating control lookup for priority calculation.
 func (s *PriorityClassificationService) SetControlLookup(lookup CompensatingControlLookup) {
 	s.controlLookup = lookup
+}
+
+// SetChangePublisher wires the priority-change event publisher. Safe to
+// call after construction; nil disables publishing.
+func (s *PriorityClassificationService) SetChangePublisher(p PriorityChangePublisher) {
+	s.changePublisher = p
+}
+
+// SetP0FloodGuard wires the anti-flap budget used to suppress P0
+// downstream fan-out under noisy-scanner bursts. Nil disables the
+// guard. Safe to call after construction.
+func (s *PriorityClassificationService) SetP0FloodGuard(g *P0FloodGuard) {
+	s.p0Guard = g
 }
 
 // EPSSRepository provides EPSS score lookups.
@@ -48,6 +71,33 @@ type PriorityRuleRepository interface {
 // PriorityAuditRepository records priority changes.
 type PriorityAuditRepository interface {
 	LogChange(ctx context.Context, entry PriorityAuditEntry) error
+}
+
+// PriorityChangeEvent is emitted whenever a finding's priority class
+// transitions to a new value. Downstream consumers (notification
+// service, assignment-rule service, dashboard live feed) subscribe via
+// the outbox.
+//
+// Q1/WS-C (F3, B1, B2): emission is the mechanism that wires the
+// reclassification sweep to the rest of the system. Without this
+// event, a priority change is a silent dashboard update — an operator
+// can miss that a P3 just became P0.
+type PriorityChangeEvent struct {
+	TenantID      shared.ID
+	FindingID     shared.ID
+	PreviousClass *vulnerability.PriorityClass // nil for first classification
+	NewClass      vulnerability.PriorityClass
+	Reason        string
+	Source        string // "auto" | "rule" | "sweep" | "manual"
+	RuleID        *shared.ID
+	At            time.Time
+}
+
+// PriorityChangePublisher delivers priority-change events to downstream
+// consumers, typically by inserting into the notification outbox.
+// Optional — when nil, classification still runs but no event is fired.
+type PriorityChangePublisher interface {
+	Publish(ctx context.Context, event PriorityChangeEvent) error
 }
 
 // CompensatingControlLookup provides lookups for effective controls on assets/findings.
@@ -163,7 +213,78 @@ func (s *PriorityClassificationService) ClassifyFinding(
 		s.logger.Warn("failed to log priority audit", "finding_id", finding.ID(), "error", err)
 	}
 
+	// F3 / Q1-WS-C: emit priority_changed event on actual transition.
+	// First classification (previousClass == nil) also emits so
+	// downstream services can react to "first P0 detected".
+	s.publishIfChanged(ctx, tenantID, finding.ID(), previousClass, classification)
+
 	return nil
+}
+
+// publishIfChanged fires a PriorityChangeEvent when the class actually
+// transitioned (or on first classification). Safe when the publisher is
+// nil. Errors are logged, not propagated — a publish failure must not
+// roll back a successful classification.
+func (s *PriorityClassificationService) publishIfChanged(
+	ctx context.Context,
+	tenantID, findingID shared.ID,
+	previousClass *vulnerability.PriorityClass,
+	c vulnerability.PriorityClassification,
+) {
+	if s.changePublisher == nil {
+		return
+	}
+	if previousClass != nil && *previousClass == c.Class {
+		return // no transition
+	}
+
+	// Q4/WS-C: anti-flap — when the tenant has burned its rolling P0
+	// budget we RECORD the classification (already done above) but
+	// SKIP the fan-out event, so Jira/outbox/notifications don't
+	// drown in a scanner-induced flood. Non-P0 classes are never
+	// throttled.
+	if s.p0Guard != nil {
+		shouldFanOut, err := s.p0Guard.ShouldFanOut(ctx, tenantID, c.Class)
+		if err != nil {
+			if errors.Is(err, ErrP0FloodSuppressed) {
+				s.logger.Warn("priority_changed fan-out suppressed by P0 flood guard",
+					"tenant_id", tenantID.String(),
+					"finding_id", findingID.String(),
+					"class", string(c.Class),
+					"budget_usage", s.p0Guard.CurrentUsage(tenantID),
+				)
+				return
+			}
+			// Any other error (ctx cancelled) → don't publish, but let
+			// caller see via log. Classification is already recorded.
+			s.logger.Warn("P0 flood guard error; skipping publish",
+				"finding_id", findingID, "error", err)
+			return
+		}
+		if !shouldFanOut {
+			return
+		}
+	}
+
+	ev := PriorityChangeEvent{
+		TenantID:      tenantID,
+		FindingID:     findingID,
+		PreviousClass: previousClass,
+		NewClass:      c.Class,
+		Reason:        c.Reason,
+		Source:        c.Source,
+		RuleID:        c.RuleID,
+		At:            time.Now().UTC(),
+	}
+	if err := s.changePublisher.Publish(ctx, ev); err != nil {
+		s.logger.Warn("publish priority_changed failed", "finding_id", findingID, "error", err)
+		// Refund the slot so a transient publish failure doesn't
+		// permanently burn budget. On retry the caller should re-run
+		// classification → ShouldFanOut → Publish.
+		if s.p0Guard != nil && c.Class == "P0" {
+			s.p0Guard.Refund(tenantID)
+		}
+	}
 }
 
 // EnrichAndClassifyBatch enriches findings with EPSS/KEV and classifies priority.
@@ -273,7 +394,12 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 			classification = vulnerability.ClassifyPriority(pctx)
 		}
 
+		previousClass := f.PriorityClass()
 		f.SetPriorityClassification(classification.Class, classification.Reason)
+		// Q1/WS-C: batch classification also emits change events so the
+		// reclassification sweep (a future task) reuses the same path
+		// and downstream consumers see every transition.
+		s.publishIfChanged(ctx, tenantID, f.ID(), previousClass, classification)
 	}
 
 	s.logger.Info("batch enrichment and classification complete",

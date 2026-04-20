@@ -170,7 +170,7 @@ func (m *secretMockRepo) addCredential(cred *secretstore.Credential) {
 }
 
 // =============================================================================
-// Mock Audit Repository (minimal, for AuditService dependency)
+// Mock Audit Repository (minimal, for audit.Service dependency)
 // =============================================================================
 
 type secretMockAuditRepo struct {
@@ -218,7 +218,11 @@ func (m *secretMockAuditRepo) DeleteOlderThan(_ context.Context, _ time.Time) (i
 	return 0, nil
 }
 
-func (m *secretMockAuditRepo) GetLatestByResource(_ context.Context, _ audit.ResourceType, _ string) (*audit.AuditLog, error) {
+func (m *secretMockAuditRepo) DeleteOlderThanForTenant(_ context.Context, _ shared.ID, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (m *secretMockAuditRepo) GetLatestByResource(_ context.Context, _ shared.ID, _ audit.ResourceType, _ string) (*audit.AuditLog, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -226,7 +230,7 @@ func (m *secretMockAuditRepo) ListByActor(_ context.Context, _ shared.ID, _ pagi
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 
-func (m *secretMockAuditRepo) ListByResource(_ context.Context, _ audit.ResourceType, _ string, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (m *secretMockAuditRepo) ListByResource(_ context.Context, _ shared.ID, _ audit.ResourceType, _ string, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 

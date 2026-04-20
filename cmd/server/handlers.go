@@ -16,6 +16,17 @@ import (
 	"github.com/openctemio/api/pkg/validator"
 )
 
+// newCompensatingControlHandlerWithWiring constructs the handler and
+// attaches the B2 reclassify publisher when the services graph has
+// one wired. Kept as a helper so handlers.go stays declarative.
+func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Services) *handler.CompensatingControlHandler {
+	h := handler.NewCompensatingControlHandler(db, log)
+	if svc != nil && svc.ControlChangePub != nil {
+		h.SetChangePublisher(svc.ControlChangePub)
+	}
+	return h
+}
+
 // HandlerDeps contains dependencies needed to create handlers.
 type HandlerDeps struct {
 	Config       *config.Config
@@ -55,6 +66,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler := handler.NewVulnerabilityHandler(svc.Vulnerability, v, log)
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
+	if svc.BulkGuard != nil {
+		vulnHandler.SetBulkGuard(svc.BulkGuard)
+	}
 
 	handlers := routes.Handlers{
 		// Health
@@ -213,7 +227,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
 
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
-		CompensatingControl: handler.NewCompensatingControlHandler(deps.DB.DB, log),
+		CompensatingControl: newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:     handler.NewAttackerProfileHandler(deps.DB.DB, log),
 		CTEMCycle:              handler.NewCTEMCycleHandler(deps.DB.DB, log),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
@@ -224,6 +238,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log),
+
+		// F-8: wire the single-use ticket redeemer when configured so the
+		// /ws route uses ticket auth instead of the JWT chain.
+		WSTicketRedeemer: svc.WSTicket,
 	}
 
 	// SSO handler (always initialized - uses DB-stored provider configs)
@@ -250,6 +268,10 @@ func InitLocalAuthHandler(
 			cfg.Auth,
 			log,
 		)
+		// F-8: wire the single-use ticket service (may be nil if Redis not configured).
+		if svc.WSTicket != nil {
+			handlers.LocalAuth.SetWSTicketService(svc.WSTicket)
+		}
 		log.Info("local auth handler initialized")
 	}
 }

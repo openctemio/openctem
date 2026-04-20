@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"github.com/openctemio/api/internal/app/template"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -415,7 +416,7 @@ func setupTemplateTestHandlers(t *testing.T) *templateTestHandlers {
 		log,
 	)
 
-	sourceService := app.NewTemplateSourceService(
+	sourceService := template.NewSourceService(
 		sourceRepo,
 		log,
 	)

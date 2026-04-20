@@ -205,6 +205,39 @@ func (c *Campaign) UpdateProgress(findingCount, resolvedCount int) {
 	c.updatedAt = time.Now()
 }
 
+// AllFindingsResolved reports whether every finding in the campaign
+// is resolved (progress at 100%). A zero-finding campaign is NOT
+// treated as complete — an empty campaign is a misconfiguration, not
+// an accomplishment.
+func (c *Campaign) AllFindingsResolved() bool {
+	return c.findingCount > 0 && c.resolvedCount >= c.findingCount
+}
+
+// TryAutoComplete attempts the active/validating → completed
+// transition when all findings are resolved. Q4/WS-E: this is what
+// turns "every finding in my campaign hit resolved" into an actual
+// campaign-level event without an operator clicking Complete.
+//
+// Returns (true, nil) on successful auto-complete.
+// Returns (false, nil) when not yet eligible — callers should treat
+// this as a normal no-op, not an error.
+// Returns (_, err) for genuine state-machine or validation failures.
+func (c *Campaign) TryAutoComplete() (bool, error) {
+	if !c.AllFindingsResolved() {
+		return false, nil
+	}
+	// Eligible terminal targets: active and validating. Draft,
+	// paused, completed, canceled are explicit user states that we
+	// do not auto-complete out of.
+	if c.status != CampaignStatusActive && c.status != CampaignStatusValidating {
+		return false, nil
+	}
+	if err := c.Complete(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // RecordRiskReduction records risk before/after for this campaign.
 func (c *Campaign) RecordRiskReduction(before, after float64) {
 	c.riskBefore = &before

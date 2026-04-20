@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/jira"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -21,12 +21,12 @@ import (
 //   - DELETE /api/v1/findings/{id}/link-ticket     — unlink a Jira ticket from a finding
 //   - POST /api/v1/webhooks/incoming/jira          — receive Jira status-change webhooks
 type JiraWebhookHandler struct {
-	service *app.JiraSyncService
+	service *jira.SyncService
 	logger  *logger.Logger
 }
 
 // NewJiraWebhookHandler creates a new JiraWebhookHandler.
-func NewJiraWebhookHandler(svc *app.JiraSyncService, log *logger.Logger) *JiraWebhookHandler {
+func NewJiraWebhookHandler(svc *jira.SyncService, log *logger.Logger) *JiraWebhookHandler {
 	return &JiraWebhookHandler{service: svc, logger: log}
 }
 
@@ -66,7 +66,7 @@ func (h *JiraWebhookHandler) LinkTicket(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.LinkTicketInput{
+	input := jira.LinkTicketInput{
 		TenantID:  tenantID,
 		FindingID: findingID,
 		TicketKey: req.TicketKey,
@@ -138,7 +138,7 @@ func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result, err := h.service.CreateTicketFromFinding(r.Context(), app.CreateTicketInput{
+	result, err := h.service.CreateTicketFromFinding(r.Context(), jira.CreateTicketInput{
 		TenantID:   tenantID,
 		FindingID:  findingID,
 		ProjectKey: req.ProjectKey,
@@ -170,7 +170,7 @@ func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.
 		return
 	}
 
-	var payload app.JiraWebhookPayload
+	var payload jira.WebhookPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		apierror.BadRequest("invalid jira webhook payload").WriteJSON(w)
 		return

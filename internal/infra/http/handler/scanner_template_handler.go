@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/app/validators"
+	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
@@ -531,7 +531,7 @@ func toScannerTemplateResponse(t *scannertemplate.ScannerTemplate) *ScannerTempl
 }
 
 // toValidationResultResponse converts a validation result to response.
-func toValidationResultResponse(r *validators.ValidationResult) *ValidationResultResponse {
+func toValidationResultResponse(r *template.ValidationResult) *ValidationResultResponse {
 	resp := &ValidationResultResponse{
 		Valid:     r.Valid,
 		RuleCount: r.RuleCount,

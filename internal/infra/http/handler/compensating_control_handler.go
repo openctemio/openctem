@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )
@@ -18,11 +21,89 @@ import (
 type CompensatingControlHandler struct {
 	db     *sql.DB
 	logger *logger.Logger
+	// B2 (Q2/WS-C): optional. When set, mutations enqueue a
+	// reclassify sweep for the assets this control protects so
+	// priority reflects changed protection promptly. Nil = legacy
+	// no-fan-out behaviour.
+	publisher *controller.ControlChangePublisher
 }
 
 // NewCompensatingControlHandler creates a new handler.
 func NewCompensatingControlHandler(db *sql.DB, log *logger.Logger) *CompensatingControlHandler {
 	return &CompensatingControlHandler{db: db, logger: log}
+}
+
+// SetChangePublisher wires the reclassify publisher. Safe after
+// construction; nil disables the fan-out.
+func (h *CompensatingControlHandler) SetChangePublisher(p *controller.ControlChangePublisher) {
+	h.publisher = p
+}
+
+// enqueueReclassifyForControl loads asset IDs protected by the given
+// control and enqueues one sweep request per tenant. All errors are
+// logged — control-change fan-out is advisory and must never fail the
+// write that triggered it.
+func (h *CompensatingControlHandler) enqueueReclassifyForControl(
+	ctx context.Context,
+	tenantID shared.ID,
+	controlID string,
+	reason string,
+) {
+	if h.publisher == nil {
+		return
+	}
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT asset_id FROM compensating_control_assets WHERE control_id = $1`,
+		controlID,
+	)
+	if err != nil {
+		h.logger.Warn("load control assets for reclassify failed",
+			"control_id", controlID, "error", err)
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	assetIDs := make([]shared.ID, 0, 8)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			continue
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			continue
+		}
+		assetIDs = append(assetIDs, id)
+	}
+	if len(assetIDs) == 0 {
+		return
+	}
+	h.publisher.PublishChange(ctx, tenantID, assetIDs, reason)
+}
+
+// enqueueReclassifyForAssets enqueues a sweep for an explicit asset
+// list (used by LinkAssets where we already know the IDs).
+func (h *CompensatingControlHandler) enqueueReclassifyForAssets(
+	ctx context.Context,
+	tenantID shared.ID,
+	assetIDRaw []string,
+	reason string,
+) {
+	if h.publisher == nil {
+		return
+	}
+	assetIDs := make([]shared.ID, 0, len(assetIDRaw))
+	for _, raw := range assetIDRaw {
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			continue
+		}
+		assetIDs = append(assetIDs, id)
+	}
+	if len(assetIDs) == 0 {
+		return
+	}
+	h.publisher.PublishChange(ctx, tenantID, assetIDs, reason)
 }
 
 // List lists compensating controls for the tenant.
@@ -225,6 +306,11 @@ func (h *CompensatingControlHandler) Update(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// B2: protection may have changed (status/reduction_factor) → sweep.
+	if tid, ok := middleware.GetTenantIDFromContext(r.Context()); ok {
+		h.enqueueReclassifyForControl(r.Context(), tid, id, "control_updated")
+	}
+
 	writeJSON(w, http.StatusOK, c)
 }
 
@@ -232,6 +318,10 @@ func (h *CompensatingControlHandler) Update(w http.ResponseWriter, r *http.Reque
 func (h *CompensatingControlHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
+
+	// B2: capture the protected asset set BEFORE the cascade delete
+	// drops the link rows. Without this we'd have nothing to sweep.
+	protectedAssetIDs := h.loadControlAssetIDs(r.Context(), id)
 
 	res, err := h.db.ExecContext(r.Context(),
 		"DELETE FROM compensating_controls WHERE tenant_id = $1 AND id = $2",
@@ -247,7 +337,43 @@ func (h *CompensatingControlHandler) Delete(w http.ResponseWriter, r *http.Reque
 		apierror.NotFound("compensating control not found").WriteJSON(w)
 		return
 	}
+
+	// Protection removed → findings may reclassify upwards.
+	if len(protectedAssetIDs) > 0 && h.publisher != nil {
+		if tid, ok := middleware.GetTenantIDFromContext(r.Context()); ok {
+			h.publisher.PublishChange(r.Context(), tid, protectedAssetIDs, "control_deleted")
+		}
+	}
+
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// loadControlAssetIDs reads the current asset link set for a control.
+// Errors are logged and treated as empty — sweep is advisory.
+func (h *CompensatingControlHandler) loadControlAssetIDs(ctx context.Context, controlID string) []shared.ID {
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT asset_id FROM compensating_control_assets WHERE control_id = $1`,
+		controlID,
+	)
+	if err != nil {
+		h.logger.Warn("load control assets failed", "control_id", controlID, "error", err)
+		return nil
+	}
+	defer func() { _ = rows.Close() }()
+
+	ids := make([]shared.ID, 0, 8)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			continue
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // RecordTest records a test result for a compensating control.
@@ -286,6 +412,11 @@ func (h *CompensatingControlHandler) RecordTest(w http.ResponseWriter, r *http.R
 		h.logger.Error("compensating control record test", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
+	}
+
+	// B2: test result changed the effective protection → sweep.
+	if tid, ok := middleware.GetTenantIDFromContext(r.Context()); ok {
+		h.enqueueReclassifyForControl(r.Context(), tid, id, "control_tested")
 	}
 
 	writeJSON(w, http.StatusOK, c)
@@ -327,6 +458,12 @@ func (h *CompensatingControlHandler) LinkAssets(w http.ResponseWriter, r *http.R
 			apierror.InternalServerError("internal error").WriteJSON(w)
 			return
 		}
+	}
+
+	// B2: new assets came under protection → sweep them so findings
+	// on those assets may reclassify down.
+	if tid, ok := middleware.GetTenantIDFromContext(r.Context()); ok {
+		h.enqueueReclassifyForAssets(r.Context(), tid, req.AssetIDs, "control_linked")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

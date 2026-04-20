@@ -59,6 +59,8 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 }
 
 // GetByID retrieves a tenant by ID.
+//
+//getbyid:unsafe - Tenants ARE the scope unit; lookup by tenant ID alone is the correct primary-key access pattern.
 func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.Tenant, error) {
 	query := `
 		SELECT id, name, slug, description, logo_url, settings, created_by, created_at, updated_at

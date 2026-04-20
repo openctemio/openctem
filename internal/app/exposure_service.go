@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/openctemio/api/internal/app/outbox"
 	"context"
 	"database/sql"
 	"fmt"
@@ -16,7 +17,7 @@ import (
 type ExposureService struct {
 	repo                exposure.Repository
 	historyRepo         exposure.StateHistoryRepository
-	notificationService *OutboxService
+	notificationService *outbox.Service
 	db                  *sql.DB
 	logger              *logger.Logger
 }
@@ -35,7 +36,7 @@ func NewExposureService(
 }
 
 // SetOutboxService sets the notification service for transactional outbox pattern.
-func (s *ExposureService) SetOutboxService(db *sql.DB, svc *OutboxService) {
+func (s *ExposureService) SetOutboxService(db *sql.DB, svc *outbox.Service) {
 	s.db = db
 	s.notificationService = svc
 }
@@ -89,7 +90,7 @@ func (s *ExposureService) CreateExposure(ctx context.Context, input CreateExposu
 		event.SetAssetID(&id)
 	}
 
-	// Use transactional outbox pattern if OutboxService is configured
+	// Use transactional outbox pattern if outbox.Service is configured
 	if s.notificationService != nil && s.db != nil {
 		if err := s.createExposureWithNotification(ctx, event); err != nil {
 			return nil, err
@@ -120,7 +121,7 @@ func (s *ExposureService) createExposureWithNotification(ctx context.Context, ev
 
 	// Enqueue notification in the same transaction
 	exposureUUID, _ := uuid.Parse(event.ID().String())
-	err = s.notificationService.EnqueueNotificationInTx(ctx, tx, EnqueueNotificationParams{
+	err = s.notificationService.EnqueueInTx(ctx, tx, outbox.EnqueueParams{
 		TenantID:      event.TenantID(),
 		EventType:     "new_exposure",
 		AggregateType: "exposure",

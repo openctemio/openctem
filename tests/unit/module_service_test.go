@@ -173,7 +173,7 @@ func (m *moduleTenanMockRepo) addOverride(tenantID shared.ID, moduleID string, i
 }
 
 // =============================================================================
-// Mock Audit Repository (for AuditService)
+// Mock Audit Repository (for audit.Service)
 // =============================================================================
 
 type moduleAuditMockRepo struct {
@@ -220,7 +220,11 @@ func (m *moduleAuditMockRepo) DeleteOlderThan(_ context.Context, _ time.Time) (i
 	return 0, nil
 }
 
-func (m *moduleAuditMockRepo) GetLatestByResource(_ context.Context, _ audit.ResourceType, _ string) (*audit.AuditLog, error) {
+func (m *moduleAuditMockRepo) DeleteOlderThanForTenant(_ context.Context, _ shared.ID, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (m *moduleAuditMockRepo) GetLatestByResource(_ context.Context, _ shared.ID, _ audit.ResourceType, _ string) (*audit.AuditLog, error) {
 	return nil, nil
 }
 
@@ -228,7 +232,7 @@ func (m *moduleAuditMockRepo) ListByActor(_ context.Context, _ shared.ID, _ pagi
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 
-func (m *moduleAuditMockRepo) ListByResource(_ context.Context, _ audit.ResourceType, _ string, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (m *moduleAuditMockRepo) ListByResource(_ context.Context, _ shared.ID, _ audit.ResourceType, _ string, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 

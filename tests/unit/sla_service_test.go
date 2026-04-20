@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/sla"
+	sladom "github.com/openctemio/api/pkg/domain/sla"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -18,7 +18,7 @@ import (
 // =============================================================================
 
 type mockSLARepo struct {
-	policies    map[string]*sla.Policy
+	policies    map[string]*sladom.Policy
 	createErr   error
 	getByIDErr  error
 	getByAsset  error
@@ -32,11 +32,11 @@ type mockSLARepo struct {
 
 func newMockSLARepo() *mockSLARepo {
 	return &mockSLARepo{
-		policies: make(map[string]*sla.Policy),
+		policies: make(map[string]*sladom.Policy),
 	}
 }
 
-func (m *mockSLARepo) Create(_ context.Context, policy *sla.Policy) error {
+func (m *mockSLARepo) Create(_ context.Context, policy *sladom.Policy) error {
 	if m.createErr != nil {
 		return m.createErr
 	}
@@ -44,21 +44,21 @@ func (m *mockSLARepo) Create(_ context.Context, policy *sla.Policy) error {
 	return nil
 }
 
-func (m *mockSLARepo) GetByID(_ context.Context, id shared.ID) (*sla.Policy, error) {
+func (m *mockSLARepo) GetByID(_ context.Context, id shared.ID) (*sladom.Policy, error) {
 	if m.getByIDErr != nil {
 		return nil, m.getByIDErr
 	}
 	if p, ok := m.policies[id.String()]; ok {
 		return p, nil
 	}
-	return nil, sla.ErrNotFound
+	return nil, sladom.ErrNotFound
 }
 
-func (m *mockSLARepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*sla.Policy, error) {
+func (m *mockSLARepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*sladom.Policy, error) {
 	return nil, nil
 }
 
-func (m *mockSLARepo) GetByAsset(_ context.Context, tenantID, assetID shared.ID) (*sla.Policy, error) {
+func (m *mockSLARepo) GetByAsset(_ context.Context, tenantID, assetID shared.ID) (*sladom.Policy, error) {
 	if m.getByAsset != nil {
 		return nil, m.getByAsset
 	}
@@ -67,10 +67,10 @@ func (m *mockSLARepo) GetByAsset(_ context.Context, tenantID, assetID shared.ID)
 			return p, nil
 		}
 	}
-	return nil, sla.ErrNotFound
+	return nil, sladom.ErrNotFound
 }
 
-func (m *mockSLARepo) GetTenantDefault(_ context.Context, tenantID shared.ID) (*sla.Policy, error) {
+func (m *mockSLARepo) GetTenantDefault(_ context.Context, tenantID shared.ID) (*sladom.Policy, error) {
 	if m.getDefault != nil {
 		return nil, m.getDefault
 	}
@@ -79,10 +79,10 @@ func (m *mockSLARepo) GetTenantDefault(_ context.Context, tenantID shared.ID) (*
 			return p, nil
 		}
 	}
-	return nil, sla.ErrNotFound
+	return nil, sladom.ErrNotFound
 }
 
-func (m *mockSLARepo) Update(_ context.Context, policy *sla.Policy) error {
+func (m *mockSLARepo) Update(_ context.Context, policy *sladom.Policy) error {
 	if m.updateErr != nil {
 		return m.updateErr
 	}
@@ -95,17 +95,17 @@ func (m *mockSLARepo) Delete(_ context.Context, id shared.ID) error {
 		return m.deleteErr
 	}
 	if _, ok := m.policies[id.String()]; !ok {
-		return sla.ErrNotFound
+		return sladom.ErrNotFound
 	}
 	delete(m.policies, id.String())
 	return nil
 }
 
-func (m *mockSLARepo) ListByTenant(_ context.Context, tenantID shared.ID) ([]*sla.Policy, error) {
+func (m *mockSLARepo) ListByTenant(_ context.Context, tenantID shared.ID) ([]*sladom.Policy, error) {
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
-	var result []*sla.Policy
+	var result []*sladom.Policy
 	for _, p := range m.policies {
 		if p.TenantID() == tenantID {
 			result = append(result, p)
@@ -125,14 +125,14 @@ func (m *mockSLARepo) ExistsByAsset(_ context.Context, _ shared.ID) (bool, error
 // Helpers
 // =============================================================================
 
-func newTestSLAService(repo *mockSLARepo) *app.SLAService {
-	return app.NewSLAService(repo, logger.NewNop())
+func newTestSLAService(repo *mockSLARepo) *sla.Service {
+	return sla.NewService(repo, logger.NewNop())
 }
 
-func makeTestPolicy(tenantID shared.ID, name string, isDefault bool) *sla.Policy {
+func makeTestPolicy(tenantID shared.ID, name string, isDefault bool) *sladom.Policy {
 	now := time.Now().UTC()
 	id := shared.NewID()
-	return sla.Reconstitute(
+	return sladom.Reconstitute(
 		id, tenantID, nil, name, "test description", isDefault,
 		2, 15, 30, 60, 90,
 		80, false, nil, true,
@@ -140,10 +140,10 @@ func makeTestPolicy(tenantID shared.ID, name string, isDefault bool) *sla.Policy
 	)
 }
 
-func makeTestPolicyWithAsset(tenantID, assetID shared.ID, name string) *sla.Policy {
+func makeTestPolicyWithAsset(tenantID, assetID shared.ID, name string) *sladom.Policy {
 	now := time.Now().UTC()
 	id := shared.NewID()
-	return sla.Reconstitute(
+	return sladom.Reconstitute(
 		id, tenantID, &assetID, name, "asset policy", false,
 		1, 7, 14, 30, 60,
 		75, false, nil, true,
@@ -151,8 +151,8 @@ func makeTestPolicyWithAsset(tenantID, assetID shared.ID, name string) *sla.Poli
 	)
 }
 
-func validSLACreateInput(tenantID string) app.CreateSLAPolicyInput {
-	return app.CreateSLAPolicyInput{
+func validSLACreateInput(tenantID string) sla.CreatePolicyInput {
+	return sla.CreatePolicyInput{
 		TenantID:            tenantID,
 		Name:                "Test SLA Policy",
 		Description:         "A test policy",
@@ -381,7 +381,7 @@ func TestGetSLAPolicy_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
-	if !errors.Is(err, sla.ErrNotFound) {
+	if !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -442,7 +442,7 @@ func TestGetAssetSLAPolicy_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
-	if !errors.Is(err, sla.ErrNotFound) {
+	if !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -489,7 +489,7 @@ func TestGetTenantDefaultPolicy_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
-	if !errors.Is(err, sla.ErrNotFound) {
+	if !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -507,7 +507,7 @@ func TestUpdateSLAPolicy_Success(t *testing.T) {
 	repo.policies[existing.ID().String()] = existing
 
 	newName := "New Name"
-	input := app.UpdateSLAPolicyInput{
+	input := sla.UpdatePolicyInput{
 		Name: &newName,
 	}
 
@@ -524,7 +524,7 @@ func TestUpdateSLAPolicy_InvalidID(t *testing.T) {
 	repo := newMockSLARepo()
 	svc := newTestSLAService(repo)
 
-	_, err := svc.UpdateSLAPolicy(context.Background(), "bad-uuid", shared.NewID().String(), app.UpdateSLAPolicyInput{})
+	_, err := svc.UpdateSLAPolicy(context.Background(), "bad-uuid", shared.NewID().String(), sla.UpdatePolicyInput{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -537,11 +537,11 @@ func TestUpdateSLAPolicy_NotFound(t *testing.T) {
 	repo := newMockSLARepo()
 	svc := newTestSLAService(repo)
 
-	_, err := svc.UpdateSLAPolicy(context.Background(), shared.NewID().String(), shared.NewID().String(), app.UpdateSLAPolicyInput{})
+	_, err := svc.UpdateSLAPolicy(context.Background(), shared.NewID().String(), shared.NewID().String(), sla.UpdatePolicyInput{})
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
-	if !errors.Is(err, sla.ErrNotFound) {
+	if !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -555,7 +555,7 @@ func TestUpdateSLAPolicy_IDORPrevention(t *testing.T) {
 	existing := makeTestPolicy(tenantID, "My Policy", false)
 	repo.policies[existing.ID().String()] = existing
 
-	_, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), otherTenantID.String(), app.UpdateSLAPolicyInput{})
+	_, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), otherTenantID.String(), sla.UpdatePolicyInput{})
 	if err == nil {
 		t.Fatal("expected error for IDOR prevention")
 	}
@@ -572,7 +572,7 @@ func TestUpdateSLAPolicy_NameOnly(t *testing.T) {
 	existing := makeTestPolicy(tenantID, "Old Name", false)
 	repo.policies[existing.ID().String()] = existing
 
-	input := app.UpdateSLAPolicyInput{Name: slaStrPtr("Updated Name")}
+	input := sla.UpdatePolicyInput{Name: slaStrPtr("Updated Name")}
 	policy, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), tenantID.String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -595,7 +595,7 @@ func TestUpdateSLAPolicy_DaysPartial(t *testing.T) {
 	repo.policies[existing.ID().String()] = existing
 
 	// Only update critical days (1 <= 15 <= 30 <= 60 <= 90 still valid)
-	input := app.UpdateSLAPolicyInput{CriticalDays: slaIntPtr(1)}
+	input := sla.UpdatePolicyInput{CriticalDays: slaIntPtr(1)}
 	policy, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), tenantID.String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -617,7 +617,7 @@ func TestUpdateSLAPolicy_DaysOrderViolation(t *testing.T) {
 	repo.policies[existing.ID().String()] = existing
 
 	// Set critical higher than high (violates order)
-	input := app.UpdateSLAPolicyInput{CriticalDays: slaIntPtr(100)}
+	input := sla.UpdatePolicyInput{CriticalDays: slaIntPtr(100)}
 	_, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), tenantID.String(), input)
 	if err == nil {
 		t.Fatal("expected error for days order violation")
@@ -635,7 +635,7 @@ func TestUpdateSLAPolicy_WarningThreshold(t *testing.T) {
 	existing := makeTestPolicy(tenantID, "Policy", false)
 	repo.policies[existing.ID().String()] = existing
 
-	input := app.UpdateSLAPolicyInput{WarningThresholdPct: slaIntPtr(50)}
+	input := sla.UpdatePolicyInput{WarningThresholdPct: slaIntPtr(50)}
 	policy, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), tenantID.String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -653,7 +653,7 @@ func TestUpdateSLAPolicy_EnableEscalation(t *testing.T) {
 	existing := makeTestPolicy(tenantID, "Policy", false)
 	repo.policies[existing.ID().String()] = existing
 
-	input := app.UpdateSLAPolicyInput{
+	input := sla.UpdatePolicyInput{
 		EscalationEnabled: slaBoolPtr(true),
 		EscalationConfig:  map[string]any{"channel": "#alerts"},
 	}
@@ -672,7 +672,7 @@ func TestUpdateSLAPolicy_DisableEscalation(t *testing.T) {
 
 	tenantID := shared.NewID()
 	now := time.Now().UTC()
-	existing := sla.Reconstitute(
+	existing := sladom.Reconstitute(
 		shared.NewID(), tenantID, nil, "Policy", "", false,
 		2, 15, 30, 60, 90,
 		80, true, map[string]any{"notify": true}, true,
@@ -680,7 +680,7 @@ func TestUpdateSLAPolicy_DisableEscalation(t *testing.T) {
 	)
 	repo.policies[existing.ID().String()] = existing
 
-	input := app.UpdateSLAPolicyInput{EscalationEnabled: slaBoolPtr(false)}
+	input := sla.UpdatePolicyInput{EscalationEnabled: slaBoolPtr(false)}
 	policy, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), tenantID.String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -696,7 +696,7 @@ func TestUpdateSLAPolicy_Activate(t *testing.T) {
 
 	tenantID := shared.NewID()
 	now := time.Now().UTC()
-	existing := sla.Reconstitute(
+	existing := sladom.Reconstitute(
 		shared.NewID(), tenantID, nil, "Policy", "", false,
 		2, 15, 30, 60, 90,
 		80, false, nil, false, // isActive = false
@@ -704,7 +704,7 @@ func TestUpdateSLAPolicy_Activate(t *testing.T) {
 	)
 	repo.policies[existing.ID().String()] = existing
 
-	input := app.UpdateSLAPolicyInput{IsActive: slaBoolPtr(true)}
+	input := sla.UpdatePolicyInput{IsActive: slaBoolPtr(true)}
 	policy, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), tenantID.String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -722,7 +722,7 @@ func TestUpdateSLAPolicy_Deactivate(t *testing.T) {
 	existing := makeTestPolicy(tenantID, "Policy", false) // isActive = true
 	repo.policies[existing.ID().String()] = existing
 
-	input := app.UpdateSLAPolicyInput{IsActive: slaBoolPtr(false)}
+	input := sla.UpdatePolicyInput{IsActive: slaBoolPtr(false)}
 	policy, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), tenantID.String(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -776,7 +776,7 @@ func TestDeleteSLAPolicy_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
-	if !errors.Is(err, sla.ErrNotFound) {
+	if !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -930,7 +930,7 @@ func TestCalculateSLADeadline_FallbackToDefaults(t *testing.T) {
 	tenantID := shared.NewID()
 	detectedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	// No policy in repo, should fall back to sla.DefaultSLADays
+	// No policy in repo, should fall back to sladom.DefaultSLADays
 	deadline, err := svc.CalculateSLADeadline(context.Background(), tenantID.String(), "", vulnerability.SeverityMedium, detectedAt)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -1032,7 +1032,7 @@ func TestCheckSLACompliance_Overdue(t *testing.T) {
 	tenantID := shared.NewID()
 	now := time.Now().UTC()
 	// Create policy with escalation enabled
-	existing := sla.Reconstitute(
+	existing := sladom.Reconstitute(
 		shared.NewID(), tenantID, nil, "Default", "", true,
 		2, 15, 30, 60, 90,
 		80, true, map[string]any{"notify": true}, true,
@@ -1151,20 +1151,20 @@ func TestCreateDefaultTenantPolicy_Success(t *testing.T) {
 	if !policy.IsDefault() {
 		t.Error("expected policy to be default")
 	}
-	if policy.CriticalDays() != sla.DefaultSLADays["critical"] {
-		t.Errorf("expected critical days %d, got %d", sla.DefaultSLADays["critical"], policy.CriticalDays())
+	if policy.CriticalDays() != sladom.DefaultSLADays["critical"] {
+		t.Errorf("expected critical days %d, got %d", sladom.DefaultSLADays["critical"], policy.CriticalDays())
 	}
-	if policy.HighDays() != sla.DefaultSLADays["high"] {
-		t.Errorf("expected high days %d, got %d", sla.DefaultSLADays["high"], policy.HighDays())
+	if policy.HighDays() != sladom.DefaultSLADays["high"] {
+		t.Errorf("expected high days %d, got %d", sladom.DefaultSLADays["high"], policy.HighDays())
 	}
-	if policy.MediumDays() != sla.DefaultSLADays["medium"] {
-		t.Errorf("expected medium days %d, got %d", sla.DefaultSLADays["medium"], policy.MediumDays())
+	if policy.MediumDays() != sladom.DefaultSLADays["medium"] {
+		t.Errorf("expected medium days %d, got %d", sladom.DefaultSLADays["medium"], policy.MediumDays())
 	}
-	if policy.LowDays() != sla.DefaultSLADays["low"] {
-		t.Errorf("expected low days %d, got %d", sla.DefaultSLADays["low"], policy.LowDays())
+	if policy.LowDays() != sladom.DefaultSLADays["low"] {
+		t.Errorf("expected low days %d, got %d", sladom.DefaultSLADays["low"], policy.LowDays())
 	}
-	if policy.InfoDays() != sla.DefaultSLADays["info"] {
-		t.Errorf("expected info days %d, got %d", sla.DefaultSLADays["info"], policy.InfoDays())
+	if policy.InfoDays() != sladom.DefaultSLADays["info"] {
+		t.Errorf("expected info days %d, got %d", sladom.DefaultSLADays["info"], policy.InfoDays())
 	}
 	if policy.WarningThresholdPct() != 80 {
 		t.Errorf("expected warning threshold 80, got %d", policy.WarningThresholdPct())

@@ -164,6 +164,10 @@ type Handlers struct {
 
 	// WebSocket handler for real-time communication
 	WebSocket *websocket.Handler
+
+	// F-8: Optional single-use WebSocket ticket redeemer. When non-nil,
+	// the /ws route uses ticket auth instead of the JWT chain.
+	WSTicketRedeemer middleware.WSTicketRedeemer
 }
 
 // AuthConfig holds authentication configuration for route registration.
@@ -308,8 +312,8 @@ func Register(
 		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, authMiddleware, userSync)
 	}
 
-	// Incoming Jira webhook — public endpoint (no JWT), Jira POSTs status changes here.
-	registerIncomingWebhookRoutes(router, h.JiraWebhook)
+	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
+	registerIncomingWebhookRoutes(router, h.JiraWebhook, cfg.Webhooks.JiraSecret, log)
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
 	var activityRateLimiter *middleware.FindingActivityRateLimiter
@@ -630,7 +634,11 @@ func Register(
 	// ==========================================================================
 	// WebSocket endpoint for real-time features (activities, scans, notifications)
 	if h.WebSocket != nil {
-		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync)
+		var wsTicketMW Middleware
+		if h.WSTicketRedeemer != nil {
+			wsTicketMW = middleware.WSTicketAuth(h.WSTicketRedeemer, log)
+		}
+		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync, wsTicketMW)
 	}
 }
 
