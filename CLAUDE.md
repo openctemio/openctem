@@ -753,6 +753,16 @@ git commit -m "fix(security): add input validation
 - Ingest now resolves TypeAliases and promotes `sub_type` from properties
 - Migration 000141 backfills existing data
 
-### Migrations: 141 total (000001–000141)
+### CTEM loop closures (2026-04-20)
+- Migration 000154 — audit log hash-chain (tamper-evident trail)
+- Migration 000155 — runtime telemetry events (EDR/XDR ingest from agents)
+- Migration 000156 — IOC catalogue + match log (runtime auto-reopen, B6)
+- Agent API-key endpoint: `POST /api/v1/telemetry-events` (NOT `/runtime-telemetry/events`)
+- Admin endpoint: `GET /api/v1/audit-logs/verify` returns 409 when chain broken
+- Package `pkg/domain/ioc/`, `pkg/domain/telemetry/`, `internal/app/ioc/` added
+- Priority-flood guard renamed: `P0FloodGuard` → `PriorityFloodGuard` with configurable `ProtectedClass`
+- Q1/Q2/Q3 gate integration tests in `tests/integration/ctem_*_test.go`
 
-**Last Updated**: 2026-04-15
+### Migrations: 156 total (000001–000156)
+
+**Last Updated**: 2026-04-20
