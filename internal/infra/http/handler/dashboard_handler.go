@@ -16,6 +16,9 @@ import (
 )
 
 // DashboardHandler handles dashboard-related HTTP requests.
+// Export format query-string values accepted by the export endpoints.
+const exportFormatCSV = "csv"
+
 type DashboardHandler struct {
 	dashboardService *app.DashboardService
 	logger           *logger.Logger
@@ -253,7 +256,7 @@ func (h *DashboardHandler) ExportExecutiveSummary(w http.ResponseWriter, r *http
 	format := r.URL.Query().Get("format")
 	filenameDate := time.Now().UTC().Format("2006-01-02")
 
-	if format == "csv" {
+	if format == exportFormatCSV {
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition",
 			fmt.Sprintf(`attachment; filename="executive-summary-%s.csv"`, filenameDate))

@@ -12,6 +12,19 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// SPDX specifies "NOASSERTION" as the string used when a licence
+// cannot be determined. Treat it like an empty value.
+//
+// CycloneDX uses "optional" and "excluded" for scope values that mean
+// the component is not a direct runtime dependency — mapped to
+// transitive on import.
+const (
+	spdxLicenseNoAssertion    = "NOASSERTION"
+	cycloneDXScopeOptional    = "optional"
+	cycloneDXScopeExcluded    = "excluded"
+	cycloneDXExtRefTypePurl   = "purl"
+)
+
 // SBOMImportService handles importing SBOM files (CycloneDX, SPDX).
 type SBOMImportService struct {
 	repo   component.Repository
@@ -125,7 +138,7 @@ func (s *SBOMImportService) importCycloneDX(ctx context.Context, tenantID, asset
 		}
 
 		depType := component.DependencyTypeDirect
-		if comp.Scope == "optional" || comp.Scope == "excluded" {
+		if comp.Scope == cycloneDXScopeOptional || comp.Scope == cycloneDXScopeExcluded {
 			depType = component.DependencyTypeTransitive
 		}
 
@@ -191,7 +204,7 @@ func (s *SBOMImportService) importSPDX(ctx context.Context, tenantID, assetID sh
 		// Extract PURL from external refs
 		purl := ""
 		for _, ref := range pkg.ExternalRefs {
-			if ref.ReferenceType == "purl" {
+			if ref.ReferenceType == cycloneDXExtRefTypePurl {
 				purl = ref.ReferenceLocator
 				break
 			}
@@ -203,10 +216,10 @@ func (s *SBOMImportService) importSPDX(ctx context.Context, tenantID, assetID sh
 		}
 
 		license := pkg.LicenseDeclared
-		if license == "" || license == "NOASSERTION" {
+		if license == "" || license == spdxLicenseNoAssertion {
 			license = pkg.LicenseConcluded
 		}
-		if license == "NOASSERTION" {
+		if license == spdxLicenseNoAssertion {
 			license = ""
 		}
 		if license != "" {

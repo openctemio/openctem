@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -97,12 +98,10 @@ func (e *DefaultConditionEvaluator) Evaluate(ctx context.Context, expression str
 
 	expr := strings.TrimSpace(expression)
 
-	// Handle boolean literals
-	if expr == "true" {
-		return true, nil
-	}
-	if expr == "false" {
-		return false, nil
+	// Handle boolean literals — use strconv so "TRUE"/"1"/"0" are also
+	// accepted the same way humans write them in workflow configs.
+	if b, berr := strconv.ParseBool(expr); berr == nil {
+		return b, nil
 	}
 
 	// Try to parse comparison expressions

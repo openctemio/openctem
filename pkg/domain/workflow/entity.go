@@ -9,6 +9,15 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
+// RunStatusSuccess / RunStatusError are the two extra status strings
+// the scheduler reports. The canonical RunStatus type lives in run.go;
+// these sit next to it as plain strings because RecordRun accepts the
+// untyped string from the database row.
+const (
+	RunStatusSuccess = "success"
+	RunStatusError   = "error"
+)
+
 // Workflow represents an automation workflow definition.
 type Workflow struct {
 	ID          shared.ID
@@ -165,9 +174,9 @@ func (w *Workflow) RecordRun(runID shared.ID, status string) {
 	w.LastRunStatus = status
 	w.TotalRuns++
 
-	if status == "completed" || status == "success" {
+	if status == string(RunStatusCompleted) || status == RunStatusSuccess {
 		w.SuccessfulRuns++
-	} else if status == "failed" || status == "error" {
+	} else if status == string(RunStatusFailed) || status == RunStatusError {
 		w.FailedRuns++
 	}
 
