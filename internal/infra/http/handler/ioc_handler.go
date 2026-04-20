@@ -109,6 +109,8 @@ func (h *IOCHandler) Create(w http.ResponseWriter, r *http.Request) {
 			apierror.BadRequest("invalid ioc type").WriteJSON(w)
 		case errors.Is(err, ioc.ErrEmptyValue):
 			apierror.BadRequest("value is required").WriteJSON(w)
+		case errors.Is(err, ioc.ErrInvalidValueFormat):
+			apierror.BadRequest("value does not match the format required by this type").WriteJSON(w)
 		default:
 			apierror.BadRequest(err.Error()).WriteJSON(w)
 		}

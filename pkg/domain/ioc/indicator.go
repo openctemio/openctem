@@ -15,6 +15,9 @@ package ioc
 import (
 	"context"
 	"errors"
+	"net"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -63,6 +66,76 @@ var ErrInvalidType = errors.New("ioc: invalid type")
 // after normalization.
 var ErrEmptyValue = errors.New("ioc: value required")
 
+// ErrInvalidValueFormat is returned by NewIndicator when the value
+// doesn't match the format implied by the type (e.g. "not-an-ip"
+// submitted with type=ip). Without this check the catalogue would
+// accept garbage that the correlator can never match, and attackers
+// could pollute a tenant's catalogue with unbounded junk values.
+var ErrInvalidValueFormat = errors.New("ioc: value format doesn't match type")
+
+// maxValueBytes caps the byte length of a single IOC value. A URL or
+// user-agent can legitimately be long; process names and hashes are
+// short. 2 KB is generous across all types and stops an attacker from
+// stuffing pagefuls of garbage into one row.
+const maxValueBytes = 2048
+
+// fileHashRegex matches hex strings of the lengths produced by the
+// hash algorithms the correlator sees in agent telemetry:
+//   - MD5    : 32 hex chars
+//   - SHA-1  : 40 hex chars
+//   - SHA-256: 64 hex chars
+//   - SHA-512: 128 hex chars
+// Case is not enforced here because Normalize lowercases.
+var fileHashRegex = regexp.MustCompile(`^[0-9a-fA-F]{32}$|^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$|^[0-9a-fA-F]{128}$`)
+
+// domainRegex matches RFC 1035 labels joined by dots. Stricter than
+// "anything lower-cased" — rejects whitespace, slashes, NUL bytes,
+// and hostnames longer than 253 chars.
+var domainRegex = regexp.MustCompile(`^(?i:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.(?i:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))+$`)
+
+// validateValue applies per-type format rules. Called from
+// NewIndicator before the struct is constructed so a garbage row
+// never lands in the DB. Exported for reuse by bulk-import callers
+// that want to prevalidate before batching.
+func validateValue(t Type, normalized string) error {
+	if len(normalized) == 0 {
+		return ErrEmptyValue
+	}
+	if len(normalized) > maxValueBytes {
+		return ErrInvalidValueFormat
+	}
+	switch t {
+	case TypeIP:
+		if net.ParseIP(normalized) == nil {
+			return ErrInvalidValueFormat
+		}
+	case TypeDomain:
+		if len(normalized) > 253 || !domainRegex.MatchString(normalized) {
+			return ErrInvalidValueFormat
+		}
+	case TypeURL:
+		u, err := url.Parse(normalized)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return ErrInvalidValueFormat
+		}
+	case TypeFileHash:
+		if !fileHashRegex.MatchString(normalized) {
+			return ErrInvalidValueFormat
+		}
+	case TypeProcessName:
+		// Process names can contain spaces, backslashes (Windows), and
+		// slashes (Linux). Only reject control characters.
+		for _, r := range normalized {
+			if r < 0x20 || r == 0x7f {
+				return ErrInvalidValueFormat
+			}
+		}
+	case TypeUserAgent:
+		// UA strings are free-form by spec; only length-limit them.
+	}
+	return nil
+}
+
 // Indicator is one IOC row. The correlator looks it up by
 // (TenantID, Type, Normalized) — never by raw Value.
 type Indicator struct {
@@ -81,15 +154,18 @@ type Indicator struct {
 	UpdatedAt       time.Time
 }
 
-// NewIndicator validates + builds a new Indicator. Normalisation is
+// NewIndicator validates + builds a new Indicator. Normalization is
 // done here so the repo never has to care about input hygiene.
 func NewIndicator(tenantID shared.ID, t Type, value string, src Source) (*Indicator, error) {
 	if !t.IsValid() {
 		return nil, ErrInvalidType
 	}
-	norm := Normalise(t, value)
+	norm := Normalize(t, value)
 	if norm == "" {
 		return nil, ErrEmptyValue
+	}
+	if err := validateValue(t, norm); err != nil {
+		return nil, err
 	}
 	now := time.Now().UTC()
 	return &Indicator{
@@ -108,7 +184,7 @@ func NewIndicator(tenantID shared.ID, t Type, value string, src Source) (*Indica
 	}, nil
 }
 
-// Normalise returns the match form for a given type. Kept exported
+// Normalize returns the match form for a given type. Kept exported
 // so callers doing lookups (correlator) produce the same key the
 // entity stores.
 //
@@ -117,7 +193,7 @@ func NewIndicator(tenantID shared.ID, t Type, value string, src Source) (*Indica
 //     matter, but leave raw hex bytes alone).
 //   - process name                → trim only (Windows process names
 //     are case-insensitive on disk, but keep the display form).
-func Normalise(t Type, value string) string {
+func Normalize(t Type, value string) string {
 	v := strings.TrimSpace(value)
 	switch t {
 	case TypeProcessName:

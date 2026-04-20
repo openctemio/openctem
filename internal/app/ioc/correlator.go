@@ -168,7 +168,7 @@ func ExtractCandidates(event TelemetryEvent) []iocdom.Candidate {
 		if !ok || s == "" {
 			return
 		}
-		norm := iocdom.Normalise(t, s)
+		norm := iocdom.Normalize(t, s)
 		if norm == "" {
 			return
 		}
