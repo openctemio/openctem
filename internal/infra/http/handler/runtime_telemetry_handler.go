@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	iocapp "github.com/openctemio/api/internal/app/ioc"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -19,8 +21,9 @@ import (
 // agent's tenant_id — handler does NOT accept a tenant override from
 // the body so a compromised agent cannot write into another tenant.
 type RuntimeTelemetryHandler struct {
-	db     *sql.DB
-	logger *logger.Logger
+	db         *sql.DB
+	correlator *iocapp.Correlator // optional — nil disables B6
+	logger     *logger.Logger
 }
 
 // NewRuntimeTelemetryHandler creates the handler.
@@ -29,6 +32,13 @@ func NewRuntimeTelemetryHandler(db *sql.DB, log *logger.Logger) *RuntimeTelemetr
 		db:     db,
 		logger: log.With("handler", "runtime_telemetry"),
 	}
+}
+
+// SetCorrelator wires the IOC correlator. Called from services bootstrap
+// after both the handler and the correlator are constructed — avoids a
+// wiring-order cycle with NewRuntimeTelemetryHandler.
+func (h *RuntimeTelemetryHandler) SetCorrelator(c *iocapp.Correlator) {
+	h.correlator = c
 }
 
 // runtimeEventIn is the wire format an agent emits. Keep fields
@@ -86,10 +96,14 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 	// Per-event insert. Batching into a single multi-VALUES INSERT is
 	// the obvious optimisation once ingest rate demands it; the per-row
 	// variant keeps the error message list precise for now.
+	//
+	// RETURNING id so the correlator (if wired) can link any ioc_matches
+	// row it records to the originating telemetry event.
 	const q = `
 		INSERT INTO runtime_telemetry_events
 		       (tenant_id, agent_id, endpoint_asset_id, event_type, severity, observed_at, properties)
 		VALUES ($1, $2, NULLIF($3,'')::uuid, $4, COALESCE(NULLIF($5,''),'info'), $6, $7)
+		RETURNING id
 	`
 	for i, ev := range req.Events {
 		if ev.EventType == "" {
@@ -108,7 +122,8 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			resp.Errors = append(resp.Errors, eventErr(i, "properties not serialisable"))
 			continue
 		}
-		_, err = h.db.ExecContext(r.Context(), q,
+		var eventIDStr string
+		err = h.db.QueryRowContext(r.Context(), q,
 			agt.TenantID.String(),
 			agt.ID.String(),
 			ev.EndpointAssetID,
@@ -116,7 +131,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			ev.Severity,
 			ev.ObservedAt.UTC(),
 			propsJSON,
-		)
+		).Scan(&eventIDStr)
 		if err != nil {
 			h.logger.Warn("runtime telemetry insert failed",
 				"tenant_id", agt.TenantID.String(),
@@ -129,6 +144,27 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 		resp.Accepted++
+
+		// B6 wire: forward the accepted event to the IOC correlator.
+		// Errors here are logged but never block ingest — the event is
+		// durably stored; correlation is best-effort on top.
+		if h.correlator != nil && agt.TenantID != nil {
+			eventID, parseErr := shared.IDFromString(eventIDStr)
+			if parseErr == nil {
+				_, corrErr := h.correlator.Correlate(r.Context(), *agt.TenantID, iocapp.TelemetryEvent{
+					ID:         eventID,
+					EventType:  ev.EventType,
+					Properties: ev.Properties,
+				})
+				if corrErr != nil {
+					h.logger.Warn("ioc correlate failed",
+						"tenant_id", agt.TenantID.String(),
+						"event_id", eventIDStr,
+						"error", corrErr,
+					)
+				}
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
