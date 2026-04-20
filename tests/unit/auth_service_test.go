@@ -2619,3 +2619,8 @@ func TestAuthService_PasswordValidation(t *testing.T) {
 		})
 	}
 }
+
+// Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
+func (m *mockAuthAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
+func (m *mockAuthAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
+func (m *mockAuthAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }

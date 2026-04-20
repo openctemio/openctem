@@ -1233,3 +1233,8 @@ func TestSecretDecryptCredentialData_NoExpiration(t *testing.T) {
 		t.Fatalf("expected key 'forever', got '%s'", apiKey.Key)
 	}
 }
+
+// Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
+func (m *secretMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
+func (m *secretMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
+func (m *secretMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }

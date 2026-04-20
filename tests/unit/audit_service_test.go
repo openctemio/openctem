@@ -1117,3 +1117,8 @@ func TestAuditService_LogEvent_ActorEmailOnly(t *testing.T) {
 		t.Error("expected actor id to be set (even if zero)")
 	}
 }
+
+// Hash-chain stubs for the audit service tests.
+func (m *mockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
+func (m *mockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
+func (m *mockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }

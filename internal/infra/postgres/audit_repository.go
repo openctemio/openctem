@@ -577,3 +577,93 @@ func nullableID(id *shared.ID) sql.NullString {
 	}
 	return sql.NullString{String: id.String(), Valid: true}
 }
+
+// ────────────────────────────────────────────────────────────────────
+// Audit hash-chain (migration 000154)
+//
+// These three methods back the tamper-evident audit_log_chain side
+// table. Callers must ensure the audit_logs row exists before
+// AppendChainEntry — the FK on audit_log_chain.audit_log_id enforces
+// this at the database level too.
+// ────────────────────────────────────────────────────────────────────
+
+// LatestChainHash returns the newest chain hash for the tenant, or ""
+// when the tenant has no chain entries yet.
+func (r *AuditRepository) LatestChainHash(ctx context.Context, tenantID shared.ID) (string, error) {
+	const q = `
+		SELECT hash
+		  FROM audit_log_chain
+		 WHERE tenant_id = $1
+		 ORDER BY chain_position DESC
+		 LIMIT 1
+	`
+	var hash string
+	err := r.db.QueryRowContext(ctx, q, tenantID.String()).Scan(&hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("latest chain hash: %w", err)
+	}
+	return hash, nil
+}
+
+// AppendChainEntry inserts a new chain row. ON CONFLICT DO NOTHING so
+// accidental retries don't duplicate the entry (the PK is
+// audit_log_id).
+func (r *AuditRepository) AppendChainEntry(ctx context.Context, e audit.ChainEntry) error {
+	const q = `
+		INSERT INTO audit_log_chain (audit_log_id, tenant_id, prev_hash, hash)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (audit_log_id) DO NOTHING
+	`
+	_, err := r.db.ExecContext(ctx, q,
+		e.AuditLogID.String(),
+		e.TenantID.String(),
+		e.PrevHash,
+		e.Hash,
+	)
+	if err != nil {
+		return fmt.Errorf("append chain entry: %w", err)
+	}
+	return nil
+}
+
+// ListChainEntries returns chain rows ordered by position ASC. Used by
+// the verify endpoint to walk the chain.
+func (r *AuditRepository) ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]audit.ChainEntry, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	const q = `
+		SELECT audit_log_id, tenant_id, prev_hash, hash, chain_position, created_at
+		  FROM audit_log_chain
+		 WHERE tenant_id = $1
+		 ORDER BY chain_position ASC
+		 LIMIT $2
+	`
+	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list chain entries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]audit.ChainEntry, 0, limit)
+	for rows.Next() {
+		var (
+			auditLogID, tid string
+			e               audit.ChainEntry
+		)
+		if err := rows.Scan(&auditLogID, &tid, &e.PrevHash, &e.Hash, &e.ChainPosition, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan chain entry: %w", err)
+		}
+		if id, err := shared.IDFromString(auditLogID); err == nil {
+			e.AuditLogID = id
+		}
+		if id, err := shared.IDFromString(tid); err == nil {
+			e.TenantID = id
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}

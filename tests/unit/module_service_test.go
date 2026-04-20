@@ -1440,3 +1440,8 @@ func TestModuleService_UpdateTenantModules_ReturnsUpdatedConfig(t *testing.T) {
 		t.Error("expected non-zero total in summary")
 	}
 }
+
+// Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
+func (m *moduleAuditMockRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
+func (m *moduleAuditMockRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
+func (m *moduleAuditMockRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }

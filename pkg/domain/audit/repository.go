@@ -55,6 +55,32 @@ type Repository interface {
 
 	// CountByAction counts occurrences of an action within a time range.
 	CountByAction(ctx context.Context, tenantID *shared.ID, action Action, since time.Time) (int64, error)
+
+	// LatestChainHash returns the hash of the newest chain entry for
+	// the tenant, or "" if the tenant has no chain yet. Used by the
+	// audit service when computing the next hash.
+	LatestChainHash(ctx context.Context, tenantID shared.ID) (string, error)
+
+	// AppendChainEntry inserts a new row into audit_log_chain. Must be
+	// called AFTER the audit_logs row exists — the FK is enforced.
+	// Idempotent on (audit_log_id) PK collision so retries don't
+	// duplicate.
+	AppendChainEntry(ctx context.Context, entry ChainEntry) error
+
+	// ListChainEntries returns chain rows for verification. Ordered by
+	// chain_position ASC.
+	ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]ChainEntry, error)
+}
+
+// ChainEntry is one row of the tamper-evident audit hash-chain.
+// Mirrors the audit_log_chain table (migration 000154).
+type ChainEntry struct {
+	AuditLogID    shared.ID
+	TenantID      shared.ID
+	PrevHash      string    // "" for the first entry per tenant
+	Hash          string    // SHA-256 hex (64 chars)
+	ChainPosition int64     // monotonic per tenant
+	CreatedAt     time.Time
 }
 
 // Filter defines criteria for filtering audit logs.

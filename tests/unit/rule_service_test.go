@@ -3063,3 +3063,8 @@ func TestGenerateBundleVersion_ExactlyEightCharHash(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, version)
 	}
 }
+
+// Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
+func (m *ruleSvcMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
+func (m *ruleSvcMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
+func (m *ruleSvcMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }

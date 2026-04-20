@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
+	cryptopkg "github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -17,6 +19,11 @@ type AuditService struct {
 	logger    *logger.Logger
 	// Buffer for batch operations (optional async processing)
 	asyncEnabled bool
+	// chainMu serialises hash-chain extension so two concurrent
+	// LogEvent calls for the same tenant cannot both see the same
+	// prev_hash and write sibling rows. Single-replica safe; scaling
+	// beyond one API replica requires a postgres advisory lock.
+	chainMu sync.Mutex
 }
 
 // NewAuditService creates a new AuditService.
@@ -122,6 +129,12 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 		return err
 	}
 
+	// Append to the tamper-evident hash-chain (migration 000154).
+	// Best-effort: a chain failure does not roll back the audit log.
+	// Verification would detect the missing row as a chain gap, which
+	// is strictly better than dropping the audit entry altogether.
+	s.appendChainEntry(ctx, log)
+
 	// Log to structured logger as well for immediate visibility
 	s.logger.Info("audit event",
 		"action", event.Action.String(),
@@ -133,6 +146,60 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 	)
 
 	return nil
+}
+
+// appendChainEntry computes the next hash in the per-tenant chain and
+// persists it. Safe to call with any audit_log; rows without a tenant
+// ID are skipped (the chain is per-tenant).
+//
+// Concurrency note: under multi-writer races two callers for the same
+// tenant can read the same prev_hash and both try to extend it. The
+// chainMu mutex serialises this within a single process; cross-replica
+// coordination would need a per-tenant advisory lock
+// (pg_advisory_xact_lock) and is not wired here because the current
+// deployment is single-replica.
+func (s *AuditService) appendChainEntry(ctx context.Context, log *audit.AuditLog) {
+	tenantPtr := log.TenantID()
+	if tenantPtr == nil {
+		return // system-level events bypass the per-tenant chain
+	}
+	tid := *tenantPtr
+
+	s.chainMu.Lock()
+	defer s.chainMu.Unlock()
+
+	prev, err := s.auditRepo.LatestChainHash(ctx, tid)
+	if err != nil {
+		s.logger.Warn("chain: failed to read prev hash; skipping entry",
+			"tenant_id", tid.String(), "error", err)
+		return
+	}
+
+	// Deterministic payload: scalar columns that uniquely identify
+	// the audit log. Changes feed the hash via the log fields below
+	// rather than full JSON so minor schema tweaks do not invalidate
+	// older hashes.
+	payload := fmt.Sprintf("%s|%s|%s|%s",
+		log.Action().String(),
+		log.ResourceType().String(),
+		log.ResourceID(),
+		log.Result().String(),
+	)
+	hash := cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp())
+
+	entry := audit.ChainEntry{
+		AuditLogID: log.ID(),
+		TenantID:   tid,
+		PrevHash:   prev,
+		Hash:       hash,
+	}
+	if err := s.auditRepo.AppendChainEntry(ctx, entry); err != nil {
+		s.logger.Warn("chain: append failed (audit log persisted, chain has a gap)",
+			"tenant_id", tid.String(),
+			"audit_log_id", log.ID().String(),
+			"error", err,
+		)
+	}
 }
 
 // AuditEvent represents an audit event to log.
