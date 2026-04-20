@@ -145,10 +145,10 @@ func TestCTEM_F3_PriorityClassDrivesSLADeadline(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 type recordingReclassifier struct {
-	calls    int32
-	lastReq  controller.ReclassifyRequest
-	nCalls   int32
-	perCall  int
+	calls     int32
+	lastReq   controller.ReclassifyRequest
+	nCalls    int32
+	perCall   int
 	returnErr error
 }
 
@@ -254,10 +254,10 @@ func (r *fakeFindingByIDReader) GetByID(_ context.Context, _, _ shared.ID) (*vul
 }
 
 type fakeRescanRequester struct {
-	calls       int32
-	lastInput   app.RequestVerificationScanInput
-	lastTenant  string
-	returnErr   error
+	calls      int32
+	lastInput  app.RequestVerificationScanInput
+	lastTenant string
+	returnErr  error
 }
 
 func (r *fakeRescanRequester) RequestVerificationScan(_ context.Context, tenantID, _ string, input app.RequestVerificationScanInput) (*app.RequestVerificationScanResult, error) {
@@ -359,8 +359,8 @@ func TestCTEM_B3_JiraDoneSkipsWhenScannerMissing(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 type fakeOutbox struct {
-	calls    int32
-	last     outbox.EnqueueParams
+	calls     int32
+	last      outbox.EnqueueParams
 	returnErr error
 }
 

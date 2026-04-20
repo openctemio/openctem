@@ -33,11 +33,11 @@ func NewIOCHandler(repo ioc.Repository, log *logger.Logger) *IOCHandler {
 
 // iocCreateRequest is the wire format for POST /iocs.
 type iocCreateRequest struct {
-	Type            string  `json:"type"`
-	Value           string  `json:"value"`
-	Source          string  `json:"source,omitempty"`            // scan_finding | threat_feed | manual (default manual)
-	SourceFindingID string  `json:"source_finding_id,omitempty"` // optional — links reopen target
-	Confidence      *int    `json:"confidence,omitempty"`        // 0-100, default 75
+	Type            string `json:"type"`
+	Value           string `json:"value"`
+	Source          string `json:"source,omitempty"`            // scan_finding | threat_feed | manual (default manual)
+	SourceFindingID string `json:"source_finding_id,omitempty"` // optional — links reopen target
+	Confidence      *int   `json:"confidence,omitempty"`        // 0-100, default 75
 }
 
 // iocResponse is what we emit back to clients.

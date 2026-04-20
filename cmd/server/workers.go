@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/openctemio/api/internal/app/command"
 	"context"
 	"database/sql"
+	"github.com/openctemio/api/internal/app/command"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
@@ -17,15 +17,15 @@ import (
 
 // Workers holds all background worker instances.
 type Workers struct {
-	JobWorker                    *jobs.Worker
-	AgentHealthChecker           *jobs.AgentHealthChecker
-	AITriageRecoveryJob          *jobs.AITriageRecoveryJob
-	ScanScheduler                *app.ScanScheduler
-	CommandExpirationChecker     *command.ExpirationChecker
-	OutboxScheduler              *outbox.Scheduler
-	FindingLifecycleScheduler    *app.FindingLifecycleScheduler
-	NotificationCleanupTicker    *time.Ticker
-	notificationService          *app.NotificationService
+	JobWorker                 *jobs.Worker
+	AgentHealthChecker        *jobs.AgentHealthChecker
+	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
+	ScanScheduler             *app.ScanScheduler
+	CommandExpirationChecker  *command.ExpirationChecker
+	OutboxScheduler           *outbox.Scheduler
+	FindingLifecycleScheduler *app.FindingLifecycleScheduler
+	NotificationCleanupTicker *time.Ticker
+	notificationService       *app.NotificationService
 	// SessionCleanupTicker periodically deletes expired/revoked
 	// sessions and refresh tokens. Without this the tables grow
 	// unboundedly because logout marks rows as 'revoked' (not deleted)

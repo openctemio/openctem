@@ -4,7 +4,6 @@ import (
 	"database/sql"
 
 	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -12,6 +11,7 @@ import (
 	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/websocket"
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
 )
@@ -97,16 +97,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
 
 		// CTEM Discovery - Network Services, State History & Relationships
-		AssetService:      handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
-		AssetStateHistory: handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
+		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
+		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, log),
 		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
 
 		// Vulnerabilities & Exposures
-		Vulnerability:      vulnHandler,
-		FindingActivity:    handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		Vulnerability:    vulnHandler,
+		FindingActivity:  handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:   handler.NewFindingActionsHandler(svc.FindingActions, log),
 		JiraWebhook:      handler.NewJiraWebhookHandler(svc.JiraSync, log),
 		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
@@ -121,8 +121,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),
 
 		// Agents & Commands
-		Command: commandHandler,
-		Agent:   newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
+		Command:          commandHandler,
+		Agent:            newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
 		Ingest:           handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              handler.NewIOCHandler(deps.Repos.IOC, log),
@@ -229,9 +229,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
 
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
-		CompensatingControl: newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
-		AttackerProfile:     handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:              handler.NewCTEMCycleHandler(deps.DB.DB, log),
+		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
+		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, log),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          handler.NewPriorityRuleHandler(deps.DB.DB, log),
 

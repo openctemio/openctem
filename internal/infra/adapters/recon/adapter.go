@@ -42,18 +42,18 @@ func (a *Adapter) OutputFormat() string { return "ctis" }
 // duplicated in this package so the adapter has zero dependency on
 // the HTTP handler layer — one-way data flow, no import cycle risk.
 type reconInput struct {
-	ScannerName    string                 `json:"scanner_name"`
-	ScannerVersion string                 `json:"scanner_version,omitempty"`
-	ReconType      string                 `json:"recon_type"`
-	Target         string                 `json:"target"`
-	StartedAt      int64                  `json:"started_at,omitempty"`
-	FinishedAt     int64                  `json:"finished_at,omitempty"`
-	DurationMs     int64                  `json:"duration_ms,omitempty"`
-	Subdomains     []subdomainInput       `json:"subdomains,omitempty"`
-	DNSRecords     []dnsRecordInput       `json:"dns_records,omitempty"`
-	OpenPorts      []openPortInput        `json:"open_ports,omitempty"`
-	LiveHosts      []liveHostInput        `json:"live_hosts,omitempty"`
-	URLs           []discoveredURLInput   `json:"urls,omitempty"`
+	ScannerName    string               `json:"scanner_name"`
+	ScannerVersion string               `json:"scanner_version,omitempty"`
+	ReconType      string               `json:"recon_type"`
+	Target         string               `json:"target"`
+	StartedAt      int64                `json:"started_at,omitempty"`
+	FinishedAt     int64                `json:"finished_at,omitempty"`
+	DurationMs     int64                `json:"duration_ms,omitempty"`
+	Subdomains     []subdomainInput     `json:"subdomains,omitempty"`
+	DNSRecords     []dnsRecordInput     `json:"dns_records,omitempty"`
+	OpenPorts      []openPortInput      `json:"open_ports,omitempty"`
+	LiveHosts      []liveHostInput      `json:"live_hosts,omitempty"`
+	URLs           []discoveredURLInput `json:"urls,omitempty"`
 }
 
 type subdomainInput struct {

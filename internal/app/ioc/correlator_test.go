@@ -50,9 +50,9 @@ func TestExtractCandidates_NetworkConnectExtractsIPAndDomain(t *testing.T) {
 func TestExtractCandidates_IgnoresEmptyStrings(t *testing.T) {
 	ev := TelemetryEvent{
 		Properties: map[string]any{
-			telemetry.PropRemoteIP:   "",
-			telemetry.PropFileHash:   "abc123",
-			telemetry.PropUserAgent:  "   ",
+			telemetry.PropRemoteIP:  "",
+			telemetry.PropFileHash:  "abc123",
+			telemetry.PropUserAgent: "   ",
 		},
 	}
 	cs := ExtractCandidates(ev)

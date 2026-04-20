@@ -38,7 +38,7 @@ import (
 // stands in for the agent fleet — in production the API pushes the
 // job onto the platform-agent queue and an agent reports back.
 type stubDispatcher struct {
-	outcome    validation.Outcome
+	outcome       validation.Outcome
 	recordedJobID string
 	submissions   int32
 }

@@ -1,13 +1,13 @@
 package integration
 
 import (
-	"github.com/openctemio/api/internal/app/template"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/openctemio/api/internal/app/template"
 	"net/http"
 	"net/http/httptest"
 	"testing"

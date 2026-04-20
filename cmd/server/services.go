@@ -1,39 +1,39 @@
 package main
 
 import (
-	"github.com/openctemio/api/internal/app/tool"
-	"github.com/openctemio/api/internal/app/assignment"
-	"github.com/openctemio/api/internal/app/scope"
-	"github.com/openctemio/api/internal/app/threat"
-	"github.com/openctemio/api/internal/app/command"
-	"github.com/openctemio/api/internal/app/apikey"
 	"context"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"github.com/openctemio/api/internal/app/apikey"
+	"github.com/openctemio/api/internal/app/assignment"
+	"github.com/openctemio/api/internal/app/command"
+	"github.com/openctemio/api/internal/app/scope"
+	"github.com/openctemio/api/internal/app/threat"
+	"github.com/openctemio/api/internal/app/tool"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/internal/app/outbox"
-	"github.com/openctemio/api/internal/app/ingest"
-	"github.com/openctemio/api/internal/app/jira"
-	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/app/attack"
-	"github.com/openctemio/api/internal/app/pipeline"
+	"github.com/openctemio/api/internal/app/ingest"
 	iocapp "github.com/openctemio/api/internal/app/ioc"
+	"github.com/openctemio/api/internal/app/jira"
+	"github.com/openctemio/api/internal/app/outbox"
+	"github.com/openctemio/api/internal/app/pipeline"
 	"github.com/openctemio/api/internal/app/reclassify"
-	"github.com/openctemio/api/internal/app/sla"
-	"github.com/openctemio/api/internal/infra/controller"
-	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/app/scan"
+	"github.com/openctemio/api/internal/app/sla"
+	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/internal/infra/llm"
+	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/storage"
 	"github.com/openctemio/api/internal/infra/websocket"
-	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/crypto"
+	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/suppression"
 	"github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/jwt"
@@ -88,32 +88,32 @@ type Services struct {
 	Tenant *app.TenantService
 
 	// Assets
-	Asset             *app.AssetService
-	AssetGroup        *app.AssetGroupService
-	AssetType         *app.AssetTypeService
+	Asset                  *app.AssetService
+	AssetGroup             *app.AssetGroupService
+	AssetType              *app.AssetTypeService
 	AssetRelationship      *app.AssetRelationshipService
 	AssetImport            *app.AssetImportService
 	RelationshipSuggestion *app.RelationshipSuggestionService
 	Scope                  *scope.Service
-	AttackSurface     *attack.SurfaceService
+	AttackSurface          *attack.SurfaceService
 
 	// Configuration (read-only system config)
 	FindingSource      *app.FindingSourceService
 	FindingSourceCache *app.FindingSourceCacheService
 
 	// Vulnerabilities & Exposures
-	Vulnerability      *app.VulnerabilityService
-	FindingActivity    *app.FindingActivityService
+	Vulnerability    *app.VulnerabilityService
+	FindingActivity  *app.FindingActivityService
 	FindingActions   *app.FindingActionsService
-	Exposure           *app.ExposureService
+	Exposure         *app.ExposureService
 	ThreatIntel      *threat.IntelService
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
-	Component  *app.ComponentService
+	Component      *app.ComponentService
 	SBOMImport     *app.SBOMImportService
 	ReportSchedule *app.ReportScheduleService
-	Branch    *app.BranchService
+	Branch         *app.BranchService
 
 	// Dashboard
 	Dashboard *app.DashboardService
@@ -182,14 +182,14 @@ type Services struct {
 	// B1/B2 reclassification pipeline — memory queue,
 	// publisher (called from control CRUD), reclassifier (consumed
 	// by the PriorityReclassifyController registered in workers.go).
-	ReclassifyQueue       *reclassify.MemoryQueue
-	ControlChangePub      *controller.ControlChangePublisher
-	Reclassifier          *reclassify.Reclassifier
+	ReclassifyQueue  *reclassify.MemoryQueue
+	ControlChangePub *controller.ControlChangePublisher
+	Reclassifier     *reclassify.Reclassifier
 
 	// B6 runtime loop — indicator catalogue + correlator.
 	// Handlers.go hooks the correlator into RuntimeTelemetryHandler so
 	// every accepted event is matched against active IOCs.
-	IOCRepo    *postgres.IOCRepository
+	IOCRepo       *postgres.IOCRepository
 	IOCCorrelator *iocapp.Correlator
 
 	// bulk-action guard (attached to finding bulk handlers).
@@ -391,7 +391,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire unified finding repository for CTEM integration (pentest findings → findings table)
 	s.Pentest.SetUnifiedFindingRepository(repos.Finding)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
-	s.Pentest.SetAuditService(s.Audit)                    // audit logging for team changes + status changes
+	s.Pentest.SetAuditService(s.Audit)                     // audit logging for team changes + status changes
 	s.Pentest.SetFindingActivityService(s.FindingActivity) // finding activity trail
 	// Note: Pentest notification wiring happens later after NotificationService is initialized
 

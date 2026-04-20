@@ -69,8 +69,8 @@ type Indicator struct {
 	ID              shared.ID
 	TenantID        shared.ID
 	Type            Type
-	Value           string  // display value
-	Normalized      string  // matching value (lowercase, stripped)
+	Value           string // display value
+	Normalized      string // matching value (lowercase, stripped)
 	SourceFindingID *shared.ID
 	Source          Source
 	Active          bool
@@ -129,13 +129,13 @@ func Normalise(t Type, value string) string {
 
 // Match is the return shape of the correlator — one per IOC hit.
 type Match struct {
-	ID                shared.ID
-	TenantID          shared.ID
-	IOCID             shared.ID
-	TelemetryEventID  *shared.ID
-	FindingID         *shared.ID
-	Reopened          bool
-	MatchedAt         time.Time
+	ID               shared.ID
+	TenantID         shared.ID
+	IOCID            shared.ID
+	TelemetryEventID *shared.ID
+	FindingID        *shared.ID
+	Reopened         bool
+	MatchedAt        time.Time
 }
 
 // Repository is the persistence contract.
