@@ -49,7 +49,8 @@ type Handlers struct {
 	AttackSurface   *handler.AttackSurfaceHandler   // nil if not initialized (no database)
 	Docs            *handler.DocsHandler            // API documentation handler
 	Command         *handler.CommandHandler         // nil if not initialized (no database)
-	Ingest          *handler.IngestHandler          // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
+	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
+	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint agents
 	Agent           *handler.AgentHandler           // nil if not initialized (no database)
 	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
 	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
@@ -467,7 +468,7 @@ func Register(
 
 	// Ingest/Agent routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
-		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession)
+		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry)
 	}
 
 	// Agent management routes (tenant from JWT token)

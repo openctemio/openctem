@@ -39,6 +39,7 @@ func registerAgentRoutes(
 	ingestHandler *handler.IngestHandler,
 	commandHandler *handler.CommandHandler,
 	scanSessionHandler *handler.ScanSessionHandler,
+	runtimeTelemetryHandler *handler.RuntimeTelemetryHandler,
 ) {
 	// Build middleware chain: API key auth
 	baseMiddleware := ingestHandler.AuthenticateSource
@@ -79,6 +80,14 @@ func registerAgentRoutes(
 			r.POST("/scans", scanSessionHandler.RegisterScan)
 			r.PATCH("/scans/{id}", scanSessionHandler.UpdateScan)
 			r.GET("/scans/{id}", scanSessionHandler.GetScan)
+		}
+
+		// Runtime telemetry (Q3/WS-B #343). Batched EDR/XDR events
+		// from endpoint agents — feeds IOC correlator + CTEM maturity
+		// dashboards. Same agent API-key auth as the other ingest
+		// endpoints; 50 MB body limit for backlogged batches.
+		if runtimeTelemetryHandler != nil {
+			r.POST("/runtime-telemetry/events", runtimeTelemetryHandler.Ingest, ingestBodyLimit, decompressMiddleware)
 		}
 	}, baseMiddleware)
 }

@@ -123,7 +123,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Agents & Commands
 		Command: commandHandler,
 		Agent:   newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
-		Ingest:  handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
+		Ingest:           handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
+		RuntimeTelemetry: handler.NewRuntimeTelemetryHandler(deps.DB.DB, log),
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
