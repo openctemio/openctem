@@ -17,7 +17,10 @@ import (
 
 // DashboardHandler handles dashboard-related HTTP requests.
 // Export format query-string values accepted by the export endpoints.
-const exportFormatCSV = "csv"
+const (
+	exportFormatCSV  = "csv"
+	exportFormatHTML = "html"
+)
 
 type DashboardHandler struct {
 	dashboardService *app.DashboardService
@@ -301,6 +304,21 @@ func (h *DashboardHandler) ExportExecutiveSummary(w http.ResponseWriter, r *http
 			}
 			_ = cw.Write([]string{prefix + "epss_score", epss})
 			_ = cw.Write([]string{prefix + "is_in_kev", strconv.FormatBool(tr.IsInKEV)})
+		}
+		return
+	}
+
+	if format == exportFormatHTML {
+		// Print-ready HTML. Consumers save-as-PDF through the browser
+		// (Ctrl-P → Save as PDF). Cheaper than adding a headless-Chrome
+		// dependency and gives the exec the same rendering they'd see
+		// on the dashboard.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Disposition",
+			fmt.Sprintf(`inline; filename="executive-summary-%s.html"`, filenameDate))
+		w.WriteHeader(http.StatusOK)
+		if err := renderExecutiveSummaryHTML(w, summary, filenameDate); err != nil {
+			h.logger.Error("render executive summary html", "error", err)
 		}
 		return
 	}

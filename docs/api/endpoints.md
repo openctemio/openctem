@@ -188,6 +188,7 @@ Base URL: `http://localhost:8080/api/v1`
 | GET | `/audit-logs` | List audit logs | `audit:read` |
 | GET | `/audit-logs/stats` | Get audit statistics | `audit:read` |
 | GET | `/audit-logs/verify` | Verify hash-chain integrity. Returns 200 OK when the chain is intact, 409 Conflict with the offending entry when a break is detected. | admin only |
+| GET | `/dashboard/executive-summary/export?format=html` | Executive summary as print-ready HTML. Browser's Print dialog → "Save as PDF" produces the PDF report. Same endpoint also supports `format=json` (default) and `format=csv`. | `dashboard:read` |
 | GET | `/audit-logs/:id` | Get single audit log | `audit:read` |
 | GET | `/audit-logs/resource/:type/:id` | Get resource history | `audit:read` |
 | GET | `/audit-logs/user/:id` | Get user activity | `audit:read` |
