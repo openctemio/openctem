@@ -449,7 +449,8 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteTenant(r.Context(), tenantID.String()); err != nil {
+	actx := h.buildAuditContext(r)
+	if err := h.service.DeleteTenant(r.Context(), actx, tenantID.String()); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1675,7 +1676,7 @@ type TenantSubModuleResponse struct {
 
 // TenantModuleListResponse wraps the module list with summary.
 type TenantModuleListResponse struct {
-	Modules []TenantModuleResponse `json:"modules"`
+	Modules []TenantModuleResponse      `json:"modules"`
 	Summary TenantModuleSummaryResponse `json:"summary"`
 }
 

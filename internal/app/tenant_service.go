@@ -397,18 +397,39 @@ func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input
 	return t, nil
 }
 
-// DeleteTenant deletes a tenant.
-func (s *TenantService) DeleteTenant(ctx context.Context, tenantID string) error {
+// DeleteTenant deletes a tenant. The destructive nature means this
+// MUST emit an audit event — without it the hash-chain can't prove
+// who triggered the deletion, and operators have no forensic trail
+// once the tenant's rows are CASCADE'd away. Tenant name is captured
+// BEFORE delete so the audit row can name the victim even though the
+// row no longer exists.
+func (s *TenantService) DeleteTenant(ctx context.Context, actx AuditContext, tenantID string) error {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+
+	// Capture the name + slug before the row vanishes so the audit
+	// entry is self-describing. Best-effort — if the lookup fails the
+	// tenant may already be gone and we still want to log the attempt.
+	var tenantName, tenantSlug string
+	if t, getErr := s.repo.GetByID(ctx, parsedID); getErr == nil && t != nil {
+		tenantName = t.Name()
+		tenantSlug = t.Slug()
 	}
 
 	if err := s.repo.Delete(ctx, parsedID); err != nil {
 		return err
 	}
 
-	s.logger.Info("tenant deleted", "id", tenantID)
+	event := NewSuccessEvent(audit.ActionTenantDeleted, audit.ResourceTypeTenant, tenantID).
+		WithResourceName(tenantName).
+		WithSeverity(audit.SeverityCritical).
+		WithMessage(fmt.Sprintf("Tenant %q deleted (all tenant data cascaded)", tenantName)).
+		WithMetadata("slug", tenantSlug)
+	s.logAudit(ctx, actx, event)
+
+	s.logger.Info("tenant deleted", "id", tenantID, "name", tenantName)
 	return nil
 }
 
@@ -845,7 +866,7 @@ func (s *TenantService) GetMembership(ctx context.Context, userID shared.ID, ten
 // Note: All invited users are "member". Permissions come from RBAC roles (RoleIDs).
 type CreateInvitationInput struct {
 	Email   string   `json:"email" validate:"required,email,max=254"`
-	Role    string   `json:"-"`                                       // Internal use only - always set to "member" by handler
+	Role    string   `json:"-"`                                         // Internal use only - always set to "member" by handler
 	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=10"` // RBAC roles to assign (required, max 10)
 }
 
