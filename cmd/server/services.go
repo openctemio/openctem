@@ -460,8 +460,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log.Info("AI triage service initialized")
 	}
 
-	// Initialize API Key & Webhook services
-	s.APIKey = apikey.NewService(repos.APIKey, log)
+	// Initialize API Key & Webhook services. APP_ENCRYPTION_KEY is
+	// reused as the apikey pepper so any new tenant API key created
+	// from now on is stored as HMAC(pepper, key) instead of plain
+	// SHA-256. See crypto.HashTokenPeppered. Unset key → unpeppered
+	// (dev only; production startup already refuses this above).
+	s.APIKey = apikey.NewService(repos.APIKey, cfg.Encryption.Key, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 	s.JiraSync = jira.NewSyncService(repos.Finding, nil, log) // nil = Jira client configured via integration settings
 

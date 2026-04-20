@@ -222,7 +222,7 @@ func (m *apikeyMockEncryptor) DecryptString(encoded string) (string, error) {
 
 func newTestAPIKeyService(repo *mockAPIKeyRepo) *apikey.Service {
 	log := logger.NewNop()
-	return apikey.NewService(repo, log)
+	return apikey.NewService(repo, "test-pepper", log)
 }
 
 // =============================================================================

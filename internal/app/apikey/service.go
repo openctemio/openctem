@@ -3,25 +3,34 @@ package apikey
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 
+	"github.com/openctemio/api/pkg/crypto"
 	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// Service provides business logic for API key management.
+// Service provides business logic for API key management. pepper is
+// the server-side secret mixed into every new key's stored hash via
+// HMAC-SHA256 (pkg/crypto.HashTokenPeppered). Empty pepper falls
+// back to plain SHA-256 — acceptable only in dev. When the DB is
+// leaked but APP_ENCRYPTION_KEY is not, peppered rows resist offline
+// brute-force against the leaked key_hash column (hashcat / rainbow
+// tables without the HMAC key cannot recover the raw key).
 type Service struct {
 	repo   apikeydom.Repository
+	pepper string
 	logger *logger.Logger
 }
 
-// NewService creates a new Service.
-func NewService(repo apikeydom.Repository, log *logger.Logger) *Service {
+// NewService creates a new Service. pepper should be APP_ENCRYPTION_KEY
+// (or a dedicated secret derived from it).
+func NewService(repo apikeydom.Repository, pepper string, log *logger.Logger) *Service {
 	return &Service{
 		repo:   repo,
+		pepper: pepper,
 		logger: log.With("service", "apikey"),
 	}
 }
@@ -60,9 +69,13 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 	// Format: oct_ + base64url encoded
 	plaintext := "oct_" + base64.RawURLEncoding.EncodeToString(keyBytes)
 
-	// Hash for storage
-	hash := sha256.Sum256([]byte(plaintext))
-	keyHash := fmt.Sprintf("%x", hash)
+	// Hash for storage — peppered so that a DB leak without the
+	// server-side pepper cannot brute-force the raw key offline.
+	// Existing pre-fix rows have plain-SHA256 hashes and must be
+	// verified with crypto.VerifyTokenHashAny when the validation
+	// path is wired in (no active validator in this package yet —
+	// F-9 follow-up).
+	keyHash := crypto.HashTokenPeppered(plaintext, s.pepper)
 
 	// Prefix for identification (first 8 chars of the oct_ key)
 	prefix := plaintext[:8]
