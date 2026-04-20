@@ -62,7 +62,7 @@ func (s *FindingCommentService) AddComment(ctx context.Context, input AddComment
 		return nil, err
 	}
 
-	comment, err := vulnerability.NewFindingComment(findingID, authorID, input.Content)
+	comment, err := vulnerability.NewFindingComment(tenantID, findingID, authorID, input.Content)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +77,7 @@ func (s *FindingCommentService) AddComment(ctx context.Context, input AddComment
 
 // AddStatusChangeCommentInput represents the input for adding a status change comment.
 type AddStatusChangeCommentInput struct {
+	TenantID  string `validate:"required,uuid"`
 	FindingID string `validate:"required,uuid"`
 	AuthorID  string `validate:"required,uuid"`
 	Content   string `validate:"max=10000"`
@@ -88,6 +89,10 @@ type AddStatusChangeCommentInput struct {
 func (s *FindingCommentService) AddStatusChangeComment(ctx context.Context, input AddStatusChangeCommentInput) (*vulnerability.FindingComment, error) {
 	s.logger.Info("adding status change comment", "finding_id", input.FindingID, "old_status", input.OldStatus, "new_status", input.NewStatus)
 
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
 	findingID, err := shared.IDFromString(input.FindingID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid finding id format", shared.ErrValidation)
@@ -113,7 +118,7 @@ func (s *FindingCommentService) AddStatusChangeComment(ctx context.Context, inpu
 		content = fmt.Sprintf("Status changed from %s to %s", oldStatus.String(), newStatus.String())
 	}
 
-	comment, err := vulnerability.NewStatusChangeComment(findingID, authorID, content, oldStatus, newStatus)
+	comment, err := vulnerability.NewStatusChangeComment(tenantID, findingID, authorID, content, oldStatus, newStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -141,14 +146,20 @@ type UpdateCommentInput struct {
 	Content string `validate:"required,min=1,max=10000"`
 }
 
-// UpdateComment updates an existing comment.
-func (s *FindingCommentService) UpdateComment(ctx context.Context, commentID, authorID string, input UpdateCommentInput) (*vulnerability.FindingComment, error) {
+// UpdateComment updates an existing comment. tenantID scopes the
+// lookup — user in tenant A cannot resolve a comment id from tenant B
+// even if they guess the UUID.
+func (s *FindingCommentService) UpdateComment(ctx context.Context, tenantID, commentID, authorID string, input UpdateCommentInput) (*vulnerability.FindingComment, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(commentID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
-	comment, err := s.commentRepo.GetByID(ctx, parsedID)
+	comment, err := s.commentRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
 	}
@@ -175,14 +186,19 @@ func (s *FindingCommentService) UpdateComment(ctx context.Context, commentID, au
 	return comment, nil
 }
 
-// DeleteComment deletes a comment.
-func (s *FindingCommentService) DeleteComment(ctx context.Context, commentID, authorID string) error {
+// DeleteComment deletes a comment. tenantID is required so the
+// storage-layer WHERE clause rejects cross-tenant IDs (IDOR defense).
+func (s *FindingCommentService) DeleteComment(ctx context.Context, tenantID, commentID, authorID string) error {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(commentID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
-	comment, err := s.commentRepo.GetByID(ctx, parsedID)
+	comment, err := s.commentRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return err
 	}
@@ -197,7 +213,7 @@ func (s *FindingCommentService) DeleteComment(ctx context.Context, commentID, au
 		return fmt.Errorf("%w: cannot delete status change comments", shared.ErrValidation)
 	}
 
-	if err := s.commentRepo.Delete(ctx, parsedID); err != nil {
+	if err := s.commentRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
 		return err
 	}
 
