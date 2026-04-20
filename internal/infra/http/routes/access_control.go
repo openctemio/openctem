@@ -39,7 +39,12 @@ func registerGroupRoutes(
 		// Single group operations
 		r.GET("/{groupId}", h.GetGroup, middleware.Require(permission.GroupsRead))
 		r.PUT("/{groupId}", h.UpdateGroup, middleware.Require(permission.GroupsWrite))
-		r.DELETE("/{groupId}", h.DeleteGroup, middleware.Require(permission.GroupsDelete))
+		// Owner-only per CLAUDE.md §2-Layer Access Control: destructive
+		// access-control operations (delete a group, delete a permission
+		// set, delete an assignment rule) must not be available to
+		// non-owner admins. Without this, an admin could nuke the access
+		// model their own account depends on.
+		r.DELETE("/{groupId}", h.DeleteGroup, middleware.RequireOwner(), middleware.Require(permission.GroupsDelete))
 
 		// Group members
 		r.GET("/{groupId}/members", h.ListMembers, middleware.Require(permission.GroupsRead))
@@ -105,7 +110,7 @@ func registerAssignmentRuleRoutes(
 		r.POST("/", h.CreateRule, middleware.Require(permission.AssignmentRulesWrite))
 		r.GET("/{id}", h.GetRule, middleware.Require(permission.AssignmentRulesRead))
 		r.PUT("/{id}", h.UpdateRule, middleware.Require(permission.AssignmentRulesWrite))
-		r.DELETE("/{id}", h.DeleteRule, middleware.Require(permission.AssignmentRulesDelete))
+		r.DELETE("/{id}", h.DeleteRule, middleware.RequireOwner(), middleware.Require(permission.AssignmentRulesDelete))
 		r.POST("/{id}/test", h.TestRule, middleware.Require(permission.AssignmentRulesRead))
 	}, tenantMiddlewares...)
 }
@@ -134,7 +139,7 @@ func registerPermissionSetRoutes(
 		// Single permission set operations
 		r.GET("/{id}", h.GetPermissionSet, middleware.Require(permission.PermissionSetsRead))
 		r.PUT("/{id}", h.UpdatePermissionSet, middleware.Require(permission.PermissionSetsWrite))
-		r.DELETE("/{id}", h.DeletePermissionSet, middleware.Require(permission.PermissionSetsDelete))
+		r.DELETE("/{id}", h.DeletePermissionSet, middleware.RequireOwner(), middleware.Require(permission.PermissionSetsDelete))
 
 		// Permission items within a set
 		r.POST("/{id}/permissions", h.AddPermission, middleware.Require(permission.PermissionSetsWrite))
