@@ -1,4 +1,4 @@
-package app
+package validation
 
 import (
 	"errors"
@@ -72,13 +72,13 @@ func TestEnforce_MessageListsAllBreaches(t *testing.T) {
 	// Human-readable message must name both classes so the operator
 	// can fix them before retrying close.
 	for _, class := range []string{"P0", "P1"} {
-		if !contains(msg, class) {
+		if !containsStr(msg, class) {
 			t.Errorf("expected message to mention %s, got %q", class, msg)
 		}
 	}
 }
 
-func contains(s, sub string) bool {
+func containsStr(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
 			return true

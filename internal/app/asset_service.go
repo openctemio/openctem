@@ -62,7 +62,13 @@ const (
 	BatchCreateStatusError     = asset.BatchCreateStatusError
 )
 
+type (
+	TenantScoringConfigProvider = asset.TenantScoringConfigProvider
+)
+
 var (
+	NewTenantScoringConfigProvider = asset.NewTenantScoringConfigProvider
+	MapTenantToAssetScoringConfig  = asset.MapTenantToAssetScoringConfig
 	NewAssetService                  = asset.NewAssetService
 	NewAssetGroupService             = asset.NewAssetGroupService
 	NewAssetImportService            = asset.NewAssetImportService
