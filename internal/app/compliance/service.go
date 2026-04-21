@@ -276,17 +276,3 @@ func (s *ComplianceService) GetControlFindings(ctx context.Context, tenantID, co
 	return s.mappingRepo.ListByControl(ctx, tid, cid)
 }
 
-
-// parseOptionalDate parses an optional date string. Kept here (not
-// exported) so compliance/ has no dependency on pentest_service.go
-// which remained in package app due to cross-service deps.
-func parseOptionalDate(s *string) *time.Time {
-	if s == nil || *s == "" {
-		return nil
-	}
-	t, err := time.Parse("2006-01-02", *s)
-	if err != nil {
-		return nil
-	}
-	return &t
-}
