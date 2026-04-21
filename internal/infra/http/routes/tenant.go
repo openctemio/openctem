@@ -98,6 +98,9 @@ func registerTenantRoutes(
 		// pkg/domain/module/dependency.go). UI uses this to render
 		// dependency badges + "disabling X will also affect Y" dialogs.
 		r.GET("/settings/modules/graph", h.GetModuleDependencyGraph, middleware.RequireTeamAdmin())
+		// Dry-run validation of a toggle — UI calls this BEFORE the
+		// PATCH commit so the admin can confirm cascading impact.
+		r.POST("/settings/modules/validate", h.ValidateTenantModuleToggle, middleware.RequireTeamAdmin())
 
 		// Security & API settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())

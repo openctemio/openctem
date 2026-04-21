@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	auditapp "github.com/openctemio/api/internal/app/audit"
 
@@ -30,19 +31,50 @@ type TenantModuleRepository interface {
 }
 
 // ModuleService handles module-related business operations.
+//
+// toggleLocks serialises concurrent UpdateTenantModules calls for the
+// same tenant. Without this, two admins flipping related modules at
+// the same time could interleave reads and writes such that the
+// dependency check passes for each request individually but the
+// resulting combined state violates the invariant (TOCTOU). The lock
+// is per-tenant so different tenants don't contend.
+//
+// Caveat: this is an in-process mutex. A multi-replica deployment
+// needs a cross-process lock (Redis SETNX, Postgres advisory lock on
+// a shared connection, etc.). In the CTEM deployment model the API
+// runs as a single replica today; when horizontal scale lands, swap
+// this map for the advisory-lock variant.
 type ModuleService struct {
 	moduleRepo       ModuleRepository
 	tenantModuleRepo TenantModuleRepository
 	auditService     *auditapp.AuditService
 	logger           *logger.Logger
+
+	toggleLocks   map[string]*sync.Mutex
+	toggleLocksMu sync.Mutex
 }
 
 // NewModuleService creates a new ModuleService.
 func NewModuleService(moduleRepo ModuleRepository, log *logger.Logger) *ModuleService {
 	return &ModuleService{
-		moduleRepo: moduleRepo,
-		logger:     log.With("service", "module"),
+		moduleRepo:  moduleRepo,
+		logger:      log.With("service", "module"),
+		toggleLocks: make(map[string]*sync.Mutex),
 	}
+}
+
+// tenantToggleLock returns the per-tenant mutex, lazily creating it.
+// Lock map guarded by toggleLocksMu; the returned mutex is the one
+// callers Lock()/Unlock() on.
+func (s *ModuleService) tenantToggleLock(tenantID string) *sync.Mutex {
+	s.toggleLocksMu.Lock()
+	defer s.toggleLocksMu.Unlock()
+	m, ok := s.toggleLocks[tenantID]
+	if !ok {
+		m = &sync.Mutex{}
+		s.toggleLocks[tenantID] = m
+	}
+	return m
 }
 
 // SetTenantModuleRepo sets the tenant module repository.
@@ -122,6 +154,12 @@ func (s *ModuleService) GetTenantEnabledModules(ctx context.Context, tenantID st
 type TenantModuleConfigOutput struct {
 	Modules []*TenantModuleInfo
 	Summary TenantModuleSummary
+	// Warnings is a best-effort list of soft-dependency degradations
+	// introduced by the MOST RECENT toggle. On GET the field is empty;
+	// on PATCH it carries the warnings the service decided not to
+	// escalate to a blocker. Handlers render these as toast/banner on
+	// the Settings → Modules page.
+	Warnings []ToggleIssue
 }
 
 // TenantModuleInfo combines module metadata with tenant-specific enabled state.
@@ -159,11 +197,20 @@ func (s *ModuleService) GetTenantModuleConfig(ctx context.Context, tenantID stri
 // buildTenantModuleConfig builds the tenant module config from pre-loaded modules.
 // Separated to allow reuse in UpdateTenantModules (avoids redundant ListActiveModules query).
 func (s *ModuleService) buildTenantModuleConfig(ctx context.Context, tenantID string, allModules []*moduledom.Module) (*TenantModuleConfigOutput, error) {
+	disabledModules := s.getTenantDisabledModules(ctx, tenantID)
+	return s.buildTenantModuleConfigFromMaps(tenantID, allModules, disabledModules)
+}
+
+// buildTenantModuleConfigFromMaps is the pure-map variant used by
+// UpdateTenantModules, which has already queried tenant_modules once
+// for dependency validation. Calling this saves the duplicate
+// `getTenantDisabledModules` trip that the plain
+// buildTenantModuleConfig would issue.
+func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModules []*moduledom.Module, disabledModules map[string]bool) (*TenantModuleConfigOutput, error) {
+	_ = tenantID // retained in the signature for symmetry; may be used for future scoping
+
 	// Split into top-level and sub-modules from the same query result
 	topLevel, subModulesByParent := splitModules(allModules)
-
-	// Get tenant overrides
-	disabledModules := s.getTenantDisabledModules(ctx, tenantID)
 
 	// Build output: only top-level, user-facing modules
 	var summary TenantModuleSummary
@@ -234,6 +281,12 @@ func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
+	// Serialise concurrent toggles on the SAME tenant so the validate→
+	// upsert window is atomic. Different tenants don't contend.
+	lock := s.tenantToggleLock(tenantID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	// Pre-load all active modules into a map to avoid N individual GetModuleByID queries
 	allModules, loadErr := s.moduleRepo.ListActiveModules(ctx)
 	if loadErr != nil {
@@ -260,6 +313,7 @@ func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string
 
 	// Validate all module IDs against pre-loaded map (0 additional queries)
 	var disabledNames, enabledNames []string
+	var collectedWarnings []ToggleIssue
 	for _, u := range updates {
 		m, exists := moduleMap[u.ModuleID]
 		if !exists {
@@ -280,40 +334,32 @@ func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string
 		// reference modules NOT present in the registry (e.g.
 		// platform-edition mismatch, or a dep migration that hasn't
 		// run yet) are skipped — we cannot block on something the
-		// deployment doesn't know about.
+		// deployment doesn't know about. Returns a structured
+		// ToggleError the HTTP handler can serialise as JSON.
 		if !u.IsEnabled {
-			blockers, _ := moduledom.CanDisable(u.ModuleID, enabledAfter)
-			names := make([]string, 0, len(blockers))
-			seen := make(map[string]bool, len(blockers))
-			for _, b := range blockers {
-				if seen[b.DependentModuleID] {
-					continue
+			blockers, warnings := moduledom.CanDisable(u.ModuleID, enabledAfter)
+			issues := collectBlockerIssues(blockers, moduleMap)
+			if len(issues) > 0 {
+				return nil, &ToggleError{
+					ModuleID:   u.ModuleID,
+					ModuleName: m.Name(),
+					Action:     "disable",
+					Blockers:   issues,
 				}
-				dep, ok := moduleMap[b.DependentModuleID]
-				if !ok {
-					continue
-				}
-				seen[b.DependentModuleID] = true
-				names = append(names, dep.Name())
 			}
-			if len(names) > 0 {
-				return nil, fmt.Errorf("%w: cannot disable '%s' while these modules depend on it: %v",
-					shared.ErrValidation, m.Name(), names)
-			}
+			// Soft warnings — not fatal, just surface them.
+			collectedWarnings = append(collectedWarnings, collectWarningIssues(warnings, moduleMap)...)
 		} else {
 			// Enabling — verify required hard deps are enabled too.
 			missing := moduledom.RequiredToEnable(u.ModuleID, enabledAfter)
-			names := make([]string, 0, len(missing))
-			for _, d := range missing {
-				dep, ok := moduleMap[d.ModuleID]
-				if !ok {
-					continue
+			issues := collectRequiredIssues(missing, moduleMap)
+			if len(issues) > 0 {
+				return nil, &ToggleError{
+					ModuleID:   u.ModuleID,
+					ModuleName: m.Name(),
+					Action:     "enable",
+					Required:   issues,
 				}
-				names = append(names, dep.Name())
-			}
-			if len(names) > 0 {
-				return nil, fmt.Errorf("%w: cannot enable '%s' without first enabling: %v",
-					shared.ErrValidation, m.Name(), names)
 			}
 		}
 
@@ -341,8 +387,136 @@ func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string
 	// Audit log
 	s.logModuleAudit(ctx, actx, tenantID, enabledNames, disabledNames)
 
-	// Reuse pre-loaded modules to avoid redundant ListActiveModules query
-	return s.buildTenantModuleConfig(ctx, tenantID, allModules)
+	// Re-derive the disabled set from the applied updates instead of
+	// re-querying the DB (saves one round-trip per toggle request).
+	for _, u := range updates {
+		disabled[u.ModuleID] = !u.IsEnabled
+	}
+	out, buildErr := s.buildTenantModuleConfigFromMaps(tenantID, allModules, disabled)
+	if buildErr != nil {
+		return nil, buildErr
+	}
+	out.Warnings = collectedWarnings
+	return out, nil
+}
+
+// ValidateToggle runs the same dependency gate as UpdateTenantModules
+// but WITHOUT persisting. The UI calls this from the module-toggle UI
+// to preview blockers/warnings before the user commits. Hit path:
+//
+//	POST /api/v1/tenants/{t}/settings/modules/validate
+func (s *ModuleService) ValidateToggle(ctx context.Context, tenantID string, updates []moduledom.TenantModuleUpdate) (*ValidationIssues, error) {
+	if s.tenantModuleRepo == nil {
+		return nil, fmt.Errorf("%w: tenant module management not configured", shared.ErrInternal)
+	}
+	if len(updates) > maxModuleUpdatesPerRequest {
+		return nil, fmt.Errorf("%w: too many module updates (max %d)", shared.ErrValidation, maxModuleUpdatesPerRequest)
+	}
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	allModules, err := s.moduleRepo.ListActiveModules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load modules: %w", err)
+	}
+	moduleMap := make(map[string]*moduledom.Module, len(allModules))
+	for _, m := range allModules {
+		moduleMap[m.ID()] = m
+	}
+	disabled := s.getTenantDisabledModules(ctx, tenantID)
+	enabledAfter := make(map[string]bool, len(allModules))
+	for _, m := range allModules {
+		enabledAfter[m.ID()] = m.IsActive() && !disabled[m.ID()]
+	}
+	for _, u := range updates {
+		enabledAfter[u.ModuleID] = u.IsEnabled
+	}
+
+	issues := &ValidationIssues{}
+	for _, u := range updates {
+		m, ok := moduleMap[u.ModuleID]
+		if !ok || !m.IsActive() {
+			continue
+		}
+		if !u.IsEnabled {
+			if m.IsCore() {
+				// Surface as blocker with an explicit reason so the UI
+				// can render the same dialog.
+				issues.Blockers = append(issues.Blockers, ToggleIssue{
+					ModuleID: u.ModuleID,
+					Name:     m.Name(),
+					Reason:   "core module — cannot be disabled",
+				})
+				continue
+			}
+			blockers, warnings := moduledom.CanDisable(u.ModuleID, enabledAfter)
+			issues.Blockers = append(issues.Blockers, collectBlockerIssues(blockers, moduleMap)...)
+			issues.Warnings = append(issues.Warnings, collectWarningIssues(warnings, moduleMap)...)
+		} else {
+			missing := moduledom.RequiredToEnable(u.ModuleID, enabledAfter)
+			issues.Required = append(issues.Required, collectRequiredIssues(missing, moduleMap)...)
+		}
+	}
+	return issues, nil
+}
+
+func collectBlockerIssues(blockers []moduledom.ToggleBlocker, moduleMap map[string]*moduledom.Module) []ToggleIssue {
+	out := make([]ToggleIssue, 0, len(blockers))
+	seen := make(map[string]bool, len(blockers))
+	for _, b := range blockers {
+		if seen[b.DependentModuleID] {
+			continue
+		}
+		dep, ok := moduleMap[b.DependentModuleID]
+		if !ok {
+			continue
+		}
+		seen[b.DependentModuleID] = true
+		out = append(out, ToggleIssue{
+			ModuleID: b.DependentModuleID,
+			Name:     dep.Name(),
+			Reason:   b.Reason,
+		})
+	}
+	return out
+}
+
+func collectWarningIssues(warnings []moduledom.ToggleWarning, moduleMap map[string]*moduledom.Module) []ToggleIssue {
+	out := make([]ToggleIssue, 0, len(warnings))
+	seen := make(map[string]bool, len(warnings))
+	for _, w := range warnings {
+		if seen[w.DependentModuleID] {
+			continue
+		}
+		dep, ok := moduleMap[w.DependentModuleID]
+		if !ok {
+			continue
+		}
+		seen[w.DependentModuleID] = true
+		out = append(out, ToggleIssue{
+			ModuleID: w.DependentModuleID,
+			Name:     dep.Name(),
+			Reason:   w.Reason,
+		})
+	}
+	return out
+}
+
+func collectRequiredIssues(missing []moduledom.Dependency, moduleMap map[string]*moduledom.Module) []ToggleIssue {
+	out := make([]ToggleIssue, 0, len(missing))
+	for _, d := range missing {
+		dep, ok := moduleMap[d.ModuleID]
+		if !ok {
+			continue
+		}
+		out = append(out, ToggleIssue{
+			ModuleID: d.ModuleID,
+			Name:     dep.Name(),
+			Reason:   d.Reason,
+		})
+	}
+	return out
 }
 
 // ResetTenantModules resets all module overrides for a tenant (all modules enabled).

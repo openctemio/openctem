@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/module"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/audit"
@@ -288,6 +289,15 @@ func (h *TenantHandler) handleValidationError(w http.ResponseWriter, err error) 
 }
 
 func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
+	// Module toggle rejections carry a structured ToggleError so the
+	// UI can render a dependency-aware confirmation dialog without
+	// regex-ing the error message. Detect it BEFORE the generic
+	// shared.ErrValidation branch collapses it into a string.
+	var toggleErr *module.ToggleError
+	if errors.As(err, &toggleErr) {
+		writeToggleErrorJSON(w, toggleErr)
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Tenant").WriteJSON(w)
@@ -306,6 +316,23 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// writeToggleErrorJSON serialises a module.ToggleError as the 400
+// body. The shape is stable — UI depends on the `code`, `blockers`,
+// `required` fields to render the dependency dialog.
+func writeToggleErrorJSON(w http.ResponseWriter, e *module.ToggleError) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"code":        "module_dependency_violation",
+		"message":     e.Error(),
+		"module_id":   e.ModuleID,
+		"module_name": e.ModuleName,
+		"action":      e.Action,
+		"blockers":    e.Blockers,
+		"required":    e.Required,
+	})
 }
 
 // =============================================================================
@@ -1720,6 +1747,48 @@ func (h *TenantHandler) GetTenantModules(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
+}
+
+// ValidateTenantModuleToggle handles POST /settings/modules/validate —
+// dry-run of the toggle validation. Returns structured blockers +
+// warnings + required so the UI can render a confirmation modal
+// BEFORE the tenant admin commits the toggle. No state change.
+func (h *TenantHandler) ValidateTenantModuleToggle(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+
+	var req UpdateTenantModulesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	updates := make([]moduleTypes.TenantModuleUpdate, len(req.Modules))
+	for i, m := range req.Modules {
+		updates[i] = moduleTypes.TenantModuleUpdate{
+			ModuleID:  m.ModuleID,
+			IsEnabled: m.IsEnabled,
+		}
+	}
+
+	result, err := h.moduleService.ValidateToggle(r.Context(), tenantID.String(), updates)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 // GetModuleDependencyGraph handles GET /api/v1/modules/graph.
