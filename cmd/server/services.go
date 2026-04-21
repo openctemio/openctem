@@ -509,6 +509,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize agent & command services
 	s.Agent = app.NewAgentService(repos.Agent, s.Audit, log)
+	// Pepper the agent API-key hash with the platform encryption key
+	// (or its absence in dev). HMAC-SHA256(pepper, key) stops a DB-only
+	// leak from being brute-forced offline. New keys hash with pepper;
+	// AuthenticateByAPIKey falls back to the legacy plain-SHA256 lookup
+	// for rows written before the pepper was deployed.
+	s.Agent.SetPepper(cfg.Encryption.Key)
 	s.Command = command.NewService(repos.Command, log)
 
 	// Initialize ingest service (unified ingestion engine)

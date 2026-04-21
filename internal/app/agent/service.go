@@ -3,12 +3,12 @@ package agent
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	auditapp "github.com/openctemio/api/internal/app/audit"
 	"net"
 
+	"github.com/openctemio/api/pkg/crypto"
 	agentdom "github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -21,6 +21,15 @@ type AgentService struct {
 	repo         agentdom.Repository
 	auditService *auditapp.AuditService
 	logger       *logger.Logger
+	// pepper is the server-side secret mixed into the API-key hash via
+	// HMAC-SHA256. Optional — when empty the hash falls back to plain
+	// SHA-256 for backward compatibility with rows written before the
+	// pepper was deployed. Set via SetPepper at boot from the platform
+	// encryption key (or a dedicated derived secret). The pepper turns
+	// a database-only leak into useless ciphertext: an attacker without
+	// access to application config cannot brute-force the raw API key
+	// from a leaked key_hash column.
+	pepper string
 }
 
 // NewAgentService creates a new AgentService.
@@ -30,6 +39,14 @@ func NewAgentService(repo agentdom.Repository, auditService *auditapp.AuditServi
 		auditService: auditService,
 		logger:       log.With("service", "agent"),
 	}
+}
+
+// SetPepper configures the HMAC pepper used by the API-key hash.
+// Empty string disables peppering (backward-compat with pre-existing
+// SHA-256 hashes). Should be called once at boot before the service
+// handles any traffic.
+func (s *AgentService) SetPepper(pepper string) {
+	s.pepper = pepper
 }
 
 // CreateAgentInput represents the input for creating an agent.
@@ -78,7 +95,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, input CreateAgentInput) 
 	}
 
 	// Generate API key
-	apiKey, hash, prefix, err := generateAgentAPIKey()
+	apiKey, hash, prefix, err := s.generateAgentAPIKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
@@ -308,7 +325,7 @@ func (s *AgentService) RegenerateAPIKey(ctx context.Context, tenantID, agentID s
 		return "", err
 	}
 
-	apiKey, hash, prefix, err := generateAgentAPIKey()
+	apiKey, hash, prefix, err := s.generateAgentAPIKey()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate API key: %w", err)
 	}
@@ -333,8 +350,20 @@ func (s *AgentService) RegenerateAPIKey(ctx context.Context, tenantID, agentID s
 // - Revoked: access permanently revoked
 // The Health field (unknown/online/offline/error) is for monitoring only.
 func (s *AgentService) AuthenticateByAPIKey(ctx context.Context, apiKey string) (*agentdom.Agent, error) {
-	hash := hashAgentAPIKey(apiKey)
+	// Backward-compat lookup: try the peppered hash first; on miss
+	// fall back to the legacy plain SHA-256. Rows written before the
+	// pepper was deployed match the legacy variant; the next key
+	// rotation will move them to peppered. When no pepper is
+	// configured both branches collapse to plain SHA-256 (same hash)
+	// so the lookup remains a single DB hit.
+	hash := s.hashAgentAPIKey(apiKey)
 	a, err := s.repo.GetByAPIKeyHash(ctx, hash)
+	if err != nil && s.pepper != "" {
+		// Legacy fallback: a row written without pepper would have a
+		// plain SHA-256 hash, not the peppered one we just computed.
+		legacyHash := crypto.HashToken(apiKey)
+		a, err = s.repo.GetByAPIKeyHash(ctx, legacyHash)
+	}
 	if err != nil {
 		return nil, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
 	}
@@ -490,24 +519,35 @@ func (s *AgentService) IncrementStats(ctx context.Context, agentID shared.ID, fi
 	return s.repo.IncrementStats(ctx, agentID, findings, scans, errors)
 }
 
-// generateAgentAPIKey generates a new API key for an agent.
-func generateAgentAPIKey() (key, hash, prefix string, err error) {
+// generateAgentAPIKey generates a new API key for an agent and the
+// peppered hash used to look it up. Caller's responsibility to feed
+// the raw key to the agent and persist only the hash.
+func (s *AgentService) generateAgentAPIKey() (key, hash, prefix string, err error) {
 	keyBytes := make([]byte, 32)
 	if _, err := rand.Read(keyBytes); err != nil {
 		return "", "", "", err
 	}
 
 	key = "rda_" + hex.EncodeToString(keyBytes) // rda = openctem agent
-	hash = hashAgentAPIKey(key)
+	hash = s.hashAgentAPIKey(key)
 	prefix = key[:12] // "rda_" + first 8 hex chars
 
 	return key, hash, prefix, nil
 }
 
-// hashAgentAPIKey hashes an agent API key.
-func hashAgentAPIKey(key string) string {
-	h := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(h[:])
+// hashAgentAPIKey hashes an agent API key using HMAC-SHA256 keyed
+// with the server-side pepper. Falls back to plain SHA-256 when no
+// pepper is configured — required for the boot-time path where
+// existing rows in the DB were written before peppering was deployed.
+//
+// SECURITY: the API key itself is 32 bytes from crypto/rand (256 bits
+// of entropy), so plain SHA-256 is computationally infeasible to
+// reverse. The peppered variant additionally defends against database-
+// only leaks by ensuring an attacker with `key_hash` rows but no
+// access to application config cannot pre-compute candidate hashes
+// (rainbow tables / hashcat) offline.
+func (s *AgentService) hashAgentAPIKey(key string) string {
+	return crypto.HashTokenPeppered(key, s.pepper)
 }
 
 // =============================================================================
