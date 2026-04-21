@@ -31,6 +31,8 @@ type (
 	TenantModuleRepository       = module.TenantModuleRepository
 	TenantModuleSummary          = module.TenantModuleSummary
 	TopRisk                      = module.TopRisk
+	DependencyEdgeOutput         = module.DependencyEdgeOutput
+	DependencyGraphOutput        = module.DependencyGraphOutput
 )
 
 var (

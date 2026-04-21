@@ -243,6 +243,20 @@ func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string
 		moduleMap[m.ID()] = m
 	}
 
+	// Build the enabled-module set AFTER the proposed updates, so the
+	// dependency check sees the target state, not the current state. This
+	// matters when a single request both disables X and the modules that
+	// soft/hard depend on X — the request as a whole is valid even though
+	// mid-way the dependent is still in the updates queue.
+	disabled := s.getTenantDisabledModules(ctx, tenantID)
+	enabledAfter := make(map[string]bool, len(allModules))
+	for _, m := range allModules {
+		enabledAfter[m.ID()] = m.IsActive() && !disabled[m.ID()]
+	}
+	for _, u := range updates {
+		enabledAfter[u.ModuleID] = u.IsEnabled
+	}
+
 	// Validate all module IDs against pre-loaded map (0 additional queries)
 	var disabledNames, enabledNames []string
 	for _, u := range updates {
@@ -257,6 +271,49 @@ func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string
 
 		if !u.IsEnabled && m.IsCore() {
 			return nil, fmt.Errorf("%w: '%s' is a core module and cannot be disabled", moduledom.ErrCoreModuleCannotBeDisabled, m.Name())
+		}
+
+		// Dependency check — platform-wide static graph in
+		// pkg/domain/module/dependency.go. Reject if any hard-dependent
+		// module remains enabled in the post-update state. Deps that
+		// reference modules NOT present in the registry (e.g.
+		// platform-edition mismatch, or a dep migration that hasn't
+		// run yet) are skipped — we cannot block on something the
+		// deployment doesn't know about.
+		if !u.IsEnabled {
+			blockers, _ := moduledom.CanDisable(u.ModuleID, enabledAfter)
+			names := make([]string, 0, len(blockers))
+			seen := make(map[string]bool, len(blockers))
+			for _, b := range blockers {
+				if seen[b.DependentModuleID] {
+					continue
+				}
+				dep, ok := moduleMap[b.DependentModuleID]
+				if !ok {
+					continue
+				}
+				seen[b.DependentModuleID] = true
+				names = append(names, dep.Name())
+			}
+			if len(names) > 0 {
+				return nil, fmt.Errorf("%w: cannot disable '%s' while these modules depend on it: %v",
+					shared.ErrValidation, m.Name(), names)
+			}
+		} else {
+			// Enabling — verify required hard deps are enabled too.
+			missing := moduledom.RequiredToEnable(u.ModuleID, enabledAfter)
+			names := make([]string, 0, len(missing))
+			for _, d := range missing {
+				dep, ok := moduleMap[d.ModuleID]
+				if !ok {
+					continue
+				}
+				names = append(names, dep.Name())
+			}
+			if len(names) > 0 {
+				return nil, fmt.Errorf("%w: cannot enable '%s' without first enabling: %v",
+					shared.ErrValidation, m.Name(), names)
+			}
 		}
 
 		if u.IsEnabled {
@@ -399,4 +456,39 @@ func (s *ModuleService) ListActiveModules(ctx context.Context) ([]*moduledom.Mod
 // GetModule retrieves a module by ID.
 func (s *ModuleService) GetModule(ctx context.Context, moduleID string) (*moduledom.Module, error) {
 	return s.moduleRepo.GetModuleByID(ctx, moduleID)
+}
+
+// DependencyEdgeOutput is the UI-facing shape of one dependency edge.
+type DependencyEdgeOutput struct {
+	From   string `json:"from"`             // Module that depends on the target.
+	To     string `json:"to"`               // Target module required by From.
+	Type   string `json:"type"`             // "hard" or "soft".
+	Reason string `json:"reason,omitempty"` // Human-readable explanation.
+}
+
+// DependencyGraphOutput is returned by GetDependencyGraph. Flat edge list
+// so the UI can render the graph with any layout library without
+// re-shaping the server response.
+type DependencyGraphOutput struct {
+	Edges []DependencyEdgeOutput `json:"edges"`
+}
+
+// GetDependencyGraph returns the static module dependency graph. The
+// graph is read from pkg/domain/module/dependency.go (platform-wide
+// spec, does not change per tenant or at runtime). The UI uses this
+// to render the Settings → Modules page with dependency badges and
+// to show "disabling X will also affect Y, Z" confirmation dialogs.
+func (s *ModuleService) GetDependencyGraph(_ context.Context) *DependencyGraphOutput {
+	out := &DependencyGraphOutput{}
+	for dependent, deps := range moduledom.ModuleDependencies {
+		for _, d := range deps {
+			out.Edges = append(out.Edges, DependencyEdgeOutput{
+				From:   dependent,
+				To:     d.ModuleID,
+				Type:   string(d.Type),
+				Reason: d.Reason,
+			})
+		}
+	}
+	return out
 }

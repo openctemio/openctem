@@ -213,6 +213,38 @@ const (
 	ModuleCommands     = "commands"
 	ModuleScanProfiles = "scan_profiles"
 	ModuleIOCs         = "iocs"
+
+	// Scoping (CTEM) — seeded by migration 000161.
+	ModuleAttackSurface    = "attack_surface"
+	ModuleScopeConfig      = "scope_config"
+	ModuleBusinessServices = "business_services"
+	ModuleCTEMCycles       = "ctem_cycles"
+	ModuleAttackerProfiles = "attacker_profiles"
+	ModuleRelationships    = "relationships"
+
+	// Prioritisation (CTEM) — seeded by migration 000161.
+	ModulePriorityRules = "priority_rules"
+	ModuleRiskAnalysis  = "risk_analysis"
+	ModuleBusinessImpact = "business_impact"
+	ModuleRiskScoring   = "risk_scoring"
+
+	// Validation — seeded by migration 000161.
+	ModuleCompensatingControls = "compensating_controls"
+
+	// Mobilisation — seeded by migration 000161.
+	ModuleWorkflows        = "workflows"
+	ModuleRemediationTasks = "remediation_tasks"
+
+	// Insights — seeded by migration 000161.
+	ModuleCTEMMaturity    = "ctem_maturity"
+	ModuleExecutiveSummary = "executive_summary"
+	ModuleMITRECoverage   = "mitre_coverage"
+	ModuleSBOMExport      = "sbom_export"
+
+	// Settings — seeded by migration 000161.
+	ModuleScannerTemplates = "scanner_templates"
+	ModuleTemplateSources  = "template_sources"
+	ModuleScanPipelines    = "scan_pipelines"
 )
 
 // Integration sub-module IDs (children of ModuleIntegrations)
@@ -278,7 +310,7 @@ var UserFacingModuleIDs = map[string]bool{
 	ModuleCredentials:  true, // Discovery > Credential Leaks
 	ModuleComponents:   true, // Discovery > Components (SBOM)
 	ModuleExposures:    true, // Discovery > Exposures (Non-CVE security issues)
-	ModuleThreatIntel:  true, // Prioritization > Threat Intel, Risk Analysis, Business Impact
+	ModuleThreatIntel:  true, // Prioritization > Threat Intel
 	ModulePentest:           true, // Validation > Penetration Testing
 	ModuleAttackSimulation:  true, // Validation > Attack Simulation (BAS)
 	ModuleControlTesting:    true, // Validation > Control Testing
@@ -286,6 +318,38 @@ var UserFacingModuleIDs = map[string]bool{
 	ModuleRemediation:       true, // Mobilization > Remediation Tasks, Workflows
 	ModuleReports:      true, // Insights > Reports
 	ModuleIntegrations: true, // Settings > Integrations (SCM, Notifications, CI/CD, Ticketing, SIEM)
+
+	// CTEM scoping cluster (seeded by 000161).
+	ModuleAttackSurface:    true,
+	ModuleScopeConfig:      true,
+	ModuleBusinessServices: true,
+	ModuleCTEMCycles:       true,
+	ModuleAttackerProfiles: true,
+	ModuleRelationships:    true,
+
+	// Prioritisation cluster (seeded by 000161).
+	ModulePriorityRules:  true,
+	ModuleRiskAnalysis:   true,
+	ModuleBusinessImpact: true,
+	ModuleRiskScoring:    true,
+
+	// Validation extensions (seeded by 000161).
+	ModuleCompensatingControls: true,
+
+	// Mobilisation extensions (seeded by 000161).
+	ModuleWorkflows:        true,
+	ModuleRemediationTasks: true,
+
+	// Insights extensions (seeded by 000161).
+	ModuleCTEMMaturity:     true,
+	ModuleExecutiveSummary: true,
+	ModuleMITRECoverage:    true,
+	ModuleSBOMExport:       true,
+
+	// Settings extensions (seeded by 000161).
+	ModuleScannerTemplates: true,
+	ModuleTemplateSources:  true,
+	ModuleScanPipelines:    true,
 }
 
 // IsUserFacing returns true if the module should be shown in the admin
@@ -353,6 +417,38 @@ var ModulePermissionMapping = map[string]string{
 	ModulePipelines:    "integrations:pipelines:read",
 	ModuleTools:        "scans:tools:read",
 	ModuleScanProfiles: "scans:profiles:read",
+
+	// CTEM scoping (seeded by 000161). Permissions seeded by 000153_ctem_permissions.
+	ModuleAttackSurface:    "attack_surface:read",
+	ModuleScopeConfig:      "attack_surface:scope:read",
+	ModuleBusinessServices: "attack_surface:business_services:read",
+	ModuleCTEMCycles:       "attack_surface:cycles:read",
+	ModuleAttackerProfiles: "threat_intel:read",
+	ModuleRelationships:    "assets:read",
+
+	// Prioritisation extensions.
+	ModulePriorityRules:  "findings:read",
+	ModuleRiskAnalysis:   "findings:read",
+	ModuleBusinessImpact: "attack_surface:business_services:read",
+	ModuleRiskScoring:    "settings:read",
+
+	// Validation extensions.
+	ModuleCompensatingControls: "findings:compensating_controls:read",
+
+	// Mobilisation extensions.
+	ModuleWorkflows:        "findings:workflows:read",
+	ModuleRemediationTasks: "findings:remediation:read",
+
+	// Insights extensions.
+	ModuleCTEMMaturity:     "dashboard:read",
+	ModuleExecutiveSummary: "reports:read",
+	ModuleMITRECoverage:    "threat_intel:read",
+	ModuleSBOMExport:       "assets:components:read",
+
+	// Settings extensions.
+	ModuleScannerTemplates: "scans:templates:read",
+	ModuleTemplateSources:  "scans:templates:read",
+	ModuleScanPipelines:    "scans:pipelines:read",
 }
 
 // GetRequiredPermission returns the required permission for a module.

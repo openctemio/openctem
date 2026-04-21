@@ -1722,6 +1722,21 @@ func (h *TenantHandler) GetTenantModules(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
 }
 
+// GetModuleDependencyGraph handles GET /api/v1/modules/graph.
+// Returns the platform-wide module dependency graph (static, loaded from
+// pkg/domain/module/dependency.go). The UI consumes this to render the
+// Settings → Modules page with dependency badges and to surface
+// "disabling X will also affect Y, Z" confirmation dialogs.
+func (h *TenantHandler) GetModuleDependencyGraph(w http.ResponseWriter, r *http.Request) {
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+	graph := h.moduleService.GetDependencyGraph(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(graph)
+}
+
 // UpdateTenantModules handles PATCH /api/v1/tenants/{tenant}/settings/modules
 func (h *TenantHandler) UpdateTenantModules(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())

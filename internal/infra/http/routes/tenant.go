@@ -94,6 +94,10 @@ func registerTenantRoutes(
 		r.GET("/settings/modules", h.GetTenantModules, middleware.RequireTeamAdmin())
 		r.PATCH("/settings/modules", h.UpdateTenantModules, middleware.RequireTeamAdmin())
 		r.POST("/settings/modules/reset", h.ResetTenantModules, middleware.RequireTeamAdmin())
+		// Platform-wide module dependency graph (static spec from
+		// pkg/domain/module/dependency.go). UI uses this to render
+		// dependency badges + "disabling X will also affect Y" dialogs.
+		r.GET("/settings/modules/graph", h.GetModuleDependencyGraph, middleware.RequireTeamAdmin())
 
 		// Security & API settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())
