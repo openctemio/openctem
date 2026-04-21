@@ -1,4 +1,4 @@
-package app
+package integration
 
 import (
 	"bytes"
@@ -11,22 +11,22 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/attachment"
+	attachmentdom "github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // TenantStorageResolver resolves per-tenant storage configuration.
 type TenantStorageResolver interface {
-	GetTenantStorageConfig(ctx context.Context, tenantID string) (*attachment.StorageConfig, error)
+	GetTenantStorageConfig(ctx context.Context, tenantID string) (*attachmentdom.StorageConfig, error)
 }
 
 // StorageFactory creates a FileStorage from a StorageConfig.
-type StorageFactory func(cfg attachment.StorageConfig) (attachment.FileStorage, error)
+type StorageFactory func(cfg attachmentdom.StorageConfig) (attachmentdom.FileStorage, error)
 
 // storageCache caches resolved FileStorage per tenant to avoid creating S3 clients per request.
 type storageCacheEntry struct {
-	storage  attachment.FileStorage
+	storage  attachmentdom.FileStorage
 	provider string
 	expiry   time.Time
 }
@@ -37,8 +37,8 @@ const storageCacheTTL = 5 * time.Minute
 // It coordinates between the metadata repository (Postgres) and the
 // file storage provider (local/S3/MinIO — selected per-tenant or globally).
 type AttachmentService struct {
-	repo            attachment.Repository
-	storage         attachment.FileStorage  // Default provider (fallback)
+	repo            attachmentdom.Repository
+	storage         attachmentdom.FileStorage  // Default provider (fallback)
 	storageResolver TenantStorageResolver   // Optional: per-tenant config lookup
 	storageFactory  StorageFactory          // Optional: creates provider from config
 	storageCache    sync.Map                // tenantID → *storageCacheEntry
@@ -49,8 +49,8 @@ type AttachmentService struct {
 // The storage parameter is the DEFAULT provider used when tenants don't have
 // a custom storage config.
 func NewAttachmentService(
-	repo attachment.Repository,
-	storage attachment.FileStorage,
+	repo attachmentdom.Repository,
+	storage attachmentdom.FileStorage,
 	log *logger.Logger,
 ) *AttachmentService {
 	return &AttachmentService{
@@ -69,7 +69,7 @@ func (s *AttachmentService) SetTenantStorageResolver(resolver TenantStorageResol
 
 // resolveStorage returns the FileStorage and provider name for a given tenant.
 // Falls back to the default provider if no tenant-specific config exists.
-func (s *AttachmentService) resolveStorage(ctx context.Context, tenantID string) (attachment.FileStorage, string) {
+func (s *AttachmentService) resolveStorage(ctx context.Context, tenantID string) (attachmentdom.FileStorage, string) {
 	if s.storageResolver == nil || s.storageFactory == nil {
 		return s.storage, "local"
 	}
@@ -100,7 +100,7 @@ func (s *AttachmentService) resolveStorage(ctx context.Context, tenantID string)
 
 // resolveStorageByProvider creates a FileStorage for a specific provider name.
 // Used by Download/Delete to access files on the provider they were uploaded to.
-func (s *AttachmentService) resolveStorageByProvider(ctx context.Context, tenantID, provider string) attachment.FileStorage {
+func (s *AttachmentService) resolveStorageByProvider(ctx context.Context, tenantID, provider string) attachmentdom.FileStorage {
 	if provider == "" || provider == "local" {
 		return s.storage
 	}
@@ -150,15 +150,15 @@ type UploadInput struct {
 
 // Upload validates, stores the file, and creates a metadata record.
 // Returns the attachment with its download URL.
-func (s *AttachmentService) Upload(ctx context.Context, input UploadInput) (*attachment.Attachment, error) {
+func (s *AttachmentService) Upload(ctx context.Context, input UploadInput) (*attachmentdom.Attachment, error) {
 	// Validate
-	if input.Size > attachment.MaxFileSize {
-		return nil, fmt.Errorf("%w: file exceeds %dMB limit", attachment.ErrTooLarge, attachment.MaxFileSize/1024/1024)
+	if input.Size > attachmentdom.MaxFileSize {
+		return nil, fmt.Errorf("%w: file exceeds %dMB limit", attachmentdom.ErrTooLarge, attachmentdom.MaxFileSize/1024/1024)
 	}
 
 	ct := strings.ToLower(strings.TrimSpace(input.ContentType))
-	if !attachment.AllowedContentTypes[ct] {
-		return nil, fmt.Errorf("%w: %s is not an allowed file type", attachment.ErrUnsupported, ct)
+	if !attachmentdom.AllowedContentTypes[ct] {
+		return nil, fmt.Errorf("%w: %s is not an allowed file type", attachmentdom.ErrUnsupported, ct)
 	}
 
 	tenantID, err := shared.IDFromString(input.TenantID)
@@ -199,7 +199,7 @@ func (s *AttachmentService) Upload(ctx context.Context, input UploadInput) (*att
 	}
 
 	// Create metadata record
-	att := attachment.NewAttachment(
+	att := attachmentdom.NewAttachment(
 		tenantID, input.Filename, ct, input.Size, storageKey,
 		uploadedBy, input.ContextType, input.ContextID,
 	)
@@ -274,7 +274,7 @@ func (s *AttachmentService) Delete(ctx context.Context, tenantID, attachmentID s
 }
 
 // ListByContext returns all attachments linked to a specific context.
-func (s *AttachmentService) ListByContext(ctx context.Context, tenantID shared.ID, contextType, contextID string) ([]*attachment.Attachment, error) {
+func (s *AttachmentService) ListByContext(ctx context.Context, tenantID shared.ID, contextType, contextID string) ([]*attachmentdom.Attachment, error) {
 	return s.repo.ListByContext(ctx, tenantID, contextType, contextID)
 }
 
@@ -301,7 +301,7 @@ func (s *AttachmentService) LinkToContext(ctx context.Context, tenantID, uploade
 }
 
 // GetByID retrieves attachment metadata (for URL generation, etc).
-func (s *AttachmentService) GetByID(ctx context.Context, tenantID, attachmentID string) (*attachment.Attachment, error) {
+func (s *AttachmentService) GetByID(ctx context.Context, tenantID, attachmentID string) (*attachmentdom.Attachment, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)

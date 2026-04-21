@@ -1,6 +1,7 @@
-package app
+package integration
 
 import (
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,14 +17,14 @@ type SecretStoreService struct {
 	repo         secretstore.Repository
 	encryptor    *secretstore.Encryptor
 	logger       *logger.Logger
-	auditService *AuditService
+	auditService *auditapp.AuditService
 }
 
 // NewSecretStoreService creates a new SecretStoreService.
 func NewSecretStoreService(
 	repo secretstore.Repository,
 	encryptionKey []byte,
-	auditService *AuditService,
+	auditService *auditapp.AuditService,
 	log *logger.Logger,
 ) (*SecretStoreService, error) {
 	encryptor, err := secretstore.NewEncryptor(encryptionKey)
@@ -90,7 +91,7 @@ func (s *SecretStoreService) CreateCredential(ctx context.Context, input CreateC
 	)
 
 	// Audit creation
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: input.TenantID.String(),
 		ActorID:  input.UserID.String(),
 		// IP/UA would need to be passed in input or context
@@ -205,7 +206,7 @@ func (s *SecretStoreService) UpdateCredential(ctx context.Context, input UpdateC
 	)
 
 	// Audit update
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: input.TenantID.String(),
 		// ActorID would need to be passed in input
 	}
@@ -251,7 +252,7 @@ func (s *SecretStoreService) RotateCredential(ctx context.Context, tenantID shar
 	)
 
 	// Audit rotation (treat as update)
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: tenantID.String(),
 	}
 	_ = s.auditService.LogCredentialUpdated(ctx, actx, cred.ID.String(), cred.Name)
@@ -274,7 +275,7 @@ func (s *SecretStoreService) DeleteCredential(ctx context.Context, tenantID shar
 	s.logger.Info("credential deleted", "id", credentialID)
 
 	// Audit deletion
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: tenantID.String(),
 	}
 	_ = s.auditService.LogCredentialDeleted(ctx, actx, credentialID)
@@ -333,7 +334,7 @@ func (s *SecretStoreService) DecryptCredentialData(ctx context.Context, tenantID
 	_ = s.repo.UpdateLastUsedByTenantAndID(ctx, tenantID, id)
 
 	// Audit access (CRITICAL)
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: tenantID.String(),
 	}
 	_ = s.auditService.LogCredentialAccessed(ctx, actx, credentialID, cred.Name)

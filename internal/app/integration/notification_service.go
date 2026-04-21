@@ -1,4 +1,4 @@
-package app
+package integration
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/notification"
+	notificationdom "github.com/openctemio/api/pkg/domain/notification"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -39,14 +39,14 @@ type UpdatePreferencesInput struct {
 
 // NotificationService handles user notification operations (inbox).
 type NotificationService struct {
-	repo   notification.Repository
+	repo   notificationdom.Repository
 	wsHub  WebSocketBroadcaster
 	logger *logger.Logger
 }
 
 // NewNotificationService creates a new NotificationService.
 func NewNotificationService(
-	repo notification.Repository,
+	repo notificationdom.Repository,
 	wsHub WebSocketBroadcaster,
 	log *logger.Logger,
 ) *NotificationService {
@@ -66,13 +66,13 @@ func NewNotificationService(
 func (s *NotificationService) ListNotifications(
 	ctx context.Context,
 	tenantID, userID shared.ID,
-	filter notification.ListFilter,
+	filter notificationdom.ListFilter,
 	page pagination.Pagination,
-) (pagination.Result[*notification.Notification], error) {
+) (pagination.Result[*notificationdom.Notification], error) {
 	result, err := s.repo.List(ctx, tenantID, userID, filter, page)
 	if err != nil {
 		s.logger.Error("failed to list notifications", "tenant_id", tenantID, "user_id", userID, "error", err)
-		return pagination.Result[*notification.Notification]{}, fmt.Errorf("list notifications: %w", err)
+		return pagination.Result[*notificationdom.Notification]{}, fmt.Errorf("list notifications: %w", err)
 	}
 
 	return result, nil
@@ -95,7 +95,7 @@ func (s *NotificationService) GetUnreadCount(ctx context.Context, tenantID, user
 // =============================================================================
 
 // MarkAsRead marks a single notification as read for a user.
-func (s *NotificationService) MarkAsRead(ctx context.Context, tenantID shared.ID, notificationID notification.ID, userID shared.ID) error {
+func (s *NotificationService) MarkAsRead(ctx context.Context, tenantID shared.ID, notificationID notificationdom.ID, userID shared.ID) error {
 	if err := s.repo.MarkAsRead(ctx, tenantID, notificationID, userID); err != nil {
 		s.logger.Error("failed to mark notification as read", "tenant_id", tenantID, "notification_id", notificationID, "user_id", userID, "error", err)
 		return fmt.Errorf("mark as read: %w", err)
@@ -119,7 +119,7 @@ func (s *NotificationService) MarkAllAsRead(ctx context.Context, tenantID, userI
 // =============================================================================
 
 // GetPreferences returns notification preferences for a user.
-func (s *NotificationService) GetPreferences(ctx context.Context, tenantID, userID shared.ID) (*notification.Preferences, error) {
+func (s *NotificationService) GetPreferences(ctx context.Context, tenantID, userID shared.ID) (*notificationdom.Preferences, error) {
 	prefs, err := s.repo.GetPreferences(ctx, tenantID, userID)
 	if err != nil {
 		s.logger.Error("failed to get notification preferences", "tenant_id", tenantID, "user_id", userID, "error", err)
@@ -134,7 +134,7 @@ func (s *NotificationService) UpdatePreferences(
 	ctx context.Context,
 	tenantID, userID shared.ID,
 	input UpdatePreferencesInput,
-) (*notification.Preferences, error) {
+) (*notificationdom.Preferences, error) {
 	if err := validatePreferencesInput(input); err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (s *NotificationService) UpdatePreferences(
 		return nil, fmt.Errorf("get existing preferences: %w", err)
 	}
 
-	params := notification.PreferencesParams{
+	params := notificationdom.PreferencesParams{
 		InAppEnabled: existing.InAppEnabled(),
 		EmailDigest:  existing.EmailDigest(),
 		MutedTypes:   existing.MutedTypes(),
@@ -184,7 +184,7 @@ func (s *NotificationService) UpdatePreferences(
 // =============================================================================
 
 // Notify creates a notification and pushes it via WebSocket to appropriate channels.
-func (s *NotificationService) Notify(ctx context.Context, params notification.NotificationParams) error {
+func (s *NotificationService) Notify(ctx context.Context, params notificationdom.NotificationParams) error {
 	// Validate required fields.
 	if err := validateNotifyParams(params); err != nil {
 		return err
@@ -200,7 +200,7 @@ func (s *NotificationService) Notify(ctx context.Context, params notification.No
 		}
 	}
 
-	n := notification.NewNotification(params)
+	n := notificationdom.NewNotification(params)
 
 	if err := s.repo.Create(ctx, n); err != nil {
 		s.logger.Error("failed to create notification", "tenant_id", params.TenantID, "type", params.NotificationType, "error", err)
@@ -221,7 +221,7 @@ func (s *NotificationService) Notify(ctx context.Context, params notification.No
 }
 
 // pushWebSocket sends a real-time notification to the appropriate WebSocket channels.
-func (s *NotificationService) pushWebSocket(params notification.NotificationParams) {
+func (s *NotificationService) pushWebSocket(params notificationdom.NotificationParams) {
 	if s.wsHub == nil {
 		return
 	}
@@ -242,12 +242,12 @@ func (s *NotificationService) pushWebSocket(params notification.NotificationPara
 
 	// Additionally broadcast to audience-specific channels for targeted listeners.
 	switch params.Audience {
-	case notification.AudienceUser:
+	case notificationdom.AudienceUser:
 		if params.AudienceID != nil {
 			channel := fmt.Sprintf("notification:%s", params.AudienceID.String())
 			s.wsHub.BroadcastEvent(channel, payload, tenantID)
 		}
-	case notification.AudienceGroup:
+	case notificationdom.AudienceGroup:
 		if params.AudienceID != nil {
 			channel := fmt.Sprintf("group:%s", params.AudienceID.String())
 			s.wsHub.BroadcastEvent(channel, payload, tenantID)
@@ -291,22 +291,22 @@ var validEmailDigests = map[string]bool{
 }
 
 var validSeverities = map[string]bool{
-	notification.SeverityCritical: true,
-	notification.SeverityHigh:     true,
-	notification.SeverityMedium:   true,
-	notification.SeverityLow:      true,
-	notification.SeverityInfo:     true,
+	notificationdom.SeverityCritical: true,
+	notificationdom.SeverityHigh:     true,
+	notificationdom.SeverityMedium:   true,
+	notificationdom.SeverityLow:      true,
+	notificationdom.SeverityInfo:     true,
 	"":                            true, // allow empty to clear
 }
 
 // validAudiences defines the allowed notification audience types.
 var validAudiences = map[string]bool{
-	notification.AudienceAll:   true,
-	notification.AudienceGroup: true,
-	notification.AudienceUser:  true,
+	notificationdom.AudienceAll:   true,
+	notificationdom.AudienceGroup: true,
+	notificationdom.AudienceUser:  true,
 }
 
-func validateNotifyParams(params notification.NotificationParams) error {
+func validateNotifyParams(params notificationdom.NotificationParams) error {
 	if params.Title == "" {
 		return fmt.Errorf("%w: notification title is required", shared.ErrValidation)
 	}
@@ -319,13 +319,13 @@ func validateNotifyParams(params notification.NotificationParams) error {
 	if !validAudiences[params.Audience] {
 		return fmt.Errorf("%w: invalid audience: %s", shared.ErrValidation, params.Audience)
 	}
-	if (params.Audience == notification.AudienceUser || params.Audience == notification.AudienceGroup) && params.AudienceID == nil {
+	if (params.Audience == notificationdom.AudienceUser || params.Audience == notificationdom.AudienceGroup) && params.AudienceID == nil {
 		return fmt.Errorf("%w: audience_id is required for audience type %s", shared.ErrValidation, params.Audience)
 	}
-	if params.NotificationType != "" && !notification.IsValidType(params.NotificationType) {
+	if params.NotificationType != "" && !notificationdom.IsValidType(params.NotificationType) {
 		return fmt.Errorf("%w: invalid notification type: %s", shared.ErrValidation, params.NotificationType)
 	}
-	if params.Severity != "" && !notification.IsValidSeverity(params.Severity) {
+	if params.Severity != "" && !notificationdom.IsValidSeverity(params.Severity) {
 		return fmt.Errorf("%w: invalid severity: %s", shared.ErrValidation, params.Severity)
 	}
 	return nil
@@ -349,7 +349,7 @@ func validatePreferencesInput(input UpdatePreferencesInput) error {
 			return fmt.Errorf("%w: muted_types exceeds maximum of 50", shared.ErrValidation)
 		}
 		for _, t := range input.MutedTypes {
-			if !notification.IsValidType(t) {
+			if !notificationdom.IsValidType(t) {
 				return fmt.Errorf("%w: invalid notification type in muted_types: %s", shared.ErrValidation, t)
 			}
 		}

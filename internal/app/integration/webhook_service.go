@@ -1,4 +1,4 @@
-package app
+package integration
 
 import (
 	"context"
@@ -9,19 +9,19 @@ import (
 
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/webhook"
+	webhookdom "github.com/openctemio/api/pkg/domain/webhook"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // WebhookService provides business logic for webhook management.
 type WebhookService struct {
-	repo      webhook.Repository
+	repo      webhookdom.Repository
 	encryptor crypto.Encryptor
 	logger    *logger.Logger
 }
 
 // NewWebhookService creates a new WebhookService.
-func NewWebhookService(repo webhook.Repository, encryptor crypto.Encryptor, log *logger.Logger) *WebhookService {
+func NewWebhookService(repo webhookdom.Repository, encryptor crypto.Encryptor, log *logger.Logger) *WebhookService {
 	if encryptor == nil {
 		encryptor = crypto.NewNoOpEncryptor()
 	}
@@ -47,7 +47,7 @@ type CreateWebhookInput struct {
 }
 
 // CreateWebhook creates a new webhook.
-func (s *WebhookService) CreateWebhook(ctx context.Context, input CreateWebhookInput) (*webhook.Webhook, error) {
+func (s *WebhookService) CreateWebhook(ctx context.Context, input CreateWebhookInput) (*webhookdom.Webhook, error) {
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
@@ -59,7 +59,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, input CreateWebhookI
 	}
 
 	id := shared.NewID()
-	w := webhook.NewWebhook(id, tenantID, input.Name, input.URL, input.EventTypes)
+	w := webhookdom.NewWebhook(id, tenantID, input.Name, input.URL, input.EventTypes)
 
 	if input.Description != "" {
 		w.SetDescription(input.Description)
@@ -118,13 +118,13 @@ type ListWebhooksInput struct {
 }
 
 // ListWebhooks retrieves a paginated list of webhooks.
-func (s *WebhookService) ListWebhooks(ctx context.Context, input ListWebhooksInput) (webhook.ListResult, error) {
+func (s *WebhookService) ListWebhooks(ctx context.Context, input ListWebhooksInput) (webhookdom.ListResult, error) {
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
-		return webhook.ListResult{}, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+		return webhookdom.ListResult{}, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	filter := webhook.Filter{
+	filter := webhookdom.Filter{
 		TenantID:  &tenantID,
 		EventType: input.EventType,
 		Search:    input.Search,
@@ -135,7 +135,7 @@ func (s *WebhookService) ListWebhooks(ctx context.Context, input ListWebhooksInp
 	}
 
 	if input.Status != "" {
-		st := webhook.Status(input.Status)
+		st := webhookdom.Status(input.Status)
 		filter.Status = &st
 	}
 
@@ -143,7 +143,7 @@ func (s *WebhookService) ListWebhooks(ctx context.Context, input ListWebhooksInp
 }
 
 // GetWebhook retrieves a webhook by ID within a tenant.
-func (s *WebhookService) GetWebhook(ctx context.Context, id, tenantIDStr string) (*webhook.Webhook, error) {
+func (s *WebhookService) GetWebhook(ctx context.Context, id, tenantIDStr string) (*webhookdom.Webhook, error) {
 	wID, err := shared.IDFromString(id)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
@@ -168,7 +168,7 @@ type UpdateWebhookInput struct {
 }
 
 // UpdateWebhook updates a webhook.
-func (s *WebhookService) UpdateWebhook(ctx context.Context, id, tenantIDStr string, input UpdateWebhookInput) (*webhook.Webhook, error) {
+func (s *WebhookService) UpdateWebhook(ctx context.Context, id, tenantIDStr string, input UpdateWebhookInput) (*webhookdom.Webhook, error) {
 	wID, err := shared.IDFromString(id)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
@@ -226,7 +226,7 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, id, tenantIDStr stri
 }
 
 // EnableWebhook enables a webhook.
-func (s *WebhookService) EnableWebhook(ctx context.Context, id, tenantIDStr string) (*webhook.Webhook, error) {
+func (s *WebhookService) EnableWebhook(ctx context.Context, id, tenantIDStr string) (*webhookdom.Webhook, error) {
 	wID, err := shared.IDFromString(id)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
@@ -252,7 +252,7 @@ func (s *WebhookService) EnableWebhook(ctx context.Context, id, tenantIDStr stri
 }
 
 // DisableWebhook disables a webhook.
-func (s *WebhookService) DisableWebhook(ctx context.Context, id, tenantIDStr string) (*webhook.Webhook, error) {
+func (s *WebhookService) DisableWebhook(ctx context.Context, id, tenantIDStr string) (*webhookdom.Webhook, error) {
 	wID, err := shared.IDFromString(id)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
@@ -308,30 +308,30 @@ type ListDeliveriesInput struct {
 }
 
 // ListDeliveries retrieves delivery history for a webhook.
-func (s *WebhookService) ListDeliveries(ctx context.Context, input ListDeliveriesInput) (webhook.DeliveryListResult, error) {
+func (s *WebhookService) ListDeliveries(ctx context.Context, input ListDeliveriesInput) (webhookdom.DeliveryListResult, error) {
 	wID, err := shared.IDFromString(input.WebhookID)
 	if err != nil {
-		return webhook.DeliveryListResult{}, fmt.Errorf("%w: invalid webhook ID", shared.ErrValidation)
+		return webhookdom.DeliveryListResult{}, fmt.Errorf("%w: invalid webhook ID", shared.ErrValidation)
 	}
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
-		return webhook.DeliveryListResult{}, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+		return webhookdom.DeliveryListResult{}, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
 	// Verify webhook exists and belongs to tenant via tenant-scoped GetByID
 	if _, err := s.repo.GetByID(ctx, wID, tenantID); err != nil {
-		return webhook.DeliveryListResult{}, err
+		return webhookdom.DeliveryListResult{}, err
 	}
 
-	filter := webhook.DeliveryFilter{
+	filter := webhookdom.DeliveryFilter{
 		WebhookID: &wID,
 		Page:      input.Page,
 		PerPage:   input.PerPage,
 	}
 
 	if input.Status != "" {
-		st := webhook.DeliveryStatus(input.Status)
+		st := webhookdom.DeliveryStatus(input.Status)
 		filter.Status = &st
 	}
 
