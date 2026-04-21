@@ -1,4 +1,4 @@
-package app
+package aitriage
 
 import (
 	"strings"

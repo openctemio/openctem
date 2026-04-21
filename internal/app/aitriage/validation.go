@@ -1,4 +1,4 @@
-package app
+package aitriage
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/openctemio/api/pkg/domain/aitriage"
+	aitriagedom "github.com/openctemio/api/pkg/domain/aitriage"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
@@ -45,14 +45,14 @@ func NewTriageOutputValidator() *TriageOutputValidator {
 
 // ValidateAndSanitize validates and sanitizes the LLM output.
 // Returns a sanitized analysis or an error if validation fails.
-func (v *TriageOutputValidator) ValidateAndSanitize(content string) (*aitriage.TriageAnalysis, error) {
+func (v *TriageOutputValidator) ValidateAndSanitize(content string) (*aitriagedom.TriageAnalysis, error) {
 	// Parse JSON
 	var raw map[string]any
 	if err := json.Unmarshal([]byte(content), &raw); err != nil {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
 
-	analysis := &aitriage.TriageAnalysis{
+	analysis := &aitriagedom.TriageAnalysis{
 		RawResponse: raw,
 	}
 
@@ -89,7 +89,7 @@ func (v *TriageOutputValidator) ValidateAndSanitize(content string) (*aitriage.T
 		if !v.validExploitabilities[exploitability] {
 			exploitability = riskLevelMedium
 		}
-		analysis.Exploitability = aitriage.Exploitability(exploitability)
+		analysis.Exploitability = aitriagedom.Exploitability(exploitability)
 	}
 
 	// Validate exploitability_details
@@ -172,8 +172,8 @@ func (v *TriageOutputValidator) sanitizeText(text string, maxLen int) string {
 }
 
 // validateRemediationSteps validates and sanitizes remediation steps.
-func (v *TriageOutputValidator) validateRemediationSteps(steps []any) []aitriage.RemediationStep {
-	result := make([]aitriage.RemediationStep, 0, len(steps))
+func (v *TriageOutputValidator) validateRemediationSteps(steps []any) []aitriagedom.RemediationStep {
+	result := make([]aitriagedom.RemediationStep, 0, len(steps))
 
 	validEfforts := map[string]bool{"low": true, riskLevelMedium: true, "high": true}
 
@@ -187,7 +187,7 @@ func (v *TriageOutputValidator) validateRemediationSteps(steps []any) []aitriage
 			continue
 		}
 
-		step := aitriage.RemediationStep{
+		step := aitriagedom.RemediationStep{
 			Step: i + 1,
 		}
 
