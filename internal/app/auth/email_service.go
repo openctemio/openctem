@@ -1,4 +1,4 @@
-package app
+package auth
 
 import (
 	"context"
@@ -6,29 +6,29 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/email"
+	emaildom "github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // TenantSMTPResolver resolves per-tenant SMTP configuration from integrations.
 // Returns nil if tenant has no custom SMTP config (fallback to system default).
 type TenantSMTPResolver interface {
-	GetTenantSMTPConfig(ctx context.Context, tenantID string) (*email.Config, error)
+	GetTenantSMTPConfig(ctx context.Context, tenantID string) (*emaildom.Config, error)
 }
 
 // EmailService handles sending emails for various application events.
 // Supports per-tenant SMTP via TenantSMTPResolver: if a tenant has a custom
 // email integration configured, it uses that SMTP server instead of the system default.
 type EmailService struct {
-	sender       email.Sender // System-wide default sender
-	tenantSMTP   TenantSMTPResolver
-	config       config.SMTPConfig
-	appName      string
-	logger       *logger.Logger
+	sender     emaildom.Sender // System-wide default sender
+	tenantSMTP TenantSMTPResolver
+	config     config.SMTPConfig
+	appName    string
+	logger     *logger.Logger
 }
 
 // NewEmailService creates a new EmailService.
-func NewEmailService(sender email.Sender, cfg config.SMTPConfig, appName string, log *logger.Logger) *EmailService {
+func NewEmailService(sender emaildom.Sender, cfg config.SMTPConfig, appName string, log *logger.Logger) *EmailService {
 	return &EmailService{
 		sender:  sender,
 		config:  cfg,
@@ -43,7 +43,7 @@ func (s *EmailService) SetTenantSMTPResolver(resolver TenantSMTPResolver) {
 }
 
 // getSenderForTenant returns a per-tenant SMTP sender if configured, or the default sender.
-func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) email.Sender {
+func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) emaildom.Sender {
 	if s.tenantSMTP == nil || tenantID == "" {
 		return s.sender
 	}
@@ -57,7 +57,7 @@ func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) 
 		return s.sender
 	}
 
-	return email.NewSMTPSender(*cfg)
+	return emaildom.NewSMTPSender(*cfg)
 }
 
 // IsConfigured returns true if email service is properly configured.
@@ -96,7 +96,7 @@ func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, use
 
 	verificationURL := fmt.Sprintf("%s/auth/verify-email?token=%s", s.config.BaseURL, token)
 
-	data := email.VerifyEmailData{
+	data := emaildom.VerifyEmailData{
 		UserName:        userName,
 		Email:           userEmail,
 		VerificationURL: verificationURL,
@@ -104,7 +104,7 @@ func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, use
 		AppName:         s.appName,
 	}
 
-	if err := s.sender.SendTemplate(ctx, userEmail, email.TemplateVerifyEmail, data); err != nil {
+	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateVerifyEmail, data); err != nil {
 		s.logger.Error("failed to send verification email",
 			"email", userEmail,
 			"error", err,
@@ -129,7 +129,7 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 
 	resetURL := fmt.Sprintf("%s/auth/reset-password?token=%s", s.config.BaseURL, token)
 
-	data := email.PasswordResetData{
+	data := emaildom.PasswordResetData{
 		UserName:    userName,
 		Email:       userEmail,
 		ResetURL:    resetURL,
@@ -139,7 +139,7 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 		RequestedAt: time.Now().Format("January 2, 2006 at 3:04 PM MST"),
 	}
 
-	if err := s.sender.SendTemplate(ctx, userEmail, email.TemplatePasswordReset, data); err != nil {
+	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplatePasswordReset, data); err != nil {
 		s.logger.Error("failed to send password reset email",
 			"email", userEmail,
 			"error", err,
@@ -164,7 +164,7 @@ func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, 
 
 	supportURL := fmt.Sprintf("%s/support", s.config.BaseURL)
 
-	data := email.PasswordChangedData{
+	data := emaildom.PasswordChangedData{
 		UserName:   userName,
 		Email:      userEmail,
 		ChangedAt:  time.Now().Format("January 2, 2006 at 3:04 PM MST"),
@@ -173,7 +173,7 @@ func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, 
 		SupportURL: supportURL,
 	}
 
-	if err := s.sender.SendTemplate(ctx, userEmail, email.TemplatePasswordChanged, data); err != nil {
+	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplatePasswordChanged, data); err != nil {
 		s.logger.Error("failed to send password changed email",
 			"email", userEmail,
 			"error", err,
@@ -199,7 +199,7 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 	loginURL := fmt.Sprintf("%s/auth/login", s.config.BaseURL)
 	supportURL := fmt.Sprintf("%s/support", s.config.BaseURL)
 
-	data := email.WelcomeData{
+	data := emaildom.WelcomeData{
 		UserName:   userName,
 		Email:      userEmail,
 		LoginURL:   loginURL,
@@ -207,7 +207,7 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 		SupportURL: supportURL,
 	}
 
-	if err := s.sender.SendTemplate(ctx, userEmail, email.TemplateWelcome, data); err != nil {
+	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateWelcome, data); err != nil {
 		s.logger.Error("failed to send welcome email",
 			"email", userEmail,
 			"error", err,
@@ -240,7 +240,7 @@ func (s *EmailService) SendMemberSuspendedEmail(
 		return nil
 	}
 
-	data := email.MemberStatusChangeData{
+	data := emaildom.MemberStatusChangeData{
 		UserName:  recipientName,
 		TeamName:  teamName,
 		ActorName: actorName,
@@ -248,7 +248,7 @@ func (s *EmailService) SendMemberSuspendedEmail(
 		AppName:   s.appName,
 	}
 
-	if err := sender.SendTemplate(ctx, recipientEmail, email.TemplateMemberSuspended, data); err != nil {
+	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateMemberSuspended, data); err != nil {
 		s.logger.Error("failed to send member suspended email",
 			"email", recipientEmail, "error", err)
 		return fmt.Errorf("failed to send member suspended email: %w", err)
@@ -276,7 +276,7 @@ func (s *EmailService) SendMemberReactivatedEmail(
 		return nil
 	}
 
-	data := email.MemberStatusChangeData{
+	data := emaildom.MemberStatusChangeData{
 		UserName:  recipientName,
 		TeamName:  teamName,
 		ActorName: actorName,
@@ -284,7 +284,7 @@ func (s *EmailService) SendMemberReactivatedEmail(
 		AppName:   s.appName,
 	}
 
-	if err := sender.SendTemplate(ctx, recipientEmail, email.TemplateMemberReactivated, data); err != nil {
+	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateMemberReactivated, data); err != nil {
 		s.logger.Error("failed to send member reactivated email",
 			"email", recipientEmail, "error", err)
 		return fmt.Errorf("failed to send member reactivated email: %w", err)
@@ -313,7 +313,7 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 
 	invitationURL := fmt.Sprintf("%s/invitations/%s", s.config.BaseURL, token)
 
-	data := email.TeamInvitationData{
+	data := emaildom.TeamInvitationData{
 		InviterName:   inviterName,
 		TeamName:      teamName,
 		InvitationURL: invitationURL,
@@ -321,7 +321,7 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 		AppName:       s.appName,
 	}
 
-	if err := sender.SendTemplate(ctx, recipientEmail, email.TemplateTeamInvitation, data); err != nil {
+	if err := sender.SendTemplate(ctx, recipientEmail, emaildom.TemplateTeamInvitation, data); err != nil {
 		s.logger.Error("failed to send team invitation email",
 			"email", recipientEmail,
 			"error", err,

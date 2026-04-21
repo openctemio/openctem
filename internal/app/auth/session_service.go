@@ -1,22 +1,24 @@
-package app
+package auth
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/session"
+	"github.com/openctemio/api/internal/app/accesscontrol"
+
+	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // SessionService handles session management operations.
 type SessionService struct {
-	sessionRepo      session.Repository
-	refreshTokenRepo session.RefreshTokenRepository
+	sessionRepo      sessiondom.Repository
+	refreshTokenRepo sessiondom.RefreshTokenRepository
 	logger           *logger.Logger
 	// Permission sync services for cache invalidation on session revocation
-	permCacheSvc   *PermissionCacheService
-	permVersionSvc *PermissionVersionService
+	permCacheSvc   *accesscontrol.PermissionCacheService
+	permVersionSvc *accesscontrol.PermissionVersionService
 	tenantRepo     TenantMembershipProvider // For getting user's tenants
 }
 
@@ -28,8 +30,8 @@ type TenantMembershipProvider interface {
 
 // NewSessionService creates a new SessionService.
 func NewSessionService(
-	sessionRepo session.Repository,
-	refreshTokenRepo session.RefreshTokenRepository,
+	sessionRepo sessiondom.Repository,
+	refreshTokenRepo sessiondom.RefreshTokenRepository,
 	log *logger.Logger,
 ) *SessionService {
 	return &SessionService{
@@ -42,8 +44,8 @@ func NewSessionService(
 // SetPermissionServices sets the permission cache and version services.
 // This enables cache invalidation when sessions are revoked.
 func (s *SessionService) SetPermissionServices(
-	cacheSvc *PermissionCacheService,
-	versionSvc *PermissionVersionService,
+	cacheSvc *accesscontrol.PermissionCacheService,
+	versionSvc *accesscontrol.PermissionVersionService,
 	tenantRepo TenantMembershipProvider,
 ) {
 	s.permCacheSvc = cacheSvc
@@ -138,7 +140,7 @@ func (s *SessionService) RevokeSession(ctx context.Context, userID, sessionID st
 
 	// Ensure the session belongs to the user
 	if !sess.UserID().Equals(uid) {
-		return session.ErrSessionNotFound
+		return sessiondom.ErrSessionNotFound
 	}
 
 	// Revoke session
@@ -213,7 +215,7 @@ func (s *SessionService) RevokeAllSessions(ctx context.Context, userID, exceptSe
 }
 
 // ValidateSession checks if a session is valid.
-func (s *SessionService) ValidateSession(ctx context.Context, sessionID string) (*session.Session, error) {
+func (s *SessionService) ValidateSession(ctx context.Context, sessionID string) (*sessiondom.Session, error) {
 	id, err := shared.IDFromString(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid session id: %w", err)
@@ -225,15 +227,15 @@ func (s *SessionService) ValidateSession(ctx context.Context, sessionID string) 
 	}
 
 	if !sess.IsActive() {
-		return nil, session.ErrSessionExpired
+		return nil, sessiondom.ErrSessionExpired
 	}
 
 	return sess, nil
 }
 
 // GetSessionByAccessToken retrieves a session by its access token.
-func (s *SessionService) GetSessionByAccessToken(ctx context.Context, accessToken string) (*session.Session, error) {
-	hash := session.HashToken(accessToken)
+func (s *SessionService) GetSessionByAccessToken(ctx context.Context, accessToken string) (*sessiondom.Session, error) {
+	hash := sessiondom.HashToken(accessToken)
 	return s.sessionRepo.GetByAccessTokenHash(ctx, hash)
 }
 

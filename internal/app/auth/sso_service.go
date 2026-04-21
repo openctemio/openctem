@@ -1,4 +1,4 @@
-package app
+package auth
 
 import (
 	"context"
@@ -17,11 +17,11 @@ import (
 
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/identityprovider"
-	"github.com/openctemio/api/pkg/domain/session"
+	identityproviderdom "github.com/openctemio/api/pkg/domain/identityprovider"
+	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/domain/user"
+	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -48,11 +48,11 @@ const ssoMaxRedirectURILength = 2000
 
 // SSOService handles per-tenant SSO authentication.
 type SSOService struct {
-	ipRepo           identityprovider.Repository
-	tenantRepo       tenant.Repository
-	userRepo         user.Repository
-	sessionRepo      session.Repository
-	refreshTokenRepo session.RefreshTokenRepository
+	ipRepo           identityproviderdom.Repository
+	tenantRepo       tenantdom.Repository
+	userRepo         userdom.Repository
+	sessionRepo      sessiondom.Repository
+	refreshTokenRepo sessiondom.RefreshTokenRepository
 	encryptor        crypto.Encryptor
 	tokenGenerator   *jwt.Generator
 	authConfig       config.AuthConfig
@@ -65,16 +65,16 @@ type SSOService struct {
 
 // TenantMemberCreator creates tenant memberships for auto-provisioned users.
 type TenantMemberCreator interface {
-	CreateMembership(ctx context.Context, m *tenant.Membership) error
+	CreateMembership(ctx context.Context, m *tenantdom.Membership) error
 }
 
 // NewSSOService creates a new SSOService.
 func NewSSOService(
-	ipRepo identityprovider.Repository,
-	tenantRepo tenant.Repository,
-	userRepo user.Repository,
-	sessionRepo session.Repository,
-	refreshTokenRepo session.RefreshTokenRepository,
+	ipRepo identityproviderdom.Repository,
+	tenantRepo tenantdom.Repository,
+	userRepo userdom.Repository,
+	sessionRepo sessiondom.Repository,
+	refreshTokenRepo sessiondom.RefreshTokenRepository,
 	encryptor crypto.Encryptor,
 	authCfg config.AuthConfig,
 	log *logger.Logger,
@@ -180,10 +180,10 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 		return nil, ErrSSOTenantNotFound
 	}
 
-	provider := identityprovider.Provider(input.Provider)
+	provider := identityproviderdom.Provider(input.Provider)
 	ip, err := s.ipRepo.GetByTenantAndProvider(ctx, t.ID().String(), provider)
 	if err != nil {
-		if errors.Is(err, identityprovider.ErrNotFound) {
+		if errors.Is(err, identityproviderdom.ErrNotFound) {
 			return nil, ErrSSOProviderNotFound
 		}
 		return nil, fmt.Errorf("get provider: %w", err)
@@ -227,9 +227,9 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 
 	// Provider-specific parameters
 	switch ip.Provider() {
-	case identityprovider.ProviderEntraID:
+	case identityproviderdom.ProviderEntraID:
 		params.Set("response_mode", "query")
-	case identityprovider.ProviderGoogleWorkspace:
+	case identityproviderdom.ProviderGoogleWorkspace:
 		params.Set("access_type", "offline")
 		params.Set("prompt", "select_account")
 		// Restrict to org domain
@@ -254,13 +254,13 @@ type SSOCallbackInput struct {
 
 // SSOCallbackResult is the result of a successful SSO callback.
 type SSOCallbackResult struct {
-	AccessToken  string     `json:"access_token"`
-	RefreshToken string     `json:"refresh_token"`
-	ExpiresIn    int64      `json:"expires_in"`
-	TokenType    string     `json:"token_type"`
-	User         *user.User `json:"user"`
-	TenantID     string     `json:"tenant_id"`
-	TenantSlug   string     `json:"tenant_slug"`
+	AccessToken  string        `json:"access_token"`
+	RefreshToken string        `json:"refresh_token"`
+	ExpiresIn    int64         `json:"expires_in"`
+	TokenType    string        `json:"token_type"`
+	User         *userdom.User `json:"user"`
+	TenantID     string        `json:"tenant_id"`
+	TenantSlug   string        `json:"tenant_slug"`
 }
 
 // HandleCallback handles the SSO OAuth callback.
@@ -282,10 +282,10 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	}
 
 	// Look up provider config
-	provider := identityprovider.Provider(input.Provider)
+	provider := identityproviderdom.Provider(input.Provider)
 	ip, err := s.ipRepo.GetByTenantAndProvider(ctx, t.ID().String(), provider)
 	if err != nil {
-		if errors.Is(err, identityprovider.ErrNotFound) {
+		if errors.Is(err, identityproviderdom.ErrNotFound) {
 			return nil, ErrSSOProviderNotFound
 		}
 		return nil, fmt.Errorf("get provider: %w", err)
@@ -337,7 +337,7 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 
 	// Auto-provision into tenant if enabled
 	if ip.AutoProvision() && s.tenantMemberRepo != nil {
-		membership, memErr := tenant.NewMembership(u.ID(), t.ID(), tenant.Role(ip.DefaultRole()), nil)
+		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), tenantdom.Role(ip.DefaultRole()), nil)
 		if memErr == nil {
 			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
 		}
@@ -509,7 +509,7 @@ type SSOUserInfo struct {
 }
 
 // getUserInfo fetches user information from the SSO provider.
-func (s *SSOService) getUserInfo(ctx context.Context, provider identityprovider.Provider, accessToken, userInfoURL string) (*SSOUserInfo, error) {
+func (s *SSOService) getUserInfo(ctx context.Context, provider identityproviderdom.Provider, accessToken, userInfoURL string) (*SSOUserInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", userInfoURL, nil)
 	if err != nil {
 		return nil, err
@@ -529,11 +529,11 @@ func (s *SSOService) getUserInfo(ctx context.Context, provider identityprovider.
 	}
 
 	switch provider {
-	case identityprovider.ProviderEntraID:
+	case identityproviderdom.ProviderEntraID:
 		return s.parseEntraIDUserInfo(resp.Body)
-	case identityprovider.ProviderOkta:
+	case identityproviderdom.ProviderOkta:
 		return s.parseOktaUserInfo(resp.Body)
-	case identityprovider.ProviderGoogleWorkspace:
+	case identityproviderdom.ProviderGoogleWorkspace:
 		return s.parseGoogleUserInfo(resp.Body)
 	default:
 		return nil, ErrSSOProviderUnsupported
@@ -594,7 +594,7 @@ func (s *SSOService) parseGoogleUserInfo(body io.Reader) (*SSOUserInfo, error) {
 // findOrCreateUser finds an existing user or creates a new SSO user.
 // Handles race condition: if two concurrent SSO logins create the same user,
 // the second attempt will retry the lookup after a duplicate key error.
-func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo, provider identityprovider.Provider) (*user.User, error) {
+func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
 	if userInfo.Email == "" {
 		return nil, ErrSSONoEmail
 	}
@@ -608,10 +608,10 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 		existingProvider := existingUser.AuthProvider()
 		expectedProvider := s.mapAuthProvider(provider)
 
-		if existingProvider != expectedProvider && existingProvider != user.AuthProviderOIDC {
+		if existingProvider != expectedProvider && existingProvider != userdom.AuthProviderOIDC {
 			// Allow local users to be "upgraded" to SSO only if they have no password set
 			// (i.e., they were invited but haven't set a password yet).
-			if existingProvider == user.AuthProviderLocal && existingUser.PasswordHash() != nil {
+			if existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() != nil {
 				s.logger.Warn("SSO login blocked: email exists with different auth provider",
 					"email", userInfo.Email,
 					"existing_provider", existingProvider,
@@ -632,7 +632,7 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 	authProvider := s.mapAuthProvider(provider)
 
 	// Create new user
-	newUser, err := user.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, authProvider)
+	newUser, err := userdom.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, authProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -654,27 +654,27 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 }
 
 // mapAuthProvider maps identity provider to user auth provider.
-func (s *SSOService) mapAuthProvider(provider identityprovider.Provider) user.AuthProvider {
+func (s *SSOService) mapAuthProvider(provider identityproviderdom.Provider) userdom.AuthProvider {
 	switch provider {
-	case identityprovider.ProviderEntraID:
-		return user.AuthProviderMicrosoft
-	case identityprovider.ProviderGoogleWorkspace:
-		return user.AuthProviderGoogle
-	case identityprovider.ProviderOkta:
-		return user.AuthProviderOIDC
+	case identityproviderdom.ProviderEntraID:
+		return userdom.AuthProviderMicrosoft
+	case identityproviderdom.ProviderGoogleWorkspace:
+		return userdom.AuthProviderGoogle
+	case identityproviderdom.ProviderOkta:
+		return userdom.AuthProviderOIDC
 	default:
-		return user.AuthProviderOIDC
+		return userdom.AuthProviderOIDC
 	}
 }
 
 // createSession creates a new session for the user.
-func (s *SSOService) createSession(ctx context.Context, u *user.User) (*SessionResult, error) {
+func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
 	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), "", "user")
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
-	newSession, err := session.New(
+	newSession, err := sessiondom.New(
 		u.ID(),
 		tokenPair.AccessToken,
 		"", // IP address from request context
@@ -689,7 +689,7 @@ func (s *SSOService) createSession(ctx context.Context, u *user.User) (*SessionR
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 
-	refreshTokenEntity, err := session.NewRefreshToken(
+	refreshTokenEntity, err := sessiondom.NewRefreshToken(
 		u.ID(),
 		newSession.ID(),
 		tokenPair.RefreshToken,
@@ -748,33 +748,33 @@ func validateDefaultRole(role string) error {
 
 // validateTenantIdentifier validates the tenant identifier to prevent SSRF.
 // For Okta, this must be a valid https URL. For Entra ID, it's a directory/tenant ID.
-func validateTenantIdentifier(provider identityprovider.Provider, tid string) error {
+func validateTenantIdentifier(provider identityproviderdom.Provider, tid string) error {
 	if tid == "" {
 		return nil
 	}
 	switch provider {
-	case identityprovider.ProviderOkta:
+	case identityproviderdom.ProviderOkta:
 		// Okta tenant identifier is the org URL (e.g., https://dev-123456.okta.com)
 		parsed, err := url.Parse(tid)
 		if err != nil {
-			return fmt.Errorf("%w: invalid Okta org URL", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: invalid Okta org URL", identityproviderdom.ErrInvalidConfig)
 		}
 		if parsed.Scheme != "https" {
-			return fmt.Errorf("%w: Okta org URL must use https", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: Okta org URL must use https", identityproviderdom.ErrInvalidConfig)
 		}
 		if parsed.Host == "" {
-			return fmt.Errorf("%w: Okta org URL missing host", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: Okta org URL missing host", identityproviderdom.ErrInvalidConfig)
 		}
 		// Prevent SSRF: only allow known Okta domains
 		host := strings.ToLower(parsed.Host)
 		if !strings.HasSuffix(host, ".okta.com") && !strings.HasSuffix(host, ".oktapreview.com") {
-			return fmt.Errorf("%w: Okta org URL must end with .okta.com or .oktapreview.com", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: Okta org URL must end with .okta.com or .oktapreview.com", identityproviderdom.ErrInvalidConfig)
 		}
-	case identityprovider.ProviderEntraID:
+	case identityproviderdom.ProviderEntraID:
 		// Entra ID tenant identifier is a GUID or domain — no URL, so no SSRF risk.
 		// Just prevent overly long or suspicious values.
 		if len(tid) > 128 {
-			return fmt.Errorf("%w: tenant identifier too long", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: tenant identifier too long", identityproviderdom.ErrInvalidConfig)
 		}
 	}
 	return nil
@@ -783,11 +783,11 @@ func validateTenantIdentifier(provider identityprovider.Provider, tid string) er
 // validateScopes validates that requested scopes are reasonable.
 func validateScopes(scopes []string) error {
 	if len(scopes) > 20 {
-		return fmt.Errorf("%w: too many scopes (max 20)", identityprovider.ErrInvalidConfig)
+		return fmt.Errorf("%w: too many scopes (max 20)", identityproviderdom.ErrInvalidConfig)
 	}
 	for _, scope := range scopes {
 		if len(scope) > 128 {
-			return fmt.Errorf("%w: scope too long (max 128 chars)", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: scope too long (max 128 chars)", identityproviderdom.ErrInvalidConfig)
 		}
 	}
 	return nil
@@ -796,31 +796,31 @@ func validateScopes(scopes []string) error {
 // validateAllowedDomains validates allowed email domains.
 func validateAllowedDomains(domains []string) error {
 	if len(domains) > 100 {
-		return fmt.Errorf("%w: too many allowed domains (max 100)", identityprovider.ErrInvalidConfig)
+		return fmt.Errorf("%w: too many allowed domains (max 100)", identityproviderdom.ErrInvalidConfig)
 	}
 	for _, domain := range domains {
 		domain = strings.TrimSpace(domain)
 		if domain == "" {
-			return fmt.Errorf("%w: empty domain not allowed", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: empty domain not allowed", identityproviderdom.ErrInvalidConfig)
 		}
 		if len(domain) > 255 {
-			return fmt.Errorf("%w: domain too long (max 255 chars)", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: domain too long (max 255 chars)", identityproviderdom.ErrInvalidConfig)
 		}
 		if strings.Contains(domain, "*") {
-			return fmt.Errorf("%w: wildcards not allowed in domain", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: wildcards not allowed in domain", identityproviderdom.ErrInvalidConfig)
 		}
 		if strings.ContainsAny(domain, " \t\n\r") {
-			return fmt.Errorf("%w: domain contains whitespace", identityprovider.ErrInvalidConfig)
+			return fmt.Errorf("%w: domain contains whitespace", identityproviderdom.ErrInvalidConfig)
 		}
 	}
 	return nil
 }
 
 // CreateProvider creates a new identity provider configuration for a tenant.
-func (s *SSOService) CreateProvider(ctx context.Context, input CreateProviderInput) (*identityprovider.IdentityProvider, error) {
-	provider := identityprovider.Provider(input.Provider)
+func (s *SSOService) CreateProvider(ctx context.Context, input CreateProviderInput) (*identityproviderdom.IdentityProvider, error) {
+	provider := identityproviderdom.Provider(input.Provider)
 	if !provider.IsValid() {
-		return nil, identityprovider.ErrInvalidProvider
+		return nil, identityproviderdom.ErrInvalidProvider
 	}
 
 	// Validate default role (prevent setting "owner" via SSO auto-provision)
@@ -849,7 +849,7 @@ func (s *SSOService) CreateProvider(ctx context.Context, input CreateProviderInp
 		return nil, fmt.Errorf("encrypt client secret: %w", err)
 	}
 
-	ip := identityprovider.New(
+	ip := identityproviderdom.New(
 		shared.NewID().String(),
 		input.TenantID,
 		provider,
@@ -902,7 +902,7 @@ type UpdateProviderInput struct {
 }
 
 // UpdateProvider updates an identity provider configuration.
-func (s *SSOService) UpdateProvider(ctx context.Context, input UpdateProviderInput) (*identityprovider.IdentityProvider, error) {
+func (s *SSOService) UpdateProvider(ctx context.Context, input UpdateProviderInput) (*identityproviderdom.IdentityProvider, error) {
 	ip, err := s.ipRepo.GetByID(ctx, input.TenantID, input.ID)
 	if err != nil {
 		return nil, err
@@ -979,12 +979,12 @@ func (s *SSOService) UpdateProvider(ctx context.Context, input UpdateProviderInp
 }
 
 // GetProvider retrieves a provider configuration by ID.
-func (s *SSOService) GetProvider(ctx context.Context, tenantID, id string) (*identityprovider.IdentityProvider, error) {
+func (s *SSOService) GetProvider(ctx context.Context, tenantID, id string) (*identityproviderdom.IdentityProvider, error) {
 	return s.ipRepo.GetByID(ctx, tenantID, id)
 }
 
 // ListProviders lists all identity provider configurations for a tenant.
-func (s *SSOService) ListProviders(ctx context.Context, tenantID string) ([]*identityprovider.IdentityProvider, error) {
+func (s *SSOService) ListProviders(ctx context.Context, tenantID string) ([]*identityproviderdom.IdentityProvider, error) {
 	return s.ipRepo.ListByTenant(ctx, tenantID)
 }
 

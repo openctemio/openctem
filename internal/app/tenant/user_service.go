@@ -1,4 +1,4 @@
-package app
+package tenant
 
 import (
 	"context"
@@ -6,21 +6,23 @@ import (
 	"html"
 	"strings"
 
+	authapp "github.com/openctemio/api/internal/app/auth"
+
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/user"
+	userdom "github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/keycloak"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // UserService handles user-related business operations.
 type UserService struct {
-	repo           user.Repository
-	sessionService *SessionService // For revoking sessions on suspend
+	repo           userdom.Repository
+	sessionService *authapp.SessionService // For revoking sessions on suspend
 	logger         *logger.Logger
 }
 
 // NewUserService creates a new UserService.
-func NewUserService(repo user.Repository, log *logger.Logger) *UserService {
+func NewUserService(repo userdom.Repository, log *logger.Logger) *UserService {
 	return &UserService{
 		repo:   repo,
 		logger: log.With("service", "user"),
@@ -29,7 +31,7 @@ func NewUserService(repo user.Repository, log *logger.Logger) *UserService {
 
 // SetSessionService sets the session service for revoking sessions.
 // This enables immediate session revocation when user is suspended.
-func (s *UserService) SetSessionService(sessionService *SessionService) {
+func (s *UserService) SetSessionService(sessionService *authapp.SessionService) {
 	s.sessionService = sessionService
 }
 
@@ -53,7 +55,7 @@ func sanitizeString(s string, maxLen int) string {
 // SyncFromKeycloak syncs a user from Keycloak claims.
 // This is called by middleware on each authenticated request.
 // It creates the user if not exists, or updates their info if exists.
-func (s *UserService) SyncFromKeycloak(ctx context.Context, claims *keycloak.Claims) (*user.User, error) {
+func (s *UserService) SyncFromKeycloak(ctx context.Context, claims *keycloak.Claims) (*userdom.User, error) {
 	if claims == nil {
 		return nil, fmt.Errorf("%w: claims is nil", shared.ErrValidation)
 	}
@@ -103,7 +105,7 @@ func (s *UserService) SyncFromKeycloak(ctx context.Context, claims *keycloak.Cla
 }
 
 // GetProfile retrieves a user's profile by ID.
-func (s *UserService) GetProfile(ctx context.Context, userID string) (*user.User, error) {
+func (s *UserService) GetProfile(ctx context.Context, userID string) (*userdom.User, error) {
 	parsedID, err := shared.IDFromString(userID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -118,7 +120,7 @@ func (s *UserService) GetProfile(ctx context.Context, userID string) (*user.User
 // IMPORTANT: For OSS/local auth, we do NOT auto-create users from JWT tokens.
 // Users MUST register through the /api/v1/auth/register endpoint first.
 // This prevents creating passwordless users that cannot login.
-func (s *UserService) GetOrCreateFromLocalToken(ctx context.Context, userID, email, name string) (*user.User, error) {
+func (s *UserService) GetOrCreateFromLocalToken(ctx context.Context, userID, email, name string) (*userdom.User, error) {
 	parsedID, err := shared.IDFromString(userID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -143,12 +145,12 @@ func (s *UserService) GetOrCreateFromLocalToken(ctx context.Context, userID, ema
 }
 
 // GetByKeycloakID retrieves a user by their Keycloak ID.
-func (s *UserService) GetByKeycloakID(ctx context.Context, keycloakID string) (*user.User, error) {
+func (s *UserService) GetByKeycloakID(ctx context.Context, keycloakID string) (*userdom.User, error) {
 	return s.repo.GetByKeycloakID(ctx, keycloakID)
 }
 
 // GetByEmail retrieves a user by their email.
-func (s *UserService) GetByEmail(ctx context.Context, email string) (*user.User, error) {
+func (s *UserService) GetByEmail(ctx context.Context, email string) (*userdom.User, error) {
 	return s.repo.GetByEmail(ctx, email)
 }
 
@@ -160,7 +162,7 @@ type UpdateProfileInput struct {
 }
 
 // UpdateProfile updates a user's profile.
-func (s *UserService) UpdateProfile(ctx context.Context, userID string, input UpdateProfileInput) (*user.User, error) {
+func (s *UserService) UpdateProfile(ctx context.Context, userID string, input UpdateProfileInput) (*userdom.User, error) {
 	parsedID, err := shared.IDFromString(userID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -198,7 +200,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID string, input Up
 }
 
 // UpdatePreferences updates a user's preferences.
-func (s *UserService) UpdatePreferences(ctx context.Context, userID string, prefs user.Preferences) (*user.User, error) {
+func (s *UserService) UpdatePreferences(ctx context.Context, userID string, prefs userdom.Preferences) (*userdom.User, error) {
 	parsedID, err := shared.IDFromString(userID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -226,9 +228,9 @@ func (s *UserService) UpdatePreferences(ctx context.Context, userID string, pref
 // status column itself.
 
 // GetUsersByIDs retrieves multiple users by their IDs (string format).
-func (s *UserService) GetUsersByIDs(ctx context.Context, userIDs []string) ([]*user.User, error) {
+func (s *UserService) GetUsersByIDs(ctx context.Context, userIDs []string) ([]*userdom.User, error) {
 	if len(userIDs) == 0 {
-		return []*user.User{}, nil
+		return []*userdom.User{}, nil
 	}
 
 	ids := make([]shared.ID, 0, len(userIDs))
@@ -244,9 +246,9 @@ func (s *UserService) GetUsersByIDs(ctx context.Context, userIDs []string) ([]*u
 }
 
 // GetByIDs retrieves multiple users by their IDs (shared.ID format).
-func (s *UserService) GetByIDs(ctx context.Context, ids []shared.ID) ([]*user.User, error) {
+func (s *UserService) GetByIDs(ctx context.Context, ids []shared.ID) ([]*userdom.User, error) {
 	if len(ids) == 0 {
-		return []*user.User{}, nil
+		return []*userdom.User{}, nil
 	}
 	return s.repo.GetByIDs(ctx, ids)
 }

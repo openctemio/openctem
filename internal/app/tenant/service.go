@@ -1,4 +1,4 @@
-package app
+package tenant
 
 import (
 	"context"
@@ -7,10 +7,15 @@ import (
 	"strings"
 	"time"
 
+	authapp "github.com/openctemio/api/internal/app/auth"
+
+	"github.com/openctemio/api/internal/app/accesscontrol"
+	auditapp "github.com/openctemio/api/internal/app/audit"
+
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tenant"
+	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -42,26 +47,26 @@ type TeamInvitationJobPayload struct {
 // TenantService handles tenant-related business operations.
 // Note: Tenants are displayed as "Teams" in the UI.
 type TenantService struct {
-	repo             tenant.Repository
-	auditService     *AuditService
+	repo             tenantdom.Repository
+	auditService     *auditapp.AuditService
 	emailEnqueuer    EmailJobEnqueuer
 	userInfoProvider UserInfoProvider // For fetching user names
 	// Permission sync services for immediate cache invalidation on member removal
-	permCacheSvc   *PermissionCacheService
-	permVersionSvc *PermissionVersionService
+	permCacheSvc   *accesscontrol.PermissionCacheService
+	permVersionSvc *accesscontrol.PermissionVersionService
 	// Session service for revoking all sessions of a user when their
 	// access is paused (suspend) or removed. Without this, an existing
 	// browser tab keeps a valid JWT until expiry and the suspension
 	// only takes effect on tenant-scoped routes that hit
 	// RequireMembership middleware. JWT-claim-scoped routes (e.g.
 	// /api/v1/me/*, /api/v1/notifications) would still let the user in.
-	sessionService *SessionService
+	sessionService *authapp.SessionService
 	// Membership cache used by RequireMembership middleware. We hold a
 	// reference here so mutations (suspend / reactivate / role change /
 	// remove) can drop the cached entry immediately. nil means caching
 	// is disabled (Redis unavailable) and the middleware reads the
 	// repository directly — invalidation calls become no-ops.
-	membershipCache *MembershipCacheService
+	membershipCache *accesscontrol.MembershipCacheService
 	// Email notifier for membership lifecycle events. Optional — if
 	// nil (or if SMTP is not configured) the suspend/reactivate
 	// operations succeed without sending an email.
@@ -79,7 +84,7 @@ type UserInfoProvider interface {
 }
 
 // NewTenantService creates a new TenantService.
-func NewTenantService(repo tenant.Repository, log *logger.Logger, opts ...TenantServiceOption) *TenantService {
+func NewTenantService(repo tenantdom.Repository, log *logger.Logger, opts ...TenantServiceOption) *TenantService {
 	s := &TenantService{
 		repo:   repo,
 		logger: log.With("service", "tenant"),
@@ -94,7 +99,7 @@ func NewTenantService(repo tenant.Repository, log *logger.Logger, opts ...Tenant
 type TenantServiceOption func(*TenantService)
 
 // WithTenantAuditService sets the audit service for TenantService.
-func WithTenantAuditService(auditService *AuditService) TenantServiceOption {
+func WithTenantAuditService(auditService *auditapp.AuditService) TenantServiceOption {
 	return func(s *TenantService) {
 		s.auditService = auditService
 	}
@@ -116,7 +121,7 @@ func WithUserInfoProvider(provider UserInfoProvider) TenantServiceOption {
 
 // WithTenantPermissionCacheService sets the permission cache service for TenantService.
 // This enables immediate cache invalidation when members are removed.
-func WithTenantPermissionCacheService(svc *PermissionCacheService) TenantServiceOption {
+func WithTenantPermissionCacheService(svc *accesscontrol.PermissionCacheService) TenantServiceOption {
 	return func(s *TenantService) {
 		s.permCacheSvc = svc
 	}
@@ -124,7 +129,7 @@ func WithTenantPermissionCacheService(svc *PermissionCacheService) TenantService
 
 // WithTenantPermissionVersionService sets the permission version service for TenantService.
 // This enables version cleanup when members are removed.
-func WithTenantPermissionVersionService(svc *PermissionVersionService) TenantServiceOption {
+func WithTenantPermissionVersionService(svc *accesscontrol.PermissionVersionService) TenantServiceOption {
 	return func(s *TenantService) {
 		s.permVersionSvc = svc
 	}
@@ -132,7 +137,7 @@ func WithTenantPermissionVersionService(svc *PermissionVersionService) TenantSer
 
 // SetPermissionServices sets the permission cache and version services.
 // This is used when services are initialized after TenantService.
-func (s *TenantService) SetPermissionServices(cacheSvc *PermissionCacheService, versionSvc *PermissionVersionService) {
+func (s *TenantService) SetPermissionServices(cacheSvc *accesscontrol.PermissionCacheService, versionSvc *accesscontrol.PermissionVersionService) {
 	s.permCacheSvc = cacheSvc
 	s.permVersionSvc = versionSvc
 }
@@ -141,7 +146,7 @@ func (s *TenantService) SetPermissionServices(cacheSvc *PermissionCacheService, 
 // RemoveMember can revoke all of the user's sessions immediately.
 // Without it, suspended users can still hit JWT-claim-scoped routes
 // (e.g. /api/v1/me/*) until their JWT expires.
-func (s *TenantService) SetSessionService(sessionService *SessionService) {
+func (s *TenantService) SetSessionService(sessionService *authapp.SessionService) {
 	s.sessionService = sessionService
 }
 
@@ -151,7 +156,7 @@ func (s *TenantService) SetSessionService(sessionService *SessionService) {
 // no longer hits the database on every request — but the same wiring
 // is what guarantees a suspended user gets a 403 on their NEXT
 // request instead of after the cache TTL expires.
-func (s *TenantService) SetMembershipCache(cache *MembershipCacheService) {
+func (s *TenantService) SetMembershipCache(cache *accesscontrol.MembershipCacheService) {
 	s.membershipCache = cache
 }
 
@@ -237,7 +242,7 @@ func (s *TenantService) invalidateMembershipCache(ctx context.Context, tenantID,
 }
 
 // logAudit logs an audit event if audit service is configured.
-func (s *TenantService) logAudit(ctx context.Context, actx AuditContext, event AuditEvent) {
+func (s *TenantService) logAudit(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) {
 	if s.auditService == nil {
 		return
 	}
@@ -249,7 +254,7 @@ func (s *TenantService) logAudit(ctx context.Context, actx AuditContext, event A
 // LogAuditEvent logs an audit event via the tenant service's audit service.
 // This is the public variant of logAudit, intended for use by handlers that
 // need to log audit events for operations not managed by the service layer.
-func (s *TenantService) LogAuditEvent(ctx context.Context, actx AuditContext, event AuditEvent) {
+func (s *TenantService) LogAuditEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) {
 	s.logAudit(ctx, actx, event)
 }
 
@@ -273,7 +278,7 @@ type CreateTenantInput struct {
 
 // CreateTenant creates a new tenant and adds the creator as owner.
 // creatorUserID is the local user ID (from users table).
-func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInput, creatorUserID shared.ID, actx AuditContext) (*tenant.Tenant, error) {
+func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInput, creatorUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Tenant, error) {
 	s.logger.Info("creating tenant", "name", input.Name, "slug", input.Slug, "creator", creatorUserID.String())
 
 	// Check if slug already exists
@@ -286,7 +291,7 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 	}
 
 	// Create tenant (createdBy still uses string for now as it's stored separately)
-	t, err := tenant.NewTenant(input.Name, input.Slug, creatorUserID.String())
+	t, err := tenantdom.NewTenant(input.Name, input.Slug, creatorUserID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +306,7 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 	}
 
 	// Create owner membership for the creator
-	membership, err := tenant.NewOwnerMembership(creatorUserID, t.ID())
+	membership, err := tenantdom.NewOwnerMembership(creatorUserID, t.ID())
 	if err != nil {
 		// Rollback tenant creation
 		_ = s.repo.Delete(ctx, t.ID())
@@ -318,7 +323,7 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 
 	// Log audit event
 	actx.TenantID = t.ID().String()
-	event := NewSuccessEvent(audit.ActionTenantCreated, audit.ResourceTypeTenant, t.ID().String()).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantCreated, audit.ResourceTypeTenant, t.ID().String()).
 		WithResourceName(t.Name()).
 		WithMessage(fmt.Sprintf("Team '%s' created", t.Name()))
 	s.logAudit(ctx, actx, event)
@@ -327,7 +332,7 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 }
 
 // GetTenant retrieves a tenant by ID.
-func (s *TenantService) GetTenant(ctx context.Context, tenantID string) (*tenant.Tenant, error) {
+func (s *TenantService) GetTenant(ctx context.Context, tenantID string) (*tenantdom.Tenant, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -337,7 +342,7 @@ func (s *TenantService) GetTenant(ctx context.Context, tenantID string) (*tenant
 }
 
 // GetTenantBySlug retrieves a tenant by slug.
-func (s *TenantService) GetTenantBySlug(ctx context.Context, slug string) (*tenant.Tenant, error) {
+func (s *TenantService) GetTenantBySlug(ctx context.Context, slug string) (*tenantdom.Tenant, error) {
 	return s.repo.GetBySlug(ctx, slug)
 }
 
@@ -350,7 +355,7 @@ type UpdateTenantInput struct {
 }
 
 // UpdateTenant updates a tenant's information.
-func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input UpdateTenantInput) (*tenant.Tenant, error) {
+func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input UpdateTenantInput) (*tenantdom.Tenant, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -403,7 +408,7 @@ func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input
 // once the tenant's rows are CASCADE'd away. Tenant name is captured
 // BEFORE delete so the audit row can name the victim even though the
 // row no longer exists.
-func (s *TenantService) DeleteTenant(ctx context.Context, actx AuditContext, tenantID string) error {
+func (s *TenantService) DeleteTenant(ctx context.Context, actx auditapp.AuditContext, tenantID string) error {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -422,7 +427,7 @@ func (s *TenantService) DeleteTenant(ctx context.Context, actx AuditContext, ten
 		return err
 	}
 
-	event := NewSuccessEvent(audit.ActionTenantDeleted, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantDeleted, audit.ResourceTypeTenant, tenantID).
 		WithResourceName(tenantName).
 		WithSeverity(audit.SeverityCritical).
 		WithMessage(fmt.Sprintf("Tenant %q deleted (all tenant data cascaded)", tenantName)).
@@ -435,7 +440,7 @@ func (s *TenantService) DeleteTenant(ctx context.Context, actx AuditContext, ten
 
 // ListUserTenants lists all tenants a user belongs to.
 // userID is the local user ID (from users table).
-func (s *TenantService) ListUserTenants(ctx context.Context, userID shared.ID) ([]*tenant.TenantWithRole, error) {
+func (s *TenantService) ListUserTenants(ctx context.Context, userID shared.ID) ([]*tenantdom.TenantWithRole, error) {
 	return s.repo.ListTenantsByUser(ctx, userID)
 }
 
@@ -451,13 +456,13 @@ type AddMemberInput struct {
 
 // AddMember adds a user to a tenant.
 // inviterUserID is the local user ID of the person inviting.
-func (s *TenantService) AddMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx AuditContext) (*tenant.Membership, error) {
+func (s *TenantService) AddMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	role, ok := tenant.ParseRole(input.Role)
+	role, ok := tenantdom.ParseRole(input.Role)
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
@@ -479,7 +484,7 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
-	membership, err := tenant.NewMembership(input.UserID, parsedTenantID, role, &inviterUserID)
+	membership, err := tenantdom.NewMembership(input.UserID, parsedTenantID, role, &inviterUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -492,7 +497,7 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionMemberAdded, audit.ResourceTypeMembership, membership.ID().String()).
+	event := auditapp.NewSuccessEvent(audit.ActionMemberAdded, audit.ResourceTypeMembership, membership.ID().String()).
 		WithMessage(fmt.Sprintf("Member added with role %s", role)).
 		WithMetadata("role", input.Role).
 		WithMetadata("user_id", input.UserID.String())
@@ -507,7 +512,7 @@ type UpdateMemberRoleInput struct {
 }
 
 // UpdateMemberRole updates a member's role.
-func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID string, input UpdateMemberRoleInput, actx AuditContext) (*tenant.Membership, error) {
+func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID string, input UpdateMemberRoleInput, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
 	parsedID, err := shared.IDFromString(membershipID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
@@ -524,13 +529,13 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	}
 
 	oldRole := membership.Role().String()
-	role, ok := tenant.ParseRole(input.Role)
+	role, ok := tenantdom.ParseRole(input.Role)
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
 
 	// Prevent promoting to owner
-	if role == tenant.RoleOwner {
+	if role == tenantdom.RoleOwner {
 		return nil, fmt.Errorf("%w: cannot promote to owner", shared.ErrValidation)
 	}
 
@@ -553,7 +558,7 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	// Log audit event
 	actx.TenantID = membership.TenantID().String()
 	changes := audit.NewChanges().Set("role", oldRole, input.Role)
-	event := NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeMembership, membershipID).
+	event := auditapp.NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeMembership, membershipID).
 		WithChanges(changes).
 		WithSeverity(audit.SeverityHigh).
 		WithMessage(fmt.Sprintf("Member role changed from %s to %s", oldRole, input.Role))
@@ -563,7 +568,7 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 }
 
 // RemoveMember removes a member from a tenant.
-func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, actx AuditContext) error {
+func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
 	parsedID, err := shared.IDFromString(membershipID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
@@ -616,7 +621,7 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeMembership, membershipID).
+	event := auditapp.NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeMembership, membershipID).
 		WithSeverity(audit.SeverityHigh).
 		WithMessage("Member removed from team").
 		WithMetadata("user_id", userID)
@@ -630,7 +635,7 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 // attribution, and compliance evidence), but the user's access is
 // immediately revoked: sessions are invalidated, permission cache
 // cleared, and JWT exchange should check membership status.
-func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, actx AuditContext) error {
+func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
 	parsedID, err := shared.IDFromString(membershipID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
@@ -698,7 +703,7 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 	s.logger.Info("member suspended", "membership_id", membershipID, "user_id", userID)
 
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionMemberSuspended, audit.ResourceTypeMembership, membershipID).
+	event := auditapp.NewSuccessEvent(audit.ActionMemberSuspended, audit.ResourceTypeMembership, membershipID).
 		WithSeverity(audit.SeverityHigh).
 		WithMessage("Member suspended").
 		WithMetadata("user_id", userID)
@@ -708,7 +713,7 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 }
 
 // ReactivateMember restores a suspended member's access.
-func (s *TenantService) ReactivateMember(ctx context.Context, membershipID string, actx AuditContext) error {
+func (s *TenantService) ReactivateMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
 	parsedID, err := shared.IDFromString(membershipID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
@@ -747,7 +752,7 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
 
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionMemberReactivated, audit.ResourceTypeMembership, membershipID).
+	event := auditapp.NewSuccessEvent(audit.ActionMemberReactivated, audit.ResourceTypeMembership, membershipID).
 		WithSeverity(audit.SeverityMedium).
 		WithMessage("Member reactivated").
 		WithMetadata("user_id", userID)
@@ -782,7 +787,7 @@ func (s *TenantService) invalidateUserPermissions(ctx context.Context, tenantID,
 }
 
 // ListMembers lists all members of a tenant.
-func (s *TenantService) ListMembers(ctx context.Context, tenantID string) ([]*tenant.Membership, error) {
+func (s *TenantService) ListMembers(ctx context.Context, tenantID string) ([]*tenantdom.Membership, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -792,7 +797,7 @@ func (s *TenantService) ListMembers(ctx context.Context, tenantID string) ([]*te
 }
 
 // ListMembersWithUserInfo lists all members of a tenant with user details.
-func (s *TenantService) ListMembersWithUserInfo(ctx context.Context, tenantID string) ([]*tenant.MemberWithUser, error) {
+func (s *TenantService) ListMembersWithUserInfo(ctx context.Context, tenantID string) ([]*tenantdom.MemberWithUser, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -802,7 +807,7 @@ func (s *TenantService) ListMembersWithUserInfo(ctx context.Context, tenantID st
 }
 
 // SearchMembersWithUserInfo searches members with filtering and pagination.
-func (s *TenantService) SearchMembersWithUserInfo(ctx context.Context, tenantID string, filters tenant.MemberSearchFilters) (*tenant.MemberSearchResult, error) {
+func (s *TenantService) SearchMembersWithUserInfo(ctx context.Context, tenantID string, filters tenantdom.MemberSearchFilters) (*tenantdom.MemberSearchResult, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -838,7 +843,7 @@ func (s *TenantService) SearchMembersWithUserInfo(ctx context.Context, tenantID 
 }
 
 // GetMemberStats retrieves member statistics for a tenant.
-func (s *TenantService) GetMemberStats(ctx context.Context, tenantID string) (*tenant.MemberStats, error) {
+func (s *TenantService) GetMemberStats(ctx context.Context, tenantID string) (*tenantdom.MemberStats, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -849,7 +854,7 @@ func (s *TenantService) GetMemberStats(ctx context.Context, tenantID string) (*t
 
 // GetMembership retrieves a user's membership in a tenant.
 // userID is the local user ID (from users table).
-func (s *TenantService) GetMembership(ctx context.Context, userID shared.ID, tenantID string) (*tenant.Membership, error) {
+func (s *TenantService) GetMembership(ctx context.Context, userID shared.ID, tenantID string) (*tenantdom.Membership, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -872,13 +877,13 @@ type CreateInvitationInput struct {
 
 // CreateInvitation creates an invitation to join a tenant.
 // inviterUserID is the local user ID (from users table) of the person sending the invitation.
-func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, input CreateInvitationInput, inviterUserID shared.ID, actx AuditContext) (*tenant.Invitation, error) {
+func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, input CreateInvitationInput, inviterUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Invitation, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
-	role, ok := tenant.ParseRole(input.Role)
+	role, ok := tenantdom.ParseRole(input.Role)
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
@@ -905,7 +910,7 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	// the suspend audit trail and any compliance evidence stay intact.
 	existingMember, err := s.repo.GetMemberByEmail(ctx, parsedID, input.Email)
 	if err == nil && existingMember != nil {
-		if existingMember.Status == string(tenant.MemberStatusSuspended) {
+		if existingMember.Status == string(tenantdom.MemberStatusSuspended) {
 			return nil, fmt.Errorf(
 				"%w: this user has a suspended membership in this tenant — reactivate them via the Members page instead of sending a new invitation",
 				shared.ErrValidation,
@@ -917,7 +922,7 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		return nil, fmt.Errorf("failed to check existing member: %w", err)
 	}
 
-	invitation, err := tenant.NewInvitation(parsedID, input.Email, role, inviterUserID, input.RoleIDs)
+	invitation, err := tenantdom.NewInvitation(parsedID, input.Email, role, inviterUserID, input.RoleIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -930,7 +935,7 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionInvitationCreated, audit.ResourceTypeInvitation, invitation.ID().String()).
+	event := auditapp.NewSuccessEvent(audit.ActionInvitationCreated, audit.ResourceTypeInvitation, invitation.ID().String()).
 		WithResourceName(input.Email).
 		WithMessage(fmt.Sprintf("Invitation sent to %s with role %s", input.Email, role)).
 		WithMetadata("email", input.Email).
@@ -982,14 +987,14 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 }
 
 // GetInvitationByToken retrieves an invitation by its token.
-func (s *TenantService) GetInvitationByToken(ctx context.Context, token string) (*tenant.Invitation, error) {
+func (s *TenantService) GetInvitationByToken(ctx context.Context, token string) (*tenantdom.Invitation, error) {
 	return s.repo.GetInvitationByToken(ctx, token)
 }
 
 // AcceptInvitation accepts an invitation and creates a membership.
 // userID is the local user ID (from users table) of the person accepting the invitation.
 // userEmail is used to verify the invitation is intended for this user.
-func (s *TenantService) AcceptInvitation(ctx context.Context, token string, userID shared.ID, userEmail string, actx AuditContext) (*tenant.Membership, error) {
+func (s *TenantService) AcceptInvitation(ctx context.Context, token string, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
 	invitation, err := s.repo.GetInvitationByToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -1034,7 +1039,7 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 
 	// Create membership
 	invitedBy := invitation.InvitedBy()
-	membership, err := tenant.NewMembership(userID, invitation.TenantID(), invitation.Role(), &invitedBy)
+	membership, err := tenantdom.NewMembership(userID, invitation.TenantID(), invitation.Role(), &invitedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -1048,7 +1053,7 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 
 	// Log audit event
 	actx.TenantID = invitation.TenantID().String()
-	event := NewSuccessEvent(audit.ActionInvitationAccepted, audit.ResourceTypeInvitation, invitation.ID().String()).
+	event := auditapp.NewSuccessEvent(audit.ActionInvitationAccepted, audit.ResourceTypeInvitation, invitation.ID().String()).
 		WithResourceName(userEmail).
 		WithMessage(fmt.Sprintf("Invitation accepted by %s", userEmail)).
 		WithMetadata("role", invitation.Role().String())
@@ -1058,7 +1063,7 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 }
 
 // ListPendingInvitations lists pending invitations for a tenant.
-func (s *TenantService) ListPendingInvitations(ctx context.Context, tenantID string) ([]*tenant.Invitation, error) {
+func (s *TenantService) ListPendingInvitations(ctx context.Context, tenantID string) ([]*tenantdom.Invitation, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1103,7 +1108,7 @@ func (s *TenantService) CleanupExpiredInvitations(ctx context.Context) (int64, e
 //
 // Returns ErrNotFound if the invitation doesn't exist, and ErrValidation
 // if the invitation has already been accepted or has expired.
-func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitationID string, actx AuditContext) error {
+func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitationID string, actx auditapp.AuditContext) error {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -1167,7 +1172,7 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 
 	// Audit
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionInvitationCreated, audit.ResourceTypeInvitation, invitationID).
+	event := auditapp.NewSuccessEvent(audit.ActionInvitationCreated, audit.ResourceTypeInvitation, invitationID).
 		WithSeverity(audit.SeverityLow).
 		WithMessage(fmt.Sprintf("Invitation email resent to %s", inv.Email())).
 		WithMetadata("email", inv.Email())
@@ -1194,7 +1199,7 @@ func (s *TenantService) GetUserDisplayName(ctx context.Context, userID shared.ID
 // =============================================================================
 
 // GetTenantSettings retrieves the typed settings for a tenant.
-func (s *TenantService) GetTenantSettings(ctx context.Context, tenantID string) (*tenant.Settings, error) {
+func (s *TenantService) GetTenantSettings(ctx context.Context, tenantID string) (*tenantdom.Settings, error) {
 	t, err := s.GetTenant(ctx, tenantID)
 	if err != nil {
 		return nil, err
@@ -1204,7 +1209,7 @@ func (s *TenantService) GetTenantSettings(ctx context.Context, tenantID string) 
 }
 
 // UpdateTenantSettings updates all tenant settings.
-func (s *TenantService) UpdateTenantSettings(ctx context.Context, tenantID string, settings tenant.Settings, actx AuditContext) (*tenant.Settings, error) {
+func (s *TenantService) UpdateTenantSettings(ctx context.Context, tenantID string, settings tenantdom.Settings, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1227,7 +1232,7 @@ func (s *TenantService) UpdateTenantSettings(ctx context.Context, tenantID strin
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
 		WithMessage("Team settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1244,7 +1249,7 @@ type UpdateGeneralSettingsInput struct {
 }
 
 // UpdateGeneralSettings updates only the general settings.
-func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID string, input UpdateGeneralSettingsInput, actx AuditContext) (*tenant.Settings, error) {
+func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID string, input UpdateGeneralSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1255,7 +1260,7 @@ func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID stri
 		return nil, err
 	}
 
-	general := tenant.GeneralSettings{
+	general := tenantdom.GeneralSettings{
 		Timezone: input.Timezone,
 		Language: input.Language,
 		Industry: input.Industry,
@@ -1274,7 +1279,7 @@ func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID stri
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
 		WithMessage("General settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1295,7 +1300,7 @@ type UpdateSecuritySettingsInput struct {
 }
 
 // UpdateSecuritySettings updates only the security settings.
-func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID string, input UpdateSecuritySettingsInput, actx AuditContext) (*tenant.Settings, error) {
+func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID string, input UpdateSecuritySettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1317,12 +1322,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 	}
 
-	mode := tenant.EmailVerificationMode(input.EmailVerificationMode)
+	mode := tenantdom.EmailVerificationMode(input.EmailVerificationMode)
 	if mode == "" {
 		// Preserve existing mode if caller doesn't specify (don't reset to empty/auto)
 		mode = t.TypedSettings().Security.EmailVerificationMode
 	}
-	security := tenant.SecuritySettings{
+	security := tenantdom.SecuritySettings{
 		SSOEnabled:            input.SSOEnabled,
 		SSOProvider:           input.SSOProvider,
 		SSOConfigURL:          input.SSOConfigURL,
@@ -1345,7 +1350,7 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
 		WithSeverity(audit.SeverityHigh).
 		WithMessage("Security settings updated")
 	s.logAudit(ctx, actx, event)
@@ -1363,7 +1368,7 @@ type UpdateAPISettingsInput struct {
 }
 
 // UpdateAPISettings updates only the API settings.
-func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, input UpdateAPISettingsInput, actx AuditContext) (*tenant.Settings, error) {
+func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, input UpdateAPISettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1386,12 +1391,12 @@ func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, 
 	}
 
 	// Convert webhook events
-	webhookEvents := make([]tenant.WebhookEvent, len(input.WebhookEvents))
+	webhookEvents := make([]tenantdom.WebhookEvent, len(input.WebhookEvents))
 	for i, e := range input.WebhookEvents {
-		webhookEvents[i] = tenant.WebhookEvent(e)
+		webhookEvents[i] = tenantdom.WebhookEvent(e)
 	}
 
-	api := tenant.APISettings{
+	api := tenantdom.APISettings{
 		APIKeyEnabled: input.APIKeyEnabled,
 		WebhookURL:    input.WebhookURL,
 		WebhookSecret: input.WebhookSecret,
@@ -1410,7 +1415,7 @@ func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, 
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
 		WithMessage("API settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1426,7 +1431,7 @@ type UpdateBrandingSettingsInput struct {
 }
 
 // UpdateBrandingSettings updates only the branding settings.
-func (s *TenantService) UpdateBrandingSettings(ctx context.Context, tenantID string, input UpdateBrandingSettingsInput, actx AuditContext) (*tenant.Settings, error) {
+func (s *TenantService) UpdateBrandingSettings(ctx context.Context, tenantID string, input UpdateBrandingSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1437,7 +1442,7 @@ func (s *TenantService) UpdateBrandingSettings(ctx context.Context, tenantID str
 		return nil, err
 	}
 
-	branding := tenant.BrandingSettings{
+	branding := tenantdom.BrandingSettings{
 		PrimaryColor: input.PrimaryColor,
 		LogoDarkURL:  input.LogoDarkURL,
 		LogoData:     input.LogoData,
@@ -1455,7 +1460,7 @@ func (s *TenantService) UpdateBrandingSettings(ctx context.Context, tenantID str
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
 		WithMessage("Branding settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1476,7 +1481,7 @@ type BranchTypeRuleInput struct {
 }
 
 // UpdateBranchSettings updates only the branch naming convention settings.
-func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID string, input UpdateBranchSettingsInput, actx AuditContext) (*tenant.Settings, error) {
+func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID string, input UpdateBranchSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1496,7 +1501,7 @@ func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID strin
 		}
 	}
 
-	bs := tenant.BranchSettings{
+	bs := tenantdom.BranchSettings{
 		TypeRules: rules,
 	}
 
@@ -1511,7 +1516,7 @@ func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID strin
 	s.logger.Info("branch settings updated", "tenant_id", tenantID, "rules_count", len(rules))
 
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
 		WithMessage("Branch naming convention settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1521,12 +1526,12 @@ func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID strin
 
 // UpdatePentestSettingsInput represents input for updating pentest settings.
 type UpdatePentestSettingsInput struct {
-	CampaignTypes []tenant.ConfigOption `json:"campaign_types"`
-	Methodologies []tenant.ConfigOption `json:"methodologies"`
+	CampaignTypes []tenantdom.ConfigOption `json:"campaign_types"`
+	Methodologies []tenantdom.ConfigOption `json:"methodologies"`
 }
 
 // UpdatePentestSettings updates only the pentest settings.
-func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID string, input UpdatePentestSettingsInput, actx AuditContext) (*tenant.Settings, error) {
+func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID string, input UpdatePentestSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1537,7 +1542,7 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 		return nil, err
 	}
 
-	ps := tenant.PentestSettings{
+	ps := tenantdom.PentestSettings{
 		CampaignTypes: input.CampaignTypes,
 		Methodologies: input.Methodologies,
 	}
@@ -1553,7 +1558,7 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 	s.logger.Info("pentest settings updated", "tenant_id", tenantID)
 
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
 		WithMessage("Pentest settings updated")
 	s.logAudit(ctx, actx, event)
 
@@ -1563,7 +1568,7 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 
 // GetPentestSettings returns the current pentest settings for a tenant.
 // Returns system defaults if the tenant has not customized pentest settings.
-func (s *TenantService) GetPentestSettings(ctx context.Context, tenantID string) (*tenant.PentestSettings, error) {
+func (s *TenantService) GetPentestSettings(ctx context.Context, tenantID string) (*tenantdom.PentestSettings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1578,7 +1583,7 @@ func (s *TenantService) GetPentestSettings(ctx context.Context, tenantID string)
 	ps := settings.Pentest
 
 	// Fall back to system defaults if tenant has not customized
-	defaults := tenant.DefaultSettings().Pentest
+	defaults := tenantdom.DefaultSettings().Pentest
 	if len(ps.CampaignTypes) == 0 {
 		ps.CampaignTypes = defaults.CampaignTypes
 	}
@@ -1590,7 +1595,7 @@ func (s *TenantService) GetPentestSettings(ctx context.Context, tenantID string)
 }
 
 // UpdateRiskScoringSettings updates only the risk scoring settings.
-func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID string, rs tenant.RiskScoringSettings, actx AuditContext) (*tenant.Settings, error) {
+func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID string, rs tenantdom.RiskScoringSettings, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -1612,7 +1617,7 @@ func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID 
 	s.logger.Info("risk scoring settings updated", "tenant_id", tenantID, "preset", rs.Preset)
 
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionTenantRiskScoringUpdated, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionTenantRiskScoringUpdated, audit.ResourceTypeTenant, tenantID).
 		WithMessage("Risk scoring settings updated").
 		WithMetadata("preset", rs.Preset)
 	s.logAudit(ctx, actx, event)
@@ -1622,7 +1627,7 @@ func (s *TenantService) UpdateRiskScoringSettings(ctx context.Context, tenantID 
 }
 
 // GetRiskScoringSettings returns the current risk scoring settings for a tenant.
-func (s *TenantService) GetRiskScoringSettings(ctx context.Context, tenantID string) (*tenant.RiskScoringSettings, error) {
+func (s *TenantService) GetRiskScoringSettings(ctx context.Context, tenantID string) (*tenantdom.RiskScoringSettings, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)

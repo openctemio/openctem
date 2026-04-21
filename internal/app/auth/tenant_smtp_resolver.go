@@ -1,11 +1,11 @@
-package app
+package auth
 
 import (
 	"context"
 
 	"github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/email"
+	emaildom "github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -27,7 +27,7 @@ func NewIntegrationSMTPResolver(repo integration.Repository, log *logger.Logger)
 
 // GetTenantSMTPConfig looks up the tenant's email integration and returns SMTP config.
 // Returns nil if no email integration is configured for this tenant.
-func (r *IntegrationSMTPResolver) GetTenantSMTPConfig(ctx context.Context, tenantID string) (*email.Config, error) {
+func (r *IntegrationSMTPResolver) GetTenantSMTPConfig(ctx context.Context, tenantID string) (*emaildom.Config, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, nil // Invalid tenant ID, use default
@@ -57,8 +57,8 @@ func (r *IntegrationSMTPResolver) GetTenantSMTPConfig(ctx context.Context, tenan
 	return nil, nil // No email integration found
 }
 
-// extractSMTPConfig builds email.Config from integration metadata.
-func (r *IntegrationSMTPResolver) extractSMTPConfig(intg *integration.Integration) *email.Config {
+// extractSMTPConfig builds emaildom.Config from integration metadata.
+func (r *IntegrationSMTPResolver) extractSMTPConfig(intg *integration.Integration) *emaildom.Config {
 	meta := intg.Metadata()
 	if meta == nil {
 		return nil
@@ -74,7 +74,7 @@ func (r *IntegrationSMTPResolver) extractSMTPConfig(intg *integration.Integratio
 		port = int(p)
 	}
 
-	cfg := &email.Config{
+	cfg := &emaildom.Config{
 		Host: host,
 		Port: port,
 	}

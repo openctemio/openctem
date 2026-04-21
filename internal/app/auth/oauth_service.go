@@ -1,4 +1,4 @@
-package app
+package auth
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/domain/session"
-	"github.com/openctemio/api/pkg/domain/user"
+	sessiondom "github.com/openctemio/api/pkg/domain/session"
+	userdom "github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -50,24 +50,24 @@ func (p OAuthProvider) IsValid() bool {
 	return false
 }
 
-// ToAuthProvider converts OAuthProvider to user.AuthProvider.
-func (p OAuthProvider) ToAuthProvider() user.AuthProvider {
+// ToAuthProvider converts OAuthProvider to userdom.AuthProvider.
+func (p OAuthProvider) ToAuthProvider() userdom.AuthProvider {
 	switch p {
 	case OAuthProviderGoogle:
-		return user.AuthProviderGoogle
+		return userdom.AuthProviderGoogle
 	case OAuthProviderGitHub:
-		return user.AuthProviderGitHub
+		return userdom.AuthProviderGitHub
 	case OAuthProviderMicrosoft:
-		return user.AuthProviderMicrosoft
+		return userdom.AuthProviderMicrosoft
 	}
-	return user.AuthProviderLocal
+	return userdom.AuthProviderLocal
 }
 
 // OAuthService handles OAuth authentication.
 type OAuthService struct {
-	userRepo         user.Repository
-	sessionRepo      session.Repository
-	refreshTokenRepo session.RefreshTokenRepository
+	userRepo         userdom.Repository
+	sessionRepo      sessiondom.Repository
+	refreshTokenRepo sessiondom.RefreshTokenRepository
 	tokenGenerator   *jwt.Generator
 	config           config.OAuthConfig
 	authConfig       config.AuthConfig
@@ -77,9 +77,9 @@ type OAuthService struct {
 
 // NewOAuthService creates a new OAuthService.
 func NewOAuthService(
-	userRepo user.Repository,
-	sessionRepo session.Repository,
-	refreshTokenRepo session.RefreshTokenRepository,
+	userRepo userdom.Repository,
+	sessionRepo sessiondom.Repository,
+	refreshTokenRepo sessiondom.RefreshTokenRepository,
 	oauthCfg config.OAuthConfig,
 	authCfg config.AuthConfig,
 	log *logger.Logger,
@@ -161,11 +161,11 @@ type CallbackInput struct {
 
 // CallbackResult represents the OAuth callback result.
 type CallbackResult struct {
-	AccessToken  string     `json:"access_token"`
-	RefreshToken string     `json:"refresh_token"`
-	ExpiresIn    int64      `json:"expires_in"`
-	TokenType    string     `json:"token_type"`
-	User         *user.User `json:"user"`
+	AccessToken  string        `json:"access_token"`
+	RefreshToken string        `json:"refresh_token"`
+	ExpiresIn    int64         `json:"expires_in"`
+	TokenType    string        `json:"token_type"`
+	User         *userdom.User `json:"user"`
 }
 
 // HandleCallback handles the OAuth callback.
@@ -634,7 +634,7 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, accessToken str
 }
 
 // findOrCreateUser finds an existing user or creates a new one.
-func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUserInfo, provider OAuthProvider) (*user.User, error) {
+func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUserInfo, provider OAuthProvider) (*userdom.User, error) {
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
@@ -643,7 +643,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 		existingProvider := existingUser.AuthProvider()
 		expectedProvider := provider.ToAuthProvider()
 
-		if existingProvider != expectedProvider && existingProvider == user.AuthProviderLocal {
+		if existingProvider != expectedProvider && existingProvider == userdom.AuthProviderLocal {
 			if existingUser.PasswordHash() != nil {
 				s.logger.Warn("OAuth login blocked: email exists with local auth",
 					"email", userInfo.Email,
@@ -662,7 +662,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	}
 
 	// Create new user
-	newUser, err := user.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, provider.ToAuthProvider())
+	newUser, err := userdom.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, provider.ToAuthProvider())
 	if err != nil {
 		return nil, err
 	}
@@ -686,7 +686,7 @@ type SessionResult struct {
 }
 
 // createSession creates a new session for the user.
-func (s *OAuthService) createSession(ctx context.Context, u *user.User) (*SessionResult, error) {
+func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
 	// Generate token pair first (with empty session ID - will be set after session creation)
 	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), "", "user")
 	if err != nil {
@@ -694,7 +694,7 @@ func (s *OAuthService) createSession(ctx context.Context, u *user.User) (*Sessio
 	}
 
 	// Create session with the access token
-	newSession, err := session.New(
+	newSession, err := sessiondom.New(
 		u.ID(),
 		tokenPair.AccessToken,
 		"", // IP address - can be set from request context
@@ -710,7 +710,7 @@ func (s *OAuthService) createSession(ctx context.Context, u *user.User) (*Sessio
 	}
 
 	// Create refresh token entity
-	refreshTokenEntity, err := session.NewRefreshToken(
+	refreshTokenEntity, err := sessiondom.NewRefreshToken(
 		u.ID(),
 		newSession.ID(),
 		tokenPair.RefreshToken,

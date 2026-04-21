@@ -1,4 +1,4 @@
-package app
+package auth
 
 import (
 	"context"
@@ -7,11 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/api/internal/app/accesscontrol"
+	auditapp "github.com/openctemio/api/internal/app/audit"
+
 	"github.com/openctemio/api/internal/config"
-	"github.com/openctemio/api/pkg/domain/session"
+	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/tenant"
-	"github.com/openctemio/api/pkg/domain/user"
+	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
+	userdom "github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/password"
@@ -35,17 +38,17 @@ var (
 
 // AuthService handles authentication operations.
 type AuthService struct {
-	userRepo         user.Repository
-	sessionRepo      session.Repository
-	refreshTokenRepo session.RefreshTokenRepository
-	tenantRepo       tenant.Repository
+	userRepo         userdom.Repository
+	sessionRepo      sessiondom.Repository
+	refreshTokenRepo sessiondom.RefreshTokenRepository
+	tenantRepo       tenantdom.Repository
 	passwordHasher   *password.Hasher
 	tokenGenerator   *jwt.Generator
 	config           config.AuthConfig
 	logger           *logger.Logger
-	auditService     *AuditService
-	roleService      *RoleService          // Optional: for database-driven role permissions
-	smtpChecker      SMTPAvailabilityCheck // Optional: enables smart email verification
+	auditService     *auditapp.AuditService
+	roleService      *accesscontrol.RoleService // Optional: for database-driven role permissions
+	smtpChecker      SMTPAvailabilityCheck      // Optional: enables smart email verification
 }
 
 // SMTPAvailabilityCheck reports whether outbound email is available, either via
@@ -61,11 +64,11 @@ type SMTPAvailabilityCheck interface {
 
 // NewAuthService creates a new AuthService.
 func NewAuthService(
-	userRepo user.Repository,
-	sessionRepo session.Repository,
-	refreshTokenRepo session.RefreshTokenRepository,
-	tenantRepo tenant.Repository,
-	auditService *AuditService,
+	userRepo userdom.Repository,
+	sessionRepo sessiondom.Repository,
+	refreshTokenRepo sessiondom.RefreshTokenRepository,
+	tenantRepo tenantdom.Repository,
+	auditService *auditapp.AuditService,
 	cfg config.AuthConfig,
 	log *logger.Logger,
 ) *AuthService {
@@ -102,7 +105,7 @@ func NewAuthService(
 // SetRoleService sets the role service for database-driven permissions.
 // When set, the auth service will fetch permissions from the database
 // instead of using hardcoded role-permission mappings.
-func (s *AuthService) SetRoleService(roleService *RoleService) {
+func (s *AuthService) SetRoleService(roleService *accesscontrol.RoleService) {
 	s.roleService = roleService
 }
 
@@ -135,9 +138,9 @@ func (s *AuthService) shouldRequireEmailVerificationForUser(ctx context.Context,
 	for _, m := range memberships {
 		mode := s.getTenantVerificationMode(ctx, m.TenantID)
 		switch mode {
-		case tenant.EmailVerificationAlways:
+		case tenantdom.EmailVerificationAlways:
 			hasAlways = true
-		case tenant.EmailVerificationNever:
+		case tenantdom.EmailVerificationNever:
 			hasNever = true
 		}
 	}
@@ -153,7 +156,7 @@ func (s *AuthService) shouldRequireEmailVerificationForUser(ctx context.Context,
 
 // getTenantVerificationMode reads a tenant's EmailVerificationMode setting.
 // Returns empty string if tenant lookup fails (caller treats as auto).
-func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr string) tenant.EmailVerificationMode {
+func (s *AuthService) getTenantVerificationMode(ctx context.Context, tenantIDStr string) tenantdom.EmailVerificationMode {
 	if tenantIDStr == "" || s.tenantRepo == nil {
 		return ""
 	}
@@ -188,9 +191,9 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 	if tenantID != "" && s.tenantRepo != nil {
 		if mode, ok := s.lookupTenantVerificationMode(ctx, tenantID); ok {
 			switch mode {
-			case tenant.EmailVerificationAlways:
+			case tenantdom.EmailVerificationAlways:
 				return true
-			case tenant.EmailVerificationNever:
+			case tenantdom.EmailVerificationNever:
 				return false
 			}
 			// EmailVerificationAuto / empty → fall through to SMTP check
@@ -208,9 +211,9 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 			soleID := ids[0].String()
 			if mode, ok := s.lookupTenantVerificationMode(ctx, soleID); ok {
 				switch mode {
-				case tenant.EmailVerificationAlways:
+				case tenantdom.EmailVerificationAlways:
 					return true
-				case tenant.EmailVerificationNever:
+				case tenantdom.EmailVerificationNever:
 					return false
 				}
 				// auto → fall through to SMTP check below, with the
@@ -245,7 +248,7 @@ func (s *AuthService) shouldRequireEmailVerification(ctx context.Context, tenant
 // override" and continue to the next resolution step.
 func (s *AuthService) lookupTenantVerificationMode(
 	ctx context.Context, tenantID string,
-) (tenant.EmailVerificationMode, bool) {
+) (tenantdom.EmailVerificationMode, bool) {
 	if tenantID == "" || s.tenantRepo == nil {
 		return "", false
 	}
@@ -276,7 +279,7 @@ type RegisterInput struct {
 
 // RegisterResult represents the result of registration.
 type RegisterResult struct {
-	User                 *user.User
+	User                 *userdom.User
 	VerificationToken    string // Only returned if email verification is required
 	RequiresVerification bool
 	EmailExisted         bool // Set to true if email already exists (for anti-enumeration)
@@ -325,7 +328,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 
 	// Create user
 	name := strings.TrimSpace(input.Name)
-	newUser, err := user.NewLocalUser(email, name, passwordHash)
+	newUser, err := userdom.NewLocalUser(email, name, passwordHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
@@ -374,7 +377,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	s.logger.Info("user registered", "user_id", newUser.ID().String(), "email", email)
 
 	// Log audit event
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		ActorEmail: email,
 		ActorIP:    "", // Not available in RegisterInput, would need context or expansion
 		UserAgent:  "",
@@ -410,7 +413,7 @@ type TenantMembershipInfo struct {
 // Returns a global refresh token and list of tenant memberships.
 // Client must call ExchangeToken to get a tenant-scoped access token.
 type LoginResult struct {
-	User         *user.User
+	User         *userdom.User
 	RefreshToken string // Global refresh token (no tenant context)
 	ExpiresAt    time.Time
 	SessionID    string
@@ -445,12 +448,12 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	}
 
 	// Check if account is suspended
-	if u.Status() == user.StatusSuspended {
+	if u.Status() == userdom.StatusSuspended {
 		return nil, ErrAccountSuspended
 	}
 
 	// Check if user is a local user
-	if u.AuthProvider() != user.AuthProviderLocal {
+	if u.AuthProvider() != userdom.AuthProviderLocal {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -467,7 +470,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 		}
 
 		// Audit failed login
-		actx := AuditContext{
+		actx := auditapp.AuditContext{
 			ActorEmail: email,
 			ActorIP:    input.IPAddress,
 			UserAgent:  input.UserAgent,
@@ -584,7 +587,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 
 	// Create session (we use refresh token hash as access token hash for now,
 	// since access tokens will be generated per-tenant via ExchangeToken)
-	sess, err := session.NewWithID(
+	sess, err := sessiondom.NewWithID(
 		sessionID,
 		u.ID(),
 		refreshTokenStr, // Use refresh token for session tracking
@@ -601,7 +604,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	}
 
 	// Store refresh token in database
-	refreshToken, err := session.NewRefreshToken(
+	refreshToken, err := sessiondom.NewRefreshToken(
 		u.ID(),
 		sess.ID(),
 		refreshTokenStr,
@@ -618,7 +621,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	s.logger.Info("user logged in", "user_id", u.ID().String(), "session_id", sess.ID().String())
 
 	// Audit successful login
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		ActorID:    u.ID().String(),
 		ActorEmail: u.Email(),
 		ActorIP:    input.IPAddress,
@@ -668,18 +671,18 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	}
 
 	// Get the refresh token hash and verify it exists in database
-	tokenHash := session.HashToken(input.RefreshToken)
+	tokenHash := sessiondom.HashToken(input.RefreshToken)
 	storedToken, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
-		if errors.Is(err, session.ErrRefreshTokenNotFound) {
-			return nil, session.ErrRefreshTokenNotFound
+		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
+			return nil, sessiondom.ErrRefreshTokenNotFound
 		}
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
 	// Check if token is valid (not used, not revoked, not expired)
 	if !storedToken.IsValid() {
-		return nil, session.ErrRefreshTokenRevoked
+		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// Get the session and verify it's still active
@@ -688,7 +691,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	if !sess.IsActive() {
-		return nil, session.ErrSessionExpired
+		return nil, sessiondom.ErrSessionExpired
 	}
 
 	// Get user
@@ -708,7 +711,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, fmt.Errorf("failed to get user memberships: %w", err)
 	}
 
-	var targetMembership *tenant.UserMembership
+	var targetMembership *tenantdom.UserMembership
 	for _, m := range memberships {
 		if m.TenantID == input.TenantID {
 			targetMembership = &m
@@ -774,7 +777,7 @@ func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
 
 	sess, err := s.sessionRepo.GetByID(ctx, id)
 	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
+		if errors.Is(err, sessiondom.ErrSessionNotFound) {
 			return nil // Already logged out
 		}
 		return fmt.Errorf("failed to get session: %w", err)
@@ -799,7 +802,7 @@ func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
 	// Audit logout (best effort, as we only have session ID here)
 	// Ideally we should look up user from session before revoking to get full context
 	// For now, simple log
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		ActorID:   sess.UserID().String(),
 		SessionID: sessionID,
 	}
@@ -844,13 +847,13 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	}
 
 	// Get the refresh token hash
-	tokenHash := session.HashToken(input.RefreshToken)
+	tokenHash := sessiondom.HashToken(input.RefreshToken)
 
 	// Find the refresh token in database
 	storedToken, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
-		if errors.Is(err, session.ErrRefreshTokenNotFound) {
-			return nil, session.ErrRefreshTokenNotFound
+		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
+			return nil, sessiondom.ErrRefreshTokenNotFound
 		}
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
@@ -862,12 +865,12 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
 			s.logger.Error("failed to revoke token family", "error", err)
 		}
-		return nil, session.ErrRefreshTokenUsed
+		return nil, sessiondom.ErrRefreshTokenUsed
 	}
 
 	// Check if token is valid
 	if !storedToken.IsValid() {
-		return nil, session.ErrRefreshTokenRevoked
+		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// Get the session
@@ -877,7 +880,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	}
 
 	if !sess.IsActive() {
-		return nil, session.ErrSessionExpired
+		return nil, sessiondom.ErrSessionExpired
 	}
 
 	// Get user
@@ -905,7 +908,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, fmt.Errorf("failed to get user memberships: %w", err)
 	}
 
-	var targetMembership *tenant.UserMembership
+	var targetMembership *tenantdom.UserMembership
 	for _, m := range memberships {
 		if m.TenantID == input.TenantID {
 			targetMembership = &m
@@ -929,7 +932,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	}
 
 	// Create new refresh token in the same family (for rotation tracking)
-	newRefreshToken, err := session.NewRefreshTokenInFamily(
+	newRefreshToken, err := sessiondom.NewRefreshTokenInFamily(
 		u.ID(),
 		sess.ID(),
 		newRefreshTokenStr,
@@ -1040,7 +1043,7 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 	}
 
 	// Only allow password reset for local users
-	if u.AuthProvider() != user.AuthProviderLocal {
+	if u.AuthProvider() != userdom.AuthProviderLocal {
 		return &ForgotPasswordResult{}, nil
 	}
 
@@ -1144,7 +1147,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 	}
 
 	// Only allow password change for local users
-	if u.AuthProvider() != user.AuthProviderLocal {
+	if u.AuthProvider() != userdom.AuthProviderLocal {
 		return errors.New("password change not supported for this auth provider")
 	}
 
@@ -1211,17 +1214,17 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 
 	// Verify refresh token exists in database
-	tokenHash := session.HashToken(input.RefreshToken)
+	tokenHash := sessiondom.HashToken(input.RefreshToken)
 	storedToken, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
-		if errors.Is(err, session.ErrRefreshTokenNotFound) {
-			return nil, session.ErrRefreshTokenNotFound
+		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
+			return nil, sessiondom.ErrRefreshTokenNotFound
 		}
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
 	if !storedToken.IsValid() {
-		return nil, session.ErrRefreshTokenRevoked
+		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// Get the session
@@ -1230,7 +1233,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	if !sess.IsActive() {
-		return nil, session.ErrSessionExpired
+		return nil, sessiondom.ErrSessionExpired
 	}
 
 	// Get user
@@ -1254,7 +1257,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 
 	// Validate slug format
-	if !tenant.IsValidSlug(input.TeamSlug) {
+	if !tenantdom.IsValidSlug(input.TeamSlug) {
 		return nil, fmt.Errorf("%w: invalid slug format (use lowercase letters, numbers, and hyphens)", shared.ErrValidation)
 	}
 
@@ -1268,7 +1271,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 
 	// Create tenant
-	newTenant, err := tenant.NewTenant(input.TeamName, input.TeamSlug, u.ID().String())
+	newTenant, err := tenantdom.NewTenant(input.TeamName, input.TeamSlug, u.ID().String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -1278,7 +1281,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 
 	// Create owner membership
-	membership, err := tenant.NewOwnerMembership(u.ID(), newTenant.ID())
+	membership, err := tenantdom.NewOwnerMembership(u.ID(), newTenant.ID())
 	if err != nil {
 		_ = s.tenantRepo.Delete(ctx, newTenant.ID())
 		return nil, fmt.Errorf("failed to create membership: %w", err)
@@ -1316,7 +1319,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 
 	// Save new refresh token
-	newRefreshToken, err := session.NewRefreshTokenInFamily(
+	newRefreshToken, err := sessiondom.NewRefreshTokenInFamily(
 		u.ID(),
 		sess.ID(),
 		newRefreshTokenStr,
@@ -1341,7 +1344,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		jwt.TenantMembership{
 			TenantID:   newTenant.ID().String(),
 			TenantSlug: newTenant.Slug(),
-			Role:       tenant.RoleOwner.String(),
+			Role:       tenantdom.RoleOwner.String(),
 		},
 		true, // Owner is always admin - bypasses permission checks, keeps JWT small
 	)
@@ -1357,7 +1360,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 			TenantID:   newTenant.ID().String(),
 			TenantSlug: newTenant.Slug(),
 			TenantName: newTenant.Name(),
-			Role:       tenant.RoleOwner.String(),
+			Role:       tenantdom.RoleOwner.String(),
 		},
 	}, nil
 }
@@ -1388,17 +1391,17 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	}
 
 	// Verify refresh token exists in database
-	tokenHash := session.HashToken(input.RefreshToken)
+	tokenHash := sessiondom.HashToken(input.RefreshToken)
 	storedToken, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
-		if errors.Is(err, session.ErrRefreshTokenNotFound) {
-			return nil, session.ErrRefreshTokenNotFound
+		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
+			return nil, sessiondom.ErrRefreshTokenNotFound
 		}
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
 	if !storedToken.IsValid() {
-		return nil, session.ErrRefreshTokenRevoked
+		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// Get the session
@@ -1407,7 +1410,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	if !sess.IsActive() {
-		return nil, session.ErrSessionExpired
+		return nil, sessiondom.ErrSessionExpired
 	}
 
 	// Get user
@@ -1468,7 +1471,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 
 	// Create membership
 	invitedBy := invitation.InvitedBy()
-	membership, err := tenant.NewMembership(u.ID(), invitation.TenantID(), invitation.Role(), &invitedBy)
+	membership, err := tenantdom.NewMembership(u.ID(), invitation.TenantID(), invitation.Role(), &invitedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -1511,7 +1514,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	}
 
 	// Save new refresh token
-	newRefreshToken, err := session.NewRefreshTokenInFamily(
+	newRefreshToken, err := sessiondom.NewRefreshTokenInFamily(
 		u.ID(),
 		sess.ID(),
 		newRefreshTokenStr,
@@ -1526,7 +1529,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	}
 
 	// Determine if user is admin (only owner/admin bypass permissions)
-	isAdminRole := membership.Role() == tenant.RoleOwner || membership.Role() == tenant.RoleAdmin
+	isAdminRole := membership.Role() == tenantdom.RoleOwner || membership.Role() == tenantdom.RoleAdmin
 
 	// Generate tenant-scoped access token
 	accessToken, err := s.generateTenantScopedAccessToken(
