@@ -1481,6 +1481,33 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to accept invitation: %w", err)
 	}
 
+	// Apply RBAC roles attached to the invitation. Audit finding —
+	// previously the membership.Role (owner/admin/member/viewer) was
+	// the only thing carried over; the RBAC role_ids on the invitation
+	// were silently dropped, leaving the new user with the legacy
+	// coarse role only and missing any scoped permissions the inviter
+	// intended to grant. Best-effort: if a role can't be assigned, log
+	// and continue — the membership is still created so the user isn't
+	// locked out. Operators can re-assign manually from Settings.
+	if s.roleService != nil {
+		invitedByStr := invitation.InvitedBy().String()
+		invActx := auditapp.AuditContext{ActorID: invitedByStr, TenantID: invitation.TenantID().String()}
+		for _, roleID := range invitation.RoleIDs() {
+			err := s.roleService.AssignRole(ctx, accesscontrol.AssignRoleInput{
+				TenantID: invitation.TenantID().String(),
+				UserID:   u.ID().String(),
+				RoleID:   roleID,
+			}, invitedByStr, invActx)
+			if err != nil {
+				s.logger.Error("failed to assign invitation role on accept",
+					"invitation_id", invitation.ID().String(),
+					"user_id", u.ID().String(),
+					"role_id", roleID,
+					"error", err)
+			}
+		}
+	}
+
 	// Get the tenant info
 	t, err := s.tenantRepo.GetByID(ctx, invitation.TenantID())
 	if err != nil {
@@ -1491,6 +1518,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		"invitation_id", invitation.ID().String(),
 		"user_id", u.ID().String(),
 		"tenant_id", t.ID().String(),
+		"role_count", len(invitation.RoleIDs()),
 	)
 
 	// Mark old refresh token as used (token rotation)

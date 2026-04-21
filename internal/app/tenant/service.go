@@ -75,6 +75,11 @@ type TenantService struct {
 	// suspend / reactivate notification email. Optional: when unset,
 	// the email is skipped (best-effort).
 	userService *UserService
+	// Role service for assigning RBAC roles attached to invitations
+	// when they are accepted. Optional — without it, invitation
+	// role_ids are silently dropped (audit finding). Wire it via
+	// WithTenantRoleService at app startup.
+	roleService *accesscontrol.RoleService
 	logger      *logger.Logger
 }
 
@@ -117,6 +122,22 @@ func WithUserInfoProvider(provider UserInfoProvider) TenantServiceOption {
 	return func(s *TenantService) {
 		s.userInfoProvider = provider
 	}
+}
+
+// WithTenantRoleService wires the RBAC role service for invitation
+// role assignment. Without it, invitation.RoleIDs() is silently dropped
+// on accept — security audit finding.
+func WithTenantRoleService(svc *accesscontrol.RoleService) TenantServiceOption {
+	return func(s *TenantService) {
+		s.roleService = svc
+	}
+}
+
+// SetRoleService wires the RBAC role service after construction
+// (used by services.go bootstrap where TenantService is built before
+// RoleService — same pattern as SetMembershipCache).
+func (s *TenantService) SetRoleService(svc *accesscontrol.RoleService) {
+	s.roleService = svc
 }
 
 // WithTenantPermissionCacheService sets the permission cache service for TenantService.
@@ -1049,14 +1070,39 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 		return nil, fmt.Errorf("failed to accept invitation: %w", err)
 	}
 
-	s.logger.Info("invitation accepted", "token", token[:8]+"...", "user_id", userID.String())
+	// Apply RBAC role_ids attached to the invitation. Best-effort:
+	// failure to assign a single role logs but doesn't roll back —
+	// the user is already a member, missing roles can be granted
+	// manually from Settings. Audit finding: previously these were
+	// silently dropped, leaving the user with only membership.Role.
+	if s.roleService != nil {
+		invitedByStr := invitation.InvitedBy().String()
+		invActx := auditapp.AuditContext{ActorID: invitedByStr, TenantID: invitation.TenantID().String()}
+		for _, roleID := range invitation.RoleIDs() {
+			if err := s.roleService.AssignRole(ctx, accesscontrol.AssignRoleInput{
+				TenantID: invitation.TenantID().String(),
+				UserID:   userID.String(),
+				RoleID:   roleID,
+			}, invitedByStr, invActx); err != nil {
+				s.logger.Error("failed to assign invitation role on accept",
+					"invitation_id", invitation.ID().String(),
+					"user_id", userID.String(),
+					"role_id", roleID,
+					"error", err)
+			}
+		}
+	}
+
+	s.logger.Info("invitation accepted", "token", token[:8]+"...", "user_id", userID.String(),
+		"role_count", len(invitation.RoleIDs()))
 
 	// Log audit event
 	actx.TenantID = invitation.TenantID().String()
 	event := auditapp.NewSuccessEvent(audit.ActionInvitationAccepted, audit.ResourceTypeInvitation, invitation.ID().String()).
 		WithResourceName(userEmail).
 		WithMessage(fmt.Sprintf("Invitation accepted by %s", userEmail)).
-		WithMetadata("role", invitation.Role().String())
+		WithMetadata("role", invitation.Role().String()).
+		WithMetadata("role_ids_count", len(invitation.RoleIDs()))
 	s.logAudit(ctx, actx, event)
 
 	return membership, nil
