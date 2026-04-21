@@ -275,11 +275,11 @@ type K8sNamespace struct {
 
 // K8sWorkload represents a Kubernetes workload.
 type K8sWorkload struct {
-	Kind      string            `json:"kind"`
-	Name      string            `json:"name"`
-	Replicas  int               `json:"replicas"`
-	Images    []string          `json:"images"`
-	Labels    map[string]string `json:"labels,omitempty"`
+	Kind     string            `json:"kind"`
+	Name     string            `json:"name"`
+	Replicas int               `json:"replicas"`
+	Images   []string          `json:"images"`
+	Labels   map[string]string `json:"labels,omitempty"`
 }
 
 // ImportKubernetes imports assets from a Kubernetes cluster discovery report.

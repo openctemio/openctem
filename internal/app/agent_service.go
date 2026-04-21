@@ -27,10 +27,10 @@ type (
 )
 
 var (
-	NewAgentService                = agent.NewAgentService
-	NewAgentSelector               = agent.NewAgentSelector
-	NewAgentConfigTemplateService  = agent.NewAgentConfigTemplateService
-	ErrNoAgentAvailable            = agent.ErrNoAgentAvailable
+	NewAgentService               = agent.NewAgentService
+	NewAgentSelector              = agent.NewAgentSelector
+	NewAgentConfigTemplateService = agent.NewAgentConfigTemplateService
+	ErrNoAgentAvailable           = agent.ErrNoAgentAvailable
 )
 
 // Selection-mode constants re-exported for legacy callers.

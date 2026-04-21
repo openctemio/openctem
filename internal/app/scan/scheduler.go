@@ -1,12 +1,11 @@
 package scan
 
 import (
-	"github.com/openctemio/api/internal/metrics"
 	"context"
+	"github.com/openctemio/api/internal/metrics"
 	"sync"
 	"time"
 
-	
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"

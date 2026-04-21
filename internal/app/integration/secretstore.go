@@ -1,10 +1,10 @@
 package integration
 
 import (
-	auditapp "github.com/openctemio/api/internal/app/audit"
 	"context"
 	"encoding/json"
 	"fmt"
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/secretstore"

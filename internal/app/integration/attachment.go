@@ -38,10 +38,10 @@ const storageCacheTTL = 5 * time.Minute
 // file storage provider (local/S3/MinIO — selected per-tenant or globally).
 type AttachmentService struct {
 	repo            attachmentdom.Repository
-	storage         attachmentdom.FileStorage  // Default provider (fallback)
-	storageResolver TenantStorageResolver   // Optional: per-tenant config lookup
-	storageFactory  StorageFactory          // Optional: creates provider from config
-	storageCache    sync.Map                // tenantID → *storageCacheEntry
+	storage         attachmentdom.FileStorage // Default provider (fallback)
+	storageResolver TenantStorageResolver     // Optional: per-tenant config lookup
+	storageFactory  StorageFactory            // Optional: creates provider from config
+	storageCache    sync.Map                  // tenantID → *storageCacheEntry
 	logger          *logger.Logger
 }
 

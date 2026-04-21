@@ -16,11 +16,11 @@ import (
 // calculation paths are covered in pkg/domain/sla + sla_service_test.
 
 type fakeCalc struct {
-	deadline time.Time
-	err      error
-	calls    int
+	deadline  time.Time
+	err       error
+	calls     int
 	lastClass string
-	lastSev  vulnerability.Severity
+	lastSev   vulnerability.Severity
 }
 
 func (f *fakeCalc) CalculateSLADeadlineForPriority(

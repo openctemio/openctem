@@ -223,10 +223,10 @@ const (
 	ModuleRelationships    = "relationships"
 
 	// Prioritisation (CTEM) — seeded by migration 000161.
-	ModulePriorityRules = "priority_rules"
-	ModuleRiskAnalysis  = "risk_analysis"
+	ModulePriorityRules  = "priority_rules"
+	ModuleRiskAnalysis   = "risk_analysis"
 	ModuleBusinessImpact = "business_impact"
-	ModuleRiskScoring   = "risk_scoring"
+	ModuleRiskScoring    = "risk_scoring"
 
 	// Validation — seeded by migration 000161.
 	ModuleCompensatingControls = "compensating_controls"
@@ -236,10 +236,10 @@ const (
 	ModuleRemediationTasks = "remediation_tasks"
 
 	// Insights — seeded by migration 000161.
-	ModuleCTEMMaturity    = "ctem_maturity"
+	ModuleCTEMMaturity     = "ctem_maturity"
 	ModuleExecutiveSummary = "executive_summary"
-	ModuleMITRECoverage   = "mitre_coverage"
-	ModuleSBOMExport      = "sbom_export"
+	ModuleMITRECoverage    = "mitre_coverage"
+	ModuleSBOMExport       = "sbom_export"
 
 	// Settings — seeded by migration 000161.
 	ModuleScannerTemplates = "scanner_templates"
@@ -307,17 +307,17 @@ var UserFacingModuleIDs = map[string]bool{
 	ModuleSettings:  true,
 
 	// Toggleable feature modules (each directly controls sidebar visibility)
-	ModuleCredentials:  true, // Discovery > Credential Leaks
-	ModuleComponents:   true, // Discovery > Components (SBOM)
-	ModuleExposures:    true, // Discovery > Exposures (Non-CVE security issues)
-	ModuleThreatIntel:  true, // Prioritization > Threat Intel
-	ModulePentest:           true, // Validation > Penetration Testing
-	ModuleAttackSimulation:  true, // Validation > Attack Simulation (BAS)
-	ModuleControlTesting:    true, // Validation > Control Testing
-	ModuleCompliance:        true, // Compliance > Frameworks, Controls, Audit
-	ModuleRemediation:       true, // Mobilization > Remediation Tasks, Workflows
-	ModuleReports:      true, // Insights > Reports
-	ModuleIntegrations: true, // Settings > Integrations (SCM, Notifications, CI/CD, Ticketing, SIEM)
+	ModuleCredentials:      true, // Discovery > Credential Leaks
+	ModuleComponents:       true, // Discovery > Components (SBOM)
+	ModuleExposures:        true, // Discovery > Exposures (Non-CVE security issues)
+	ModuleThreatIntel:      true, // Prioritization > Threat Intel
+	ModulePentest:          true, // Validation > Penetration Testing
+	ModuleAttackSimulation: true, // Validation > Attack Simulation (BAS)
+	ModuleControlTesting:   true, // Validation > Control Testing
+	ModuleCompliance:       true, // Compliance > Frameworks, Controls, Audit
+	ModuleRemediation:      true, // Mobilization > Remediation Tasks, Workflows
+	ModuleReports:          true, // Insights > Reports
+	ModuleIntegrations:     true, // Settings > Integrations (SCM, Notifications, CI/CD, Ticketing, SIEM)
 
 	// CTEM scoping cluster (seeded by 000161).
 	ModuleAttackSurface:    true,
@@ -357,7 +357,6 @@ var UserFacingModuleIDs = map[string]bool{
 func IsUserFacing(moduleID string) bool {
 	return UserFacingModuleIDs[moduleID]
 }
-
 
 // ModulePermissionMapping maps module IDs to their required read permissions.
 // This is used to filter modules based on user's RBAC permissions.

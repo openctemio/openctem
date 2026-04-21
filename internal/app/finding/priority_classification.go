@@ -116,7 +116,7 @@ type EPSSData struct {
 
 // KEVData holds KEV catalog info for a CVE.
 type KEVData struct {
-	DueDate   *time.Time
+	DueDate    *time.Time
 	Ransomware string
 }
 

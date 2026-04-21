@@ -13,18 +13,18 @@ import (
 // lateral movement and attack progression. We traverse ONLY these types
 // when computing reachability from public entry points.
 var attackPathRelationshipTypes = map[asset.RelationshipType]bool{
-	asset.RelTypeRunsOn:        true,
-	asset.RelTypeDeployedTo:    true,
-	asset.RelTypeContains:      true,
-	asset.RelTypeExposes:       true,
-	asset.RelTypeResolvesTo:    true,
-	asset.RelTypeDependsOn:     true,
-	asset.RelTypeSendsDataTo:   true,
-	asset.RelTypeStoresDataIn:  true,
+	asset.RelTypeRunsOn:          true,
+	asset.RelTypeDeployedTo:      true,
+	asset.RelTypeContains:        true,
+	asset.RelTypeExposes:         true,
+	asset.RelTypeResolvesTo:      true,
+	asset.RelTypeDependsOn:       true,
+	asset.RelTypeSendsDataTo:     true,
+	asset.RelTypeStoresDataIn:    true,
 	asset.RelTypeAuthenticatesTo: true,
-	asset.RelTypeGrantedTo:     true,
-	asset.RelTypeHasAccessTo:   true,
-	asset.RelTypeLoadBalances:  true,
+	asset.RelTypeGrantedTo:       true,
+	asset.RelTypeHasAccessTo:     true,
+	asset.RelTypeLoadBalances:    true,
 }
 
 // controlRelationshipTypes are relationships that indicate security controls.

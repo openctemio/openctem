@@ -56,7 +56,7 @@ func NewReclassifier(
 		assets:     assets,
 		classifier: classifier,
 		logger:     log.With("component", "reclassifier"),
-		perPage:   500,
+		perPage:    500,
 	}
 }
 

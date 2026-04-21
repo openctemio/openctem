@@ -82,7 +82,7 @@ func TestPriorityFlood_Refund_ReturnsSlot(t *testing.T) {
 	tid := shared.NewID()
 	_, _ = g.ShouldFanOut(context.Background(), tid, vulnerability.PriorityP0) // 1/2
 	_, _ = g.ShouldFanOut(context.Background(), tid, vulnerability.PriorityP0) // 2/2
-	g.Refund(tid)                                                               // back to 1/2
+	g.Refund(tid)                                                              // back to 1/2
 	if g.CurrentUsage(tid) != 1 {
 		t.Fatalf("after refund usage = %d, want 1", g.CurrentUsage(tid))
 	}

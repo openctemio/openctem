@@ -7,15 +7,15 @@ package app
 import "github.com/openctemio/api/internal/app/auth"
 
 type (
-	AuthService              = auth.AuthService
-	SSOService               = auth.SSOService
-	OAuthService             = auth.OAuthService
-	SessionService           = auth.SessionService
-	EmailService             = auth.EmailService
-	WSTicketService          = auth.WSTicketService
-	IntegrationSMTPResolver  = auth.IntegrationSMTPResolver
-	TenantSMTPResolver       = auth.TenantSMTPResolver
-	SettingsStorageResolver  = auth.SettingsStorageResolver
+	AuthService             = auth.AuthService
+	SSOService              = auth.SSOService
+	OAuthService            = auth.OAuthService
+	SessionService          = auth.SessionService
+	EmailService            = auth.EmailService
+	WSTicketService         = auth.WSTicketService
+	IntegrationSMTPResolver = auth.IntegrationSMTPResolver
+	TenantSMTPResolver      = auth.TenantSMTPResolver
+	SettingsStorageResolver = auth.SettingsStorageResolver
 
 	WSTicketClaims           = auth.WSTicketClaims
 	WSTicketStore            = auth.WSTicketStore
@@ -72,38 +72,38 @@ var (
 	SMTPConfigFromIntegrationMeta = auth.SMTPConfigFromIntegrationMeta
 
 	// Sentinel errors.
-	ErrTicketNotFound             = auth.ErrTicketNotFound
-	ErrAccountLocked              = auth.ErrAccountLocked
-	ErrAccountSuspended           = auth.ErrAccountSuspended
-	ErrEmailAlreadyExists         = auth.ErrEmailAlreadyExists
-	ErrEmailNotVerified           = auth.ErrEmailNotVerified
-	ErrInvalidCredentials         = auth.ErrInvalidCredentials
-	ErrInvalidProvider            = auth.ErrInvalidProvider
-	ErrInvalidResetToken          = auth.ErrInvalidResetToken
-	ErrInvalidState               = auth.ErrInvalidState
-	ErrInvalidVerificationToken   = auth.ErrInvalidVerificationToken
-	ErrOAuthDisabled              = auth.ErrOAuthDisabled
-	ErrOAuthExchangeFailed        = auth.ErrOAuthExchangeFailed
-	ErrOAuthUserInfoFailed        = auth.ErrOAuthUserInfoFailed
-	ErrPasswordMismatch           = auth.ErrPasswordMismatch
-	ErrProviderDisabled           = auth.ErrProviderDisabled
-	ErrRegistrationDisabled       = auth.ErrRegistrationDisabled
-	ErrSessionLimitReached        = auth.ErrSessionLimitReached
-	ErrSSODecryptionFailed        = auth.ErrSSODecryptionFailed
-	ErrSSODomainNotAllowed        = auth.ErrSSODomainNotAllowed
-	ErrSSOExchangeFailed          = auth.ErrSSOExchangeFailed
-	ErrSSOInvalidDefaultRole      = auth.ErrSSOInvalidDefaultRole
-	ErrSSOInvalidRedirectURI      = auth.ErrSSOInvalidRedirectURI
-	ErrSSOInvalidState            = auth.ErrSSOInvalidState
-	ErrSSONoActiveProviders       = auth.ErrSSONoActiveProviders
-	ErrSSONoEmail                 = auth.ErrSSONoEmail
-	ErrSSOProviderInactive        = auth.ErrSSOProviderInactive
-	ErrSSOProviderNotFound        = auth.ErrSSOProviderNotFound
-	ErrSSOProviderUnsupported     = auth.ErrSSOProviderUnsupported
-	ErrSSOTenantNotFound          = auth.ErrSSOTenantNotFound
-	ErrSSOUserInfoFailed          = auth.ErrSSOUserInfoFailed
-	ErrTenantAccessDenied         = auth.ErrTenantAccessDenied
-	ErrTenantRequired             = auth.ErrTenantRequired
+	ErrTicketNotFound           = auth.ErrTicketNotFound
+	ErrAccountLocked            = auth.ErrAccountLocked
+	ErrAccountSuspended         = auth.ErrAccountSuspended
+	ErrEmailAlreadyExists       = auth.ErrEmailAlreadyExists
+	ErrEmailNotVerified         = auth.ErrEmailNotVerified
+	ErrInvalidCredentials       = auth.ErrInvalidCredentials
+	ErrInvalidProvider          = auth.ErrInvalidProvider
+	ErrInvalidResetToken        = auth.ErrInvalidResetToken
+	ErrInvalidState             = auth.ErrInvalidState
+	ErrInvalidVerificationToken = auth.ErrInvalidVerificationToken
+	ErrOAuthDisabled            = auth.ErrOAuthDisabled
+	ErrOAuthExchangeFailed      = auth.ErrOAuthExchangeFailed
+	ErrOAuthUserInfoFailed      = auth.ErrOAuthUserInfoFailed
+	ErrPasswordMismatch         = auth.ErrPasswordMismatch
+	ErrProviderDisabled         = auth.ErrProviderDisabled
+	ErrRegistrationDisabled     = auth.ErrRegistrationDisabled
+	ErrSessionLimitReached      = auth.ErrSessionLimitReached
+	ErrSSODecryptionFailed      = auth.ErrSSODecryptionFailed
+	ErrSSODomainNotAllowed      = auth.ErrSSODomainNotAllowed
+	ErrSSOExchangeFailed        = auth.ErrSSOExchangeFailed
+	ErrSSOInvalidDefaultRole    = auth.ErrSSOInvalidDefaultRole
+	ErrSSOInvalidRedirectURI    = auth.ErrSSOInvalidRedirectURI
+	ErrSSOInvalidState          = auth.ErrSSOInvalidState
+	ErrSSONoActiveProviders     = auth.ErrSSONoActiveProviders
+	ErrSSONoEmail               = auth.ErrSSONoEmail
+	ErrSSOProviderInactive      = auth.ErrSSOProviderInactive
+	ErrSSOProviderNotFound      = auth.ErrSSOProviderNotFound
+	ErrSSOProviderUnsupported   = auth.ErrSSOProviderUnsupported
+	ErrSSOTenantNotFound        = auth.ErrSSOTenantNotFound
+	ErrSSOUserInfoFailed        = auth.ErrSSOUserInfoFailed
+	ErrTenantAccessDenied       = auth.ErrTenantAccessDenied
+	ErrTenantRequired           = auth.ErrTenantRequired
 )
 
 // OAuth provider constants.

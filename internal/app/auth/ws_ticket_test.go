@@ -108,9 +108,9 @@ func TestWSTicketService_WrongLength_Rejects(t *testing.T) {
 	ctx := context.Background()
 
 	cases := []string{
-		"",                        // empty
-		"too-short",               // below 64 chars
-		"12345",                   // way below
+		"",          // empty
+		"too-short", // below 64 chars
+		"12345",     // way below
 		"0123456789abcdef" + "0123456789abcdef" + "0123456789abcdef" + "0123456789abcde", // 63 chars
 	}
 	for _, c := range cases {

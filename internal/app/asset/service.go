@@ -1,10 +1,10 @@
 package asset
 
 import (
-	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/openctemio/api/internal/app/scope"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +48,7 @@ type scoringConfigEntry struct {
 type AssetService struct {
 	repo              assetdom.Repository
 	repoExtRepo       assetdom.RepositoryExtensionRepository
-	assetGroupRepo    assetgroupdom.Repository    // For recalculating group stats
+	assetGroupRepo    assetgroupdom.Repository // For recalculating group stats
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
 	scoringProvider   assetdom.ScoringConfigProvider
 	redisClient       *redis.Client
@@ -995,24 +995,24 @@ func (s *AssetService) recalculateAffectedGroups(ctx context.Context, assetID sh
 
 // ListAssetsInput represents the input for listing assets.
 type ListAssetsInput struct {
-	TenantID      string   `validate:"omitempty,uuid"`
-	Name          string   `validate:"max=255"`
-	Types         []string `validate:"max=20,dive,asset_type"`
-	Criticalities []string `validate:"max=5,dive,criticality"`
-	Statuses      []string `validate:"max=3,dive,status"`
-	Scopes        []string `validate:"max=6,dive,scope"`
-	Exposures     []string `validate:"max=5,dive,exposure"`
-	Tags          []string `validate:"max=20,dive,max=50"`
-	Search        string   `validate:"max=255"` // Full-text search across name and description
-	MinRiskScore  *int     `validate:"omitempty,min=0,max=100"`
-	MaxRiskScore  *int     `validate:"omitempty,min=0,max=100"`
-	HasFindings   *bool    // Filter by whether asset has findings
-	IsCrownJewel     *bool             // Filter crown jewel assets
-	SubType          *string           // Filter by sub_type
+	TenantID         string              `validate:"omitempty,uuid"`
+	Name             string              `validate:"max=255"`
+	Types            []string            `validate:"max=20,dive,asset_type"`
+	Criticalities    []string            `validate:"max=5,dive,criticality"`
+	Statuses         []string            `validate:"max=3,dive,status"`
+	Scopes           []string            `validate:"max=6,dive,scope"`
+	Exposures        []string            `validate:"max=5,dive,exposure"`
+	Tags             []string            `validate:"max=20,dive,max=50"`
+	Search           string              `validate:"max=255"` // Full-text search across name and description
+	MinRiskScore     *int                `validate:"omitempty,min=0,max=100"`
+	MaxRiskScore     *int                `validate:"omitempty,min=0,max=100"`
+	HasFindings      *bool               // Filter by whether asset has findings
+	IsCrownJewel     *bool               // Filter crown jewel assets
+	SubType          *string             // Filter by sub_type
 	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
-	Sort             string            `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
-	Page          int      `validate:"min=0"`
-	PerPage       int      `validate:"min=0,max=100"`
+	Sort             string              `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
+	Page             int                 `validate:"min=0"`
+	PerPage          int                 `validate:"min=0,max=100"`
 
 	// Layer 2: Data Scope
 	ActingUserID string // From JWT context

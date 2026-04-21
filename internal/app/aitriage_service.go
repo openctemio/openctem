@@ -5,29 +5,29 @@ package app
 import "github.com/openctemio/api/internal/app/aitriage"
 
 type (
-	AITriageService                 = aitriage.AITriageService
-	AITriageJobEnqueuer             = aitriage.AITriageJobEnqueuer
+	AITriageService                  = aitriage.AITriageService
+	AITriageJobEnqueuer              = aitriage.AITriageJobEnqueuer
 	WorkflowEventDispatcherInterface = aitriage.WorkflowEventDispatcherInterface
-	TriageBroadcaster               = aitriage.TriageBroadcaster
-	TriageRequest                   = aitriage.TriageRequest
-	TriageResponse                  = aitriage.TriageResponse
-	TriageResultResponse            = aitriage.TriageResultResponse
-	BulkTriageRequest               = aitriage.BulkTriageRequest
-	BulkTriageResponse              = aitriage.BulkTriageResponse
-	BulkTriageJob                   = aitriage.BulkTriageJob
-	RecoverStuckJobsInput           = aitriage.RecoverStuckJobsInput
-	RecoverStuckJobsOutput          = aitriage.RecoverStuckJobsOutput
-	AIConfigInfo                    = aitriage.AIConfigInfo
-	TriageOutputValidator           = aitriage.TriageOutputValidator
-	PromptSanitizer                 = aitriage.PromptSanitizer
-	TokenLimitError                 = aitriage.TokenLimitError
+	TriageBroadcaster                = aitriage.TriageBroadcaster
+	TriageRequest                    = aitriage.TriageRequest
+	TriageResponse                   = aitriage.TriageResponse
+	TriageResultResponse             = aitriage.TriageResultResponse
+	BulkTriageRequest                = aitriage.BulkTriageRequest
+	BulkTriageResponse               = aitriage.BulkTriageResponse
+	BulkTriageJob                    = aitriage.BulkTriageJob
+	RecoverStuckJobsInput            = aitriage.RecoverStuckJobsInput
+	RecoverStuckJobsOutput           = aitriage.RecoverStuckJobsOutput
+	AIConfigInfo                     = aitriage.AIConfigInfo
+	TriageOutputValidator            = aitriage.TriageOutputValidator
+	PromptSanitizer                  = aitriage.PromptSanitizer
+	TokenLimitError                  = aitriage.TokenLimitError
 )
 
 var (
-	NewAITriageService        = aitriage.NewAITriageService
-	NewTriageOutputValidator  = aitriage.NewTriageOutputValidator
-	NewPromptSanitizer        = aitriage.NewPromptSanitizer
-	CheckTokenLimit           = aitriage.CheckTokenLimit
+	NewAITriageService       = aitriage.NewAITriageService
+	NewTriageOutputValidator = aitriage.NewTriageOutputValidator
+	NewPromptSanitizer       = aitriage.NewPromptSanitizer
+	CheckTokenLimit          = aitriage.CheckTokenLimit
 )
 
 const TypeAITriage = aitriage.TypeAITriage

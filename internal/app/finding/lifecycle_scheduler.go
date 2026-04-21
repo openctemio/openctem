@@ -1,8 +1,8 @@
 package finding
 
 import (
-	"github.com/openctemio/api/internal/metrics"
 	"context"
+	"github.com/openctemio/api/internal/metrics"
 	"sync"
 	"time"
 

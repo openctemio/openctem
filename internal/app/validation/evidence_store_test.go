@@ -11,9 +11,9 @@ import (
 )
 
 type memEvidenceRepo struct {
-	mu    sync.Mutex
-	rows  []StoredEvidence
-	err   error
+	mu   sync.Mutex
+	rows []StoredEvidence
+	err  error
 }
 
 func (m *memEvidenceRepo) Create(_ context.Context, ev StoredEvidence) error {

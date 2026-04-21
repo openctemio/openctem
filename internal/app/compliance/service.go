@@ -275,4 +275,3 @@ func (s *ComplianceService) GetControlFindings(ctx context.Context, tenantID, co
 	cid, _ := shared.IDFromString(controlID)
 	return s.mappingRepo.ListByControl(ctx, tid, cid)
 }
-

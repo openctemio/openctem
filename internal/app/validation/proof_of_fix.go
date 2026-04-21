@@ -27,11 +27,11 @@ import (
 
 // ProofOfFixService orchestrates the retest.
 type ProofOfFixService struct {
-	dispatcher    ValidationDispatcher
-	selector      Selector
-	evidence      *EvidenceStore
-	finding       FindingMutator
-	notifier      RetestNotifier
+	dispatcher ValidationDispatcher
+	selector   Selector
+	evidence   *EvidenceStore
+	finding    FindingMutator
+	notifier   RetestNotifier
 	// capability is how the API learns which ExecutorKinds the
 	// current agent fleet advertises. Injected so integration
 	// testing can stub it.

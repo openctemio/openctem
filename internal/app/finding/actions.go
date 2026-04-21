@@ -1,18 +1,18 @@
 package finding
 
 import (
-	"github.com/openctemio/api/internal/app/activity"
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/openctemio/api/internal/app/activity"
 	"regexp"
 
-	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/group"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )
 
@@ -82,11 +82,11 @@ func (s *FindingActionsService) loadVerificationChecklist(
 		WHERE tenant_id = $1 AND finding_id = $2
 	`
 	var (
-		data                vulnerability.VerificationChecklistData
-		monitoringAdded     sql.NullBool
-		regressionScheduled sql.NullBool
-		completedBy         sql.NullString
-		completedAt         sql.NullTime
+		data                  vulnerability.VerificationChecklistData
+		monitoringAdded       sql.NullBool
+		regressionScheduled   sql.NullBool
+		completedBy           sql.NullString
+		completedAt           sql.NullTime
 		idStr, tidStr, fidStr string
 	)
 	err := s.db.QueryRowContext(ctx, q, tenantID.String(), findingID.String()).Scan(
@@ -175,10 +175,10 @@ func (s *FindingActionsService) GetRelatedCVEs(
 
 // BulkFixAppliedInput is the input for bulk fix-applied operation.
 type BulkFixAppliedInput struct {
-	Filter            vulnerability.FindingFilter
+	Filter             vulnerability.FindingFilter
 	IncludeRelatedCVEs bool
-	Note              string // REQUIRED
-	Reference         string // optional (commit hash, patch ID)
+	Note               string // REQUIRED
+	Reference          string // optional (commit hash, patch ID)
 }
 
 // BulkFixAppliedResult is the result of bulk fix-applied operation.

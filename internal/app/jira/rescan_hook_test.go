@@ -1,9 +1,9 @@
 package jira
 
 import (
-	"github.com/openctemio/api/internal/app"
 	"context"
 	"errors"
+	"github.com/openctemio/api/internal/app"
 	"sync/atomic"
 	"testing"
 	"time"

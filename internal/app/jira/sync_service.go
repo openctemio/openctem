@@ -254,9 +254,9 @@ func (s *SyncService) UnlinkTicket(ctx context.Context, tenantIDStr, findingIDSt
 // WebhookPayload is the envelope sent by Jira issue-updated webhooks.
 // See https://developer.atlassian.com/cloud/jira/platform/webhooks/
 type WebhookPayload struct {
-	WebhookEvent string            `json:"webhookEvent"` // "jira:issue_updated"
-	Issue        WebhookIssue  `json:"issue"`
-	Changelog    *Changelog    `json:"changelog,omitempty"`
+	WebhookEvent string       `json:"webhookEvent"` // "jira:issue_updated"
+	Issue        WebhookIssue `json:"issue"`
+	Changelog    *Changelog   `json:"changelog,omitempty"`
 }
 
 // WebhookIssue represents the issue block inside a Jira webhook payload.
@@ -405,8 +405,8 @@ func deriveJiraTicketURL(issue WebhookIssue) string {
 
 // TicketInfo is returned by LinkTicket to the HTTP handler for the response body.
 type TicketInfo struct {
-	FindingID  string    `json:"finding_id"`
-	TicketKey  string    `json:"ticket_key"`
-	TicketURL  string    `json:"ticket_url"`
-	LinkedAt   time.Time `json:"linked_at"`
+	FindingID string    `json:"finding_id"`
+	TicketKey string    `json:"ticket_key"`
+	TicketURL string    `json:"ticket_url"`
+	LinkedAt  time.Time `json:"linked_at"`
 }

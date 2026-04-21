@@ -1,9 +1,9 @@
 package sla
 
 import (
-	"github.com/openctemio/api/internal/app/outbox"
 	"context"
 	"errors"
+	"github.com/openctemio/api/internal/app/outbox"
 	"testing"
 	"time"
 
@@ -17,9 +17,9 @@ import (
 // unit tests.
 
 type fakeEnqueuer struct {
-	calls  int
-	err    error
-	last   outbox.EnqueueParams
+	calls int
+	err   error
+	last  outbox.EnqueueParams
 }
 
 func (f *fakeEnqueuer) Enqueue(_ context.Context, params outbox.EnqueueParams) error {

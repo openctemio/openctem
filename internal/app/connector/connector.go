@@ -26,11 +26,11 @@ import (
 type Provider string
 
 const (
-	ProviderAWS    Provider = "aws"
-	ProviderGCP    Provider = "gcp"
-	ProviderAzure  Provider = "azure"
-	ProviderK8s    Provider = "kubernetes"
-	ProviderGit    Provider = "git-host"
+	ProviderAWS   Provider = "aws"
+	ProviderGCP   Provider = "gcp"
+	ProviderAzure Provider = "azure"
+	ProviderK8s   Provider = "kubernetes"
+	ProviderGit   Provider = "git-host"
 )
 
 // Credentials is the tenant-supplied material a connector needs to

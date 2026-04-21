@@ -1,9 +1,9 @@
 package asset
 
 import (
-	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"fmt"
+	"github.com/openctemio/api/internal/app/scope"
 
 	assetgroupdom "github.com/openctemio/api/pkg/domain/assetgroup"
 	"github.com/openctemio/api/pkg/domain/shared"

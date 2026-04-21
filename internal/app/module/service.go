@@ -1,10 +1,11 @@
 package module
 
 import (
-	auditapp "github.com/openctemio/api/internal/app/audit"
 	"context"
 	"fmt"
 	"strings"
+
+	auditapp "github.com/openctemio/api/internal/app/audit"
 
 	"github.com/openctemio/api/pkg/domain/audit"
 	moduledom "github.com/openctemio/api/pkg/domain/module"

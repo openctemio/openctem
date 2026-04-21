@@ -1,12 +1,12 @@
 package agent
 
 import (
-	auditapp "github.com/openctemio/api/internal/app/audit"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"net"
 
 	agentdom "github.com/openctemio/api/pkg/domain/agent"
@@ -49,7 +49,7 @@ type CreateAgentInput struct {
 // CreateAgentOutput represents the output after creating an agent.
 type CreateAgentOutput struct {
 	Agent  *agentdom.Agent `json:"agent"`
-	APIKey string       `json:"api_key"` // Only returned on creation
+	APIKey string          `json:"api_key"` // Only returned on creation
 }
 
 // CreateAgent creates a new agent and generates an API key.

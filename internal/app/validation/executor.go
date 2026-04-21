@@ -69,11 +69,11 @@ func (e Evidence) Executor() string { return e.ExecutorKind }
 type Outcome string
 
 const (
-	OutcomeDetected    Outcome = "detected"
-	OutcomeNotDetected Outcome = "not_detected"
+	OutcomeDetected     Outcome = "detected"
+	OutcomeNotDetected  Outcome = "not_detected"
 	OutcomeInconclusive Outcome = "inconclusive"
-	OutcomeError       Outcome = "error"
-	OutcomeSkipped     Outcome = "skipped"
+	OutcomeError        Outcome = "error"
+	OutcomeSkipped      Outcome = "skipped"
 )
 
 // ExecutorKind enumerates the validation tool the AGENT will run.

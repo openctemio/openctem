@@ -296,7 +296,7 @@ var validSeverities = map[string]bool{
 	notificationdom.SeverityMedium:   true,
 	notificationdom.SeverityLow:      true,
 	notificationdom.SeverityInfo:     true,
-	"":                            true, // allow empty to clear
+	"":                               true, // allow empty to clear
 }
 
 // validAudiences defines the allowed notification audience types.

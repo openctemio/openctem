@@ -85,11 +85,11 @@ const (
 // request, so the frontend can map results back to target names
 // without re-fetching anything.
 type BatchCreateRelationshipResultItem struct {
-	Index          int                                  `json:"index"`
-	Status         BatchCreateRelationshipResultStatus  `json:"status"`
-	TargetAssetID  string                               `json:"target_asset_id"`
-	RelationshipID string                               `json:"relationship_id,omitempty"`
-	Error          string                               `json:"error,omitempty"`
+	Index          int                                 `json:"index"`
+	Status         BatchCreateRelationshipResultStatus `json:"status"`
+	TargetAssetID  string                              `json:"target_asset_id"`
+	RelationshipID string                              `json:"relationship_id,omitempty"`
+	Error          string                              `json:"error,omitempty"`
 }
 
 // BatchCreateRelationshipResult is the aggregate response.

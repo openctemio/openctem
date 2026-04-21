@@ -28,9 +28,9 @@ type Service struct {
 	toolRepo            tooldom.Repository
 	configRepo          tooldom.TenantToolConfigRepository
 	executionRepo       tooldom.ToolExecutionRepository
-	agentRepo           agent.Repository        // For checking tool availability
+	agentRepo           agent.Repository      // For checking tool availability
 	categoryRepo        tooldomcat.Repository // For fetching category info
-	pipelineDeactivator PipelineDeactivator     // For cascade deactivation when tool is disabled/deleted
+	pipelineDeactivator PipelineDeactivator   // For cascade deactivation when tool is disabled/deleted
 	logger              *logger.Logger
 }
 

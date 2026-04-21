@@ -8,14 +8,14 @@ import (
 
 // Domain errors.
 var (
-	ErrPlanNotFound         = fmt.Errorf("%w: plan not found", shared.ErrNotFound)
-	ErrPlanSlugExists       = fmt.Errorf("%w: plan slug already exists", shared.ErrConflict)
-	ErrModuleNotFound       = fmt.Errorf("%w: module not found", shared.ErrNotFound)
-	ErrEventTypeNotFound    = fmt.Errorf("%w: event type not found", shared.ErrNotFound)
-	ErrSubscriptionNotFound = fmt.Errorf("%w: subscription not found", shared.ErrNotFound)
-	ErrInvalidPlanID        = fmt.Errorf("%w: invalid plan ID format", shared.ErrValidation)
-	ErrInvalidModuleID      = fmt.Errorf("%w: invalid module ID format", shared.ErrValidation)
-	ErrInvalidSubModuleID   = fmt.Errorf("%w: invalid sub-module ID format", shared.ErrValidation)
+	ErrPlanNotFound               = fmt.Errorf("%w: plan not found", shared.ErrNotFound)
+	ErrPlanSlugExists             = fmt.Errorf("%w: plan slug already exists", shared.ErrConflict)
+	ErrModuleNotFound             = fmt.Errorf("%w: module not found", shared.ErrNotFound)
+	ErrEventTypeNotFound          = fmt.Errorf("%w: event type not found", shared.ErrNotFound)
+	ErrSubscriptionNotFound       = fmt.Errorf("%w: subscription not found", shared.ErrNotFound)
+	ErrInvalidPlanID              = fmt.Errorf("%w: invalid plan ID format", shared.ErrValidation)
+	ErrInvalidModuleID            = fmt.Errorf("%w: invalid module ID format", shared.ErrValidation)
+	ErrInvalidSubModuleID         = fmt.Errorf("%w: invalid sub-module ID format", shared.ErrValidation)
 	ErrCoreModuleCannotBeDisabled = fmt.Errorf("%w: core module cannot be disabled", shared.ErrValidation)
-	ErrModuleNotAvailable   = fmt.Errorf("%w: module is not available", shared.ErrValidation)
+	ErrModuleNotAvailable         = fmt.Errorf("%w: module is not available", shared.ErrValidation)
 )

@@ -17,11 +17,11 @@ type RuleBroadcaster interface {
 
 // RuleService handles scope rule business operations.
 type RuleService struct {
-	acRepo         accesscontrol.Repository
-	groupRepo      group.Repository
-	agValidator    assetGroupValidator
-	broadcaster    RuleBroadcaster
-	logger         *logger.Logger
+	acRepo      accesscontrol.Repository
+	groupRepo   group.Repository
+	agValidator assetGroupValidator
+	broadcaster RuleBroadcaster
+	logger      *logger.Logger
 }
 
 // assetGroupValidator validates that asset group IDs belong to a specific tenant.
@@ -653,9 +653,9 @@ func (s *RuleService) EvaluateAsset(ctx context.Context, tenantID shared.ID, ass
 
 // reconcileResult holds the results of a rule reconciliation.
 type reconcileResult struct {
-	added           int
-	matchingAssets  []shared.ID
-	newlyAddedIDs   []shared.ID
+	added          int
+	matchingAssets []shared.ID
+	newlyAddedIDs  []shared.ID
 }
 
 // reconcileRule applies a single rule to find and assign matching assets.

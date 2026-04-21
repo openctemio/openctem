@@ -36,14 +36,14 @@ type EPSSScore struct {
 
 // KEVEntry represents a CISA KEV catalog entry.
 type KEVEntry struct {
-	CVEID                 string `json:"cveID"`
-	VendorProject         string `json:"vendorProject"`
-	Product               string `json:"product"`
-	VulnerabilityName     string `json:"vulnerabilityName"`
-	DateAdded             string `json:"dateAdded"`
-	ShortDescription      string `json:"shortDescription"`
-	RequiredAction        string `json:"requiredAction"`
-	DueDate               string `json:"dueDate"`
+	CVEID                      string `json:"cveID"`
+	VendorProject              string `json:"vendorProject"`
+	Product                    string `json:"product"`
+	VulnerabilityName          string `json:"vulnerabilityName"`
+	DateAdded                  string `json:"dateAdded"`
+	ShortDescription           string `json:"shortDescription"`
+	RequiredAction             string `json:"requiredAction"`
+	DueDate                    string `json:"dueDate"`
 	KnownRansomwareCampaignUse string `json:"knownRansomwareCampaignUse"`
 }
 
@@ -170,4 +170,3 @@ func (r *IntelRefresher) FetchEPSSForCVEs(ctx context.Context, cveIDs []string) 
 
 	return scores, nil
 }
-

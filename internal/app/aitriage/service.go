@@ -1,11 +1,11 @@
 package aitriage
 
 import (
-	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/internal/app/activity"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/openctemio/api/internal/app/activity"
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"strings"
 	"time"
 

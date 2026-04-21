@@ -26,12 +26,12 @@ import (
 // linkage to the in-memory Evidence struct. Persisted into the
 // simulation_evidence table (migration lives in a companion PR).
 type StoredEvidence struct {
-	ID         shared.ID
-	TenantID   shared.ID
-	FindingID  shared.ID // the finding this execution validated
+	ID              shared.ID
+	TenantID        shared.ID
+	FindingID       shared.ID  // the finding this execution validated
 	SimulationRunID *shared.ID // optional; populated when evidence is part of a scheduled simulation
-	Evidence   Evidence
-	CreatedAt  time.Time
+	Evidence        Evidence
+	CreatedAt       time.Time
 }
 
 // EvidenceRepository persists StoredEvidence. Implemented by a

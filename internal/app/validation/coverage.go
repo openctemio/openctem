@@ -35,13 +35,13 @@ import (
 // ValidationCoverage aggregates per-priority coverage for a tenant
 // or cycle window.
 type ValidationCoverage struct {
-	P0Total     int
+	P0Total        int
 	P0WithEvidence int
-	P1Total     int
+	P1Total        int
 	P1WithEvidence int
-	P2Total     int
+	P2Total        int
 	P2WithEvidence int
-	P3Total     int
+	P3Total        int
 	P3WithEvidence int
 }
 

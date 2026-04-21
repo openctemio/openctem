@@ -1,9 +1,9 @@
 package command
 
 import (
-	"github.com/openctemio/api/internal/app"
 	"context"
 	"encoding/json"
+	"github.com/openctemio/api/internal/app"
 	"sync"
 	"time"
 

@@ -17,8 +17,8 @@ type stubConnector struct {
 	discErr  error
 }
 
-func (s *stubConnector) Provider() Provider                               { return s.provider }
-func (s *stubConnector) Validate(_ context.Context, _ Credentials) error  { return nil }
+func (s *stubConnector) Provider() Provider                              { return s.provider }
+func (s *stubConnector) Validate(_ context.Context, _ Credentials) error { return nil }
 func (s *stubConnector) Discover(_ context.Context, tid shared.ID, _ Credentials) (*DiscoveryResult, error) {
 	if s.discErr != nil {
 		return nil, s.discErr

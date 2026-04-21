@@ -1,9 +1,9 @@
 package jira
 
 import (
-	"github.com/openctemio/api/internal/app"
 	"context"
 	"fmt"
+	"github.com/openctemio/api/internal/app"
 	"sync"
 	"time"
 

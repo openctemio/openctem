@@ -69,12 +69,12 @@ func (a *BreachOutboxAdapter) Publish(ctx context.Context, event controller.SLAB
 		),
 		Severity: "high",
 		Metadata: map[string]any{
-			"finding_id":         event.FindingID.String(),
-			"sla_deadline":       event.SLADeadline.UTC().Format(time.RFC3339),
-			"overdue_duration":   event.OverdueDuration.String(),
-			"overdue_seconds":    int64(event.OverdueDuration.Seconds()),
-			"breached_at":        event.At.UTC().Format(time.RFC3339),
-			"escalation_source":  "sla_escalation_controller",
+			"finding_id":        event.FindingID.String(),
+			"sla_deadline":      event.SLADeadline.UTC().Format(time.RFC3339),
+			"overdue_duration":  event.OverdueDuration.String(),
+			"overdue_seconds":   int64(event.OverdueDuration.Seconds()),
+			"breached_at":       event.At.UTC().Format(time.RFC3339),
+			"escalation_source": "sla_escalation_controller",
 		},
 	}
 

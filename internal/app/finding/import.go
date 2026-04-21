@@ -39,20 +39,20 @@ type ImportResult struct {
 
 // BurpIssue represents a single issue in Burp Suite XML export.
 type BurpIssue struct {
-	XMLName          xml.Name `xml:"issue"`
-	SerialNumber     string   `xml:"serialNumber"`
-	Type             string   `xml:"type"`
-	Name             string   `xml:"name"`
-	Host             string   `xml:"host"`
-	Path             string   `xml:"path"`
-	Location         string   `xml:"location"`
-	Severity         string   `xml:"severity"`
-	Confidence       string   `xml:"confidence"`
-	IssueBackground  string   `xml:"issueBackground"`
-	RemediationBG    string   `xml:"remediationBackground"`
-	IssueDetail      string   `xml:"issueDetail"`
-	RemediationDetail string  `xml:"remediationDetail"`
-	RequestResponse  []struct {
+	XMLName           xml.Name `xml:"issue"`
+	SerialNumber      string   `xml:"serialNumber"`
+	Type              string   `xml:"type"`
+	Name              string   `xml:"name"`
+	Host              string   `xml:"host"`
+	Path              string   `xml:"path"`
+	Location          string   `xml:"location"`
+	Severity          string   `xml:"severity"`
+	Confidence        string   `xml:"confidence"`
+	IssueBackground   string   `xml:"issueBackground"`
+	RemediationBG     string   `xml:"remediationBackground"`
+	IssueDetail       string   `xml:"issueDetail"`
+	RemediationDetail string   `xml:"remediationDetail"`
+	RequestResponse   []struct {
 		Request  string `xml:"request"`
 		Response string `xml:"response"`
 	} `xml:"requestresponse"`

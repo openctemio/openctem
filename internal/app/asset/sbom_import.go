@@ -19,10 +19,10 @@ import (
 // the component is not a direct runtime dependency — mapped to
 // transitive on import.
 const (
-	spdxLicenseNoAssertion    = "NOASSERTION"
-	cycloneDXScopeOptional    = "optional"
-	cycloneDXScopeExcluded    = "excluded"
-	cycloneDXExtRefTypePurl   = "purl"
+	spdxLicenseNoAssertion  = "NOASSERTION"
+	cycloneDXScopeOptional  = "optional"
+	cycloneDXScopeExcluded  = "excluded"
+	cycloneDXExtRefTypePurl = "purl"
 )
 
 // SBOMImportService handles importing SBOM files (CycloneDX, SPDX).
@@ -41,13 +41,13 @@ func NewSBOMImportService(repo componentdom.Repository, log *logger.Logger) *SBO
 
 // SBOMImportResult contains the result of an SBOM import.
 type SBOMImportResult struct {
-	Format           string   `json:"format"`            // cyclonedx or spdx
-	SpecVersion      string   `json:"spec_version"`
-	ComponentsTotal  int      `json:"components_total"`   // total in file
-	ComponentsImported int    `json:"components_imported"` // successfully imported
-	ComponentsSkipped  int    `json:"components_skipped"`
-	LicensesFound    int      `json:"licenses_found"`
-	Errors           []string `json:"errors,omitempty"`
+	Format             string   `json:"format"` // cyclonedx or spdx
+	SpecVersion        string   `json:"spec_version"`
+	ComponentsTotal    int      `json:"components_total"`    // total in file
+	ComponentsImported int      `json:"components_imported"` // successfully imported
+	ComponentsSkipped  int      `json:"components_skipped"`
+	LicensesFound      int      `json:"licenses_found"`
+	Errors             []string `json:"errors,omitempty"`
 }
 
 // ImportSBOM detects format and imports components from a SBOM file.
@@ -88,18 +88,18 @@ func (s *SBOMImportService) ImportSBOM(ctx context.Context, tenantID, assetID st
 // =============================================================================
 
 type cycloneDXBOM struct {
-	BOMFormat   string             `json:"bomFormat"`
-	SpecVersion string             `json:"specVersion"`
+	BOMFormat   string               `json:"bomFormat"`
+	SpecVersion string               `json:"specVersion"`
 	Components  []cycloneDXComponent `json:"components"`
 }
 
 type cycloneDXComponent struct {
-	Type    string              `json:"type"`    // library, framework, application
-	Name    string              `json:"name"`
-	Version string              `json:"version"`
-	PURL    string              `json:"purl"`
+	Type     string             `json:"type"` // library, framework, application
+	Name     string             `json:"name"`
+	Version  string             `json:"version"`
+	PURL     string             `json:"purl"`
 	Licenses []cycloneDXLicense `json:"licenses,omitempty"`
-	Scope   string              `json:"scope,omitempty"` // required, optional, excluded
+	Scope    string             `json:"scope,omitempty"` // required, optional, excluded
 }
 
 type cycloneDXLicense struct {
@@ -165,16 +165,16 @@ func (s *SBOMImportService) importCycloneDX(ctx context.Context, tenantID, asset
 // =============================================================================
 
 type spdxDocument struct {
-	SPDXVersion string          `json:"spdxVersion"`
-	Packages    []spdxPackage   `json:"packages"`
+	SPDXVersion string        `json:"spdxVersion"`
+	Packages    []spdxPackage `json:"packages"`
 }
 
 type spdxPackage struct {
-	Name            string `json:"name"`
-	VersionInfo     string `json:"versionInfo"`
-	ExternalRefs    []spdxExternalRef `json:"externalRefs,omitempty"`
-	LicenseConcluded string `json:"licenseConcluded,omitempty"`
-	LicenseDeclared  string `json:"licenseDeclared,omitempty"`
+	Name             string            `json:"name"`
+	VersionInfo      string            `json:"versionInfo"`
+	ExternalRefs     []spdxExternalRef `json:"externalRefs,omitempty"`
+	LicenseConcluded string            `json:"licenseConcluded,omitempty"`
+	LicenseDeclared  string            `json:"licenseDeclared,omitempty"`
 }
 
 type spdxExternalRef struct {

@@ -218,12 +218,12 @@ func (s *SimulationService) DeleteControlTest(ctx context.Context, tenantID, ctI
 
 // RecordControlTestResult records a test result.
 type RecordControlTestResultInput struct {
-	TenantID    string
-	ControlID   string
-	Status      string
-	Evidence    string
-	Notes       string
-	TestedByID  string
+	TenantID   string
+	ControlID  string
+	Status     string
+	Evidence   string
+	Notes      string
+	TestedByID string
 }
 
 // RecordControlTestResult records a test result.
