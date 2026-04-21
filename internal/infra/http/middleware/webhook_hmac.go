@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/logger"
@@ -33,7 +35,16 @@ import (
 // in the future. For now callers typically pass a closure returning a single
 // platform-wide secret.
 
-const webhookMaxBody = 2 * 1024 * 1024 // 2 MiB — tighter than the default.
+const (
+	webhookMaxBody = 2 * 1024 * 1024 // 2 MiB — tighter than the default.
+	// webhookTimestampTolerance bounds replay attacks: a captured
+	// signature is only valid for ±5 minutes. 5 min is the industry
+	// standard (Stripe, GitHub use the same window) — long enough to
+	// absorb clock skew between sender and us, short enough that a
+	// captured signature from yesterday's logs is useless.
+	webhookTimestampTolerance = 5 * time.Minute
+	webhookTimestampHeader    = "X-OpenCTEM-Timestamp"
+)
 
 // WebhookSecretFn returns the HMAC secret used to verify an incoming request.
 // It receives the request so implementations can derive the secret per-tenant,
@@ -54,6 +65,39 @@ func VerifyHMAC(headerName string, secretFn WebhookSecretFn, log *logger.Logger)
 			if sigHeader == "" {
 				log.Warn("webhook rejected: missing signature", "header", headerName, "path", r.URL.Path, "remote_ip", r.RemoteAddr)
 				apierror.Unauthorized("missing webhook signature").WriteJSON(w)
+				return
+			}
+
+			// Replay protection: require a recent timestamp header.
+			// HMAC alone protects against forgery but NOT replay — an
+			// attacker who captured a valid signed request once could
+			// resend it indefinitely. Including the timestamp in the
+			// HMAC input + bounding it to ±5 minutes turns a replay
+			// into either a clock-skew rejection or a stale-window
+			// rejection. Senders MUST include this header (Stripe-style
+			// "t=<unix>,v1=<sig>" can also be parsed but plain header
+			// is simpler for first iteration).
+			tsHeader := r.Header.Get(webhookTimestampHeader)
+			if tsHeader == "" {
+				log.Warn("webhook rejected: missing timestamp", "path", r.URL.Path)
+				apierror.Unauthorized("missing webhook timestamp header (X-OpenCTEM-Timestamp)").WriteJSON(w)
+				return
+			}
+			tsUnix, err := strconv.ParseInt(strings.TrimSpace(tsHeader), 10, 64)
+			if err != nil {
+				log.Warn("webhook rejected: invalid timestamp", "path", r.URL.Path, "ts", tsHeader)
+				apierror.Unauthorized("invalid webhook timestamp").WriteJSON(w)
+				return
+			}
+			ts := time.Unix(tsUnix, 0)
+			delta := time.Since(ts)
+			if delta < 0 {
+				delta = -delta
+			}
+			if delta > webhookTimestampTolerance {
+				log.Warn("webhook rejected: timestamp outside tolerance",
+					"path", r.URL.Path, "delta_seconds", delta.Seconds())
+				apierror.Unauthorized("webhook timestamp outside tolerance window").WriteJSON(w)
 				return
 			}
 
@@ -80,7 +124,11 @@ func VerifyHMAC(headerName string, secretFn WebhookSecretFn, log *logger.Logger)
 			_ = r.Body.Close()
 			r.Body = io.NopCloser(bytes.NewReader(body))
 
-			expected := computeHMAC(body, secret)
+			// Compute HMAC over (timestamp + "." + body) — the timestamp
+			// MUST be in the signed payload, otherwise an attacker could
+			// strip the timestamp header and replace it with a fresh one
+			// while keeping the original body+signature.
+			expected := computeHMACWithTimestamp(body, tsHeader, secret)
 			provided := normalizeSig(sigHeader)
 			if provided == "" || subtle.ConstantTimeCompare([]byte(expected), []byte(provided)) != 1 {
 				log.Warn("webhook rejected: bad signature", "path", r.URL.Path, "remote_ip", r.RemoteAddr)
@@ -94,11 +142,28 @@ func VerifyHMAC(headerName string, secretFn WebhookSecretFn, log *logger.Logger)
 }
 
 // computeHMAC returns the lowercase-hex HMAC-SHA256 of body keyed with secret.
+// Kept for backward compatibility with senders that haven't been
+// upgraded to the timestamp variant — new code should use
+// computeHMACWithTimestamp.
 func computeHMAC(body []byte, secret string) string {
 	m := hmac.New(sha256.New, []byte(secret))
 	_, _ = m.Write(body)
 	return hex.EncodeToString(m.Sum(nil))
 }
+
+// computeHMACWithTimestamp signs (timestamp + "." + body). Including
+// the timestamp in the signed payload is what makes the timestamp
+// header tamper-evident — without this binding, an attacker could
+// strip+replace the timestamp header to bypass the freshness window.
+// Format is "<ts>.<body>" (Stripe convention).
+func computeHMACWithTimestamp(body []byte, ts, secret string) string {
+	m := hmac.New(sha256.New, []byte(secret))
+	_, _ = m.Write([]byte(ts))
+	_, _ = m.Write([]byte("."))
+	_, _ = m.Write(body)
+	return hex.EncodeToString(m.Sum(nil))
+}
+
 
 // normalizeSig accepts either raw hex ("ab12...") or "sha256=ab12..." and
 // returns the lowercase hex portion. Returns "" on malformed input.

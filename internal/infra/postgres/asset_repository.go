@@ -158,8 +158,14 @@ func (r *AssetRepository) FindByPropertyValue(ctx context.Context, tenantID shar
 		return nil, fmt.Errorf("unsupported property key for correlation: %s", key)
 	}
 
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.properties->>'" + key + "' = $2 LIMIT 1"
-	row := r.db.QueryRowContext(ctx, query, tenantID.String(), value)
+	// Use a parameterized JSONB key access (a.properties ->> $3) instead
+	// of string concatenation. The whitelist above already constrains
+	// the value, but parameterising the key removes the SQL injection
+	// pattern entirely — defense-in-depth so a future "let users add
+	// custom correlation keys" feature can't accidentally introduce a
+	// vulnerability.
+	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.properties ->> $3 = $2 LIMIT 1"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), value, key)
 	a, err := r.scanAsset(row, shared.ID{})
 	if err != nil {
 		if errors.Is(err, asset.ErrAssetNotFound) {

@@ -405,6 +405,14 @@ type EncryptionConfig struct {
 	// Values: "raw", "hex", "base64"
 	// Default: auto-detected based on key length
 	KeyFormat string
+
+	// AllowPlaintext, when true, lets non-production deployments fall
+	// back to plaintext credential storage if Key is empty. Required
+	// to make the security trade-off intentional and visible — without
+	// this opt-in, a missing APP_ENCRYPTION_KEY refuses to boot even
+	// in dev. Production NEVER allows plaintext (initEncryptor enforces).
+	// Env var: APP_ALLOW_PLAINTEXT_CREDENTIALS
+	AllowPlaintext bool
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -632,8 +640,9 @@ func Load() (*Config, error) {
 			},
 		},
 		Encryption: EncryptionConfig{
-			Key:       getEnv("APP_ENCRYPTION_KEY", ""),
-			KeyFormat: getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
+			Key:            getEnv("APP_ENCRYPTION_KEY", ""),
+			KeyFormat:      getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
+			AllowPlaintext: getEnvBool("APP_ALLOW_PLAINTEXT_CREDENTIALS", false),
 		},
 		Webhooks: WebhooksConfig{
 			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the

@@ -162,6 +162,19 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 		intg.SetBaseURL(input.BaseURL)
 	}
 	if input.Credentials != "" {
+		// Defense-in-depth: warn loudly when persisting credentials
+		// while the encryptor is the NoOp implementation. The boot-time
+		// check (initEncryptor) already requires APP_ALLOW_PLAINTEXT_
+		// CREDENTIALS=true to permit NoOp at all, but a single startup
+		// warning is easy to miss — emitting at each credential write
+		// gives visibility in audit logs that something sensitive is
+		// being persisted in plaintext.
+		if crypto.IsNoOp(s.encryptor) {
+			s.logger.Warn("PERSISTING INTEGRATION CREDENTIAL IN PLAINTEXT — APP_ENCRYPTION_KEY is not configured",
+				"tenant_id", input.TenantID,
+				"integration_name", input.Name,
+				"category", input.Category)
+		}
 		encrypted, err := s.encryptor.EncryptString(input.Credentials)
 		if err != nil {
 			return nil, fmt.Errorf("encrypt credentials: %w", err)

@@ -91,14 +91,22 @@ INSERT INTO _module_hard_edges (dependent, dep) VALUES
 -- transitive closure with a recursive CTE.
 WITH RECURSIVE disabled_per_tenant AS (
     -- Base: every (tenant, module) explicitly disabled today.
-    SELECT tm.tenant_id, tm.module_id AS dep
+    -- Cast to TEXT so the recursive term (which joins against the TEXT
+    -- columns of _module_hard_edges) unifies on the same column type.
+    -- depth tracks recursion level so we can bound iteration; a cycle
+    -- in the edge data (defensive guard — DetectCycle Go test catches
+    -- intentional cycles, but a corrupted INSERT could slip through)
+    -- would otherwise loop until statement_timeout. 50 levels is far
+    -- more than the actual graph depth (~5).
+    SELECT tm.tenant_id, tm.module_id::TEXT AS dep, 0 AS depth
       FROM tenant_modules tm
      WHERE tm.is_enabled = false
     UNION
     -- Recursive: every dependent of an already-disabled dep.
-    SELECT d.tenant_id, e.dependent
+    SELECT d.tenant_id, e.dependent::TEXT, d.depth + 1
       FROM disabled_per_tenant d
       JOIN _module_hard_edges e ON e.dep = d.dep
+     WHERE d.depth < 50
 )
 INSERT INTO tenant_modules (tenant_id, module_id, is_enabled, disabled_at, updated_at, created_at)
 SELECT d.tenant_id,

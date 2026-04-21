@@ -76,6 +76,23 @@ func (b *wsHubBroadcaster) BroadcastScopeChange(channel string, data any, tenant
 	b.hub.BroadcastEvent(channel, data, tenantID)
 }
 
+// Broadcast satisfies module.WSBroadcaster. Used by ModuleService to
+// fan out "module.updated" events to clients subscribed to the
+// tenant:{id} channel — drives the SWR cache invalidation on the
+// Settings → Modules page so admins in other tabs see the new state
+// immediately.
+//
+// The channel string already encodes the tenant (`tenant:{id}`); the
+// hub's BroadcastEvent expects a separate tenantID so we extract it
+// from the channel prefix.
+func (b *wsHubBroadcaster) Broadcast(channel string, data any) {
+	tenantID := ""
+	if len(channel) > len("tenant:") && channel[:len("tenant:")] == "tenant:" {
+		tenantID = channel[len("tenant:"):]
+	}
+	b.hub.BroadcastEvent(channel, data, tenantID)
+}
+
 // Services holds all service instances.
 type Services struct {
 	// Auth
@@ -742,10 +759,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// change / member removal) can drop the cached entry immediately.
 	s.Tenant.SetMembershipCache(s.MembershipCache)
 
+	// Wire role service so invitation.RoleIDs() are applied on accept.
+	// Without this, the RBAC roles attached to an invitation are
+	// silently dropped — security audit finding (privilege escalation
+	// inverse: legitimate roles never granted).
+	s.Tenant.SetRoleService(s.Role)
+
 	// Initialize licensing service (OSS edition - modules from database)
 	s.Module = app.NewModuleService(repos.Module, log)
 	s.Module.SetTenantModuleRepo(repos.TenantModule)
 	s.Module.SetAuditService(s.Audit)
+	// Per-tenant module-config version counter (Redis-backed). Used
+	// for ETag generation on module-list endpoints and as the cache-
+	// key suffix in any future Redis payload cache. Bumped on every
+	// toggle / preset apply / reset via notifyModuleChange.
+	s.Module.SetVersionService(app.NewModuleVersionService(deps.RedisClient, log))
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
@@ -881,7 +909,15 @@ func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, er
 		if cfg.App.Env == config.EnvProduction {
 			return nil, fmt.Errorf("APP_ENCRYPTION_KEY is required in production (APP_ENV=production); refusing to start with plaintext credentials")
 		}
-		log.Warn("APP_ENCRYPTION_KEY not configured - credentials will be stored in plaintext (DEVELOPMENT ONLY)")
+		// Even in non-production, require an EXPLICIT opt-in to use
+		// plaintext storage. Audit finding: silent fallback meant
+		// developers could ship credentials to staging/test environments
+		// thinking they were encrypted. Now an env var must be set
+		// intentionally — making the security trade-off visible.
+		if !cfg.Encryption.AllowPlaintext {
+			return nil, fmt.Errorf("APP_ENCRYPTION_KEY is not set; to use plaintext credential storage in non-production set APP_ALLOW_PLAINTEXT_CREDENTIALS=true explicitly (NEVER do this in production)")
+		}
+		log.Warn("APP_ENCRYPTION_KEY not configured - credentials will be stored in plaintext (DEVELOPMENT ONLY, ALLOW_PLAINTEXT_CREDENTIALS=true)")
 		return crypto.NewNoOpEncryptor(), nil
 	}
 

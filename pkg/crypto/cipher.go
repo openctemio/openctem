@@ -19,7 +19,12 @@ type Encryptor interface {
 	DecryptString(encoded string) (string, error)
 }
 
-// NoOpEncryptor is an Encryptor that does not encrypt (for development/testing).
+// NoOpEncryptor is an Encryptor that does not encrypt — used ONLY in
+// development sandboxes where APP_ENCRYPTION_KEY is intentionally
+// unset. Callers that handle long-lived secret material (integration
+// credentials, OAuth tokens) should type-check for *NoOpEncryptor and
+// reject — having credential rows persisted in plaintext is a data
+// breach waiting to happen if the DB is later ever leaked.
 type NoOpEncryptor struct{}
 
 // EncryptString returns the plaintext as-is (no encryption).
@@ -35,6 +40,15 @@ func (n *NoOpEncryptor) DecryptString(encoded string) (string, error) {
 // NewNoOpEncryptor creates a no-op encryptor for development/testing.
 func NewNoOpEncryptor() Encryptor {
 	return &NoOpEncryptor{}
+}
+
+// IsNoOp returns true when the given Encryptor is a NoOpEncryptor.
+// Helper for callers that want to refuse to persist sensitive data
+// when encryption is effectively disabled. Returns false on real
+// Cipher instances (or any other implementation).
+func IsNoOp(e Encryptor) bool {
+	_, ok := e.(*NoOpEncryptor)
+	return ok
 }
 
 var (
