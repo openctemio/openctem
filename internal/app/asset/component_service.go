@@ -1,10 +1,10 @@
-package app
+package asset
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/component"
+	componentdom "github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -12,12 +12,12 @@ import (
 
 // ComponentService handles component-related business operations.
 type ComponentService struct {
-	repo   component.Repository
+	repo   componentdom.Repository
 	logger *logger.Logger
 }
 
 // NewComponentService creates a new ComponentService.
-func NewComponentService(repo component.Repository, log *logger.Logger) *ComponentService {
+func NewComponentService(repo componentdom.Repository, log *logger.Logger) *ComponentService {
 	return &ComponentService{
 		repo:   repo,
 		logger: log.With("service", "component"),
@@ -40,7 +40,7 @@ type CreateComponentInput struct {
 }
 
 // CreateComponent creates a new component (Global) and links it to an asset.
-func (s *ComponentService) CreateComponent(ctx context.Context, input CreateComponentInput) (*component.Component, error) {
+func (s *ComponentService) CreateComponent(ctx context.Context, input CreateComponentInput) (*componentdom.Component, error) {
 	s.logger.Info("creating component", "name", input.Name, "version", input.Version)
 
 	tenantID, err := shared.IDFromString(input.TenantID)
@@ -53,13 +53,13 @@ func (s *ComponentService) CreateComponent(ctx context.Context, input CreateComp
 		return nil, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
 	}
 
-	ecosystem, err := component.ParseEcosystem(input.Ecosystem)
+	ecosystem, err := componentdom.ParseEcosystem(input.Ecosystem)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
 	// 1. Create/prepare the Global Component
-	c, err := component.NewComponent(input.Name, input.Version, ecosystem)
+	c, err := componentdom.NewComponent(input.Name, input.Version, ecosystem)
 	if err != nil {
 		return nil, err
 	}
@@ -85,15 +85,15 @@ func (s *ComponentService) CreateComponent(ctx context.Context, input CreateComp
 	}
 
 	// 3. Create Asset Dependency Link
-	depType := component.DependencyTypeDirect
+	depType := componentdom.DependencyTypeDirect
 	if input.DependencyType != "" {
-		depType, err = component.ParseDependencyType(input.DependencyType)
+		depType, err = componentdom.ParseDependencyType(input.DependencyType)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 		}
 	}
 
-	dep, err := component.NewAssetDependency(tenantID, assetID, compID, input.ManifestPath, depType)
+	dep, err := componentdom.NewAssetDependency(tenantID, assetID, compID, input.ManifestPath, depType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dependency link: %w", err)
 	}
@@ -107,7 +107,7 @@ func (s *ComponentService) CreateComponent(ctx context.Context, input CreateComp
 }
 
 // GetComponent retrieves a component by ID.
-func (s *ComponentService) GetComponent(ctx context.Context, componentID string) (*component.Component, error) {
+func (s *ComponentService) GetComponent(ctx context.Context, componentID string) (*componentdom.Component, error) {
 	parsedID, err := shared.IDFromString(componentID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -117,7 +117,7 @@ func (s *ComponentService) GetComponent(ctx context.Context, componentID string)
 }
 
 // GetComponentByPURL retrieves a component by Package URL.
-func (s *ComponentService) GetComponentByPURL(ctx context.Context, tenantID, purl string) (*component.Component, error) {
+func (s *ComponentService) GetComponentByPURL(ctx context.Context, tenantID, purl string) (*componentdom.Component, error) {
 	// parsedTenantID is not used for global lookup
 	if _, err := shared.IDFromString(tenantID); err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -149,7 +149,7 @@ type UpdateComponentInput struct {
 // If input.Version is provided, we will return an error or handle it as "not supported via this endpoint" for now,
 // or we implement the re-link logic.
 // DECISION: We will assume `componentID` passed here is the `AssetDependency.ID`.
-func (s *ComponentService) UpdateComponent(ctx context.Context, dependencyID string, tenantID string, input UpdateComponentInput) (*component.AssetDependency, error) {
+func (s *ComponentService) UpdateComponent(ctx context.Context, dependencyID string, tenantID string, input UpdateComponentInput) (*componentdom.AssetDependency, error) {
 	parsedID, err := shared.IDFromString(dependencyID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -168,7 +168,7 @@ func (s *ComponentService) UpdateComponent(ctx context.Context, dependencyID str
 
 	// 2. Handle Contextual Updates (DependencyType, Path)
 	if input.DependencyType != nil {
-		dt, err := component.ParseDependencyType(*input.DependencyType)
+		dt, err := componentdom.ParseDependencyType(*input.DependencyType)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, err)
 		}
@@ -240,18 +240,18 @@ type ListComponentsInput struct {
 }
 
 // ListComponents retrieves components with filtering and pagination.
-func (s *ComponentService) ListComponents(ctx context.Context, input ListComponentsInput) (pagination.Result[*component.Component], error) {
+func (s *ComponentService) ListComponents(ctx context.Context, input ListComponentsInput) (pagination.Result[*componentdom.Component], error) {
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
-		return pagination.Result[*component.Component]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		return pagination.Result[*componentdom.Component]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	filter := component.NewFilter().WithTenantID(tenantID)
+	filter := componentdom.NewFilter().WithTenantID(tenantID)
 
 	if input.AssetID != "" {
 		assetID, err := shared.IDFromString(input.AssetID)
 		if err != nil {
-			return pagination.Result[*component.Component]{}, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+			return pagination.Result[*componentdom.Component]{}, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
 		}
 		filter = filter.WithAssetID(assetID)
 	}
@@ -261,9 +261,9 @@ func (s *ComponentService) ListComponents(ctx context.Context, input ListCompone
 	}
 
 	if len(input.Ecosystems) > 0 {
-		ecosystems := make([]component.Ecosystem, 0, len(input.Ecosystems))
+		ecosystems := make([]componentdom.Ecosystem, 0, len(input.Ecosystems))
 		for _, e := range input.Ecosystems {
-			if parsed, err := component.ParseEcosystem(e); err == nil {
+			if parsed, err := componentdom.ParseEcosystem(e); err == nil {
 				ecosystems = append(ecosystems, parsed)
 			}
 		}
@@ -271,9 +271,9 @@ func (s *ComponentService) ListComponents(ctx context.Context, input ListCompone
 	}
 
 	if len(input.Statuses) > 0 {
-		statuses := make([]component.Status, 0, len(input.Statuses))
+		statuses := make([]componentdom.Status, 0, len(input.Statuses))
 		for _, st := range input.Statuses {
-			if parsed, err := component.ParseStatus(st); err == nil {
+			if parsed, err := componentdom.ParseStatus(st); err == nil {
 				statuses = append(statuses, parsed)
 			}
 		}
@@ -281,9 +281,9 @@ func (s *ComponentService) ListComponents(ctx context.Context, input ListCompone
 	}
 
 	if len(input.DependencyTypes) > 0 {
-		dts := make([]component.DependencyType, 0, len(input.DependencyTypes))
+		dts := make([]componentdom.DependencyType, 0, len(input.DependencyTypes))
 		for _, dt := range input.DependencyTypes {
-			if parsed, err := component.ParseDependencyType(dt); err == nil {
+			if parsed, err := componentdom.ParseDependencyType(dt); err == nil {
 				dts = append(dts, parsed)
 			}
 		}
@@ -303,10 +303,10 @@ func (s *ComponentService) ListComponents(ctx context.Context, input ListCompone
 }
 
 // ListAssetComponents retrieves components for a specific asset (Dependencies).
-func (s *ComponentService) ListAssetComponents(ctx context.Context, assetID string, page, perPage int) (pagination.Result[*component.AssetDependency], error) {
+func (s *ComponentService) ListAssetComponents(ctx context.Context, assetID string, page, perPage int) (pagination.Result[*componentdom.AssetDependency], error) {
 	parsedAssetID, err := shared.IDFromString(assetID)
 	if err != nil {
-		return pagination.Result[*component.AssetDependency]{}, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+		return pagination.Result[*componentdom.AssetDependency]{}, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
 	}
 
 	p := pagination.New(page, perPage)
@@ -314,7 +314,7 @@ func (s *ComponentService) ListAssetComponents(ctx context.Context, assetID stri
 }
 
 // GetComponentStats retrieves aggregated component statistics for a tenant.
-func (s *ComponentService) GetComponentStats(ctx context.Context, tenantID string) (*component.ComponentStats, error) {
+func (s *ComponentService) GetComponentStats(ctx context.Context, tenantID string) (*componentdom.ComponentStats, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -324,7 +324,7 @@ func (s *ComponentService) GetComponentStats(ctx context.Context, tenantID strin
 }
 
 // GetEcosystemStats retrieves per-ecosystem statistics for a tenant.
-func (s *ComponentService) GetEcosystemStats(ctx context.Context, tenantID string) ([]component.EcosystemStats, error) {
+func (s *ComponentService) GetEcosystemStats(ctx context.Context, tenantID string) ([]componentdom.EcosystemStats, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -334,10 +334,10 @@ func (s *ComponentService) GetEcosystemStats(ctx context.Context, tenantID strin
 }
 
 // GetVulnerableComponents retrieves paginated vulnerable components for a tenant.
-func (s *ComponentService) GetVulnerableComponents(ctx context.Context, tenantID string, page pagination.Pagination) (pagination.Result[component.VulnerableComponent], error) {
+func (s *ComponentService) GetVulnerableComponents(ctx context.Context, tenantID string, page pagination.Pagination) (pagination.Result[componentdom.VulnerableComponent], error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return pagination.Result[component.VulnerableComponent]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		return pagination.Result[componentdom.VulnerableComponent]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
 	return s.repo.GetVulnerableComponents(ctx, parsedTenantID, page)
@@ -359,7 +359,7 @@ func (s *ComponentService) DeleteAssetComponents(ctx context.Context, assetID st
 }
 
 // GetLicenseStats retrieves license statistics for a tenant.
-func (s *ComponentService) GetLicenseStats(ctx context.Context, tenantID string) ([]component.LicenseStats, error) {
+func (s *ComponentService) GetLicenseStats(ctx context.Context, tenantID string) ([]componentdom.LicenseStats, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)

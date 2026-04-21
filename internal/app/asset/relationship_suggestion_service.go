@@ -1,12 +1,12 @@
-package app
+package asset
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/relationship"
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
+	relationshipdom "github.com/openctemio/api/pkg/domain/relationship"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -14,17 +14,17 @@ import (
 
 // RelationshipSuggestionService handles relationship suggestion business logic.
 type RelationshipSuggestionService struct {
-	suggestionRepo relationship.SuggestionRepository
-	assetRepo      asset.Repository
-	relRepo        asset.RelationshipRepository
+	suggestionRepo relationshipdom.SuggestionRepository
+	assetRepo      assetdom.Repository
+	relRepo        assetdom.RelationshipRepository
 	logger         *logger.Logger
 }
 
 // NewRelationshipSuggestionService creates a new RelationshipSuggestionService.
 func NewRelationshipSuggestionService(
-	suggestionRepo relationship.SuggestionRepository,
-	assetRepo asset.Repository,
-	relRepo asset.RelationshipRepository,
+	suggestionRepo relationshipdom.SuggestionRepository,
+	assetRepo assetdom.Repository,
+	relRepo assetdom.RelationshipRepository,
 	log *logger.Logger,
 ) *RelationshipSuggestionService {
 	return &RelationshipSuggestionService{
@@ -53,43 +53,43 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 	}
 
 	// Fetch all assets by type using pagination loop to handle large datasets.
-	domains, err := s.fetchAllAssets(ctx, tenantID, asset.AssetTypeDomain)
+	domains, err := s.fetchAllAssets(ctx, tenantID, assetdom.AssetTypeDomain)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list domains: %w", err)
 	}
 
-	subdomains, err := s.fetchAllAssets(ctx, tenantID, asset.AssetTypeSubdomain)
+	subdomains, err := s.fetchAllAssets(ctx, tenantID, assetdom.AssetTypeSubdomain)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list subdomains: %w", err)
 	}
 
-	ips, err := s.fetchAllAssets(ctx, tenantID, asset.AssetTypeIPAddress)
+	ips, err := s.fetchAllAssets(ctx, tenantID, assetdom.AssetTypeIPAddress)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list IP addresses: %w", err)
 	}
 
 	// Build lookup maps
-	domainMap := make(map[string]*asset.Asset, len(domains))
+	domainMap := make(map[string]*assetdom.Asset, len(domains))
 	for _, d := range domains {
 		domainMap[d.Name()] = d
 	}
 
-	ipMap := make(map[string]*asset.Asset, len(ips))
+	ipMap := make(map[string]*assetdom.Asset, len(ips))
 	for _, ip := range ips {
 		ipMap[ip.Name()] = ip
 	}
 
-	suggestions := make([]*relationship.Suggestion, 0)
+	suggestions := make([]*relationshipdom.Suggestion, 0)
 
 	// Generate domain contains subdomain suggestions (parent → child)
 	for _, sub := range subdomains {
 		parentDomain := findParentDomain(sub.Name(), domainMap)
 		if parentDomain != nil {
-			suggestion, suggErr := relationship.NewSuggestion(
+			suggestion, suggErr := relationshipdom.NewSuggestion(
 				parsedTenantID,
 				parentDomain.ID(),
 				sub.ID(),
-				string(asset.RelTypeContains),
+				string(assetdom.RelTypeContains),
 				fmt.Sprintf("Domain %s contains subdomain %s", parentDomain.Name(), sub.Name()),
 				0.95,
 			)
@@ -102,7 +102,7 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 	}
 
 	// Generate resolves_to suggestions for domains/subdomains with resolved_ip
-	allDNSAssets := make([]*asset.Asset, 0, len(domains)+len(subdomains))
+	allDNSAssets := make([]*assetdom.Asset, 0, len(domains)+len(subdomains))
 	allDNSAssets = append(allDNSAssets, domains...)
 	allDNSAssets = append(allDNSAssets, subdomains...)
 
@@ -117,11 +117,11 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 			continue
 		}
 
-		suggestion, suggErr := relationship.NewSuggestion(
+		suggestion, suggErr := relationshipdom.NewSuggestion(
 			parsedTenantID,
 			dnsAsset.ID(),
 			ipAsset.ID(),
-			string(asset.RelTypeResolvesTo),
+			string(assetdom.RelTypeResolvesTo),
 			fmt.Sprintf("%s resolves to IP %s", dnsAsset.Name(), resolvedIP),
 			0.90,
 		)
@@ -147,10 +147,10 @@ func (s *RelationshipSuggestionService) GenerateSuggestions(ctx context.Context,
 }
 
 // ListPending returns pending suggestions for a tenant, optionally filtered by search.
-func (s *RelationshipSuggestionService) ListPending(ctx context.Context, tenantID string, search string, page pagination.Pagination) (pagination.Result[*relationship.Suggestion], error) {
+func (s *RelationshipSuggestionService) ListPending(ctx context.Context, tenantID string, search string, page pagination.Pagination) (pagination.Result[*relationshipdom.Suggestion], error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return pagination.Result[*relationship.Suggestion]{}, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+		return pagination.Result[*relationshipdom.Suggestion]{}, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
 	return s.suggestionRepo.ListPending(ctx, parsedTenantID, search, page)
@@ -201,17 +201,17 @@ func (s *RelationshipSuggestionService) Approve(ctx context.Context, tenantID, s
 		return err
 	}
 
-	if suggestion.Status() != relationship.SuggestionPending {
+	if suggestion.Status() != relationshipdom.SuggestionPending {
 		return fmt.Errorf("%w: suggestion is not pending", shared.ErrValidation)
 	}
 
 	// Create the real relationship
-	relType, parseErr := asset.ParseRelationshipType(suggestion.RelationshipType())
+	relType, parseErr := assetdom.ParseRelationshipType(suggestion.RelationshipType())
 	if parseErr != nil {
 		return fmt.Errorf("invalid relationship type in suggestion: %w", parseErr)
 	}
 
-	rel, relErr := asset.NewRelationship(
+	rel, relErr := assetdom.NewRelationship(
 		parsedTenantID,
 		suggestion.SourceAssetID(),
 		suggestion.TargetAssetID(),
@@ -259,13 +259,13 @@ func (s *RelationshipSuggestionService) ApproveAll(ctx context.Context, tenantID
 	// Create relationships for each approved suggestion
 	created := 0
 	for _, suggestion := range approved {
-		relType, parseErr := asset.ParseRelationshipType(suggestion.RelationshipType())
+		relType, parseErr := assetdom.ParseRelationshipType(suggestion.RelationshipType())
 		if parseErr != nil {
 			s.logger.Warn("skipping suggestion with invalid relationship type", "suggestion_id", suggestion.ID().String(), "type", suggestion.RelationshipType())
 			continue
 		}
 
-		rel, relErr := asset.NewRelationship(
+		rel, relErr := assetdom.NewRelationship(
 			parsedTenantID,
 			suggestion.SourceAssetID(),
 			suggestion.TargetAssetID(),
@@ -304,7 +304,7 @@ func (s *RelationshipSuggestionService) UpdateRelationshipType(ctx context.Conte
 		return fmt.Errorf("%w: relationship type is required", shared.ErrValidation)
 	}
 	// Validate the relationship type is valid
-	if _, parseErr := asset.ParseRelationshipType(relType); parseErr != nil {
+	if _, parseErr := assetdom.ParseRelationshipType(relType); parseErr != nil {
 		return fmt.Errorf("%w: invalid relationship type: %s", shared.ErrValidation, relType)
 	}
 
@@ -331,7 +331,7 @@ func (s *RelationshipSuggestionService) Dismiss(ctx context.Context, tenantID, s
 		return err
 	}
 
-	if suggestion.Status() != relationship.SuggestionPending {
+	if suggestion.Status() != relationshipdom.SuggestionPending {
 		return fmt.Errorf("%w: suggestion is not pending", shared.ErrValidation)
 	}
 
@@ -355,7 +355,7 @@ func (s *RelationshipSuggestionService) CountPending(ctx context.Context, tenant
 
 // findParentDomain extracts the parent domain from a subdomain name and looks it up.
 // Example: "api.example.com" -> look for "example.com" in the map.
-func findParentDomain(subdomainName string, domainMap map[string]*asset.Asset) *asset.Asset {
+func findParentDomain(subdomainName string, domainMap map[string]*assetdom.Asset) *assetdom.Asset {
 	parts := strings.SplitN(subdomainName, ".", 2)
 	if len(parts) < 2 {
 		return nil
@@ -383,7 +383,7 @@ func findParentDomain(subdomainName string, domainMap map[string]*asset.Asset) *
 }
 
 // getResolvedIP extracts the resolved_ip property from an asset.
-func getResolvedIP(a *asset.Asset) string {
+func getResolvedIP(a *assetdom.Asset) string {
 	props := a.Properties()
 
 	// Check resolved_ip property
@@ -414,16 +414,16 @@ func getResolvedIP(a *asset.Asset) string {
 
 // fetchAllAssets retrieves all assets of a given type for a tenant, paginating through all pages.
 // This prevents the LIMIT 100 cap from silently truncating large datasets.
-func (s *RelationshipSuggestionService) fetchAllAssets(ctx context.Context, tenantID string, assetType asset.AssetType) ([]*asset.Asset, error) {
+func (s *RelationshipSuggestionService) fetchAllAssets(ctx context.Context, tenantID string, assetType assetdom.AssetType) ([]*assetdom.Asset, error) {
 	const pageSize = 100
-	filter := asset.Filter{
+	filter := assetdom.Filter{
 		TenantID: &tenantID,
-		Types:    []asset.AssetType{assetType},
+		Types:    []assetdom.AssetType{assetType},
 	}
 
-	var all []*asset.Asset
+	var all []*assetdom.Asset
 	for page := 1; ; page++ {
-		result, err := s.assetRepo.List(ctx, filter, asset.ListOptions{}, pagination.New(page, pageSize))
+		result, err := s.assetRepo.List(ctx, filter, assetdom.ListOptions{}, pagination.New(page, pageSize))
 		if err != nil {
 			return nil, err
 		}

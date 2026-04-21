@@ -1,10 +1,10 @@
-package app
+package asset
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/businessunit"
+	businessunitdom "github.com/openctemio/api/pkg/domain/businessunit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -12,12 +12,12 @@ import (
 
 // BusinessUnitService manages business units.
 type BusinessUnitService struct {
-	repo   businessunit.Repository
+	repo   businessunitdom.Repository
 	logger *logger.Logger
 }
 
 // NewBusinessUnitService creates a new service.
-func NewBusinessUnitService(repo businessunit.Repository, log *logger.Logger) *BusinessUnitService {
+func NewBusinessUnitService(repo businessunitdom.Repository, log *logger.Logger) *BusinessUnitService {
 	return &BusinessUnitService{repo: repo, logger: log}
 }
 
@@ -32,12 +32,12 @@ type CreateBusinessUnitInput struct {
 }
 
 // Create creates a new business unit.
-func (s *BusinessUnitService) Create(ctx context.Context, input CreateBusinessUnitInput) (*businessunit.BusinessUnit, error) {
+func (s *BusinessUnitService) Create(ctx context.Context, input CreateBusinessUnitInput) (*businessunitdom.BusinessUnit, error) {
 	tid, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
-	bu, err := businessunit.NewBusinessUnit(tid, input.Name)
+	bu, err := businessunitdom.NewBusinessUnit(tid, input.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -50,14 +50,14 @@ func (s *BusinessUnitService) Create(ctx context.Context, input CreateBusinessUn
 }
 
 // Get retrieves a BU.
-func (s *BusinessUnitService) Get(ctx context.Context, tenantID, buID string) (*businessunit.BusinessUnit, error) {
+func (s *BusinessUnitService) Get(ctx context.Context, tenantID, buID string) (*businessunitdom.BusinessUnit, error) {
 	tid, _ := shared.IDFromString(tenantID)
 	bid, _ := shared.IDFromString(buID)
 	return s.repo.GetByID(ctx, tid, bid)
 }
 
 // List lists BUs.
-func (s *BusinessUnitService) List(ctx context.Context, tenantID string, filter businessunit.Filter, page pagination.Pagination) (pagination.Result[*businessunit.BusinessUnit], error) {
+func (s *BusinessUnitService) List(ctx context.Context, tenantID string, filter businessunitdom.Filter, page pagination.Pagination) (pagination.Result[*businessunitdom.BusinessUnit], error) {
 	tid, _ := shared.IDFromString(tenantID)
 	filter.TenantID = &tid
 	return s.repo.List(ctx, filter, page)
@@ -75,7 +75,7 @@ type UpdateBusinessUnitInput struct {
 }
 
 // Update updates an existing business unit.
-func (s *BusinessUnitService) Update(ctx context.Context, input UpdateBusinessUnitInput) (*businessunit.BusinessUnit, error) {
+func (s *BusinessUnitService) Update(ctx context.Context, input UpdateBusinessUnitInput) (*businessunitdom.BusinessUnit, error) {
 	tid, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)

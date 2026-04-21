@@ -1,4 +1,4 @@
-package app
+package asset
 
 import (
 	"context"
@@ -10,19 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/asset"
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // AssetImportService handles bulk asset import from various formats.
 type AssetImportService struct {
-	assetRepo asset.Repository
+	assetRepo assetdom.Repository
 	logger    *logger.Logger
 }
 
 // NewAssetImportService creates a new AssetImportService.
-func NewAssetImportService(assetRepo asset.Repository, log *logger.Logger) *AssetImportService {
+func NewAssetImportService(assetRepo assetdom.Repository, log *logger.Logger) *AssetImportService {
 	return &AssetImportService{
 		assetRepo: assetRepo,
 		logger:    log.With("service", "asset-import"),
@@ -85,7 +85,7 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 			continue
 		}
 
-		a, createErr := asset.NewAssetWithTenant(tid, name, asset.AssetType(assetType), asset.CriticalityMedium)
+		a, createErr := assetdom.NewAssetWithTenant(tid, name, assetdom.AssetType(assetType), assetdom.CriticalityMedium)
 		if createErr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("invalid asset %s: %v", name, createErr))
 			continue
@@ -206,7 +206,7 @@ func (s *AssetImportService) ImportNessus(ctx context.Context, tenantID string, 
 			continue
 		}
 
-		a, createErr := asset.NewAssetWithTenant(tid, hostname, asset.AssetTypeHost, asset.CriticalityMedium)
+		a, createErr := assetdom.NewAssetWithTenant(tid, hostname, assetdom.AssetTypeHost, assetdom.CriticalityMedium)
 		if createErr != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("invalid host %s: %v", hostname, createErr))
 			continue
@@ -296,7 +296,7 @@ func (s *AssetImportService) ImportKubernetes(ctx context.Context, tenantID stri
 	now := time.Now().UTC()
 
 	// Create cluster asset
-	cluster, clusterErr := asset.NewAssetWithTenant(tid, input.ClusterName, asset.AssetType("host"), asset.CriticalityHigh)
+	cluster, clusterErr := assetdom.NewAssetWithTenant(tid, input.ClusterName, assetdom.AssetType("host"), assetdom.CriticalityHigh)
 	if clusterErr == nil {
 		cluster.SetSubType("kubernetes_cluster")
 		cluster.SetProperties(map[string]any{"namespace_count": len(input.Namespaces)})
@@ -317,7 +317,7 @@ func (s *AssetImportService) ImportKubernetes(ctx context.Context, tenantID stri
 		for _, wl := range ns.Workloads {
 			name := fmt.Sprintf("%s/%s", ns.Name, wl.Name)
 
-			a, createErr := asset.NewAssetWithTenant(tid, name, asset.AssetType("container"), asset.CriticalityMedium)
+			a, createErr := assetdom.NewAssetWithTenant(tid, name, assetdom.AssetType("container"), assetdom.CriticalityMedium)
 			if createErr != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("workload %s: %v", name, createErr))
 				continue

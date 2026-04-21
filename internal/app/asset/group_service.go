@@ -1,11 +1,11 @@
-package app
+package asset
 
 import (
 	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/assetgroup"
+	assetgroupdom "github.com/openctemio/api/pkg/domain/assetgroup"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -13,7 +13,7 @@ import (
 
 // AssetGroupService handles asset group business logic.
 type AssetGroupService struct {
-	repo   assetgroup.Repository
+	repo   assetgroupdom.Repository
 	logger *logger.Logger
 
 	// Scope rule reconciler callback (set by services.go wiring)
@@ -21,7 +21,7 @@ type AssetGroupService struct {
 }
 
 // NewAssetGroupService creates a new asset group service.
-func NewAssetGroupService(repo assetgroup.Repository, log *logger.Logger) *AssetGroupService {
+func NewAssetGroupService(repo assetgroupdom.Repository, log *logger.Logger) *AssetGroupService {
 	return &AssetGroupService{
 		repo:   repo,
 		logger: log,
@@ -79,25 +79,25 @@ type ListAssetGroupsInput struct {
 
 // ListAssetGroupsOutput represents output from listing asset groups.
 type ListAssetGroupsOutput struct {
-	Groups []*assetgroup.AssetGroup
+	Groups []*assetgroupdom.AssetGroup
 	Total  int64
 	Page   int
 	Pages  int
 }
 
 // CreateAssetGroup creates a new asset group.
-func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAssetGroupInput) (*assetgroup.AssetGroup, error) {
+func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAssetGroupInput) (*assetgroupdom.AssetGroup, error) {
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	env, ok := assetgroup.ParseEnvironment(input.Environment)
+	env, ok := assetgroupdom.ParseEnvironment(input.Environment)
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid environment", shared.ErrValidation)
 	}
 
-	crit, ok := assetgroup.ParseCriticality(input.Criticality)
+	crit, ok := assetgroupdom.ParseCriticality(input.Criticality)
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid criticality", shared.ErrValidation)
 	}
@@ -111,7 +111,7 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 		return nil, fmt.Errorf("%w: asset group with this name already exists", shared.ErrAlreadyExists)
 	}
 
-	group, err := assetgroup.NewAssetGroupWithTenant(tenantID, input.Name, env, crit)
+	group, err := assetgroupdom.NewAssetGroupWithTenant(tenantID, input.Name, env, crit)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 }
 
 // GetAssetGroup retrieves an asset group by tenant and ID.
-func (s *AssetGroupService) GetAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) (*assetgroup.AssetGroup, error) {
+func (s *AssetGroupService) GetAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) (*assetgroupdom.AssetGroup, error) {
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -167,7 +167,7 @@ func (s *AssetGroupService) GetAssetGroup(ctx context.Context, tenantIDStr strin
 }
 
 // UpdateAssetGroup updates an existing asset group.
-func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID, input UpdateAssetGroupInput) (*assetgroup.AssetGroup, error) {
+func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID, input UpdateAssetGroupInput) (*assetgroupdom.AssetGroup, error) {
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -188,7 +188,7 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 	}
 
 	if input.Environment != nil {
-		env, ok := assetgroup.ParseEnvironment(*input.Environment)
+		env, ok := assetgroupdom.ParseEnvironment(*input.Environment)
 		if !ok {
 			return nil, fmt.Errorf("%w: invalid environment", shared.ErrValidation)
 		}
@@ -198,7 +198,7 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 	}
 
 	if input.Criticality != nil {
-		crit, ok := assetgroup.ParseCriticality(*input.Criticality)
+		crit, ok := assetgroupdom.ParseCriticality(*input.Criticality)
 		if !ok {
 			return nil, fmt.Errorf("%w: invalid criticality", shared.ErrValidation)
 		}
@@ -246,16 +246,16 @@ func (s *AssetGroupService) DeleteAssetGroup(ctx context.Context, id shared.ID) 
 
 // ListAssetGroups lists asset groups with filtering and pagination.
 func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAssetGroupsInput) (*ListAssetGroupsOutput, error) {
-	filter := assetgroup.NewFilter().WithTenantID(input.TenantID)
+	filter := assetgroupdom.NewFilter().WithTenantID(input.TenantID)
 
 	if input.Search != "" {
 		filter = filter.WithSearch(input.Search)
 	}
 
 	if len(input.Environments) > 0 {
-		envs := make([]assetgroup.Environment, 0, len(input.Environments))
+		envs := make([]assetgroupdom.Environment, 0, len(input.Environments))
 		for _, e := range input.Environments {
-			if env, ok := assetgroup.ParseEnvironment(e); ok {
+			if env, ok := assetgroupdom.ParseEnvironment(e); ok {
 				envs = append(envs, env)
 			}
 		}
@@ -265,9 +265,9 @@ func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAsset
 	}
 
 	if len(input.Criticalities) > 0 {
-		crits := make([]assetgroup.Criticality, 0, len(input.Criticalities))
+		crits := make([]assetgroupdom.Criticality, 0, len(input.Criticalities))
 		for _, c := range input.Criticalities {
-			if crit, ok := assetgroup.ParseCriticality(c); ok {
+			if crit, ok := assetgroupdom.ParseCriticality(c); ok {
 				crits = append(crits, crit)
 			}
 		}
@@ -295,9 +295,9 @@ func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAsset
 		filter.MaxRiskScore = input.MaxRiskScore
 	}
 
-	opts := assetgroup.NewListOptions()
+	opts := assetgroupdom.NewListOptions()
 	if input.Sort != "" {
-		sortOpt := pagination.NewSortOption(assetgroup.AllowedSortFields()).Parse(input.Sort)
+		sortOpt := pagination.NewSortOption(assetgroupdom.AllowedSortFields()).Parse(input.Sort)
 		opts = opts.WithSort(sortOpt)
 	}
 
@@ -317,7 +317,7 @@ func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAsset
 }
 
 // GetAssetGroupStats retrieves aggregated statistics.
-func (s *AssetGroupService) GetAssetGroupStats(ctx context.Context, tenantID string) (*assetgroup.Stats, error) {
+func (s *AssetGroupService) GetAssetGroupStats(ctx context.Context, tenantID string) (*assetgroupdom.Stats, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
@@ -406,13 +406,13 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, groupID s
 }
 
 // GetGroupAssets retrieves assets in a group.
-func (s *AssetGroupService) GetGroupAssets(ctx context.Context, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroup.GroupAsset], error) {
+func (s *AssetGroupService) GetGroupAssets(ctx context.Context, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupAsset], error) {
 	page := pagination.New(pageNum, perPage)
 	return s.repo.GetGroupAssets(ctx, groupID, page)
 }
 
 // GetGroupFindings retrieves findings for assets in a group.
-func (s *AssetGroupService) GetGroupFindings(ctx context.Context, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroup.GroupFinding], error) {
+func (s *AssetGroupService) GetGroupFindings(ctx context.Context, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupFinding], error) {
 	page := pagination.New(pageNum, perPage)
 	return s.repo.GetGroupFindings(ctx, groupID, page)
 }

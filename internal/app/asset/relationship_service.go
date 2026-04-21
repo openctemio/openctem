@@ -1,26 +1,26 @@
-package app
+package asset
 
 import (
 	"context"
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/asset"
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // AssetRelationshipService handles relationship business logic.
 type AssetRelationshipService struct {
-	relRepo   asset.RelationshipRepository
-	assetRepo asset.Repository
+	relRepo   assetdom.RelationshipRepository
+	assetRepo assetdom.Repository
 	logger    *logger.Logger
 }
 
 // NewAssetRelationshipService creates a new AssetRelationshipService.
 func NewAssetRelationshipService(
-	relRepo asset.RelationshipRepository,
-	assetRepo asset.Repository,
+	relRepo assetdom.RelationshipRepository,
+	assetRepo assetdom.Repository,
 	log *logger.Logger,
 ) *AssetRelationshipService {
 	return &AssetRelationshipService{
@@ -169,7 +169,7 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 		}
 
 		// Validate relationship type
-		relType, perr := asset.ParseRelationshipType(item.Type)
+		relType, perr := assetdom.ParseRelationshipType(item.Type)
 		if perr != nil {
 			fail(BatchCreateStatusError, perr.Error())
 			continue
@@ -182,10 +182,10 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 		}
 
 		// Placement mutex — same rule the singleton path enforces.
-		if relType == asset.RelTypeRunsOn || relType == asset.RelTypeDeployedTo {
-			conflictingType := asset.RelTypeDeployedTo
-			if relType == asset.RelTypeDeployedTo {
-				conflictingType = asset.RelTypeRunsOn
+		if relType == assetdom.RelTypeRunsOn || relType == assetdom.RelTypeDeployedTo {
+			conflictingType := assetdom.RelTypeDeployedTo
+			if relType == assetdom.RelTypeDeployedTo {
+				conflictingType = assetdom.RelTypeRunsOn
 			}
 			exists, eerr := s.relRepo.Exists(ctx, parsedTenantID, parsedSourceID, parsedTargetID, conflictingType)
 			if eerr != nil {
@@ -200,7 +200,7 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 		}
 
 		// Build the domain entity
-		rel, nerr := asset.NewRelationship(parsedTenantID, parsedSourceID, parsedTargetID, relType)
+		rel, nerr := assetdom.NewRelationship(parsedTenantID, parsedSourceID, parsedTargetID, relType)
 		if nerr != nil {
 			fail(BatchCreateStatusError, nerr.Error())
 			continue
@@ -209,7 +209,7 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 			rel.SetDescription(item.Description)
 		}
 		if item.Confidence != "" {
-			confidence, cerr := asset.ParseRelationshipConfidence(item.Confidence)
+			confidence, cerr := assetdom.ParseRelationshipConfidence(item.Confidence)
 			if cerr != nil {
 				fail(BatchCreateStatusError, cerr.Error())
 				continue
@@ -217,7 +217,7 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 			_ = rel.SetConfidence(confidence)
 		}
 		if item.DiscoveryMethod != "" {
-			method, mderr := asset.ParseRelationshipDiscoveryMethod(item.DiscoveryMethod)
+			method, mderr := assetdom.ParseRelationshipDiscoveryMethod(item.DiscoveryMethod)
 			if mderr != nil {
 				fail(BatchCreateStatusError, mderr.Error())
 				continue
@@ -256,7 +256,7 @@ func (s *AssetRelationshipService) CreateRelationshipBatch(
 }
 
 // CreateRelationship creates a new relationship between two assets.
-func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input CreateRelationshipInput) (*asset.RelationshipWithAssets, error) {
+func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input CreateRelationshipInput) (*assetdom.RelationshipWithAssets, error) {
 	s.logger.Info("creating relationship", "source", input.SourceAssetID, "target", input.TargetAssetID, "type", input.Type)
 
 	// Parse IDs
@@ -274,7 +274,7 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 	}
 
 	// Parse relationship type
-	relType, err := asset.ParseRelationshipType(input.Type)
+	relType, err := assetdom.ParseRelationshipType(input.Type)
 	if err != nil {
 		return nil, err
 	}
@@ -295,12 +295,12 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 	//
 	// We only run this check when the requested type is one half of the
 	// pair; for every other relationship type the loop below is skipped.
-	if relType == asset.RelTypeRunsOn || relType == asset.RelTypeDeployedTo {
-		var conflictingType asset.RelationshipType
-		if relType == asset.RelTypeRunsOn {
-			conflictingType = asset.RelTypeDeployedTo
+	if relType == assetdom.RelTypeRunsOn || relType == assetdom.RelTypeDeployedTo {
+		var conflictingType assetdom.RelationshipType
+		if relType == assetdom.RelTypeRunsOn {
+			conflictingType = assetdom.RelTypeDeployedTo
 		} else {
-			conflictingType = asset.RelTypeRunsOn
+			conflictingType = assetdom.RelTypeRunsOn
 		}
 		exists, existsErr := s.relRepo.Exists(ctx, tenantID, sourceID, targetID, conflictingType)
 		if existsErr != nil {
@@ -316,7 +316,7 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 	}
 
 	// Create domain entity
-	rel, err := asset.NewRelationship(tenantID, sourceID, targetID, relType)
+	rel, err := assetdom.NewRelationship(tenantID, sourceID, targetID, relType)
 	if err != nil {
 		return nil, err
 	}
@@ -326,14 +326,14 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 		rel.SetDescription(input.Description)
 	}
 	if input.Confidence != "" {
-		confidence, err := asset.ParseRelationshipConfidence(input.Confidence)
+		confidence, err := assetdom.ParseRelationshipConfidence(input.Confidence)
 		if err != nil {
 			return nil, err
 		}
 		_ = rel.SetConfidence(confidence)
 	}
 	if input.DiscoveryMethod != "" {
-		method, err := asset.ParseRelationshipDiscoveryMethod(input.DiscoveryMethod)
+		method, err := assetdom.ParseRelationshipDiscoveryMethod(input.DiscoveryMethod)
 		if err != nil {
 			return nil, err
 		}
@@ -364,7 +364,7 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 }
 
 // GetRelationship retrieves a relationship by ID.
-func (s *AssetRelationshipService) GetRelationship(ctx context.Context, tenantID, relationshipID string) (*asset.RelationshipWithAssets, error) {
+func (s *AssetRelationshipService) GetRelationship(ctx context.Context, tenantID, relationshipID string) (*assetdom.RelationshipWithAssets, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
@@ -378,7 +378,7 @@ func (s *AssetRelationshipService) GetRelationship(ctx context.Context, tenantID
 }
 
 // UpdateRelationship updates a relationship's mutable fields.
-func (s *AssetRelationshipService) UpdateRelationship(ctx context.Context, tenantID, relationshipID string, input UpdateRelationshipInput) (*asset.RelationshipWithAssets, error) {
+func (s *AssetRelationshipService) UpdateRelationship(ctx context.Context, tenantID, relationshipID string, input UpdateRelationshipInput) (*assetdom.RelationshipWithAssets, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
@@ -400,7 +400,7 @@ func (s *AssetRelationshipService) UpdateRelationship(ctx context.Context, tenan
 		rel.SetDescription(*input.Description)
 	}
 	if input.Confidence != nil {
-		confidence, err := asset.ParseRelationshipConfidence(*input.Confidence)
+		confidence, err := assetdom.ParseRelationshipConfidence(*input.Confidence)
 		if err != nil {
 			return nil, err
 		}
@@ -447,8 +447,8 @@ func (s *AssetRelationshipService) DeleteRelationship(ctx context.Context, tenan
 func (s *AssetRelationshipService) ListAssetRelationships(
 	ctx context.Context,
 	tenantID, assetID string,
-	filter asset.RelationshipFilter,
-) ([]*asset.RelationshipWithAssets, int64, error) {
+	filter assetdom.RelationshipFilter,
+) ([]*assetdom.RelationshipWithAssets, int64, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
@@ -496,9 +496,9 @@ func (s *AssetRelationshipService) GetRelationshipTypeUsage(
 	// Walk every type in the registry so unused types appear with
 	// count=0. The order is the YAML declaration order which keeps
 	// the response stable across calls.
-	out := make([]RelationshipTypeUsage, 0, len(asset.AllRelationshipTypes()))
-	for _, t := range asset.AllRelationshipTypes() {
-		meta, ok := asset.RelationshipTypeRegistry[t]
+	out := make([]RelationshipTypeUsage, 0, len(assetdom.AllRelationshipTypes()))
+	for _, t := range assetdom.AllRelationshipTypes() {
+		meta, ok := assetdom.RelationshipTypeRegistry[t]
 		if !ok {
 			continue
 		}

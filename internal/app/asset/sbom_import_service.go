@@ -1,4 +1,4 @@
-package app
+package asset
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/openctemio/api/pkg/domain/component"
+	componentdom "github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -27,12 +27,12 @@ const (
 
 // SBOMImportService handles importing SBOM files (CycloneDX, SPDX).
 type SBOMImportService struct {
-	repo   component.Repository
+	repo   componentdom.Repository
 	logger *logger.Logger
 }
 
 // NewSBOMImportService creates a new SBOMImportService.
-func NewSBOMImportService(repo component.Repository, log *logger.Logger) *SBOMImportService {
+func NewSBOMImportService(repo componentdom.Repository, log *logger.Logger) *SBOMImportService {
 	return &SBOMImportService{
 		repo:   repo,
 		logger: log.With("service", "sbom-import"),
@@ -137,9 +137,9 @@ func (s *SBOMImportService) importCycloneDX(ctx context.Context, tenantID, asset
 			result.LicensesFound++
 		}
 
-		depType := component.DependencyTypeDirect
+		depType := componentdom.DependencyTypeDirect
 		if comp.Scope == cycloneDXScopeOptional || comp.Scope == cycloneDXScopeExcluded {
-			depType = component.DependencyTypeTransitive
+			depType = componentdom.DependencyTypeTransitive
 		}
 
 		if err := s.upsertComponent(ctx, tenantID, assetID, comp.Name, comp.Version, ecosystem, comp.PURL, license, depType); err != nil {
@@ -226,7 +226,7 @@ func (s *SBOMImportService) importSPDX(ctx context.Context, tenantID, assetID sh
 			result.LicensesFound++
 		}
 
-		if err := s.upsertComponent(ctx, tenantID, assetID, pkg.Name, pkg.VersionInfo, ecosystem, purl, license, component.DependencyTypeDirect); err != nil {
+		if err := s.upsertComponent(ctx, tenantID, assetID, pkg.Name, pkg.VersionInfo, ecosystem, purl, license, componentdom.DependencyTypeDirect); err != nil {
 			if len(result.Errors) < 50 {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s@%s: %v", pkg.Name, pkg.VersionInfo, err))
 			}
@@ -251,14 +251,14 @@ func (s *SBOMImportService) importSPDX(ctx context.Context, tenantID, assetID sh
 func (s *SBOMImportService) upsertComponent(
 	ctx context.Context, tenantID, assetID shared.ID,
 	name, version, ecosystem, purl, license string,
-	depType component.DependencyType,
+	depType componentdom.DependencyType,
 ) error {
-	eco, err := component.ParseEcosystem(ecosystem)
+	eco, err := componentdom.ParseEcosystem(ecosystem)
 	if err != nil {
-		eco = component.EcosystemOther
+		eco = componentdom.EcosystemOther
 	}
 
-	c, err := component.NewComponent(name, version, eco)
+	c, err := componentdom.NewComponent(name, version, eco)
 	if err != nil {
 		return err
 	}
@@ -275,7 +275,7 @@ func (s *SBOMImportService) upsertComponent(
 		return fmt.Errorf("upsert: %w", err)
 	}
 
-	dep, err := component.NewAssetDependency(tenantID, assetID, compID, "", depType)
+	dep, err := componentdom.NewAssetDependency(tenantID, assetID, compID, "", depType)
 	if err != nil {
 		return fmt.Errorf("dependency: %w", err)
 	}

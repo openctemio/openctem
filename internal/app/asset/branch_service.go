@@ -1,11 +1,11 @@
-package app
+package asset
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/branch"
+	branchdom "github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -13,12 +13,12 @@ import (
 
 // BranchService handles branch-related business operations.
 type BranchService struct {
-	repo   branch.Repository
+	repo   branchdom.Repository
 	logger *logger.Logger
 }
 
 // NewBranchService creates a new BranchService.
-func NewBranchService(repo branch.Repository, log *logger.Logger) *BranchService {
+func NewBranchService(repo branchdom.Repository, log *logger.Logger) *BranchService {
 	return &BranchService{
 		repo:   repo,
 		logger: log.With("service", "branch"),
@@ -36,7 +36,7 @@ type CreateBranchInput struct {
 }
 
 // CreateBranch creates a new branch.
-func (s *BranchService) CreateBranch(ctx context.Context, input CreateBranchInput) (*branch.Branch, error) {
+func (s *BranchService) CreateBranch(ctx context.Context, input CreateBranchInput) (*branchdom.Branch, error) {
 	s.logger.Info("creating branch", "name", input.Name, "repository_id", input.RepositoryID)
 
 	repositoryID, err := shared.IDFromString(input.RepositoryID)
@@ -44,7 +44,7 @@ func (s *BranchService) CreateBranch(ctx context.Context, input CreateBranchInpu
 		return nil, shared.ErrNotFound
 	}
 
-	branchType := branch.ParseType(input.BranchType)
+	branchType := branchdom.ParseType(input.BranchType)
 
 	// Check if branch already exists
 	exists, err := s.repo.ExistsByName(ctx, repositoryID, input.Name)
@@ -52,10 +52,10 @@ func (s *BranchService) CreateBranch(ctx context.Context, input CreateBranchInpu
 		return nil, fmt.Errorf("failed to check branch existence: %w", err)
 	}
 	if exists {
-		return nil, branch.AlreadyExistsError(input.Name)
+		return nil, branchdom.AlreadyExistsError(input.Name)
 	}
 
-	b, err := branch.NewBranch(repositoryID, input.Name, branchType)
+	b, err := branchdom.NewBranch(repositoryID, input.Name, branchType)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (s *BranchService) CreateBranch(ctx context.Context, input CreateBranchInpu
 }
 
 // GetBranch retrieves a branch by ID.
-func (s *BranchService) GetBranch(ctx context.Context, branchID string) (*branch.Branch, error) {
+func (s *BranchService) GetBranch(ctx context.Context, branchID string) (*branchdom.Branch, error) {
 	parsedID, err := shared.IDFromString(branchID)
 	if err != nil {
 		return nil, shared.ErrNotFound
@@ -91,7 +91,7 @@ func (s *BranchService) GetBranch(ctx context.Context, branchID string) (*branch
 }
 
 // GetBranchByName retrieves a branch by repository ID and name.
-func (s *BranchService) GetBranchByName(ctx context.Context, repositoryID, name string) (*branch.Branch, error) {
+func (s *BranchService) GetBranchByName(ctx context.Context, repositoryID, name string) (*branchdom.Branch, error) {
 	parsedRepositoryID, err := shared.IDFromString(repositoryID)
 	if err != nil {
 		return nil, shared.ErrNotFound
@@ -114,7 +114,7 @@ type UpdateBranchInput struct {
 }
 
 // UpdateBranch updates an existing branch.
-func (s *BranchService) UpdateBranch(ctx context.Context, branchID, repositoryID string, input UpdateBranchInput) (*branch.Branch, error) {
+func (s *BranchService) UpdateBranch(ctx context.Context, branchID, repositoryID string, input UpdateBranchInput) (*branchdom.Branch, error) {
 	parsedID, err := shared.IDFromString(branchID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -225,13 +225,13 @@ type ListBranchesInput struct {
 }
 
 // ListBranches retrieves branches with filtering and pagination.
-func (s *BranchService) ListBranches(ctx context.Context, input ListBranchesInput) (pagination.Result[*branch.Branch], error) {
+func (s *BranchService) ListBranches(ctx context.Context, input ListBranchesInput) (pagination.Result[*branchdom.Branch], error) {
 	repositoryID, err := shared.IDFromString(input.RepositoryID)
 	if err != nil {
-		return pagination.Result[*branch.Branch]{}, shared.ErrNotFound
+		return pagination.Result[*branchdom.Branch]{}, shared.ErrNotFound
 	}
 
-	filter := branch.Filter{
+	filter := branchdom.Filter{
 		RepositoryID: &repositoryID,
 	}
 
@@ -240,9 +240,9 @@ func (s *BranchService) ListBranches(ctx context.Context, input ListBranchesInpu
 	}
 
 	if len(input.BranchTypes) > 0 {
-		types := make([]branch.Type, 0, len(input.BranchTypes))
+		types := make([]branchdom.Type, 0, len(input.BranchTypes))
 		for _, t := range input.BranchTypes {
-			types = append(types, branch.ParseType(t))
+			types = append(types, branchdom.ParseType(t))
 		}
 		filter.Types = types
 	}
@@ -252,11 +252,11 @@ func (s *BranchService) ListBranches(ctx context.Context, input ListBranchesInpu
 	}
 
 	if input.ScanStatus != "" {
-		status := branch.ParseScanStatus(input.ScanStatus)
+		status := branchdom.ParseScanStatus(input.ScanStatus)
 		filter.ScanStatus = &status
 	}
 
-	opts := branch.ListOptions{}
+	opts := branchdom.ListOptions{}
 	const SortOrderDesc = "desc"
 
 	if input.Sort != "" {
@@ -275,7 +275,7 @@ func (s *BranchService) ListBranches(ctx context.Context, input ListBranchesInpu
 }
 
 // ListRepositoryBranches retrieves all branches for a repository.
-func (s *BranchService) ListRepositoryBranches(ctx context.Context, repositoryID string) ([]*branch.Branch, error) {
+func (s *BranchService) ListRepositoryBranches(ctx context.Context, repositoryID string) ([]*branchdom.Branch, error) {
 	parsedRepositoryID, err := shared.IDFromString(repositoryID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid repository id format", shared.ErrValidation)
@@ -285,7 +285,7 @@ func (s *BranchService) ListRepositoryBranches(ctx context.Context, repositoryID
 }
 
 // GetDefaultBranch retrieves the default branch for a repository.
-func (s *BranchService) GetDefaultBranch(ctx context.Context, repositoryID string) (*branch.Branch, error) {
+func (s *BranchService) GetDefaultBranch(ctx context.Context, repositoryID string) (*branchdom.Branch, error) {
 	parsedRepositoryID, err := shared.IDFromString(repositoryID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid repository id format", shared.ErrValidation)
@@ -295,7 +295,7 @@ func (s *BranchService) GetDefaultBranch(ctx context.Context, repositoryID strin
 }
 
 // SetDefaultBranch sets a branch as the default for a repository.
-func (s *BranchService) SetDefaultBranch(ctx context.Context, branchID, repositoryID string) (*branch.Branch, error) {
+func (s *BranchService) SetDefaultBranch(ctx context.Context, branchID, repositoryID string) (*branchdom.Branch, error) {
 	parsedID, err := shared.IDFromString(branchID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -342,7 +342,7 @@ type UpdateBranchScanStatusInput struct {
 }
 
 // UpdateBranchScanStatus updates scan-related fields for a branch.
-func (s *BranchService) UpdateBranchScanStatus(ctx context.Context, branchID, repositoryID string, input UpdateBranchScanStatusInput) (*branch.Branch, error) {
+func (s *BranchService) UpdateBranchScanStatus(ctx context.Context, branchID, repositoryID string, input UpdateBranchScanStatusInput) (*branchdom.Branch, error) {
 	parsedID, err := shared.IDFromString(branchID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
@@ -363,10 +363,10 @@ func (s *BranchService) UpdateBranchScanStatus(ctx context.Context, branchID, re
 		return nil, fmt.Errorf("%w: invalid scan id format", shared.ErrValidation)
 	}
 
-	scanStatus := branch.ParseScanStatus(input.ScanStatus)
-	qgStatus := branch.QualityGateNotComputed
+	scanStatus := branchdom.ParseScanStatus(input.ScanStatus)
+	qgStatus := branchdom.QualityGateNotComputed
 	if input.QualityGate != "" {
-		qgStatus = branch.ParseQualityGateStatus(input.QualityGate)
+		qgStatus = branchdom.ParseQualityGateStatus(input.QualityGate)
 	}
 
 	b.MarkScanned(scanID, scanStatus, qgStatus)
@@ -387,7 +387,7 @@ func (s *BranchService) UpdateBranchScanStatus(ctx context.Context, branchID, re
 
 // CountRepositoryBranches counts branches for a repository.
 // CompareBranches compares findings between two branches.
-func (s *BranchService) CompareBranches(ctx context.Context, repositoryID, baseBranch, compareBranch string) (*branch.BranchComparison, error) {
+func (s *BranchService) CompareBranches(ctx context.Context, repositoryID, baseBranch, compareBranch string) (*branchdom.BranchComparison, error) {
 	parsedRepoID, err := shared.IDFromString(repositoryID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid repository id", shared.ErrValidation)
@@ -404,7 +404,7 @@ func (s *BranchService) CountRepositoryBranches(ctx context.Context, repositoryI
 		return 0, fmt.Errorf("%w: invalid repository id format", shared.ErrValidation)
 	}
 
-	filter := branch.Filter{
+	filter := branchdom.Filter{
 		RepositoryID: &parsedRepositoryID,
 	}
 	return s.repo.Count(ctx, filter)
