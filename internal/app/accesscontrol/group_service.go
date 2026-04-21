@@ -1,31 +1,34 @@
-package app
+package accesscontrol
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/accesscontrol"
+	auditapp "github.com/openctemio/api/internal/app/audit"
+	"github.com/openctemio/api/internal/app/integration"
+
+	accesscontroldom "github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/group"
+	groupdom "github.com/openctemio/api/pkg/domain/group"
 	"github.com/openctemio/api/pkg/domain/notification"
-	"github.com/openctemio/api/pkg/domain/permissionset"
+	permissionsetdom "github.com/openctemio/api/pkg/domain/permissionset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // GroupService handles group-related business operations.
 type GroupService struct {
-	repo                group.Repository
-	permissionSetRepo   permissionset.Repository
-	accessControlRepo   accesscontrol.Repository
-	auditService        *AuditService
-	notificationService *NotificationService
+	repo                groupdom.Repository
+	permissionSetRepo   permissionsetdom.Repository
+	accessControlRepo   accesscontroldom.Repository
+	auditService        *auditapp.AuditService
+	notificationService *integration.NotificationService
 	logger              *logger.Logger
 }
 
 // NewGroupService creates a new GroupService.
 func NewGroupService(
-	repo group.Repository,
+	repo groupdom.Repository,
 	log *logger.Logger,
 	opts ...GroupServiceOption,
 ) *GroupService {
@@ -43,34 +46,34 @@ func NewGroupService(
 type GroupServiceOption func(*GroupService)
 
 // WithGroupAuditService sets the audit service for GroupService.
-func WithGroupAuditService(auditService *AuditService) GroupServiceOption {
+func WithGroupAuditService(auditService *auditapp.AuditService) GroupServiceOption {
 	return func(s *GroupService) {
 		s.auditService = auditService
 	}
 }
 
 // WithPermissionSetRepository sets the permission set repository.
-func WithPermissionSetRepository(repo permissionset.Repository) GroupServiceOption {
+func WithPermissionSetRepository(repo permissionsetdom.Repository) GroupServiceOption {
 	return func(s *GroupService) {
 		s.permissionSetRepo = repo
 	}
 }
 
 // WithAccessControlRepository sets the access control repository.
-func WithAccessControlRepository(repo accesscontrol.Repository) GroupServiceOption {
+func WithAccessControlRepository(repo accesscontroldom.Repository) GroupServiceOption {
 	return func(s *GroupService) {
 		s.accessControlRepo = repo
 	}
 }
 
 // SetNotificationService sets the notification service for GroupService.
-// This is used for late-binding when NotificationService is initialized after GroupService.
-func (s *GroupService) SetNotificationService(ns *NotificationService) {
+// This is used for late-binding when integration.NotificationService is initialized after GroupService.
+func (s *GroupService) SetNotificationService(ns *integration.NotificationService) {
 	s.notificationService = ns
 }
 
 // logAudit logs an audit event if audit service is configured.
-func (s *GroupService) logAudit(ctx context.Context, actx AuditContext, event AuditEvent) {
+func (s *GroupService) logAudit(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) {
 	if s.auditService == nil {
 		return
 	}
@@ -85,17 +88,17 @@ func (s *GroupService) logAudit(ctx context.Context, actx AuditContext, event Au
 
 // CreateGroupInput represents the input for creating a group.
 type CreateGroupInput struct {
-	TenantID           string                    `json:"-"`
-	Name               string                    `json:"name" validate:"required,min=2,max=100"`
-	Slug               string                    `json:"slug" validate:"required,min=2,max=100,slug"`
-	Description        string                    `json:"description" validate:"max=500"`
-	GroupType          string                    `json:"group_type" validate:"required,oneof=security_team team department project external"`
-	Settings           *group.GroupSettings      `json:"settings,omitempty"`
-	NotificationConfig *group.NotificationConfig `json:"notification_config,omitempty"`
+	TenantID           string                       `json:"-"`
+	Name               string                       `json:"name" validate:"required,min=2,max=100"`
+	Slug               string                       `json:"slug" validate:"required,min=2,max=100,slug"`
+	Description        string                       `json:"description" validate:"max=500"`
+	GroupType          string                       `json:"group_type" validate:"required,oneof=security_team team department project external"`
+	Settings           *groupdom.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *groupdom.NotificationConfig `json:"notification_config,omitempty"`
 }
 
 // CreateGroup creates a new group.
-func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, creatorUserID shared.ID, actx AuditContext) (*group.Group, error) {
+func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, creatorUserID shared.ID, actx auditapp.AuditContext) (*groupdom.Group, error) {
 	s.logger.Info("creating group", "name", input.Name, "slug", input.Slug, "type", input.GroupType)
 
 	tenantID, err := shared.IDFromString(input.TenantID)
@@ -104,7 +107,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 	}
 
 	// Validate group type
-	groupType := group.GroupType(input.GroupType)
+	groupType := groupdom.GroupType(input.GroupType)
 	if !groupType.IsValid() {
 		return nil, fmt.Errorf("%w: invalid group type", shared.ErrValidation)
 	}
@@ -119,7 +122,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 	}
 
 	// Create group
-	g, err := group.NewGroup(tenantID, input.Name, input.Slug, groupType)
+	g, err := groupdom.NewGroup(tenantID, input.Name, input.Slug, groupType)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +148,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 	_, err = s.AddMember(ctx, AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  creatorUserID,
-		Role:    string(group.MemberRoleOwner),
+		Role:    string(groupdom.MemberRoleOwner),
 	}, actx)
 	if err != nil {
 		// Rollback group creation
@@ -157,7 +160,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 
 	// Log audit event
 	actx.TenantID = input.TenantID
-	event := NewSuccessEvent(audit.ActionGroupCreated, audit.ResourceTypeGroup, g.ID().String()).
+	event := auditapp.NewSuccessEvent(audit.ActionGroupCreated, audit.ResourceTypeGroup, g.ID().String()).
 		WithResourceName(g.Name()).
 		WithMessage(fmt.Sprintf("Group '%s' created", g.Name())).
 		WithMetadata("group_type", input.GroupType)
@@ -167,7 +170,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 }
 
 // GetGroup retrieves a group by ID.
-func (s *GroupService) GetGroup(ctx context.Context, groupID string) (*group.Group, error) {
+func (s *GroupService) GetGroup(ctx context.Context, groupID string) (*groupdom.Group, error) {
 	id, err := shared.IDFromString(groupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
@@ -177,7 +180,7 @@ func (s *GroupService) GetGroup(ctx context.Context, groupID string) (*group.Gro
 }
 
 // GetGroupSecure retrieves a group by tenant and ID (tenant-scoped access control).
-func (s *GroupService) GetGroupSecure(ctx context.Context, tenantID, groupID string) (*group.Group, error) {
+func (s *GroupService) GetGroupSecure(ctx context.Context, tenantID, groupID string) (*groupdom.Group, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -190,7 +193,7 @@ func (s *GroupService) GetGroupSecure(ctx context.Context, tenantID, groupID str
 }
 
 // GetGroupBySlug retrieves a group by tenant and slug.
-func (s *GroupService) GetGroupBySlug(ctx context.Context, tenantID, slug string) (*group.Group, error) {
+func (s *GroupService) GetGroupBySlug(ctx context.Context, tenantID, slug string) (*groupdom.Group, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -201,16 +204,16 @@ func (s *GroupService) GetGroupBySlug(ctx context.Context, tenantID, slug string
 
 // UpdateGroupInput represents the input for updating a group.
 type UpdateGroupInput struct {
-	Name               *string                   `json:"name" validate:"omitempty,min=2,max=100"`
-	Slug               *string                   `json:"slug" validate:"omitempty,min=2,max=100,slug"`
-	Description        *string                   `json:"description" validate:"omitempty,max=500"`
-	Settings           *group.GroupSettings      `json:"settings,omitempty"`
-	NotificationConfig *group.NotificationConfig `json:"notification_config,omitempty"`
-	IsActive           *bool                     `json:"is_active,omitempty"`
+	Name               *string                      `json:"name" validate:"omitempty,min=2,max=100"`
+	Slug               *string                      `json:"slug" validate:"omitempty,min=2,max=100,slug"`
+	Description        *string                      `json:"description" validate:"omitempty,max=500"`
+	Settings           *groupdom.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *groupdom.NotificationConfig `json:"notification_config,omitempty"`
+	IsActive           *bool                        `json:"is_active,omitempty"`
 }
 
 // UpdateGroup updates a group.
-func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input UpdateGroupInput, actx AuditContext) (*group.Group, error) {
+func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input UpdateGroupInput, actx auditapp.AuditContext) (*groupdom.Group, error) {
 	id, err := shared.IDFromString(groupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
@@ -269,7 +272,7 @@ func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input Up
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
-	event := NewSuccessEvent(audit.ActionGroupUpdated, audit.ResourceTypeGroup, groupID).
+	event := auditapp.NewSuccessEvent(audit.ActionGroupUpdated, audit.ResourceTypeGroup, groupID).
 		WithResourceName(g.Name()).
 		WithMessage(fmt.Sprintf("Group '%s' updated", g.Name()))
 	s.logAudit(ctx, actx, event)
@@ -278,7 +281,7 @@ func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input Up
 }
 
 // DeleteGroup deletes a group.
-func (s *GroupService) DeleteGroup(ctx context.Context, groupID string, actx AuditContext) error {
+func (s *GroupService) DeleteGroup(ctx context.Context, groupID string, actx auditapp.AuditContext) error {
 	id, err := shared.IDFromString(groupID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
@@ -300,7 +303,7 @@ func (s *GroupService) DeleteGroup(ctx context.Context, groupID string, actx Aud
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionGroupDeleted, audit.ResourceTypeGroup, groupID).
+	event := auditapp.NewSuccessEvent(audit.ActionGroupDeleted, audit.ResourceTypeGroup, groupID).
 		WithResourceName(groupName).
 		WithMessage(fmt.Sprintf("Group '%s' deleted", groupName)).
 		WithSeverity(audit.SeverityHigh)
@@ -321,7 +324,7 @@ type ListGroupsInput struct {
 
 // ListGroupsOutput represents the output for listing groups.
 type ListGroupsOutput struct {
-	Groups     []*group.Group
+	Groups     []*groupdom.Group
 	TotalCount int64
 }
 
@@ -332,15 +335,15 @@ func (s *GroupService) ListGroups(ctx context.Context, input ListGroupsInput) (*
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	filter := group.ListFilter{
+	filter := groupdom.ListFilter{
 		Search: input.Search,
 		Limit:  input.Limit,
 		Offset: input.Offset,
 	}
 
 	if input.GroupType != nil {
-		gt := group.GroupType(*input.GroupType)
-		filter.GroupTypes = []group.GroupType{gt}
+		gt := groupdom.GroupType(*input.GroupType)
+		filter.GroupTypes = []groupdom.GroupType{gt}
 	}
 
 	if input.IsActive != nil {
@@ -370,7 +373,7 @@ type GroupCounts struct {
 }
 
 // GetGroupCounts returns member and asset counts for the given groups.
-func (s *GroupService) GetGroupCounts(ctx context.Context, groups []*group.Group) (map[shared.ID]GroupCounts, error) {
+func (s *GroupService) GetGroupCounts(ctx context.Context, groups []*groupdom.Group) (map[shared.ID]GroupCounts, error) {
 	if len(groups) == 0 {
 		return make(map[shared.ID]GroupCounts), nil
 	}
@@ -409,7 +412,7 @@ func (s *GroupService) GetGroupCounts(ctx context.Context, groups []*group.Group
 }
 
 // CountUniqueMembers counts the number of distinct users across the given groups.
-func (s *GroupService) CountUniqueMembers(ctx context.Context, groups []*group.Group) (int, error) {
+func (s *GroupService) CountUniqueMembers(ctx context.Context, groups []*groupdom.Group) (int, error) {
 	if len(groups) == 0 {
 		return 0, nil
 	}
@@ -434,13 +437,13 @@ type AddGroupMemberInput struct {
 }
 
 // AddMember adds a user to a group.
-func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput, actx AuditContext) (*group.Member, error) {
+func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput, actx auditapp.AuditContext) (*groupdom.Member, error) {
 	groupID, err := shared.IDFromString(input.GroupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	role := group.MemberRole(input.Role)
+	role := groupdom.MemberRole(input.Role)
 	if !role.IsValid() {
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
@@ -450,11 +453,11 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	if err == nil {
 		return nil, fmt.Errorf("%w: user is already a member of this group", shared.ErrValidation)
 	}
-	if !group.IsMemberNotFound(err) {
+	if !groupdom.IsMemberNotFound(err) {
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
-	member, err := group.NewMember(groupID, input.UserID, role, nil)
+	member, err := groupdom.NewMember(groupID, input.UserID, role, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +480,7 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	if g != nil {
 		actx.TenantID = g.TenantID().String()
 	}
-	event := NewSuccessEvent(audit.ActionMemberAdded, audit.ResourceTypeGroup, input.GroupID).
+	event := auditapp.NewSuccessEvent(audit.ActionMemberAdded, audit.ResourceTypeGroup, input.GroupID).
 		WithMessage(fmt.Sprintf("Member added to group with role %s", role)).
 		WithMetadata("user_id", input.UserID.String()).
 		WithMetadata("role", input.Role)
@@ -517,13 +520,13 @@ type UpdateGroupMemberRoleInput struct {
 }
 
 // UpdateMemberRole updates a member's role in a group.
-func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMemberRoleInput, actx AuditContext) (*group.Member, error) {
+func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMemberRoleInput, actx auditapp.AuditContext) (*groupdom.Member, error) {
 	groupID, err := shared.IDFromString(input.GroupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	role := group.MemberRole(input.Role)
+	role := groupdom.MemberRole(input.Role)
 	if !role.IsValid() {
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
@@ -550,7 +553,7 @@ func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMe
 		actx.TenantID = g.TenantID().String()
 	}
 	changes := audit.NewChanges().Set("role", oldRole.String(), input.Role)
-	event := NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeGroup, input.GroupID).
+	event := auditapp.NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeGroup, input.GroupID).
 		WithChanges(changes).
 		WithMessage(fmt.Sprintf("Member role changed from %s to %s", oldRole, role)).
 		WithMetadata("user_id", input.UserID.String())
@@ -583,7 +586,7 @@ func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMe
 }
 
 // RemoveMember removes a member from a group.
-func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID shared.ID, actx AuditContext) error {
+func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID shared.ID, actx auditapp.AuditContext) error {
 	gid, err := shared.IDFromString(groupID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
@@ -601,7 +604,7 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 		return err
 	}
 
-	if member.Role() == group.MemberRoleOwner {
+	if member.Role() == groupdom.MemberRoleOwner {
 		// Count owners
 		members, err := s.repo.ListMembers(ctx, gid)
 		if err != nil {
@@ -609,7 +612,7 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 		}
 		ownerCount := 0
 		for _, m := range members {
-			if m.Role() == group.MemberRoleOwner {
+			if m.Role() == groupdom.MemberRoleOwner {
 				ownerCount++
 			}
 		}
@@ -633,7 +636,7 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
-	event := NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeGroup, groupID).
+	event := auditapp.NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeGroup, groupID).
 		WithMessage("Member removed from group").
 		WithMetadata("user_id", userID.String()).
 		WithSeverity(audit.SeverityHigh)
@@ -666,7 +669,7 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 }
 
 // ListGroupMembers lists all members of a group.
-func (s *GroupService) ListGroupMembers(ctx context.Context, groupID string) ([]*group.Member, error) {
+func (s *GroupService) ListGroupMembers(ctx context.Context, groupID string) ([]*groupdom.Member, error) {
 	id, err := shared.IDFromString(groupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
@@ -676,7 +679,7 @@ func (s *GroupService) ListGroupMembers(ctx context.Context, groupID string) ([]
 }
 
 // ListGroupMembersWithUserInfo lists members with user details, with pagination.
-func (s *GroupService) ListGroupMembersWithUserInfo(ctx context.Context, groupID string, limit, offset int) ([]*group.MemberWithUser, int64, error) {
+func (s *GroupService) ListGroupMembersWithUserInfo(ctx context.Context, groupID string, limit, offset int) ([]*groupdom.MemberWithUser, int64, error) {
 	id, err := shared.IDFromString(groupID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
@@ -686,7 +689,7 @@ func (s *GroupService) ListGroupMembersWithUserInfo(ctx context.Context, groupID
 }
 
 // ListUserGroups lists all groups a user belongs to.
-func (s *GroupService) ListUserGroups(ctx context.Context, tenantID string, userID shared.ID) ([]*group.GroupWithRole, error) {
+func (s *GroupService) ListUserGroups(ctx context.Context, tenantID string, userID shared.ID) ([]*groupdom.GroupWithRole, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -706,7 +709,7 @@ type AssignPermissionSetInput struct {
 }
 
 // AssignPermissionSet assigns a permission set to a group.
-func (s *GroupService) AssignPermissionSet(ctx context.Context, input AssignPermissionSetInput, assignedBy shared.ID, actx AuditContext) error {
+func (s *GroupService) AssignPermissionSet(ctx context.Context, input AssignPermissionSetInput, assignedBy shared.ID, actx auditapp.AuditContext) error {
 	groupID, err := shared.IDFromString(input.GroupID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
@@ -742,7 +745,7 @@ func (s *GroupService) AssignPermissionSet(ctx context.Context, input AssignPerm
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
-	event := NewSuccessEvent(audit.ActionPermissionSetAssigned, audit.ResourceTypeGroup, input.GroupID).
+	event := auditapp.NewSuccessEvent(audit.ActionPermissionSetAssigned, audit.ResourceTypeGroup, input.GroupID).
 		WithMessage("Permission set assigned to group").
 		WithMetadata("permission_set_id", input.PermissionSetID)
 	s.logAudit(ctx, actx, event)
@@ -751,7 +754,7 @@ func (s *GroupService) AssignPermissionSet(ctx context.Context, input AssignPerm
 }
 
 // UnassignPermissionSet removes a permission set from a group.
-func (s *GroupService) UnassignPermissionSet(ctx context.Context, groupID, permissionSetID string, actx AuditContext) error {
+func (s *GroupService) UnassignPermissionSet(ctx context.Context, groupID, permissionSetID string, actx auditapp.AuditContext) error {
 	gid, err := shared.IDFromString(groupID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
@@ -779,7 +782,7 @@ func (s *GroupService) UnassignPermissionSet(ctx context.Context, groupID, permi
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
-	event := NewSuccessEvent(audit.ActionPermissionSetUnassigned, audit.ResourceTypeGroup, groupID).
+	event := auditapp.NewSuccessEvent(audit.ActionPermissionSetUnassigned, audit.ResourceTypeGroup, groupID).
 		WithMessage("Permission set removed from group").
 		WithMetadata("permission_set_id", permissionSetID)
 	s.logAudit(ctx, actx, event)
@@ -798,13 +801,13 @@ func (s *GroupService) ListGroupPermissionSets(ctx context.Context, groupID stri
 }
 
 // ListGroupPermissionSetsWithDetails lists permission sets assigned to a group with full details.
-func (s *GroupService) ListGroupPermissionSetsWithDetails(ctx context.Context, groupID string) ([]*permissionset.PermissionSetWithItems, error) {
+func (s *GroupService) ListGroupPermissionSetsWithDetails(ctx context.Context, groupID string) ([]*permissionsetdom.PermissionSetWithItems, error) {
 	ids, err := s.ListGroupPermissionSets(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]*permissionset.PermissionSetWithItems, 0, len(ids))
+	result := make([]*permissionsetdom.PermissionSetWithItems, 0, len(ids))
 	for _, id := range ids {
 		ps, err := s.permissionSetRepo.GetWithItems(ctx, id)
 		if err != nil {
@@ -831,7 +834,7 @@ type AssignAssetInput struct {
 }
 
 // AssignAsset assigns an asset to a group with the specified ownership type.
-func (s *GroupService) AssignAsset(ctx context.Context, input AssignAssetInput, assignedBy shared.ID, actx AuditContext) error {
+func (s *GroupService) AssignAsset(ctx context.Context, input AssignAssetInput, assignedBy shared.ID, actx auditapp.AuditContext) error {
 	if s.accessControlRepo == nil {
 		return fmt.Errorf("access control repository not configured")
 	}
@@ -846,7 +849,7 @@ func (s *GroupService) AssignAsset(ctx context.Context, input AssignAssetInput, 
 		return fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
 	}
 
-	ownershipType := accesscontrol.OwnershipType(input.OwnershipType)
+	ownershipType := accesscontroldom.OwnershipType(input.OwnershipType)
 	if !ownershipType.IsValid() {
 		return fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
 	}
@@ -858,7 +861,7 @@ func (s *GroupService) AssignAsset(ctx context.Context, input AssignAssetInput, 
 	}
 
 	// Create the asset owner relationship
-	ao, err := accesscontrol.NewAssetOwner(assetID, groupID, ownershipType, &assignedBy)
+	ao, err := accesscontroldom.NewAssetOwner(assetID, groupID, ownershipType, &assignedBy)
 	if err != nil {
 		return err
 	}
@@ -876,7 +879,7 @@ func (s *GroupService) AssignAsset(ctx context.Context, input AssignAssetInput, 
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
-	event := NewSuccessEvent(audit.ActionAssetAssigned, audit.ResourceTypeGroup, input.GroupID).
+	event := auditapp.NewSuccessEvent(audit.ActionAssetAssigned, audit.ResourceTypeGroup, input.GroupID).
 		WithMessage("Asset assigned to group").
 		WithMetadata("asset_id", input.AssetID).
 		WithMetadata("ownership_type", input.OwnershipType)
@@ -892,7 +895,7 @@ type UnassignAssetInput struct {
 }
 
 // UnassignAsset removes an asset from a group.
-func (s *GroupService) UnassignAsset(ctx context.Context, input UnassignAssetInput, actx AuditContext) error {
+func (s *GroupService) UnassignAsset(ctx context.Context, input UnassignAssetInput, actx auditapp.AuditContext) error {
 	if s.accessControlRepo == nil {
 		return fmt.Errorf("access control repository not configured")
 	}
@@ -926,7 +929,7 @@ func (s *GroupService) UnassignAsset(ctx context.Context, input UnassignAssetInp
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
-	event := NewSuccessEvent(audit.ActionAssetUnassigned, audit.ResourceTypeGroup, input.GroupID).
+	event := auditapp.NewSuccessEvent(audit.ActionAssetUnassigned, audit.ResourceTypeGroup, input.GroupID).
 		WithMessage("Asset removed from group").
 		WithMetadata("asset_id", input.AssetID)
 	s.logAudit(ctx, actx, event)
@@ -942,7 +945,7 @@ type UpdateAssetOwnershipInput struct {
 }
 
 // UpdateAssetOwnership updates the ownership type of an asset for a group.
-func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAssetOwnershipInput, actx AuditContext) error {
+func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAssetOwnershipInput, actx auditapp.AuditContext) error {
 	if s.accessControlRepo == nil {
 		return fmt.Errorf("access control repository not configured")
 	}
@@ -957,7 +960,7 @@ func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAss
 		return fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
 	}
 
-	ownershipType := accesscontrol.OwnershipType(input.OwnershipType)
+	ownershipType := accesscontroldom.OwnershipType(input.OwnershipType)
 	if !ownershipType.IsValid() {
 		return fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
 	}
@@ -987,7 +990,7 @@ func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAss
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
-	event := NewSuccessEvent(audit.ActionAssetOwnershipUpdated, audit.ResourceTypeGroup, input.GroupID).
+	event := auditapp.NewSuccessEvent(audit.ActionAssetOwnershipUpdated, audit.ResourceTypeGroup, input.GroupID).
 		WithMessage("Asset ownership type updated").
 		WithMetadata("asset_id", input.AssetID).
 		WithMetadata("ownership_type", input.OwnershipType)
@@ -997,7 +1000,7 @@ func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAss
 }
 
 // ListGroupAssets lists assets assigned to a group with asset details, with pagination.
-func (s *GroupService) ListGroupAssets(ctx context.Context, groupID string, limit, offset int) ([]*accesscontrol.AssetOwnerWithAsset, int64, error) {
+func (s *GroupService) ListGroupAssets(ctx context.Context, groupID string, limit, offset int) ([]*accesscontroldom.AssetOwnerWithAsset, int64, error) {
 	if s.accessControlRepo == nil {
 		return nil, 0, fmt.Errorf("access control repository not configured")
 	}
@@ -1011,7 +1014,7 @@ func (s *GroupService) ListGroupAssets(ctx context.Context, groupID string, limi
 }
 
 // ListAssetOwners lists all groups that own an asset.
-func (s *GroupService) ListAssetOwners(ctx context.Context, assetID string) ([]*accesscontrol.AssetOwner, error) {
+func (s *GroupService) ListAssetOwners(ctx context.Context, assetID string) ([]*accesscontroldom.AssetOwner, error) {
 	if s.accessControlRepo == nil {
 		return nil, fmt.Errorf("access control repository not configured")
 	}
@@ -1071,7 +1074,7 @@ type BulkAssignAssetsResult struct {
 }
 
 // BulkAssignAssets assigns multiple assets to a group in bulk.
-func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAssetsInput, assignedBy shared.ID, actx AuditContext) (*BulkAssignAssetsResult, error) {
+func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAssetsInput, assignedBy shared.ID, actx auditapp.AuditContext) (*BulkAssignAssetsResult, error) {
 	if s.accessControlRepo == nil {
 		return nil, fmt.Errorf("access control repository not configured")
 	}
@@ -1081,7 +1084,7 @@ func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAss
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	ownershipType := accesscontrol.OwnershipType(input.OwnershipType)
+	ownershipType := accesscontroldom.OwnershipType(input.OwnershipType)
 	if !ownershipType.IsValid() {
 		return nil, fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
 	}
@@ -1093,7 +1096,7 @@ func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAss
 	}
 
 	// Build AssetOwner entities
-	owners := make([]*accesscontrol.AssetOwner, 0, len(input.AssetIDs))
+	owners := make([]*accesscontroldom.AssetOwner, 0, len(input.AssetIDs))
 	failedAssets := make([]string, 0)
 
 	for _, assetIDStr := range input.AssetIDs {
@@ -1103,7 +1106,7 @@ func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAss
 			continue
 		}
 
-		ao, err := accesscontrol.NewAssetOwnerForGroup(assetID, groupID, ownershipType, &assignedBy)
+		ao, err := accesscontroldom.NewAssetOwnerForGroup(assetID, groupID, ownershipType, &assignedBy)
 		if err != nil {
 			failedAssets = append(failedAssets, assetIDStr)
 			continue
@@ -1139,7 +1142,7 @@ func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAss
 
 	// Log audit event
 	actx.TenantID = g.TenantID().String()
-	event := NewSuccessEvent(audit.ActionAssetAssigned, audit.ResourceTypeGroup, input.GroupID).
+	event := auditapp.NewSuccessEvent(audit.ActionAssetAssigned, audit.ResourceTypeGroup, input.GroupID).
 		WithMessage(fmt.Sprintf("Bulk assigned %d assets to group", inserted)).
 		WithMetadata("total_requested", fmt.Sprintf("%d", len(input.AssetIDs))).
 		WithMetadata("success_count", fmt.Sprintf("%d", inserted)).

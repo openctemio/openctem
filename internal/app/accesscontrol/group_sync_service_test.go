@@ -1,4 +1,4 @@
-package app
+package accesscontrol
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openctemio/api/pkg/domain/group"
+	groupdom "github.com/openctemio/api/pkg/domain/group"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -16,20 +16,20 @@ import (
 // Mock Group Repository
 // =============================================================================
 
-// MockGroupRepository implements group.Repository for testing.
+// MockGroupRepository implements groupdom.Repository for testing.
 // Only the methods needed by GroupSyncService are implemented; the rest are stubs.
 type MockGroupRepository struct {
-	groups    map[string]*group.Group
+	groups    map[string]*groupdom.Group
 	createErr error
 }
 
 func NewMockGroupRepository() *MockGroupRepository {
 	return &MockGroupRepository{
-		groups: make(map[string]*group.Group),
+		groups: make(map[string]*groupdom.Group),
 	}
 }
 
-func (m *MockGroupRepository) Create(_ context.Context, g *group.Group) error {
+func (m *MockGroupRepository) Create(_ context.Context, g *groupdom.Group) error {
 	if m.createErr != nil {
 		return m.createErr
 	}
@@ -37,25 +37,25 @@ func (m *MockGroupRepository) Create(_ context.Context, g *group.Group) error {
 	return nil
 }
 
-func (m *MockGroupRepository) GetByID(_ context.Context, id shared.ID) (*group.Group, error) {
+func (m *MockGroupRepository) GetByID(_ context.Context, id shared.ID) (*groupdom.Group, error) {
 	if g, ok := m.groups[id.String()]; ok {
 		return g, nil
 	}
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockGroupRepository) GetByTenantAndID(_ context.Context, _, id shared.ID) (*group.Group, error) {
+func (m *MockGroupRepository) GetByTenantAndID(_ context.Context, _, id shared.ID) (*groupdom.Group, error) {
 	if g, ok := m.groups[id.String()]; ok {
 		return g, nil
 	}
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockGroupRepository) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
+func (m *MockGroupRepository) GetBySlug(_ context.Context, _ shared.ID, _ string) (*groupdom.Group, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockGroupRepository) Update(_ context.Context, _ *group.Group) error {
+func (m *MockGroupRepository) Update(_ context.Context, _ *groupdom.Group) error {
 	return nil
 }
 
@@ -63,11 +63,11 @@ func (m *MockGroupRepository) Delete(_ context.Context, _ shared.ID) error {
 	return nil
 }
 
-func (m *MockGroupRepository) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
+func (m *MockGroupRepository) List(_ context.Context, _ shared.ID, _ groupdom.ListFilter) ([]*groupdom.Group, error) {
 	return nil, nil
 }
 
-func (m *MockGroupRepository) Count(_ context.Context, _ shared.ID, _ group.ListFilter) (int64, error) {
+func (m *MockGroupRepository) Count(_ context.Context, _ shared.ID, _ groupdom.ListFilter) (int64, error) {
 	return 0, nil
 }
 
@@ -75,23 +75,23 @@ func (m *MockGroupRepository) ExistsBySlug(_ context.Context, _ shared.ID, _ str
 	return false, nil
 }
 
-func (m *MockGroupRepository) ListByIDs(_ context.Context, _ []shared.ID) ([]*group.Group, error) {
+func (m *MockGroupRepository) ListByIDs(_ context.Context, _ []shared.ID) ([]*groupdom.Group, error) {
 	return nil, nil
 }
 
-func (m *MockGroupRepository) GetByExternalID(_ context.Context, _ shared.ID, _ group.ExternalSource, _ string) (*group.Group, error) {
+func (m *MockGroupRepository) GetByExternalID(_ context.Context, _ shared.ID, _ groupdom.ExternalSource, _ string) (*groupdom.Group, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockGroupRepository) AddMember(_ context.Context, _ *group.Member) error {
+func (m *MockGroupRepository) AddMember(_ context.Context, _ *groupdom.Member) error {
 	return nil
 }
 
-func (m *MockGroupRepository) GetMember(_ context.Context, _, _ shared.ID) (*group.Member, error) {
+func (m *MockGroupRepository) GetMember(_ context.Context, _, _ shared.ID) (*groupdom.Member, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockGroupRepository) UpdateMember(_ context.Context, _ *group.Member) error {
+func (m *MockGroupRepository) UpdateMember(_ context.Context, _ *groupdom.Member) error {
 	return nil
 }
 
@@ -99,11 +99,11 @@ func (m *MockGroupRepository) RemoveMember(_ context.Context, _, _ shared.ID) er
 	return nil
 }
 
-func (m *MockGroupRepository) ListMembers(_ context.Context, _ shared.ID) ([]*group.Member, error) {
+func (m *MockGroupRepository) ListMembers(_ context.Context, _ shared.ID) ([]*groupdom.Member, error) {
 	return nil, nil
 }
 
-func (m *MockGroupRepository) ListMembersWithUserInfo(_ context.Context, _ shared.ID, _, _ int) ([]*group.MemberWithUser, int64, error) {
+func (m *MockGroupRepository) ListMembersWithUserInfo(_ context.Context, _ shared.ID, _, _ int) ([]*groupdom.MemberWithUser, int64, error) {
 	return nil, 0, nil
 }
 
@@ -118,7 +118,7 @@ func (m *MockGroupRepository) CountUniqueMembers(_ context.Context, _ []shared.I
 	return 0, nil
 }
 
-func (m *MockGroupRepository) GetMemberStats(_ context.Context, _ shared.ID) (*group.MemberStats, error) {
+func (m *MockGroupRepository) GetMemberStats(_ context.Context, _ shared.ID) (*groupdom.MemberStats, error) {
 	return nil, nil
 }
 
@@ -126,7 +126,7 @@ func (m *MockGroupRepository) IsMember(_ context.Context, _, _ shared.ID) (bool,
 	return false, nil
 }
 
-func (m *MockGroupRepository) ListGroupsByUser(_ context.Context, _, _ shared.ID) ([]*group.GroupWithRole, error) {
+func (m *MockGroupRepository) ListGroupsByUser(_ context.Context, _, _ shared.ID) ([]*groupdom.GroupWithRole, error) {
 	return nil, nil
 }
 
@@ -146,7 +146,7 @@ func (m *MockGroupRepository) ListPermissionSetIDs(_ context.Context, _ shared.I
 	return nil, nil
 }
 
-func (m *MockGroupRepository) ListGroupsWithPermissionSet(_ context.Context, _ shared.ID) ([]*group.Group, error) {
+func (m *MockGroupRepository) ListGroupsWithPermissionSet(_ context.Context, _ shared.ID) ([]*groupdom.Group, error) {
 	return nil, nil
 }
 

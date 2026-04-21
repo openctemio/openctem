@@ -1,4 +1,4 @@
-package app
+package accesscontrol
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/infra/redis"
-	"github.com/openctemio/api/pkg/domain/role"
+	roledom "github.com/openctemio/api/pkg/domain/role"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -19,7 +19,7 @@ import (
 // Cache is invalidated when user's roles change.
 type PermissionCacheService struct {
 	cache      *redis.Cache[[]string]
-	roleRepo   role.Repository
+	roleRepo   roledom.Repository
 	versionSvc *PermissionVersionService
 	logger     *logger.Logger
 }
@@ -32,7 +32,7 @@ const (
 // NewPermissionCacheService creates a new permission cache service.
 func NewPermissionCacheService(
 	redisClient *redis.Client,
-	roleRepo role.Repository,
+	roleRepo roledom.Repository,
 	versionSvc *PermissionVersionService,
 	log *logger.Logger,
 ) (*PermissionCacheService, error) {
@@ -79,11 +79,11 @@ func (s *PermissionCacheService) GetPermissions(ctx context.Context, tenantID, u
 		"user_id", userID,
 	)
 
-	tid, err := role.ParseID(tenantID)
+	tid, err := roledom.ParseID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid tenant id: %w", err)
 	}
-	uid, err := role.ParseID(userID)
+	uid, err := roledom.ParseID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user id: %w", err)
 	}
@@ -119,11 +119,11 @@ func (s *PermissionCacheService) GetPermissionsWithFallback(ctx context.Context,
 
 	key := s.cacheKey(tenantID, userID)
 
-	tid, err := role.ParseID(tenantID)
+	tid, err := roledom.ParseID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid tenant id: %w", err)
 	}
-	uid, err := role.ParseID(userID)
+	uid, err := roledom.ParseID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user id: %w", err)
 	}

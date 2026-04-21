@@ -1,10 +1,10 @@
-package app
+package accesscontrol
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/group"
+	groupdom "github.com/openctemio/api/pkg/domain/group"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -12,12 +12,12 @@ import (
 // GroupSyncService handles synchronization of groups from external providers
 // such as GitHub Teams, GitLab Groups, Azure AD, and Okta.
 type GroupSyncService struct {
-	groupRepo group.Repository
+	groupRepo groupdom.Repository
 	logger    *logger.Logger
 }
 
 // NewGroupSyncService creates a new GroupSyncService.
-func NewGroupSyncService(groupRepo group.Repository, log *logger.Logger) *GroupSyncService {
+func NewGroupSyncService(groupRepo groupdom.Repository, log *logger.Logger) *GroupSyncService {
 	return &GroupSyncService{
 		groupRepo: groupRepo,
 		logger:    log.With("service", "group-sync"),
@@ -34,7 +34,7 @@ func NewGroupSyncService(groupRepo group.Repository, log *logger.Logger) *GroupS
 //   - Azure AD: tenant ID, client credentials
 //   - Okta: domain, API token
 func (s *GroupSyncService) SyncFromProvider(ctx context.Context, tenantID shared.ID, provider string, config map[string]interface{}) error {
-	src := group.ExternalSource(provider)
+	src := groupdom.ExternalSource(provider)
 	if !src.IsValid() {
 		return fmt.Errorf("%w: unsupported provider '%s'", shared.ErrValidation, provider)
 	}

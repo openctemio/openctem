@@ -1,4 +1,4 @@
-package app
+package accesscontrol
 
 import (
 	"context"
@@ -6,17 +6,19 @@ import (
 	"fmt"
 	"slices"
 
+	auditapp "github.com/openctemio/api/internal/app/audit"
+
 	"github.com/openctemio/api/pkg/domain/audit"
-	"github.com/openctemio/api/pkg/domain/role"
+	roledom "github.com/openctemio/api/pkg/domain/role"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
 // RoleService handles role-related business operations.
 type RoleService struct {
-	roleRepo       role.Repository
-	permissionRepo role.PermissionRepository
-	auditService   *AuditService
+	roleRepo       roledom.Repository
+	permissionRepo roledom.PermissionRepository
+	auditService   *auditapp.AuditService
 	// Permission sync services for real-time permission updates
 	permVersionSvc *PermissionVersionService
 	permCacheSvc   *PermissionCacheService
@@ -25,8 +27,8 @@ type RoleService struct {
 
 // NewRoleService creates a new RoleService.
 func NewRoleService(
-	roleRepo role.Repository,
-	permissionRepo role.PermissionRepository,
+	roleRepo roledom.Repository,
+	permissionRepo roledom.PermissionRepository,
 	log *logger.Logger,
 	opts ...RoleServiceOption,
 ) *RoleService {
@@ -45,7 +47,7 @@ func NewRoleService(
 type RoleServiceOption func(*RoleService)
 
 // WithRoleAuditService sets the audit service for RoleService.
-func WithRoleAuditService(auditService *AuditService) RoleServiceOption {
+func WithRoleAuditService(auditService *auditapp.AuditService) RoleServiceOption {
 	return func(s *RoleService) {
 		s.auditService = auditService
 	}
@@ -68,7 +70,7 @@ func WithRolePermissionCacheService(svc *PermissionCacheService) RoleServiceOpti
 }
 
 // logAudit logs an audit event if audit service is configured.
-func (s *RoleService) logAudit(ctx context.Context, actx AuditContext, event AuditEvent) {
+func (s *RoleService) logAudit(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) {
 	if s.auditService == nil {
 		return
 	}
@@ -135,15 +137,15 @@ type CreateRoleInput struct {
 }
 
 // CreateRole creates a new custom role for a tenant.
-func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, createdBy string, actx AuditContext) (*role.Role, error) {
+func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, createdBy string, actx auditapp.AuditContext) (*roledom.Role, error) {
 	s.logger.Info("creating role", "name", input.Name, "tenant_id", input.TenantID)
 
-	tenantID, err := role.ParseID(input.TenantID)
+	tenantID, err := roledom.ParseID(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	createdByID, err := role.ParseID(createdBy)
+	createdByID, err := roledom.ParseID(createdBy)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid created_by id format", shared.ErrValidation)
 	}
@@ -153,7 +155,7 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 	if err == nil {
 		return nil, fmt.Errorf("%w: role with slug '%s' already exists", shared.ErrValidation, input.Slug)
 	}
-	if !errors.Is(err, role.ErrRoleNotFound) {
+	if !errors.Is(err, roledom.ErrRoleNotFound) {
 		return nil, fmt.Errorf("failed to check slug existence: %w", err)
 	}
 
@@ -169,7 +171,7 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 	}
 
 	// Create the role
-	r := role.New(
+	r := roledom.New(
 		tenantID,
 		input.Slug,
 		input.Name,
@@ -181,7 +183,7 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 	)
 
 	if err := s.roleRepo.Create(ctx, r); err != nil {
-		if errors.Is(err, role.ErrRoleSlugExists) {
+		if errors.Is(err, roledom.ErrRoleSlugExists) {
 			return nil, fmt.Errorf("%w: role with slug '%s' already exists", shared.ErrValidation, input.Slug)
 		}
 		return nil, fmt.Errorf("failed to create role: %w", err)
@@ -191,7 +193,7 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 
 	// Log audit event
 	actx.TenantID = input.TenantID
-	event := NewSuccessEvent(audit.ActionRoleCreated, audit.ResourceTypeRole, r.ID().String()).
+	event := auditapp.NewSuccessEvent(audit.ActionRoleCreated, audit.ResourceTypeRole, r.ID().String()).
 		WithResourceName(r.Name()).
 		WithMessage(fmt.Sprintf("Role '%s' created", r.Name())).
 		WithMetadata("slug", r.Slug()).
@@ -204,8 +206,8 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 }
 
 // GetRole retrieves a role by ID.
-func (s *RoleService) GetRole(ctx context.Context, roleID string) (*role.Role, error) {
-	id, err := role.ParseID(roleID)
+func (s *RoleService) GetRole(ctx context.Context, roleID string) (*roledom.Role, error) {
+	id, err := roledom.ParseID(roleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
@@ -214,10 +216,10 @@ func (s *RoleService) GetRole(ctx context.Context, roleID string) (*role.Role, e
 }
 
 // GetRoleBySlug retrieves a role by slug.
-func (s *RoleService) GetRoleBySlug(ctx context.Context, tenantID *string, slug string) (*role.Role, error) {
-	var tid *role.ID
+func (s *RoleService) GetRoleBySlug(ctx context.Context, tenantID *string, slug string) (*roledom.Role, error) {
+	var tid *roledom.ID
 	if tenantID != nil {
-		parsedTID, err := role.ParseID(*tenantID)
+		parsedTID, err := roledom.ParseID(*tenantID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 		}
@@ -237,8 +239,8 @@ type UpdateRoleInput struct {
 }
 
 // UpdateRole updates a role.
-func (s *RoleService) UpdateRole(ctx context.Context, roleID string, input UpdateRoleInput, actx AuditContext) (*role.Role, error) {
-	id, err := role.ParseID(roleID)
+func (s *RoleService) UpdateRole(ctx context.Context, roleID string, input UpdateRoleInput, actx auditapp.AuditContext) (*roledom.Role, error) {
+	id, err := roledom.ParseID(roleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
@@ -330,7 +332,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, roleID string, input Updat
 	if r.TenantID() != nil {
 		actx.TenantID = r.TenantID().String()
 	}
-	event := NewSuccessEvent(audit.ActionRoleUpdated, audit.ResourceTypeRole, roleID).
+	event := auditapp.NewSuccessEvent(audit.ActionRoleUpdated, audit.ResourceTypeRole, roleID).
 		WithResourceName(r.Name()).
 		WithMessage(fmt.Sprintf("Role '%s' updated", r.Name())).
 		WithChanges(changes)
@@ -340,8 +342,8 @@ func (s *RoleService) UpdateRole(ctx context.Context, roleID string, input Updat
 }
 
 // DeleteRole deletes a role.
-func (s *RoleService) DeleteRole(ctx context.Context, roleID string, actx AuditContext) error {
-	id, err := role.ParseID(roleID)
+func (s *RoleService) DeleteRole(ctx context.Context, roleID string, actx auditapp.AuditContext) error {
+	id, err := roledom.ParseID(roleID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
@@ -363,7 +365,7 @@ func (s *RoleService) DeleteRole(ctx context.Context, roleID string, actx AuditC
 	}
 
 	if err := s.roleRepo.Delete(ctx, id); err != nil {
-		if errors.Is(err, role.ErrRoleInUse) {
+		if errors.Is(err, roledom.ErrRoleInUse) {
 			return fmt.Errorf("%w: role is assigned to users and cannot be deleted", shared.ErrValidation)
 		}
 		return fmt.Errorf("failed to delete role: %w", err)
@@ -373,7 +375,7 @@ func (s *RoleService) DeleteRole(ctx context.Context, roleID string, actx AuditC
 
 	// Log audit event
 	actx.TenantID = tenantIDStr
-	event := NewSuccessEvent(audit.ActionRoleDeleted, audit.ResourceTypeRole, roleID).
+	event := auditapp.NewSuccessEvent(audit.ActionRoleDeleted, audit.ResourceTypeRole, roleID).
 		WithResourceName(roleName).
 		WithMessage(fmt.Sprintf("Role '%s' deleted", roleName)).
 		WithSeverity(audit.SeverityHigh)
@@ -387,8 +389,8 @@ func (s *RoleService) DeleteRole(ctx context.Context, roleID string, actx AuditC
 // =============================================================================
 
 // ListRolesForTenant returns all roles available for a tenant.
-func (s *RoleService) ListRolesForTenant(ctx context.Context, tenantID string) ([]*role.Role, error) {
-	tid, err := role.ParseID(tenantID)
+func (s *RoleService) ListRolesForTenant(ctx context.Context, tenantID string) ([]*roledom.Role, error) {
+	tid, err := roledom.ParseID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
@@ -397,7 +399,7 @@ func (s *RoleService) ListRolesForTenant(ctx context.Context, tenantID string) (
 }
 
 // ListSystemRoles returns only system roles.
-func (s *RoleService) ListSystemRoles(ctx context.Context) ([]*role.Role, error) {
+func (s *RoleService) ListSystemRoles(ctx context.Context) ([]*roledom.Role, error) {
 	return s.roleRepo.ListSystemRoles(ctx)
 }
 
@@ -406,13 +408,13 @@ func (s *RoleService) ListSystemRoles(ctx context.Context) ([]*role.Role, error)
 // =============================================================================
 
 // GetUserRoles returns all roles for a user in a tenant.
-func (s *RoleService) GetUserRoles(ctx context.Context, tenantID, userID string) ([]*role.Role, error) {
-	tid, err := role.ParseID(tenantID)
+func (s *RoleService) GetUserRoles(ctx context.Context, tenantID, userID string) ([]*roledom.Role, error) {
+	tid, err := roledom.ParseID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	uid, err := role.ParseID(userID)
+	uid, err := roledom.ParseID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
 	}
@@ -428,15 +430,15 @@ func (s *RoleService) GetUserRoles(ctx context.Context, tenantID, userID string)
 // list endpoint resilient.
 func (s *RoleService) GetUsersRoles(
 	ctx context.Context, tenantID string, userIDs []string,
-) (map[string][]*role.Role, error) {
-	tid, err := role.ParseID(tenantID)
+) (map[string][]*roledom.Role, error) {
+	tid, err := roledom.ParseID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	parsed := make([]role.ID, 0, len(userIDs))
+	parsed := make([]roledom.ID, 0, len(userIDs))
 	for _, s := range userIDs {
-		uid, err := role.ParseID(s)
+		uid, err := roledom.ParseID(s)
 		if err != nil {
 			continue
 		}
@@ -448,12 +450,12 @@ func (s *RoleService) GetUsersRoles(
 
 // GetUserPermissions returns all permissions for a user (UNION of all roles).
 func (s *RoleService) GetUserPermissions(ctx context.Context, tenantID, userID string) ([]string, error) {
-	tid, err := role.ParseID(tenantID)
+	tid, err := roledom.ParseID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	uid, err := role.ParseID(userID)
+	uid, err := roledom.ParseID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
 	}
@@ -463,12 +465,12 @@ func (s *RoleService) GetUserPermissions(ctx context.Context, tenantID, userID s
 
 // HasFullDataAccess checks if user has full data access.
 func (s *RoleService) HasFullDataAccess(ctx context.Context, tenantID, userID string) (bool, error) {
-	tid, err := role.ParseID(tenantID)
+	tid, err := roledom.ParseID(tenantID)
 	if err != nil {
 		return false, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	uid, err := role.ParseID(userID)
+	uid, err := roledom.ParseID(userID)
 	if err != nil {
 		return false, fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
 	}
@@ -494,18 +496,18 @@ type AssignRoleInput struct {
 }
 
 // AssignRole assigns a role to a user.
-func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, assignedBy string, actx AuditContext) error {
-	tid, err := role.ParseID(input.TenantID)
+func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, assignedBy string, actx auditapp.AuditContext) error {
+	tid, err := roledom.ParseID(input.TenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	uid, err := role.ParseID(input.UserID)
+	uid, err := roledom.ParseID(input.UserID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
 	}
 
-	rid, err := role.ParseID(input.RoleID)
+	rid, err := roledom.ParseID(input.RoleID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
@@ -521,9 +523,9 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 		return fmt.Errorf("%w: role not available for this tenant", shared.ErrValidation)
 	}
 
-	var assignedByID *role.ID
+	var assignedByID *roledom.ID
 	if assignedBy != "" {
-		id, err := role.ParseID(assignedBy)
+		id, err := roledom.ParseID(assignedBy)
 		if err != nil {
 			return fmt.Errorf("%w: invalid assigned_by id format", shared.ErrValidation)
 		}
@@ -541,7 +543,7 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 
 	// Log audit event
 	actx.TenantID = input.TenantID
-	event := NewSuccessEvent(audit.ActionRoleAssigned, audit.ResourceTypeRole, input.RoleID).
+	event := auditapp.NewSuccessEvent(audit.ActionRoleAssigned, audit.ResourceTypeRole, input.RoleID).
 		WithResourceName(r.Name()).
 		WithMessage(fmt.Sprintf("Role '%s' assigned to user", r.Name())).
 		WithMetadata("user_id", input.UserID).
@@ -552,18 +554,18 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 }
 
 // RemoveRole removes a role from a user.
-func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID string, actx AuditContext) error {
-	tid, err := role.ParseID(tenantID)
+func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID string, actx auditapp.AuditContext) error {
+	tid, err := roledom.ParseID(tenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	uid, err := role.ParseID(userID)
+	uid, err := roledom.ParseID(userID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
 	}
 
-	rid, err := role.ParseID(roleID)
+	rid, err := roledom.ParseID(roleID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
@@ -576,7 +578,7 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 	}
 
 	if err := s.roleRepo.RemoveRole(ctx, tid, uid, rid); err != nil {
-		if errors.Is(err, role.ErrUserRoleNotFound) {
+		if errors.Is(err, roledom.ErrUserRoleNotFound) {
 			return fmt.Errorf("%w: user does not have this role", shared.ErrValidation)
 		}
 		return fmt.Errorf("failed to remove role: %w", err)
@@ -589,7 +591,7 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 
 	// Log audit event
 	actx.TenantID = tenantID
-	event := NewSuccessEvent(audit.ActionRoleUnassigned, audit.ResourceTypeRole, roleID).
+	event := auditapp.NewSuccessEvent(audit.ActionRoleUnassigned, audit.ResourceTypeRole, roleID).
 		WithResourceName(roleName).
 		WithMessage(fmt.Sprintf("Role '%s' removed from user", roleName)).
 		WithMetadata("user_id", userID).
@@ -607,21 +609,21 @@ type SetUserRolesInput struct {
 }
 
 // SetUserRoles replaces all roles for a user.
-func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput, assignedBy string, actx AuditContext) error {
-	tid, err := role.ParseID(input.TenantID)
+func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput, assignedBy string, actx auditapp.AuditContext) error {
+	tid, err := roledom.ParseID(input.TenantID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	uid, err := role.ParseID(input.UserID)
+	uid, err := roledom.ParseID(input.UserID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
 	}
 
-	roleIDs := make([]role.ID, 0, len(input.RoleIDs))
+	roleIDs := make([]roledom.ID, 0, len(input.RoleIDs))
 	roleNames := make([]string, 0, len(input.RoleIDs))
 	for _, ridStr := range input.RoleIDs {
-		rid, err := role.ParseID(ridStr)
+		rid, err := roledom.ParseID(ridStr)
 		if err != nil {
 			return fmt.Errorf("%w: invalid role id format: %s", shared.ErrValidation, ridStr)
 		}
@@ -648,9 +650,9 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		currentRoleNames = append(currentRoleNames, r.Name())
 	}
 
-	var assignedByID *role.ID
+	var assignedByID *roledom.ID
 	if assignedBy != "" {
-		id, err := role.ParseID(assignedBy)
+		id, err := roledom.ParseID(assignedBy)
 		if err != nil {
 			return fmt.Errorf("%w: invalid assigned_by id format", shared.ErrValidation)
 		}
@@ -669,7 +671,7 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 	// Log audit event
 	actx.TenantID = input.TenantID
 	changes := audit.NewChanges().Set("roles", currentRoleNames, roleNames)
-	event := NewSuccessEvent(audit.ActionUserRolesUpdated, audit.ResourceTypeUser, input.UserID).
+	event := auditapp.NewSuccessEvent(audit.ActionUserRolesUpdated, audit.ResourceTypeUser, input.UserID).
 		WithMessage(fmt.Sprintf("User roles updated to: %v", roleNames)).
 		WithChanges(changes).
 		WithSeverity(audit.SeverityHigh)
@@ -697,15 +699,15 @@ type BulkAssignRoleToUsersResult struct {
 }
 
 // BulkAssignRoleToUsers assigns a role to multiple users at once.
-func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssignRoleToUsersInput, assignedBy string, actx AuditContext) (*BulkAssignRoleToUsersResult, error) {
+func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssignRoleToUsersInput, assignedBy string, actx auditapp.AuditContext) (*BulkAssignRoleToUsersResult, error) {
 	s.logger.Info("bulk assigning role to users", "role_id", input.RoleID, "user_count", len(input.UserIDs))
 
-	tid, err := role.ParseID(input.TenantID)
+	tid, err := roledom.ParseID(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	rid, err := role.ParseID(input.RoleID)
+	rid, err := roledom.ParseID(input.RoleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
@@ -722,18 +724,18 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 	}
 
 	// Parse user IDs
-	userIDs := make([]role.ID, 0, len(input.UserIDs))
+	userIDs := make([]roledom.ID, 0, len(input.UserIDs))
 	for _, uidStr := range input.UserIDs {
-		uid, err := role.ParseID(uidStr)
+		uid, err := roledom.ParseID(uidStr)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid user id format: %s", shared.ErrValidation, uidStr)
 		}
 		userIDs = append(userIDs, uid)
 	}
 
-	var assignedByID *role.ID
+	var assignedByID *roledom.ID
 	if assignedBy != "" {
-		id, err := role.ParseID(assignedBy)
+		id, err := roledom.ParseID(assignedBy)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid assigned_by id format", shared.ErrValidation)
 		}
@@ -752,7 +754,7 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 
 	// Log audit event
 	actx.TenantID = input.TenantID
-	event := NewSuccessEvent(audit.ActionRoleAssigned, audit.ResourceTypeRole, input.RoleID).
+	event := auditapp.NewSuccessEvent(audit.ActionRoleAssigned, audit.ResourceTypeRole, input.RoleID).
 		WithResourceName(r.Name()).
 		WithMessage(fmt.Sprintf("Role '%s' assigned to %d users", r.Name(), len(input.UserIDs))).
 		WithMetadata("user_count", len(input.UserIDs)).
@@ -770,13 +772,13 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 // =============================================================================
 
 // ListRoleMembers returns all users who have a specific role.
-func (s *RoleService) ListRoleMembers(ctx context.Context, tenantID, roleID string) ([]*role.UserRole, error) {
-	tid, err := role.ParseID(tenantID)
+func (s *RoleService) ListRoleMembers(ctx context.Context, tenantID, roleID string) ([]*roledom.UserRole, error) {
+	tid, err := roledom.ParseID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	rid, err := role.ParseID(roleID)
+	rid, err := roledom.ParseID(roleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
@@ -786,7 +788,7 @@ func (s *RoleService) ListRoleMembers(ctx context.Context, tenantID, roleID stri
 
 // CountUsersWithRole returns the count of users with a specific role.
 func (s *RoleService) CountUsersWithRole(ctx context.Context, roleID string) (int, error) {
-	rid, err := role.ParseID(roleID)
+	rid, err := roledom.ParseID(roleID)
 	if err != nil {
 		return 0, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
@@ -799,11 +801,11 @@ func (s *RoleService) CountUsersWithRole(ctx context.Context, roleID string) (in
 // =============================================================================
 
 // ListModulesWithPermissions returns all modules with their permissions.
-func (s *RoleService) ListModulesWithPermissions(ctx context.Context) ([]*role.Module, error) {
+func (s *RoleService) ListModulesWithPermissions(ctx context.Context) ([]*roledom.Module, error) {
 	return s.permissionRepo.ListModulesWithPermissions(ctx)
 }
 
 // ListPermissions returns all permissions.
-func (s *RoleService) ListPermissions(ctx context.Context) ([]*role.Permission, error) {
+func (s *RoleService) ListPermissions(ctx context.Context) ([]*roledom.Permission, error) {
 	return s.permissionRepo.ListPermissions(ctx)
 }

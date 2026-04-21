@@ -1,4 +1,4 @@
-package app
+package accesscontrol
 
 import (
 	"context"
@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/rule"
+	auditapp "github.com/openctemio/api/internal/app/audit"
+
+	ruledom "github.com/openctemio/api/pkg/domain/rule"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -15,23 +17,23 @@ import (
 
 // RuleService handles rule management business operations.
 type RuleService struct {
-	sourceRepo      rule.SourceRepository
-	ruleRepo        rule.RuleRepository
-	bundleRepo      rule.BundleRepository
-	overrideRepo    rule.OverrideRepository
-	syncHistoryRepo rule.SyncHistoryRepository
+	sourceRepo      ruledom.SourceRepository
+	ruleRepo        ruledom.RuleRepository
+	bundleRepo      ruledom.BundleRepository
+	overrideRepo    ruledom.OverrideRepository
+	syncHistoryRepo ruledom.SyncHistoryRepository
 	logger          *logger.Logger
-	auditService    *AuditService
+	auditService    *auditapp.AuditService
 }
 
 // NewRuleService creates a new RuleService.
 func NewRuleService(
-	sourceRepo rule.SourceRepository,
-	ruleRepo rule.RuleRepository,
-	bundleRepo rule.BundleRepository,
-	overrideRepo rule.OverrideRepository,
-	syncHistoryRepo rule.SyncHistoryRepository,
-	auditService *AuditService,
+	sourceRepo ruledom.SourceRepository,
+	ruleRepo ruledom.RuleRepository,
+	bundleRepo ruledom.BundleRepository,
+	overrideRepo ruledom.OverrideRepository,
+	syncHistoryRepo ruledom.SyncHistoryRepository,
+	auditService *auditapp.AuditService,
 	log *logger.Logger,
 ) *RuleService {
 	return &RuleService{
@@ -64,7 +66,7 @@ type CreateSourceInput struct {
 }
 
 // CreateSource creates a new rule source.
-func (s *RuleService) CreateSource(ctx context.Context, input CreateSourceInput) (*rule.Source, error) {
+func (s *RuleService) CreateSource(ctx context.Context, input CreateSourceInput) (*ruledom.Source, error) {
 	s.logger.Info("creating rule source", "tenant_id", input.TenantID, "name", input.Name, "type", input.SourceType)
 
 	tenantID, err := shared.IDFromString(input.TenantID)
@@ -90,12 +92,12 @@ func (s *RuleService) CreateSource(ctx context.Context, input CreateSourceInput)
 		credID = &cid
 	}
 
-	sourceType := rule.SourceType(input.SourceType)
+	sourceType := ruledom.SourceType(input.SourceType)
 	if !sourceType.IsValid() {
 		return nil, fmt.Errorf("%w: invalid source type", shared.ErrValidation)
 	}
 
-	source, err := rule.NewSource(tenantID, toolID, input.Name, sourceType, input.Config)
+	source, err := ruledom.NewSource(tenantID, toolID, input.Name, sourceType, input.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +116,7 @@ func (s *RuleService) CreateSource(ctx context.Context, input CreateSourceInput)
 	}
 
 	// Audit creation
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: tenantID.String(),
 		// ActorID from context/input if available
 	}
@@ -124,7 +126,7 @@ func (s *RuleService) CreateSource(ctx context.Context, input CreateSourceInput)
 }
 
 // GetSource retrieves a rule source by ID.
-func (s *RuleService) GetSource(ctx context.Context, sourceID string) (*rule.Source, error) {
+func (s *RuleService) GetSource(ctx context.Context, sourceID string) (*ruledom.Source, error) {
 	id, err := shared.IDFromString(sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid source id", shared.ErrValidation)
@@ -134,7 +136,7 @@ func (s *RuleService) GetSource(ctx context.Context, sourceID string) (*rule.Sou
 }
 
 // GetSourceByTenantAndID retrieves a rule source by tenant and ID.
-func (s *RuleService) GetSourceByTenantAndID(ctx context.Context, tenantID, sourceID string) (*rule.Source, error) {
+func (s *RuleService) GetSourceByTenantAndID(ctx context.Context, tenantID, sourceID string) (*ruledom.Source, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -162,8 +164,8 @@ type ListSourcesInput struct {
 }
 
 // ListSources lists rule sources with filters.
-func (s *RuleService) ListSources(ctx context.Context, input ListSourcesInput) (pagination.Result[*rule.Source], error) {
-	filter := rule.SourceFilter{
+func (s *RuleService) ListSources(ctx context.Context, input ListSourcesInput) (pagination.Result[*ruledom.Source], error) {
+	filter := ruledom.SourceFilter{
 		Enabled:           input.Enabled,
 		IsPlatformDefault: input.IsPlatformDefault,
 		Search:            input.Search,
@@ -172,7 +174,7 @@ func (s *RuleService) ListSources(ctx context.Context, input ListSourcesInput) (
 	if input.TenantID != "" {
 		tenantID, err := shared.IDFromString(input.TenantID)
 		if err != nil {
-			return pagination.Result[*rule.Source]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+			return pagination.Result[*ruledom.Source]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 		}
 		filter.TenantID = &tenantID
 	}
@@ -180,18 +182,18 @@ func (s *RuleService) ListSources(ctx context.Context, input ListSourcesInput) (
 	if input.ToolID != "" {
 		toolID, err := shared.IDFromString(input.ToolID)
 		if err != nil {
-			return pagination.Result[*rule.Source]{}, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
+			return pagination.Result[*ruledom.Source]{}, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 		}
 		filter.ToolID = &toolID
 	}
 
 	if input.SourceType != "" {
-		st := rule.SourceType(input.SourceType)
+		st := ruledom.SourceType(input.SourceType)
 		filter.SourceType = &st
 	}
 
 	if input.SyncStatus != "" {
-		ss := rule.SyncStatus(input.SyncStatus)
+		ss := ruledom.SyncStatus(input.SyncStatus)
 		filter.SyncStatus = &ss
 	}
 
@@ -214,7 +216,7 @@ type UpdateSourceInput struct {
 }
 
 // UpdateSource updates a rule source.
-func (s *RuleService) UpdateSource(ctx context.Context, input UpdateSourceInput) (*rule.Source, error) {
+func (s *RuleService) UpdateSource(ctx context.Context, input UpdateSourceInput) (*ruledom.Source, error) {
 	s.logger.Info("updating rule source", "tenant_id", input.TenantID, "source_id", input.SourceID)
 
 	source, err := s.GetSourceByTenantAndID(ctx, input.TenantID, input.SourceID)
@@ -258,7 +260,7 @@ func (s *RuleService) UpdateSource(ctx context.Context, input UpdateSourceInput)
 	}
 
 	// Audit update
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: input.TenantID,
 	}
 	_ = s.auditService.LogRuleSourceUpdated(ctx, actx, source.ID.String(), source.Name)
@@ -285,7 +287,7 @@ func (s *RuleService) DeleteSource(ctx context.Context, tenantID, sourceID strin
 	}
 
 	// Audit deletion
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: tenantID,
 	}
 	_ = s.auditService.LogRuleSourceDeleted(ctx, actx, sourceID, source.Name)
@@ -294,7 +296,7 @@ func (s *RuleService) DeleteSource(ctx context.Context, tenantID, sourceID strin
 }
 
 // EnableSource enables a rule source.
-func (s *RuleService) EnableSource(ctx context.Context, tenantID, sourceID string) (*rule.Source, error) {
+func (s *RuleService) EnableSource(ctx context.Context, tenantID, sourceID string) (*ruledom.Source, error) {
 	s.logger.Info("enabling rule source", "tenant_id", tenantID, "source_id", sourceID)
 
 	source, err := s.GetSourceByTenantAndID(ctx, tenantID, sourceID)
@@ -312,7 +314,7 @@ func (s *RuleService) EnableSource(ctx context.Context, tenantID, sourceID strin
 }
 
 // DisableSource disables a rule source.
-func (s *RuleService) DisableSource(ctx context.Context, tenantID, sourceID string) (*rule.Source, error) {
+func (s *RuleService) DisableSource(ctx context.Context, tenantID, sourceID string) (*ruledom.Source, error) {
 	s.logger.Info("disabling rule source", "tenant_id", tenantID, "source_id", sourceID)
 
 	source, err := s.GetSourceByTenantAndID(ctx, tenantID, sourceID)
@@ -348,8 +350,8 @@ type ListRulesInput struct {
 }
 
 // ListRules lists rules with filters.
-func (s *RuleService) ListRules(ctx context.Context, input ListRulesInput) (pagination.Result[*rule.Rule], error) {
-	filter := rule.RuleFilter{
+func (s *RuleService) ListRules(ctx context.Context, input ListRulesInput) (pagination.Result[*ruledom.Rule], error) {
+	filter := ruledom.RuleFilter{
 		Category: input.Category,
 		Tags:     input.Tags,
 		RuleIDs:  input.RuleIDs,
@@ -359,7 +361,7 @@ func (s *RuleService) ListRules(ctx context.Context, input ListRulesInput) (pagi
 	if input.TenantID != "" {
 		tenantID, err := shared.IDFromString(input.TenantID)
 		if err != nil {
-			return pagination.Result[*rule.Rule]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+			return pagination.Result[*ruledom.Rule]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 		}
 		filter.TenantID = &tenantID
 	}
@@ -367,7 +369,7 @@ func (s *RuleService) ListRules(ctx context.Context, input ListRulesInput) (pagi
 	if input.ToolID != "" {
 		toolID, err := shared.IDFromString(input.ToolID)
 		if err != nil {
-			return pagination.Result[*rule.Rule]{}, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
+			return pagination.Result[*ruledom.Rule]{}, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 		}
 		filter.ToolID = &toolID
 	}
@@ -375,13 +377,13 @@ func (s *RuleService) ListRules(ctx context.Context, input ListRulesInput) (pagi
 	if input.SourceID != "" {
 		sourceID, err := shared.IDFromString(input.SourceID)
 		if err != nil {
-			return pagination.Result[*rule.Rule]{}, fmt.Errorf("%w: invalid source id", shared.ErrValidation)
+			return pagination.Result[*ruledom.Rule]{}, fmt.Errorf("%w: invalid source id", shared.ErrValidation)
 		}
 		filter.SourceID = &sourceID
 	}
 
 	if input.Severity != "" {
-		sev := rule.Severity(input.Severity)
+		sev := ruledom.Severity(input.Severity)
 		filter.Severity = &sev
 	}
 
@@ -390,7 +392,7 @@ func (s *RuleService) ListRules(ctx context.Context, input ListRulesInput) (pagi
 }
 
 // GetRule retrieves a rule by ID.
-func (s *RuleService) GetRule(ctx context.Context, ruleID string) (*rule.Rule, error) {
+func (s *RuleService) GetRule(ctx context.Context, ruleID string) (*ruledom.Rule, error) {
 	id, err := shared.IDFromString(ruleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid rule id", shared.ErrValidation)
@@ -400,7 +402,7 @@ func (s *RuleService) GetRule(ctx context.Context, ruleID string) (*rule.Rule, e
 }
 
 // ListRulesBySource lists all rules for a source.
-func (s *RuleService) ListRulesBySource(ctx context.Context, sourceID string) ([]*rule.Rule, error) {
+func (s *RuleService) ListRulesBySource(ctx context.Context, sourceID string) ([]*ruledom.Rule, error) {
 	id, err := shared.IDFromString(sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid source id", shared.ErrValidation)
@@ -439,7 +441,7 @@ type CreateOverrideInput struct {
 }
 
 // CreateOverride creates a new rule override.
-func (s *RuleService) CreateOverride(ctx context.Context, input CreateOverrideInput) (*rule.Override, error) {
+func (s *RuleService) CreateOverride(ctx context.Context, input CreateOverrideInput) (*ruledom.Override, error) {
 	s.logger.Info("creating rule override", "tenant_id", input.TenantID, "pattern", input.RulePattern)
 
 	tenantID, err := shared.IDFromString(input.TenantID)
@@ -465,7 +467,7 @@ func (s *RuleService) CreateOverride(ctx context.Context, input CreateOverrideIn
 		createdBy = &cid
 	}
 
-	override := rule.NewOverride(
+	override := ruledom.NewOverride(
 		tenantID,
 		toolID,
 		input.RulePattern,
@@ -476,7 +478,7 @@ func (s *RuleService) CreateOverride(ctx context.Context, input CreateOverrideIn
 	)
 
 	if input.SeverityOverride != "" {
-		override.SetSeverityOverride(rule.Severity(input.SeverityOverride))
+		override.SetSeverityOverride(ruledom.Severity(input.SeverityOverride))
 	}
 
 	if input.AssetGroupID != "" || input.ScanProfileID != "" {
@@ -511,7 +513,7 @@ func (s *RuleService) CreateOverride(ctx context.Context, input CreateOverrideIn
 	}
 
 	// Audit creation
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: tenantID.String(),
 		ActorID:  input.CreatedBy,
 	}
@@ -521,7 +523,7 @@ func (s *RuleService) CreateOverride(ctx context.Context, input CreateOverrideIn
 }
 
 // GetOverride retrieves an override by ID.
-func (s *RuleService) GetOverride(ctx context.Context, overrideID string) (*rule.Override, error) {
+func (s *RuleService) GetOverride(ctx context.Context, overrideID string) (*ruledom.Override, error) {
 	id, err := shared.IDFromString(overrideID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid override id", shared.ErrValidation)
@@ -531,7 +533,7 @@ func (s *RuleService) GetOverride(ctx context.Context, overrideID string) (*rule
 }
 
 // GetOverrideByTenantAndID retrieves an override by tenant and ID.
-func (s *RuleService) GetOverrideByTenantAndID(ctx context.Context, tenantID, overrideID string) (*rule.Override, error) {
+func (s *RuleService) GetOverrideByTenantAndID(ctx context.Context, tenantID, overrideID string) (*ruledom.Override, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -557,15 +559,15 @@ type ListOverridesInput struct {
 }
 
 // ListOverrides lists rule overrides with filters.
-func (s *RuleService) ListOverrides(ctx context.Context, input ListOverridesInput) (pagination.Result[*rule.Override], error) {
-	filter := rule.OverrideFilter{
+func (s *RuleService) ListOverrides(ctx context.Context, input ListOverridesInput) (pagination.Result[*ruledom.Override], error) {
+	filter := ruledom.OverrideFilter{
 		Enabled: input.Enabled,
 	}
 
 	if input.TenantID != "" {
 		tenantID, err := shared.IDFromString(input.TenantID)
 		if err != nil {
-			return pagination.Result[*rule.Override]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+			return pagination.Result[*ruledom.Override]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 		}
 		filter.TenantID = &tenantID
 	}
@@ -573,7 +575,7 @@ func (s *RuleService) ListOverrides(ctx context.Context, input ListOverridesInpu
 	if input.ToolID != "" {
 		toolID, err := shared.IDFromString(input.ToolID)
 		if err != nil {
-			return pagination.Result[*rule.Override]{}, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
+			return pagination.Result[*ruledom.Override]{}, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 		}
 		filter.ToolID = &toolID
 	}
@@ -581,7 +583,7 @@ func (s *RuleService) ListOverrides(ctx context.Context, input ListOverridesInpu
 	if input.AssetGroupID != "" {
 		agID, err := shared.IDFromString(input.AssetGroupID)
 		if err != nil {
-			return pagination.Result[*rule.Override]{}, fmt.Errorf("%w: invalid asset_group id", shared.ErrValidation)
+			return pagination.Result[*ruledom.Override]{}, fmt.Errorf("%w: invalid asset_group id", shared.ErrValidation)
 		}
 		filter.AssetGroupID = &agID
 	}
@@ -589,7 +591,7 @@ func (s *RuleService) ListOverrides(ctx context.Context, input ListOverridesInpu
 	if input.ScanProfileID != "" {
 		spID, err := shared.IDFromString(input.ScanProfileID)
 		if err != nil {
-			return pagination.Result[*rule.Override]{}, fmt.Errorf("%w: invalid scan_profile id", shared.ErrValidation)
+			return pagination.Result[*ruledom.Override]{}, fmt.Errorf("%w: invalid scan_profile id", shared.ErrValidation)
 		}
 		filter.ScanProfileID = &spID
 	}
@@ -613,7 +615,7 @@ type UpdateOverrideInput struct {
 }
 
 // UpdateOverride updates a rule override.
-func (s *RuleService) UpdateOverride(ctx context.Context, input UpdateOverrideInput) (*rule.Override, error) {
+func (s *RuleService) UpdateOverride(ctx context.Context, input UpdateOverrideInput) (*ruledom.Override, error) {
 	s.logger.Info("updating rule override", "tenant_id", input.TenantID, "override_id", input.OverrideID)
 
 	override, err := s.GetOverrideByTenantAndID(ctx, input.TenantID, input.OverrideID)
@@ -631,7 +633,7 @@ func (s *RuleService) UpdateOverride(ctx context.Context, input UpdateOverrideIn
 		override.Enabled = *input.Enabled
 	}
 	if input.SeverityOverride != "" {
-		override.SetSeverityOverride(rule.Severity(input.SeverityOverride))
+		override.SetSeverityOverride(ruledom.Severity(input.SeverityOverride))
 	}
 	if input.Reason != "" {
 		override.Reason = input.Reason
@@ -675,7 +677,7 @@ func (s *RuleService) UpdateOverride(ctx context.Context, input UpdateOverrideIn
 	}
 
 	// Audit update
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: input.TenantID,
 	}
 	_ = s.auditService.LogRuleOverrideUpdated(ctx, actx, override.ID.String(), override.RulePattern)
@@ -697,7 +699,7 @@ func (s *RuleService) DeleteOverride(ctx context.Context, tenantID, overrideID s
 	}
 
 	// Audit deletion
-	actx := AuditContext{
+	actx := auditapp.AuditContext{
 		TenantID: tenantID,
 	}
 	_ = s.auditService.LogRuleOverrideDeleted(ctx, actx, overrideID, override.RulePattern)
@@ -706,7 +708,7 @@ func (s *RuleService) DeleteOverride(ctx context.Context, tenantID, overrideID s
 }
 
 // ListActiveOverridesForTool lists all active (non-expired) overrides for a tenant and tool.
-func (s *RuleService) ListActiveOverridesForTool(ctx context.Context, tenantID string, toolID *string) ([]*rule.Override, error) {
+func (s *RuleService) ListActiveOverridesForTool(ctx context.Context, tenantID string, toolID *string) ([]*ruledom.Override, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -729,7 +731,7 @@ func (s *RuleService) ListActiveOverridesForTool(ctx context.Context, tenantID s
 // =============================================================================
 
 // GetLatestBundle retrieves the latest ready bundle for a tenant and tool.
-func (s *RuleService) GetLatestBundle(ctx context.Context, tenantID, toolID string) (*rule.Bundle, error) {
+func (s *RuleService) GetLatestBundle(ctx context.Context, tenantID, toolID string) (*ruledom.Bundle, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -744,7 +746,7 @@ func (s *RuleService) GetLatestBundle(ctx context.Context, tenantID, toolID stri
 }
 
 // GetBundleByID retrieves a bundle by ID.
-func (s *RuleService) GetBundleByID(ctx context.Context, bundleID string) (*rule.Bundle, error) {
+func (s *RuleService) GetBundleByID(ctx context.Context, bundleID string) (*ruledom.Bundle, error) {
 	id, err := shared.IDFromString(bundleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid bundle id", shared.ErrValidation)
@@ -761,8 +763,8 @@ type ListBundlesInput struct {
 }
 
 // ListBundles lists bundles with filters.
-func (s *RuleService) ListBundles(ctx context.Context, input ListBundlesInput) ([]*rule.Bundle, error) {
-	filter := rule.BundleFilter{}
+func (s *RuleService) ListBundles(ctx context.Context, input ListBundlesInput) ([]*ruledom.Bundle, error) {
+	filter := ruledom.BundleFilter{}
 
 	if input.TenantID != "" {
 		tenantID, err := shared.IDFromString(input.TenantID)
@@ -781,7 +783,7 @@ func (s *RuleService) ListBundles(ctx context.Context, input ListBundlesInput) (
 	}
 
 	if input.Status != "" {
-		status := rule.BundleStatus(input.Status)
+		status := ruledom.BundleStatus(input.Status)
 		filter.Status = &status
 	}
 
@@ -797,7 +799,7 @@ type CreateBundleInput struct {
 }
 
 // CreateBundle creates a new rule bundle (starts building).
-func (s *RuleService) CreateBundle(ctx context.Context, input CreateBundleInput) (*rule.Bundle, error) {
+func (s *RuleService) CreateBundle(ctx context.Context, input CreateBundleInput) (*ruledom.Bundle, error) {
 	s.logger.Info("creating rule bundle", "tenant_id", input.TenantID, "tool_id", input.ToolID)
 
 	tenantID, err := shared.IDFromString(input.TenantID)
@@ -819,7 +821,7 @@ func (s *RuleService) CreateBundle(ctx context.Context, input CreateBundleInput)
 		sourceIDs = append(sourceIDs, id)
 	}
 
-	bundle := rule.NewBundle(tenantID, toolID)
+	bundle := ruledom.NewBundle(tenantID, toolID)
 	bundle.SourceIDs = sourceIDs
 	bundle.StoragePath = input.StoragePath
 
@@ -843,7 +845,7 @@ type CompleteBundleInput struct {
 }
 
 // CompleteBundle marks a bundle build as completed successfully.
-func (s *RuleService) CompleteBundle(ctx context.Context, input CompleteBundleInput) (*rule.Bundle, error) {
+func (s *RuleService) CompleteBundle(ctx context.Context, input CompleteBundleInput) (*ruledom.Bundle, error) {
 	s.logger.Info("completing bundle build", "bundle_id", input.BundleID)
 
 	bundleID, err := shared.IDFromString(input.BundleID)
@@ -889,7 +891,7 @@ func (s *RuleService) CompleteBundle(ctx context.Context, input CompleteBundleIn
 }
 
 // FailBundle marks a bundle build as failed.
-func (s *RuleService) FailBundle(ctx context.Context, bundleID, errorMessage string) (*rule.Bundle, error) {
+func (s *RuleService) FailBundle(ctx context.Context, bundleID, errorMessage string) (*ruledom.Bundle, error) {
 	s.logger.Info("failing bundle build", "bundle_id", bundleID)
 
 	bid, err := shared.IDFromString(bundleID)
@@ -963,7 +965,7 @@ func (s *RuleService) RecordSyncResult(ctx context.Context, sourceID string, res
 	if result.NewContentHash != "" {
 		source.ContentHash = result.NewContentHash
 	}
-	if result.RulesAdded+result.RulesUpdated > 0 || result.Status == rule.SyncStatusSuccess {
+	if result.RulesAdded+result.RulesUpdated > 0 || result.Status == ruledom.SyncStatusSuccess {
 		count, _ := s.ruleRepo.CountBySource(ctx, sid)
 		source.RuleCount = count
 	}
@@ -973,7 +975,7 @@ func (s *RuleService) RecordSyncResult(ctx context.Context, sourceID string, res
 	}
 
 	// Record sync history
-	history := &rule.SyncHistory{
+	history := &ruledom.SyncHistory{
 		ID:           shared.NewID(),
 		SourceID:     sid,
 		Status:       result.Status,
@@ -993,7 +995,7 @@ func (s *RuleService) RecordSyncResult(ctx context.Context, sourceID string, res
 
 // SyncResult represents the result of a sync operation.
 type SyncResult struct {
-	Status         rule.SyncStatus
+	Status         ruledom.SyncStatus
 	RulesAdded     int
 	RulesUpdated   int
 	RulesRemoved   int
@@ -1005,7 +1007,7 @@ type SyncResult struct {
 }
 
 // ListSourcesNeedingSync lists sources that need synchronization.
-func (s *RuleService) ListSourcesNeedingSync(ctx context.Context, limit int) ([]*rule.Source, error) {
+func (s *RuleService) ListSourcesNeedingSync(ctx context.Context, limit int) ([]*ruledom.Source, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -1013,7 +1015,7 @@ func (s *RuleService) ListSourcesNeedingSync(ctx context.Context, limit int) ([]
 }
 
 // GetSyncHistory lists sync history for a source.
-func (s *RuleService) GetSyncHistory(ctx context.Context, sourceID string, limit int) ([]*rule.SyncHistory, error) {
+func (s *RuleService) GetSyncHistory(ctx context.Context, sourceID string, limit int) ([]*ruledom.SyncHistory, error) {
 	sid, err := shared.IDFromString(sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid source id", shared.ErrValidation)
@@ -1027,7 +1029,7 @@ func (s *RuleService) GetSyncHistory(ctx context.Context, sourceID string, limit
 }
 
 // UpsertRulesFromSync upserts rules from a sync operation.
-func (s *RuleService) UpsertRulesFromSync(ctx context.Context, rules []*rule.Rule) error {
+func (s *RuleService) UpsertRulesFromSync(ctx context.Context, rules []*ruledom.Rule) error {
 	if len(rules) == 0 {
 		return nil
 	}
