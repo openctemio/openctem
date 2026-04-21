@@ -1,7 +1,6 @@
-package app
+package workflow
 
 import (
-	"github.com/openctemio/api/internal/app/outbox"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,9 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/api/internal/app/integration"
+	"github.com/openctemio/api/internal/app/outbox"
+
 	"github.com/google/uuid"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/workflow"
+	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -32,7 +34,7 @@ type ActionInput struct {
 	WorkflowID   shared.ID
 	RunID        shared.ID
 	NodeKey      string
-	ActionType   workflow.ActionType
+	ActionType   workflowdom.ActionType
 	ActionConfig map[string]any
 	TriggerData  map[string]any
 	Context      map[string]any
@@ -50,7 +52,7 @@ type NotificationInput struct {
 	WorkflowID         shared.ID
 	RunID              shared.ID
 	NodeKey            string
-	NotificationType   workflow.NotificationType
+	NotificationType   workflowdom.NotificationType
 	NotificationConfig map[string]any
 	TriggerData        map[string]any
 	Context            map[string]any
@@ -241,12 +243,12 @@ func (e *DefaultConditionEvaluator) parseNumbers(left any, right string) (float6
 // HTTPRequestHandler handles HTTP request actions.
 // SECURITY: Includes SSRF protection via URL allowlist/denylist.
 type HTTPRequestHandler struct {
-	client              *http.Client
-	logger              *logger.Logger
-	blockedCIDRs        []string      // Internal/private ranges to block
-	maxTimeout          time.Duration // Maximum timeout allowed
-	maxBodySize         int64         // Maximum response body size
-	allowLocalhostForTesting bool     // Disables localhost validation (testing only)
+	client                   *http.Client
+	logger                   *logger.Logger
+	blockedCIDRs             []string      // Internal/private ranges to block
+	maxTimeout               time.Duration // Maximum timeout allowed
+	maxBodySize              int64         // Maximum response body size
+	allowLocalhostForTesting bool          // Disables localhost validation (testing only)
 }
 
 // SetClient overrides the default HTTP client used by the handler.
@@ -584,7 +586,7 @@ func (h *HTTPRequestHandler) isBlockedIP(ip net.IP) bool {
 // DefaultNotificationHandler handles notification actions using the notification service.
 type DefaultNotificationHandler struct {
 	notificationService *outbox.Service
-	integrationService  *IntegrationService
+	integrationService  *integration.IntegrationService
 	logger              *logger.Logger
 }
 
@@ -607,14 +609,14 @@ func (h *DefaultNotificationHandler) Send(ctx context.Context, input *Notificati
 
 	// Handle different notification types
 	switch input.NotificationType {
-	case workflow.NotificationTypeSlack, workflow.NotificationTypeTeams, workflow.NotificationTypeWebhook:
+	case workflowdom.NotificationTypeSlack, workflowdom.NotificationTypeTeams, workflowdom.NotificationTypeWebhook:
 		// Use integration service for direct channel notifications
 		if h.integrationService != nil {
 			integrationID, _ := config["integration_id"].(string)
 			if integrationID != "" {
 				// SEC-WF08: TenantID is always passed to ensure integration belongs to tenant
 				// The integration service MUST verify ownership before sending
-				result, err := h.integrationService.SendNotification(ctx, SendNotificationInput{
+				result, err := h.integrationService.SendNotification(ctx, integration.SendNotificationInput{
 					IntegrationID: integrationID,
 					TenantID:      input.TenantID.String(), // Always use the workflow's tenant
 					Title:         title,
@@ -635,7 +637,7 @@ func (h *DefaultNotificationHandler) Send(ctx context.Context, input *Notificati
 
 		// Fall through to notification service if no specific integration
 
-	case workflow.NotificationTypeEmail:
+	case workflowdom.NotificationTypeEmail:
 		// Email notifications go through notification service
 		if h.notificationService != nil {
 			err := h.notificationService.Enqueue(ctx, outbox.EnqueueParams{
@@ -662,7 +664,7 @@ func (h *DefaultNotificationHandler) Send(ctx context.Context, input *Notificati
 			}, nil
 		}
 
-	case workflow.NotificationTypePagerDuty:
+	case workflowdom.NotificationTypePagerDuty:
 		// PagerDuty specific handling
 		if h.integrationService != nil {
 			integrationID, _ := config["integration_id"].(string)
@@ -679,7 +681,7 @@ func (h *DefaultNotificationHandler) Send(ctx context.Context, input *Notificati
 				}
 
 				// SEC-WF08: TenantID is always passed to ensure integration belongs to tenant
-				result, err := h.integrationService.SendNotification(ctx, SendNotificationInput{
+				result, err := h.integrationService.SendNotification(ctx, integration.SendNotificationInput{
 					IntegrationID: integrationID,
 					TenantID:      input.TenantID.String(), // Always use the workflow's tenant
 					Title:         title,

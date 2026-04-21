@@ -1,4 +1,4 @@
-package app
+package workflow
 
 import (
 	"context"
@@ -7,10 +7,13 @@ import (
 	"sync"
 	"time"
 
+	auditapp "github.com/openctemio/api/internal/app/audit"
+	"github.com/openctemio/api/internal/app/integration"
+
 	"github.com/openctemio/api/internal/app/outbox"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/workflow"
+	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -21,19 +24,19 @@ import (
 // SECURITY: Includes tenant isolation, execution timeout, and rate limiting.
 type WorkflowExecutor struct {
 	db           *sql.DB
-	workflowRepo workflow.WorkflowRepository
-	runRepo      workflow.RunRepository
-	nodeRunRepo  workflow.NodeRunRepository
+	workflowRepo workflowdom.WorkflowRepository
+	runRepo      workflowdom.RunRepository
+	nodeRunRepo  workflowdom.NodeRunRepository
 
 	// Action handlers
-	actionHandlers      map[workflow.ActionType]ActionHandler
+	actionHandlers      map[workflowdom.ActionType]ActionHandler
 	notificationHandler NotificationHandler
 	conditionEvaluator  ConditionEvaluator
 
 	// Services for actions
 	notificationService *outbox.Service
-	integrationService  *IntegrationService
-	auditService        *AuditService
+	integrationService  *integration.IntegrationService
+	auditService        *auditapp.AuditService
 
 	logger *logger.Logger
 	mu     sync.RWMutex
@@ -86,14 +89,14 @@ func WithExecutorOutboxService(svc *outbox.Service) WorkflowExecutorOption {
 }
 
 // WithExecutorIntegrationService sets the integration service.
-func WithExecutorIntegrationService(svc *IntegrationService) WorkflowExecutorOption {
+func WithExecutorIntegrationService(svc *integration.IntegrationService) WorkflowExecutorOption {
 	return func(e *WorkflowExecutor) {
 		e.integrationService = svc
 	}
 }
 
 // WithExecutorAuditService sets the audit service.
-func WithExecutorAuditService(svc *AuditService) WorkflowExecutorOption {
+func WithExecutorAuditService(svc *auditapp.AuditService) WorkflowExecutorOption {
 	return func(e *WorkflowExecutor) {
 		e.auditService = svc
 	}
@@ -108,9 +111,9 @@ func WithExecutorDB(db *sql.DB) WorkflowExecutorOption {
 
 // NewWorkflowExecutor creates a new WorkflowExecutor.
 func NewWorkflowExecutor(
-	workflowRepo workflow.WorkflowRepository,
-	runRepo workflow.RunRepository,
-	nodeRunRepo workflow.NodeRunRepository,
+	workflowRepo workflowdom.WorkflowRepository,
+	runRepo workflowdom.RunRepository,
+	nodeRunRepo workflowdom.NodeRunRepository,
 	log *logger.Logger,
 	opts ...WorkflowExecutorOption,
 ) *WorkflowExecutor {
@@ -118,7 +121,7 @@ func NewWorkflowExecutor(
 		workflowRepo:       workflowRepo,
 		runRepo:            runRepo,
 		nodeRunRepo:        nodeRunRepo,
-		actionHandlers:     make(map[workflow.ActionType]ActionHandler),
+		actionHandlers:     make(map[workflowdom.ActionType]ActionHandler),
 		conditionEvaluator: &DefaultConditionEvaluator{},
 		logger:             log.With("component", "workflow_executor"),
 		// SEC-WF04: Default security limits
@@ -146,7 +149,7 @@ func NewWorkflowExecutor(
 // registerDefaultHandlers registers the built-in action handlers.
 func (e *WorkflowExecutor) registerDefaultHandlers() {
 	// HTTP Request handler (with SSRF protection)
-	e.RegisterActionHandler(workflow.ActionTypeHTTPRequest, NewHTTPRequestHandler(e.logger))
+	e.RegisterActionHandler(workflowdom.ActionTypeHTTPRequest, NewHTTPRequestHandler(e.logger))
 
 	// Notification-based actions will use the notification service
 	if e.notificationService != nil {
@@ -159,7 +162,7 @@ func (e *WorkflowExecutor) registerDefaultHandlers() {
 }
 
 // RegisterActionHandler registers a custom action handler.
-func (e *WorkflowExecutor) RegisterActionHandler(actionType workflow.ActionType, handler ActionHandler) {
+func (e *WorkflowExecutor) RegisterActionHandler(actionType workflowdom.ActionType, handler ActionHandler) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.actionHandlers[actionType] = handler
@@ -198,7 +201,7 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 	}
 
 	// Check if already running or completed
-	if run.Status != workflow.RunStatusPending {
+	if run.Status != workflowdom.RunStatusPending {
 		return fmt.Errorf("run is not in pending state: %s", run.Status)
 	}
 
@@ -231,7 +234,7 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 		TriggerData:       run.TriggerData,
 		Context:           make(map[string]any),
 		CompletedNodeKeys: make(map[string]bool),
-		NodeRunsByKey:     make(map[string]*workflow.NodeRun),
+		NodeRunsByKey:     make(map[string]*workflowdom.NodeRun),
 	}
 
 	// Index node runs by key
@@ -250,12 +253,12 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 
 // ExecutionContext holds the state during workflow execution.
 type ExecutionContext struct {
-	Run               *workflow.Run
-	Workflow          *workflow.Workflow
+	Run               *workflowdom.Run
+	Workflow          *workflowdom.Workflow
 	TriggerData       map[string]any
 	Context           map[string]any // Shared context across nodes
 	CompletedNodeKeys map[string]bool
-	NodeRunsByKey     map[string]*workflow.NodeRun
+	NodeRunsByKey     map[string]*workflowdom.NodeRun
 	mu                sync.RWMutex
 }
 
@@ -362,7 +365,7 @@ func (e *WorkflowExecutor) executeDownstream(ctx context.Context, execCtx *Execu
 	// Skip any remaining unreachable nodes
 	for _, node := range wf.Nodes {
 		nr := execCtx.NodeRunsByKey[node.NodeKey]
-		if nr != nil && nr.Status == workflow.NodeRunStatusPending {
+		if nr != nil && nr.Status == workflowdom.NodeRunStatusPending {
 			_ = e.skipNode(ctx, execCtx, node, "unreachable due to workflow path")
 		}
 	}
@@ -372,18 +375,18 @@ func (e *WorkflowExecutor) executeDownstream(ctx context.Context, execCtx *Execu
 
 // findReadyNodes finds nodes that are ready to execute.
 // A node is ready if all its upstream dependencies are completed.
-func (e *WorkflowExecutor) findReadyNodes(execCtx *ExecutionContext) []*workflow.Node {
-	var ready []*workflow.Node
+func (e *WorkflowExecutor) findReadyNodes(execCtx *ExecutionContext) []*workflowdom.Node {
+	var ready []*workflowdom.Node
 	wf := execCtx.Workflow
 
 	for _, node := range wf.Nodes {
 		nr := execCtx.NodeRunsByKey[node.NodeKey]
-		if nr == nil || nr.Status != workflow.NodeRunStatusPending {
+		if nr == nil || nr.Status != workflowdom.NodeRunStatusPending {
 			continue
 		}
 
 		// Skip trigger nodes (already executed)
-		if node.NodeType == workflow.NodeTypeTrigger {
+		if node.NodeType == workflowdom.NodeTypeTrigger {
 			continue
 		}
 
@@ -407,7 +410,7 @@ func (e *WorkflowExecutor) findReadyNodes(execCtx *ExecutionContext) []*workflow
 }
 
 // shouldSkipNode checks if a node should be skipped based on condition results.
-func (e *WorkflowExecutor) shouldSkipNode(execCtx *ExecutionContext, node *workflow.Node) bool {
+func (e *WorkflowExecutor) shouldSkipNode(execCtx *ExecutionContext, node *workflowdom.Node) bool {
 	wf := execCtx.Workflow
 
 	// Check incoming edges from condition nodes
@@ -417,7 +420,7 @@ func (e *WorkflowExecutor) shouldSkipNode(execCtx *ExecutionContext, node *workf
 		}
 
 		sourceNode := wf.GetNodeByKey(edge.SourceNodeKey)
-		if sourceNode == nil || sourceNode.NodeType != workflow.NodeTypeCondition {
+		if sourceNode == nil || sourceNode.NodeType != workflowdom.NodeTypeCondition {
 			continue
 		}
 
@@ -442,7 +445,7 @@ func (e *WorkflowExecutor) shouldSkipNode(execCtx *ExecutionContext, node *workf
 }
 
 // executeNode executes a single node.
-func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionContext, node *workflow.Node) error {
+func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionContext, node *workflowdom.Node) error {
 	nodeRun := execCtx.NodeRunsByKey[node.NodeKey]
 	if nodeRun == nil {
 		return fmt.Errorf("node run not found for %s", node.NodeKey)
@@ -462,13 +465,13 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 	var execErr error
 
 	switch node.NodeType {
-	case workflow.NodeTypeTrigger:
+	case workflowdom.NodeTypeTrigger:
 		output, execErr = e.executeTriggerNode(ctx, execCtx, node)
-	case workflow.NodeTypeCondition:
+	case workflowdom.NodeTypeCondition:
 		output, execErr = e.executeConditionNode(ctx, execCtx, node, nodeRun)
-	case workflow.NodeTypeAction:
+	case workflowdom.NodeTypeAction:
 		output, execErr = e.executeActionNode(ctx, execCtx, node)
-	case workflow.NodeTypeNotification:
+	case workflowdom.NodeTypeNotification:
 		output, execErr = e.executeNotificationNode(ctx, execCtx, node)
 	default:
 		execErr = fmt.Errorf("unknown node type: %s", node.NodeType)
@@ -497,7 +500,7 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 }
 
 // skipNode marks a node as skipped.
-func (e *WorkflowExecutor) skipNode(ctx context.Context, execCtx *ExecutionContext, node *workflow.Node, reason string) error {
+func (e *WorkflowExecutor) skipNode(ctx context.Context, execCtx *ExecutionContext, node *workflowdom.Node, reason string) error {
 	nodeRun := execCtx.NodeRunsByKey[node.NodeKey]
 	if nodeRun == nil {
 		return nil
@@ -510,7 +513,7 @@ func (e *WorkflowExecutor) skipNode(ctx context.Context, execCtx *ExecutionConte
 }
 
 // buildNodeInput builds the input for a node based on context and trigger data.
-func (e *WorkflowExecutor) buildNodeInput(execCtx *ExecutionContext, node *workflow.Node) map[string]any {
+func (e *WorkflowExecutor) buildNodeInput(execCtx *ExecutionContext, node *workflowdom.Node) map[string]any {
 	input := make(map[string]any)
 
 	// Include trigger data
@@ -534,7 +537,7 @@ func (e *WorkflowExecutor) buildNodeInput(execCtx *ExecutionContext, node *workf
 }
 
 // executeTriggerNode executes a trigger node.
-func (e *WorkflowExecutor) executeTriggerNode(ctx context.Context, execCtx *ExecutionContext, node *workflow.Node) (map[string]any, error) {
+func (e *WorkflowExecutor) executeTriggerNode(ctx context.Context, execCtx *ExecutionContext, node *workflowdom.Node) (map[string]any, error) {
 	// Trigger nodes simply pass through the trigger data
 	output := map[string]any{
 		"trigger_type": string(node.Config.TriggerType),
@@ -545,7 +548,7 @@ func (e *WorkflowExecutor) executeTriggerNode(ctx context.Context, execCtx *Exec
 }
 
 // executeConditionNode executes a condition node.
-func (e *WorkflowExecutor) executeConditionNode(ctx context.Context, execCtx *ExecutionContext, node *workflow.Node, nodeRun *workflow.NodeRun) (map[string]any, error) {
+func (e *WorkflowExecutor) executeConditionNode(ctx context.Context, execCtx *ExecutionContext, node *workflowdom.Node, nodeRun *workflowdom.NodeRun) (map[string]any, error) {
 	expr := node.Config.ConditionExpr
 	if expr == "" {
 		// No condition expression - default to true
@@ -569,7 +572,7 @@ func (e *WorkflowExecutor) executeConditionNode(ctx context.Context, execCtx *Ex
 }
 
 // executeActionNode executes an action node.
-func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *ExecutionContext, node *workflow.Node) (map[string]any, error) {
+func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *ExecutionContext, node *workflowdom.Node) (map[string]any, error) {
 	actionType := node.Config.ActionType
 
 	// Look up the action handler
@@ -598,7 +601,7 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 }
 
 // executeNotificationNode executes a notification node.
-func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx *ExecutionContext, node *workflow.Node) (map[string]any, error) {
+func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx *ExecutionContext, node *workflowdom.Node) (map[string]any, error) {
 	if e.notificationHandler == nil {
 		return nil, fmt.Errorf("notification handler not configured")
 	}
@@ -657,16 +660,16 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 	// Audit log
 	if e.auditService != nil {
 		action := audit.ActionWorkflowRunCompleted
-		if run.Status == workflow.RunStatusFailed {
+		if run.Status == workflowdom.RunStatusFailed {
 			action = audit.ActionWorkflowRunFailed
 		}
-		actx := AuditContext{
+		actx := auditapp.AuditContext{
 			TenantID: run.TenantID.String(),
 		}
 		if run.TriggeredBy != nil {
 			actx.ActorID = run.TriggeredBy.String()
 		}
-		event := NewSuccessEvent(action, audit.ResourceTypeWorkflowRun, run.ID.String()).
+		event := auditapp.NewSuccessEvent(action, audit.ResourceTypeWorkflowRun, run.ID.String()).
 			WithResourceName(wf.Name).
 			WithMessage(fmt.Sprintf("Workflow '%s' run %s: %d/%d nodes completed",
 				wf.Name, run.Status, run.CompletedNodes, run.TotalNodes)).

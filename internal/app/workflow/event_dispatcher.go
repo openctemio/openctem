@@ -1,4 +1,4 @@
-package app
+package workflow
 
 import (
 	"context"
@@ -6,9 +6,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/openctemio/api/internal/app/finding"
+
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
-	"github.com/openctemio/api/pkg/domain/workflow"
+	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -25,16 +27,16 @@ const (
 // WorkflowEventDispatcher dispatches events to matching workflows.
 // It evaluates trigger configurations to determine which workflows should run.
 type WorkflowEventDispatcher struct {
-	workflowRepo workflow.WorkflowRepository
-	nodeRepo     workflow.NodeRepository
+	workflowRepo workflowdom.WorkflowRepository
+	nodeRepo     workflowdom.NodeRepository
 	service      *WorkflowService
 	logger       *logger.Logger
 }
 
 // NewWorkflowEventDispatcher creates a new workflow event dispatcher.
 func NewWorkflowEventDispatcher(
-	workflowRepo workflow.WorkflowRepository,
-	nodeRepo workflow.NodeRepository,
+	workflowRepo workflowdom.WorkflowRepository,
+	nodeRepo workflowdom.NodeRepository,
 	service *WorkflowService,
 	log *logger.Logger,
 ) *WorkflowEventDispatcher {
@@ -50,8 +52,8 @@ func NewWorkflowEventDispatcher(
 type FindingEvent struct {
 	TenantID  shared.ID
 	Finding   *vulnerability.Finding
-	EventType workflow.TriggerType // finding_created, finding_updated
-	Changes   map[string]any       // For finding_updated: which fields changed
+	EventType workflowdom.TriggerType // finding_created, finding_updated
+	Changes   map[string]any          // For finding_updated: which fields changed
 }
 
 // DispatchFindingEvent dispatches a finding event to matching workflows.
@@ -122,8 +124,8 @@ func (d *WorkflowEventDispatcher) DispatchFindingEvent(ctx context.Context, even
 func (d *WorkflowEventDispatcher) findMatchingWorkflows(
 	ctx context.Context,
 	tenantID shared.ID,
-	triggerType workflow.TriggerType,
-) ([]*workflow.Workflow, error) {
+	triggerType workflowdom.TriggerType,
+) ([]*workflowdom.Workflow, error) {
 	// Use optimized batch query - single query returns workflows with their full graph
 	workflows, err := d.workflowRepo.ListActiveWithTriggerType(ctx, tenantID, triggerType)
 	if err != nil {
@@ -134,11 +136,11 @@ func (d *WorkflowEventDispatcher) findMatchingWorkflows(
 }
 
 // matchesTriggerFilters checks if the finding matches the workflow's trigger filters.
-func (d *WorkflowEventDispatcher) matchesTriggerFilters(wf *workflow.Workflow, event FindingEvent) bool {
+func (d *WorkflowEventDispatcher) matchesTriggerFilters(wf *workflowdom.Workflow, event FindingEvent) bool {
 	// Find the trigger node
-	var triggerNode *workflow.Node
+	var triggerNode *workflowdom.Node
 	for _, node := range wf.Nodes {
-		if node.NodeType == workflow.NodeTypeTrigger &&
+		if node.NodeType == workflowdom.NodeTypeTrigger &&
 			node.Config.TriggerType == event.EventType {
 			triggerNode = node
 			break
@@ -304,7 +306,7 @@ func (d *WorkflowEventDispatcher) DispatchFindingsCreated(ctx context.Context, t
 
 		// OPTIMIZATION: Find matching workflows ONCE for all findings
 		// Instead of querying per-finding, we query once and filter locally
-		workflows, err := d.findMatchingWorkflows(dispatchCtx, tenantID, workflow.TriggerTypeFindingCreated)
+		workflows, err := d.findMatchingWorkflows(dispatchCtx, tenantID, workflowdom.TriggerTypeFindingCreated)
 		if err != nil {
 			d.logger.Error("failed to find matching workflows",
 				"tenant_id", tenantID,
@@ -331,7 +333,7 @@ func (d *WorkflowEventDispatcher) DispatchFindingsCreated(ctx context.Context, t
 			event := FindingEvent{
 				TenantID:  tenantID,
 				Finding:   finding,
-				EventType: workflow.TriggerTypeFindingCreated,
+				EventType: workflowdom.TriggerTypeFindingCreated,
 			}
 
 			for _, wf := range workflows {
@@ -356,7 +358,7 @@ func (d *WorkflowEventDispatcher) DispatchFindingsCreated(ctx context.Context, t
 				_, err := d.service.TriggerWorkflow(dispatchCtx, TriggerWorkflowInput{
 					TenantID:    tenantID,
 					WorkflowID:  wf.ID,
-					TriggerType: workflow.TriggerTypeFindingCreated,
+					TriggerType: workflowdom.TriggerTypeFindingCreated,
 					TriggerData: triggerData,
 				})
 				if err != nil {
@@ -400,8 +402,8 @@ type AITriageEvent struct {
 	TenantID   shared.ID
 	FindingID  shared.ID
 	TriageID   shared.ID
-	EventType  workflow.TriggerType // ai_triage_completed or ai_triage_failed
-	TriageData map[string]any       // Triage result data
+	EventType  workflowdom.TriggerType // ai_triage_completed or ai_triage_failed
+	TriageData map[string]any          // Triage result data
 }
 
 // DispatchAITriageEvent dispatches an AI triage event to matching workflows.
@@ -494,11 +496,11 @@ func (d *WorkflowEventDispatcher) buildAITriageTriggerData(event AITriageEvent) 
 }
 
 // matchesAITriageTriggerFilters checks if the triage event matches the workflow's trigger filters.
-func (d *WorkflowEventDispatcher) matchesAITriageTriggerFilters(wf *workflow.Workflow, event AITriageEvent) bool {
+func (d *WorkflowEventDispatcher) matchesAITriageTriggerFilters(wf *workflowdom.Workflow, event AITriageEvent) bool {
 	// Find the trigger node
-	var triggerNode *workflow.Node
+	var triggerNode *workflowdom.Node
 	for _, node := range wf.Nodes {
-		if node.NodeType == workflow.NodeTypeTrigger &&
+		if node.NodeType == workflowdom.NodeTypeTrigger &&
 			node.Config.TriggerType == event.EventType {
 			triggerNode = node
 			break
@@ -597,7 +599,7 @@ func (d *WorkflowEventDispatcher) DispatchAITriageCompleted(
 			TenantID:   tenantID,
 			FindingID:  findingID,
 			TriageID:   triageID,
-			EventType:  workflow.TriggerTypeAITriageCompleted,
+			EventType:  workflowdom.TriggerTypeAITriageCompleted,
 			TriageData: triageData,
 		}
 
@@ -634,7 +636,7 @@ func (d *WorkflowEventDispatcher) DispatchAITriageFailed(
 			TenantID:  tenantID,
 			FindingID: findingID,
 			TriageID:  triageID,
-			EventType: workflow.TriggerTypeAITriageFailed,
+			EventType: workflowdom.TriggerTypeAITriageFailed,
 			TriageData: map[string]any{
 				"error_message": errorMessage,
 			},
@@ -654,8 +656,8 @@ func (d *WorkflowEventDispatcher) DispatchAITriageFailed(
 // =============================================================================
 
 // ValidateSourceFilter validates that source codes in the filter are valid.
-// Uses the FindingSourceCacheService to check against active sources.
-func ValidateSourceFilter(ctx context.Context, config map[string]any, cacheService *FindingSourceCacheService) error {
+// Uses the finding.FindingSourceCacheService to check against active sources.
+func ValidateSourceFilter(ctx context.Context, config map[string]any, cacheService *finding.FindingSourceCacheService) error {
 	sourceFilter, ok := config["source_filter"]
 	if !ok {
 		return nil

@@ -1,13 +1,17 @@
-package app
+package workflow
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/api/internal/app/aitriage"
+	"github.com/openctemio/api/internal/app/finding"
+	"github.com/openctemio/api/internal/app/integration"
+
 	"github.com/openctemio/api/internal/app/pipeline"
 	scansvc "github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/workflow"
+	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -17,12 +21,12 @@ import (
 
 // FindingActionHandler handles actions related to findings.
 type FindingActionHandler struct {
-	vulnerabilityService *VulnerabilityService
+	vulnerabilityService *finding.VulnerabilityService
 	logger               *logger.Logger
 }
 
 // NewFindingActionHandler creates a new FindingActionHandler.
-func NewFindingActionHandler(vulnSvc *VulnerabilityService, log *logger.Logger) *FindingActionHandler {
+func NewFindingActionHandler(vulnSvc *finding.VulnerabilityService, log *logger.Logger) *FindingActionHandler {
 	return &FindingActionHandler{
 		vulnerabilityService: vulnSvc,
 		logger:               log,
@@ -32,17 +36,17 @@ func NewFindingActionHandler(vulnSvc *VulnerabilityService, log *logger.Logger) 
 // Execute executes a finding-related action.
 func (h *FindingActionHandler) Execute(ctx context.Context, input *ActionInput) (map[string]any, error) {
 	switch input.ActionType {
-	case workflow.ActionTypeAssignUser:
+	case workflowdom.ActionTypeAssignUser:
 		return h.assignUser(ctx, input)
-	case workflow.ActionTypeAssignTeam:
+	case workflowdom.ActionTypeAssignTeam:
 		return h.assignTeam(ctx, input)
-	case workflow.ActionTypeUpdatePriority:
+	case workflowdom.ActionTypeUpdatePriority:
 		return h.updatePriority(ctx, input)
-	case workflow.ActionTypeUpdateStatus:
+	case workflowdom.ActionTypeUpdateStatus:
 		return h.updateStatus(ctx, input)
-	case workflow.ActionTypeAddTags:
+	case workflowdom.ActionTypeAddTags:
 		return h.addTags(ctx, input)
-	case workflow.ActionTypeRemoveTags:
+	case workflowdom.ActionTypeRemoveTags:
 		return h.removeTags(ctx, input)
 	default:
 		return nil, fmt.Errorf("unsupported action type: %s", input.ActionType)
@@ -73,7 +77,7 @@ func (h *FindingActionHandler) assignUser(ctx context.Context, input *ActionInpu
 			"user_id", userID,
 		)
 
-		// Use the actual AssignFinding method from VulnerabilityService
+		// Use the actual AssignFinding method from finding.VulnerabilityService
 		_, err := h.vulnerabilityService.AssignFinding(ctx, findingID, input.TenantID.String(), userID, "workflow:"+input.WorkflowID.String())
 		if err != nil {
 			return nil, fmt.Errorf("failed to assign finding to user: %w", err)
@@ -159,8 +163,8 @@ func (h *FindingActionHandler) updateStatus(ctx context.Context, input *ActionIn
 		// Get optional resolution from config
 		resolution, _ := input.ActionConfig["resolution"].(string)
 
-		// Use the actual UpdateFindingStatus method from VulnerabilityService
-		_, err := h.vulnerabilityService.UpdateFindingStatus(ctx, findingID, input.TenantID.String(), UpdateFindingStatusInput{
+		// Use the actual UpdateFindingStatus method from finding.VulnerabilityService
+		_, err := h.vulnerabilityService.UpdateFindingStatus(ctx, findingID, input.TenantID.String(), finding.UpdateFindingStatusInput{
 			Status:     status,
 			Resolution: resolution,
 			ActorID:    "workflow:" + input.WorkflowID.String(),
@@ -203,7 +207,7 @@ func (h *FindingActionHandler) addTags(ctx context.Context, input *ActionInput) 
 			"tags", tagStrings,
 		)
 
-		// Use the actual SetFindingTags method from VulnerabilityService
+		// Use the actual SetFindingTags method from finding.VulnerabilityService
 		// Note: This sets tags, so we need to get existing tags first and merge
 		finding, err := h.vulnerabilityService.GetFinding(ctx, input.TenantID.String(), findingID)
 		if err != nil {
@@ -344,9 +348,9 @@ func NewPipelineTriggerHandler(pipelineSvc *pipeline.Service, scanSvc *scansvc.S
 // Execute executes a pipeline/scan trigger action.
 func (h *PipelineTriggerHandler) Execute(ctx context.Context, input *ActionInput) (map[string]any, error) {
 	switch input.ActionType {
-	case workflow.ActionTypeTriggerPipeline:
+	case workflowdom.ActionTypeTriggerPipeline:
 		return h.triggerPipeline(ctx, input)
-	case workflow.ActionTypeTriggerScan:
+	case workflowdom.ActionTypeTriggerScan:
 		return h.triggerScan(ctx, input)
 	default:
 		return nil, fmt.Errorf("unsupported action type: %s", input.ActionType)
@@ -457,12 +461,12 @@ func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionI
 
 // TicketActionHandler handles ticket creation and update actions.
 type TicketActionHandler struct {
-	integrationService *IntegrationService
+	integrationService *integration.IntegrationService
 	logger             *logger.Logger
 }
 
 // NewTicketActionHandler creates a new TicketActionHandler.
-func NewTicketActionHandler(intSvc *IntegrationService, log *logger.Logger) *TicketActionHandler {
+func NewTicketActionHandler(intSvc *integration.IntegrationService, log *logger.Logger) *TicketActionHandler {
 	return &TicketActionHandler{
 		integrationService: intSvc,
 		logger:             log,
@@ -472,9 +476,9 @@ func NewTicketActionHandler(intSvc *IntegrationService, log *logger.Logger) *Tic
 // Execute executes a ticket-related action.
 func (h *TicketActionHandler) Execute(ctx context.Context, input *ActionInput) (map[string]any, error) {
 	switch input.ActionType {
-	case workflow.ActionTypeCreateTicket:
+	case workflowdom.ActionTypeCreateTicket:
 		return h.createTicket(ctx, input)
-	case workflow.ActionTypeUpdateTicket:
+	case workflowdom.ActionTypeUpdateTicket:
 		return h.updateTicket(ctx, input)
 	default:
 		return nil, fmt.Errorf("unsupported action type: %s", input.ActionType)
@@ -570,12 +574,12 @@ func (h *TicketActionHandler) updateTicket(ctx context.Context, input *ActionInp
 
 // AITriageActionHandler handles AI triage triggering actions.
 type AITriageActionHandler struct {
-	aiTriageService *AITriageService
+	aiTriageService *aitriage.AITriageService
 	logger          *logger.Logger
 }
 
 // NewAITriageActionHandler creates a new AITriageActionHandler.
-func NewAITriageActionHandler(aiTriageSvc *AITriageService, log *logger.Logger) *AITriageActionHandler {
+func NewAITriageActionHandler(aiTriageSvc *aitriage.AITriageService, log *logger.Logger) *AITriageActionHandler {
 	return &AITriageActionHandler{
 		aiTriageService: aiTriageSvc,
 		logger:          log,
@@ -584,7 +588,7 @@ func NewAITriageActionHandler(aiTriageSvc *AITriageService, log *logger.Logger) 
 
 // Execute executes an AI triage action.
 func (h *AITriageActionHandler) Execute(ctx context.Context, input *ActionInput) (map[string]any, error) {
-	if input.ActionType != workflow.ActionTypeTriggerAITriage {
+	if input.ActionType != workflowdom.ActionTypeTriggerAITriage {
 		return nil, fmt.Errorf("unsupported action type: %s", input.ActionType)
 	}
 
@@ -620,7 +624,7 @@ func (h *AITriageActionHandler) triggerAITriage(ctx context.Context, input *Acti
 	}
 
 	// Request triage
-	resp, err := h.aiTriageService.RequestTriage(ctx, TriageRequest{
+	resp, err := h.aiTriageService.RequestTriage(ctx, aitriage.TriageRequest{
 		TenantID:   input.TenantID.String(),
 		FindingID:  findingID,
 		TriageType: triageType,
@@ -711,10 +715,10 @@ func (h *ScriptRunnerHandler) Execute(ctx context.Context, input *ActionInput) (
 // RegisterAllActionHandlers registers all built-in action handlers.
 func RegisterAllActionHandlers(
 	executor *WorkflowExecutor,
-	vulnSvc *VulnerabilityService,
+	vulnSvc *finding.VulnerabilityService,
 	pipelineSvc *pipeline.Service,
 	scanSvc *scansvc.Service,
-	integrationSvc *IntegrationService,
+	integrationSvc *integration.IntegrationService,
 	log *logger.Logger,
 ) {
 	RegisterAllActionHandlersWithAI(executor, vulnSvc, pipelineSvc, scanSvc, integrationSvc, nil, log)
@@ -723,44 +727,44 @@ func RegisterAllActionHandlers(
 // RegisterAllActionHandlersWithAI registers all built-in action handlers including AI triage.
 func RegisterAllActionHandlersWithAI(
 	executor *WorkflowExecutor,
-	vulnSvc *VulnerabilityService,
+	vulnSvc *finding.VulnerabilityService,
 	pipelineSvc *pipeline.Service,
 	scanSvc *scansvc.Service,
-	integrationSvc *IntegrationService,
-	aiTriageSvc *AITriageService,
+	integrationSvc *integration.IntegrationService,
+	aiTriageSvc *aitriage.AITriageService,
 	log *logger.Logger,
 ) {
 	// Finding actions
 	if vulnSvc != nil {
 		findingHandler := NewFindingActionHandler(vulnSvc, log)
-		executor.RegisterActionHandler(workflow.ActionTypeAssignUser, findingHandler)
-		executor.RegisterActionHandler(workflow.ActionTypeAssignTeam, findingHandler)
-		executor.RegisterActionHandler(workflow.ActionTypeUpdatePriority, findingHandler)
-		executor.RegisterActionHandler(workflow.ActionTypeUpdateStatus, findingHandler)
-		executor.RegisterActionHandler(workflow.ActionTypeAddTags, findingHandler)
-		executor.RegisterActionHandler(workflow.ActionTypeRemoveTags, findingHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeAssignUser, findingHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeAssignTeam, findingHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeUpdatePriority, findingHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeUpdateStatus, findingHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeAddTags, findingHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeRemoveTags, findingHandler)
 	}
 
 	// Pipeline/Scan actions
 	if pipelineSvc != nil || scanSvc != nil {
 		pipelineHandler := NewPipelineTriggerHandler(pipelineSvc, scanSvc, log)
-		executor.RegisterActionHandler(workflow.ActionTypeTriggerPipeline, pipelineHandler)
-		executor.RegisterActionHandler(workflow.ActionTypeTriggerScan, pipelineHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeTriggerPipeline, pipelineHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeTriggerScan, pipelineHandler)
 	}
 
 	// Ticket actions
 	if integrationSvc != nil {
 		ticketHandler := NewTicketActionHandler(integrationSvc, log)
-		executor.RegisterActionHandler(workflow.ActionTypeCreateTicket, ticketHandler)
-		executor.RegisterActionHandler(workflow.ActionTypeUpdateTicket, ticketHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeCreateTicket, ticketHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeUpdateTicket, ticketHandler)
 	}
 
 	// AI Triage action
 	if aiTriageSvc != nil {
 		aiTriageHandler := NewAITriageActionHandler(aiTriageSvc, log)
-		executor.RegisterActionHandler(workflow.ActionTypeTriggerAITriage, aiTriageHandler)
+		executor.RegisterActionHandler(workflowdom.ActionTypeTriggerAITriage, aiTriageHandler)
 	}
 
 	// Script runner (disabled by default)
-	executor.RegisterActionHandler(workflow.ActionTypeRunScript, NewScriptRunnerHandler(log))
+	executor.RegisterActionHandler(workflowdom.ActionTypeRunScript, NewScriptRunnerHandler(log))
 }
