@@ -1,5 +1,7 @@
 package module
 
+import "strings"
+
 // Module dependency graph — PLATFORM-WIDE STATIC SPEC.
 //
 // This file is the single source of truth for "module X requires module
@@ -79,6 +81,7 @@ var ModuleDependencies = map[string][]Dependency{
 	},
 	"branches": {
 		{ModuleID: "assets", Type: DependencyHard, Reason: "branches belong to repository assets"},
+		{ModuleID: "components", Type: DependencySoft, Reason: "branch views surface component inventories per branch"},
 	},
 	"vulnerabilities": {
 		{ModuleID: "findings", Type: DependencyHard, Reason: "vulnerability views list findings of type=vulnerability"},
@@ -105,6 +108,7 @@ var ModuleDependencies = map[string][]Dependency{
 	},
 	"business_impact": {
 		{ModuleID: "business_services", Type: DependencyHard, Reason: "impact scoring is weighted by business-service mapping"},
+		{ModuleID: "findings", Type: DependencyHard, Reason: "impact is computed from finding severity × service weight"},
 	},
 	"risk_scoring": {
 		{ModuleID: "findings", Type: DependencyHard, Reason: "risk scoring operates on findings"},
@@ -133,11 +137,28 @@ var ModuleDependencies = map[string][]Dependency{
 		{ModuleID: "remediation", Type: DependencyHard, Reason: "tasks are the operator-facing queue of the remediation engine"},
 	},
 	"workflows": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "workflow triggers fire on finding lifecycle events"},
+		// Soft because workflows can also trigger on scan-completion and asset-ingest events —
+		// disabling findings degrades finding-lifecycle workflows but doesn't break the engine.
+		{ModuleID: "findings", Type: DependencySoft, Reason: "finding-lifecycle triggers are a subset of workflow triggers"},
 		{ModuleID: "integrations", Type: DependencySoft, Reason: "most workflow actions route through integrations (Jira, Slack)"},
 	},
 	"suppressions": {
 		{ModuleID: "findings", Type: DependencyHard, Reason: "suppressions suppress findings"},
+	},
+	"sla": {
+		{ModuleID: "findings", Type: DependencyHard, Reason: "SLA tracks time-to-remediate per finding"},
+	},
+	"policies": {
+		{ModuleID: "findings", Type: DependencySoft, Reason: "most policy checks classify findings"},
+	},
+	"compliance": {
+		{ModuleID: "findings", Type: DependencySoft, Reason: "compliance reports aggregate findings against frameworks"},
+	},
+	"iocs": {
+		{ModuleID: "threat_intel", Type: DependencySoft, Reason: "IOC enrichment pulls from threat intel feeds"},
+	},
+	"scan_profiles": {
+		{ModuleID: "scans", Type: DependencyHard, Reason: "profiles are parameterised scan configurations"},
 	},
 
 	// Insights cluster -----------------------------------------------------
@@ -193,10 +214,28 @@ type ToggleWarning struct {
 	Reason            string
 }
 
+// parentModuleID extracts the parent module for a sub-module ID.
+// Sub-modules use the convention "<parent>.<sub>" (e.g. "assets.hosts",
+// "ai_triage.bulk", "integrations.scm"). Returns empty string when the
+// ID has no dot, i.e. is already a top-level module.
+func parentModuleID(moduleID string) string {
+	if i := strings.Index(moduleID, "."); i > 0 {
+		return moduleID[:i]
+	}
+	return ""
+}
+
 // CanDisable checks whether moduleID can be disabled given the set of
 // currently-enabled modules. The function walks ModuleDependencies
 // backwards: for every module that depends on moduleID, if that
 // dependent is enabled, the edge type decides blocker vs warning.
+//
+// Implicit sub-module cascade: every sub-module "<parent>.<sub>" is
+// treated as hard-depending on its parent. Disabling `assets` therefore
+// auto-blocks on every enabled `assets.*` sub-module without needing
+// explicit edges per sub-module in ModuleDependencies. The inverse
+// direction (disabling a sub-module) does NOT cascade — sub-modules
+// are leaf toggles.
 //
 // enabledModules MUST already reflect the *current* tenant state (before
 // the toggle). A module listed in enabledModules with value false is
@@ -205,6 +244,7 @@ type ToggleWarning struct {
 // Returns two disjoint slices: blockers (hard) and warnings (soft).
 // Empty blockers = toggle is allowed.
 func CanDisable(moduleID string, enabledModules map[string]bool) (blockers []ToggleBlocker, warnings []ToggleWarning) {
+	// Explicit edges from the static graph.
 	for dependent, deps := range ModuleDependencies {
 		if !enabledModules[dependent] {
 			continue
@@ -227,6 +267,25 @@ func CanDisable(moduleID string, enabledModules map[string]bool) (blockers []Tog
 					Reason:            d.Reason,
 				})
 			}
+		}
+	}
+	// Implicit sub-module → parent cascade. If moduleID is a top-level
+	// module (no dot), scan every enabled sub-module whose prefix
+	// matches and report it as a hard blocker.
+	if parentModuleID(moduleID) == "" {
+		prefix := moduleID + "."
+		for dependent, on := range enabledModules {
+			if !on {
+				continue
+			}
+			if !strings.HasPrefix(dependent, prefix) {
+				continue
+			}
+			blockers = append(blockers, ToggleBlocker{
+				BlockedModuleID:   moduleID,
+				DependentModuleID: dependent,
+				Reason:            "sub-module of " + moduleID + " is still enabled",
+			})
 		}
 	}
 	return blockers, warnings

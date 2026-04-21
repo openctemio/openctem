@@ -416,6 +416,7 @@ var ModulePermissionMapping = map[string]string{
 	ModulePipelines:    "integrations:pipelines:read",
 	ModuleTools:        "scans:tools:read",
 	ModuleScanProfiles: "scans:profiles:read",
+	ModuleIOCs:         "threat_intel:read",
 
 	// CTEM scoping (seeded by 000161). Permissions seeded by 000153_ctem_permissions.
 	ModuleAttackSurface:    "attack_surface:read",

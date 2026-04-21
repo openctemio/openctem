@@ -48,10 +48,21 @@ type ModuleService struct {
 	moduleRepo       ModuleRepository
 	tenantModuleRepo TenantModuleRepository
 	auditService     *auditapp.AuditService
+	versionService   *VersionService
+	wsBroadcaster    WSBroadcaster
 	logger           *logger.Logger
 
 	toggleLocks   map[string]*sync.Mutex
 	toggleLocksMu sync.Mutex
+}
+
+// WSBroadcaster is the minimal interface ModuleService needs to fan
+// out "module.updated" events to subscribers on the tenant channel.
+// Defined locally rather than imported from the websocket package to
+// keep the dependency direction app→infra (not the other way) and to
+// allow nil/no-op in tests.
+type WSBroadcaster interface {
+	Broadcast(channel string, event any)
 }
 
 // NewModuleService creates a new ModuleService.
@@ -85,6 +96,58 @@ func (s *ModuleService) SetTenantModuleRepo(repo TenantModuleRepository) {
 // SetAuditService sets the audit service for logging module changes.
 func (s *ModuleService) SetAuditService(svc *auditapp.AuditService) {
 	s.auditService = svc
+}
+
+// SetVersionService wires the per-tenant module-version counter used
+// for ETag generation and Redis cache key suffixes. Optional —
+// without it Get returns 1 forever and ETag never matches (acceptable
+// degraded mode, just no caching benefit).
+func (s *ModuleService) SetVersionService(v *VersionService) {
+	s.versionService = v
+}
+
+// SetWSBroadcaster wires the WebSocket fan-out used to push
+// "module.updated" events to clients on the tenant channel. Optional —
+// without it, mutations still succeed but clients have to wait for the
+// next SWR dedup window to see changes.
+func (s *ModuleService) SetWSBroadcaster(b WSBroadcaster) {
+	s.wsBroadcaster = b
+}
+
+// GetTenantModuleVersion returns the current module-config version for
+// a tenant. Used by HTTP handlers to construct ETag headers; the
+// returned value is opaque to callers (treat as a token, not a count).
+func (s *ModuleService) GetTenantModuleVersion(ctx context.Context, tenantID string) int {
+	if s.versionService == nil {
+		return 1
+	}
+	return s.versionService.Get(ctx, tenantID)
+}
+
+// notifyModuleChange increments the version and broadcasts a
+// "module.updated" event to the tenant WebSocket channel. Best-effort
+// — failures are logged but never abort the underlying mutation, since
+// the tenant_modules write is already persisted by the time we get
+// here. Worst case: client sees stale data until next focus / 5-min
+// SWR dedup expires.
+func (s *ModuleService) notifyModuleChange(ctx context.Context, tenantID string) {
+	if s.versionService == nil && s.wsBroadcaster == nil {
+		return
+	}
+	newVersion := 0
+	if s.versionService != nil {
+		newVersion = s.versionService.Increment(ctx, tenantID)
+	}
+	if s.wsBroadcaster != nil {
+		// Channel naming follows the existing convention used elsewhere
+		// in the codebase (tenant:{id}). Event payload includes the
+		// fresh version so the client can compare to its cached copy.
+		s.wsBroadcaster.Broadcast("tenant:"+tenantID, map[string]any{
+			"type":      "module.updated",
+			"tenant_id": tenantID,
+			"version":   newVersion,
+		})
+	}
 }
 
 // GetTenantEnabledModulesOutput represents the output for GetTenantEnabledModules.
@@ -327,6 +390,14 @@ func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string
 		if !u.IsEnabled && m.IsCore() {
 			return nil, fmt.Errorf("%w: '%s' is a core module and cannot be disabled", moduledom.ErrCoreModuleCannotBeDisabled, m.Name())
 		}
+		// Mandatory modules (operational essentials like `agents` for
+		// data ingestion) — disabling them silently breaks the platform.
+		// Reject so an admin doesn't accidentally DoS the tenant via
+		// the toggle UI. Distinct error from core so UI can render a
+		// targeted message.
+		if !u.IsEnabled && moduledom.MandatoryModuleIDs[u.ModuleID] {
+			return nil, fmt.Errorf("%w: '%s' is a mandatory module — disabling would break platform functionality (data ingestion, alerts, RBAC)", shared.ErrValidation, m.Name())
+		}
 
 		// Dependency check — platform-wide static graph in
 		// pkg/domain/module/dependency.go. Reject if any hard-dependent
@@ -386,6 +457,9 @@ func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string
 
 	// Audit log
 	s.logModuleAudit(ctx, actx, tenantID, enabledNames, disabledNames)
+	// Bump version + WS broadcast so other tabs/clients invalidate
+	// their SWR cache and refetch immediately.
+	s.notifyModuleChange(ctx, tenantID)
 
 	// Re-derive the disabled set from the applied updates instead of
 	// re-querying the DB (saves one round-trip per toggle request).
@@ -536,6 +610,7 @@ func (s *ModuleService) ResetTenantModules(ctx context.Context, tenantID string,
 
 	// Audit log
 	s.logModuleAudit(ctx, actx, tenantID, nil, nil)
+	s.notifyModuleChange(ctx, tenantID)
 
 	return s.GetTenantModuleConfig(ctx, tenantID)
 }
@@ -666,4 +741,207 @@ func (s *ModuleService) GetDependencyGraph(_ context.Context) *DependencyGraphOu
 		}
 	}
 	return out
+}
+
+// =============================================================================
+// MODULE PRESETS — bundle curated module sets admins apply instead of
+// toggling ~100 modules one by one. Presets are defined statically in
+// pkg/domain/module/presets.go; this file exposes them via service
+// methods for the HTTP handler.
+// =============================================================================
+
+// ModulePresetOutput is the API-facing shape of one preset.
+type ModulePresetOutput struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	TargetPersona  string   `json:"target_persona"`
+	Icon           string   `json:"icon"`
+	KeyOutcomes    []string `json:"key_outcomes"`
+	RecommendedFor []string `json:"recommended_for"`
+	ModuleCount    int      `json:"module_count"` // resolved count incl. core + transitive
+}
+
+// PresetDiffOutput describes what would change if a preset were applied.
+type PresetDiffOutput struct {
+	PresetID    string              `json:"preset_id"`
+	PresetName  string              `json:"preset_name"`
+	ToEnable    []ModuleRefOutput   `json:"to_enable"`
+	ToDisable   []ModuleRefOutput   `json:"to_disable"`
+	Unchanged   int                 `json:"unchanged"`
+	TotalAfter  int                 `json:"total_after"`
+	AuditNotice string              `json:"audit_notice,omitempty"`
+}
+
+// ModuleRefOutput is a thin (id, name) pair used in diff listings.
+type ModuleRefOutput struct {
+	ModuleID string `json:"module_id"`
+	Name     string `json:"name"`
+}
+
+// ListModulePresets returns every preset registered in the domain
+// catalogue, with the module count already resolved so the UI can
+// render "Enables X modules" badges without a second round-trip.
+func (s *ModuleService) ListModulePresets(_ context.Context) []ModulePresetOutput {
+	out := make([]ModulePresetOutput, 0, len(moduledom.ModulePresets))
+	for i := range moduledom.ModulePresets {
+		p := &moduledom.ModulePresets[i]
+		resolved := moduledom.ResolvePresetModules(p)
+		out = append(out, ModulePresetOutput{
+			ID:             p.ID,
+			Name:           p.Name,
+			Description:    p.Description,
+			TargetPersona:  p.TargetPersona,
+			Icon:           p.Icon,
+			KeyOutcomes:    append([]string(nil), p.KeyOutcomes...),
+			RecommendedFor: append([]string(nil), p.RecommendedFor...),
+			ModuleCount:    len(resolved),
+		})
+	}
+	return out
+}
+
+// PreviewPreset computes the diff between the tenant's current module
+// state and the state that would result from applying the preset.
+// Read-only — never mutates tenant_modules.
+func (s *ModuleService) PreviewPreset(ctx context.Context, tenantID, presetID string) (*PresetDiffOutput, error) {
+	preset := moduledom.FindPreset(presetID)
+	if preset == nil {
+		return nil, fmt.Errorf("%w: unknown preset: %s", shared.ErrNotFound, presetID)
+	}
+	return s.buildPresetDiff(ctx, tenantID, preset)
+}
+
+// ApplyPreset materialises the preset into tenant_modules. Diff is
+// computed, then turned into UpdateTenantModules calls so the
+// dependency-graph validation and audit logging run exactly as if the
+// admin had toggled each module manually. Same locking semantics too.
+//
+// If tenantID is empty or the audit context has no actor, this still
+// works for the initial tenant-creation code path — the caller is
+// expected to have populated actx in that case.
+func (s *ModuleService) ApplyPreset(ctx context.Context, tenantID, presetID string, actx auditapp.AuditContext) (*TenantModuleConfigOutput, error) {
+	preset := moduledom.FindPreset(presetID)
+	if preset == nil {
+		return nil, fmt.Errorf("%w: unknown preset: %s", shared.ErrNotFound, presetID)
+	}
+
+	diff, err := s.buildPresetDiff(ctx, tenantID, preset)
+	if err != nil {
+		return nil, err
+	}
+
+	// No-op when current state already matches — skip the round-trip.
+	if len(diff.ToEnable) == 0 && len(diff.ToDisable) == 0 {
+		return s.GetTenantModuleConfig(ctx, tenantID)
+	}
+
+	// Build the update set. We explicitly set every module the preset
+	// touches, rather than sending only "is_enabled=false" rows, so the
+	// repo stores a positive row for each formerly-disabled module the
+	// preset is re-enabling.
+	updates := make([]moduledom.TenantModuleUpdate, 0, len(diff.ToEnable)+len(diff.ToDisable))
+	for _, r := range diff.ToEnable {
+		updates = append(updates, moduledom.TenantModuleUpdate{ModuleID: r.ModuleID, IsEnabled: true})
+	}
+	for _, r := range diff.ToDisable {
+		updates = append(updates, moduledom.TenantModuleUpdate{ModuleID: r.ModuleID, IsEnabled: false})
+	}
+
+	// Stamp the preset ID into the audit metadata so operators can
+	// later grep "which tenants applied the compliance preset".
+	cfg, err := s.UpdateTenantModules(ctx, tenantID, updates, actx)
+	if err != nil {
+		return nil, err
+	}
+	s.logPresetApplied(ctx, actx, tenantID, preset)
+	return cfg, nil
+}
+
+// buildPresetDiff is shared by PreviewPreset and ApplyPreset. It loads
+// the active module catalogue + the tenant's current disabled set,
+// then classifies every module into enable / disable / unchanged.
+func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p *moduledom.ModulePreset) (*PresetDiffOutput, error) {
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	allModules, err := s.moduleRepo.ListActiveModules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load modules: %w", err)
+	}
+
+	nameOf := make(map[string]string, len(allModules))
+	for _, m := range allModules {
+		nameOf[m.ID()] = m.Name()
+	}
+
+	target := moduledom.ResolvePresetModules(p) // what the preset wants
+	// Sub-module inheritance: if the parent ("assets", "ai_triage",
+	// "integrations") is enabled in the preset, every "<parent>.<sub>"
+	// sub-module of that parent is implicitly enabled too. Avoids
+	// forcing every preset to enumerate 24 `assets.*` types just to
+	// keep them on. Explicit list in the preset still wins (a future
+	// preset could opt-out specific sub-modules by listing them in a
+	// dedicated "disabled" field; not needed yet).
+	for _, m := range allModules {
+		id := m.ID()
+		if !strings.Contains(id, ".") {
+			continue
+		}
+		parent := strings.SplitN(id, ".", 2)[0]
+		if target[parent] {
+			target[id] = true
+		}
+	}
+	disabledNow := s.getTenantDisabledModules(ctx, tenantID)
+
+	diff := &PresetDiffOutput{
+		PresetID:   p.ID,
+		PresetName: p.Name,
+		// Initialise as empty slices (not nil) so JSON serialises as
+		// [] rather than null. UI iterates these without null-checks.
+		ToEnable:  []ModuleRefOutput{},
+		ToDisable: []ModuleRefOutput{},
+	}
+
+	for _, m := range allModules {
+		id := m.ID()
+		wantEnabled := target[id]
+		currentlyEnabled := m.IsActive() && !disabledNow[id]
+
+		switch {
+		case wantEnabled && !currentlyEnabled:
+			diff.ToEnable = append(diff.ToEnable, ModuleRefOutput{ModuleID: id, Name: m.Name()})
+		case !wantEnabled && currentlyEnabled && !m.IsCore():
+			// Never include core modules in ToDisable — they cannot be
+			// turned off by the user anyway. Surfacing them would give
+			// admins the false impression the preset will silence them.
+			diff.ToDisable = append(diff.ToDisable, ModuleRefOutput{ModuleID: id, Name: m.Name()})
+		default:
+			diff.Unchanged++
+		}
+
+		if wantEnabled {
+			diff.TotalAfter++
+		}
+	}
+
+	return diff, nil
+}
+
+// logPresetApplied records the preset choice separately from the
+// underlying toggle audit, so auditors can reconstruct "admin applied
+// VM Essentials" without parsing toggle-level rows.
+func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.AuditContext, tenantID string, p *moduledom.ModulePreset) {
+	if s.auditService == nil {
+		return
+	}
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantModulesUpdated, audit.ResourceTypeTenant, tenantID).
+		WithMessage("Module preset applied: " + p.Name).
+		WithSeverity(audit.SeverityMedium).
+		WithMetadata("preset_id", p.ID).
+		WithMetadata("preset_name", p.Name)
+	s.auditService.LogEvent(ctx, actx, event)
 }

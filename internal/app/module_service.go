@@ -38,5 +38,6 @@ type (
 var (
 	NewDashboardService      = module.NewDashboardService
 	NewModuleService         = module.NewModuleService
+	NewModuleVersionService  = module.NewVersionService
 	NewReportScheduleService = module.NewReportScheduleService
 )
