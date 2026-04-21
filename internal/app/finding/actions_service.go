@@ -1,6 +1,7 @@
-package app
+package finding
 
 import (
+	"github.com/openctemio/api/internal/app/activity"
 	"context"
 	"database/sql"
 	"fmt"
@@ -31,7 +32,7 @@ type FindingActionsService struct {
 	accessCtrlRepo  accesscontrol.Repository
 	groupRepo       group.Repository
 	assetRepo       asset.Repository
-	activityService *FindingActivityService
+	activityService *activity.FindingActivityService
 	scanTrigger     VerificationScanTrigger // optional; set via SetVerificationScanTrigger
 	db              *sql.DB
 	logger          *logger.Logger
@@ -43,7 +44,7 @@ func NewFindingActionsService(
 	accessCtrlRepo accesscontrol.Repository,
 	groupRepo group.Repository,
 	assetRepo asset.Repository,
-	activityService *FindingActivityService,
+	activityService *activity.FindingActivityService,
 	db *sql.DB,
 	logger *logger.Logger,
 ) *FindingActionsService {

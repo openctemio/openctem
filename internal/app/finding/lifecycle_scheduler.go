@@ -1,6 +1,7 @@
-package app
+package finding
 
 import (
+	"github.com/openctemio/api/internal/metrics"
 	"context"
 	"sync"
 	"time"
@@ -170,7 +171,7 @@ func (s *FindingLifecycleScheduler) expireFeatureBranchFindings() {
 				"count", expired,
 			)
 			// Record metric
-			FindingsExpired.WithLabelValues(tenantID.String(), "feature_branch").Add(float64(expired))
+			metrics.FindingsExpired.WithLabelValues(tenantID.String(), "feature_branch").Add(float64(expired))
 		}
 
 		totalExpired += expired
