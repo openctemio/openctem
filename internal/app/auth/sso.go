@@ -587,7 +587,7 @@ func (s *SSOService) parseOktaUserInfo(body io.Reader) (*SSOUserInfo, error) {
 	// returns email_verified=false would otherwise let an attacker claim
 	// any email address and federate into existing accounts.
 	if !data.EmailVerified {
-		return nil, fmt.Errorf("Okta provider did not mark email as verified")
+		return nil, fmt.Errorf("okta identity provider did not mark email as verified")
 	}
 	return &SSOUserInfo{
 		Email: data.Email,
@@ -608,7 +608,7 @@ func (s *SSOService) parseGoogleUserInfo(body io.Reader) (*SSOUserInfo, error) {
 	// SECURITY: reject unverified emails from Google Workspace. See
 	// parseOktaUserInfo for the rationale.
 	if !data.EmailVerified {
-		return nil, fmt.Errorf("Google Workspace provider did not mark email as verified")
+		return nil, fmt.Errorf("google workspace identity provider did not mark email as verified")
 	}
 	return &SSOUserInfo{
 		Email:     data.Email,

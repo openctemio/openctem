@@ -141,16 +141,6 @@ func VerifyHMAC(headerName string, secretFn WebhookSecretFn, log *logger.Logger)
 	}
 }
 
-// computeHMAC returns the lowercase-hex HMAC-SHA256 of body keyed with secret.
-// Kept for backward compatibility with senders that haven't been
-// upgraded to the timestamp variant — new code should use
-// computeHMACWithTimestamp.
-func computeHMAC(body []byte, secret string) string {
-	m := hmac.New(sha256.New, []byte(secret))
-	_, _ = m.Write(body)
-	return hex.EncodeToString(m.Sum(nil))
-}
-
 // computeHMACWithTimestamp signs (timestamp + "." + body). Including
 // the timestamp in the signed payload is what makes the timestamp
 // header tamper-evident — without this binding, an attacker could
