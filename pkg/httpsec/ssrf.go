@@ -22,18 +22,27 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
 
-// blockedIPRanges lists CIDRs the API process must never reach via
-// tenant-controlled URLs. Keep in sync with
-// internal/infra/fetchers/http_fetcher.go blockedIPRanges.
-var blockedIPRanges = []string{
+// hardBlockedIPRanges lists CIDRs that MUST NEVER be reachable from
+// the API process, regardless of any opt-in env var. Opening these
+// yields a security-incident-grade failure:
+//
+//   - 127.0.0.0/8 / ::1/128: loopback on the API host. A scan here
+//     hits the API process itself, which bypasses auth at the
+//     transport layer.
+//   - 169.254.0.0/16 / fe80::/10: link-local, including AWS/GCP/
+//     Azure cloud-metadata (169.254.169.254). A tenant-controlled
+//     URL that resolves here leaks IAM credentials.
+//   - 100.64.0.0/10: carrier-grade NAT, never a tenant network.
+//   - 0.0.0.0/8: "this" network. Not routable.
+//   - 224.0.0.0/4 / 240.0.0.0/4 / 255.255.255.255/32: multicast,
+//     reserved, broadcast. Never a legitimate outbound target.
+var hardBlockedIPRanges = []string{
 	"127.0.0.0/8",        // Loopback
-	"10.0.0.0/8",         // Private class A
-	"172.16.0.0/12",      // Private class B
-	"192.168.0.0/16",     // Private class C
 	"169.254.0.0/16",     // Link-local (incl. AWS/GCP/Azure IMDS)
 	"100.64.0.0/10",      // Carrier-grade NAT
 	"0.0.0.0/8",          // "This" network
@@ -41,12 +50,38 @@ var blockedIPRanges = []string{
 	"240.0.0.0/4",        // Reserved
 	"255.255.255.255/32", // Broadcast
 	"::1/128",            // IPv6 loopback
-	"fc00::/7",           // IPv6 unique local
 	"fe80::/10",          // IPv6 link-local
 }
 
+// privateIPRanges lists CIDRs that are blocked BY DEFAULT but can
+// be opened up for on-prem deployments via the
+// OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1 env var. These are legitimate
+// targets for a CTEM platform running inside a corporate network
+// (self-hosted Jira at 10.0.0.5, internal GitLab at 192.168.x.y,
+// etc.) but ship disabled so cloud deployments inherit the safer
+// default.
+var privateIPRanges = []string{
+	"10.0.0.0/8",     // RFC1918 class A
+	"172.16.0.0/12",  // RFC1918 class B
+	"192.168.0.0/16", // RFC1918 class C
+	"fc00::/7",       // IPv6 ULA
+}
+
+// allowPrivate is toggled by the env var at init-time. Tests can
+// flip this variable directly to exercise both modes without
+// re-running init().
+var allowPrivate = os.Getenv("OPENCTEM_HTTPSEC_ALLOW_PRIVATE") == "1"
+
+// AllowPrivate reports whether the RFC1918 / ULA ranges are
+// currently treated as reachable. Exposed for log-at-startup
+// observability; do not consult this to decide individual calls —
+// that branches inside IsIPBlocked.
+func AllowPrivate() bool { return allowPrivate }
+
 // dangerousHosts is a string-level allowlist rejection for common
 // aliases that hit metadata/local services before DNS resolves.
+// These stay blocked regardless of allowPrivate — "localhost" and
+// the IMDS aliases are never legitimate outbound targets.
 var dangerousHosts = []string{
 	"localhost",
 	"metadata",
@@ -55,22 +90,36 @@ var dangerousHosts = []string{
 	"169.254.169.254",
 }
 
-var blockedCIDRs []*net.IPNet
+var hardBlockedCIDRs []*net.IPNet
+var privateCIDRs []*net.IPNet
 
 func init() {
-	for _, cidr := range blockedIPRanges {
-		_, ipNet, err := net.ParseCIDR(cidr)
-		if err == nil {
-			blockedCIDRs = append(blockedCIDRs, ipNet)
+	for _, cidr := range hardBlockedIPRanges {
+		if _, ipNet, err := net.ParseCIDR(cidr); err == nil {
+			hardBlockedCIDRs = append(hardBlockedCIDRs, ipNet)
+		}
+	}
+	for _, cidr := range privateIPRanges {
+		if _, ipNet, err := net.ParseCIDR(cidr); err == nil {
+			privateCIDRs = append(privateCIDRs, ipNet)
 		}
 	}
 }
 
-// IsIPBlocked reports whether the given IP falls in a blocked CIDR.
+// IsIPBlocked reports whether the given IP is not reachable under
+// the current policy. Hard-blocked CIDRs always return true; the
+// RFC1918 / ULA block is conditional on allowPrivate.
 func IsIPBlocked(ip net.IP) bool {
-	for _, cidr := range blockedCIDRs {
+	for _, cidr := range hardBlockedCIDRs {
 		if cidr.Contains(ip) {
 			return true
+		}
+	}
+	if !allowPrivate {
+		for _, cidr := range privateCIDRs {
+			if cidr.Contains(ip) {
+				return true
+			}
 		}
 	}
 	return false
