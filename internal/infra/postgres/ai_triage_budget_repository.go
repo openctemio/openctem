@@ -116,23 +116,54 @@ func (r *AITriageBudgetRepository) IncrementUsed(
 // notification was last emitted. Used to prevent re-emission: the
 // service layer only fires a new warn when tokens_used has re-crossed
 // the threshold AFTER last_warn_sent_used.
+//
+// Statically-embedded UPDATE (no runtime column interpolation) so
+// CodeQL / staticcheck can flow-analyse the SQL end-to-end without
+// chasing a map lookup. The duplication with UpdateLastBlockSent is
+// two lines — worth it to avoid a Sprintf-built query.
 func (r *AITriageBudgetRepository) UpdateLastWarnSent(
 	ctx context.Context,
 	tenantID shared.ID,
 	periodStart time.Time,
 	used int64,
 ) error {
-	return r.updateLastSent(ctx, tenantID, periodStart, "last_warn_sent_used", used)
+	const q = `
+		UPDATE ai_triage_budgets
+		SET last_warn_sent_used = $3,
+		    updated_at          = NOW()
+		WHERE tenant_id    = $1
+		  AND period_start = $2
+	`
+	if _, err := r.db.ExecContext(ctx, q,
+		tenantID.String(), periodStart.UTC(), used,
+	); err != nil {
+		return fmt.Errorf("budget update last_warn_sent_used: %w", err)
+	}
+	return nil
 }
 
 // UpdateLastBlockSent mirrors UpdateLastWarnSent for the block event.
+// See that function's comment for why each path carries its own
+// literal SQL.
 func (r *AITriageBudgetRepository) UpdateLastBlockSent(
 	ctx context.Context,
 	tenantID shared.ID,
 	periodStart time.Time,
 	used int64,
 ) error {
-	return r.updateLastSent(ctx, tenantID, periodStart, "last_block_sent_used", used)
+	const q = `
+		UPDATE ai_triage_budgets
+		SET last_block_sent_used = $3,
+		    updated_at           = NOW()
+		WHERE tenant_id    = $1
+		  AND period_start = $2
+	`
+	if _, err := r.db.ExecContext(ctx, q,
+		tenantID.String(), periodStart.UTC(), used,
+	); err != nil {
+		return fmt.Errorf("budget update last_block_sent_used: %w", err)
+	}
+	return nil
 }
 
 // selectOne is the shared SELECT helper used by GetOrCreate. Hidden
@@ -184,38 +215,3 @@ func (r *AITriageBudgetRepository) selectOne(
 	return row, nil
 }
 
-// updateLastSent is shared between UpdateLastWarnSent and
-// UpdateLastBlockSent. The column name is interpolated statically —
-// the only two call-sites pass literal column names, not user input,
-// so no SQL-injection surface. Using a map lookup so a typo in the
-// column literal fails at caller boundary rather than returning an
-// opaque "column does not exist" from the DB.
-func (r *AITriageBudgetRepository) updateLastSent(
-	ctx context.Context,
-	tenantID shared.ID,
-	periodStart time.Time,
-	column string,
-	used int64,
-) error {
-	allowed := map[string]string{
-		"last_warn_sent_used":  "last_warn_sent_used",
-		"last_block_sent_used": "last_block_sent_used",
-	}
-	col, ok := allowed[column]
-	if !ok {
-		return fmt.Errorf("invalid column for updateLastSent: %s", column)
-	}
-	//nolint:gosec // column is whitelisted above
-	q := fmt.Sprintf(`
-		UPDATE ai_triage_budgets
-		SET %s = $3, updated_at = NOW()
-		WHERE tenant_id = $1
-		  AND period_start = $2
-	`, col)
-	if _, err := r.db.ExecContext(ctx, q,
-		tenantID.String(), periodStart.UTC(), used,
-	); err != nil {
-		return fmt.Errorf("budget update %s: %w", col, err)
-	}
-	return nil
-}
