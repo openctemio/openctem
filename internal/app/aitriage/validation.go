@@ -56,14 +56,25 @@ func (v *TriageOutputValidator) ValidateAndSanitize(content string) (*aitriagedo
 		RawResponse: raw,
 	}
 
-	// Validate and extract severity_assessment
+	// Validate and extract severity_assessment.
+	// SECURITY: a malicious finding title can prompt-inject the LLM
+	// into emitting an out-of-set severity (e.g. "informational" via a
+	// jailbreak). The previous behaviour silently coerced to "medium"
+	// — that hid the manipulation. We still default to medium so the
+	// existing pipeline keeps moving, but flag a ValidationWarning so
+	// downstream logic can refuse to auto-apply this triage to the
+	// finding's persisted severity until a human reviews it.
 	if severity, ok := raw["severity_assessment"].(string); ok {
-		severity = strings.ToLower(strings.TrimSpace(severity))
-		if !v.validSeverities[severity] {
-			severity = riskLevelMedium // Default to medium if invalid
+		raw := strings.ToLower(strings.TrimSpace(severity))
+		if !v.validSeverities[raw] {
+			analysis.ValidationWarnings = append(analysis.ValidationWarnings,
+				fmt.Sprintf("severity_assessment %q is not in the validated set; defaulted to %q — flag for human review", severity, riskLevelMedium))
+			raw = riskLevelMedium
 		}
-		analysis.SeverityAssessment = severity
+		analysis.SeverityAssessment = raw
 	} else {
+		analysis.ValidationWarnings = append(analysis.ValidationWarnings,
+			"severity_assessment missing or non-string; defaulted to medium")
 		analysis.SeverityAssessment = riskLevelMedium
 	}
 
@@ -83,13 +94,18 @@ func (v *TriageOutputValidator) ValidateAndSanitize(content string) (*aitriagedo
 		analysis.RiskScore = score
 	}
 
-	// Validate exploitability
+	// Validate exploitability — same fail-soft-with-warning pattern
+	// as severity_assessment above. Out-of-set values from the LLM
+	// are flagged so downstream code can require human review before
+	// they affect priority ranking or auto-remediation actions.
 	if exploitability, ok := raw["exploitability"].(string); ok {
-		exploitability = strings.ToLower(strings.TrimSpace(exploitability))
-		if !v.validExploitabilities[exploitability] {
-			exploitability = riskLevelMedium
+		clean := strings.ToLower(strings.TrimSpace(exploitability))
+		if !v.validExploitabilities[clean] {
+			analysis.ValidationWarnings = append(analysis.ValidationWarnings,
+				fmt.Sprintf("exploitability %q is not in the validated set; defaulted to %q — flag for human review", exploitability, riskLevelMedium))
+			clean = riskLevelMedium
 		}
-		analysis.Exploitability = aitriagedom.Exploitability(exploitability)
+		analysis.Exploitability = aitriagedom.Exploitability(clean)
 	}
 
 	// Validate exploitability_details

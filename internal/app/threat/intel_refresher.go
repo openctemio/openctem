@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -22,7 +23,8 @@ type IntelRefresher struct {
 func NewIntelRefresher(log *logger.Logger) *IntelRefresher {
 	return &IntelRefresher{
 		logger: log,
-		client: &http.Client{Timeout: 60 * time.Second},
+		// SSRF hygiene — see intel_service.go for rationale.
+		client: httpsec.SafeHTTPClient(60 * time.Second),
 	}
 }
 

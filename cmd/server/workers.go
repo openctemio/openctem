@@ -313,6 +313,22 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Audit hash-chain integrity verification. The admin endpoint
+	// GET /api/v1/audit-logs/verify is pull-based; this controller
+	// runs the same VerifyChain on every active tenant once an hour
+	// and emits an ERROR-level log (SIEM alert keyword
+	// "audit_chain_break") for every break. Closes the MTTD gap for
+	// tamper events where the endpoint is never called.
+	w.ControllerManager.Register(controller.NewAuditChainVerifyController(
+		svc.Audit,
+		repos.Tenant,
+		&controller.AuditChainVerifyControllerConfig{
+			Interval:       time.Hour,
+			PerTenantLimit: 10000,
+			Logger:         log.With("controller", "audit-chain-verify"),
+		},
+	))
+
 	return w, nil
 }
 

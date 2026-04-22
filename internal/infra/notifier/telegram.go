@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // TelegramClient implements the Client interface for Telegram notifications.
@@ -37,9 +39,10 @@ func NewTelegramClient(config Config) (*TelegramClient, error) {
 		botToken: config.BotToken,
 		chatID:   config.ChatID,
 		apiURL:   apiURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		// SSRF: APIEndpoint is configurable, so the dialer-level blocklist
+		// must reject any tenant-supplied URL that resolves into private
+		// space, even if the create-time check passed (DNS rebinding).
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 	}, nil
 }
 

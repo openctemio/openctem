@@ -34,12 +34,19 @@ func registerCommandRoutes(
 
 // registerAgentRoutes registers agent API endpoints.
 // These endpoints are authenticated using source API keys (not JWT).
+//
+// telemetryRateLimiter may be nil; when non-nil it is applied ONLY to
+// the /telemetry-events route. The per-tenant token-bucket keeps one
+// noisy EDR/XDR agent from saturating the ingest worker for the whole
+// cluster — a single compromised agent API key could otherwise replay
+// cached batches at line rate.
 func registerAgentRoutes(
 	router Router,
 	ingestHandler *handler.IngestHandler,
 	commandHandler *handler.CommandHandler,
 	scanSessionHandler *handler.ScanSessionHandler,
 	runtimeTelemetryHandler *handler.RuntimeTelemetryHandler,
+	telemetryRateLimiter *middleware.TelemetryRateLimiter,
 ) {
 	// Build middleware chain: API key auth
 	baseMiddleware := ingestHandler.AuthenticateSource
@@ -87,7 +94,15 @@ func registerAgentRoutes(
 		// Same agent API-key auth as the other ingest endpoints; 50 MB
 		// body limit for backlogged batches.
 		if runtimeTelemetryHandler != nil {
-			r.POST("/telemetry-events", runtimeTelemetryHandler.Ingest, ingestBodyLimit, decompressMiddleware)
+			// Optional per-tenant rate limit. Pass-through when the
+			// limiter is not configured (development, or operators who
+			// opt out via config) so the wiring change is backward
+			// compatible.
+			telemetryMW := []Middleware{ingestBodyLimit, decompressMiddleware}
+			if telemetryRateLimiter != nil {
+				telemetryMW = append(telemetryMW, telemetryRateLimiter.Middleware())
+			}
+			r.POST("/telemetry-events", runtimeTelemetryHandler.Ingest, telemetryMW...)
 		}
 	}, baseMiddleware)
 }

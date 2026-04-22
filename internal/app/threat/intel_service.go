@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/threatintel"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -42,10 +43,15 @@ func NewIntelService(
 ) *IntelService {
 	return &IntelService{
 		repo: repo,
-		httpClient: &http.Client{
-			Timeout: httpTimeout,
-		},
-		logger: log.With("service", "threat_intel"),
+		// SSRF hygiene: EPSS / CISA KEV URLs are hardcoded public
+		// endpoints, so a classic SSRF is not reachable via config.
+		// SafeHTTPClient still helps: if DNS or upstream CDN ever
+		// resolves an EPSS/KEV hostname into RFC1918 / link-local
+		// (DNS rebinding, hijacked cache), the dialer refuses to
+		// complete the connection rather than silently hitting a
+		// metadata service.
+		httpClient: httpsec.SafeHTTPClient(httpTimeout),
+		logger:     log.With("service", "threat_intel"),
 	}
 }
 

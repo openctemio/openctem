@@ -474,7 +474,26 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		)
 		s.AITriage.SetAuditService(s.Audit)
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
-		log.Info("AI triage service initialized")
+
+		// RFC-008: per-tenant LLM token budget. Always constructed so
+		// Status() works for dashboards even before enforcement.
+		// Check()/Record() short-circuit when BudgetEnabled=false —
+		// the Phase 1 rollout ships the flag off so there is zero
+		// behaviour change on this deploy.
+		budgetSvc := app.NewAITriageBudgetService(
+			repos.AITriageBudget,
+			app.AITriageBudgetServiceConfig{
+				Enabled:               cfg.AITriage.BudgetEnabled,
+				Strict:                cfg.AITriage.BudgetStrict,
+				DefaultTokensPerMonth: cfg.AITriage.BudgetDefaultTokensPerMonth,
+			},
+			log,
+		)
+		s.AITriage.SetBudgetService(budgetSvc)
+		log.Info("AI triage service initialized",
+			"budget_enabled", cfg.AITriage.BudgetEnabled,
+			"budget_strict", cfg.AITriage.BudgetStrict,
+		)
 	}
 
 	// Initialize API Key & Webhook services. APP_ENCRYPTION_KEY is

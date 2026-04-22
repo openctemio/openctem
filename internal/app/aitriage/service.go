@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/openctemio/api/internal/app/activity"
-	auditapp "github.com/openctemio/api/internal/app/audit"
 	"strings"
 	"time"
 
+	"github.com/openctemio/api/internal/app/activity"
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/llm"
+	"github.com/openctemio/api/internal/metrics"
 	aitriagedom "github.com/openctemio/api/pkg/domain/aitriage"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -122,6 +123,10 @@ type AITriageService struct {
 	logger             *logger.Logger
 	outputValidator    *TriageOutputValidator
 	promptSanitizer    *PromptSanitizer
+	// budget is the per-tenant LLM token budget service (RFC-008).
+	// nil-safe: when unset, Check/Record short-circuit. Also behind
+	// platformCfg.BudgetEnabled — Phase 1 ships flag OFF.
+	budget *BudgetService
 }
 
 // NewAITriageService creates a new AITriageService.
@@ -160,6 +165,14 @@ func (s *AITriageService) SetJobEnqueuer(enqueuer AITriageJobEnqueuer) {
 // SetWorkflowDispatcher sets the workflow event dispatcher for AI triage events.
 func (s *AITriageService) SetWorkflowDispatcher(dispatcher WorkflowEventDispatcherInterface) {
 	s.workflowDispatcher = dispatcher
+}
+
+// SetBudgetService wires the per-tenant token budget. Optional —
+// when unset, Check/Record calls are no-ops. Ship with the budget
+// constructed and cfg.Enabled=false to do the dry-run / backfill
+// described in RFC-008 Phase 2 before enforcement.
+func (s *AITriageService) SetBudgetService(b *BudgetService) {
+	s.budget = b
 }
 
 // SetTriageBroadcaster sets the broadcaster for real-time WebSocket updates.
@@ -420,6 +433,29 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// Build prompt with sanitization for prompt injection protection
 	prompt := s.buildTriagePromptSafe(finding)
 
+	// BUDGET (RFC-008): pre-check before the LLM call. When the
+	// service is wired with cfg.Enabled=false this short-circuits
+	// and no-ops, preserving the "flag off = zero behaviour change"
+	// rollout requirement. When enabled, ErrBudgetExceeded fails
+	// the triage with an explicit audit trail.
+	if s.budget != nil {
+		// Best-effort prompt-token estimate: the provider-side count
+		// is more accurate but we don't have it until after the call.
+		// Under-estimating is OK — we Record the real count below.
+		estimated := estimateTokens(triageSystemPrompt) + estimateTokens(prompt) + s.platformCfg.MaxTokens
+		if err := s.budget.Check(ctx, tenantID, estimated); err != nil {
+			if errors.Is(err, ErrBudgetExceeded) {
+				s.logTriageBudgetExhausted(ctx, tenantID.String(), resultID.String(), findingID.String())
+				metrics.AITriageBudgetExhaustedTotal.WithLabelValues(tenantID.String()).Inc()
+				return s.failTriage(ctx, result, "monthly AI token budget exhausted")
+			}
+			// ErrBudgetUnavailable (only returned when strict=true) —
+			// treat as a transient failure; triage retry loop picks
+			// it up.
+			return s.failTriage(ctx, result, "budget service unavailable: "+err.Error())
+		}
+	}
+
 	// Call LLM with configured parameters
 	temperature := s.platformCfg.Temperature
 	if temperature == 0 {
@@ -492,12 +528,54 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	analysis.PromptTokens = llmResp.PromptTokens
 	analysis.CompletionTokens = llmResp.CompletionTokens
 
+	// BUDGET (RFC-008): record actual token spend post-call. We do
+	// this BEFORE MarkCompleted so that even if persistence of the
+	// triage result fails, the tokens we already spent are counted
+	// against the tenant's budget. Errors here are logged but do not
+	// fail the triage — the LLM call already succeeded.
+	if s.budget != nil && llmResp.TotalTokens > 0 {
+		if berr := s.budget.Record(ctx, tenantID, llmResp.TotalTokens); berr != nil {
+			s.logger.Warn("failed to record AI triage token usage",
+				"tenant_id", tenantID.String(),
+				"tokens", llmResp.TotalTokens,
+				"error", berr)
+		}
+		// Snapshot the per-tenant running counter for dashboards.
+		// Status() re-reads the row so the gauge reflects the post-
+		// increment value. Best-effort: fetch failure is non-fatal.
+		if status, serr := s.budget.Status(ctx, tenantID); serr == nil && status != nil {
+			metrics.AITriageBudgetUsedTokens.WithLabelValues(tenantID.String()).Set(float64(status.Used))
+		}
+	}
+
 	// Mark completed
 	if err := result.MarkCompleted(*analysis); err != nil {
 		return s.failTriage(ctx, result, "failed to mark completed: "+err.Error())
 	}
 	if err := s.triageRepo.Update(ctx, result); err != nil {
 		return fmt.Errorf("failed to save triage result: %w", err)
+	}
+
+	// SECURITY: when the validator couldn't fit the LLM output into
+	// the domain enums (invalid severity, missing required fields,
+	// prompt-injection suspected), the TriageAnalysis carries a non-
+	// empty ValidationWarnings slice. A sanitised default (usually
+	// "medium") has been applied so the pipeline doesn't stall, but
+	// downstream automation (workflow dispatcher, auto-apply rules,
+	// severity-change triggers) MUST NOT treat this result as
+	// authoritative. We surface the condition three ways:
+	//   1. log it at warn level so operators see it during triage;
+	//   2. emit an audit event so tenants can query history;
+	//   3. annotate the workflow payload with needs_review=true below
+	//      (workflow authors gate severity mutations on that flag).
+	if len(analysis.ValidationWarnings) > 0 {
+		s.logger.Warn("AI triage result requires human review",
+			"result_id", resultID.String(),
+			"finding_id", findingID.String(),
+			"warnings", analysis.ValidationWarnings,
+		)
+		s.logTriageNeedsReview(ctx, tenantID.String(), resultID.String(), findingID.String(), analysis.ValidationWarnings)
+		metrics.AITriageNeedsReviewTotal.WithLabelValues(tenantID.String()).Inc()
 	}
 
 	// Record activity
@@ -534,7 +612,12 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// Audit log: triage completed
 	s.logTriageCompleted(ctx, tenantID.String(), resultID.String(), findingID.String(), analysis.SeverityAssessment, analysis.RiskScore, llmResp.TotalTokens)
 
-	// Dispatch workflow event for AI triage completion
+	// Dispatch workflow event for AI triage completion.
+	// `needs_review` is exposed so workflow authors can gate severity-
+	// mutation / auto-close actions on it: when true, the validator
+	// coerced the LLM output (invalid enum, missing field) and the
+	// result is advisory only. See logTriageNeedsReview above and
+	// pkg/domain/aitriage/entity.go for the contract.
 	if s.workflowDispatcher != nil {
 		triageData := map[string]any{
 			"severity_assessment":       analysis.SeverityAssessment,
@@ -547,6 +630,8 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 			"false_positive_likelihood": analysis.FalsePositiveLikelihood,
 			"false_positive_reason":     analysis.FalsePositiveReason,
 			"summary":                   analysis.Summary,
+			"needs_review":              len(analysis.ValidationWarnings) > 0,
+			"validation_warnings":       analysis.ValidationWarnings,
 		}
 		s.workflowDispatcher.DispatchAITriageCompleted(ctx, tenantID, findingID, resultID, triageData)
 	}
@@ -1155,6 +1240,28 @@ func (s *AITriageService) logTriageCompleted(ctx context.Context, tenantID, resu
 		"severity":    severity,
 		"risk_score":  riskScore,
 		"tokens_used": tokensUsed,
+	})
+}
+
+// logTriageBudgetExhausted records that a triage was refused because
+// the tenant hit its monthly AI token ceiling (RFC-008). Emitted as
+// a dedicated audit action so cost/governance tooling can surface a
+// "budget exhausted" view without inspecting error payloads.
+func (s *AITriageService) logTriageBudgetExhausted(ctx context.Context, tenantID, resultID, findingID string) {
+	s.logAuditEvent(ctx, tenantID, resultID, findingID, audit.ActionAITriageBudgetExhausted, audit.ResultDenied, map[string]any{
+		"finding_id": findingID,
+	})
+}
+
+// logTriageNeedsReview records that a completed triage carries
+// ValidationWarnings and must be reviewed by a human before its
+// recommendations drive any automated finding mutation. Emits a
+// dedicated audit action so tenants can surface a review queue.
+func (s *AITriageService) logTriageNeedsReview(ctx context.Context, tenantID, resultID, findingID string, warnings []string) {
+	s.logAuditEvent(ctx, tenantID, resultID, findingID, audit.ActionAITriageNeedsReview, audit.ResultSuccess, map[string]any{
+		"finding_id":          findingID,
+		"validation_warnings": warnings,
+		"warning_count":       len(warnings),
 	})
 }
 

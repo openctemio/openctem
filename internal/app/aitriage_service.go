@@ -21,13 +21,23 @@ type (
 	TriageOutputValidator            = aitriage.TriageOutputValidator
 	PromptSanitizer                  = aitriage.PromptSanitizer
 	TokenLimitError                  = aitriage.TokenLimitError
+
+	// RFC-008 per-tenant LLM token budget.
+	AITriageBudgetService       = aitriage.BudgetService
+	AITriageBudgetServiceConfig = aitriage.BudgetServiceConfig
+	AITriageBudgetRepository    = aitriage.BudgetRepository
+	AITriageBudgetRow           = aitriage.BudgetRow
+	AITriageBudgetStatus        = aitriage.BudgetStatus
 )
 
 var (
-	NewAITriageService       = aitriage.NewAITriageService
-	NewTriageOutputValidator = aitriage.NewTriageOutputValidator
-	NewPromptSanitizer       = aitriage.NewPromptSanitizer
-	CheckTokenLimit          = aitriage.CheckTokenLimit
+	NewAITriageService        = aitriage.NewAITriageService
+	NewTriageOutputValidator  = aitriage.NewTriageOutputValidator
+	NewPromptSanitizer        = aitriage.NewPromptSanitizer
+	CheckTokenLimit           = aitriage.CheckTokenLimit
+	NewAITriageBudgetService  = aitriage.NewBudgetService
+	ErrAITriageBudgetExceeded = aitriage.ErrBudgetExceeded
+	ErrAITriageBudgetUnavail  = aitriage.ErrBudgetUnavailable
 )
 
 const TypeAITriage = aitriage.TypeAITriage

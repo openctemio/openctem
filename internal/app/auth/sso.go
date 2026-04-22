@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/api/pkg/domain/identityprovider"
+	"github.com/openctemio/api/pkg/httpsec"
 	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
@@ -96,9 +97,13 @@ func NewSSOService(
 		tokenGenerator:   tokenGen,
 		authConfig:       authCfg,
 		logger:           log.With("service", "sso"),
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		// SSRF: the SSO token-exchange endpoint and userinfo endpoint
+		// are resolved from tenant-configured IdP records. Using
+		// SafeHTTPClient ensures the dialer refuses to connect to
+		// loopback / RFC1918 / link-local / IPv6 private ranges at
+		// transport level, even if validateTenantIdentifier (Okta
+		// whitelist) is bypassed by a future provider addition.
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 	}
 }
 
@@ -550,6 +555,13 @@ func (s *SSOService) parseEntraIDUserInfo(body io.Reader) (*SSOUserInfo, error) 
 		return nil, err
 	}
 
+	// SECURITY: Entra ID (via Microsoft Graph /me) does NOT emit an
+	// email_verified claim — Graph is a directory API, not an OIDC
+	// userinfo endpoint. The trust model is: the tenant-admin
+	// configured this IdP, and Azure AD enforces email verification at
+	// directory-entry time. Both `mail` and `userPrincipalName` are
+	// directory-bound verified identifiers. Account-takeover defence
+	// lives in findOrCreateUser's provider-match + PasswordHash check.
 	email := data.Mail
 	if email == "" {
 		email = data.UserPrincipalName
@@ -563,11 +575,19 @@ func (s *SSOService) parseEntraIDUserInfo(body io.Reader) (*SSOUserInfo, error) 
 
 func (s *SSOService) parseOktaUserInfo(body io.Reader) (*SSOUserInfo, error) {
 	var data struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		Email         string `json:"email"`
+		EmailVerified bool   `json:"email_verified"` // OIDC standard claim
+		Name          string `json:"name"`
 	}
 	if err := json.NewDecoder(body).Decode(&data); err != nil {
 		return nil, err
+	}
+	// SECURITY: reject unverified emails. Okta's OIDC userinfo emits the
+	// standard email_verified claim; a rogue/misconfigured provider that
+	// returns email_verified=false would otherwise let an attacker claim
+	// any email address and federate into existing accounts.
+	if !data.EmailVerified {
+		return nil, fmt.Errorf("Okta provider did not mark email as verified")
 	}
 	return &SSOUserInfo{
 		Email: data.Email,
@@ -577,12 +597,18 @@ func (s *SSOService) parseOktaUserInfo(body io.Reader) (*SSOUserInfo, error) {
 
 func (s *SSOService) parseGoogleUserInfo(body io.Reader) (*SSOUserInfo, error) {
 	var data struct {
-		Email   string `json:"email"`
-		Name    string `json:"name"`
-		Picture string `json:"picture"`
+		Email         string `json:"email"`
+		EmailVerified bool   `json:"email_verified"` // OIDC; Workspace also emits this
+		Name          string `json:"name"`
+		Picture       string `json:"picture"`
 	}
 	if err := json.NewDecoder(body).Decode(&data); err != nil {
 		return nil, err
+	}
+	// SECURITY: reject unverified emails from Google Workspace. See
+	// parseOktaUserInfo for the rationale.
+	if !data.EmailVerified {
+		return nil, fmt.Errorf("Google Workspace provider did not mark email as verified")
 	}
 	return &SSOUserInfo{
 		Email:     data.Email,

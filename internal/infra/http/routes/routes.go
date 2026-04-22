@@ -4,6 +4,7 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/config"
@@ -249,6 +250,24 @@ func Register(
 		activeMembershipFromJWTMiddleware = middleware.RequireActiveMembershipFromJWT(membershipReader)
 	}
 
+	// CSRF (double-submit cookie) for state-changing JWT-cookie routes.
+	// We mount CSRFOptional, not the strict variant, for a safe rollout:
+	//
+	//   - clients authenticating with a session cookie MUST send
+	//     X-CSRF-Token on POST/PUT/PATCH/DELETE once the login endpoint
+	//     has set the csrf_token cookie;
+	//   - clients that authenticate without a cookie (bearer-token,
+	//     API-key, integration tests, future SDK callers) pass through
+	//     unchanged, because the cookie is absent.
+	//
+	// This is the minimum viable wiring for the CSRF middleware that
+	// the auth handler has been generating tokens for since before this
+	// change — without the wiring, those tokens did nothing. API-key
+	// authenticated routes (/api/v1/agent/*) and HMAC-verified inbound
+	// webhooks are NOT affected because they do not use
+	// buildTokenTenantMiddlewares.
+	csrfProtectionMiddleware = middleware.CSRFOptional(middleware.NewCSRFConfig(cfg.Auth, log))
+
 	// UserSync middleware syncs authenticated users to local database
 	// Supports both local auth and OIDC auth
 	var userSync Middleware
@@ -472,9 +491,20 @@ func Register(
 		registerCommandRoutes(router, h.Command, authMiddleware, userSync)
 	}
 
+	// Per-tenant rate limiter for the telemetry-events ingest endpoint.
+	// Not generic rate limiting — only this route needs it because an
+	// EDR agent can legitimately batch thousands of events, but we
+	// still need to prevent a single compromised agent key from
+	// drowning the correlator. Conservative defaults: 200 rps burst
+	// 400, buckets evicted after 10 m idle.
+	var telemetryRateLimiter *middleware.TelemetryRateLimiter
+	if cfg.RateLimit.Enabled {
+		telemetryRateLimiter = middleware.NewTelemetryRateLimiter(200, 400, 10*time.Minute, log)
+	}
+
 	// Ingest/Agent routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
-		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry)
+		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter)
 	}
 
 	// Agent management routes (tenant from JWT token)
@@ -662,6 +692,13 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	return middlewares
 }
 
+// csrfProtectionMiddleware is the CSRF double-submit-cookie middleware,
+// appended to every JWT-cookie tenant route chain via
+// buildTokenTenantMiddlewares. Using CSRFOptional keeps API-key /
+// bearer-token clients (no cookie) unaffected; cookie-bound clients
+// must send X-CSRF-Token.
+var csrfProtectionMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
 // readRateLimitMiddleware is the per-user read endpoint rate limiter,
 // set during Register() if rate limiting is enabled. Applied automatically
 // by buildTokenTenantMiddlewares to all tenant-scoped route groups.
@@ -691,6 +728,12 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	// minimal handler set.
 	if activeMembershipFromJWTMiddleware != nil {
 		middlewares = append(middlewares, activeMembershipFromJWTMiddleware)
+	}
+	// CSRF enforcement for cookie-bound sessions. Safe methods (GET,
+	// HEAD, OPTIONS) are exempt inside the middleware, so read
+	// endpoints are unaffected.
+	if csrfProtectionMiddleware != nil {
+		middlewares = append(middlewares, csrfProtectionMiddleware)
 	}
 	if readRateLimitMiddleware != nil {
 		middlewares = append(middlewares, readRateLimitMiddleware)

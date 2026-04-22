@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // SlackClient implements the Client interface for Slack notifications.
@@ -24,9 +26,12 @@ func NewSlackClient(config Config) (*SlackClient, error) {
 
 	return &SlackClient{
 		webhookURL: config.WebhookURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		// SSRF: SafeHTTPClient's dialer rejects connections to loopback,
+		// RFC1918, link-local (169.254.169.254 / cloud IMDS), CGNAT, and
+		// IPv6 private ranges. Webhook URLs are tenant-controlled, so
+		// even if validation at create-time passes, DNS rebinding or
+		// follow-up redirects MUST fail closed at dial time.
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 	}, nil
 }
 

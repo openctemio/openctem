@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -119,6 +120,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 			cookieToken, err := r.Cookie(CSRFTokenCookieName)
 			if err != nil || cookieToken.Value == "" {
 				cfg.Logger.Debug("CSRF token missing from cookie", "path", r.URL.Path)
+				metrics.CSRFRejectionsTotal.WithLabelValues("missing_cookie", r.Method).Inc()
 				apierror.Forbidden("CSRF token missing").WriteJSON(w)
 				return
 			}
@@ -127,6 +129,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 			headerToken := r.Header.Get(CSRFHeaderName)
 			if headerToken == "" {
 				cfg.Logger.Debug("CSRF token missing from header", "path", r.URL.Path)
+				metrics.CSRFRejectionsTotal.WithLabelValues("missing_header", r.Method).Inc()
 				apierror.Forbidden("CSRF token missing from header").WriteJSON(w)
 				return
 			}
@@ -137,6 +140,7 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 					"path", r.URL.Path,
 					"ip", r.RemoteAddr,
 				)
+				metrics.CSRFRejectionsTotal.WithLabelValues("token_mismatch", r.Method).Inc()
 				apierror.Forbidden("Invalid CSRF token").WriteJSON(w)
 				return
 			}
@@ -174,6 +178,7 @@ func CSRFOptional(cfg CSRFConfig) func(http.Handler) http.Handler {
 			headerToken := r.Header.Get(CSRFHeaderName)
 			if headerToken == "" {
 				cfg.Logger.Debug("CSRF token missing from header (cookie present)", "path", r.URL.Path)
+				metrics.CSRFRejectionsTotal.WithLabelValues("missing_header", r.Method).Inc()
 				apierror.Forbidden("CSRF token required in header").WriteJSON(w)
 				return
 			}
@@ -184,6 +189,7 @@ func CSRFOptional(cfg CSRFConfig) func(http.Handler) http.Handler {
 					"path", r.URL.Path,
 					"ip", r.RemoteAddr,
 				)
+				metrics.CSRFRejectionsTotal.WithLabelValues("token_mismatch", r.Method).Inc()
 				apierror.Forbidden("Invalid CSRF token").WriteJSON(w)
 				return
 			}

@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 const (
@@ -55,7 +57,7 @@ func NewOpenAIProvider(cfg OpenAIConfig) (*OpenAIProvider, error) {
 	return &OpenAIProvider{
 		apiKey:     cfg.APIKey,
 		model:      model,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: httpsec.SafeHTTPClient(timeout),
 		maxRetries: maxRetries,
 	}, nil
 }

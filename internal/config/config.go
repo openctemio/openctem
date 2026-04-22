@@ -454,6 +454,24 @@ type AITriageConfig struct {
 	RecoveryInterval      time.Duration // How often to check for stuck jobs (default: 5 minutes)
 	RecoveryStuckDuration time.Duration // How long before a job is considered stuck (default: 15 minutes)
 	RecoveryBatchSize     int           // Max jobs to recover per run (default: 50)
+
+	// Per-tenant LLM token budget (RFC-008 Phase 1).
+	// BudgetEnabled defaults to false — the budget service is wired
+	// but Check() returns nil so no tenant is blocked. Flip to true
+	// per RFC-008 Phase 2 rollout after backfill + dashboards ship.
+	BudgetEnabled bool
+	// BudgetStrict controls the fail-mode when the budget repo is
+	// unreachable. In production (strict=true) a repo outage blocks
+	// triage — we refuse to run without a running counter. In dev/
+	// staging (strict=false) we log and proceed. Defaults to false
+	// to match "flag off = zero behaviour change" on first deploy.
+	BudgetStrict bool
+	// BudgetDefaultTokensPerMonth is the fallback ceiling applied when
+	// a tenant has no row in ai_triage_budgets for the current month
+	// AND no per-plan override. 0 = unlimited (back-compat). A paying
+	// SaaS deployment typically sets this at plan-onboarding time,
+	// not here.
+	BudgetDefaultTokensPerMonth int64
 }
 
 // IsConfigured returns true if AI triage is properly configured.
@@ -668,6 +686,10 @@ func Load() (*Config, error) {
 			RecoveryInterval:            getEnvDuration("AI_TRIAGE_RECOVERY_INTERVAL", 5*time.Minute),
 			RecoveryStuckDuration:       getEnvDuration("AI_TRIAGE_RECOVERY_STUCK_DURATION", 15*time.Minute),
 			RecoveryBatchSize:           getEnvInt("AI_TRIAGE_RECOVERY_BATCH_SIZE", 50),
+			// RFC-008 Phase 1: budget service wired but OFF by default.
+			BudgetEnabled:               getEnvBool("AI_TRIAGE_BUDGET_ENABLED", false),
+			BudgetStrict:                getEnvBool("AI_TRIAGE_BUDGET_STRICT", false),
+			BudgetDefaultTokensPerMonth: int64(getEnvInt("AI_TRIAGE_BUDGET_DEFAULT_TOKENS", 0)),
 		},
 	}
 
@@ -819,6 +841,15 @@ func (c *Config) validateAuth() error {
 		if len(c.Auth.JWTSecret) < 32 {
 			return fmt.Errorf("AUTH_JWT_SECRET must be at least 32 characters")
 		}
+		// Refuse to start in non-development environments when the JWT
+		// secret matches one of the docker-compose.yml / .env.example
+		// dev defaults. The dev defaults are deliberately preserved
+		// in development to keep `docker compose up` ergonomic, but
+		// shipping them to production / staging means every attacker
+		// with repo access can forge tokens.
+		if !c.IsDevelopment() && isDevDefaultJWTSecret(c.Auth.JWTSecret) {
+			return fmt.Errorf("AUTH_JWT_SECRET is a known development default and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
+		}
 		if c.Auth.PasswordMinLength < 6 {
 			return fmt.Errorf("AUTH_PASSWORD_MIN_LENGTH must be at least 6")
 		}
@@ -830,12 +861,43 @@ func (c *Config) validateAuth() error {
 		}
 	}
 
+	// Same sentinel for the credential-at-rest key: only refuse outside
+	// development. Dev keeps the predictable `0123…cdef` value so
+	// `docker compose up` works without further config; non-dev MUST
+	// override it because the value is publicly known.
+	if !c.IsDevelopment() && c.Encryption.Key != "" && isDevDefaultEncryptionKey(c.Encryption.Key) {
+		return fmt.Errorf("APP_ENCRYPTION_KEY is the docker-compose default and APP_ENV=%q is not 'development'; generate one with `openssl rand -hex 32`", c.App.Env)
+	}
+
 	// Validate OAuth configuration
 	if err := c.validateOAuth(); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// devDefaultJWTSecrets is the closed set of "dev-quickstart" JWT secret
+// literals that ship in docker-compose.yml and .env.*.example files
+// across this repo. Refusing them at startup prevents the "copied the
+// compose file to prod" failure mode. Update this list whenever a new
+// docs/config example is introduced.
+var devDefaultJWTSecrets = []string{
+	"this-is-a-development-secret-key-at-least-64-characters-long-for-security",
+	"this-is-a-development-secret-key-at-least-32-characters",
+}
+
+func isDevDefaultJWTSecret(s string) bool {
+	return slices.Contains(devDefaultJWTSecrets, s)
+}
+
+// isDevDefaultEncryptionKey flags the repeating-hex-digit AES-256 key
+// that ships as the docker-compose fallback. Matching the literal (not
+// a pattern) avoids false positives on legitimate high-entropy keys
+// that happen to start with common bytes.
+func isDevDefaultEncryptionKey(s string) bool {
+	const dockerComposeDefault = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	return s == dockerComposeDefault
 }
 
 // validateOAuth validates OAuth configuration.

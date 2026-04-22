@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // TeamsClient implements the Client interface for Microsoft Teams notifications.
@@ -24,9 +26,9 @@ func NewTeamsClient(config Config) (*TeamsClient, error) {
 
 	return &TeamsClient{
 		webhookURL: config.WebhookURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		// SSRF: see slack.go — tenant-controlled webhook URL needs the
+		// dialer-level blocklist as defense in depth.
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 	}, nil
 }
 

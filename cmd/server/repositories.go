@@ -33,6 +33,7 @@ type Repositories struct {
 	FindingApproval  *postgres.FindingApprovalRepository
 	FindingActivity  *postgres.FindingActivityRepository
 	AITriage         *postgres.AITriageRepository              // AI-powered vulnerability triage
+	AITriageBudget   *postgres.AITriageBudgetRepository        // Per-tenant LLM token budget (RFC-008)
 	DataFlow         *postgres.DataFlowRepository              // Data flow traces for taint tracking
 	FindingSource    *postgres.FindingSourceRepository         // Finding source configuration
 	FindingSourceCat *postgres.FindingSourceCategoryRepository // Finding source categories
@@ -197,6 +198,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		FindingApproval:  postgres.NewFindingApprovalRepository(db),
 		FindingActivity:  postgres.NewFindingActivityRepository(db),
 		AITriage:         postgres.NewAITriageRepository(db),              // AI-powered vulnerability triage
+		AITriageBudget:   postgres.NewAITriageBudgetRepository(db),        // RFC-008 monthly LLM token budget
 		DataFlow:         postgres.NewDataFlowRepository(db),              // Data flow traces
 		FindingSource:    postgres.NewFindingSourceRepository(db),         // Finding source configuration
 		FindingSourceCat: postgres.NewFindingSourceCategoryRepository(db), // Finding source categories

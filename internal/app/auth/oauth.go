@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/api/internal/config"
 	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	userdom "github.com/openctemio/api/pkg/domain/user"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -98,10 +99,13 @@ func NewOAuthService(
 		tokenGenerator:   tokenGen,
 		config:           oauthCfg,
 		authConfig:       authCfg,
-		logger:           log.With("service", "oauth"),
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		logger: log.With("service", "oauth"),
+		// SSRF: OAuth userinfo + token endpoints for Google / GitHub /
+		// Microsoft are hardcoded strings in this file, so no SSRF via
+		// config. Using SafeHTTPClient remains valuable: if a follow-
+		// redirect ever lands on a tenant-controlled host, the dialer
+		// refuses the connection instead of silently following.
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 	}
 }
 
