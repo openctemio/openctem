@@ -631,21 +631,15 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 	}
 	defer rows.Close()
 
-	// Clamp the pre-alloc capacity to a repo-boundary max. filters.Limit
-	// comes from the HTTP handler which already paginates, but the
-	// defence-in-depth cap here prevents a bypassed handler from
-	// triggering a multi-GB allocation. CodeQL flags make() with
-	// user-influenced size (go/unsafe-slice-allocation); a const-
-	// bounded local separates the tainted flow from the allocation.
+	// Pre-allocate at the const cold-cap max so make() has ZERO
+	// user-influenced size input. Even after a clamp,
+	// CodeQL's go/unsafe-slice-allocation keeps the taint tag on
+	// filters.Limit; the only path to a clean flow is to hand the
+	// literal to make. 1000 pointer slots = ~8 KB, an acceptable
+	// ceiling for a member-search result and a trivial cost when
+	// the page returns fewer rows.
 	const maxMembersCap = 1000
-	capacity := filters.Limit
-	if capacity < 0 {
-		capacity = 0
-	}
-	if capacity > maxMembersCap {
-		capacity = maxMembersCap
-	}
-	members := make([]*tenant.MemberWithUser, 0, capacity)
+	members := make([]*tenant.MemberWithUser, 0, maxMembersCap)
 	var total int
 
 	for rows.Next() {
