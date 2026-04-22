@@ -590,7 +590,7 @@ func (r *AgentRepository) buildWhereClause(filter agent.Filter) (string, []any) 
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIndex++
+		// argIndex not incremented — this is the last condition.
 	}
 
 	if filter.HasCapacity != nil && *filter.HasCapacity {

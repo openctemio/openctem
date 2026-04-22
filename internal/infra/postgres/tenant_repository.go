@@ -631,8 +631,21 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 	}
 	defer rows.Close()
 
-	// Pre-allocate slice with expected capacity
-	members := make([]*tenant.MemberWithUser, 0, filters.Limit)
+	// Clamp the pre-alloc capacity to a repo-boundary max. filters.Limit
+	// comes from the HTTP handler which already paginates, but the
+	// defence-in-depth cap here prevents a bypassed handler from
+	// triggering a multi-GB allocation. CodeQL flags make() with
+	// user-influenced size (go/unsafe-slice-allocation); a const-
+	// bounded local separates the tainted flow from the allocation.
+	const maxMembersCap = 1000
+	capacity := filters.Limit
+	if capacity < 0 {
+		capacity = 0
+	}
+	if capacity > maxMembersCap {
+		capacity = maxMembersCap
+	}
+	members := make([]*tenant.MemberWithUser, 0, capacity)
 	var total int
 
 	for rows.Next() {

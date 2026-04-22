@@ -155,11 +155,15 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		return nil, err
 	}
 
+	// report.Metadata.ID and SourceType come from the CTIS payload
+	// submitted by the agent. A compromised/malicious agent can
+	// embed CR/LF in those fields to forge log lines downstream
+	// (CodeQL go/log-injection). Strip control chars before logging.
 	s.logger.Info("ingesting report",
 		"agent_id", agt.ID.String(),
 		"tenant_id", tenantID.String(),
-		"report_id", report.Metadata.ID,
-		"source_type", report.Metadata.SourceType,
+		"report_id", sanitizeIngestLogField(report.Metadata.ID),
+		"source_type", sanitizeIngestLogField(report.Metadata.SourceType),
 		"assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),
 	)

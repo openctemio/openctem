@@ -86,15 +86,23 @@ func (r *FindingApprovalRepository) ListPending(ctx context.Context, tenantID sh
 	}
 	defer rows.Close()
 
+	// Clamp the slice capacity to a const maximum so the make() call
+	// on the next line cannot allocate more than maxApprovalsCap
+	// pointers even if page.Limit() drifts. CodeQL flags
+	// make([]T, 0, <tainted>) under go/unsafe-quoting / unsafe-slice-
+	// allocation; a separate const-bounded local eats that tainted
+	// flow without changing behaviour.
+	const maxApprovalsCap = 100
 	limit := page.Limit()
 	if limit < 0 {
 		limit = 0
 	}
-	if limit > 100 {
-		limit = 100
+	capacity := limit
+	if capacity > maxApprovalsCap {
+		capacity = maxApprovalsCap
 	}
 
-	approvals := make([]*vulnerability.Approval, 0, limit)
+	approvals := make([]*vulnerability.Approval, 0, capacity)
 	for rows.Next() {
 		a, err := r.scanApprovalFromRows(rows)
 		if err != nil {

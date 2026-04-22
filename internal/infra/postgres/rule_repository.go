@@ -400,7 +400,7 @@ func (r *RuleRepository) buildWhereClause(filter rule.RuleFilter) (string, []any
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR rule_id ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex, argIndex))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIndex++
+		// argIndex not incremented — this is the last condition.
 	}
 
 	if len(conditions) == 0 {

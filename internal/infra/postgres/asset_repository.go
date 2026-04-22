@@ -1444,24 +1444,37 @@ SELECT category, key, value FROM (
 ) sub
 `, filterClause)
 
-	// Append metadata count queries for requested JSONB property fields.
-	// Each field adds a UNION ALL that groups by the property value.
-	// Only alphanumeric + underscore field names are allowed (SQL injection safe).
+	// Append metadata count queries for requested JSONB property
+	// fields. Each field adds a UNION ALL that groups by the
+	// property value.
+	//
+	// Hardening: the regex restricts `field` to a safe subset, but
+	// CodeQL's go/sql-injection rule still flagged the Sprintf
+	// interpolation because it doesn't model the regex guard.
+	// Rewriting with `$N` parameter binding removes the tainted
+	// flow entirely — PG accepts a parameter in every position
+	// `field` used (JSONB `->>` operator, `?` existence operator,
+	// and a string-concat for the category label). The regex is
+	// retained as an early reject because the DB would accept
+	// weird-but-unused keys like "1" or "foo bar" and we want a
+	// 400-style early failure rather than a noisy 0-row group.
 	validField := regexp.MustCompile(`^[a-z][a-z0-9_]{0,49}$`)
 	for _, field := range countByFields {
 		if !validField.MatchString(field) {
 			continue
 		}
-		// Insert before the closing ") sub" by replacing it
+		// Insert before the closing ") sub" by replacing it.
 		query = strings.TrimSuffix(strings.TrimSpace(query), ") sub")
+		paramIdx := len(args) + 1 // $N for the field name
 		query += fmt.Sprintf(`
   UNION ALL
-  SELECT 'meta:%s', COALESCE(a.properties->>'%s', 'null'), COUNT(*)::float8
+  SELECT 'meta:' || $%d, COALESCE(a.properties->>$%d, 'null'), COUNT(*)::float8
   FROM filtered a
-  WHERE a.properties ? '%s'
-  GROUP BY a.properties->>'%s'
+  WHERE a.properties ? $%d
+  GROUP BY a.properties->>$%d
 ) sub
-`, field, field, field, field)
+`, paramIdx, paramIdx, paramIdx, paramIdx)
+		args = append(args, field)
 	}
 
 	rows, err := r.db.QueryContext(ctx, query, args...)

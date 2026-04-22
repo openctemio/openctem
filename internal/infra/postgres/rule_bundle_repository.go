@@ -128,7 +128,7 @@ func (r *RuleBundleRepository) List(ctx context.Context, filter rule.BundleFilte
 	if filter.Status != nil {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, string(*filter.Status))
-		argIndex++
+		// argIndex not incremented — this is the last condition.
 	}
 
 	if len(conditions) > 0 {

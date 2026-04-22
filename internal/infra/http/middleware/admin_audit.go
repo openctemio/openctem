@@ -180,6 +180,15 @@ func (w *auditResponseWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
+// Write implements http.ResponseWriter. CodeQL's go/reflected-xss
+// rule flags this line as a response-body sink because the []byte
+// `b` ultimately carries bytes written by the downstream handler
+// — some of which may derive from HTTP request input. This wrapper
+// does NOT introduce a new XSS surface: it is a transparent
+// passthrough, added only to observe the status code for audit
+// logging. Output escaping is the handler's responsibility
+// (json.Encoder for JSON endpoints, html/template for HTML
+// endpoints). Dismiss the alert as wrapper-level false-positive.
 func (w *auditResponseWriter) Write(b []byte) (int, error) {
 	if !w.written {
 		w.statusCode = http.StatusOK

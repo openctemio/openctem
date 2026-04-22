@@ -564,7 +564,7 @@ func (r *AuditRepository) buildWhereClause(filter audit.Filter) (string, []any) 
 	if filter.ExcludeSystem {
 		conditions = append(conditions, fmt.Sprintf("actor_email != $%d", argIndex))
 		args = append(args, "System")
-		argIndex++
+		// argIndex not incremented — this is the last condition.
 	}
 
 	return strings.Join(conditions, " AND "), args

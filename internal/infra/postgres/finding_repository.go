@@ -2195,7 +2195,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		userIDIdx := argIndex
 		tenantIDIdx := argIndex + 1
 		args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
-		argIndex += 2
+		// argIndex not incremented — this is the last block that consumes it.
 		conditions = append(conditions, fmt.Sprintf(`(
 			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
 			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)

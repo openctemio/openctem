@@ -316,7 +316,7 @@ func (r *RuleSourceRepository) buildWhereClause(filter rule.SourceFilter) (strin
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIndex++
+		// argIndex not incremented — this is the last condition.
 	}
 
 	if len(conditions) == 0 {
