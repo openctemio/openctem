@@ -18,16 +18,17 @@ import (
 
 // Settings represents the typed settings for a tenant.
 type Settings struct {
-	General       GeneralSettings       `json:"general"`
-	Security      SecuritySettings      `json:"security"`
-	API           APISettings           `json:"api"`
-	Branding      BrandingSettings      `json:"branding"`
-	Branch        BranchSettings        `json:"branch"`
-	AI            AISettings            `json:"ai"`
-	RiskScoring   RiskScoringSettings   `json:"risk_scoring"`
-	Pentest       PentestSettings       `json:"pentest"`
-	AssetIdentity AssetIdentitySettings `json:"asset_identity"`
-	AssetSource   AssetSourceSettings   `json:"asset_source"`
+	General        GeneralSettings        `json:"general"`
+	Security       SecuritySettings       `json:"security"`
+	API            APISettings            `json:"api"`
+	Branding       BrandingSettings       `json:"branding"`
+	Branch         BranchSettings         `json:"branch"`
+	AI             AISettings             `json:"ai"`
+	RiskScoring    RiskScoringSettings    `json:"risk_scoring"`
+	Pentest        PentestSettings        `json:"pentest"`
+	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
+	AssetSource    AssetSourceSettings    `json:"asset_source"`
+	AssetLifecycle AssetLifecycleSettings `json:"asset_lifecycle"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.
@@ -824,6 +825,9 @@ func (s *Settings) Validate() error {
 	if err := s.AssetSource.Validate(); err != nil {
 		return fmt.Errorf("asset_source settings: %w", err)
 	}
+	if err := s.AssetLifecycle.Validate(); err != nil {
+		return fmt.Errorf("asset_lifecycle settings: %w", err)
+	}
 	return nil
 }
 
@@ -1234,5 +1238,19 @@ func (t *Tenant) UpdateAssetSourceSettings(as AssetSourceSettings) error {
 	}
 	settings := t.TypedSettings()
 	settings.AssetSource = as
+	return t.UpdateSettings(settings)
+}
+
+// UpdateAssetLifecycleSettings updates only the asset-lifecycle
+// settings. The DryRunCompletedAt-before-Enabled guard lives in
+// AssetLifecycleSettings.Validate; the service layer is responsible
+// for stamping that timestamp after a successful dry-run, not this
+// entity method.
+func (t *Tenant) UpdateAssetLifecycleSettings(al AssetLifecycleSettings) error {
+	if err := al.Validate(); err != nil {
+		return err
+	}
+	settings := t.TypedSettings()
+	settings.AssetLifecycle = al
 	return t.UpdateSettings(settings)
 }
