@@ -818,6 +818,18 @@ git commit -m "fix(security): add input validation
 - Priority-flood guard renamed: `P0FloodGuard` → `PriorityFloodGuard` with configurable `ProtectedClass`
 - Q1/Q2/Q3 gate integration tests in `tests/integration/ctem_*_test.go`
 
-### Migrations: 156 total (000001–000156)
+### Security hardening batch (2026-04-22)
+- **SSRF two-tier guard**: `api/pkg/httpsec` exports `hardBlockedIPRanges` (always-blocked: IMDS, loopback, CGNAT, multicast, broadcast, v6 link-local) and `privateIPRanges` (RFC1918 + ULA, soft-blocked). Opt-in via `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1`. Mirrored identically in `sdk-go/pkg/httpsec/`.
+  - Any new outbound HTTP must use `httpsec.SafeHTTPClient`. CI (`scripts/security-lint.sh` Rule 1) fails on raw `&http.Client{}` outside `pkg/httpsec`.
+- **CSRF middleware**: `internal/infra/http/middleware/csrf.go` — double-submit-cookie on every JWT-cookie state-changing route. Exempt list is explicit (API-key + HMAC webhook). Emits `openctem_security_csrf_rejections_total` with `reason` label.
+- **Startup sentinel**: `internal/config/config.go` — `isDevDefaultJWTSecret` / `isDevDefaultEncryptionKey` gate refuses boot when `APP_ENV != development`. Also refuses `APP_DEBUG=true`, `CORS=*`, `DB_SSLMODE=disable` in production.
+- **Audit chain verifier**: `internal/infra/controller/audit_chain_verify.go` — hourly re-walk; emits `level=error alert=audit_chain_break` + `openctem_security_audit_chain_breaks_total`.
+- **AI-triage budget**: migration `000163_ai_triage_budgets`, `internal/app/aitriage/budget.go`, `internal/infra/postgres/ai_triage_budget_repository.go`. Uses `INSERT…ON CONFLICT DO NOTHING` for GetOrCreate and `UPDATE…RETURNING` for IncrementUsed. Ships disabled; rollout in [RFC-008](../docs/rfcs/RFC-008-llm-token-budget.md).
+- **Prompt-injection defences**: `TriageResult.ValidationWarnings` + `NeedsReview()` in `pkg/domain/aitriage/entity.go`. Downstream workflow payload has `needs_review` flag; emits `ActionAITriageNeedsReview` audit event.
+- **Email CRLF sanitiser**: `pkg/email/email.go` exports `SanitizeHeaderValue`. Use it for any user-controlled string fed into SMTP headers.
+- **Security observability**: 5 new Prometheus series under `openctem_security_*` prefix. See `internal/metrics/security_defenses.go`.
+- **Slice CodeQL fix**: use const-literal capacity passed directly to `make()` for `go/unsafe-slice-allocation` clean-flow (see `finding_approval_repository.go`, `tenant_repository.go`).
 
-**Last Updated**: 2026-04-20
+### Migrations: 163 total (000001–000163)
+
+**Last Updated**: 2026-04-22
