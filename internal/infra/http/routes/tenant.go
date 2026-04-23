@@ -91,6 +91,10 @@ func registerTenantRoutes(
 		r.GET("/settings/asset-identity", h.GetAssetIdentitySettings, middleware.RequireTeamAdmin())
 		r.PATCH("/settings/asset-identity", h.UpdateAssetIdentitySettings, middleware.RequireTeamAdmin())
 
+		// Asset source priority settings (admin+) — RFC-003 Phase 1a
+		r.GET("/settings/asset-source", h.GetAssetSourceSettings, middleware.RequireTeamAdmin())
+		r.PUT("/settings/asset-source", h.UpdateAssetSourceSettings, middleware.RequireTeamAdmin())
+
 		// Risk scoring settings (admin+)
 		r.GET("/settings/risk-scoring", h.GetRiskScoringSettings, middleware.RequireTeamAdmin())
 		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin())

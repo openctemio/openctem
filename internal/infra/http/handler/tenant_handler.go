@@ -1579,6 +1579,65 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 	})
 }
 
+// GetAssetSourceSettings handles GET /api/v1/tenants/{tenant}/settings/asset-source.
+// Returns the tenant's current asset source priority + trust-level
+// configuration (RFC-003 Phase 1a). Empty response means the feature
+// is not enabled for this tenant — ingest falls back to today's
+// last-write-wins merge.
+func (h *TenantHandler) GetAssetSourceSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	as, err := h.service.GetAssetSourceSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(as)
+}
+
+// UpdateAssetSourceSettings handles PUT /api/v1/tenants/{tenant}/settings/asset-source.
+// Replaces the entire asset-source configuration. Pass an empty
+// body (or empty priority + empty trust_levels) to disable the
+// feature and restore default last-write-wins behavior.
+func (h *TenantHandler) UpdateAssetSourceSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	var req tenant.AssetSourceSettings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// Structural validation runs in the domain layer via
+	// UpdateAssetSourceSettings. We still do it here so bad
+	// requests come back as 400 rather than being translated by
+	// handleServiceError.
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	settings, err := h.service.UpdateAssetSourceSettings(r.Context(), tenantID.String(), req, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(settings.AssetSource)
+}
+
 // PreviewRiskScoringChanges handles POST /api/v1/tenants/{tenant}/settings/risk-scoring/preview
 func (h *TenantHandler) PreviewRiskScoringChanges(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())
