@@ -198,6 +198,9 @@ var sensitiveConfigKeys = map[string]bool{
 
 // sanitizeConfigMap removes sensitive values from a config/metadata map.
 // Returns a new map with sensitive values replaced by "[REDACTED]".
+// Descends into nested maps AND slices: integration configs occasionally
+// store secrets inside arrays (e.g. a list of webhook targets each
+// carrying a signing_secret), and skipping slices would leak them.
 func sanitizeConfigMap(config map[string]any) map[string]any {
 	if config == nil {
 		return nil
@@ -207,7 +210,6 @@ func sanitizeConfigMap(config map[string]any) map[string]any {
 	for k, v := range config {
 		keyLower := strings.ToLower(k)
 
-		// Check if this key contains sensitive data
 		isSensitive := false
 		for sensitiveKey := range sensitiveConfigKeys {
 			if strings.Contains(keyLower, sensitiveKey) {
@@ -218,14 +220,29 @@ func sanitizeConfigMap(config map[string]any) map[string]any {
 
 		if isSensitive {
 			sanitized[k] = "[REDACTED]"
-		} else if nestedMap, ok := v.(map[string]any); ok {
-			// Recursively sanitize nested maps
-			sanitized[k] = sanitizeConfigMap(nestedMap)
-		} else {
-			sanitized[k] = v
+			continue
 		}
+		sanitized[k] = sanitizeConfigValue(v)
 	}
 	return sanitized
+}
+
+// sanitizeConfigValue recursively sanitizes a single value — maps are
+// redacted key-by-key; slices are walked element-by-element; scalars
+// pass through untouched.
+func sanitizeConfigValue(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		return sanitizeConfigMap(val)
+	case []any:
+		out := make([]any, len(val))
+		for i, item := range val {
+			out[i] = sanitizeConfigValue(item)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // toIntegrationResponse converts a domain integration to API response.
