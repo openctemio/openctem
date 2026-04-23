@@ -4,6 +4,7 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/config"
@@ -11,6 +12,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/websocket"
+	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/keycloak"
@@ -48,7 +50,9 @@ type Handlers struct {
 	AttackSurface   *handler.AttackSurfaceHandler   // nil if not initialized (no database)
 	Docs            *handler.DocsHandler            // API documentation handler
 	Command         *handler.CommandHandler         // nil if not initialized (no database)
-	Ingest          *handler.IngestHandler          // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
+	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
+	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint agents
+	IOC              *handler.IOCHandler              // nil if not initialized - IOC catalogue (feeds B6 correlator)
 	Agent           *handler.AgentHandler           // nil if not initialized (no database)
 	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
 	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
@@ -112,6 +116,16 @@ type Handlers struct {
 	// Business Units
 	BusinessUnit *handler.BusinessUnitHandler // nil if not initialized
 
+	// Business Services (distinct from Business Units — represent business capabilities)
+	BusinessService *handler.BusinessServiceHandler // nil if not initialized
+
+	// CTEM RFC-005 handlers (direct SQL, no DDD repo layer yet)
+	CompensatingControl *handler.CompensatingControlHandler // nil if not initialized
+	AttackerProfile     *handler.AttackerProfileHandler     // nil if not initialized
+	CTEMCycle           *handler.CTEMCycleHandler           // nil if not initialized
+	VerificationChecklist *handler.VerificationChecklistHandler // nil if not initialized
+	PriorityRule         *handler.PriorityRuleHandler            // nil if not initialized
+
 	// Asset Import (Nessus, K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
 
@@ -153,6 +167,10 @@ type Handlers struct {
 
 	// WebSocket handler for real-time communication
 	WebSocket *websocket.Handler
+
+	// F-8: Optional single-use WebSocket ticket redeemer. When non-nil,
+	// the /ws route uses ticket auth instead of the JWT chain.
+	WSTicketRedeemer middleware.WSTicketRedeemer
 }
 
 // AuthConfig holds authentication configuration for route registration.
@@ -232,6 +250,24 @@ func Register(
 		activeMembershipFromJWTMiddleware = middleware.RequireActiveMembershipFromJWT(membershipReader)
 	}
 
+	// CSRF (double-submit cookie) for state-changing JWT-cookie routes.
+	// We mount CSRFOptional, not the strict variant, for a safe rollout:
+	//
+	//   - clients authenticating with a session cookie MUST send
+	//     X-CSRF-Token on POST/PUT/PATCH/DELETE once the login endpoint
+	//     has set the csrf_token cookie;
+	//   - clients that authenticate without a cookie (bearer-token,
+	//     API-key, integration tests, future SDK callers) pass through
+	//     unchanged, because the cookie is absent.
+	//
+	// This is the minimum viable wiring for the CSRF middleware that
+	// the auth handler has been generating tokens for since before this
+	// change — without the wiring, those tokens did nothing. API-key
+	// authenticated routes (/api/v1/agent/*) and HMAC-verified inbound
+	// webhooks are NOT affected because they do not use
+	// buildTokenTenantMiddlewares.
+	csrfProtectionMiddleware = middleware.CSRFOptional(middleware.NewCSRFConfig(cfg.Auth, log))
+
 	// UserSync middleware syncs authenticated users to local database
 	// Supports both local auth and OIDC auth
 	var userSync Middleware
@@ -297,8 +333,8 @@ func Register(
 		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, authMiddleware, userSync)
 	}
 
-	// Incoming Jira webhook — public endpoint (no JWT), Jira POSTs status changes here.
-	registerIncomingWebhookRoutes(router, h.JiraWebhook)
+	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
+	registerIncomingWebhookRoutes(router, h.JiraWebhook, cfg.Webhooks.JiraSecret, log)
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
 	var activityRateLimiter *middleware.FindingActivityRateLimiter
@@ -367,6 +403,11 @@ func Register(
 		registerThreatActorRoutes(router, h.ThreatActor, authMiddleware, userSync)
 	}
 
+	// Indicators of Compromise (IOC catalogue, feeds B6 correlator)
+	if h.IOC != nil {
+		registerIOCRoutes(router, h.IOC, authMiddleware, userSync)
+	}
+
 	// Remediation Campaign routes
 	if h.RemediationCampaign != nil {
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync)
@@ -378,6 +419,41 @@ func Register(
 	// Business Unit routes
 	if h.BusinessUnit != nil {
 		registerBusinessUnitRoutes(router, h.BusinessUnit, authMiddleware, userSync)
+	}
+
+	// Business Service routes (Phase 3 — business capability management)
+	if h.BusinessService != nil {
+		registerBusinessServiceRoutes(router, h.BusinessService, authMiddleware, userSync)
+	}
+
+	// Compensating Control routes (RFC-005)
+	if h.CompensatingControl != nil {
+		registerCompensatingControlRoutes(router, h.CompensatingControl, authMiddleware, userSync)
+	}
+
+	// Attacker Profile routes (RFC-005)
+	if h.AttackerProfile != nil {
+		registerAttackerProfileRoutes(router, h.AttackerProfile, authMiddleware, userSync)
+	}
+
+	// CTEM Cycle routes (RFC-005)
+	if h.CTEMCycle != nil {
+		registerCTEMCycleRoutes(router, h.CTEMCycle, authMiddleware, userSync)
+	}
+
+	// Priority Rule routes (RFC-004)
+	if h.PriorityRule != nil {
+		registerPriorityRuleRoutes(router, h.PriorityRule, authMiddleware, userSync)
+	}
+
+	// Verification Checklist routes (RFC-005) — added to findings group
+	if h.VerificationChecklist != nil {
+		vcHandler := h.VerificationChecklist
+		tenantMW := buildTokenTenantMiddlewares(authMiddleware, userSync)
+		router.Group("/api/v1/verification-checklists", func(r Router) {
+			r.GET("/{findingId}", vcHandler.Get, middleware.Require(permission.VerificationChecklistsRead))
+			r.PUT("/{findingId}", vcHandler.Update, middleware.Require(permission.VerificationChecklistsWrite))
+		}, tenantMW...)
 	}
 
 	// Integration routes (tenant from JWT token)
@@ -415,9 +491,20 @@ func Register(
 		registerCommandRoutes(router, h.Command, authMiddleware, userSync)
 	}
 
+	// Per-tenant rate limiter for the telemetry-events ingest endpoint.
+	// Not generic rate limiting — only this route needs it because an
+	// EDR agent can legitimately batch thousands of events, but we
+	// still need to prevent a single compromised agent key from
+	// drowning the correlator. Conservative defaults: 200 rps burst
+	// 400, buckets evicted after 10 m idle.
+	var telemetryRateLimiter *middleware.TelemetryRateLimiter
+	if cfg.RateLimit.Enabled {
+		telemetryRateLimiter = middleware.NewTelemetryRateLimiter(200, 400, 10*time.Minute, log)
+	}
+
 	// Ingest/Agent routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
-		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession)
+		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter)
 	}
 
 	// Agent management routes (tenant from JWT token)
@@ -584,7 +671,11 @@ func Register(
 	// ==========================================================================
 	// WebSocket endpoint for real-time features (activities, scans, notifications)
 	if h.WebSocket != nil {
-		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync)
+		var wsTicketMW Middleware
+		if h.WSTicketRedeemer != nil {
+			wsTicketMW = middleware.WSTicketAuth(h.WSTicketRedeemer, log)
+		}
+		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync, wsTicketMW)
 	}
 }
 
@@ -600,6 +691,13 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	}
 	return middlewares
 }
+
+// csrfProtectionMiddleware is the CSRF double-submit-cookie middleware,
+// appended to every JWT-cookie tenant route chain via
+// buildTokenTenantMiddlewares. Using CSRFOptional keeps API-key /
+// bearer-token clients (no cookie) unaffected; cookie-bound clients
+// must send X-CSRF-Token.
+var csrfProtectionMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
 // readRateLimitMiddleware is the per-user read endpoint rate limiter,
 // set during Register() if rate limiting is enabled. Applied automatically
@@ -630,6 +728,12 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	// minimal handler set.
 	if activeMembershipFromJWTMiddleware != nil {
 		middlewares = append(middlewares, activeMembershipFromJWTMiddleware)
+	}
+	// CSRF enforcement for cookie-bound sessions. Safe methods (GET,
+	// HEAD, OPTIONS) are exempt inside the middleware, so read
+	// endpoints are unaffected.
+	if csrfProtectionMiddleware != nil {
+		middlewares = append(middlewares, csrfProtectionMiddleware)
 	}
 	if readRateLimitMiddleware != nil {
 		middlewares = append(middlewares, readRateLimitMiddleware)

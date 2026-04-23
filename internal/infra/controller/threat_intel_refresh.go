@@ -1,10 +1,10 @@
 package controller
 
 import (
+	"github.com/openctemio/api/internal/app/threat"
 	"context"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -13,13 +13,13 @@ import (
 // then persists to database via ThreatIntelService.SyncAll().
 // After sync, auto-escalates findings whose CVEs appear in the KEV catalog.
 type ThreatIntelRefreshController struct {
-	service   *app.ThreatIntelService
-	escalator app.KEVEscalator
+	service   *threat.IntelService
+	escalator threat.KEVEscalator
 	logger    *logger.Logger
 }
 
 // NewThreatIntelRefreshController creates a new controller.
-func NewThreatIntelRefreshController(service *app.ThreatIntelService, escalator app.KEVEscalator, log *logger.Logger) *ThreatIntelRefreshController {
+func NewThreatIntelRefreshController(service *threat.IntelService, escalator threat.KEVEscalator, log *logger.Logger) *ThreatIntelRefreshController {
 	return &ThreatIntelRefreshController{service: service, escalator: escalator, logger: log}
 }
 

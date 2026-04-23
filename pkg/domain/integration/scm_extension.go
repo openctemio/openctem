@@ -13,10 +13,15 @@ type SCMExtension struct {
 	scmOrganization string
 	repositoryCount int
 
-	// Webhook configuration
-	webhookID     string
-	webhookSecret string
-	webhookURL    string
+	// Webhook configuration. webhookSecretEncrypted holds AES-GCM
+	// ciphertext produced by pkg/crypto.Encryptor — the plaintext
+	// secret never crosses the DB boundary. Callers that need to
+	// emit or verify an HMAC decrypt inside the service layer, then
+	// discard the plaintext. Column on disk is BYTEA; see
+	// migration 000160.
+	webhookID              string
+	webhookSecretEncrypted []byte
+	webhookURL             string
 
 	// Repository sync settings
 	defaultBranchPattern string
@@ -46,12 +51,15 @@ func NewSCMExtension(integrationID ID) *SCMExtension {
 }
 
 // ReconstructSCMExtension creates an SCM extension from stored data.
+// webhookSecretEncrypted is the AES-GCM ciphertext read from the DB;
+// the service layer calls Encryptor.DecryptString when (and only when)
+// a live HMAC verify needs the plaintext.
 func ReconstructSCMExtension(
 	integrationID ID,
 	scmOrganization string,
 	repositoryCount int,
 	webhookID string,
-	webhookSecret string,
+	webhookSecretEncrypted []byte,
 	webhookURL string,
 	defaultBranchPattern string,
 	autoImportRepos bool,
@@ -71,19 +79,19 @@ func ReconstructSCMExtension(
 		defaultBranchPattern = "main,master"
 	}
 	return &SCMExtension{
-		integrationID:        integrationID,
-		scmOrganization:      scmOrganization,
-		repositoryCount:      repositoryCount,
-		webhookID:            webhookID,
-		webhookSecret:        webhookSecret,
-		webhookURL:           webhookURL,
-		defaultBranchPattern: defaultBranchPattern,
-		autoImportRepos:      autoImportRepos,
-		importPrivateRepos:   importPrivateRepos,
-		importArchivedRepos:  importArchivedRepos,
-		includePatterns:      includePatterns,
-		excludePatterns:      excludePatterns,
-		lastRepoSyncAt:       lastRepoSyncAt,
+		integrationID:          integrationID,
+		scmOrganization:        scmOrganization,
+		repositoryCount:        repositoryCount,
+		webhookID:              webhookID,
+		webhookSecretEncrypted: webhookSecretEncrypted,
+		webhookURL:             webhookURL,
+		defaultBranchPattern:   defaultBranchPattern,
+		autoImportRepos:        autoImportRepos,
+		importPrivateRepos:     importPrivateRepos,
+		importArchivedRepos:    importArchivedRepos,
+		includePatterns:        includePatterns,
+		excludePatterns:        excludePatterns,
+		lastRepoSyncAt:         lastRepoSyncAt,
 	}
 }
 
@@ -92,9 +100,9 @@ func ReconstructSCMExtension(
 func (s *SCMExtension) IntegrationID() ID            { return s.integrationID }
 func (s *SCMExtension) SCMOrganization() string      { return s.scmOrganization }
 func (s *SCMExtension) RepositoryCount() int         { return s.repositoryCount }
-func (s *SCMExtension) WebhookID() string            { return s.webhookID }
-func (s *SCMExtension) WebhookSecret() string        { return s.webhookSecret }
-func (s *SCMExtension) WebhookURL() string           { return s.webhookURL }
+func (s *SCMExtension) WebhookID() string                { return s.webhookID }
+func (s *SCMExtension) WebhookSecretEncrypted() []byte   { return s.webhookSecretEncrypted }
+func (s *SCMExtension) WebhookURL() string               { return s.webhookURL }
 func (s *SCMExtension) DefaultBranchPattern() string { return s.defaultBranchPattern }
 func (s *SCMExtension) AutoImportRepos() bool        { return s.autoImportRepos }
 func (s *SCMExtension) ImportPrivateRepos() bool     { return s.importPrivateRepos }
@@ -113,9 +121,15 @@ func (s *SCMExtension) SetRepositoryCount(count int) {
 	s.repositoryCount = count
 }
 
-func (s *SCMExtension) SetWebhook(id, secret, url string) {
+// SetWebhook persists the webhook configuration. secretCiphertext MUST
+// be the output of pkg/crypto.Encryptor.EncryptString — service-layer
+// callers encrypt before reaching the domain. Passing a plaintext
+// string here would land the secret on disk unencrypted (the threat
+// this refactor is closing); tests that want a placeholder should pass
+// []byte("dummy-ciphertext").
+func (s *SCMExtension) SetWebhook(id string, secretCiphertext []byte, url string) {
 	s.webhookID = id
-	s.webhookSecret = secret
+	s.webhookSecretEncrypted = secretCiphertext
 	s.webhookURL = url
 }
 

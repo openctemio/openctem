@@ -61,6 +61,11 @@ type timeoutWriter struct {
 	timedOut bool
 }
 
+// Write implements http.ResponseWriter. Same CodeQL
+// go/reflected-xss false-positive note as the other middleware
+// wrappers: transparent passthrough that only gates writes on the
+// timeout state. Output escaping remains the handler's
+// responsibility. Dismiss as wrapper-level false-positive.
 func (tw *timeoutWriter) Write(b []byte) (int, error) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()

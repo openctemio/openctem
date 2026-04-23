@@ -668,7 +668,12 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decompress data based on compression algorithm
+	// Decompress data based on compression algorithm. Every branch
+	// caps the decompressed output at maxChunkDecompressed so a
+	// highly-compressible payload (a gzip/zstd bomb) cannot expand to
+	// GBs of memory. 64 MiB is more than any legitimate ingest chunk.
+	const maxChunkDecompressed = 64 << 20 // 64 MiB
+
 	var decompressedData []byte
 	switch strings.ToLower(req.Compression) {
 	case "zstd", "":
@@ -680,10 +685,19 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer decoder.Close()
+		// DecodeAll allocates to the reported size; zstd's own size
+		// field can lie, so we pre-check the reported size when
+		// available AND verify post-decode.
 		decompressedData, err = decoder.DecodeAll(compressedData, nil)
 		if err != nil {
 			h.logger.Debug("failed to decompress zstd data", "error", err)
 			apierror.BadRequest("Failed to decompress chunk data").WriteJSON(w)
+			return
+		}
+		if len(decompressedData) > maxChunkDecompressed {
+			h.logger.Warn("zstd chunk exceeds decompression cap",
+				"bytes", len(decompressedData), "cap", maxChunkDecompressed)
+			apierror.BadRequest("Chunk exceeds decompression size limit").WriteJSON(w)
 			return
 		}
 	case "gzip":
@@ -694,10 +708,19 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer reader.Close()
-		decompressedData, err = io.ReadAll(reader)
+		// LimitReader + one extra byte: if the extra byte reads we
+		// know the input exceeded the cap and reject.
+		limited := io.LimitReader(reader, maxChunkDecompressed+1)
+		decompressedData, err = io.ReadAll(limited)
 		if err != nil {
 			h.logger.Debug("failed to read gzip data", "error", err)
 			apierror.BadRequest("Failed to decompress gzip data").WriteJSON(w)
+			return
+		}
+		if len(decompressedData) > maxChunkDecompressed {
+			h.logger.Warn("gzip chunk exceeds decompression cap",
+				"bytes", len(decompressedData), "cap", maxChunkDecompressed)
+			apierror.BadRequest("Chunk exceeds decompression size limit").WriteJSON(w)
 			return
 		}
 	case "none":

@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"github.com/openctemio/api/internal/app/threat"
 	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/threatintel"
 	"github.com/openctemio/api/pkg/logger"
@@ -16,14 +16,14 @@ import (
 
 // ThreatIntelHandler handles threat intelligence HTTP requests.
 type ThreatIntelHandler struct {
-	service   *app.ThreatIntelService
+	service   *threat.IntelService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewThreatIntelHandler creates a new ThreatIntelHandler.
 func NewThreatIntelHandler(
-	service *app.ThreatIntelService,
+	service *threat.IntelService,
 	v *validator.Validator,
 	log *logger.Logger,
 ) *ThreatIntelHandler {
@@ -85,15 +85,15 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 
 	h.logger.Info("triggering threat intel sync", "source", req.Source)
 
-	var results []app.ThreatIntelSyncResult
+	var results []threat.IntelSyncResult
 	if req.Source == "" || req.Source == "all" {
 		results = h.service.SyncAll(ctx)
 	} else {
 		switch req.Source {
 		case "epss":
-			results = []app.ThreatIntelSyncResult{h.service.SyncEPSS(ctx)}
+			results = []threat.IntelSyncResult{h.service.SyncEPSS(ctx)}
 		case "kev":
-			results = []app.ThreatIntelSyncResult{h.service.SyncKEV(ctx)}
+			results = []threat.IntelSyncResult{h.service.SyncKEV(ctx)}
 		default:
 			apierror.BadRequest("invalid source: " + req.Source).WriteJSON(w)
 			return

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -14,6 +15,19 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// CIPlatform enumerates the platforms GenerateSnippet knows how to
+// emit for. The raw string is the value the client sends via the
+// ?platform= query param.
+const (
+	ciPlatformGitHub  = "github"
+	ciPlatformGitLab  = "gitlab"
+	ciPlatformJenkins = "jenkins"
+)
+
+// supportedCIPlatforms is the single source of truth for the error
+// message and the validation check — keeps them from drifting.
+var supportedCIPlatforms = []string{ciPlatformGitHub, ciPlatformGitLab, ciPlatformJenkins}
 
 // CIHandler handles HTTP requests for CI/CD snippet generation.
 type CIHandler struct {
@@ -48,13 +62,13 @@ func (h *CIHandler) GenerateSnippet(w http.ResponseWriter, r *http.Request) {
 	platform := r.URL.Query().Get("platform")
 
 	if platform == "" {
-		apierror.BadRequest("platform query parameter is required (github, gitlab, jenkins)").WriteJSON(w)
+		apierror.BadRequest(fmt.Sprintf("platform query parameter is required (%s)", strings.Join(supportedCIPlatforms, ", "))).WriteJSON(w)
 		return
 	}
 
 	platform = strings.ToLower(platform)
-	if platform != "github" && platform != "gitlab" && platform != "jenkins" {
-		apierror.BadRequest("unsupported platform: must be github, gitlab, or jenkins").WriteJSON(w)
+	if !slices.Contains(supportedCIPlatforms, platform) {
+		apierror.BadRequest(fmt.Sprintf("unsupported platform: must be one of %s", strings.Join(supportedCIPlatforms, ", "))).WriteJSON(w)
 		return
 	}
 
@@ -66,16 +80,16 @@ func (h *CIHandler) GenerateSnippet(w http.ResponseWriter, r *http.Request) {
 
 	var snippet string
 	switch platform {
-	case "github":
+	case ciPlatformGitHub:
 		snippet = generateGitHubActionsSnippet(sc.Name, sc.ID.String(), sc.ScannerName)
-	case "gitlab":
+	case ciPlatformGitLab:
 		snippet = generateGitLabCISnippet(sc.Name, sc.ID.String(), sc.ScannerName)
-	case "jenkins":
+	case ciPlatformJenkins:
 		snippet = generateJenkinsfileSnippet(sc.Name, sc.ID.String(), sc.ScannerName)
 	}
 
 	contentType := "text/plain; charset=utf-8"
-	if platform == "github" || platform == "gitlab" {
+	if platform == ciPlatformGitHub || platform == ciPlatformGitLab {
 		contentType = "text/yaml; charset=utf-8"
 	}
 

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/openctemio/api/internal/app/assignment"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
@@ -20,13 +20,13 @@ import (
 
 // AssignmentRuleHandler handles assignment rule HTTP requests.
 type AssignmentRuleHandler struct {
-	service   *app.AssignmentRuleService
+	service   *assignment.RuleService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAssignmentRuleHandler creates a new assignment rule handler.
-func NewAssignmentRuleHandler(svc *app.AssignmentRuleService, v *validator.Validator, log *logger.Logger) *AssignmentRuleHandler {
+func NewAssignmentRuleHandler(svc *assignment.RuleService, v *validator.Validator, log *logger.Logger) *AssignmentRuleHandler {
 	return &AssignmentRuleHandler{
 		service:   svc,
 		validator: v,
@@ -169,7 +169,7 @@ func (h *AssignmentRuleHandler) ListRules(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	input := app.ListAssignmentRulesInput{
+	input := assignment.ListRulesInput{
 		TenantID:  tenantID,
 		Search:    r.URL.Query().Get("search"),
 		Limit:     limit,
@@ -236,7 +236,7 @@ func (h *AssignmentRuleHandler) CreateRule(w http.ResponseWriter, r *http.Reques
 		createdBy = localUser.ID().String()
 	}
 
-	input := app.CreateRuleInput{
+	input := assignment.CreateRuleInput{
 		TenantID:      tenantID,
 		Name:          req.Name,
 		Description:   req.Description,
@@ -290,7 +290,7 @@ func (h *AssignmentRuleHandler) UpdateRule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	input := app.UpdateRuleInput{
+	input := assignment.UpdateRuleInput{
 		Name:          req.Name,
 		Description:   req.Description,
 		Priority:      req.Priority,

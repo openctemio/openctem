@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 const (
@@ -57,7 +59,7 @@ func NewGeminiProvider(cfg GeminiConfig) (*GeminiProvider, error) {
 	return &GeminiProvider{
 		apiKey:     cfg.APIKey,
 		model:      model,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: httpsec.SafeHTTPClient(timeout),
 		maxRetries: maxRetries,
 	}, nil
 }

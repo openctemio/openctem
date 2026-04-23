@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 var (
@@ -103,7 +104,12 @@ func NewValidator(ctx context.Context, cfg ValidatorConfig) (*Validator, error) 
 		jwksURL:        cfg.JWKSURL,
 		issuerURL:      cfg.IssuerURL,
 		audience:       cfg.Audience,
-		httpClient:     &http.Client{Timeout: cfg.HTTPTimeout},
+		// SSRF: Keycloak issuer + JWKS URLs come from tenant
+		// configuration (oidc_provider). If an attacker controls the
+		// issuer URL (compromised admin, typosquat domain, DNS
+		// rebinding), the safe dialer refuses to resolve it onto
+		// loopback / RFC1918 / link-local / IMDS ranges at dial time.
+		httpClient: httpsec.SafeHTTPClient(cfg.HTTPTimeout),
 		keys:           make(map[string]*rsa.PublicKey),
 		refreshInt:     cfg.RefreshInterval,
 		onRefreshError: cfg.OnRefreshError,

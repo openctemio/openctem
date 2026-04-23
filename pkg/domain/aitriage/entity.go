@@ -139,6 +139,14 @@ type TriageResult struct {
 	rawResponse     map[string]any // Raw JSON response from LLM
 	analysisSummary string         // Human-readable summary
 
+	// validationWarnings — non-empty when the LLM output had to be
+	// coerced to fit the domain enums (severity, exploitability) or
+	// was missing required fields. Downstream automation (workflow
+	// dispatcher, auto-apply rules) MUST treat a result with warnings
+	// as advisory only; human review is required before mutating
+	// finding state. See internal/app/aitriage/validation.go.
+	validationWarnings []string
+
 	// Metadata
 	metadata  map[string]any
 	createdAt time.Time
@@ -271,6 +279,15 @@ func (r *TriageResult) RelatedCVEs() []string               { return r.relatedCV
 func (r *TriageResult) RelatedCWEs() []string               { return r.relatedCWEs }
 func (r *TriageResult) RawResponse() map[string]any         { return r.rawResponse }
 func (r *TriageResult) AnalysisSummary() string             { return r.analysisSummary }
+
+// ValidationWarnings returns the soft-failure warnings collected while
+// sanitising the LLM output. Empty slice == clean run.
+func (r *TriageResult) ValidationWarnings() []string { return r.validationWarnings }
+
+// NeedsReview is true when the LLM output failed validation in any
+// way and a human should review the triage before it influences
+// finding state. Convenience wrapper around len(ValidationWarnings).
+func (r *TriageResult) NeedsReview() bool { return len(r.validationWarnings) > 0 }
 func (r *TriageResult) Metadata() map[string]any            { return r.metadata }
 func (r *TriageResult) CreatedAt() time.Time                { return r.createdAt }
 func (r *TriageResult) UpdatedAt() time.Time                { return r.updatedAt }
@@ -323,6 +340,7 @@ func (r *TriageResult) MarkCompleted(result TriageAnalysis) error {
 	r.relatedCWEs = result.RelatedCWEs
 	r.rawResponse = result.RawResponse
 	r.analysisSummary = result.Summary
+	r.validationWarnings = result.ValidationWarnings
 
 	return nil
 }
@@ -362,6 +380,15 @@ type TriageAnalysis struct {
 	RelatedCWEs             []string
 	RawResponse             map[string]any
 	Summary                 string
+
+	// ValidationWarnings collects soft-failures during sanitization
+	// (e.g. severity_assessment value "extreme" not in the validated
+	// set, defaulted to "medium"). The default is preserved for
+	// backward compatibility, but downstream code should treat any
+	// non-empty list as "this analysis needs human review before
+	// driving an automated state change". See
+	// internal/app/aitriage/validation.go.
+	ValidationWarnings []string
 }
 
 // ParseTriageAnalysis parses the LLM response into a TriageAnalysis.

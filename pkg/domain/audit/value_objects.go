@@ -218,13 +218,15 @@ const (
 	ActionIngestPartialSuccess Action = "ingest.partial_success"
 
 	// AI Triage actions
-	ActionAITriageRequested  Action = "ai_triage.requested"
-	ActionAITriageStarted    Action = "ai_triage.started"
-	ActionAITriageCompleted  Action = "ai_triage.completed"
-	ActionAITriageFailed     Action = "ai_triage.failed"
-	ActionAITriageBulk       Action = "ai_triage.bulk_requested"
-	ActionAITriageRateLimit  Action = "ai_triage.rate_limited"
-	ActionAITriageTokenLimit Action = "ai_triage.token_limit_exceeded"
+	ActionAITriageRequested       Action = "ai_triage.requested"
+	ActionAITriageStarted         Action = "ai_triage.started"
+	ActionAITriageCompleted       Action = "ai_triage.completed"
+	ActionAITriageFailed          Action = "ai_triage.failed"
+	ActionAITriageBulk            Action = "ai_triage.bulk_requested"
+	ActionAITriageRateLimit       Action = "ai_triage.rate_limited"
+	ActionAITriageTokenLimit      Action = "ai_triage.token_limit_exceeded"
+	ActionAITriageNeedsReview     Action = "ai_triage.needs_review"      // validator flagged output
+	ActionAITriageBudgetExhausted Action = "ai_triage.budget_exhausted"  // tenant hit monthly token ceiling
 )
 
 // String returns the string representation of the action.
@@ -281,7 +283,8 @@ func (a Action) IsValid() bool {
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,
 		ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
-		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit,
+		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
+		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
 		return true
@@ -339,7 +342,8 @@ func (a Action) Category() string {
 	case ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess:
 		return "ingest"
 	case ActionAITriageRequested, ActionAITriageStarted, ActionAITriageCompleted, ActionAITriageFailed,
-		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit:
+		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
+		ActionAITriageBudgetExhausted:
 		return "ai_triage"
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:

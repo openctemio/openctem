@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"github.com/openctemio/api/internal/app/scope"
 	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
@@ -18,13 +18,13 @@ import (
 
 // ScopeRuleHandler handles HTTP requests for scope rules.
 type ScopeRuleHandler struct {
-	svc       *app.ScopeRuleService
+	svc       *scope.RuleService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewScopeRuleHandler creates a new ScopeRuleHandler.
-func NewScopeRuleHandler(svc *app.ScopeRuleService, v *validator.Validator, log *logger.Logger) *ScopeRuleHandler {
+func NewScopeRuleHandler(svc *scope.RuleService, v *validator.Validator, log *logger.Logger) *ScopeRuleHandler {
 	return &ScopeRuleHandler{
 		svc:       svc,
 		validator: v,
@@ -65,7 +65,7 @@ func (h *ScopeRuleHandler) ListScopeRules(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	rules, totalCount, err := h.svc.ListScopeRules(r.Context(), tenantID, groupID, filter)
+	rules, totalCount, err := h.svc.ListRules(r.Context(), tenantID, groupID, filter)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -89,7 +89,7 @@ func (h *ScopeRuleHandler) CreateScopeRule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var input app.CreateScopeRuleInput
+	var input scope.CreateRuleInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
@@ -104,7 +104,7 @@ func (h *ScopeRuleHandler) CreateScopeRule(w http.ResponseWriter, r *http.Reques
 	}
 
 	userID := middleware.GetUserID(r.Context())
-	rule, err := h.svc.CreateScopeRule(r.Context(), input, userID)
+	rule, err := h.svc.CreateRule(r.Context(), input, userID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -125,7 +125,7 @@ func (h *ScopeRuleHandler) GetScopeRule(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	rule, err := h.svc.GetScopeRule(r.Context(), tenantID, ruleID)
+	rule, err := h.svc.GetRule(r.Context(), tenantID, ruleID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -152,7 +152,7 @@ func (h *ScopeRuleHandler) UpdateScopeRule(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Pre-validate rule belongs to this group
-	existing, err := h.svc.GetScopeRule(r.Context(), tenantID, ruleID)
+	existing, err := h.svc.GetRule(r.Context(), tenantID, ruleID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -162,7 +162,7 @@ func (h *ScopeRuleHandler) UpdateScopeRule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var input app.UpdateScopeRuleInput
+	var input scope.UpdateRuleInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
@@ -173,7 +173,7 @@ func (h *ScopeRuleHandler) UpdateScopeRule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	rule, err := h.svc.UpdateScopeRule(r.Context(), tenantID, ruleID, input)
+	rule, err := h.svc.UpdateRule(r.Context(), tenantID, ruleID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -194,7 +194,7 @@ func (h *ScopeRuleHandler) DeleteScopeRule(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Validate rule belongs to this group
-	existing, err := h.svc.GetScopeRule(r.Context(), tenantID, ruleID)
+	existing, err := h.svc.GetRule(r.Context(), tenantID, ruleID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -204,7 +204,7 @@ func (h *ScopeRuleHandler) DeleteScopeRule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.svc.DeleteScopeRule(r.Context(), tenantID, ruleID); err != nil {
+	if err := h.svc.DeleteRule(r.Context(), tenantID, ruleID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -223,7 +223,7 @@ func (h *ScopeRuleHandler) PreviewScopeRule(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Validate rule belongs to this group
-	existing, err := h.svc.GetScopeRule(r.Context(), tenantID, ruleID)
+	existing, err := h.svc.GetRule(r.Context(), tenantID, ruleID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

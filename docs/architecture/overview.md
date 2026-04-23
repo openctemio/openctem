@@ -4,10 +4,10 @@
 
 | Component | Technology |
 |-----------|------------|
-| Language | Go 1.25+ |
+| Language | Go 1.26+ |
 | HTTP Router | Chi v5 (with abstraction layer) |
 | HTTP Handlers | Standard `net/http` signature |
-| Authentication | Keycloak (RS256 JWKS) |
+| Authentication | JWT (local) / OAuth2 (Google, GitHub, Microsoft) / OIDC (Keycloak, RS256 JWKS) |
 | Validation | go-playground/validator/v10 |
 | Database | PostgreSQL 17 |
 | Cache | Redis 7 |
@@ -25,6 +25,8 @@
 │  Mobile App  │                    │  - /api/v1/pipelines/*              │
 │  CLI         │                    │  - /api/v1/findings/*               │
 └──────────────┘                    │  - /api/v1/agent/* (agent API)      │
+                                    │  - /api/v1/telemetry-events         │
+                                    │  - /api/v1/audit-logs/verify        │
                                     └──────────────┬──────────────────────┘
                                                    │
                         ┌──────────────────────────┼──────────────────────────┐

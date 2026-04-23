@@ -86,15 +86,15 @@ func (r *FindingApprovalRepository) ListPending(ctx context.Context, tenantID sh
 	}
 	defer rows.Close()
 
-	limit := page.Limit()
-	if limit < 0 {
-		limit = 0
-	}
-	if limit > 100 {
-		limit = 100
-	}
-
-	approvals := make([]*vulnerability.Approval, 0, limit)
+	// Pre-allocate at the const cold-cap max so make() has ZERO
+	// user-influenced size input. CodeQL's go/unsafe-slice-allocation
+	// keeps the "tainted" tag on page.Limit() even after a bounds
+	// clamp — the only way to get a clean flow analysis is to pass
+	// the literal constant directly. Wasting the 800 bytes of slot
+	// overhead when a tenant has <100 approvals is cheap insurance
+	// against the re-flag loop.
+	const maxApprovalsCap = 100
+	approvals := make([]*vulnerability.Approval, 0, maxApprovalsCap)
 	for rows.Next() {
 		a, err := r.scanApprovalFromRows(rows)
 		if err != nil {

@@ -45,6 +45,18 @@ type Hub struct {
 
 	// Mutex for concurrent access
 	mu sync.RWMutex
+
+	// F-7: Cross-pod publisher. When set, Broadcast publishes through
+	// this sink (Redis pubsub) instead of delivering only in-process.
+	// The fan-in subscriber on each pod receives the payload and pushes
+	// it to h.broadcast for local delivery.
+	publisher BroadcastPublisher
+}
+
+// BroadcastPublisher is the minimum surface a cross-pod transport must
+// provide. The redis-pubsub implementation lives in bridge.go.
+type BroadcastPublisher interface {
+	Publish(ctx context.Context, msg *BroadcastMessage) error
 }
 
 // BroadcastMessage represents a message to broadcast to a channel.
@@ -191,12 +203,43 @@ func (h *Hub) UnregisterClient(client *Client) {
 }
 
 // Broadcast sends a message to all clients subscribed to a channel.
+//
+// F-7: when a cross-pod publisher is configured (Redis pubsub bridge),
+// the message is handed to it instead of being placed directly on the
+// local broadcast channel. The bridge round-trips it through Redis and
+// every subscribing pod (including this one) receives it via
+// DeliverLocal, ensuring a single source of fan-out and correct delivery
+// in multi-replica deployments.
 func (h *Hub) Broadcast(channel string, msg *Message, tenantID string) {
+	if h.publisher != nil {
+		bm := &BroadcastMessage{Channel: channel, Message: msg, TenantID: tenantID}
+		if err := h.publisher.Publish(context.Background(), bm); err != nil {
+			h.logger.Error("ws broadcast publish failed, falling back to local only",
+				"channel", channel, "error", err)
+			h.broadcast <- bm
+		}
+		return
+	}
 	h.broadcast <- &BroadcastMessage{
 		Channel:  channel,
 		Message:  msg,
 		TenantID: tenantID,
 	}
+}
+
+// DeliverLocal pushes a BroadcastMessage onto the local broadcast channel
+// WITHOUT re-publishing it through the cross-pod publisher. This is the
+// entry point used by the Redis subscriber to inject incoming messages
+// into this pod's in-memory fan-out. External callers should use
+// Broadcast instead.
+func (h *Hub) DeliverLocal(msg *BroadcastMessage) {
+	h.broadcast <- msg
+}
+
+// SetPublisher attaches a cross-pod publisher (F-7). Must be called
+// before Run so Broadcast observes it.
+func (h *Hub) SetPublisher(p BroadcastPublisher) {
+	h.publisher = p
 }
 
 // BroadcastEvent is a convenience method to broadcast an event to a channel.
@@ -241,6 +284,15 @@ func (h *Hub) authorizeSubscription(client *Client, channel string) bool {
 
 // broadcastToChannel sends a message to all clients subscribed to a channel.
 func (h *Hub) broadcastToChannel(msg *BroadcastMessage) {
+	// SECURITY: Reject broadcasts without tenant context to prevent
+	// cross-tenant data leakage. All broadcasts must be explicitly tenant-scoped.
+	if msg.TenantID == "" {
+		h.logger.Error("refusing broadcast without tenant_id",
+			"channel", msg.Channel,
+		)
+		return
+	}
+
 	h.mu.RLock()
 	clients, ok := h.channels[msg.Channel]
 	if !ok || len(clients) == 0 {
@@ -251,8 +303,8 @@ func (h *Hub) broadcastToChannel(msg *BroadcastMessage) {
 	// Copy client list to avoid holding lock during send
 	clientList := make([]*Client, 0, len(clients))
 	for client := range clients {
-		// Filter by tenant if specified
-		if msg.TenantID != "" && client.TenantID != msg.TenantID {
+		// SECURITY: Strict tenant isolation — client must belong to the same tenant
+		if client.TenantID != msg.TenantID {
 			continue
 		}
 		clientList = append(clientList, client)

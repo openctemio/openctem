@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"os"
 	"os/signal"
@@ -15,6 +16,7 @@ import (
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/infra/redis"
+	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/keycloak"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -138,9 +140,17 @@ func run() int {
 	}
 	log.Info("services initialized")
 
+	// P0-2: Jira webhook preflight. In production, refuse to start when
+	// any tenant has a connected Jira integration but the HMAC secret is
+	// missing — otherwise inbound webhooks would start silently 401'ing.
+	if err := checkJiraWebhookPreflight(ctx, cfg, db.DB, log); err != nil {
+		log.Error("jira webhook preflight failed", "error", err)
+		return 1
+	}
+
 	// Initialize auth services if local auth is supported
 	if cfg.Auth.Provider.SupportsLocal() {
-		services.InitAuthServices(cfg, repos, log)
+		services.InitAuthServices(cfg, repos, log, redisClient)
 		log.Info("auth services initialized")
 	}
 
@@ -215,6 +225,23 @@ func run() int {
 	// Start WebSocket hub in background
 	go services.WebSocketHub.Run(wsCtx)
 	log.Info("websocket hub started")
+
+	// F-7: wire Redis pubsub bridge so broadcasts fan out across pods.
+	// Silent dependency until now: without this, a BroadcastEvent on
+	// Pod-A never reaches a client on Pod-B in a multi-replica
+	// deployment. Enabled whenever Redis is available, which covers
+	// every production configuration.
+	if redisClient != nil {
+		bridge := websocket.NewRedisBridge(redisClient.Client(), services.WebSocketHub, &websocket.BridgeConfig{
+			Logger: log,
+		})
+		go func() {
+			if err := bridge.Start(wsCtx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Error("websocket bridge stopped with error", "error", err)
+			}
+		}()
+		log.Info("websocket redis bridge started")
+	}
 
 	// ==========================================================================
 	// HTTP Server

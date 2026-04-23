@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/module"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/audit"
@@ -152,6 +153,12 @@ type CreateTenantRequest struct {
 	Name        string `json:"name" validate:"required,min=2,max=100"`
 	Slug        string `json:"slug" validate:"required,min=3,max=100,slug"`
 	Description string `json:"description" validate:"max=500"`
+	// ModulePresetID optionally binds a module preset at creation time.
+	// Empty = no preset applied (every active catalogue module is on by
+	// default, i.e. ctem_full-equivalent — kept for backward compat).
+	// Valid values match pkg/domain/module/presets.go (e.g.
+	// "vm_essentials", "asset_inventory", "bug_bounty").
+	ModulePresetID string `json:"module_preset_id,omitempty" validate:"omitempty,max=64"`
 }
 
 // UpdateTenantRequest represents the request to update a tenant.
@@ -245,7 +252,7 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 // Helpers
 // =============================================================================
 
-// buildAuditContext builds an AuditContext from the HTTP request.
+// buildAuditContext builds an app.AuditContext from the HTTP request.
 func (h *TenantHandler) buildAuditContext(r *http.Request) app.AuditContext {
 	actx := app.AuditContext{
 		ActorIP:   r.RemoteAddr,
@@ -288,6 +295,15 @@ func (h *TenantHandler) handleValidationError(w http.ResponseWriter, err error) 
 }
 
 func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
+	// Module toggle rejections carry a structured ToggleError so the
+	// UI can render a dependency-aware confirmation dialog without
+	// regex-ing the error message. Detect it BEFORE the generic
+	// shared.ErrValidation branch collapses it into a string.
+	var toggleErr *module.ToggleError
+	if errors.As(err, &toggleErr) {
+		writeToggleErrorJSON(w, toggleErr)
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Tenant").WriteJSON(w)
@@ -306,6 +322,27 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// writeToggleErrorJSON serialises a module.ToggleError as the 400
+// body. The shape matches pkg/apierror's apierror.Error contract —
+// UI's parseErrorResponse reads `code`, `message`, `details` — so
+// blocker/required info is nested under `details` where the UI can
+// consume it via err.details.blockers.
+func writeToggleErrorJSON(w http.ResponseWriter, e *module.ToggleError) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"code":    "module_dependency_violation",
+		"message": e.Error(),
+		"details": map[string]any{
+			"module_id":   e.ModuleID,
+			"module_name": e.ModuleName,
+			"action":      e.Action,
+			"blockers":    e.Blockers,
+			"required":    e.Required,
+		},
+	})
 }
 
 // =============================================================================
@@ -342,6 +379,20 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+
+	// Apply the chosen module preset if one was picked during creation.
+	// Failures are logged but do NOT abort the tenant creation — the
+	// admin can always apply the preset later from Settings → Modules.
+	// This keeps the onboarding flow resilient when a preset validation
+	// hiccups on an unusual deployment.
+	if req.ModulePresetID != "" && h.moduleService != nil {
+		presetActx := actx
+		presetActx.TenantID = t.ID().String()
+		if _, presetErr := h.moduleService.ApplyPreset(r.Context(), t.ID().String(), req.ModulePresetID, presetActx); presetErr != nil {
+			h.logger.Warn("failed to apply module preset during tenant creation",
+				"tenant_id", t.ID().String(), "preset_id", req.ModulePresetID, "error", presetErr)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -449,7 +500,8 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteTenant(r.Context(), tenantID.String()); err != nil {
+	actx := h.buildAuditContext(r)
+	if err := h.service.DeleteTenant(r.Context(), actx, tenantID.String()); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1675,7 +1727,7 @@ type TenantSubModuleResponse struct {
 
 // TenantModuleListResponse wraps the module list with summary.
 type TenantModuleListResponse struct {
-	Modules []TenantModuleResponse `json:"modules"`
+	Modules []TenantModuleResponse      `json:"modules"`
 	Summary TenantModuleSummaryResponse `json:"summary"`
 }
 
@@ -1711,6 +1763,23 @@ func (h *TenantHandler) GetTenantModules(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// ETag based on module-config version. Same module state across
+	// tenant admins → same ETag → 304s on repeat fetches. Mutations
+	// bump the version via ModuleService.notifyModuleChange.
+	modVersion := h.moduleService.GetTenantModuleVersion(r.Context(), tenantID.String())
+	// Include tenant prefix in etag — see bootstrap_handler comment.
+	tidStr := tenantID.String()
+	if len(tidStr) > 8 {
+		tidStr = tidStr[:8]
+	}
+	etag := fmt.Sprintf(`"t%s-m%d"`, tidStr, modVersion)
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
 	config, err := h.moduleService.GetTenantModuleConfig(r.Context(), tenantID.String())
 	if err != nil {
 		h.handleServiceError(w, err)
@@ -1719,6 +1788,63 @@ func (h *TenantHandler) GetTenantModules(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
+}
+
+// ValidateTenantModuleToggle handles POST /settings/modules/validate —
+// dry-run of the toggle validation. Returns structured blockers +
+// warnings + required so the UI can render a confirmation modal
+// BEFORE the tenant admin commits the toggle. No state change.
+func (h *TenantHandler) ValidateTenantModuleToggle(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+
+	var req UpdateTenantModulesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	updates := make([]moduleTypes.TenantModuleUpdate, len(req.Modules))
+	for i, m := range req.Modules {
+		updates[i] = moduleTypes.TenantModuleUpdate{
+			ModuleID:  m.ModuleID,
+			IsEnabled: m.IsEnabled,
+		}
+	}
+
+	result, err := h.moduleService.ValidateToggle(r.Context(), tenantID.String(), updates)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// GetModuleDependencyGraph handles GET /api/v1/modules/graph.
+// Returns the platform-wide module dependency graph (static, loaded from
+// pkg/domain/module/dependency.go). The UI consumes this to render the
+// Settings → Modules page with dependency badges and to surface
+// "disabling X will also affect Y, Z" confirmation dialogs.
+func (h *TenantHandler) GetModuleDependencyGraph(w http.ResponseWriter, r *http.Request) {
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+	graph := h.moduleService.GetDependencyGraph(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(graph)
 }
 
 // UpdateTenantModules handles PATCH /api/v1/tenants/{tenant}/settings/modules
@@ -1781,6 +1907,85 @@ func (h *TenantHandler) ResetTenantModules(w http.ResponseWriter, r *http.Reques
 	actx := h.buildAuditContext(r)
 	config, err := h.moduleService.ResetTenantModules(r.Context(), tenantID.String(), actx)
 	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toTenantModuleListResponse(config))
+}
+
+// ListModulePresets handles GET /api/v1/tenants/{tenant}/settings/modules/presets.
+// Returns the static preset catalogue so the UI can render the picker.
+// Does NOT require tenant context for reads, but gated behind
+// RequireTeamAdmin so the pricing/persona copy isn't exposed to
+// unauthenticated probes.
+func (h *TenantHandler) ListModulePresets(w http.ResponseWriter, r *http.Request) {
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+	presets := h.moduleService.ListModulePresets(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"presets": presets})
+}
+
+// PreviewModulePreset handles POST /.../settings/modules/presets/{presetId}/preview.
+// Dry-run — returns what would change if the preset were applied.
+func (h *TenantHandler) PreviewModulePreset(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+	presetID := r.PathValue("presetId")
+	if presetID == "" {
+		apierror.BadRequest("preset id is required").WriteJSON(w)
+		return
+	}
+
+	diff, err := h.moduleService.PreviewPreset(r.Context(), tenantID.String(), presetID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(diff)
+}
+
+// ApplyModulePreset handles POST /.../settings/modules/presets/{presetId}/apply.
+// Writes the preset into tenant_modules via UpdateTenantModules (same
+// validation and audit as manual toggles).
+func (h *TenantHandler) ApplyModulePreset(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+	presetID := r.PathValue("presetId")
+	if presetID == "" {
+		apierror.BadRequest("preset id is required").WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	config, err := h.moduleService.ApplyPreset(r.Context(), tenantID.String(), presetID, actx)
+	if err != nil {
+		// Dependency-violation errors get the same structured JSON body
+		// as manual UpdateTenantModules so the UI can reuse its handler.
+		var toggleErr *module.ToggleError
+		if errors.As(err, &toggleErr) {
+			writeToggleErrorJSON(w, toggleErr)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}

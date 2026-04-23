@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,10 +10,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/scope"
+	scopedom "github.com/openctemio/api/pkg/domain/scope"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -20,13 +20,13 @@ import (
 
 // ScopeHandler handles scope configuration HTTP requests.
 type ScopeHandler struct {
-	service   *app.ScopeService
+	service   *scope.Service
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewScopeHandler creates a new scope handler.
-func NewScopeHandler(svc *app.ScopeService, v *validator.Validator, log *logger.Logger) *ScopeHandler {
+func NewScopeHandler(svc *scope.Service, v *validator.Validator, log *logger.Logger) *ScopeHandler {
 	return &ScopeHandler{
 		service:   svc,
 		validator: v,
@@ -220,7 +220,7 @@ type ScopeBulkOperationResponse struct {
 // Conversion Functions
 // =============================================================================
 
-func toScopeTargetResponse(t *scope.Target) ScopeTargetResponse {
+func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 	return ScopeTargetResponse{
 		ID:          t.ID().String(),
 		TenantID:    t.TenantID().String(),
@@ -236,7 +236,7 @@ func toScopeTargetResponse(t *scope.Target) ScopeTargetResponse {
 	}
 }
 
-func toScopeExclusionResponse(e *scope.Exclusion) ScopeExclusionResponse {
+func toScopeExclusionResponse(e *scopedom.Exclusion) ScopeExclusionResponse {
 	return ScopeExclusionResponse{
 		ID:            e.ID().String(),
 		TenantID:      e.TenantID().String(),
@@ -253,7 +253,7 @@ func toScopeExclusionResponse(e *scope.Exclusion) ScopeExclusionResponse {
 	}
 }
 
-func toScanScheduleResponse(s *scope.Schedule) ScanScheduleResponse {
+func toScanScheduleResponse(s *scopedom.Schedule) ScanScheduleResponse {
 	targetIDs := make([]string, len(s.TargetIDs()))
 	for i, id := range s.TargetIDs() {
 		targetIDs[i] = id.String()
@@ -308,14 +308,14 @@ func (h *ScopeHandler) handleValidationError(w http.ResponseWriter, err error) {
 func (h *ScopeHandler) handleServiceError(w http.ResponseWriter, resource string, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound),
-		errors.Is(err, scope.ErrTargetNotFound),
-		errors.Is(err, scope.ErrExclusionNotFound),
-		errors.Is(err, scope.ErrScheduleNotFound):
+		errors.Is(err, scopedom.ErrTargetNotFound),
+		errors.Is(err, scopedom.ErrExclusionNotFound),
+		errors.Is(err, scopedom.ErrScheduleNotFound):
 		apierror.NotFound(resource).WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists),
-		errors.Is(err, scope.ErrTargetAlreadyExists),
-		errors.Is(err, scope.ErrExclusionAlreadyExists),
-		errors.Is(err, scope.ErrScheduleAlreadyExists):
+		errors.Is(err, scopedom.ErrTargetAlreadyExists),
+		errors.Is(err, scopedom.ErrExclusionAlreadyExists),
+		errors.Is(err, scopedom.ErrScheduleAlreadyExists):
 		apierror.Conflict(resource + " already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
@@ -351,7 +351,7 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 
-	input := app.ListTargetsInput{
+	input := scope.ListTargetsInput{
 		TenantID:    tenantID,
 		TargetTypes: parseQueryArray(query.Get("types")),
 		Statuses:    parseQueryArray(query.Get("statuses")),
@@ -413,7 +413,7 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateTargetInput{
+	input := scope.CreateTargetInput{
 		TenantID:    tenantID,
 		TargetType:  req.TargetType,
 		Pattern:     req.Pattern,
@@ -504,7 +504,7 @@ func (h *ScopeHandler) UpdateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateTargetInput{
+	input := scope.UpdateTargetInput{
 		Description: req.Description,
 		Priority:    req.Priority,
 		Tags:        req.Tags,
@@ -625,7 +625,7 @@ func (h *ScopeHandler) ListExclusions(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 
-	input := app.ListExclusionsInput{
+	input := scope.ListExclusionsInput{
 		TenantID:       tenantID,
 		ExclusionTypes: parseQueryArray(query.Get("types")),
 		Statuses:       parseQueryArray(query.Get("statuses")),
@@ -687,7 +687,7 @@ func (h *ScopeHandler) CreateExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateExclusionInput{
+	input := scope.CreateExclusionInput{
 		TenantID:      tenantID,
 		ExclusionType: req.ExclusionType,
 		Pattern:       req.Pattern,
@@ -763,7 +763,7 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateExclusionInput{
+	input := scope.UpdateExclusionInput{
 		Reason:    req.Reason,
 		ExpiresAt: req.ExpiresAt,
 	}
@@ -911,7 +911,7 @@ func (h *ScopeHandler) ListSchedules(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 
-	input := app.ListSchedulesInput{
+	input := scope.ListSchedulesInput{
 		TenantID:      tenantID,
 		ScanTypes:     parseQueryArray(query.Get("scan_types")),
 		ScheduleTypes: parseQueryArray(query.Get("schedule_types")),
@@ -973,7 +973,7 @@ func (h *ScopeHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateScheduleInput{
+	input := scope.CreateScheduleInput{
 		TenantID:             tenantID,
 		Name:                 req.Name,
 		Description:          req.Description,
@@ -1058,7 +1058,7 @@ func (h *ScopeHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateScheduleInput{
+	input := scope.UpdateScheduleInput{
 		Name:                 req.Name,
 		Description:          req.Description,
 		TargetScope:          req.TargetScope,

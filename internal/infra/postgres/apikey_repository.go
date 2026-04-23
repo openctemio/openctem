@@ -156,17 +156,28 @@ func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apik
 	result.TotalPages = int((result.Total + int64(filter.PerPage) - 1) / int64(filter.PerPage))
 	result.Page = filter.Page
 
-	// Sort
+	// Sort — switch on input.SortBy so CodeQL sees a LITERAL column
+	// name on every branch. The previous map-allowlist + string
+	// concatenation was functionally safe (lookup before concat) but
+	// CodeQL's go/sql-injection flow analysis couldn't trace the
+	// map-lookup guard and kept flagging. Explicit case literals
+	// eliminate the tainted data-flow entirely.
 	orderBy := defaultSortOrder
-	if filter.SortBy != "" {
-		validFields := map[string]bool{"name": true, "status": true, "created_at": true, "last_used_at": true, "expires_at": true}
-		if validFields[filter.SortBy] {
-			order := "ASC"
-			if strings.EqualFold(filter.SortOrder, "desc") {
-				order = "DESC"
-			}
-			orderBy = filter.SortBy + " " + order
-		}
+	order := "ASC"
+	if strings.EqualFold(filter.SortOrder, "desc") {
+		order = "DESC"
+	}
+	switch filter.SortBy {
+	case "name":
+		orderBy = "name " + order
+	case "status":
+		orderBy = "status " + order
+	case "created_at":
+		orderBy = "created_at " + order
+	case "last_used_at":
+		orderBy = "last_used_at " + order
+	case "expires_at":
+		orderBy = "expires_at " + order
 	}
 
 	offset := (filter.Page - 1) * filter.PerPage

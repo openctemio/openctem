@@ -1,12 +1,12 @@
 package unit
 
 import (
+	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/group"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -371,9 +371,9 @@ func (m *mockGroupRepoForScope) ListGroupsWithPermissionSet(_ context.Context, _
 // Helpers
 // =============================================================================
 
-func newTestScopeRuleService(acRepo accesscontrol.Repository, groupRepo group.Repository) *app.ScopeRuleService {
+func newTestScopeRuleService(acRepo accesscontrol.Repository, groupRepo group.Repository) *scope.RuleService {
 	log := logger.NewNop()
-	return app.NewScopeRuleService(acRepo, groupRepo, log)
+	return scope.NewRuleService(acRepo, groupRepo, log)
 }
 
 func makeScopeTestGroup(tenantID shared.ID) *group.Group {
@@ -424,7 +424,7 @@ func TestCreateScopeRule_SuccessTagMatch(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:      tenantID.String(),
 		GroupID:       g.ID().String(),
 		Name:          "Tag Match Rule",
@@ -436,7 +436,7 @@ func TestCreateScopeRule_SuccessTagMatch(t *testing.T) {
 		Priority:      5,
 	}
 
-	rule, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	rule, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err != nil {
 		t.Fatalf("CreateScopeRule failed: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestCreateScopeRule_SuccessAssetGroupMatch(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:           tenantID.String(),
 		GroupID:            g.ID().String(),
 		Name:               "Asset Group Match Rule",
@@ -488,7 +488,7 @@ func TestCreateScopeRule_SuccessAssetGroupMatch(t *testing.T) {
 		OwnershipType:      "secondary",
 	}
 
-	rule, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	rule, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err != nil {
 		t.Fatalf("CreateScopeRule failed: %v", err)
 	}
@@ -515,7 +515,7 @@ func TestCreateScopeRule_GroupNotFound(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:  tenantID.String(),
 		GroupID:   shared.NewID().String(), // non-existent
 		Name:      "Test Rule",
@@ -523,7 +523,7 @@ func TestCreateScopeRule_GroupNotFound(t *testing.T) {
 		MatchTags: []string{"env:prod"},
 	}
 
-	_, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	_, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for non-existent group")
 	}
@@ -544,7 +544,7 @@ func TestCreateScopeRule_GroupBelongsToDifferentTenant(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:  tenantB.String(), // tenant B tries to use tenant A's group
 		GroupID:   g.ID().String(),
 		Name:      "Cross-Tenant Rule",
@@ -552,7 +552,7 @@ func TestCreateScopeRule_GroupBelongsToDifferentTenant(t *testing.T) {
 		MatchTags: []string{"env:prod"},
 	}
 
-	_, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	_, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for cross-tenant group access")
 	}
@@ -571,7 +571,7 @@ func TestCreateScopeRule_InactiveGroupRejected(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:  tenantID.String(),
 		GroupID:   g.ID().String(),
 		Name:      "Rule For Inactive Group",
@@ -579,7 +579,7 @@ func TestCreateScopeRule_InactiveGroupRejected(t *testing.T) {
 		MatchTags: []string{"env:prod"},
 	}
 
-	_, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	_, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for inactive group")
 	}
@@ -600,7 +600,7 @@ func TestCreateScopeRule_ExceedsMaxRulesPerGroup(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:  tenantID.String(),
 		GroupID:   g.ID().String(),
 		Name:      "One Too Many",
@@ -608,7 +608,7 @@ func TestCreateScopeRule_ExceedsMaxRulesPerGroup(t *testing.T) {
 		MatchTags: []string{"env:prod"},
 	}
 
-	_, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	_, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error when max rules exceeded")
 	}
@@ -627,7 +627,7 @@ func TestCreateScopeRule_TagMatchWithoutTagsFails(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:  tenantID.String(),
 		GroupID:   g.ID().String(),
 		Name:      "Missing Tags",
@@ -635,7 +635,7 @@ func TestCreateScopeRule_TagMatchWithoutTagsFails(t *testing.T) {
 		MatchTags: []string{}, // empty tags
 	}
 
-	_, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	_, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for tag_match without tags")
 	}
@@ -654,7 +654,7 @@ func TestCreateScopeRule_AssetGroupMatchWithoutGroupIDsFails(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:           tenantID.String(),
 		GroupID:            g.ID().String(),
 		Name:               "Missing Group IDs",
@@ -662,7 +662,7 @@ func TestCreateScopeRule_AssetGroupMatchWithoutGroupIDsFails(t *testing.T) {
 		MatchAssetGroupIDs: []string{}, // empty group IDs
 	}
 
-	_, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	_, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for asset_group_match without group IDs")
 	}
@@ -681,7 +681,7 @@ func TestCreateScopeRule_DefaultOwnershipTypeIsSecondary(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:  tenantID.String(),
 		GroupID:   g.ID().String(),
 		Name:      "Default Ownership",
@@ -690,7 +690,7 @@ func TestCreateScopeRule_DefaultOwnershipTypeIsSecondary(t *testing.T) {
 		// OwnershipType not set
 	}
 
-	rule, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	rule, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err != nil {
 		t.Fatalf("CreateScopeRule failed: %v", err)
 	}
@@ -713,7 +713,7 @@ func TestCreateScopeRule_ReconciliationRunsOnCreate(t *testing.T) {
 
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	input := app.CreateScopeRuleInput{
+	input := scope.CreateRuleInput{
 		TenantID:  tenantID.String(),
 		GroupID:   g.ID().String(),
 		Name:      "Reconcile On Create",
@@ -721,7 +721,7 @@ func TestCreateScopeRule_ReconciliationRunsOnCreate(t *testing.T) {
 		MatchTags: []string{"env:prod"},
 	}
 
-	_, err := svc.CreateScopeRule(context.Background(), input, shared.NewID().String())
+	_, err := svc.CreateRule(context.Background(), input, shared.NewID().String())
 	if err != nil {
 		t.Fatalf("CreateScopeRule failed: %v", err)
 	}
@@ -756,7 +756,7 @@ func TestGetScopeRule_Success(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	result, err := svc.GetScopeRule(context.Background(), tenantID.String(), rule.ID().String())
+	result, err := svc.GetRule(context.Background(), tenantID.String(), rule.ID().String())
 	if err != nil {
 		t.Fatalf("GetScopeRule failed: %v", err)
 	}
@@ -774,7 +774,7 @@ func TestGetScopeRule_NotFound(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	_, err := svc.GetScopeRule(context.Background(), shared.NewID().String(), shared.NewID().String())
+	_, err := svc.GetRule(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for non-existent rule")
 	}
@@ -788,7 +788,7 @@ func TestGetScopeRule_InvalidTenantID(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	_, err := svc.GetScopeRule(context.Background(), "not-a-uuid", shared.NewID().String())
+	_, err := svc.GetRule(context.Background(), "not-a-uuid", shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}
@@ -802,7 +802,7 @@ func TestGetScopeRule_InvalidRuleID(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	_, err := svc.GetScopeRule(context.Background(), shared.NewID().String(), "not-a-uuid")
+	_, err := svc.GetRule(context.Background(), shared.NewID().String(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid rule ID")
 	}
@@ -828,11 +828,11 @@ func TestUpdateScopeRule_SuccessNameChangeOnly(t *testing.T) {
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
 	newName := "Updated Rule Name"
-	input := app.UpdateScopeRuleInput{
+	input := scope.UpdateRuleInput{
 		Name: &newName,
 	}
 
-	result, err := svc.UpdateScopeRule(context.Background(), tenantID.String(), rule.ID().String(), input)
+	result, err := svc.UpdateRule(context.Background(), tenantID.String(), rule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("UpdateScopeRule failed: %v", err)
 	}
@@ -865,11 +865,11 @@ func TestUpdateScopeRule_SuccessWithReReconciliation(t *testing.T) {
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
 	newTags := []string{"new-tag-1", "new-tag-2"}
-	input := app.UpdateScopeRuleInput{
+	input := scope.UpdateRuleInput{
 		MatchTags: newTags,
 	}
 
-	result, err := svc.UpdateScopeRule(context.Background(), tenantID.String(), rule.ID().String(), input)
+	result, err := svc.UpdateRule(context.Background(), tenantID.String(), rule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("UpdateScopeRule failed: %v", err)
 	}
@@ -897,11 +897,11 @@ func TestUpdateScopeRule_DeactivateTriggersReconciliation(t *testing.T) {
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
 	inactive := false
-	input := app.UpdateScopeRuleInput{
+	input := scope.UpdateRuleInput{
 		IsActive: &inactive,
 	}
 
-	result, err := svc.UpdateScopeRule(context.Background(), tenantID.String(), rule.ID().String(), input)
+	result, err := svc.UpdateRule(context.Background(), tenantID.String(), rule.ID().String(), input)
 	if err != nil {
 		t.Fatalf("UpdateScopeRule failed: %v", err)
 	}
@@ -923,11 +923,11 @@ func TestUpdateScopeRule_NotFound(t *testing.T) {
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
 	newName := "Updated"
-	input := app.UpdateScopeRuleInput{
+	input := scope.UpdateRuleInput{
 		Name: &newName,
 	}
 
-	_, err := svc.UpdateScopeRule(context.Background(), shared.NewID().String(), shared.NewID().String(), input)
+	_, err := svc.UpdateRule(context.Background(), shared.NewID().String(), shared.NewID().String(), input)
 	if err == nil {
 		t.Fatal("expected error for non-existent rule")
 	}
@@ -953,7 +953,7 @@ func TestDeleteScopeRule_Success(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	err := svc.DeleteScopeRule(context.Background(), tenantID.String(), rule.ID().String())
+	err := svc.DeleteRule(context.Background(), tenantID.String(), rule.ID().String())
 	if err != nil {
 		t.Fatalf("DeleteScopeRule failed: %v", err)
 	}
@@ -980,7 +980,7 @@ func TestDeleteScopeRule_SuccessNoAssetsRemoved(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	err := svc.DeleteScopeRule(context.Background(), tenantID.String(), rule.ID().String())
+	err := svc.DeleteRule(context.Background(), tenantID.String(), rule.ID().String())
 	if err != nil {
 		t.Fatalf("DeleteScopeRule failed: %v", err)
 	}
@@ -996,7 +996,7 @@ func TestDeleteScopeRule_NotFound(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	err := svc.DeleteScopeRule(context.Background(), shared.NewID().String(), shared.NewID().String())
+	err := svc.DeleteRule(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for non-existent rule")
 	}
@@ -1010,7 +1010,7 @@ func TestDeleteScopeRule_InvalidIDs(t *testing.T) {
 	groupRepo := newMockGroupRepoForScope()
 	svc := newTestScopeRuleService(acRepo, groupRepo)
 
-	err := svc.DeleteScopeRule(context.Background(), "not-a-uuid", shared.NewID().String())
+	err := svc.DeleteRule(context.Background(), "not-a-uuid", shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}
@@ -1018,7 +1018,7 @@ func TestDeleteScopeRule_InvalidIDs(t *testing.T) {
 		t.Errorf("expected validation error, got: %v", err)
 	}
 
-	err = svc.DeleteScopeRule(context.Background(), shared.NewID().String(), "not-a-uuid")
+	err = svc.DeleteRule(context.Background(), shared.NewID().String(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid rule ID")
 	}
@@ -1052,7 +1052,7 @@ func TestListScopeRules_SuccessWithPagination(t *testing.T) {
 		Offset: 0,
 	}
 
-	result, count, err := svc.ListScopeRules(context.Background(), tenantID.String(), groupID.String(), filter)
+	result, count, err := svc.ListRules(context.Background(), tenantID.String(), groupID.String(), filter)
 	if err != nil {
 		t.Fatalf("ListScopeRules failed: %v", err)
 	}
@@ -1078,7 +1078,7 @@ func TestListScopeRules_DefaultLimit(t *testing.T) {
 		Limit: 0,
 	}
 
-	_, _, err := svc.ListScopeRules(context.Background(), tenantID.String(), groupID.String(), filter)
+	_, _, err := svc.ListRules(context.Background(), tenantID.String(), groupID.String(), filter)
 	if err != nil {
 		t.Fatalf("ListScopeRules failed: %v", err)
 	}
@@ -1095,7 +1095,7 @@ func TestListScopeRules_InvalidIDs(t *testing.T) {
 
 	filter := accesscontrol.ScopeRuleFilter{Limit: 10}
 
-	_, _, err := svc.ListScopeRules(context.Background(), "not-a-uuid", shared.NewID().String(), filter)
+	_, _, err := svc.ListRules(context.Background(), "not-a-uuid", shared.NewID().String(), filter)
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}
@@ -1103,7 +1103,7 @@ func TestListScopeRules_InvalidIDs(t *testing.T) {
 		t.Errorf("expected validation error, got: %v", err)
 	}
 
-	_, _, err = svc.ListScopeRules(context.Background(), shared.NewID().String(), "not-a-uuid", filter)
+	_, _, err = svc.ListRules(context.Background(), shared.NewID().String(), "not-a-uuid", filter)
 	if err == nil {
 		t.Fatal("expected error for invalid group ID")
 	}

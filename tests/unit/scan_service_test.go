@@ -10,7 +10,7 @@ import (
 	scanservice "github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/assetgroup"
-	"github.com/openctemio/api/pkg/domain/command"
+	commanddom "github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/pipeline"
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
@@ -479,40 +479,40 @@ func (m *mockStepRunRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (pipe
 }
 
 // =============================================================================
-// Mock: command.Repository
+// Mock: commanddom.Repository
 // =============================================================================
 
 type mockCommandRepo struct {
-	commands map[string]*command.Command
+	commands map[string]*commanddom.Command
 }
 
 func newMockCommandRepo() *mockCommandRepo {
-	return &mockCommandRepo{commands: make(map[string]*command.Command)}
+	return &mockCommandRepo{commands: make(map[string]*commanddom.Command)}
 }
 
-func (m *mockCommandRepo) Create(_ context.Context, cmd *command.Command) error {
+func (m *mockCommandRepo) Create(_ context.Context, cmd *commanddom.Command) error {
 	m.commands[cmd.ID.String()] = cmd
 	return nil
 }
-func (m *mockCommandRepo) GetByID(_ context.Context, _ shared.ID) (*command.Command, error) {
+func (m *mockCommandRepo) GetByID(_ context.Context, _ shared.ID) (*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*command.Command, error) {
+func (m *mockCommandRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, _ int) ([]*command.Command, error) {
+func (m *mockCommandRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, _ int) ([]*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) List(_ context.Context, _ command.Filter, _ pagination.Pagination) (pagination.Result[*command.Command], error) {
-	return pagination.Result[*command.Command]{}, nil
+func (m *mockCommandRepo) List(_ context.Context, _ commanddom.Filter, _ pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
+	return pagination.Result[*commanddom.Command]{}, nil
 }
-func (m *mockCommandRepo) Update(_ context.Context, _ *command.Command) error { return nil }
+func (m *mockCommandRepo) Update(_ context.Context, _ *commanddom.Command) error { return nil }
 func (m *mockCommandRepo) Delete(_ context.Context, _ shared.ID) error        { return nil }
 func (m *mockCommandRepo) ExpireOldCommands(_ context.Context) (int64, error) { return 0, nil }
-func (m *mockCommandRepo) FindExpired(_ context.Context) ([]*command.Command, error) {
+func (m *mockCommandRepo) FindExpired(_ context.Context) ([]*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) GetByAuthTokenHash(_ context.Context, _ string) (*command.Command, error) {
+func (m *mockCommandRepo) GetByAuthTokenHash(_ context.Context, _ string) (*commanddom.Command, error) {
 	return nil, nil
 }
 func (m *mockCommandRepo) CountActivePlatformJobsByTenant(_ context.Context, _ shared.ID) (int, error) {
@@ -522,10 +522,10 @@ func (m *mockCommandRepo) CountQueuedPlatformJobsByTenant(_ context.Context, _ s
 	return 0, nil
 }
 func (m *mockCommandRepo) CountQueuedPlatformJobs(_ context.Context) (int, error) { return 0, nil }
-func (m *mockCommandRepo) GetQueuedPlatformJobs(_ context.Context, _ int) ([]*command.Command, error) {
+func (m *mockCommandRepo) GetQueuedPlatformJobs(_ context.Context, _ int) ([]*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) GetNextPlatformJob(_ context.Context, _ shared.ID, _ []string, _ []string) (*command.Command, error) {
+func (m *mockCommandRepo) GetNextPlatformJob(_ context.Context, _ shared.ID, _ []string, _ []string) (*commanddom.Command, error) {
 	return nil, nil
 }
 func (m *mockCommandRepo) UpdateQueuePriorities(_ context.Context) (int64, error) { return 0, nil }
@@ -535,16 +535,16 @@ func (m *mockCommandRepo) RecoverStuckJobs(_ context.Context, _, _ int) (int64, 
 func (m *mockCommandRepo) ExpireOldPlatformJobs(_ context.Context, _ int) (int64, error) {
 	return 0, nil
 }
-func (m *mockCommandRepo) GetQueuePosition(_ context.Context, _ shared.ID) (*command.QueuePosition, error) {
+func (m *mockCommandRepo) GetQueuePosition(_ context.Context, _ shared.ID) (*commanddom.QueuePosition, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) ListPlatformJobsByTenant(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*command.Command], error) {
-	return pagination.Result[*command.Command]{}, nil
+func (m *mockCommandRepo) ListPlatformJobsByTenant(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
+	return pagination.Result[*commanddom.Command]{}, nil
 }
-func (m *mockCommandRepo) ListPlatformJobsAdmin(_ context.Context, _, _ *shared.ID, _ *command.CommandStatus, _ pagination.Pagination) (pagination.Result[*command.Command], error) {
-	return pagination.Result[*command.Command]{}, nil
+func (m *mockCommandRepo) ListPlatformJobsAdmin(_ context.Context, _, _ *shared.ID, _ *commanddom.CommandStatus, _ pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
+	return pagination.Result[*commanddom.Command]{}, nil
 }
-func (m *mockCommandRepo) GetPlatformJobsByAgent(_ context.Context, _ shared.ID, _ *command.CommandStatus) ([]*command.Command, error) {
+func (m *mockCommandRepo) GetPlatformJobsByAgent(_ context.Context, _ shared.ID, _ *commanddom.CommandStatus) ([]*commanddom.Command, error) {
 	return nil, nil
 }
 func (m *mockCommandRepo) RecoverStuckTenantCommands(_ context.Context, _, _ int) (int64, error) {
@@ -553,8 +553,8 @@ func (m *mockCommandRepo) RecoverStuckTenantCommands(_ context.Context, _, _ int
 func (m *mockCommandRepo) FailExhaustedCommands(_ context.Context, _ int) (int64, error) {
 	return 0, nil
 }
-func (m *mockCommandRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (command.CommandStats, error) {
-	return command.CommandStats{}, nil
+func (m *mockCommandRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (commanddom.CommandStats, error) {
+	return commanddom.CommandStats{}, nil
 }
 func (m *mockCommandRepo) CancelByPipelineRunID(_ context.Context, _, _ shared.ID) (int64, error) {
 	return 0, nil

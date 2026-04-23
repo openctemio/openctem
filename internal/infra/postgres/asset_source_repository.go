@@ -73,6 +73,8 @@ func (r *AssetSourceRepository) Create(ctx context.Context, as *datasource.Asset
 }
 
 // GetByID retrieves an asset source by ID.
+//
+//getbyid:unsafe - Asset sources are a shared catalog; no tenant_id column.
 func (r *AssetSourceRepository) GetByID(ctx context.Context, id shared.ID) (*datasource.AssetSource, error) {
 	query := `
 		SELECT id, asset_id, source_type, source_id,

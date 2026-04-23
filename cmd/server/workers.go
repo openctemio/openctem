@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"github.com/openctemio/api/internal/app/command"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/outbox"
+	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/jobs"
@@ -14,15 +17,15 @@ import (
 
 // Workers holds all background worker instances.
 type Workers struct {
-	JobWorker                    *jobs.Worker
-	AgentHealthChecker           *jobs.AgentHealthChecker
-	AITriageRecoveryJob          *jobs.AITriageRecoveryJob
-	ScanScheduler                *app.ScanScheduler
-	CommandExpirationChecker     *app.CommandExpirationChecker
-	OutboxScheduler              *app.OutboxScheduler
-	FindingLifecycleScheduler    *app.FindingLifecycleScheduler
-	NotificationCleanupTicker    *time.Ticker
-	notificationService          *app.NotificationService
+	JobWorker                 *jobs.Worker
+	AgentHealthChecker        *jobs.AgentHealthChecker
+	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
+	ScanScheduler             *app.ScanScheduler
+	CommandExpirationChecker  *command.ExpirationChecker
+	OutboxScheduler           *outbox.Scheduler
+	FindingLifecycleScheduler *app.FindingLifecycleScheduler
+	NotificationCleanupTicker *time.Ticker
+	notificationService       *app.NotificationService
 	// SessionCleanupTicker periodically deletes expired/revoked
 	// sessions and refresh tokens. Without this the tables grow
 	// unboundedly because logout marks rows as 'revoked' (not deleted)
@@ -92,19 +95,19 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	)
 
 	// Initialize command expiration checker
-	w.CommandExpirationChecker = app.NewCommandExpirationChecker(
+	w.CommandExpirationChecker = command.NewExpirationChecker(
 		repos.Command,
 		svc.Pipeline,
-		app.CommandExpirationCheckerConfig{
+		command.ExpirationCheckerConfig{
 			CheckInterval: time.Minute,
 		},
 		log,
 	)
 
 	// Initialize notification scheduler
-	w.OutboxScheduler = app.NewOutboxScheduler(
+	w.OutboxScheduler = outbox.NewScheduler(
 		svc.Outbox,
-		app.DefaultOutboxSchedulerConfig(),
+		outbox.DefaultSchedulerConfig(),
 		log,
 	)
 
@@ -219,6 +222,47 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "threat-intel-refresh"),
 	))
 
+	// Owner resolution — resolve owner_ref (email) to owner_id for assets
+	w.ControllerManager.Register(controller.NewOwnerResolutionController(
+		deps.DB,
+		log.With("controller", "owner-resolution"),
+	))
+
+	// B1/B2 priority reclassification sweep — drains the in-memory
+	// queue populated by ControlChangePublisher (and future EPSS/KEV/
+	// rule producers) and re-runs ClassifyFinding on the scoped set.
+	// Nil-safe only against a missing queue/reclassifier — svc itself
+	// is a required argument to NewWorkers (an earlier redundant
+	// svc != nil check confused staticcheck; the function dereferences
+	// svc unconditionally above this point).
+	if svc.ReclassifyQueue != nil && svc.Reclassifier != nil {
+		w.ControllerManager.Register(controller.NewPriorityReclassifyController(
+			svc.ReclassifyQueue,
+			svc.Reclassifier,
+			&controller.PriorityReclassifyConfig{
+				Logger: log.With("controller", "priority-reclassify"),
+			},
+		))
+	}
+
+	// SLA escalation — marks overdue findings as breached every 15 min (RFC-005 Gap 7).
+	// B4: attach outbox publisher so each breach fans out as
+	// a notification. Nil-safe when Outbox service isn't configured.
+	slaEscalation := controller.NewSLAEscalationController(
+		deps.DB,
+		log.With("controller", "sla-escalation"),
+	)
+	if svc != nil && svc.Outbox != nil {
+		slaEscalation.SetBreachPublisher(sla.NewBreachOutboxAdapter(svc.Outbox))
+	}
+	w.ControllerManager.Register(slaEscalation)
+
+	// Risk snapshot — computes daily risk/MTTR/SLA metrics per tenant (RFC-005 Gap 4)
+	w.ControllerManager.Register(controller.NewRiskSnapshotController(
+		deps.DB,
+		log.With("controller", "risk-snapshot"),
+	))
+
 	// Control test scheduler — daily sweep to mark stale detection coverage as overdue
 	w.ControllerManager.Register(controller.NewControlTestSchedulerController(
 		repos.ControlTest,
@@ -227,6 +271,61 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			StaleDays: 30,
 			BatchSize: 500,
 			Logger:    log.With("controller", "control-test-scheduler"),
+		},
+	))
+
+	// F-13: Priority-class audit log retention. Prevents unbounded growth of
+	// priority_class_audit_log — every classification/enrichment writes a row.
+	w.ControllerManager.Register(controller.NewPriorityAuditRetentionController(
+		repos.PriorityAudit,
+		&controller.PriorityAuditRetentionConfig{
+			Interval:      24 * time.Hour,
+			RetentionDays: 180,
+			Logger:        log.With("controller", "priority-audit-retention"),
+		},
+	))
+
+	// Platform job queue priority rebalancing. Without this the platform
+	// command queue stays strictly FIFO and a noisy tenant can starve
+	// quieter ones. Runs every 60 s — cheap SQL update, safe default.
+	w.ControllerManager.Register(controller.NewQueuePriorityController(
+		repos.Command,
+		&controller.QueuePriorityControllerConfig{
+			Interval: 60 * time.Second,
+			Logger:   log.With("controller", "queue-priority"),
+		},
+	))
+
+	// Admin-audit-log retention. Complements DataExpirationController
+	// (which handles tenant audit_logs) by pruning the platform-level
+	// admin_audit_logs table on the same 365-day window. Starts in
+	// DryRun: true so the first production rollout just logs what
+	// WOULD be deleted — an operator promotes to DryRun:false after
+	// confirming the counts look right.
+	w.ControllerManager.Register(controller.NewAuditRetentionController(
+		repos.AdminAuditLog,
+		&controller.AuditRetentionControllerConfig{
+			Interval:      24 * time.Hour,
+			RetentionDays: 365,
+			BatchSize:     10000,
+			DryRun:        true,
+			Logger:        log.With("controller", "admin-audit-retention"),
+		},
+	))
+
+	// Audit hash-chain integrity verification. The admin endpoint
+	// GET /api/v1/audit-logs/verify is pull-based; this controller
+	// runs the same VerifyChain on every active tenant once an hour
+	// and emits an ERROR-level log (SIEM alert keyword
+	// "audit_chain_break") for every break. Closes the MTTD gap for
+	// tamper events where the endpoint is never called.
+	w.ControllerManager.Register(controller.NewAuditChainVerifyController(
+		svc.Audit,
+		repos.Tenant,
+		&controller.AuditChainVerifyControllerConfig{
+			Interval:       time.Hour,
+			PerTenantLimit: 10000,
+			Logger:         log.With("controller", "audit-chain-verify"),
 		},
 	))
 

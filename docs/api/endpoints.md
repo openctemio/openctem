@@ -187,6 +187,8 @@ Base URL: `http://localhost:8080/api/v1`
 |--------|----------|-------------|------------|
 | GET | `/audit-logs` | List audit logs | `audit:read` |
 | GET | `/audit-logs/stats` | Get audit statistics | `audit:read` |
+| GET | `/audit-logs/verify` | Verify hash-chain integrity. Returns 200 OK when the chain is intact, 409 Conflict with the offending entry when a break is detected. | admin only |
+| GET | `/dashboard/executive-summary/export?format=html` | Executive summary as print-ready HTML. Browser's Print dialog → "Save as PDF" produces the PDF report. Same endpoint also supports `format=json` (default) and `format=csv`. | `dashboard:read` |
 | GET | `/audit-logs/:id` | Get single audit log | `audit:read` |
 | GET | `/audit-logs/resource/:type/:id` | Get resource history | `audit:read` |
 | GET | `/audit-logs/user/:id` | Get user activity | `audit:read` |
@@ -856,6 +858,40 @@ Admin endpoints for managing bootstrap tokens.
 | GET | `/admin/platform/bootstrap-tokens` | List tokens | Admin |
 | POST | `/admin/platform/bootstrap-tokens` | Create token | Admin |
 | DELETE | `/admin/platform/bootstrap-tokens/{id}` | Revoke token | Admin |
+
+### Runtime Telemetry (Agent API Key Auth)
+
+Endpoint for endpoint-agents (EDR/XDR style) to push runtime observations.
+Feeds the IOC correlator (invariant B6 — runtime hits on known IOCs auto-reopen
+the originating finding).
+
+| Method | Endpoint | Description | Permission |
+|--------|----------|-------------|------------|
+| POST | `/telemetry-events` | Batch-ingest runtime events. Body: `{"events":[{"event_type":"network_connect","observed_at":"<rfc3339>","properties":{"remote_ip":"..."}}]}`. Max 100 events/request, 50 MB body limit. Returns 202 Accepted on partial/full success, 400 when the whole batch is rejected. | Agent API key |
+
+Recognised `event_type` values: `process_start`, `process_stop`,
+`network_connect`, `file_write`, `file_delete`, `dns_query`, `auth_attempt`,
+`kernel_module_load`, `other` (see migration 000155).
+
+### IOC Catalogue (Tenant-scoped)
+
+Indicators (IP, domain, URL, file hash, process name, user agent) are matched
+against runtime telemetry to close the CTEM loop. A match on an indicator linked
+to a closed finding auto-reopens it (invariant B6).
+
+Permissions reuse `threat_intel:read` / `threat_intel:write` — an IOC is
+semantically a tenant-scoped piece of threat intel.
+
+| Method | Endpoint | Description | Permission |
+|--------|----------|-------------|------------|
+| GET | `/iocs?limit=50&offset=0` | List indicators (most recently seen first). Hard cap 200/page. | `threat_intel:read` |
+| POST | `/iocs` | Register a new indicator. Body: `{"type":"ip\|domain\|url\|file_hash\|process_name\|user_agent","value":"...","source":"manual\|scan_finding\|threat_feed","source_finding_id":"<uuid-optional>","confidence":75}`. | `threat_intel:write` |
+| GET | `/iocs/{id}` | Get a single indicator | `threat_intel:read` |
+| DELETE | `/iocs/{id}` | Soft-delete (sets `active=false`). Match history in `ioc_matches` is preserved. | `threat_intel:write` |
+
+Schema: migration 000156. Correlator: `internal/app/ioc/correlator.go`. An
+indicator with `source_finding_id` set is what makes B6 loop-closing — a
+runtime match on that IOC reopens the linked finding to `confirmed`.
 
 ---
 

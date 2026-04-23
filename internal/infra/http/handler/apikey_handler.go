@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/openctemio/api/internal/app/apikey"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -8,10 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/apikey"
+	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -19,13 +19,13 @@ import (
 
 // APIKeyHandler handles HTTP requests for API key management.
 type APIKeyHandler struct {
-	service   *app.APIKeyService
+	service   *apikey.Service
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAPIKeyHandler creates a new APIKeyHandler.
-func NewAPIKeyHandler(svc *app.APIKeyService, v *validator.Validator, log *logger.Logger) *APIKeyHandler {
+func NewAPIKeyHandler(svc *apikey.Service, v *validator.Validator, log *logger.Logger) *APIKeyHandler {
 	return &APIKeyHandler{
 		service:   svc,
 		validator: v,
@@ -90,7 +90,7 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateAPIKeyInput{
+	input := apikey.CreateInput{
 		TenantID:      tenantID,
 		UserID:        userID,
 		Name:          req.Name,
@@ -101,7 +101,7 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		CreatedBy:     userID,
 	}
 
-	result, err := h.service.CreateAPIKey(r.Context(), input)
+	result, err := h.service.Create(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -122,7 +122,7 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	query := r.URL.Query()
-	input := app.ListAPIKeysInput{
+	input := apikey.ListInput{
 		TenantID:  tenantID,
 		Status:    query.Get("status"),
 		Search:    query.Get("search"),
@@ -132,7 +132,7 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 		SortOrder: query.Get("order"),
 	}
 
-	result, err := h.service.ListAPIKeys(r.Context(), input)
+	result, err := h.service.List(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -160,7 +160,7 @@ func (h *APIKeyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	key, err := h.service.GetAPIKey(r.Context(), id, tenantID)
+	key, err := h.service.Get(r.Context(), id, tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -176,13 +176,13 @@ func (h *APIKeyHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	input := app.RevokeAPIKeyInput{
+	input := apikey.RevokeInput{
 		ID:        id,
 		TenantID:  tenantID,
 		RevokedBy: userID,
 	}
 
-	key, err := h.service.RevokeAPIKey(r.Context(), input)
+	key, err := h.service.Revoke(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -197,7 +197,7 @@ func (h *APIKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	if err := h.service.DeleteAPIKey(r.Context(), id, tenantID); err != nil {
+	if err := h.service.Delete(r.Context(), id, tenantID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -207,7 +207,7 @@ func (h *APIKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // --- Helpers ---
 
-func toAPIKeyResponse(k *apikey.APIKey) APIKeyResponse {
+func toAPIKeyResponse(k *apikeydom.APIKey) APIKeyResponse {
 	resp := APIKeyResponse{
 		ID:          k.ID().String(),
 		TenantID:    k.TenantID().String(),
@@ -257,9 +257,9 @@ func (h *APIKeyHandler) handleValidationError(w http.ResponseWriter, err error) 
 
 func (h *APIKeyHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, apikey.ErrAPIKeyNotFound):
+	case errors.Is(err, apikeydom.ErrAPIKeyNotFound):
 		apierror.NotFound("API key").WriteJSON(w)
-	case errors.Is(err, apikey.ErrAPIKeyNameExists):
+	case errors.Is(err, apikeydom.ErrAPIKeyNameExists):
 		apierror.Conflict("API key name already exists").WriteJSON(w)
 	case shared.IsValidation(err):
 		apierror.BadRequest(err.Error()).WriteJSON(w)

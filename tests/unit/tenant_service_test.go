@@ -794,7 +794,7 @@ func TestTenantSvc_DeleteTenant_Success(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
 
-	err := svc.DeleteTenant(context.Background(), existing.ID().String())
+	err := svc.DeleteTenant(context.Background(), app.AuditContext{}, existing.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -806,7 +806,7 @@ func TestTenantSvc_DeleteTenant_Success(t *testing.T) {
 func TestTenantSvc_DeleteTenant_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	err := svc.DeleteTenant(context.Background(), "bad-uuid")
+	err := svc.DeleteTenant(context.Background(), app.AuditContext{}, "bad-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -819,7 +819,7 @@ func TestTenantSvc_DeleteTenant_RepoError(t *testing.T) {
 	svc, repo := newTestTenantService()
 	repo.deleteErr = errors.New("db error")
 
-	err := svc.DeleteTenant(context.Background(), shared.NewID().String())
+	err := svc.DeleteTenant(context.Background(), app.AuditContext{}, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -2373,7 +2373,7 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 			_, err := svc.UpdateTenant(context.Background(), invalidID, app.UpdateTenantInput{Name: &n})
 			return err
 		}},
-		{"DeleteTenant", func() error { return svc.DeleteTenant(context.Background(), invalidID) }},
+		{"DeleteTenant", func() error { return svc.DeleteTenant(context.Background(), app.AuditContext{}, invalidID) }},
 		{"ListMembers", func() error { _, err := svc.ListMembers(context.Background(), invalidID); return err }},
 		{"ListMembersWithUserInfo", func() error { _, err := svc.ListMembersWithUserInfo(context.Background(), invalidID); return err }},
 		{"SearchMembers", func() error {

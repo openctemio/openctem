@@ -430,18 +430,25 @@ func (h *CapabilityHandler) buildAuditContext(r *http.Request) app.AuditContext 
 // Error Handling
 // =============================================================================
 
+// F-14: Generic client messages + server-side logging. Do not echo wrapped
+// internal error chains to clients (they may contain DB constraints, internal
+// paths, or wrapper context). Domain sentinel category is returned; details
+// stay in the logger.
 func (h *CapabilityHandler) handleError(w http.ResponseWriter, err error, resource string) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound(resource).WriteJSON(w)
 	case errors.Is(err, shared.ErrConflict):
-		apierror.Conflict(err.Error()).WriteJSON(w)
+		h.logger.Warn("capability conflict", "resource", resource, "error", err)
+		apierror.Conflict(resource + " conflict").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
-		apierror.BadRequest(err.Error()).WriteJSON(w)
+		h.logger.Warn("capability validation failed", "resource", resource, "error", err)
+		apierror.BadRequest("invalid " + resource + " request").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
-		apierror.Forbidden(err.Error()).WriteJSON(w)
+		h.logger.Warn("capability forbidden", "resource", resource, "error", err)
+		apierror.Forbidden("operation not permitted").WriteJSON(w)
 	default:
-		h.logger.Error("unexpected error", "error", err)
+		h.logger.Error("unexpected error", "resource", resource, "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
 }

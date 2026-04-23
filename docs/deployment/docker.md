@@ -6,7 +6,7 @@ OpenCTEM uses a **single Dockerfile with multiple build targets**:
 
 ```
 Dockerfile
-├── base        # Shared: Go 1.25, dependencies
+├── base        # Shared: Go 1.26, dependencies
 ├── development # Dev: Air (hot reload), Delve (debugger)
 ├── builder     # Build: Compile binary
 └── production  # Prod: Minimal Alpine image

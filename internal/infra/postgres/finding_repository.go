@@ -61,6 +61,15 @@ func marshalFindingSARIFFields(finding *vulnerability.Finding) (partialFingerpri
 	return partialFingerprints, relatedLocations, stacks, attachments, nil
 }
 
+// nullPriorityClass converts a *PriorityClass to sql.NullString.
+// nil is treated as NULL.
+func nullPriorityClass(pc *vulnerability.PriorityClass) sql.NullString {
+	if pc == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: string(*pc), Valid: true}
+}
+
 // marshalRemediation marshals the FindingRemediation value object to JSONB.
 // Returns nil interface{} if remediation is nil or empty (proper SQL NULL for JSONB).
 func marshalRemediation(r *vulnerability.FindingRemediation) interface{} {
@@ -110,6 +119,9 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
 			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
+			epss_score, epss_percentile, is_in_kev, kev_due_date,
+			priority_class, priority_class_reason, priority_class_override, priority_class_overridden_by, priority_class_overridden_at,
+			is_reachable, reachable_from_count,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
@@ -117,7 +129,8 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
+			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -182,6 +195,18 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		finding.IsNetworkAccessible(),
 		finding.IsInternetAccessible(),
 		nullString(finding.AttackPrerequisites()),
+		// Priority classification fields (RFC-004)
+		nullFloat64(finding.EPSSScore()),
+		nullFloat64(finding.EPSSPercentile()),
+		finding.IsInKEV(),
+		nullTime(finding.KEVDueDate()),
+		nullPriorityClass(finding.PriorityClass()),
+		nullString(finding.PriorityClassReason()),
+		finding.PriorityClassOverride(),
+		nullID(finding.PriorityClassOverriddenBy()),
+		nullTime(finding.PriorityClassOverriddenAt()),
+		finding.IsReachable(),
+		finding.ReachableFromCount(),
 		nullString(finding.RemediationType().String()),
 		nullIntPtr(finding.EstimatedFixTime()),
 		nullString(finding.FixComplexity().String()),
@@ -237,6 +262,9 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
 			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
+			epss_score, epss_percentile, is_in_kev, kev_due_date,
+			priority_class, priority_class_reason, priority_class_override, priority_class_overridden_by, priority_class_overridden_at,
+			is_reachable, reachable_from_count,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
@@ -244,7 +272,8 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
+			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -309,6 +338,18 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		finding.IsNetworkAccessible(),
 		finding.IsInternetAccessible(),
 		nullString(finding.AttackPrerequisites()),
+		// Priority classification fields (RFC-004)
+		nullFloat64(finding.EPSSScore()),
+		nullFloat64(finding.EPSSPercentile()),
+		finding.IsInKEV(),
+		nullTime(finding.KEVDueDate()),
+		nullPriorityClass(finding.PriorityClass()),
+		nullString(finding.PriorityClassReason()),
+		finding.PriorityClassOverride(),
+		nullID(finding.PriorityClassOverriddenBy()),
+		nullTime(finding.PriorityClassOverriddenAt()),
+		finding.IsReachable(),
+		finding.ReachableFromCount(),
 		nullString(finding.RemediationType().String()),
 		nullIntPtr(finding.EstimatedFixTime()),
 		nullString(finding.FixComplexity().String()),
@@ -489,6 +530,9 @@ func (r *FindingRepository) upsertQuery() string {
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
 			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
+			epss_score, epss_percentile, is_in_kev, kev_due_date,
+			priority_class, priority_class_reason, priority_class_override, priority_class_overridden_by, priority_class_overridden_at,
+			is_reachable, reachable_from_count,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
@@ -496,7 +540,8 @@ func (r *FindingRepository) upsertQuery() string {
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70)
+			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70,
+			$71, $72, $73, $74, $75, $76, $77, $78, $79, $80, $81)
 		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET
 			vulnerability_id = EXCLUDED.vulnerability_id,
 			component_id = EXCLUDED.component_id,
@@ -536,6 +581,17 @@ func (r *FindingRepository) upsertQuery() string {
 			is_network_accessible = EXCLUDED.is_network_accessible,
 			is_internet_accessible = EXCLUDED.is_internet_accessible,
 			attack_prerequisites = EXCLUDED.attack_prerequisites,
+			epss_score = EXCLUDED.epss_score,
+			epss_percentile = EXCLUDED.epss_percentile,
+			is_in_kev = EXCLUDED.is_in_kev,
+			kev_due_date = EXCLUDED.kev_due_date,
+			priority_class = CASE WHEN findings.priority_class_override THEN findings.priority_class ELSE EXCLUDED.priority_class END,
+			priority_class_reason = CASE WHEN findings.priority_class_override THEN findings.priority_class_reason ELSE EXCLUDED.priority_class_reason END,
+			priority_class_override = findings.priority_class_override,
+			priority_class_overridden_by = findings.priority_class_overridden_by,
+			priority_class_overridden_at = findings.priority_class_overridden_at,
+			is_reachable = EXCLUDED.is_reachable,
+			reachable_from_count = EXCLUDED.reachable_from_count,
 			remediation_type = EXCLUDED.remediation_type,
 			estimated_fix_time = EXCLUDED.estimated_fix_time,
 			fix_complexity = EXCLUDED.fix_complexity,
@@ -625,6 +681,18 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 		finding.IsNetworkAccessible(),
 		finding.IsInternetAccessible(),
 		nullString(finding.AttackPrerequisites()),
+		// Priority classification fields (RFC-004)
+		nullFloat64(finding.EPSSScore()),
+		nullFloat64(finding.EPSSPercentile()),
+		finding.IsInKEV(),
+		nullTime(finding.KEVDueDate()),
+		nullPriorityClass(finding.PriorityClass()),
+		nullString(finding.PriorityClassReason()),
+		finding.PriorityClassOverride(),
+		nullID(finding.PriorityClassOverriddenBy()),
+		nullTime(finding.PriorityClassOverriddenAt()),
+		finding.IsReachable(),
+		finding.ReachableFromCount(),
 		nullString(finding.RemediationType().String()),
 		nullIntPtr(finding.EstimatedFixTime()),
 		nullString(finding.FixComplexity().String()),
@@ -720,7 +788,11 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 			assigned_to = $17, assigned_at = $18, assigned_by = $19,
 			title = $21, description = $22, tags = $23,
 			cvss_score = $24, cvss_vector = $25, cve_id = $26, cwe_ids = $27, owasp_ids = $28,
-			remediation = $29
+			remediation = $29,
+			epss_score = $30, epss_percentile = $31, is_in_kev = $32, kev_due_date = $33,
+			priority_class = $34, priority_class_reason = $35,
+			priority_class_override = $36, priority_class_overridden_by = $37, priority_class_overridden_at = $38,
+			is_reachable = $39, reachable_from_count = $40
 		WHERE id = $1 AND tenant_id = $20
 	`
 
@@ -754,6 +826,18 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 		pq.Array(finding.CWEIDs()),            // $27
 		pq.Array(finding.OWASPIDs()),          // $28
 		remediationJSON,                       // $29
+		// Priority classification (RFC-004)
+		nullFloat64(finding.EPSSScore()),              // $30
+		nullFloat64(finding.EPSSPercentile()),         // $31
+		finding.IsInKEV(),                             // $32
+		nullTime(finding.KEVDueDate()),                // $33
+		nullPriorityClass(finding.PriorityClass()),    // $34
+		nullString(finding.PriorityClassReason()),     // $35
+		finding.PriorityClassOverride(),               // $36
+		nullID(finding.PriorityClassOverriddenBy()),   // $37
+		nullTime(finding.PriorityClassOverriddenAt()), // $38
+		finding.IsReachable(),                         // $39
+		finding.ReachableFromCount(),                  // $40
 	)
 
 	if err != nil {
@@ -1204,6 +1288,9 @@ func (r *FindingRepository) selectQuery() string {
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
 			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
+			epss_score, epss_percentile, is_in_kev, kev_due_date,
+			priority_class, priority_class_reason, priority_class_override, priority_class_overridden_by, priority_class_overridden_at,
+			is_reachable, reachable_from_count,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			remediation, created_by,
@@ -1312,13 +1399,25 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		isNetworkAccessible  sql.NullBool
 		isInternetAccessible sql.NullBool
 		attackPrerequisites  sql.NullString
-		remediationType      sql.NullString
-		estimatedFixTime     sql.NullInt64
-		fixComplexity        sql.NullString
-		remedyAvailable      sql.NullBool
-		dataExposureRisk     sql.NullString
-		reputationalImpact   sql.NullBool
-		complianceImpact     []string
+		// Priority classification (RFC-004)
+		epssScore                 sql.NullFloat64
+		epssPercentile            sql.NullFloat64
+		isInKEV                   sql.NullBool
+		kevDueDate                sql.NullTime
+		priorityClass             sql.NullString
+		priorityClassReason       sql.NullString
+		priorityClassOverride     sql.NullBool
+		priorityClassOverriddenBy sql.NullString
+		priorityClassOverriddenAt sql.NullTime
+		isReachable               sql.NullBool
+		reachableFromCount        sql.NullInt64
+		remediationType           sql.NullString
+		estimatedFixTime          sql.NullInt64
+		fixComplexity             sql.NullString
+		remedyAvailable           sql.NullBool
+		dataExposureRisk          sql.NullString
+		reputationalImpact        sql.NullBool
+		complianceImpact          []string
 		// Remediation JSONB
 		remediation []byte
 		// Creator (pentest ownership)
@@ -1346,6 +1445,9 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&baselineState, &kind, &rank, &occurrenceCount, &correlationID,
 		&partialFingerprints, &relatedLocations, &stacks, &attachments, pq.Array(&workItemURIs), &hostedViewerURI,
 		&exposureVector, &isNetworkAccessible, &isInternetAccessible, &attackPrerequisites,
+		&epssScore, &epssPercentile, &isInKEV, &kevDueDate,
+		&priorityClass, &priorityClassReason, &priorityClassOverride, &priorityClassOverriddenBy, &priorityClassOverriddenAt,
+		&isReachable, &reachableFromCount,
 		&remediationType, &estimatedFixTime, &fixComplexity, &remedyAvailable,
 		&dataExposureRisk, &reputationalImpact, pq.Array(&complianceImpact),
 		&remediation, &createdBy,
@@ -1377,6 +1479,10 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		partialFingerprints, relatedLocations, stacks, attachments, workItemURIs, hostedViewerURI,
 		// CTEM fields
 		exposureVector, isNetworkAccessible, isInternetAccessible, attackPrerequisites,
+		// Priority classification (RFC-004)
+		epssScore, epssPercentile, isInKEV, kevDueDate,
+		priorityClass, priorityClassReason, priorityClassOverride, priorityClassOverriddenBy, priorityClassOverriddenAt,
+		isReachable, reachableFromCount,
 		remediationType, estimatedFixTime, fixComplexity, remedyAvailable,
 		dataExposureRisk, reputationalImpact, complianceImpact,
 		// Remediation JSONB
@@ -1473,13 +1579,25 @@ type findingRow struct {
 	isNetworkAccessible  sql.NullBool
 	isInternetAccessible sql.NullBool
 	attackPrerequisites  sql.NullString
-	remediationType      sql.NullString
-	estimatedFixTime     sql.NullInt64
-	fixComplexity        sql.NullString
-	remedyAvailable      sql.NullBool
-	dataExposureRisk     sql.NullString
-	reputationalImpact   sql.NullBool
-	complianceImpact     []string
+	// Priority classification (RFC-004)
+	epssScore                 sql.NullFloat64
+	epssPercentile            sql.NullFloat64
+	isInKEV                   sql.NullBool
+	kevDueDate                sql.NullTime
+	priorityClass             sql.NullString
+	priorityClassReason       sql.NullString
+	priorityClassOverride     sql.NullBool
+	priorityClassOverriddenBy sql.NullString
+	priorityClassOverriddenAt sql.NullTime
+	isReachable               sql.NullBool
+	reachableFromCount        sql.NullInt64
+	remediationType           sql.NullString
+	estimatedFixTime          sql.NullInt64
+	fixComplexity             sql.NullString
+	remedyAvailable           sql.NullBool
+	dataExposureRisk          sql.NullString
+	reputationalImpact        sql.NullBool
+	complianceImpact          []string
 	// Remediation JSONB
 	remediation []byte
 	// Creator (pentest ownership)
@@ -1602,6 +1720,30 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 	fixComplexity, _ := vulnerability.ParseFixComplexity(nullStringValue(row.fixComplexity))
 	dataExposureRisk, _ := vulnerability.ParseDataExposureRisk(nullStringValue(row.dataExposureRisk))
 
+	// Parse priority classification fields (RFC-004)
+	var epssScore *float64
+	if row.epssScore.Valid {
+		epssScore = &row.epssScore.Float64
+	}
+
+	var epssPercentile *float64
+	if row.epssPercentile.Valid {
+		epssPercentile = &row.epssPercentile.Float64
+	}
+
+	var priorityClass *vulnerability.PriorityClass
+	if row.priorityClass.Valid && row.priorityClass.String != "" {
+		pc, pcErr := vulnerability.ParsePriorityClass(row.priorityClass.String)
+		if pcErr == nil {
+			priorityClass = &pc
+		}
+	}
+
+	var reachableFromCount int
+	if row.reachableFromCount.Valid {
+		reachableFromCount = int(row.reachableFromCount.Int64)
+	}
+
 	// Parse remediation JSONB
 	var remediation *vulnerability.FindingRemediation
 	if len(row.remediation) > 0 {
@@ -1703,13 +1845,25 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		IsNetworkAccessible:  nullBoolValue(row.isNetworkAccessible) != nil && *nullBoolValue(row.isNetworkAccessible),
 		IsInternetAccessible: nullBoolValue(row.isInternetAccessible) != nil && *nullBoolValue(row.isInternetAccessible),
 		AttackPrerequisites:  nullStringValue(row.attackPrerequisites),
-		RemediationType:      remediationType,
-		EstimatedFixTime:     estimatedFixTime,
-		FixComplexity:        fixComplexity,
-		RemedyAvailable:      nullBoolValue(row.remedyAvailable) != nil && *nullBoolValue(row.remedyAvailable),
-		DataExposureRisk:     dataExposureRisk,
-		ReputationalImpact:   nullBoolValue(row.reputationalImpact) != nil && *nullBoolValue(row.reputationalImpact),
-		ComplianceImpact:     row.complianceImpact,
+		// Priority classification (RFC-004)
+		EPSSScore:                 epssScore,
+		EPSSPercentile:            epssPercentile,
+		IsInKEV:                   row.isInKEV.Valid && row.isInKEV.Bool,
+		KEVDueDate:                nullTimeValue(row.kevDueDate),
+		PriorityClass:             priorityClass,
+		PriorityClassReason:       nullStringValue(row.priorityClassReason),
+		PriorityClassOverride:     row.priorityClassOverride.Valid && row.priorityClassOverride.Bool,
+		PriorityClassOverriddenBy: parseNullID(row.priorityClassOverriddenBy),
+		PriorityClassOverriddenAt: nullTimeValue(row.priorityClassOverriddenAt),
+		IsReachable:               row.isReachable.Valid && row.isReachable.Bool,
+		ReachableFromCount:        reachableFromCount,
+		RemediationType:           remediationType,
+		EstimatedFixTime:          estimatedFixTime,
+		FixComplexity:             fixComplexity,
+		RemedyAvailable:           nullBoolValue(row.remedyAvailable) != nil && *nullBoolValue(row.remedyAvailable),
+		DataExposureRisk:          dataExposureRisk,
+		ReputationalImpact:        nullBoolValue(row.reputationalImpact) != nil && *nullBoolValue(row.reputationalImpact),
+		ComplianceImpact:          row.complianceImpact,
 		// Data flow flag (from subquery)
 		HasDataFlow: row.hasDataFlow,
 	}
@@ -2041,7 +2195,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		userIDIdx := argIndex
 		tenantIDIdx := argIndex + 1
 		args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
-		argIndex += 2
+		// argIndex not incremented — this is the last block that consumes it.
 		conditions = append(conditions, fmt.Sprintf(`(
 			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
 			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
@@ -2412,6 +2566,9 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
 			exposure_vector, is_network_accessible, is_internet_accessible, attack_prerequisites,
+			epss_score, epss_percentile, is_in_kev, kev_due_date,
+			priority_class, priority_class_reason, priority_class_override, priority_class_overridden_by, priority_class_overridden_at,
+			is_reachable, reachable_from_count,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			remediation, created_by,
@@ -2421,7 +2578,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 50
+const enrichColumnsPerRow = 61
 
 // enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
 // 1000 rows × 50 columns = 50,000 params (safely under limit).
@@ -2475,6 +2632,17 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"is_network_accessible", "boolean"},
 	{"is_internet_accessible", "boolean"},
 	{"attack_prerequisites", "text"},
+	{"epss_score", "float8"},
+	{"epss_percentile", "float8"},
+	{"is_in_kev", "boolean"},
+	{"kev_due_date", "date"},
+	{"priority_class", "varchar(2)"},
+	{"priority_class_reason", "text"},
+	{"priority_class_override", "boolean"},
+	{"priority_class_overridden_by", "uuid"},
+	{"priority_class_overridden_at", "timestamptz"},
+	{"is_reachable", "boolean"},
+	{"reachable_from_count", "int"},
 	{"remediation_type", "text"},
 	{"estimated_fix_time", "int"},
 	{"fix_complexity", "text"},
@@ -2640,6 +2808,17 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		f.IsNetworkAccessible(),
 		f.IsInternetAccessible(),
 		nullString(f.AttackPrerequisites()),
+		nullFloat64(f.EPSSScore()),
+		nullFloat64(f.EPSSPercentile()),
+		f.IsInKEV(),
+		nullTime(f.KEVDueDate()),
+		nullPriorityClass(f.PriorityClass()),
+		nullString(f.PriorityClassReason()),
+		f.PriorityClassOverride(),
+		nullID(f.PriorityClassOverriddenBy()),
+		nullTime(f.PriorityClassOverriddenAt()),
+		f.IsReachable(),
+		f.ReachableFromCount(),
 		nullString(f.RemediationType().String()),
 		nullIntPtr(f.EstimatedFixTime()),
 		nullString(f.FixComplexity().String()),

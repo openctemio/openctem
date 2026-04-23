@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 const azureDefaultBranchPrefix = "refs/heads/"
@@ -22,7 +24,8 @@ type AzureClient struct {
 	isCloud    bool
 }
 
-// NewAzureClient creates a new Azure DevOps client
+// NewAzureClient creates a new Azure DevOps client.
+// SECURITY: see GitHubClient — same SSRF mitigation pattern.
 func NewAzureClient(config Config) (*AzureClient, error) {
 	// Default to Azure DevOps Services
 	baseURL := "https://dev.azure.com"
@@ -31,6 +34,9 @@ func NewAzureClient(config Config) (*AzureClient, error) {
 	if config.BaseURL != "" &&
 		config.BaseURL != "https://dev.azure.com" &&
 		config.BaseURL != "https://azure.microsoft.com" {
+		if _, err := httpsec.ValidateURL(config.BaseURL); err != nil {
+			return nil, fmt.Errorf("invalid base_url: %w", err)
+		}
 		// For Azure DevOps Server (on-premises)
 		baseURL = strings.TrimSuffix(config.BaseURL, "/")
 		isCloud = false
@@ -38,7 +44,7 @@ func NewAzureClient(config Config) (*AzureClient, error) {
 
 	return &AzureClient{
 		config:     config,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 		baseURL:    baseURL,
 		isCloud:    isCloud,
 	}, nil

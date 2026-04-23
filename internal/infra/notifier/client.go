@@ -17,6 +17,14 @@ type Message struct {
 	FooterText  string            // Optional footer text
 	IconURL     string            // Optional icon URL
 	Attachments []Attachment      // Optional attachments
+
+	// IdempotencyKey is an opaque identifier the sender uses for
+	// provider-side deduplication (F-6). When non-empty, HTTP-based
+	// providers (Slack, Teams, generic webhook) attach it as the
+	// Idempotency-Key header so the receiving system can reject a
+	// duplicate delivery that follows a worker crash + UnlockStale
+	// re-queue. Providers that do not support dedup can ignore it.
+	IdempotencyKey string
 }
 
 // Attachment represents a message attachment.
@@ -55,6 +63,13 @@ type Config struct {
 	ChannelID   string       // For Slack
 	APIEndpoint string       // Custom API endpoint
 	Email       *EmailConfig // For Email (SMTP)
+
+	// AllowLoopback disables the SSRF guard's private-IP block. Only
+	// set true in unit tests that target httptest.NewServer (binds to
+	// 127.0.0.1). Production tenants MUST NOT set this — WebhookURL
+	// is tenant-controlled and the guard is the sole defense against
+	// IMDS / internal-network exfil. Default zero-value is safe.
+	AllowLoopback bool
 }
 
 // Provider represents a notification provider.

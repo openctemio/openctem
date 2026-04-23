@@ -703,7 +703,11 @@ func (m *mockAuthAuditRepo) DeleteOlderThan(_ context.Context, _ time.Time) (int
 	return 0, nil
 }
 
-func (m *mockAuthAuditRepo) GetLatestByResource(_ context.Context, _ audit.ResourceType, _ string) (*audit.AuditLog, error) {
+func (m *mockAuthAuditRepo) DeleteOlderThanForTenant(_ context.Context, _ shared.ID, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockAuthAuditRepo) GetLatestByResource(_ context.Context, _ shared.ID, _ audit.ResourceType, _ string) (*audit.AuditLog, error) {
 	return nil, shared.ErrNotFound
 }
 
@@ -711,7 +715,7 @@ func (m *mockAuthAuditRepo) ListByActor(_ context.Context, _ shared.ID, _ pagina
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 
-func (m *mockAuthAuditRepo) ListByResource(_ context.Context, _ audit.ResourceType, _ string, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (m *mockAuthAuditRepo) ListByResource(_ context.Context, _ shared.ID, _ audit.ResourceType, _ string, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 
@@ -2615,3 +2619,8 @@ func TestAuthService_PasswordValidation(t *testing.T) {
 		})
 	}
 }
+
+// Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
+func (m *mockAuthAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
+func (m *mockAuthAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
+func (m *mockAuthAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }

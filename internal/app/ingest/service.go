@@ -116,6 +116,18 @@ func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	s.findingProcessor.SetFindingCreatedCallback(callback)
 }
 
+// SetPriorityClassifier sets the priority classification service (RFC-004).
+func (s *Service) SetPriorityClassifier(classifier PriorityClassifier) {
+	s.findingProcessor.SetPriorityClassifier(classifier)
+}
+
+// SetSLAApplier wires the SLA-deadline calculator used after priority
+// classification (F3 wire). Nil-safe: when not wired, findings persist
+// with NULL sla_deadline, matching pre-F3 behaviour.
+func (s *Service) SetSLAApplier(applier SLAApplier) {
+	s.findingProcessor.SetSLAApplier(applier)
+}
+
 // =============================================================================
 // Main Ingestion Methods
 // =============================================================================
@@ -143,11 +155,15 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		return nil, err
 	}
 
+	// report.Metadata.ID and SourceType come from the CTIS payload
+	// submitted by the agent. A compromised/malicious agent can
+	// embed CR/LF in those fields to forge log lines downstream
+	// (CodeQL go/log-injection). Strip control chars before logging.
 	s.logger.Info("ingesting report",
 		"agent_id", agt.ID.String(),
 		"tenant_id", tenantID.String(),
-		"report_id", report.Metadata.ID,
-		"source_type", report.Metadata.SourceType,
+		"report_id", sanitizeIngestLogField(report.Metadata.ID),
+		"source_type", sanitizeIngestLogField(report.Metadata.SourceType),
 		"assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),
 	)
