@@ -288,16 +288,18 @@ func (h *DashboardHandler) ExportExecutiveSummary(w http.ResponseWriter, r *http
 			{"regression_count", strconv.Itoa(summary.RegressionCount)},
 			{"regression_rate_pct", formatFloat(summary.RegressionRatePct)},
 		}
+		// User-controlled values (period string, asset/finding text in
+		// top_risks) flow through sanitizeCSVRow to defuse
+		// =/+/-/@/TAB/CR formula-injection payloads before Excel sees them.
 		for _, row := range rows {
-			_ = cw.Write([]string{row[0], row[1]})
+			_ = cw.Write(sanitizeCSVRow([]string{row[0], row[1]}))
 		}
-		// Emit top risks as indexed rows.
 		for i, tr := range summary.TopRisks {
 			prefix := fmt.Sprintf("top_risk_%d_", i+1)
-			_ = cw.Write([]string{prefix + "title", tr.FindingTitle})
-			_ = cw.Write([]string{prefix + "severity", tr.Severity})
-			_ = cw.Write([]string{prefix + "priority_class", tr.PriorityClass})
-			_ = cw.Write([]string{prefix + "asset_name", tr.AssetName})
+			_ = cw.Write(sanitizeCSVRow([]string{prefix + "title", tr.FindingTitle}))
+			_ = cw.Write(sanitizeCSVRow([]string{prefix + "severity", tr.Severity}))
+			_ = cw.Write(sanitizeCSVRow([]string{prefix + "priority_class", tr.PriorityClass}))
+			_ = cw.Write(sanitizeCSVRow([]string{prefix + "asset_name", tr.AssetName}))
 			epss := ""
 			if tr.EPSSScore != nil {
 				epss = formatFloat(*tr.EPSSScore)
