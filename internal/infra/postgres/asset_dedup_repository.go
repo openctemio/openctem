@@ -141,7 +141,10 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 		return fmt.Errorf("update finding count: %w", err)
 	}
 
-	// Log merges
+	// Log merges. Name subqueries are tenant-scoped as defense-in-depth:
+	// keepID/mergeID already come from a tenant-scoped review row, but
+	// filtering here prevents any future code path that forgets the join
+	// from leaking an asset name across tenants.
 	for _, mergeID := range mergeIDs {
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO asset_merge_log (
@@ -150,8 +153,8 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 				correlation_type, action, source, created_at
 			)
 			SELECT
-				$1, $2, (SELECT name FROM assets WHERE id = $2),
-				$3, (SELECT name FROM assets WHERE id = $3),
+				$1, $2, (SELECT name FROM assets WHERE id = $2 AND tenant_id = $1),
+				$3, (SELECT name FROM assets WHERE id = $3 AND tenant_id = $1),
 				'admin_review', 'merge', 'admin', NOW()
 		`, rev.TenantID, keepID, mergeID)
 		if err != nil {
@@ -244,4 +247,3 @@ func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID string,
 	}
 	return results, nil
 }
-
