@@ -1612,8 +1612,14 @@ func (h *TenantHandler) UpdateAssetSourceSettings(w http.ResponseWriter, r *http
 		return
 	}
 
+	// DisallowUnknownFields rejects payloads with typos like
+	// "trust_level" (singular) or "priorities" — without it, such
+	// mistakes would silently no-op and leave the admin confused
+	// why their settings "didn't save".
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
 	var req tenant.AssetSourceSettings
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decoder.Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}

@@ -1698,6 +1698,12 @@ func (s *TenantService) UpdateAssetSourceSettings(
 		return nil, err
 	}
 
+	// Snapshot the pre-change state so the audit event can carry a
+	// full before/after diff. Compliance frameworks that ask "who
+	// changed this setting and what specifically changed" lean on
+	// this — bare counts are not enough.
+	before := t.TypedSettings().AssetSource
+
 	if err := t.UpdateAssetSourceSettings(as); err != nil {
 		return nil, err
 	}
@@ -1713,12 +1719,26 @@ func (s *TenantService) UpdateAssetSourceSettings(
 		"track_attribution", as.TrackFieldAttribution,
 	)
 
+	// Build ordered []string of UUIDs for audit metadata. Bounded
+	// by MaxAssetSourcePriorityLen so we don't blow up the audit
+	// row on an oversize-but-accepted list.
+	toStrings := func(ids []shared.ID) []string {
+		out := make([]string, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, id.String())
+		}
+		return out
+	}
+
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantAssetSourceUpdated, audit.ResourceTypeTenant, tenantID).
 		WithMessage("Asset source priority settings updated").
-		WithMetadata("priority_count", len(as.Priority)).
-		WithMetadata("trust_levels_count", len(as.TrustLevels)).
-		WithMetadata("track_field_attribution", as.TrackFieldAttribution)
+		WithMetadata("priority_before", toStrings(before.Priority)).
+		WithMetadata("priority_after", toStrings(as.Priority)).
+		WithMetadata("trust_levels_before", before.TrustLevels).
+		WithMetadata("trust_levels_after", as.TrustLevels).
+		WithMetadata("track_field_attribution_before", before.TrackFieldAttribution).
+		WithMetadata("track_field_attribution_after", as.TrackFieldAttribution)
 	s.logAudit(ctx, actx, event)
 
 	result := t.TypedSettings()

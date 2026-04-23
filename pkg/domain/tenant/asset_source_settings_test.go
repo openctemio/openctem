@@ -176,6 +176,151 @@ func TestSettings_RoundTrip_PreservesAssetSource(t *testing.T) {
 	}
 }
 
+func TestSettingsFromMap_LegacyTenantWithoutAssetSource(t *testing.T) {
+	// Regression guard for pre-RFC-003 tenants whose stored JSONB
+	// payload has no "asset_source" key at all. SettingsFromMap
+	// must return zero-value AssetSource without panicking, and
+	// IsEnabled must stay false so these tenants see no behavior
+	// change on upgrade.
+	legacyJSON := map[string]any{
+		"general":        map[string]any{"timezone": "UTC"},
+		"security":       map[string]any{},
+		"api":            map[string]any{},
+		"branding":       map[string]any{},
+		"branch":         map[string]any{},
+		"ai":             map[string]any{},
+		"risk_scoring":   map[string]any{},
+		"pentest":        map[string]any{},
+		"asset_identity": map[string]any{},
+		// NOTE: no asset_source key — the whole point of this test
+	}
+
+	settings := SettingsFromMap(legacyJSON)
+
+	if settings.AssetSource.IsEnabled() {
+		t.Fatal("legacy tenant (no asset_source key) must not be enabled")
+	}
+	if len(settings.AssetSource.Priority) != 0 {
+		t.Errorf("expected empty priority, got %v", settings.AssetSource.Priority)
+	}
+	if len(settings.AssetSource.TrustLevels) != 0 {
+		t.Errorf("expected empty trust_levels, got %v", settings.AssetSource.TrustLevels)
+	}
+	if settings.AssetSource.TrackFieldAttribution {
+		t.Error("expected track_field_attribution=false by default")
+	}
+}
+
+func TestAssetSourceSettings_Validate_OversizeInputs(t *testing.T) {
+	// Size bounds are a DoS guard. An attacker with admin access on
+	// one tenant would otherwise be able to stuff arbitrarily large
+	// arrays into tenants.settings JSONB.
+	t.Run("priority exceeds limit", func(t *testing.T) {
+		ids := make([]shared.ID, MaxAssetSourcePriorityLen+1)
+		for i := range ids {
+			ids[i] = newID(t)
+		}
+		s := AssetSourceSettings{Priority: ids}
+		if err := s.Validate(); err == nil {
+			t.Fatal("expected validation error for oversized Priority")
+		} else if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("expected ErrValidation, got %v", err)
+		}
+	})
+
+	t.Run("trust_levels exceeds limit", func(t *testing.T) {
+		levels := make(map[string]TrustLevel, MaxAssetSourceTrustLevels+1)
+		for i := 0; i <= MaxAssetSourceTrustLevels; i++ {
+			levels[newID(t).String()] = TrustLevelMedium
+		}
+		s := AssetSourceSettings{TrustLevels: levels}
+		if err := s.Validate(); err == nil {
+			t.Fatal("expected validation error for oversized TrustLevels")
+		}
+	})
+
+	t.Run("exactly at limit is accepted", func(t *testing.T) {
+		// Boundary — MaxAssetSourcePriorityLen itself must pass.
+		ids := make([]shared.ID, MaxAssetSourcePriorityLen)
+		for i := range ids {
+			ids[i] = newID(t)
+		}
+		s := AssetSourceSettings{Priority: ids}
+		if err := s.Validate(); err != nil {
+			t.Fatalf("priority at exact limit should pass: %v", err)
+		}
+	})
+}
+
+func TestAssetSourceSettings_Validate_ErrorsDoNotEchoUUIDs(t *testing.T) {
+	// Security guard: error messages must not contain the offending
+	// UUID — otherwise an attacker who submits probed UUIDs can
+	// differentiate "format invalid" from "other tenant's UUID" via
+	// response substrings. We accept that the caller already knows
+	// what they submitted; but we don't want regex-style probes to
+	// distinguish errors by the value echoed back.
+	secretLookingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	dup := newID(t)
+
+	cases := []struct {
+		name string
+		s    AssetSourceSettings
+	}{
+		{"duplicate priority", AssetSourceSettings{Priority: []shared.ID{dup, dup}}},
+		{"malformed key", AssetSourceSettings{
+			TrustLevels: map[string]TrustLevel{"xxx-not-a-uuid": TrustLevelMedium},
+		}},
+		{"secret-looking UUID in trust_levels key (valid format, unknown level)", AssetSourceSettings{
+			TrustLevels: map[string]TrustLevel{secretLookingUUID: "bogus-level"},
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.s.Validate()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			msg := err.Error()
+			// None of our error strings may contain a raw UUID
+			// fragment. Check the obvious ones.
+			if containsUUIDLike(msg) {
+				t.Errorf("error message leaks user-supplied UUID: %q", msg)
+			}
+		})
+	}
+}
+
+// containsUUIDLike is a best-effort check: looks for the 8-4-4-4-12
+// hyphen shape that shared.ID.String() produces. Not a full UUID
+// regex — we just want to catch casual echoes.
+func containsUUIDLike(s string) bool {
+	// Dashes in the right places indicate an echoed UUID.
+	for i := 0; i < len(s)-36; i++ {
+		if s[i+8] == '-' && s[i+13] == '-' && s[i+18] == '-' && s[i+23] == '-' {
+			// Verify surrounding is hex-ish.
+			isHex := func(b byte) bool {
+				return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
+			}
+			allHex := true
+			for j := range 36 {
+				b := s[i+j]
+				if j == 8 || j == 13 || j == 18 || j == 23 {
+					continue
+				}
+				if !isHex(b) {
+					allHex = false
+					break
+				}
+			}
+			if allHex {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestTenant_UpdateAssetSourceSettings(t *testing.T) {
 	// Builds a minimal tenant and verifies that UpdateAssetSourceSettings
 	// persists into TypedSettings().

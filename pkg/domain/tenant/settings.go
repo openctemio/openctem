@@ -62,6 +62,16 @@ func (s AssetIdentitySettings) EffectiveMaxIPsPerAsset(systemDefault int) int {
 	return systemDefault
 }
 
+// Upper bounds on AssetSourceSettings collections. Chosen to be
+// comfortably above any realistic tenant size (a tenant with 500+
+// data sources is operating at a scale none of our customers hit
+// today) while keeping JSON payloads bounded for DoS protection.
+// Exceeded values return shared.ErrValidation.
+const (
+	MaxAssetSourcePriorityLen = 500
+	MaxAssetSourceTrustLevels = 500
+)
+
 // AssetSourceSettings controls how conflicting data from multiple
 // sources is reconciled when merging into the same asset. See
 // RFC-003 (docs/architecture/asset-source-priority.md).
@@ -123,22 +133,45 @@ func (s AssetSourceSettings) TrustLevelFor(sourceID shared.ID) TrustLevel {
 // Validate checks the settings payload for structural errors. Domain
 // validation (UUIDs must exist + belong to the tenant) happens at
 // the service layer where we can look up data_sources.
+//
+// Error messages intentionally do NOT echo offending UUIDs back to
+// the caller. A request that submits attacker-controlled UUIDs
+// (e.g. probing other tenants) would otherwise receive a response
+// that distinguishes "bad UUID format" from "unrelated UUID", and
+// the caller already knows what they submitted. Service layer logs
+// specifics at debug level for operator forensics.
 func (s *AssetSourceSettings) Validate() error {
+	// Reject oversize inputs — cheap DoS guard. Priority de-dup
+	// check below is O(n) in a map, so the main cost here is JSONB
+	// storage bloat on tenants.settings.
+	if len(s.Priority) > MaxAssetSourcePriorityLen {
+		return fmt.Errorf(
+			"%w: asset_source.priority exceeds maximum of %d entries",
+			shared.ErrValidation, MaxAssetSourcePriorityLen,
+		)
+	}
+	if len(s.TrustLevels) > MaxAssetSourceTrustLevels {
+		return fmt.Errorf(
+			"%w: asset_source.trust_levels exceeds maximum of %d entries",
+			shared.ErrValidation, MaxAssetSourceTrustLevels,
+		)
+	}
+
 	// Reject duplicate IDs in Priority — they would make the
 	// ordering ambiguous and waste storage.
 	seen := make(map[string]struct{}, len(s.Priority))
 	for _, id := range s.Priority {
 		if id.IsZero() {
 			return fmt.Errorf(
-				"%w: asset_source.priority contains empty UUID",
+				"%w: asset_source.priority contains an empty UUID",
 				shared.ErrValidation,
 			)
 		}
 		key := id.String()
 		if _, dup := seen[key]; dup {
 			return fmt.Errorf(
-				"%w: asset_source.priority contains duplicate %s",
-				shared.ErrValidation, key,
+				"%w: asset_source.priority contains a duplicate entry",
+				shared.ErrValidation,
 			)
 		}
 		seen[key] = struct{}{}
@@ -150,24 +183,26 @@ func (s *AssetSourceSettings) Validate() error {
 	for key, level := range s.TrustLevels {
 		if key == "" {
 			return fmt.Errorf(
-				"%w: asset_source.trust_levels has empty source ID key",
+				"%w: asset_source.trust_levels has an empty source ID key",
 				shared.ErrValidation,
 			)
 		}
 		if _, err := shared.IDFromString(key); err != nil {
 			return fmt.Errorf(
-				"%w: asset_source.trust_levels key %q is not a valid UUID",
-				shared.ErrValidation, key,
+				"%w: asset_source.trust_levels contains a malformed UUID key",
+				shared.ErrValidation,
 			)
-		}
-		if err := level.Validate(); err != nil {
-			return fmt.Errorf("asset_source.trust_levels[%s]: %w", key, err)
 		}
 		if level == "" {
 			return fmt.Errorf(
-				"%w: asset_source.trust_levels[%s] cannot be empty — remove the entry instead",
-				shared.ErrValidation, key,
+				"%w: asset_source.trust_levels entries must carry a non-empty level (remove instead of setting empty)",
+				shared.ErrValidation,
 			)
+		}
+		if err := level.Validate(); err != nil {
+			// TrustLevel.Validate already returns a non-echoing
+			// message; wrap without adding the UUID key.
+			return fmt.Errorf("asset_source.trust_levels: %w", err)
 		}
 	}
 	return nil
