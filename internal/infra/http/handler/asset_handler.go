@@ -4,16 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/scm"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/asset"
+	auditdom "github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -24,6 +28,8 @@ type AssetHandler struct {
 	service            *app.AssetService
 	integrationService *app.IntegrationService
 	accessControlRepo  accesscontrol.Repository
+	auditService       *auditapp.AuditService
+	snoozeRateLimiter  *snoozeRateLimiter
 	validator          *validator.Validator
 	logger             *logger.Logger
 }
@@ -31,9 +37,10 @@ type AssetHandler struct {
 // NewAssetHandler creates a new asset handler.
 func NewAssetHandler(svc *app.AssetService, v *validator.Validator, log *logger.Logger) *AssetHandler {
 	return &AssetHandler{
-		service:   svc,
-		validator: v,
-		logger:    log,
+		service:           svc,
+		validator:         v,
+		logger:            log,
+		snoozeRateLimiter: newSnoozeRateLimiter(),
 	}
 }
 
@@ -45,6 +52,105 @@ func (h *AssetHandler) SetAccessControlRepo(repo accesscontrol.Repository) {
 // SetIntegrationService sets the integration service for sync operations.
 func (h *AssetHandler) SetIntegrationService(svc *app.IntegrationService) {
 	h.integrationService = svc
+}
+
+// SetAuditService wires the audit logger. When set, snooze/unsnooze
+// actions emit non-repudiable audit events so operators cannot silently
+// hide stale assets from lifecycle sweeps. When nil, the handler
+// behaves identically minus the audit — tests and stub builds do not
+// need to provide one.
+func (h *AssetHandler) SetAuditService(svc *auditapp.AuditService) {
+	h.auditService = svc
+}
+
+// snoozeRateLimiter throttles lifecycle-snooze actions per tenant.
+// Attack shape: a compromised operator token could snooze every asset
+// in a single loop, hiding the entire estate from the stale-detection
+// worker. 60/min keeps room for legitimate bulk operators (UI
+// multi-select) without allowing a full-estate sweep.
+type snoozeRateLimiter struct {
+	mu       sync.Mutex
+	requests map[string][]time.Time
+	limit    int
+	window   time.Duration
+}
+
+func newSnoozeRateLimiter() *snoozeRateLimiter {
+	rl := &snoozeRateLimiter{
+		requests: make(map[string][]time.Time),
+		limit:    60,
+		window:   time.Minute,
+	}
+	go rl.cleanup()
+	return rl
+}
+
+func (rl *snoozeRateLimiter) allow(tenantID string) (bool, time.Duration) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-rl.window)
+
+	recent := rl.requests[tenantID][:0:0]
+	for _, t := range rl.requests[tenantID] {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+	if len(recent) >= rl.limit {
+		retry := recent[0].Add(rl.window).Sub(now)
+		if retry < time.Second {
+			retry = time.Second
+		}
+		rl.requests[tenantID] = recent
+		return false, retry
+	}
+	rl.requests[tenantID] = append(recent, now)
+	return true, 0
+}
+
+func (rl *snoozeRateLimiter) cleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		rl.mu.Lock()
+		cutoff := time.Now().Add(-rl.window)
+		for k, times := range rl.requests {
+			kept := times[:0]
+			for _, t := range times {
+				if t.After(cutoff) {
+					kept = append(kept, t)
+				}
+			}
+			if len(kept) == 0 {
+				delete(rl.requests, k)
+			} else {
+				rl.requests[k] = kept
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+// buildAuditContext extracts audit context from the authenticated
+// request. Mirrors AgentHandler's helper — kept local so the audit
+// dependency is opt-in per handler.
+func (h *AssetHandler) buildAuditContext(r *http.Request) auditapp.AuditContext {
+	clientIP := r.RemoteAddr
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		clientIP = xff
+	} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		clientIP = xri
+	}
+	return auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: middleware.GetUsername(r.Context()),
+		ActorIP:    clientIP,
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
 }
 
 // SnoozeLifecycleRequest is the body for POST /assets/{id}/lifecycle/snooze.
@@ -77,6 +183,12 @@ func (h *AssetHandler) SnoozeAssetLifecycle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if allowed, retry := h.snoozeRateLimiter.allow(tenantID.String()); !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())))
+		apierror.TooManyRequests("snooze rate limit exceeded").WriteJSON(w)
+		return
+	}
+
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	var req SnoozeLifecycleRequest
@@ -93,6 +205,15 @@ func (h *AssetHandler) SnoozeAssetLifecycle(w http.ResponseWriter, r *http.Reque
 	if err := h.service.SnoozeLifecycle(r.Context(), tenantID.String(), assetID, duration, req.Reactivate); err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+
+	if h.auditService != nil {
+		event := auditapp.NewSuccessEvent(auditdom.ActionAssetLifecycleSnoozed, auditdom.ResourceTypeAsset, assetID).
+			WithMessage(fmt.Sprintf("Lifecycle snoozed for %d day(s)", req.Days)).
+			WithMetadata("days", req.Days).
+			WithMetadata("reactivate", req.Reactivate).
+			WithSeverity(auditdom.SeverityLow)
+		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -115,12 +236,26 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	if allowed, retry := h.snoozeRateLimiter.allow(tenantID.String()); !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())))
+		apierror.TooManyRequests("snooze rate limit exceeded").WriteJSON(w)
+		return
+	}
+
 	// Duration 0 clears the snooze; reactivate is ignored in that
 	// path (documented on the service method).
 	if err := h.service.SnoozeLifecycle(r.Context(), tenantID.String(), assetID, 0, false); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+
+	if h.auditService != nil {
+		event := auditapp.NewSuccessEvent(auditdom.ActionAssetLifecycleUnsnoozed, auditdom.ResourceTypeAsset, assetID).
+			WithMessage("Lifecycle snooze cleared").
+			WithSeverity(auditdom.SeverityLow)
+		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
