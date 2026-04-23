@@ -46,9 +46,10 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 			discovery_source, discovery_tool, discovered_at,
 			compliance_scope, data_classification, pii_data_exposed, phi_data_exposed, regulatory_owner_id,
 			is_internet_accessible, exposure_changed_at, last_exposure_level,
-			first_seen, last_seen, created_at, updated_at
+			first_seen, last_seen, created_at, updated_at,
+			lifecycle_paused_until, manual_status_override
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
 	`
 
 	ownerRefVal := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -90,6 +91,8 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 		a.LastSeen(),
 		a.CreatedAt(),
 		a.UpdatedAt(),
+		nullTime(a.LifecyclePausedUntil()),
+		a.ManualStatusOverride(),
 	)
 
 	if err != nil {
@@ -375,7 +378,8 @@ func (r *AssetRepository) selectQuery() string {
 			   a.discovery_source, a.discovery_tool, a.discovered_at,
 			   a.compliance_scope, a.data_classification, a.pii_data_exposed, a.phi_data_exposed, a.regulatory_owner_id,
 			   a.is_internet_accessible, a.exposure_changed_at, a.last_exposure_level,
-			   a.first_seen, a.last_seen, a.created_at, a.updated_at
+			   a.first_seen, a.last_seen, a.created_at, a.updated_at,
+			   a.lifecycle_paused_until, a.manual_status_override
 		FROM assets a
 		LEFT JOIN (
 			SELECT asset_id,
@@ -408,7 +412,8 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		    discovery_source = $22, discovery_tool = $23, discovered_at = $24,
 		    compliance_scope = $25, data_classification = $26, pii_data_exposed = $27, phi_data_exposed = $28, regulatory_owner_id = $29,
 		    is_internet_accessible = $30, exposure_changed_at = $31, last_exposure_level = $32,
-		    last_seen = $33, updated_at = $34
+		    last_seen = $33, updated_at = $34,
+		    lifecycle_paused_until = $36, manual_status_override = $37
 		WHERE id = $1 AND tenant_id = $35
 	`
 
@@ -449,6 +454,8 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		a.LastSeen(),
 		a.UpdatedAt(),
 		a.TenantID().String(),
+		nullTime(a.LifecyclePausedUntil()),
+		a.ManualStatusOverride(),
 	)
 
 	if err != nil {
@@ -696,6 +703,10 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		lastSeen  time.Time
 		createdAt time.Time
 		updatedAt time.Time
+		// Lifecycle columns (migration 000165). Null lifecycle_paused_until
+		// is the common case — most assets have never been snoozed.
+		lifecyclePausedUntil sql.NullTime
+		manualStatusOverride bool
 	)
 
 	err := scan(
@@ -708,6 +719,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		&complianceScope, &dataClassification, &piiDataExposed, &phiDataExposed, &regulatoryOwnerIDStr,
 		&isInternetAccessible, &exposureChangedAt, &lastExposureLevel,
 		&firstSeen, &lastSeen, &createdAt, &updatedAt,
+		&lifecyclePausedUntil, &manualStatusOverride,
 	)
 	if err != nil {
 		return nil, err
@@ -722,6 +734,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		complianceScope, dataClassification, piiDataExposed, phiDataExposed, regulatoryOwnerIDStr,
 		isInternetAccessible, exposureChangedAt, lastExposureLevel,
 		firstSeen, lastSeen, createdAt, updatedAt,
+		lifecyclePausedUntil, manualStatusOverride,
 	)
 	if err != nil {
 		return nil, err
@@ -764,6 +777,9 @@ func (r *AssetRepository) reconstructAsset(
 	lastExposureLevelStr sql.NullString,
 	// Timestamps
 	firstSeen, lastSeen, createdAt, updatedAt time.Time,
+	// Lifecycle (migration 000165)
+	lifecyclePausedUntil sql.NullTime,
+	manualStatusOverride bool,
 ) (*asset.Asset, error) {
 	parsedID, err := shared.IDFromString(idStr)
 	if err != nil {
@@ -880,6 +896,15 @@ func (r *AssetRepository) reconstructAsset(
 	if subTypeStr != "" {
 		result.SetSubType(subTypeStr)
 	}
+
+	// Restore lifecycle state via setter to avoid extending the
+	// Reconstitute signature. Common case is both zero-valued, so
+	// this is a no-op cost.
+	var pausedUntil *time.Time
+	if lifecyclePausedUntil.Valid {
+		pausedUntil = &lifecyclePausedUntil.Time
+	}
+	result.RestoreLifecycleState(pausedUntil, manualStatusOverride)
 
 	return result, nil
 }

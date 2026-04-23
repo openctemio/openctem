@@ -126,27 +126,27 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
-	ID           string              `json:"id"`
-	TenantID     string              `json:"tenant_id,omitempty"`
-	ParentID     string              `json:"parent_id,omitempty"`
-	OwnerRef     string              `json:"owner_ref,omitempty"`
-	Name         string              `json:"name"`
-	Type         string              `json:"type"`
-	SubType      string              `json:"sub_type,omitempty"`
-	Category     string              `json:"category"`
-	Provider     string              `json:"provider,omitempty"`
-	ExternalID   string              `json:"external_id,omitempty"`
-	Criticality  string              `json:"criticality"`
-	Status       string              `json:"status"`
-	Scope        string              `json:"scope"`
-	Exposure     string              `json:"exposure"`
+	ID                    string                   `json:"id"`
+	TenantID              string                   `json:"tenant_id,omitempty"`
+	ParentID              string                   `json:"parent_id,omitempty"`
+	OwnerRef              string                   `json:"owner_ref,omitempty"`
+	Name                  string                   `json:"name"`
+	Type                  string                   `json:"type"`
+	SubType               string                   `json:"sub_type,omitempty"`
+	Category              string                   `json:"category"`
+	Provider              string                   `json:"provider,omitempty"`
+	ExternalID            string                   `json:"external_id,omitempty"`
+	Criticality           string                   `json:"criticality"`
+	Status                string                   `json:"status"`
+	Scope                 string                   `json:"scope"`
+	Exposure              string                   `json:"exposure"`
 	RiskScore             int                      `json:"risk_score"`
 	FindingCount          int                      `json:"finding_count"`
-	FindingSeverityCounts *FindingSeverityResponse  `json:"finding_severity_counts,omitempty"`
+	FindingSeverityCounts *FindingSeverityResponse `json:"finding_severity_counts,omitempty"`
 	Description           string                   `json:"description,omitempty"`
-	Tags         []string            `json:"tags,omitempty"`
-	Properties   map[string]any      `json:"properties,omitempty"`
-	PrimaryOwner *OwnerBriefResponse `json:"primary_owner,omitempty"`
+	Tags                  []string                 `json:"tags,omitempty"`
+	Properties            map[string]any           `json:"properties,omitempty"`
+	PrimaryOwner          *OwnerBriefResponse      `json:"primary_owner,omitempty"`
 
 	// Discovery
 	DiscoverySource string     `json:"discovery_source,omitempty"`
@@ -154,21 +154,28 @@ type AssetResponse struct {
 	DiscoveredAt    *time.Time `json:"discovered_at,omitempty"`
 
 	// CTEM
-	ComplianceScope     []string `json:"compliance_scope,omitempty"`
-	DataClassification  string   `json:"data_classification,omitempty"`
-	PIIDataExposed      bool     `json:"pii_data_exposed"`
-	PHIDataExposed      bool     `json:"phi_data_exposed"`
-	IsInternetAccessible bool    `json:"is_internet_accessible"`
+	ComplianceScope      []string `json:"compliance_scope,omitempty"`
+	DataClassification   string   `json:"data_classification,omitempty"`
+	PIIDataExposed       bool     `json:"pii_data_exposed"`
+	PHIDataExposed       bool     `json:"phi_data_exposed"`
+	IsInternetAccessible bool     `json:"is_internet_accessible"`
 
 	// Sync
 	SyncStatus   string     `json:"sync_status,omitempty"`
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 
 	// Timestamps
-	FirstSeen    time.Time           `json:"first_seen"`
-	LastSeen     time.Time           `json:"last_seen"`
-	CreatedAt    time.Time           `json:"created_at"`
-	UpdatedAt    time.Time           `json:"updated_at"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// Lifecycle state. Null LifecyclePausedUntil is the common case
+	// (most assets have never been snoozed). ManualStatusOverride =
+	// true tells the UI that the status was set by an operator and
+	// the background worker is not allowed to change it.
+	LifecyclePausedUntil *time.Time `json:"lifecycle_paused_until,omitempty"`
+	ManualStatusOverride bool       `json:"manual_status_override"`
 }
 
 // FindingSeverityResponse represents finding counts by severity level.
@@ -264,10 +271,14 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		LastSyncedAt: a.LastSyncedAt(),
 
 		// Timestamps
-		FirstSeen:    a.FirstSeen(),
-		LastSeen:     a.LastSeen(),
-		CreatedAt:    a.CreatedAt(),
-		UpdatedAt:    a.UpdatedAt(),
+		FirstSeen: a.FirstSeen(),
+		LastSeen:  a.LastSeen(),
+		CreatedAt: a.CreatedAt(),
+		UpdatedAt: a.UpdatedAt(),
+
+		// Lifecycle
+		LifecyclePausedUntil: a.LifecyclePausedUntil(),
+		ManualStatusOverride: a.ManualStatusOverride(),
 	}
 
 	// Include finding severity breakdown if available
@@ -384,26 +395,26 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
 	input := app.ListAssetsInput{
-		TenantID:      tenantID,
-		Name:          query.Get("name"),
-		Types:         parseQueryArray(query.Get("types")),
-		Criticalities: parseQueryArray(query.Get("criticalities")),
-		Statuses:      parseQueryArray(query.Get("statuses")),
-		Scopes:        parseQueryArray(query.Get("scopes")),
-		Exposures:     parseQueryArray(query.Get("exposures")),
-		Tags:          parseQueryArray(query.Get("tags")),
-		Search:        query.Get("search"),
-		MinRiskScore:  parseQueryIntPtr(query.Get("min_risk_score")),
-		MaxRiskScore:  parseQueryIntPtr(query.Get("max_risk_score")),
-		HasFindings:   parseQueryBoolPtr(query.Get("has_findings")),
-		IsCrownJewel:  parseQueryBoolPtr(query.Get("is_crown_jewel")),
+		TenantID:         tenantID,
+		Name:             query.Get("name"),
+		Types:            parseQueryArray(query.Get("types")),
+		Criticalities:    parseQueryArray(query.Get("criticalities")),
+		Statuses:         parseQueryArray(query.Get("statuses")),
+		Scopes:           parseQueryArray(query.Get("scopes")),
+		Exposures:        parseQueryArray(query.Get("exposures")),
+		Tags:             parseQueryArray(query.Get("tags")),
+		Search:           query.Get("search"),
+		MinRiskScore:     parseQueryIntPtr(query.Get("min_risk_score")),
+		MaxRiskScore:     parseQueryIntPtr(query.Get("max_risk_score")),
+		HasFindings:      parseQueryBoolPtr(query.Get("has_findings")),
+		IsCrownJewel:     parseQueryBoolPtr(query.Get("is_crown_jewel")),
 		SubType:          nilIfEmpty(query.Get("sub_type")),
 		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
 		Sort:             query.Get("sort"),
-		Page:          parseQueryInt(query.Get("page"), 1),
-		PerPage:       parseQueryInt(query.Get("per_page"), 20),
-		ActingUserID:  middleware.GetUserID(r.Context()),
-		IsAdmin:       middleware.IsAdmin(r.Context()),
+		Page:             parseQueryInt(query.Get("page"), 1),
+		PerPage:          parseQueryInt(query.Get("per_page"), 20),
+		ActingUserID:     middleware.GetUserID(r.Context()),
+		IsAdmin:          middleware.IsAdmin(r.Context()),
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -1225,16 +1236,16 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 
 // AssetStatsResponse represents asset statistics in API responses.
 type AssetStatsResponse struct {
-	Total         int            `json:"total"`
-	ByType        map[string]int `json:"by_type"`
-	BySubType     map[string]int `json:"by_sub_type"`
-	ByStatus      map[string]int `json:"by_status"`
-	ByCriticality map[string]int `json:"by_criticality"`
-	ByScope       map[string]int `json:"by_scope"`
-	ByExposure    map[string]int `json:"by_exposure"`
-	WithFindings  int            `json:"with_findings"`
-	RiskScoreAvg  float64        `json:"risk_score_avg"`
-	FindingsTotal int            `json:"findings_total"`
+	Total          int                       `json:"total"`
+	ByType         map[string]int            `json:"by_type"`
+	BySubType      map[string]int            `json:"by_sub_type"`
+	ByStatus       map[string]int            `json:"by_status"`
+	ByCriticality  map[string]int            `json:"by_criticality"`
+	ByScope        map[string]int            `json:"by_scope"`
+	ByExposure     map[string]int            `json:"by_exposure"`
+	WithFindings   int                       `json:"with_findings"`
+	RiskScoreAvg   float64                   `json:"risk_score_avg"`
+	FindingsTotal  int                       `json:"findings_total"`
 	HighRiskCount  int                       `json:"high_risk_count"`
 	MetadataCounts map[string]map[string]int `json:"metadata_counts,omitempty"`
 }
