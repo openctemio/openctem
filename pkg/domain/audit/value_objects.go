@@ -17,14 +17,24 @@ const (
 	ActionUserLogout      Action = "user.logout"
 
 	// Tenant actions
-	ActionTenantCreated         Action = "tenant.created"
-	ActionTenantUpdated         Action = "tenant.updated"
-	ActionTenantDeleted         Action = "tenant.deleted"
-	ActionTenantSettingsUpdated      Action = "tenant.settings_updated"
-	ActionTenantModulesUpdated      Action = "tenant.modules_updated"
-	ActionTenantRiskScoringUpdated  Action = "tenant.risk_scoring_updated"
+	ActionTenantCreated                Action = "tenant.created"
+	ActionTenantUpdated                Action = "tenant.updated"
+	ActionTenantDeleted                Action = "tenant.deleted"
+	ActionTenantSettingsUpdated        Action = "tenant.settings_updated"
+	ActionTenantModulesUpdated         Action = "tenant.modules_updated"
+	ActionTenantRiskScoringUpdated     Action = "tenant.risk_scoring_updated"
 	ActionTenantRiskScoresRecalculated Action = "tenant.risk_scores_recalculated"
-	ActionTenantAssetSourceUpdated  Action = "tenant.asset_source_updated"
+	ActionTenantAssetSourceUpdated     Action = "tenant.asset_source_updated"
+	ActionTenantAssetLifecycleUpdated  Action = "tenant.asset_lifecycle_updated"
+
+	// Asset lifecycle transitions. Emitted per batch run (worker)
+	// rather than per asset so the audit log stays scannable.
+	// Metadata carries counts + bounded lists of affected asset IDs.
+	ActionAssetLifecycleRun       Action = "asset.lifecycle_run"
+	ActionAssetMarkedStale        Action = "asset.marked_stale"
+	ActionAssetReactivated        Action = "asset.reactivated"
+	ActionAssetLifecycleSnoozed   Action = "asset.lifecycle_snoozed"
+	ActionAssetLifecycleUnsnoozed Action = "asset.lifecycle_unsnoozed"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -226,8 +236,8 @@ const (
 	ActionAITriageBulk            Action = "ai_triage.bulk_requested"
 	ActionAITriageRateLimit       Action = "ai_triage.rate_limited"
 	ActionAITriageTokenLimit      Action = "ai_triage.token_limit_exceeded"
-	ActionAITriageNeedsReview     Action = "ai_triage.needs_review"      // validator flagged output
-	ActionAITriageBudgetExhausted Action = "ai_triage.budget_exhausted"  // tenant hit monthly token ceiling
+	ActionAITriageNeedsReview     Action = "ai_triage.needs_review"     // validator flagged output
+	ActionAITriageBudgetExhausted Action = "ai_triage.budget_exhausted" // tenant hit monthly token ceiling
 )
 
 // String returns the string representation of the action.
@@ -243,6 +253,9 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
+		ActionTenantAssetLifecycleUpdated,
+		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
@@ -485,6 +498,9 @@ func SeverityForAction(a Action) Severity {
 	case ActionUserCreated, ActionUserActivated,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
+		ActionTenantAssetLifecycleUpdated,
+		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
+		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,

@@ -370,7 +370,14 @@ func ParseCriticality(s string) (Criticality, error) {
 type Status string
 
 const (
-	StatusActive   Status = "active"
+	StatusActive Status = "active"
+	// StatusStale marks an asset that has not been re-observed by any
+	// scanner/integration within the tenant's lifecycle threshold but
+	// is not yet demoted to inactive. Operators see a UI warning and
+	// the asset still appears in default lists. Findings on a stale
+	// asset keep running their SLAs — the exposure may still exist in
+	// the real world. Set by the lifecycle background worker.
+	StatusStale    Status = "stale"
 	StatusInactive Status = "inactive"
 	StatusArchived Status = "archived"
 )
@@ -379,6 +386,7 @@ const (
 func AllStatuses() []Status {
 	return []Status{
 		StatusActive,
+		StatusStale,
 		StatusInactive,
 		StatusArchived,
 	}

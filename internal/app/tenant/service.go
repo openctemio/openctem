@@ -1745,6 +1745,109 @@ func (s *TenantService) UpdateAssetSourceSettings(
 	return &result, nil
 }
 
+// UpdateAssetLifecycleSettings updates only the asset-lifecycle
+// settings. The first-time-enable rule ("must run dry-run first")
+// lives in the domain validator; this service layer is where we
+// stamp DryRunCompletedAt after a successful preview run.
+//
+// Accepts the settings as-submitted and lets
+// Tenant.UpdateAssetLifecycleSettings apply the validator before
+// persisting. Emits a full before/after audit entry so operators
+// have a paper trail when lifecycle config changes.
+func (s *TenantService) UpdateAssetLifecycleSettings(
+	ctx context.Context,
+	tenantID string,
+	al tenantdom.AssetLifecycleSettings,
+	actx auditapp.AuditContext,
+) (*tenantdom.Settings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+
+	before := t.TypedSettings().AssetLifecycle
+
+	if err := t.UpdateAssetLifecycleSettings(al); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, t); err != nil {
+		return nil, fmt.Errorf("failed to update asset lifecycle settings: %w", err)
+	}
+
+	s.logger.Info("asset lifecycle settings updated",
+		"tenant_id", tenantID,
+		"enabled", al.Enabled,
+		"stale_threshold_days", al.EffectiveStaleThresholdDays(),
+	)
+
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantAssetLifecycleUpdated, audit.ResourceTypeTenant, tenantID).
+		WithMessage("Asset lifecycle settings updated").
+		WithMetadata("enabled_before", before.Enabled).
+		WithMetadata("enabled_after", al.Enabled).
+		WithMetadata("stale_threshold_days_before", before.StaleThresholdDays).
+		WithMetadata("stale_threshold_days_after", al.StaleThresholdDays).
+		WithMetadata("grace_period_days_before", before.GracePeriodDays).
+		WithMetadata("grace_period_days_after", al.GracePeriodDays).
+		WithMetadata("excluded_source_types_before", before.ExcludedSourceTypes).
+		WithMetadata("excluded_source_types_after", al.ExcludedSourceTypes)
+	s.logAudit(ctx, actx, event)
+
+	result := t.TypedSettings()
+	return &result, nil
+}
+
+// GetAssetLifecycleSettings returns the tenant's current lifecycle
+// settings. An empty (zero-value) payload means the feature has
+// never been configured — the UI shows defaults.
+func (s *TenantService) GetAssetLifecycleSettings(
+	ctx context.Context,
+	tenantID string,
+) (*tenantdom.AssetLifecycleSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	settings := t.TypedSettings()
+	al := settings.AssetLifecycle
+	return &al, nil
+}
+
+// StampAssetLifecycleDryRunCompleted records that the tenant just
+// successfully executed a dry-run, unlocking the ability to toggle
+// Enabled=true on the next PUT. Separate from the settings update
+// so the API handler can stamp after the worker confirms success
+// without the caller having to submit a special payload.
+func (s *TenantService) StampAssetLifecycleDryRunCompleted(
+	ctx context.Context,
+	tenantID string,
+) error {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+	settings := t.TypedSettings()
+	now := time.Now().UTC().Unix()
+	settings.AssetLifecycle.DryRunCompletedAt = &now
+	if err := t.UpdateSettings(settings); err != nil {
+		return err
+	}
+	return s.repo.Update(ctx, t)
+}
+
 // GetAssetSourceSettings returns the current asset-source settings
 // for a tenant. Zero-value (empty priority + no trust levels) means
 // the feature is not enabled; ingest will fall back to today's

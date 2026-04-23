@@ -34,8 +34,8 @@ type Asset struct {
 	findingCount          int
 	findingSeverityCounts *FindingSeverityCounts
 	description           string
-	tags       []string
-	properties map[string]any // All asset properties (merged metadata + properties)
+	tags                  []string
+	properties            map[string]any // All asset properties (merged metadata + properties)
 
 	// External provider info
 	provider       Provider
@@ -68,6 +68,20 @@ type Asset struct {
 	lastSeen  time.Time
 	createdAt time.Time
 	updatedAt time.Time
+
+	// lifecyclePausedUntil freezes the background lifecycle worker
+	// from transitioning this asset's status until the given time.
+	// Set by operator action (Snooze) or auto-set after a manual
+	// reactivation to avoid the flap where the worker instantly
+	// re-flags a reactivated asset.
+	//
+	// manualStatusOverride = true means an operator has taken
+	// explicit control of the status; the lifecycle worker never
+	// writes to status on this asset. Used when ops wants to keep an
+	// asset marked active for a reason the automation cannot know
+	// (e.g. "known to be offline for rack migration this month").
+	lifecyclePausedUntil *time.Time
+	manualStatusOverride bool
 }
 
 // NewAsset creates a new Asset entity.
@@ -95,8 +109,8 @@ func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset
 		exposure:     ExposureUnknown,
 		riskScore:    0,
 		findingCount: 0,
-		tags:       make([]string, 0),
-		properties: make(map[string]any),
+		tags:         make([]string, 0),
+		properties:   make(map[string]any),
 		syncStatus:   SyncStatusSynced,
 		firstSeen:    now,
 		lastSeen:     now,
@@ -177,8 +191,8 @@ func Reconstitute(
 		riskScore:       riskScore,
 		findingCount:    findingCount,
 		description:     description,
-		tags:       tags,
-		properties: properties,
+		tags:            tags,
+		properties:      properties,
 		provider:        provider,
 		externalID:      externalID,
 		classification:  classification,
@@ -193,8 +207,8 @@ func Reconstitute(
 		dataClassification:   dataClassification,
 		piiDataExposed:       piiDataExposed,
 		phiDataExposed:       phiDataExposed,
-		regulatoryOwnerID:     regulatoryOwnerID,
-		isInternetAccessible:  isInternetAccessible,
+		regulatoryOwnerID:    regulatoryOwnerID,
+		isInternetAccessible: isInternetAccessible,
 		exposureChangedAt:    exposureChangedAt,
 		lastExposureLevel:    lastExposureLevel,
 		// Timestamps
@@ -435,10 +449,95 @@ func (a *Asset) DecrementFindingCount() {
 	}
 }
 
-// MarkSeen updates the last seen timestamp.
+// MarkSeen updates the last-seen timestamp. When the asset had been
+// demoted to stale or inactive by the lifecycle worker, MarkSeen also
+// transitions it back to active — unless the operator has taken
+// manual control of the status (manualStatusOverride=true) or the
+// asset has been archived (archived is a manual terminal state).
+//
+// The grace pause (lifecyclePausedUntil) is cleared on reactivation:
+// a fresh sighting is the strongest signal the asset is really here,
+// so whatever snooze the operator set becomes moot.
+//
+// Always uses server-side time — callers cannot spoof last-seen by
+// sending a future timestamp. This defends against clock-skewed
+// agents that would otherwise make an asset "never stale".
 func (a *Asset) MarkSeen() {
-	a.lastSeen = time.Now().UTC()
+	now := time.Now().UTC()
+	a.lastSeen = now
+	a.updatedAt = now
+
+	if a.manualStatusOverride || a.status == StatusArchived {
+		return
+	}
+	if a.status == StatusStale || a.status == StatusInactive {
+		a.status = StatusActive
+		a.lifecyclePausedUntil = nil
+	}
+}
+
+// MarkStale is called by the lifecycle worker to flag an asset that
+// has not been re-observed within the tenant's threshold. Safe to
+// call repeatedly — returns false if the status did not change.
+func (a *Asset) MarkStale() bool {
+	if a.manualStatusOverride {
+		return false
+	}
+	if a.status != StatusActive {
+		return false
+	}
+	a.status = StatusStale
 	a.updatedAt = time.Now().UTC()
+	return true
+}
+
+// SnoozeLifecycle pauses lifecycle transitions for the given
+// duration. Use case: operator manually reactivated a false-stale
+// asset and wants a breathing room so the next worker run does not
+// immediately re-demote it. Duration <= 0 clears any existing snooze.
+func (a *Asset) SnoozeLifecycle(d time.Duration) {
+	if d <= 0 {
+		a.lifecyclePausedUntil = nil
+	} else {
+		pausedUntil := time.Now().UTC().Add(d)
+		a.lifecyclePausedUntil = &pausedUntil
+	}
+	a.updatedAt = time.Now().UTC()
+}
+
+// IsLifecyclePaused reports whether the asset is currently protected
+// from worker transitions by an operator snooze.
+func (a *Asset) IsLifecyclePaused(now time.Time) bool {
+	return a.lifecyclePausedUntil != nil && a.lifecyclePausedUntil.After(now)
+}
+
+// LifecyclePausedUntil exposes the snooze expiry for persistence and
+// UI display. Returns nil if no snooze is active.
+func (a *Asset) LifecyclePausedUntil() *time.Time {
+	return a.lifecyclePausedUntil
+}
+
+// SetManualStatusOverride toggles whether the lifecycle worker is
+// allowed to change this asset's status. true means "operator
+// controls status, worker hands off".
+func (a *Asset) SetManualStatusOverride(v bool) {
+	a.manualStatusOverride = v
+	a.updatedAt = time.Now().UTC()
+}
+
+// ManualStatusOverride reports whether the worker should skip this
+// asset when evaluating lifecycle transitions.
+func (a *Asset) ManualStatusOverride() bool {
+	return a.manualStatusOverride
+}
+
+// RestoreLifecycleState is used by the repository when reconstituting
+// an Asset from storage. Added as a setter instead of new parameters
+// on the already-long Reconstitute signature so infra can populate
+// the pause + override fields without churning every caller.
+func (a *Asset) RestoreLifecycleState(pausedUntil *time.Time, manualOverride bool) {
+	a.lifecyclePausedUntil = pausedUntil
+	a.manualStatusOverride = manualOverride
 }
 
 // SetTenantID sets the tenant ID.
