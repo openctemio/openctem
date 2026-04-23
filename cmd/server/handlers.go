@@ -4,6 +4,7 @@ import (
 	"database/sql"
 
 	"github.com/openctemio/api/internal/app"
+	assetapp "github.com/openctemio/api/internal/app/asset"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -39,6 +40,23 @@ type HandlerDeps struct {
 	Services     *Services
 }
 
+// lastTenantHandler retains a pointer to the TenantHandler built by
+// the most recent NewHandlers call so main.go can back-wire the
+// asset lifecycle worker after workers are constructed. Not exposed
+// via the Handlers struct because the routes layer already has a
+// reference — we just need one extra slot for the back-wiring step.
+var lastTenantHandler *handler.TenantHandler
+
+// WireAssetLifecycleWorker connects the worker instance that the
+// cron controller drives to the dry-run HTTP endpoint. Must be
+// called after both NewHandlers and NewWorkers have run; until
+// then the dry-run endpoint returns 503.
+func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
+	if lastTenantHandler != nil {
+		lastTenantHandler.SetAssetLifecycleWorker(w)
+	}
+}
+
 // NewHandlers creates all HTTP handlers.
 func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	cfg := deps.Config
@@ -56,11 +74,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	commandHandler.SetPipelineService(svc.Pipeline)
 
-	// Tenant handler with role service and asset service wired
+	// Tenant handler with role service and asset service wired.
+	// Exposed as a package-level var so main.go can back-wire the
+	// asset lifecycle worker after both handlers and workers are
+	// constructed. The handler returns 503 from the dry-run
+	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetRoleService(svc.Role)
 	tenantHandler.SetAssetService(svc.Asset)
 	tenantHandler.SetModuleService(svc.Module)
+	lastTenantHandler = tenantHandler
 
 	// Vulnerability handler with user and asset services for enrichment
 	vulnHandler := handler.NewVulnerabilityHandler(svc.Vulnerability, v, log)

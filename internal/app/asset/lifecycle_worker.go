@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	auditapp "github.com/openctemio/api/internal/app/audit"
+	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
@@ -19,9 +21,10 @@ import (
 // Run(ctx, tenantID, dryRun) once per tenant per cron tick. The
 // worker is stateless between runs so failures and restarts are safe.
 type AssetLifecycleWorker struct {
-	db         *sql.DB
-	tenantRepo tenant.Repository
-	logger     *logger.Logger
+	db           *sql.DB
+	tenantRepo   tenant.Repository
+	auditService *auditapp.AuditService
+	logger       *logger.Logger
 }
 
 // NewAssetLifecycleWorker constructs the worker. The tenant
@@ -34,6 +37,15 @@ func NewAssetLifecycleWorker(db *sql.DB, tenantRepo tenant.Repository, log *logg
 		tenantRepo: tenantRepo,
 		logger:     log.With("worker", "asset_lifecycle"),
 	}
+}
+
+// SetAuditService wires the audit logger. When set, every non-empty
+// batch run emits one asset.lifecycle_run audit entry so operators
+// can trace exactly when and how many assets the automation demoted.
+// Optional: leave nil in tests that don't want to assert audit side
+// effects.
+func (w *AssetLifecycleWorker) SetAuditService(svc *auditapp.AuditService) {
+	w.auditService = svc
 }
 
 // LifecycleRunReport summarizes one worker pass. It is the audit
@@ -136,6 +148,39 @@ func (w *AssetLifecycleWorker) Run(ctx context.Context, tenantID shared.ID, dryR
 	}
 
 	report.CompletedAt = time.Now().UTC()
+
+	// Audit every non-dry-run pass that actually transitioned
+	// assets. Skipped runs already carry their reason in structured
+	// logs; emitting audit rows for zero-transition runs would
+	// create a daily row per tenant that carries no signal.
+	if !dryRun && !report.Skipped && report.TransitionedToStale > 0 && w.auditService != nil {
+		actx := auditapp.AuditContext{
+			TenantID:   tenantID.String(),
+			ActorID:    "system",
+			ActorEmail: "asset-lifecycle-worker@system",
+		}
+		event := auditapp.NewSuccessEvent(
+			audit.ActionAssetLifecycleRun,
+			audit.ResourceTypeTenant,
+			tenantID.String(),
+		).
+			WithMessage(fmt.Sprintf("Asset lifecycle worker demoted %d assets to stale", report.TransitionedToStale)).
+			WithMetadata("transitioned_to_stale", report.TransitionedToStale).
+			WithMetadata("stale_threshold_days", report.StaleThresholdDays).
+			WithMetadata("grace_period_days", report.GracePeriodDays).
+			WithMetadata("excluded_source_types", report.ExcludedSourceTypes).
+			WithMetadata("sample_asset_ids", report.AffectedAssetIDs)
+		if err := w.auditService.LogEvent(ctx, actx, event); err != nil {
+			// Audit failure must not fail the worker run — structured
+			// log + move on. Alerting picks this up if it becomes
+			// frequent.
+			w.logger.Warn("failed to emit lifecycle audit event",
+				"tenant_id", tenantID.String(),
+				"error", err,
+			)
+		}
+	}
+
 	return report, nil
 }
 
@@ -216,45 +261,94 @@ func (w *AssetLifecycleWorker) countCandidates(
 //
 // RETURNING id lets us capture the affected IDs in one round-trip
 // without a follow-up SELECT that could race with another worker.
+//
+// A hard LIMIT per batch prevents a single pass from holding locks
+// on millions of rows when a tenant with a huge fleet enables the
+// feature for the first time. We loop until the batch returns fewer
+// rows than the limit, capping the total at
+// maxTransitionsPerRun so that a runaway configuration can't
+// saturate the database with a single cron tick. Anything remaining
+// after that will be picked up on the next daily run.
 func (w *AssetLifecycleWorker) applyTransitions(
 	ctx context.Context,
 	tenantID shared.ID,
 	settings tenant.AssetLifecycleSettings,
 	report *LifecycleRunReport,
 ) error {
-	query := `UPDATE assets SET status = 'stale', updated_at = NOW() ` +
-		lifecycleCandidateClauses + ` RETURNING id`
-	rows, err := w.db.QueryContext(ctx, query,
-		tenantID.String(),
-		settings.EffectiveStaleThresholdDays(),
-		settings.EffectiveGracePeriodDays(),
-		pq.Array(settings.EffectiveExcludedSourceTypes()),
-	)
-	if err != nil {
-		return fmt.Errorf("lifecycle update: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
+	// UPDATE with a self-referencing CTE so Postgres can use the
+	// partial index to pick a bounded candidate set before locking.
+	// Without the inner LIMIT the planner would filter the full set
+	// up-front and the transaction would grow unbounded.
+	const batchSize = lifecycleBatchSize
+	query := `
+		WITH candidates AS (
+			SELECT id FROM assets ` + lifecycleCandidateClauses + `
+			LIMIT $5
+		)
+		UPDATE assets SET status = 'stale', updated_at = NOW()
+		WHERE id IN (SELECT id FROM candidates)
+		RETURNING id
+	`
 
-	count := 0
+	totalCount := 0
 	ids := make([]string, 0, maxAffectedIDsInReport)
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return fmt.Errorf("scan updated row: %w", err)
+
+	for totalCount < maxTransitionsPerRun {
+		rows, err := w.db.QueryContext(ctx, query,
+			tenantID.String(),
+			settings.EffectiveStaleThresholdDays(),
+			settings.EffectiveGracePeriodDays(),
+			pq.Array(settings.EffectiveExcludedSourceTypes()),
+			batchSize,
+		)
+		if err != nil {
+			return fmt.Errorf("lifecycle update: %w", err)
 		}
-		count++
-		if len(ids) < maxAffectedIDsInReport {
-			ids = append(ids, id)
+		batchCount := 0
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("scan updated row: %w", err)
+			}
+			batchCount++
+			totalCount++
+			if len(ids) < maxAffectedIDsInReport {
+				ids = append(ids, id)
+			}
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		_ = rows.Close()
+
+		// Short-circuit when the batch returned fewer rows than the
+		// limit — no more candidates remain. Avoids a final empty
+		// round trip.
+		if batchCount < batchSize {
+			break
+		}
 	}
 
-	report.TransitionedToStale = count
+	report.TransitionedToStale = totalCount
 	report.AffectedAssetIDs = ids
 	return nil
 }
+
+// lifecycleBatchSize bounds a single UPDATE pass. Chosen to keep
+// transaction duration under a second on typical hardware while
+// amortising the per-batch query setup cost over a useful amount of
+// work. Operators that need bigger batches can rebuild from source;
+// exposing this as a tunable is pre-mature until we see real numbers.
+const lifecycleBatchSize = 5000
+
+// maxTransitionsPerRun caps the total number of transitions per
+// tenant per cron tick. Prevents the "first enable on 10M-asset
+// tenant" scenario from blocking the worker pool on a single tenant
+// for hours. 50K per day per tenant is still a generous budget — the
+// remainder rolls into tomorrow's run.
+const maxTransitionsPerRun = 50_000
 
 // lifecycleCandidateClauses is the shared WHERE fragment used by
 // both the dry-run and the actual UPDATE. Keeping one copy avoids
