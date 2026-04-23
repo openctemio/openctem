@@ -47,6 +47,83 @@ func (h *AssetHandler) SetIntegrationService(svc *app.IntegrationService) {
 	h.integrationService = svc
 }
 
+// SnoozeLifecycleRequest is the body for POST /assets/{id}/lifecycle/snooze.
+// Duration is expressed in days so the HTTP contract is simple;
+// service layer converts to an absolute timestamp on the server
+// side. 365 is the upper bound — beyond a year the snooze is
+// effectively "forever" and operators should use manual_status_
+// override instead (coming in a later phase).
+type SnoozeLifecycleRequest struct {
+	Days       int  `json:"days"`
+	Reactivate bool `json:"reactivate"`
+}
+
+// SnoozeAssetLifecycle handles POST /api/v1/assets/{id}/lifecycle/snooze.
+// The operator is expressing "do not let the background worker
+// change this asset's status for N days." Optionally the same call
+// also flips the asset back to active if it was already stale or
+// inactive (reactivate=true). Setting days<=0 via DELETE endpoint
+// clears the snooze — this endpoint rejects non-positive days to
+// keep the two actions separate and obvious.
+func (h *AssetHandler) SnoozeAssetLifecycle(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	assetID := r.PathValue("id")
+	if assetID == "" {
+		apierror.BadRequest("Asset ID required").WriteJSON(w)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var req SnoozeLifecycleRequest
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if req.Days <= 0 || req.Days > 365 {
+		apierror.BadRequest("days must be between 1 and 365; use DELETE to clear").WriteJSON(w)
+		return
+	}
+
+	duration := time.Duration(req.Days) * 24 * time.Hour
+	if err := h.service.SnoozeLifecycle(r.Context(), tenantID.String(), assetID, duration, req.Reactivate); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UnsnoozeAssetLifecycle handles DELETE /api/v1/assets/{id}/lifecycle/snooze.
+// Clearing a snooze is a neutral operation — the worker will take
+// over on its next run. Reactivation is NOT implied here; an
+// operator who wants the asset active clicks the regular status
+// toggle.
+func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	assetID := r.PathValue("id")
+	if assetID == "" {
+		apierror.BadRequest("Asset ID required").WriteJSON(w)
+		return
+	}
+
+	// Duration 0 clears the snooze; reactivate is ignored in that
+	// path (documented on the service method).
+	if err := h.service.SnoozeLifecycle(r.Context(), tenantID.String(), assetID, 0, false); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
 	ID           string              `json:"id"`

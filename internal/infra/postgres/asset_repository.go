@@ -467,6 +467,64 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 	return nil
 }
 
+// SnoozeLifecycle implements asset.LifecycleRepository.
+// RFC-004 Phase 0.
+//
+// Direct UPDATE rather than load-modify-save so we do not have to
+// extend the scan pipeline just for two fields. The query is a
+// single statement that atomically sets the pause column and —
+// when reactivate is true — reactivates stale/inactive assets in
+// one go. Archived assets are explicitly excluded: archived is a
+// terminal state only a manual Activate can undo.
+func (r *AssetRepository) SnoozeLifecycle(
+	ctx context.Context,
+	tenantID, assetID shared.ID,
+	pausedUntil *time.Time,
+	reactivate bool,
+) error {
+	var pausedUntilArg any
+	if pausedUntil != nil {
+		pausedUntilArg = *pausedUntil
+	} else {
+		pausedUntilArg = nil
+	}
+
+	// CASE expression below keeps archived assets untouched while
+	// reactivating stale/inactive ones when the caller asks. The
+	// reactivate flag threads through as a parameter so the CASE
+	// branches collapse to a no-op at the DB level when it is
+	// false.
+	query := `
+		UPDATE assets SET
+			lifecycle_paused_until = $3,
+			status = CASE
+				WHEN $4::boolean = true
+				  AND status IN ('stale', 'inactive')
+				THEN 'active'
+				ELSE status
+			END,
+			updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2
+	`
+	result, err := r.db.ExecContext(ctx, query,
+		tenantID.String(),
+		assetID.String(),
+		pausedUntilArg,
+		reactivate,
+	)
+	if err != nil {
+		return fmt.Errorf("snooze asset lifecycle: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return asset.NotFoundError(assetID)
+	}
+	return nil
+}
+
 // Delete removes an asset by its ID within a tenant.
 // Security: Requires tenantID to prevent cross-tenant deletion.
 func (r *AssetRepository) Delete(ctx context.Context, tenantID, assetID shared.ID) error {

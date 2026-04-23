@@ -63,6 +63,12 @@ type AssetService struct {
 
 	// User matcher for auto-resolving owner_ref to owner_id
 	userMatcher UserMatcher
+
+	// Lifecycle repository for RFC-004 Phase 0 snooze operations.
+	// Optional — when nil, SnoozeLifecycle returns an unconfigured
+	// error. Separated from the main Repository to avoid forcing
+	// every mock in tests to add a snooze method they never use.
+	lifecycleRepo assetdom.LifecycleRepository
 }
 
 // UserMatcher resolves external references (email, username) to user IDs.
@@ -113,6 +119,57 @@ func (s *AssetService) SetRedisClient(client *redis.Client) {
 // When set, asset create/update will trigger async scope rule evaluation.
 func (s *AssetService) SetScopeRuleEvaluator(fn scope.RuleEvaluatorFunc) {
 	s.scopeRuleEvaluator = fn
+}
+
+// SetLifecycleRepository wires the lifecycle-specific repository
+// used by SnoozeLifecycle (RFC-004 Phase 0). Optional — callers
+// that do not surface the snooze feature (tests, stubs) can leave
+// this nil; the service returns a clear error in that case.
+func (s *AssetService) SetLifecycleRepository(r assetdom.LifecycleRepository) {
+	s.lifecycleRepo = r
+}
+
+// SnoozeLifecycle pauses the lifecycle worker on a single asset for
+// the given duration and optionally reactivates it if currently
+// stale or inactive. Duration <= 0 clears the snooze entirely (and
+// never reactivates — clearing a snooze is a neutral operation,
+// the worker takes over on its next run).
+//
+// Callers pass the desired duration (7/30/90 days, or custom). The
+// service computes the exact paused-until timestamp from server
+// time — clients never set a raw timestamp, which prevents
+// clock-skew attacks and simplifies the HTTP contract.
+func (s *AssetService) SnoozeLifecycle(
+	ctx context.Context,
+	tenantIDStr, assetIDStr string,
+	duration time.Duration,
+	reactivate bool,
+) error {
+	if s.lifecycleRepo == nil {
+		return fmt.Errorf("%w: lifecycle repository not configured", shared.ErrInternal)
+	}
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	assetID, err := shared.IDFromString(assetIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid asset id", shared.ErrValidation)
+	}
+
+	var pausedUntil *time.Time
+	actualReactivate := false
+	if duration > 0 {
+		t := time.Now().UTC().Add(duration)
+		pausedUntil = &t
+		actualReactivate = reactivate
+	}
+	// When duration <= 0 we are UN-snoozing; ignore the reactivate
+	// flag so the operation is purely "clear the pause". If the
+	// operator wants to reactivate the asset they can do so
+	// explicitly via the regular status-change API.
+
+	return s.lifecycleRepo.SnoozeLifecycle(ctx, tenantID, assetID, pausedUntil, actualReactivate)
 }
 
 // HasRepositoryExtensionRepository returns true if the repository extension repository is configured.

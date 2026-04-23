@@ -54,6 +54,10 @@ func registerAssetRoutes(
 		r.POST("/{id}/deactivate", h.Deactivate, middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/archive", h.Archive, middleware.Require(permission.AssetsWrite))
 
+		// Lifecycle snooze (RFC-004 Phase 0).
+		r.POST("/{id}/lifecycle/snooze", h.SnoozeAssetLifecycle, middleware.Require(permission.AssetsWrite))
+		r.DELETE("/{id}/lifecycle/snooze", h.UnsnoozeAssetLifecycle, middleware.Require(permission.AssetsWrite))
+
 		// Sync and scan operations (repository assets)
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/scan", h.TriggerScan, middleware.Require(permission.AssetsWrite))
