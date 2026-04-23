@@ -14,11 +14,11 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/ingest"
+	"github.com/openctemio/api/internal/infra/adapters"
+	"github.com/openctemio/api/internal/infra/adapters/core"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/api/internal/infra/adapters"
-	"github.com/openctemio/api/internal/infra/adapters/core"
 	"github.com/openctemio/ctis"
 )
 
@@ -297,13 +297,19 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 
 	var report ctis.Report
 
-	// Try wrapped format first: { "report": { ... } }
+	// Try wrapped format first: { "report": { ... } }.
+	// DisallowUnknownFields rejects fields outside the contract so an
+	// agent cannot smuggle auxiliary keys into the ingest payload.
 	var req CTISIngestRequest
-	if err := json.Unmarshal(bodyBytes, &req); err == nil && req.Report.Version != "" {
+	wrappedDec := json.NewDecoder(bytes.NewReader(bodyBytes))
+	wrappedDec.DisallowUnknownFields()
+	if err := wrappedDec.Decode(&req); err == nil && req.Report.Version != "" {
 		report = req.Report
 	} else {
 		// Try flat format (SDK format): { "version": ..., "metadata": ..., ... }
-		if err := json.Unmarshal(bodyBytes, &report); err != nil {
+		flatDec := json.NewDecoder(bytes.NewReader(bodyBytes))
+		flatDec.DisallowUnknownFields()
+		if err := flatDec.Decode(&report); err != nil {
 			h.logger.Debug("failed to parse CTIS ingest request", "error", err)
 			apierror.BadRequest("Invalid JSON request body").WriteJSON(w)
 			return
