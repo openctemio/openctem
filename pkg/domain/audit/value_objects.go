@@ -24,6 +24,7 @@ const (
 	ActionTenantModulesUpdated      Action = "tenant.modules_updated"
 	ActionTenantRiskScoringUpdated  Action = "tenant.risk_scoring_updated"
 	ActionTenantRiskScoresRecalculated Action = "tenant.risk_scores_recalculated"
+	ActionTenantAssetSourceUpdated  Action = "tenant.asset_source_updated"
 
 	// Membership actions
 	ActionMemberAdded       Action = "member.added"
@@ -241,7 +242,7 @@ func (a Action) IsValid() bool {
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
-		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated,
+		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
@@ -483,7 +484,7 @@ func SeverityForAction(a Action) Severity {
 	// Medium - important changes
 	case ActionUserCreated, ActionUserActivated,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
-		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated,
+		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,

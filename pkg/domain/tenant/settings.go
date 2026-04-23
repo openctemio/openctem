@@ -18,15 +18,16 @@ import (
 
 // Settings represents the typed settings for a tenant.
 type Settings struct {
-	General  GeneralSettings  `json:"general"`
-	Security SecuritySettings `json:"security"`
-	API      APISettings      `json:"api"`
-	Branding BrandingSettings `json:"branding"`
-	Branch   BranchSettings   `json:"branch"`
-	AI             AISettings             `json:"ai"`
-	RiskScoring    RiskScoringSettings    `json:"risk_scoring"`
-	Pentest        PentestSettings        `json:"pentest"`
-	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
+	General       GeneralSettings       `json:"general"`
+	Security      SecuritySettings      `json:"security"`
+	API           APISettings           `json:"api"`
+	Branding      BrandingSettings      `json:"branding"`
+	Branch        BranchSettings        `json:"branch"`
+	AI            AISettings            `json:"ai"`
+	RiskScoring   RiskScoringSettings   `json:"risk_scoring"`
+	Pentest       PentestSettings       `json:"pentest"`
+	AssetIdentity AssetIdentitySettings `json:"asset_identity"`
+	AssetSource   AssetSourceSettings   `json:"asset_source"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.
@@ -59,6 +60,152 @@ func (s AssetIdentitySettings) EffectiveMaxIPsPerAsset(systemDefault int) int {
 		return s.MaxIPsPerAsset
 	}
 	return systemDefault
+}
+
+// Upper bounds on AssetSourceSettings collections. Chosen to be
+// comfortably above any realistic tenant size (a tenant with 500+
+// data sources is operating at a scale none of our customers hit
+// today) while keeping JSON payloads bounded for DoS protection.
+// Exceeded values return shared.ErrValidation.
+const (
+	MaxAssetSourcePriorityLen = 500
+	MaxAssetSourceTrustLevels = 500
+)
+
+// AssetSourceSettings controls how conflicting data from multiple
+// sources is reconciled when merging into the same asset. See
+// RFC-003 (docs/architecture/asset-source-priority.md).
+//
+// Backward compatibility: a zero-value AssetSourceSettings preserves
+// today's behavior exactly (last-write-wins at the field level).
+// The feature only kicks in after an admin populates Priority or
+// TrustLevels.
+type AssetSourceSettings struct {
+	// SchemaVersion guards forward-incompatible changes to the
+	// settings payload. Bumped only when the shape changes in a
+	// way that legacy code can't deserialize safely.
+	SchemaVersion int `json:"schema_version,omitempty"`
+
+	// Priority is an ordered list of data_sources.id values —
+	// highest priority first. Sources not listed are ranked below
+	// every listed source; among unlisted sources, the existing
+	// last-write-wins behavior applies.
+	//
+	// Nil/empty = feature effectively off (today's behavior).
+	Priority []shared.ID `json:"priority,omitempty"`
+
+	// TrustLevels maps data_sources.id → TrustLevel. Expresses the
+	// same precedence as Priority but bucketed, matching the
+	// source-creation dropdown in the UI (primary/high/medium/low).
+	//
+	// When both Priority and TrustLevels are set, Priority wins for
+	// ordering and TrustLevels is advisory (used for the UI badge
+	// and for populating Priority on first save). Sources present
+	// in TrustLevels but missing from Priority are inserted into
+	// Priority at the position their bucket implies.
+	TrustLevels map[string]TrustLevel `json:"trust_levels,omitempty"`
+
+	// TrackFieldAttribution enables per-field source lineage —
+	// populates asset_sources.contributed_data with which source
+	// wrote which field and when. Off by default to keep storage
+	// cost predictable; on for tenants that want the audit trail.
+	TrackFieldAttribution bool `json:"track_field_attribution,omitempty"`
+}
+
+// IsEnabled reports whether the tenant has configured any priority
+// information. Callers use this to decide whether to invoke the
+// priority gate at all — a tenant with no config skips the gate
+// entirely and keeps today's merge behavior.
+func (s AssetSourceSettings) IsEnabled() bool {
+	return len(s.Priority) > 0 || len(s.TrustLevels) > 0
+}
+
+// TrustLevelFor returns the configured bucket for a given source ID,
+// or an empty level if not set. Empty is treated as "unlisted" —
+// ranks below any configured level.
+func (s AssetSourceSettings) TrustLevelFor(sourceID shared.ID) TrustLevel {
+	if len(s.TrustLevels) == 0 {
+		return ""
+	}
+	return s.TrustLevels[sourceID.String()]
+}
+
+// Validate checks the settings payload for structural errors. Domain
+// validation (UUIDs must exist + belong to the tenant) happens at
+// the service layer where we can look up data_sources.
+//
+// Error messages intentionally do NOT echo offending UUIDs back to
+// the caller. A request that submits attacker-controlled UUIDs
+// (e.g. probing other tenants) would otherwise receive a response
+// that distinguishes "bad UUID format" from "unrelated UUID", and
+// the caller already knows what they submitted. Service layer logs
+// specifics at debug level for operator forensics.
+func (s *AssetSourceSettings) Validate() error {
+	// Reject oversize inputs — cheap DoS guard. Priority de-dup
+	// check below is O(n) in a map, so the main cost here is JSONB
+	// storage bloat on tenants.settings.
+	if len(s.Priority) > MaxAssetSourcePriorityLen {
+		return fmt.Errorf(
+			"%w: asset_source.priority exceeds maximum of %d entries",
+			shared.ErrValidation, MaxAssetSourcePriorityLen,
+		)
+	}
+	if len(s.TrustLevels) > MaxAssetSourceTrustLevels {
+		return fmt.Errorf(
+			"%w: asset_source.trust_levels exceeds maximum of %d entries",
+			shared.ErrValidation, MaxAssetSourceTrustLevels,
+		)
+	}
+
+	// Reject duplicate IDs in Priority — they would make the
+	// ordering ambiguous and waste storage.
+	seen := make(map[string]struct{}, len(s.Priority))
+	for _, id := range s.Priority {
+		if id.IsZero() {
+			return fmt.Errorf(
+				"%w: asset_source.priority contains an empty UUID",
+				shared.ErrValidation,
+			)
+		}
+		key := id.String()
+		if _, dup := seen[key]; dup {
+			return fmt.Errorf(
+				"%w: asset_source.priority contains a duplicate entry",
+				shared.ErrValidation,
+			)
+		}
+		seen[key] = struct{}{}
+	}
+
+	// Every value in TrustLevels must be a known bucket. Empty keys
+	// are meaningless — reject them. Values that fail Validate()
+	// (typos, legacy data) are rejected too.
+	for key, level := range s.TrustLevels {
+		if key == "" {
+			return fmt.Errorf(
+				"%w: asset_source.trust_levels has an empty source ID key",
+				shared.ErrValidation,
+			)
+		}
+		if _, err := shared.IDFromString(key); err != nil {
+			return fmt.Errorf(
+				"%w: asset_source.trust_levels contains a malformed UUID key",
+				shared.ErrValidation,
+			)
+		}
+		if level == "" {
+			return fmt.Errorf(
+				"%w: asset_source.trust_levels entries must carry a non-empty level (remove instead of setting empty)",
+				shared.ErrValidation,
+			)
+		}
+		if err := level.Validate(); err != nil {
+			// TrustLevel.Validate already returns a non-echoing
+			// message; wrap without adding the UUID key.
+			return fmt.Errorf("asset_source.trust_levels: %w", err)
+		}
+	}
+	return nil
 }
 
 // BranchSettings contains branch naming convention configuration.
@@ -295,14 +442,14 @@ type AISettings struct {
 
 // RiskScoringSettings configures the risk scoring formula per tenant.
 type RiskScoringSettings struct {
-	Preset              string                  `json:"preset,omitempty"`
-	Weights             ComponentWeights        `json:"weights"`
-	ExposureScores      ExposureScoreConfig     `json:"exposure_scores"`
+	Preset              string                   `json:"preset,omitempty"`
+	Weights             ComponentWeights         `json:"weights"`
+	ExposureScores      ExposureScoreConfig      `json:"exposure_scores"`
 	ExposureMultipliers ExposureMultiplierConfig `json:"exposure_multipliers"`
-	CriticalityScores   CriticalityScoreConfig  `json:"criticality_scores"`
-	FindingImpact       FindingImpactConfig     `json:"finding_impact"`
-	CTEMPoints          CTEMPointsConfig        `json:"ctem_points"`
-	RiskLevels          RiskLevelConfig         `json:"risk_levels"`
+	CriticalityScores   CriticalityScoreConfig   `json:"criticality_scores"`
+	FindingImpact       FindingImpactConfig      `json:"finding_impact"`
+	CTEMPoints          CTEMPointsConfig         `json:"ctem_points"`
+	RiskLevels          RiskLevelConfig          `json:"risk_levels"`
 }
 
 type ComponentWeights struct {
@@ -673,6 +820,9 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.Pentest.Validate(); err != nil {
 		return fmt.Errorf("pentest settings: %w", err)
+	}
+	if err := s.AssetSource.Validate(); err != nil {
+		return fmt.Errorf("asset_source settings: %w", err)
 	}
 	return nil
 }
@@ -1071,5 +1221,18 @@ func (t *Tenant) UpdateRiskScoringSettings(rs RiskScoringSettings) error {
 	}
 	settings := t.TypedSettings()
 	settings.RiskScoring = rs
+	return t.UpdateSettings(settings)
+}
+
+// UpdateAssetSourceSettings updates only the asset-source priority
+// configuration. RFC-003 Phase 1a. Structural validation (dup UUIDs,
+// unknown trust levels) happens here; existence-of-source validation
+// lives in the service layer because it needs a repository.
+func (t *Tenant) UpdateAssetSourceSettings(as AssetSourceSettings) error {
+	if err := as.Validate(); err != nil {
+		return err
+	}
+	settings := t.TypedSettings()
+	settings.AssetSource = as
 	return t.UpdateSettings(settings)
 }
