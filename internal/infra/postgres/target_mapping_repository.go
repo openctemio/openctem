@@ -62,6 +62,8 @@ func (r *TargetMappingRepository) Create(ctx context.Context, m *tool.TargetAsse
 }
 
 // GetByID retrieves a target mapping by ID.
+//
+//getbyid:unsafe - Target mappings are shared tool→asset-type definitions; no tenant_id column.
 func (r *TargetMappingRepository) GetByID(ctx context.Context, id shared.ID) (*tool.TargetAssetTypeMapping, error) {
 	query := `
 		SELECT id, target_type, asset_type, priority, is_active, description, created_at, updated_at, created_by

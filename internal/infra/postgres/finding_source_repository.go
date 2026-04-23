@@ -83,6 +83,8 @@ func (r *FindingSourceCategoryRepository) Create(ctx context.Context, c *finding
 }
 
 // GetByID retrieves a category by ID.
+//
+//getbyid:unsafe - Finding source categories are a shared catalog; no tenant_id column.
 func (r *FindingSourceCategoryRepository) GetByID(ctx context.Context, id shared.ID) (*findingsource.Category, error) {
 	query := findingSourceCategorySelectQuery + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
@@ -341,6 +343,8 @@ func (r *FindingSourceRepository) scanFindingSource(row interface{ Scan(...any) 
 }
 
 // GetByID retrieves a finding source by ID.
+//
+//getbyid:unsafe - Finding sources are a shared catalog; no tenant_id column.
 func (r *FindingSourceRepository) GetByID(ctx context.Context, id shared.ID) (*findingsource.FindingSource, error) {
 	query := findingSourceSelectQuery + " WHERE fs.id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())

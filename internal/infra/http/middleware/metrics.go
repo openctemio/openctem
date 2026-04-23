@@ -135,6 +135,10 @@ func (mrw *metricsResponseWriter) WriteHeader(code int) {
 	mrw.ResponseWriter.WriteHeader(code)
 }
 
+// Write implements http.ResponseWriter. Same CodeQL
+// go/reflected-xss false-positive note as auditResponseWriter.Write:
+// transparent passthrough, only observes bytesWritten for the
+// Prometheus histogram. Dismiss as wrapper-level false-positive.
 func (mrw *metricsResponseWriter) Write(b []byte) (int, error) {
 	n, err := mrw.ResponseWriter.Write(b)
 	mrw.bytesWritten += n

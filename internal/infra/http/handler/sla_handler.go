@@ -6,24 +6,24 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/domain/sla"
+	sladom "github.com/openctemio/api/pkg/domain/sla"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
 )
 
 // SLAHandler handles SLA policy-related HTTP requests.
 type SLAHandler struct {
-	service   *app.SLAService
+	service   *sla.Service
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewSLAHandler creates a new SLA handler.
-func NewSLAHandler(svc *app.SLAService, v *validator.Validator, log *logger.Logger) *SLAHandler {
+func NewSLAHandler(svc *sla.Service, v *validator.Validator, log *logger.Logger) *SLAHandler {
 	return &SLAHandler{
 		service:   svc,
 		validator: v,
@@ -53,7 +53,7 @@ type SLAPolicyResponse struct {
 }
 
 // toSLAPolicyResponse converts a domain policy to API response.
-func toSLAPolicyResponse(p *sla.Policy) SLAPolicyResponse {
+func toSLAPolicyResponse(p *sladom.Policy) SLAPolicyResponse {
 	resp := SLAPolicyResponse{
 		ID:                  p.ID().String(),
 		TenantID:            p.TenantID().String(),
@@ -130,9 +130,9 @@ func (h *SLAHandler) handleValidationError(w http.ResponseWriter, err error) {
 // handleServiceError converts service errors to API errors.
 func (h *SLAHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, shared.ErrNotFound) || errors.Is(err, sla.ErrNotFound):
+	case errors.Is(err, shared.ErrNotFound) || errors.Is(err, sladom.ErrNotFound):
 		apierror.NotFound("SLA Policy").WriteJSON(w)
-	case errors.Is(err, shared.ErrAlreadyExists) || errors.Is(err, sla.ErrAlreadyExists):
+	case errors.Is(err, shared.ErrAlreadyExists) || errors.Is(err, sladom.ErrAlreadyExists):
 		apierror.Conflict("SLA Policy already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
@@ -206,7 +206,7 @@ func (h *SLAHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateSLAPolicyInput{
+	input := sla.CreatePolicyInput{
 		TenantID:            tenantID,
 		AssetID:             req.AssetID,
 		Name:                req.Name,
@@ -301,7 +301,7 @@ func (h *SLAHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateSLAPolicyInput{
+	input := sla.UpdatePolicyInput{
 		Name:                req.Name,
 		Description:         req.Description,
 		IsDefault:           req.IsDefault,

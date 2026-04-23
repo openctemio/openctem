@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 const (
@@ -57,7 +59,7 @@ func NewClaudeProvider(cfg ClaudeConfig) (*ClaudeProvider, error) {
 	return &ClaudeProvider{
 		apiKey:     cfg.APIKey,
 		model:      model,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: httpsec.SafeHTTPClient(timeout),
 		maxRetries: maxRetries,
 	}, nil
 }

@@ -1,0 +1,859 @@
+package audit
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	cryptopkg "github.com/openctemio/api/pkg/crypto"
+	auditdom "github.com/openctemio/api/pkg/domain/audit"
+	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
+)
+
+// AuditService handles audit logging operations.
+type AuditService struct {
+	auditRepo auditdom.Repository
+	logger    *logger.Logger
+	// Buffer for batch operations (optional async processing)
+	asyncEnabled bool
+	// chainMu serialises hash-chain extension so two concurrent
+	// LogEvent calls for the same tenant cannot both see the same
+	// prev_hash and write sibling rows. Single-replica safe; scaling
+	// beyond one API replica requires a postgres advisory lock.
+	chainMu sync.Mutex
+}
+
+// NewAuditService creates a new AuditService.
+func NewAuditService(repo auditdom.Repository, log *logger.Logger) *AuditService {
+	return &AuditService{
+		auditRepo:    repo,
+		logger:       log.With("service", "audit"),
+		asyncEnabled: false,
+	}
+}
+
+// AuditContext holds contextual information for audit logging.
+type AuditContext struct {
+	TenantID   string
+	ActorID    string
+	ActorEmail string
+	ActorIP    string
+	UserAgent  string
+	RequestID  string
+	SessionID  string
+	// ActorRole captures the caller's role at the moment of the action.
+	// Used by pentest module to distinguish reviewer QA edits from creator
+	// self-edits in audit forensics. Optional — empty for non-pentest paths.
+	ActorRole string
+}
+
+// LogEvent creates and persists an audit log entry.
+func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event AuditEvent) error {
+	log, err := auditdom.NewAuditLog(
+		event.Action,
+		event.ResourceType,
+		event.ResourceID,
+		event.Result,
+	)
+	if err != nil {
+		s.logger.Error("failed to create audit log", "error", err)
+		return err
+	}
+
+	// Set tenant context
+	if actx.TenantID != "" {
+		tenantID, err := shared.IDFromString(actx.TenantID)
+		if err == nil {
+			log.WithTenantID(tenantID)
+		}
+	}
+
+	// Set actor information
+	if actx.ActorID != "" {
+		actorID, err := shared.IDFromString(actx.ActorID)
+		if err == nil {
+			log.WithActor(actorID, actx.ActorEmail)
+		}
+	} else if actx.ActorEmail != "" {
+		// System action with email only
+		log.WithActor(shared.ID{}, actx.ActorEmail)
+	}
+
+	// Set request context
+	if actx.ActorIP != "" {
+		log.WithActorIP(actx.ActorIP)
+	}
+	if actx.UserAgent != "" {
+		log.WithActorAgent(actx.UserAgent)
+	}
+	if actx.RequestID != "" {
+		log.WithRequestID(actx.RequestID)
+	}
+	if actx.SessionID != "" {
+		log.WithSessionID(actx.SessionID)
+	}
+	// Stamp the actor's role into metadata so audit reviewers can distinguish
+	// reviewer QA actions from creator self-edits without joining other tables.
+	if actx.ActorRole != "" {
+		log.WithMetadata("actor_role", actx.ActorRole)
+	}
+
+	// Set event details
+	if event.ResourceName != "" {
+		log.WithResourceName(event.ResourceName)
+	}
+	if event.Changes != nil {
+		log.WithChanges(event.Changes)
+	}
+	if event.Message != "" {
+		log.WithMessage(event.Message)
+	}
+	if event.Severity != "" {
+		log.WithSeverity(event.Severity)
+	}
+	for k, v := range event.Metadata {
+		log.WithMetadata(k, v)
+	}
+
+	// Persist
+	if err := s.auditRepo.Create(ctx, log); err != nil {
+		s.logger.Error("failed to persist audit log",
+			"error", err,
+			"action", event.Action,
+			"resource_type", event.ResourceType,
+			"resource_id", event.ResourceID,
+		)
+		return err
+	}
+
+	// Append to the tamper-evident hash-chain (migration 000154).
+	// Best-effort: a chain failure does not roll back the audit log.
+	// Verification would detect the missing row as a chain gap, which
+	// is strictly better than dropping the audit entry altogether.
+	s.appendChainEntry(ctx, log)
+
+	// Log to structured logger as well for immediate visibility
+	s.logger.Info("audit event",
+		"action", event.Action.String(),
+		"resource_type", event.ResourceType.String(),
+		"resource_id", event.ResourceID,
+		"result", event.Result.String(),
+		"actor_email", actx.ActorEmail,
+		"tenant_id", actx.TenantID,
+	)
+
+	return nil
+}
+
+// ChainBreak describes a single inconsistency discovered while
+// walking the audit hash-chain for a tenant.
+type ChainBreak struct {
+	AuditLogID    string
+	ChainPosition int64
+	ExpectedHash  string // hash recomputed from the audit_log row
+	ActualHash    string // hash stored in audit_log_chain
+	Reason        string // "hash_mismatch" | "prev_hash_mismatch" | "audit_log_missing"
+}
+
+// ChainVerifyResult is the outcome of a VerifyChain call.
+// OK is true iff Breaks is empty.
+type ChainVerifyResult struct {
+	TenantID string
+	Total    int
+	Verified int
+	Breaks   []ChainBreak
+	OK       bool
+}
+
+// VerifyChain walks the audit_log_chain entries for a tenant in
+// chain_position order and confirms each stored hash matches the hash
+// recomputed from the original audit_logs row. A single tampered audit
+// row surfaces as (at least) one break; downstream entries typically
+// break too because prev_hash no longer links.
+//
+// Limit bounds memory for large tenants; pagination support is a
+// follow-up. Zero/negative limit means "use default 10_000". Values
+// above maxVerifyChainLimit are clamped — same cap is also enforced at
+// the handler and repository layers (defense in depth, closes CodeQL
+// go/uncontrolled-allocation-size sink at the make() site).
+func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limit int) (*ChainVerifyResult, error) {
+	const maxVerifyChainLimit = 10_000
+	if limit <= 0 {
+		limit = maxVerifyChainLimit
+	} else if limit > maxVerifyChainLimit {
+		limit = maxVerifyChainLimit
+	}
+	entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list chain entries: %w", err)
+	}
+
+	res := &ChainVerifyResult{
+		TenantID: tenantID.String(),
+		Total:    len(entries),
+	}
+	var prevStored string
+	for _, e := range entries {
+		// 1. Fetch the original audit_log. If it's gone, flag it — a
+		//    deleted row is a tamper signal (FK ON DELETE RESTRICT
+		//    blocks it in production but not in every path).
+		log, err := s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
+		if err != nil {
+			res.Breaks = append(res.Breaks, ChainBreak{
+				AuditLogID:    e.AuditLogID.String(),
+				ChainPosition: e.ChainPosition,
+				ExpectedHash:  "",
+				ActualHash:    e.Hash,
+				Reason:        "audit_log_missing",
+			})
+			prevStored = e.Hash
+			continue
+		}
+
+		// 2. Recompute hash from the audit_log fields + stored prev_hash.
+		payload := fmt.Sprintf("%s|%s|%s|%s",
+			log.Action().String(),
+			log.ResourceType().String(),
+			log.ResourceID(),
+			log.Result().String(),
+		)
+		expected := cryptopkg.ComputeAuditChainHash(e.PrevHash, log.ID().String(), payload, log.Timestamp())
+
+		if expected != e.Hash {
+			res.Breaks = append(res.Breaks, ChainBreak{
+				AuditLogID:    e.AuditLogID.String(),
+				ChainPosition: e.ChainPosition,
+				ExpectedHash:  expected,
+				ActualHash:    e.Hash,
+				Reason:        "hash_mismatch",
+			})
+		} else if e.ChainPosition > 1 && e.PrevHash != prevStored {
+			// 3. prev_hash link check. We intentionally do this ONLY
+			//    when the hash itself was OK — a hash_mismatch already
+			//    tells the whole story; prepending a prev-hash break
+			//    would double-count.
+			res.Breaks = append(res.Breaks, ChainBreak{
+				AuditLogID:    e.AuditLogID.String(),
+				ChainPosition: e.ChainPosition,
+				ExpectedHash:  prevStored,
+				ActualHash:    e.PrevHash,
+				Reason:        "prev_hash_mismatch",
+			})
+		} else {
+			res.Verified++
+		}
+		prevStored = e.Hash
+	}
+	res.OK = len(res.Breaks) == 0
+	return res, nil
+}
+
+// appendChainEntry computes the next hash in the per-tenant chain and
+// persists it. Safe to call with any audit_log; rows without a tenant
+// ID are skipped (the chain is per-tenant).
+//
+// Concurrency note: under multi-writer races two callers for the same
+// tenant can read the same prev_hash and both try to extend it. The
+// chainMu mutex serialises this within a single process; cross-replica
+// coordination would need a per-tenant advisory lock
+// (pg_advisory_xact_lock) and is not wired here because the current
+// deployment is single-replica.
+func (s *AuditService) appendChainEntry(ctx context.Context, log *auditdom.AuditLog) {
+	tenantPtr := log.TenantID()
+	if tenantPtr == nil {
+		return // system-level events bypass the per-tenant chain
+	}
+	tid := *tenantPtr
+
+	s.chainMu.Lock()
+	defer s.chainMu.Unlock()
+
+	prev, err := s.auditRepo.LatestChainHash(ctx, tid)
+	if err != nil {
+		s.logger.Warn("chain: failed to read prev hash; skipping entry",
+			"tenant_id", tid.String(), "error", err)
+		return
+	}
+
+	// Deterministic payload: scalar columns that uniquely identify
+	// the audit log. Changes feed the hash via the log fields below
+	// rather than full JSON so minor schema tweaks do not invalidate
+	// older hashes.
+	payload := fmt.Sprintf("%s|%s|%s|%s",
+		log.Action().String(),
+		log.ResourceType().String(),
+		log.ResourceID(),
+		log.Result().String(),
+	)
+	hash := cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp())
+
+	entry := auditdom.ChainEntry{
+		AuditLogID: log.ID(),
+		TenantID:   tid,
+		PrevHash:   prev,
+		Hash:       hash,
+	}
+	if err := s.auditRepo.AppendChainEntry(ctx, entry); err != nil {
+		s.logger.Warn("chain: append failed (audit log persisted, chain has a gap)",
+			"tenant_id", tid.String(),
+			"audit_log_id", log.ID().String(),
+			"error", err,
+		)
+	}
+}
+
+// AuditEvent represents an audit event to log.
+type AuditEvent struct {
+	Action       auditdom.Action
+	ResourceType auditdom.ResourceType
+	ResourceID   string
+	ResourceName string
+	Result       auditdom.Result
+	Severity     auditdom.Severity
+	Changes      *auditdom.Changes
+	Message      string
+	Metadata     map[string]any
+}
+
+// NewSuccessEvent creates a success audit event.
+func NewSuccessEvent(action auditdom.Action, resourceType auditdom.ResourceType, resourceID string) AuditEvent {
+	return AuditEvent{
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Result:       auditdom.ResultSuccess,
+		Metadata:     make(map[string]any),
+	}
+}
+
+// NewFailureEvent creates a failure audit event.
+func NewFailureEvent(action auditdom.Action, resourceType auditdom.ResourceType, resourceID string, err error) AuditEvent {
+	event := AuditEvent{
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Result:       auditdom.ResultFailure,
+		Metadata:     make(map[string]any),
+	}
+	if err != nil {
+		event.Metadata["error"] = err.Error()
+	}
+	return event
+}
+
+// NewDeniedEvent creates a denied audit event.
+func NewDeniedEvent(action auditdom.Action, resourceType auditdom.ResourceType, resourceID string, reason string) AuditEvent {
+	event := AuditEvent{
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Result:       auditdom.ResultDenied,
+		Severity:     auditdom.SeverityHigh,
+		Metadata:     make(map[string]any),
+	}
+	if reason != "" {
+		event.Metadata["reason"] = reason
+	}
+	return event
+}
+
+// WithResourceName sets the resource name.
+func (e AuditEvent) WithResourceName(name string) AuditEvent {
+	e.ResourceName = name
+	return e
+}
+
+// WithChanges sets the changes.
+func (e AuditEvent) WithChanges(changes *auditdom.Changes) AuditEvent {
+	e.Changes = changes
+	return e
+}
+
+// WithMessage sets the message.
+func (e AuditEvent) WithMessage(message string) AuditEvent {
+	e.Message = message
+	return e
+}
+
+// WithSeverity sets the severity.
+func (e AuditEvent) WithSeverity(severity auditdom.Severity) AuditEvent {
+	e.Severity = severity
+	return e
+}
+
+// WithMetadata adds metadata.
+func (e AuditEvent) WithMetadata(key string, value any) AuditEvent {
+	if e.Metadata == nil {
+		e.Metadata = make(map[string]any)
+	}
+	e.Metadata[key] = value
+	return e
+}
+
+// ============================================
+// QUERY OPERATIONS
+// ============================================
+
+// ListAuditLogsInput represents the input for listing audit logs.
+type ListAuditLogsInput struct {
+	TenantID      string   `validate:"omitempty,uuid"`
+	ActorID       string   `validate:"omitempty,uuid"`
+	Actions       []string `validate:"max=20"`
+	ResourceTypes []string `validate:"max=10"`
+	ResourceID    string   `validate:"max=255"`
+	Results       []string `validate:"max=3"`
+	Severities    []string `validate:"max=4"`
+	RequestID     string   `validate:"max=100"`
+	Since         *time.Time
+	Until         *time.Time
+	SearchTerm    string `validate:"max=255"`
+	Page          int    `validate:"min=0"`
+	PerPage       int    `validate:"min=0,max=100"`
+	SortBy        string `validate:"omitempty,oneof=logged_at action resource_type result severity"`
+	SortOrder     string `validate:"omitempty,oneof=asc desc"`
+	ExcludeSystem bool
+}
+
+// ListAuditLogs retrieves audit logs with filtering and pagination.
+func (s *AuditService) ListAuditLogs(ctx context.Context, input ListAuditLogsInput) (pagination.Result[*auditdom.AuditLog], error) {
+	filter := auditdom.NewFilter()
+
+	if input.TenantID != "" {
+		tenantID, err := shared.IDFromString(input.TenantID)
+		if err != nil {
+			return pagination.Result[*auditdom.AuditLog]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		}
+		filter = filter.WithTenantID(tenantID)
+	}
+
+	if input.ActorID != "" {
+		actorID, err := shared.IDFromString(input.ActorID)
+		if err != nil {
+			return pagination.Result[*auditdom.AuditLog]{}, fmt.Errorf("%w: invalid actor id format", shared.ErrValidation)
+		}
+		filter = filter.WithActorID(actorID)
+	}
+
+	if len(input.Actions) > 0 {
+		actions := make([]auditdom.Action, 0, len(input.Actions))
+		for _, a := range input.Actions {
+			actions = append(actions, auditdom.Action(a))
+		}
+		filter = filter.WithActions(actions...)
+	}
+
+	if len(input.ResourceTypes) > 0 {
+		types := make([]auditdom.ResourceType, 0, len(input.ResourceTypes))
+		for _, rt := range input.ResourceTypes {
+			types = append(types, auditdom.ResourceType(rt))
+		}
+		filter = filter.WithResourceTypes(types...)
+	}
+
+	if input.ResourceID != "" {
+		filter = filter.WithResourceID(input.ResourceID)
+	}
+
+	if len(input.Results) > 0 {
+		results := make([]auditdom.Result, 0, len(input.Results))
+		for _, r := range input.Results {
+			results = append(results, auditdom.Result(r))
+		}
+		filter = filter.WithResults(results...)
+	}
+
+	if len(input.Severities) > 0 {
+		severities := make([]auditdom.Severity, 0, len(input.Severities))
+		for _, sev := range input.Severities {
+			severities = append(severities, auditdom.Severity(sev))
+		}
+		filter = filter.WithSeverities(severities...)
+	}
+
+	if input.RequestID != "" {
+		filter = filter.WithRequestID(input.RequestID)
+	}
+
+	if input.Since != nil {
+		filter = filter.WithSince(*input.Since)
+	}
+
+	if input.Until != nil {
+		filter = filter.WithUntil(*input.Until)
+	}
+
+	if input.SearchTerm != "" {
+		filter = filter.WithSearchTerm(input.SearchTerm)
+	}
+
+	if input.SortBy != "" {
+		filter = filter.WithSort(input.SortBy, input.SortOrder)
+	}
+
+	if input.ExcludeSystem {
+		filter = filter.WithExcludeSystem(true)
+	}
+
+	page := pagination.New(input.Page, input.PerPage)
+	return s.auditRepo.List(ctx, filter, page)
+}
+
+// GetAuditLog retrieves an audit log by ID.
+func (s *AuditService) GetAuditLog(ctx context.Context, auditLogID string) (*auditdom.AuditLog, error) {
+	parsedID, err := shared.IDFromString(auditLogID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+
+	return s.auditRepo.GetByID(ctx, parsedID)
+}
+
+// GetResourceHistory retrieves audit history for a specific resource within a tenant.
+// tenantID MUST be provided to prevent cross-tenant reads (F-2).
+func (s *AuditService) GetResourceHistory(ctx context.Context, tenantID shared.ID, resourceType, resourceID string, page, perPage int) (pagination.Result[*auditdom.AuditLog], error) {
+	p := pagination.New(page, perPage)
+	return s.auditRepo.ListByResource(ctx, tenantID, auditdom.ResourceType(resourceType), resourceID, p)
+}
+
+// GetUserActivity retrieves audit logs for a specific user.
+func (s *AuditService) GetUserActivity(ctx context.Context, userID string, page, perPage int) (pagination.Result[*auditdom.AuditLog], error) {
+	actorID, err := shared.IDFromString(userID)
+	if err != nil {
+		return pagination.Result[*auditdom.AuditLog]{}, fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
+	}
+
+	p := pagination.New(page, perPage)
+	return s.auditRepo.ListByActor(ctx, actorID, p)
+}
+
+// ============================================
+// RETENTION OPERATIONS
+// ============================================
+
+// CleanupOldLogs removes audit logs older than the retention period.
+// Preserves high and critical severity logs.
+func (s *AuditService) CleanupOldLogs(ctx context.Context, retentionDays int) (int64, error) {
+	if retentionDays < 30 {
+		return 0, fmt.Errorf("%w: retention period must be at least 30 days", shared.ErrValidation)
+	}
+
+	before := time.Now().AddDate(0, 0, -retentionDays)
+	count, err := s.auditRepo.DeleteOlderThan(ctx, before)
+	if err != nil {
+		return 0, err
+	}
+
+	s.logger.Info("audit log cleanup completed",
+		"deleted_count", count,
+		"retention_days", retentionDays,
+		"before", before,
+	)
+
+	return count, nil
+}
+
+// ============================================
+// STATISTICS
+// ============================================
+
+// GetActionCount returns the count of a specific action within a time range.
+func (s *AuditService) GetActionCount(ctx context.Context, tenantID string, action auditdom.Action, since time.Time) (int64, error) {
+	var tid *shared.ID
+	if tenantID != "" {
+		parsedID, err := shared.IDFromString(tenantID)
+		if err != nil {
+			return 0, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		}
+		tid = &parsedID
+	}
+
+	return s.auditRepo.CountByAction(ctx, tid, action, since)
+}
+
+// ============================================
+// CONVENIENCE METHODS FOR COMMON EVENTS
+// ============================================
+
+// LogUserCreated logs a user creation event.
+func (s *AuditService) LogUserCreated(ctx context.Context, actx AuditContext, userID, email string) error {
+	event := NewSuccessEvent(auditdom.ActionUserCreated, auditdom.ResourceTypeUser, userID).
+		WithResourceName(email).
+		WithMessage(fmt.Sprintf("User %s created", email))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogUserUpdated logs a user update event.
+func (s *AuditService) LogUserUpdated(ctx context.Context, actx AuditContext, userID, email string, changes *auditdom.Changes) error {
+	event := NewSuccessEvent(auditdom.ActionUserUpdated, auditdom.ResourceTypeUser, userID).
+		WithResourceName(email).
+		WithChanges(changes).
+		WithMessage(fmt.Sprintf("User %s updated", email))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogUserSuspended logs a user suspension event.
+func (s *AuditService) LogUserSuspended(ctx context.Context, actx AuditContext, userID, email, reason string) error {
+	event := NewSuccessEvent(auditdom.ActionUserSuspended, auditdom.ResourceTypeUser, userID).
+		WithResourceName(email).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("User %s suspended: %s", email, reason)).
+		WithMetadata("reason", reason)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogMemberAdded logs a member addition event.
+func (s *AuditService) LogMemberAdded(ctx context.Context, actx AuditContext, membershipID, email, role string) error {
+	event := NewSuccessEvent(auditdom.ActionMemberAdded, auditdom.ResourceTypeMembership, membershipID).
+		WithResourceName(email).
+		WithMessage(fmt.Sprintf("Member %s added with role %s", email, role)).
+		WithMetadata("role", role)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogMemberRemoved logs a member removal event.
+func (s *AuditService) LogMemberRemoved(ctx context.Context, actx AuditContext, membershipID, email string) error {
+	event := NewSuccessEvent(auditdom.ActionMemberRemoved, auditdom.ResourceTypeMembership, membershipID).
+		WithResourceName(email).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Member %s removed", email))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogMemberRoleChanged logs a member role change event.
+func (s *AuditService) LogMemberRoleChanged(ctx context.Context, actx AuditContext, membershipID, email, oldRole, newRole string) error {
+	changes := auditdom.NewChanges().Set("role", oldRole, newRole)
+	event := NewSuccessEvent(auditdom.ActionMemberRoleChanged, auditdom.ResourceTypeMembership, membershipID).
+		WithResourceName(email).
+		WithChanges(changes).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Member %s role changed from %s to %s", email, oldRole, newRole))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogInvitationCreated logs an invitation creation event.
+func (s *AuditService) LogInvitationCreated(ctx context.Context, actx AuditContext, invitationID, email, role string) error {
+	event := NewSuccessEvent(auditdom.ActionInvitationCreated, auditdom.ResourceTypeInvitation, invitationID).
+		WithResourceName(email).
+		WithMessage(fmt.Sprintf("Invitation sent to %s with role %s", email, role)).
+		WithMetadata("role", role)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogInvitationAccepted logs an invitation acceptance event.
+func (s *AuditService) LogInvitationAccepted(ctx context.Context, actx AuditContext, invitationID, email string) error {
+	event := NewSuccessEvent(auditdom.ActionInvitationAccepted, auditdom.ResourceTypeInvitation, invitationID).
+		WithResourceName(email).
+		WithMessage(fmt.Sprintf("Invitation accepted by %s", email))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogPermissionDenied logs a permission denied event.
+func (s *AuditService) LogPermissionDenied(ctx context.Context, actx AuditContext, resourceType auditdom.ResourceType, resourceID, action, reason string) error {
+	event := NewDeniedEvent(auditdom.ActionPermissionDenied, resourceType, resourceID, reason).
+		WithMessage(fmt.Sprintf("Permission denied for %s on %s %s: %s", action, resourceType, resourceID, reason))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAuthFailed logs an authentication failure event.
+func (s *AuditService) LogAuthFailed(ctx context.Context, actx AuditContext, reason string) error {
+	event := NewFailureEvent(auditdom.ActionAuthFailed, auditdom.ResourceTypeToken, "", nil).
+		WithSeverity(auditdom.SeverityCritical).
+		WithMessage(fmt.Sprintf("Authentication failed: %s", reason)).
+		WithMetadata("reason", reason)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogUserLogin logs a user login event.
+func (s *AuditService) LogUserLogin(ctx context.Context, actx AuditContext, userID, email string) error {
+	event := NewSuccessEvent(auditdom.ActionAuthLogin, auditdom.ResourceTypeUser, userID).
+		WithResourceName(email).
+		WithMessage(fmt.Sprintf("User %s logged in", email))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogUserLogout logs a user logout event.
+func (s *AuditService) LogUserLogout(ctx context.Context, actx AuditContext, userID, email string) error {
+	event := NewSuccessEvent(auditdom.ActionAuthLogout, auditdom.ResourceTypeUser, userID).
+		WithResourceName(email).
+		WithMessage(fmt.Sprintf("User %s logged out", email))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogUserRegistered logs a user registration event.
+func (s *AuditService) LogUserRegistered(ctx context.Context, actx AuditContext, userID, email string) error {
+	event := NewSuccessEvent(auditdom.ActionAuthRegister, auditdom.ResourceTypeUser, userID).
+		WithResourceName(email).
+		WithMessage(fmt.Sprintf("User %s registered", email))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// ============================================
+// AGENT AUDIT EVENTS
+// ============================================
+
+// LogAgentCreated logs an agent creation event.
+func (s *AuditService) LogAgentCreated(ctx context.Context, actx AuditContext, agentID, agentName, agentType string) error {
+	event := NewSuccessEvent(auditdom.ActionAgentCreated, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithMessage(fmt.Sprintf("Agent '%s' created (type: %s)", agentName, agentType)).
+		WithMetadata("agent_type", agentType)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAgentUpdated logs an agent update event.
+func (s *AuditService) LogAgentUpdated(ctx context.Context, actx AuditContext, agentID, agentName string, changes *auditdom.Changes) error {
+	event := NewSuccessEvent(auditdom.ActionAgentUpdated, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithChanges(changes).
+		WithMessage(fmt.Sprintf("Agent '%s' updated", agentName))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAgentDeleted logs an agent deletion event.
+func (s *AuditService) LogAgentDeleted(ctx context.Context, actx AuditContext, agentID, agentName string) error {
+	event := NewSuccessEvent(auditdom.ActionAgentDeleted, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithSeverity(auditdom.SeverityCritical).
+		WithMessage(fmt.Sprintf("Agent '%s' deleted", agentName))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAgentActivated logs an agent activation event.
+func (s *AuditService) LogAgentActivated(ctx context.Context, actx AuditContext, agentID, agentName string) error {
+	event := NewSuccessEvent(auditdom.ActionAgentActivated, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithMessage(fmt.Sprintf("Agent '%s' activated", agentName))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogCredentialCreated logs a credential creation event.
+func (s *AuditService) LogCredentialCreated(ctx context.Context, actx AuditContext, credID, name, credType string) error {
+	event := NewSuccessEvent(auditdom.ActionCredentialCreated, auditdom.ResourceTypeToken, credID).
+		WithResourceName(name).
+		WithMessage(fmt.Sprintf("Credential '%s' (%s) created", name, credType)).
+		WithMetadata("type", credType)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogCredentialUpdated logs a credential update event.
+func (s *AuditService) LogCredentialUpdated(ctx context.Context, actx AuditContext, credID, name string) error {
+	event := NewSuccessEvent(auditdom.ActionCredentialUpdated, auditdom.ResourceTypeToken, credID).
+		WithResourceName(name).
+		WithMessage(fmt.Sprintf("Credential '%s' updated", name))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogCredentialDeleted logs a credential deletion event.
+func (s *AuditService) LogCredentialDeleted(ctx context.Context, actx AuditContext, credID string) error {
+	event := NewSuccessEvent(auditdom.ActionCredentialDeleted, auditdom.ResourceTypeToken, credID).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Credential %s deleted", credID))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogCredentialAccessed logs a credential access (decrypt) event.
+func (s *AuditService) LogCredentialAccessed(ctx context.Context, actx AuditContext, credID, name string) error {
+	event := NewSuccessEvent(auditdom.ActionCredentialAccessed, auditdom.ResourceTypeToken, credID).
+		WithResourceName(name).
+		WithSeverity(auditdom.SeverityHigh). // Accessing secrets is high sensitivity
+		WithMessage(fmt.Sprintf("Credential '%s' decrypted/accessed", name))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogRuleSourceCreated logs a rule source creation event.
+func (s *AuditService) LogRuleSourceCreated(ctx context.Context, actx AuditContext, sourceID, name, sourceType string) error {
+	event := NewSuccessEvent(auditdom.ActionRuleSourceCreated, auditdom.ResourceTypeRuleSource, sourceID).
+		WithResourceName(name).
+		WithMessage(fmt.Sprintf("Rule Source '%s' (%s) created", name, sourceType)).
+		WithMetadata("type", sourceType)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogRuleSourceUpdated logs a rule source update event.
+func (s *AuditService) LogRuleSourceUpdated(ctx context.Context, actx AuditContext, sourceID, name string) error {
+	event := NewSuccessEvent(auditdom.ActionRuleSourceUpdated, auditdom.ResourceTypeRuleSource, sourceID).
+		WithResourceName(name).
+		WithMessage(fmt.Sprintf("Rule Source '%s' updated", name))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogRuleSourceDeleted logs a rule source deletion event.
+func (s *AuditService) LogRuleSourceDeleted(ctx context.Context, actx AuditContext, sourceID, name string) error {
+	event := NewSuccessEvent(auditdom.ActionRuleSourceDeleted, auditdom.ResourceTypeRuleSource, sourceID).
+		WithResourceName(name).
+		WithMessage(fmt.Sprintf("Rule Source '%s' deleted", name))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogRuleOverrideCreated logs a rule override creation event.
+func (s *AuditService) LogRuleOverrideCreated(ctx context.Context, actx AuditContext, overrideID, pattern string) error {
+	event := NewSuccessEvent(auditdom.ActionRuleOverrideCreated, auditdom.ResourceTypeRuleOverride, overrideID).
+		WithResourceName(pattern).
+		WithMessage(fmt.Sprintf("Rule Override for '%s' created", pattern))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogRuleOverrideUpdated logs a rule override update event.
+func (s *AuditService) LogRuleOverrideUpdated(ctx context.Context, actx AuditContext, overrideID, pattern string) error {
+	event := NewSuccessEvent(auditdom.ActionRuleOverrideUpdated, auditdom.ResourceTypeRuleOverride, overrideID).
+		WithResourceName(pattern).
+		WithMessage(fmt.Sprintf("Rule Override for '%s' updated", pattern))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogRuleOverrideDeleted logs a rule override deletion event.
+func (s *AuditService) LogRuleOverrideDeleted(ctx context.Context, actx AuditContext, overrideID, pattern string) error {
+	event := NewSuccessEvent(auditdom.ActionRuleOverrideDeleted, auditdom.ResourceTypeRuleOverride, overrideID).
+		WithResourceName(pattern).
+		WithMessage(fmt.Sprintf("Rule Override for '%s' deleted", pattern))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAgentDeactivated logs an agent deactivation event.
+func (s *AuditService) LogAgentDeactivated(ctx context.Context, actx AuditContext, agentID, agentName, reason string) error {
+	event := NewSuccessEvent(auditdom.ActionAgentDeactivated, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Agent '%s' deactivated: %s", agentName, reason)).
+		WithMetadata("reason", reason)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAgentRevoked logs an agent revocation event.
+func (s *AuditService) LogAgentRevoked(ctx context.Context, actx AuditContext, agentID, agentName, reason string) error {
+	event := NewSuccessEvent(auditdom.ActionAgentRevoked, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithSeverity(auditdom.SeverityCritical).
+		WithMessage(fmt.Sprintf("Agent '%s' access revoked: %s", agentName, reason)).
+		WithMetadata("reason", reason)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAgentKeyRegenerated logs an agent API key regeneration event.
+func (s *AuditService) LogAgentKeyRegenerated(ctx context.Context, actx AuditContext, agentID, agentName string) error {
+	event := NewSuccessEvent(auditdom.ActionAgentKeyRegenerated, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Agent '%s' API key regenerated", agentName))
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAgentConnected logs when an agent first connects (comes online).
+func (s *AuditService) LogAgentConnected(ctx context.Context, actx AuditContext, agentID, agentName, ipAddress string) error {
+	event := NewSuccessEvent(auditdom.ActionAgentConnected, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithMessage(fmt.Sprintf("Agent '%s' connected from %s", agentName, ipAddress)).
+		WithMetadata("ip_address", ipAddress)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogAgentDisconnected logs when an agent goes offline (timeout).
+func (s *AuditService) LogAgentDisconnected(ctx context.Context, actx AuditContext, agentID, agentName string) error {
+	event := NewSuccessEvent(auditdom.ActionAgentDisconnected, auditdom.ResourceTypeAgent, agentID).
+		WithResourceName(agentName).
+		WithMessage(fmt.Sprintf("Agent '%s' disconnected (heartbeat timeout)", agentName))
+	return s.LogEvent(ctx, actx, event)
+}

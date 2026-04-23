@@ -15,7 +15,7 @@ UPDATE assets
 SET sub_type = properties->>'sub_type',
     properties = properties - 'sub_type',
     updated_at = NOW()
-WHERE sub_type IS NULL OR sub_type = ''
+WHERE (sub_type IS NULL OR sub_type = '')
   AND properties->>'sub_type' IS NOT NULL
   AND properties->>'sub_type' != '';
 

@@ -33,6 +33,15 @@ const (
 	AuthProviderOIDC  = "oidc"
 )
 
+// Platform-level role strings recognised by IsPlatformAdmin. These
+// come from the IdP (Keycloak RealmAccess) or local auth. Kept here
+// instead of inline string literals so a rename in the IdP contract
+// only touches one place.
+const (
+	RolePlatformAdmin = "platform_admin"
+	RoleSystemAdmin   = "system_admin"
+)
+
 // UnifiedAuthConfig holds configuration for unified auth middleware.
 type UnifiedAuthConfig struct {
 	Provider              config.AuthProvider
@@ -498,7 +507,7 @@ func IsPlatformAdmin(ctx context.Context) bool {
 
 	// Check for platform_admin role in Keycloak realm access
 	for _, role := range claims.RealmAccess.Roles {
-		if role == "platform_admin" || role == "system_admin" {
+		if role == RolePlatformAdmin || role == RoleSystemAdmin {
 			return true
 		}
 	}
@@ -507,7 +516,7 @@ func IsPlatformAdmin(ctx context.Context) bool {
 	// This can be configured via environment variable PLATFORM_ADMIN_EMAILS
 	// For now, we check the role from context (set by local auth)
 	role := GetRole(ctx)
-	if role == "platform_admin" || role == "system_admin" {
+	if role == RolePlatformAdmin || role == RoleSystemAdmin {
 		return true
 	}
 

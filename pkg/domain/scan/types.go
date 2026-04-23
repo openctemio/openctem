@@ -66,3 +66,13 @@ const (
 	// MaxRetryBackoffSeconds is the maximum allowed initial backoff (24 hours).
 	MaxRetryBackoffSeconds = 86400
 )
+
+// Run-outcome strings a scan run reports. Used by RecordRun in
+// entity.go. Kept as plain string constants (not a typed enum) so
+// they line up with the untyped status column on scan_runs.
+const (
+	RunStatusCompleted = "completed"
+	RunStatusSuccess   = "success"
+	RunStatusFailed    = "failed"
+	RunStatusError     = "error"
+)

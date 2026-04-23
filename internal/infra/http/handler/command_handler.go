@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/openctemio/api/internal/app/command"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,11 +10,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
 	pipelinesvc "github.com/openctemio/api/internal/app/pipeline"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/command"
+	commanddom "github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -21,14 +21,14 @@ import (
 
 // CommandHandler handles command-related HTTP requests.
 type CommandHandler struct {
-	service         *app.CommandService
+	service         *command.Service
 	pipelineService *pipelinesvc.Service
 	validator       *validator.Validator
 	logger          *logger.Logger
 }
 
 // NewCommandHandler creates a new command handler.
-func NewCommandHandler(svc *app.CommandService, v *validator.Validator, log *logger.Logger) *CommandHandler {
+func NewCommandHandler(svc *command.Service, v *validator.Validator, log *logger.Logger) *CommandHandler {
 	return &CommandHandler{
 		service:   svc,
 		validator: v,
@@ -60,7 +60,7 @@ type CommandResponse struct {
 }
 
 // toCommandResponse converts a domain command to API response.
-func toCommandResponse(c *command.Command) CommandResponse {
+func toCommandResponse(c *commanddom.Command) CommandResponse {
 	resp := CommandResponse{
 		ID:             c.ID.String(),
 		TenantID:       c.TenantID.String(),
@@ -125,7 +125,7 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	tenantID := middleware.GetTenantID(r.Context())
 
-	cmd, err := h.service.CreateCommand(r.Context(), app.CreateCommandInput{
+	cmd, err := h.service.Create(r.Context(), command.CreateInput{
 		TenantID:  tenantID,
 		AgentID:   req.AgentID,
 		Type:      req.Type,
@@ -160,7 +160,7 @@ func (h *CommandHandler) Get(w http.ResponseWriter, r *http.Request) {
 	commandID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	cmd, err := h.service.GetCommand(r.Context(), tenantID, commandID)
+	cmd, err := h.service.Get(r.Context(), tenantID, commandID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -190,7 +190,7 @@ func (h *CommandHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
-	input := app.ListCommandsInput{
+	input := command.ListInput{
 		TenantID: tenantID,
 		AgentID:  r.URL.Query().Get("agent_id"),
 		Type:     r.URL.Query().Get("type"),
@@ -200,7 +200,7 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 		PerPage:  parseQueryInt(r.URL.Query().Get("per_page"), 20),
 	}
 
-	result, err := h.service.ListCommands(r.Context(), input)
+	result, err := h.service.List(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -244,7 +244,7 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 
 	limit := parseQueryInt(r.URL.Query().Get("limit"), 10)
 
-	commands, err := h.service.PollCommands(r.Context(), app.PollCommandsInput{
+	commands, err := h.service.Poll(r.Context(), command.PollInput{
 		TenantID: agt.TenantID.String(),
 		AgentID:  agt.ID.String(),
 		Limit:    limit,
@@ -285,7 +285,7 @@ func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 
 	commandID := chi.URLParam(r, "id")
 
-	cmd, err := h.service.AcknowledgeCommand(r.Context(), agt.TenantID.String(), commandID)
+	cmd, err := h.service.Acknowledge(r.Context(), agt.TenantID.String(), commandID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -317,7 +317,7 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 
 	commandID := chi.URLParam(r, "id")
 
-	cmd, err := h.service.StartCommand(r.Context(), agt.TenantID.String(), commandID)
+	cmd, err := h.service.Start(r.Context(), agt.TenantID.String(), commandID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -356,7 +356,7 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		req = UpdateCommandStatusRequest{}
 	}
 
-	cmd, err := h.service.CompleteCommand(r.Context(), app.CompleteCommandInput{
+	cmd, err := h.service.Complete(r.Context(), command.CompleteInput{
 		TenantID:  agt.TenantID.String(),
 		CommandID: commandID,
 		Result:    req.Result,
@@ -375,7 +375,7 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 
 // triggerPipelineProgression triggers pipeline progression when a command completes.
 // It extracts pipeline info from the command payload and calls OnStepCompleted.
-func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *command.Command) {
+func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *commanddom.Command) {
 	if h.pipelineService == nil {
 		return
 	}
@@ -449,7 +449,7 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 		req = UpdateCommandStatusRequest{ErrorMessage: "Unknown error"}
 	}
 
-	cmd, err := h.service.FailCommand(r.Context(), app.FailCommandInput{
+	cmd, err := h.service.Fail(r.Context(), command.FailInput{
 		TenantID:     agt.TenantID.String(),
 		CommandID:    commandID,
 		ErrorMessage: req.ErrorMessage,
@@ -467,7 +467,7 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 }
 
 // triggerPipelineFailed triggers pipeline failure when a command fails.
-func (h *CommandHandler) triggerPipelineFailed(ctx context.Context, cmd *command.Command, errorMessage string) {
+func (h *CommandHandler) triggerPipelineFailed(ctx context.Context, cmd *commanddom.Command, errorMessage string) {
 	if h.pipelineService == nil {
 		return
 	}

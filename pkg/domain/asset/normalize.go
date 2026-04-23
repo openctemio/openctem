@@ -29,6 +29,12 @@ func NormalizeName(name string, assetType AssetType, subType string) string {
 		return normalizeIPAddress(name)
 	case AssetTypeHost:
 		return normalizeHostName(name)
+	case AssetTypeEndpoint:
+		// endpoints are user-operated devices. Names arrive as
+		// hostname (laptop-uk-0141), FQDN (laptop-uk-0141.corp.example),
+		// or agent GUID. Reuse the host-name normalizer — same rules
+		// (lowercase, strip trailing dot, DNS label validation).
+		return normalizeHostName(name)
 	case AssetTypeService, AssetTypeHTTPService, AssetTypeOpenPort, AssetTypeDiscoveredURL:
 		return normalizeServiceName(name, subType)
 	case AssetTypeApplication, AssetTypeWebsite, AssetTypeWebApplication, AssetTypeAPI:

@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 const maxResponseSize = 10 * 1024 * 1024 // 10MB
@@ -30,19 +32,22 @@ func NewClient(baseURL, email, apiToken string) (*Client, error) {
 	if err != nil || u.Scheme != "https" {
 		return nil, fmt.Errorf("invalid Jira URL: must use https")
 	}
-	// Block internal/metadata URLs (SSRF protection)
-	host := strings.ToLower(u.Hostname())
-	if host == "localhost" || strings.HasPrefix(host, "127.") || strings.HasPrefix(host, "169.254.") || strings.HasPrefix(host, "10.") || strings.HasPrefix(host, "192.168.") {
-		return nil, fmt.Errorf("invalid Jira URL: internal addresses not allowed")
+	// SSRF: delegate the blocklist to pkg/httpsec — the previous inline
+	// prefix check missed CGNAT (100.64/10), 172.16/12, IPv6 link-local,
+	// multicast, and DNS-resolved attacks. ValidateURL resolves the
+	// hostname and rejects if any A/AAAA record falls in a blocked CIDR.
+	if _, err := httpsec.ValidateURL(baseURL); err != nil {
+		return nil, fmt.Errorf("invalid Jira URL: %w", err)
 	}
 
 	return &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		email:    email,
 		apiToken: apiToken,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		// SSRF: SafeHTTPClient's dialer is the belt to ValidateURL's
+		// braces — even if a redirect or DNS rebinding tries to pivot
+		// to private space, the dial fails closed.
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 	}, nil
 }
 

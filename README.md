@@ -93,7 +93,7 @@ api/
 │   ├── validator/             # Input validation + SSRF protection
 │   ├── password/              # bcrypt hashing
 │   └── pagination/            # Cursor/offset pagination
-├── migrations/                # 99 sequential migrations
+├── migrations/                # 156 sequential migrations
 ├── tests/
 │   ├── unit/                  # Unit tests (100+ files)
 │   ├── integration/           # Integration tests

@@ -113,31 +113,68 @@ func (s *SMTPSender) SendTemplate(ctx context.Context, to string, template Templ
 	})
 }
 
+// SanitizeHeaderValue strips CR and LF from a value that will be
+// written into an SMTP header line. Without this, attacker-controlled
+// values in Subject / To / From / ReplyTo / custom headers would let
+// an attacker inject additional headers by embedding "\r\n" + a
+// forged header name. Classic email-header-injection / CRLF-injection
+// vector; see CodeQL rule go/email-content-injection.
+//
+// We strip rather than reject so a benign stray "\r" in a scanner-
+// generated title (e.g. copy-pasted from a Windows log file) does
+// not fail the notification outright. Any downstream templating can
+// always re-add structure by choosing its own delimiters — it never
+// needs literal CR/LF in an address, subject, or header key/value.
+func SanitizeHeaderValue(v string) string {
+	// Replace CR / LF with a single space so visible content still
+	// round-trips intact in the email client.
+	v = strings.ReplaceAll(v, "\r", " ")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return v
+}
+
 // buildMessage builds the email message content.
 func (s *SMTPSender) buildMessage(msg *Message) []byte {
 	var builder strings.Builder
 
+	// Every value that gets printed into a header line MUST pass
+	// through SanitizeHeaderValue first. Skipping the sanitiser on
+	// any one of these readds the CRLF-injection vector CodeQL
+	// flagged.
+	safeFromName := SanitizeHeaderValue(s.config.FromName)
+	safeFrom := SanitizeHeaderValue(s.config.From)
+
 	// From header
-	if s.config.FromName != "" {
-		builder.WriteString(fmt.Sprintf("From: %s <%s>\r\n", s.config.FromName, s.config.From))
+	if safeFromName != "" {
+		builder.WriteString(fmt.Sprintf("From: %s <%s>\r\n", safeFromName, safeFrom))
 	} else {
-		builder.WriteString(fmt.Sprintf("From: %s\r\n", s.config.From))
+		builder.WriteString(fmt.Sprintf("From: %s\r\n", safeFrom))
 	}
 
-	// To header
-	builder.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(msg.To, ", ")))
+	// To header — sanitise each recipient individually, then join.
+	safeRecipients := make([]string, 0, len(msg.To))
+	for _, r := range msg.To {
+		safeRecipients = append(safeRecipients, SanitizeHeaderValue(r))
+	}
+	builder.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(safeRecipients, ", ")))
 
 	// Subject header
-	builder.WriteString(fmt.Sprintf("Subject: %s\r\n", msg.Subject))
+	builder.WriteString(fmt.Sprintf("Subject: %s\r\n", SanitizeHeaderValue(msg.Subject)))
 
 	// Reply-To header
 	if msg.ReplyTo != "" {
-		builder.WriteString(fmt.Sprintf("Reply-To: %s\r\n", msg.ReplyTo))
+		builder.WriteString(fmt.Sprintf("Reply-To: %s\r\n", SanitizeHeaderValue(msg.ReplyTo)))
 	}
 
-	// Custom headers
+	// Custom headers — BOTH the key and the value pass through the
+	// sanitiser. An attacker who controls just the key can still
+	// wedge "\r\nBcc:" into the header stream if only values get
+	// cleaned.
 	for key, value := range msg.Headers {
-		builder.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+		builder.WriteString(fmt.Sprintf("%s: %s\r\n",
+			SanitizeHeaderValue(key),
+			SanitizeHeaderValue(value),
+		))
 	}
 
 	// MIME headers
@@ -151,7 +188,8 @@ func (s *SMTPSender) buildMessage(msg *Message) []byte {
 	// Empty line before body
 	builder.WriteString("\r\n")
 
-	// Body
+	// Body (HTML bodies are auto-escaped by html/template at the
+	// template-render layer; text bodies are fine to embed as-is).
 	builder.WriteString(msg.Body)
 
 	return []byte(builder.String())
@@ -272,21 +310,37 @@ func (s *LoggingSender) IsConfigured() bool {
 	return s.sender.IsConfigured()
 }
 
+// sanitizeRecipientsForLog runs SanitizeHeaderValue on every address
+// and returns them joined. Logging callsites flowed the raw recipient
+// slice into the structured logger before; any CRLF in a malicious
+// address would let an attacker forge fake log lines (CodeQL rule
+// go/log-injection). The header-sanitiser already strips CR/LF, so
+// reusing it keeps one definition.
+func sanitizeRecipientsForLog(to []string) string {
+	safe := make([]string, 0, len(to))
+	for _, r := range to {
+		safe = append(safe, SanitizeHeaderValue(r))
+	}
+	return strings.Join(safe, ", ")
+}
+
 // Send logs and sends the email.
 func (s *LoggingSender) Send(ctx context.Context, msg *Message) error {
+	safeTo := sanitizeRecipientsForLog(msg.To)
+	safeSubject := SanitizeHeaderValue(msg.Subject)
 	s.logger.Info("sending email",
-		"to", msg.To,
-		"subject", msg.Subject,
+		"to", safeTo,
+		"subject", safeSubject,
 	)
 	err := s.sender.Send(ctx, msg)
 	if err != nil {
 		s.logger.Info("email send failed",
-			"to", msg.To,
+			"to", safeTo,
 			"error", err,
 		)
 	} else {
 		s.logger.Info("email sent successfully",
-			"to", msg.To,
+			"to", safeTo,
 		)
 	}
 	return err
@@ -294,20 +348,21 @@ func (s *LoggingSender) Send(ctx context.Context, msg *Message) error {
 
 // SendTemplate logs and sends a templated email.
 func (s *LoggingSender) SendTemplate(ctx context.Context, to string, template Template, data any) error {
+	safeTo := SanitizeHeaderValue(to)
 	s.logger.Info("sending templated email",
-		"to", to,
+		"to", safeTo,
 		"template", template,
 	)
 	err := s.sender.SendTemplate(ctx, to, template, data)
 	if err != nil {
 		s.logger.Info("templated email send failed",
-			"to", to,
+			"to", safeTo,
 			"template", template,
 			"error", err,
 		)
 	} else {
 		s.logger.Info("templated email sent successfully",
-			"to", to,
+			"to", safeTo,
 			"template", template,
 		)
 	}

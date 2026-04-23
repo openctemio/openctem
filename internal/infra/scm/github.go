@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // GitHubClient implements the Client interface for GitHub
@@ -19,17 +21,25 @@ type GitHubClient struct {
 	baseURL    string
 }
 
-// NewGitHubClient creates a new GitHub client
+// NewGitHubClient creates a new GitHub client.
+// SECURITY: validates user-supplied BaseURL via httpsec.ValidateURL to
+// prevent SSRF (e.g. attacker setting BaseURL=http://169.254.169.254/...
+// to read AWS IMDS metadata via TestConnection). The httpClient also
+// uses httpsec.SafeHTTPClient whose dialer rejects loopback / private
+// / link-local addresses as defense-in-depth.
 func NewGitHubClient(config Config) (*GitHubClient, error) {
 	baseURL := "https://api.github.com"
 	if config.BaseURL != "" && config.BaseURL != "https://github.com" {
+		if _, err := httpsec.ValidateURL(config.BaseURL); err != nil {
+			return nil, fmt.Errorf("invalid base_url: %w", err)
+		}
 		// For GitHub Enterprise, construct the API URL
 		baseURL = strings.TrimSuffix(config.BaseURL, "/") + "/api/v3"
 	}
 
 	return &GitHubClient{
 		config:     config,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 		baseURL:    baseURL,
 	}, nil
 }

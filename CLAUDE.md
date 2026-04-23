@@ -39,6 +39,13 @@ api/
 ├── cmd/                    # Application entrypoints
 ├── internal/
 │   ├── app/               # Application services (business logic)
+│   │   ├── <cluster>/     # One bounded context per folder (audit/,
+│   │   │                  # asset/, finding/, auth/, tenant/, ...)
+│   │   └── <cluster>_service.go  # Compat shim — type aliases re-
+│   │                      #   exporting the cluster's public surface
+│   │                      #   as `app.X` for pre-refactor callers.
+│   │                      #   New code should import the cluster
+│   │                      #   package directly.
 │   ├── domain/            # Domain models and interfaces
 │   │   └── shared/        # Shared types (ID, errors)
 │   └── infra/             # Infrastructure layer
@@ -125,6 +132,54 @@ Add bounds checking when converting between integer types (`math.MaxInt32` befor
 ### 7. Cyclomatic Complexity (cyclop)
 
 Keep functions under 30 complexity. Use `//nolint:cyclop` for route registration.
+
+### 8. File Naming Inside `internal/app/<cluster>/`
+
+Files inside a cluster folder describe WHAT they contain, not the layer.
+The folder name already says "this is a service package", so the `_service`
+suffix is redundant and must be dropped.
+
+```
+// GOOD — inside internal/app/auth/
+auth/service.go          # main AuthService impl
+auth/session.go          # SessionService impl
+auth/oauth.go            # OAuthService impl
+
+// BAD — redundant
+auth/auth_service.go     # "auth" × 2 + "service" redundant
+auth/session_service.go
+auth/oauth_service.go
+```
+
+Exceptions:
+- Test files keep `_test.go` suffix (Go requirement).
+- The compat shim file at `internal/app/<cluster>_service.go` DOES carry
+  the `_service` suffix because it lives in `package app`, not inside
+  a named cluster folder.
+
+Struct names keep the `Service` suffix (`AuthService`, `AssetService`) —
+only file names are adjusted.
+
+### 9. Layer-Mirrored Package Naming (`pkg/domain/<X>` ↔ `internal/app/<X>`)
+
+It is intentional that `pkg/domain/audit/` and `internal/app/audit/` share the
+short name `audit`. DDD convention — domain entities live at
+`pkg/domain/<X>/`, the orchestrating service lives at `internal/app/<X>/`.
+
+When a single file imports both, alias the domain side with a `dom` suffix:
+
+```go
+import (
+    "github.com/openctemio/api/internal/app/audit"
+    auditdom "github.com/openctemio/api/pkg/domain/audit"
+)
+
+var _ auditdom.Repository = (*audit.Service)(nil)
+```
+
+Do NOT rename folders to avoid the collision (do not add `svc`/`service`/
+`app` suffix). Collisions handle at the callsite via alias; folder naming
+stays mirrored with the domain layer for navigability.
 
 ---
 
@@ -728,4 +783,41 @@ git commit -m "fix(security): add input validation
 
 ---
 
-**Last Updated**: 2026-03-17
+## Recent Changes (2026-04-15)
+
+### Asset Identity Resolution (RFC-001)
+- Asset names normalized automatically in `NewAsset()` constructor (16 asset types)
+- IP correlation for host dedup (`internal/app/ingest/correlator.go`)
+- Aliases stored in `properties.aliases[]` when assets renamed
+- Admin dedup review: `GET/POST /api/v1/assets/dedup/reviews`
+- Per-tenant config: `tenant.Settings.AssetIdentity`
+- See `docs/architecture/asset-identity-resolution.md`
+
+### API Decoupled from SDK-Go (RFC-002)
+- API imports `github.com/openctemio/ctis` (4K lines, zero deps) instead of SDK-Go (50K lines)
+- Adapters copied to `internal/infra/adapters/`
+- Branch: `feat/decouple-sdk` (pending merge)
+- See `docs/architecture/api-ctis-decoupling.md`
+
+### Asset metadata column removed
+- `metadata` JSONB merged into `properties` (migration 000140)
+- Entity: `Metadata()` and `SetMetadata()` removed
+- API response: only `properties` field (no more `metadata`)
+
+### Sub-type promotion
+- Ingest now resolves TypeAliases and promotes `sub_type` from properties
+- Migration 000141 backfills existing data
+
+### CTEM loop closures (2026-04-20)
+- Migration 000154 — audit log hash-chain (tamper-evident trail)
+- Migration 000155 — runtime telemetry events (EDR/XDR ingest from agents)
+- Migration 000156 — IOC catalogue + match log (runtime auto-reopen, B6)
+- Agent API-key endpoint: `POST /api/v1/telemetry-events` (NOT `/runtime-telemetry/events`)
+- Admin endpoint: `GET /api/v1/audit-logs/verify` returns 409 when chain broken
+- Package `pkg/domain/ioc/`, `pkg/domain/telemetry/`, `internal/app/ioc/` added
+- Priority-flood guard renamed: `P0FloodGuard` → `PriorityFloodGuard` with configurable `ProtectedClass`
+- Q1/Q2/Q3 gate integration tests in `tests/integration/ctem_*_test.go`
+
+### Migrations: 156 total (000001–000156)
+
+**Last Updated**: 2026-04-20

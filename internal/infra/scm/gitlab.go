@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // GitLabClient implements the Client interface for GitLab
@@ -19,17 +21,21 @@ type GitLabClient struct {
 	baseURL    string
 }
 
-// NewGitLabClient creates a new GitLab client
+// NewGitLabClient creates a new GitLab client.
+// SECURITY: see GitHubClient — same SSRF mitigation pattern.
 func NewGitLabClient(config Config) (*GitLabClient, error) {
 	baseURL := "https://gitlab.com/api/v4"
 	if config.BaseURL != "" && config.BaseURL != defaultGitLabURL {
+		if _, err := httpsec.ValidateURL(config.BaseURL); err != nil {
+			return nil, fmt.Errorf("invalid base_url: %w", err)
+		}
 		// For self-hosted GitLab, construct the API URL
 		baseURL = strings.TrimSuffix(config.BaseURL, "/") + "/api/v4"
 	}
 
 	return &GitLabClient{
 		config:     config,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 		baseURL:    baseURL,
 	}, nil
 }

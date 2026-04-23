@@ -159,6 +159,8 @@ func (r *RuleRepository) CreateBatch(ctx context.Context, rules []*rule.Rule) er
 }
 
 // GetByID retrieves a rule by ID.
+//
+//getbyid:unsafe - Rules are the shared rule catalog; tenant-specific overrides live in rule_overrides.
 func (r *RuleRepository) GetByID(ctx context.Context, id shared.ID) (*rule.Rule, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
@@ -398,7 +400,7 @@ func (r *RuleRepository) buildWhereClause(filter rule.RuleFilter) (string, []any
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR rule_id ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex, argIndex))
 		args = append(args, wrapLikePattern(filter.Search))
-		argIndex++
+		// argIndex not incremented — this is the last condition.
 	}
 
 	if len(conditions) == 0 {

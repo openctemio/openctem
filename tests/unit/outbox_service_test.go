@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/openctemio/api/internal/app"
+	outboxapp "github.com/openctemio/api/internal/app/outbox"
 	"github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -284,9 +284,9 @@ func newTestOutboxService(
 	eventRepo *mockEventRepo,
 	notifRepo *mockNotifExtRepoForService,
 	decryptFn func(string) (string, error),
-) *app.OutboxService {
+) *outboxapp.Service {
 	log := logger.NewNop()
-	return app.NewOutboxService(
+	return outboxapp.NewService(
 		outboxRepo,
 		eventRepo,
 		notifRepo,
@@ -395,7 +395,7 @@ func TestEnqueueNotification_Success(t *testing.T) {
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	tenantID := shared.NewID()
-	params := app.EnqueueNotificationParams{
+	params := outboxapp.EnqueueParams{
 		TenantID:      tenantID,
 		EventType:     "new_finding",
 		AggregateType: "finding",
@@ -406,7 +406,7 @@ func TestEnqueueNotification_Success(t *testing.T) {
 		Metadata:      map[string]any{"tool": "nuclei"},
 	}
 
-	err := svc.EnqueueNotification(context.Background(), params)
+	err := svc.Enqueue(context.Background(), params)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -438,7 +438,7 @@ func TestEnqueueNotification_WithAggregateID(t *testing.T) {
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
 	aggID := uuid.New()
-	params := app.EnqueueNotificationParams{
+	params := outboxapp.EnqueueParams{
 		TenantID:      shared.NewID(),
 		EventType:     "scan_completed",
 		AggregateType: "scan",
@@ -448,7 +448,7 @@ func TestEnqueueNotification_WithAggregateID(t *testing.T) {
 		Severity:      "info",
 	}
 
-	err := svc.EnqueueNotification(context.Background(), params)
+	err := svc.Enqueue(context.Background(), params)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -469,14 +469,14 @@ func TestEnqueueNotification_RepoError(t *testing.T) {
 	notifRepo := &mockNotifExtRepoForService{}
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	params := app.EnqueueNotificationParams{
+	params := outboxapp.EnqueueParams{
 		TenantID:  shared.NewID(),
 		EventType: "new_finding",
 		Title:     "Test",
 		Severity:  "high",
 	}
 
-	err := svc.EnqueueNotification(context.Background(), params)
+	err := svc.Enqueue(context.Background(), params)
 	if err == nil {
 		t.Fatal("expected error when repo fails")
 	}
@@ -491,14 +491,14 @@ func TestEnqueueNotification_DefaultSeverity(t *testing.T) {
 	notifRepo := &mockNotifExtRepoForService{}
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	params := app.EnqueueNotificationParams{
+	params := outboxapp.EnqueueParams{
 		TenantID:  shared.NewID(),
 		EventType: "new_finding",
 		Title:     "Test",
 		// Severity intentionally left empty
 	}
 
-	err := svc.EnqueueNotification(context.Background(), params)
+	err := svc.Enqueue(context.Background(), params)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -519,7 +519,7 @@ func TestEnqueueNotificationInTx_Success(t *testing.T) {
 	notifRepo := &mockNotifExtRepoForService{}
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	params := app.EnqueueNotificationParams{
+	params := outboxapp.EnqueueParams{
 		TenantID:      shared.NewID(),
 		EventType:     "finding_confirmed",
 		AggregateType: "finding",
@@ -528,7 +528,7 @@ func TestEnqueueNotificationInTx_Success(t *testing.T) {
 	}
 
 	// Pass nil tx since mock doesn't use it
-	err := svc.EnqueueNotificationInTx(context.Background(), nil, params)
+	err := svc.EnqueueInTx(context.Background(), nil, params)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -546,14 +546,14 @@ func TestEnqueueNotificationInTx_RepoError(t *testing.T) {
 	notifRepo := &mockNotifExtRepoForService{}
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	params := app.EnqueueNotificationParams{
+	params := outboxapp.EnqueueParams{
 		TenantID:  shared.NewID(),
 		EventType: "new_finding",
 		Title:     "Test",
 		Severity:  "medium",
 	}
 
-	err := svc.EnqueueNotificationInTx(context.Background(), nil, params)
+	err := svc.EnqueueInTx(context.Background(), nil, params)
 	if err == nil {
 		t.Fatal("expected error when tx repo fails")
 	}
@@ -1557,7 +1557,7 @@ func TestNotificationExtension_BooleanCompat(t *testing.T) {
 // =============================================================================
 
 func TestOutboxSchedulerConfig_Defaults(t *testing.T) {
-	config := app.DefaultOutboxSchedulerConfig()
+	config := outboxapp.DefaultSchedulerConfig()
 
 	if config.ProcessInterval != 5*time.Second {
 		t.Errorf("expected 5s process interval, got %v", config.ProcessInterval)
@@ -1596,7 +1596,7 @@ func TestOutboxScheduler_StartStop(t *testing.T) {
 	notifRepo := &mockNotifExtRepoForService{}
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	config := app.OutboxSchedulerConfig{
+	config := outboxapp.SchedulerConfig{
 		ProcessInterval:        100 * time.Millisecond,
 		CleanupInterval:        100 * time.Millisecond,
 		UnlockInterval:         100 * time.Millisecond,
@@ -1608,7 +1608,7 @@ func TestOutboxScheduler_StartStop(t *testing.T) {
 	}
 
 	log := logger.NewNop()
-	scheduler := app.NewOutboxScheduler(svc, config, log)
+	scheduler := outboxapp.NewScheduler(svc, config, log)
 
 	// Start scheduler
 	scheduler.Start()
@@ -1636,7 +1636,7 @@ func TestOutboxScheduler_DoubleStart(t *testing.T) {
 	notifRepo := &mockNotifExtRepoForService{}
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	config := app.OutboxSchedulerConfig{
+	config := outboxapp.SchedulerConfig{
 		ProcessInterval:        1 * time.Hour, // Long interval so it doesn't trigger
 		CleanupInterval:        1 * time.Hour,
 		UnlockInterval:         1 * time.Hour,
@@ -1648,7 +1648,7 @@ func TestOutboxScheduler_DoubleStart(t *testing.T) {
 	}
 
 	log := logger.NewNop()
-	scheduler := app.NewOutboxScheduler(svc, config, log)
+	scheduler := outboxapp.NewScheduler(svc, config, log)
 
 	// Double start should not panic
 	scheduler.Start()
@@ -1668,7 +1668,7 @@ func TestOutboxScheduler_DoubleStop(t *testing.T) {
 	notifRepo := &mockNotifExtRepoForService{}
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, successDecrypt())
 
-	config := app.OutboxSchedulerConfig{
+	config := outboxapp.SchedulerConfig{
 		ProcessInterval:        1 * time.Hour,
 		CleanupInterval:        1 * time.Hour,
 		UnlockInterval:         1 * time.Hour,
@@ -1680,7 +1680,7 @@ func TestOutboxScheduler_DoubleStop(t *testing.T) {
 	}
 
 	log := logger.NewNop()
-	scheduler := app.NewOutboxScheduler(svc, config, log)
+	scheduler := outboxapp.NewScheduler(svc, config, log)
 
 	scheduler.Start()
 	scheduler.Stop()

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/sdk-go/pkg/shared/fingerprint"
-	"github.com/openctemio/sdk-go/pkg/shared/severity"
+	"github.com/openctemio/ctis/fingerprint"
+	"github.com/openctemio/ctis/severity"
 
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -17,7 +17,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
-	"github.com/openctemio/sdk-go/pkg/ctis"
+	"github.com/openctemio/ctis"
 )
 
 // FindingCreatedCallback is called when findings are created during ingestion.
@@ -35,8 +35,28 @@ type FindingProcessor struct {
 	// findingCreatedCallback is called after findings are successfully created
 	findingCreatedCallback FindingCreatedCallback
 
+	// priorityClassifier enriches + classifies findings after creation (RFC-004)
+	priorityClassifier PriorityClassifier
+
+	// slaApplier (F3 wire): computes and sets the SLA deadline on each
+	// classified finding using priority class first, severity fallback.
+	// Nil-safe: when not wired, findings get NULL sla_deadline as before.
+	slaApplier SLAApplier
+
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
+}
+
+// PriorityClassifier enriches findings with EPSS/KEV and assigns priority class.
+type PriorityClassifier interface {
+	EnrichAndClassifyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, assets map[shared.ID]*asset.Asset) error
+}
+
+// SLAApplier computes SLA deadline for each finding and writes it via
+// Finding.SetSLADeadline. MUST run AFTER priority classification so
+// the P0..P3 class drives the deadline (F3 invariant).
+type SLAApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
 
 // activityRecorder is the subset of FindingActivityService needed by the processor.
@@ -72,6 +92,19 @@ func (p *FindingProcessor) SetActivityService(svc activityRecorder) {
 // SetFindingCreatedCallback sets the callback for when findings are created.
 func (p *FindingProcessor) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	p.findingCreatedCallback = callback
+}
+
+// SetPriorityClassifier sets the priority classification service (RFC-004).
+func (p *FindingProcessor) SetPriorityClassifier(classifier PriorityClassifier) {
+	p.priorityClassifier = classifier
+}
+
+// SetSLAApplier wires the SLA-deadline calculator. F3: the
+// applier is invoked AFTER priority classification so priority class
+// drives the deadline; when the applier is nil the pipeline behaves
+// as before (sla_deadline left NULL).
+func (p *FindingProcessor) SetSLAApplier(applier SLAApplier) {
+	p.slaApplier = applier
 }
 
 // ProcessBatch processes all findings using batch operations.
@@ -317,7 +350,50 @@ func (p *FindingProcessor) ProcessBatch(
 				p.persistDataFlows(ctx, newFindings)
 			}
 
-			// Step 4c: Trigger workflow events for newly created findings
+			// Step 4c: Enrich with EPSS/KEV + classify priority (RFC-004)
+			if p.priorityClassifier != nil && result.Created > 0 {
+				createdForEnrich := make([]*vulnerability.Finding, 0, result.Created)
+				for i, f := range newFindings {
+					if result.Errors == nil || result.Errors[i] == "" {
+						createdForEnrich = append(createdForEnrich, f)
+					}
+				}
+				if len(createdForEnrich) > 0 {
+					// Build asset map for classification context.
+					// Uses dedup map so each unique asset is fetched once.
+					// Typical batch has 1-5 unique assets — acceptable for now.
+					assetMap := make(map[shared.ID]*asset.Asset)
+					for _, f := range createdForEnrich {
+						if _, ok := assetMap[f.AssetID()]; !ok {
+							a, err := p.assetRepo.GetByID(ctx, tenantID, f.AssetID())
+							if err == nil {
+								assetMap[f.AssetID()] = a
+							}
+						}
+					}
+					if err := p.priorityClassifier.EnrichAndClassifyBatch(ctx, tenantID, createdForEnrich, assetMap); err != nil {
+						p.logger.Warn("priority classification failed", "error", err)
+					} else {
+						// F3 wire: apply SLA deadline now that priority
+						// class is set. Failure is non-fatal — findings
+						// persist without a deadline and the SLA
+						// escalation controller surfaces them as NULL.
+						if p.slaApplier != nil {
+							if err := p.slaApplier.ApplyBatch(ctx, tenantID, createdForEnrich); err != nil {
+								p.logger.Warn("sla deadline apply failed", "error", err)
+							}
+						}
+						// Persist enriched findings (update EPSS/KEV/priority/SLA fields)
+						for _, f := range createdForEnrich {
+							if updateErr := p.repo.Update(ctx, f); updateErr != nil {
+								p.logger.Warn("failed to persist enriched finding", "id", f.ID(), "error", updateErr)
+							}
+						}
+					}
+				}
+			}
+
+			// Step 4d: Trigger workflow events for newly created findings
 			if p.findingCreatedCallback != nil && result.Created > 0 {
 				// Only include successfully created findings (exclude failed ones)
 				createdFindings := make([]*vulnerability.Finding, 0, result.Created)

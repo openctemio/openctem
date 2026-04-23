@@ -218,13 +218,25 @@ func (r *TemplateSourceRepository) List(ctx context.Context, input ts.ListInput)
 		return nil, fmt.Errorf("failed to count template sources: %w", err)
 	}
 
-	// Sorting
+	// F-D1 hardening: switch-allowlist on sortBy + binary ASC/DESC on
+	// sortOrder. Each case assigns a LITERAL so CodeQL sees a fully
+	// constant string on every path — the previous
+	// `sortBy = input.SortBy` inside the switch body kept the tainted-
+	// flow link intact and go/sql-injection still flagged it.
 	sortBy := "created_at"
-	if input.SortBy != "" {
-		switch input.SortBy {
-		case "name", "source_type", "template_type", "created_at", "updated_at", "last_sync_at":
-			sortBy = input.SortBy
-		}
+	switch input.SortBy {
+	case "name":
+		sortBy = "name"
+	case "source_type":
+		sortBy = "source_type"
+	case "template_type":
+		sortBy = "template_type"
+	case "created_at":
+		sortBy = "created_at"
+	case "updated_at":
+		sortBy = "updated_at"
+	case "last_sync_at":
+		sortBy = "last_sync_at"
 	}
 	sortOrder := sortOrderDESC
 	if input.SortOrder == sortOrderAscLower {
@@ -232,9 +244,14 @@ func (r *TemplateSourceRepository) List(ctx context.Context, input ts.ListInput)
 	}
 	baseQuery += fmt.Sprintf(" ORDER BY %s %s", sortBy, sortOrder)
 
-	// Pagination
+	// Pagination — LIMIT/OFFSET as bind parameters. `%d` would also
+	// be SQL-injection-safe (Go's typechecker forces integer args)
+	// but CodeQL doesn't trust the format verb; binding via $N
+	// keeps the flow analysis clean.
 	p := pagination.New(input.Page, input.PageSize)
-	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", p.Limit(), p.Offset())
+	args = append(args, p.Limit(), p.Offset())
+	baseQuery += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIdx, argIdx+1)
+	_ = argIdx // shut up the "declared but not used" if compiler complains
 
 	// Execute query
 	rows, err := r.db.QueryContext(ctx, baseQuery, args...)

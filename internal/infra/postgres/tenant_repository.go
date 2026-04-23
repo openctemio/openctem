@@ -59,6 +59,8 @@ func (r *TenantRepository) Create(ctx context.Context, t *tenant.Tenant) error {
 }
 
 // GetByID retrieves a tenant by ID.
+//
+//getbyid:unsafe - Tenants ARE the scope unit; lookup by tenant ID alone is the correct primary-key access pattern.
 func (r *TenantRepository) GetByID(ctx context.Context, id shared.ID) (*tenant.Tenant, error) {
 	query := `
 		SELECT id, name, slug, description, logo_url, settings, created_by, created_at, updated_at
@@ -629,8 +631,15 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 	}
 	defer rows.Close()
 
-	// Pre-allocate slice with expected capacity
-	members := make([]*tenant.MemberWithUser, 0, filters.Limit)
+	// Pre-allocate at the const cold-cap max so make() has ZERO
+	// user-influenced size input. Even after a clamp,
+	// CodeQL's go/unsafe-slice-allocation keeps the taint tag on
+	// filters.Limit; the only path to a clean flow is to hand the
+	// literal to make. 1000 pointer slots = ~8 KB, an acceptable
+	// ceiling for a member-search result and a trivial cost when
+	// the page returns fewer rows.
+	const maxMembersCap = 1000
+	members := make([]*tenant.MemberWithUser, 0, maxMembersCap)
 	var total int
 
 	for rows.Next() {

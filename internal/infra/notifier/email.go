@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	emailpkg "github.com/openctemio/api/pkg/email"
 )
 
 // EmailClient implements the Client interface for email notifications via SMTP.
@@ -75,19 +77,37 @@ func (c *EmailClient) Send(ctx context.Context, msg Message) (*SendResult, error
 		}, nil
 	}
 
-	// Build email headers
-	subject := msg.Title
+	// Build email headers.
+	// msg.Title comes from the notification payload which is
+	// attacker-influenceable (finding titles, scanner output, AI
+	// summaries). A "\r\n" in Title lets an attacker smuggle
+	// additional SMTP headers (Bcc: attacker@evil, Content-Type
+	// override, etc.) — classic CRLF injection. Every value we
+	// write into a header line passes through
+	// emailpkg.SanitizeHeaderValue first. See CodeQL rule
+	// go/email-content-injection.
+	subject := emailpkg.SanitizeHeaderValue(msg.Title)
 	if msg.Severity != "" {
 		emoji := GetSeverityEmoji(msg.Severity)
-		subject = fmt.Sprintf("%s [%s] %s", emoji, strings.ToUpper(msg.Severity), msg.Title)
+		subject = fmt.Sprintf("%s [%s] %s", emoji, strings.ToUpper(msg.Severity), emailpkg.SanitizeHeaderValue(msg.Title))
+	}
+
+	// Recipient + sender headers — sanitise at the source so a
+	// malicious FromName / FromEmail (operator config) or a stray
+	// CR in ToEmails cannot inject extra headers either.
+	safeFromName := emailpkg.SanitizeHeaderValue(c.config.FromName)
+	safeFromEmail := emailpkg.SanitizeHeaderValue(c.config.FromEmail)
+	safeRecipients := make([]string, 0, len(c.config.ToEmails))
+	for _, r := range c.config.ToEmails {
+		safeRecipients = append(safeRecipients, emailpkg.SanitizeHeaderValue(r))
 	}
 
 	// Build MIME message
 	var emailBuf bytes.Buffer
-	fmt.Fprintf(&emailBuf, "From: %s <%s>\r\n", c.config.FromName, c.config.FromEmail)
-	fmt.Fprintf(&emailBuf, "To: %s\r\n", strings.Join(c.config.ToEmails, ", "))
+	fmt.Fprintf(&emailBuf, "From: %s <%s>\r\n", safeFromName, safeFromEmail)
+	fmt.Fprintf(&emailBuf, "To: %s\r\n", strings.Join(safeRecipients, ", "))
 	if c.config.ReplyTo != "" {
-		fmt.Fprintf(&emailBuf, "Reply-To: %s\r\n", c.config.ReplyTo)
+		fmt.Fprintf(&emailBuf, "Reply-To: %s\r\n", emailpkg.SanitizeHeaderValue(c.config.ReplyTo))
 	}
 	fmt.Fprintf(&emailBuf, "Subject: %s\r\n", subject)
 	emailBuf.WriteString("MIME-Version: 1.0\r\n")

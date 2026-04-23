@@ -31,13 +31,25 @@ type Repository interface {
 	// Used for enforcing agent limits per plan.
 	CountByTenant(ctx context.Context, tenantID shared.ID) (int, error)
 
-	// GetByID retrieves an agent by ID.
+	// GetByID retrieves an agent by ID without tenant scoping.
+	//
+	// F-5: UNSAFE for user-facing handlers. Platform (shared) agents are
+	// tenant-agnostic so this lookup is legitimate for platform orchestration
+	// paths, but any handler that authorizes on the caller's JWT MUST use
+	// GetByTenantAndID instead to prevent IDOR across tenants.
 	GetByID(ctx context.Context, id shared.ID) (*Agent, error)
 
 	// GetByTenantAndID retrieves an agent by tenant and ID.
+	// Prefer this in handlers exposed to user input.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Agent, error)
 
 	// GetByAPIKeyHash retrieves an agent by API key hash.
+	//
+	// F-5: By design this lookup is not tenant-scoped — the hash IS the
+	// authentication material that establishes the tenant binding. Callers
+	// MUST NOT expose the returned object directly to another user; it is
+	// used only by the platform-auth middleware to identify the calling
+	// agent before downstream tenant filters take over.
 	GetByAPIKeyHash(ctx context.Context, hash string) (*Agent, error)
 
 	// List lists agents with filters and pagination.

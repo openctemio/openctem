@@ -32,6 +32,45 @@ func NewAuditHandler(svc *app.AuditService, v *validator.Validator, log *logger.
 	}
 }
 
+// VerifyChain walks the tenant's audit hash-chain and reports any
+// tamper evidence. Tenant-admin scoped; returns JSON with OK + breaks.
+//
+// GET /api/v1/audit/verify[?limit=10000]
+func (h *AuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := middleware.GetTenantID(r.Context())
+	if tenantIDStr == "" {
+		apierror.Unauthorized("tenant required").WriteJSON(w)
+		return
+	}
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+
+	// Cap at the handler boundary so CodeQL's data-flow analysis sees the
+	// bound at the first sink; service + repo re-cap as defense in depth.
+	const maxVerifyChainLimit = 10_000
+	limit := parseQueryIntBounded(r.URL.Query().Get("limit"), 0, 0, maxVerifyChainLimit)
+
+	result, err := h.service.VerifyChain(r.Context(), tenantID, limit)
+	if err != nil {
+		h.logger.Error("audit chain verify failed",
+			"tenant_id", tenantIDStr, "error", err)
+		apierror.InternalServerError("verify failed").WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if !result.OK {
+		// 409 signals "state is inconsistent"; body carries details.
+		w.WriteHeader(http.StatusConflict)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	_ = json.NewEncoder(w).Encode(result)
+}
+
 // =============================================================================
 // Response Types
 // =============================================================================
@@ -327,6 +366,13 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// F-2: tenant scope is mandatory for resource audit history.
+	tenantID, ok := middleware.GetTenantIDFromContext(r.Context())
+	if !ok {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return
+	}
+
 	// Parse pagination
 	query := r.URL.Query()
 	page := 0
@@ -343,7 +389,7 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	result, err := h.service.GetResourceHistory(r.Context(), resourceType, resourceID, page, perPage)
+	result, err := h.service.GetResourceHistory(r.Context(), tenantID, resourceType, resourceID, page, perPage)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

@@ -1,12 +1,12 @@
 package unit
 
 import (
+	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -110,7 +110,7 @@ func TestEvaluateAsset_NoActiveRules(t *testing.T) {
 	acRepo.listAutoGroupsForAssetResult = nil  // no current auto-assignments
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
@@ -141,7 +141,7 @@ func TestEvaluateAsset_TagMatch_SingleRule(t *testing.T) {
 	acRepo.listAutoGroupsForAssetResult = nil // no prior auto-assignments
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	// Asset has matching tag
 	err := svc.EvaluateAsset(context.Background(), tenantID, assetID, []string{"env:prod", "team:alpha"}, nil)
@@ -171,7 +171,7 @@ func TestEvaluateAsset_TagMatch_NoMatch(t *testing.T) {
 	acRepo.listAutoGroupsForAssetResult = nil
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	// Asset does NOT have the required tag
 	err := svc.EvaluateAsset(context.Background(), tenantID, assetID, []string{"env:prod"}, nil)
@@ -201,7 +201,7 @@ func TestEvaluateAsset_AssetGroupMatch(t *testing.T) {
 	acRepo.listAutoGroupsForAssetResult = nil
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	// Asset is in the matching asset group
 	err := svc.EvaluateAsset(context.Background(), tenantID, assetID, nil, []shared.ID{assetGroupID})
@@ -228,7 +228,7 @@ func TestEvaluateAsset_MultipleRulesMatch(t *testing.T) {
 	acRepo.listAutoGroupsForAssetResult = nil
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	// Asset has both tags, so both rules match
 	err := svc.EvaluateAsset(context.Background(), tenantID, assetID, []string{"env:prod", "team:alpha"}, nil)
@@ -260,7 +260,7 @@ func TestEvaluateAsset_StaleCleanup(t *testing.T) {
 	acRepo.listAutoGroupsForAssetResult = []shared.ID{groupID}
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	// Asset now has different tags, no longer matches
 	err := svc.EvaluateAsset(context.Background(), tenantID, assetID, []string{"env:prod"}, nil)
@@ -291,7 +291,7 @@ func TestEvaluateAsset_NoStaleNoMatch(t *testing.T) {
 	acRepo.listAutoGroupsForAssetResult = nil  // no current auto-assignments
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	err := svc.EvaluateAsset(context.Background(), tenantID, assetID, []string{"env:prod"}, nil)
 	if err != nil {
@@ -315,7 +315,7 @@ func TestEvaluateAsset_ListRulesError(t *testing.T) {
 	acRepo.listActiveRulesByTenantErr = errors.New("database connection lost")
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	err := svc.EvaluateAsset(context.Background(), tenantID, assetID, []string{"env:prod"}, nil)
 	if err == nil {
@@ -339,7 +339,7 @@ func TestReconcileByAssetGroup_NoReferencingRules(t *testing.T) {
 	acRepo.listGroupsWithMatchResult = nil // no groups reference this asset group
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	// Should be a no-op, no panic
 	svc.ReconcileByAssetGroup(context.Background(), assetGroupID)
@@ -375,7 +375,7 @@ func TestReconcileByAssetGroup_TriggersReconcile(t *testing.T) {
 	acRepo.listAutoAssignedResult = nil
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	svc.ReconcileByAssetGroup(context.Background(), assetGroupID)
 
@@ -400,7 +400,7 @@ func TestReconcileByAssetGroup_ListError(t *testing.T) {
 	acRepo.listGroupsWithMatchErr = errors.New("database error")
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	// Should not panic, error is logged
 	svc.ReconcileByAssetGroup(context.Background(), assetGroupID)
@@ -436,7 +436,7 @@ func TestReconcileByAssetGroup_MultipleGroups(t *testing.T) {
 	acRepo.listAutoAssignedResult = nil
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	svc.ReconcileByAssetGroup(context.Background(), assetGroupID)
 
@@ -468,7 +468,7 @@ func TestReconcileGroupByIDs_DelegatesToReconcileGroup(t *testing.T) {
 	acRepo.listAutoAssignedResult = nil
 
 	groupRepo := newMockGroupRepoForScope()
-	svc := app.NewScopeRuleService(acRepo, groupRepo, logger.NewNop())
+	svc := scope.NewRuleService(acRepo, groupRepo, logger.NewNop())
 
 	err := svc.ReconcileGroupByIDs(context.Background(), tenantID, groupID)
 	if err != nil {

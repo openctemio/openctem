@@ -39,6 +39,7 @@ var typeToCategory = map[AssetType]Category{
 	AssetTypeKubernetesCluster:   CategoryInfrastructure,
 	AssetTypeKubernetesNamespace: CategoryInfrastructure,
 	AssetTypeKubernetes:          CategoryInfrastructure, // consolidated type
+	AssetTypeEndpoint:            CategoryInfrastructure, // user-operated device (laptop, workstation, mobile)
 
 	// Network — network segments, devices, and services
 	AssetTypeNetwork:       CategoryNetwork,

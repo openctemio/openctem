@@ -64,6 +64,18 @@ func (m *mockFindingCommentServiceRepo) GetByID(_ context.Context, id shared.ID)
 	return c, nil
 }
 
+func (m *mockFindingCommentServiceRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*vulnerability.FindingComment, error) {
+	m.getCalls++
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	c, ok := m.comments[id.String()]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	return c, nil
+}
+
 func (m *mockFindingCommentServiceRepo) Update(_ context.Context, comment *vulnerability.FindingComment) error {
 	m.updateCalls++
 	if m.updateErr != nil {
@@ -76,7 +88,7 @@ func (m *mockFindingCommentServiceRepo) Update(_ context.Context, comment *vulne
 	return nil
 }
 
-func (m *mockFindingCommentServiceRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockFindingCommentServiceRepo) Delete(_ context.Context, _, id shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -135,6 +147,7 @@ func makeTestComment(findingID, authorID shared.ID, content string, isStatusChan
 	}
 	return vulnerability.ReconstituteFindingComment(
 		shared.NewID(),
+		shared.NewID(), // tenantID — mock is tenant-agnostic, a random UUID is fine
 		findingID,
 		authorID,
 		"Test User",
@@ -284,6 +297,7 @@ func TestAddStatusChangeComment_Success(t *testing.T) {
 	svc := newTestCommentService(commentRepo, findingRepo)
 
 	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
 		Content:   "Marking as resolved",
@@ -305,6 +319,7 @@ func TestAddStatusChangeComment_WithCustomContent(t *testing.T) {
 
 	customContent := "Fixed in PR #123"
 	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
 		Content:   customContent,
@@ -324,6 +339,7 @@ func TestAddStatusChangeComment_AutoGenerateContent(t *testing.T) {
 	svc := newTestCommentService(commentRepo, findingRepo)
 
 	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
 		Content:   "", // empty content triggers auto-generation
@@ -343,6 +359,7 @@ func TestAddStatusChangeComment_InvalidFindingID(t *testing.T) {
 	svc := newTestCommentService(commentRepo, findingRepo)
 
 	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+		TenantID:  shared.NewID().String(),
 		FindingID: "bad-id",
 		AuthorID:  shared.NewID().String(),
 		Content:   "test",
@@ -361,6 +378,7 @@ func TestAddStatusChangeComment_InvalidAuthorID(t *testing.T) {
 	svc := newTestCommentService(commentRepo, findingRepo)
 
 	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  "not-valid",
 		Content:   "test",
@@ -379,6 +397,7 @@ func TestAddStatusChangeComment_InvalidOldStatus(t *testing.T) {
 	svc := newTestCommentService(commentRepo, findingRepo)
 
 	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
 		Content:   "test",
@@ -397,6 +416,7 @@ func TestAddStatusChangeComment_InvalidNewStatus(t *testing.T) {
 	svc := newTestCommentService(commentRepo, findingRepo)
 
 	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
 		Content:   "test",
@@ -417,6 +437,7 @@ func TestAddStatusChangeComment_RepoError(t *testing.T) {
 	commentRepo.createErr = errors.New("db write failed")
 
 	result, err := svc.AddStatusChangeComment(context.Background(), app.AddStatusChangeCommentInput{
+		TenantID:  shared.NewID().String(),
 		FindingID: shared.NewID().String(),
 		AuthorID:  shared.NewID().String(),
 		Content:   "test",
@@ -488,7 +509,7 @@ func TestUpdateComment_Success(t *testing.T) {
 	comment := makeTestComment(shared.NewID(), authorID, "original content", false)
 	commentRepo.comments[comment.ID().String()] = comment
 
-	result, err := svc.UpdateComment(context.Background(), comment.ID().String(), authorID.String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String(), app.UpdateCommentInput{
 		Content: "updated content",
 	})
 
@@ -503,7 +524,7 @@ func TestUpdateComment_NotFound(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), shared.NewID().String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), shared.NewID().String(), shared.NewID().String(), app.UpdateCommentInput{
 		Content: "test",
 	})
 
@@ -522,7 +543,7 @@ func TestUpdateComment_WrongAuthor(t *testing.T) {
 	comment := makeTestComment(shared.NewID(), authorID, "my comment", false)
 	commentRepo.comments[comment.ID().String()] = comment
 
-	result, err := svc.UpdateComment(context.Background(), comment.ID().String(), otherUserID.String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), otherUserID.String(), app.UpdateCommentInput{
 		Content: "hijacked",
 	})
 
@@ -541,7 +562,7 @@ func TestUpdateComment_StatusChangeComment(t *testing.T) {
 	comment := makeTestComment(shared.NewID(), authorID, "Status changed", true)
 	commentRepo.comments[comment.ID().String()] = comment
 
-	result, err := svc.UpdateComment(context.Background(), comment.ID().String(), authorID.String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String(), app.UpdateCommentInput{
 		Content: "trying to edit status change",
 	})
 
@@ -562,7 +583,7 @@ func TestUpdateComment_RepoUpdateError(t *testing.T) {
 	commentRepo.comments[comment.ID().String()] = comment
 	commentRepo.updateErr = errors.New("update failed")
 
-	result, err := svc.UpdateComment(context.Background(), comment.ID().String(), authorID.String(), app.UpdateCommentInput{
+	result, err := svc.UpdateComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String(), app.UpdateCommentInput{
 		Content: "new content",
 	})
 
@@ -584,7 +605,7 @@ func TestDeleteComment_Success(t *testing.T) {
 	comment := makeTestComment(shared.NewID(), authorID, "to be deleted", false)
 	commentRepo.comments[comment.ID().String()] = comment
 
-	err := svc.DeleteComment(context.Background(), comment.ID().String(), authorID.String())
+	err := svc.DeleteComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String())
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, commentRepo.deleteCalls)
@@ -597,7 +618,7 @@ func TestDeleteComment_InvalidID(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	err := svc.DeleteComment(context.Background(), "bad-uuid", shared.NewID().String())
+	err := svc.DeleteComment(context.Background(), shared.NewID().String(), "bad-uuid", shared.NewID().String())
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, shared.ErrValidation))
@@ -608,7 +629,7 @@ func TestDeleteComment_NotFound(t *testing.T) {
 	findingRepo := newMockFindingRepo()
 	svc := newTestCommentService(commentRepo, findingRepo)
 
-	err := svc.DeleteComment(context.Background(), shared.NewID().String(), shared.NewID().String())
+	err := svc.DeleteComment(context.Background(), shared.NewID().String(), shared.NewID().String(), shared.NewID().String())
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, shared.ErrNotFound))
@@ -624,7 +645,7 @@ func TestDeleteComment_WrongAuthor(t *testing.T) {
 	comment := makeTestComment(shared.NewID(), authorID, "my comment", false)
 	commentRepo.comments[comment.ID().String()] = comment
 
-	err := svc.DeleteComment(context.Background(), comment.ID().String(), otherUserID.String())
+	err := svc.DeleteComment(context.Background(), shared.NewID().String(), comment.ID().String(), otherUserID.String())
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, shared.ErrForbidden))
@@ -640,7 +661,7 @@ func TestDeleteComment_StatusChangeComment(t *testing.T) {
 	comment := makeTestComment(shared.NewID(), authorID, "Status changed", true)
 	commentRepo.comments[comment.ID().String()] = comment
 
-	err := svc.DeleteComment(context.Background(), comment.ID().String(), authorID.String())
+	err := svc.DeleteComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String())
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, shared.ErrValidation))
@@ -658,7 +679,7 @@ func TestDeleteComment_RepoDeleteError(t *testing.T) {
 	commentRepo.comments[comment.ID().String()] = comment
 	commentRepo.deleteErr = errors.New("delete failed")
 
-	err := svc.DeleteComment(context.Background(), comment.ID().String(), authorID.String())
+	err := svc.DeleteComment(context.Background(), shared.NewID().String(), comment.ID().String(), authorID.String())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "delete failed")

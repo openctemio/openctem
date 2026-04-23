@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -19,13 +19,13 @@ import (
 
 // TemplateSourceHandler handles HTTP requests for template sources.
 type TemplateSourceHandler struct {
-	service   *app.TemplateSourceService
+	service   *template.SourceService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewTemplateSourceHandler creates a new TemplateSourceHandler.
-func NewTemplateSourceHandler(service *app.TemplateSourceService, v *validator.Validator, log *logger.Logger) *TemplateSourceHandler {
+func NewTemplateSourceHandler(service *template.SourceService, v *validator.Validator, log *logger.Logger) *TemplateSourceHandler {
 	return &TemplateSourceHandler{
 		service:   service,
 		validator: v,
@@ -137,7 +137,7 @@ func (h *TemplateSourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
 
-	input := app.CreateTemplateSourceInput{
+	input := template.CreateSourceInput{
 		TenantID:        tenantID,
 		UserID:          userID,
 		Name:            req.Name,
@@ -217,7 +217,7 @@ func (h *TemplateSourceHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *TemplateSourceHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
-	input := app.ListTemplateSourcesInput{
+	input := template.ListSourcesInput{
 		TenantID:  tenantID,
 		SortBy:    r.URL.Query().Get("sort_by"),
 		SortOrder: r.URL.Query().Get("sort_order"),
@@ -316,7 +316,7 @@ func (h *TemplateSourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	tenantID := middleware.GetTenantID(r.Context())
 
-	input := app.UpdateTemplateSourceInput{
+	input := template.UpdateSourceInput{
 		TenantID:        tenantID,
 		SourceID:        sourceID,
 		Name:            req.Name,

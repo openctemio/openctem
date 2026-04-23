@@ -49,7 +49,7 @@
 
 | Component | Technology |
 |-----------|------------|
-| Language | Go 1.25+ |
+| Language | Go 1.26+ |
 | HTTP | Standard `net/http` |
 | Database | PostgreSQL 17 |
 | Cache | Redis 7 |

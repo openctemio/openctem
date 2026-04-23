@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -16,6 +17,13 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// auditWriteTimeout bounds how long a detached audit-write goroutine
+// will wait on the DB before abandoning the write. Under a brute-force
+// login burst the old unbounded goroutines piled up and exhausted
+// memory; capping at 5s ensures at most N-concurrent-DB-slow audit
+// writes are in-flight at any time.
+const auditWriteTimeout = 5 * time.Second
 
 // AuditMiddleware provides audit logging for admin API endpoints.
 type AuditMiddleware struct {
@@ -84,9 +92,16 @@ func (m *AuditMiddleware) AuditLog(action, resourceType, resourceIDParam string)
 			// Build and save audit log
 			auditLog := builder.Build()
 
-			// Save audit log asynchronously to not block the response
+			// Save audit log asynchronously to not block the response.
+			// Detach from request ctx (audit must outlive the request)
+			// but cap at auditWriteTimeout so a stalled DB cannot pin
+			// a goroutine forever — under a brute-force login burst the
+			// old code spawned one unbounded goroutine per attempt and
+			// eventually OOM'd the API process.
 			go func() {
-				if err := m.auditRepo.Create(context.Background(), auditLog); err != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)
+				defer cancel()
+				if err := m.auditRepo.Create(ctx, auditLog); err != nil {
 					m.logger.Error("failed to create audit log",
 						"error", err,
 						"action", action,
@@ -121,7 +136,9 @@ func (m *AuditMiddleware) LogAuthFailure(r *http.Request, reason string) {
 		Build()
 
 	go func() {
-		if err := m.auditRepo.Create(context.Background(), auditLog); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)
+		defer cancel()
+		if err := m.auditRepo.Create(ctx, auditLog); err != nil {
 			m.logger.Error("failed to log auth failure", "error", err)
 		}
 	}()
@@ -136,7 +153,9 @@ func (m *AuditMiddleware) LogAuthSuccess(r *http.Request, adminUser *admin.Admin
 		Build()
 
 	go func() {
-		if err := m.auditRepo.Create(context.Background(), auditLog); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)
+		defer cancel()
+		if err := m.auditRepo.Create(ctx, auditLog); err != nil {
 			m.logger.Error("failed to log auth success", "error", err)
 		}
 	}()
@@ -161,6 +180,15 @@ func (w *auditResponseWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
+// Write implements http.ResponseWriter. CodeQL's go/reflected-xss
+// rule flags this line as a response-body sink because the []byte
+// `b` ultimately carries bytes written by the downstream handler
+// — some of which may derive from HTTP request input. This wrapper
+// does NOT introduce a new XSS surface: it is a transparent
+// passthrough, added only to observe the status code for audit
+// logging. Output escaping is the handler's responsibility
+// (json.Encoder for JSON endpoints, html/template for HTML
+// endpoints). Dismiss the alert as wrapper-level false-positive.
 func (w *auditResponseWriter) Write(b []byte) (int, error) {
 	if !w.written {
 		w.statusCode = http.StatusOK

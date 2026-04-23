@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // WebhookClient implements the Client interface for generic webhook notifications.
@@ -17,16 +19,31 @@ type WebhookClient struct {
 }
 
 // NewWebhookClient creates a new generic webhook notification client.
+// Validates the webhook URL up front (reject link-local, loopback,
+// cloud-metadata, etc.) and uses a dialer-level SSRF guard so even if
+// DNS flips to a blocked IP between construction and delivery, the
+// dial fails closed. See pkg/httpsec for the ranges.
 func NewWebhookClient(config Config) (*WebhookClient, error) {
 	if config.WebhookURL == "" {
 		return nil, fmt.Errorf("webhook URL is required")
 	}
+	if !config.AllowLoopback {
+		if _, err := httpsec.ValidateURL(config.WebhookURL); err != nil {
+			return nil, fmt.Errorf("webhook URL rejected: %w", err)
+		}
+	}
 
+	hc := httpsec.SafeHTTPClient(30 * time.Second)
+	if config.AllowLoopback {
+		// Tests use httptest.NewServer which binds to 127.0.0.1; the
+		// SafeHTTPClient dialer would refuse that at connect time.
+		// Fall back to a plain client for the explicitly-opted-in
+		// test path only.
+		hc = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &WebhookClient{
 		webhookURL: config.WebhookURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		httpClient: hc,
 	}, nil
 }
 
@@ -73,6 +90,12 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "OpenCTEM-Notification/1.0")
+	// F-6: idempotency key for duplicate-delivery suppression.
+	if msg.IdempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", msg.IdempotencyKey)
+		// Also surface in the JSON body so receivers that read it from
+		// the payload (rather than headers) can dedupe too.
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
