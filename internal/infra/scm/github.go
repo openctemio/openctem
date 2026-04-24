@@ -229,6 +229,25 @@ func (c *GitHubClient) ListRepositories(ctx context.Context, opts ListOptions) (
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		// Map HTTP status to typed SCM errors so the handler layer can
+		// produce an actionable 4xx response instead of a generic 500.
+		// Anything else falls through as a plain "unexpected status"
+		// which the handler can still recognise by substring match.
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return nil, ErrAuthFailed.Wrap(fmt.Errorf("github rejected credentials: %s", string(body)))
+		case http.StatusForbidden:
+			// GitHub returns 403 for both rate-limit AND insufficient
+			// scope. Inspect body to disambiguate.
+			if strings.Contains(strings.ToLower(string(body)), "rate limit") {
+				return nil, ErrRateLimited.Wrap(fmt.Errorf("github rate limit: %s", string(body)))
+			}
+			return nil, ErrAuthFailed.Wrap(fmt.Errorf("github forbidden (check token scopes): %s", string(body)))
+		case http.StatusNotFound:
+			return nil, ErrNotFound.Wrap(fmt.Errorf("github org/user not found: %s", string(body)))
+		case http.StatusTooManyRequests:
+			return nil, ErrRateLimited.Wrap(fmt.Errorf("github rate limit: %s", string(body)))
+		}
 		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
 	}
 
