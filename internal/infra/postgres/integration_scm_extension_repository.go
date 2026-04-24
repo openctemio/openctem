@@ -92,7 +92,7 @@ func (r *IntegrationSCMExtensionRepository) Update(ctx context.Context, ext *int
 			scm_organization = $2,
 			repository_count = $3,
 			webhook_id = $4,
-			webhook_secret = $5,
+			webhook_secret_encrypted = $5,
 			webhook_url = $6,
 			default_branch_pattern = $7,
 			auto_import_repos = $8,
@@ -188,7 +188,7 @@ func (r *IntegrationSCMExtensionRepository) ListIntegrationsWithSCM(ctx context.
 			i.status, i.status_message, i.auth_type, i.base_url, i.credentials_encrypted,
 			i.last_sync_at, i.next_sync_at, i.sync_interval_minutes, i.sync_error,
 			i.config, i.metadata, i.stats, i.created_at, i.updated_at, i.created_by,
-			s.scm_organization, s.repository_count, s.webhook_id, s.webhook_secret,
+			s.scm_organization, s.repository_count, s.webhook_id, s.webhook_secret_encrypted,
 			s.webhook_url, s.default_branch_pattern, s.auto_import_repos,
 			s.import_private_repos, s.import_archived_repos,
 			s.include_patterns, s.exclude_patterns, s.last_repo_sync_at
