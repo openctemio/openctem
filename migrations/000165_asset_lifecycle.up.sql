@@ -3,7 +3,7 @@
 -- Adds the 'stale' status to assets.status, plus two new columns
 -- driving the lifecycle worker's decisions: lifecycle_paused_until
 -- (per-asset snooze) and manual_status_override (operator-takes-
--- control flag). A partial index on (tenant_id, status, last_seen_at)
+-- control flag). A partial index on (tenant_id, status, last_seen)
 -- keeps the worker's daily query fast even on 10M-row deployments.
 --
 -- Backward-compatibility promise: an asset with both new columns
@@ -35,7 +35,7 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS manual_status_override BOOLEAN NOT N
 --      WHERE tenant_id = ? AND status IN ('active', 'stale')
 --        AND manual_status_override = false
 --        AND (lifecycle_paused_until IS NULL OR lifecycle_paused_until < NOW())
---        AND last_seen_at < NOW() - INTERVAL 'N days'
+--        AND last_seen < NOW() - INTERVAL 'N days'
 --    The partial index covers the first two clauses which have high
 --    selectivity; the time comparison is a cheap seq-filter on a
 --    small candidate set.
@@ -51,7 +51,7 @@ COMMIT;
 --    migration framework will stop here and run the next block in
 --    its own transaction.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_assets_lifecycle_candidates
-    ON assets (tenant_id, status, last_seen_at)
+    ON assets (tenant_id, status, last_seen)
     WHERE status IN ('active', 'stale') AND manual_status_override = false;
 
 -- 6. Column comments — help operators greping the schema understand
