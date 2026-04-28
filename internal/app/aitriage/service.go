@@ -1139,7 +1139,15 @@ func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) string
 		fmt.Fprintf(&b, " (CVSS: %.1f)", *f.CVSSScore())
 	}
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "- **Source**: %s (%s)\n", f.Source(), f.ToolName())
+	// Source / ToolName / CVE / CWE / OWASP / ComplianceImpact are all
+	// adapter-controlled strings — a malicious or compromised scanner
+	// adapter can stuff prompt-injection payloads into any of them.
+	// Fence each one inside <user_input> so the system prompt's
+	// "treat tagged content as data" rule applies to the whole
+	// finding, not just title/description/file/snippet.
+	fmt.Fprintf(&b, "- **Source**: %s (%s)\n",
+		fence("user_input", san.SanitizeForPrompt(string(f.Source()))),
+		fence("user_input", san.SanitizeForPrompt(f.ToolName())))
 
 	if f.FilePath() != "" {
 		fmt.Fprintf(&b, "- **File**: %s:%d\n", fence("user_input", san.SanitizeForPrompt(f.FilePath())), f.StartLine())
@@ -1151,19 +1159,19 @@ func (s *AITriageService) buildTriagePromptSafe(f *vulnerability.Finding) string
 
 	b.WriteString("\n## Context\n")
 	if f.CVEID() != "" {
-		fmt.Fprintf(&b, "- **CVE**: %s\n", f.CVEID())
+		fmt.Fprintf(&b, "- **CVE**: %s\n", fence("user_input", san.SanitizeForPrompt(f.CVEID())))
 	}
 	if len(f.CWEIDs()) > 0 {
-		fmt.Fprintf(&b, "- **CWE**: %s\n", strings.Join(f.CWEIDs(), ", "))
+		fmt.Fprintf(&b, "- **CWE**: %s\n", fence("user_input", san.SanitizeForPrompt(strings.Join(f.CWEIDs(), ", "))))
 	}
 	if len(f.OWASPIDs()) > 0 {
-		fmt.Fprintf(&b, "- **OWASP**: %s\n", strings.Join(f.OWASPIDs(), ", "))
+		fmt.Fprintf(&b, "- **OWASP**: %s\n", fence("user_input", san.SanitizeForPrompt(strings.Join(f.OWASPIDs(), ", "))))
 	}
 	fmt.Fprintf(&b, "- **Internet Accessible**: %t\n", f.IsInternetAccessible())
 	fmt.Fprintf(&b, "- **Data Exposure Risk**: %s\n", f.DataExposureRisk())
 
 	if len(f.ComplianceImpact()) > 0 {
-		fmt.Fprintf(&b, "- **Compliance Frameworks**: %s\n", strings.Join(f.ComplianceImpact(), ", "))
+		fmt.Fprintf(&b, "- **Compliance Frameworks**: %s\n", fence("user_input", san.SanitizeForPrompt(strings.Join(f.ComplianceImpact(), ", "))))
 	}
 
 	b.WriteString("\n## Analysis Required\n")
