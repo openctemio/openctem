@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"testing"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 func TestValidateURL_SSRFPrevention(t *testing.T) {
@@ -119,9 +121,9 @@ func TestValidateURL_SSRFPrevention(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateURL(tt.url)
+			_, err := httpsec.ValidateURL(tt.url)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
+				t.Errorf("httpsec.ValidateURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
 			}
 		})
 	}
@@ -250,9 +252,9 @@ func TestIsIPBlocked(t *testing.T) {
 			if ip == nil {
 				t.Fatalf("failed to parse IP: %s", tt.ip)
 			}
-			got := isIPBlocked(ip)
+			got := httpsec.IsIPBlocked(ip)
 			if got != tt.blocked {
-				t.Errorf("isIPBlocked(%s) = %v, want %v", tt.ip, got, tt.blocked)
+				t.Errorf("httpsec.IsIPBlocked(%s) = %v, want %v", tt.ip, got, tt.blocked)
 			}
 		})
 	}

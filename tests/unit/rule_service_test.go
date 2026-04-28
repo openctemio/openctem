@@ -577,7 +577,11 @@ func (m *ruleSvcMockAuditRepo) DeleteOlderThan(_ context.Context, _ time.Time) (
 	return 0, nil
 }
 
-func (m *ruleSvcMockAuditRepo) GetLatestByResource(_ context.Context, _ audit.ResourceType, _ string) (*audit.AuditLog, error) {
+func (m *ruleSvcMockAuditRepo) DeleteOlderThanForTenant(_ context.Context, _ shared.ID, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+func (m *ruleSvcMockAuditRepo) GetLatestByResource(_ context.Context, _ shared.ID, _ audit.ResourceType, _ string) (*audit.AuditLog, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -585,7 +589,7 @@ func (m *ruleSvcMockAuditRepo) ListByActor(_ context.Context, _ shared.ID, _ pag
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 
-func (m *ruleSvcMockAuditRepo) ListByResource(_ context.Context, _ audit.ResourceType, _ string, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (m *ruleSvcMockAuditRepo) ListByResource(_ context.Context, _ shared.ID, _ audit.ResourceType, _ string, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 
@@ -3059,3 +3063,8 @@ func TestGenerateBundleVersion_ExactlyEightCharHash(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, version)
 	}
 }
+
+// Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
+func (m *ruleSvcMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
+func (m *ruleSvcMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
+func (m *ruleSvcMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }

@@ -41,6 +41,8 @@ func (r *ComplianceControlRepository) Create(ctx context.Context, c *compliance.
 }
 
 // GetByID retrieves a control by ID.
+//
+//getbyid:unsafe - Compliance controls are a shared catalog; no tenant_id column.
 func (r *ComplianceControlRepository) GetByID(ctx context.Context, id shared.ID) (*compliance.Control, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT `+controlColumns+` FROM compliance_controls WHERE id = $1`, id.String())
 	c, err := r.scanControl(row.Scan)

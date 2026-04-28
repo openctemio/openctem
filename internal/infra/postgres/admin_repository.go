@@ -72,6 +72,8 @@ func (r *AdminRepository) Create(ctx context.Context, a *admin.AdminUser) error 
 }
 
 // GetByID retrieves an admin user by ID.
+//
+//getbyid:unsafe - Admin users are platform operators (not tenant users); no tenant_id column.
 func (r *AdminRepository) GetByID(ctx context.Context, id shared.ID) (*admin.AdminUser, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
@@ -355,7 +357,7 @@ func (r *AdminRepository) buildWhereClause(filter admin.Filter) (string, []any) 
 			"(LOWER(email) LIKE LOWER($%d) OR LOWER(name) LIKE LOWER($%d))",
 			argIndex, argIndex))
 		args = append(args, "%"+escapeLikePattern(filter.Search)+"%")
-		argIndex++
+		// argIndex not incremented — this is the last condition.
 	}
 
 	if len(conditions) == 0 {
@@ -796,7 +798,7 @@ func (r *AuditLogRepository) buildAuditWhereClause(filter admin.AuditLogFilter) 
 			"(action LIKE $%d OR resource_name LIKE $%d OR error_message LIKE $%d)",
 			argIndex, argIndex, argIndex))
 		args = append(args, "%"+escapeLikePattern(filter.Search)+"%")
-		argIndex++
+		// argIndex not incremented — this is the last condition.
 	}
 
 	if len(conditions) == 0 {

@@ -1,5 +1,7 @@
 # RFC-001 Appendix: Edge Cases per Asset Type
 
+> **Status**: Completed — Part of [RFC-001](RFC-001-asset-identity-resolution.md)
+
 Tài liệu này liệt kê TẤT CẢ edge cases có thể gặp khi dedup mỗi asset type.
 Mỗi case có: scenario, input, expected behavior, và normalization rule.
 

@@ -251,7 +251,9 @@ func (r *AuditRepository) Count(ctx context.Context, filter audit.Filter) (int64
 	return count, nil
 }
 
-// DeleteOlderThan deletes audit logs older than the specified time.
+// DeleteOlderThan deletes audit logs older than the specified time ACROSS ALL
+// TENANTS. See the interface doc (F-3) — this is a platform-privileged
+// operation, safe only from operator-driven background jobs.
 func (r *AuditRepository) DeleteOlderThan(ctx context.Context, before time.Time) (int64, error) {
 	query := `DELETE FROM audit_logs WHERE logged_at < $1 AND severity NOT IN ('high', 'critical')`
 
@@ -268,10 +270,30 @@ func (r *AuditRepository) DeleteOlderThan(ctx context.Context, before time.Time)
 	return count, nil
 }
 
-// GetLatestByResource retrieves the latest audit log for a resource.
-func (r *AuditRepository) GetLatestByResource(ctx context.Context, resourceType audit.ResourceType, resourceID string) (*audit.AuditLog, error) {
-	query := r.selectQuery() + ` WHERE resource_type = $1 AND resource_id = $2 ORDER BY logged_at DESC LIMIT 1`
-	row := r.db.QueryRowContext(ctx, query, resourceType.String(), resourceID)
+// DeleteOlderThanForTenant deletes audit logs older than the specified time,
+// scoped to a single tenant. High/critical severity entries are preserved
+// (F-3 per-tenant retention variant).
+func (r *AuditRepository) DeleteOlderThanForTenant(ctx context.Context, tenantID shared.ID, before time.Time) (int64, error) {
+	query := `DELETE FROM audit_logs WHERE tenant_id = $1 AND logged_at < $2 AND severity NOT IN ('high', 'critical')`
+
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), before)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete old audit logs: %w", err)
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetLatestByResource retrieves the latest audit log for a resource within a tenant.
+// tenantID is required to prevent cross-tenant reads (F-2).
+func (r *AuditRepository) GetLatestByResource(ctx context.Context, tenantID shared.ID, resourceType audit.ResourceType, resourceID string) (*audit.AuditLog, error) {
+	query := r.selectQuery() + ` WHERE tenant_id = $1 AND resource_type = $2 AND resource_id = $3 ORDER BY logged_at DESC LIMIT 1`
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), resourceType.String(), resourceID)
 
 	log, err := r.scanAuditLog(row, nil)
 	if err != nil {
@@ -289,9 +311,11 @@ func (r *AuditRepository) ListByActor(ctx context.Context, actorID shared.ID, pa
 	return r.List(ctx, filter, page)
 }
 
-// ListByResource retrieves audit logs for a specific resource.
-func (r *AuditRepository) ListByResource(ctx context.Context, resourceType audit.ResourceType, resourceID string, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+// ListByResource retrieves audit logs for a specific resource within a tenant.
+// tenantID is required to prevent cross-tenant reads (F-2).
+func (r *AuditRepository) ListByResource(ctx context.Context, tenantID shared.ID, resourceType audit.ResourceType, resourceID string, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	filter := audit.NewFilter().
+		WithTenantID(tenantID).
 		WithResourceTypes(resourceType).
 		WithResourceID(resourceID)
 	return r.List(ctx, filter, page)
@@ -540,7 +564,7 @@ func (r *AuditRepository) buildWhereClause(filter audit.Filter) (string, []any) 
 	if filter.ExcludeSystem {
 		conditions = append(conditions, fmt.Sprintf("actor_email != $%d", argIndex))
 		args = append(args, "System")
-		argIndex++
+		// argIndex not incremented — this is the last condition.
 	}
 
 	return strings.Join(conditions, " AND "), args
@@ -552,4 +576,98 @@ func nullableID(id *shared.ID) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: id.String(), Valid: true}
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Audit hash-chain (migration 000154)
+//
+// These three methods back the tamper-evident audit_log_chain side
+// table. Callers must ensure the audit_logs row exists before
+// AppendChainEntry — the FK on audit_log_chain.audit_log_id enforces
+// this at the database level too.
+// ────────────────────────────────────────────────────────────────────
+
+// LatestChainHash returns the newest chain hash for the tenant, or ""
+// when the tenant has no chain entries yet.
+func (r *AuditRepository) LatestChainHash(ctx context.Context, tenantID shared.ID) (string, error) {
+	const q = `
+		SELECT hash
+		  FROM audit_log_chain
+		 WHERE tenant_id = $1
+		 ORDER BY chain_position DESC
+		 LIMIT 1
+	`
+	var hash string
+	err := r.db.QueryRowContext(ctx, q, tenantID.String()).Scan(&hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("latest chain hash: %w", err)
+	}
+	return hash, nil
+}
+
+// AppendChainEntry inserts a new chain row. ON CONFLICT DO NOTHING so
+// accidental retries don't duplicate the entry (the PK is
+// audit_log_id).
+func (r *AuditRepository) AppendChainEntry(ctx context.Context, e audit.ChainEntry) error {
+	const q = `
+		INSERT INTO audit_log_chain (audit_log_id, tenant_id, prev_hash, hash)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (audit_log_id) DO NOTHING
+	`
+	_, err := r.db.ExecContext(ctx, q,
+		e.AuditLogID.String(),
+		e.TenantID.String(),
+		e.PrevHash,
+		e.Hash,
+	)
+	if err != nil {
+		return fmt.Errorf("append chain entry: %w", err)
+	}
+	return nil
+}
+
+// ListChainEntries returns chain rows ordered by position ASC. Used by
+// the verify endpoint to walk the chain.
+func (r *AuditRepository) ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]audit.ChainEntry, error) {
+	const defaultChainEntriesLimit = 1000
+	const maxChainEntriesLimit = 10_000
+	if limit <= 0 {
+		limit = defaultChainEntriesLimit
+	} else if limit > maxChainEntriesLimit {
+		limit = maxChainEntriesLimit
+	}
+	const q = `
+		SELECT audit_log_id, tenant_id, prev_hash, hash, chain_position, created_at
+		  FROM audit_log_chain
+		 WHERE tenant_id = $1
+		 ORDER BY chain_position ASC
+		 LIMIT $2
+	`
+	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list chain entries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]audit.ChainEntry, 0, limit)
+	for rows.Next() {
+		var (
+			auditLogID, tid string
+			e               audit.ChainEntry
+		)
+		if err := rows.Scan(&auditLogID, &tid, &e.PrevHash, &e.Hash, &e.ChainPosition, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan chain entry: %w", err)
+		}
+		if id, err := shared.IDFromString(auditLogID); err == nil {
+			e.AuditLogID = id
+		}
+		if id, err := shared.IDFromString(tid); err == nil {
+			e.TenantID = id
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }

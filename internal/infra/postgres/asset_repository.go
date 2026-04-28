@@ -32,11 +32,6 @@ func NewAssetRepository(db *DB) *AssetRepository {
 
 // Create persists a new asset.
 func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
-	metadata, err := json.Marshal(a.Metadata())
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
 	properties, err := json.Marshal(a.Properties())
 	if err != nil {
 		return fmt.Errorf("failed to marshal properties: %w", err)
@@ -46,14 +41,14 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 		INSERT INTO assets (
 			id, tenant_id, parent_id, owner_id, owner_ref, name, asset_type, sub_type, criticality, status,
 			scope, exposure, risk_score,
-			description, tags, metadata, properties,
+			description, tags, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
 			discovery_source, discovery_tool, discovered_at,
 			compliance_scope, data_classification, pii_data_exposed, phi_data_exposed, regulatory_owner_id,
 			is_internet_accessible, exposure_changed_at, last_exposure_level,
 			first_seen, last_seen, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
 	`
 
 	ownerRefVal := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -73,7 +68,6 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 		a.RiskScore(),
 		a.Description(),
 		pq.Array(a.Tags()),
-		metadata,
 		properties,
 		a.Provider().String(),
 		nullString(a.ExternalID()),
@@ -164,8 +158,14 @@ func (r *AssetRepository) FindByPropertyValue(ctx context.Context, tenantID shar
 		return nil, fmt.Errorf("unsupported property key for correlation: %s", key)
 	}
 
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.properties->>'" + key + "' = $2 LIMIT 1"
-	row := r.db.QueryRowContext(ctx, query, tenantID.String(), value)
+	// Use a parameterized JSONB key access (a.properties ->> $3) instead
+	// of string concatenation. The whitelist above already constrains
+	// the value, but parameterising the key removes the SQL injection
+	// pattern entirely — defense-in-depth so a future "let users add
+	// custom correlation keys" feature can't accidentally introduce a
+	// vulnerability.
+	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.properties ->> $3 = $2 LIMIT 1"
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), value, key)
 	a, err := r.scanAsset(row, shared.ID{})
 	if err != nil {
 		if errors.Is(err, asset.ErrAssetNotFound) {
@@ -370,7 +370,7 @@ func (r *AssetRepository) selectQuery() string {
 			   COALESCE(fc.finding_medium, 0) as finding_medium,
 			   COALESCE(fc.finding_low, 0) as finding_low,
 			   COALESCE(fc.finding_info, 0) as finding_info,
-			   a.description, a.tags, a.metadata, a.properties,
+			   a.description, a.tags, a.properties,
 			   a.provider, a.external_id, a.classification, a.sync_status, a.last_synced_at, a.sync_error,
 			   a.discovery_source, a.discovery_tool, a.discovered_at,
 			   a.compliance_scope, a.data_classification, a.pii_data_exposed, a.phi_data_exposed, a.regulatory_owner_id,
@@ -394,11 +394,6 @@ func (r *AssetRepository) selectQuery() string {
 
 // Update updates an existing asset.
 func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
-	metadata, err := json.Marshal(a.Metadata())
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
 	properties, err := json.Marshal(a.Properties())
 	if err != nil {
 		return fmt.Errorf("failed to marshal properties: %w", err)
@@ -408,13 +403,13 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		UPDATE assets
 		SET parent_id = $2, owner_id = $3, owner_ref = $4, name = $5, asset_type = $6, sub_type = $7, criticality = $8, status = $9,
 		    scope = $10, exposure = $11, risk_score = $12,
-		    description = $13, tags = $14, metadata = $15, properties = $16,
-		    provider = $17, external_id = $18, classification = $19, sync_status = $20, last_synced_at = $21, sync_error = $22,
-		    discovery_source = $23, discovery_tool = $24, discovered_at = $25,
-		    compliance_scope = $26, data_classification = $27, pii_data_exposed = $28, phi_data_exposed = $29, regulatory_owner_id = $30,
-		    is_internet_accessible = $31, exposure_changed_at = $32, last_exposure_level = $33,
-		    last_seen = $34, updated_at = $35
-		WHERE id = $1 AND tenant_id = $36
+		    description = $13, tags = $14, properties = $15,
+		    provider = $16, external_id = $17, classification = $18, sync_status = $19, last_synced_at = $20, sync_error = $21,
+		    discovery_source = $22, discovery_tool = $23, discovered_at = $24,
+		    compliance_scope = $25, data_classification = $26, pii_data_exposed = $27, phi_data_exposed = $28, regulatory_owner_id = $29,
+		    is_internet_accessible = $30, exposure_changed_at = $31, last_exposure_level = $32,
+		    last_seen = $33, updated_at = $34
+		WHERE id = $1 AND tenant_id = $35
 	`
 
 	updateOwnerRef := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -433,7 +428,6 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		a.RiskScore(),
 		a.Description(),
 		pq.Array(a.Tags()),
-		metadata,
 		properties,
 		a.Provider().String(),
 		nullString(a.ExternalID()),
@@ -620,7 +614,6 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		findingInfo     int
 		description     sql.NullString
 		tags            pq.StringArray
-		metadata        []byte
 		properties      []byte
 		provider        sql.NullString
 		externalID      sql.NullString
@@ -651,7 +644,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		&idStr, &tenantIDStr, &parentIDStr, &ownerIDStr, &ownerRef, &name, &assetType, &subType, &criticality, &status,
 		&scope, &exposure, &riskScore, &findingCount,
 		&findingCritical, &findingHigh, &findingMedium, &findingLow, &findingInfo,
-		&description, &tags, &metadata, &properties,
+		&description, &tags, &properties,
 		&provider, &externalID, &classification, &syncStatus, &lastSyncedAt, &syncError,
 		&discoverySource, &discoveryTool, &discoveredAt,
 		&complianceScope, &dataClassification, &piiDataExposed, &phiDataExposed, &regulatoryOwnerIDStr,
@@ -665,7 +658,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 	a, err := r.reconstructAsset(
 		idStr, tenantIDStr, parentIDStr, ownerIDStr, ownerRef, name, assetType, subType.String, criticality, status,
 		scope, exposure, riskScore, findingCount,
-		description, tags, metadata, properties,
+		description, tags, properties,
 		provider, externalID, classification, syncStatus, lastSyncedAt, syncError,
 		discoverySource, discoveryTool, discoveredAt,
 		complianceScope, dataClassification, piiDataExposed, phiDataExposed, regulatoryOwnerIDStr,
@@ -695,7 +688,7 @@ func (r *AssetRepository) reconstructAsset(
 	riskScore, findingCount int,
 	description sql.NullString,
 	tags pq.StringArray,
-	metadataBytes, propertiesBytes []byte,
+	propertiesBytes []byte,
 	provider sql.NullString,
 	externalID, classification sql.NullString,
 	syncStatus sql.NullString,
@@ -743,13 +736,6 @@ func (r *AssetRepository) reconstructAsset(
 	exposure, _ := asset.ParseExposure(exposureStr)
 	parsedProvider := asset.ParseProvider(nullStringValue(provider))
 	parsedSyncStatus := asset.ParseSyncStatus(nullStringValue(syncStatus))
-
-	var metadata map[string]any
-	if len(metadataBytes) > 0 {
-		if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
-			metadata = make(map[string]any)
-		}
-	}
 
 	var properties map[string]any
 	if len(propertiesBytes) > 0 {
@@ -804,7 +790,6 @@ func (r *AssetRepository) reconstructAsset(
 		findingCount,
 		desc,
 		[]string(tags),
-		metadata,
 		properties,
 		parsedProvider,
 		nullStringValue(externalID),
@@ -1103,12 +1088,12 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 		INSERT INTO assets (
 			id, tenant_id, parent_id, owner_id, name, asset_type, criticality, status,
 			scope, exposure, risk_score,
-			description, tags, metadata, properties,
+			description, tags, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
 			discovery_source, discovery_tool, discovered_at,
 			first_seen, last_seen, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
 		ON CONFLICT (tenant_id, name) DO UPDATE SET
 			tags = (
 				SELECT array_agg(DISTINCT t)
@@ -1135,11 +1120,6 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	defer stmt.Close()
 
 	for _, a := range assets {
-		metadata, err := json.Marshal(a.Metadata())
-		if err != nil {
-			return created, updated, fmt.Errorf("failed to marshal metadata: %w", err)
-		}
-
 		properties, err := json.Marshal(a.Properties())
 		if err != nil {
 			return created, updated, fmt.Errorf("failed to marshal properties: %w", err)
@@ -1160,7 +1140,6 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 			a.RiskScore(),
 			a.Description(),
 			pq.Array(a.Tags()),
-			metadata,
 			properties,
 			a.Provider().String(),
 			nullString(a.ExternalID()),
@@ -1465,24 +1444,37 @@ SELECT category, key, value FROM (
 ) sub
 `, filterClause)
 
-	// Append metadata count queries for requested JSONB property fields.
-	// Each field adds a UNION ALL that groups by the property value.
-	// Only alphanumeric + underscore field names are allowed (SQL injection safe).
+	// Append metadata count queries for requested JSONB property
+	// fields. Each field adds a UNION ALL that groups by the
+	// property value.
+	//
+	// Hardening: the regex restricts `field` to a safe subset, but
+	// CodeQL's go/sql-injection rule still flagged the Sprintf
+	// interpolation because it doesn't model the regex guard.
+	// Rewriting with `$N` parameter binding removes the tainted
+	// flow entirely — PG accepts a parameter in every position
+	// `field` used (JSONB `->>` operator, `?` existence operator,
+	// and a string-concat for the category label). The regex is
+	// retained as an early reject because the DB would accept
+	// weird-but-unused keys like "1" or "foo bar" and we want a
+	// 400-style early failure rather than a noisy 0-row group.
 	validField := regexp.MustCompile(`^[a-z][a-z0-9_]{0,49}$`)
 	for _, field := range countByFields {
 		if !validField.MatchString(field) {
 			continue
 		}
-		// Insert before the closing ") sub" by replacing it
+		// Insert before the closing ") sub" by replacing it.
 		query = strings.TrimSuffix(strings.TrimSpace(query), ") sub")
+		paramIdx := len(args) + 1 // $N for the field name
 		query += fmt.Sprintf(`
   UNION ALL
-  SELECT 'meta:%s', COALESCE(a.properties->>'%s', 'null'), COUNT(*)::float8
+  SELECT 'meta:' || $%d, COALESCE(a.properties->>$%d, 'null'), COUNT(*)::float8
   FROM filtered a
-  WHERE a.properties ? '%s'
-  GROUP BY a.properties->>'%s'
+  WHERE a.properties ? $%d
+  GROUP BY a.properties->>$%d
 ) sub
-`, field, field, field, field)
+`, paramIdx, paramIdx, paramIdx, paramIdx)
+		args = append(args, field)
 	}
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -1652,12 +1644,45 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 	return facets, nil
 }
 
-// formatPropertyLabel converts snake_case key to Title Case label.
+// formatPropertyLabel converts snake_case or camelCase key to Title Case label.
+// Handles: snake_case, camelCase, PascalCase, ALLCAPS, and mixtures.
 func formatPropertyLabel(key string) string {
-	words := strings.Split(key, "_")
+	// Step 1: insert space before uppercase letters in camelCase/PascalCase
+	// but NOT between consecutive uppercase (e.g., "BIOS" stays "BIOS")
+	var b strings.Builder
+	for i, r := range key {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			prev := rune(key[i-1])
+			// Insert space if prev is lowercase, OR prev is uppercase but next (if exists) is lowercase
+			// This handles: "camelCase" -> "camel Case", "BIOSUuid" -> "BIOS Uuid"
+			if prev >= 'a' && prev <= 'z' {
+				b.WriteRune(' ')
+			} else if prev >= 'A' && prev <= 'Z' && i+1 < len(key) && key[i+1] >= 'a' && key[i+1] <= 'z' {
+				b.WriteRune(' ')
+			}
+		}
+		b.WriteRune(r)
+	}
+	result := b.String()
+
+	// Step 2: replace underscores with spaces
+	result = strings.ReplaceAll(result, "_", " ")
+
+	// Step 3: title case each word
+	words := strings.Fields(result) // splits on any whitespace
 	for i, w := range words {
 		if len(w) > 0 {
-			words[i] = strings.ToUpper(w[:1]) + w[1:]
+			// Keep ALL_CAPS words as-is (acronyms like BIOS, UUID, IP)
+			allUpper := true
+			for _, c := range w {
+				if c < 'A' || c > 'Z' {
+					allUpper = false
+					break
+				}
+			}
+			if !allUpper {
+				words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
+			}
 		}
 	}
 	return strings.Join(words, " ")

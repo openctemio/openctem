@@ -505,9 +505,9 @@ func (s *Scan) RecordRun(runID shared.ID, status string) {
 	s.LastRunStatus = status
 	s.TotalRuns++
 
-	if status == "completed" || status == "success" {
+	if status == RunStatusCompleted || status == RunStatusSuccess {
 		s.SuccessfulRuns++
-	} else if status == "failed" || status == "error" {
+	} else if status == RunStatusFailed || status == RunStatusError {
 		s.FailedRuns++
 	}
 

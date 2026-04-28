@@ -27,6 +27,14 @@ type GroupSyncControllerConfig struct {
 // 1. Iterates over all active tenants
 // 2. For each tenant, triggers SyncAll to synchronize all configured providers
 // 3. Logs sync results for monitoring
+//
+// NOT WIRED: this controller is not registered in cmd/server/workers.go
+// because app.GroupSyncService is also not constructed in services.go —
+// the periodic sync side of the group-provider feature is not shipped.
+// On-demand sync works through the HTTP handler (group_handler.go). A
+// future PR that turns on periodic SCIM/LDAP sync needs to:
+//   1. Construct app.NewGroupSyncService(repos.Group, log) in services.go
+//   2. Register this controller in workers.go
 type GroupSyncController struct {
 	syncService *app.GroupSyncService
 	tenantRepo  tenant.Repository

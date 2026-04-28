@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"github.com/openctemio/api/internal/app/tool"
 	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -18,13 +18,13 @@ import (
 
 // ToolCategoryHandler handles HTTP requests for tool categories.
 type ToolCategoryHandler struct {
-	service   *app.ToolCategoryService
+	service   *tool.CategoryService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewToolCategoryHandler creates a new ToolCategoryHandler.
-func NewToolCategoryHandler(service *app.ToolCategoryService, v *validator.Validator, log *logger.Logger) *ToolCategoryHandler {
+func NewToolCategoryHandler(service *tool.CategoryService, v *validator.Validator, log *logger.Logger) *ToolCategoryHandler {
 	return &ToolCategoryHandler{
 		service:   service,
 		validator: v,
@@ -116,7 +116,7 @@ func (h *ToolCategoryHandler) ListCategories(w http.ResponseWriter, r *http.Requ
 		isBuiltin = &val
 	}
 
-	result, err := h.service.ListCategories(r.Context(), app.ListCategoriesInput{
+	result, err := h.service.ListCategories(r.Context(), tool.ListCategoriesInput{
 		TenantID:  tenantID,
 		IsBuiltin: isBuiltin,
 		Search:    search,
@@ -205,7 +205,7 @@ func (h *ToolCategoryHandler) CreateCustomCategory(w http.ResponseWriter, r *htt
 		return
 	}
 
-	tc, err := h.service.CreateCategory(r.Context(), app.CreateCategoryInput{
+	tc, err := h.service.CreateCategory(r.Context(), tool.CreateCategoryInput{
 		TenantID:    tenantID,
 		CreatedBy:   userID,
 		Name:        req.Name,
@@ -241,7 +241,7 @@ func (h *ToolCategoryHandler) UpdateCustomCategory(w http.ResponseWriter, r *htt
 		return
 	}
 
-	tc, err := h.service.UpdateCategory(r.Context(), app.UpdateCategoryInput{
+	tc, err := h.service.UpdateCategory(r.Context(), tool.UpdateCategoryInput{
 		TenantID:    tenantID,
 		ID:          categoryID,
 		DisplayName: req.DisplayName,

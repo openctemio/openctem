@@ -4,7 +4,6 @@ import (
 	"database/sql"
 
 	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -12,9 +11,21 @@ import (
 	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/websocket"
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
 )
+
+// newCompensatingControlHandlerWithWiring constructs the handler and
+// attaches the B2 reclassify publisher when the services graph has
+// one wired. Kept as a helper so handlers.go stays declarative.
+func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Services) *handler.CompensatingControlHandler {
+	h := handler.NewCompensatingControlHandler(db, log)
+	if svc != nil && svc.ControlChangePub != nil {
+		h.SetChangePublisher(svc.ControlChangePub)
+	}
+	return h
+}
 
 // HandlerDeps contains dependencies needed to create handlers.
 type HandlerDeps struct {
@@ -55,6 +66,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler := handler.NewVulnerabilityHandler(svc.Vulnerability, v, log)
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
+	if svc.BulkGuard != nil {
+		vulnHandler.SetBulkGuard(svc.BulkGuard)
+	}
 
 	handlers := routes.Handlers{
 		// Health
@@ -83,16 +97,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
 
 		// CTEM Discovery - Network Services, State History & Relationships
-		AssetService:      handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
-		AssetStateHistory: handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
+		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
+		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, log),
 		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
 
 		// Vulnerabilities & Exposures
-		Vulnerability:      vulnHandler,
-		FindingActivity:    handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		Vulnerability:    vulnHandler,
+		FindingActivity:  handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:   handler.NewFindingActionsHandler(svc.FindingActions, log),
 		JiraWebhook:      handler.NewJiraWebhookHandler(svc.JiraSync, log),
 		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
@@ -107,9 +121,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),
 
 		// Agents & Commands
-		Command: commandHandler,
-		Agent:   newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
-		Ingest:  handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
+		Command:          commandHandler,
+		Agent:            newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
+		Ingest:           handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
+		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
+		IOC:              newIOCHandlerWithFindingCheck(deps, log),
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
@@ -155,6 +171,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Business Units
 		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),
+
+		// Business Services (Phase 3)
+		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log),
 
 		// API Keys & Webhooks
 		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
@@ -209,11 +228,22 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Asset Dedup Review (RFC-001)
 		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
 
+		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
+		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
+		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, log),
+		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
+		PriorityRule:          handler.NewPriorityRuleHandler(deps.DB.DB, log),
+
 		// Platform Stats (tenant-scoped platform agent statistics)
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log),
+
+		// F-8: wire the single-use ticket redeemer when configured so the
+		// /ws route uses ticket auth instead of the JWT chain.
+		WSTicketRedeemer: svc.WSTicket,
 	}
 
 	// SSO handler (always initialized - uses DB-stored provider configs)
@@ -240,6 +270,10 @@ func InitLocalAuthHandler(
 			cfg.Auth,
 			log,
 		)
+		// F-8: wire the single-use ticket service (may be nil if Redis not configured).
+		if svc.WSTicket != nil {
+			handlers.LocalAuth.SetWSTicketService(svc.WSTicket)
+		}
 		log.Info("local auth handler initialized")
 	}
 }
@@ -278,5 +312,28 @@ func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pente
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
 	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
+	return h
+}
+
+// newRuntimeTelemetryHandlerWithCorrelator wires the IOC correlator
+// into the runtime-telemetry ingest path. The handler is nil-safe
+// without a correlator, but leaving it nil kills invariant B6 —
+// telemetry is stored but never matched.
+func newRuntimeTelemetryHandlerWithCorrelator(deps *HandlerDeps, svc *Services, log *logger.Logger) *handler.RuntimeTelemetryHandler {
+	h := handler.NewRuntimeTelemetryHandler(deps.DB.DB, log)
+	if svc.IOCCorrelator != nil {
+		h.SetCorrelator(svc.IOCCorrelator)
+	}
+	return h
+}
+
+// newIOCHandlerWithFindingCheck wires the tenant-scoped finding repo
+// into the IOC handler so POST /iocs can verify source_finding_id
+// belongs to the caller. Without this check a client in tenant A
+// could submit an IOC pointing at a finding in tenant B and trick the
+// B6 correlator into reopening tenant B's finding.
+func newIOCHandlerWithFindingCheck(deps *HandlerDeps, log *logger.Logger) *handler.IOCHandler {
+	h := handler.NewIOCHandler(deps.Repos.IOC, log)
+	h.SetFindingChecker(deps.Repos.Finding)
 	return h
 }

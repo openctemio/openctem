@@ -54,6 +54,8 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 }
 
 // GetByID retrieves a session by its ID.
+//
+//getbyid:unsafe - Sessions carry their own user binding; tenant scope resolved via the session's claims.
 func (r *SessionRepository) GetByID(ctx context.Context, id shared.ID) (*session.Session, error) {
 	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE id = $1`
 

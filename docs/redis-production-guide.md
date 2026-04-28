@@ -22,7 +22,7 @@ This guide covers deploying Redis integration for production environments.
 
 ### Go Application Requirements
 
-- Go 1.21+
+- Go 1.26+
 - `github.com/redis/go-redis/v9`
 
 ## Configuration

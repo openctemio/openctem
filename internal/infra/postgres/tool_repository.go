@@ -116,6 +116,8 @@ func (r *ToolRepository) Create(ctx context.Context, t *tool.Tool) error {
 }
 
 // GetByID retrieves a tool by its ID.
+//
+//getbyid:unsafe - Tools are shared definitions used across all tenants; tenant config lives in tenant_tool_configs.
 func (r *ToolRepository) GetByID(ctx context.Context, id shared.ID) (*tool.Tool, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())

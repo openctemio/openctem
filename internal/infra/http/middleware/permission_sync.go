@@ -103,6 +103,30 @@ func (m *PermissionSyncMiddleware) EnrichPermissions(next http.Handler) http.Han
 				"jwt_version", jwtPermVersion,
 				"current_version", currentVersion,
 			)
+
+			// Fail-closed for STATE-MUTATING requests when permissions are
+			// stale. The header alone (read by the frontend) is not enough
+			// — a non-browser client (curl, attacker) can ignore it. For
+			// safe methods (GET/HEAD/OPTIONS) we let the request through
+			// because read traffic dominates and the cache fetch below
+			// will use the FRESH permissions anyway. For unsafe methods
+			// (POST/PUT/PATCH/DELETE) we reject with 409, telling the
+			// client to refresh their token and retry — this closes the
+			// "I revoked your admin role 3 minutes ago but your old JWT
+			// still lets you delete things" window.
+			//
+			// Audit finding: previously fail-OPEN on stale, even for
+			// destructive operations.
+			if !isSafeMethod(r.Method) {
+				m.logger.Info("rejecting unsafe request with stale permissions",
+					"user_id", userID, "tenant_id", tenantID,
+					"method", r.Method, "path", r.URL.Path,
+					"jwt_version", jwtPermVersion, "current_version", currentVersion)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"code":"permissions_stale","message":"Your session is using outdated permissions. Refresh your token and retry."}`))
+				return
+			}
 		}
 
 		// Fetch permissions from cache/DB with timeout to prevent DoS
@@ -129,6 +153,10 @@ func (m *PermissionSyncMiddleware) EnrichPermissions(next http.Handler) http.Han
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// (isSafeMethod is defined in csrf.go in this package — same semantics:
+// read methods are allowed through stale-permission window, write
+// methods are rejected.)
 
 // GetFetchedPermissions returns permissions fetched from Redis/DB.
 func GetFetchedPermissions(ctx context.Context) []string {

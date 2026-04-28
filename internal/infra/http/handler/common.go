@@ -172,6 +172,30 @@ func parseQueryInt(s string, defaultVal int) int {
 	return val
 }
 
+// MaxPerPage is the hard ceiling every paginated list handler
+// enforces on the `per_page` query parameter. Use with
+// parseQueryIntBounded so CodeQL's data-flow analysis sees the bound
+// at the parse site — prevents go/uncontrolled-allocation-size false
+// positives in make() calls downstream.
+const MaxPerPage = 100
+
+// parseQueryIntBounded parses a query parameter as an integer and
+// clamps the result to [minVal, maxVal]. Returns defaultVal when
+// input is empty or invalid.
+func parseQueryIntBounded(s string, defaultVal, minVal, maxVal int) int {
+	if minVal > maxVal {
+		return defaultVal
+	}
+	val := parseQueryInt(s, defaultVal)
+	if val < minVal {
+		return minVal
+	}
+	if val > maxVal {
+		return maxVal
+	}
+	return val
+}
+
 // parseQueryBool parses a query parameter as a boolean pointer.
 // Returns nil if the input is empty, otherwise returns a pointer to the boolean value.
 // Accepts "true", "1" as true; anything else as false.
@@ -208,6 +232,7 @@ func nilIfEmpty(s string) *string {
 	}
 	return &s
 }
+
 
 // parsePropertiesFilter parses "key:value,key2:value2" into a map.
 // Keys are validated to alphanumeric+underscore only. Max 5 pairs.

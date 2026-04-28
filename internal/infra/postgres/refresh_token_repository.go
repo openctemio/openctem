@@ -52,6 +52,8 @@ func (r *RefreshTokenRepository) Create(ctx context.Context, token *session.Refr
 }
 
 // GetByID retrieves a refresh token by its ID.
+//
+//getbyid:unsafe - Refresh tokens carry their own user binding; used only for token validation flow.
 func (r *RefreshTokenRepository) GetByID(ctx context.Context, id shared.ID) (*session.RefreshToken, error) {
 	query := `SELECT ` + refreshTokenColumns + ` FROM refresh_tokens WHERE id = $1`
 

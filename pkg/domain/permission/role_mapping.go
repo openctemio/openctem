@@ -80,6 +80,13 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ThreatIntelRead, ThreatIntelWrite,
 		// AI Triage
 		AITriageRead, AITriageTrigger,
+		// CTEM (RFC-004 + RFC-005)
+		CTEMCyclesRead, CTEMCyclesWrite,
+		AttackerProfilesRead, AttackerProfilesWrite,
+		BusinessServicesRead, BusinessServicesWrite,
+		CompensatingControlsRead, CompensatingControlsWrite,
+		PriorityRulesRead, PriorityRulesWrite,
+		VerificationChecklistsRead, VerificationChecklistsWrite,
 	},
 
 	tenant.RoleAdmin: {
@@ -151,6 +158,13 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ThreatIntelRead, ThreatIntelWrite,
 		// AI Triage
 		AITriageRead, AITriageTrigger,
+		// CTEM (RFC-004 + RFC-005)
+		CTEMCyclesRead, CTEMCyclesWrite,
+		AttackerProfilesRead, AttackerProfilesWrite,
+		BusinessServicesRead, BusinessServicesWrite,
+		CompensatingControlsRead, CompensatingControlsWrite,
+		PriorityRulesRead, PriorityRulesWrite,
+		VerificationChecklistsRead, VerificationChecklistsWrite,
 	},
 
 	tenant.RoleMember: {
@@ -220,6 +234,12 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ThreatIntelRead,
 		// AI Triage
 		AITriageRead, AITriageTrigger,
+		// CTEM — Members can read/write cycles/controls but cannot manage rules
+		CTEMCyclesRead, CTEMCyclesWrite,
+		AttackerProfilesRead,
+		BusinessServicesRead, BusinessServicesWrite,
+		CompensatingControlsRead, CompensatingControlsWrite,
+		VerificationChecklistsRead, VerificationChecklistsWrite,
 	},
 
 	tenant.RoleViewer: {
@@ -281,6 +301,9 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ThreatIntelRead,
 		// AI Triage (read only)
 		AITriageRead,
+		// CTEM (read only)
+		CTEMCyclesRead, AttackerProfilesRead, BusinessServicesRead,
+		CompensatingControlsRead, VerificationChecklistsRead,
 	},
 }
 

@@ -72,6 +72,11 @@ func (h *AssetImportHandler) ImportNessus(w http.ResponseWriter, r *http.Request
 func (h *AssetImportHandler) ImportKubernetes(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
+	// Cap body at 10 MB — K8s cluster exports are structured data, not
+	// binary blobs; even a large cluster fits. Unbounded body + decode
+	// would let an attacker OOM the process with a multi-GB JSON.
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+
 	var input app.K8sDiscoveryInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)

@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // BitbucketClient implements the Client interface for Bitbucket
@@ -20,12 +22,16 @@ type BitbucketClient struct {
 	isCloud    bool
 }
 
-// NewBitbucketClient creates a new Bitbucket client
+// NewBitbucketClient creates a new Bitbucket client.
+// SECURITY: see GitHubClient — same SSRF mitigation pattern.
 func NewBitbucketClient(config Config) (*BitbucketClient, error) {
 	baseURL := "https://api.bitbucket.org/2.0"
 	isCloud := true
 
 	if config.BaseURL != "" && config.BaseURL != "https://bitbucket.org" {
+		if _, err := httpsec.ValidateURL(config.BaseURL); err != nil {
+			return nil, fmt.Errorf("invalid base_url: %w", err)
+		}
 		// For Bitbucket Server/Data Center
 		baseURL = strings.TrimSuffix(config.BaseURL, "/") + "/rest/api/1.0"
 		isCloud = false
@@ -33,7 +39,7 @@ func NewBitbucketClient(config Config) (*BitbucketClient, error) {
 
 	return &BitbucketClient{
 		config:     config,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 		baseURL:    baseURL,
 		isCloud:    isCloud,
 	}, nil

@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
-	"github.com/openctemio/sdk-go/pkg/ctis"
+	"github.com/openctemio/ctis"
 )
 
 // AssetProcessor handles batch asset processing.
@@ -1210,7 +1210,9 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	ctisAsset *ctis.Asset,
 	tool *ctis.Tool,
 ) (*asset.Asset, error) {
-	assetType := mapCTISAssetType(ctisAsset.Type)
+	rawType := mapCTISAssetType(ctisAsset.Type)
+	// Resolve type aliases: e.g., "firewall" → type=network, sub_type=firewall
+	coreType, subType := asset.ResolveTypeAlias(rawType)
 	criticality := mapCTISCriticality(ctisAsset.Criticality)
 
 	name := getAssetName(ctisAsset)
@@ -1229,9 +1231,14 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		name = name[:maxNameLength]
 	}
 
-	newAsset, err := asset.NewAsset(name, assetType, criticality)
+	newAsset, err := asset.NewAsset(name, coreType, criticality)
 	if err != nil {
 		return nil, err
+	}
+
+	// Set sub_type from TypeAliases or from properties
+	if subType != "" {
+		newAsset.SetSubType(subType)
 	}
 
 	newAsset.SetTenantID(tenantID)
@@ -1265,16 +1272,24 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		newAsset.AddTag(tag)
 	}
 
+	// Promote sub_type from properties if not already set via TypeAliases
+	if newAsset.SubType() == "" {
+		if st, ok := ctisAsset.Properties["sub_type"].(string); ok && st != "" {
+			newAsset.SetSubType(st)
+			delete(ctisAsset.Properties, "sub_type")
+		}
+	}
+
 	// Set discovery info
 	discoverySource := "agent"
 	discoveryTool := ""
 	if tool != nil {
 		discoveryTool = tool.Name
 	}
-	if source, ok := ctisAsset.Properties["discovery_source"].(string); ok {
+	if source, ok := ctisAsset.Properties[asset.PropKeyDiscoverySource].(string); ok {
 		discoverySource = source
 	}
-	if toolName, ok := ctisAsset.Properties["discovery_tool"].(string); ok {
+	if toolName, ok := ctisAsset.Properties[asset.PropKeyDiscoveryTool].(string); ok {
 		discoveryTool = toolName
 	}
 
@@ -1321,6 +1336,19 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
 	existing.SetProperties(mergedProps)
 
+	// Promote sub_type if existing asset doesn't have one
+	if existing.SubType() == "" {
+		// Try explicit sub_type from CTIS properties
+		if st, ok := ctisAsset.Properties["sub_type"].(string); ok && st != "" {
+			existing.SetSubType(st)
+		} else if ctisAsset.Type != "" {
+			// Try TypeAliases inference (e.g., "firewall" → network + firewall)
+			if _, subType := asset.ResolveTypeAlias(asset.AssetType(ctisAsset.Type)); subType != "" {
+				existing.SetSubType(subType)
+			}
+		}
+	}
+
 	// Update discovery tool if not set
 	if existing.DiscoveryTool() == "" && tool != nil {
 		existing.SetDiscoveryTool(tool.Name)
@@ -1339,7 +1367,7 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 		}
 
 		// Skip discovery fields (handled separately)
-		if k == "discovery_source" || k == "discovery_tool" {
+		if k == asset.PropKeyDiscoverySource || k == asset.PropKeyDiscoveryTool {
 			continue
 		}
 

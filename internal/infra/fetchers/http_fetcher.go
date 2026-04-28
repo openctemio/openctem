@@ -11,125 +11,22 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // =============================================================================
-// Security: URL Validation (SSRF Prevention)
+// Security: URL Validation (SSRF Prevention) — delegated to pkg/httpsec.
+//
+// This file used to carry its own copy of the blocklist + validator.
+// The canonical implementation now lives in pkg/httpsec and is shared
+// with pkg/httpsec-consuming code (notifier/webhook, etc.). This block
+// stays as a doc-only note so future callers know where to look.
 // =============================================================================
-
-// blockedIPRanges contains IP ranges that should never be accessed.
-// This prevents SSRF attacks against internal services and cloud metadata.
-var blockedIPRanges = []string{
-	"127.0.0.0/8",        // Loopback
-	"10.0.0.0/8",         // Private class A
-	"172.16.0.0/12",      // Private class B
-	"192.168.0.0/16",     // Private class C
-	"169.254.0.0/16",     // Link-local (includes AWS metadata 169.254.169.254)
-	"100.64.0.0/10",      // Carrier-grade NAT
-	"0.0.0.0/8",          // "This" network
-	"224.0.0.0/4",        // Multicast
-	"240.0.0.0/4",        // Reserved
-	"255.255.255.255/32", // Broadcast
-	"::1/128",            // IPv6 loopback
-	"fc00::/7",           // IPv6 unique local
-	"fe80::/10",          // IPv6 link-local
-}
-
-// blockedCIDRs is the parsed version of blockedIPRanges.
-var blockedCIDRs []*net.IPNet
-
-func init() {
-	for _, cidr := range blockedIPRanges {
-		_, ipNet, err := net.ParseCIDR(cidr)
-		if err == nil {
-			blockedCIDRs = append(blockedCIDRs, ipNet)
-		}
-	}
-}
-
-// isIPBlocked checks if an IP address is in a blocked range.
-func isIPBlocked(ip net.IP) bool {
-	for _, cidr := range blockedCIDRs {
-		if cidr.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-// urlValidationResult contains the result of URL validation including resolved IPs.
-// This is used to prevent DNS rebinding attacks by pinning IPs at validation time.
-type urlValidationResult struct {
-	parsedURL   *url.URL
-	resolvedIPs []net.IP // Pinned IPs from DNS resolution at validation time
-}
-
-// validateURL checks if a URL is safe to fetch (SSRF prevention).
-// Returns an error if the URL points to a blocked destination.
-func validateURL(rawURL string) error {
-	_, err := validateURLWithIPs(rawURL)
-	return err
-}
-
-// validateURLWithIPs validates a URL and returns the resolved IPs.
-// This prevents DNS rebinding attacks by pinning IPs at validation time.
-// The returned IPs should be used when making the actual HTTP request.
-func validateURLWithIPs(rawURL string) (*urlValidationResult, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid URL: %w", err)
-	}
-
-	// Only allow HTTP(S) schemes
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, fmt.Errorf("unsupported scheme: %s (only http/https allowed)", parsed.Scheme)
-	}
-
-	// Block common dangerous hostnames
-	hostname := strings.ToLower(parsed.Hostname())
-	dangerousHosts := []string{
-		"localhost",
-		"metadata",
-		"metadata.google.internal",
-		"metadata.google",
-		"169.254.169.254", // AWS/GCP/Azure metadata
-	}
-	for _, blocked := range dangerousHosts {
-		if hostname == blocked {
-			return nil, fmt.Errorf("blocked hostname: %s", hostname)
-		}
-	}
-
-	// Resolve hostname and check IP addresses
-	ips, err := net.LookupIP(parsed.Hostname())
-	if err != nil {
-		// If DNS fails, we can't validate - fail closed
-		return nil, fmt.Errorf("DNS lookup failed for %s: %w", parsed.Hostname(), err)
-	}
-
-	// Filter and validate IPs
-	validIPs := make([]net.IP, 0, len(ips))
-	for _, ip := range ips {
-		if isIPBlocked(ip) {
-			return nil, fmt.Errorf("blocked IP address: %s resolves to %s", parsed.Hostname(), ip.String())
-		}
-		validIPs = append(validIPs, ip)
-	}
-
-	if len(validIPs) == 0 {
-		return nil, fmt.Errorf("no valid IP addresses for %s", parsed.Hostname())
-	}
-
-	return &urlValidationResult{
-		parsedURL:   parsed,
-		resolvedIPs: validIPs,
-	}, nil
-}
 
 // =============================================================================
 // Security: Archive Extraction Limits
@@ -204,7 +101,7 @@ type HTTPFetcher struct {
 // The fetcher pins DNS resolution at creation time to prevent DNS rebinding attacks.
 func NewHTTPFetcher(config HTTPConfig) (*HTTPFetcher, error) {
 	// Validate URL and get pinned IPs before creating fetcher (SSRF prevention)
-	validationResult, err := validateURLWithIPs(config.URL)
+	validationResult, err := httpsec.ValidateURL(config.URL)
 	if err != nil {
 		return nil, fmt.Errorf("URL validation failed: %w", err)
 	}
@@ -220,7 +117,7 @@ func NewHTTPFetcher(config HTTPConfig) (*HTTPFetcher, error) {
 	}
 
 	// Create a custom dialer that uses pinned IPs to prevent DNS rebinding
-	pinnedIPs := validationResult.resolvedIPs
+	pinnedIPs := validationResult.ResolvedIPs
 	dialer := &net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
@@ -236,10 +133,10 @@ func NewHTTPFetcher(config HTTPConfig) (*HTTPFetcher, error) {
 			}
 
 			// If this is our target host, use pinned IPs
-			if host == validationResult.parsedURL.Hostname() {
+			if host == validationResult.URL.Hostname() {
 				// Re-validate IP before connecting (defense in depth)
 				for _, ip := range pinnedIPs {
-					if isIPBlocked(ip) {
+					if httpsec.IsIPBlocked(ip) {
 						return nil, fmt.Errorf("blocked IP: %s", ip.String())
 					}
 				}
@@ -252,7 +149,7 @@ func NewHTTPFetcher(config HTTPConfig) (*HTTPFetcher, error) {
 					return nil, fmt.Errorf("DNS lookup failed: %w", err)
 				}
 				for _, ip := range newIPs {
-					if isIPBlocked(ip) {
+					if httpsec.IsIPBlocked(ip) {
 						return nil, fmt.Errorf("redirect to blocked IP: %s", ip.String())
 					}
 				}
@@ -277,7 +174,7 @@ func NewHTTPFetcher(config HTTPConfig) (*HTTPFetcher, error) {
 					return fmt.Errorf("too many redirects")
 				}
 				// Validate redirect URL (with full DNS resolution for redirect target)
-				if err := validateURL(req.URL.String()); err != nil {
+				if _, err := httpsec.ValidateURL(req.URL.String()); err != nil {
 					return fmt.Errorf("redirect blocked: %w", err)
 				}
 				return nil

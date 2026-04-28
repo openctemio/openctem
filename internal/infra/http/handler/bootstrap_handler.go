@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"sync"
@@ -323,6 +324,28 @@ func (h *BootstrapHandler) GetTenantModules(w http.ResponseWriter, r *http.Reque
 		} else {
 			userPermissions = perms
 		}
+	}
+
+	// ETag based on (tenant module version + user permission version)
+	// — both must match for the cached payload to still be valid. The
+	// permission half catches role/permission changes that affect what
+	// modules this user can SEE, distinct from what the tenant has
+	// enabled. Hex-encode the tuple so it's a single opaque token.
+	modVersion := h.moduleSvc.GetTenantModuleVersion(ctx, tenantID)
+	permVersion := 0
+	if h.permVersionSvc != nil && userID != "" {
+		permVersion = h.permVersionSvc.Get(ctx, tenantID, userID)
+	}
+	// Include tenant_id in etag so a CDN/proxy that incorrectly shares
+	// cache entries across tenants cannot serve tenant A's response to
+	// tenant B (defense-in-depth: HTTP semantics already require
+	// per-user caching with private cache-control, but belt-and-braces).
+	etag := fmt.Sprintf(`"t%s-m%d-p%d"`, tenantID[:8], modVersion, permVersion)
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
 	}
 
 	// Get enabled modules for tenant

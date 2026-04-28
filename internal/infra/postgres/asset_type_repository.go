@@ -83,6 +83,8 @@ func (r *AssetTypeCategoryRepository) Create(ctx context.Context, c *assettype.C
 }
 
 // GetByID retrieves a category by ID.
+//
+//getbyid:unsafe - Asset-type categories are a shared catalog; no tenant column on the table.
 func (r *AssetTypeCategoryRepository) GetByID(ctx context.Context, id shared.ID) (*assettype.Category, error) {
 	query := categorySelectQuery + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
@@ -354,6 +356,8 @@ func (r *AssetTypeRepository) scanAssetType(row interface{ Scan(...any) error })
 }
 
 // GetByID retrieves an asset type by ID.
+//
+//getbyid:unsafe - Asset types are a shared catalog; no tenant_id column.
 func (r *AssetTypeRepository) GetByID(ctx context.Context, id shared.ID) (*assettype.AssetType, error) {
 	query := assetTypeSelectQuery + " WHERE at.id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/openctemio/api/internal/app/template"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -415,7 +416,7 @@ func setupTemplateTestHandlers(t *testing.T) *templateTestHandlers {
 		log,
 	)
 
-	sourceService := app.NewTemplateSourceService(
+	sourceService := template.NewSourceService(
 		sourceRepo,
 		log,
 	)

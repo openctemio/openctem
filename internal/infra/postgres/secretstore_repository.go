@@ -158,7 +158,11 @@ func (r *SecretStoreRepository) List(ctx context.Context, input secretstore.List
 		return nil, fmt.Errorf("failed to count credentials: %w", err)
 	}
 
-	// Sorting
+	// F-D1 hardening: sortBy is a strict switch-allowlist — any unknown value
+	// falls through to the hardcoded default. sortOrder is a binary literal
+	// ("ASC" | "DESC") derived from a lowercase compare. Neither slot can
+	// carry attacker input into the fmt.Sprintf below. See pkg/pagination
+	// SortOption for a centralized alternative planned for future refactor.
 	sortBy := sortFieldCreatedAt
 	if input.SortBy != "" {
 		switch input.SortBy {

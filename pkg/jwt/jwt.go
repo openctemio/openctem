@@ -150,6 +150,32 @@ type TokenConfig struct {
 	Issuer               string
 	AccessTokenDuration  time.Duration
 	RefreshTokenDuration time.Duration
+
+	// Audience is the intended recipient of the token (RFC 7519 `aud`).
+	// Defaults to DefaultAudience when empty. Kept configurable so
+	// multi-service deployments can bind a token to exactly the
+	// service that accepts it — prevents a leaked token issued for
+	// one service from being replayed against another sharing the
+	// same signing key.
+	Audience string
+}
+
+// DefaultAudience is the `aud` value used when TokenConfig.Audience is
+// unset. Chosen as a stable identifier tied to the API surface this
+// package serves. Tokens signed without `aud` will still parse (the
+// validator accepts either the default or a match), but new tokens
+// always carry one.
+const DefaultAudience = "openctem.api"
+
+// claimAudience returns the audience to embed in the `aud` field of
+// new tokens. Falls back to DefaultAudience to guarantee every token
+// issued from this version forward carries an audience.
+func (g *Generator) claimAudience() jwt.ClaimStrings {
+	aud := g.config.Audience
+	if aud == "" {
+		aud = DefaultAudience
+	}
+	return jwt.ClaimStrings{aud}
 }
 
 // TokenPair contains both access and refresh tokens.
@@ -208,6 +234,7 @@ func (g *Generator) GenerateAccessToken(userID, sessionID, role string) (string,
 		TokenType: TokenTypeAccess,
 		Role:      role,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -244,6 +271,7 @@ func (g *Generator) GenerateAccessTokenWithTenant(userID, email, sessionID strin
 		Permissions: tenant.Permissions,
 		IsAdmin:     tenant.IsAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -276,6 +304,7 @@ func (g *Generator) GenerateRefreshToken(userID, sessionID string) (string, time
 		TokenType: TokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.New().String(), // Unique jti to prevent token hash collisions
+			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -350,6 +379,7 @@ func (g *Generator) GenerateTokenPairWithMemberships(userID, email, name, sessio
 		Tenants:   tenants,
 		IsAdmin:   isAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -396,6 +426,7 @@ func (g *Generator) GenerateGlobalRefreshToken(userID, email, name, sessionID st
 		// No tenant info - this is a global refresh token
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.New().String(), // Unique jti to prevent token hash collisions
+			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -453,6 +484,7 @@ func (g *Generator) GenerateTenantScopedAccessToken(userID, email, name, session
 		// Include single tenant in Tenants array for backward compatibility
 		Tenants: []TenantMembership{tenant},
 		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -520,6 +552,7 @@ func (g *Generator) GenerateTenantScopedAccessTokenWithPermissions(userID, email
 		IsAdmin:     isAdmin,
 		Tenants:     []TenantMembership{tenant},
 		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -600,6 +633,7 @@ func (g *Generator) GenerateSlimAccessToken(
 		// NO IsAdmin flag - all users go through same permission check flow
 		Tenants: []TenantMembership{tenant}, // For backward compatibility
 		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -865,6 +899,7 @@ func GenerateToken(userID, role, secret string, expiry time.Duration) (string, e
 		UserID: userID,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{DefaultAudience},
 			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
@@ -875,7 +910,12 @@ func GenerateToken(userID, role, secret string, expiry time.Duration) (string, e
 	return token.SignedString([]byte(secret))
 }
 
-// ValidateToken validates the token and returns the claims.
+// ValidateToken validates the token and returns the claims. Tokens
+// that carry an `aud` claim MUST name DefaultAudience — this closes
+// the cross-service replay attack where a token issued for one
+// service is presented to another sharing the same signing key.
+// Tokens without an `aud` (issued before this package added the
+// field) still parse to preserve sessions across the rollout.
 func ValidateToken(tokenString, secret string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -895,6 +935,22 @@ func ValidateToken(tokenString, secret string) (*Claims, error) {
 		return nil, ErrInvalidToken
 	}
 
+	// Enforce audience if the token carries one. Empty audience (old
+	// tokens from before this change) is accepted during the rollout
+	// window; a follow-up will flip this to "audience required".
+	if len(claims.Audience) > 0 {
+		matched := false
+		for _, aud := range claims.Audience {
+			if aud == DefaultAudience {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return nil, ErrInvalidToken
+		}
+	}
+
 	return claims, nil
 }
 
@@ -909,6 +965,7 @@ func GenerateTokenWithExpiry(userID, role, secret string, expiresAt time.Time) (
 		UserID: userID,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{DefaultAudience},
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
@@ -936,6 +993,7 @@ func (g *Generator) GenerateShortLivedToken(userID, tenantID string, ttl time.Du
 		TenantID:  tenantID,
 		TokenType: TokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),

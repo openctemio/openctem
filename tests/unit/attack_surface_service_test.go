@@ -1,12 +1,12 @@
 package unit
 
 import (
+	"github.com/openctemio/api/internal/app/attack"
 	"context"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -240,10 +240,10 @@ func (m *mockAttackSurfaceRelRepo) ListAllEdges(_ context.Context, _ shared.ID) 
 // Helper Functions
 // =============================================================================
 
-func newTestAttackSurfaceService(repo *mockAttackSurfaceRepo) *app.AttackSurfaceService {
+func newTestAttackSurfaceService(repo *mockAttackSurfaceRepo) *attack.SurfaceService {
 	log := logger.NewNop()
 	relRepo := &mockAttackSurfaceRelRepo{}
-	return app.NewAttackSurfaceService(repo, relRepo, log)
+	return attack.NewSurfaceService(repo, relRepo, log)
 }
 
 // makeAttackSurfaceAsset creates a test asset using Reconstitute with the given parameters.
@@ -270,7 +270,6 @@ func makeAttackSurfaceAsset(
 		findingCount,          // findingCount
 		"test description",    // description
 		nil,                   // tags
-		nil,                   // metadata
 		nil,                   // properties
 		asset.ProviderManual,  // provider
 		"",                    // externalID

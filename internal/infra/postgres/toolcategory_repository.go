@@ -143,6 +143,8 @@ func (r *ToolCategoryRepository) Create(ctx context.Context, tc *toolcategory.To
 }
 
 // GetByID returns a category by ID.
+//
+//getbyid:unsafe - Tool categories are a shared catalog; no tenant_id column.
 func (r *ToolCategoryRepository) GetByID(ctx context.Context, id shared.ID) (*toolcategory.ToolCategory, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 

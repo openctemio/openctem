@@ -1,22 +1,39 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"github.com/openctemio/api/internal/app/apikey"
+	"github.com/openctemio/api/internal/app/assignment"
+	"github.com/openctemio/api/internal/app/command"
+	"github.com/openctemio/api/internal/app/scope"
+	"github.com/openctemio/api/internal/app/threat"
+	"github.com/openctemio/api/internal/app/tool"
+	"time"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/attack"
 	"github.com/openctemio/api/internal/app/ingest"
+	iocapp "github.com/openctemio/api/internal/app/ioc"
+	"github.com/openctemio/api/internal/app/jira"
+	"github.com/openctemio/api/internal/app/outbox"
 	"github.com/openctemio/api/internal/app/pipeline"
+	"github.com/openctemio/api/internal/app/reclassify"
 	"github.com/openctemio/api/internal/app/scan"
+	"github.com/openctemio/api/internal/app/sla"
+	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/internal/infra/llm"
+	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/storage"
 	"github.com/openctemio/api/internal/infra/websocket"
-	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/crypto"
+	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/suppression"
 	"github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/jwt"
@@ -28,6 +45,25 @@ type wsHubBroadcaster struct {
 	hub *websocket.Hub
 }
 
+// wsTicketStore is an adapter exposing only the Get/Set/Del surface that the
+// WS ticket service needs — keeps that service decoupled from the full Redis
+// client surface. F-8.
+type wsTicketStore struct {
+	rc *redis.Client
+}
+
+func newWSTicketStore(rc *redis.Client) *wsTicketStore {
+	return &wsTicketStore{rc: rc}
+}
+
+func (s *wsTicketStore) Set(ctx context.Context, key, value string, ttl time.Duration) error {
+	return s.rc.Set(ctx, key, value, ttl)
+}
+
+func (s *wsTicketStore) GetDel(ctx context.Context, key string) (string, bool, error) {
+	return s.rc.GetDel(ctx, key)
+}
+
 func (b *wsHubBroadcaster) BroadcastActivity(channel string, data any, tenantID string) {
 	b.hub.BroadcastEvent(channel, data, tenantID)
 }
@@ -37,6 +73,23 @@ func (b *wsHubBroadcaster) BroadcastTriage(channel string, data any, tenantID st
 }
 
 func (b *wsHubBroadcaster) BroadcastScopeChange(channel string, data any, tenantID string) {
+	b.hub.BroadcastEvent(channel, data, tenantID)
+}
+
+// Broadcast satisfies module.WSBroadcaster. Used by ModuleService to
+// fan out "module.updated" events to clients subscribed to the
+// tenant:{id} channel — drives the SWR cache invalidation on the
+// Settings → Modules page so admins in other tabs see the new state
+// immediately.
+//
+// The channel string already encodes the tenant (`tenant:{id}`); the
+// hub's BroadcastEvent expects a separate tenantID so we extract it
+// from the channel prefix.
+func (b *wsHubBroadcaster) Broadcast(channel string, data any) {
+	tenantID := ""
+	if len(channel) > len("tenant:") && channel[:len("tenant:")] == "tenant:" {
+		tenantID = channel[len("tenant:"):]
+	}
 	b.hub.BroadcastEvent(channel, data, tenantID)
 }
 
@@ -52,58 +105,58 @@ type Services struct {
 	Tenant *app.TenantService
 
 	// Assets
-	Asset             *app.AssetService
-	AssetGroup        *app.AssetGroupService
-	AssetType         *app.AssetTypeService
+	Asset                  *app.AssetService
+	AssetGroup             *app.AssetGroupService
+	AssetType              *app.AssetTypeService
 	AssetRelationship      *app.AssetRelationshipService
 	AssetImport            *app.AssetImportService
 	RelationshipSuggestion *app.RelationshipSuggestionService
-	Scope                  *app.ScopeService
-	AttackSurface     *app.AttackSurfaceService
+	Scope                  *scope.Service
+	AttackSurface          *attack.SurfaceService
 
 	// Configuration (read-only system config)
 	FindingSource      *app.FindingSourceService
 	FindingSourceCache *app.FindingSourceCacheService
 
 	// Vulnerabilities & Exposures
-	Vulnerability      *app.VulnerabilityService
-	FindingActivity    *app.FindingActivityService
+	Vulnerability    *app.VulnerabilityService
+	FindingActivity  *app.FindingActivityService
 	FindingActions   *app.FindingActionsService
-	Exposure           *app.ExposureService
-	ThreatIntel      *app.ThreatIntelService
+	Exposure         *app.ExposureService
+	ThreatIntel      *threat.IntelService
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
-	Component  *app.ComponentService
+	Component      *app.ComponentService
 	SBOMImport     *app.SBOMImportService
 	ReportSchedule *app.ReportScheduleService
-	Branch    *app.BranchService
+	Branch         *app.BranchService
 
 	// Dashboard
 	Dashboard *app.DashboardService
 
 	// Integrations & Notifications
 	Integration  *app.IntegrationService
-	Outbox       *app.OutboxService
+	Outbox       *outbox.Service
 	Notification *app.NotificationService
 
 	// Agents & Commands
 	Agent   *app.AgentService
-	Command *app.CommandService
+	Command *command.Service
 	Ingest  *ingest.Service
 
 	// Scanning & Pipelines
 	ScanProfile     *app.ScanProfileService
 	ScanSession     *app.ScanSessionService
-	Tool            *app.ToolService
-	ToolCategory    *app.ToolCategoryService
+	Tool            *tool.Service
+	ToolCategory    *tool.CategoryService
 	Capability      *app.CapabilityService
 	Scan            *scan.Service
 	Pipeline        *pipeline.Service
 	ScannerTemplate *app.ScannerTemplateService
-	TemplateSource  *app.TemplateSourceService
+	TemplateSource  *template.SourceService
 	SecretStore     *app.SecretStoreService
-	TemplateSyncer  *app.TemplateSyncer
+	TemplateSyncer  *template.Syncer
 
 	// Workflows
 	Workflow           *app.WorkflowService
@@ -119,8 +172,8 @@ type Services struct {
 	Group          *app.GroupService
 	Permission     *app.PermissionService
 	Role           *app.RoleService
-	AssignmentRule *app.AssignmentRuleService
-	ScopeRule      *app.ScopeRuleService
+	AssignmentRule *assignment.RuleService
+	ScopeRule      *scope.RuleService
 
 	// Permission Sync
 	PermVersion *app.PermissionVersionService
@@ -138,7 +191,26 @@ type Services struct {
 	Module *app.ModuleService
 
 	// SLA
-	SLA *app.SLAService
+	SLA *sla.Service
+
+	// Priority Classification (RFC-004)
+	PriorityClassification *app.PriorityClassificationService
+
+	// B1/B2 reclassification pipeline — memory queue,
+	// publisher (called from control CRUD), reclassifier (consumed
+	// by the PriorityReclassifyController registered in workers.go).
+	ReclassifyQueue  *reclassify.MemoryQueue
+	ControlChangePub *controller.ControlChangePublisher
+	Reclassifier     *reclassify.Reclassifier
+
+	// B6 runtime loop — indicator catalogue + correlator.
+	// Handlers.go hooks the correlator into RuntimeTelemetryHandler so
+	// every accepted event is matched against active IOCs.
+	IOCRepo       *postgres.IOCRepository
+	IOCCorrelator *iocapp.Correlator
+
+	// bulk-action guard (attached to finding bulk handlers).
+	BulkGuard *app.BulkGuard
 
 	// Pentest
 	Pentest    *app.PentestService
@@ -151,7 +223,7 @@ type Services struct {
 	Simulation *app.SimulationService
 
 	// Threat Actor Intelligence
-	ThreatActor *app.ThreatActorService
+	ThreatActor *threat.ActorService
 
 	// Remediation Campaigns
 	RemediationCampaign *app.RemediationCampaignService
@@ -160,17 +232,19 @@ type Services struct {
 	BusinessUnit *app.BusinessUnitService
 
 	// API Keys & Webhooks
-	APIKey  *app.APIKeyService
+	APIKey  *apikey.Service
 	Webhook *app.WebhookService
 
 	// Jira Bidirectional Sync
-	JiraSync *app.JiraSyncService
+	JiraSync *jira.SyncService
 
 	// AI Triage
 	AITriage *app.AITriageService
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
+	// F-8: Single-use ticket service used by WS upgrade auth.
+	WSTicket *app.WSTicketService
 
 	// Email
 	Email        *app.EmailService
@@ -230,8 +304,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
-	s.Scope = app.NewScopeService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
-	s.AttackSurface = app.NewAttackSurfaceService(repos.Asset, repos.AssetRelationship, log)
+	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
+	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.AssetImport = app.NewAssetImportService(repos.Asset, log)
@@ -274,14 +348,56 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 
 	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
-	s.ThreatIntel = app.NewThreatIntelService(repos.ThreatIntel, log)
+	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 
 	// Initialize dashboard service
 	s.Dashboard = app.NewDashboardService(repos.Dashboard, log)
 
 	// Initialize SLA service
-	s.SLA = app.NewSLAService(repos.SLA, log)
+	s.SLA = sla.NewService(repos.SLA, log)
+
+	// Initialize Priority Classification service (RFC-004)
+	epssAdapter := postgres.NewEPSSAdapter(repos.ThreatIntel.EPSS().(*postgres.EPSSRepository))
+	kevAdapter := postgres.NewKEVAdapter(repos.ThreatIntel.KEV().(*postgres.KEVRepository))
+	s.PriorityClassification = app.NewPriorityClassificationService(
+		repos.Finding, repos.Asset,
+		epssAdapter, kevAdapter,
+		repos.PriorityRule, repos.PriorityAudit, log,
+	)
+	// Wire compensating controls into priority classification (RFC-005 Gap 6)
+	s.PriorityClassification.SetControlLookup(postgres.NewCompensatingControlLookupRepo(deps.DB))
+
+	// anti-flap priority flood guard. Caps per-tenant top-class
+	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
+	// bursts while keeping the classification itself intact on the
+	// dashboard.
+	s.PriorityClassification.SetPriorityFloodGuard(app.NewPriorityFloodGuard(app.PriorityFloodConfig{}))
+
+	// B1/B2 reclassification pipeline wiring:
+	//   producers → ControlChangePublisher → MemoryQueue
+	//   PriorityReclassifyController (workers.go) → Reclassifier → ClassifyFinding
+	// The publisher is nil-safe; handlers can call PublishChange even
+	// when the queue/controller aren't running (logs a warn and drops).
+	s.ReclassifyQueue = reclassify.NewMemoryQueue()
+	s.ControlChangePub = controller.NewControlChangePublisher(s.ReclassifyQueue, log)
+	s.Reclassifier = reclassify.NewReclassifier(
+		repos.Finding, repos.Asset, s.PriorityClassification, log,
+	)
+
+	// B6 runtime loop — IOC catalogue + correlator. The correlator is
+	// attached to the runtime telemetry handler in handlers.go so every
+	// accepted event is matched against active IOCs. Match side effects:
+	//   - ioc_matches row (always, per hit)
+	//   - closed finding auto-reopen via reopen_adapter (when IOC links
+	//     back to a finding)
+	s.IOCRepo = repos.IOC
+	iocReopener := iocapp.NewFindingReopener(repos.Finding, s.Audit)
+	s.IOCCorrelator = iocapp.NewCorrelator(s.IOCRepo, iocReopener, log)
+
+	// bulk-action safety rail. Defaults: 500 rows/request,
+	// 10k rows/tenant/hour. Attached to bulk finding handlers below.
+	s.BulkGuard = app.NewBulkGuard(app.BulkGuardConfig{})
 
 	// Initialize Pentest service
 	s.Pentest = app.NewPentestService(
@@ -292,7 +408,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire unified finding repository for CTEM integration (pentest findings → findings table)
 	s.Pentest.SetUnifiedFindingRepository(repos.Finding)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
-	s.Pentest.SetAuditService(s.Audit)                    // audit logging for team changes + status changes
+	s.Pentest.SetAuditService(s.Audit)                     // audit logging for team changes + status changes
 	s.Pentest.SetFindingActivityService(s.FindingActivity) // finding activity trail
 	// Note: Pentest notification wiring happens later after NotificationService is initialized
 
@@ -334,7 +450,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize Compliance service
 	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
-	s.ThreatActor = app.NewThreatActorService(repos.ThreatActor, log)
+	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
 	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, log)
 
@@ -358,20 +474,43 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		)
 		s.AITriage.SetAuditService(s.Audit)
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
-		log.Info("AI triage service initialized")
+
+		// RFC-008: per-tenant LLM token budget. Always constructed so
+		// Status() works for dashboards even before enforcement.
+		// Check()/Record() short-circuit when BudgetEnabled=false —
+		// the Phase 1 rollout ships the flag off so there is zero
+		// behaviour change on this deploy.
+		budgetSvc := app.NewAITriageBudgetService(
+			repos.AITriageBudget,
+			app.AITriageBudgetServiceConfig{
+				Enabled:               cfg.AITriage.BudgetEnabled,
+				Strict:                cfg.AITriage.BudgetStrict,
+				DefaultTokensPerMonth: cfg.AITriage.BudgetDefaultTokensPerMonth,
+			},
+			log,
+		)
+		s.AITriage.SetBudgetService(budgetSvc)
+		log.Info("AI triage service initialized",
+			"budget_enabled", cfg.AITriage.BudgetEnabled,
+			"budget_strict", cfg.AITriage.BudgetStrict,
+		)
 	}
 
-	// Initialize API Key & Webhook services
-	s.APIKey = app.NewAPIKeyService(repos.APIKey, log)
+	// Initialize API Key & Webhook services. APP_ENCRYPTION_KEY is
+	// reused as the apikey pepper so any new tenant API key created
+	// from now on is stored as HMAC(pepper, key) instead of plain
+	// SHA-256. See crypto.HashTokenPeppered. Unset key → unpeppered
+	// (dev only; production startup already refuses this above).
+	s.APIKey = apikey.NewService(repos.APIKey, cfg.Encryption.Key, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
-	s.JiraSync = app.NewJiraSyncService(repos.Finding, nil, log) // nil = Jira client configured via integration settings
+	s.JiraSync = jira.NewSyncService(repos.Finding, nil, log) // nil = Jira client configured via integration settings
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
 
-	s.Outbox = app.NewOutboxService(
+	s.Outbox = outbox.NewService(
 		repos.Outbox,
 		repos.OutboxEvent,
 		repos.IntegrationNotificationExt,
@@ -389,7 +528,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize agent & command services
 	s.Agent = app.NewAgentService(repos.Agent, s.Audit, log)
-	s.Command = app.NewCommandService(repos.Command, log)
+	// Pepper the agent API-key hash with the platform encryption key
+	// (or its absence in dev). HMAC-SHA256(pepper, key) stops a DB-only
+	// leak from being brute-forced offline. New keys hash with pepper;
+	// AuthenticateByAPIKey falls back to the legacy plain-SHA256 lookup
+	// for rows written before the pepper was deployed.
+	s.Agent.SetPepper(cfg.Encryption.Key)
+	s.Command = command.NewService(repos.Command, log)
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Agent, repos.Branch, repos.Tenant, repos.Audit, log)
@@ -409,7 +554,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
 	s.ScanSession = app.NewScanSessionService(repos.ScanSession, repos.Agent, log)
 	s.ScannerTemplate = app.NewScannerTemplateService(repos.ScannerTemplate, cfg.Encryption.Key, log)
-	s.TemplateSource = app.NewTemplateSourceService(repos.TemplateSource, log)
+	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
 
 	// Initialize credential service for template sources
 	// Decode hex key to bytes (64 hex chars -> 32 bytes for AES-256)
@@ -431,7 +576,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 
 	// Initialize template syncer for fetching templates from external sources
-	s.TemplateSyncer = app.NewTemplateSyncer(
+	s.TemplateSyncer = template.NewSyncer(
 		repos.TemplateSource,
 		repos.ScannerTemplate,
 		s.SecretStore,
@@ -442,10 +587,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire up template syncer to source service for force sync API
 	s.TemplateSource.SetTemplateSyncer(s.TemplateSyncer)
 
-	s.Tool = app.NewToolService(repos.Tool, repos.TenantToolConfig, repos.ToolExecution, log)
+	s.Tool = tool.NewService(repos.Tool, repos.TenantToolConfig, repos.ToolExecution, log)
 	s.Tool.SetAgentRepo(repos.Agent)           // Enable tool availability checking
 	s.Tool.SetCategoryRepo(repos.ToolCategory) // Enable category info in responses
-	s.ToolCategory = app.NewToolCategoryService(repos.ToolCategory, repos.Tool, log)
+	s.ToolCategory = tool.NewCategoryService(repos.ToolCategory, repos.Tool, log)
 	s.Capability = app.NewCapabilityService(repos.Capability, s.Audit, log)
 
 	// Initialize agent selector for load balancing
@@ -457,7 +602,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
 	scanAgentSelectorAdapter := app.NewScanAgentSelectorAdapter(s.AgentSelector)
-	scanTemplateSyncerAdapter := app.NewScanTemplateSyncerAdapter(s.TemplateSyncer)
+	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
 	// Initialize scan service with adapters for its interfaces
@@ -472,7 +617,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.ScannerTemplate,
 		repos.TemplateSource,
 		repos.Tool,
-		scanTemplateSyncerAdapter,
+		templateScanAdapter,
 		scanAgentSelectorAdapter,
 		scanSecurityValidatorAdapter,
 		log,
@@ -483,6 +628,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire verification scan trigger: allows FindingActionsService to launch targeted scans
 	// when a finding transitions to fix_applied and the user requests scan-based verification.
 	s.FindingActions.SetVerificationScanTrigger(app.NewVerificationScanTriggerAdapter(s.Scan))
+
+	// B3 wire: when a Jira "Done" webhook arrives and the
+	// finding transitions to fix_applied, automatically trigger a
+	// verification scan via FindingActions. Per-finding 24h cooldown
+	// prevents scanner thrash from chatty Jira automation rules.
+	// Without this wire Jira "Done" would only update status and
+	// leave the "did the fix actually work?" question unanswered.
+	if s.JiraSync != nil && s.FindingActions != nil && repos.Finding != nil {
+		rescanHook := jira.NewRescanHook(s.FindingActions, repos.Finding, log)
+		s.JiraSync.SetPostFixAppliedHook(rescanHook.Hook)
+	}
 
 	// Create adapters for pipeline sub-package
 	pipelineAuditAdapter := app.NewPipelineAuditServiceAdapter(s.Audit)
@@ -557,6 +713,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// when new findings are created during ingestion
 	s.Ingest.SetFindingCreatedCallback(s.WorkflowDispatcher.DispatchFindingsCreated)
 
+	// Wire priority classification into ingest (RFC-004)
+	s.Ingest.SetPriorityClassifier(s.PriorityClassification)
+
+	// F3 wire: every ingest now computes an SLA deadline using
+	// priority class (falls back to severity) right after classification.
+	// Without this wire the sla_deadline column stays NULL on new rows
+	// and the sla_escalation controller has nothing to breach on.
+	if s.SLA != nil {
+		s.Ingest.SetSLAApplier(sla.NewApplier(s.SLA))
+	}
+
 	// Initialize suppression service (platform-controlled false positive management)
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 
@@ -567,8 +734,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithAccessControlRepository(repos.AccessControl),
 	)
 
-	s.AssignmentRule = app.NewAssignmentRuleService(repos.AccessControl, repos.Group, log)
-	s.ScopeRule = app.NewScopeRuleService(repos.AccessControl, repos.Group, log)
+	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
+	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule.SetAssetGroupValidator(repos.AccessControl)
 
 	// Wire scope rule hooks for real-time evaluation
@@ -576,7 +743,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetGroup.SetScopeRuleReconciler(s.ScopeRule.ReconcileByAssetGroup)
 
 	// Initialize assignment engine and wire to vulnerability service for auto-routing
-	assignmentEngine := app.NewAssignmentEngine(repos.AccessControl, log)
+	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)
 	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
 
 	// Wire engine and finding repo to assignment rule service for TestRule
@@ -617,10 +784,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// change / member removal) can drop the cached entry immediately.
 	s.Tenant.SetMembershipCache(s.MembershipCache)
 
+	// Wire role service so invitation.RoleIDs() are applied on accept.
+	// Without this, the RBAC roles attached to an invitation are
+	// silently dropped — security audit finding (privilege escalation
+	// inverse: legitimate roles never granted).
+	s.Tenant.SetRoleService(s.Role)
+
 	// Initialize licensing service (OSS edition - modules from database)
 	s.Module = app.NewModuleService(repos.Module, log)
 	s.Module.SetTenantModuleRepo(repos.TenantModule)
 	s.Module.SetAuditService(s.Audit)
+	// Per-tenant module-config version counter (Redis-backed). Used
+	// for ETag generation on module-list endpoints and as the cache-
+	// key suffix in any future Redis payload cache. Bumped on every
+	// toggle / preset apply / reset via notifyModuleChange.
+	s.Module.SetVersionService(app.NewModuleVersionService(deps.RedisClient, log))
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
@@ -669,7 +847,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 // InitAuthServices initializes authentication-related services.
 // Should be called only if local auth is supported.
-func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log *logger.Logger) {
+func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log *logger.Logger, redisClient *redis.Client) {
 	// Initialize JWT generator
 	s.JWTGenerator = jwt.NewGenerator(jwt.TokenConfig{
 		Secret:               cfg.Auth.JWTSecret,
@@ -684,6 +862,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = app.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
+
+	// F-8: single-use WebSocket ticket service, Redis-backed.
+	if redisClient != nil {
+		s.WSTicket = app.NewWSTicketService(newWSTicketStore(redisClient), 30*time.Second, log)
+	}
 
 	// Wire permission services to session service
 	tenantMembershipAdapter := app.NewTenantMembershipAdapter(repos.Tenant)
@@ -746,7 +929,20 @@ func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) err
 // initEncryptor initializes the credentials encryptor.
 func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, error) {
 	if !cfg.Encryption.IsConfigured() {
-		log.Warn("APP_ENCRYPTION_KEY not configured - credentials will be stored in plaintext")
+		// Refuse to start in production without encryption key.
+		// Plaintext credentials in production is a CRITICAL security risk.
+		if cfg.App.Env == config.EnvProduction {
+			return nil, fmt.Errorf("APP_ENCRYPTION_KEY is required in production (APP_ENV=production); refusing to start with plaintext credentials")
+		}
+		// Even in non-production, require an EXPLICIT opt-in to use
+		// plaintext storage. Audit finding: silent fallback meant
+		// developers could ship credentials to staging/test environments
+		// thinking they were encrypted. Now an env var must be set
+		// intentionally — making the security trade-off visible.
+		if !cfg.Encryption.AllowPlaintext {
+			return nil, fmt.Errorf("APP_ENCRYPTION_KEY is not set; to use plaintext credential storage in non-production set APP_ALLOW_PLAINTEXT_CREDENTIALS=true explicitly (NEVER do this in production)")
+		}
+		log.Warn("APP_ENCRYPTION_KEY not configured - credentials will be stored in plaintext (DEVELOPMENT ONLY, ALLOW_PLAINTEXT_CREDENTIALS=true)")
 		return crypto.NewNoOpEncryptor(), nil
 	}
 

@@ -20,7 +20,7 @@ CTEM Asset Schema (CTAS) is a standardized JSON format for asset ingestion, insp
 ```
 CTAS Document
 ├── version          # Schema version
-├── metadata         # Source info, timestamp
+├── properties       # All asset properties (JSONB)
 │   ├── source       # Who sent this data
 │   └── timestamp    # When it was sent
 └── assets[]         # Array of assets
@@ -40,7 +40,7 @@ CTAS Document
 {
   "$schema": "https://openctem.io/schemas/ctas/v1.0.json",
   "version": "1.0",
-  "metadata": { ... },
+  
   "assets": [ ... ]
 }
 ```

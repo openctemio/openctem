@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/attack"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -13,12 +13,12 @@ import (
 
 // AttackSurfaceHandler handles attack surface related HTTP requests.
 type AttackSurfaceHandler struct {
-	service *app.AttackSurfaceService
+	service *attack.SurfaceService
 	logger  *logger.Logger
 }
 
 // NewAttackSurfaceHandler creates a new AttackSurfaceHandler.
-func NewAttackSurfaceHandler(service *app.AttackSurfaceService, log *logger.Logger) *AttackSurfaceHandler {
+func NewAttackSurfaceHandler(service *attack.SurfaceService, log *logger.Logger) *AttackSurfaceHandler {
 	return &AttackSurfaceHandler{
 		service: service,
 		logger:  log.With("handler", "attack_surface"),
@@ -215,7 +215,7 @@ func (h *AttackSurfaceHandler) GetAttackPaths(w http.ResponseWriter, r *http.Req
 }
 
 // toStatsResponse converts service stats to API response.
-func (h *AttackSurfaceHandler) toStatsResponse(stats *app.AttackSurfaceStats) AttackSurfaceStatsResponse {
+func (h *AttackSurfaceHandler) toStatsResponse(stats *attack.SurfaceStats) AttackSurfaceStatsResponse {
 	// Convert asset breakdown
 	breakdown := make([]AssetTypeBreakdownResponse, len(stats.AssetBreakdown))
 	for i, b := range stats.AssetBreakdown {

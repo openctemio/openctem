@@ -2004,12 +2004,13 @@ func TestSCMExtension_Setters(t *testing.T) {
 func TestSCMExtension_Reconstruct(t *testing.T) {
 	now := time.Now()
 	id := shared.NewID()
+	ciphertext := []byte("encrypted-secret-bytes")
 	ext := integration.ReconstructSCMExtension(
 		id,
 		"my-org",
 		100,
 		"wh-123",
-		"secret",
+		ciphertext,
 		"https://example.com/hook",
 		"main",
 		true,
@@ -2032,8 +2033,8 @@ func TestSCMExtension_Reconstruct(t *testing.T) {
 	if ext.WebhookID() != "wh-123" {
 		t.Errorf("expected webhook ID %q, got %q", "wh-123", ext.WebhookID())
 	}
-	if ext.WebhookSecret() != "secret" {
-		t.Errorf("expected webhook secret %q, got %q", "secret", ext.WebhookSecret())
+	if string(ext.WebhookSecretEncrypted()) != string(ciphertext) {
+		t.Errorf("expected webhook secret ciphertext %q, got %q", ciphertext, ext.WebhookSecretEncrypted())
 	}
 	if ext.AutoImportRepos() != true {
 		t.Error("expected auto import repos to be true")

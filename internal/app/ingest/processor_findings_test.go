@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
-	"github.com/openctemio/sdk-go/pkg/ctis"
+	"github.com/openctemio/ctis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

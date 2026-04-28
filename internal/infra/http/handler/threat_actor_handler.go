@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"github.com/openctemio/api/internal/app/threat"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -18,12 +18,12 @@ import (
 
 // ThreatActorHandler handles threat actor HTTP endpoints.
 type ThreatActorHandler struct {
-	service *app.ThreatActorService
+	service *threat.ActorService
 	logger  *logger.Logger
 }
 
 // NewThreatActorHandler creates a new threat actor handler.
-func NewThreatActorHandler(svc *app.ThreatActorService, log *logger.Logger) *ThreatActorHandler {
+func NewThreatActorHandler(svc *threat.ActorService, log *logger.Logger) *ThreatActorHandler {
 	return &ThreatActorHandler{service: svc, logger: log}
 }
 
@@ -48,7 +48,7 @@ func (h *ThreatActorHandler) List(w http.ResponseWriter, r *http.Request) {
 		filter.Search = &q
 	}
 
-	result, err := h.service.ListThreatActors(r.Context(), tenantID, filter, page)
+	result, err := h.service.ListActors(r.Context(), tenantID, filter, page)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -72,7 +72,7 @@ func (h *ThreatActorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actor, err := h.service.CreateThreatActor(r.Context(), app.CreateThreatActorInput{
+	actor, err := h.service.CreateActor(r.Context(), threat.CreateActorInput{
 		TenantID:         tenantID,
 		Name:             req.Name,
 		Aliases:          req.Aliases,
@@ -100,7 +100,7 @@ func (h *ThreatActorHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	actorID := chi.URLParam(r, "id")
 
-	actor, err := h.service.GetThreatActor(r.Context(), tenantID, actorID)
+	actor, err := h.service.GetActor(r.Context(), tenantID, actorID)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -114,7 +114,7 @@ func (h *ThreatActorHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	actorID := chi.URLParam(r, "id")
 
-	if err := h.service.DeleteThreatActor(r.Context(), tenantID, actorID); err != nil {
+	if err := h.service.DeleteActor(r.Context(), tenantID, actorID); err != nil {
 		h.handleError(w, err)
 		return
 	}

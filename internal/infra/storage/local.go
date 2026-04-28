@@ -39,7 +39,10 @@ func (s *LocalStorage) Upload(_ context.Context, tenantID, filename, _ string, r
 		return "", fmt.Errorf("failed to create tenant dir: %w", err)
 	}
 
-	path := filepath.Join(dir, key)
+	path, err := s.safePath(tenantID, key)
+	if err != nil {
+		return "", err
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to create file: %w", err)
@@ -55,7 +58,10 @@ func (s *LocalStorage) Upload(_ context.Context, tenantID, filename, _ string, r
 }
 
 func (s *LocalStorage) Download(_ context.Context, tenantID, storageKey string) (io.ReadCloser, string, error) {
-	path := filepath.Join(s.basePath, tenantID, storageKey)
+	path, err := s.safePath(tenantID, storageKey)
+	if err != nil {
+		return nil, "", err
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -67,12 +73,53 @@ func (s *LocalStorage) Download(_ context.Context, tenantID, storageKey string) 
 }
 
 func (s *LocalStorage) Delete(_ context.Context, tenantID, storageKey string) error {
-	path := filepath.Join(s.basePath, tenantID, storageKey)
-	err := os.Remove(path)
+	path, err := s.safePath(tenantID, storageKey)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(path)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
 	return nil
+}
+
+// safePath joins basePath/tenantID/key and verifies the result (after
+// resolving any existing symlinks on the tenant dir) stays within
+// basePath. If an attacker manages to pre-place a symlink
+// `basePath/tenantA/link -> /etc` they must not be able to drive a
+// read/write outside basePath via this method.
+//
+// Defense: compute the absolute basePath once, resolve symlinks on
+// the PARENT of the target (tenant dir) — which must exist already —
+// and reject if it escapes. The leaf file is not resolved because a
+// fresh upload creates it; symlink-racing the leaf between stat and
+// open is out of scope (defender would also need to drop privileges
+// and tighten umask for that threat).
+func (s *LocalStorage) safePath(tenantID, key string) (string, error) {
+	if strings.ContainsAny(tenantID, "/\\") || strings.ContainsAny(key, "/\\") {
+		return "", fmt.Errorf("invalid path component")
+	}
+	baseAbs, err := filepath.Abs(s.basePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve base path: %w", err)
+	}
+	tenantDir := filepath.Join(baseAbs, tenantID)
+	// EvalSymlinks requires the path to exist; for Upload the tenant
+	// dir was just MkdirAll'd, so it exists. For Download/Delete a
+	// missing tenant dir is a legitimate not-found case, so fall back
+	// to a textual prefix check in that narrow window.
+	resolved := tenantDir
+	if st, statErr := os.Stat(tenantDir); statErr == nil && st.IsDir() {
+		resolved, err = filepath.EvalSymlinks(tenantDir)
+		if err != nil {
+			return "", fmt.Errorf("resolve tenant dir: %w", err)
+		}
+	}
+	if resolved != baseAbs && !strings.HasPrefix(resolved+string(filepath.Separator), baseAbs+string(filepath.Separator)) {
+		return "", fmt.Errorf("tenant dir escapes base path")
+	}
+	return filepath.Join(resolved, key), nil
 }
 
 // sanitizeFilename strips path separators and control characters.

@@ -25,15 +25,16 @@ func NewFindingCommentRepository(db *DB) *FindingCommentRepository {
 func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerability.FindingComment) error {
 	query := `
 		INSERT INTO finding_comments (
-			id, finding_id, author_id, content,
+			id, tenant_id, finding_id, author_id, content,
 			is_status_change, old_status, new_status,
 			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
 		comment.ID().String(),
+		comment.TenantID().String(),
 		comment.FindingID().String(),
 		comment.AuthorID().String(),
 		comment.Content(),
@@ -52,24 +53,46 @@ func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerab
 }
 
 // GetByID retrieves a comment by ID.
+//
+// Deprecated: callers in a multi-tenant context must use GetByTenantAndID.
+// Kept for backward compatibility with internal call sites that already
+// scope via another path. New code MUST NOT call this directly — the
+// service layer IDOR in UpdateFindingComment/DeleteFindingComment was
+// caused by using this unscoped variant.
 func (r *FindingCommentRepository) GetByID(ctx context.Context, id shared.ID) (*vulnerability.FindingComment, error) {
 	query := r.selectQuery() + " WHERE fc.id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
 	return r.scanComment(row)
 }
 
-// Update updates an existing comment.
+// GetByTenantAndID retrieves a comment scoped to (tenantID, commentID).
+// The JOIN on findings ensures cross-tenant lookups return ErrNotFound
+// even if the column tenant_id happens to be out of sync with the
+// parent finding (defense in depth against trigger failure).
+func (r *FindingCommentRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.FindingComment, error) {
+	query := r.selectQuery() + `
+		JOIN findings f ON f.id = fc.finding_id
+		WHERE fc.id = $1 AND f.tenant_id = $2 AND fc.tenant_id = $2
+	`
+	row := r.db.QueryRowContext(ctx, query, id.String(), tenantID.String())
+	return r.scanComment(row)
+}
+
+// Update updates an existing comment. The WHERE clause requires the
+// row's tenant to match the caller's so a stale or cross-tenant
+// commentID cannot slip through a bypassed service check.
 func (r *FindingCommentRepository) Update(ctx context.Context, comment *vulnerability.FindingComment) error {
 	query := `
 		UPDATE finding_comments SET
 			content = $2, updated_at = $3
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $4
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
 		comment.ID().String(),
 		comment.Content(),
 		comment.UpdatedAt(),
+		comment.TenantID().String(),
 	)
 
 	if err != nil {
@@ -88,11 +111,13 @@ func (r *FindingCommentRepository) Update(ctx context.Context, comment *vulnerab
 	return nil
 }
 
-// Delete removes a comment.
-func (r *FindingCommentRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := `DELETE FROM finding_comments WHERE id = $1`
+// Delete removes a comment, scoped to the caller's tenant. Matches the
+// pattern of Update — rows-affected check gives IDOR detection at the
+// storage boundary even if an upstream layer bypasses tenant scoping.
+func (r *FindingCommentRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := `DELETE FROM finding_comments WHERE id = $1 AND tenant_id = $2`
 
-	result, err := r.db.ExecContext(ctx, query, id.String())
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete finding comment: %w", err)
 	}
@@ -148,7 +173,7 @@ func (r *FindingCommentRepository) CountByFinding(ctx context.Context, findingID
 
 func (r *FindingCommentRepository) selectQuery() string {
 	return `
-		SELECT fc.id, fc.finding_id, fc.author_id,
+		SELECT fc.id, fc.tenant_id, fc.finding_id, fc.author_id,
 			COALESCE(u.name, '') as author_name,
 			COALESCE(u.email, '') as author_email,
 			fc.content, fc.is_status_change, fc.old_status, fc.new_status,
@@ -176,6 +201,7 @@ func (r *FindingCommentRepository) scanCommentFromRows(rows *sql.Rows) (*vulnera
 func (r *FindingCommentRepository) doScan(scan func(dest ...any) error) (*vulnerability.FindingComment, error) {
 	var (
 		idStr          string
+		tenantIDStr    string
 		findingIDStr   string
 		authorIDStr    string
 		authorName     string
@@ -189,7 +215,7 @@ func (r *FindingCommentRepository) doScan(scan func(dest ...any) error) (*vulner
 	)
 
 	err := scan(
-		&idStr, &findingIDStr, &authorIDStr,
+		&idStr, &tenantIDStr, &findingIDStr, &authorIDStr,
 		&authorName, &authorEmail,
 		&content, &isStatusChange, &oldStatus, &newStatus,
 		&createdAt, &updatedAt,
@@ -201,6 +227,11 @@ func (r *FindingCommentRepository) doScan(scan func(dest ...any) error) (*vulner
 	parsedID, err := shared.IDFromString(idStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse id: %w", err)
+	}
+
+	parsedTenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse tenant_id: %w", err)
 	}
 
 	parsedFindingID, err := shared.IDFromString(findingIDStr)
@@ -223,6 +254,7 @@ func (r *FindingCommentRepository) doScan(scan func(dest ...any) error) (*vulner
 
 	return vulnerability.ReconstituteFindingComment(
 		parsedID,
+		parsedTenantID,
 		parsedFindingID,
 		parsedAuthorID,
 		authorName,
