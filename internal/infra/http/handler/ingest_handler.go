@@ -75,6 +75,8 @@ type IngestResponse struct {
 	FindingsCreated int      `json:"findings_created"`
 	FindingsUpdated int      `json:"findings_updated"`
 	FindingsSkipped int      `json:"findings_skipped"`
+	CVEsCreated     int      `json:"cves_created"`
+	CVEsUpdated     int      `json:"cves_updated"`
 	Errors          []string `json:"errors,omitempty"`
 }
 
@@ -339,6 +341,8 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 		FindingsCreated: output.FindingsCreated,
 		FindingsUpdated: output.FindingsUpdated,
 		FindingsSkipped: output.FindingsSkipped,
+		CVEsCreated:     output.CVEsCreated,
+		CVEsUpdated:     output.CVEsUpdated,
 		Errors:          output.Errors,
 	}
 
@@ -397,6 +401,8 @@ func (h *IngestHandler) IngestSARIF(w http.ResponseWriter, r *http.Request) {
 		FindingsCreated: output.FindingsCreated,
 		FindingsUpdated: output.FindingsUpdated,
 		FindingsSkipped: output.FindingsSkipped,
+		CVEsCreated:     output.CVEsCreated,
+		CVEsUpdated:     output.CVEsUpdated,
 		Errors:          output.Errors,
 	}
 
@@ -463,6 +469,8 @@ func (h *IngestHandler) IngestReconReport(w http.ResponseWriter, r *http.Request
 		FindingsCreated: output.FindingsCreated,
 		FindingsUpdated: output.FindingsUpdated,
 		FindingsSkipped: output.FindingsSkipped,
+		CVEsCreated:     output.CVEsCreated,
+		CVEsUpdated:     output.CVEsUpdated,
 		Errors:          output.Errors,
 	}
 
@@ -1007,6 +1015,8 @@ func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
 		FindingsCreated: output.FindingsCreated,
 		FindingsUpdated: output.FindingsUpdated,
 		FindingsSkipped: output.FindingsSkipped,
+		CVEsCreated:     output.CVEsCreated,
+		CVEsUpdated:     output.CVEsUpdated,
 		Errors:          output.Errors,
 	}
 

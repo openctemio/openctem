@@ -115,6 +115,8 @@ type Output struct {
 	DependenciesLinked   int      `json:"dependencies_linked,omitempty"`
 	LicensesDiscovered   int      `json:"licenses_discovered,omitempty"`
 	LicensesLinked       int      `json:"licenses_linked,omitempty"`
+	CVEsCreated          int      `json:"cves_created,omitempty"`
+	CVEsUpdated          int      `json:"cves_updated,omitempty"`
 	Errors               []string `json:"errors,omitempty"`
 	Warnings             []string `json:"warnings,omitempty"`
 

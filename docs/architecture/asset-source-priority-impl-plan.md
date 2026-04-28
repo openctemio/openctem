@@ -134,7 +134,7 @@ These hold across every phase. If any is violated, the design is wrong — stop 
 - Same path — when the gate rejects a write, append to `asset_sources.contributed_data.skipped` (capped at 500 entries; oldest dropped)
 - `internal/infra/http/handler/asset_handler.go` — extend `GET /assets/{id}?include=field_sources`
 - `internal/infra/http/handler/asset_handler.go` — new `GET /assets/{id}/source-skips?limit=20`
-- Migration 000164 (optional) — if storage growth is worrying after Phase 1b staging, add a background job `asset_source_attrition_pruner` that trims `contributed_data` for cold assets
+- Migration 000169 (optional) — if storage growth is worrying after Phase 1b staging, add a background job `asset_source_attrition_pruner` that trims `contributed_data` for cold assets
 
 **Exit criteria**
 
