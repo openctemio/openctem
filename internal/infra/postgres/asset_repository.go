@@ -703,7 +703,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		lastSeen  time.Time
 		createdAt time.Time
 		updatedAt time.Time
-		// Lifecycle columns (migration 000168). Null lifecycle_paused_until
+		// Lifecycle columns (migration 000165). Null lifecycle_paused_until
 		// is the common case — most assets have never been snoozed.
 		lifecyclePausedUntil sql.NullTime
 		manualStatusOverride bool
@@ -777,7 +777,7 @@ func (r *AssetRepository) reconstructAsset(
 	lastExposureLevelStr sql.NullString,
 	// Timestamps
 	firstSeen, lastSeen, createdAt, updatedAt time.Time,
-	// Lifecycle (migration 000168)
+	// Lifecycle (migration 000165)
 	lifecyclePausedUntil sql.NullTime,
 	manualStatusOverride bool,
 ) (*asset.Asset, error) {
