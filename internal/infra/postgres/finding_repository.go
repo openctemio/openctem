@@ -707,6 +707,8 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 		nullIntPtr(finding.ASVSLevel()),
 		// Remediation JSONB (contains recommendation, fix_code, fix_regex)
 		remediationJSON,
+		// Pentest campaign reference
+		nullIDPtr(finding.PentestCampaignID()),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert finding: %w", err)

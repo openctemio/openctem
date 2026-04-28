@@ -28,10 +28,12 @@ type Service struct {
 	assetProcessor     *AssetProcessor
 	findingProcessor   *FindingProcessor
 	componentProcessor *ComponentProcessor
+	cveProcessor       *CVEProcessor
 	validator          *Validator
 
 	assetRepo   asset.Repository
 	findingRepo vulnerability.FindingRepository
+	vulnRepo    vulnerability.VulnerabilityRepository
 	compRepo    component.Repository
 	agentRepo   agent.Repository
 	branchRepo  branch.Repository
@@ -50,6 +52,7 @@ type Service struct {
 func NewService(
 	assetRepo asset.Repository,
 	findingRepo vulnerability.FindingRepository,
+	vulnRepo vulnerability.VulnerabilityRepository,
 	compRepo component.Repository,
 	agentRepo agent.Repository,
 	branchRepo branch.Repository,
@@ -63,10 +66,12 @@ func NewService(
 		assetProcessor:     NewAssetProcessor(assetRepo, l),
 		findingProcessor:   NewFindingProcessor(findingRepo, branchRepo, assetRepo, l),
 		componentProcessor: NewComponentProcessor(compRepo, slog.New(l.Handler())),
+		cveProcessor:       NewCVEProcessor(vulnRepo, l),
 		validator:          NewValidator(),
 
 		assetRepo:   assetRepo,
 		findingRepo: findingRepo,
+		vulnRepo:    vulnRepo,
 		compRepo:    compRepo,
 		agentRepo:   agentRepo,
 		branchRepo:  branchRepo,
@@ -201,18 +206,26 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		"asset_map_size", len(assetMap),
 	)
 
-	// Step 2: Process findings using batch operations (if findingRepo is available)
-	if s.findingRepo != nil && len(report.Findings) > 0 {
-		if err := s.findingProcessor.ProcessBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output); err != nil {
-			s.logger.Error("failed to process findings batch", "error", err)
+	// Step 2: Process dependencies/components (SBOM)
+	if s.compRepo != nil && s.componentProcessor != nil && len(report.Dependencies) > 0 {
+		if err := s.componentProcessor.ProcessBatch(ctx, tenantID, report, assetMap, output); err != nil {
+			s.logger.Error("failed to process components batch", "error", err)
 			// Continue with partial results
 		}
 	}
 
-	// Step 2b: Process dependencies/components (SBOM)
-	if s.compRepo != nil && s.componentProcessor != nil && len(report.Dependencies) > 0 {
-		if err := s.componentProcessor.ProcessBatch(ctx, tenantID, report, assetMap, output); err != nil {
-			s.logger.Error("failed to process components batch", "error", err)
+	// Step 2b: Upsert CVE catalog entries from findings
+	cveMap, cveErr := s.cveProcessor.ProcessBatch(ctx, report, output)
+	if cveErr != nil {
+		s.logger.Warn("CVE upsert failed; findings will not be linked to vulnerability catalog",
+			"error", cveErr)
+		cveMap = map[string]shared.ID{}
+	}
+
+	// Step 2c: Process findings using batch operations (if findingRepo is available)
+	if s.findingRepo != nil && len(report.Findings) > 0 {
+		if err := s.findingProcessor.ProcessBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap); err != nil {
+			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
 		}
 	}

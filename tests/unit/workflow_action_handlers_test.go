@@ -218,6 +218,10 @@ func (m *wfActionMockVulnRepo) UpsertByCVE(_ context.Context, _ *vulnerability.V
 	return nil
 }
 
+func (m *wfActionMockVulnRepo) UpsertBatchByCVE(_ context.Context, _ []*vulnerability.Vulnerability) error {
+	return nil
+}
+
 func (m *wfActionMockVulnRepo) ExistsByCVE(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }
@@ -1338,4 +1342,8 @@ func (m *wfActionMockFindingRepo) GetByWorkItemURI(_ context.Context, _ shared.I
 
 func (m *wfActionMockFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
 	return nil
+}
+
+func (m *wfActionMockFindingRepo) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
+	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
 }
