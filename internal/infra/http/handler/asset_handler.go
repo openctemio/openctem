@@ -172,8 +172,8 @@ type SnoozeLifecycleRequest struct {
 // clears the snooze — this endpoint rejects non-positive days to
 // keep the two actions separate and obvious.
 func (h *AssetHandler) SnoozeAssetLifecycle(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	if tenantID == "" {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}
@@ -183,7 +183,7 @@ func (h *AssetHandler) SnoozeAssetLifecycle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if allowed, retry := h.snoozeRateLimiter.allow(tenantID.String()); !allowed {
+	if allowed, retry := h.snoozeRateLimiter.allow(tenantID); !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())))
 		apierror.TooManyRequests("snooze rate limit exceeded").WriteJSON(w)
 		return
@@ -202,7 +202,7 @@ func (h *AssetHandler) SnoozeAssetLifecycle(w http.ResponseWriter, r *http.Reque
 	}
 
 	duration := time.Duration(req.Days) * 24 * time.Hour
-	if err := h.service.SnoozeLifecycle(r.Context(), tenantID.String(), assetID, duration, req.Reactivate); err != nil {
+	if err := h.service.SnoozeLifecycle(r.Context(), tenantID, assetID, duration, req.Reactivate); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -225,8 +225,8 @@ func (h *AssetHandler) SnoozeAssetLifecycle(w http.ResponseWriter, r *http.Reque
 // operator who wants the asset active clicks the regular status
 // toggle.
 func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	if tenantID == "" {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}
@@ -236,7 +236,7 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if allowed, retry := h.snoozeRateLimiter.allow(tenantID.String()); !allowed {
+	if allowed, retry := h.snoozeRateLimiter.allow(tenantID); !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())))
 		apierror.TooManyRequests("snooze rate limit exceeded").WriteJSON(w)
 		return
@@ -244,7 +244,7 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 	// Duration 0 clears the snooze; reactivate is ignored in that
 	// path (documented on the service method).
-	if err := h.service.SnoozeLifecycle(r.Context(), tenantID.String(), assetID, 0, false); err != nil {
+	if err := h.service.SnoozeLifecycle(r.Context(), tenantID, assetID, 0, false); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
