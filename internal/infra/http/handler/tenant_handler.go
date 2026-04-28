@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	assetapp "github.com/openctemio/api/internal/app/asset"
 	"github.com/openctemio/api/internal/app/module"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
@@ -33,12 +34,13 @@ var recalculateLastRun sync.Map
 // TenantHandler handles tenant-related HTTP requests.
 // Note: "Team" is the UI-facing name for tenants.
 type TenantHandler struct {
-	service       *app.TenantService
-	roleService   *app.RoleService
-	assetService  *app.AssetService
-	moduleService *app.ModuleService
-	validator     *validator.Validator
-	logger        *logger.Logger
+	service         *app.TenantService
+	roleService     *app.RoleService
+	assetService    *app.AssetService
+	moduleService   *app.ModuleService
+	lifecycleWorker *assetapp.AssetLifecycleWorker
+	validator       *validator.Validator
+	logger          *logger.Logger
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -63,6 +65,13 @@ func (h *TenantHandler) SetAssetService(svc *app.AssetService) {
 // SetModuleService sets the module service for module management.
 func (h *TenantHandler) SetModuleService(svc *app.ModuleService) {
 	h.moduleService = svc
+}
+
+// SetAssetLifecycleWorker wires the lifecycle worker used by the
+// POST /settings/asset-lifecycle/dry-run endpoint. Optional: when
+// nil the dry-run endpoint returns 503.
+func (h *TenantHandler) SetAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
+	h.lifecycleWorker = w
 }
 
 // =============================================================================
@@ -1577,6 +1586,166 @@ func (h *TenantHandler) UpdateRiskScoringSettings(w http.ResponseWriter, r *http
 		"config":         settings.RiskScoring,
 		"assets_updated": assetsUpdated,
 	})
+}
+
+// GetAssetSourceSettings handles GET /api/v1/tenants/{tenant}/settings/asset-source.
+// Returns the tenant's current asset source priority + trust-level
+// configuration (RFC-003 Phase 1a). Empty response means the feature
+// is not enabled for this tenant — ingest falls back to today's
+// last-write-wins merge.
+func (h *TenantHandler) GetAssetSourceSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	as, err := h.service.GetAssetSourceSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(as)
+}
+
+// UpdateAssetSourceSettings handles PUT /api/v1/tenants/{tenant}/settings/asset-source.
+// Replaces the entire asset-source configuration. Pass an empty
+// body (or empty priority + empty trust_levels) to disable the
+// feature and restore default last-write-wins behavior.
+func (h *TenantHandler) UpdateAssetSourceSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	// DisallowUnknownFields rejects payloads with typos like
+	// "trust_level" (singular) or "priorities" — without it, such
+	// mistakes would silently no-op and leave the admin confused
+	// why their settings "didn't save".
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var req tenant.AssetSourceSettings
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	// Structural validation runs in the domain layer via
+	// UpdateAssetSourceSettings. We still do it here so bad
+	// requests come back as 400 rather than being translated by
+	// handleServiceError.
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	settings, err := h.service.UpdateAssetSourceSettings(r.Context(), tenantID.String(), req, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(settings.AssetSource)
+}
+
+// GetAssetLifecycleSettings handles
+// GET /api/v1/tenants/{tenant}/settings/asset-lifecycle.
+// Returns the zero-value struct when nothing has been configured so
+// the UI can render defaults without a special "not configured"
+// code-path.
+func (h *TenantHandler) GetAssetLifecycleSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	al, err := h.service.GetAssetLifecycleSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(al)
+}
+
+// UpdateAssetLifecycleSettings handles
+// PUT /api/v1/tenants/{tenant}/settings/asset-lifecycle.
+//
+// DisallowUnknownFields rejects body typos — otherwise an admin who
+// writes "stale_threshold_day" (singular) would see the request
+// succeed with their value silently ignored.
+func (h *TenantHandler) UpdateAssetLifecycleSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var req tenant.AssetLifecycleSettings
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+
+	actx := h.buildAuditContext(r)
+	settings, err := h.service.UpdateAssetLifecycleSettings(r.Context(), tenantID.String(), req, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(settings.AssetLifecycle)
+}
+
+// DryRunAssetLifecycle handles
+// POST /api/v1/tenants/{tenant}/settings/asset-lifecycle/dry-run.
+//
+// Returns the LifecycleRunReport without writing. On success the
+// service stamps DryRunCompletedAt so the next PUT with Enabled=true
+// passes validation. An enable-without-dry-run attempt returns 400
+// from the domain validator.
+func (h *TenantHandler) DryRunAssetLifecycle(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	if h.lifecycleWorker == nil {
+		apierror.ServiceUnavailable("Asset lifecycle worker is not configured").WriteJSON(w)
+		return
+	}
+
+	report, err := h.lifecycleWorker.Run(r.Context(), tenantID, true)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	if err := h.service.StampAssetLifecycleDryRunCompleted(r.Context(), tenantID.String()); err != nil {
+		// Non-fatal: dry-run data is still useful even if we can't
+		// stamp the timestamp. Log and return the report.
+		h.logger.Warn("failed to stamp dry-run completion; ignoring",
+			"tenant_id", tenantID.String(),
+			"error", err,
+		)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(report)
 }
 
 // PreviewRiskScoringChanges handles POST /api/v1/tenants/{tenant}/settings/risk-scoring/preview

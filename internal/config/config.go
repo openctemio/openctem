@@ -513,8 +513,8 @@ func Load() (*Config, error) {
 			RequestTimeout:        getEnvDuration("SERVER_REQUEST_TIMEOUT", 30*time.Second), // Per-request timeout
 			ShutdownTimeout:       getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
 			MaxBodySize:           getEnvInt64("SERVER_MAX_BODY_SIZE", 10<<20), // 10MB default
-			SessionTimeoutMinutes: getEnvInt("SESSION_TIMEOUT_MINUTES", 30),   // 30 minutes default
-			MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 1000), // 1000 concurrent requests default
+			SessionTimeoutMinutes: getEnvInt("SESSION_TIMEOUT_MINUTES", 30),    // 30 minutes default
+			MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 1000),  // 1000 concurrent requests default
 		},
 		GRPC: GRPCConfig{
 			Port: getEnvInt("GRPC_PORT", 9090),
@@ -779,10 +779,12 @@ func (c *Config) validateLog() error {
 
 // validateEncryption validates encryption configuration.
 func (c *Config) validateEncryption() error {
-	// Encryption key is optional in development, required in production
+	// Encryption key is optional only in development. Any other APP_ENV
+	// (production, staging, preview, etc.) stores real tenant credentials
+	// and MUST have a key — otherwise integration tokens sit in plaintext.
 	if c.Encryption.Key == "" {
-		if c.App.Env == EnvProduction {
-			return fmt.Errorf("APP_ENCRYPTION_KEY is required in production")
+		if !c.IsDevelopment() {
+			return fmt.Errorf("APP_ENCRYPTION_KEY is required when APP_ENV=%q (only APP_ENV=development may omit it); generate one with `openssl rand -hex 32`", c.App.Env)
 		}
 		return nil
 	}

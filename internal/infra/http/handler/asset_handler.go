@@ -4,16 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/scm"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/asset"
+	auditdom "github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -24,6 +28,8 @@ type AssetHandler struct {
 	service            *app.AssetService
 	integrationService *app.IntegrationService
 	accessControlRepo  accesscontrol.Repository
+	auditService       *auditapp.AuditService
+	snoozeRateLimiter  *snoozeRateLimiter
 	validator          *validator.Validator
 	logger             *logger.Logger
 }
@@ -31,9 +37,10 @@ type AssetHandler struct {
 // NewAssetHandler creates a new asset handler.
 func NewAssetHandler(svc *app.AssetService, v *validator.Validator, log *logger.Logger) *AssetHandler {
 	return &AssetHandler{
-		service:   svc,
-		validator: v,
-		logger:    log,
+		service:           svc,
+		validator:         v,
+		logger:            log,
+		snoozeRateLimiter: newSnoozeRateLimiter(),
 	}
 }
 
@@ -47,29 +54,234 @@ func (h *AssetHandler) SetIntegrationService(svc *app.IntegrationService) {
 	h.integrationService = svc
 }
 
+// SetAuditService wires the audit logger. When set, snooze/unsnooze
+// actions emit non-repudiable audit events so operators cannot silently
+// hide stale assets from lifecycle sweeps. When nil, the handler
+// behaves identically minus the audit — tests and stub builds do not
+// need to provide one.
+func (h *AssetHandler) SetAuditService(svc *auditapp.AuditService) {
+	h.auditService = svc
+}
+
+// snoozeRateLimiter throttles lifecycle-snooze actions per tenant.
+// Attack shape: a compromised operator token could snooze every asset
+// in a single loop, hiding the entire estate from the stale-detection
+// worker. 60/min keeps room for legitimate bulk operators (UI
+// multi-select) without allowing a full-estate sweep.
+type snoozeRateLimiter struct {
+	mu       sync.Mutex
+	requests map[string][]time.Time
+	limit    int
+	window   time.Duration
+}
+
+func newSnoozeRateLimiter() *snoozeRateLimiter {
+	rl := &snoozeRateLimiter{
+		requests: make(map[string][]time.Time),
+		limit:    60,
+		window:   time.Minute,
+	}
+	go rl.cleanup()
+	return rl
+}
+
+func (rl *snoozeRateLimiter) allow(tenantID string) (bool, time.Duration) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-rl.window)
+
+	recent := rl.requests[tenantID][:0:0]
+	for _, t := range rl.requests[tenantID] {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+	if len(recent) >= rl.limit {
+		retry := recent[0].Add(rl.window).Sub(now)
+		if retry < time.Second {
+			retry = time.Second
+		}
+		rl.requests[tenantID] = recent
+		return false, retry
+	}
+	rl.requests[tenantID] = append(recent, now)
+	return true, 0
+}
+
+func (rl *snoozeRateLimiter) cleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		rl.mu.Lock()
+		cutoff := time.Now().Add(-rl.window)
+		for k, times := range rl.requests {
+			kept := times[:0]
+			for _, t := range times {
+				if t.After(cutoff) {
+					kept = append(kept, t)
+				}
+			}
+			if len(kept) == 0 {
+				delete(rl.requests, k)
+			} else {
+				rl.requests[k] = kept
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+// buildAuditContext extracts audit context from the authenticated
+// request. Mirrors AgentHandler's helper — kept local so the audit
+// dependency is opt-in per handler.
+func (h *AssetHandler) buildAuditContext(r *http.Request) auditapp.AuditContext {
+	clientIP := r.RemoteAddr
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		clientIP = xff
+	} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		clientIP = xri
+	}
+	return auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: middleware.GetUsername(r.Context()),
+		ActorIP:    clientIP,
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+}
+
+// SnoozeLifecycleRequest is the body for POST /assets/{id}/lifecycle/snooze.
+// Duration is expressed in days so the HTTP contract is simple;
+// service layer converts to an absolute timestamp on the server
+// side. 365 is the upper bound — beyond a year the snooze is
+// effectively "forever" and operators should use manual_status_
+// override instead (coming in a later phase).
+type SnoozeLifecycleRequest struct {
+	Days       int  `json:"days"`
+	Reactivate bool `json:"reactivate"`
+}
+
+// SnoozeAssetLifecycle handles POST /api/v1/assets/{id}/lifecycle/snooze.
+// The operator is expressing "do not let the background worker
+// change this asset's status for N days." Optionally the same call
+// also flips the asset back to active if it was already stale or
+// inactive (reactivate=true). Setting days<=0 via DELETE endpoint
+// clears the snooze — this endpoint rejects non-positive days to
+// keep the two actions separate and obvious.
+func (h *AssetHandler) SnoozeAssetLifecycle(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	if tenantID == "" {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	assetID := r.PathValue("id")
+	if assetID == "" {
+		apierror.BadRequest("Asset ID required").WriteJSON(w)
+		return
+	}
+
+	if allowed, retry := h.snoozeRateLimiter.allow(tenantID); !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())))
+		apierror.TooManyRequests("snooze rate limit exceeded").WriteJSON(w)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var req SnoozeLifecycleRequest
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if req.Days <= 0 || req.Days > 365 {
+		apierror.BadRequest("days must be between 1 and 365; use DELETE to clear").WriteJSON(w)
+		return
+	}
+
+	duration := time.Duration(req.Days) * 24 * time.Hour
+	if err := h.service.SnoozeLifecycle(r.Context(), tenantID, assetID, duration, req.Reactivate); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	if h.auditService != nil {
+		event := auditapp.NewSuccessEvent(auditdom.ActionAssetLifecycleSnoozed, auditdom.ResourceTypeAsset, assetID).
+			WithMessage(fmt.Sprintf("Lifecycle snoozed for %d day(s)", req.Days)).
+			WithMetadata("days", req.Days).
+			WithMetadata("reactivate", req.Reactivate).
+			WithSeverity(auditdom.SeverityLow)
+		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UnsnoozeAssetLifecycle handles DELETE /api/v1/assets/{id}/lifecycle/snooze.
+// Clearing a snooze is a neutral operation — the worker will take
+// over on its next run. Reactivation is NOT implied here; an
+// operator who wants the asset active clicks the regular status
+// toggle.
+func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	if tenantID == "" {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	assetID := r.PathValue("id")
+	if assetID == "" {
+		apierror.BadRequest("Asset ID required").WriteJSON(w)
+		return
+	}
+
+	if allowed, retry := h.snoozeRateLimiter.allow(tenantID); !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())))
+		apierror.TooManyRequests("snooze rate limit exceeded").WriteJSON(w)
+		return
+	}
+
+	// Duration 0 clears the snooze; reactivate is ignored in that
+	// path (documented on the service method).
+	if err := h.service.SnoozeLifecycle(r.Context(), tenantID, assetID, 0, false); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	if h.auditService != nil {
+		event := auditapp.NewSuccessEvent(auditdom.ActionAssetLifecycleUnsnoozed, auditdom.ResourceTypeAsset, assetID).
+			WithMessage("Lifecycle snooze cleared").
+			WithSeverity(auditdom.SeverityLow)
+		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
-	ID           string              `json:"id"`
-	TenantID     string              `json:"tenant_id,omitempty"`
-	ParentID     string              `json:"parent_id,omitempty"`
-	OwnerRef     string              `json:"owner_ref,omitempty"`
-	Name         string              `json:"name"`
-	Type         string              `json:"type"`
-	SubType      string              `json:"sub_type,omitempty"`
-	Category     string              `json:"category"`
-	Provider     string              `json:"provider,omitempty"`
-	ExternalID   string              `json:"external_id,omitempty"`
-	Criticality  string              `json:"criticality"`
-	Status       string              `json:"status"`
-	Scope        string              `json:"scope"`
-	Exposure     string              `json:"exposure"`
+	ID                    string                   `json:"id"`
+	TenantID              string                   `json:"tenant_id,omitempty"`
+	ParentID              string                   `json:"parent_id,omitempty"`
+	OwnerRef              string                   `json:"owner_ref,omitempty"`
+	Name                  string                   `json:"name"`
+	Type                  string                   `json:"type"`
+	SubType               string                   `json:"sub_type,omitempty"`
+	Category              string                   `json:"category"`
+	Provider              string                   `json:"provider,omitempty"`
+	ExternalID            string                   `json:"external_id,omitempty"`
+	Criticality           string                   `json:"criticality"`
+	Status                string                   `json:"status"`
+	Scope                 string                   `json:"scope"`
+	Exposure              string                   `json:"exposure"`
 	RiskScore             int                      `json:"risk_score"`
 	FindingCount          int                      `json:"finding_count"`
-	FindingSeverityCounts *FindingSeverityResponse  `json:"finding_severity_counts,omitempty"`
+	FindingSeverityCounts *FindingSeverityResponse `json:"finding_severity_counts,omitempty"`
 	Description           string                   `json:"description,omitempty"`
-	Tags         []string            `json:"tags,omitempty"`
-	Properties   map[string]any      `json:"properties,omitempty"`
-	PrimaryOwner *OwnerBriefResponse `json:"primary_owner,omitempty"`
+	Tags                  []string                 `json:"tags,omitempty"`
+	Properties            map[string]any           `json:"properties,omitempty"`
+	PrimaryOwner          *OwnerBriefResponse      `json:"primary_owner,omitempty"`
 
 	// Discovery
 	DiscoverySource string     `json:"discovery_source,omitempty"`
@@ -77,21 +289,28 @@ type AssetResponse struct {
 	DiscoveredAt    *time.Time `json:"discovered_at,omitempty"`
 
 	// CTEM
-	ComplianceScope     []string `json:"compliance_scope,omitempty"`
-	DataClassification  string   `json:"data_classification,omitempty"`
-	PIIDataExposed      bool     `json:"pii_data_exposed"`
-	PHIDataExposed      bool     `json:"phi_data_exposed"`
-	IsInternetAccessible bool    `json:"is_internet_accessible"`
+	ComplianceScope      []string `json:"compliance_scope,omitempty"`
+	DataClassification   string   `json:"data_classification,omitempty"`
+	PIIDataExposed       bool     `json:"pii_data_exposed"`
+	PHIDataExposed       bool     `json:"phi_data_exposed"`
+	IsInternetAccessible bool     `json:"is_internet_accessible"`
 
 	// Sync
 	SyncStatus   string     `json:"sync_status,omitempty"`
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 
 	// Timestamps
-	FirstSeen    time.Time           `json:"first_seen"`
-	LastSeen     time.Time           `json:"last_seen"`
-	CreatedAt    time.Time           `json:"created_at"`
-	UpdatedAt    time.Time           `json:"updated_at"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// Lifecycle state. Null LifecyclePausedUntil is the common case
+	// (most assets have never been snoozed). ManualStatusOverride =
+	// true tells the UI that the status was set by an operator and
+	// the background worker is not allowed to change it.
+	LifecyclePausedUntil *time.Time `json:"lifecycle_paused_until,omitempty"`
+	ManualStatusOverride bool       `json:"manual_status_override"`
 }
 
 // FindingSeverityResponse represents finding counts by severity level.
@@ -187,10 +406,14 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		LastSyncedAt: a.LastSyncedAt(),
 
 		// Timestamps
-		FirstSeen:    a.FirstSeen(),
-		LastSeen:     a.LastSeen(),
-		CreatedAt:    a.CreatedAt(),
-		UpdatedAt:    a.UpdatedAt(),
+		FirstSeen: a.FirstSeen(),
+		LastSeen:  a.LastSeen(),
+		CreatedAt: a.CreatedAt(),
+		UpdatedAt: a.UpdatedAt(),
+
+		// Lifecycle
+		LifecyclePausedUntil: a.LifecyclePausedUntil(),
+		ManualStatusOverride: a.ManualStatusOverride(),
 	}
 
 	// Include finding severity breakdown if available
@@ -307,26 +530,26 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
 	input := app.ListAssetsInput{
-		TenantID:      tenantID,
-		Name:          query.Get("name"),
-		Types:         parseQueryArray(query.Get("types")),
-		Criticalities: parseQueryArray(query.Get("criticalities")),
-		Statuses:      parseQueryArray(query.Get("statuses")),
-		Scopes:        parseQueryArray(query.Get("scopes")),
-		Exposures:     parseQueryArray(query.Get("exposures")),
-		Tags:          parseQueryArray(query.Get("tags")),
-		Search:        query.Get("search"),
-		MinRiskScore:  parseQueryIntPtr(query.Get("min_risk_score")),
-		MaxRiskScore:  parseQueryIntPtr(query.Get("max_risk_score")),
-		HasFindings:   parseQueryBoolPtr(query.Get("has_findings")),
-		IsCrownJewel:  parseQueryBoolPtr(query.Get("is_crown_jewel")),
+		TenantID:         tenantID,
+		Name:             query.Get("name"),
+		Types:            parseQueryArray(query.Get("types")),
+		Criticalities:    parseQueryArray(query.Get("criticalities")),
+		Statuses:         parseQueryArray(query.Get("statuses")),
+		Scopes:           parseQueryArray(query.Get("scopes")),
+		Exposures:        parseQueryArray(query.Get("exposures")),
+		Tags:             parseQueryArray(query.Get("tags")),
+		Search:           query.Get("search"),
+		MinRiskScore:     parseQueryIntPtr(query.Get("min_risk_score")),
+		MaxRiskScore:     parseQueryIntPtr(query.Get("max_risk_score")),
+		HasFindings:      parseQueryBoolPtr(query.Get("has_findings")),
+		IsCrownJewel:     parseQueryBoolPtr(query.Get("is_crown_jewel")),
 		SubType:          nilIfEmpty(query.Get("sub_type")),
 		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
 		Sort:             query.Get("sort"),
-		Page:          parseQueryInt(query.Get("page"), 1),
-		PerPage:       parseQueryInt(query.Get("per_page"), 20),
-		ActingUserID:  middleware.GetUserID(r.Context()),
-		IsAdmin:       middleware.IsAdmin(r.Context()),
+		Page:             parseQueryInt(query.Get("page"), 1),
+		PerPage:          parseQueryInt(query.Get("per_page"), 20),
+		ActingUserID:     middleware.GetUserID(r.Context()),
+		IsAdmin:          middleware.IsAdmin(r.Context()),
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -1148,16 +1371,16 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 
 // AssetStatsResponse represents asset statistics in API responses.
 type AssetStatsResponse struct {
-	Total         int            `json:"total"`
-	ByType        map[string]int `json:"by_type"`
-	BySubType     map[string]int `json:"by_sub_type"`
-	ByStatus      map[string]int `json:"by_status"`
-	ByCriticality map[string]int `json:"by_criticality"`
-	ByScope       map[string]int `json:"by_scope"`
-	ByExposure    map[string]int `json:"by_exposure"`
-	WithFindings  int            `json:"with_findings"`
-	RiskScoreAvg  float64        `json:"risk_score_avg"`
-	FindingsTotal int            `json:"findings_total"`
+	Total          int                       `json:"total"`
+	ByType         map[string]int            `json:"by_type"`
+	BySubType      map[string]int            `json:"by_sub_type"`
+	ByStatus       map[string]int            `json:"by_status"`
+	ByCriticality  map[string]int            `json:"by_criticality"`
+	ByScope        map[string]int            `json:"by_scope"`
+	ByExposure     map[string]int            `json:"by_exposure"`
+	WithFindings   int                       `json:"with_findings"`
+	RiskScoreAvg   float64                   `json:"risk_score_avg"`
+	FindingsTotal  int                       `json:"findings_total"`
 	HighRiskCount  int                       `json:"high_risk_count"`
 	MetadataCounts map[string]map[string]int `json:"metadata_counts,omitempty"`
 }

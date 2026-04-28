@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	assetapp "github.com/openctemio/api/internal/app/asset"
 	"github.com/openctemio/api/internal/app/outbox"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/config"
@@ -35,6 +36,14 @@ type Workers struct {
 	SessionCleanupTicker *time.Ticker
 	sessionService       *app.SessionService
 	ControllerManager    *controller.Manager
+
+	// AssetLifecycleWorker is exposed so the HTTP layer can invoke
+	// the dry-run endpoint against the same worker instance the
+	// cron controller uses. Keeps us from double-constructing the
+	// worker and, more importantly, means settings changes observed
+	// by the cron side are visible to the dry-run side on the next
+	// tick.
+	AssetLifecycleWorker *assetapp.AssetLifecycleWorker
 }
 
 // WorkerDeps contains dependencies needed to create workers.
@@ -328,6 +337,26 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Logger:         log.With("controller", "audit-chain-verify"),
 		},
 	))
+
+	// Asset lifecycle worker. Demotes assets that no scanner or
+	// integration has re-observed within each tenant's configured
+	// threshold. Backward compatible by default: a tenant that has
+	// not enabled the feature in its settings is skipped entirely
+	// inside the worker, so registering this controller is safe for
+	// every deployment even before operators opt in.
+	lifecycleWorker := assetapp.NewAssetLifecycleWorker(deps.DB, repos.Tenant, log)
+	lifecycleWorker.SetAuditService(svc.Audit)
+	w.ControllerManager.Register(controller.NewAssetLifecycleController(
+		lifecycleWorker,
+		repos.Tenant,
+		&controller.AssetLifecycleControllerConfig{
+			Interval: 24 * time.Hour,
+			Logger:   log.With("controller", "asset-lifecycle"),
+		},
+	))
+	// Expose the worker to the HTTP layer so the admin dry-run
+	// endpoint can call it without a duplicate instance.
+	w.AssetLifecycleWorker = lifecycleWorker
 
 	return w, nil
 }

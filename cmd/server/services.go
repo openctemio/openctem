@@ -301,6 +301,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetAccessControlRepository(repos.AccessControl)
 	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
 	s.Asset.SetRedisClient(deps.RedisClient)
+	// The Postgres asset repository also implements the narrow
+	// LifecycleRepository side-interface; wire it so the snooze
+	// endpoint can write lifecycle_paused_until without going
+	// through the full load-modify-save path.
+	s.Asset.SetLifecycleRepository(repos.Asset)
 
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)

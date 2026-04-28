@@ -199,6 +199,10 @@ func run() int {
 	// Handlers
 	// ==========================================================================
 	v := validator.New()
+	// Handlers are constructed before workers because workers
+	// subscribe to some service events that need handler-side
+	// dependencies wired. The AssetLifecycleWorker dry-run endpoint
+	// is back-wired after workers.Start below.
 	handlers := NewHandlers(&HandlerDeps{
 		Config:       cfg,
 		Log:          log,
@@ -285,6 +289,14 @@ func run() int {
 	if err := workers.Start(ctx, log); err != nil {
 		log.Error("failed to start workers", "error", err)
 		return 1
+	}
+
+	// Back-wire the lifecycle worker into the tenant handler so the
+	// dry-run HTTP endpoint and the cron controller share one worker
+	// instance. Handlers are built before workers (see note above);
+	// this call closes that loop.
+	if workers.AssetLifecycleWorker != nil {
+		WireAssetLifecycleWorker(workers.AssetLifecycleWorker)
 	}
 
 	// ==========================================================================

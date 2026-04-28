@@ -2,10 +2,31 @@ package asset
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
 )
+
+// LifecycleRepository is a narrow side-interface for RFC-004 Phase 0
+// operations that bypass the full Asset reconstruction path. Kept
+// separate from the main Repository so mock implementations in tests
+// do not have to add a method they don't use — mocks can embed a
+// no-op if they need to satisfy AssetService's constructor.
+//
+// The Postgres AssetRepository implements both interfaces; the
+// lifecycle worker and snooze endpoints accept LifecycleRepository
+// explicitly so only the call sites that need these operations pay
+// the coupling cost.
+type LifecycleRepository interface {
+	// SnoozeLifecycle updates lifecycle_paused_until without
+	// round-tripping through Asset reconstruction. pausedUntil=nil
+	// clears the snooze. When reactivate is true AND the current
+	// status is stale/inactive, status also flips to active in the
+	// same UPDATE — manual snooze expresses operator intent to
+	// treat the asset as alive.
+	SnoozeLifecycle(ctx context.Context, tenantID, assetID shared.ID, pausedUntil *time.Time, reactivate bool) error
+}
 
 // Repository defines the interface for asset persistence.
 // Alias: Store (preferred for new code)

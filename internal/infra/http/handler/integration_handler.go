@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/internal/infra/scm"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -198,6 +199,9 @@ var sensitiveConfigKeys = map[string]bool{
 
 // sanitizeConfigMap removes sensitive values from a config/metadata map.
 // Returns a new map with sensitive values replaced by "[REDACTED]".
+// Descends into nested maps AND slices: integration configs occasionally
+// store secrets inside arrays (e.g. a list of webhook targets each
+// carrying a signing_secret), and skipping slices would leak them.
 func sanitizeConfigMap(config map[string]any) map[string]any {
 	if config == nil {
 		return nil
@@ -207,7 +211,6 @@ func sanitizeConfigMap(config map[string]any) map[string]any {
 	for k, v := range config {
 		keyLower := strings.ToLower(k)
 
-		// Check if this key contains sensitive data
 		isSensitive := false
 		for sensitiveKey := range sensitiveConfigKeys {
 			if strings.Contains(keyLower, sensitiveKey) {
@@ -218,14 +221,29 @@ func sanitizeConfigMap(config map[string]any) map[string]any {
 
 		if isSensitive {
 			sanitized[k] = "[REDACTED]"
-		} else if nestedMap, ok := v.(map[string]any); ok {
-			// Recursively sanitize nested maps
-			sanitized[k] = sanitizeConfigMap(nestedMap)
-		} else {
-			sanitized[k] = v
+			continue
 		}
+		sanitized[k] = sanitizeConfigValue(v)
 	}
 	return sanitized
+}
+
+// sanitizeConfigValue recursively sanitizes a single value — maps are
+// redacted key-by-key; slices are walked element-by-element; scalars
+// pass through untouched.
+func sanitizeConfigValue(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		return sanitizeConfigMap(val)
+	case []any:
+		out := make([]any, len(val))
+		for i, item := range val {
+			out[i] = sanitizeConfigValue(item)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // toIntegrationResponse converts a domain integration to API response.
@@ -388,6 +406,14 @@ func (h *IntegrationHandler) handleValidationError(w http.ResponseWriter, err er
 }
 
 // handleServiceError converts service errors to API errors.
+//
+// Upstream SCM / integration providers produce three error shapes:
+//  1. Typed scm.Err* sentinels (ErrAuthFailed, ErrRateLimited, ErrNotFound)
+//     — when the client recognises the HTTP status and wraps accordingly.
+//  2. Network-level errors as plain strings (DNS, refused, timeout).
+//  3. Generic "unexpected status: N" strings when the client didn't map
+//     the status. We substring-match 401/403/404/429 as a safety net so
+//     operators still see an actionable 4xx instead of a 500.
 func (h *IntegrationHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
@@ -396,11 +422,61 @@ func (h *IntegrationHandler) handleServiceError(w http.ResponseWriter, err error
 		apierror.Conflict("Integration already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, scm.ErrAuthFailed):
+		h.logger.Warn("integration auth failed", "error", err)
+		apierror.New(http.StatusFailedDependency, apierror.Code("INTEGRATION_AUTH_FAILED"),
+			"The integration's stored credentials are invalid or expired. Re-authenticate the integration in Settings → Integrations and try again.").
+			WriteJSON(w)
+	case errors.Is(err, scm.ErrRateLimited):
+		h.logger.Warn("integration rate limited", "error", err)
+		apierror.New(http.StatusTooManyRequests, apierror.CodeRateLimitExceeded,
+			"The integration provider is rate-limiting us. Wait a minute and retry — or reduce sync frequency.").
+			WriteJSON(w)
+	case errors.Is(err, scm.ErrNotFound):
+		h.logger.Warn("integration resource not found", "error", err)
+		apierror.New(http.StatusNotFound, apierror.CodeNotFound,
+			"The integration is pointing at an organisation, repository, or project that no longer exists or is inaccessible with the current credentials.").
+			WriteJSON(w)
 	default:
-		// Detect upstream / network errors so the client gets an actionable
-		// 502 instead of a generic 500. The error string is the only signal we
-		// have here because the SCM client wraps net errors as plain errors.
 		errStr := err.Error()
+		// Safety net — un-typed upstream errors still produce meaningful
+		// HTTP codes. Kept in priority order: auth first, then rate-limit,
+		// then not-found, then network.
+		switch {
+		case strings.Contains(errStr, "unexpected status: 401"),
+			strings.Contains(errStr, "Bad credentials"),
+			strings.Contains(errStr, "invalid_token"):
+			h.logger.Warn("integration upstream 401", "error", err)
+			apierror.New(http.StatusFailedDependency, apierror.Code("INTEGRATION_AUTH_FAILED"),
+				"The integration's stored credentials are invalid or expired. Re-authenticate the integration in Settings → Integrations and try again.").
+				WriteJSON(w)
+			return
+		case strings.Contains(errStr, "unexpected status: 403"):
+			h.logger.Warn("integration upstream 403", "error", err)
+			apierror.New(http.StatusFailedDependency, apierror.Code("INTEGRATION_FORBIDDEN"),
+				"The integration token does not have the required scopes. Re-authenticate with the needed permissions.").
+				WriteJSON(w)
+			return
+		case strings.Contains(errStr, "unexpected status: 404"):
+			h.logger.Warn("integration upstream 404", "error", err)
+			apierror.New(http.StatusNotFound, apierror.CodeNotFound,
+				"The integration is pointing at a resource (organisation, repository, project) that no longer exists or is inaccessible.").
+				WriteJSON(w)
+			return
+		case strings.Contains(errStr, "unexpected status: 429"),
+			strings.Contains(errStr, "rate limit"):
+			h.logger.Warn("integration upstream 429", "error", err)
+			apierror.New(http.StatusTooManyRequests, apierror.CodeRateLimitExceeded,
+				"The integration provider is rate-limiting us. Wait a minute and retry.").
+				WriteJSON(w)
+			return
+		case strings.HasPrefix(errStr, "unexpected status: 5"):
+			h.logger.Warn("integration upstream 5xx", "error", err)
+			apierror.New(http.StatusBadGateway, apierror.Code("INTEGRATION_UPSTREAM_ERROR"),
+				"The integration provider returned a server error. This is upstream, not us — retry shortly.").
+				WriteJSON(w)
+			return
+		}
 		isUpstream := strings.Contains(errStr, "no such host") ||
 			strings.Contains(errStr, "connection refused") ||
 			strings.Contains(errStr, "i/o timeout") ||
