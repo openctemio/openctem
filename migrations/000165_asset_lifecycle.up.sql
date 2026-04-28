@@ -40,23 +40,22 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS manual_status_override BOOLEAN NOT N
 --    selectivity; the time comparison is a cheap seq-filter on a
 --    small candidate set.
 --
---    CONCURRENTLY so a large assets table does not block writes
---    during migration. The IF NOT EXISTS lets re-running the
---    migration (or a pre-existing index in some environments) pass
---    cleanly.
-COMMIT;
-
--- 5. Index creation must live outside the transaction because
---    CREATE INDEX CONCURRENTLY refuses to run inside one. The
---    migration framework will stop here and run the next block in
---    its own transaction.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_assets_lifecycle_candidates
+--    NOTE: blocking CREATE INDEX (not CONCURRENTLY) because
+--    golang-migrate wraps every up.sql in a single transaction and
+--    CREATE INDEX CONCURRENTLY is not allowed inside one. For the
+--    early-stage assets table size this is fine; if/when the table
+--    grows past ~10M rows, ship a follow-up migration that drops
+--    this index and recreates it CONCURRENTLY out-of-band (psql
+--    direct, not via migrate).
+CREATE INDEX IF NOT EXISTS idx_assets_lifecycle_candidates
     ON assets (tenant_id, status, last_seen)
     WHERE status IN ('active', 'stale') AND manual_status_override = false;
 
--- 6. Column comments — help operators greping the schema understand
+-- 5. Column comments — help operators greping the schema understand
 --    what they do without hunting through code.
 COMMENT ON COLUMN assets.lifecycle_paused_until IS
     'If NOW() < this value, the lifecycle worker skips this asset (operator snooze).';
 COMMENT ON COLUMN assets.manual_status_override IS
     'When TRUE, the lifecycle worker never writes to assets.status for this row.';
+
+COMMIT;
