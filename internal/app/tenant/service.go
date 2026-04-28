@@ -1772,6 +1772,13 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 
 	before := t.TypedSettings().AssetLifecycle
 
+	// SECURITY: DryRunCompletedAt is server-side only. The dry-run
+	// endpoint (StampAssetLifecycleDryRunCompleted) is the sole writer.
+	// Overriding here prevents a client from bypassing the
+	// "must run dry-run before enabling" gate by submitting a
+	// fabricated timestamp in the PUT body.
+	al.DryRunCompletedAt = before.DryRunCompletedAt
+
 	if err := t.UpdateAssetLifecycleSettings(al); err != nil {
 		return nil, err
 	}
