@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(GOWORK=off golangci-lint run ./internal/app/component_service.go ./internal/app/outbox_service.go ./internal/app/toolcategory_service.go ./internal/app/workflow_handlers.go ./pkg/domain/component/entity.go ./cmd/server/services.go 2>&1 | head -50)",
+      "Bash(go build:*)",
+      "Bash(GOWORK=off go build ./... 2>&1 | head -30)",
+      "Bash(GOWORK=off go test ./internal/app/... ./pkg/domain/component/... ./tests/unit/... 2>&1 | tail -30)",
+      "Bash(GOWORK=off go test ./tests/unit/... 2>&1 | grep -E \"^\\(---|FAIL|ok\\)\" | head -20)",
+      "Bash(GOWORK=off go test ./internal/app/... 2>&1 | grep -E \"^\\(---|FAIL|ok\\)\" | head -20)",
+      "Bash(GOWORK=off go build ./internal/infra/postgres/... 2>&1)",
+      "Bash(GOWORK=off go build ./internal/infra/postgres/ 2>&1)",
+      "Bash(GOWORK=off go vet ./internal/infra/postgres/)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(GOWORK=off golangci-lint run ./internal/infra/postgres/finding_repository.go)",
+      "Bash(git -C /home/ubuntu/projects/openctemio/api status --short)",
+      "Bash(git -C /home/ubuntu/projects/openctemio/ui status --short)",
+      "Bash(git -C /home/ubuntu/projects/openctemio/agent status --short)",
+      "Bash(git -C /home/ubuntu/projects/openctemio/setup status --short)",
+      "Bash(git:*)",
+      "Bash(GOWORK=off go build ./...)",
+      "Bash(GOWORK=off golangci-lint run ./...)",
+      "Bash(GOWORK=off go vet ./...)",
+      "Skill(telegram:configure)",
+      "Bash(chmod:*)",
+      "Bash(curl:*)",
+      "Read(//home/ubuntu/.claude/plugins/cache/claude-plugins-official/telegram/0.0.1/**)",
+      "Read(//home/ubuntu/.claude/**)",
+      "Read(//home/ubuntu/.claude/plugins/**)",
+      "Bash(bun --version)",
+      "Bash(sudo apt-get:*)"
+    ]
+  }
+}

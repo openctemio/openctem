@@ -73,3 +73,6 @@ go.work.sum
 
 # User-uploaded attachments
 data/
+
+# Claude code
+./.claude/settings.local.json
