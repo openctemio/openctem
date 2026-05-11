@@ -66,8 +66,10 @@ const DefaultAccessTokenCookieName = "auth_token"
 //   - paste-into-Slack social engineering ("here's the URL" with token in it)
 //
 // SSE/EventSource genuinely needs query-param auth (browsers don't allow
-// custom headers on EventSource). Use extractTokenWithQueryParam below for
-// the few SSE routes only — never on the global UnifiedAuth path.
+// custom headers on EventSource), but the codebase has migrated all
+// streaming endpoints to WebSocket (which DOES forward cookies during the
+// upgrade handshake). If SSE is ever reintroduced, add a dedicated extractor
+// next to its route — never reintroduce a query-param fallback here.
 func extractToken(r *http.Request) string {
 	// 1. Try Authorization header first (standard API auth)
 	authHeader := r.Header.Get("Authorization")
@@ -88,25 +90,15 @@ func extractToken(r *http.Request) string {
 	return ""
 }
 
-// extractTokenWithQueryParam is the SSE-only variant that ALSO accepts a
-// `?token=` query parameter. Use this ONLY on EventSource routes — never
-// register it on a route group that includes mutating endpoints.
-func extractTokenWithQueryParam(r *http.Request) string {
-	if t := extractToken(r); t != "" {
-		return t
-	}
-	return r.URL.Query().Get("token")
-}
-
 // UnifiedAuth creates an authentication middleware that supports both local and OIDC authentication.
 // The middleware tries to validate tokens based on the configured auth provider:
 // - "local": Only validates local JWT tokens
 // - "oidc": Only validates Keycloak/OIDC tokens
 // - "hybrid": Tries local first, then falls back to OIDC
 //
-// Token extraction order:
+// Token extraction order (see extractToken):
 // 1. Authorization header (Bearer <token>)
-// 2. Query parameter "token" (for SSE/EventSource which can't send headers)
+// 2. httpOnly cookie (auth_token) — used by WebSocket upgrade and cookie SPA
 func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
