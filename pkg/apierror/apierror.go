@@ -234,8 +234,8 @@ func TooManyRequests(message string) *Error {
 
 // IsAPIError checks if an error is an API error.
 func IsAPIError(err error) bool {
-	var apiErr *Error
-	return errors.As(err, &apiErr)
+	_, ok := errors.AsType[*Error](err)
+	return ok
 }
 
 // FromError converts any error to an API error.
@@ -245,8 +245,7 @@ func FromError(err error) *Error {
 	}
 
 	// Already an API error
-	var apiErr *Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*Error](err); ok {
 		return apiErr
 	}
 

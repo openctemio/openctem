@@ -1,3 +1,7 @@
+// Package accesscontrol provides the application-layer services for the
+// 2-layer access control model (RBAC roles + Groups data scope). See
+// CLAUDE.md "2-Layer Access Control" for the conceptual overview and
+// pkg/domain/accesscontrol for the persisted entities.
 package accesscontrol
 
 import (
@@ -512,7 +516,8 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	return member, nil
 }
 
-// UpdateMemberRoleInput represents the input for updating a member's role.
+// UpdateGroupMemberRoleInput represents the input for updating a member's role
+// within a group.
 type UpdateGroupMemberRoleInput struct {
 	GroupID string    `json:"-"`
 	UserID  shared.ID `json:"-"`
