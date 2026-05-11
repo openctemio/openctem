@@ -19,10 +19,14 @@ type Repository interface {
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*AssetGroup, error)
 
 	// Update updates an existing asset group.
-	Update(ctx context.Context, group *AssetGroup) error
+	// Security: tenantID enforces tenant scoping in SQL — caller MUST pass
+	// the requesting tenant so IDOR is impossible (an attacker cannot mutate
+	// another tenant's group by guessing the UUID).
+	Update(ctx context.Context, tenantID shared.ID, group *AssetGroup) error
 
 	// Delete removes an asset group by its ID.
-	Delete(ctx context.Context, id shared.ID) error
+	// Security: tenantID enforces tenant scoping in SQL — same rationale as Update.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// List retrieves asset groups with filtering, sorting, and pagination.
 	List(ctx context.Context, filter Filter, opts ListOptions, page pagination.Pagination) (pagination.Result[*AssetGroup], error)

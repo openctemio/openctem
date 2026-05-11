@@ -424,7 +424,7 @@ func (h *AssetGroupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteAssetGroup(r.Context(), id); err != nil {
+	if err := h.service.DeleteAssetGroup(r.Context(), middleware.MustGetTenantID(r.Context()), id); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -761,7 +761,7 @@ func (h *AssetGroupHandler) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deleted, err := h.service.BulkDeleteAssetGroups(r.Context(), req.GroupIDs)
+	deleted, err := h.service.BulkDeleteAssetGroups(r.Context(), middleware.MustGetTenantID(r.Context()), req.GroupIDs)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

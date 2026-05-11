@@ -227,7 +227,7 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 		group.SetTags(input.Tags)
 	}
 
-	if err := s.repo.Update(ctx, group); err != nil {
+	if err := s.repo.Update(ctx, tenantID, group); err != nil {
 		return nil, err
 	}
 
@@ -235,12 +235,17 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 	return group, nil
 }
 
-// DeleteAssetGroup deletes an asset group.
-func (s *AssetGroupService) DeleteAssetGroup(ctx context.Context, id shared.ID) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+// DeleteAssetGroup deletes an asset group within the given tenant scope.
+// Security: tenantID required so the SQL DELETE is tenant-scoped (S-1 audit).
+func (s *AssetGroupService) DeleteAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) error {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	if err := s.repo.Delete(ctx, tenantID, id); err != nil {
 		return err
 	}
-	s.logger.Info("asset group deleted", "id", id)
+	s.logger.Info("asset group deleted", "id", id, "tenant_id", tenantIDStr)
 	return nil
 }
 
@@ -447,7 +452,7 @@ func (s *AssetGroupService) BulkUpdateAssetGroups(ctx context.Context, tenantID 
 }
 
 // BulkDeleteAssetGroups deletes multiple asset groups.
-func (s *AssetGroupService) BulkDeleteAssetGroups(ctx context.Context, groupIDs []string) (int, error) {
+func (s *AssetGroupService) BulkDeleteAssetGroups(ctx context.Context, tenantIDStr string, groupIDs []string) (int, error) {
 	deleted := 0
 	for _, idStr := range groupIDs {
 		id, err := shared.IDFromString(idStr)
@@ -455,7 +460,7 @@ func (s *AssetGroupService) BulkDeleteAssetGroups(ctx context.Context, groupIDs 
 			continue
 		}
 
-		if err := s.DeleteAssetGroup(ctx, id); err != nil {
+		if err := s.DeleteAssetGroup(ctx, tenantIDStr, id); err != nil {
 			s.logger.Warn("bulk delete failed for group", "id", idStr, "error", err)
 			continue
 		}

@@ -122,6 +122,14 @@ func (m *MockComponentRepository) GetLicenseStats(ctx context.Context, tenantID 
 	return nil, nil
 }
 
+func (m *MockComponentRepository) ListAssetUsage(_ context.Context, _ shared.ID, _ shared.ID, _ bool, page pagination.Pagination) (pagination.Result[component.ComponentAssetUsage], error) {
+	return pagination.NewResult([]component.ComponentAssetUsage{}, 0, page), nil
+}
+
+func (m *MockComponentRepository) ListVulnerabilities(_ context.Context, _, _ shared.ID, _ bool, page pagination.Pagination) (pagination.Result[component.ComponentVulnerability], error) {
+	return pagination.NewResult([]component.ComponentVulnerability{}, 0, page), nil
+}
+
 func TestComponentProcessor_ProcessBatch_WithLicenses(t *testing.T) {
 	// Setup
 	mockRepo := new(MockComponentRepository)

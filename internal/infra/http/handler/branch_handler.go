@@ -17,9 +17,10 @@ import (
 
 // BranchHandler handles branch-related HTTP requests.
 type BranchHandler struct {
-	service   *app.BranchService
-	validator *validator.Validator
-	logger    *logger.Logger
+	service      *app.BranchService
+	assetService *app.AssetService // for tenant ownership validation (S-2)
+	validator    *validator.Validator
+	logger       *logger.Logger
 }
 
 // NewBranchHandler creates a new branch handler.
@@ -29,6 +30,40 @@ func NewBranchHandler(svc *app.BranchService, v *validator.Validator, log *logge
 		validator: v,
 		logger:    log,
 	}
+}
+
+// SetAssetService wires the asset service used for repository ownership checks
+// (S-2: branch handler must verify the URL repo belongs to caller's tenant).
+func (h *BranchHandler) SetAssetService(svc *app.AssetService) {
+	h.assetService = svc
+}
+
+// ensureRepoOwnedByTenant verifies that the repository referenced in the URL
+// belongs to the caller's tenant. Returns true if valid; on failure writes
+// 404 (treat as not-found to avoid leaking existence) and returns false.
+//
+// Security rationale (S-2 audit): without this check, a member of tenant A
+// could mutate branches of tenant B's repository by guessing its UUID. We use
+// the asset service (repository assets are stored in `assets` table with
+// asset_type='repository') because it already enforces tenant scoping in SQL.
+func (h *BranchHandler) ensureRepoOwnedByTenant(w http.ResponseWriter, r *http.Request, repoIDStr string) bool {
+	if h.assetService == nil {
+		// Service not wired (test environment): be conservative and allow.
+		return true
+	}
+	tenantID := middleware.MustGetTenantID(r.Context())
+	if _, err := shared.IDFromString(repoIDStr); err != nil {
+		apierror.BadRequest("Invalid repository ID").WriteJSON(w)
+		return false
+	}
+	if _, err := h.assetService.GetAsset(r.Context(), tenantID, repoIDStr); err != nil {
+		// Asset service returns shared.ErrNotFound when the repo doesn't exist
+		// OR isn't owned by this tenant. Either way the answer is 404 — never
+		// 403 (would leak that the resource exists in another tenant).
+		apierror.NotFound("Repository").WriteJSON(w)
+		return false
+	}
+	return true
 }
 
 // BranchResponse represents a branch in API responses.
@@ -175,6 +210,9 @@ func (h *BranchHandler) List(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Repository ID is required").WriteJSON(w)
 		return
 	}
+	if !h.ensureRepoOwnedByTenant(w, r, repositoryID) {
+		return
+	}
 
 	query := r.URL.Query()
 	input := app.ListBranchesInput{
@@ -238,6 +276,9 @@ func (h *BranchHandler) Create(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Repository ID is required").WriteJSON(w)
 		return
 	}
+	if !h.ensureRepoOwnedByTenant(w, r, repositoryID) {
+		return
+	}
 
 	var req CreateBranchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -289,6 +330,9 @@ func (h *BranchHandler) Get(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Repository ID and Branch ID are required").WriteJSON(w)
 		return
 	}
+	if !h.ensureRepoOwnedByTenant(w, r, repositoryID) {
+		return
+	}
 
 	b, err := h.service.GetBranch(r.Context(), branchID)
 	if err != nil {
@@ -326,6 +370,9 @@ func (h *BranchHandler) Update(w http.ResponseWriter, r *http.Request) {
 	branchID := r.PathValue("branchId")
 	if repositoryID == "" || branchID == "" {
 		apierror.BadRequest("Repository ID and Branch ID are required").WriteJSON(w)
+		return
+	}
+	if !h.ensureRepoOwnedByTenant(w, r, repositoryID) {
 		return
 	}
 
@@ -381,6 +428,9 @@ func (h *BranchHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Repository ID and Branch ID are required").WriteJSON(w)
 		return
 	}
+	if !h.ensureRepoOwnedByTenant(w, r, repositoryID) {
+		return
+	}
 
 	if err := h.service.DeleteBranch(r.Context(), branchID, repositoryID); err != nil {
 		h.handleServiceError(w, err)
@@ -407,6 +457,9 @@ func (h *BranchHandler) SetDefault(w http.ResponseWriter, r *http.Request) {
 	branchID := r.PathValue("branchId")
 	if repositoryID == "" || branchID == "" {
 		apierror.BadRequest("Repository ID and Branch ID are required").WriteJSON(w)
+		return
+	}
+	if !h.ensureRepoOwnedByTenant(w, r, repositoryID) {
 		return
 	}
 
@@ -438,6 +491,9 @@ func (h *BranchHandler) GetDefault(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Repository ID is required").WriteJSON(w)
 		return
 	}
+	if !h.ensureRepoOwnedByTenant(w, r, repositoryID) {
+		return
+	}
 
 	b, err := h.service.GetDefaultBranch(r.Context(), repositoryID)
 	if err != nil {
@@ -457,6 +513,9 @@ func (h *BranchHandler) Compare(w http.ResponseWriter, r *http.Request) {
 	repositoryID := r.PathValue("repositoryId")
 	if repositoryID == "" {
 		apierror.BadRequest("Repository ID is required").WriteJSON(w)
+		return
+	}
+	if !h.ensureRepoOwnedByTenant(w, r, repositoryID) {
 		return
 	}
 

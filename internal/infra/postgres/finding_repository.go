@@ -799,35 +799,35 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
-		finding.ID().String(),                 // $1
-		nullID(finding.VulnerabilityID()),     // $2
-		nullID(finding.ComponentID()),         // $3
-		nullID(finding.ToolID()),              // $4
-		nullString(finding.ToolVersion()),     // $5
-		nullString(finding.Snippet()),         // $6
-		finding.Message(),                     // $7
-		finding.Severity().String(),           // $8
-		finding.Status().String(),             // $9
-		nullString(finding.Resolution()),      // $10
+		finding.ID().String(),                  // $1
+		nullID(finding.VulnerabilityID()),      // $2
+		nullID(finding.ComponentID()),          // $3
+		nullID(finding.ToolID()),               // $4
+		nullString(finding.ToolVersion()),      // $5
+		nullString(finding.Snippet()),          // $6
+		finding.Message(),                      // $7
+		finding.Severity().String(),            // $8
+		finding.Status().String(),              // $9
+		nullString(finding.Resolution()),       // $10
 		nullString(finding.ResolutionMethod()), // $11
-		nullTime(finding.ResolvedAt()),        // $12
-		nullID(finding.ResolvedBy()),          // $13
-		nullString(finding.ScanID()),          // $14
-		metadata,                              // $15
-		finding.UpdatedAt(),                   // $16
-		nullID(finding.AssignedTo()),          // $17
-		nullTime(finding.AssignedAt()),        // $18
-		nullID(finding.AssignedBy()),          // $19
-		finding.TenantID().String(),           // $20 (WHERE)
-		nullString(finding.Title()),           // $21
-		nullString(finding.Description()),     // $22
-		pq.Array(finding.Tags()),              // $23
+		nullTime(finding.ResolvedAt()),         // $12
+		nullID(finding.ResolvedBy()),           // $13
+		nullString(finding.ScanID()),           // $14
+		metadata,                               // $15
+		finding.UpdatedAt(),                    // $16
+		nullID(finding.AssignedTo()),           // $17
+		nullTime(finding.AssignedAt()),         // $18
+		nullID(finding.AssignedBy()),           // $19
+		finding.TenantID().String(),            // $20 (WHERE)
+		nullString(finding.Title()),            // $21
+		nullString(finding.Description()),      // $22
+		pq.Array(finding.Tags()),               // $23
 		nullFloat64(finding.CVSSScore()),       // $24
-		nullString(finding.CVSSVector()),      // $25
-		nullString(finding.CVEID()),           // $26
-		pq.Array(finding.CWEIDs()),            // $27
-		pq.Array(finding.OWASPIDs()),          // $28
-		remediationJSON,                       // $29
+		nullString(finding.CVSSVector()),       // $25
+		nullString(finding.CVEID()),            // $26
+		pq.Array(finding.CWEIDs()),             // $27
+		pq.Array(finding.OWASPIDs()),           // $28
+		remediationJSON,                        // $29
 		// Priority classification (RFC-004)
 		nullFloat64(finding.EPSSScore()),              // $30
 		nullFloat64(finding.EPSSPercentile()),         // $31
@@ -975,6 +975,339 @@ func (r *FindingRepository) ListByVulnerabilityID(ctx context.Context, tenantID,
 func (r *FindingRepository) ListByComponentID(ctx context.Context, tenantID, compID shared.ID, opts vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
 	filter := vulnerability.NewFindingFilter().WithTenantID(tenantID).WithComponentID(compID)
 	return r.List(ctx, filter, opts, page)
+}
+
+// ListActiveCVEsByTenant returns the distinct CVEs currently impacting assets in
+// the given tenant. Aggregates findings GROUP BY vulnerability_id and joins the
+// global vulnerabilities table for CVE metadata. Sort: severity → KEV → EPSS →
+// affected_assets desc.
+func (r *FindingRepository) ListActiveCVEsByTenant(
+	ctx context.Context,
+	tenantID shared.ID,
+	filter vulnerability.ActiveCVEFilter,
+	page pagination.Pagination,
+) (pagination.Result[vulnerability.ActiveCVE], error) {
+	empty := pagination.NewResult([]vulnerability.ActiveCVE{}, 0, page)
+
+	// Build dynamic WHERE for outer (vulnerabilities-level) filters
+	var whereClauses []string
+	args := []any{tenantID.String()}
+	argN := 2
+
+	statusFilter := ""
+	if !filter.IncludeResolved {
+		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+
+	if len(filter.SeverityIn) > 0 {
+		placeholders := make([]string, 0, len(filter.SeverityIn))
+		for _, s := range filter.SeverityIn {
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argN))
+			args = append(args, s)
+			argN++
+		}
+		whereClauses = append(whereClauses, fmt.Sprintf("v.severity IN (%s)", strings.Join(placeholders, ",")))
+	}
+	if filter.KEVOnly {
+		whereClauses = append(whereClauses, "v.cisa_kev_date_added IS NOT NULL")
+	}
+	if filter.MinCVSS != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(v.cvss_score, 0) >= $%d", argN))
+		args = append(args, *filter.MinCVSS)
+		argN++
+	}
+	if filter.MinEPSS != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(v.epss_score, 0) >= $%d", argN))
+		args = append(args, *filter.MinEPSS)
+		argN++
+	}
+	if filter.ExploitAvailable != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(v.exploit_available, false) = $%d", argN))
+		args = append(args, *filter.ExploitAvailable)
+		argN++
+	}
+
+	outerWhere := ""
+	if len(whereClauses) > 0 {
+		outerWhere = " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	countQuery := `
+		WITH agg AS (
+			SELECT f.vulnerability_id
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
+			GROUP BY f.vulnerability_id
+		)
+		SELECT COUNT(*) FROM agg
+		JOIN vulnerabilities v ON v.id = agg.vulnerability_id` + outerWhere
+
+	limitArg := argN
+	offsetArg := argN + 1
+	args = append(args, page.Limit(), page.Offset())
+
+	listQuery := `
+		WITH agg AS (
+			SELECT
+				f.vulnerability_id,
+				COUNT(DISTINCT f.asset_id)               AS affected_assets_count,
+				COUNT(DISTINCT f.component_id) FILTER (WHERE f.component_id IS NOT NULL) AS affected_components_count,
+				COUNT(*)                                 AS total_finding_count,
+				COUNT(*) FILTER (WHERE f.status IN ('new','confirmed','in_progress')) AS open_finding_count,
+				MIN(CASE f.status
+					WHEN 'new'         THEN 1
+					WHEN 'confirmed'   THEN 2
+					WHEN 'in_progress' THEN 3
+					WHEN 'accepted'    THEN 4
+					WHEN 'false_positive' THEN 5
+					WHEN 'resolved'    THEN 6
+					ELSE 7 END) AS worst_status_rank,
+				MIN(f.first_detected_at) AS first_detected_at,
+				MAX(f.last_seen_at)      AS last_seen_at
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
+			GROUP BY f.vulnerability_id
+		)
+		SELECT
+			v.id, v.cve_id, v.title, v.severity,
+			v.cvss_score, v.epss_score,
+			(v.cisa_kev_date_added IS NOT NULL) AS in_cisa_kev,
+			COALESCE(v.exploit_maturity, 'none') AS exploit_maturity,
+			COALESCE(v.exploit_available, false) AS exploit_available,
+			COALESCE(v.fixed_versions, '{}'::text[]) AS fixed_versions,
+			v.published_at,
+			agg.affected_assets_count,
+			agg.affected_components_count,
+			agg.total_finding_count,
+			agg.open_finding_count,
+			(ARRAY['new','confirmed','in_progress','accepted','false_positive','resolved','unknown']::text[])[LEAST(agg.worst_status_rank, 7)] AS worst_finding_status,
+			agg.first_detected_at, agg.last_seen_at
+		FROM agg
+		JOIN vulnerabilities v ON v.id = agg.vulnerability_id` + outerWhere + `
+		ORDER BY
+			CASE v.severity
+				WHEN 'critical' THEN 1
+				WHEN 'high'     THEN 2
+				WHEN 'medium'   THEN 3
+				WHEN 'low'      THEN 4
+				WHEN 'info'     THEN 5
+				ELSE 6
+			END,
+			(v.cisa_kev_date_added IS NOT NULL) DESC,
+			COALESCE(v.epss_score, 0) DESC,
+			agg.affected_assets_count DESC
+		LIMIT $` + fmt.Sprintf("%d", limitArg) + ` OFFSET $` + fmt.Sprintf("%d", offsetArg)
+
+	countArgs := args[:len(args)-2]
+
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return empty, fmt.Errorf("failed to count active CVEs: %w", err)
+	}
+	if total == 0 {
+		return empty, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, listQuery, args...)
+	if err != nil {
+		return empty, fmt.Errorf("failed to list active CVEs: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]vulnerability.ActiveCVE, 0, page.Limit())
+	for rows.Next() {
+		var v vulnerability.ActiveCVE
+		var cvss, epss sql.NullFloat64
+		var fixed pq.StringArray
+		var publishedAt sql.NullTime
+		if err := rows.Scan(
+			&v.VulnerabilityID, &v.CVEID, &v.Title, &v.Severity,
+			&cvss, &epss,
+			&v.InCISAKEV, &v.ExploitMaturity, &v.ExploitAvailable, &fixed,
+			&publishedAt,
+			&v.AffectedAssetsCount, &v.AffectedComponentsCount,
+			&v.TotalFindingCount, &v.OpenFindingCount,
+			&v.WorstFindingStatus,
+			&v.FirstDetectedAt, &v.LastSeenAt,
+		); err != nil {
+			return empty, fmt.Errorf("failed to scan active CVE row: %w", err)
+		}
+		if cvss.Valid {
+			s := cvss.Float64
+			v.CVSSScore = &s
+		}
+		if epss.Valid {
+			e := epss.Float64
+			v.EPSSScore = &e
+		}
+		if publishedAt.Valid {
+			t := publishedAt.Time
+			v.PublishedAt = &t
+		}
+		v.FixedVersions = []string(fixed)
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		return empty, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return pagination.NewResult(out, total, page), nil
+}
+
+// GetActiveCVEStats returns aggregate counts for the tenant's active CVEs.
+// Uses FILTER aggregates for a single round-trip (8 counts in 1 query).
+func (r *FindingRepository) GetActiveCVEStats(
+	ctx context.Context,
+	tenantID shared.ID,
+	includeResolved bool,
+) (*vulnerability.ActiveCVEStats, error) {
+	statusFilter := ""
+	if !includeResolved {
+		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+
+	query := `
+		WITH agg AS (
+			SELECT DISTINCT f.vulnerability_id
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
+		)
+		SELECT
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE v.severity = 'critical') AS crit,
+			COUNT(*) FILTER (WHERE v.severity = 'high')     AS high,
+			COUNT(*) FILTER (WHERE v.severity = 'medium')   AS med,
+			COUNT(*) FILTER (WHERE v.severity = 'low')      AS low,
+			COUNT(*) FILTER (WHERE v.severity = 'info')     AS info,
+			COUNT(*) FILTER (WHERE v.cisa_kev_date_added IS NOT NULL) AS kev,
+			COUNT(*) FILTER (WHERE COALESCE(v.exploit_available, false) = true) AS exploit
+		FROM agg
+		JOIN vulnerabilities v ON v.id = agg.vulnerability_id
+	`
+
+	var stats vulnerability.ActiveCVEStats
+	var crit, high, med, low, info int
+	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+		&stats.Total, &crit, &high, &med, &low, &info,
+		&stats.KEVCount, &stats.ExploitAvailableCount,
+	); err != nil {
+		return nil, fmt.Errorf("failed to get active CVE stats: %w", err)
+	}
+	stats.BySeverity = map[string]int{
+		"critical": crit, "high": high, "medium": med, "low": low, "info": info,
+	}
+	return &stats, nil
+}
+
+// ListAffectedAssetsByVulnerabilityID returns the distinct assets affected by a CVE
+// (blast-radius reverse lookup). Aggregates findings GROUP BY asset_id and joins
+// against the assets table for context. Sorted by criticality, then by worst SLA
+// status, then by risk_score.
+func (r *FindingRepository) ListAffectedAssetsByVulnerabilityID(
+	ctx context.Context,
+	tenantID, vulnID shared.ID,
+	includeResolved bool,
+	page pagination.Pagination,
+) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+	empty := pagination.NewResult([]vulnerability.VulnerabilityAffectedAsset{}, 0, page)
+
+	// When includeResolved=false, restrict to open statuses (new/confirmed/in_progress).
+	statusFilter := ""
+	if !includeResolved {
+		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+
+	countQuery := `
+		SELECT COUNT(DISTINCT f.asset_id)
+		FROM findings f
+		WHERE f.tenant_id = $1 AND f.vulnerability_id = $2` + statusFilter
+
+	listQuery := `
+		WITH agg AS (
+			SELECT
+				f.asset_id,
+				COUNT(*) AS finding_count,
+				COUNT(*) FILTER (WHERE f.status IN ('new','confirmed','in_progress')) AS open_count,
+				MIN(CASE f.severity
+					WHEN 'critical' THEN 1
+					WHEN 'high'     THEN 2
+					WHEN 'medium'   THEN 3
+					WHEN 'low'      THEN 4
+					WHEN 'info'     THEN 5
+					ELSE 6 END) AS sev_rank,
+				MIN(CASE f.sla_status
+					WHEN 'exceeded' THEN 1
+					WHEN 'overdue'  THEN 2
+					WHEN 'warning'  THEN 3
+					WHEN 'on_track' THEN 4
+					ELSE 5 END) AS sla_rank,
+				MIN(f.first_detected_at) AS first_detected_at,
+				MAX(f.last_seen_at)      AS last_seen_at,
+				(ARRAY_AGG(f.id ORDER BY f.last_seen_at DESC))[1]     AS sample_finding_id,
+				(ARRAY_AGG(f.status ORDER BY f.last_seen_at DESC))[1] AS sample_finding_status
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.vulnerability_id = $2` + statusFilter + `
+			GROUP BY f.asset_id
+		)
+		SELECT
+			a.id, a.name, a.asset_type, a.criticality, a.status, a.exposure,
+			a.risk_score, COALESCE(a.is_internet_accessible, false),
+			agg.finding_count, agg.open_count,
+			(ARRAY['critical','high','medium','low','info','none']::text[])[LEAST(agg.sev_rank, 6)] AS highest_severity,
+			(ARRAY['exceeded','overdue','warning','on_track','not_applicable']::text[])[LEAST(agg.sla_rank, 5)] AS worst_sla_status,
+			agg.first_detected_at, agg.last_seen_at,
+			agg.sample_finding_id, agg.sample_finding_status
+		FROM agg
+		JOIN assets a ON a.id = agg.asset_id
+		ORDER BY
+			CASE a.criticality
+				WHEN 'critical' THEN 1
+				WHEN 'high'     THEN 2
+				WHEN 'medium'   THEN 3
+				WHEN 'low'      THEN 4
+				ELSE 5
+			END,
+			agg.sla_rank ASC,
+			a.risk_score DESC,
+			a.name ASC
+		LIMIT $3 OFFSET $4
+	`
+
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String(), vulnID.String()).Scan(&total); err != nil {
+		return empty, fmt.Errorf("failed to count affected assets: %w", err)
+	}
+	if total == 0 {
+		return empty, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, listQuery,
+		tenantID.String(), vulnID.String(), page.Limit(), page.Offset())
+	if err != nil {
+		return empty, fmt.Errorf("failed to list affected assets: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]vulnerability.VulnerabilityAffectedAsset, 0, page.Limit())
+	for rows.Next() {
+		var a vulnerability.VulnerabilityAffectedAsset
+		if err := rows.Scan(
+			&a.AssetID, &a.AssetName, &a.AssetType, &a.Criticality, &a.AssetStatus, &a.Exposure,
+			&a.RiskScore, &a.IsInternetExposed,
+			&a.FindingCount, &a.OpenFindingCount,
+			&a.HighestSeverity, &a.WorstSLAStatus,
+			&a.FirstDetectedAt, &a.LastSeenAt,
+			&a.SampleFindingID, &a.SampleFindingStatus,
+		); err != nil {
+			return empty, fmt.Errorf("failed to scan affected asset row: %w", err)
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return empty, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return pagination.NewResult(out, total, page), nil
 }
 
 // Count returns the count of findings matching the filter.
@@ -1820,11 +2153,11 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		// metadata JSONB column. Copy the full map so the handler's
 		// toUnifiedPentestFindingResponse() can read steps_to_reproduce,
 		// poc_code, business_impact, etc. from SourceMetadata().
-		SourceMetadata:      meta,
-		PentestCampaignID:   parseNullID(row.pentestCampaignID),
-		CreatedAt:           row.createdAt,
-		UpdatedAt:           row.updatedAt,
-		CreatedBy:           parseNullID(row.createdBy),
+		SourceMetadata:    meta,
+		PentestCampaignID: parseNullID(row.pentestCampaignID),
+		CreatedAt:         row.createdAt,
+		UpdatedAt:         row.updatedAt,
+		CreatedBy:         parseNullID(row.createdBy),
 		// SARIF 2.1.0 fields
 		Confidence:          confidence,
 		Impact:              nullStringValue(row.impact),

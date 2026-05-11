@@ -113,6 +113,10 @@ func registerComponentRoutes(
 
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.ComponentsRead))
+		// Reverse lookup: assets that use a given global component (blast-radius)
+		r.GET("/{id}/assets", h.ListAssets, middleware.Require(permission.ComponentsRead))
+		// CVEs affecting this component (forward lookup, paginated)
+		r.GET("/{id}/vulnerabilities", h.ListVulnerabilities, middleware.Require(permission.ComponentsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ComponentsRead))
 
 		// Write operations

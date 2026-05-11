@@ -937,3 +937,15 @@ func (m *mockFindingRepoForScope) GetByWorkItemURI(_ context.Context, _ shared.I
 func (m *mockFindingRepoForScope) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, _ []string) error {
 	return nil
 }
+
+func (m *mockFindingRepoForScope) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
+}
+
+func (m *mockFindingRepoForScope) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
+	return pagination.Result[vulnerability.ActiveCVE]{}, nil
+}
+
+func (m *mockFindingRepoForScope) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
+}

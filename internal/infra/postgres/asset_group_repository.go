@@ -173,24 +173,27 @@ func (r *AssetGroupRepository) GetByTenantAndID(ctx context.Context, tenantID, i
 	return g, nil
 }
 
-// Update updates an asset group.
-func (r *AssetGroupRepository) Update(ctx context.Context, g *assetgroup.AssetGroup) error {
+// Update updates an asset group within the given tenant scope.
+// Security: WHERE tenant_id = ? prevents IDOR — caller cannot mutate
+// another tenant's group even with a known UUID.
+func (r *AssetGroupRepository) Update(ctx context.Context, tenantID shared.ID, g *assetgroup.AssetGroup) error {
 	query := `
 		UPDATE asset_groups SET
-			name = $2,
-			description = $3,
-			environment = $4,
-			criticality = $5,
-			business_unit = $6,
-			owner = $7,
-			owner_email = $8,
-			tags = $9,
-			updated_at = $10
-		WHERE id = $1
+			name = $3,
+			description = $4,
+			environment = $5,
+			criticality = $6,
+			business_unit = $7,
+			owner = $8,
+			owner_email = $9,
+			tags = $10,
+			updated_at = $11
+		WHERE id = $1 AND tenant_id = $2
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
 		g.ID().String(),
+		tenantID.String(),
 		g.Name(),
 		nullString(g.Description()),
 		g.Environment().String(),
@@ -216,10 +219,11 @@ func (r *AssetGroupRepository) Update(ctx context.Context, g *assetgroup.AssetGr
 	return nil
 }
 
-// Delete deletes an asset group.
-func (r *AssetGroupRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM asset_groups WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes an asset group within the given tenant scope.
+// Security: WHERE tenant_id = ? prevents IDOR — see Update for rationale.
+func (r *AssetGroupRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM asset_groups WHERE id = $1 AND tenant_id = $2"
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("delete asset group: %w", err)
 	}

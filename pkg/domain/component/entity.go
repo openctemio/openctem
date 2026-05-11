@@ -74,6 +74,60 @@ type VulnerableComponent struct {
 	InCisaKev     bool `json:"in_cisa_kev"`
 }
 
+// ComponentAssetUsage represents a single (component, asset) link used to answer
+// "which assets use this component?" — the blast-radius reverse lookup view.
+// Joins asset_components × assets to surface asset context (name, type,
+// criticality, exposure) alongside the per-asset link details.
+type ComponentAssetUsage struct {
+	// Asset identity & context
+	AssetID           string `json:"asset_id"`
+	AssetName         string `json:"asset_name"`
+	AssetType         string `json:"asset_type"`
+	Criticality       string `json:"criticality"`
+	AssetStatus       string `json:"asset_status"`
+	Exposure          string `json:"exposure"`
+	RiskScore         int    `json:"risk_score"`
+	IsInternetExposed bool   `json:"is_internet_accessible"`
+
+	// Per-asset link details (from asset_components)
+	DependencyID       string    `json:"dependency_id"` // asset_components.id (for further drill-down)
+	DependencyType     string    `json:"dependency_type"`
+	IsDirect           bool      `json:"is_direct"`
+	Depth              int       `json:"depth"`
+	ManifestFile       string    `json:"manifest_file,omitempty"`
+	ManifestPath       string    `json:"manifest_path,omitempty"`
+	License            string    `json:"license,omitempty"`
+	VulnerabilityCount int       `json:"vulnerability_count"`
+	HighestSeverity    string    `json:"highest_severity,omitempty"`
+	LinkedAt           time.Time `json:"linked_at"`
+}
+
+// ComponentVulnerability represents one CVE that affects a global component
+// (forward lookup view from the component detail sheet). Aggregates findings
+// GROUP BY vulnerability_id so a CVE appearing on multiple assets shows once,
+// with affected_assets_count rolled up.
+type ComponentVulnerability struct {
+	// Vulnerability identity (from global vulnerabilities table)
+	VulnerabilityID  string  `json:"vulnerability_id"`
+	CVEID            string  `json:"cve_id"`
+	Title            string  `json:"title"`
+	Severity         string  `json:"severity"`
+	CVSSScore        *float64 `json:"cvss_score,omitempty"`
+	EPSSScore        *float64 `json:"epss_score,omitempty"`
+	InCISAKEV        bool    `json:"in_cisa_kev"`
+	ExploitMaturity  string  `json:"exploit_maturity,omitempty"`
+	ExploitAvailable bool    `json:"exploit_available"`
+	FixedVersions    []string `json:"fixed_versions"`
+
+	// Aggregated finding context for THIS component within THIS tenant
+	AffectedAssetsCount int       `json:"affected_assets_count"`
+	OpenFindingCount    int       `json:"open_finding_count"`
+	TotalFindingCount   int       `json:"total_finding_count"`
+	WorstFindingStatus  string    `json:"worst_finding_status"`
+	FirstDetectedAt     time.Time `json:"first_detected_at"`
+	LastSeenAt          time.Time `json:"last_seen_at"`
+}
+
 // LicenseStats represents statistics for a single license.
 type LicenseStats struct {
 	LicenseID string  `json:"license_id"`    // SPDX identifier

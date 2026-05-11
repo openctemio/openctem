@@ -49,6 +49,7 @@ type (
 	KEVRepository                 = finding.KEVRepository
 	ListFindingsInput             = finding.ListFindingsInput
 	ListVulnerabilitiesInput      = finding.ListVulnerabilitiesInput
+	ListActiveCVEsInput           = finding.ListActiveCVEsInput
 	PriorityAuditEntry            = finding.PriorityAuditEntry
 	PriorityAuditRepository       = finding.PriorityAuditRepository
 	PriorityChangeEvent           = finding.PriorityChangeEvent

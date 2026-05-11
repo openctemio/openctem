@@ -1190,6 +1190,15 @@ func (s *stubFindingRepository) ListByVulnerabilityID(_ context.Context, _, _ sh
 func (s *stubFindingRepository) ListByComponentID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
 	return pagination.Result[*vulnerability.Finding]{}, nil
 }
+func (s *stubFindingRepository) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
+}
+func (s *stubFindingRepository) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
+	return pagination.Result[vulnerability.ActiveCVE]{}, nil
+}
+func (s *stubFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
+}
 func (s *stubFindingRepository) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
 	return 0, nil
 }

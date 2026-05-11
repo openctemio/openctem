@@ -91,7 +91,7 @@ func (m *mockAssetGroupServiceRepo) GetByTenantAndID(ctx context.Context, _, id 
 	return m.GetByID(ctx, id)
 }
 
-func (m *mockAssetGroupServiceRepo) Update(_ context.Context, group *assetgroup.AssetGroup) error {
+func (m *mockAssetGroupServiceRepo) Update(_ context.Context, _ shared.ID, group *assetgroup.AssetGroup) error {
 	m.updateCalls++
 	if m.updateErr != nil {
 		return m.updateErr
@@ -103,7 +103,7 @@ func (m *mockAssetGroupServiceRepo) Update(_ context.Context, group *assetgroup.
 	return nil
 }
 
-func (m *mockAssetGroupServiceRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockAssetGroupServiceRepo) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -710,7 +710,7 @@ func TestDeleteAssetGroup(t *testing.T) {
 
 		existing := seedAssetGroup(repo, tenantID, "To Delete", assetgroup.EnvironmentTesting, assetgroup.CriticalityLow)
 
-		err := svc.DeleteAssetGroup(context.Background(), existing.ID())
+		err := svc.DeleteAssetGroup(context.Background(), tenantID.String(), existing.ID())
 		if err != nil {
 			t.Fatalf("DeleteAssetGroup failed: %v", err)
 		}
@@ -729,7 +729,7 @@ func TestDeleteAssetGroup(t *testing.T) {
 		repo := newMockAssetGroupServiceRepo()
 		svc := newTestAssetGroupService(repo)
 
-		err := svc.DeleteAssetGroup(context.Background(), shared.NewID())
+		err := svc.DeleteAssetGroup(context.Background(), shared.NewID().String(), shared.NewID())
 		if err == nil {
 			t.Fatal("expected error for non-existent group")
 		}
@@ -746,7 +746,7 @@ func TestDeleteAssetGroup(t *testing.T) {
 
 		existing := seedAssetGroup(repo, tenantID, "Error Delete", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
-		err := svc.DeleteAssetGroup(context.Background(), existing.ID())
+		err := svc.DeleteAssetGroup(context.Background(), tenantID.String(), existing.ID())
 		if err == nil {
 			t.Fatal("expected error from repo")
 		}
@@ -1334,7 +1334,7 @@ func TestBulkDeleteAssetGroups(t *testing.T) {
 
 		groupIDs := []string{g1.ID().String(), g2.ID().String(), nonExistentID.String()}
 
-		deleted, err := svc.BulkDeleteAssetGroups(context.Background(), groupIDs)
+		deleted, err := svc.BulkDeleteAssetGroups(context.Background(), tenantID.String(), groupIDs)
 		if err != nil {
 			t.Fatalf("BulkDeleteAssetGroups failed: %v", err)
 		}
@@ -1353,7 +1353,7 @@ func TestBulkDeleteAssetGroups(t *testing.T) {
 		repo := newMockAssetGroupServiceRepo()
 		svc := newTestAssetGroupService(repo)
 
-		deleted, err := svc.BulkDeleteAssetGroups(context.Background(), []string{"bad-id", "worse-id"})
+		deleted, err := svc.BulkDeleteAssetGroups(context.Background(), shared.NewID().String(), []string{"bad-id", "worse-id"})
 		if err != nil {
 			t.Fatalf("BulkDeleteAssetGroups failed: %v", err)
 		}

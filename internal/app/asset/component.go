@@ -358,6 +358,50 @@ func (s *ComponentService) DeleteAssetComponents(ctx context.Context, assetID st
 	return nil
 }
 
+// ListVulnerabilitiesByComponent returns the CVEs affecting a global component within a tenant.
+// Powers the "Vulnerabilities" tab on the component detail sheet.
+func (s *ComponentService) ListVulnerabilitiesByComponent(
+	ctx context.Context,
+	tenantID, componentID string,
+	includeResolved bool,
+	page, perPage int,
+) (pagination.Result[componentdom.ComponentVulnerability], error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return pagination.Result[componentdom.ComponentVulnerability]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	parsedComponentID, err := shared.IDFromString(componentID)
+	if err != nil {
+		return pagination.Result[componentdom.ComponentVulnerability]{}, fmt.Errorf("%w: invalid component id format", shared.ErrValidation)
+	}
+	p := pagination.New(page, perPage)
+	return s.repo.ListVulnerabilities(ctx, parsedTenantID, parsedComponentID, includeResolved, p)
+}
+
+// ListAssetUsageByComponent retrieves the assets within a tenant that use a given global component.
+// Used by the "Used By Assets" blast-radius panel on the component detail sheet.
+//
+// When atRiskOnly is true, only assets with at least one open finding for this
+// component are returned (matches the "at risk only" toggle in the UI).
+func (s *ComponentService) ListAssetUsageByComponent(
+	ctx context.Context,
+	tenantID, componentID string,
+	atRiskOnly bool,
+	page, perPage int,
+) (pagination.Result[componentdom.ComponentAssetUsage], error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return pagination.Result[componentdom.ComponentAssetUsage]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	parsedComponentID, err := shared.IDFromString(componentID)
+	if err != nil {
+		return pagination.Result[componentdom.ComponentAssetUsage]{}, fmt.Errorf("%w: invalid component id format", shared.ErrValidation)
+	}
+
+	p := pagination.New(page, perPage)
+	return s.repo.ListAssetUsage(ctx, parsedTenantID, parsedComponentID, atRiskOnly, p)
+}
+
 // GetLicenseStats retrieves license statistics for a tenant.
 func (s *ComponentService) GetLicenseStats(ctx context.Context, tenantID string) ([]componentdom.LicenseStats, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
