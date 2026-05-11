@@ -741,6 +741,33 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	return middlewares
 }
 
+// tenantOverlayMiddlewares returns the EXTRA middlewares that
+// buildTokenTenantMiddlewares adds on top of buildBaseMiddlewares
+// (RequireTenant + active-membership + CSRF + rate-limit).
+//
+// Use case: a route group is mounted with baseMiddlewares (e.g. global
+// vulnerabilities catalog) but a few endpoints inside the group are
+// tenant-scoped (e.g. /vulnerabilities/{id}/affected-assets joins
+// per-tenant findings). Apply this overlay per-route to upgrade those
+// endpoints to the same security posture as a tokenTenant group, without
+// having to mount a second chi Group on the same path (chi forbids that).
+//
+// Order matters: caller MUST spread these BEFORE permission middleware so
+// RequireTenant runs first.
+func tenantOverlayMiddlewares() []Middleware {
+	mws := []Middleware{middleware.RequireTenant()}
+	if activeMembershipFromJWTMiddleware != nil {
+		mws = append(mws, activeMembershipFromJWTMiddleware)
+	}
+	if csrfProtectionMiddleware != nil {
+		mws = append(mws, csrfProtectionMiddleware)
+	}
+	if readRateLimitMiddleware != nil {
+		mws = append(mws, readRateLimitMiddleware)
+	}
+	return mws
+}
+
 // ChainFunc wraps a handler function with middleware(s).
 // Returns the final handler after applying all middleware in order.
 func ChainFunc(handler http.HandlerFunc, middlewares ...Middleware) http.Handler {

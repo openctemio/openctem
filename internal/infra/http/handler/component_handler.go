@@ -650,6 +650,108 @@ func toAssetComponentResponse(d *component.AssetDependency) ComponentResponse {
 	}
 }
 
+// ListVulnerabilities handles GET /api/v1/components/{id}/vulnerabilities
+// @Summary      List CVEs that affect a component
+// @Description  Returns CVEs affecting a global component within the current tenant.
+//               One row per CVE with affected_assets_count rolled up.
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id                path     string  true   "Global component ID"
+// @Param        include_resolved  query    bool    false  "Include CVEs only seen in closed findings"
+// @Param        page              query    int     false  "Page number"  default(1)
+// @Param        per_page          query    int     false  "Items per page"  default(20)
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  map[string]string
+// @Failure      404  {object}  map[string]string
+// @Router       /components/{id}/vulnerabilities [get]
+func (h *ComponentHandler) ListVulnerabilities(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	componentID := r.PathValue("id")
+	if componentID == "" {
+		apierror.BadRequest("Component ID is required").WriteJSON(w)
+		return
+	}
+
+	query := r.URL.Query()
+	includeResolved := parseQueryBool(query.Get("include_resolved"))
+	page := parseQueryInt(query.Get("page"), 1)
+	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
+
+	result, err := h.service.ListVulnerabilitiesByComponent(r.Context(), tenantID, componentID,
+		includeResolved != nil && *includeResolved, page, perPage)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	response := ListResponse[component.ComponentVulnerability]{
+		Data:       result.Data,
+		Total:      result.Total,
+		Page:       result.Page,
+		PerPage:    result.PerPage,
+		TotalPages: result.TotalPages,
+		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+// ListAssets handles GET /api/v1/components/{id}/assets
+// @Summary      List assets that use a component
+// @Description  Returns the assets in the current tenant that use the given global component
+//
+//	(blast-radius reverse lookup).
+//
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id            path      string  true   "Global component ID"
+// @Param        at_risk_only  query     bool    false  "Only return assets with open findings for this component"
+// @Param        page          query     int     false  "Page number"  default(1)
+// @Param        per_page      query     int     false  "Items per page"  default(20)
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  map[string]string
+// @Failure      404  {object}  map[string]string
+// @Router       /components/{id}/assets [get]
+func (h *ComponentHandler) ListAssets(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	componentID := r.PathValue("id")
+	if componentID == "" {
+		apierror.BadRequest("Component ID is required").WriteJSON(w)
+		return
+	}
+
+	query := r.URL.Query()
+	atRiskOnly := parseQueryBool(query.Get("at_risk_only"))
+	page := parseQueryInt(query.Get("page"), 1)
+	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
+
+	result, err := h.service.ListAssetUsageByComponent(r.Context(), tenantID, componentID,
+		atRiskOnly != nil && *atRiskOnly, page, perPage)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	response := ListResponse[component.ComponentAssetUsage]{
+		Data:       result.Data,
+		Total:      result.Total,
+		Page:       result.Page,
+		PerPage:    result.PerPage,
+		TotalPages: result.TotalPages,
+		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
 // ListByAsset handles GET /api/v1/assets/{id}/components
 // @Summary      List asset components
 // @Description  Retrieves all components for an asset

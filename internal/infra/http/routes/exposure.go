@@ -159,12 +159,29 @@ func registerVulnerabilityRoutes(
 	// Build base middleware chain
 	baseMiddlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Vulnerability routes - global CVE database (no tenant required)
+	// Vulnerability routes - global CVE database (no tenant required for catalog ops).
+	// EXCEPTION: /{id}/affected-assets and /cve/{cveId}/affected-assets are
+	// blast-radius reverse lookups that JOIN findings × assets — those need
+	// tenant context. We apply middleware.RequireTenant() per-route below
+	// (chi doesn't allow two Group() blocks on the same mount path).
 	router.Group("/api/v1/vulnerabilities", func(r Router) {
 		// Read operations
 		r.GET("/", h.ListVulnerabilities, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/{id}", h.GetVulnerability, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/cve/{cveId}", h.GetVulnerabilityByCVE, middleware.Require(permission.VulnerabilitiesRead))
+
+		// Blast-radius reverse lookups + Active CVEs (tenant-scoped). Use
+		// tenantOverlayMiddlewares() to apply RequireTenant + active-membership
+		// + CSRF + rate-limit per-route, since chi forbids mounting a second
+		// Group on the same path. See routes.go.
+		tenantScopedMW := append(tenantOverlayMiddlewares(),
+			middleware.Require(permission.VulnerabilitiesRead))
+		// IMPORTANT: register /active/stats BEFORE /active and /{id} so the
+		// most-specific literal path wins.
+		r.GET("/active/stats", h.GetActiveCVEStats, tenantScopedMW...)
+		r.GET("/active", h.ListActiveCVEs, tenantScopedMW...)
+		r.GET("/{id}/affected-assets", h.ListAffectedAssets, tenantScopedMW...)
+		r.GET("/cve/{cveId}/affected-assets", h.ListAffectedAssetsByCVE, tenantScopedMW...)
 
 		// Write operations (admin only)
 		r.POST("/", h.CreateVulnerability, middleware.Require(permission.VulnerabilitiesWrite))
@@ -172,7 +189,7 @@ func registerVulnerabilityRoutes(
 		r.DELETE("/{id}", h.DeleteVulnerability, middleware.Require(permission.VulnerabilitiesDelete))
 	}, baseMiddlewares...)
 
-	// Build tenant middleware chain from JWT token
+	// Build tenant middleware chain from JWT token (used by /findings group below)
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	// Finding routes - tenant from JWT token
