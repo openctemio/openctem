@@ -1,3 +1,4 @@
+// Package compliance implements the application service for the compliance bounded context — orchestrates pkg/domain/compliance entities and cross-cutting concerns (audit, notifications, RBAC).
 package compliance
 
 import (

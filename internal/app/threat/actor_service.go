@@ -1,3 +1,4 @@
+// Package threat implements the application service for the threat bounded context — orchestrates pkg/domain/threat entities and cross-cutting concerns (audit, notifications, RBAC).
 package threat
 
 import (

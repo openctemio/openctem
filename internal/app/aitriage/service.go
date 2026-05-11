@@ -1,3 +1,4 @@
+// Package aitriage implements the application service for the aitriage bounded context — orchestrates pkg/domain/aitriage entities and cross-cutting concerns (audit, notifications, RBAC).
 package aitriage
 
 import (

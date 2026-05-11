@@ -1,3 +1,4 @@
+// Package audit implements the application service for the audit bounded context — orchestrates pkg/domain/audit entities and cross-cutting concerns (audit, notifications, RBAC).
 package audit
 
 import (

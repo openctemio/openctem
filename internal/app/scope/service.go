@@ -1,3 +1,4 @@
+// Package scope implements the application service for the scope bounded context — orchestrates pkg/domain/scope entities and cross-cutting concerns (audit, notifications, RBAC).
 package scope
 
 import (

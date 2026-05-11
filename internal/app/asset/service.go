@@ -1,3 +1,4 @@
+// Package asset implements the application service for the asset bounded context — orchestrates pkg/domain/asset entities and cross-cutting concerns (audit, notifications, RBAC).
 package asset
 
 import (

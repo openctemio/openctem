@@ -1,3 +1,4 @@
+// Package module implements the application service for the module bounded context — orchestrates pkg/domain/module entities and cross-cutting concerns (audit, notifications, RBAC).
 package module
 
 import (

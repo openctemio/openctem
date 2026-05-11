@@ -1,3 +1,4 @@
+// Package logger provides public types and helpers reusable across the codebase.
 package logger
 
 import (

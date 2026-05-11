@@ -1,3 +1,4 @@
+// Package auth implements the application service for the auth bounded context — orchestrates pkg/domain/auth entities and cross-cutting concerns (audit, notifications, RBAC).
 package auth
 
 import (

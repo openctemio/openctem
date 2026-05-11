@@ -1,4 +1,4 @@
-// Package validators provides template validation for different scanner types.
+// Package template provides template validation for different scanner types.
 package template
 
 import (

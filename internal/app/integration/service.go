@@ -1,3 +1,4 @@
+// Package integration implements the application service for the integration bounded context — orchestrates pkg/domain/integration entities and cross-cutting concerns (audit, notifications, RBAC).
 package integration
 
 import (

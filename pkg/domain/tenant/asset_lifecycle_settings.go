@@ -1,3 +1,4 @@
+// Package tenant provides public types and helpers reusable across the codebase.
 package tenant
 
 import (

@@ -1,3 +1,4 @@
+// Package findingsource provides public types and helpers reusable across the codebase.
 package findingsource
 
 import (

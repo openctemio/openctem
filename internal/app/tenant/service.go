@@ -1,3 +1,4 @@
+// Package tenant implements the application service for the tenant bounded context — orchestrates pkg/domain/tenant entities and cross-cutting concerns (audit, notifications, RBAC).
 package tenant
 
 import (

@@ -1,3 +1,4 @@
+// Package scansession provides public types and helpers reusable across the codebase.
 package scansession
 
 import (

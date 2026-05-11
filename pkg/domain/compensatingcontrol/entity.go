@@ -1,3 +1,4 @@
+// Package compensatingcontrol provides public types and helpers reusable across the codebase.
 package compensatingcontrol
 
 import (

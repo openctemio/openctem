@@ -1,3 +1,4 @@
+// Package cmd implements the openctem-admin CLI (cobra commands) for tenant ops + maintenance.
 package cmd
 
 import (

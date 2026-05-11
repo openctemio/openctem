@@ -1,3 +1,4 @@
+// Package agent implements the application service for the agent bounded context — orchestrates pkg/domain/agent entities and cross-cutting concerns (audit, notifications, RBAC).
 package agent
 
 import (

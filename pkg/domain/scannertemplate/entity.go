@@ -1,4 +1,4 @@
-// Package scanner_template defines the ScannerTemplate domain entity for custom scanner templates.
+// Package scannertemplate defines the ScannerTemplate domain entity for custom scanner templates.
 package scannertemplate
 
 import (

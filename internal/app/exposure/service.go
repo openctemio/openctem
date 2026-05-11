@@ -1,3 +1,4 @@
+// Package exposure implements the application service for the exposure bounded context — orchestrates pkg/domain/exposure entities and cross-cutting concerns (audit, notifications, RBAC).
 package exposure
 
 import (

@@ -1,3 +1,4 @@
+// Package asset provides public types and helpers reusable across the codebase.
 package asset
 
 // Category groups asset types for UI organization and filtering.

@@ -1,3 +1,4 @@
+// Package capability implements the application service for the capability bounded context — orchestrates pkg/domain/capability entities and cross-cutting concerns (audit, notifications, RBAC).
 package capability
 
 import (

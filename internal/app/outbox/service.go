@@ -1,3 +1,4 @@
+// Package outbox implements the application service for the outbox bounded context — orchestrates pkg/domain/outbox entities and cross-cutting concerns (audit, notifications, RBAC).
 package outbox
 
 import (

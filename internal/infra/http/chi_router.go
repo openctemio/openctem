@@ -1,3 +1,4 @@
+// Package http hosts the HTTP server scaffolding (router, options, lifecycle).
 package http
 
 import (

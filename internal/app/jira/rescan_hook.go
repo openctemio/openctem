@@ -1,3 +1,4 @@
+// Package jira implements the application service for the jira bounded context — orchestrates pkg/domain/jira entities and cross-cutting concerns (audit, notifications, RBAC).
 package jira
 
 import (

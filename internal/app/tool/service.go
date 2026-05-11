@@ -1,3 +1,4 @@
+// Package tool implements the application service for the tool bounded context — orchestrates pkg/domain/tool entities and cross-cutting concerns (audit, notifications, RBAC).
 package tool
 
 import (

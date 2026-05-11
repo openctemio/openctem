@@ -1,3 +1,4 @@
+// Package command implements the application service for the command bounded context — orchestrates pkg/domain/command entities and cross-cutting concerns (audit, notifications, RBAC).
 package command
 
 import (

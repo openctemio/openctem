@@ -1,3 +1,4 @@
+// Package finding implements the application service for the finding bounded context — orchestrates pkg/domain/finding entities and cross-cutting concerns (audit, notifications, RBAC).
 package finding
 
 import (

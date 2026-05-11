@@ -1,3 +1,4 @@
+// Package apikey implements the application service for the apikey bounded context — orchestrates pkg/domain/apikey entities and cross-cutting concerns (audit, notifications, RBAC).
 package apikey
 
 import (
