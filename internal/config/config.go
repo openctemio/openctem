@@ -1,3 +1,4 @@
+// Package config loads and validates application configuration from environment variables.
 package config
 
 import (
@@ -95,6 +96,13 @@ type ServerConfig struct {
 	MaxBodySize           int64
 	SessionTimeoutMinutes int // Session timeout in minutes (0 = disabled, default: 30)
 	MaxConcurrentRequests int // Maximum concurrent requests (default: 1000)
+	// TrustedProxies is the list of CIDR ranges (or bare IPs) whose
+	// X-Real-IP / X-Forwarded-For headers will be honored. Requests from
+	// peers outside this list have their forwarding headers ignored —
+	// preventing IP spoofing of rate-limit and audit-log keys (S-4).
+	// Empty list = treat the API as directly Internet-facing.
+	// Configure via SERVER_TRUSTED_PROXIES (comma-separated CIDRs).
+	TrustedProxies []string
 }
 
 // GRPCConfig holds gRPC server configuration.
@@ -515,6 +523,7 @@ func Load() (*Config, error) {
 			MaxBodySize:           getEnvInt64("SERVER_MAX_BODY_SIZE", 10<<20), // 10MB default
 			SessionTimeoutMinutes: getEnvInt("SESSION_TIMEOUT_MINUTES", 30),    // 30 minutes default
 			MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 1000),  // 1000 concurrent requests default
+			TrustedProxies:        getEnvSlice("SERVER_TRUSTED_PROXIES", nil),
 		},
 		GRPC: GRPCConfig{
 			Port: getEnvInt("GRPC_PORT", 9090),
@@ -795,12 +804,12 @@ func (c *Config) validateEncryption() error {
 
 	// Auto-detect format if not specified
 	if format == "" {
-		switch {
-		case keyLen == 32:
+		switch keyLen {
+		case 32:
 			format = "raw"
-		case keyLen == 64:
+		case 64:
 			format = "hex"
-		case keyLen == 44:
+		case 44:
 			format = "base64"
 		default:
 			return fmt.Errorf("APP_ENCRYPTION_KEY has invalid length %d (expected 32 raw, 64 hex, or 44 base64)", keyLen)
@@ -1145,7 +1154,7 @@ func getEnvSlice(key string, defaultValue []string) []string {
 
 func splitAndTrim(s, sep string) []string {
 	parts := make([]string, 0)
-	for _, p := range strings.Split(s, sep) {
+	for p := range strings.SplitSeq(s, sep) {
 		trimmed := strings.TrimSpace(p)
 		if trimmed != "" {
 			parts = append(parts, trimmed)

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
+	"time"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/config"
@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/password"
 	"github.com/openctemio/api/pkg/validator"
@@ -289,10 +290,14 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	middleware.SetCSRFTokenCookie(w, csrfToken, h.csrfConfig)
 
+	// SECURITY (S-3): Do NOT include refresh_token in the response body.
+	// It is set as an httpOnly cookie above (SetRefreshTokenCookie) which is
+	// the only place a browser-bound client should read it from. Returning
+	// it in the body lets any XSS / browser extension / analytics middleware
+	// capture the long-lived credential, enabling persistent ATO.
 	resp := LoginResponse{
-		RefreshToken: result.RefreshToken, // Also in body for backward compatibility
-		TokenType:    "Bearer",
-		ExpiresIn:    expiresIn,
+		TokenType: "Bearer",
+		ExpiresIn: expiresIn,
 		User: UserInfo{
 			ID:    result.User.ID().String(),
 			Email: result.User.Email(),
@@ -412,6 +417,15 @@ func (h *LocalAuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request)
 
 	expiresIn := int64(h.authConfig.AccessTokenDuration.Seconds())
 
+	// S-3-rotate: ExchangeToken now rotates the refresh token. Persist the
+	// NEW refresh token to the httpOnly cookie so the next call works.
+	// Body intentionally OMITS the refresh token — it lives in cookie only
+	// (matches S-3 hardening: never echo refresh tokens in JSON bodies).
+	if result.RefreshToken != "" {
+		refreshExpiresAt := time.Now().Add(h.authConfig.RefreshTokenDuration)
+		SetRefreshTokenCookie(w, result.RefreshToken, refreshExpiresAt, h.cookieConfig)
+	}
+
 	resp := ExchangeTokenResponse{
 		AccessToken: result.AccessToken,
 		TokenType:   "Bearer",
@@ -508,14 +522,15 @@ func (h *LocalAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 	}
 	middleware.SetCSRFTokenCookie(w, csrfToken, h.csrfConfig)
 
+	// SECURITY (S-3): omit refresh_token from response body — set in httpOnly
+	// cookie above. Browser clients never need it in JS.
 	resp := RefreshTokenResponse{
-		AccessToken:  result.AccessToken,
-		RefreshToken: result.RefreshToken, // Also in body for backward compatibility
-		TokenType:    "Bearer",
-		ExpiresIn:    expiresIn,
-		TenantID:     result.TenantID,
-		TenantSlug:   result.TenantSlug,
-		Role:         result.Role,
+		AccessToken: result.AccessToken,
+		TokenType:   "Bearer",
+		ExpiresIn:   expiresIn,
+		TenantID:    result.TenantID,
+		TenantSlug:  result.TenantSlug,
+		Role:        result.Role,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1155,27 +1170,24 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 }
 
 // getClientIP extracts the client IP address from the request.
+//
+// SECURITY (S-4): Forwarding headers are honored only when the immediate
+// TCP peer sits in the trusted-proxy CIDR allowlist. Without this guard
+// attackers could spoof X-Forwarded-For to attribute brute-force / abuse
+// attempts to fake IPs in the audit log.
+//
+// trustedProxiesForAuth is set during server bootstrap. If nil (tests,
+// direct-Internet deployments) only r.RemoteAddr is honored.
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header first (for proxied requests)
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		// Take the first IP in the list
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
+	return httpsec.ClientIP(r, trustedProxiesForAuth)
+}
 
-	// Check X-Real-IP header
-	xri := r.Header.Get("X-Real-IP")
-	if xri != "" {
-		return strings.TrimSpace(xri)
-	}
+// trustedProxiesForAuth is the package-level proxy allowlist used by
+// auth-handler audit code. Wired once at startup via SetAuthTrustedProxies.
+var trustedProxiesForAuth *httpsec.TrustedProxySet //nolint:gochecknoglobals // set once at startup
 
-	// Fall back to RemoteAddr
-	ip := r.RemoteAddr
-	if idx := strings.LastIndex(ip, ":"); idx != -1 {
-		return ip[:idx]
-	}
-	return ip
+// SetAuthTrustedProxies configures the trusted-proxy set used by the
+// auth handler's IP attribution. Call once during server bootstrap.
+func SetAuthTrustedProxies(set *httpsec.TrustedProxySet) {
+	trustedProxiesForAuth = set
 }

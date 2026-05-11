@@ -139,7 +139,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),
-		Branch:    handler.NewBranchHandler(svc.Branch, v, log),
+		Branch: func() *handler.BranchHandler {
+			h := handler.NewBranchHandler(svc.Branch, v, log)
+			// S-2: wire AssetService so branch handler can verify repo ownership.
+			h.SetAssetService(svc.Asset)
+			return h
+		}(),
 
 		// Integration
 		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),

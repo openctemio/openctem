@@ -649,12 +649,18 @@ type ExchangeTokenInput struct {
 }
 
 // ExchangeTokenResult represents the result of token exchange.
+//
+// RefreshToken is the NEW refresh token issued during rotation (S-3-rotate).
+// Caller is expected to overwrite the old refresh_token cookie with this value
+// — failing to do so means the next ExchangeToken call will fail (the old
+// token is now marked used).
 type ExchangeTokenResult struct {
-	AccessToken string
-	TenantID    string
-	TenantSlug  string
-	Role        string
-	ExpiresAt   time.Time
+	AccessToken  string
+	RefreshToken string
+	TenantID     string
+	TenantSlug   string
+	Role         string
+	ExpiresAt    time.Time
 }
 
 // ExchangeToken exchanges a global refresh token for a tenant-scoped access token.
@@ -753,6 +759,41 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		s.logger.Error("failed to update session activity", "error", err)
 	}
 
+	// S-3-rotate: rotate refresh token (mark old as used + issue new in same family).
+	// Matches the pattern used in CreateFirstTeam (line ~1300) and Refresh.
+	// Without rotation, a stolen refresh token remains valid for the full window;
+	// with rotation, theft is detected on the next legitimate use (token-already-used).
+	if err := storedToken.MarkUsed(); err != nil {
+		s.logger.Error("failed to mark refresh token as used", "error", err)
+	} else {
+		if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
+			s.logger.Error("failed to update refresh token", "error", err)
+		}
+	}
+
+	newRefreshTokenStr, _, err := s.tokenGenerator.GenerateGlobalRefreshToken(
+		u.ID().String(),
+		u.Email(),
+		u.Name(),
+		sess.ID().String(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+	}
+	newRefreshToken, err := sessiondom.NewRefreshTokenInFamily(
+		u.ID(),
+		sess.ID(),
+		newRefreshTokenStr,
+		storedToken.Family(),
+		s.config.RefreshTokenDuration,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create refresh token: %w", err)
+	}
+	if err := s.refreshTokenRepo.Create(ctx, newRefreshToken); err != nil {
+		return nil, fmt.Errorf("failed to save refresh token: %w", err)
+	}
+
 	s.logger.Debug("token exchanged",
 		"user_id", u.ID().String(),
 		"tenant_id", input.TenantID,
@@ -760,11 +801,12 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	)
 
 	return &ExchangeTokenResult{
-		AccessToken: accessToken.AccessToken,
-		TenantID:    accessToken.TenantID,
-		TenantSlug:  accessToken.TenantSlug,
-		Role:        accessToken.Role,
-		ExpiresAt:   accessToken.ExpiresAt,
+		AccessToken:  accessToken.AccessToken,
+		RefreshToken: newRefreshTokenStr,
+		TenantID:     accessToken.TenantID,
+		TenantSlug:   accessToken.TenantSlug,
+		Role:         accessToken.Role,
+		ExpiresAt:    accessToken.ExpiresAt,
 	}, nil
 }
 

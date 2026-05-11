@@ -56,9 +56,18 @@ type UnifiedAuthConfig struct {
 const DefaultAccessTokenCookieName = "auth_token"
 
 // extractToken extracts the JWT token from the request.
-// Priority: Authorization header > Cookie > query parameter "token"
-// Cookie-based auth is preferred for WebSocket (browser sends cookies automatically).
-// Query parameter is needed for SSE/EventSource which cannot send custom headers.
+// Priority: Authorization header > httpOnly cookie.
+//
+// SECURITY (S-5): The query-parameter fallback (`?token=`) was REMOVED from
+// the default extractor because tokens leak via:
+//   - nginx/CDN access logs
+//   - browser history & autocomplete
+//   - Referer headers sent to 3rd-party domains
+//   - paste-into-Slack social engineering ("here's the URL" with token in it)
+//
+// SSE/EventSource genuinely needs query-param auth (browsers don't allow
+// custom headers on EventSource). Use extractTokenWithQueryParam below for
+// the few SSE routes only — never on the global UnifiedAuth path.
 func extractToken(r *http.Request) string {
 	// 1. Try Authorization header first (standard API auth)
 	authHeader := r.Header.Get("Authorization")
@@ -69,20 +78,24 @@ func extractToken(r *http.Request) string {
 		}
 	}
 
-	// 2. Try httpOnly cookie (for WebSocket connections)
-	// Browser automatically sends cookies during WebSocket upgrade request
-	// This eliminates the need for frontend to expose token via query param
+	// 2. Try httpOnly cookie (for WebSocket connections + cookie-based SPA)
+	// Browser automatically sends cookies during WebSocket upgrade request,
+	// eliminating any need for frontend to expose token via query param.
 	if cookie, err := r.Cookie(DefaultAccessTokenCookieName); err == nil && cookie.Value != "" {
 		return cookie.Value
 	}
 
-	// 3. Fallback to query parameter for SSE/EventSource
-	// Note: Query param auth is less secure (logged in URLs), only use for SSE
-	if token := r.URL.Query().Get("token"); token != "" {
-		return token
-	}
-
 	return ""
+}
+
+// extractTokenWithQueryParam is the SSE-only variant that ALSO accepts a
+// `?token=` query parameter. Use this ONLY on EventSource routes — never
+// register it on a route group that includes mutating endpoints.
+func extractTokenWithQueryParam(r *http.Request) string {
+	if t := extractToken(r); t != "" {
+		return t
+	}
+	return r.URL.Query().Get("token")
 }
 
 // UnifiedAuth creates an authentication middleware that supports both local and OIDC authentication.
@@ -538,50 +551,12 @@ func RequirePlatformAdmin() func(http.Handler) http.Handler {
 	}
 }
 
-// OptionalUnifiedAuth creates an optional authentication middleware.
-// It extracts claims if present but doesn't require authentication.
-func OptionalUnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			tokenString := parts[1]
-			if tokenString == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			var ctx context.Context
-			var err error
-
-			switch cfg.Provider {
-			case config.AuthProviderLocal:
-				ctx, err = validateLocalToken(r.Context(), tokenString, cfg.LocalValidator)
-			case config.AuthProviderOIDC:
-				ctx, err = validateOIDCToken(r.Context(), tokenString, cfg.OIDCValidator, cfg.Logger)
-			case config.AuthProviderHybrid:
-				ctx, err = validateLocalToken(r.Context(), tokenString, cfg.LocalValidator)
-				if err != nil && cfg.OIDCValidator != nil {
-					ctx, err = validateOIDCToken(r.Context(), tokenString, cfg.OIDCValidator, cfg.Logger)
-				}
-			}
-
-			if err == nil && ctx != nil {
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
-	}
-}
+// REMOVED (S-8): OptionalUnifiedAuth.
+// The middleware silently passed through requests when a Bearer token was
+// present but invalid (next.ServeHTTP without auth context). Future code that
+// mounts it could be tricked: attacker sends `Authorization: Bearer junk` and
+// reaches an unauthenticated handler that assumes claims-or-nothing.
+// Confirmed zero callers via repo-wide grep before removal.
+// If an SSE-style "auth optional" pattern is needed later, build a new
+// middleware that returns 401 when a token is present-but-invalid (only skip
+// auth on the missing-header case).
