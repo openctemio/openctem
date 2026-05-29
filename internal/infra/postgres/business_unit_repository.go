@@ -30,13 +30,13 @@ const buSelectCols = `id, tenant_id, name, description, owner_name, owner_email,
 
 func (r *BusinessUnitRepository) scanBU(scan func(dest ...any) error) (*businessunit.BusinessUnit, error) {
 	var (
-		id, tenantID         string
-		name, desc           string
-		ownerName, ownerEmail sql.NullString
+		id, tenantID                        string
+		name, desc                          string
+		ownerName, ownerEmail               sql.NullString
 		assetCount, findingCount, critCount int
-		avgRisk              float64
-		tags                 pq.StringArray
-		createdAt, updatedAt time.Time
+		avgRisk                             float64
+		tags                                pq.StringArray
+		createdAt, updatedAt                time.Time
 	)
 	err := scan(&id, &tenantID, &name, &desc, &ownerName, &ownerEmail,
 		&assetCount, &findingCount, &avgRisk, &critCount,
@@ -144,10 +144,49 @@ func (r *BusinessUnitRepository) List(ctx context.Context, filter businessunit.F
 }
 
 func (r *BusinessUnitRepository) AddAsset(ctx context.Context, tenantID, buID, assetID shared.ID) error {
+	// Only link the asset if it belongs to this tenant — defence-in-depth on
+	// top of the service-layer check, so the link table can never reference a
+	// foreign asset even if a caller bypasses the service.
 	query := `INSERT INTO business_unit_assets (id, tenant_id, business_unit_id, asset_id, created_at)
-		VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT DO NOTHING`
+		SELECT $1, $2, $3, $4, NOW()
+		WHERE EXISTS (SELECT 1 FROM assets WHERE id = $4 AND tenant_id = $2)
+		ON CONFLICT DO NOTHING`
 	_, err := r.db.ExecContext(ctx, query, shared.NewID().String(), tenantID.String(), buID.String(), assetID.String())
 	return err
+}
+
+// RecalculateCounts refreshes the cached rollup counters for a business unit
+// from its current membership (asset_count, finding_count, critical_finding_count,
+// avg_risk_score).
+func (r *BusinessUnitRepository) RecalculateCounts(ctx context.Context, tenantID, buID shared.ID) error {
+	query := `
+		UPDATE business_units SET
+			asset_count = (
+				SELECT COUNT(*) FROM business_unit_assets
+				WHERE business_unit_id = $2 AND tenant_id = $1
+			),
+			finding_count = COALESCE((
+				SELECT COUNT(*) FROM findings f
+				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
+				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1
+			), 0),
+			critical_finding_count = COALESCE((
+				SELECT COUNT(*) FROM findings f
+				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
+				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.severity = 'critical'
+			), 0),
+			avg_risk_score = COALESCE((
+				SELECT AVG(a.risk_score) FROM business_unit_assets bua
+				JOIN assets a ON a.id = bua.asset_id
+				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1
+			), 0),
+			updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2
+	`
+	if _, err := r.db.ExecContext(ctx, query, tenantID.String(), buID.String()); err != nil {
+		return fmt.Errorf("recalculate business unit counts: %w", err)
+	}
+	return nil
 }
 
 func (r *BusinessUnitRepository) RemoveAsset(ctx context.Context, tenantID, buID, assetID shared.ID) error {

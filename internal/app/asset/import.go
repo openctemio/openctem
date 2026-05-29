@@ -230,7 +230,9 @@ func (s *AssetImportService) ImportNessus(ctx context.Context, tenantID string, 
 
 		if createErr := s.assetRepo.Create(ctx, a); createErr != nil {
 			if strings.Contains(createErr.Error(), "already exists") {
-				result.AssetsUpdated++
+				// Create only — an existing asset is left untouched, so this is
+				// a skip, not an update (matches the CSV importer's accounting).
+				result.AssetsSkipped++
 			} else {
 				result.Errors = append(result.Errors, fmt.Sprintf("host %s: %v", hostname, createErr))
 			}
@@ -343,7 +345,8 @@ func (s *AssetImportService) ImportKubernetes(ctx context.Context, tenantID stri
 
 			if err := s.assetRepo.Create(ctx, a); err != nil {
 				if strings.Contains(err.Error(), "already exists") {
-					result.AssetsUpdated++
+					// Create only — existing asset untouched, so skip not update.
+					result.AssetsSkipped++
 				} else {
 					result.Errors = append(result.Errors, fmt.Sprintf("workload %s: %v", name, err))
 				}

@@ -501,7 +501,7 @@ func (h *AssetGroupHandler) GetAssets(w http.ResponseWriter, r *http.Request) {
 	page := parseQueryInt(query.Get("page"), 1)
 	perPage := parseQueryInt(query.Get("per_page"), 20)
 
-	result, err := h.service.GetGroupAssets(r.Context(), id, page, perPage)
+	result, err := h.service.GetGroupAssets(r.Context(), middleware.MustGetTenantID(r.Context()), id, page, perPage)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -562,7 +562,7 @@ func (h *AssetGroupHandler) GetFindings(w http.ResponseWriter, r *http.Request) 
 	page := parseQueryInt(query.Get("page"), 1)
 	perPage := parseQueryInt(query.Get("per_page"), 20)
 
-	result, err := h.service.GetGroupFindings(r.Context(), id, page, perPage)
+	result, err := h.service.GetGroupFindings(r.Context(), middleware.MustGetTenantID(r.Context()), id, page, perPage)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -626,7 +626,7 @@ func (h *AssetGroupHandler) AddAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AddAssetsToGroup(r.Context(), id, req.AssetIDs); err != nil {
+	if err := h.service.AddAssetsToGroup(r.Context(), middleware.MustGetTenantID(r.Context()), id, req.AssetIDs); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -676,7 +676,7 @@ func (h *AssetGroupHandler) RemoveAssets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.RemoveAssetsFromGroup(r.Context(), id, req.AssetIDs); err != nil {
+	if err := h.service.RemoveAssetsFromGroup(r.Context(), middleware.MustGetTenantID(r.Context()), id, req.AssetIDs); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -723,16 +723,14 @@ func (h *AssetGroupHandler) BulkUpdate(w http.ResponseWriter, r *http.Request) {
 		Criticality: req.Update.Criticality,
 	}
 
-	updated, err := h.service.BulkUpdateAssetGroups(r.Context(), middleware.MustGetTenantID(r.Context()), input)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
+	res := h.service.BulkUpdateAssetGroups(r.Context(), middleware.MustGetTenantID(r.Context()), input)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"updated": updated,
+		"updated": res.Succeeded,
+		"failed":  res.Failed,
+		"errors":  res.Errors,
 		"total":   len(req.GroupIDs),
 	})
 }
@@ -761,16 +759,14 @@ func (h *AssetGroupHandler) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deleted, err := h.service.BulkDeleteAssetGroups(r.Context(), middleware.MustGetTenantID(r.Context()), req.GroupIDs)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
+	res := h.service.BulkDeleteAssetGroups(r.Context(), middleware.MustGetTenantID(r.Context()), req.GroupIDs)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"deleted": deleted,
+		"deleted": res.Succeeded,
+		"failed":  res.Failed,
+		"errors":  res.Errors,
 		"total":   len(req.GroupIDs),
 	})
 }

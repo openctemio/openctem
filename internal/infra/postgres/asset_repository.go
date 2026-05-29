@@ -1023,9 +1023,12 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
-	// Crown jewel filter
+	// Crown jewel filter.
+	// Source of truth is properties->>'is_crown_jewel' (written by the
+	// crown-jewel PATCH endpoint); read from there so filtering reflects what
+	// was set. The dedicated is_crown_jewel column is not written by Update.
 	if filter.IsCrownJewel != nil {
-		conditions = append(conditions, fmt.Sprintf("a.is_crown_jewel = $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE) = $%d", argIndex))
 		args = append(args, *filter.IsCrownJewel)
 		argIndex++
 	}
@@ -1783,7 +1786,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			a.exposure,
 			a.criticality,
 			a.risk_score,
-			COALESCE(a.is_crown_jewel, FALSE),
+			COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE),
 			COALESCE(fc.finding_count, 0)
 		FROM assets a
 		LEFT JOIN (

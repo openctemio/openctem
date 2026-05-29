@@ -54,6 +54,11 @@ func (r *AssetRelationshipRepository) Create(ctx context.Context, rel *asset.Rel
 		if isUniqueViolation(err) {
 			return asset.RelationshipAlreadyExistsError()
 		}
+		// A CHECK violation (e.g. relationship_type outside chk_asset_rel_type)
+		// is bad input, not a server fault — surface it as a 400.
+		if isCheckViolation(err) {
+			return fmt.Errorf("%w: invalid relationship type or value", shared.ErrValidation)
+		}
 		return fmt.Errorf("failed to create relationship: %w", err)
 	}
 

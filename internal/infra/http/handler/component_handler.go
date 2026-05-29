@@ -653,7 +653,9 @@ func toAssetComponentResponse(d *component.AssetDependency) ComponentResponse {
 // ListVulnerabilities handles GET /api/v1/components/{id}/vulnerabilities
 // @Summary      List CVEs that affect a component
 // @Description  Returns CVEs affecting a global component within the current tenant.
-//               One row per CVE with affected_assets_count rolled up.
+//
+//	One row per CVE with affected_assets_count rolled up.
+//
 // @Tags         Components
 // @Produce      json
 // @Security     BearerAuth
@@ -766,6 +768,7 @@ func (h *ComponentHandler) ListAssets(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object}  map[string]string
 // @Router       /assets/{id}/components [get]
 func (h *ComponentHandler) ListByAsset(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
 	assetID := r.PathValue("id")
 	if assetID == "" {
 		apierror.BadRequest("Asset ID is required").WriteJSON(w)
@@ -776,7 +779,7 @@ func (h *ComponentHandler) ListByAsset(w http.ResponseWriter, r *http.Request) {
 	page := parseQueryInt(query.Get("page"), 1)
 	perPage := parseQueryInt(query.Get("per_page"), 20)
 
-	result, err := h.service.ListAssetComponents(r.Context(), assetID, page, perPage)
+	result, err := h.service.ListAssetComponents(r.Context(), tenantID, assetID, page, perPage)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

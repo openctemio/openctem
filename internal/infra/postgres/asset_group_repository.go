@@ -530,6 +530,11 @@ func (r *AssetGroupRepository) AddAssets(ctx context.Context, groupID shared.ID,
 		)
 
 		if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+			// A FK violation means one of the asset IDs does not exist — that's
+			// bad input (400), not a server fault.
+			if isForeignKeyViolation(err) {
+				return fmt.Errorf("%w: one or more assets do not exist", shared.ErrValidation)
+			}
 			return fmt.Errorf("add assets to group: %w", err)
 		}
 	}

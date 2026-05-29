@@ -12,16 +12,34 @@ import (
 
 // ComponentService handles component-related business operations.
 type ComponentService struct {
-	repo   componentdom.Repository
-	logger *logger.Logger
+	repo         componentdom.Repository
+	assetChecker assetTenantChecker
+	logger       *logger.Logger
 }
 
 // NewComponentService creates a new ComponentService.
-func NewComponentService(repo componentdom.Repository, log *logger.Logger) *ComponentService {
+// assetChecker verifies that a supplied asset_id belongs to the caller's tenant
+// before components are linked to / listed for it (prevents cross-tenant access
+// via a guessed asset UUID). It may be nil in tests that don't exercise those
+// paths.
+func NewComponentService(repo componentdom.Repository, assetChecker assetTenantChecker, log *logger.Logger) *ComponentService {
 	return &ComponentService{
-		repo:   repo,
-		logger: log.With("service", "component"),
+		repo:         repo,
+		assetChecker: assetChecker,
+		logger:       log.With("service", "component"),
 	}
+}
+
+// verifyAssetTenant ensures the asset belongs to the tenant before any
+// component operation keyed on asset_id. Returns ErrNotFound (→404) otherwise.
+func (s *ComponentService) verifyAssetTenant(ctx context.Context, tenantID, assetID shared.ID) error {
+	if s.assetChecker == nil {
+		return nil
+	}
+	if _, err := s.assetChecker.GetByID(ctx, tenantID, assetID); err != nil {
+		return err
+	}
+	return nil
 }
 
 // CreateComponentInput represents the input for creating a component.
@@ -51,6 +69,12 @@ func (s *ComponentService) CreateComponent(ctx context.Context, input CreateComp
 	assetID, err := shared.IDFromString(input.AssetID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+	}
+
+	// Verify the target asset belongs to this tenant before linking a component
+	// to it (avoids a raw FK-violation 500 and blocks cross-tenant injection).
+	if err := s.verifyAssetTenant(ctx, tenantID, assetID); err != nil {
+		return nil, err
 	}
 
 	ecosystem, err := componentdom.ParseEcosystem(input.Ecosystem)
@@ -303,10 +327,21 @@ func (s *ComponentService) ListComponents(ctx context.Context, input ListCompone
 }
 
 // ListAssetComponents retrieves components for a specific asset (Dependencies).
-func (s *ComponentService) ListAssetComponents(ctx context.Context, assetID string, page, perPage int) (pagination.Result[*componentdom.AssetDependency], error) {
+func (s *ComponentService) ListAssetComponents(ctx context.Context, tenantID, assetID string, page, perPage int) (pagination.Result[*componentdom.AssetDependency], error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return pagination.Result[*componentdom.AssetDependency]{}, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
 	parsedAssetID, err := shared.IDFromString(assetID)
 	if err != nil {
 		return pagination.Result[*componentdom.AssetDependency]{}, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+	}
+
+	// ListDependencies is keyed only by asset_id (no tenant column on the
+	// join in that query), so verify asset→tenant ownership here to prevent
+	// reading another tenant's components by UUID.
+	if err := s.verifyAssetTenant(ctx, tid, parsedAssetID); err != nil {
+		return pagination.Result[*componentdom.AssetDependency]{}, err
 	}
 
 	p := pagination.New(page, perPage)

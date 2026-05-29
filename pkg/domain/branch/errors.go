@@ -1,13 +1,17 @@
 package branch
 
 import (
-	"errors"
 	"fmt"
+
+	"github.com/openctemio/api/pkg/domain/shared"
 )
 
+// Wrap the shared sentinels so handlers that switch on errors.Is(err,
+// shared.ErrNotFound) / shared.ErrConflict map these to 404 / 409 instead of
+// falling through to a 500.
 var (
-	ErrNotFound      = errors.New("branch not found")
-	ErrAlreadyExists = errors.New("branch already exists")
+	ErrNotFound      = fmt.Errorf("%w: branch not found", shared.ErrNotFound)
+	ErrAlreadyExists = fmt.Errorf("%w: branch already exists", shared.ErrAlreadyExists)
 )
 
 // NotFoundError returns a formatted not found error.

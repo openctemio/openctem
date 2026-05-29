@@ -7,10 +7,19 @@ import (
 	"io"
 	"strings"
 
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	componentdom "github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// assetTenantChecker verifies that an asset belongs to a tenant. SBOM import
+// links components to a caller-supplied asset_id, so without this check a user
+// could attach components to another tenant's asset (IDOR). The tenant-scoped
+// GetByID returns ErrNotFound when the asset is not in the tenant.
+type assetTenantChecker interface {
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*assetdom.Asset, error)
+}
 
 // SPDX specifies "NOASSERTION" as the string used when a licence
 // cannot be determined. Treat it like an empty value.
@@ -27,15 +36,17 @@ const (
 
 // SBOMImportService handles importing SBOM files (CycloneDX, SPDX).
 type SBOMImportService struct {
-	repo   componentdom.Repository
-	logger *logger.Logger
+	repo         componentdom.Repository
+	assetChecker assetTenantChecker
+	logger       *logger.Logger
 }
 
 // NewSBOMImportService creates a new SBOMImportService.
-func NewSBOMImportService(repo componentdom.Repository, log *logger.Logger) *SBOMImportService {
+func NewSBOMImportService(repo componentdom.Repository, assetChecker assetTenantChecker, log *logger.Logger) *SBOMImportService {
 	return &SBOMImportService{
-		repo:   repo,
-		logger: log.With("service", "sbom-import"),
+		repo:         repo,
+		assetChecker: assetChecker,
+		logger:       log.With("service", "sbom-import"),
 	}
 }
 
@@ -59,6 +70,15 @@ func (s *SBOMImportService) ImportSBOM(ctx context.Context, tenantID, assetID st
 	aid, err := shared.IDFromString(assetID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid asset ID", shared.ErrValidation)
+	}
+
+	// Verify the target asset belongs to this tenant before linking any
+	// components to it (prevents cross-tenant component injection via a
+	// guessed/known asset UUID). Returns ErrNotFound → 404 otherwise.
+	if s.assetChecker != nil {
+		if _, err := s.assetChecker.GetByID(ctx, tid, aid); err != nil {
+			return nil, err
+		}
 	}
 
 	// Read body (max 50MB)

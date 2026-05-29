@@ -1,6 +1,9 @@
 package routes
 
 import (
+	"time"
+
+	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/permission"
@@ -101,6 +104,15 @@ func registerComponentRoutes(
 	// Build middleware chain with tenant validation from JWT
 	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
+	// SBOM import accepts a 50MB body and parses an arbitrary dependency tree —
+	// rate-limit it like the other bulk-import endpoints.
+	sbomRL := middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled:         true,
+		RequestsPerSec:  10.0 / 60.0, // 10 requests per minute
+		Burst:           3,
+		CleanupInterval: 5 * time.Minute,
+	}, nil)
+
 	// Component routes - tenant from JWT token
 	router.Group("/api/v1/components", func(r Router) {
 		// Stats endpoints (must be before /{id} to avoid matching)
@@ -109,7 +121,7 @@ func registerComponentRoutes(
 		r.GET("/vulnerable", h.GetVulnerableComponents, middleware.Require(permission.ComponentsRead))
 		r.GET("/licenses", h.GetLicenseStats, middleware.Require(permission.ComponentsRead))
 		r.GET("/export", h.ExportComponents, middleware.Require(permission.ComponentsRead))
-		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite))
+		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite), sbomRL.Middleware())
 
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.ComponentsRead))
@@ -498,9 +510,19 @@ func registerAssetImportRoutes(
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
+	// Bulk import accepts large bodies (50–100MB) and creates up to 100k assets
+	// per call, so rate-limit it (per the security checklist): ~10 imports/min
+	// per client, small burst.
+	importRL := middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled:         true,
+		RequestsPerSec:  10.0 / 60.0, // 10 requests per minute
+		Burst:           3,
+		CleanupInterval: 5 * time.Minute,
+	}, nil)
+
 	router.Group("/api/v1/assets/import", func(r Router) {
-		r.POST("/csv", h.ImportCSV, middleware.Require(permission.AssetsWrite))
-		r.POST("/nessus", h.ImportNessus, middleware.Require(permission.AssetsWrite))
-		r.POST("/kubernetes", h.ImportKubernetes, middleware.Require(permission.AssetsWrite))
+		r.POST("/csv", h.ImportCSV, middleware.Require(permission.AssetsWrite), importRL.Middleware())
+		r.POST("/nessus", h.ImportNessus, middleware.Require(permission.AssetsWrite), importRL.Middleware())
+		r.POST("/kubernetes", h.ImportKubernetes, middleware.Require(permission.AssetsWrite), importRL.Middleware())
 	}, tenantMiddlewares...)
 }

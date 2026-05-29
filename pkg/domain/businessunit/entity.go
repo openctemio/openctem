@@ -55,19 +55,19 @@ func ReconstituteBusinessUnit(
 }
 
 // Getters
-func (b *BusinessUnit) ID() shared.ID               { return b.id }
-func (b *BusinessUnit) TenantID() shared.ID          { return b.tenantID }
-func (b *BusinessUnit) Name() string                 { return b.name }
-func (b *BusinessUnit) Description() string           { return b.description }
-func (b *BusinessUnit) OwnerName() string             { return b.ownerName }
-func (b *BusinessUnit) OwnerEmail() string            { return b.ownerEmail }
-func (b *BusinessUnit) AssetCount() int               { return b.assetCount }
-func (b *BusinessUnit) FindingCount() int             { return b.findingCount }
-func (b *BusinessUnit) AvgRiskScore() float64         { return b.avgRiskScore }
-func (b *BusinessUnit) CriticalFindingCount() int     { return b.criticalFindingCount }
-func (b *BusinessUnit) Tags() []string                { return b.tags }
-func (b *BusinessUnit) CreatedAt() time.Time          { return b.createdAt }
-func (b *BusinessUnit) UpdatedAt() time.Time          { return b.updatedAt }
+func (b *BusinessUnit) ID() shared.ID             { return b.id }
+func (b *BusinessUnit) TenantID() shared.ID       { return b.tenantID }
+func (b *BusinessUnit) Name() string              { return b.name }
+func (b *BusinessUnit) Description() string       { return b.description }
+func (b *BusinessUnit) OwnerName() string         { return b.ownerName }
+func (b *BusinessUnit) OwnerEmail() string        { return b.ownerEmail }
+func (b *BusinessUnit) AssetCount() int           { return b.assetCount }
+func (b *BusinessUnit) FindingCount() int         { return b.findingCount }
+func (b *BusinessUnit) AvgRiskScore() float64     { return b.avgRiskScore }
+func (b *BusinessUnit) CriticalFindingCount() int { return b.criticalFindingCount }
+func (b *BusinessUnit) Tags() []string            { return b.tags }
+func (b *BusinessUnit) CreatedAt() time.Time      { return b.createdAt }
+func (b *BusinessUnit) UpdatedAt() time.Time      { return b.updatedAt }
 
 // Update sets mutable fields.
 func (b *BusinessUnit) Update(name, description, ownerName, ownerEmail string) {
@@ -115,4 +115,7 @@ type Repository interface {
 	AddAsset(ctx context.Context, tenantID, buID, assetID shared.ID) error
 	RemoveAsset(ctx context.Context, tenantID, buID, assetID shared.ID) error
 	ListAssetIDs(ctx context.Context, tenantID, buID shared.ID) ([]shared.ID, error)
+	// RecalculateCounts refreshes the cached asset/finding rollup counters
+	// for a business unit from its current membership.
+	RecalculateCounts(ctx context.Context, tenantID, buID shared.ID) error
 }

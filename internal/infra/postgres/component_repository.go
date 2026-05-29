@@ -418,10 +418,10 @@ func (r *ComponentRepository) ListDependencies(ctx context.Context, assetID shar
 	var deps []*component.AssetDependency
 	for rows.Next() {
 		var (
-			adID, adTenant, adAsset, adCompID, adPath, adType string
-			adManifest, adParentID                            sql.NullString
-			adDepth                                           int
-			adCreated, adUpdated                              time.Time
+			adID, adTenant, adAsset, adCompID      string
+			adPath, adType, adManifest, adParentID sql.NullString // path & dependency_type are nullable
+			adDepth                                int
+			adCreated, adUpdated                   time.Time
 
 			cID, cName, cVer, cEco, cPurl string
 			cDesc, cHome                  sql.NullString
@@ -458,7 +458,7 @@ func (r *ComponentRepository) ListDependencies(ctx context.Context, assetID shar
 		tIDObj, _ := shared.IDFromString(adTenant)
 		aIDObj, _ := shared.IDFromString(adAsset)
 		compIDObj, _ := shared.IDFromString(adCompID)
-		depType, _ := component.ParseDependencyType(adType)
+		depType, _ := component.ParseDependencyType(adType.String)
 
 		var parentID *shared.ID
 		if adParentID.Valid {
@@ -468,7 +468,7 @@ func (r *ComponentRepository) ListDependencies(ctx context.Context, assetID shar
 
 		dep := component.ReconstituteAssetDependency(
 			adIDObj, tIDObj, aIDObj, compIDObj,
-			adPath, depType, nullStringValue(adManifest),
+			adPath.String, depType, nullStringValue(adManifest),
 			parentID, adDepth, adCreated, adUpdated,
 		)
 		dep.SetComponent(comp)
@@ -538,10 +538,10 @@ func (r *ComponentRepository) scanComponentFromRows(rows *sql.Rows) (*component.
 // Helper to scan dependency with joined component
 func (r *ComponentRepository) scanDependency(row *sql.Row) (*component.AssetDependency, error) {
 	var (
-		adID, adTenant, adAsset, adCompID, adPath, adType string
-		adManifest, adParentID                            sql.NullString
-		adDepth                                           int
-		adCreated, adUpdated                              time.Time
+		adID, adTenant, adAsset, adCompID      string
+		adPath, adType, adManifest, adParentID sql.NullString // path & dependency_type are nullable
+		adDepth                                int
+		adCreated, adUpdated                   time.Time
 
 		cID, cName, cVer, cEco, cPurl string
 		cDesc, cHome                  sql.NullString
@@ -583,7 +583,7 @@ func (r *ComponentRepository) scanDependency(row *sql.Row) (*component.AssetDepe
 	tIDObj, _ := shared.IDFromString(adTenant)
 	aIDObj, _ := shared.IDFromString(adAsset)
 	compIDObj, _ := shared.IDFromString(adCompID)
-	depType, _ := component.ParseDependencyType(adType)
+	depType, _ := component.ParseDependencyType(adType.String)
 
 	var parentID *shared.ID
 	if adParentID.Valid {
@@ -593,7 +593,7 @@ func (r *ComponentRepository) scanDependency(row *sql.Row) (*component.AssetDepe
 
 	dep := component.ReconstituteAssetDependency(
 		adIDObj, tIDObj, aIDObj, compIDObj,
-		adPath, depType, nullStringValue(adManifest),
+		adPath.String, depType, nullStringValue(adManifest),
 		parentID, adDepth, adCreated, adUpdated,
 	)
 

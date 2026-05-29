@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/api/internal/app"
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -223,8 +224,62 @@ func (m *mockComponentRepo) ListVulnerabilities(_ context.Context, _, _ shared.I
 // Helper functions
 // =============================================================================
 
+// stubAssetChecker implements the asset-ownership check used by ComponentService.
+type stubAssetChecker struct {
+	err   error
+	calls int
+}
+
+func (s *stubAssetChecker) GetByID(_ context.Context, _, _ shared.ID) (*assetdom.Asset, error) {
+	s.calls++
+	return nil, s.err
+}
+
+// TestComponentServiceAssetOwnership verifies cross-tenant protection: component
+// create/list keyed on asset_id must reject an asset that is not in the tenant
+// (the dependency queries are not tenant-scoped, so the service must guard).
+func TestComponentServiceAssetOwnership(t *testing.T) {
+	t.Run("CreateComponent rejects foreign asset", func(t *testing.T) {
+		repo := newMockComponentRepo()
+		svc := app.NewComponentService(repo, &stubAssetChecker{err: shared.ErrNotFound}, logger.NewNop())
+		_, err := svc.CreateComponent(context.Background(), validCreateComponentInput())
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
+		}
+		if repo.upsertCalls != 0 || repo.linkAssetCalls != 0 {
+			t.Errorf("repo must not be touched for foreign asset: upsert=%d link=%d", repo.upsertCalls, repo.linkAssetCalls)
+		}
+	})
+
+	t.Run("ListAssetComponents rejects foreign asset", func(t *testing.T) {
+		repo := newMockComponentRepo()
+		svc := app.NewComponentService(repo, &stubAssetChecker{err: shared.ErrNotFound}, logger.NewNop())
+		_, err := svc.ListAssetComponents(context.Background(), shared.NewID().String(), shared.NewID().String(), 1, 20)
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
+		}
+		if repo.listDependCalls != 0 {
+			t.Errorf("ListDependencies must not run for foreign asset, got %d", repo.listDependCalls)
+		}
+	})
+
+	t.Run("owner asset allowed", func(t *testing.T) {
+		repo := newMockComponentRepo()
+		svc := app.NewComponentService(repo, &stubAssetChecker{err: nil}, logger.NewNop())
+		if _, err := svc.CreateComponent(context.Background(), validCreateComponentInput()); err != nil {
+			t.Fatalf("expected success for owned asset, got %v", err)
+		}
+		if repo.linkAssetCalls != 1 {
+			t.Errorf("expected LinkAsset called once, got %d", repo.linkAssetCalls)
+		}
+	})
+}
+
 func newComponentService(repo *mockComponentRepo) *app.ComponentService {
-	return app.NewComponentService(repo, logger.NewNop())
+	// nil assetChecker → ownership verification is skipped (guarded), keeping
+	// the existing component tests focused on component logic. Cross-tenant
+	// ownership is covered by TestComponentServiceAssetOwnership.
+	return app.NewComponentService(repo, nil, logger.NewNop())
 }
 
 func validCreateComponentInput() app.CreateComponentInput {
@@ -866,7 +921,7 @@ func TestListAssetComponents_Success(t *testing.T) {
 		TotalPages: 1,
 	}
 
-	result, err := svc.ListAssetComponents(context.Background(), assetID.String(), 1, 20)
+	result, err := svc.ListAssetComponents(context.Background(), tenantID.String(), assetID.String(), 1, 20)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -882,7 +937,7 @@ func TestListAssetComponents_InvalidAssetID(t *testing.T) {
 	repo := newMockComponentRepo()
 	svc := newComponentService(repo)
 
-	_, err := svc.ListAssetComponents(context.Background(), "bad-id", 1, 20)
+	_, err := svc.ListAssetComponents(context.Background(), shared.NewID().String(), "bad-id", 1, 20)
 	if err == nil {
 		t.Fatal("expected error for invalid asset ID")
 	}
@@ -896,7 +951,7 @@ func TestListAssetComponents_RepoError(t *testing.T) {
 	repo.listDependenciesErr = errors.New("db error")
 	svc := newComponentService(repo)
 
-	_, err := svc.ListAssetComponents(context.Background(), shared.NewID().String(), 1, 20)
+	_, err := svc.ListAssetComponents(context.Background(), shared.NewID().String(), shared.NewID().String(), 1, 20)
 	if err == nil {
 		t.Fatal("expected error from repo failure")
 	}

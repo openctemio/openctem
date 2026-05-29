@@ -102,6 +102,28 @@ func isUniqueViolation(err error) bool {
 	return false
 }
 
+// isCheckViolation checks if the error is a PostgreSQL CHECK constraint violation
+// (SQLSTATE 23514). Callers should map this to a 400 rather than a 500 — it means
+// the supplied value (e.g. an enum) is outside the column's allowed set.
+func isCheckViolation(err error) bool {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return pqErr.Code == "23514"
+	}
+	return false
+}
+
+// isForeignKeyViolation checks if the error is a PostgreSQL foreign-key violation
+// (SQLSTATE 23503) — e.g. referencing an asset/row that does not exist. Callers
+// should map this to a 400/404 rather than a 500.
+func isForeignKeyViolation(err error) bool {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return pqErr.Code == "23503"
+	}
+	return false
+}
+
 // parseIP parses an IP address string into net.IP.
 func parseIP(s string) net.IP {
 	return net.ParseIP(s)

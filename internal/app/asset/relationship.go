@@ -458,6 +458,12 @@ func (s *AssetRelationshipService) ListAssetRelationships(
 		return nil, 0, shared.ErrNotFound
 	}
 
+	// Verify the asset belongs to the tenant so a foreign/unknown asset returns
+	// 404 (consistent with other asset sub-resources) instead of an empty 200.
+	if _, err := s.assetRepo.GetByID(ctx, parsedTenantID, parsedAssetID); err != nil {
+		return nil, 0, err
+	}
+
 	return s.relRepo.ListByAsset(ctx, parsedTenantID, parsedAssetID, filter)
 }
 
