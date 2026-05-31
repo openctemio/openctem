@@ -245,6 +245,92 @@ func TestGenerateFindingFingerprint_CompositeFormat(t *testing.T) {
 	assert.True(t, isValidFingerprint(result), "result should be a valid hex fingerprint")
 }
 
+// Type-aware dedup: once Vulnerability.Package is populated the input is
+// detected as SCA, which keys on package+version+CVE and IGNORES incidental
+// location noise. Two scans of the same vulnerable dependency at different
+// reported lines must therefore collapse to one finding.
+func TestGenerateFindingFingerprint_SCAStableAcrossLocationNoise(t *testing.T) {
+	assetID := shared.NewID()
+
+	mk := func(startLine int) *ctis.Finding {
+		return &ctis.Finding{
+			RuleID: "sca-check",
+			Title:  "Vulnerable Dependency",
+			Location: &ctis.FindingLocation{
+				Path:      "package-lock.json",
+				StartLine: startLine,
+			},
+			Vulnerability: &ctis.VulnerabilityDetails{
+				Package:         "lodash",
+				AffectedVersion: "4.17.20",
+				CVEID:           "CVE-2021-23337",
+			},
+		}
+	}
+
+	fpA := generateFindingFingerprint(assetID, mk(12), nil)
+	fpB := generateFindingFingerprint(assetID, mk(987), nil)
+
+	assert.Equal(t, fpA, fpB,
+		"SCA fingerprint must be stable across location changes for the same package+version+CVE")
+}
+
+// Distinct packages (or versions) must produce distinct SCA fingerprints so
+// that genuinely different dependency vulns are never false-merged.
+func TestGenerateFindingFingerprint_SCADistinctPackages(t *testing.T) {
+	assetID := shared.NewID()
+
+	base := func(pkg, ver string) *ctis.Finding {
+		return &ctis.Finding{
+			RuleID: "sca-check",
+			Title:  "Vulnerable Dependency",
+			Vulnerability: &ctis.VulnerabilityDetails{
+				Package:         pkg,
+				AffectedVersion: ver,
+				CVEID:           "CVE-2021-23337",
+			},
+		}
+	}
+
+	fpLodash := generateFindingFingerprint(assetID, base("lodash", "4.17.20"), nil)
+	fpAxios := generateFindingFingerprint(assetID, base("axios", "0.21.0"), nil)
+	fpLodashV2 := generateFindingFingerprint(assetID, base("lodash", "4.17.21"), nil)
+
+	assert.NotEqual(t, fpLodash, fpAxios, "different packages must not share a fingerprint")
+	assert.NotEqual(t, fpLodash, fpLodashV2, "different versions must not share a fingerprint")
+}
+
+// Secret findings are keyed by location + secret hash (upstream design: the
+// same masked value at the same spot dedups, but two distinct secrets sharing
+// a line must stay separate). The masked value feeds the hash, so distinct
+// secrets at the same location must NOT collapse.
+func TestGenerateFindingFingerprint_SecretByMaskedValue(t *testing.T) {
+	assetID := shared.NewID()
+
+	mk := func(masked string, line int) *ctis.Finding {
+		return &ctis.Finding{
+			RuleID: "secret-aws-key",
+			Title:  "AWS key detected",
+			Location: &ctis.FindingLocation{
+				Path:      "config.env",
+				StartLine: line,
+			},
+			Secret: &ctis.SecretDetails{
+				SecretType:  "aws_access_key",
+				MaskedValue: masked,
+			},
+		}
+	}
+
+	same1 := generateFindingFingerprint(assetID, mk("AKIA****WXYZ", 3), nil)
+	same2 := generateFindingFingerprint(assetID, mk("AKIA****WXYZ", 3), nil)
+	otherSecret := generateFindingFingerprint(assetID, mk("AKIA****ABCD", 3), nil)
+
+	assert.Equal(t, same1, same2, "same masked secret at same location must dedup")
+	assert.NotEqual(t, same1, otherSecret,
+		"two distinct secrets on the same line must not be merged")
+}
+
 func TestGenerateFindingFingerprint_ShortProvidedFingerprintFallsBackToSDK(t *testing.T) {
 	assetID := shared.NewID()
 

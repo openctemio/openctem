@@ -187,6 +187,14 @@ func run() int {
 	// the constructor above replaces services.Tenant, dropping the
 	// SetSessionService call from initServices().
 	services.Tenant.SetSessionService(services.Session)
+	// Re-wire the membership cache too. Without this, SuspendMember /
+	// ReactivateMember / UpdateMemberRole / RemoveMember silently skip cache
+	// invalidation (membershipCache == nil), so a revoked member keeps tenant
+	// access until the cache TTL expires — breaking the documented 0-second
+	// revocation guarantee.
+	if services.MembershipCache != nil {
+		services.Tenant.SetMembershipCache(services.MembershipCache)
+	}
 
 	// Wire AI triage job enqueuer if service is enabled
 	if services.AITriage != nil {

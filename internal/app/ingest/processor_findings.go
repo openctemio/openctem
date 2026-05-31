@@ -530,14 +530,41 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 			input.FilePath = ctisFinding.Location.Path
 			input.StartLine = ctisFinding.Location.StartLine
 			input.EndLine = ctisFinding.Location.EndLine
+			input.StartColumn = ctisFinding.Location.StartColumn
+			input.EndColumn = ctisFinding.Location.EndColumn
 		}
 
-		// Add CVE for SCA findings
-		if ctisFinding.Vulnerability != nil && ctisFinding.Vulnerability.CVEID != "" {
-			input.VulnerabilityID = ctisFinding.Vulnerability.CVEID
+		// Populate type-specific fields so fingerprint.Generate selects the
+		// correct type-aware algorithm (see fingerprint.DetectType). Without
+		// these, every finding fell back to the generic algorithm, which both
+		// false-merged distinct SCA/secret findings and churned fingerprints
+		// across scans when incidental fields (line numbers, messages) shifted.
+		if v := ctisFinding.Vulnerability; v != nil {
+			input.PackageName = v.Package
+			input.PackageVersion = v.AffectedVersion
+			if v.CVEID != "" {
+				input.VulnerabilityID = v.CVEID
+			}
+		}
+		if s := ctisFinding.Secret; s != nil {
+			// MaskedValue is stable per-secret and carries no plaintext.
+			input.SecretValue = s.MaskedValue
+		}
+		if m := ctisFinding.Misconfiguration; m != nil {
+			input.ResourceType = m.ResourceType
+			input.ResourceName = m.ResourceName
+		}
+		if w := ctisFinding.Web3; w != nil {
+			input.ContractAddress = w.ContractAddress
+			input.ChainID = int(w.ChainID)
+			input.SWCID = w.SWCID
+			input.FunctionSignature = w.FunctionSignature
 		}
 
-		baseFingerprint = fingerprint.Generate(input)
+		// GenerateAuto detects the type from the populated fields above and
+		// applies the matching type-aware algorithm (plain Generate would key
+		// everything by the generic location-based scheme).
+		baseFingerprint = fingerprint.GenerateAuto(input)
 	}
 
 	// Create composite fingerprint including assetID

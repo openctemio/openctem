@@ -64,9 +64,79 @@ func (e Ecosystem) String() string {
 	return string(e)
 }
 
-// ParseEcosystem parses a string into an Ecosystem.
+// ecosystemAliases maps the many ecosystem labels emitted by scanners and PURL
+// types onto our canonical Ecosystem values. Without this, common inputs such
+// as "pip" (pip-audit, osv-scanner) or "golang" (Trivy) fell through to
+// EcosystemOther, which silently broke ecosystem-keyed component dedup and
+// vulnerability matching.
+var ecosystemAliases = map[string]Ecosystem{
+	// Python
+	"pip":         EcosystemPyPI,
+	"pypi":        EcosystemPyPI,
+	"python":      EcosystemPyPI,
+	"poetry":      EcosystemPyPI,
+	"pipenv":      EcosystemPyPI,
+	"pip-audit":   EcosystemPyPI,
+	"python-pkg":  EcosystemPyPI,
+	"pip_package": EcosystemPyPI,
+	// JavaScript / Node
+	"node":     EcosystemNPM,
+	"nodejs":   EcosystemNPM,
+	"node.js":  EcosystemNPM,
+	"yarn":     EcosystemNPM,
+	"pnpm":     EcosystemNPM,
+	"npmjs":    EcosystemNPM,
+	"node-pkg": EcosystemNPM,
+	// Go
+	"golang":   EcosystemGo,
+	"gomod":    EcosystemGo,
+	"go-mod":   EcosystemGo,
+	"gobinary": EcosystemGo,
+	// Rust
+	"rust":      EcosystemCargo,
+	"crates":    EcosystemCargo,
+	"crates.io": EcosystemCargo,
+	// Java
+	"java":   EcosystemMaven,
+	"gradle": EcosystemMaven,
+	// .NET
+	"dotnet":    EcosystemNuGet,
+	".net":      EcosystemNuGet,
+	"nuget.org": EcosystemNuGet,
+	// Ruby
+	"ruby":      EcosystemRubyGems,
+	"gem":       EcosystemRubyGems,
+	"gems":      EcosystemRubyGems,
+	"bundler":   EcosystemRubyGems,
+	"ruby-gems": EcosystemRubyGems,
+	// PHP
+	"php":       EcosystemComposer,
+	"packagist": EcosystemComposer,
+	// Elixir / Erlang
+	"elixir": EcosystemHex,
+	"erlang": EcosystemHex,
+	"mix":    EcosystemHex,
+	// Apple
+	"swift":    EcosystemSwiftPM,
+	"swift-pm": EcosystemSwiftPM,
+	"spm":      EcosystemSwiftPM,
+	"cocoapod": EcosystemCocoaPods,
+	"pods":     EcosystemCocoaPods,
+	// Dart / Flutter
+	"dart":    EcosystemPub,
+	"flutter": EcosystemPub,
+	// R
+	"r": EcosystemCran,
+}
+
+// ParseEcosystem parses a string into an Ecosystem, normalizing the many
+// scanner- and PURL-specific labels onto our canonical set.
 func ParseEcosystem(s string) (Ecosystem, error) {
-	e := Ecosystem(strings.ToLower(strings.TrimSpace(s)))
+	normalized := strings.ToLower(strings.TrimSpace(s))
+	if alias, ok := ecosystemAliases[normalized]; ok {
+		return alias, nil
+	}
+	e := Ecosystem(normalized)
 	if !e.IsValid() {
 		return EcosystemOther, nil // Default to other for unknown ecosystems
 	}
