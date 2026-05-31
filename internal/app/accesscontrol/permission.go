@@ -238,10 +238,16 @@ func (s *PermissionService) GetPermissionSet(ctx context.Context, permissionSetI
 }
 
 // GetPermissionSetWithItems retrieves a permission set with its items.
-func (s *PermissionService) GetPermissionSetWithItems(ctx context.Context, permissionSetID string) (*permissionsetdom.PermissionSetWithItems, error) {
+func (s *PermissionService) GetPermissionSetWithItems(ctx context.Context, permissionSetID, callerTenantID string) (*permissionsetdom.PermissionSetWithItems, error) {
 	id, err := shared.IDFromString(permissionSetID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
+	}
+
+	// Tenant scoping: a tenant user may only read their own (or a global
+	// system) permission set, not another tenant's by guessing the ID.
+	if _, err := s.permissionSetForTenant(ctx, id, callerTenantID); err != nil {
+		return nil, err
 	}
 
 	return s.permissionSetRepo.GetWithItems(ctx, id)

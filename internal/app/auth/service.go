@@ -22,6 +22,11 @@ import (
 )
 
 // AuthService errors.
+// dummyLoginPasswordHash is a valid bcrypt (cost 12) hash used only to spend
+// constant time on the user-not-found login path, so account existence cannot
+// be inferred from response latency.
+const dummyLoginPasswordHash = "$2a$12$odsIwJ3GzB7hgHr/gUWeiOYuDSW0mzDtq.CWaifNmuy7t9vmuKaoW"
+
 var (
 	ErrInvalidCredentials       = errors.New("invalid email or password")
 	ErrAccountLocked            = errors.New("account is locked due to too many failed attempts")
@@ -438,6 +443,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	u, err := s.userRepo.GetByEmailForAuth(ctx, email)
 	if err != nil {
 		if shared.IsNotFound(err) {
+			// Constant-time defense: run a dummy bcrypt verify so the
+			// user-not-found path costs the same as a real (wrong-password)
+			// login, preventing account enumeration via response timing.
+			_ = s.passwordHasher.Verify(input.Password, dummyLoginPasswordHash)
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
