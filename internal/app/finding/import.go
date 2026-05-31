@@ -24,6 +24,12 @@ func NewFindingImportService(repo vulnerability.FindingRepository, log *logger.L
 	return &FindingImportService{findingRepo: repo, logger: log}
 }
 
+// MaxImportFindings caps how many findings a single import may create. The
+// 50MB upload limit alone allows a file with a very large number of tiny
+// issues/rows, each becoming a synchronous DB insert — a connection-pool
+// exhaustion DoS. Reject oversized imports up front.
+const MaxImportFindings = 5000
+
 // ImportResult contains the result of an import operation.
 type ImportResult struct {
 	Total    int      `json:"total"`
@@ -130,6 +136,10 @@ func (s *FindingImportService) ImportBurpXML(ctx context.Context, tenantID, camp
 		return nil, fmt.Errorf("invalid Burp XML format: %w", err)
 	}
 
+	if len(burp.Issues) > MaxImportFindings {
+		return nil, fmt.Errorf("%w: import has %d issues, exceeds limit of %d", shared.ErrValidation, len(burp.Issues), MaxImportFindings)
+	}
+
 	result := &ImportResult{Total: len(burp.Issues)}
 
 	for _, issue := range burp.Issues {
@@ -219,6 +229,9 @@ func (s *FindingImportService) ImportCSV(ctx context.Context, tenantID, campaign
 	lines := strings.Split(string(data), "\n")
 	if len(lines) < 2 {
 		return nil, fmt.Errorf("%w: CSV must have header + at least 1 row", shared.ErrValidation)
+	}
+	if len(lines)-1 > MaxImportFindings {
+		return nil, fmt.Errorf("%w: CSV has %d rows, exceeds limit of %d", shared.ErrValidation, len(lines)-1, MaxImportFindings)
 	}
 
 	// Parse headers

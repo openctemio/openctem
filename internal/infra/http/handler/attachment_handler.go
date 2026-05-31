@@ -19,10 +19,17 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// FindingCampaignAccessChecker verifies that a user has access to a finding's campaign.
-// Returns nil if access is allowed, ErrNotFound/ErrForbidden otherwise.
+// errAttachmentAccessDenied is returned when the caller may not access an
+// attachment that exists in their tenant. Handlers map it to 404 (same as a
+// missing attachment) to avoid leaking existence.
+var errAttachmentAccessDenied = errors.New("attachment access denied")
+
+// FindingCampaignAccessChecker verifies that a user has access to a finding's
+// or campaign's attachments. Returns nil if access is allowed,
+// ErrNotFound/ErrForbidden otherwise.
 type FindingCampaignAccessChecker interface {
 	CheckFindingAccess(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
+	CheckCampaignAccess(ctx context.Context, tenantID, campaignID, userID string, isAdmin bool) error
 }
 
 // AttachmentHandler handles file upload/download/delete HTTP endpoints.
@@ -48,21 +55,58 @@ func (h *AttachmentHandler) SetAccessChecker(checker FindingCampaignAccessChecke
 	h.accessChecker = checker
 }
 
-// verifyContextAccess checks campaign membership for finding/retest-context attachments.
-// For other context types or when no checker is configured, it's a no-op.
+// verifyContextAccess checks the caller may write to (upload/link into) the
+// given context. finding/retest contexts require campaign membership for the
+// finding; campaign contexts require campaign membership. Empty/unknown
+// context (a private orphan attachment owned by the uploader) is allowed.
+// No-op when no checker is configured.
 // Both "finding" and "retest" contexts use finding ID as context_id.
 func (h *AttachmentHandler) verifyContextAccess(r *http.Request, contextType, contextID string) error {
 	if h.accessChecker == nil || contextID == "" {
 		return nil
 	}
-	// Both finding and retest contexts store finding_id as context_id
-	if contextType != "finding" && contextType != "retest" {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	isAdmin := middleware.IsAdmin(r.Context())
+	switch contextType {
+	case "finding", "retest":
+		return h.accessChecker.CheckFindingAccess(r.Context(), tenantID, contextID, userID, isAdmin)
+	case "campaign":
+		return h.accessChecker.CheckCampaignAccess(r.Context(), tenantID, contextID, userID, isAdmin)
+	default:
+		return nil
+	}
+}
+
+// authorizeAttachment decides whether the caller may read or delete an
+// existing attachment. Deny-by-default: finding/retest and campaign contexts
+// require campaign membership; an attachment with no (or unknown) context is
+// private to its uploader. Admins bypass. Cross-tenant is already blocked by
+// the tenant-scoped GetByID in the caller. Previously campaign-context and
+// context-less attachments were reachable by any tenant user with the
+// pentest:findings:read permission (same-tenant IDOR on evidence).
+func (h *AttachmentHandler) authorizeAttachment(r *http.Request, att *attachment.Attachment) error {
+	if h.accessChecker == nil {
+		return nil // checker not wired (tests/dev) — preserve legacy behavior
+	}
+	if middleware.IsAdmin(r.Context()) {
 		return nil
 	}
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
-	isAdmin := middleware.IsAdmin(r.Context())
-	return h.accessChecker.CheckFindingAccess(r.Context(), tenantID, contextID, userID, isAdmin)
+	ct, cid := att.ContextType(), att.ContextID()
+	switch {
+	case cid != "" && (ct == "finding" || ct == "retest"):
+		return h.accessChecker.CheckFindingAccess(r.Context(), tenantID, cid, userID, false)
+	case cid != "" && ct == "campaign":
+		return h.accessChecker.CheckCampaignAccess(r.Context(), tenantID, cid, userID, false)
+	default:
+		// No / unknown context → private to the uploader.
+		if att.UploadedBy().String() == userID {
+			return nil
+		}
+		return errAttachmentAccessDenied
+	}
 }
 
 // Upload handles multipart file upload.
@@ -107,6 +151,13 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	buf := make([]byte, 512)
 	n, _ := file.Read(buf)
 	contentType := http.DetectContentType(buf[:n])
+	// http.DetectContentType returns parameters (e.g. "text/plain; charset=utf-8");
+	// strip them so the comparisons below and the service allowlist match on the
+	// bare media type. Without this, every textual upload (.md/.csv/.txt/.har)
+	// was rejected as unsupported.
+	if mt, _, perr := mime.ParseMediaType(contentType); perr == nil {
+		contentType = mt
+	}
 	// Reset reader — Seek back to start
 	if seeker, ok := file.(io.Seeker); ok {
 		_, _ = seeker.Seek(0, io.SeekStart)
@@ -172,7 +223,7 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
-		if err := h.verifyContextAccess(r, att.ContextType(), att.ContextID()); err != nil {
+		if err := h.authorizeAttachment(r, att); err != nil {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
@@ -220,7 +271,7 @@ func (h *AttachmentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
-		if err := h.verifyContextAccess(r, att.ContextType(), att.ContextID()); err != nil {
+		if err := h.authorizeAttachment(r, att); err != nil {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
@@ -252,7 +303,7 @@ func (h *AttachmentHandler) GetMeta(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
-		if err := h.verifyContextAccess(r, att.ContextType(), att.ContextID()); err != nil {
+		if err := h.authorizeAttachment(r, att); err != nil {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
@@ -351,6 +402,14 @@ func (h *AttachmentHandler) LinkToContext(w http.ResponseWriter, r *http.Request
 	}
 	if len(req.AttachmentIDs) == 0 || req.ContextType == "" || req.ContextID == "" {
 		apierror.BadRequest("attachment_ids, context_type, and context_id are required").WriteJSON(w)
+		return
+	}
+
+	// Verify the caller may write to the destination context before linking,
+	// otherwise a user could attach their own evidence onto a finding/campaign
+	// they have no access to.
+	if err := h.verifyContextAccess(r, req.ContextType, req.ContextID); err != nil {
+		apierror.NotFound("Access denied").WriteJSON(w)
 		return
 	}
 

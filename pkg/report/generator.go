@@ -256,7 +256,7 @@ const reportTemplate = `<!DOCTYPE html>
       <div class="section"><div class="section-title">Steps to Reproduce</div><ol>{{range $f.Steps}}<li>{{.}}</li>{{end}}</ol></div>
       {{end}}
 
-      {{if $f.POC}}
+      {{if and $.IncludePOC $f.POC}}
       <div class="section"><div class="section-title">Proof of Concept</div><pre>{{$f.POC}}</pre></div>
       {{end}}
 

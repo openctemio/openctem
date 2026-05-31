@@ -717,6 +717,21 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 	return nil
 }
 
+// IsPentestCampaignMember reports whether the user belongs to the given
+// pentest campaign in this tenant. Used by the generic findings surface to
+// gate single-finding reads of pentest findings by campaign membership.
+func (r *FindingRepository) IsPentestCampaignMember(ctx context.Context, tenantID, campaignID, userID string) (bool, error) {
+	const q = `SELECT EXISTS (
+		SELECT 1 FROM pentest_campaign_members
+		WHERE tenant_id = $1 AND campaign_id = $2 AND user_id = $3
+	)`
+	var ok bool
+	if err := r.db.QueryRowContext(ctx, q, tenantID, campaignID, userID).Scan(&ok); err != nil {
+		return false, err
+	}
+	return ok, nil
+}
+
 // GetByID retrieves a finding by ID.
 // Security: Requires tenantID to prevent cross-tenant data access (IDOR prevention).
 func (r *FindingRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error) {
@@ -2522,6 +2537,22 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 				SELECT campaign_id FROM pentest_campaign_members
 				WHERE user_id = $%d AND tenant_id = $%d
 			)`, userIdx, tenantIdx))
+	}
+
+	// Pentest membership visibility for the GENERIC findings surface: show
+	// non-pentest findings to everyone, but pentest findings only to members
+	// of their campaign. Closes the same-tenant exposure where any user with
+	// findings:read could read pentest evidence by filtering source=pentest.
+	if filter.PentestMemberOrNonPentestUserID != nil && filter.TenantID != nil {
+		userIdx := argIndex
+		tenantIdx := argIndex + 1
+		args = append(args, filter.PentestMemberOrNonPentestUserID.String(), filter.TenantID.String())
+		argIndex += 2
+		conditions = append(conditions, fmt.Sprintf(
+			`(source != 'pentest' OR pentest_campaign_id IN (
+				SELECT campaign_id FROM pentest_campaign_members
+				WHERE user_id = $%d AND tenant_id = $%d
+			))`, userIdx, tenantIdx))
 	}
 
 	// Layer 2: Data Scope - filter findings by user's group membership on assets
