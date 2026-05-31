@@ -2287,7 +2287,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END), 0) as high,
 			COALESCE(SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END), 0) as medium,
 			COALESCE(SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END), 0) as low,
-			COALESCE(SUM(CASE WHEN severity = 'info' THEN 1 ELSE 0 END), 0) as info,
+			COALESCE(SUM(CASE WHEN severity IN ('info', 'none') THEN 1 ELSE 0 END), 0) as info,
 			COALESCE(SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END), 0) as status_new,
 			COALESCE(SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) as status_confirmed,
 			COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) as status_in_progress,
@@ -2498,6 +2498,16 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	if filter.FilePath != nil && *filter.FilePath != "" {
 		conditions = append(conditions, fmt.Sprintf("file_path ILIKE $%d", argIndex))
 		args = append(args, wrapLikePattern(*filter.FilePath))
+		argIndex++
+	}
+
+	// Full-text search across title, description, and file path. The service
+	// sets this from the ?search= param; previously it was silently ignored.
+	if filter.Search != nil && *filter.Search != "" {
+		conditions = append(conditions, fmt.Sprintf(
+			"(title ILIKE $%d OR description ILIKE $%d OR file_path ILIKE $%d)",
+			argIndex, argIndex, argIndex))
+		args = append(args, wrapLikePattern(*filter.Search))
 		argIndex++
 	}
 
@@ -2803,7 +2813,7 @@ func (r *FindingRepository) CountBySeverityForScan(ctx context.Context, tenantID
 			COALESCE(SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END), 0) AS high,
 			COALESCE(SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END), 0) AS medium,
 			COALESCE(SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END), 0) AS low,
-			COALESCE(SUM(CASE WHEN severity = 'info' THEN 1 ELSE 0 END), 0) AS info,
+			COALESCE(SUM(CASE WHEN severity IN ('info', 'none') THEN 1 ELSE 0 END), 0) AS info,
 			COUNT(*) AS total
 		FROM findings
 		WHERE tenant_id = $1 AND scan_id = $2 AND status NOT IN ('false_positive', 'resolved')

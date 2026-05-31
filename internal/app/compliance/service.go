@@ -241,9 +241,25 @@ func (s *ComplianceService) MapFindingToControl(ctx context.Context, tenantID, f
 		}
 	}
 
+	// Verify the control exists and its framework is accessible to this tenant
+	// (mirrors UpdateAssessment). Without this a caller could map a finding to
+	// an arbitrary control UUID, including one in another tenant's custom
+	// framework — probing existence and creating dangling references.
+	control, err := s.controlRepo.GetByID(ctx, cid)
+	if err != nil {
+		return nil, fmt.Errorf("%w: control not found", shared.ErrValidation)
+	}
+	if _, err := s.frameworkRepo.GetByID(ctx, tid, control.FrameworkID()); err != nil {
+		return nil, fmt.Errorf("%w: control not accessible", shared.ErrValidation)
+	}
+
 	impactType := compliancedom.ImpactDirect
 	if impact != "" {
-		impactType = compliancedom.ImpactType(impact)
+		parsed, perr := compliancedom.ParseImpactType(impact)
+		if perr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, perr)
+		}
+		impactType = parsed
 	}
 
 	mapping := compliancedom.NewFindingControlMapping(tid, fid, cid, impactType)

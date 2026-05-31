@@ -293,10 +293,15 @@ func (c *Campaign) Complete() error {
 	return nil
 }
 
-// Cancel transitions to canceled.
-func (c *Campaign) Cancel() {
+// Cancel transitions to canceled. Terminal states (completed, already
+// canceled) cannot be canceled — mirrors the guards on the other transitions.
+func (c *Campaign) Cancel() error {
+	if c.status == CampaignStatusCompleted || c.status == CampaignStatusCanceled {
+		return fmt.Errorf("%w: cannot cancel from %s", shared.ErrValidation, c.status)
+	}
 	c.status = CampaignStatusCanceled
 	c.updatedAt = time.Now()
+	return nil
 }
 
 // IsOverdue returns true if past due date and not completed.

@@ -10,6 +10,8 @@ import (
 	"net/smtp"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 var (
@@ -197,6 +199,11 @@ func (s *SMTPSender) buildMessage(msg *Message) []byte {
 
 // sendSMTP sends the email via SMTP.
 func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) error {
+	// SSRF guard: Host is tenant-configurable; block internal targets before
+	// dialing (see httpsec.ValidateHost).
+	if err := httpsec.ValidateHost(ctx, s.config.Host); err != nil {
+		return fmt.Errorf("smtp host rejected: %w", err)
+	}
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
 
 	// Create connection with timeout

@@ -15,8 +15,28 @@ import (
 	integrationdom "github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// validateNotificationWebhookURL rejects an SSRF-unsafe webhook URL for
+// providers whose credential IS a URL (Slack/Teams/custom webhook). Defense in
+// depth: the notifier clients also dial via httpsec.SafeHTTPClient, but
+// validating at create/update gives early feedback and blocks storing an
+// internal-targeting URL. No-op for empty credentials or non-URL providers
+// (Telegram bot token, Email SMTP config).
+func validateNotificationWebhookURL(provider integrationdom.Provider, credentials string) error {
+	if credentials == "" {
+		return nil
+	}
+	switch provider {
+	case integrationdom.ProviderSlack, integrationdom.ProviderTeams, integrationdom.ProviderWebhook:
+		if _, err := httpsec.ValidateURL(credentials); err != nil {
+			return fmt.Errorf("%w: webhook URL rejected: %v", shared.ErrValidation, err)
+		}
+	}
+	return nil
+}
 
 // testNotificationRateLimit defines the minimum interval between test notifications per integration.
 const testNotificationRateLimit = 30 * time.Second
@@ -1535,6 +1555,11 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 		intg.SetDescription(input.Description)
 	}
 
+	// SSRF guard for URL-credential providers (Slack/Teams/webhook).
+	if err := validateNotificationWebhookURL(provider, input.Credentials); err != nil {
+		return nil, err
+	}
+
 	// Handle credentials and metadata based on provider
 	switch provider {
 	case integrationdom.ProviderEmail:
@@ -1708,6 +1733,11 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 
 	// Handle credentials and metadata based on provider
 	provider := intg.Provider()
+	if input.Credentials != nil {
+		if err := validateNotificationWebhookURL(provider, *input.Credentials); err != nil {
+			return nil, err
+		}
+	}
 	switch provider {
 	case integrationdom.ProviderEmail:
 		// For email: split into metadata (non-sensitive) and credentials (sensitive)

@@ -368,6 +368,34 @@ func TestFindingApprovalService_RequestApproval_Success(t *testing.T) {
 	assert.Len(t, approvalRepo.approvals, 1)
 }
 
+// The approval workflow must only accept statuses that require approval
+// (false_positive / accepted / accepted_risk). Requesting e.g. "resolved"
+// would otherwise launder a finding past the findings:verify gate and the
+// state machine once approved.
+func TestFindingApprovalService_RequestApproval_RejectsNonApprovalStatus(t *testing.T) {
+	for _, status := range []string{"resolved", "confirmed", "in_progress", "fix_applied"} {
+		t.Run(status, func(t *testing.T) {
+			tenantID := shared.NewID()
+			findingID := shared.NewID()
+			findingRepo := newMockFindingRepository()
+			findingRepo.findings[findingID] = &vulnerability.Finding{}
+			approvalRepo := newMockApprovalRepository()
+			svc := newApprovalTestService(findingRepo, approvalRepo)
+
+			_, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+				TenantID:        tenantID.String(),
+				FindingID:       findingID.String(),
+				RequestedStatus: status,
+				Justification:   "trying to launder status via approval",
+				RequestedBy:     shared.NewID().String(),
+			})
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, shared.ErrValidation), "want validation error, got %v", err)
+			assert.Empty(t, approvalRepo.approvals, "no approval should be stored")
+		})
+	}
+}
+
 func TestFindingApprovalService_RequestApproval_FindingNotFound(t *testing.T) {
 	tenantID := shared.NewID()
 	findingID := shared.NewID()

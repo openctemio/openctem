@@ -65,7 +65,10 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		campaign.SetCreatedBy(actorID)
 	}
 	if input.AssignedTo != "" {
-		assignee, _ := shared.IDFromString(input.AssignedTo)
+		assignee, aerr := shared.IDFromString(input.AssignedTo)
+		if aerr != nil {
+			return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
+		}
 		campaign.SetAssignment(&assignee, nil)
 	}
 
@@ -160,7 +163,7 @@ func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, t
 			campaign.RecordRiskReduction(before, after)
 		}
 	case remediation.CampaignStatusCanceled:
-		campaign.Cancel()
+		err = campaign.Cancel()
 	default:
 		return nil, fmt.Errorf("%w: invalid status: %s", shared.ErrValidation, newStatus)
 	}

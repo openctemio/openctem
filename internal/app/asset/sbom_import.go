@@ -32,6 +32,12 @@ const (
 	cycloneDXScopeOptional  = "optional"
 	cycloneDXScopeExcluded  = "excluded"
 	cycloneDXExtRefTypePurl = "purl"
+
+	// maxSBOMComponents caps how many components a single SBOM import may
+	// process. The byte-size limit alone allows an SBOM with a very large
+	// number of tiny components, each becoming a synchronous Upsert+Link
+	// round-trip — a connection-pool exhaustion DoS. Reject oversized SBOMs.
+	maxSBOMComponents = 10000
 )
 
 // SBOMImportService handles importing SBOM files (CycloneDX, SPDX).
@@ -134,6 +140,9 @@ func (s *SBOMImportService) importCycloneDX(ctx context.Context, tenantID, asset
 	if err := json.Unmarshal(data, &bom); err != nil {
 		return nil, fmt.Errorf("%w: invalid CycloneDX JSON", shared.ErrValidation)
 	}
+	if len(bom.Components) > maxSBOMComponents {
+		return nil, fmt.Errorf("%w: SBOM has %d components, exceeds limit of %d", shared.ErrValidation, len(bom.Components), maxSBOMComponents)
+	}
 
 	result := &SBOMImportResult{
 		Format:          "cyclonedx",
@@ -207,6 +216,9 @@ func (s *SBOMImportService) importSPDX(ctx context.Context, tenantID, assetID sh
 	var doc spdxDocument
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("%w: invalid SPDX JSON", shared.ErrValidation)
+	}
+	if len(doc.Packages) > maxSBOMComponents {
+		return nil, fmt.Errorf("%w: SBOM has %d packages, exceeds limit of %d", shared.ErrValidation, len(doc.Packages), maxSBOMComponents)
 	}
 
 	result := &SBOMImportResult{
@@ -327,34 +339,9 @@ func detectEcosystemFromPURL(purl string) string {
 	if idx <= 0 {
 		return "other"
 	}
-	ecosystem := purl[:idx]
-	// Normalize known aliases
-	switch strings.ToLower(ecosystem) {
-	case "npm":
-		return "npm"
-	case "pypi":
-		return "pypi"
-	case "maven":
-		return "maven"
-	case "golang", "go":
-		return "go"
-	case "cargo":
-		return "cargo"
-	case "nuget":
-		return "nuget"
-	case "gem", "rubygems":
-		return "rubygems"
-	case "composer", "packagist":
-		return "composer"
-	case "cocoapods":
-		return "cocoapods"
-	case "hex":
-		return "hex"
-	case "pub":
-		return "pub"
-	case "swift", "swiftpm":
-		return "swiftpm"
-	default:
-		return "other"
-	}
+	// Reuse the canonical alias map (ParseEcosystem) instead of a local switch
+	// so PURL types like crates/crates.io→cargo, gradle→maven, etc. normalize
+	// consistently with ingest + component CRUD. Unknown → other.
+	eco, _ := componentdom.ParseEcosystem(purl[:idx])
+	return eco.String()
 }

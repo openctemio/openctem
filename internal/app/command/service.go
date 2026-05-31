@@ -176,9 +176,12 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 }
 
 // Acknowledge marks a command as acknowledged.
-func (s *Service) Acknowledge(ctx context.Context, tenantID, commandID string) (*commanddom.Command, error) {
+func (s *Service) Acknowledge(ctx context.Context, tenantID, agentID, commandID string) (*commanddom.Command, error) {
 	cmd, err := s.Get(ctx, tenantID, commandID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureAgentOwnsCommand(cmd, agentID); err != nil {
 		return nil, err
 	}
 
@@ -195,9 +198,12 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, commandID string) (
 }
 
 // Start marks a command as running.
-func (s *Service) Start(ctx context.Context, tenantID, commandID string) (*commanddom.Command, error) {
+func (s *Service) Start(ctx context.Context, tenantID, agentID, commandID string) (*commanddom.Command, error) {
 	cmd, err := s.Get(ctx, tenantID, commandID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureAgentOwnsCommand(cmd, agentID); err != nil {
 		return nil, err
 	}
 
@@ -213,9 +219,23 @@ func (s *Service) Start(ctx context.Context, tenantID, commandID string) (*comma
 	return cmd, nil
 }
 
+// ensureAgentOwnsCommand rejects lifecycle operations on a command assigned to
+// a DIFFERENT agent (anti-tampering: otherwise any agent in the tenant could
+// acknowledge/complete/fail another agent's command and inject forged
+// results). Unassigned/broadcast commands (AgentID == nil) remain operable by
+// any agent in the tenant. Returns a not-found-style error to avoid leaking
+// the command's existence to a non-owning agent.
+func ensureAgentOwnsCommand(cmd *commanddom.Command, agentID string) error {
+	if cmd.AgentID != nil && cmd.AgentID.String() != agentID {
+		return shared.NewDomainError("NOT_FOUND", "command not found", shared.ErrNotFound)
+	}
+	return nil
+}
+
 // CompleteInput represents the input for completing a command.
 type CompleteInput struct {
 	TenantID  string          `json:"tenant_id" validate:"required,uuid"`
+	AgentID   string          `json:"agent_id" validate:"required,uuid"`
 	CommandID string          `json:"command_id" validate:"required,uuid"`
 	Result    json.RawMessage `json:"result,omitempty"`
 }
@@ -224,6 +244,9 @@ type CompleteInput struct {
 func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddom.Command, error) {
 	cmd, err := s.Get(ctx, input.TenantID, input.CommandID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureAgentOwnsCommand(cmd, input.AgentID); err != nil {
 		return nil, err
 	}
 
@@ -242,6 +265,7 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddo
 // FailInput represents the input for failing a command.
 type FailInput struct {
 	TenantID     string `json:"tenant_id" validate:"required,uuid"`
+	AgentID      string `json:"agent_id" validate:"required,uuid"`
 	CommandID    string `json:"command_id" validate:"required,uuid"`
 	ErrorMessage string `json:"error_message"`
 }
@@ -250,6 +274,9 @@ type FailInput struct {
 func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Command, error) {
 	cmd, err := s.Get(ctx, input.TenantID, input.CommandID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureAgentOwnsCommand(cmd, input.AgentID); err != nil {
 		return nil, err
 	}
 

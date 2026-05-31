@@ -837,7 +837,7 @@ func TestCommandService_AcknowledgeCommand_Success(t *testing.T) {
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
-	acked, err := svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	acked, err := svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -857,13 +857,13 @@ func TestCommandService_AcknowledgeCommand_AlreadyAcknowledged(t *testing.T) {
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
 	// Acknowledge once
-	_, err := svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err != nil {
 		t.Fatalf("first acknowledge failed: %v", err)
 	}
 
 	// Try to acknowledge again - should fail
-	_, err = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, err = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err == nil {
 		t.Fatal("expected error when acknowledging already acknowledged command")
 	}
@@ -877,11 +877,11 @@ func TestCommandService_AcknowledgeCommand_RunningCommand(t *testing.T) {
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
 	// Move to acknowledged, then running
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	// Try to acknowledge a running command
-	_, err := svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err == nil {
 		t.Fatal("expected error when acknowledging running command")
 	}
@@ -893,7 +893,7 @@ func TestCommandService_AcknowledgeCommand_NotFound(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 	missingID := shared.NewID().String()
 
-	_, err := svc.Acknowledge(context.Background(), tenantID, missingID)
+	_, err := svc.Acknowledge(context.Background(), tenantID, "agent-test", missingID)
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -907,7 +907,7 @@ func TestCommandService_AcknowledgeCommand_UpdateError(t *testing.T) {
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 	repo.updateErr = errors.New("update failed")
 
-	_, err := svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err == nil {
 		t.Fatal("expected error from repo update")
 	}
@@ -923,9 +923,9 @@ func TestCommandService_StartCommand_Success(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 
-	started, err := svc.Start(context.Background(), tenantID, created.ID.String())
+	started, err := svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -945,7 +945,7 @@ func TestCommandService_StartCommand_NotAcknowledged(t *testing.T) {
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
 
 	// Try to start a pending command (not acknowledged)
-	_, err := svc.Start(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err == nil {
 		t.Fatal("expected error when starting non-acknowledged command")
 	}
@@ -957,11 +957,11 @@ func TestCommandService_StartCommand_AlreadyRunning(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	// Try to start again
-	_, err := svc.Start(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err == nil {
 		t.Fatal("expected error when starting already running command")
 	}
@@ -972,7 +972,7 @@ func TestCommandService_StartCommand_NotFound(t *testing.T) {
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
-	_, err := svc.Start(context.Background(), tenantID, shared.NewID().String())
+	_, err := svc.Start(context.Background(), tenantID, "agent-test", shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -984,10 +984,10 @@ func TestCommandService_StartCommand_UpdateError(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	repo.updateErr = errors.New("update failed")
-	_, err := svc.Start(context.Background(), tenantID, created.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err == nil {
 		t.Fatal("expected error from repo update")
 	}
@@ -1003,8 +1003,8 @@ func TestCommandService_CompleteCommand_Success(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	result := json.RawMessage(`{"found":42}`)
 	input := command.CompleteInput{
@@ -1050,8 +1050,8 @@ func TestCommandService_CompleteCommand_AlreadyCompleted(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	input := command.CompleteInput{
 		TenantID:  tenantID,
@@ -1087,8 +1087,8 @@ func TestCommandService_CompleteCommand_UpdateError(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	repo.updateErr = errors.New("update failed")
 	input := command.CompleteInput{
@@ -1138,8 +1138,8 @@ func TestCommandService_FailCommand_FromRunning(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	input := command.FailInput{
 		TenantID:     tenantID,
@@ -1218,7 +1218,7 @@ func TestCommandService_CancelCommand_FromAcknowledged(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	canceled, err := svc.CancelCommand(context.Background(), tenantID, created.ID.String())
 	if err != nil {
@@ -1235,8 +1235,8 @@ func TestCommandService_CancelCommand_FromRunning(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 
 	canceled, err := svc.CancelCommand(context.Background(), tenantID, created.ID.String())
 	if err != nil {
@@ -1253,8 +1253,8 @@ func TestCommandService_CancelCommand_CompletedCannotBeCanceled(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, created.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, created.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", created.ID.String())
 	_, _ = svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: created.ID.String(),
@@ -1461,7 +1461,7 @@ func TestCommandService_FullLifecycle_PendingToCompleted(t *testing.T) {
 	}
 
 	// Acknowledge
-	cmd, err := svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
+	cmd, err := svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
 	if err != nil {
 		t.Fatalf("acknowledge failed: %v", err)
 	}
@@ -1470,7 +1470,7 @@ func TestCommandService_FullLifecycle_PendingToCompleted(t *testing.T) {
 	}
 
 	// Start
-	cmd, err = svc.Start(context.Background(), tenantID, cmd.ID.String())
+	cmd, err = svc.Start(context.Background(), tenantID, "agent-test", cmd.ID.String())
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
@@ -1499,8 +1499,8 @@ func TestCommandService_FullLifecycle_PendingToFailed(t *testing.T) {
 
 	cmd := createTestCommand(t, svc, tenantID, "collect", "critical")
 
-	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", cmd.ID.String())
 
 	failed, err := svc.Fail(context.Background(), command.FailInput{
 		TenantID:     tenantID,
@@ -1546,7 +1546,7 @@ func TestCommandService_InvalidTransition_StartFromPending(t *testing.T) {
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
 
 	// Cannot start directly from pending (must acknowledge first)
-	_, err := svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, "agent-test", cmd.ID.String())
 	if err == nil {
 		t.Fatal("expected error: cannot start from pending")
 	}
@@ -1574,7 +1574,7 @@ func TestCommandService_InvalidTransition_CompleteFromAcknowledged(t *testing.T)
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
 
 	_, err := svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
@@ -1591,14 +1591,14 @@ func TestCommandService_InvalidTransition_AcknowledgeFromCompleted(t *testing.T)
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", cmd.ID.String())
 	_, _ = svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
 	})
 
-	_, err := svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
 	if err == nil {
 		t.Fatal("expected error: cannot acknowledge completed command")
 	}
@@ -1610,14 +1610,14 @@ func TestCommandService_InvalidTransition_StartFromCompleted(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", cmd.ID.String())
 	_, _ = svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
 	})
 
-	_, err := svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, err := svc.Start(context.Background(), tenantID, "agent-test", cmd.ID.String())
 	if err == nil {
 		t.Fatal("expected error: cannot start completed command")
 	}
@@ -1629,8 +1629,8 @@ func TestCommandService_InvalidTransition_CancelCompleted(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", cmd.ID.String())
 	_, _ = svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
 		CommandID: cmd.ID.String(),
@@ -1655,7 +1655,7 @@ func TestCommandService_MultipleCommands_IndependentState(t *testing.T) {
 	cmd2 := createTestCommand(t, svc, tenantID, "collect", "low")
 
 	// Acknowledge cmd1 only
-	_, err := svc.Acknowledge(context.Background(), tenantID, cmd1.ID.String())
+	_, err := svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd1.ID.String())
 	if err != nil {
 		t.Fatalf("failed to acknowledge cmd1: %v", err)
 	}
@@ -1700,7 +1700,7 @@ func TestCommandService_TenantIsolation(t *testing.T) {
 	}
 
 	// Tenant 2 should not be able to acknowledge tenant 1's command
-	_, err = svc.Acknowledge(context.Background(), tenant2, cmd1.ID.String())
+	_, err = svc.Acknowledge(context.Background(), tenant2, "agent-test", cmd1.ID.String())
 	if err == nil {
 		t.Fatal("expected error: tenant 2 should not acknowledge tenant 1 command")
 	}
@@ -1734,8 +1734,8 @@ func TestCommandService_CompleteCommand_NilResult(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
-	_, _ = svc.Acknowledge(context.Background(), tenantID, cmd.ID.String())
-	_, _ = svc.Start(context.Background(), tenantID, cmd.ID.String())
+	_, _ = svc.Acknowledge(context.Background(), tenantID, "agent-test", cmd.ID.String())
+	_, _ = svc.Start(context.Background(), tenantID, "agent-test", cmd.ID.String())
 
 	completed, err := svc.Complete(context.Background(), command.CompleteInput{
 		TenantID:  tenantID,
@@ -1834,5 +1834,46 @@ func TestCommandService_GetCommand_RepoError(t *testing.T) {
 	_, err := svc.Get(context.Background(), tenantID, shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error from repo")
+	}
+}
+
+// A command assigned to a specific agent must not be operable by a different
+// agent in the same tenant (anti-tampering / forged-result injection).
+func TestCommandService_AgentBinding_BlocksOtherAgent(t *testing.T) {
+	repo := newCmdMockRepo()
+	svc := newCmdTestService(repo)
+	tenantID := newCmdTestTenantID()
+	agentA := shared.NewID().String()
+	agentB := shared.NewID().String()
+
+	created, err := svc.Create(context.Background(), command.CreateInput{
+		TenantID: tenantID,
+		Type:     "scan",
+		Priority: "normal",
+		AgentID:  agentA,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	id := created.ID.String()
+
+	// Agent B must not acknowledge/complete/fail agent A's command.
+	if _, err := svc.Acknowledge(context.Background(), tenantID, agentB, id); err == nil {
+		t.Fatal("agent B must not acknowledge agent A's command")
+	}
+	if _, err := svc.Complete(context.Background(), command.CompleteInput{
+		TenantID: tenantID, AgentID: agentB, CommandID: id,
+	}); err == nil {
+		t.Fatal("agent B must not complete agent A's command")
+	}
+	if _, err := svc.Fail(context.Background(), command.FailInput{
+		TenantID: tenantID, AgentID: agentB, CommandID: id, ErrorMessage: "x",
+	}); err == nil {
+		t.Fatal("agent B must not fail agent A's command")
+	}
+
+	// Agent A (the assignee) can operate it.
+	if _, err := svc.Acknowledge(context.Background(), tenantID, agentA, id); err != nil {
+		t.Fatalf("assignee agent A should acknowledge: %v", err)
 	}
 }

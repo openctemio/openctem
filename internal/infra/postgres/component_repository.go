@@ -628,6 +628,28 @@ func (r *ComponentRepository) buildWhereClause(filter component.Filter) (string,
 		conditions = append(conditions, fmt.Sprintf("ecosystem IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
+	// Tenant / asset scoping. The components table is a GLOBAL catalogue (no
+	// tenant_id), so restrict to components actually linked to the caller's
+	// tenant (and optionally a specific asset) via asset_components. Without
+	// this the list/export returned the entire cross-tenant catalogue even
+	// though the service set TenantID on the filter.
+	// This is the last block that consumes argIndex, so it is not incremented
+	// after the final placeholder (matches the convention in the other
+	// buildWhereClause functions and avoids a dead-store).
+	if filter.TenantID != nil {
+		sub := fmt.Sprintf("SELECT component_id FROM asset_components WHERE tenant_id = $%d", argIndex)
+		args = append(args, filter.TenantID.String())
+		if filter.AssetID != nil {
+			argIndex++
+			sub += fmt.Sprintf(" AND asset_id = $%d", argIndex)
+			args = append(args, filter.AssetID.String())
+		}
+		conditions = append(conditions, fmt.Sprintf("id IN (%s)", sub))
+	} else if filter.AssetID != nil {
+		conditions = append(conditions, fmt.Sprintf("id IN (SELECT component_id FROM asset_components WHERE asset_id = $%d)", argIndex))
+		args = append(args, filter.AssetID.String())
+	}
+
 	return strings.Join(conditions, " AND "), args
 }
 
@@ -646,14 +668,14 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 				FROM findings f
 				WHERE f.tenant_id = $1
 				  AND f.component_id IS NOT NULL
-				  AND f.status NOT IN ('resolved', 'false_positive')
+				  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 			) as vulnerable_components,
 			(
 				SELECT COUNT(*)
 				FROM findings f
 				WHERE f.tenant_id = $1
 				  AND f.component_id IS NOT NULL
-				  AND f.status NOT IN ('resolved', 'false_positive')
+				  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 			) as total_vulnerabilities,
 			COUNT(DISTINCT ac.component_id) FILTER (WHERE ac.dependency_type IN ('deprecated', 'end_of_life')) as outdated_components
 		FROM asset_components ac
@@ -686,7 +708,7 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 			COUNT(*) as count
 		FROM findings f
 		WHERE f.tenant_id = $1
-		  AND f.status NOT IN ('resolved', 'false_positive')
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 		  AND f.component_id IS NOT NULL
 		GROUP BY f.severity
 	`
@@ -721,7 +743,7 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 		WHERE f.tenant_id = $1
 		  AND f.component_id IS NOT NULL
 		  AND v.cisa_kev_date_added IS NOT NULL
-		  AND f.status NOT IN ('resolved', 'false_positive')
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 	`
 	if err := r.db.QueryRowContext(ctx, kevQuery, tenantID.String()).Scan(&stats.CisaKevComponents); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		// Non-critical metric — continue with zero value if query fails
@@ -816,7 +838,7 @@ func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenan
 			FROM findings f
 			LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
 			WHERE f.tenant_id = $1
-			  AND f.status NOT IN ('resolved', 'false_positive')
+			  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 			  AND f.component_id IS NOT NULL
 		)
 	`
@@ -919,7 +941,7 @@ func (r *ComponentRepository) ListAssetUsage(
 			WHERE f.tenant_id = ac.tenant_id
 			  AND f.component_id = ac.component_id
 			  AND f.asset_id = ac.asset_id
-			  AND f.status IN ('new','confirmed','in_progress')
+			  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 		)`
 	}
 
@@ -1008,7 +1030,7 @@ func (r *ComponentRepository) ListVulnerabilities(
 
 	statusFilter := ""
 	if !includeResolved {
-		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+		statusFilter = ` AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')`
 	}
 
 	countQuery := `
@@ -1022,7 +1044,7 @@ func (r *ComponentRepository) ListVulnerabilities(
 				f.vulnerability_id,
 				COUNT(DISTINCT f.asset_id) AS affected_assets_count,
 				COUNT(*) AS total_finding_count,
-				COUNT(*) FILTER (WHERE f.status IN ('new','confirmed','in_progress')) AS open_finding_count,
+				COUNT(*) FILTER (WHERE f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')) AS open_finding_count,
 				MIN(CASE f.status
 					WHEN 'new'         THEN 1
 					WHEN 'confirmed'   THEN 2

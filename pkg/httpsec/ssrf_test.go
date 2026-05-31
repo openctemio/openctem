@@ -1,6 +1,7 @@
 package httpsec
 
 import (
+	"context"
 	"net"
 	"strings"
 	"testing"
@@ -178,5 +179,41 @@ func TestAllowPrivate_ReturnsCurrentToggle(t *testing.T) {
 	allowPrivate = false
 	if AllowPrivate() {
 		t.Error("AllowPrivate() should return false when allowPrivate is false")
+	}
+}
+
+func TestValidateHost(t *testing.T) {
+	// Hard-blocked regardless of allow-private policy.
+	hardBlocked := []string{
+		"127.0.0.1", "127.0.0.1:25", "localhost", "169.254.169.254",
+		"169.254.169.254:80", "::1", "[::1]:443",
+	}
+	for _, h := range hardBlocked {
+		if err := ValidateHost(context.Background(), h); err == nil {
+			t.Errorf("ValidateHost(%q) = nil, want blocked", h)
+		}
+	}
+
+	// Public addresses pass.
+	for _, h := range []string{"8.8.8.8", "1.1.1.1:587"} {
+		if err := ValidateHost(context.Background(), h); err != nil {
+			t.Errorf("ValidateHost(%q) = %v, want allowed", h, err)
+		}
+	}
+
+	// Empty host is rejected.
+	if err := ValidateHost(context.Background(), ""); err == nil {
+		t.Error("ValidateHost(\"\") = nil, want error")
+	}
+
+	// RFC1918 is blocked unless allow-private is set.
+	rfc1918 := "10.0.0.5"
+	err := ValidateHost(context.Background(), rfc1918)
+	if AllowPrivate() {
+		if err != nil {
+			t.Errorf("with allow-private, ValidateHost(%q) = %v, want nil", rfc1918, err)
+		}
+	} else if err == nil {
+		t.Errorf("without allow-private, ValidateHost(%q) = nil, want blocked", rfc1918)
 	}
 }
