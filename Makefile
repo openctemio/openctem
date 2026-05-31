@@ -79,14 +79,24 @@ test-load-bench:
 	@echo "Running load test benchmarks..."
 	$(GOTEST) -v -bench=. -benchmem -timeout=10m ./tests/load/...
 
-## lint: Run linter
+# golangci-lint is pinned to v1.64.8: the repo's .golangci.yml is v1-format, and
+# the current v2.x releases both reject that config AND panic analyzing this
+# codebase under Go 1.26. `go run @version` ignores whatever is on PATH, so the
+# target works regardless of any globally-installed (v2) binary.
+GOLANGCI_LINT_VERSION ?= v1.64.8
+GOLANGCI_LINT := go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+## lint: Run linter (golangci-lint, pinned). Note: CI's lint gate is `go vet` + staticcheck (see `make lint-ci`).
 lint:
-	@echo "Running linter..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		GOWORK=off golangci-lint run ./...; \
-	else \
-		echo "golangci-lint not installed. Run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
-	fi
+	@echo "Running golangci-lint $(GOLANGCI_LINT_VERSION)..."
+	@GOWORK=off $(GOLANGCI_LINT) run ./...
+
+## lint-ci: Run the exact linters CI gates on (go vet + staticcheck)
+lint-ci:
+	@echo "Running go vet..."
+	@GOWORK=off go vet ./...
+	@echo "Running staticcheck..."
+	@GOWORK=off go run honnef.co/go/tools/cmd/staticcheck@latest ./...
 
 ## fmt: Format code
 fmt:
@@ -333,7 +343,8 @@ dev:
 ## install-tools: Install development tools
 install-tools:
 	@echo "Installing development tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install github.com/air-verse/air@latest
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	go install go.uber.org/mock/mockgen@latest
@@ -410,7 +421,7 @@ security-scan:
 	@gitleaks detect --config .gitleaks.toml --verbose || true
 	@echo ""
 	@echo "=== Golangci-lint with Gosec (Code Security) ==="
-	@golangci-lint run --config .golangci.yml ./... || true
+	@GOWORK=off $(GOLANGCI_LINT) run --config .golangci.yml ./... || true
 	@echo ""
 	@echo "=== Trivy (Vulnerability Scan) ==="
 	@trivy fs --severity HIGH,CRITICAL --scanners vuln,secret,misconfig --skip-files Dockerfile.seed --skip-files Dockerfile.migrations --config trivy.yaml . || true
