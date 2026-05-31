@@ -555,6 +555,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		StaleAssetDays: 30,
 		MaxIPsPerAsset: 20,
 	}))
+	// Enqueue an admin dedup review when correlation finds multiple existing
+	// assets sharing identity (RFC-001) — populates the previously-empty queue.
+	s.Ingest.SetDedupEnqueuer(repos.AssetDedup)
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)

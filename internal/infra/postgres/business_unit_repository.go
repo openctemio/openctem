@@ -144,7 +144,7 @@ func (r *BusinessUnitRepository) List(ctx context.Context, filter businessunit.F
 }
 
 func (r *BusinessUnitRepository) AddAsset(ctx context.Context, tenantID, buID, assetID shared.ID) error {
-	// Only link the asset if it belongs to this tenant — defence-in-depth on
+	// Only link the asset if it belongs to this tenant — defense-in-depth on
 	// top of the service-layer check, so the link table can never reference a
 	// foreign asset even if a caller bypasses the service.
 	query := `INSERT INTO business_unit_assets (id, tenant_id, business_unit_id, asset_id, created_at)

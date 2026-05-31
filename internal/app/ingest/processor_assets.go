@@ -15,12 +15,22 @@ import (
 	"github.com/openctemio/ctis"
 )
 
+// DedupReviewEnqueuer enqueues a duplicate-asset review for admin approval when
+// the correlator finds multiple existing assets that should be consolidated.
+// Implementations must be idempotent (one pending review per keep asset).
+type DedupReviewEnqueuer interface {
+	UpsertReview(ctx context.Context,
+		tenantID, normalizedName, assetType, keepID, keepName string, keepFindingCount int,
+		mergeIDs, mergeNames []string, mergeFindingCount int) error
+}
+
 // AssetProcessor handles batch asset processing.
 type AssetProcessor struct {
 	repo           asset.Repository
 	repoExtRepo    asset.RepositoryExtensionRepository
 	relRepo        asset.RelationshipRepository
-	correlator     *AssetCorrelator // RFC-001: IP-based correlation (nil = disabled)
+	correlator     *AssetCorrelator    // RFC-001: IP-based correlation (nil = disabled)
+	dedupEnqueuer  DedupReviewEnqueuer // RFC-001: enqueue multi-match dupes for review (nil = disabled)
 	propsValidator *validator.PropertiesValidator
 	logger         *logger.Logger
 }
@@ -48,6 +58,35 @@ func (p *AssetProcessor) SetRelationshipRepository(repo asset.RelationshipReposi
 // When nil (default), IP correlation is disabled.
 func (p *AssetProcessor) SetCorrelator(c *AssetCorrelator) {
 	p.correlator = c
+}
+
+// SetDedupEnqueuer wires the duplicate-review enqueuer. When nil (default),
+// multi-match duplicates detected during correlation are not enqueued.
+func (p *AssetProcessor) SetDedupEnqueuer(e DedupReviewEnqueuer) {
+	p.dedupEnqueuer = e
+}
+
+// enqueueDedupReview records a pending review when the correlator found several
+// existing assets sharing identity. Best-effort: a failure is logged and never
+// aborts ingestion.
+func (p *AssetProcessor) enqueueDedupReview(ctx context.Context, tenantID shared.ID, normalizedName, assetType string, keep *asset.Asset, mergeTargets []*asset.Asset) {
+	if p.dedupEnqueuer == nil || keep == nil || len(mergeTargets) == 0 {
+		return
+	}
+	mergeIDs := make([]string, 0, len(mergeTargets))
+	mergeNames := make([]string, 0, len(mergeTargets))
+	mergeFindings := 0
+	for _, m := range mergeTargets {
+		mergeIDs = append(mergeIDs, m.ID().String())
+		mergeNames = append(mergeNames, m.Name())
+		mergeFindings += m.FindingCount()
+	}
+	if err := p.dedupEnqueuer.UpsertReview(ctx, tenantID.String(), normalizedName, assetType,
+		keep.ID().String(), keep.Name(), keep.FindingCount(),
+		mergeIDs, mergeNames, mergeFindings); err != nil {
+		p.logger.Warn("failed to enqueue dedup review",
+			"keep_id", keep.ID().String(), "merge_count", len(mergeTargets), "error", err)
+	}
 }
 
 // defaultCorrelationConfig returns the system default correlation config.
@@ -212,6 +251,12 @@ func (p *AssetProcessor) ProcessBatch(
 
 				// Cache for later assets in same batch
 				existingMap[normalizedName] = existing
+
+				// Multiple existing assets matched the same identity →
+				// enqueue an admin review to consolidate them (RFC-001).
+				if len(result.MergeTargets) > 0 {
+					p.enqueueDedupReview(ctx, tenantID, normalizedName, string(coreType), existing, result.MergeTargets)
+				}
 			} else {
 				// No correlation → create new
 				newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)

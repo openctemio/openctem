@@ -109,6 +109,12 @@ func (s *Service) SetCorrelator(c *AssetCorrelator) {
 	s.assetProcessor.SetCorrelator(c)
 }
 
+// SetDedupEnqueuer wires the duplicate-review enqueuer used when correlation
+// detects multiple existing assets sharing identity (RFC-001).
+func (s *Service) SetDedupEnqueuer(e DedupReviewEnqueuer) {
+	s.assetProcessor.SetDedupEnqueuer(e)
+}
+
 // SetActivityService sets the finding activity service for audit trail during ingestion.
 func (s *Service) SetActivityService(activityService *app.FindingActivityService) {
 	s.activityService = activityService
