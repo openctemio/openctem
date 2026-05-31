@@ -780,7 +780,7 @@ func TestUpdatePermissionSet_Success(t *testing.T) {
 		Name: &newName,
 	}
 
-	updated, err := svc.UpdatePermissionSet(context.Background(), ps.ID().String(), input, app.AuditContext{})
+	updated, err := svc.UpdatePermissionSet(context.Background(), ps.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -819,7 +819,7 @@ func TestDeletePermissionSet_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	ps := seedCustomPermissionSet(repo, tenantID, "To Delete", "to-delete")
 
-	err := svc.DeletePermissionSet(context.Background(), ps.ID().String(), app.AuditContext{})
+	err := svc.DeletePermissionSet(context.Background(), ps.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -853,7 +853,7 @@ func TestDeletePermissionSet_CannotDeleteIfInUseByGroups(t *testing.T) {
 	// Simulate that 3 groups are using this permission set
 	repo.countGroupsResult = 3
 
-	err := svc.DeletePermissionSet(context.Background(), ps.ID().String(), app.AuditContext{})
+	err := svc.DeletePermissionSet(context.Background(), ps.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error for permission set in use")
 	}
@@ -974,7 +974,7 @@ func TestAddPermissionToSet_Success(t *testing.T) {
 		PermissionID:    "findings:read",
 	}
 
-	err := svc.AddPermissionToSet(context.Background(), input, app.AuditContext{})
+	err := svc.AddPermissionToSet(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1027,7 +1027,7 @@ func TestRemovePermissionFromSet_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	ps := seedCustomPermissionSet(repo, tenantID, "My Set", "my-set")
 
-	err := svc.RemovePermissionFromSet(context.Background(), ps.ID().String(), "findings:read", app.AuditContext{})
+	err := svc.RemovePermissionFromSet(context.Background(), ps.ID().String(), "findings:read", app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1388,7 +1388,7 @@ func TestUpdatePermissionSet_ActivateDeactivate(t *testing.T) {
 		IsActive: &isActiveFalse,
 	}
 
-	updated, err := svc.UpdatePermissionSet(context.Background(), ps.ID().String(), input, app.AuditContext{})
+	updated, err := svc.UpdatePermissionSet(context.Background(), ps.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1402,7 +1402,7 @@ func TestUpdatePermissionSet_ActivateDeactivate(t *testing.T) {
 		IsActive: &isActiveTrue,
 	}
 
-	updated2, err := svc.UpdatePermissionSet(context.Background(), ps.ID().String(), input2, app.AuditContext{})
+	updated2, err := svc.UpdatePermissionSet(context.Background(), ps.ID().String(), input2, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

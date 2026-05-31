@@ -579,11 +579,12 @@ func (h *GroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/groups/{groupId}/members [get]
 func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
 	groupID := chi.URLParam(r, "groupId")
 
 	limit, offset := parsePagination(r)
 
-	members, totalCount, err := h.service.ListGroupMembersWithUserInfo(ctx, groupID, limit, offset)
+	members, totalCount, err := h.service.ListGroupMembersWithUserInfo(ctx, tenantID, groupID, limit, offset)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -828,9 +829,10 @@ func (h *GroupHandler) UnassignPermissionSet(w http.ResponseWriter, r *http.Requ
 // @Router /api/v1/groups/{groupId}/permission-sets [get]
 func (h *GroupHandler) ListAssignedPermissionSets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
 	groupID := chi.URLParam(r, "groupId")
 
-	permissionSets, err := h.service.ListGroupPermissionSetsWithDetails(ctx, groupID)
+	permissionSets, err := h.service.ListGroupPermissionSetsWithDetails(ctx, tenantID, groupID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1130,11 +1132,12 @@ func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Reque
 // @Router /api/v1/groups/{groupId}/assets [get]
 func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
 	groupID := chi.URLParam(r, "groupId")
 
 	limit, offset := parsePagination(r)
 
-	owners, totalCount, err := h.service.ListGroupAssets(ctx, groupID, limit, offset)
+	owners, totalCount, err := h.service.ListGroupAssets(ctx, tenantID, groupID, limit, offset)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

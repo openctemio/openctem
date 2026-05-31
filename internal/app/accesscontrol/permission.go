@@ -76,6 +76,44 @@ func (s *PermissionService) logAudit(ctx context.Context, actx auditapp.AuditCon
 	}
 }
 
+// permissionSetForTenant fetches a permission set and verifies the caller's
+// tenant is allowed to act on it (anti-enumeration: ErrNotFound on
+// cross-tenant mismatch/empty), preventing cross-tenant permission-set
+// management via a guessed ID.
+//
+// System/global permission sets (tenant_id NULL) are returned regardless of
+// tenant so that the caller's existing IsSystem() guard can reject mutations
+// with its specific error while keeping them readable.
+func (s *PermissionService) permissionSetForTenant(ctx context.Context, id shared.ID, callerTenantID string) (*permissionsetdom.PermissionSet, error) {
+	ps, err := s.permissionSetRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// System sets (no tenant) are global; let IsSystem() guards handle them.
+	if ps.IsSystem() || ps.TenantID() == nil {
+		return ps, nil
+	}
+	if callerTenantID == "" || ps.TenantID().String() != callerTenantID {
+		return nil, shared.ErrNotFound
+	}
+	return ps, nil
+}
+
+// groupForTenant fetches a group and verifies it belongs to the caller's
+// tenant (anti-enumeration: ErrNotFound on mismatch/empty), preventing
+// cross-tenant group management (custom permission overrides) via a guessed
+// group ID.
+func (s *PermissionService) groupForTenant(ctx context.Context, id shared.ID, callerTenantID string) (*groupdom.Group, error) {
+	g, err := s.groupRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if callerTenantID == "" || g.TenantID().String() != callerTenantID {
+		return nil, shared.ErrNotFound
+	}
+	return g, nil
+}
+
 // =============================================================================
 // PERMISSION SET CRUD OPERATIONS
 // =============================================================================
@@ -223,7 +261,7 @@ func (s *PermissionService) UpdatePermissionSet(ctx context.Context, permissionS
 		return nil, fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
 	}
 
-	ps, err := s.permissionSetRepo.GetByID(ctx, id)
+	ps, err := s.permissionSetForTenant(ctx, id, actx.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +314,7 @@ func (s *PermissionService) DeletePermissionSet(ctx context.Context, permissionS
 		return fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
 	}
 
-	ps, err := s.permissionSetRepo.GetByID(ctx, id)
+	ps, err := s.permissionSetForTenant(ctx, id, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -393,7 +431,7 @@ func (s *PermissionService) AddPermissionToSet(ctx context.Context, input AddPer
 		return fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
 	}
 
-	ps, err := s.permissionSetRepo.GetByID(ctx, permSetID)
+	ps, err := s.permissionSetForTenant(ctx, permSetID, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -439,7 +477,7 @@ func (s *PermissionService) RemovePermissionFromSet(ctx context.Context, permiss
 		return fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
 	}
 
-	ps, err := s.permissionSetRepo.GetByID(ctx, permSetID)
+	ps, err := s.permissionSetForTenant(ctx, permSetID, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -625,8 +663,8 @@ func (s *PermissionService) CreateGroupPermission(ctx context.Context, input Cre
 		return nil, fmt.Errorf("%w: invalid permission effect", shared.ErrValidation)
 	}
 
-	// Verify group exists
-	g, err := s.groupRepo.GetByID(ctx, groupID)
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -664,8 +702,8 @@ func (s *PermissionService) DeleteGroupPermission(ctx context.Context, groupID, 
 		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	// Get group for audit context
-	g, err := s.groupRepo.GetByID(ctx, gid)
+	// Get group (tenant-scoped) for audit context
+	g, err := s.groupForTenant(ctx, gid, actx.TenantID)
 	if err != nil {
 		return err
 	}

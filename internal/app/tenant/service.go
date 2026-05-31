@@ -534,13 +534,28 @@ type UpdateMemberRoleInput struct {
 }
 
 // UpdateMemberRole updates a member's role.
-func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID string, input UpdateMemberRoleInput, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+// getOwnMembership fetches a membership and verifies it belongs to the caller's
+// tenant (callerTenantID, from the audit context / route tenant). Returns
+// ErrNotFound on any mismatch or missing tenant — anti-enumeration — so a
+// tenant admin cannot manage members of another tenant via a guessed
+// membership ID.
+func (s *TenantService) getOwnMembership(ctx context.Context, membershipID, callerTenantID string) (*tenantdom.Membership, error) {
 	parsedID, err := shared.IDFromString(membershipID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
 	}
-
 	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	if callerTenantID == "" || membership.TenantID().String() != callerTenantID {
+		return nil, shared.ErrNotFound
+	}
+	return membership, nil
+}
+
+func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID string, input UpdateMemberRoleInput, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -591,12 +606,7 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 
 // RemoveMember removes a member from a tenant.
 func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
-	parsedID, err := shared.IDFromString(membershipID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
-	}
-
-	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -609,7 +619,7 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
 
-	if err := s.repo.DeleteMembership(ctx, parsedID); err != nil {
+	if err := s.repo.DeleteMembership(ctx, membership.ID()); err != nil {
 		return err
 	}
 
@@ -658,12 +668,7 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 // immediately revoked: sessions are invalidated, permission cache
 // cleared, and JWT exchange should check membership status.
 func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
-	parsedID, err := shared.IDFromString(membershipID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
-	}
-
-	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -736,12 +741,7 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 
 // ReactivateMember restores a suspended member's access.
 func (s *TenantService) ReactivateMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
-	parsedID, err := shared.IDFromString(membershipID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
-	}
-
-	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
 		return err
 	}

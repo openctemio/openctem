@@ -1001,7 +1001,7 @@ func TestTenantSvc_UpdateMemberRole_Success(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "admin"}
 
-	result, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{})
+	result, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1042,7 +1042,7 @@ func TestTenantSvc_UpdateMemberRole_CannotChangeOwnerRole(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "admin"}
 
-	_, err := svc.UpdateMemberRole(context.Background(), ownerMs.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateMemberRole(context.Background(), ownerMs.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error when changing owner role")
 	}
@@ -1058,7 +1058,7 @@ func TestTenantSvc_UpdateMemberRole_CannotPromoteToOwner(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "owner"}
 
-	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error when promoting to owner")
 	}
@@ -1074,7 +1074,7 @@ func TestTenantSvc_UpdateMemberRole_InvalidRole(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "superadmin"}
 
-	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error for invalid role")
 	}
@@ -1091,7 +1091,7 @@ func TestTenantSvc_UpdateMemberRole_RepoError(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "admin"}
 
-	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -1106,7 +1106,7 @@ func TestTenantSvc_RemoveMember_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
 
-	err := svc.RemoveMember(context.Background(), ms.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), ms.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1141,7 +1141,7 @@ func TestTenantSvc_RemoveMember_CannotRemoveOwner(t *testing.T) {
 	tenantID := shared.NewID()
 	ownerMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleOwner)
 
-	err := svc.RemoveMember(context.Background(), ownerMs.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), ownerMs.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error when removing owner")
 	}
@@ -1156,7 +1156,7 @@ func TestTenantSvc_RemoveMember_RepoError(t *testing.T) {
 	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
 	repo.deleteMembershipErr = errors.New("db error")
 
-	err := svc.RemoveMember(context.Background(), ms.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), ms.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -1167,7 +1167,7 @@ func TestTenantSvc_RemoveMember_RemoveAdminAllowed(t *testing.T) {
 	tenantID := shared.NewID()
 	adminMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleAdmin)
 
-	err := svc.RemoveMember(context.Background(), adminMs.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), adminMs.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected admin removal to succeed, got %v", err)
 	}
@@ -1178,7 +1178,7 @@ func TestTenantSvc_RemoveMember_RemoveViewerAllowed(t *testing.T) {
 	tenantID := shared.NewID()
 	viewerMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleViewer)
 
-	err := svc.RemoveMember(context.Background(), viewerMs.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), viewerMs.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected viewer removal to succeed, got %v", err)
 	}

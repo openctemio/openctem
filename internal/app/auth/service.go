@@ -687,6 +687,19 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
+	// Replay-attack detection: a token that was already used (rotated) being
+	// presented again means it was stolen — revoke the entire family so
+	// neither the attacker nor the legitimate chain can continue. Mirrors
+	// RefreshToken; without it, theft replayed via this endpoint went
+	// undetected.
+	if storedToken.IsUsed() {
+		s.logger.Warn("possible replay attack detected", "family", storedToken.Family().String())
+		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
+			s.logger.Error("failed to revoke token family", "error", err)
+		}
+		return nil, sessiondom.ErrRefreshTokenRevoked
+	}
+
 	// Check if token is valid (not used, not revoked, not expired)
 	if !storedToken.IsValid() {
 		return nil, sessiondom.ErrRefreshTokenRevoked

@@ -86,6 +86,20 @@ func (s *GroupService) logAudit(ctx context.Context, actx auditapp.AuditContext,
 	}
 }
 
+// groupForTenant fetches a group and verifies it belongs to the caller's
+// tenant (anti-enumeration: ErrNotFound on mismatch/empty), preventing
+// cross-tenant group management via a guessed group ID.
+func (s *GroupService) groupForTenant(ctx context.Context, id shared.ID, callerTenantID string) (*groupdom.Group, error) {
+	g, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if callerTenantID == "" || g.TenantID().String() != callerTenantID {
+		return nil, shared.ErrNotFound
+	}
+	return g, nil
+}
+
 // =============================================================================
 // GROUP CRUD OPERATIONS
 // =============================================================================
@@ -148,6 +162,11 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 		return nil, fmt.Errorf("failed to create group: %w", err)
 	}
 
+	// Pin the audit/caller tenant to the group's tenant for the rest of this
+	// flow so the internal AddMember tenant check (groupForTenant) resolves
+	// against the just-created group.
+	actx.TenantID = input.TenantID
+
 	// Add creator as owner of the group
 	_, err = s.AddMember(ctx, AddGroupMemberInput{
 		GroupID: g.ID().String(),
@@ -163,7 +182,6 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 	s.logger.Info("group created", "id", g.ID().String(), "name", g.Name())
 
 	// Log audit event
-	actx.TenantID = input.TenantID
 	event := auditapp.NewSuccessEvent(audit.ActionGroupCreated, audit.ResourceTypeGroup, g.ID().String()).
 		WithResourceName(g.Name()).
 		WithMessage(fmt.Sprintf("Group '%s' created", g.Name())).
@@ -223,7 +241,7 @@ func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input Up
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	g, err := s.repo.GetByID(ctx, id)
+	g, err := s.groupForTenant(ctx, id, actx.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +309,7 @@ func (s *GroupService) DeleteGroup(ctx context.Context, groupID string, actx aud
 		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	g, err := s.repo.GetByID(ctx, id)
+	g, err := s.groupForTenant(ctx, id, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -452,6 +470,12 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
 
+	// Verify group belongs to caller's tenant before any mutation.
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Check if user is already a member
 	_, err = s.repo.GetMember(ctx, groupID, input.UserID)
 	if err == nil {
@@ -480,10 +504,7 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	s.logger.Info("member added to group", "group_id", input.GroupID, "user_id", input.UserID.String(), "role", role)
 
 	// Log audit event
-	g, _ := s.repo.GetByID(ctx, groupID)
-	if g != nil {
-		actx.TenantID = g.TenantID().String()
-	}
+	actx.TenantID = g.TenantID().String()
 	event := auditapp.NewSuccessEvent(audit.ActionMemberAdded, audit.ResourceTypeGroup, input.GroupID).
 		WithMessage(fmt.Sprintf("Member added to group with role %s", role)).
 		WithMetadata("user_id", input.UserID.String()).
@@ -491,7 +512,7 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	s.logAudit(ctx, actx, event)
 
 	// Notify the added user
-	if s.notificationService != nil && g != nil {
+	if s.notificationService != nil {
 		audienceID := input.UserID
 		notifParams := notification.NotificationParams{
 			TenantID:         g.TenantID(),
@@ -536,6 +557,12 @@ func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMe
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
 
+	// Verify group belongs to caller's tenant before any mutation.
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
 	member, err := s.repo.GetMember(ctx, groupID, input.UserID)
 	if err != nil {
 		return nil, err
@@ -553,10 +580,7 @@ func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMe
 	s.logger.Info("member role updated", "group_id", input.GroupID, "user_id", input.UserID.String(), "new_role", role)
 
 	// Log audit event
-	g, _ := s.repo.GetByID(ctx, groupID)
-	if g != nil {
-		actx.TenantID = g.TenantID().String()
-	}
+	actx.TenantID = g.TenantID().String()
 	changes := audit.NewChanges().Set("role", oldRole.String(), input.Role)
 	event := auditapp.NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeGroup, input.GroupID).
 		WithChanges(changes).
@@ -565,7 +589,7 @@ func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMe
 	s.logAudit(ctx, actx, event)
 
 	// Notify the user about role change
-	if s.notificationService != nil && g != nil {
+	if s.notificationService != nil {
 		audienceID := input.UserID
 		notifParams := notification.NotificationParams{
 			TenantID:         g.TenantID(),
@@ -597,8 +621,8 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
 	}
 
-	// Get group for audit context
-	g, err := s.repo.GetByID(ctx, gid)
+	// Get group (tenant-scoped) for audit context
+	g, err := s.groupForTenant(ctx, gid, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -684,10 +708,15 @@ func (s *GroupService) ListGroupMembers(ctx context.Context, groupID string) ([]
 }
 
 // ListGroupMembersWithUserInfo lists members with user details, with pagination.
-func (s *GroupService) ListGroupMembersWithUserInfo(ctx context.Context, groupID string, limit, offset int) ([]*groupdom.MemberWithUser, int64, error) {
+// The group is verified to belong to the caller's tenant to prevent cross-tenant reads.
+func (s *GroupService) ListGroupMembersWithUserInfo(ctx context.Context, tenantID, groupID string, limit, offset int) ([]*groupdom.MemberWithUser, int64, error) {
 	id, err := shared.IDFromString(groupID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	if _, err := s.groupForTenant(ctx, id, tenantID); err != nil {
+		return nil, 0, err
 	}
 
 	return s.repo.ListMembersWithUserInfo(ctx, id, limit, offset)
@@ -725,17 +754,22 @@ func (s *GroupService) AssignPermissionSet(ctx context.Context, input AssignPerm
 		return fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
 	}
 
-	// Verify group exists
-	g, err := s.repo.GetByID(ctx, groupID)
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
 	if err != nil {
 		return err
 	}
 
-	// Verify permission set exists (if repo is configured)
+	// Verify permission set exists and is assignable by this tenant: either a
+	// permission set owned by the group's tenant, or a global system template
+	// (tenant_id NULL). This prevents assigning another tenant's custom set.
 	if s.permissionSetRepo != nil {
-		_, err = s.permissionSetRepo.GetByID(ctx, permissionSetID)
+		ps, err := s.permissionSetRepo.GetByID(ctx, permissionSetID)
 		if err != nil {
 			return err
+		}
+		if !ps.IsSystem() && (ps.TenantID() == nil || ps.TenantID().String() != g.TenantID().String()) {
+			return shared.ErrNotFound
 		}
 	}
 
@@ -770,8 +804,8 @@ func (s *GroupService) UnassignPermissionSet(ctx context.Context, groupID, permi
 		return fmt.Errorf("%w: invalid permission set id format", shared.ErrValidation)
 	}
 
-	// Get group for audit context
-	g, err := s.repo.GetByID(ctx, gid)
+	// Get group (tenant-scoped) for audit context
+	g, err := s.groupForTenant(ctx, gid, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -806,7 +840,16 @@ func (s *GroupService) ListGroupPermissionSets(ctx context.Context, groupID stri
 }
 
 // ListGroupPermissionSetsWithDetails lists permission sets assigned to a group with full details.
-func (s *GroupService) ListGroupPermissionSetsWithDetails(ctx context.Context, groupID string) ([]*permissionsetdom.PermissionSetWithItems, error) {
+// The group is verified to belong to the caller's tenant to prevent cross-tenant reads.
+func (s *GroupService) ListGroupPermissionSetsWithDetails(ctx context.Context, tenantID, groupID string) ([]*permissionsetdom.PermissionSetWithItems, error) {
+	gid, err := shared.IDFromString(groupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+	if _, err := s.groupForTenant(ctx, gid, tenantID); err != nil {
+		return nil, err
+	}
+
 	ids, err := s.ListGroupPermissionSets(ctx, groupID)
 	if err != nil {
 		return nil, err
@@ -859,8 +902,8 @@ func (s *GroupService) AssignAsset(ctx context.Context, input AssignAssetInput, 
 		return fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
 	}
 
-	// Verify group exists
-	g, err := s.repo.GetByID(ctx, groupID)
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -915,8 +958,8 @@ func (s *GroupService) UnassignAsset(ctx context.Context, input UnassignAssetInp
 		return fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
 	}
 
-	// Verify group exists
-	g, err := s.repo.GetByID(ctx, groupID)
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -970,8 +1013,8 @@ func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAss
 		return fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
 	}
 
-	// Verify group exists
-	g, err := s.repo.GetByID(ctx, groupID)
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -1005,7 +1048,8 @@ func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAss
 }
 
 // ListGroupAssets lists assets assigned to a group with asset details, with pagination.
-func (s *GroupService) ListGroupAssets(ctx context.Context, groupID string, limit, offset int) ([]*accesscontroldom.AssetOwnerWithAsset, int64, error) {
+// The group is verified to belong to the caller's tenant to prevent cross-tenant reads.
+func (s *GroupService) ListGroupAssets(ctx context.Context, tenantID, groupID string, limit, offset int) ([]*accesscontroldom.AssetOwnerWithAsset, int64, error) {
 	if s.accessControlRepo == nil {
 		return nil, 0, fmt.Errorf("access control repository not configured")
 	}
@@ -1013,6 +1057,10 @@ func (s *GroupService) ListGroupAssets(ctx context.Context, groupID string, limi
 	gid, err := shared.IDFromString(groupID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	if _, err := s.groupForTenant(ctx, gid, tenantID); err != nil {
+		return nil, 0, err
 	}
 
 	return s.accessControlRepo.ListAssetOwnersByGroupWithDetails(ctx, gid, limit, offset)
@@ -1094,8 +1142,8 @@ func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAss
 		return nil, fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
 	}
 
-	// Verify group exists
-	g, err := s.repo.GetByID(ctx, groupID)
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
 	if err != nil {
 		return nil, err
 	}
