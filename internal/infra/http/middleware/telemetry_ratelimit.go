@@ -137,12 +137,12 @@ func (rl *TelemetryRateLimiter) Middleware() func(http.Handler) http.Handler {
 				return
 			}
 			if !rl.bucket(tid).Allow() {
-				rl.log.Warn("telemetry rate limit exceeded",
+				rl.log.Warn("ingest rate limit exceeded",
 					"tenant_id", tid,
 					"rate_per_sec", float64(rl.rate),
 					"burst", rl.burst,
 				)
-				apierror.TooManyRequests("telemetry ingest rate limit exceeded").WriteJSON(w)
+				apierror.TooManyRequests("ingest rate limit exceeded").WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)

@@ -159,8 +159,6 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		return nil, shared.NewDomainError("INVALID_INPUT", "report is required", nil)
 	}
 
-	fmt.Printf("%+v\n", report)
-
 	// Validate report limits
 	if err := s.validator.ValidateReport(report); err != nil {
 		return nil, err

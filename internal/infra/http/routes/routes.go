@@ -509,9 +509,18 @@ func Register(
 		telemetryRateLimiter = middleware.NewTelemetryRateLimiter(200, 400, 10*time.Minute, log)
 	}
 
+	// Per-tenant limiter for the heavy report-ingest endpoints. Report ingest
+	// is far heavier per request than telemetry (up to 100k findings / 100MB),
+	// so it gets a much lower budget — enough for legitimate CI bursts, low
+	// enough to bound a runaway loop or compromised agent key.
+	var ingestRateLimiter *middleware.TelemetryRateLimiter
+	if cfg.RateLimit.Enabled {
+		ingestRateLimiter = middleware.NewTelemetryRateLimiter(20, 40, 10*time.Minute, log)
+	}
+
 	// Ingest/Agent routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
-		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter)
+		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter, ingestRateLimiter)
 	}
 
 	// Agent management routes (tenant from JWT token)

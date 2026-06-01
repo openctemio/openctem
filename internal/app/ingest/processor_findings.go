@@ -822,6 +822,12 @@ func (p *FindingProcessor) setFindingTypeAndSpecializedFields(f *vulnerability.F
 	switch findingType {
 	case vulnerability.FindingTypeSecret:
 		p.setSecretFields(f, ctisFinding)
+		// SECURITY: for a secret finding the raw code snippet / context is the
+		// leaked credential's source line. Never persist it in cleartext —
+		// replace it with the masked value (or a generic placeholder) so the DB
+		// and any snippet rendering cannot expose the secret. The scanner is
+		// expected to pre-mask, but we redact server-side as defense in depth.
+		p.redactSecretSnippet(f)
 	case vulnerability.FindingTypeCompliance:
 		p.setComplianceFields(f, ctisFinding)
 	case vulnerability.FindingTypeWeb3:
@@ -829,6 +835,19 @@ func (p *FindingProcessor) setFindingTypeAndSpecializedFields(f *vulnerability.F
 	case vulnerability.FindingTypeMisconfiguration:
 		p.setMisconfigFields(f, ctisFinding)
 	}
+}
+
+// redactSecretSnippet strips the raw code snippet/context from a secret finding
+// so the live credential is never persisted in cleartext. The masked value is
+// kept as the only snippet representation; if none is available a generic
+// placeholder is used.
+func (p *FindingProcessor) redactSecretSnippet(f *vulnerability.Finding) {
+	if masked := f.SecretMaskedValue(); masked != "" {
+		f.SetSnippet(masked)
+	} else {
+		f.SetSnippet("[redacted secret]")
+	}
+	f.SetContextSnippet("")
 }
 
 // inferFindingType determines the FindingType based on source and CTIS finding data.
@@ -1328,26 +1347,21 @@ func (p *FindingProcessor) getOrCreateBranch(ctx context.Context, repositoryID s
 	// Try to find existing branch by name
 	existingBranch, err := p.branchRepo.GetByName(ctx, repositoryID, branchInfo.Name)
 	if err == nil && existingBranch != nil {
-		// Branch exists - batch updates into a single write
-		needsUpdate := false
-
 		if branchInfo.CommitSHA != "" && branchInfo.CommitSHA != existingBranch.LastCommitSHA() {
 			existingBranch.UpdateLastCommit(branchInfo.CommitSHA, "", "", "", time.Now().UTC())
-			needsUpdate = true
-		}
-
-		if branchInfo.IsDefaultBranch && !existingBranch.IsDefault() {
-			existingBranch.SetDefault(true)
-			needsUpdate = true
-		}
-
-		if needsUpdate {
 			if err := p.branchRepo.Update(ctx, existingBranch); err != nil {
 				p.logger.Warn("failed to update branch",
 					"branch_id", existingBranch.ID().String(),
 					"error", err,
 				)
 			}
+		}
+
+		// Default-branch designation is applied atomically (single-default
+		// invariant) and only when the repo has no default yet — see
+		// maybeSetDefaultBranch.
+		if branchInfo.IsDefaultBranch && !existingBranch.IsDefault() {
+			p.maybeSetDefaultBranch(ctx, repositoryID, existingBranch.ID())
 		}
 
 		id := existingBranch.ID()
@@ -1362,14 +1376,13 @@ func (p *FindingProcessor) getOrCreateBranch(ctx context.Context, repositoryID s
 		return nil, fmt.Errorf("failed to create branch entity: %w", err)
 	}
 
-	if branchInfo.IsDefaultBranch {
-		newBranch.SetDefault(true)
-	}
-
 	if branchInfo.CommitSHA != "" {
 		newBranch.UpdateLastCommit(branchInfo.CommitSHA, "", "", "", time.Now().UTC())
 	}
 
+	// is_default is intentionally NOT set here; it is applied atomically after
+	// creation via maybeSetDefaultBranch (single-default invariant + no
+	// hijacking an existing default from an untrusted scan report).
 	if err := p.branchRepo.Create(ctx, newBranch); err != nil {
 		// Race condition: another goroutine may have created the branch
 		// between our GetByName and Create calls. Retry the lookup.
@@ -1386,15 +1399,46 @@ func (p *FindingProcessor) getOrCreateBranch(ctx context.Context, repositoryID s
 		return nil, fmt.Errorf("failed to create branch: %w", err)
 	}
 
+	if branchInfo.IsDefaultBranch {
+		p.maybeSetDefaultBranch(ctx, repositoryID, newBranch.ID())
+	}
+
 	p.logger.Debug("created new branch record",
 		"repository_id", repositoryID.String(),
 		"branch_name", branchInfo.Name,
 		"branch_id", newBranch.ID().String(),
-		"is_default", newBranch.IsDefault(),
 	)
 
 	id := newBranch.ID()
 	return &id, nil
+}
+
+// maybeSetDefaultBranch designates branchID as the repository's default branch,
+// but ONLY when the repo has no default yet. It uses the atomic SetDefaultBranch
+// (which unsets any sibling default) to preserve the single-default invariant.
+//
+// It deliberately does NOT flip an existing default: the default-branch flag in
+// a scan report is attacker-influenceable, and silently re-pointing the default
+// would re-scope default-branch auto-resolve and could be abused to mass-resolve
+// a repo's real findings. Changing the default is an explicit API operation.
+func (p *FindingProcessor) maybeSetDefaultBranch(ctx context.Context, repositoryID, branchID shared.ID) {
+	if current, err := p.branchRepo.GetDefaultBranch(ctx, repositoryID); err == nil && current != nil {
+		if current.ID() != branchID {
+			p.logger.Debug("ingest reported a default branch but repository already has one; not changing",
+				"repository_id", repositoryID.String(),
+				"reported_branch_id", branchID.String(),
+				"current_default_branch_id", current.ID().String(),
+			)
+		}
+		return
+	}
+	if err := p.branchRepo.SetDefaultBranch(ctx, repositoryID, branchID); err != nil {
+		p.logger.Warn("failed to set default branch on ingest",
+			"repository_id", repositoryID.String(),
+			"branch_id", branchID.String(),
+			"error", err,
+		)
+	}
 }
 
 // mapCTISDataFlowToDomain converts a CTIS DataFlow to a domain DataFlow value object.

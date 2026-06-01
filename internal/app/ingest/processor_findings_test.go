@@ -1479,3 +1479,108 @@ func TestFindingProcessor_NoStampWhenVulnerabilityAbsent(t *testing.T) {
 	require.Len(t, repo.created, 1)
 	assert.Nil(t, repo.created[0].VulnerabilityID(), "VulnerabilityID should not be set when finding has no Vulnerability block")
 }
+
+// =============================================================================
+// redactSecretSnippet — never persist a secret's raw source line
+// =============================================================================
+
+func newSecretFindingForTest(t *testing.T) *vulnerability.Finding {
+	t.Helper()
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceSecret, "gitleaks", vulnerability.SeverityHigh, "hardcoded secret")
+	require.NoError(t, err)
+	return f
+}
+
+func TestRedactSecretSnippet_UsesMaskedValueAndClearsContext(t *testing.T) {
+	p := &FindingProcessor{}
+	f := newSecretFindingForTest(t)
+	f.SetSnippet("AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE")
+	f.SetContextSnippet("foo()\nAWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE\nbar()")
+	f.SetSecretMaskedValue("AKIA****************MPLE")
+
+	p.redactSecretSnippet(f)
+
+	assert.Equal(t, "AKIA****************MPLE", f.Snippet(), "raw secret snippet must be replaced by masked value")
+	assert.Equal(t, "", f.ContextSnippet(), "context snippet (may contain the secret) must be cleared")
+	assert.NotContains(t, f.Snippet(), "AKIAIOSFODNN7EXAMPLE")
+}
+
+func TestRedactSecretSnippet_PlaceholderWhenNoMaskedValue(t *testing.T) {
+	p := &FindingProcessor{}
+	f := newSecretFindingForTest(t)
+	f.SetSnippet("token = ghp_REALSECRETVALUE1234567890")
+
+	p.redactSecretSnippet(f)
+
+	assert.Equal(t, "[redacted secret]", f.Snippet())
+	assert.NotContains(t, f.Snippet(), "ghp_REALSECRETVALUE1234567890")
+}
+
+// =============================================================================
+// maybeSetDefaultBranch — single-default invariant + no hijacking an existing
+// default from an (untrusted) scan report
+// =============================================================================
+
+// defaultBranchStubRepo is a minimal branch.Repository for testing default-branch logic.
+type defaultBranchStubRepo struct {
+	defaultBranch *branch.Branch
+	setCalls      []shared.ID
+}
+
+func (s *defaultBranchStubRepo) GetDefaultBranch(_ context.Context, _ shared.ID) (*branch.Branch, error) {
+	if s.defaultBranch == nil {
+		return nil, shared.ErrNotFound
+	}
+	return s.defaultBranch, nil
+}
+func (s *defaultBranchStubRepo) SetDefaultBranch(_ context.Context, _ shared.ID, branchID shared.ID) error {
+	s.setCalls = append(s.setCalls, branchID)
+	return nil
+}
+func (s *defaultBranchStubRepo) Create(context.Context, *branch.Branch) error { return nil }
+func (s *defaultBranchStubRepo) GetByID(context.Context, shared.ID) (*branch.Branch, error) {
+	return nil, nil
+}
+func (s *defaultBranchStubRepo) GetByName(context.Context, shared.ID, string) (*branch.Branch, error) {
+	return nil, nil
+}
+func (s *defaultBranchStubRepo) Update(context.Context, *branch.Branch) error { return nil }
+func (s *defaultBranchStubRepo) Delete(context.Context, shared.ID) error      { return nil }
+func (s *defaultBranchStubRepo) List(context.Context, branch.Filter, branch.ListOptions, pagination.Pagination) (pagination.Result[*branch.Branch], error) {
+	return pagination.Result[*branch.Branch]{}, nil
+}
+func (s *defaultBranchStubRepo) ListByRepository(context.Context, shared.ID) ([]*branch.Branch, error) {
+	return nil, nil
+}
+func (s *defaultBranchStubRepo) Count(context.Context, branch.Filter) (int64, error) { return 0, nil }
+func (s *defaultBranchStubRepo) ExistsByName(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+func (s *defaultBranchStubRepo) CompareBranches(context.Context, shared.ID, string, string) (*branch.BranchComparison, error) {
+	return nil, nil
+}
+
+func TestMaybeSetDefaultBranch_SetsWhenNoneExists(t *testing.T) {
+	stub := &defaultBranchStubRepo{defaultBranch: nil}
+	p := &FindingProcessor{branchRepo: stub, logger: logger.NewNop()}
+
+	repoID := shared.NewID()
+	branchID := shared.NewID()
+	p.maybeSetDefaultBranch(context.Background(), repoID, branchID)
+
+	require.Len(t, stub.setCalls, 1, "should promote to default when repo has none")
+	assert.Equal(t, branchID, stub.setCalls[0])
+}
+
+func TestMaybeSetDefaultBranch_DoesNotHijackExistingDefault(t *testing.T) {
+	repoID := shared.NewID()
+	existing, err := branch.NewBranch(repoID, "main", branch.TypeMain)
+	require.NoError(t, err)
+	stub := &defaultBranchStubRepo{defaultBranch: existing}
+	p := &FindingProcessor{branchRepo: stub, logger: logger.NewNop()}
+
+	// A scan reports a *different* branch as default — must be ignored.
+	p.maybeSetDefaultBranch(context.Background(), repoID, shared.NewID())
+
+	assert.Empty(t, stub.setCalls, "must not change an existing default from an untrusted scan report")
+}

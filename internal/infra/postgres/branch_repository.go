@@ -13,6 +13,23 @@ import (
 	"github.com/openctemio/api/pkg/pagination"
 )
 
+// branchSortColumns is the allowlist of user-selectable ORDER BY columns for
+// branch listing. Keys are the values accepted from the `sort` query param;
+// values are the literal, trusted column names. Anything not in this map falls
+// back to the default sort — this prevents ORDER BY SQL injection.
+var branchSortColumns = map[string]string{
+	"name":            "name",
+	"branch_type":     "branch_type",
+	"is_default":      "is_default",
+	"is_protected":    "is_protected",
+	"last_commit_at":  "last_commit_at",
+	"last_scanned_at": "last_scanned_at",
+	"scan_status":     "scan_status",
+	"findings_total":  "findings_total",
+	"created_at":      "created_at",
+	"updated_at":      "updated_at",
+}
+
 // BranchRepository implements branch.Repository using PostgreSQL.
 type BranchRepository struct {
 	db *DB
@@ -180,14 +197,21 @@ func (r *BranchRepository) List(ctx context.Context, filter branch.Filter, opts 
 		countQuery += " WHERE " + whereClause
 	}
 
-	// Apply sorting
+	// Apply sorting. SECURITY: opts.SortBy originates from the user-supplied
+	// `sort` query param and is interpolated into ORDER BY, so it MUST be
+	// validated against a fixed column allowlist (no raw interpolation) to
+	// prevent ORDER BY SQL injection.
+	orderColumn, ok := branchSortColumns[opts.SortBy]
+	if !ok {
+		orderColumn = "" // fall back to the default sort
+	}
 	orderBy := defaultSortOrder
-	if opts.SortBy != "" {
+	if orderColumn != "" {
 		direction := sortOrderASC
 		if opts.SortOrder == sortOrderDescLower {
 			direction = sortOrderDESC
 		}
-		orderBy = fmt.Sprintf("%s %s", opts.SortBy, direction)
+		orderBy = fmt.Sprintf("%s %s", orderColumn, direction)
 	}
 	baseQuery += " ORDER BY " + orderBy
 	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
