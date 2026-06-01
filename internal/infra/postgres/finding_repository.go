@@ -2473,7 +2473,15 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	}
 
 	if filter.BranchID != nil {
-		conditions = append(conditions, fmt.Sprintf("branch_id = $%d", argIndex))
+		// Branch-aware filter (occurrence model): a finding is "on" a branch if
+		// it has an occurrence there — not just if its legacy branch_id (the
+		// single first-attributed branch) happens to match. On backfilled data
+		// this is equivalent to the old `branch_id = X`; going forward it
+		// correctly returns the same vuln across every branch it appears on.
+		// The finding's own status filter still controls open/resolved.
+		conditions = append(conditions, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM finding_branch_occurrences o WHERE o.finding_id = findings.id AND o.branch_id = $%d)",
+			argIndex))
 		args = append(args, filter.BranchID.String())
 		argIndex++
 	}

@@ -11,15 +11,16 @@ import (
 	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
+	"github.com/openctemio/api/pkg/pagination"
 )
 
 // seedOccurrenceFixture creates the FK chain (tenant → repository asset →
 // asset_repositories → branch → finding) needed to exercise the branch-aware
 // occurrence upsert, and returns the tenant id, branch id, and finding fingerprint.
-func seedOccurrenceFixture(t *testing.T, db *sql.DB) (tenantID, branchID shared.ID, fingerprint string) {
+func seedOccurrenceFixture(t *testing.T, db *sql.DB) (tenantID, assetID, branchID shared.ID, fingerprint string) {
 	t.Helper()
 	tenantID = shared.NewID()
-	assetID := shared.NewID()
+	assetID = shared.NewID()
 	branchID = shared.NewID()
 	fingerprint = "fbo" + shared.NewID().String()[:29] // unique 32-char-ish
 
@@ -45,7 +46,7 @@ func seedOccurrenceFixture(t *testing.T, db *sql.DB) (tenantID, branchID shared.
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM tenants WHERE id = $1`, tenantID.String()) })
-	return tenantID, branchID, fingerprint
+	return tenantID, assetID, branchID, fingerprint
 }
 
 func TestUpsertBranchOccurrences_InsertThenReopen(t *testing.T) {
@@ -53,7 +54,7 @@ func TestUpsertBranchOccurrences_InsertThenReopen(t *testing.T) {
 	repo := postgres.NewFindingRepository(&postgres.DB{DB: sqlDB})
 	ctx := context.Background()
 
-	tenantID, branchID, fp := seedOccurrenceFixture(t, sqlDB)
+	tenantID, _, branchID, fp := seedOccurrenceFixture(t, sqlDB)
 
 	item := vulnerability.BranchOccurrenceUpsert{
 		Fingerprint: fp, BranchID: branchID, ScanID: "scan-1", CommitSHA: "abc123",
@@ -99,7 +100,7 @@ func TestUpsertBranchOccurrences_UnknownFingerprintMatchesNothing(t *testing.T) 
 	repo := postgres.NewFindingRepository(&postgres.DB{DB: sqlDB})
 	ctx := context.Background()
 
-	tenantID, branchID, _ := seedOccurrenceFixture(t, sqlDB)
+	tenantID, _, branchID, _ := seedOccurrenceFixture(t, sqlDB)
 
 	// A fingerprint with no matching finding → no occurrence, no error.
 	require.NoError(t, repo.UpsertBranchOccurrences(ctx, tenantID, []vulnerability.BranchOccurrenceUpsert{
@@ -110,4 +111,50 @@ func TestUpsertBranchOccurrences_UnknownFingerprintMatchesNothing(t *testing.T) 
 	require.NoError(t, sqlDB.QueryRow(
 		`SELECT count(*) FROM finding_branch_occurrences WHERE branch_id = $1`, branchID.String()).Scan(&count))
 	require.Equal(t, 0, count)
+}
+
+// TestListFilterByBranch_UsesOccurrences proves the branch filter now matches via
+// occurrences — it returns a finding whose legacy findings.branch_id is NULL but
+// which has an occurrence on the target branch, and correctly separates two
+// findings that live on different branches of the same repository.
+func TestListFilterByBranch_UsesOccurrences(t *testing.T) {
+	sqlDB := setupTestDB(t)
+	repo := postgres.NewFindingRepository(&postgres.DB{DB: sqlDB})
+	ctx := context.Background()
+
+	tenantID, assetID, branchX, fp1 := seedOccurrenceFixture(t, sqlDB)
+
+	// F1 (fp1) has branch_id = NULL (the fixture inserts no branch_id) but gets
+	// an occurrence on branchX — the legacy `branch_id = X` filter would miss it.
+	require.NoError(t, repo.UpsertBranchOccurrences(ctx, tenantID,
+		[]vulnerability.BranchOccurrenceUpsert{{Fingerprint: fp1, BranchID: branchX, ScanID: "s1"}}))
+
+	// A second branch Y on the same repo + a second finding only on Y.
+	branchY := shared.NewID()
+	_, err := sqlDB.Exec(`INSERT INTO repository_branches (id, repository_id, name, branch_type)
+		VALUES ($1, $2, 'feature/y', 'feature')`, branchY.String(), assetID.String())
+	require.NoError(t, err)
+	fp2 := "fbo" + shared.NewID().String()[:29]
+	_, err = sqlDB.Exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint)
+		VALUES ($1, $2, $3, 'sast', 'semgrep', 'f2', 'high', $4)`,
+		shared.NewID().String(), tenantID.String(), assetID.String(), fp2)
+	require.NoError(t, err)
+	require.NoError(t, repo.UpsertBranchOccurrences(ctx, tenantID,
+		[]vulnerability.BranchOccurrenceUpsert{{Fingerprint: fp2, BranchID: branchY, ScanID: "s2"}}))
+
+	// Filter by branchX → only F1 (even though F1.branch_id IS NULL).
+	resX, err := repo.List(ctx,
+		vulnerability.NewFindingFilter().WithTenantID(tenantID).WithBranchID(branchX),
+		vulnerability.NewFindingListOptions(), pagination.New(1, 20))
+	require.NoError(t, err)
+	require.Len(t, resX.Data, 1, "branchX should match exactly F1 via occurrence")
+	require.Equal(t, fp1, resX.Data[0].Fingerprint())
+
+	// Filter by branchY → only F2.
+	resY, err := repo.List(ctx,
+		vulnerability.NewFindingFilter().WithTenantID(tenantID).WithBranchID(branchY),
+		vulnerability.NewFindingListOptions(), pagination.New(1, 20))
+	require.NoError(t, err)
+	require.Len(t, resY.Data, 1, "branchY should match exactly F2 via occurrence")
+	require.Equal(t, fp2, resY.Data[0].Fingerprint())
 }
