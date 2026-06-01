@@ -1156,6 +1156,107 @@ func TestWfDispatch_MatchesAITriageTriggerFilters_NoFiltersMatchAll(t *testing.T
 	}
 }
 
+// wfDispatchAddActionNode appends an action node so the workflow counts as
+// having a side effect (used by the needs_review gate tests).
+func wfDispatchAddActionNode(t *testing.T, wf *workflow.Workflow) {
+	t.Helper()
+	node, err := workflow.NewNode(wf.ID, "action_1", workflow.NodeTypeAction, "Action")
+	if err != nil {
+		t.Fatalf("failed to create action node: %v", err)
+	}
+	if err := node.SetActionConfig(workflow.ActionTypeUpdateStatus, map[string]any{"status": "closed"}); err != nil {
+		t.Fatalf("failed to set action config: %v", err)
+	}
+	wf.Nodes = append(wf.Nodes, node)
+}
+
+func TestWfDispatch_AITriageNeedsReview_BlocksSideEffectWorkflow(t *testing.T) {
+	h := newWfDispatchTestHarness()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+
+	// Workflow with a state-mutating action node.
+	wf := wfDispatchMakeWorkflow(t, tenantID, workflow.TriggerTypeAITriageCompleted, nil)
+	wfDispatchAddActionNode(t, wf)
+	h.wfRepo.workflows[wf.ID.String()] = wf
+
+	// Triage flagged needs_review (potential prompt injection / coerced output).
+	event := app.AITriageEvent{
+		TenantID:  tenantID,
+		FindingID: shared.NewID(),
+		TriageID:  shared.NewID(),
+		EventType: workflow.TriggerTypeAITriageCompleted,
+		TriageData: map[string]any{
+			"severity_assessment": "critical",
+			"risk_score":          float64(9.0),
+			"needs_review":        true,
+		},
+	}
+
+	_ = h.dispatch.DispatchAITriageEvent(ctx, event)
+
+	if h.runRepo.TriggeredCount() != 0 {
+		t.Errorf("expected 0 triggers for needs_review triage on a side-effect workflow, got %d", h.runRepo.TriggeredCount())
+	}
+}
+
+func TestWfDispatch_AITriageNeedsReview_AllowsTriggerOnlyWorkflow(t *testing.T) {
+	h := newWfDispatchTestHarness()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+
+	// Workflow with no action node (e.g. notification/trigger only) — safe to fire.
+	wf := wfDispatchMakeWorkflow(t, tenantID, workflow.TriggerTypeAITriageCompleted, nil)
+	h.wfRepo.workflows[wf.ID.String()] = wf
+
+	event := app.AITriageEvent{
+		TenantID:  tenantID,
+		FindingID: shared.NewID(),
+		TriageID:  shared.NewID(),
+		EventType: workflow.TriggerTypeAITriageCompleted,
+		TriageData: map[string]any{
+			"severity_assessment": "critical",
+			"risk_score":          float64(9.0),
+			"needs_review":        true,
+		},
+	}
+
+	_ = h.dispatch.DispatchAITriageEvent(ctx, event)
+
+	if h.runRepo.TriggeredCount() != 1 {
+		t.Errorf("expected 1 trigger for needs_review triage on a non-side-effect workflow, got %d", h.runRepo.TriggeredCount())
+	}
+}
+
+func TestWfDispatch_AITriageNoReview_AllowsSideEffectWorkflow(t *testing.T) {
+	h := newWfDispatchTestHarness()
+	ctx := context.Background()
+	tenantID := shared.NewID()
+
+	wf := wfDispatchMakeWorkflow(t, tenantID, workflow.TriggerTypeAITriageCompleted, nil)
+	wfDispatchAddActionNode(t, wf)
+	h.wfRepo.workflows[wf.ID.String()] = wf
+
+	// needs_review absent/false → action workflow fires normally.
+	event := app.AITriageEvent{
+		TenantID:  tenantID,
+		FindingID: shared.NewID(),
+		TriageID:  shared.NewID(),
+		EventType: workflow.TriggerTypeAITriageCompleted,
+		TriageData: map[string]any{
+			"severity_assessment": "critical",
+			"risk_score":          float64(9.0),
+			"needs_review":        false,
+		},
+	}
+
+	_ = h.dispatch.DispatchAITriageEvent(ctx, event)
+
+	if h.runRepo.TriggeredCount() != 1 {
+		t.Errorf("expected 1 trigger for non-needs_review triage on a side-effect workflow, got %d", h.runRepo.TriggeredCount())
+	}
+}
+
 func TestWfDispatch_MatchesAITriageTriggerFilters_SeverityFilterMatch(t *testing.T) {
 	h := newWfDispatchTestHarness()
 	ctx := context.Background()

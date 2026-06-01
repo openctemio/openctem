@@ -98,10 +98,27 @@ func (r *SLAPolicyRepository) GetByAsset(ctx context.Context, tenantID, assetID 
 }
 
 // GetTenantDefault retrieves the default policy for a tenant.
+//
+// The single-default invariant is enforced at write time (UnsetTenantDefaults),
+// but ORDER BY + LIMIT 1 makes the read deterministic as a safety net even if
+// stale data ever has more than one default row.
 func (r *SLAPolicyRepository) GetTenantDefault(ctx context.Context, tenantID shared.ID) (*sla.Policy, error) {
-	query := r.selectQuery() + " WHERE tenant_id = $1 AND is_default = true AND asset_id IS NULL"
+	query := r.selectQuery() + ` WHERE tenant_id = $1 AND is_default = true AND asset_id IS NULL
+		ORDER BY created_at ASC LIMIT 1`
 	row := r.db.QueryRowContext(ctx, query, tenantID.String())
 	return r.scanPolicy(row)
+}
+
+// UnsetTenantDefaults clears is_default on all of the tenant's tenant-wide
+// (asset_id IS NULL) policies except exceptID, enforcing a single default.
+func (r *SLAPolicyRepository) UnsetTenantDefaults(ctx context.Context, tenantID, exceptID shared.ID) error {
+	query := `UPDATE sla_policies
+		SET is_default = false, updated_at = now()
+		WHERE tenant_id = $1 AND asset_id IS NULL AND is_default = true AND id <> $2`
+	if _, err := r.db.ExecContext(ctx, query, tenantID.String(), exceptID.String()); err != nil {
+		return fmt.Errorf("failed to unset existing default SLA policies: %w", err)
+	}
+	return nil
 }
 
 // Update updates an existing policy.

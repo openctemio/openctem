@@ -511,6 +511,21 @@ func (d *WorkflowEventDispatcher) matchesAITriageTriggerFilters(wf *workflowdom.
 		return false
 	}
 
+	// SECURITY: the triage verdict (severity_assessment, risk_score, ...) is
+	// produced by an LLM from attacker-influenceable finding content and is
+	// advisory only. When the triage service flags needs_review (the LLM
+	// output was invalid/coerced — a prompt-injection signal), refuse to let
+	// it auto-fire workflows that mutate finding state or have external
+	// effects. Notification-only workflows still fire so humans are alerted.
+	if triageNeedsReview(event.TriageData) && workflowHasSideEffectAction(wf) {
+		d.logger.Warn("SECURITY: skipping side-effect workflow for needs-review AI triage",
+			"workflow_id", wf.ID,
+			"workflow_name", wf.Name,
+			"finding_id", event.FindingID,
+			"triage_id", event.TriageID)
+		return false
+	}
+
 	config := triggerNode.Config.TriggerConfig
 	if config == nil {
 		// No filters configured - match all
@@ -528,6 +543,26 @@ func (d *WorkflowEventDispatcher) matchesAITriageTriggerFilters(wf *workflowdom.
 	}
 
 	return true
+}
+
+// triageNeedsReview reports whether the triage result was flagged for human
+// review (LLM output coerced/invalid — a low-confidence / prompt-injection
+// signal). Such a verdict must not silently drive automated state changes.
+func triageNeedsReview(triageData map[string]any) bool {
+	v, ok := triageData["needs_review"].(bool)
+	return ok && v
+}
+
+// workflowHasSideEffectAction reports whether the workflow contains any node
+// that mutates state or has an external effect (any action node). Notification
+// nodes are not side-effecting in this sense and remain allowed.
+func workflowHasSideEffectAction(wf *workflowdom.Workflow) bool {
+	for _, node := range wf.Nodes {
+		if node.NodeType == workflowdom.NodeTypeAction {
+			return true
+		}
+	}
+	return false
 }
 
 // matchesAITriageSeverityFilter checks if triage severity matches the filter.

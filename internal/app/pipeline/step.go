@@ -407,6 +407,21 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 		return nil, err
 	}
 
+	// Security: bind the step to the template named in the request. The step
+	// is loaded by raw ID, so without this check a caller could pass a
+	// template they own in the path but a step ID belonging to another
+	// tenant's template, mutating it (IDOR). The handler separately verifies
+	// the named template belongs to the caller's tenant.
+	if input.TemplateID != "" {
+		tid, err := shared.IDFromString(input.TemplateID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid template id", shared.ErrValidation)
+		}
+		if step.PipelineID != tid {
+			return nil, shared.ErrNotFound
+		}
+	}
+
 	// Security validation: validate tool, capabilities, and config
 	tenantID, _ := shared.IDFromString(input.TenantID)
 	if s.securityValidator != nil {

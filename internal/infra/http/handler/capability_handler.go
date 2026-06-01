@@ -215,9 +215,10 @@ func (h *CapabilityHandler) ListCapabilitiesByCategory(w http.ResponseWriter, r 
 // GetCapability returns a capability by ID.
 // GET /api/v1/capabilities/:id
 func (h *CapabilityHandler) GetCapability(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
 	capabilityID := chi.URLParam(r, "id")
 
-	c, err := h.service.GetCapability(r.Context(), capabilityID)
+	c, err := h.service.GetCapability(r.Context(), tenantID, capabilityID)
 	if err != nil {
 		h.handleError(w, err, "capability")
 		return

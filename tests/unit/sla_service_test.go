@@ -18,16 +18,16 @@ import (
 // =============================================================================
 
 type mockSLARepo struct {
-	policies    map[string]*sladom.Policy
-	createErr   error
-	getByIDErr  error
-	getByAsset  error
-	getDefault  error
-	updateErr   error
-	deleteErr   error
-	listErr     error
-	existsErr   error
-	existsVal   bool
+	policies   map[string]*sladom.Policy
+	createErr  error
+	getByIDErr error
+	getByAsset error
+	getDefault error
+	updateErr  error
+	deleteErr  error
+	listErr    error
+	existsErr  error
+	existsVal  bool
 }
 
 func newMockSLARepo() *mockSLARepo {
@@ -121,6 +121,15 @@ func (m *mockSLARepo) ExistsByAsset(_ context.Context, _ shared.ID) (bool, error
 	return m.existsVal, nil
 }
 
+func (m *mockSLARepo) UnsetTenantDefaults(_ context.Context, tenantID, exceptID shared.ID) error {
+	for _, p := range m.policies {
+		if p.TenantID() == tenantID && p.AssetID() == nil && p.IsDefault() && p.ID() != exceptID {
+			p.SetDefault(false)
+		}
+	}
+	return nil
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -200,6 +209,47 @@ func TestCreateSLAPolicy_Success(t *testing.T) {
 	}
 	if len(repo.policies) != 1 {
 		t.Errorf("expected 1 policy in repo, got %d", len(repo.policies))
+	}
+}
+
+func TestCreateSLAPolicy_SingleDefaultEnforced(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+
+	tenantID := shared.NewID()
+
+	// First default policy.
+	in1 := validSLACreateInput(tenantID.String())
+	in1.Name = "Default A"
+	in1.IsDefault = true
+	p1, err := svc.CreateSLAPolicy(context.Background(), in1)
+	if err != nil {
+		t.Fatalf("create p1: %v", err)
+	}
+
+	// Second default policy for the same tenant must demote the first.
+	in2 := validSLACreateInput(tenantID.String())
+	in2.Name = "Default B"
+	in2.IsDefault = true
+	p2, err := svc.CreateSLAPolicy(context.Background(), in2)
+	if err != nil {
+		t.Fatalf("create p2: %v", err)
+	}
+
+	defaults := 0
+	for _, p := range repo.policies {
+		if p.IsDefault() {
+			defaults++
+		}
+	}
+	if defaults != 1 {
+		t.Fatalf("expected exactly 1 default policy, got %d", defaults)
+	}
+	if repo.policies[p1.ID().String()].IsDefault() {
+		t.Error("expected first policy to be demoted from default")
+	}
+	if !repo.policies[p2.ID().String()].IsDefault() {
+		t.Error("expected newest policy to remain default")
 	}
 }
 

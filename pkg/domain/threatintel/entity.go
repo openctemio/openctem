@@ -21,15 +21,29 @@ type EPSSScore struct {
 // NewEPSSScore creates a new EPSSScore.
 func NewEPSSScore(cveID string, score, percentile float64, modelVersion string, scoreDate time.Time) *EPSSScore {
 	now := time.Now().UTC()
+	// Clamp to valid ranges so a malformed/poisoned feed row cannot store
+	// out-of-range values that downstream risk math would trust. EPSS
+	// probability is [0,1]; percentile is expressed here as [0,100].
 	return &EPSSScore{
 		cveID:        cveID,
-		epssScore:    score,
-		percentile:   percentile,
+		epssScore:    clampRange(score, 0, 1),
+		percentile:   clampRange(percentile, 0, 100),
 		modelVersion: modelVersion,
 		scoreDate:    scoreDate,
 		createdAt:    now,
 		updatedAt:    now,
 	}
+}
+
+// clampRange constrains v to the inclusive range [min, max].
+func clampRange(v, min, max float64) float64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }
 
 // ReconstituteEPSSScore recreates an EPSSScore from persistence.

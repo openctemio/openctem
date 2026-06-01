@@ -27,6 +27,16 @@ const (
 
 	// HTTP client timeout
 	httpTimeout = 5 * time.Minute
+
+	// maxCompressedFeedBytes bounds the raw (still-compressed) response read
+	// from a feed before it is handed to a decompressor — a guard against an
+	// upstream/MITM serving an oversized body.
+	maxCompressedFeedBytes = 256 << 20 // 256 MiB
+
+	// maxDecompressedFeedBytes bounds the decompressed stream so a malicious
+	// gzip (decompression bomb) cannot exhaust memory. The real EPSS feed is
+	// well under this; the bound is defence-in-depth.
+	maxDecompressedFeedBytes = 1 << 30 // 1 GiB
 )
 
 // IntelService handles threat intelligence operations.
@@ -239,15 +249,16 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	// Decompress gzip
-	gzReader, err := gzip.NewReader(resp.Body)
+	// Decompress gzip. Bound both the compressed input and the decompressed
+	// output to defend against an oversized body / decompression bomb.
+	gzReader, err := gzip.NewReader(io.LimitReader(resp.Body, maxCompressedFeedBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
 	}
 	defer gzReader.Close()
 
 	// Parse CSV
-	csvReader := csv.NewReader(gzReader)
+	csvReader := csv.NewReader(io.LimitReader(gzReader, maxDecompressedFeedBytes))
 
 	// Read header - EPSS CSV has a comment line first, then header
 	// First line is like: #model_version:v2023.03.01,score_date:2024-01-15
@@ -348,9 +359,9 @@ func (s *IntelService) fetchKEVData(ctx context.Context) ([]*threatintel.KEVEntr
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	// Parse JSON
+	// Parse JSON (bounded to guard against an oversized upstream body)
 	var kevCatalog kevCatalogResponse
-	if err := json.NewDecoder(resp.Body).Decode(&kevCatalog); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDecompressedFeedBytes)).Decode(&kevCatalog); err != nil {
 		return nil, fmt.Errorf("failed to parse KEV JSON: %w", err)
 	}
 

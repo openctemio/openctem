@@ -129,8 +129,11 @@ func (s *CapabilityService) ListCapabilitiesByCategory(ctx context.Context, tena
 	return s.repo.ListByCategory(ctx, tid, category)
 }
 
-// GetCapability returns a capability by ID.
-func (s *CapabilityService) GetCapability(ctx context.Context, id string) (*capabilitydom.Capability, error) {
+// GetCapability returns a capability by ID, scoped to the caller's tenant.
+// Platform capabilities (TenantID == nil) are visible to everyone; tenant
+// custom capabilities are only visible to their owning tenant. Without this
+// check a guessed UUID would disclose another tenant's custom capability.
+func (s *CapabilityService) GetCapability(ctx context.Context, tenantID, id string) (*capabilitydom.Capability, error) {
 	s.logger.Debug("getting capability", "id", id)
 
 	capabilityID, err := shared.IDFromString(id)
@@ -138,7 +141,22 @@ func (s *CapabilityService) GetCapability(ctx context.Context, id string) (*capa
 		return nil, fmt.Errorf("%w: invalid capability id", shared.ErrValidation)
 	}
 
-	return s.repo.GetByID(ctx, capabilityID)
+	c, err := s.repo.GetByID(ctx, capabilityID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Platform capability: always visible.
+	if c.TenantID == nil {
+		return c, nil
+	}
+
+	// Tenant custom capability: must belong to the caller's tenant.
+	if tenantID == "" || c.TenantID.String() != tenantID {
+		return nil, shared.ErrNotFound
+	}
+
+	return c, nil
 }
 
 // GetCategories returns all unique capability categories.

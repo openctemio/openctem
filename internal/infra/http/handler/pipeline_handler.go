@@ -696,6 +696,15 @@ func (h *PipelineHandler) UpdateStep(w http.ResponseWriter, r *http.Request) {
 		input.UIPositionY = &req.UIPosition.Y
 	}
 
+	// Security: verify the template belongs to the tenant before mutating a
+	// step under it. UpdateStep resolves the step by raw ID, so without this
+	// guard a caller could modify another tenant's step (IDOR). Mirrors
+	// DeleteStep below.
+	if _, err := h.service.GetTemplate(r.Context(), tenantID, templateID); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
 	step, err := h.service.UpdateStep(r.Context(), stepID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
