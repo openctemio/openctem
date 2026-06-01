@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/internal/infra/notifier"
 	"github.com/openctemio/api/internal/infra/scm"
 	"github.com/openctemio/api/pkg/crypto"
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	integrationdom "github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -51,6 +52,11 @@ type IntegrationService struct {
 	notificationFactory   *notifier.ClientFactory
 	encryptor             crypto.Encryptor
 	logger                *logger.Logger
+
+	// Optional stores for SCM repository import (wired via SetRepoImportRepos).
+	// nil when import is not configured.
+	assetRepo   assetdom.Repository
+	repoExtRepo assetdom.RepositoryExtensionRepository
 
 	// Rate limiting for test notifications
 	testRateLimitMu  sync.RWMutex
@@ -681,6 +687,16 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 		Search:  input.Search,
 	})
 	if err != nil {
+		// If the provider rejected our credentials, reflect that on the
+		// integration status so the UI stops showing "Connected" — otherwise
+		// the stored status (set at create/last successful test) goes stale and
+		// the connection looks healthy while every sync fails.
+		if errors.Is(err, scm.ErrAuthFailed) {
+			intg.SetError("Stored credentials are invalid or expired")
+			if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
+				s.logger.Warn("failed to mark integration credentials invalid", "integration_id", intgID.String(), "error", updateErr)
+			}
+		}
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
 	}
 

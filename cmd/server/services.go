@@ -515,6 +515,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
+	s.Integration.SetRepoImportRepos(repos.Asset, repos.RepoExt)
 
 	s.Outbox = outbox.NewService(
 		repos.Outbox,

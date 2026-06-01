@@ -179,6 +179,7 @@ func registerIntegrationRoutes(
 		// Integration actions
 		r.POST("/{id}/test", h.Test, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.IntegrationsManage))
+		r.POST("/{id}/import-repositories", h.ImportRepositories, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.IntegrationsManage))
 

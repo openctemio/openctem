@@ -3,6 +3,7 @@ package scm
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -187,6 +188,17 @@ func (e *SCMError) Wrap(err error) *SCMError {
 		Code:    e.Code,
 		Wrapped: err,
 	}
+}
+
+// Is reports whether target is an SCMError with the same code. This lets
+// errors.Is match a wrapped SCM error (e.g. ErrAuthFailed.Wrap(...), which is a
+// fresh instance) against the package sentinels like ErrAuthFailed.
+func (e *SCMError) Is(target error) bool {
+	var t *SCMError
+	if errors.As(target, &t) {
+		return e.Code == t.Code
+	}
+	return false
 }
 
 // Unwrap returns the wrapped error

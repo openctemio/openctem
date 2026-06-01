@@ -1581,3 +1581,24 @@ func (h *IntegrationHandler) RotateJiraWebhookSecret(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
 }
+
+// ImportRepositories handles POST /api/v1/integrations/{id}/import-repositories.
+// It lists repositories from an SCM integration and upserts them as repository
+// assets for the tenant (dedup by full name; archived skipped unless requested).
+func (h *IntegrationHandler) ImportRepositories(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	integrationID := r.PathValue("id")
+
+	result, err := h.service.ImportSCMRepositories(r.Context(), app.ImportReposInput{
+		IntegrationID:   integrationID,
+		TenantID:        tenantID,
+		IncludeArchived: r.URL.Query().Get("include_archived") == queryParamTrue,
+	})
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}

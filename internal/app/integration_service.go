@@ -28,6 +28,8 @@ type (
 	GetNotificationEventsInput         = integration.GetNotificationEventsInput
 	GetNotificationEventsResult        = integration.GetNotificationEventsResult
 	GetSCMRepositoryInput              = integration.GetSCMRepositoryInput
+	ImportReposInput                   = integration.ImportReposInput
+	ImportReposResult                  = integration.ImportReposResult
 	IdentityExposure                   = integration.IdentityExposure
 	IdentityListResult                 = integration.IdentityListResult
 	IntegrationListReposInput          = integration.IntegrationListReposInput
