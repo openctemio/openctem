@@ -596,3 +596,8 @@ func convertGLProjects(glProjects []glProject, baseWebURL string) []Repository {
 	}
 	return repos
 }
+
+// ListBranches is not yet implemented for this provider.
+func (c *GitLabClient) ListBranches(_ context.Context, _ string, _ ListOptions) ([]Branch, error) {
+	return nil, ErrBranchListingUnsupported
+}

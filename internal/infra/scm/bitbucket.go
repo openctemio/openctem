@@ -731,3 +731,8 @@ func convertBBServerRepos(bbRepos []bbServerRepo, _ string) []Repository {
 	}
 	return repos
 }
+
+// ListBranches is not yet implemented for this provider.
+func (c *BitbucketClient) ListBranches(_ context.Context, _ string, _ ListOptions) ([]Branch, error) {
+	return nil, ErrBranchListingUnsupported
+}

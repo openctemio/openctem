@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/internal/infra/scm"
 	"github.com/openctemio/api/pkg/crypto"
 	assetdom "github.com/openctemio/api/pkg/domain/asset"
+	branchdom "github.com/openctemio/api/pkg/domain/branch"
 	integrationdom "github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -53,10 +54,11 @@ type IntegrationService struct {
 	encryptor             crypto.Encryptor
 	logger                *logger.Logger
 
-	// Optional stores for SCM repository import (wired via SetRepoImportRepos).
-	// nil when import is not configured.
+	// Optional stores for SCM repository import / branch sync (wired via
+	// SetRepoImportRepos). nil when import is not configured.
 	assetRepo   assetdom.Repository
 	repoExtRepo assetdom.RepositoryExtensionRepository
+	branchRepo  branchdom.Repository
 
 	// Rate limiting for test notifications
 	testRateLimitMu  sync.RWMutex

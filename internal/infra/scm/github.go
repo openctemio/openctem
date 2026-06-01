@@ -336,6 +336,54 @@ func (c *GitHubClient) GetRepository(ctx context.Context, fullName string) (*Rep
 	return &repo, nil
 }
 
+// ListBranches returns the branches of a repository, walking pages up to a cap.
+func (c *GitHubClient) ListBranches(ctx context.Context, fullName string, opts ListOptions) ([]Branch, error) {
+	perPage := opts.PerPage
+	if perPage <= 0 || perPage > 100 {
+		perPage = 100
+	}
+	const maxPages = 20 // cap: up to maxPages*perPage branches
+	var branches []Branch
+	for page := 1; page <= maxPages; page++ {
+		path := fmt.Sprintf("/repos/%s/branches?page=%d&per_page=%d", fullName, page, perPage)
+		resp, err := c.doRequest(ctx, "GET", path, nil)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusUnauthorized {
+			resp.Body.Close()
+			return nil, ErrAuthFailed.Wrap(fmt.Errorf("invalid or expired token"))
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			return nil, ErrNotFound.Wrap(fmt.Errorf("repository %s not found", fullName))
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		}
+		var page1 []struct {
+			Name      string `json:"name"`
+			Protected bool   `json:"protected"`
+			Commit    struct {
+				SHA string `json:"sha"`
+			} `json:"commit"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&page1); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		resp.Body.Close()
+		for _, b := range page1 {
+			branches = append(branches, Branch{Name: b.Name, Protected: b.Protected, CommitSHA: b.Commit.SHA})
+		}
+		if len(page1) < perPage {
+			break
+		}
+	}
+	return branches, nil
+}
+
 // getRepositoryLanguages fetches all languages for a repository
 func (c *GitHubClient) getRepositoryLanguages(ctx context.Context, fullName string) (map[string]int, error) {
 	path := fmt.Sprintf("/repos/%s/languages", fullName)

@@ -489,3 +489,8 @@ func convertAzureRepos(azRepos []azureRepo, baseURL, org string) []Repository {
 	}
 	return repos
 }
+
+// ListBranches is not yet implemented for this provider.
+func (c *AzureClient) ListBranches(_ context.Context, _ string, _ ListOptions) ([]Branch, error) {
+	return nil, ErrBranchListingUnsupported
+}
