@@ -22,8 +22,14 @@ var _ Router = (*chiRouter)(nil)
 func NewChiRouter() Router {
 	r := chi.NewRouter()
 
-	// Chi built-in middleware that are battle-tested
-	r.Use(chimw.RealIP)       // Sets RemoteAddr to X-Real-IP or X-Forwarded-For
+	// Chi built-in middleware that are battle-tested.
+	//
+	// SECURITY: chimw.RealIP is intentionally NOT used. It rewrites
+	// r.RemoteAddr from X-Forwarded-For / X-Real-IP for ANY peer, which is
+	// spoofable (GHSA-3fxj-6jh8-hvhx) and would defeat the trusted-proxy gate
+	// in httpsec.ClientIP — the authoritative client-IP source for rate
+	// limiting and audit. Leaving RemoteAddr as the real TCP peer lets
+	// httpsec.ClientIP honor forwarding headers only from SERVER_TRUSTED_PROXIES.
 	r.Use(chimw.CleanPath)    // Clean double slashes
 	r.Use(chimw.StripSlashes) // Strip trailing slashes
 
@@ -54,7 +60,8 @@ type ChiOption func(*chiRouter)
 // WithChiMiddleware adds Chi's built-in middleware.
 func WithChiMiddleware() ChiOption {
 	return func(r *chiRouter) {
-		r.mux.Use(chimw.RealIP)
+		// chimw.RealIP intentionally omitted — see NewChiRouter for rationale
+		// (it is spoofable and defeats the httpsec.ClientIP trusted-proxy gate).
 		r.mux.Use(chimw.CleanPath)
 		r.mux.Use(chimw.StripSlashes)
 	}
