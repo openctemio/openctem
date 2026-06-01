@@ -100,6 +100,18 @@ func (i Input) ShouldAutoResolve() bool {
 	return coverageType == CoverageTypeFull && i.IsDefaultBranchScan()
 }
 
+// IsFullCoverage reports whether this is a full scan (covers the whole codebase),
+// regardless of which branch it ran on. Used to gate per-branch occurrence
+// auto-resolve: only a full scan can conclude that a no-longer-reported finding
+// is actually gone from that branch (an incremental/partial scan cannot).
+func (i Input) IsFullCoverage() bool {
+	coverageType := i.CoverageType
+	if coverageType == "" && i.Report != nil && i.Report.Metadata.CoverageType != "" {
+		coverageType = CoverageType(i.Report.Metadata.CoverageType)
+	}
+	return coverageType == CoverageTypeFull
+}
+
 // Output represents the result of ingestion.
 type Output struct {
 	ReportID             string   `json:"report_id"`

@@ -158,3 +158,42 @@ func TestListFilterByBranch_UsesOccurrences(t *testing.T) {
 	require.Len(t, resY.Data, 1, "branchY should match exactly F2 via occurrence")
 	require.Equal(t, fp2, resY.Data[0].Fingerprint())
 }
+
+// TestAutoResolveStaleBranchOccurrences verifies a full scan that no longer
+// reports an occurrence marks it auto_fixed, scoped to the parent finding's tool.
+func TestAutoResolveStaleBranchOccurrences(t *testing.T) {
+	sqlDB := setupTestDB(t)
+	repo := postgres.NewFindingRepository(&postgres.DB{DB: sqlDB})
+	ctx := context.Background()
+
+	tenantID, _, branchID, fp := seedOccurrenceFixture(t, sqlDB) // finding tool_name = 'semgrep'
+
+	// Observe in scan s1.
+	require.NoError(t, repo.UpsertBranchOccurrences(ctx, tenantID,
+		[]vulnerability.BranchOccurrenceUpsert{{Fingerprint: fp, BranchID: branchID, ScanID: "s1"}}))
+
+	// A different tool's scan must NOT resolve it.
+	n, err := repo.AutoResolveStaleBranchOccurrences(ctx, tenantID, branchID, "trivy", "s2")
+	require.NoError(t, err)
+	require.Equal(t, int64(0), n, "tool mismatch must not resolve")
+
+	var status string
+	require.NoError(t, sqlDB.QueryRow(`SELECT status FROM finding_branch_occurrences WHERE branch_id = $1`,
+		branchID.String()).Scan(&status))
+	require.Equal(t, "open", status)
+
+	// The same tool's NEXT full scan (s2) no longer reports it → auto_fixed.
+	n, err = repo.AutoResolveStaleBranchOccurrences(ctx, tenantID, branchID, "semgrep", "s2")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), n)
+	require.NoError(t, sqlDB.QueryRow(`SELECT status FROM finding_branch_occurrences WHERE branch_id = $1`,
+		branchID.String()).Scan(&status))
+	require.Equal(t, "auto_fixed", status)
+
+	// Re-observing in a later scan reopens it.
+	require.NoError(t, repo.UpsertBranchOccurrences(ctx, tenantID,
+		[]vulnerability.BranchOccurrenceUpsert{{Fingerprint: fp, BranchID: branchID, ScanID: "s3"}}))
+	require.NoError(t, sqlDB.QueryRow(`SELECT status FROM finding_branch_occurrences WHERE branch_id = $1`,
+		branchID.String()).Scan(&status))
+	require.Equal(t, "open", status, "re-observing reopens an auto_fixed occurrence")
+}

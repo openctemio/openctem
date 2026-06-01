@@ -1361,3 +1361,7 @@ func (m *wfActionMockFindingRepo) ListComponentCVEPairs(_ context.Context, _ sha
 func (m *wfActionMockFindingRepo) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
 	return nil
 }
+
+func (m *wfActionMockFindingRepo) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
+	return 0, nil
+}

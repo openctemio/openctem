@@ -306,6 +306,33 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		}
 	}
 
+	// Step 3b: Per-branch occurrence auto-resolve (branch-aware occurrence model).
+	// Unlike the finding-level auto-resolve above (default branch only), this runs
+	// for ANY full-coverage scan and marks occurrences on the SCANNED branch that
+	// the scan no longer reports as auto_fixed — so per-branch state reflects what
+	// is actually present on that branch. Additive: it only touches occurrence
+	// rows, never the finding's headline status. Best-effort.
+	if input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
+		report.Tool != nil && report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
+		toolName := report.Tool.Name
+		scanID := report.Metadata.ID
+		branchName := report.Metadata.Branch.Name
+		for _, assetID := range assetMap {
+			br, err := s.branchRepo.GetByName(ctx, assetID, branchName)
+			if err != nil || br == nil {
+				continue // not a repository asset / branch not tracked — skip
+			}
+			n, err := s.findingRepo.AutoResolveStaleBranchOccurrences(ctx, tenantID, br.ID(), toolName, scanID)
+			if err != nil {
+				s.logger.Warn("failed to auto-resolve stale branch occurrences",
+					"asset_id", assetID.String(), "branch", branchName, "error", err)
+			} else if n > 0 {
+				s.logger.Info("auto-resolved stale branch occurrences",
+					"asset_id", assetID.String(), "branch", branchName, "count", n)
+			}
+		}
+	}
+
 	// Step 4: Update asset finding counts
 	if len(assetMap) > 0 {
 		assetIDs := make([]shared.ID, 0, len(assetMap))

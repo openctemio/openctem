@@ -1466,6 +1466,33 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	return nil
 }
 
+// AutoResolveStaleBranchOccurrences marks open occurrences on a branch as
+// auto_fixed when the current full scan (scanID, scoped to toolName via the
+// parent finding) no longer reported them. "Not reported" is detected by the
+// occurrence's last_seen_scan_id NOT matching the current scan id — every
+// occurrence seen in this scan was just bumped to scanID by
+// UpsertBranchOccurrences. Tool scoping prevents a scan from one tool resolving
+// another tool's occurrences on the same branch.
+func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Context, tenantID, branchID shared.ID, toolName, scanID string) (int64, error) {
+	const query = `
+		UPDATE finding_branch_occurrences o
+		SET status = 'auto_fixed', resolved_at = NOW(), resolved_reason = 'not_seen_in_scan', updated_at = NOW()
+		FROM findings f
+		WHERE o.finding_id = f.id
+		  AND o.tenant_id = $1
+		  AND o.branch_id = $2
+		  AND o.status = 'open'
+		  AND f.tool_name = $3
+		  AND o.last_seen_scan_id IS DISTINCT FROM $4
+	`
+	res, err := r.db.ExecContext(ctx, query, tenantID.String(), branchID.String(), toolName, scanID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to auto-resolve stale branch occurrences: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // UpdateStatusBatch updates the status of multiple findings.
 // Security: Requires tenantID to prevent cross-tenant status modification.
 func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
