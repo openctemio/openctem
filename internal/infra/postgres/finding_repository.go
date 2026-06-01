@@ -2506,11 +2506,23 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		// this is equivalent to the old `branch_id = X`; going forward it
 		// correctly returns the same vuln across every branch it appears on.
 		// The finding's own status filter still controls open/resolved.
-		conditions = append(conditions, fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM finding_branch_occurrences o WHERE o.finding_id = findings.id AND o.branch_id = $%d)",
-			argIndex))
+		//
+		// BranchStatus optionally narrows by the per-branch occurrence state:
+		// "open" (present now) or "fixed" (auto-resolved/closed on the branch).
+		// Anything else means "any state" (default), preserving prior behaviour.
+		occCond := fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM finding_branch_occurrences o WHERE o.finding_id = findings.id AND o.branch_id = $%d",
+			argIndex)
 		args = append(args, filter.BranchID.String())
 		argIndex++
+		switch filter.BranchStatus {
+		case "open":
+			occCond += " AND o.status = 'open'"
+		case "fixed":
+			occCond += " AND o.status IN ('auto_fixed', 'resolved')"
+		}
+		occCond += ")"
+		conditions = append(conditions, occCond)
 	}
 
 	if filter.ComponentID != nil {

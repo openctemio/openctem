@@ -197,3 +197,64 @@ func TestAutoResolveStaleBranchOccurrences(t *testing.T) {
 		branchID.String()).Scan(&status))
 	require.Equal(t, "open", status, "re-observing reopens an auto_fixed occurrence")
 }
+
+// TestListFilterByBranchStatus verifies the per-branch status filter
+// (open / fixed / all) over occurrences.
+func TestListFilterByBranchStatus(t *testing.T) {
+	sqlDB := setupTestDB(t)
+	repo := postgres.NewFindingRepository(&postgres.DB{DB: sqlDB})
+	ctx := context.Background()
+
+	tenantID, assetID, branchID, fp1 := seedOccurrenceFixture(t, sqlDB) // F1, tool semgrep
+
+	// F1: present (open) on the branch.
+	require.NoError(t, repo.UpsertBranchOccurrences(ctx, tenantID,
+		[]vulnerability.BranchOccurrenceUpsert{{Fingerprint: fp1, BranchID: branchID, ScanID: "s1"}}))
+
+	// F2: also on the branch, then auto-resolved (fixed on the branch).
+	fp2 := "fbo" + shared.NewID().String()[:29]
+	_, err := sqlDB.Exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint)
+		VALUES ($1, $2, $3, 'sast', 'semgrep', 'f2', 'high', $4)`,
+		shared.NewID().String(), tenantID.String(), assetID.String(), fp2)
+	require.NoError(t, err)
+	require.NoError(t, repo.UpsertBranchOccurrences(ctx, tenantID,
+		[]vulnerability.BranchOccurrenceUpsert{{Fingerprint: fp2, BranchID: branchID, ScanID: "s1"}}))
+	// A later full scan no longer reports F2 → its occurrence becomes auto_fixed.
+	n, err := repo.AutoResolveStaleBranchOccurrences(ctx, tenantID, branchID, "semgrep", "s2")
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, n, int64(1))
+	// Re-bump F1 so it stays open under scan s2.
+	require.NoError(t, repo.UpsertBranchOccurrences(ctx, tenantID,
+		[]vulnerability.BranchOccurrenceUpsert{{Fingerprint: fp1, BranchID: branchID, ScanID: "s2"}}))
+
+	fps := func(res []*vulnerability.Finding) map[string]bool {
+		m := map[string]bool{}
+		for _, f := range res {
+			m[f.Fingerprint()] = true
+		}
+		return m
+	}
+
+	openRes, err := repo.List(ctx,
+		vulnerability.NewFindingFilter().WithTenantID(tenantID).WithBranchID(branchID).WithBranchStatus("open"),
+		vulnerability.NewFindingListOptions(), pagination.New(1, 20))
+	require.NoError(t, err)
+	m := fps(openRes.Data)
+	require.True(t, m[fp1], "open filter must include F1")
+	require.False(t, m[fp2], "open filter must exclude fixed F2")
+
+	fixedRes, err := repo.List(ctx,
+		vulnerability.NewFindingFilter().WithTenantID(tenantID).WithBranchID(branchID).WithBranchStatus("fixed"),
+		vulnerability.NewFindingListOptions(), pagination.New(1, 20))
+	require.NoError(t, err)
+	m = fps(fixedRes.Data)
+	require.True(t, m[fp2], "fixed filter must include F2")
+	require.False(t, m[fp1], "fixed filter must exclude open F1")
+
+	allRes, err := repo.List(ctx,
+		vulnerability.NewFindingFilter().WithTenantID(tenantID).WithBranchID(branchID).WithBranchStatus("all"),
+		vulnerability.NewFindingListOptions(), pagination.New(1, 20))
+	require.NoError(t, err)
+	m = fps(allRes.Data)
+	require.True(t, m[fp1] && m[fp2], "all must include both")
+}
