@@ -1584,3 +1584,7 @@ func TestMaybeSetDefaultBranch_DoesNotHijackExistingDefault(t *testing.T) {
 
 	assert.Empty(t, stub.setCalls, "must not change an existing default from an untrusted scan report")
 }
+
+func (s *stubFindingRepository) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
+	return nil
+}

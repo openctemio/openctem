@@ -513,3 +513,7 @@ func TestDifferentTenantsProduceDifferentActivities(t *testing.T) {
 	}
 }
 
+
+func (s *stubFindingRepo) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
+	return nil
+}

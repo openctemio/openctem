@@ -1357,3 +1357,7 @@ func (m *wfActionMockFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ sha
 func (m *wfActionMockFindingRepo) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
 	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
 }
+
+func (m *wfActionMockFindingRepo) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
+	return nil
+}

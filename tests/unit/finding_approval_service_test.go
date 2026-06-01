@@ -1202,3 +1202,7 @@ func (m *mockFindingRepository) UpdateWorkItemURIs(_ context.Context, _, _ share
 func (m *mockFindingRepository) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
 	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
 }
+
+func (m *mockFindingRepository) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
+	return nil
+}

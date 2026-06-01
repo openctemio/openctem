@@ -1413,6 +1413,59 @@ func (r *FindingRepository) CheckFingerprintsExist(ctx context.Context, tenantID
 	return result, nil
 }
 
+// UpsertBranchOccurrences records per-branch observations for findings matched by
+// (tenant_id, fingerprint). It is a single set-based upsert over parallel arrays:
+// a new occurrence is inserted, or an existing (finding, branch) row is bumped
+// (last_seen + commit) and reopened if it had been auto-resolved. Findings whose
+// fingerprint is not (yet) persisted simply match nothing — harmless.
+func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantID shared.ID, items []vulnerability.BranchOccurrenceUpsert) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	fingerprints := make([]string, len(items))
+	branchIDs := make([]string, len(items))
+	scanIDs := make([]string, len(items))
+	commits := make([]string, len(items))
+	for i, it := range items {
+		fingerprints[i] = it.Fingerprint
+		branchIDs[i] = it.BranchID.String()
+		scanIDs[i] = it.ScanID
+		commits[i] = it.CommitSHA
+	}
+
+	// gen_random_uuid() for the PK; the JOIN to findings resolves the canonical
+	// finding row by fingerprint, and the JOIN to repository_branches both
+	// validates the branch exists and supplies the denormalized repository_id.
+	const query = `
+		INSERT INTO finding_branch_occurrences (
+			tenant_id, finding_id, branch_id, repository_id, status,
+			first_seen_scan_id, first_commit_sha, last_seen_scan_id, last_commit_sha
+		)
+		SELECT f.tenant_id, f.id, b.id, b.repository_id, 'open',
+			NULLIF(inp.scan_id, ''), NULLIF(inp.commit_sha, ''),
+			NULLIF(inp.scan_id, ''), NULLIF(inp.commit_sha, '')
+		FROM unnest($2::text[], $3::uuid[], $4::text[], $5::text[])
+			AS inp(fingerprint, branch_id, scan_id, commit_sha)
+		JOIN findings f ON f.tenant_id = $1 AND f.fingerprint = inp.fingerprint
+		JOIN repository_branches b ON b.id = inp.branch_id
+		ON CONFLICT (finding_id, branch_id) DO UPDATE SET
+			last_seen_at = NOW(),
+			last_seen_scan_id = EXCLUDED.last_seen_scan_id,
+			last_commit_sha = EXCLUDED.last_commit_sha,
+			status = CASE WHEN finding_branch_occurrences.status = 'auto_fixed'
+			              THEN 'open' ELSE finding_branch_occurrences.status END,
+			updated_at = NOW()
+	`
+
+	if _, err := r.db.ExecContext(ctx, query, tenantID.String(),
+		pq.Array(fingerprints), pq.Array(branchIDs), pq.Array(scanIDs), pq.Array(commits),
+	); err != nil {
+		return fmt.Errorf("failed to upsert branch occurrences: %w", err)
+	}
+	return nil
+}
+
 // UpdateStatusBatch updates the status of multiple findings.
 // Security: Requires tenantID to prevent cross-tenant status modification.
 func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {

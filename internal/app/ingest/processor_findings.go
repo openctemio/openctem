@@ -470,6 +470,37 @@ func (p *FindingProcessor) ProcessBatch(
 		}
 	}
 
+	// Step 6: Branch-aware occurrence model. Record, per branch, where each
+	// finding was observed in this scan. Matched by fingerprint so it covers
+	// both newly-created and enriched findings, and is additive to the finding
+	// row (which keeps its branch-independent identity). Best-effort: a failure
+	// here must not fail the ingest.
+	reportCommit := ""
+	if report.Metadata.Branch != nil {
+		reportCommit = report.Metadata.Branch.CommitSHA
+	}
+	occurrences := make([]vulnerability.BranchOccurrenceUpsert, 0, len(validFindings))
+	for _, fm := range validFindings {
+		if fm.branchID == nil {
+			continue
+		}
+		commit := reportCommit
+		if commit == "" && fm.finding.Location != nil {
+			commit = fm.finding.Location.CommitSHA
+		}
+		occurrences = append(occurrences, vulnerability.BranchOccurrenceUpsert{
+			Fingerprint: fm.fingerprint,
+			BranchID:    *fm.branchID,
+			ScanID:      report.Metadata.ID,
+			CommitSHA:   commit,
+		})
+	}
+	if len(occurrences) > 0 {
+		if err := p.repo.UpsertBranchOccurrences(ctx, tenantID, occurrences); err != nil {
+			p.logger.Warn("failed to record branch occurrences", "error", err, "count", len(occurrences))
+		}
+	}
+
 	return nil
 }
 
