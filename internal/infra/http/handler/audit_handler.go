@@ -71,6 +71,37 @@ func (h *AuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(result)
 }
 
+// RebaselineChain handles POST /api/v1/audit-logs/rebaseline. Admin-only. It
+// re-signs the tenant's audit hash-chain from current data — used to clear breaks
+// from a known-benign hashing change (e.g. the timestamp-precision fix). This
+// overwrites the tamper-evident chain, so it is a deliberate, audited action.
+func (h *AuditHandler) RebaselineChain(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := middleware.GetTenantID(r.Context())
+	if tenantIDStr == "" {
+		apierror.Unauthorized("tenant required").WriteJSON(w)
+		return
+	}
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+
+	rewritten, err := h.service.RebaselineChain(r.Context(), tenantID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		h.logger.Error("audit chain rebaseline failed", "tenant_id", tenantIDStr, "error", err)
+		apierror.InternalServerError("rebaseline failed").WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":                true,
+		"entries_rewritten": rewritten,
+	})
+}
+
 // =============================================================================
 // Response Types
 // =============================================================================

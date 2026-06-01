@@ -629,6 +629,16 @@ func (r *AuditRepository) AppendChainEntry(ctx context.Context, e audit.ChainEnt
 	return nil
 }
 
+// UpdateChainEntryHashes overwrites prev_hash + hash for a chain row. Used only
+// by the admin re-baseline operation.
+func (r *AuditRepository) UpdateChainEntryHashes(ctx context.Context, auditLogID shared.ID, prevHash, hash string) error {
+	const q = `UPDATE audit_log_chain SET prev_hash = $2, hash = $3 WHERE audit_log_id = $1`
+	if _, err := r.db.ExecContext(ctx, q, auditLogID.String(), prevHash, hash); err != nil {
+		return fmt.Errorf("update chain entry hashes: %w", err)
+	}
+	return nil
+}
+
 // ListChainEntries returns chain rows ordered by position ASC. Used by
 // the verify endpoint to walk the chain.
 func (r *AuditRepository) ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]audit.ChainEntry, error) {

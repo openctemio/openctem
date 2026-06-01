@@ -3068,3 +3068,7 @@ func TestGenerateBundleVersion_ExactlyEightCharHash(t *testing.T) {
 func (m *ruleSvcMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
 func (m *ruleSvcMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
 func (m *ruleSvcMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }
+
+func (m *ruleSvcMockAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
+	return nil
+}

@@ -2624,3 +2624,7 @@ func TestAuthService_PasswordValidation(t *testing.T) {
 func (m *mockAuthAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
 func (m *mockAuthAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
 func (m *mockAuthAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }
+
+func (m *mockAuthAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
+	return nil
+}

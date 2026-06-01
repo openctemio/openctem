@@ -1445,3 +1445,7 @@ func TestModuleService_UpdateTenantModules_ReturnsUpdatedConfig(t *testing.T) {
 func (m *moduleAuditMockRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
 func (m *moduleAuditMockRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
 func (m *moduleAuditMockRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }
+
+func (m *moduleAuditMockRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
+	return nil
+}

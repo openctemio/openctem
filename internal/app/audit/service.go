@@ -252,6 +252,62 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 	return res, nil
 }
 
+// RebaselineChain re-signs a tenant's entire audit hash-chain from the current
+// audit_logs data, recomputing prev_hash + hash for every entry in position
+// order. It exists to clear breaks caused by a known-benign hashing change (the
+// timestamp-precision fix, migration-era rows whose sub-microsecond digits are
+// unrecoverable) — NOT to dismiss tampering.
+//
+// SECURITY: this overwrites the tamper-evident chain, so it accepts the current
+// DB state as authoritative and therefore MUST be an explicit, admin-gated,
+// audited action. It aborts (without partial changes beyond those already
+// applied) if an underlying audit_log is missing, since that is a genuine
+// tamper signal it must not paper over. Returns the number of entries rewritten.
+func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, actorID string) (int, error) {
+	s.chainMu.Lock()
+	defer s.chainMu.Unlock()
+
+	const maxRebaselineLimit = 10_000
+	entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, maxRebaselineLimit)
+	if err != nil {
+		return 0, fmt.Errorf("list chain entries: %w", err)
+	}
+
+	prev := ""
+	rewritten := 0
+	for _, e := range entries {
+		log, err := s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
+		if err != nil {
+			// A missing source row is a real tamper signal — refuse to
+			// re-baseline over it.
+			return rewritten, fmt.Errorf("cannot re-baseline: audit log %s missing (position %d)", e.AuditLogID.String(), e.ChainPosition)
+		}
+		payload := fmt.Sprintf("%s|%s|%s|%s",
+			log.Action().String(),
+			log.ResourceType().String(),
+			log.ResourceID(),
+			log.Result().String(),
+		)
+		newHash := cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp())
+		if e.PrevHash != prev || e.Hash != newHash {
+			if err := s.auditRepo.UpdateChainEntryHashes(ctx, e.AuditLogID, prev, newHash); err != nil {
+				return rewritten, fmt.Errorf("rewrite chain entry %s: %w", e.AuditLogID.String(), err)
+			}
+			rewritten++
+		}
+		prev = newHash
+	}
+
+	s.logger.Warn("audit chain re-baselined",
+		"tenant_id", tenantID.String(),
+		"actor_id", actorID,
+		"entries_total", len(entries),
+		"entries_rewritten", rewritten,
+		"alert", "audit_chain_rebaselined",
+	)
+	return rewritten, nil
+}
+
 // appendChainEntry computes the next hash in the per-tenant chain and
 // persists it. Safe to call with any audit_log; rows without a tenant
 // ID are skipped (the chain is per-tenant).

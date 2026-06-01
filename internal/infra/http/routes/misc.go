@@ -95,6 +95,11 @@ func registerAuditRoutes(
 		// operator should not be able to dismiss a chain break by
 		// running verify with wider permissions than read.
 		r.GET("/verify", h.VerifyChain, middleware.RequireAdmin())
+
+		// Re-baseline the hash-chain (re-sign from current data) to clear
+		// breaks from a known-benign hashing change. Admin-only + audited —
+		// it overwrites the tamper-evident chain, so it is deliberately gated.
+		r.POST("/rebaseline", h.RebaselineChain, middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 }
 

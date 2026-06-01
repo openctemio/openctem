@@ -70,6 +70,12 @@ type Repository interface {
 	// ListChainEntries returns chain rows for verification. Ordered by
 	// chain_position ASC.
 	ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]ChainEntry, error)
+
+	// UpdateChainEntryHashes overwrites prev_hash + hash of an existing chain
+	// entry. Used ONLY by the admin re-baseline operation (re-signing the chain
+	// after a known-benign hashing change, e.g. the timestamp-precision fix). It
+	// is intentionally not part of the normal append flow.
+	UpdateChainEntryHashes(ctx context.Context, auditLogID shared.ID, prevHash, hash string) error
 }
 
 // ChainEntry is one row of the tamper-evident audit hash-chain.
@@ -77,9 +83,9 @@ type Repository interface {
 type ChainEntry struct {
 	AuditLogID    shared.ID
 	TenantID      shared.ID
-	PrevHash      string    // "" for the first entry per tenant
-	Hash          string    // SHA-256 hex (64 chars)
-	ChainPosition int64     // monotonic per tenant
+	PrevHash      string // "" for the first entry per tenant
+	Hash          string // SHA-256 hex (64 chars)
+	ChainPosition int64  // monotonic per tenant
 	CreatedAt     time.Time
 }
 

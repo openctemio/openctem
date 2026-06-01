@@ -22,6 +22,14 @@ type mockAuditRepo struct {
 	mu   sync.Mutex
 	logs map[shared.ID]*audit.AuditLog
 
+	// Opt-in hash-chain storage for re-baseline / verify tests. When
+	// chainStore is non-nil the chain methods operate against it (and
+	// chainLogs) instead of the no-op stubs, so a test can seed entries +
+	// their source logs, corrupt the hashes, and assert RebaselineChain
+	// heals what VerifyChain reports broken.
+	chainStore []audit.ChainEntry
+	chainLogs  map[shared.ID]*audit.AuditLog
+
 	// Error overrides
 	createErr         error
 	createBatchErr    error
@@ -56,8 +64,8 @@ type mockAuditRepo struct {
 	lastCreated      *audit.AuditLog
 
 	// Return overrides
-	deleteOlderCount  int64
-	countByActionVal  int64
+	deleteOlderCount int64
+	countByActionVal int64
 }
 
 func newMockAuditRepo() *mockAuditRepo {
@@ -105,8 +113,17 @@ func (m *mockAuditRepo) GetByID(_ context.Context, id shared.ID) (*audit.AuditLo
 	return log, nil
 }
 
-func (m *mockAuditRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*audit.AuditLog, error) {
-	return nil, nil
+func (m *mockAuditRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*audit.AuditLog, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.chainLogs == nil {
+		return nil, nil
+	}
+	log, ok := m.chainLogs[id]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	return log, nil
 }
 
 func (m *mockAuditRepo) List(_ context.Context, filter audit.Filter, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
@@ -1118,7 +1135,142 @@ func TestAuditService_LogEvent_ActorEmailOnly(t *testing.T) {
 	}
 }
 
-// Hash-chain stubs for the audit service tests.
-func (m *mockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
-func (m *mockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
-func (m *mockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }
+// Hash-chain stubs for the audit service tests. Operate against the opt-in
+// chainStore when a test has seeded it; otherwise behave as inert no-ops.
+func (m *mockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) {
+	return "", nil
+}
+func (m *mockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error { return nil }
+
+func (m *mockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.chainStore, nil
+}
+
+func (m *mockAuditRepo) UpdateChainEntryHashes(_ context.Context, auditLogID shared.ID, prevHash, hash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.chainStore {
+		if m.chainStore[i].AuditLogID == auditLogID {
+			m.chainStore[i].PrevHash = prevHash
+			m.chainStore[i].Hash = hash
+			return nil
+		}
+	}
+	return nil
+}
+
+// =============================================================================
+// Audit hash-chain re-baseline
+// =============================================================================
+
+// TestAuditService_RebaselineChain_HealsBrokenChain seeds a tenant chain whose
+// stored hashes are all wrong (the production symptom of the timestamp-precision
+// change — legacy rows verify as broken even though the source data is intact),
+// confirms VerifyChain reports the breaks, then asserts RebaselineChain re-signs
+// every entry from the current audit_logs so VerifyChain comes back clean.
+func TestAuditService_RebaselineChain_HealsBrokenChain(t *testing.T) {
+	repo := newMockAuditRepo()
+	repo.chainLogs = make(map[shared.ID]*audit.AuditLog)
+
+	tenantID := shared.NewID()
+
+	// Three intact audit logs, each backing one chain entry.
+	specs := []struct {
+		action  audit.Action
+		resType audit.ResourceType
+		resID   string
+		result  audit.Result
+	}{
+		{audit.ActionUserCreated, audit.ResourceTypeUser, "user-1", audit.ResultSuccess},
+		{audit.ActionUserUpdated, audit.ResourceTypeUser, "user-1", audit.ResultSuccess},
+		{audit.ActionAuthLogin, audit.ResourceTypeUser, "user-2", audit.ResultSuccess},
+	}
+	for i, sp := range specs {
+		log, err := audit.NewAuditLog(sp.action, sp.resType, sp.resID, sp.result)
+		if err != nil {
+			t.Fatalf("NewAuditLog[%d]: %v", i, err)
+		}
+		repo.chainLogs[log.ID()] = log
+		// Seed the chain entry with a deliberately bogus hash — the
+		// data is sound but the stored signature does not match it.
+		repo.chainStore = append(repo.chainStore, audit.ChainEntry{
+			AuditLogID:    log.ID(),
+			TenantID:      tenantID,
+			PrevHash:      "stale-prev",
+			Hash:          "stale-hash",
+			ChainPosition: int64(i + 1),
+		})
+	}
+
+	svc := app.NewAuditService(repo, logger.NewNop())
+	ctx := context.Background()
+
+	// Before: every entry should verify as broken.
+	before, err := svc.VerifyChain(ctx, tenantID, 0)
+	if err != nil {
+		t.Fatalf("VerifyChain (before): %v", err)
+	}
+	if before.OK {
+		t.Fatal("expected chain to be broken before re-baseline")
+	}
+	if len(before.Breaks) != len(specs) {
+		t.Fatalf("expected %d breaks before, got %d", len(specs), len(before.Breaks))
+	}
+
+	// Re-baseline re-signs the whole chain from current data.
+	rewritten, err := svc.RebaselineChain(ctx, tenantID, "admin-actor")
+	if err != nil {
+		t.Fatalf("RebaselineChain: %v", err)
+	}
+	if rewritten != len(specs) {
+		t.Fatalf("expected %d entries rewritten, got %d", len(specs), rewritten)
+	}
+
+	// After: the chain verifies clean and every entry counts as verified.
+	after, err := svc.VerifyChain(ctx, tenantID, 0)
+	if err != nil {
+		t.Fatalf("VerifyChain (after): %v", err)
+	}
+	if !after.OK {
+		t.Fatalf("expected chain OK after re-baseline, got %d breaks", len(after.Breaks))
+	}
+	if after.Verified != len(specs) {
+		t.Fatalf("expected %d verified after, got %d", len(specs), after.Verified)
+	}
+
+	// Idempotent: a second re-baseline rewrites nothing.
+	again, err := svc.RebaselineChain(ctx, tenantID, "admin-actor")
+	if err != nil {
+		t.Fatalf("RebaselineChain (second): %v", err)
+	}
+	if again != 0 {
+		t.Fatalf("expected 0 rewrites on idempotent re-baseline, got %d", again)
+	}
+}
+
+// TestAuditService_RebaselineChain_AbortsOnMissingLog ensures the re-baseline
+// refuses to paper over a genuinely missing source row — that is a tamper
+// signal, not a benign precision break.
+func TestAuditService_RebaselineChain_AbortsOnMissingLog(t *testing.T) {
+	repo := newMockAuditRepo()
+	repo.chainLogs = make(map[shared.ID]*audit.AuditLog)
+
+	tenantID := shared.NewID()
+	missingID := shared.NewID() // referenced by the chain but absent from chainLogs
+
+	repo.chainStore = append(repo.chainStore, audit.ChainEntry{
+		AuditLogID:    missingID,
+		TenantID:      tenantID,
+		PrevHash:      "",
+		Hash:          "whatever",
+		ChainPosition: 1,
+	})
+
+	svc := app.NewAuditService(repo, logger.NewNop())
+
+	if _, err := svc.RebaselineChain(context.Background(), tenantID, "admin-actor"); err == nil {
+		t.Fatal("expected RebaselineChain to abort on missing source audit log")
+	}
+}
