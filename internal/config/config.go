@@ -356,6 +356,12 @@ type AgentConfig struct {
 	// Default: true.
 	Enabled bool
 
+	// SCMSyncInterval is how often the scheduled SCM repository/branch sync runs.
+	// 0 (default) disables it — repositories are then only imported on demand via
+	// POST /integrations/{id}/import-repositories. Set SCM_SYNC_INTERVAL (e.g. 6h)
+	// to enable periodic auto-import + branch sync + expired-token detection.
+	SCMSyncInterval time.Duration
+
 	// LoadBalancing holds configuration for agent load balancing weights.
 	LoadBalancing LoadBalancingConfig
 }
@@ -656,6 +662,7 @@ func Load() (*Config, error) {
 			Enabled:             getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
 			HeartbeatTimeout:    getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			HealthCheckInterval: getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
+			SCMSyncInterval:     getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("AGENT_LB_JOB_WEIGHT", 0.30),
 				CPUWeight:                getEnvFloat("AGENT_LB_CPU_WEIGHT", 0.40),

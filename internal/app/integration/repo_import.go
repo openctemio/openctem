@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/infra/scm"
 	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	branchdom "github.com/openctemio/api/pkg/domain/branch"
+	integrationdom "github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
@@ -122,6 +123,44 @@ func (s *IntegrationService) ImportSCMRepositories(ctx context.Context, input Im
 		"integration_id", input.IntegrationID,
 		"created", result.Created, "updated", result.Updated, "skipped", result.Skipped, "total", result.Total)
 	return result, nil
+}
+
+// SyncAllConnectedSCMIntegrations imports repositories (and branches) for every
+// connected SCM integration across all tenants. Used by the scheduled SCM sync
+// controller. Per-integration failures (e.g. an expired token — which also marks
+// that integration's status) are logged and skipped so one bad connection does
+// not abort the run. Returns the total repos created+updated.
+func (s *IntegrationService) SyncAllConnectedSCMIntegrations(ctx context.Context) (int, error) {
+	if s.assetRepo == nil || s.repoExtRepo == nil {
+		return 0, nil // import not wired — nothing to do
+	}
+	category := integrationdom.CategorySCM
+	status := integrationdom.StatusConnected
+	listed, err := s.repo.List(ctx, integrationdom.Filter{
+		Category: &category,
+		Status:   &status,
+		PerPage:  1000,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("list connected SCM integrations: %w", err)
+	}
+
+	total := 0
+	for _, intg := range listed.Data {
+		res, err := s.ImportSCMRepositories(ctx, ImportReposInput{
+			IntegrationID: intg.ID().String(),
+			TenantID:      intg.TenantID().String(),
+		})
+		if err != nil {
+			s.logger.Warn("scheduled SCM sync failed for integration",
+				"integration_id", intg.ID().String(), "error", err)
+			continue
+		}
+		total += res.Created + res.Updated
+	}
+	s.logger.Info("scheduled SCM sync complete",
+		"integrations", len(listed.Data), "repos_synced", total)
+	return total, nil
 }
 
 // upsertRepositoryAsset creates (or refreshes) a repository asset + extension

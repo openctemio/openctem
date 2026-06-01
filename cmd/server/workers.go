@@ -237,6 +237,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "owner-resolution"),
 	))
 
+	// Scheduled SCM repository/branch sync — disabled unless SCM_SYNC_INTERVAL
+	// is set. Imports repos + branches for connected SCM integrations and flips
+	// connections to "error" when their tokens expire.
+	if cfg.Worker.SCMSyncInterval > 0 && svc.Integration != nil {
+		w.ControllerManager.Register(controller.NewSCMSyncController(
+			svc.Integration,
+			cfg.Worker.SCMSyncInterval,
+			log.With("controller", "scm-sync"),
+		))
+	}
+
 	// B1/B2 priority reclassification sweep — drains the in-memory
 	// queue populated by ControlChangePublisher (and future EPSS/KEV/
 	// rule producers) and re-runs ClassifyFinding on the scoped set.
