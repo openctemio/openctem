@@ -274,13 +274,13 @@ func (c *GitHubClient) ListRepositories(ctx context.Context, opts ListOptions) (
 		}
 		repos = convertGHRepos(ghRepos)
 
-		// Get total from Link header if available
+		// Estimate total from the rel="last" page in the Link header. GitHub's
+		// list API does not expose an exact count, so we use lastPage*perPage
+		// (page-accurate, vs the previous arbitrary len*10). Falls back to the
+		// current page size when there is no "last" link (single page).
 		total = len(repos)
-		if linkHeader := resp.Header.Get("Link"); linkHeader != "" {
-			if strings.Contains(linkHeader, "last") {
-				// There are more pages
-				total = len(repos) * 10 // Estimate
-			}
+		if lastPage := lastPageFromLinkHeader(resp.Header.Get("Link")); lastPage > opts.Page && opts.PerPage > 0 {
+			total = lastPage * opts.PerPage
 		}
 	}
 
@@ -360,6 +360,35 @@ func (c *GitHubClient) getRepositoryLanguages(ctx context.Context, fullName stri
 }
 
 // Helper methods
+
+// lastPageFromLinkHeader extracts the page number of the rel="last" link from a
+// GitHub-style Link header, or 0 if there is none / it can't be parsed. Example:
+//
+//	<https://api.github.com/user/repos?page=2>; rel="next",
+//	<https://api.github.com/user/repos?page=5>; rel="last"
+func lastPageFromLinkHeader(linkHeader string) int {
+	if linkHeader == "" {
+		return 0
+	}
+	for _, part := range strings.Split(linkHeader, ",") {
+		if !strings.Contains(part, `rel="last"`) {
+			continue
+		}
+		start := strings.Index(part, "<")
+		end := strings.Index(part, ">")
+		if start < 0 || end <= start {
+			continue
+		}
+		u, err := url.Parse(part[start+1 : end])
+		if err != nil {
+			continue
+		}
+		if p, err := strconv.Atoi(u.Query().Get("page")); err == nil && p > 0 {
+			return p
+		}
+	}
+	return 0
+}
 
 func (c *GitHubClient) doRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
 	reqURL := c.baseURL + path
