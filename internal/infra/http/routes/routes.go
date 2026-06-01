@@ -91,7 +91,8 @@ type Handlers struct {
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
 
 	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
-	JiraWebhook *handler.JiraWebhookHandler // nil if not initialized (no database)
+	JiraWebhook   *handler.JiraWebhookHandler   // nil if not initialized (no database)
+	GitHubWebhook *handler.GitHubWebhookHandler // nil if not initialized (no database)
 
 	// JiraWebhookSecretResolver resolves the per-tenant Jira inbound-webhook
 	// HMAC secrets (stored on each tenant's Jira integration). When non-nil,
@@ -342,6 +343,12 @@ func Register(
 
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
 	registerIncomingWebhookRoutes(router, h.JiraWebhook, h.JiraWebhookSecretResolver, cfg.Webhooks.JiraSecret, log)
+
+	// Public GitHub webhook endpoint — verified in the handler via GitHub's
+	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
+	if h.GitHubWebhook != nil {
+		router.POST("/api/v1/webhooks/incoming/github", h.GitHubWebhook.IncomingGitHubWebhook)
+	}
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
 	var activityRateLimiter *middleware.FindingActivityRateLimiter

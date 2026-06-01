@@ -170,6 +170,8 @@ func registerIntegrationRoutes(
 		// contains a secret.
 		r.GET("/jira/webhook-secret", h.GetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage))
 		r.POST("/jira/webhook-secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage))
+		r.GET("/github/webhook-secret", h.GetGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
+		r.POST("/github/webhook-secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
 
 		// Get, update, delete specific integration
 		r.GET("/{id}", h.Get, middleware.Require(permission.IntegrationsRead))

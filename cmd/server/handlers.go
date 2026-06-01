@@ -134,6 +134,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingActions:            handler.NewFindingActionsHandler(svc.FindingActions, log),
 		JiraWebhook:               handler.NewJiraWebhookHandler(svc.JiraSync, log),
 		JiraWebhookSecretResolver: svc.Integration,
+		GitHubWebhook:             handler.NewGitHubWebhookHandler(svc.Integration, log),
 		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:               handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
 		CredentialImport:          handler.NewCredentialImportHandler(svc.CredentialImport, v, log),

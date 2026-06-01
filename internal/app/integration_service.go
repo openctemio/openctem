@@ -28,6 +28,7 @@ type (
 	GetNotificationEventsInput         = integration.GetNotificationEventsInput
 	GetNotificationEventsResult        = integration.GetNotificationEventsResult
 	GetSCMRepositoryInput              = integration.GetSCMRepositoryInput
+	GitHubPushEvent                    = integration.GitHubPushEvent
 	ImportReposInput                   = integration.ImportReposInput
 	ImportReposResult                  = integration.ImportReposResult
 	IdentityExposure                   = integration.IdentityExposure
@@ -64,4 +65,8 @@ var (
 	NewNotificationService     = integration.NewNotificationService
 	NewSecretStoreService      = integration.NewSecretStoreService
 	NewWebhookService          = integration.NewWebhookService
+
+	// GitHub inbound-webhook helpers (pure).
+	VerifyGitHubSignature = integration.VerifyGitHubSignature
+	ParseGitHubPush       = integration.ParseGitHubPush
 )

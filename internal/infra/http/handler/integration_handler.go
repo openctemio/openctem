@@ -1582,6 +1582,60 @@ func (h *IntegrationHandler) RotateJiraWebhookSecret(w http.ResponseWriter, r *h
 	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
 }
 
+// GitHubWebhookConfigResponse describes how to configure a GitHub webhook so it
+// verifies against this tenant's secret.
+type GitHubWebhookConfigResponse struct {
+	WebhookSecret  string `json:"webhook_secret"`
+	WebhookURL     string `json:"webhook_url"`
+	ContentType    string `json:"content_type"`
+	SignatureType  string `json:"signature_type"`
+	RecommendedFor string `json:"recommended_events"`
+}
+
+func githubWebhookConfig(tenantID, secret string) GitHubWebhookConfigResponse {
+	return GitHubWebhookConfigResponse{
+		WebhookSecret:  secret,
+		WebhookURL:     "/api/v1/webhooks/incoming/github?tenant=" + tenantID,
+		ContentType:    "application/json",
+		SignatureType:  "X-Hub-Signature-256 (HMAC-SHA256)",
+		RecommendedFor: "push",
+	}
+}
+
+// GetGitHubWebhookSecret handles GET /api/v1/integrations/github/webhook-secret.
+func (h *IntegrationHandler) GetGitHubWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+	secret, err := h.service.EnsureGitHubWebhookSecret(r.Context(), tid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(githubWebhookConfig(tenantID, secret))
+}
+
+// RotateGitHubWebhookSecret handles POST /api/v1/integrations/github/webhook-secret/rotate.
+func (h *IntegrationHandler) RotateGitHubWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+	secret, err := h.service.RotateGitHubWebhookSecret(r.Context(), tid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(githubWebhookConfig(tenantID, secret))
+}
+
 // ImportRepositories handles POST /api/v1/integrations/{id}/import-repositories.
 // It lists repositories from an SCM integration and upserts them as repository
 // assets for the tenant (dedup by full name; archived skipped unless requested).
