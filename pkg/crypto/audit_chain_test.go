@@ -144,3 +144,20 @@ func TestComputeAuditChainHash_ChainWalk(t *testing.T) {
 		t.Fatal("tampered hash must not equal stored prev_hash of next entry")
 	}
 }
+
+// Regression: the write-time in-memory timestamp (nanosecond precision) and
+// the verify-time value read back from PostgreSQL (microsecond precision) must
+// hash identically — otherwise the audit chain reports every row as a
+// hash_mismatch on the DB round-trip.
+func TestComputeAuditChainHash_MicrosecondRoundTrip(t *testing.T) {
+	// nanos = what's in memory at write time.
+	nanos := time.Date(2026, 5, 31, 16, 4, 49, 593217845, time.UTC)
+	// micros = what PostgreSQL timestamptz stores / returns at verify time.
+	micros := nanos.Truncate(time.Microsecond)
+	if nanos.Equal(micros) {
+		t.Fatal("test setup: expected sub-microsecond difference")
+	}
+	if ComputeAuditChainHash("p", "id", "pay", nanos) != ComputeAuditChainHash("p", "id", "pay", micros) {
+		t.Fatal("nanosecond write timestamp and microsecond DB timestamp must hash identically")
+	}
+}
