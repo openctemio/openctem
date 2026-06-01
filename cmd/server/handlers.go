@@ -129,13 +129,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
 
 		// Vulnerabilities & Exposures
-		Vulnerability:    vulnHandler,
-		FindingActivity:  handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
-		FindingActions:   handler.NewFindingActionsHandler(svc.FindingActions, log),
-		JiraWebhook:      handler.NewJiraWebhookHandler(svc.JiraSync, log),
-		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:      handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
-		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
+		Vulnerability:             vulnHandler,
+		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		FindingActions:            handler.NewFindingActionsHandler(svc.FindingActions, log),
+		JiraWebhook:               handler.NewJiraWebhookHandler(svc.JiraSync, log),
+		JiraWebhookSecretResolver: svc.Integration,
+		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
+		ThreatIntel:               handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
+		CredentialImport:          handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),

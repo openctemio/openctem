@@ -1914,8 +1914,8 @@ func TestNotificationExtension_BooleanSeveritySetters(t *testing.T) {
 func TestReconstructNotificationExtensionFromBooleans(t *testing.T) {
 	ext := integration.ReconstructNotificationExtensionFromBooleans(
 		shared.NewID(),
-		"", // channelID - deprecated
-		"", // channelName - deprecated
+		"",    // channelID - deprecated
+		"",    // channelName - deprecated
 		true,  // notifyOnCritical
 		true,  // notifyOnHigh
 		false, // notifyOnMedium
@@ -2347,13 +2347,13 @@ func TestNotificationExtension_MinIntervalDefaults(t *testing.T) {
 func TestReconstructNotificationExtension_EmptySeverities_UsesDefaults(t *testing.T) {
 	ext := integration.ReconstructNotificationExtension(
 		shared.NewID(),
-		"", // channelID - deprecated
-		"", // channelName - deprecated
-		nil,   // empty severities -> defaults
-		nil,   // empty event types -> defaults
-		"",    // messageTemplate
-		true,  // includeDetails
-		0,     // minIntervalMinutes (0 -> default 5)
+		"",   // channelID - deprecated
+		"",   // channelName - deprecated
+		nil,  // empty severities -> defaults
+		nil,  // empty event types -> defaults
+		"",   // messageTemplate
+		true, // includeDetails
+		0,    // minIntervalMinutes (0 -> default 5)
 	)
 
 	if !ext.IsSeverityEnabled(integration.SeverityCritical) {
@@ -2395,5 +2395,128 @@ func TestReconstructNotificationExtension_CustomSeverities(t *testing.T) {
 	}
 	if ext.MinIntervalMinutes() != 30 {
 		t.Errorf("expected min interval 30, got %d", ext.MinIntervalMinutes())
+	}
+}
+
+// =============================================================================
+// Per-tenant Jira inbound-webhook secret (EnsureJiraWebhookSecret / Rotate / List)
+// =============================================================================
+
+func TestJiraWebhookSecret_NoIntegration_ReturnsNotFound(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), crypto.NewNoOpEncryptor())
+
+	_, err := svc.EnsureJiraWebhookSecret(context.Background(), shared.NewID())
+	if err == nil {
+		t.Fatal("expected error when tenant has no Jira integration")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestJiraWebhookSecret_EnsureGeneratesAndPersists(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	cipher, err := crypto.NewCipher(make([]byte, 32))
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), cipher)
+
+	tenantID := shared.NewID()
+	jira := integration.NewIntegration(shared.NewID(), tenantID, "Jira", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+	repo.integrations[jira.ID()] = jira
+
+	secret, err := svc.EnsureJiraWebhookSecret(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if secret == "" {
+		t.Fatal("expected a non-empty secret")
+	}
+
+	// Persisted encrypted (not stored as plaintext) on the integration metadata.
+	stored, _ := jira.Metadata()["webhook_secret_encrypted"].(string)
+	if stored == "" {
+		t.Fatal("expected encrypted secret persisted in metadata")
+	}
+	if stored == secret {
+		t.Error("secret must be stored encrypted, not as plaintext")
+	}
+
+	// Ensure is idempotent — returns the same secret, does not regenerate.
+	secret2, err := svc.EnsureJiraWebhookSecret(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("ensure(2): %v", err)
+	}
+	if secret2 != secret {
+		t.Errorf("Ensure should be idempotent: got %q then %q", secret, secret2)
+	}
+}
+
+func TestJiraWebhookSecret_RotateChangesSecret(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	cipher, err := crypto.NewCipher(make([]byte, 32))
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), cipher)
+
+	tenantID := shared.NewID()
+	jira := integration.NewIntegration(shared.NewID(), tenantID, "Jira", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+	repo.integrations[jira.ID()] = jira
+
+	first, err := svc.EnsureJiraWebhookSecret(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	rotated, err := svc.RotateJiraWebhookSecret(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if rotated == first {
+		t.Error("rotate should produce a different secret")
+	}
+
+	// List returns the current (rotated) secret only.
+	secrets, err := svc.ListJiraWebhookSecrets(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(secrets) != 1 || secrets[0] != rotated {
+		t.Errorf("expected [rotated], got %v", secrets)
+	}
+}
+
+func TestJiraWebhookSecret_ListIsTenantScoped(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	cipher, err := crypto.NewCipher(make([]byte, 32))
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), cipher)
+
+	tenantA := shared.NewID()
+	tenantB := shared.NewID()
+	jiraA := integration.NewIntegration(shared.NewID(), tenantA, "JiraA", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+	jiraB := integration.NewIntegration(shared.NewID(), tenantB, "JiraB", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+	repo.integrations[jiraA.ID()] = jiraA
+	repo.integrations[jiraB.ID()] = jiraB
+
+	secretA, _ := svc.EnsureJiraWebhookSecret(context.Background(), tenantA)
+	_, _ = svc.EnsureJiraWebhookSecret(context.Background(), tenantB)
+
+	listA, err := svc.ListJiraWebhookSecrets(context.Background(), tenantA)
+	if err != nil {
+		t.Fatalf("list A: %v", err)
+	}
+	if len(listA) != 1 || listA[0] != secretA {
+		t.Fatalf("tenant A list should contain only A's secret, got %v", listA)
+	}
+	// Tenant B's secret must never appear in tenant A's candidate set.
+	for _, s := range listA {
+		if s == "" {
+			t.Error("unexpected empty secret")
+		}
 	}
 }

@@ -1521,3 +1521,63 @@ func (h *IntegrationHandler) GetNotificationEvents(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
 }
+
+// JiraWebhookConfigResponse describes how to configure an inbound Jira webhook
+// so it verifies against this tenant's own secret.
+type JiraWebhookConfigResponse struct {
+	WebhookSecret   string `json:"webhook_secret"`
+	WebhookURL      string `json:"webhook_url"`
+	SignatureHeader string `json:"signature_header"`
+	TimestampHeader string `json:"timestamp_header"`
+}
+
+func jiraWebhookConfig(tenantID, secret string) JiraWebhookConfigResponse {
+	return JiraWebhookConfigResponse{
+		WebhookSecret:   secret,
+		WebhookURL:      "/api/v1/webhooks/incoming/jira?tenant=" + tenantID,
+		SignatureHeader: "X-OpenCTEM-Signature",
+		TimestampHeader: "X-OpenCTEM-Timestamp",
+	}
+}
+
+// GetJiraWebhookSecret handles GET /api/v1/integrations/jira/webhook-secret.
+// Returns (lazily creating if needed) the tenant's per-tenant inbound-webhook
+// HMAC secret so an admin can configure it in Jira. Requires a Jira integration.
+func (h *IntegrationHandler) GetJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+
+	secret, err := h.service.EnsureJiraWebhookSecret(r.Context(), tid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
+}
+
+// RotateJiraWebhookSecret handles POST /api/v1/integrations/jira/webhook-secret/rotate.
+// Generates a fresh secret (invalidating the previous one immediately) and
+// returns it. Requires a Jira integration.
+func (h *IntegrationHandler) RotateJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+
+	secret, err := h.service.RotateJiraWebhookSecret(r.Context(), tid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
+}

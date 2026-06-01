@@ -38,33 +38,33 @@ type Handlers struct {
 	Vulnerability   *handler.VulnerabilityHandler   // nil if not initialized (no database)
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
-	AITriage        *handler.AITriageHandler        // Always initialized - handles nil service gracefully
-	Dashboard       *handler.DashboardHandler       // nil if not initialized (no database)
-	Audit           *handler.AuditHandler           // nil if not initialized (no database)
-	Branch          *handler.BranchHandler          // nil if not initialized (no database)
-	SLA             *handler.SLAHandler             // nil if not initialized (no database)
-	Integration     *handler.IntegrationHandler     // nil if not initialized (no database)
-	AssetGroup      *handler.AssetGroupHandler      // nil if not initialized (no database)
-	Scope           *handler.ScopeHandler           // nil if not initialized (no database)
-	AssetType       *handler.AssetTypeHandler       // nil if not initialized (no database)
-	AttackSurface   *handler.AttackSurfaceHandler   // nil if not initialized (no database)
-	Docs            *handler.DocsHandler            // API documentation handler
-	Command         *handler.CommandHandler         // nil if not initialized (no database)
+	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
+	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
+	Audit            *handler.AuditHandler            // nil if not initialized (no database)
+	Branch           *handler.BranchHandler           // nil if not initialized (no database)
+	SLA              *handler.SLAHandler              // nil if not initialized (no database)
+	Integration      *handler.IntegrationHandler      // nil if not initialized (no database)
+	AssetGroup       *handler.AssetGroupHandler       // nil if not initialized (no database)
+	Scope            *handler.ScopeHandler            // nil if not initialized (no database)
+	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
+	AttackSurface    *handler.AttackSurfaceHandler    // nil if not initialized (no database)
+	Docs             *handler.DocsHandler             // API documentation handler
+	Command          *handler.CommandHandler          // nil if not initialized (no database)
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
 	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint agents
 	IOC              *handler.IOCHandler              // nil if not initialized - IOC catalogue (feeds B6 correlator)
-	Agent           *handler.AgentHandler           // nil if not initialized (no database)
-	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
-	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
-	Tool            *handler.ToolHandler            // nil if not initialized (no database)
-	ToolCategory    *handler.ToolCategoryHandler    // nil if not initialized (no database)
-	Capability      *handler.CapabilityHandler      // nil if not initialized (no database)
-	Scan            *handler.ScanHandler            // nil if not initialized (no database)
-	CI              *handler.CIHandler              // nil if not initialized (no database) - CI/CD snippet generator
-	ScanSession     *handler.ScanSessionHandler     // nil if not initialized (no database)
-	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
-	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
-	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
+	Agent            *handler.AgentHandler            // nil if not initialized (no database)
+	Pipeline         *handler.PipelineHandler         // nil if not initialized (no database)
+	ScanProfile      *handler.ScanProfileHandler      // nil if not initialized (no database)
+	Tool             *handler.ToolHandler             // nil if not initialized (no database)
+	ToolCategory     *handler.ToolCategoryHandler     // nil if not initialized (no database)
+	Capability       *handler.CapabilityHandler       // nil if not initialized (no database)
+	Scan             *handler.ScanHandler             // nil if not initialized (no database)
+	CI               *handler.CIHandler               // nil if not initialized (no database) - CI/CD snippet generator
+	ScanSession      *handler.ScanSessionHandler      // nil if not initialized (no database)
+	ScannerTemplate  *handler.ScannerTemplateHandler  // nil if not initialized (no database)
+	TemplateSource   *handler.TemplateSourceHandler   // nil if not initialized (no database)
+	SecretStore      *handler.SecretStoreHandler      // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
@@ -73,10 +73,10 @@ type Handlers struct {
 	Suppression      *handler.SuppressionHandler      // nil if not initialized (no database)
 
 	// CTEM Discovery handlers
-	AssetService      *handler.AssetServiceHandler      // nil if not initialized (no database)
-	AssetStateHistory *handler.AssetStateHistoryHandler // nil if not initialized (no database)
-	AssetRelationship          *handler.AssetRelationshipHandler          // nil if not initialized (no database)
-	RelationshipSuggestion     *handler.RelationshipSuggestionHandler     // nil if not initialized (no database)
+	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
+	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
+	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
+	RelationshipSuggestion *handler.RelationshipSuggestionHandler // nil if not initialized (no database)
 
 	// Access Control handlers
 	Group          *handler.GroupHandler          // nil if not initialized (no database)
@@ -93,9 +93,16 @@ type Handlers struct {
 	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
 	JiraWebhook *handler.JiraWebhookHandler // nil if not initialized (no database)
 
+	// JiraWebhookSecretResolver resolves the per-tenant Jira inbound-webhook
+	// HMAC secrets (stored on each tenant's Jira integration). When non-nil,
+	// the incoming-webhook route verifies against the requesting tenant's own
+	// secrets (plus the platform fallback), closing the cross-tenant spoofing
+	// gap of a single shared secret. nil falls back to the platform secret only.
+	JiraWebhookSecretResolver JiraWebhookSecretResolver
+
 	// Pentest Campaign Management handlers
-	Pentest                *handler.PentestHandler             // nil if not initialized (no database)
-	PentestCampaignRoleQry middleware.CampaignRoleQuerier       // Campaign role resolver for RBAC middleware
+	Pentest                *handler.PentestHandler        // nil if not initialized (no database)
+	PentestCampaignRoleQry middleware.CampaignRoleQuerier // Campaign role resolver for RBAC middleware
 
 	// File Attachments (shared across pentest, retest, campaign)
 	Attachment *handler.AttachmentHandler // nil if not initialized
@@ -120,11 +127,11 @@ type Handlers struct {
 	BusinessService *handler.BusinessServiceHandler // nil if not initialized
 
 	// CTEM RFC-005 handlers (direct SQL, no DDD repo layer yet)
-	CompensatingControl *handler.CompensatingControlHandler // nil if not initialized
-	AttackerProfile     *handler.AttackerProfileHandler     // nil if not initialized
-	CTEMCycle           *handler.CTEMCycleHandler           // nil if not initialized
+	CompensatingControl   *handler.CompensatingControlHandler   // nil if not initialized
+	AttackerProfile       *handler.AttackerProfileHandler       // nil if not initialized
+	CTEMCycle             *handler.CTEMCycleHandler             // nil if not initialized
 	VerificationChecklist *handler.VerificationChecklistHandler // nil if not initialized
-	PriorityRule         *handler.PriorityRuleHandler            // nil if not initialized
+	PriorityRule          *handler.PriorityRuleHandler          // nil if not initialized
 
 	// Asset Import (Nessus, K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
@@ -334,7 +341,7 @@ func Register(
 	}
 
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
-	registerIncomingWebhookRoutes(router, h.JiraWebhook, cfg.Webhooks.JiraSecret, log)
+	registerIncomingWebhookRoutes(router, h.JiraWebhook, h.JiraWebhookSecretResolver, cfg.Webhooks.JiraSecret, log)
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
 	var activityRateLimiter *middleware.FindingActivityRateLimiter
