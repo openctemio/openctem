@@ -732,7 +732,47 @@ func convertBBServerRepos(bbRepos []bbServerRepo, _ string) []Repository {
 	return repos
 }
 
-// ListBranches is not yet implemented for this provider.
-func (c *BitbucketClient) ListBranches(_ context.Context, _ string, _ ListOptions) ([]Branch, error) {
-	return nil, ErrBranchListingUnsupported
+// ListBranches returns the branches of a Bitbucket Cloud repository. Bitbucket
+// Server/Data Center is not supported yet (different REST API). A single page of
+// up to 100 branches is fetched (covers the common case; following the cloud
+// `next` URL is left as a follow-up).
+func (c *BitbucketClient) ListBranches(ctx context.Context, fullName string, opts ListOptions) ([]Branch, error) {
+	if !c.isCloud {
+		return nil, ErrBranchListingUnsupported
+	}
+	pagelen := opts.PerPage
+	if pagelen <= 0 || pagelen > 100 {
+		pagelen = 100
+	}
+	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=%d", fullName, pagelen)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, ErrAuthFailed.Wrap(fmt.Errorf("invalid or expired token"))
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound.Wrap(fmt.Errorf("repository %s not found", fullName))
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+	var data struct {
+		Values []struct {
+			Name   string `json:"name"`
+			Target struct {
+				Hash string `json:"hash"`
+			} `json:"target"`
+		} `json:"values"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	out := make([]Branch, 0, len(data.Values))
+	for _, b := range data.Values {
+		out = append(out, Branch{Name: b.Name, CommitSHA: b.Target.Hash})
+	}
+	return out, nil
 }

@@ -597,7 +597,51 @@ func convertGLProjects(glProjects []glProject, baseWebURL string) []Repository {
 	return repos
 }
 
-// ListBranches is not yet implemented for this provider.
-func (c *GitLabClient) ListBranches(_ context.Context, _ string, _ ListOptions) ([]Branch, error) {
-	return nil, ErrBranchListingUnsupported
+// ListBranches returns the branches of a GitLab project, walking pages up to a cap.
+func (c *GitLabClient) ListBranches(ctx context.Context, fullName string, opts ListOptions) ([]Branch, error) {
+	perPage := opts.PerPage
+	if perPage <= 0 || perPage > 100 {
+		perPage = 100
+	}
+	encoded := url.PathEscape(fullName)
+	const maxPages = 20
+	var out []Branch
+	for page := 1; page <= maxPages; page++ {
+		path := fmt.Sprintf("/projects/%s/repository/branches?page=%d&per_page=%d", encoded, page, perPage)
+		resp, err := c.doRequest(ctx, "GET", path, nil)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusUnauthorized {
+			resp.Body.Close()
+			return nil, ErrAuthFailed.Wrap(fmt.Errorf("invalid or expired token"))
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			return nil, ErrNotFound.Wrap(fmt.Errorf("project %s not found", fullName))
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		}
+		var pageData []struct {
+			Name      string `json:"name"`
+			Protected bool   `json:"protected"`
+			Commit    struct {
+				ID string `json:"id"`
+			} `json:"commit"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&pageData); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		resp.Body.Close()
+		for _, b := range pageData {
+			out = append(out, Branch{Name: b.Name, Protected: b.Protected, CommitSHA: b.Commit.ID})
+		}
+		if len(pageData) < perPage {
+			break
+		}
+	}
+	return out, nil
 }
