@@ -135,18 +135,27 @@ func (s *IntegrationService) SyncAllConnectedSCMIntegrations(ctx context.Context
 		return 0, nil // import not wired — nothing to do
 	}
 	category := integrationdom.CategorySCM
-	status := integrationdom.StatusConnected
+	// No status filter: we want connected integrations AND those previously
+	// flipped to error/expired by a transient auth failure, so a recovered
+	// token re-syncs and (via ListSCMRepositories' recovery edge) flips the
+	// status back to connected. Integrations the user deliberately disabled or
+	// disconnected are skipped in the loop below.
 	listed, err := s.repo.List(ctx, integrationdom.Filter{
 		Category: &category,
-		Status:   &status,
 		PerPage:  1000,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("list connected SCM integrations: %w", err)
+		return 0, fmt.Errorf("list SCM integrations: %w", err)
 	}
 
 	total := 0
 	for _, intg := range listed.Data {
+		switch intg.Status() {
+		case integrationdom.StatusConnected, integrationdom.StatusError, integrationdom.StatusExpired:
+			// retry these — a successful sync recovers an errored connection
+		default:
+			continue // disabled / disconnected / pending — leave alone
+		}
 		res, err := s.ImportSCMRepositories(ctx, ImportReposInput{
 			IntegrationID: intg.ID().String(),
 			TenantID:      intg.TenantID().String(),

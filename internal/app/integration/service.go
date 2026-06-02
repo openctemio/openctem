@@ -702,6 +702,18 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
 	}
 
+	// The provider accepted our credentials. If a previous sync had flipped
+	// the integration to error (e.g. an expired token, since recovered), this
+	// is the recovery edge back to connected — without it the integration is
+	// stuck in error forever and the scheduled syncer (which only walks
+	// connected integrations) can never pick it up again.
+	if intg.Status() != integrationdom.StatusConnected {
+		intg.SetConnected()
+		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
+			s.logger.Warn("failed to restore integration connected status", "integration_id", intgID.String(), "error", updateErr)
+		}
+	}
+
 	// Update repository count if this is the first page and no search filter
 	if page == 1 && input.Search == "" && result.Total > 0 && scmExt != nil {
 		if scmExt.RepositoryCount() != result.Total {
