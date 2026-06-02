@@ -451,12 +451,21 @@ func (s *Service) CheckSLACompliance(
 		}, nil
 	}
 
-	// Calculate time elapsed
+	// Calculate time elapsed. Guard a zero/negative window: an unknown
+	// severity (e.g. "none", absent from DefaultSLADays → days=0) makes
+	// deadline == detectedAt, so the division would yield NaN/+Inf and NaN
+	// silently breaks json.Marshal of the result. Treat a non-positive
+	// window as fully elapsed.
 	totalDuration := deadline.Sub(detectedAt)
 	elapsed := now.Sub(detectedAt)
-	percentElapsed := float64(elapsed) / float64(totalDuration) * 100
-	if percentElapsed > 100 {
+	var percentElapsed float64
+	if totalDuration <= 0 {
 		percentElapsed = 100
+	} else {
+		percentElapsed = float64(elapsed) / float64(totalDuration) * 100
+		if percentElapsed > 100 {
+			percentElapsed = 100
+		}
 	}
 
 	daysRemaining := int(deadline.Sub(now).Hours() / 24)

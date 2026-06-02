@@ -83,28 +83,28 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 
 	now := time.Now()
 	return &Scan{
-		ID:               shared.NewID(),
-		TenantID:         tenantID,
-		Name:             name,
-		AssetGroupID:     assetGroupID,
-		AssetGroupIDs:    []shared.ID{},
-		Targets:          []string{},
-		ScanType:         scanType,
-		ScannerConfig:    make(map[string]any),
-		TargetsPerJob:    1,
-		ScheduleType:     ScheduleManual,
-		ScheduleTimezone: "UTC",
-		Tags:             []string{},
+		ID:                  shared.NewID(),
+		TenantID:            tenantID,
+		Name:                name,
+		AssetGroupID:        assetGroupID,
+		AssetGroupIDs:       []shared.ID{},
+		Targets:             []string{},
+		ScanType:            scanType,
+		ScannerConfig:       make(map[string]any),
+		TargetsPerJob:       1,
+		ScheduleType:        ScheduleManual,
+		ScheduleTimezone:    "UTC",
+		Tags:                []string{},
 		AgentPreference:     AgentPreferenceAuto,
 		TimeoutSeconds:      DefaultScanTimeoutSeconds,
 		MaxRetries:          0,
 		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
 		Status:              StatusActive,
-		TotalRuns:        0,
-		SuccessfulRuns:   0,
-		FailedRuns:       0,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		TotalRuns:           0,
+		SuccessfulRuns:      0,
+		FailedRuns:          0,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}, nil
 }
 
@@ -125,28 +125,28 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 
 	now := time.Now()
 	return &Scan{
-		ID:               shared.NewID(),
-		TenantID:         tenantID,
-		Name:             name,
-		AssetGroupID:     shared.ID{}, // Zero value - no asset group
-		AssetGroupIDs:    []shared.ID{},
-		Targets:          targets,
-		ScanType:         scanType,
-		ScannerConfig:    make(map[string]any),
-		TargetsPerJob:    1,
-		ScheduleType:     ScheduleManual,
-		ScheduleTimezone: "UTC",
-		Tags:             []string{},
+		ID:                  shared.NewID(),
+		TenantID:            tenantID,
+		Name:                name,
+		AssetGroupID:        shared.ID{}, // Zero value - no asset group
+		AssetGroupIDs:       []shared.ID{},
+		Targets:             targets,
+		ScanType:            scanType,
+		ScannerConfig:       make(map[string]any),
+		TargetsPerJob:       1,
+		ScheduleType:        ScheduleManual,
+		ScheduleTimezone:    "UTC",
+		Tags:                []string{},
 		AgentPreference:     AgentPreferenceAuto,
 		TimeoutSeconds:      DefaultScanTimeoutSeconds,
 		MaxRetries:          0,
 		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
 		Status:              StatusActive,
-		TotalRuns:        0,
-		SuccessfulRuns:   0,
-		FailedRuns:       0,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		TotalRuns:           0,
+		SuccessfulRuns:      0,
+		FailedRuns:          0,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}, nil
 }
 
@@ -354,12 +354,33 @@ func nextAtDayOfMonth(now time.Time, dayOfMonth *int, t *time.Time) time.Time {
 	if dayOfMonth != nil {
 		day = *dayOfMonth
 	}
-	// Try this month first
-	candidate := time.Date(now.Year(), now.Month(), day, hour, minute, 0, 0, now.Location())
+	// Clamp the requested day to the target month's length. time.Date does NOT
+	// clamp — time.Date(2026, Feb, 31, …) normalizes forward to early March, so
+	// a "31st" schedule would skip February entirely and drift. Build on the
+	// clamped day; if that's already past, roll to next month and re-clamp
+	// (next month may also be short).
+	candidate := dateOnClampedDay(now.Year(), now.Month(), day, hour, minute, now.Location())
 	if !candidate.After(now) {
-		candidate = candidate.AddDate(0, 1, 0)
+		// Advance one month from a day-1 anchor — adding a month to the clamped
+		// candidate itself (e.g. Jan 31) would re-trigger time.Date overflow.
+		next := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).AddDate(0, 1, 0)
+		candidate = dateOnClampedDay(next.Year(), next.Month(), day, hour, minute, now.Location())
 	}
 	return candidate
+}
+
+// dateOnClampedDay returns time.Date for the given day-of-month, capped to the
+// last valid day of that month (e.g. day 31 in February → 28/29).
+func dateOnClampedDay(year int, month time.Month, day, hour, minute int, loc *time.Location) time.Time {
+	// Day 0 of the next month == last day of this month.
+	lastDay := time.Date(year, month+1, 0, 0, 0, 0, 0, loc).Day()
+	if day > lastDay {
+		day = lastDay
+	}
+	if day < 1 {
+		day = 1
+	}
+	return time.Date(year, month, day, hour, minute, 0, 0, loc)
 }
 
 // CalculateNextRunAt returns the next scheduled run time.
@@ -611,23 +632,23 @@ func (s *Scan) IsDueForExecution(now time.Time) bool {
 func (s *Scan) Clone(newName string) *Scan {
 	now := time.Now()
 	clone := &Scan{
-		ID:                shared.NewID(),
-		TenantID:          s.TenantID,
-		Name:              newName,
-		Description:       s.Description,
-		AssetGroupID:      s.AssetGroupID,
-		AssetGroupIDs:     make([]shared.ID, len(s.AssetGroupIDs)),
-		Targets:           make([]string, len(s.Targets)),
-		ScanType:          s.ScanType,
-		PipelineID:        s.PipelineID,
-		ScannerName:       s.ScannerName,
-		TargetsPerJob:     s.TargetsPerJob,
-		ScheduleType:      s.ScheduleType,
-		ScheduleCron:      s.ScheduleCron,
-		ScheduleDay:       s.ScheduleDay,
-		ScheduleTime:      s.ScheduleTime,
-		ScheduleTimezone:  s.ScheduleTimezone,
-		Tags:              make([]string, len(s.Tags)),
+		ID:                  shared.NewID(),
+		TenantID:            s.TenantID,
+		Name:                newName,
+		Description:         s.Description,
+		AssetGroupID:        s.AssetGroupID,
+		AssetGroupIDs:       make([]shared.ID, len(s.AssetGroupIDs)),
+		Targets:             make([]string, len(s.Targets)),
+		ScanType:            s.ScanType,
+		PipelineID:          s.PipelineID,
+		ScannerName:         s.ScannerName,
+		TargetsPerJob:       s.TargetsPerJob,
+		ScheduleType:        s.ScheduleType,
+		ScheduleCron:        s.ScheduleCron,
+		ScheduleDay:         s.ScheduleDay,
+		ScheduleTime:        s.ScheduleTime,
+		ScheduleTimezone:    s.ScheduleTimezone,
+		Tags:                make([]string, len(s.Tags)),
 		RunOnTenantRunner:   s.RunOnTenantRunner,
 		AgentPreference:     s.AgentPreference,
 		ProfileID:           s.ProfileID,
@@ -635,11 +656,11 @@ func (s *Scan) Clone(newName string) *Scan {
 		MaxRetries:          s.MaxRetries,
 		RetryBackoffSeconds: s.RetryBackoffSeconds,
 		Status:              StatusActive,
-		TotalRuns:         0,
-		SuccessfulRuns:    0,
-		FailedRuns:        0,
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		TotalRuns:           0,
+		SuccessfulRuns:      0,
+		FailedRuns:          0,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	// Deep copy maps and slices
