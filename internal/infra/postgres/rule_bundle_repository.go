@@ -72,9 +72,14 @@ func (r *RuleBundleRepository) Create(ctx context.Context, bundle *rule.Bundle) 
 	return nil
 }
 
-// GetByID retrieves a bundle by ID.
+// GetByID retrieves a bundle by ID WITHOUT tenant scoping.
 //
-//getbyid:unsafe - Rule bundles are a shared catalog; no tenant_id column.
+// WARNING: rule_bundles IS tenant-scoped (tenant_id NOT NULL) — the old
+// "no tenant_id column" note was wrong. This tenant-less lookup is for
+// platform/admin paths only; tenant-facing callers MUST use GetByTenantAndID
+// or it is a cross-tenant IDOR.
+//
+//getbyid:unsafe - tenant-less by design; use GetByTenantAndID for tenant callers (see warning).
 func (r *RuleBundleRepository) GetByID(ctx context.Context, id shared.ID) (*rule.Bundle, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())

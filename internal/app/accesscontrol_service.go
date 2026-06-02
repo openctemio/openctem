@@ -74,6 +74,7 @@ var (
 	WithPermissionGroupRepository         = accesscontrol.WithPermissionGroupRepository
 	WithPermissionSetRepository           = accesscontrol.WithPermissionSetRepository
 	WithRoleAuditService                  = accesscontrol.WithRoleAuditService
+	WithRoleMembershipReader              = accesscontrol.WithRoleMembershipReader
 	WithRolePermissionCacheService        = accesscontrol.WithRolePermissionCacheService
 	WithRolePermissionVersionService      = accesscontrol.WithRolePermissionVersionService
 

@@ -68,8 +68,11 @@ func registerThreatIntelRoutes(
 		// Sync status and management (admin operations)
 		r.GET("/sync", h.GetSyncStatuses, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/sync/{source}", h.GetSyncStatus, middleware.Require(permission.VulnerabilitiesRead))
-		r.POST("/sync", h.TriggerSync, middleware.Require(permission.VulnerabilitiesWrite))
-		r.PATCH("/sync/{source}", h.SetSyncEnabled, middleware.Require(permission.VulnerabilitiesWrite))
+		// Sync mutations carry the tenant overlay (active-membership etc.) so a
+		// suspended admin can't keep triggering syncs with a stale JWT.
+		tiSyncWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
+		r.POST("/sync", h.TriggerSync, tiSyncWriteMW...)
+		r.PATCH("/sync/{source}", h.SetSyncEnabled, tiSyncWriteMW...)
 
 		// CVE enrichment (combine EPSS + KEV data)
 		r.GET("/enrich/{cveId}", h.EnrichCVE, middleware.Require(permission.VulnerabilitiesRead))
@@ -183,10 +186,16 @@ func registerVulnerabilityRoutes(
 		r.GET("/{id}/affected-assets", h.ListAffectedAssets, tenantScopedMW...)
 		r.GET("/cve/{cveId}/affected-assets", h.ListAffectedAssetsByCVE, tenantScopedMW...)
 
-		// Write operations (admin only)
-		r.POST("/", h.CreateVulnerability, middleware.Require(permission.VulnerabilitiesWrite))
-		r.PUT("/{id}", h.UpdateVulnerability, middleware.Require(permission.VulnerabilitiesWrite))
-		r.DELETE("/{id}", h.DeleteVulnerability, middleware.Require(permission.VulnerabilitiesDelete))
+		// Write operations (admin only). Apply the tenant overlay
+		// (RequireTenant + active-membership + CSRF + rate-limit) so a
+		// suspended/removed admin can't keep mutating the global catalog with a
+		// still-valid JWT — matching the active CVE read routes above and every
+		// tenant-scoped write route.
+		vulnWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
+		vulnDeleteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesDelete))
+		r.POST("/", h.CreateVulnerability, vulnWriteMW...)
+		r.PUT("/{id}", h.UpdateVulnerability, vulnWriteMW...)
+		r.DELETE("/{id}", h.DeleteVulnerability, vulnDeleteMW...)
 	}, baseMiddlewares...)
 
 	// Build tenant middleware chain from JWT token (used by /findings group below)

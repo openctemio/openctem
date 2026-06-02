@@ -11,8 +11,15 @@ import (
 	"github.com/openctemio/api/pkg/domain/audit"
 	roledom "github.com/openctemio/api/pkg/domain/role"
 	"github.com/openctemio/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// roleMembershipReader looks up a user's membership in a tenant. RoleService
+// uses it to reject role grants targeting non-members (see ensureTenantMember).
+type roleMembershipReader interface {
+	GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenantdom.Membership, error)
+}
 
 // RoleService handles role-related business operations.
 type RoleService struct {
@@ -20,9 +27,10 @@ type RoleService struct {
 	permissionRepo roledom.PermissionRepository
 	auditService   *auditapp.AuditService
 	// Permission sync services for real-time permission updates
-	permVersionSvc *PermissionVersionService
-	permCacheSvc   *PermissionCacheService
-	logger         *logger.Logger
+	permVersionSvc   *PermissionVersionService
+	permCacheSvc     *PermissionCacheService
+	membershipReader roleMembershipReader
+	logger           *logger.Logger
 }
 
 // NewRoleService creates a new RoleService.
@@ -67,6 +75,41 @@ func WithRolePermissionCacheService(svc *PermissionCacheService) RoleServiceOpti
 	return func(s *RoleService) {
 		s.permCacheSvc = svc
 	}
+}
+
+// WithRoleMembershipReader sets the membership reader used to verify that a
+// role-assignment target is actually a member of the tenant. When unset, the
+// membership check is skipped (backward compatible).
+func WithRoleMembershipReader(r roleMembershipReader) RoleServiceOption {
+	return func(s *RoleService) {
+		s.membershipReader = r
+	}
+}
+
+// ensureTenantMember rejects a role operation that targets a user who is not a
+// member of the tenant. Without it, anyone holding roles:assign could mint
+// user_roles rows for arbitrary user IDs — including users of other tenants or
+// never-invited UUIDs — bypassing the invitation flow. No-op when the
+// membership reader is not wired.
+func (s *RoleService) ensureTenantMember(ctx context.Context, userIDStr, tenantIDStr string) error {
+	if s.membershipReader == nil {
+		return nil
+	}
+	uid, err := shared.IDFromString(userIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
+	}
+	tid, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	if _, err := s.membershipReader.GetMembership(ctx, uid, tid); err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return fmt.Errorf("%w: user is not a member of this tenant", shared.ErrValidation)
+		}
+		return fmt.Errorf("verify tenant membership: %w", err)
+	}
+	return nil
 }
 
 // logAudit logs an audit event if audit service is configured.
@@ -523,6 +566,11 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 		return fmt.Errorf("%w: role not available for this tenant", shared.ErrValidation)
 	}
 
+	// Reject grants to a user who is not a member of this tenant.
+	if err := s.ensureTenantMember(ctx, input.UserID, input.TenantID); err != nil {
+		return err
+	}
+
 	var assignedByID *roledom.ID
 	if assignedBy != "" {
 		id, err := roledom.ParseID(assignedBy)
@@ -618,6 +666,11 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 	uid, err := roledom.ParseID(input.UserID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
+	}
+
+	// Reject setting roles on a user who is not a member of this tenant.
+	if err := s.ensureTenantMember(ctx, input.UserID, input.TenantID); err != nil {
+		return err
 	}
 
 	roleIDs := make([]roledom.ID, 0, len(input.RoleIDs))
@@ -723,14 +776,24 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 		return nil, fmt.Errorf("%w: role not available for this tenant", shared.ErrValidation)
 	}
 
-	// Parse user IDs
+	// Parse user IDs, skipping any that are not members of this tenant —
+	// assigning a role to a non-member would mint an orphan user_roles row.
 	userIDs := make([]roledom.ID, 0, len(input.UserIDs))
+	assignedUserIDs := make([]string, 0, len(input.UserIDs))
+	skipped := 0
 	for _, uidStr := range input.UserIDs {
 		uid, err := roledom.ParseID(uidStr)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid user id format: %s", shared.ErrValidation, uidStr)
 		}
+		if err := s.ensureTenantMember(ctx, uidStr, input.TenantID); err != nil {
+			s.logger.Warn("skipping bulk role assignment for non-member",
+				"tenant_id", input.TenantID, "user_id", uidStr, "error", err)
+			skipped++
+			continue
+		}
 		userIDs = append(userIDs, uid)
+		assignedUserIDs = append(assignedUserIDs, uidStr)
 	}
 
 	var assignedByID *roledom.ID
@@ -742,28 +805,30 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 		assignedByID = &id
 	}
 
-	// Perform bulk assignment
-	if err := s.roleRepo.BulkAssignRoleToUsers(ctx, tid, rid, userIDs, assignedByID); err != nil {
-		return nil, fmt.Errorf("failed to bulk assign role: %w", err)
+	// Perform bulk assignment for the members that passed the check.
+	if len(userIDs) > 0 {
+		if err := s.roleRepo.BulkAssignRoleToUsers(ctx, tid, rid, userIDs, assignedByID); err != nil {
+			return nil, fmt.Errorf("failed to bulk assign role: %w", err)
+		}
+		// Invalidate permissions only for the users actually assigned.
+		s.invalidateUsersPermissions(ctx, input.TenantID, assignedUserIDs)
 	}
 
-	// Invalidate permissions for all affected users
-	s.invalidateUsersPermissions(ctx, input.TenantID, input.UserIDs)
-
-	s.logger.Info("bulk role assignment completed", "role_id", input.RoleID, "user_count", len(input.UserIDs))
+	s.logger.Info("bulk role assignment completed",
+		"role_id", input.RoleID, "assigned", len(userIDs), "skipped_non_members", skipped)
 
 	// Log audit event
 	actx.TenantID = input.TenantID
 	event := auditapp.NewSuccessEvent(audit.ActionRoleAssigned, audit.ResourceTypeRole, input.RoleID).
 		WithResourceName(r.Name()).
-		WithMessage(fmt.Sprintf("Role '%s' assigned to %d users", r.Name(), len(input.UserIDs))).
-		WithMetadata("user_count", len(input.UserIDs)).
+		WithMessage(fmt.Sprintf("Role '%s' assigned to %d users", r.Name(), len(userIDs))).
+		WithMetadata("user_count", len(userIDs)).
 		WithSeverity(audit.SeverityHigh)
 	s.logAudit(ctx, actx, event)
 
 	return &BulkAssignRoleToUsersResult{
-		SuccessCount: len(input.UserIDs),
-		FailedCount:  0,
+		SuccessCount: len(userIDs),
+		FailedCount:  skipped,
 	}, nil
 }
 

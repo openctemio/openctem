@@ -785,6 +785,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithRoleAuditService(s.Audit),
 		app.WithRolePermissionVersionService(s.PermVersion),
 		app.WithRolePermissionCacheService(s.PermCache),
+		app.WithRoleMembershipReader(s.MembershipCache),
 	)
 
 	// Wire permission services to tenant service

@@ -158,9 +158,14 @@ func (r *RuleRepository) CreateBatch(ctx context.Context, rules []*rule.Rule) er
 	return tx.Commit()
 }
 
-// GetByID retrieves a rule by ID.
+// GetByID retrieves a rule by ID WITHOUT tenant scoping.
 //
-//getbyid:unsafe - Rules are the shared rule catalog; tenant-specific overrides live in rule_overrides.
+// WARNING: the rules table IS tenant-scoped (tenant_id NOT NULL). This
+// tenant-less lookup is for platform/admin paths only — any tenant-facing
+// caller MUST use GetByTenantAndID or it becomes a cross-tenant IDOR. The
+// catalog RuleHandler that would expose this is not currently mounted.
+//
+//getbyid:unsafe - tenant-less by design; use GetByTenantAndID for tenant callers (see warning).
 func (r *RuleRepository) GetByID(ctx context.Context, id shared.ID) (*rule.Rule, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
