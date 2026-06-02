@@ -57,6 +57,26 @@ func (s *PermissionVersionService) Get(ctx context.Context, tenantID, userID str
 	return val
 }
 
+// GetChecked returns the current permission version AND whether it was
+// actually confirmed from Redis. ok is true only when the key exists and was
+// read successfully; it is false for a missing key (the user has never had a
+// permission change) OR a Redis error. Callers use this to fail OPEN on a
+// cache outage — a stale-permission rejection must only fire on a *confirmed*
+// version mismatch, never because Redis was briefly unreachable (which would
+// otherwise turn a cache outage into a write outage for everyone).
+func (s *PermissionVersionService) GetChecked(ctx context.Context, tenantID, userID string) (int, bool) {
+	if tenantID == "" || userID == "" {
+		return 1, false
+	}
+	key := s.buildKey(tenantID, userID)
+	val, err := s.redisClient.Client().Get(ctx, key).Int()
+	if err != nil {
+		// Missing key or Redis error — not a confirmed version.
+		return 1, false
+	}
+	return val, true
+}
+
 // Increment atomically increments the permission version for a user.
 // Called when roles are assigned, removed, or modified.
 // Returns the new version number.

@@ -215,6 +215,12 @@ func Register(
 	// instead of querying the database directly. nil falls back to
 	// tenantRepo (the legacy behaviour).
 	membershipReader middleware.MembershipReader,
+	// Permission sync services. When both are non-nil, EnrichPermissions is
+	// mounted on every token-tenant chain so revoked permissions / demoted
+	// admins are enforced within the token lifetime (real-time sync). nil
+	// disables it (legacy embedded-JWT-permission behaviour).
+	permCache *app.PermissionCacheService,
+	permVersion *app.PermissionVersionService,
 ) {
 	// Pick the membership reader: cache when available, repo otherwise.
 	if membershipReader == nil {
@@ -275,6 +281,16 @@ func Register(
 	// webhooks are NOT affected because they do not use
 	// buildTokenTenantMiddlewares.
 	csrfProtectionMiddleware = middleware.CSRFOptional(middleware.NewCSRFConfig(cfg.Auth, log))
+
+	// Real-time permission sync. When the permission cache + version services
+	// are wired, EnrichPermissions refreshes each request's permissions from
+	// Redis (DB fallback) and rejects state-mutating requests whose JWT
+	// permission version is confirmed-stale (e.g. a role was revoked or an
+	// admin demoted). Without it, permissions baked into the JWT stay live
+	// until the token expires. Fails open on a Redis outage (see GetChecked).
+	if permCache != nil && permVersion != nil {
+		permissionSyncMiddleware = middleware.NewPermissionSyncMiddleware(permCache, permVersion, log).EnrichPermissions
+	}
 
 	// UserSync middleware syncs authenticated users to local database
 	// Supports both local auth and OIDC auth
@@ -738,6 +754,11 @@ var readRateLimitMiddleware Middleware //nolint:gochecknoglobals // set once dur
 // RequireMembership in tenant.go.
 var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
+// permissionSyncMiddleware enriches each token-tenant request with fresh
+// permissions from Redis and rejects confirmed-stale state-mutating requests.
+// Set once during Register; nil leaves the legacy embedded-JWT behaviour.
+var permissionSyncMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
 // This uses tenant ID from JWT claims instead of URL path.
 // Best practice: tenant-scoped access tokens eliminate IDOR by design.
@@ -751,6 +772,13 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	// minimal handler set.
 	if activeMembershipFromJWTMiddleware != nil {
 		middlewares = append(middlewares, activeMembershipFromJWTMiddleware)
+	}
+	// Real-time permission sync — runs after membership so user/tenant are in
+	// context and before the per-route Require() checks so they see the fresh
+	// permissions. Rejects confirmed-stale writes (revoked role / demoted
+	// admin); safe methods pass through with fresh perms.
+	if permissionSyncMiddleware != nil {
+		middlewares = append(middlewares, permissionSyncMiddleware)
 	}
 	// CSRF enforcement for cookie-bound sessions. Safe methods (GET,
 	// HEAD, OPTIONS) are exempt inside the middleware, so read
