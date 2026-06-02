@@ -29,8 +29,9 @@ type AssetProcessor struct {
 	repo           asset.Repository
 	repoExtRepo    asset.RepositoryExtensionRepository
 	relRepo        asset.RelationshipRepository
-	correlator     *AssetCorrelator    // RFC-001: IP-based correlation (nil = disabled)
-	dedupEnqueuer  DedupReviewEnqueuer // RFC-001: enqueue multi-match dupes for review (nil = disabled)
+	stateHistory   asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
+	correlator     *AssetCorrelator             // RFC-001: IP-based correlation (nil = disabled)
+	dedupEnqueuer  DedupReviewEnqueuer          // RFC-001: enqueue multi-match dupes for review (nil = disabled)
 	propsValidator *validator.PropertiesValidator
 	logger         *logger.Logger
 }
@@ -52,6 +53,14 @@ func (p *AssetProcessor) SetRepositoryExtensionRepository(repo asset.RepositoryE
 // SetRelationshipRepository sets the asset relationship repository.
 func (p *AssetProcessor) SetRelationshipRepository(repo asset.RelationshipRepository) {
 	p.relRepo = repo
+}
+
+// SetStateHistoryRepository wires the asset state-history store. When set, the
+// discovery pipeline records an `appeared` entry for each newly-created asset
+// and a `recovered` entry when a scan re-observes a stale/inactive asset
+// (reactivating it). Optional: nil → no history (preserves prior behaviour).
+func (p *AssetProcessor) SetStateHistoryRepository(repo asset.StateHistoryRepository) {
+	p.stateHistory = repo
 }
 
 // SetCorrelator sets the asset correlator for IP-based deduplication.
@@ -86,6 +95,28 @@ func (p *AssetProcessor) enqueueDedupReview(ctx context.Context, tenantID shared
 		mergeIDs, mergeNames, mergeFindings); err != nil {
 		p.logger.Warn("failed to enqueue dedup review",
 			"keep_id", keep.ID().String(), "merge_count", len(mergeTargets), "error", err)
+	}
+}
+
+// recordDiscoveryHistory appends `appeared` rows for newly-created assets and
+// `recovered` rows for assets a scan re-observed after they went stale. Without
+// it, scanner-discovered assets produce no state history, leaving the activity
+// timeline + shadow-IT/recovery analytics blind to the bulk of discovery.
+// Best-effort: a failure is logged and never aborts ingestion.
+func (p *AssetProcessor) recordDiscoveryHistory(ctx context.Context, tenantID shared.ID, appeared []*asset.Asset, recoveredIDs []shared.ID) {
+	if p.stateHistory == nil || (len(appeared) == 0 && len(recoveredIDs) == 0) {
+		return
+	}
+	changes := make([]*asset.AssetStateChange, 0, len(appeared)+len(recoveredIDs))
+	for _, a := range appeared {
+		changes = append(changes, asset.RecordAssetAppeared(tenantID, a.ID(), asset.ChangeSourceScan, "discovered by scan"))
+	}
+	for _, id := range recoveredIDs {
+		changes = append(changes, asset.RecordAssetRecovered(tenantID, id, asset.ChangeSourceScan, "re-observed by scan"))
+	}
+	if err := p.stateHistory.CreateBatch(ctx, changes); err != nil {
+		p.logger.Warn("failed to record asset discovery state-history",
+			"tenant_id", tenantID.String(), "count", len(changes), "error", err)
 	}
 }
 
@@ -197,6 +228,9 @@ func (p *AssetProcessor) ProcessBatch(
 	// With IP correlation: if name doesn't match but IPs do, merge into existing.
 	newAssets := make([]*asset.Asset, 0)
 	updateAssets := make([]*asset.Asset, 0)
+	// Assets a scan re-observed after they had gone stale/inactive (reactivated
+	// by MarkSeen) — recorded as `recovered` state history after the upsert.
+	var recoveredIDs []shared.ID
 
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
@@ -215,7 +249,7 @@ func (p *AssetProcessor) ProcessBatch(
 
 		if existing, ok := existingMap[normalizedName]; ok {
 			// Name match → merge (existing behavior)
-			p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
+			p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool, &recoveredIDs)
 			updateAssets = append(updateAssets, existing)
 			assetMap[ctisAsset.ID] = existing.ID()
 		} else if p.correlator != nil && (coreType == asset.AssetTypeHost || coreType == asset.AssetTypeIPAddress) {
@@ -234,7 +268,7 @@ func (p *AssetProcessor) ProcessBatch(
 			if result != nil && result.Matched != nil {
 				// IP match found → merge into existing
 				existing := result.Matched
-				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
+				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool, &recoveredIDs)
 				updateAssets = append(updateAssets, existing)
 				assetMap[ctisAsset.ID] = existing.ID()
 
@@ -299,7 +333,7 @@ func (p *AssetProcessor) ProcessBatch(
 
 			if result != nil && result.Matched != nil {
 				existing := result.Matched
-				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
+				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool, &recoveredIDs)
 				updateAssets = append(updateAssets, existing)
 				assetMap[ctisAsset.ID] = existing.ID()
 				existingMap[normalizedName] = existing
@@ -337,6 +371,10 @@ func (p *AssetProcessor) ProcessBatch(
 		}
 		output.AssetsCreated = created
 		output.AssetsUpdated = updated
+
+		// Record discovery state history (appeared for new assets, recovered
+		// for reactivated ones). Best-effort — never fails ingestion.
+		p.recordDiscoveryHistory(ctx, tenantID, newAssets, recoveredIDs)
 	}
 
 	// Step 5: Create/update repository extensions for repository assets
@@ -1360,9 +1398,14 @@ func (p *AssetProcessor) createAssetFromCTIS(
 }
 
 // mergeCTISIntoAsset merges CTIS data into an existing asset.
-func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool) {
-	// Mark as seen
+func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool, recovered *[]shared.ID) {
+	// Mark as seen. Capture the prior status first so we can tell when this
+	// scan reactivates a stale/inactive asset (MarkSeen flips it to active).
+	wasInactive := existing.Status() == asset.StatusStale || existing.Status() == asset.StatusInactive
 	existing.MarkSeen()
+	if recovered != nil && wasInactive && existing.Status() == asset.StatusActive {
+		*recovered = append(*recovered, existing.ID())
+	}
 
 	// Update owner ref if provided and not already set
 	if existing.OwnerRef() == "" {

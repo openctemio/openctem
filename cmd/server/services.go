@@ -545,11 +545,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Agent, repos.Branch, repos.Tenant, repos.Audit, log)
-	s.Ingest.SetDataFlowRepository(repos.DataFlow)              // Wire data flow persistence
-	s.Ingest.SetComponentRepository(repos.Component)            // Wire component linking for SCA findings
-	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)    // Wire repository extension for auto web_url
-	s.Ingest.SetRelationshipRepository(repos.AssetRelationship) // Wire subdomain-to-domain relationships
-	s.Ingest.SetActivityService(s.FindingActivity)              // Wire activity logging for auto-resolve/reopen
+	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
+	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
+	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
+	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
+	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
+	s.Ingest.SetActivityService(s.FindingActivity)                   // Wire activity logging for auto-resolve/reopen
 	// Wire IP correlation for host dedup (RFC-001)
 	// System defaults; per-tenant overrides come from tenant settings at ingest time
 	s.Ingest.SetCorrelator(ingest.NewAssetCorrelator(repos.Asset, log, ingest.CorrelationConfig{

@@ -104,6 +104,12 @@ func (s *Service) SetRelationshipRepository(repo asset.RelationshipRepository) {
 	s.assetProcessor.SetRelationshipRepository(repo)
 }
 
+// SetAssetStateHistoryRepository wires the asset state-history store so the
+// discovery pipeline records appeared/recovered events. Optional.
+func (s *Service) SetAssetStateHistoryRepository(repo asset.StateHistoryRepository) {
+	s.assetProcessor.SetStateHistoryRepository(repo)
+}
+
 // SetCorrelator sets the asset correlator for IP-based deduplication (RFC-001).
 func (s *Service) SetCorrelator(c *AssetCorrelator) {
 	s.assetProcessor.SetCorrelator(c)
