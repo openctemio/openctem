@@ -189,7 +189,10 @@ func (r *ControlTestRepository) List(ctx context.Context, filter simulation.Cont
 	}
 	if filter.Search != nil && *filter.Search != "" {
 		where += fmt.Sprintf(" AND (name ILIKE $%d OR control_name ILIKE $%d)", argIdx, argIdx)
-		args = append(args, "%"+*filter.Search+"%")
+		// Escape %/_/\ so user input is matched literally — an unescaped
+		// pattern lets `%` match everything (filter bypass) and pathological
+		// inputs cause heavy LIKE backtracking (query-DoS).
+		args = append(args, wrapLikePattern(*filter.Search))
 		// argIdx not incremented — no further conditions
 	}
 

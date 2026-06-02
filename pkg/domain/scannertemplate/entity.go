@@ -2,6 +2,7 @@
 package scannertemplate
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"time"
@@ -399,7 +400,9 @@ func (t *ScannerTemplate) VerifySignature(secret string) bool {
 		return false
 	}
 	expectedSignature := ComputeSignature(t.Content, secret)
-	return t.SignatureHash == expectedSignature
+	// Constant-time compare: SignatureHash is an HMAC and a byte-wise == would
+	// leak a timing oracle that lets an attacker recover a valid signature.
+	return hmac.Equal([]byte(t.SignatureHash), []byte(expectedSignature))
 }
 
 // computeContentHash computes the SHA256 hash of the content.
