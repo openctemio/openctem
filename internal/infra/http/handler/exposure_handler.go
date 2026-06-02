@@ -451,6 +451,10 @@ func (h *ExposureHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 
 	var req ChangeStateRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
 
 	event, err := h.service.ResolveExposure(r.Context(), tenantID, exposureID, userID, req.Reason)
 	if err != nil {
@@ -484,6 +488,10 @@ func (h *ExposureHandler) Accept(w http.ResponseWriter, r *http.Request) {
 
 	var req ChangeStateRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
 
 	event, err := h.service.AcceptExposure(r.Context(), tenantID, exposureID, userID, req.Reason)
 	if err != nil {
@@ -517,6 +525,10 @@ func (h *ExposureHandler) MarkFalsePositive(w http.ResponseWriter, r *http.Reque
 
 	var req ChangeStateRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
 
 	event, err := h.service.MarkFalsePositive(r.Context(), tenantID, exposureID, userID, req.Reason)
 	if err != nil {

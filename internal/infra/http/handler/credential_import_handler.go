@@ -785,6 +785,10 @@ func (h *CredentialImportHandler) Resolve(w http.ResponseWriter, r *http.Request
 
 	var req CredentialStateChangeRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
 
 	item, err := h.service.ResolveCredential(r.Context(), tenantID, id, userID, req.Notes)
 	if err != nil {
@@ -821,6 +825,10 @@ func (h *CredentialImportHandler) Accept(w http.ResponseWriter, r *http.Request)
 
 	var req CredentialStateChangeRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
 
 	item, err := h.service.AcceptCredential(r.Context(), tenantID, id, userID, req.Notes)
 	if err != nil {
@@ -857,6 +865,10 @@ func (h *CredentialImportHandler) MarkFalsePositive(w http.ResponseWriter, r *ht
 
 	var req CredentialStateChangeRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
 
 	item, err := h.service.MarkCredentialFalsePositive(r.Context(), tenantID, id, userID, req.Notes)
 	if err != nil {
