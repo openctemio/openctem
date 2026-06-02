@@ -244,7 +244,7 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 	// 3. Tool name available for scoping
 	//
 	// This follows GitHub/GitLab best practices where default branch is source of truth.
-	if input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil {
+	if input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != "" {
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
 
@@ -295,6 +295,13 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 			s.logger.Debug("auto-resolve skipped: not default branch",
 				"branch", branchInfo.Name,
 			)
+		case report.Metadata.ID == "":
+			// Without a scan identity we cannot tell which findings belong to
+			// THIS scan, so the "not seen in this scan" staleness test would
+			// match (and resolve) the tenant's entire existing finding set.
+			s.logger.Warn("auto-resolve skipped: report metadata.id is empty",
+				"tool_name", report.Tool.Name,
+			)
 		default:
 			coverageType := input.CoverageType
 			if coverageType == "" && report.Metadata.CoverageType != "" {
@@ -313,7 +320,8 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 	// is actually present on that branch. Additive: it only touches occurrence
 	// rows, never the finding's headline status. Best-effort.
 	if input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
-		report.Tool != nil && report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
+		report.Tool != nil && report.Metadata.ID != "" &&
+		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
 		branchName := report.Metadata.Branch.Name

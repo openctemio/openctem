@@ -1474,6 +1474,13 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 // UpsertBranchOccurrences. Tool scoping prevents a scan from one tool resolving
 // another tool's occurrences on the same branch.
 func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Context, tenantID, branchID shared.ID, toolName, scanID string) (int64, error) {
+	// Guard: with an empty scan id the `last_seen_scan_id IS DISTINCT FROM $4`
+	// test matches occurrences last seen under any non-empty scan (and the ones
+	// this very scan just upserted as NULL via NULLIF), mass-resolving them.
+	// Resolve nothing without a scan identity.
+	if scanID == "" {
+		return 0, nil
+	}
 	const query = `
 		UPDATE finding_branch_occurrences o
 		SET status = 'auto_fixed', resolved_at = NOW(), resolved_reason = 'not_seen_in_scan', updated_at = NOW()
@@ -2689,6 +2696,13 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 // If branchID is nil, auto-resolves findings where branch_id points to any default branch.
 // Returns the IDs of auto-resolved findings for activity logging.
 func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID shared.ID, assetID shared.ID, toolName string, currentScanID string, branchID *shared.ID) ([]shared.ID, error) {
+	// Guard: an empty scan id makes the `scan_id != $current` staleness test
+	// match every existing finding (they all differ from ""), which would
+	// silently resolve the tenant's entire finding set. Without a scan identity
+	// staleness is undeterminable, so resolve nothing.
+	if currentScanID == "" {
+		return nil, nil
+	}
 	// Auto-resolve findings that:
 	// 1. Belong to the same tenant, asset, and tool
 	// 2. Are on the default branch (via JOIN to repository_branches.is_default = true)
