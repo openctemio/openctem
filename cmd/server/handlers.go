@@ -179,7 +179,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Pentest Campaign Management
 		Pentest: func() *handler.PentestHandler {
-			h := handler.NewPentestHandler(svc.Pentest, repos.User, log)
+			h := handler.NewPentestHandler(svc.Pentest, repos.User, v, log)
 			h.SetImportService(app.NewFindingImportService(repos.Finding, log))
 			return h
 		}(),
