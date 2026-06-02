@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"database/sql"
-	"github.com/openctemio/api/internal/app/command"
+	"sync"
 	"time"
+
+	"github.com/openctemio/api/internal/app/command"
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
@@ -36,6 +38,13 @@ type Workers struct {
 	SessionCleanupTicker *time.Ticker
 	sessionService       *app.SessionService
 	ControllerManager    *controller.Manager
+
+	// cleanupStopCh signals the ticker-driven cleanup goroutines (notification
+	// + session) to exit; cleanupWG lets Stop() join them. time.Ticker.Stop()
+	// does not close its channel, so a bare `for range ticker.C` loop would
+	// leak the goroutine — these let them shut down cleanly.
+	cleanupStopCh chan struct{}
+	cleanupWG     sync.WaitGroup
 
 	// AssetLifecycleWorker is exposed so the HTTP layer can invoke
 	// the dry-run endpoint against the same worker instance the
@@ -406,19 +415,29 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 	// Start finding lifecycle scheduler
 	w.FindingLifecycleScheduler.Start()
 
+	// Shared stop channel for the ticker-driven cleanup goroutines below.
+	w.cleanupStopCh = make(chan struct{})
+
 	// Start notification cleanup worker (runs daily, 90-day retention)
 	if w.notificationService != nil {
 		w.NotificationCleanupTicker = time.NewTicker(24 * time.Hour)
+		w.cleanupWG.Add(1)
 		go func() {
-			for range w.NotificationCleanupTicker.C {
-				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-				deleted, err := w.notificationService.CleanupOld(cleanupCtx, 90)
-				if err != nil {
-					log.Error("notification cleanup failed", "error", err)
-				} else if deleted > 0 {
-					log.Info("notification cleanup completed", "deleted", deleted)
+			defer w.cleanupWG.Done()
+			for {
+				select {
+				case <-w.cleanupStopCh:
+					return
+				case <-w.NotificationCleanupTicker.C:
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+					deleted, err := w.notificationService.CleanupOld(cleanupCtx, 90)
+					if err != nil {
+						log.Error("notification cleanup failed", "error", err)
+					} else if deleted > 0 {
+						log.Info("notification cleanup completed", "deleted", deleted)
+					}
+					cancel()
 				}
-				cancel()
 			}
 		}()
 		log.Info("notification cleanup worker started", "interval", "24h", "retention_days", 90)
@@ -456,9 +475,16 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 		// Initial run on startup to clear historical backlog.
 		go runCleanup()
 		w.SessionCleanupTicker = time.NewTicker(1 * time.Hour)
+		w.cleanupWG.Add(1)
 		go func() {
-			for range w.SessionCleanupTicker.C {
-				runCleanup()
+			defer w.cleanupWG.Done()
+			for {
+				select {
+				case <-w.cleanupStopCh:
+					return
+				case <-w.SessionCleanupTicker.C:
+					runCleanup()
+				}
 			}
 		}()
 		log.Info("session cleanup worker started", "interval", "1h")
@@ -512,18 +538,20 @@ func (w *Workers) Stop(log *logger.Logger) {
 	w.FindingLifecycleScheduler.Stop()
 	log.Info("finding lifecycle scheduler stopped")
 
-	// Stop notification cleanup worker
-	if w.NotificationCleanupTicker != nil {
-		log.Info("stopping notification cleanup worker...")
-		w.NotificationCleanupTicker.Stop()
-		log.Info("notification cleanup worker stopped")
-	}
-
-	// Stop session cleanup worker
-	if w.SessionCleanupTicker != nil {
-		log.Info("stopping session cleanup worker...")
-		w.SessionCleanupTicker.Stop()
-		log.Info("session cleanup worker stopped")
+	// Stop the ticker-driven cleanup workers. Signal them to exit, stop the
+	// tickers, then join — time.Ticker.Stop() alone doesn't close the channel,
+	// so the goroutines need the stop signal to actually return.
+	if w.cleanupStopCh != nil {
+		log.Info("stopping cleanup workers...")
+		close(w.cleanupStopCh)
+		if w.NotificationCleanupTicker != nil {
+			w.NotificationCleanupTicker.Stop()
+		}
+		if w.SessionCleanupTicker != nil {
+			w.SessionCleanupTicker.Stop()
+		}
+		w.cleanupWG.Wait()
+		log.Info("cleanup workers stopped")
 	}
 
 	// Stop controller manager

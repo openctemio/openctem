@@ -11,6 +11,7 @@ package sla
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 // needs. *outbox.Service satisfies it directly.
 type NotificationEnqueuer interface {
 	Enqueue(ctx context.Context, params outbox.EnqueueParams) error
+	EnqueueInTx(ctx context.Context, tx *sql.Tx, params outbox.EnqueueParams) error
 }
 
 // BreachOutboxAdapter satisfies controller.SLABreachPublisher by
@@ -47,14 +49,42 @@ func (a *BreachOutboxAdapter) Publish(ctx context.Context, event controller.SLAB
 	if a == nil || a.outbox == nil {
 		return nil // misconfigured → silent no-op, escalation is advisory
 	}
+	params, err := buildBreachParams(event)
+	if err != nil {
+		return err
+	}
+	if err := a.outbox.Enqueue(ctx, params); err != nil {
+		return fmt.Errorf("enqueue sla breach notification: %w", err)
+	}
+	return nil
+}
 
+// PublishTx enqueues the breach notification inside the caller's transaction,
+// so the finding's `breached` transition and this notification commit together.
+// Implements controller.SLABreachTxPublisher.
+func (a *BreachOutboxAdapter) PublishTx(ctx context.Context, tx *sql.Tx, event controller.SLABreachEvent) error {
+	if a == nil || a.outbox == nil {
+		return nil
+	}
+	params, err := buildBreachParams(event)
+	if err != nil {
+		return err
+	}
+	if err := a.outbox.EnqueueInTx(ctx, tx, params); err != nil {
+		return fmt.Errorf("enqueue sla breach notification in tx: %w", err)
+	}
+	return nil
+}
+
+// buildBreachParams translates a breach event into outbox enqueue params.
+func buildBreachParams(event controller.SLABreachEvent) (outbox.EnqueueParams, error) {
 	fidUUID, err := uuid.Parse(event.FindingID.String())
 	if err != nil {
-		return fmt.Errorf("parse finding id: %w", err)
+		return outbox.EnqueueParams{}, fmt.Errorf("parse finding id: %w", err)
 	}
 
 	overdue := event.OverdueDuration.Round(time.Minute)
-	params := outbox.EnqueueParams{
+	return outbox.EnqueueParams{
 		TenantID:      event.TenantID,
 		EventType:     "sla_breach",
 		AggregateType: "finding",
@@ -76,10 +106,5 @@ func (a *BreachOutboxAdapter) Publish(ctx context.Context, event controller.SLAB
 			"breached_at":       event.At.UTC().Format(time.RFC3339),
 			"escalation_source": "sla_escalation_controller",
 		},
-	}
-
-	if err := a.outbox.Enqueue(ctx, params); err != nil {
-		return fmt.Errorf("enqueue sla breach notification: %w", err)
-	}
-	return nil
+	}, nil
 }

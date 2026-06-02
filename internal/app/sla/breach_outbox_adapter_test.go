@@ -2,11 +2,12 @@ package sla
 
 import (
 	"context"
+	"database/sql"
 	"errors"
-	"github.com/openctemio/api/internal/app/outbox"
 	"testing"
 	"time"
 
+	"github.com/openctemio/api/internal/app/outbox"
 	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -17,13 +18,20 @@ import (
 // unit tests.
 
 type fakeEnqueuer struct {
-	calls int
-	err   error
-	last  outbox.EnqueueParams
+	calls   int
+	txCalls int
+	err     error
+	last    outbox.EnqueueParams
 }
 
 func (f *fakeEnqueuer) Enqueue(_ context.Context, params outbox.EnqueueParams) error {
 	f.calls++
+	f.last = params
+	return f.err
+}
+
+func (f *fakeEnqueuer) EnqueueInTx(_ context.Context, _ *sql.Tx, params outbox.EnqueueParams) error {
+	f.txCalls++
 	f.last = params
 	return f.err
 }
@@ -119,6 +127,37 @@ func TestOutboxAdapter_Publish_NilEnqueuer_NoOp(t *testing.T) {
 		t.Fatalf("nil enqueuer should be safe: %v", err)
 	}
 }
+
+func TestOutboxAdapter_PublishTx_UsesTxEnqueue(t *testing.T) {
+	enq := &fakeEnqueuer{}
+	adapter := NewBreachOutboxAdapter(enq)
+
+	// nil *sql.Tx is fine — fakeEnqueuer doesn't touch it.
+	if err := adapter.PublishTx(context.Background(), nil, newEvent()); err != nil {
+		t.Fatalf("PublishTx: %v", err)
+	}
+	if enq.txCalls != 1 {
+		t.Errorf("expected 1 tx enqueue, got %d", enq.txCalls)
+	}
+	if enq.calls != 0 {
+		t.Errorf("expected the non-tx Enqueue not to be used, got %d calls", enq.calls)
+	}
+	if enq.last.EventType != "sla_breach" {
+		t.Errorf("expected sla_breach event, got %q", enq.last.EventType)
+	}
+}
+
+func TestOutboxAdapter_PublishTx_EnqueueError_Propagates(t *testing.T) {
+	boom := errors.New("outbox offline")
+	adapter := NewBreachOutboxAdapter(&fakeEnqueuer{err: boom})
+	if err := adapter.PublishTx(context.Background(), nil, newEvent()); !errors.Is(err, boom) {
+		t.Fatalf("want boom, got %v", err)
+	}
+}
+
+// Compile-time assertion: the adapter satisfies the transactional publisher
+// interface, so the controller takes the atomic path.
+var _ controller.SLABreachTxPublisher = (*BreachOutboxAdapter)(nil)
 
 func TestOutboxAdapter_Publish_NilAdapter_NoOp(t *testing.T) {
 	var adapter *BreachOutboxAdapter

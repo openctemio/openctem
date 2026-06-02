@@ -23,6 +23,7 @@ package integration
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"strings"
@@ -364,6 +365,12 @@ type fakeOutbox struct {
 }
 
 func (f *fakeOutbox) Enqueue(_ context.Context, params outbox.EnqueueParams) error {
+	atomic.AddInt32(&f.calls, 1)
+	f.last = params
+	return f.returnErr
+}
+
+func (f *fakeOutbox) EnqueueInTx(_ context.Context, _ *sql.Tx, params outbox.EnqueueParams) error {
 	atomic.AddInt32(&f.calls, 1)
 	f.last = params
 	return f.returnErr
