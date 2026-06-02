@@ -239,10 +239,11 @@ func (p *AssetProcessor) ProcessBatch(
 				assetMap[ctisAsset.ID] = existing.ID()
 
 				if result.ShouldRename {
+					oldName := existing.Name() // capture before UpdateName overwrites it
 					if err := existing.UpdateName(result.NewName); err == nil {
 						p.logger.Info("asset renamed via IP correlation",
 							"id", existing.ID().String(),
-							"old_name", existing.Name(),
+							"old_name", oldName,
 							"new_name", result.NewName,
 							"correlation_type", result.CorrelationType,
 						)

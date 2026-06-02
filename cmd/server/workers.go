@@ -366,6 +366,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// every deployment even before operators opt in.
 	lifecycleWorker := assetapp.NewAssetLifecycleWorker(deps.DB, repos.Tenant, log)
 	lifecycleWorker.SetAuditService(svc.Audit)
+	lifecycleWorker.SetStateHistoryRepository(repos.AssetStateHistory)
 	w.ControllerManager.Register(controller.NewAssetLifecycleController(
 		lifecycleWorker,
 		repos.Tenant,

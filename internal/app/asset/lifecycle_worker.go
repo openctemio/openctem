@@ -8,6 +8,7 @@ import (
 
 	"github.com/lib/pq"
 	auditapp "github.com/openctemio/api/internal/app/audit"
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
@@ -24,6 +25,7 @@ type AssetLifecycleWorker struct {
 	db           *sql.DB
 	tenantRepo   tenant.Repository
 	auditService *auditapp.AuditService
+	stateHistory assetdom.StateHistoryRepository
 	logger       *logger.Logger
 }
 
@@ -46,6 +48,43 @@ func NewAssetLifecycleWorker(db *sql.DB, tenantRepo tenant.Repository, log *logg
 // effects.
 func (w *AssetLifecycleWorker) SetAuditService(svc *auditapp.AuditService) {
 	w.auditService = svc
+}
+
+// SetStateHistoryRepository wires the asset state-history store. When set, each
+// automated active→stale transition is recorded as a status_changed entry, so
+// the activity timeline and disappearance analytics reflect cron-driven
+// demotions (not just manual edits). Optional: nil → history is not written
+// (preserves the prior behaviour and keeps tests that don't care simple).
+func (w *AssetLifecycleWorker) SetStateHistoryRepository(repo assetdom.StateHistoryRepository) {
+	w.stateHistory = repo
+}
+
+// recordStaleHistory appends one status_changed (active→stale) state-history
+// row per transitioned asset. Best-effort: a failure is logged but never blocks
+// the transition (the assets are already stale) or the rest of the run.
+func (w *AssetLifecycleWorker) recordStaleHistory(ctx context.Context, tenantID shared.ID, ids []string) {
+	if w.stateHistory == nil || len(ids) == 0 {
+		return
+	}
+	changes := make([]*assetdom.AssetStateChange, 0, len(ids))
+	for _, idStr := range ids {
+		assetID, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		changes = append(changes, assetdom.RecordFieldChange(
+			tenantID, assetID, assetdom.StateChangeStatusChanged,
+			"status", string(assetdom.StatusActive), string(assetdom.StatusStale),
+			assetdom.ChangeSourceSystem, nil,
+		))
+	}
+	if len(changes) == 0 {
+		return
+	}
+	if err := w.stateHistory.CreateBatch(ctx, changes); err != nil {
+		w.logger.Warn("failed to record asset stale state-history",
+			"tenant_id", tenantID.String(), "count", len(changes), "error", err)
+	}
 }
 
 // LifecycleRunReport summarizes one worker pass. It is the audit
@@ -305,6 +344,7 @@ func (w *AssetLifecycleWorker) applyTransitions(
 			return fmt.Errorf("lifecycle update: %w", err)
 		}
 		batchCount := 0
+		batchIDs := make([]string, 0, batchSize)
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
@@ -313,6 +353,7 @@ func (w *AssetLifecycleWorker) applyTransitions(
 			}
 			batchCount++
 			totalCount++
+			batchIDs = append(batchIDs, id)
 			if len(ids) < maxAffectedIDsInReport {
 				ids = append(ids, id)
 			}
@@ -322,6 +363,10 @@ func (w *AssetLifecycleWorker) applyTransitions(
 			return err
 		}
 		_ = rows.Close()
+
+		// Record state history for every asset in this batch (not just the
+		// capped report sample). Best-effort — never blocks the transition.
+		w.recordStaleHistory(ctx, tenantID, batchIDs)
 
 		// Short-circuit when the batch returned fewer rows than the
 		// limit — no more candidates remain. Avoids a final empty
