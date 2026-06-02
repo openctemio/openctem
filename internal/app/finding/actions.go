@@ -262,8 +262,11 @@ func (s *FindingActionsService) BulkFixApplied(
 	// Collect all findings (cap already checked at 1000)
 	allFindings := make([]*vulnerability.Finding, 0, int(count))
 	const batchSize = 100
+	// pagination.New is (page, perPage) — page is 1-based. Walk pages, not
+	// offsets (an earlier version passed (batchSize, offset), which clamped
+	// perPage and skewed OFFSET, fetching the wrong rows).
 	for offset := int64(0); offset < count; offset += batchSize {
-		page := pagination.New(int(batchSize), int(offset))
+		page := pagination.New(int(offset/batchSize)+1, batchSize)
 		findings, err := s.findingRepo.List(ctx, input.Filter, vulnerability.NewFindingListOptions(), page)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list findings: %w", err)
@@ -598,9 +601,12 @@ func (s *FindingActionsService) AutoAssignToOwners(
 	result := &AutoAssignToOwnersResult{ByOwner: make(map[string]int)}
 
 	const batchSize = 100
-	for offset := 0; ; offset += batchSize {
-		page := pagination.New(batchSize, offset)
-		findings, err := s.findingRepo.List(ctx, filter, vulnerability.NewFindingListOptions(), page)
+	// pagination.New is (page, perPage) — page is 1-based. Iterate by page;
+	// the prior (batchSize, offset) call clamped perPage and pinned OFFSET to
+	// a fixed window, which skipped findings and could loop forever.
+	for page := 1; ; page++ {
+		pg := pagination.New(page, batchSize)
+		findings, err := s.findingRepo.List(ctx, filter, vulnerability.NewFindingListOptions(), pg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list findings: %w", err)
 		}
