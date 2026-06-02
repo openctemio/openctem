@@ -1208,10 +1208,10 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 	`
 
 	var (
-		mttrCritical, mttrHigh, mttrMedium, mttrLow             float64
-		mttrP0, mttrP1, mttrP2, mttrP3                         float64
-		mttrOverall                                             float64
-		sampleSize                                              int
+		mttrCritical, mttrHigh, mttrMedium, mttrLow float64
+		mttrP0, mttrP1, mttrP2, mttrP3              float64
+		mttrOverall                                 float64
+		sampleSize                                  int
 	)
 
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(

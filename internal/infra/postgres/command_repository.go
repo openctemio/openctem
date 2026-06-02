@@ -149,6 +149,9 @@ func (r *CommandRepository) GetPendingForAgent(ctx context.Context, tenantID sha
 		}
 		commands = append(commands, cmd)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return commands, nil
 }
@@ -190,6 +193,9 @@ func (r *CommandRepository) List(ctx context.Context, filter command.Filter, pag
 			return result, err
 		}
 		commands = append(commands, cmd)
+	}
+	if err := rows.Err(); err != nil {
+		return result, err
 	}
 
 	return pagination.NewResult(commands, total, page), nil
@@ -659,6 +665,9 @@ func (r *CommandRepository) FindExpired(ctx context.Context) ([]*command.Command
 		}
 		commands = append(commands, cmd)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return commands, nil
 }
@@ -761,6 +770,9 @@ func (r *CommandRepository) GetQueuedPlatformJobs(ctx context.Context, limit int
 			return nil, err
 		}
 		commands = append(commands, cmd)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return commands, nil
@@ -927,6 +939,9 @@ func (r *CommandRepository) ListPlatformJobsByTenant(ctx context.Context, tenant
 		}
 		commands = append(commands, cmd)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(commands, total, page), nil
 }
@@ -987,6 +1002,9 @@ func (r *CommandRepository) ListPlatformJobsAdmin(ctx context.Context, agentID, 
 		}
 		commands = append(commands, cmd)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(commands, total, page), nil
 }
@@ -1016,6 +1034,9 @@ func (r *CommandRepository) GetPlatformJobsByAgent(ctx context.Context, agentID 
 			return nil, err
 		}
 		commands = append(commands, cmd)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return commands, nil

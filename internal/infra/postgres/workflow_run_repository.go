@@ -122,6 +122,9 @@ func (r *WorkflowRunRepository) List(ctx context.Context, filter workflow.RunFil
 		}
 		runs = append(runs, run)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(runs, total, page), nil
 }
@@ -150,6 +153,9 @@ func (r *WorkflowRunRepository) ListByWorkflowID(ctx context.Context, workflowID
 			return nil, 0, err
 		}
 		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
 	}
 
 	return runs, total, nil
@@ -241,6 +247,9 @@ func (r *WorkflowRunRepository) GetWithNodeRuns(ctx context.Context, id shared.I
 		}
 		run.NodeRuns = append(run.NodeRuns, nodeRun)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return run, nil
 }
@@ -262,6 +271,9 @@ func (r *WorkflowRunRepository) GetActiveByWorkflowID(ctx context.Context, workf
 			return nil, err
 		}
 		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return runs, nil

@@ -214,4 +214,3 @@ func (r *AITriageBudgetRepository) selectOne(
 	row.TenantID = parsed
 	return row, nil
 }
-

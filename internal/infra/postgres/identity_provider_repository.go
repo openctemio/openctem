@@ -156,12 +156,12 @@ func (r *IdentityProviderRepository) queryIPs(ctx context.Context, query string,
 func (r *IdentityProviderRepository) scanIP(row *sql.Row) (*identityprovider.IdentityProvider, error) {
 	var (
 		id, tenantID, provider, displayName, clientID, clientSecretEnc string
-		issuerURL, tenantIdentifier, createdBy                        sql.NullString
-		scopes, allowedDomains                                        pq.StringArray
-		autoProvision, isActive                                       bool
-		defaultRole                                                   string
-		metadataJSON                                                  []byte
-		createdAt, updatedAt                                          sql.NullTime
+		issuerURL, tenantIdentifier, createdBy                         sql.NullString
+		scopes, allowedDomains                                         pq.StringArray
+		autoProvision, isActive                                        bool
+		defaultRole                                                    string
+		metadataJSON                                                   []byte
+		createdAt, updatedAt                                           sql.NullTime
 	)
 
 	err := row.Scan(
@@ -189,12 +189,12 @@ func (r *IdentityProviderRepository) scanIP(row *sql.Row) (*identityprovider.Ide
 func (r *IdentityProviderRepository) scanIPRow(rows *sql.Rows) (*identityprovider.IdentityProvider, error) {
 	var (
 		id, tenantID, provider, displayName, clientID, clientSecretEnc string
-		issuerURL, tenantIdentifier, createdBy                        sql.NullString
-		scopes, allowedDomains                                        pq.StringArray
-		autoProvision, isActive                                       bool
-		defaultRole                                                   string
-		metadataJSON                                                  []byte
-		createdAt, updatedAt                                          sql.NullTime
+		issuerURL, tenantIdentifier, createdBy                         sql.NullString
+		scopes, allowedDomains                                         pq.StringArray
+		autoProvision, isActive                                        bool
+		defaultRole                                                    string
+		metadataJSON                                                   []byte
+		createdAt, updatedAt                                           sql.NullTime
 	)
 
 	err := rows.Scan(

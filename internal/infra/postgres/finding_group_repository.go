@@ -170,13 +170,13 @@ func (r *FindingRepository) groupByCVE(
 	groups := make([]*vulnerability.FindingGroup, 0)
 	for rows.Next() {
 		var (
-			groupKey                          string
-			label, severity                   string
-			cvssScore                         *float64
-			epssScore                         *float64
-			exploitAvailable, cisaKev         *bool
-			total, open, ip, fa, resolved     int
-			affectedAssets, resolvedAssets     int
+			groupKey                       string
+			label, severity                string
+			cvssScore                      *float64
+			epssScore                      *float64
+			exploitAvailable, cisaKev      *bool
+			total, open, ip, fa, resolved  int
+			affectedAssets, resolvedAssets int
 		)
 		if err := rows.Scan(
 			&groupKey, &label, &severity,
@@ -282,7 +282,7 @@ func (r *FindingRepository) groupByAsset(
 			groupKey, label                   string
 			assetType, criticality, ownerName string
 			total, open, ip, fa, resolved     int
-			affectedAssets, resolvedAssets     int
+			affectedAssets, resolvedAssets    int
 		)
 		if err := rows.Scan(
 			&groupKey, &label, &assetType, &criticality, &ownerName,
@@ -368,9 +368,9 @@ func (r *FindingRepository) groupByOwner(
 	groups := make([]*vulnerability.FindingGroup, 0)
 	for rows.Next() {
 		var (
-			groupKey, label, email            string
-			total, open, ip, fa, resolved     int
-			affectedAssets, resolvedAssets     int
+			groupKey, label, email         string
+			total, open, ip, fa, resolved  int
+			affectedAssets, resolvedAssets int
 		)
 		if err := rows.Scan(
 			&groupKey, &label, &email,
@@ -448,9 +448,9 @@ func (r *FindingRepository) groupByComponent(
 	groups := make([]*vulnerability.FindingGroup, 0)
 	for rows.Next() {
 		var (
-			groupKey, label, ecosystem        string
-			total, open, ip, fa, resolved     int
-			affectedAssets, resolvedAssets     int
+			groupKey, label, ecosystem     string
+			total, open, ip, fa, resolved  int
+			affectedAssets, resolvedAssets int
 		)
 		if err := rows.Scan(
 			&groupKey, &label, &ecosystem,
@@ -530,9 +530,9 @@ func (r *FindingRepository) groupByField(
 	groups := make([]*vulnerability.FindingGroup, 0)
 	for rows.Next() {
 		var (
-			groupKey                          string
-			total, open, ip, fa, resolved     int
-			affectedAssets, resolvedAssets     int
+			groupKey                       string
+			total, open, ip, fa, resolved  int
+			affectedAssets, resolvedAssets int
 		)
 		if err := rows.Scan(
 			&groupKey,

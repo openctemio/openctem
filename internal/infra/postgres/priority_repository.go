@@ -99,13 +99,13 @@ func (r *PriorityRuleRepository) ListActiveByTenant(ctx context.Context, tenantI
 	var rules []*vulnerability.PriorityOverrideRule
 	for rows.Next() {
 		var (
-			id, tid                        string
-			name, description, pc          string
-			conditionsJSON                 []byte
-			isActive                       bool
-			evalOrder                      int
-			createdBy, updatedBy           sql.NullString
-			createdAt, updatedAt           time.Time
+			id, tid               string
+			name, description, pc string
+			conditionsJSON        []byte
+			isActive              bool
+			evalOrder             int
+			createdBy, updatedBy  sql.NullString
+			createdAt, updatedAt  time.Time
 		)
 		if err := rows.Scan(&id, &tid, &name, &description, &pc, &conditionsJSON,
 			&isActive, &evalOrder, &createdBy, &updatedBy, &createdAt, &updatedAt); err != nil {
@@ -139,6 +139,9 @@ func (r *PriorityRuleRepository) ListActiveByTenant(ctx context.Context, tenantI
 		}
 
 		rules = append(rules, vulnerability.ReconstitutePriorityOverrideRule(data))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return rules, nil
@@ -290,14 +293,17 @@ func (r *CompensatingControlLookupRepo) GetEffectiveForAssets(ctx context.Contex
 			result[aid] = factor
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
 // Verify interface compliance
 var (
-	_ app.EPSSRepository              = (*EPSSAdapter)(nil)
-	_ app.KEVRepository               = (*KEVAdapter)(nil)
-	_ app.PriorityRuleRepository      = (*PriorityRuleRepository)(nil)
-	_ app.PriorityAuditRepository     = (*PriorityAuditRepository)(nil)
-	_ app.CompensatingControlLookup   = (*CompensatingControlLookupRepo)(nil)
+	_ app.EPSSRepository            = (*EPSSAdapter)(nil)
+	_ app.KEVRepository             = (*KEVAdapter)(nil)
+	_ app.PriorityRuleRepository    = (*PriorityRuleRepository)(nil)
+	_ app.PriorityAuditRepository   = (*PriorityAuditRepository)(nil)
+	_ app.CompensatingControlLookup = (*CompensatingControlLookupRepo)(nil)
 )

@@ -71,6 +71,9 @@ func (r *AssetDedupRepository) ListPendingReviews(ctx context.Context, tenantID 
 		}
 		reviews = append(reviews, rev)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return reviews, nil
 }
 
@@ -390,6 +393,9 @@ func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID string,
 			row[col] = values[i]
 		}
 		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return results, nil
 }

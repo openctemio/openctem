@@ -134,6 +134,9 @@ func (r *RuleSourceRepository) List(ctx context.Context, filter rule.SourceFilte
 		}
 		sources = append(sources, source)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(sources, total, page), nil
 }
@@ -163,6 +166,9 @@ func (r *RuleSourceRepository) ListByTenantAndTool(ctx context.Context, tenantID
 			return nil, err
 		}
 		sources = append(sources, source)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return sources, nil
@@ -194,6 +200,9 @@ func (r *RuleSourceRepository) ListNeedingSync(ctx context.Context, limit int) (
 			return nil, err
 		}
 		sources = append(sources, source)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return sources, nil

@@ -209,6 +209,9 @@ func (r *SLAPolicyRepository) ListByTenant(ctx context.Context, tenantID shared.
 		}
 		policies = append(policies, policy)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return policies, nil
 }

@@ -99,11 +99,11 @@ func (r *ComplianceControlRepository) CountByFramework(ctx context.Context, fram
 func (r *ComplianceControlRepository) scanControl(scan func(dest ...any) error) (*compliance.Control, error) {
 	var (
 		idStr, frameworkIDStr, controlID, title string
-		description, category                  sql.NullString
-		parentControlIDStr                     sql.NullString
-		sortOrder                              int
-		metaJSON                               []byte
-		createdAt                              time.Time
+		description, category                   sql.NullString
+		parentControlIDStr                      sql.NullString
+		sortOrder                               int
+		metaJSON                                []byte
+		createdAt                               time.Time
 	)
 
 	err := scan(&idStr, &frameworkIDStr, &controlID, &title, &description, &category,

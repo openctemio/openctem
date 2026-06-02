@@ -144,6 +144,9 @@ func (r *PipelineTemplateRepository) List(ctx context.Context, filter pipeline.T
 		templates = append(templates, t)
 		templateIDs = append(templateIDs, t.ID.String())
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	// Load steps for all templates in a single batch query
 	if len(templateIDs) > 0 {
@@ -172,6 +175,9 @@ func (r *PipelineTemplateRepository) List(ctx context.Context, filter pipeline.T
 				return result, err
 			}
 			stepsMap[step.PipelineID.String()] = append(stepsMap[step.PipelineID.String()], step)
+		}
+		if err := stepRows.Err(); err != nil {
+			return result, err
 		}
 
 		// Assign steps to templates
@@ -304,6 +310,9 @@ func (r *PipelineTemplateRepository) GetWithSteps(ctx context.Context, id shared
 		}
 		template.Steps = append(template.Steps, step)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return template, nil
 }
@@ -380,6 +389,9 @@ func (r *PipelineTemplateRepository) ListWithSystemTemplates(ctx context.Context
 		templates = append(templates, t)
 		templateIDs = append(templateIDs, t.ID.String())
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	// Load steps for all templates in a single batch query
 	if len(templateIDs) > 0 {
@@ -408,6 +420,9 @@ func (r *PipelineTemplateRepository) ListWithSystemTemplates(ctx context.Context
 				return result, err
 			}
 			stepsMap[step.PipelineID.String()] = append(stepsMap[step.PipelineID.String()], step)
+		}
+		if err := stepRows.Err(); err != nil {
+			return result, err
 		}
 
 		// Assign steps to templates
@@ -871,6 +886,9 @@ func (r *PipelineStepRepository) GetByPipelineID(ctx context.Context, pipelineID
 			return nil, err
 		}
 		steps = append(steps, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return steps, nil

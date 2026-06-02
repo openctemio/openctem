@@ -121,6 +121,9 @@ func (r *RuleOverrideRepository) List(ctx context.Context, filter rule.OverrideF
 		}
 		overrides = append(overrides, override)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(overrides, total, page), nil
 }
@@ -155,6 +158,9 @@ func (r *RuleOverrideRepository) ListByTenantAndTool(ctx context.Context, tenant
 			return nil, err
 		}
 		overrides = append(overrides, override)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return overrides, nil

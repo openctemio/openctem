@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/notification"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
 )
 
@@ -274,12 +274,12 @@ func (r *NotificationRepository) UpsertPreferences(
 		RETURNING tenant_id, user_id, in_app_enabled, email_digest, muted_types, min_severity, updated_at`
 
 	var (
-		tID, uID         shared.ID
-		inAppEnabled     bool
-		emailDigest      string
+		tID, uID          shared.ID
+		inAppEnabled      bool
+		emailDigest       string
 		retMutedTypesJSON sql.NullString
-		retMinSeverity   sql.NullString
-		updatedAt        time.Time
+		retMinSeverity    sql.NullString
+		updatedAt         time.Time
 	)
 
 	err := r.db.QueryRowContext(ctx, query, tenantID, userID, params.InAppEnabled, params.EmailDigest, mutedTypesJSON, minSev).Scan(
@@ -404,4 +404,3 @@ func (r *NotificationRepository) scanNotificationWithTotal(scanner notifRowScann
 		actorID, createdAt, isRead,
 	), totalCount, nil
 }
-
