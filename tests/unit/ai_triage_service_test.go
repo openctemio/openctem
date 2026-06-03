@@ -22,20 +22,20 @@ import (
 // =============================================================================
 
 type mockAITriageRepo struct {
-	results    map[string]*aitriage.TriageResult
-	createErr  error
-	updateErr  error
-	getByIDErr error
-	getByFindingErr error
-	listErr    error
-	hasPendingErr error
+	results          map[string]*aitriage.TriageResult
+	createErr        error
+	updateErr        error
+	getByIDErr       error
+	getByFindingErr  error
+	listErr          error
+	hasPendingErr    error
 	hasPendingResult bool
-	findStuckErr error
-	findStuckResult []*aitriage.TriageResult
-	markStuckErr error
-	markStuckResult bool
-	acquireErr error
-	acquireResult *aitriage.TriageContext
+	findStuckErr     error
+	findStuckResult  []*aitriage.TriageResult
+	markStuckErr     error
+	markStuckResult  bool
+	acquireErr       error
+	acquireResult    *aitriage.TriageContext
 
 	createCalls int
 	updateCalls int
@@ -145,7 +145,7 @@ func (m *mockAITriageRepo) FindStuckJobs(_ context.Context, _ time.Duration, _ i
 	return m.findStuckResult, nil
 }
 
-func (m *mockAITriageRepo) MarkStuckAsFailed(_ context.Context, _ shared.ID, _ string) (bool, error) {
+func (m *mockAITriageRepo) MarkStuckAsFailed(_ context.Context, _, _ shared.ID, _ string) (bool, error) {
 	if m.markStuckErr != nil {
 		return false, m.markStuckErr
 	}
@@ -178,8 +178,8 @@ func (m *mockAITriageTenantRepo) Create(_ context.Context, _ *tenant.Tenant) err
 func (m *mockAITriageTenantRepo) GetBySlug(_ context.Context, _ string) (*tenant.Tenant, error) {
 	return nil, nil
 }
-func (m *mockAITriageTenantRepo) Update(_ context.Context, _ *tenant.Tenant) error  { return nil }
-func (m *mockAITriageTenantRepo) Delete(_ context.Context, _ shared.ID) error        { return nil }
+func (m *mockAITriageTenantRepo) Update(_ context.Context, _ *tenant.Tenant) error { return nil }
+func (m *mockAITriageTenantRepo) Delete(_ context.Context, _ shared.ID) error      { return nil }
 func (m *mockAITriageTenantRepo) ExistsBySlug(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }
@@ -725,15 +725,15 @@ func TestAITriage_ExtractAISettings_FullConfig(t *testing.T) {
 
 	settings := map[string]any{
 		"ai": map[string]any{
-			"mode":                     "byok",
-			"provider":                 "openai",
-			"api_key":                  "sk-test123",
-			"azure_endpoint":           "https://myendpoint.openai.azure.com",
-			"model_override":           "gpt-4-turbo",
-			"auto_triage_enabled":      true,
-			"auto_triage_severities":   []any{"critical", "high"},
+			"mode":                      "byok",
+			"provider":                  "openai",
+			"api_key":                   "sk-test123",
+			"azure_endpoint":            "https://myendpoint.openai.azure.com",
+			"model_override":            "gpt-4-turbo",
+			"auto_triage_enabled":       true,
+			"auto_triage_severities":    []any{"critical", "high"},
 			"auto_triage_delay_seconds": float64(30),
-			"monthly_token_limit":      float64(100000),
+			"monthly_token_limit":       float64(100000),
 		},
 	}
 
@@ -809,8 +809,8 @@ func TestAITriage_ExtractAISettings_WrongTypes(t *testing.T) {
 
 	settings := map[string]any{
 		"ai": map[string]any{
-			"mode":                int(42),       // Wrong type - should be string
-			"auto_triage_enabled": "yes",         // Wrong type - should be bool
+			"mode":                int(42),        // Wrong type - should be string
+			"auto_triage_enabled": "yes",          // Wrong type - should be bool
 			"monthly_token_limit": "not a number", // Wrong type - should be float64
 		},
 	}
@@ -1985,15 +1985,15 @@ func TestAITriage_TriageResult_MarkCompleted(t *testing.T) {
 	_ = result.MarkProcessing()
 
 	analysis := aitriage.TriageAnalysis{
-		Provider:            "claude",
-		Model:               "claude-3-5-sonnet",
-		SeverityAssessment:  "high",
-		RiskScore:           75.0,
-		Exploitability:      aitriage.ExploitabilityHigh,
-		PriorityRank:        90,
-		Summary:             "Critical SQL injection",
-		PromptTokens:        500,
-		CompletionTokens:    200,
+		Provider:           "claude",
+		Model:              "claude-3-5-sonnet",
+		SeverityAssessment: "high",
+		RiskScore:          75.0,
+		Exploitability:     aitriage.ExploitabilityHigh,
+		PriorityRank:       90,
+		Summary:            "Critical SQL injection",
+		PromptTokens:       500,
+		CompletionTokens:   200,
 	}
 
 	err := result.MarkCompleted(analysis)
@@ -2115,4 +2115,3 @@ func TestAITriage_Exploitability_IsValid(t *testing.T) {
 		t.Error("expected 'unknown' to be invalid exploitability")
 	}
 }
-

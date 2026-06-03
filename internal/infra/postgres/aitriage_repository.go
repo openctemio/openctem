@@ -947,7 +947,7 @@ func (r *AITriageRepository) FindStuckJobs(ctx context.Context, stuckDuration ti
 
 // MarkStuckAsFailed marks a stuck triage job as failed.
 // Returns true if the job was updated, false if it was already in a terminal state.
-func (r *AITriageRepository) MarkStuckAsFailed(ctx context.Context, id shared.ID, errorMessage string) (bool, error) {
+func (r *AITriageRepository) MarkStuckAsFailed(ctx context.Context, tenantID, id shared.ID, errorMessage string) (bool, error) {
 	now := time.Now().UTC()
 
 	query := `
@@ -957,10 +957,11 @@ func (r *AITriageRepository) MarkStuckAsFailed(ctx context.Context, id shared.ID
 		    completed_at = $2,
 		    updated_at = $2
 		WHERE id = $3
+		  AND tenant_id = $4
 		  AND status IN ('pending', 'processing')
 	`
 
-	result, err := r.db.ExecContext(ctx, query, errorMessage, now, id)
+	result, err := r.db.ExecContext(ctx, query, errorMessage, now, id, tenantID)
 	if err != nil {
 		return false, fmt.Errorf("failed to mark job as failed: %w", err)
 	}
