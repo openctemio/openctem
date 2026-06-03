@@ -119,6 +119,11 @@ func (s *BranchService) UpdateBranch(ctx context.Context, branchID, repositoryID
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
+	// repositoryID is REQUIRED — it scopes the IDOR check below. An empty value
+	// must not skip the ownership check (footgun for future callers).
+	if repositoryID == "" {
+		return nil, fmt.Errorf("%w: repository id is required", shared.ErrValidation)
+	}
 
 	b, err := s.repo.GetByID(ctx, parsedID)
 	if err != nil {
@@ -126,7 +131,7 @@ func (s *BranchService) UpdateBranch(ctx context.Context, branchID, repositoryID
 	}
 
 	// IDOR prevention: verify branch belongs to the repository
-	if repositoryID != "" && b.RepositoryID().String() != repositoryID {
+	if b.RepositoryID().String() != repositoryID {
 		return nil, shared.ErrNotFound
 	}
 
@@ -189,19 +194,24 @@ func (s *BranchService) DeleteBranch(ctx context.Context, branchID, repositoryID
 		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
+	// repositoryID is REQUIRED — it scopes the ownership check below. Skipping
+	// it (the old `if repositoryID != ""` guard) would delete a branch by ID
+	// alone, bypassing both the IDOR check and the default-branch protection.
+	if repositoryID == "" {
+		return fmt.Errorf("%w: repository id is required", shared.ErrValidation)
+	}
+
 	// IDOR prevention: verify branch belongs to the repository before deletion
-	if repositoryID != "" {
-		b, err := s.repo.GetByID(ctx, parsedID)
-		if err != nil {
-			return err
-		}
-		if b.RepositoryID().String() != repositoryID {
-			return shared.ErrNotFound
-		}
-		// Prevent deletion of default branch
-		if b.IsDefault() {
-			return fmt.Errorf("%w: cannot delete default branch", shared.ErrValidation)
-		}
+	b, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+	if b.RepositoryID().String() != repositoryID {
+		return shared.ErrNotFound
+	}
+	// Prevent deletion of default branch
+	if b.IsDefault() {
+		return fmt.Errorf("%w: cannot delete default branch", shared.ErrValidation)
 	}
 
 	if err := s.repo.Delete(ctx, parsedID); err != nil {

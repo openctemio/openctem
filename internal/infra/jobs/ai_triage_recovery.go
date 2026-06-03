@@ -17,6 +17,7 @@ type AITriageRecoveryJob struct {
 	config        *config.AITriageConfig
 	logger        *logger.Logger
 	stopCh        chan struct{}
+	stopOnce      sync.Once
 	wg            sync.WaitGroup
 }
 
@@ -61,12 +62,15 @@ func (j *AITriageRecoveryJob) Start() {
 	go j.run(interval, stuckDuration)
 }
 
-// Stop stops the recovery job gracefully.
+// Stop stops the recovery job gracefully. Safe to call more than once
+// (a second close(stopCh) would otherwise panic).
 func (j *AITriageRecoveryJob) Stop() {
-	j.logger.Info("stopping ai triage recovery job")
-	close(j.stopCh)
-	j.wg.Wait()
-	j.logger.Info("ai triage recovery job stopped")
+	j.stopOnce.Do(func() {
+		j.logger.Info("stopping ai triage recovery job")
+		close(j.stopCh)
+		j.wg.Wait()
+		j.logger.Info("ai triage recovery job stopped")
+	})
 }
 
 func (j *AITriageRecoveryJob) run(interval, stuckDuration time.Duration) {
