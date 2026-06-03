@@ -189,12 +189,21 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, agentID, commandID 
 		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
 	}
 
-	cmd.Acknowledge()
-	if err := s.repo.Update(ctx, cmd); err != nil {
+	// Atomic claim: only one concurrent poller can transition a pending
+	// command to acknowledged. A read-modify-write via Update would let two
+	// agents that both polled the same unassigned command each "win",
+	// double-dispatching it. cmd was just fetched tenant-scoped, so reuse its
+	// already-parsed IDs.
+	claimed, err := s.repo.ClaimForAgent(ctx, cmd.TenantID, cmd.ID, agentID)
+	if err != nil {
 		return nil, err
 	}
+	if !claimed {
+		return nil, shared.NewDomainError("CONFLICT", "command already claimed by another agent", shared.ErrConflict)
+	}
 
-	return cmd, nil
+	// Return the freshly-claimed state.
+	return s.Get(ctx, tenantID, commandID)
 }
 
 // Start marks a command as running.

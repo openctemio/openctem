@@ -24,6 +24,7 @@ type cmdMockRepo struct {
 	createErr             error
 	getByTenantAndIDErr   error
 	updateErr             error
+	claimErr              error
 	deleteErr             error
 	listErr               error
 	getPendingErr         error
@@ -97,6 +98,24 @@ func (m *cmdMockRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shar
 		}
 	}
 	return result, nil
+}
+
+func (m *cmdMockRepo) ClaimForAgent(_ context.Context, tenantID, commandID shared.ID, agentID string) (bool, error) {
+	if m.claimErr != nil {
+		return false, m.claimErr
+	}
+	c, ok := m.commands[commandID.String()]
+	if !ok || c.TenantID != tenantID {
+		return false, nil
+	}
+	if c.Status != commanddom.CommandStatusPending {
+		return false, nil
+	}
+	if c.AgentID != nil && c.AgentID.String() != agentID {
+		return false, nil
+	}
+	c.Acknowledge()
+	return true, nil
 }
 
 func (m *cmdMockRepo) List(_ context.Context, _ commanddom.Filter, page pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
@@ -905,11 +924,11 @@ func TestCommandService_AcknowledgeCommand_UpdateError(t *testing.T) {
 	tenantID := newCmdTestTenantID()
 
 	created := createTestCommand(t, svc, tenantID, "scan", "normal")
-	repo.updateErr = errors.New("update failed")
+	repo.claimErr = errors.New("claim failed")
 
 	_, err := svc.Acknowledge(context.Background(), tenantID, "agent-test", created.ID.String())
 	if err == nil {
-		t.Fatal("expected error from repo update")
+		t.Fatal("expected error from repo claim")
 	}
 }
 
