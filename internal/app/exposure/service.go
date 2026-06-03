@@ -546,8 +546,10 @@ func (s *ExposureService) GetExposureStats(ctx context.Context, tenantID string)
 	}
 
 	stateMap := make(map[string]int64)
+	var total int64
 	for k, v := range byState {
 		stateMap[k.String()] = v
+		total += v
 	}
 
 	severityMap := make(map[string]int64)
@@ -555,10 +557,25 @@ func (s *ExposureService) GetExposureStats(ctx context.Context, tenantID string)
 		severityMap[k.String()] = v
 	}
 
-	return map[string]any{
-		"by_state":    stateMap,
-		"by_severity": severityMap,
-	}, nil
+	stats := map[string]any{
+		"by_state":       stateMap,
+		"by_severity":    severityMap,
+		"total":          total,
+		"active_count":   stateMap[exposuredom.StateActive.String()],
+		"resolved_count": stateMap[exposuredom.StateResolved.String()],
+	}
+
+	// MTTR is optional — only surface it when there is at least one resolved
+	// event with a resolution timestamp to average.
+	mttrHours, ok, err := s.repo.MeanTimeToResolveHours(ctx, parsedTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute MTTR: %w", err)
+	}
+	if ok {
+		stats["mttr_hours"] = mttrHours
+	}
+
+	return stats, nil
 }
 
 // DeleteExposure deletes an exposure event.

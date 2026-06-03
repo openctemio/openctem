@@ -32,10 +32,13 @@ type mockExposureRepo struct {
 	bulkUpsertErr error
 	countStateErr error
 	countSevErr   error
+	mttrErr       error
 
 	// Configurable results
 	countByStateResult    map[exposure.State]int64
 	countBySeverityResult map[exposure.Severity]int64
+	mttrHours             float64
+	mttrOK                bool
 
 	// Call tracking
 	createCalls     int
@@ -200,6 +203,13 @@ func (m *mockExposureRepo) CountBySeverity(_ context.Context, _ shared.ID) (map[
 		return m.countBySeverityResult, nil
 	}
 	return map[exposure.Severity]int64{}, nil
+}
+
+func (m *mockExposureRepo) MeanTimeToResolveHours(_ context.Context, _ shared.ID) (float64, bool, error) {
+	if m.mttrErr != nil {
+		return 0, false, m.mttrErr
+	}
+	return m.mttrHours, m.mttrOK, nil
 }
 
 // =============================================================================
@@ -1568,6 +1578,8 @@ func TestExposureService_GetExposureStats_Success(t *testing.T) {
 		exposure.SeverityMedium:   5,
 		exposure.SeverityLow:      2,
 	}
+	repo.mttrHours = 12.5
+	repo.mttrOK = true
 
 	stats, err := svc.GetExposureStats(context.Background(), tenantID.String())
 	if err != nil {
@@ -1583,6 +1595,20 @@ func TestExposureService_GetExposureStats_Success(t *testing.T) {
 	}
 	if byState["resolved"] != 5 {
 		t.Errorf("expected resolved count 5, got %d", byState["resolved"])
+	}
+
+	// Derived summary fields the UI stat cards consume.
+	if stats["total"] != int64(17) {
+		t.Errorf("expected total 17, got %v", stats["total"])
+	}
+	if stats["active_count"] != int64(10) {
+		t.Errorf("expected active_count 10, got %v", stats["active_count"])
+	}
+	if stats["resolved_count"] != int64(5) {
+		t.Errorf("expected resolved_count 5, got %v", stats["resolved_count"])
+	}
+	if stats["mttr_hours"] != 12.5 {
+		t.Errorf("expected mttr_hours 12.5, got %v", stats["mttr_hours"])
 	}
 
 	bySeverity, ok := stats["by_severity"].(map[string]int64)
@@ -1601,6 +1627,26 @@ func TestExposureService_GetExposureStats_Success(t *testing.T) {
 	}
 	if repo.countSevCalls != 1 {
 		t.Errorf("expected 1 CountBySeverity call, got %d", repo.countSevCalls)
+	}
+}
+
+func TestExposureService_GetExposureStats_OmitsMTTRWhenNoResolved(t *testing.T) {
+	svc, repo, _ := newExposureTestService()
+	tenantID := shared.NewID()
+
+	repo.countByStateResult = map[exposure.State]int64{exposure.StateActive: 3}
+	repo.mttrOK = false // no resolved events to average
+
+	stats, err := svc.GetExposureStats(context.Background(), tenantID.String())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if _, present := stats["mttr_hours"]; present {
+		t.Errorf("expected mttr_hours to be omitted when no resolved events, got %v", stats["mttr_hours"])
+	}
+	if stats["resolved_count"] != int64(0) {
+		t.Errorf("expected resolved_count 0, got %v", stats["resolved_count"])
 	}
 }
 

@@ -57,6 +57,11 @@ type Repository interface {
 
 	// CountBySeverity returns counts grouped by severity for a tenant.
 	CountBySeverity(ctx context.Context, tenantID shared.ID) (map[Severity]int64, error)
+
+	// MeanTimeToResolveHours returns the average resolution time, in hours,
+	// across all resolved exposure events for a tenant. The bool is false when
+	// there are no resolved events to average (so the caller can omit the field).
+	MeanTimeToResolveHours(ctx context.Context, tenantID shared.ID) (float64, bool, error)
 }
 
 // StateHistoryRepository defines the interface for state history persistence.

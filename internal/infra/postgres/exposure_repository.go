@@ -496,6 +496,30 @@ func (r *ExposureRepository) CountBySeverity(ctx context.Context, tenantID share
 	return result, nil
 }
 
+// MeanTimeToResolveHours returns the average (resolved_at - first_seen_at) in
+// hours across resolved events for a tenant. Returns ok=false when no resolved
+// event has a resolved_at timestamp, so the caller can omit the metric.
+func (r *ExposureRepository) MeanTimeToResolveHours(ctx context.Context, tenantID shared.ID) (float64, bool, error) {
+	query := `
+		SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - first_seen_at)) / 3600.0)
+		FROM exposure_events
+		WHERE tenant_id = $1
+		  AND state = $2
+		  AND resolved_at IS NOT NULL
+	`
+
+	var avgHours sql.NullFloat64
+	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), exposure.StateResolved.String()).Scan(&avgHours); err != nil {
+		return 0, false, fmt.Errorf("failed to compute mean time to resolve: %w", err)
+	}
+
+	if !avgHours.Valid {
+		return 0, false, nil
+	}
+
+	return avgHours.Float64, true, nil
+}
+
 // Helper methods
 
 func (r *ExposureRepository) selectQuery() string {
