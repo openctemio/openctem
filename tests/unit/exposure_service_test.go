@@ -22,16 +22,16 @@ type mockExposureRepo struct {
 	events map[string]*exposure.ExposureEvent
 
 	// Configurable errors
-	createErr      error
-	getErr         error
-	updateErr      error
-	deleteErr      error
-	listErr        error
-	countErr       error
-	upsertErr      error
-	bulkUpsertErr  error
-	countStateErr  error
-	countSevErr    error
+	createErr     error
+	getErr        error
+	updateErr     error
+	deleteErr     error
+	listErr       error
+	countErr      error
+	upsertErr     error
+	bulkUpsertErr error
+	countStateErr error
+	countSevErr   error
 
 	// Configurable results
 	countByStateResult    map[exposure.State]int64
@@ -1498,7 +1498,7 @@ func TestExposureService_GetStateHistory_Success(t *testing.T) {
 		t.Fatalf("reactivate failed: %v", err)
 	}
 
-	history, err := svc.GetStateHistory(context.Background(), event.ID().String())
+	history, err := svc.GetStateHistory(context.Background(), tenantID.String(), event.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1511,7 +1511,7 @@ func TestExposureService_GetStateHistory_Success(t *testing.T) {
 func TestExposureService_GetStateHistory_InvalidID(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 
-	_, err := svc.GetStateHistory(context.Background(), "not-a-uuid")
+	_, err := svc.GetStateHistory(context.Background(), shared.NewID().String(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -1526,7 +1526,7 @@ func TestExposureService_GetStateHistory_Empty(t *testing.T) {
 
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
-	history, err := svc.GetStateHistory(context.Background(), event.ID().String())
+	history, err := svc.GetStateHistory(context.Background(), tenantID.String(), event.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1538,10 +1538,12 @@ func TestExposureService_GetStateHistory_Empty(t *testing.T) {
 
 func TestExposureService_GetStateHistory_RepoError(t *testing.T) {
 	svc, _, historyRepo := newExposureTestService()
+	tenantID := shared.NewID()
+	event := createTestExposureEvent(t, svc, tenantID.String())
 
 	historyRepo.listErr = fmt.Errorf("database error")
 
-	_, err := svc.GetStateHistory(context.Background(), shared.NewID().String())
+	_, err := svc.GetStateHistory(context.Background(), tenantID.String(), event.ID().String())
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -1997,7 +1999,7 @@ func TestExposureService_FullLifecycle(t *testing.T) {
 	}
 
 	// 7. Get history
-	history, err := svc.GetStateHistory(context.Background(), event.ID().String())
+	history, err := svc.GetStateHistory(context.Background(), tenantID.String(), event.ID().String())
 	if err != nil {
 		t.Fatalf("get history failed: %v", err)
 	}

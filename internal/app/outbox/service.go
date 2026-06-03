@@ -230,6 +230,15 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 		entry.MarkCompleted()
 	}
 
+	// If MarkFailed rescheduled the entry for retry (status back to pending with
+	// a backoff), it must STAY in the outbox — persist and return. Without this,
+	// the code below archived + deleted it, so any transient downstream failure
+	// (Slack 5xx, SMTP timeout) silently dropped the notification on the first
+	// attempt and the entire exponential-backoff retry path was dead code.
+	if entry.Status() == outboxdom.OutboxStatusPending {
+		return s.outboxRepo.Update(ctx, entry)
+	}
+
 	// Archive to notification_events
 	event := outboxdom.NewEventFromOutbox(entry, results)
 	if err := s.eventRepo.Create(ctx, event); err != nil {

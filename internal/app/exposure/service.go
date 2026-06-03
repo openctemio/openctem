@@ -511,7 +511,15 @@ func (s *ExposureService) changeState(ctx context.Context, tenantID, exposureID,
 }
 
 // GetStateHistory retrieves the state change history for an exposure event.
-func (s *ExposureService) GetStateHistory(ctx context.Context, exposureID string) ([]*exposuredom.StateHistory, error) {
+// Scoped to the caller's tenant: it first verifies the exposure belongs to the
+// tenant (GetExposureSecure returns NotFound cross-tenant) — otherwise any
+// authenticated user with findings:read could read any tenant's exposure
+// history (state changes, reasons, changed_by) by guessing the UUID.
+func (s *ExposureService) GetStateHistory(ctx context.Context, tenantID, exposureID string) ([]*exposuredom.StateHistory, error) {
+	if _, err := s.GetExposureSecure(ctx, tenantID, exposureID); err != nil {
+		return nil, err
+	}
+
 	parsedID, err := shared.IDFromString(exposureID)
 	if err != nil {
 		return nil, shared.ErrNotFound

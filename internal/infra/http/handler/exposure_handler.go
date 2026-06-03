@@ -585,8 +585,9 @@ func (h *ExposureHandler) Reactivate(w http.ResponseWriter, r *http.Request) {
 // @Router       /exposures/{id}/history [get]
 func (h *ExposureHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	exposureID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
 
-	history, err := h.service.GetStateHistory(r.Context(), exposureID)
+	history, err := h.service.GetStateHistory(r.Context(), tenantID, exposureID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
