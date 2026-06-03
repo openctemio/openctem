@@ -137,6 +137,51 @@ func TestReconcile_PerRequestErrorDoesNotAbortBatch(t *testing.T) {
 	}
 }
 
+// A transiently-failed request must be re-enqueued (not silently dropped),
+// otherwise the reclassification is lost and findings keep stale priority.
+func TestReconcile_FailedRequestReEnqueued(t *testing.T) {
+	q := &fakeQueue{}
+	_ = q.Enqueue(context.Background(), ReclassifyRequest{TenantID: shared.NewID(), Reason: ReasonManual})
+
+	rc := newFakeReclassifier()
+	rc.errOnIdx = 0 // the only request errors
+	rc.errToRet = errors.New("transient db blip")
+	c := NewPriorityReclassifyController(q, rc, &PriorityReclassifyConfig{BatchSize: 10})
+
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatalf("batch-level err must be nil, got %v", err)
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.items) != 1 {
+		t.Fatalf("failed request must be re-enqueued, queue len = %d, want 1", len(q.items))
+	}
+	if q.items[0].Attempts != 1 {
+		t.Fatalf("re-enqueued request Attempts = %d, want 1", q.items[0].Attempts)
+	}
+}
+
+// Once retries are exhausted the request is dropped (not re-enqueued forever).
+func TestReconcile_DroppedAfterMaxRetries(t *testing.T) {
+	q := &fakeQueue{}
+	// MaxRetries defaults to 3; seed Attempts=2 so this dispatch is the last.
+	_ = q.Enqueue(context.Background(), ReclassifyRequest{TenantID: shared.NewID(), Reason: ReasonManual, Attempts: 2})
+
+	rc := newFakeReclassifier()
+	rc.errOnIdx = 0
+	rc.errToRet = errors.New("still failing")
+	c := NewPriorityReclassifyController(q, rc, &PriorityReclassifyConfig{BatchSize: 10})
+
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatalf("batch-level err must be nil, got %v", err)
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.items) != 0 {
+		t.Fatalf("request must be dropped after exhausting retries, queue len = %d, want 0", len(q.items))
+	}
+}
+
 func TestReconcile_BatchSizeRespected(t *testing.T) {
 	q := &fakeQueue{}
 	for i := 0; i < 10; i++ {

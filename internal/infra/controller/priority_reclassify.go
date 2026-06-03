@@ -58,6 +58,10 @@ type ReclassifyRequest struct {
 	AssetIDs  []shared.ID
 	RuleID    *shared.ID
 	EnqueueAt time.Time
+	// Attempts counts how many times this request has been dispatched and
+	// failed. Used to bound re-enqueue retries so a poison request can't loop
+	// forever. Zero on first enqueue.
+	Attempts int
 }
 
 // ReclassifyQueue is the minimal contract for the in/out queue.
@@ -90,6 +94,9 @@ type PriorityReclassifyConfig struct {
 	// BatchSize is the max number of requests drained per tick.
 	// Default 64.
 	BatchSize int
+	// MaxRetries bounds how many times a failed request is re-enqueued
+	// before it is dropped (with a warning). Default 3.
+	MaxRetries int
 	// Logger (optional; defaults to no-op).
 	Logger *logger.Logger
 }
@@ -117,6 +124,9 @@ func NewPriorityReclassifyController(
 	}
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = 64
+	}
+	if cfg.MaxRetries <= 0 {
+		cfg.MaxRetries = 3
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = logger.NewNop()
@@ -159,13 +169,36 @@ func (c *PriorityReclassifyController) Reconcile(ctx context.Context) (int, erro
 		n, err := c.reclassifier.ReclassifyForRequest(ctx, req)
 		totalReexamined += n
 		if err != nil {
-			// Individual failures do not abort the batch — the
-			// next tick picks up whatever remained.
-			c.logger.Warn("reclassify request failed",
-				"tenant_id", req.TenantID.String(),
-				"reason", string(req.Reason),
-				"error", err,
-			)
+			// DequeueBatch already popped this request, so a transient
+			// failure (DB blip) would silently DROP the reclassification,
+			// leaving findings with stale EPSS/KEV/rule-driven priority.
+			// Re-enqueue with a bounded attempt count; drop (loudly) only
+			// once retries are exhausted so a poison request can't loop.
+			req.Attempts++
+			if req.Attempts < c.config.MaxRetries {
+				if eqErr := c.queue.Enqueue(ctx, req); eqErr != nil {
+					c.logger.Error("reclassify re-enqueue failed; request dropped",
+						"tenant_id", req.TenantID.String(),
+						"reason", string(req.Reason),
+						"attempts", req.Attempts,
+						"error", eqErr,
+					)
+				} else {
+					c.logger.Warn("reclassify request failed; re-enqueued for retry",
+						"tenant_id", req.TenantID.String(),
+						"reason", string(req.Reason),
+						"attempts", req.Attempts,
+						"error", err,
+					)
+				}
+			} else {
+				c.logger.Error("reclassify request dropped after exhausting retries",
+					"tenant_id", req.TenantID.String(),
+					"reason", string(req.Reason),
+					"attempts", req.Attempts,
+					"error", err,
+				)
+			}
 			continue
 		}
 		c.logger.Debug("reclassify request processed",
