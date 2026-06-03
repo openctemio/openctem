@@ -270,7 +270,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
 
 		// WebSocket for real-time communication
-		WebSocket: websocket.NewHandler(deps.WebSocketHub, log),
+		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
 
 		// F-8: wire the single-use ticket redeemer when configured so the
 		// /ws route uses ticket auth instead of the JWT chain.

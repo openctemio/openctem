@@ -26,7 +26,12 @@ func (e *KEVEscalator) EscalateKEVFindings(ctx context.Context) (int, error) {
 		SET severity = 'critical', updated_at = NOW()
 		WHERE cve_id IN (SELECT cve_id FROM kev_catalog)
 		  AND severity != 'critical'
-		  AND status NOT IN ('resolved', 'closed', 'false_positive')
+		  -- Skip every closed/terminal status (matches FindingStatus.IsClosed).
+		  -- 'closed' is not a real status value; the previous list also missed
+		  -- accepted/accepted_risk/duplicate/verified, so a risk-accepted CVE
+		  -- got force-escalated to critical on every KEV sync, overriding a
+		  -- deliberate human decision.
+		  AND status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 		  AND cve_id IS NOT NULL
 		  AND cve_id != ''
 	`

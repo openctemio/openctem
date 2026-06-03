@@ -106,12 +106,16 @@ func registerSSOAdminRoutes(
 	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	router.Group("/api/v1/settings/identity-providers", func(r Router) {
-		// All SSO admin operations require admin+ (configs contain sensitive client IDs)
-		r.GET("/", h.ListProviders, middleware.RequireTeamAdmin())
-		r.POST("/", h.CreateProvider, middleware.RequireTeamAdmin())
-		r.GET("/{id}", h.GetProvider, middleware.RequireTeamAdmin())
-		r.PUT("/{id}", h.UpdateProvider, middleware.RequireTeamAdmin())
-		r.DELETE("/{id}", h.DeleteProvider, middleware.RequireTeamAdmin())
+		// All SSO admin operations require admin+ (configs contain sensitive client IDs).
+		// These routes use the JWT-tenant chain (buildTokenTenantMiddlewares), which
+		// populates the JWT-derived role/IsAdmin context — NOT the URL-path "team_role"
+		// that RequireTeamAdmin reads. Using RequireTeamAdmin here 403'd every caller
+		// (incl. owners/admins); RequireAdmin reads the JWT IsAdmin flag.
+		r.GET("/", h.ListProviders, middleware.RequireAdmin())
+		r.POST("/", h.CreateProvider, middleware.RequireAdmin())
+		r.GET("/{id}", h.GetProvider, middleware.RequireAdmin())
+		r.PUT("/{id}", h.UpdateProvider, middleware.RequireAdmin())
+		r.DELETE("/{id}", h.DeleteProvider, middleware.RequireAdmin())
 	}, middlewares...)
 }
 
