@@ -59,17 +59,17 @@ type Repository interface {
 
 	// CompareBranches compares findings between two branches of the same repository.
 	// Returns counts of new, resolved, and common findings (matched by fingerprint).
-	CompareBranches(ctx context.Context, repositoryID shared.ID, baseBranch, compareBranch string) (*BranchComparison, error)
+	CompareBranches(ctx context.Context, tenantID, repositoryID shared.ID, baseBranch, compareBranch string) (*BranchComparison, error)
 }
 
 // BranchComparison holds the result of comparing findings between two branches.
 type BranchComparison struct {
-	BaseBranch    string               `json:"base_branch"`
-	CompareBranch string               `json:"compare_branch"`
-	NewFindings   int                  `json:"new_findings"`      // in compare but not in base
-	ResolvedFindings int               `json:"resolved_findings"` // in base but not in compare
-	CommonFindings   int               `json:"common_findings"`   // in both
-	NewBySeverity    map[string]int     `json:"new_by_severity"`
+	BaseBranch       string              `json:"base_branch"`
+	CompareBranch    string              `json:"compare_branch"`
+	NewFindings      int                 `json:"new_findings"`      // in compare but not in base
+	ResolvedFindings int                 `json:"resolved_findings"` // in base but not in compare
+	CommonFindings   int                 `json:"common_findings"`   // in both
+	NewBySeverity    map[string]int      `json:"new_by_severity"`
 	NewItems         []ComparisonFinding `json:"new_items,omitempty"`
 }
 

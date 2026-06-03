@@ -163,7 +163,7 @@ func (m *branchSvcMockRepository) ExistsByName(_ context.Context, repositoryID s
 	return false, nil
 }
 
-func (m *branchSvcMockRepository) CompareBranches(_ context.Context, _ shared.ID, base, compare string) (*branch.BranchComparison, error) {
+func (m *branchSvcMockRepository) CompareBranches(_ context.Context, _, _ shared.ID, base, compare string) (*branch.BranchComparison, error) {
 	return &branch.BranchComparison{
 		BaseBranch:    base,
 		CompareBranch: compare,

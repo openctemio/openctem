@@ -1556,7 +1556,7 @@ func (s *defaultBranchStubRepo) Count(context.Context, branch.Filter) (int64, er
 func (s *defaultBranchStubRepo) ExistsByName(context.Context, shared.ID, string) (bool, error) {
 	return false, nil
 }
-func (s *defaultBranchStubRepo) CompareBranches(context.Context, shared.ID, string, string) (*branch.BranchComparison, error) {
+func (s *defaultBranchStubRepo) CompareBranches(context.Context, shared.ID, shared.ID, string, string) (*branch.BranchComparison, error) {
 	return nil, nil
 }
 

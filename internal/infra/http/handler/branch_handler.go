@@ -526,7 +526,8 @@ func (h *BranchHandler) Compare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.CompareBranches(r.Context(), repositoryID, baseBranch, compareBranch)
+	tenantID := middleware.MustGetTenantID(r.Context())
+	result, err := h.service.CompareBranches(r.Context(), tenantID, repositoryID, baseBranch, compareBranch)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
