@@ -251,6 +251,10 @@ func (m *mockFindingRepository) CountBySeverityForScan(_ context.Context, _ shar
 func (m *mockFindingRepository) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
+
+func (m *mockFindingRepository) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
 func (m *mockFindingRepository) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
 	return nil, nil
 }

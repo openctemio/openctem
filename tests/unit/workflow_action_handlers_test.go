@@ -168,6 +168,10 @@ func (m *wfActionMockFindingRepo) AutoResolveStale(_ context.Context, _ shared.I
 	return nil, nil
 }
 
+func (m *wfActionMockFindingRepo) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+
 func (m *wfActionMockFindingRepo) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
 	return nil, nil
 }

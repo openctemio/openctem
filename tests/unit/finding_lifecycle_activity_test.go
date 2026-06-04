@@ -157,6 +157,10 @@ func (s *stubFindingRepo) CountBySeverityForScan(_ context.Context, _ shared.ID,
 func (s *stubFindingRepo) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
+
+func (s *stubFindingRepo) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
 func (s *stubFindingRepo) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
 	return nil, nil
 }

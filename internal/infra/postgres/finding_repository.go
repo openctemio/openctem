@@ -2837,6 +2837,93 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 	return resolvedIDs, nil
 }
 
+// AutoResolveStaleByAssets resolves stale findings across many assets in one
+// query (asset_id = ANY($2)) instead of issuing AutoResolveStale per asset.
+// Same staleness rules and source/status protections as AutoResolveStale.
+func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, toolName string, currentScanID string, branchID *shared.ID) ([]shared.ID, error) {
+	// Same guard as AutoResolveStale: without a scan identity, staleness is
+	// undeterminable and would resolve everything.
+	if currentScanID == "" || len(assetIDs) == 0 {
+		return nil, nil
+	}
+
+	assetIDStrs := make([]string, len(assetIDs))
+	for i, a := range assetIDs {
+		assetIDStrs[i] = a.String()
+	}
+
+	var query string
+	var args []interface{}
+
+	if branchID != nil {
+		query = `
+			UPDATE findings f
+			SET status = 'resolved',
+				resolution = 'auto_fixed',
+				resolution_method = 'scan_verified',
+				resolved_at = NOW(),
+				updated_at = NOW()
+			FROM repository_branches rb
+			WHERE f.tenant_id = $1
+				AND f.asset_id = ANY($2)
+				AND f.tool_name = $3
+				AND f.scan_id != $4
+				AND f.branch_id = $5
+				AND f.branch_id = rb.id
+				AND rb.is_default = true
+				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
+			RETURNING f.id
+		`
+		args = []interface{}{tenantID.String(), pq.Array(assetIDStrs), toolName, currentScanID, branchID.String()}
+	} else {
+		query = `
+			UPDATE findings f
+			SET status = 'resolved',
+				resolution = 'auto_fixed',
+				resolution_method = 'scan_verified',
+				resolved_at = NOW(),
+				updated_at = NOW()
+			FROM repository_branches rb
+			WHERE f.tenant_id = $1
+				AND f.asset_id = ANY($2)
+				AND f.tool_name = $3
+				AND f.scan_id != $4
+				AND f.branch_id = rb.id
+				AND rb.is_default = true
+				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
+			RETURNING f.id
+		`
+		args = []interface{}{tenantID.String(), pq.Array(assetIDStrs), toolName, currentScanID}
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to auto-resolve stale findings by assets: %w", err)
+	}
+	defer rows.Close()
+
+	var resolvedIDs []shared.ID
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("failed to scan resolved finding id: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		resolvedIDs = append(resolvedIDs, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating resolved findings: %w", err)
+	}
+
+	return resolvedIDs, nil
+}
+
 // AutoReopenByFingerprint reopens a previously auto-resolved finding if it reappears.
 // Only reopens findings with resolution = 'auto_fixed'.
 // Protected resolutions (false_positive, accepted_risk) are never reopened.

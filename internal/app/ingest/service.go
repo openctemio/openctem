@@ -260,29 +260,30 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 			"branch", input.GetBranchInfo().Name,
 		)
 
-		// Collect all resolved IDs across assets to batch activity recording
-		var allResolvedIDs []shared.ID
-
+		// Auto-resolve across all assets in a single query rather than one per
+		// asset. Pass nil branchID to resolve findings on any default branch.
+		assetIDs := make([]shared.ID, 0, len(assetMap))
 		for _, assetID := range assetMap {
-			// Pass nil for branchID to auto-resolve findings on any default branch.
-			// In the future, we can look up the specific branch and pass its ID.
-			resolvedIDs, err := s.findingRepo.AutoResolveStale(ctx, tenantID, assetID, toolName, scanID, nil)
-			if err != nil {
-				s.logger.Warn("failed to auto-resolve stale findings",
-					"asset_id", assetID.String(),
-					"tool_name", toolName,
-					"error", err,
-				)
-			} else if len(resolvedIDs) > 0 {
-				output.FindingsAutoResolved += len(resolvedIDs)
-				app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolvedIDs)))
-				s.logger.Info("auto-resolved stale findings",
-					"asset_id", assetID.String(),
-					"tool_name", toolName,
-					"count", len(resolvedIDs),
-				)
-				allResolvedIDs = append(allResolvedIDs, resolvedIDs...)
-			}
+			assetIDs = append(assetIDs, assetID)
+		}
+
+		var allResolvedIDs []shared.ID
+		resolvedIDs, err := s.findingRepo.AutoResolveStaleByAssets(ctx, tenantID, assetIDs, toolName, scanID, nil)
+		if err != nil {
+			s.logger.Warn("failed to auto-resolve stale findings",
+				"tool_name", toolName,
+				"asset_count", len(assetIDs),
+				"error", err,
+			)
+		} else if len(resolvedIDs) > 0 {
+			output.FindingsAutoResolved += len(resolvedIDs)
+			app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolvedIDs)))
+			s.logger.Info("auto-resolved stale findings",
+				"tool_name", toolName,
+				"asset_count", len(assetIDs),
+				"count", len(resolvedIDs),
+			)
+			allResolvedIDs = append(allResolvedIDs, resolvedIDs...)
 		}
 
 		// Record audit trail once for all auto-resolved findings (single batch INSERT)

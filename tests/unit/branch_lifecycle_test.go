@@ -45,6 +45,11 @@ func (m *MockFindingRepoForLifecycle) AutoResolveStale(ctx context.Context, tena
 	return m.AutoResolveStaleReturn, m.AutoResolveStaleError
 }
 
+func (m *MockFindingRepoForLifecycle) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	m.AutoResolveStaleCalled = true
+	return m.AutoResolveStaleReturn, m.AutoResolveStaleError
+}
+
 // Minimal implementations for interface compliance
 func (m *MockFindingRepoForLifecycle) Create(ctx context.Context, f *vulnerability.Finding) error {
 	return nil
