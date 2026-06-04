@@ -47,6 +47,9 @@ func (s *stubIngestJobRepo) GetByID(_ context.Context, _, id ingestjob.ID) (*ing
 func (s *stubIngestJobRepo) CountPendingByTenant(_ context.Context, _ shared.ID) (int, error) {
 	return s.pending, nil
 }
+func (s *stubIngestJobRepo) CountPending(_ context.Context) (int, error) {
+	return s.pending, nil
+}
 func (s *stubIngestJobRepo) ReleaseStale(_ context.Context, _ time.Duration) (int, error) {
 	return 0, nil
 }

@@ -234,6 +234,16 @@ func (r *IngestJobRepository) CountPendingByTenant(ctx context.Context, tenantID
 	return n, nil
 }
 
+// CountPending returns the global number of not-yet-terminal jobs.
+func (r *IngestJobRepository) CountPending(ctx context.Context) (int, error) {
+	const query = `SELECT COUNT(*) FROM ingest_jobs WHERE status IN ('pending', 'processing')`
+	var n int
+	if err := r.db.QueryRowContext(ctx, query).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count pending ingest jobs (global): %w", err)
+	}
+	return n, nil
+}
+
 // ReleaseStale resets jobs stuck in processing past the lease back to pending.
 func (r *IngestJobRepository) ReleaseStale(ctx context.Context, olderThan time.Duration) (int, error) {
 	cutoff := time.Now().Add(-olderThan)

@@ -172,6 +172,10 @@ type Repository interface {
 	// (for accept-path queue-depth backpressure).
 	CountPendingByTenant(ctx context.Context, tenantID shared.ID) (int, error)
 
+	// CountPending returns the global number of not-yet-terminal jobs across all
+	// tenants (for the queue-depth metric).
+	CountPending(ctx context.Context) (int, error)
+
 	// ReleaseStale resets jobs stuck in processing (worker crash) back to
 	// pending when their lock is older than olderThan. Returns the count reset.
 	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, error)

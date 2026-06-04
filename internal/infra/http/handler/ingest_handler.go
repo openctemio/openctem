@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/infra/adapters"
 	"github.com/openctemio/api/internal/infra/adapters/core"
+	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/ingestjob"
@@ -1106,6 +1107,12 @@ func (h *IngestHandler) enqueueAsync(w http.ResponseWriter, r *http.Request, agt
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+
+	dupLabel := "false"
+	if !created {
+		dupLabel = "true"
+	}
+	metrics.IngestJobsEnqueuedTotal.WithLabelValues(dupLabel).Inc()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Location", "/api/v1/agent/ingest/jobs/"+stored.ID().String())

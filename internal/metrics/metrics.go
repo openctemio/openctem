@@ -271,3 +271,45 @@ var (
 		[]string{"tenant_id", "source_type"},
 	)
 )
+
+// Async ingest metrics (RFC-005). Exposed so operators can watch queue depth,
+// throughput, and end-to-end latency before/while running INGEST_MODE=async.
+var (
+	// IngestJobsEnqueuedTotal counts payloads accepted into the async queue.
+	// The "duplicate" label is "true" when an identical payload was already
+	// queued (idempotency hit).
+	IngestJobsEnqueuedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ingest_jobs_enqueued_total",
+			Help: "Total async ingest jobs enqueued, by duplicate (idempotency) status",
+		},
+		[]string{"duplicate"},
+	)
+
+	// IngestJobsProcessedTotal counts worker outcomes: completed, retried, dead.
+	IngestJobsProcessedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ingest_jobs_processed_total",
+			Help: "Total async ingest jobs processed by the worker, by outcome",
+		},
+		[]string{"outcome"},
+	)
+
+	// IngestJobDurationSeconds is end-to-end latency from enqueue to completion.
+	IngestJobDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "ingest_job_duration_seconds",
+			Help:    "End-to-end async ingest latency (enqueue to completion) in seconds",
+			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600, 1800},
+		},
+	)
+
+	// IngestQueueDepth is the number of not-yet-terminal (pending+processing)
+	// jobs, refreshed each worker cycle. The key backpressure signal.
+	IngestQueueDepth = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "ingest_queue_depth",
+			Help: "Async ingest jobs awaiting or in processing across all tenants",
+		},
+	)
+)

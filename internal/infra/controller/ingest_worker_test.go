@@ -49,6 +49,7 @@ func (q *stubQueue) ReleaseStale(_ context.Context, _ time.Duration) (int, error
 	q.releaseStale++
 	return q.releaseStaleN, nil
 }
+func (q *stubQueue) CountPending(_ context.Context) (int, error) { return 0, nil }
 
 type stubProcessor struct {
 	result []byte

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/domain/ingestjob"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -14,6 +15,7 @@ type IngestJobQueue interface {
 	Complete(ctx context.Context, id ingestjob.ID, result []byte) error
 	Fail(ctx context.Context, id ingestjob.ID, errMsg string, availableAt time.Time, dead bool) error
 	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, error)
+	CountPending(ctx context.Context) (int, error)
 }
 
 // IngestJobProcessor processes a claimed job (parse payload + ingest) and
@@ -92,6 +94,11 @@ func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
 		c.logger.Info("ingest: reclaimed stale jobs", "count", released)
 	}
 
+	// Refresh the queue-depth gauge (key backpressure signal).
+	if depth, err := c.queue.CountPending(ctx); err == nil {
+		metrics.IngestQueueDepth.Set(float64(depth))
+	}
+
 	processed := 0
 	for processed < c.cfg.MaxPerTick {
 		if ctx.Err() != nil {
@@ -126,9 +133,18 @@ func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.
 			c.logger.Warn("ingest: job processing failed",
 				"job_id", job.ID().String(), "attempts", job.Attempts(), "dead", dead, "error", err)
 		}
+		outcome := "retried"
+		if dead {
+			outcome = "dead"
+		}
+		metrics.IngestJobsProcessedTotal.WithLabelValues(outcome).Inc()
 		return
 	}
 	if err := c.queue.Complete(ctx, job.ID(), result); err != nil {
 		c.logger.Error("ingest: failed to mark job complete", "job_id", job.ID().String(), "error", err)
+		return
 	}
+	metrics.IngestJobsProcessedTotal.WithLabelValues("completed").Inc()
+	// End-to-end latency: enqueue (created_at) to completion.
+	metrics.IngestJobDurationSeconds.Observe(time.Since(job.CreatedAt()).Seconds())
 }
