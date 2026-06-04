@@ -319,7 +319,13 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 	// Async mode (RFC-005): persist the raw payload + enqueue, return 202.
 	// Falls through to the synchronous path when async is off or the agent has
 	// no tenant context (platform agents are validated by the sync path).
-	if h.asyncMode && h.ingestJobRepo != nil && agt.TenantID != nil {
+	//
+	// Escape hatch (Phase 2): an agent that can't yet handle 202 + polling can
+	// force the legacy synchronous response even on an async-mode deployment via
+	// ?sync=true or the `Prefer: respond-sync` header. This lets operators flip
+	// INGEST_MODE=async globally while older agents opt back to sync until the
+	// fleet is updated.
+	if h.asyncMode && h.ingestJobRepo != nil && agt.TenantID != nil && !clientWantsSync(r) {
 		h.enqueueAsync(w, r, agt, bodyBytes)
 		return
 	}
@@ -1065,6 +1071,17 @@ func (h *IngestHandler) ListScanners(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		h.logger.Error("failed to encode response", "error", err)
 	}
+}
+
+// clientWantsSync reports whether the caller explicitly opted out of async
+// processing (RFC-005 Phase 2 escape hatch) via ?sync=true or
+// `Prefer: respond-sync`. Used so an async-mode deployment can still serve
+// agents that haven't learned to poll for job status yet.
+func clientWantsSync(r *http.Request) bool {
+	if v := strings.TrimSpace(r.URL.Query().Get("sync")); v == "true" || v == "1" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(r.Header.Get("Prefer")), "respond-sync")
 }
 
 // AsyncIngestResponse is the 202 body returned when async ingest is enabled.

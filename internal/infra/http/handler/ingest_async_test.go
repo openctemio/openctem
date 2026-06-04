@@ -162,3 +162,31 @@ func TestGetIngestJob_ReturnsStatus(t *testing.T) {
 		t.Fatalf("unexpected status body: %+v", resp)
 	}
 }
+
+func TestClientWantsSync(t *testing.T) {
+	cases := []struct {
+		name   string
+		url    string
+		prefer string
+		want   bool
+	}{
+		{"default async", "/x", "", false},
+		{"sync=true", "/x?sync=true", "", true},
+		{"sync=1", "/x?sync=1", "", true},
+		{"sync=false", "/x?sync=false", "", false},
+		{"prefer header", "/x", "respond-sync", true},
+		{"prefer mixed case", "/x", "Respond-Sync", true},
+		{"prefer other", "/x", "wait", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, c.url, nil)
+			if c.prefer != "" {
+				r.Header.Set("Prefer", c.prefer)
+			}
+			if got := clientWantsSync(r); got != c.want {
+				t.Fatalf("clientWantsSync(%q, Prefer=%q) = %v, want %v", c.url, c.prefer, got, c.want)
+			}
+		})
+	}
+}
