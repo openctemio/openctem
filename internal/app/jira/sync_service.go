@@ -109,6 +109,27 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		return nil, fmt.Errorf("get finding: %w", err)
 	}
 
+	// Idempotency: if this finding already has a ticket in the target project,
+	// return it instead of creating a duplicate. Without this, a re-scan,
+	// workflow re-trigger, or retry that calls CreateTicketFromFinding again
+	// would open a second Jira issue for the same finding. Jira browse URLs are
+	// ".../browse/<PROJECT>-<n>", so an existing work-item URL containing
+	// "/browse/<ProjectKey>-" means this finding is already ticketed here.
+	browseMarker := "/browse/" + input.ProjectKey + "-"
+	for _, uri := range finding.WorkItemURIs() {
+		if strings.Contains(uri, browseMarker) {
+			key := uri[strings.LastIndex(uri, "/")+1:]
+			s.logger.Info("jira ticket already exists for finding; skipping create",
+				"finding_id", findingID.String(), "ticket_key", key, "project", input.ProjectKey)
+			return &TicketInfo{
+				FindingID: findingID.String(),
+				TicketKey: key,
+				TicketURL: uri,
+				LinkedAt:  time.Now().UTC(),
+			}, nil
+		}
+	}
+
 	// Map finding severity to Jira priority
 	priority := mapSeverityToJiraPriority(string(finding.Severity()))
 
