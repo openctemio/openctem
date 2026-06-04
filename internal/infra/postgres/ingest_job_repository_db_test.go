@@ -26,7 +26,7 @@ func TestIngestJobRepository_Lifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
 	if err := db.PingContext(ctx); err != nil {
 		t.Skipf("cannot reach DATABASE_URL: %v", err)
@@ -132,5 +132,60 @@ func TestIngestJobRepository_Lifecycle(t *testing.T) {
 	final, _ := repo.GetByID(ctx, tenantID, stored2.ID())
 	if final.Status() != ingestjob.StatusPending {
 		t.Fatalf("after release-stale: status=%s (want pending)", final.Status())
+	}
+}
+
+// TestIngestJobRepository_FairClaim verifies per-tenant weighted-fair claiming:
+// when one tenant floods the queue, a claim batch still interleaves tenants
+// (round-robin) rather than draining the noisy tenant first.
+func TestIngestJobRepository_FairClaim(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping fair-claim test")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	repo := NewIngestJobRepository(&DB{DB: db})
+	tenantA := shared.NewID()
+	tenantB := shared.NewID()
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(),
+			"DELETE FROM ingest_jobs WHERE tenant_id = ANY($1)",
+			"{"+tenantA.String()+","+tenantB.String()+"}")
+	})
+
+	// Tenant A floods with 3 jobs; tenant B has 1.
+	for i := 0; i < 3; i++ {
+		_, _, err := repo.Enqueue(ctx, ingestjob.NewJob(tenantA, nil, "a-"+string(rune('0'+i)), "trivy", []byte(`{"version":"1.0"}`)))
+		if err != nil {
+			t.Fatalf("enqueue A: %v", err)
+		}
+	}
+	if _, _, err := repo.Enqueue(ctx, ingestjob.NewJob(tenantB, nil, "b-0", "trivy", []byte(`{"version":"1.0"}`))); err != nil {
+		t.Fatalf("enqueue B: %v", err)
+	}
+
+	// Claim 2 — fairness should pick one from each tenant, not 2 from A.
+	claimed, err := repo.ClaimBatch(ctx, "worker-fair", 2)
+	if err != nil {
+		t.Fatalf("ClaimBatch: %v", err)
+	}
+	if len(claimed) != 2 {
+		t.Fatalf("claimed %d, want 2", len(claimed))
+	}
+	byTenant := map[string]int{}
+	for _, j := range claimed {
+		byTenant[j.TenantID().String()]++
+	}
+	if byTenant[tenantA.String()] != 1 || byTenant[tenantB.String()] != 1 {
+		t.Fatalf("unfair claim: A=%d B=%d (want 1/1)", byTenant[tenantA.String()], byTenant[tenantB.String()])
 	}
 }

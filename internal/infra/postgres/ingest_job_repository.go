@@ -81,11 +81,16 @@ func (r *IngestJobRepository) getByIdempotencyKey(ctx context.Context, tenantID 
 	return scanIngestJobRow(row)
 }
 
-// ClaimBatch claims up to limit due pending jobs for workerID (FOR UPDATE SKIP
-// LOCKED), marking them processing.
+// ClaimBatch claims up to limit due pending jobs for workerID, marking them
+// processing.
 //
-// Claiming is FIFO by availability. Per-tenant weighted-fair claiming is a
-// planned refinement (RFC-005 §3.4); FIFO is correct and safe to start with.
+// Claiming is per-tenant weighted-fair (RFC-005 §3.4): jobs are ranked
+// round-robin across tenants (each tenant's oldest due job before any tenant's
+// second), so a single tenant flooding the queue cannot starve others. Because
+// Postgres forbids FOR UPDATE alongside the window function used for ranking,
+// this is a two-phase claim: (1) pick fair candidate ids (no lock), then
+// (2) lock-and-claim that subset with FOR UPDATE SKIP LOCKED so concurrent
+// workers/replicas still claim disjoint sets without blocking.
 func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, limit int) ([]*ingestjob.Job, error) {
 	if limit <= 0 {
 		limit = 10
@@ -101,29 +106,36 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now()
-	selectQuery := `
-		SELECT id FROM ingest_jobs
-		WHERE status = 'pending' AND available_at <= $1
-		ORDER BY priority DESC, available_at ASC
-		LIMIT $2
-		FOR UPDATE SKIP LOCKED`
 
-	rows, err := tx.QueryContext(ctx, selectQuery, now, limit)
+	// Phase 1: fair candidate ranking. rn=1 is each tenant's oldest due job;
+	// ordering by rn first interleaves tenants round-robin.
+	candidateQuery := `
+		SELECT id FROM (
+			SELECT id,
+				ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY priority DESC, available_at ASC) AS rn,
+				priority, available_at
+			FROM ingest_jobs
+			WHERE status = 'pending' AND available_at <= $1
+		) ranked
+		ORDER BY rn ASC, priority DESC, available_at ASC
+		LIMIT $2`
+
+	rows, err := tx.QueryContext(ctx, candidateQuery, now, limit)
 	if err != nil {
-		return nil, fmt.Errorf("select claimable jobs: %w", err)
+		return nil, fmt.Errorf("select claim candidates: %w", err)
 	}
 	var ids []string
 	for rows.Next() {
 		var id string
 		if scanErr := rows.Scan(&id); scanErr != nil {
 			_ = rows.Close()
-			return nil, fmt.Errorf("scan claimable id: %w", scanErr)
+			return nil, fmt.Errorf("scan candidate id: %w", scanErr)
 		}
 		ids = append(ids, id)
 	}
 	if rowsErr := rows.Err(); rowsErr != nil {
 		_ = rows.Close()
-		return nil, fmt.Errorf("iterate claimable ids: %w", rowsErr)
+		return nil, fmt.Errorf("iterate candidate ids: %w", rowsErr)
 	}
 	_ = rows.Close()
 
@@ -131,11 +143,18 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 		return nil, nil
 	}
 
+	// Phase 2: lock the candidate subset (still pending, not locked elsewhere)
+	// and claim it. The inner FOR UPDATE SKIP LOCKED keeps claims disjoint and
+	// non-blocking across workers/replicas.
 	updateQuery := `
 		UPDATE ingest_jobs
 		SET status = 'processing', attempts = attempts + 1,
 			locked_by = $1, locked_at = $2, updated_at = $2
-		WHERE id = ANY($3)
+		WHERE id IN (
+			SELECT id FROM ingest_jobs
+			WHERE id = ANY($3) AND status = 'pending'
+			FOR UPDATE SKIP LOCKED
+		)
 		RETURNING ` + ingestJobColumns
 
 	updated, err := tx.QueryContext(ctx, updateQuery, workerID, now, pq.Array(ids))
