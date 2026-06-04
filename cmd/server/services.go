@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
+	infrajira "github.com/openctemio/api/internal/infra/jira"
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/internal/infra/llm"
 	"github.com/openctemio/api/internal/infra/postgres"
@@ -509,7 +510,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (dev only; production startup already refuses this above).
 	s.APIKey = apikey.NewService(repos.APIKey, cfg.Encryption.Key, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
-	s.JiraSync = jira.NewSyncService(repos.Finding, nil, log) // nil = Jira client configured via integration settings
+	// Outbound Jira ticketing resolves a client per tenant from that tenant's
+	// connected ticketing integration (base URL + decrypted credentials). The
+	// static client stays nil; the resolver is the production path (mirrors the
+	// per-tenant SMTP resolver). Without this wire, create-ticket is inert.
+	s.JiraSync = jira.NewSyncService(repos.Finding, nil, log)
+	s.JiraSync.SetClientResolver(infrajira.NewIntegrationClientResolver(repos.Integration, s.Encryptor, log))
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)

@@ -76,6 +76,23 @@ type Client interface {
 	TestConnection(ctx context.Context) error
 }
 
+// ClientResolver builds a Jira Client for a given tenant from that tenant's
+// configured ticketing integration (base URL + decrypted credentials). It is
+// the outbound counterpart to the inbound webhook path: without a resolver the
+// SyncService has no client and CreateTicketFromFinding is inert.
+//
+// Implementations live in the infra layer (they decrypt credentials and open
+// HTTP clients). Returning ErrNoTicketingIntegration means the tenant has no
+// usable Jira integration — callers surface that as a 4xx, not a 5xx.
+type ClientResolver interface {
+	Resolve(ctx context.Context, tenantID shared.ID) (Client, error)
+}
+
+// ErrNoTicketingIntegration is returned by a ClientResolver when the tenant has
+// no connected Jira integration to create tickets against. It wraps
+// ErrValidation so the HTTP layer maps it to a 400 rather than a 500.
+var ErrNoTicketingIntegration = fmt.Errorf("%w: no connected Jira integration configured for this tenant", shared.ErrValidation)
+
 // CreateIssueInput contains fields for creating a Jira issue.
 type CreateIssueInput struct {
 	ProjectKey  string
@@ -103,6 +120,12 @@ type SyncService struct {
 	findingRepo vulnerability.FindingRepository
 	jiraClient  Client
 	logger      *logger.Logger
+
+	// clientResolver builds a per-tenant Jira client on demand. When set, it
+	// takes precedence over the static jiraClient (which exists mainly so tests
+	// can inject a stub). In production jiraClient is nil and the resolver loads
+	// the tenant's integration credentials per request.
+	clientResolver ClientResolver
 
 	// B3: optional hook fired when a Jira webhook transitions
 	// a finding into `fix_applied`. Wired to the verification-scan
@@ -136,6 +159,26 @@ func (s *SyncService) SetPostFixAppliedHook(h FixAppliedHook) {
 	s.postFixHook = h
 }
 
+// SetClientResolver wires the per-tenant Jira client resolver. Safe to call
+// after construction. Once set, CreateTicketFromFinding resolves a client from
+// the tenant's integration instead of relying on the static client.
+func (s *SyncService) SetClientResolver(r ClientResolver) {
+	s.clientResolver = r
+}
+
+// resolveClient returns the Jira client to use for a tenant. A statically
+// injected client (tests) wins; otherwise the resolver loads the tenant's
+// integration. Returns ErrNoTicketingIntegration when neither is available.
+func (s *SyncService) resolveClient(ctx context.Context, tenantID shared.ID) (Client, error) {
+	if s.jiraClient != nil {
+		return s.jiraClient, nil
+	}
+	if s.clientResolver != nil {
+		return s.clientResolver.Resolve(ctx, tenantID)
+	}
+	return nil, ErrNoTicketingIntegration
+}
+
 // CreateTicketInput is the payload for auto-creating a Jira ticket from a finding.
 type CreateTicketInput struct {
 	TenantID   string `json:"tenant_id"`
@@ -146,9 +189,6 @@ type CreateTicketInput struct {
 
 // CreateTicketFromFinding auto-creates a Jira ticket from a finding and links it.
 func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateTicketInput) (*TicketInfo, error) {
-	if s.jiraClient == nil {
-		return nil, fmt.Errorf("%w: Jira integration not configured", shared.ErrValidation)
-	}
 	if input.ProjectKey == "" {
 		return nil, fmt.Errorf("%w: project_key is required", shared.ErrValidation)
 	}
@@ -160,6 +200,11 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	findingID, err := shared.IDFromString(input.FindingID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid finding ID", shared.ErrValidation)
+	}
+
+	jiraClient, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return nil, err
 	}
 
 	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
@@ -196,7 +241,7 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		issueType = "Bug"
 	}
 
-	result, err := s.jiraClient.CreateIssue(ctx, CreateIssueInput{
+	result, err := jiraClient.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  input.ProjectKey,
 		Summary:     redactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())),
 		Description: ticketDescription(finding),
