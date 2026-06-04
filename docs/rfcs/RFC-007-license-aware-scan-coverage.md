@@ -119,10 +119,41 @@ Freeing a scanner slot (`.sc` removal) happens **only after** the batch is expor
 - **`.sc` license utilisation** (tracked `active_ip_set` vs `Cap`) so scheduler headroom is visible.
 - Metrics via `internal/metrics` (Prometheus) as in RFC-005.
 
+## 3.9 Deployment topology: API-direct vs agent-bridge (does agent/sdk-go need work?)
+
+Whether the **agent** and **sdk-go** need work depends entirely on whether the
+api can reach the Tenable instance:
+
+- **API-direct** — Tenable is reachable from the api (Tenable cloud, or a network
+  path to an on-prem `.sc`). The `ScanEngine` connector lives in the api
+  (§3.1/§3.5). **Agent and sdk-go need nothing.**
+- **Agent-bridge** — Tenable.sc is on-prem and **not reachable from the api**
+  (typical for SecurityCenter behind the corporate firewall). An agent on the
+  customer network bridges it:
+  - **sdk-go**: add `pkg/scanners/nessus` (or `tenable`) — `scanner.go` calls the
+    local Nessus/.sc REST API (launch/poll/export `.nessus`), `parser.go` converts
+    `.nessus → ctis.Report`. Mirrors the existing `pkg/scanners/{nuclei,trivy,…}`.
+  - **agent**: register a `tenable` tool in the `vulnscan` executor; it pushes the
+    CTIS report via the existing `pusher.PushCTIS` path and advertises the
+    capability so the scheduler routes Tenable jobs to it.
+  - **api**: no new ingest path (agent-CTIS ingest already exists); the coverage
+    scheduler (Phase 3) dispatches an **agent job** instead of calling Tenable
+    directly. Tenant isolation is preserved — agent ingest derives tenant from the
+    authenticated agent, never the `.nessus` file.
+
+**Converter ownership (decide before agent-bridge):** the `.nessus → CTIS` parser
+currently lives in `api/internal/infra/scanner/nessus`. The agent reports via
+`sdk-go/pkg/ctis`, so an agent-bridge path needs the same parser there. To avoid
+two diverging copies, promote the canonical Nessus parser into the shared **`ctis`
+module** and have both the api and sdk-go reuse it, rather than duplicating.
+Until agent-bridge is needed, the api-internal converter + manual upload endpoint
+(`POST /assets/import/nessus-findings`) are sufficient — **so no agent/sdk-go work
+is required for Phase 1, or for a Phase 2 that is API-direct.**
+
 ## 4. Roadmap (both engines)
 
 1. **Phase 1 — Findings ingestion + safety (lowest risk, highest de-risk).** `.nessus → CTIS findings` adapter; emit per-batch report with `tool=tenable` + session `scanID` + batch assets; confirm batch-scoped auto-resolve end-to-end with **manual `.nessus` files from both Pro and .sc** (both export the same format). No connector needed yet — validates the invariant and the parser for both engines at once.
-2. **Phase 2 — `ScanEngine` connector.** Interface + `LicensePolicy`; **Nessus Pro** impl (unlimited, simplest) and **Tenable.sc** impl (cap + repository/asset-list + Reclaim removal); per-tenant resolver (mirror Jira RFC-006 Phase 0); `TestConnection`; a manual "scan this target list now → ingest" trigger.
+2. **Phase 2 — `ScanEngine` connector.** Interface + `LicensePolicy`; **Nessus Pro** impl (unlimited, simplest) and **Tenable.sc** impl (cap + repository/asset-list + Reclaim removal); per-tenant resolver (mirror Jira RFC-006 Phase 0); `TestConnection`; a manual "scan this target list now → ingest" trigger. **Topology fork (§3.9):** API-direct needs no agent/sdk-go work; agent-bridge (on-prem unreachable `.sc`) adds an sdk-go `pkg/scanners/nessus` adapter + an agent `tenable` tool, and the Nessus parser moves to the shared `ctis` module.
 3. **Phase 3 — Coverage scheduler.** Coverage-rotation selection (criticality + staleness, CIDR-aware IP counting), `TargetsPerJob` batching, `.sc` cap enforcement via tracked `active_ip_set`, Reclaim gated on ingest ACK, `LastScannedAt` advance, retry/timeout reuse.
 4. **Phase 4 — Observability + UI.** Coverage freshness, `.sc` license utilisation, sweep cadence; Discovery → "Scan Coverage" page + Tenable integration config UI under settings/integrations (security category).
 5. **Phase 5 (optional) — Generalise the seam** for a third scanner (Qualys/OpenVAS) and a Nessus-Agents commercial option.

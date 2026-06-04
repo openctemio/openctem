@@ -130,6 +130,17 @@ with short repo data-expiration as a passive backstop. The scheduler tracks the
 `active_ip_set` itself (doesn't trust instant reclaim), so a slow removal delays
 the next launch instead of breaching the cap.
 
+## Does the agent / sdk-go need work?
+
+- **Phase 1 (shipped) and an API-direct Phase 2:** **no.** Everything is api-side;
+  on-prem Tenable is covered by an external script/cron pushing `.nessus` to the
+  ingest endpoint.
+- **Agent-bridge Phase 2** (on-prem Tenable.sc unreachable from the api): yes —
+  an sdk-go `pkg/scanners/nessus` adapter (mirrors `nuclei`/`trivy`) + an agent
+  `tenable` tool in the `vulnscan` executor (pushes CTIS via the existing
+  `PushCTIS` path). The `.nessus` parser then moves to the shared `ctis` module so
+  api and agent share one copy. See [RFC-007 §3.9](../rfcs/RFC-007-license-aware-scan-coverage.md).
+
 ## Roadmap (RFC-007)
 
 | Phase | Scope | Status |
