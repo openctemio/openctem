@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -463,28 +464,35 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 	return result, nil
 }
 
-// insertChunk inserts a chunk of findings in a single transaction.
+// insertChunk inserts a chunk of findings in a SINGLE multi-row INSERT.
+//
+// Previously this looped a prepared statement once per finding (N round-trips
+// per chunk). A single multi-row INSERT collapses that to one round-trip,
+// which dominates ingest latency for large scan reports. The statement is
+// atomic on its own, so no explicit transaction is needed.
+//
+// On failure (including the rare case where the same chunk contains two
+// findings with an identical (tenant_id, fingerprint) — which ON CONFLICT
+// cannot update twice in one statement), CreateBatchWithResult falls back to
+// per-row inserts, preserving partial-success error isolation.
 func (r *FindingRepository) insertChunk(ctx context.Context, findings []*vulnerability.Finding) error {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+	if len(findings) == 0 {
+		return nil
 	}
-	defer func() { _ = tx.Rollback() }()
 
-	stmt, err := tx.PrepareContext(ctx, r.upsertQuery())
-	if err != nil {
-		return fmt.Errorf("failed to prepare statement: %w", err)
-	}
-	defer stmt.Close()
-
+	args := make([]any, 0, len(findings)*findingInsertColumnCount)
 	for _, finding := range findings {
-		if err := r.execFindingInsert(ctx, stmt, finding); err != nil {
+		rowArgs, err := findingInsertArgs(finding)
+		if err != nil {
 			return err
 		}
+		args = append(args, rowArgs...)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+	query := findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(len(findings)) + "\n" + findingUpsertConflictSQL()
+
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to batch insert findings: %w", err)
 	}
 
 	return nil
@@ -515,8 +523,39 @@ func (r *FindingRepository) insertSingleFinding(ctx context.Context, finding *vu
 	return nil
 }
 
-// upsertQuery returns the INSERT ... ON CONFLICT query for findings.
+// upsertQuery returns the single-row INSERT ... ON CONFLICT query for findings
+// (used by the per-row fallback path). It is the column header + a one-row
+// VALUES tuple + the shared conflict clause.
 func (r *FindingRepository) upsertQuery() string {
+	return findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(1) + "\n" + findingUpsertConflictSQL()
+}
+
+// findingValuesPlaceholders builds the VALUES tuples for rowCount rows, e.g.
+// "($1,...,$81),($82,...,$162)". Placeholder numbering is contiguous across
+// rows so it lines up with a flattened argument slice.
+func findingValuesPlaceholders(rowCount int) string {
+	var b strings.Builder
+	n := 0
+	for row := 0; row < rowCount; row++ {
+		if row > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('(')
+		for col := 0; col < findingInsertColumnCount; col++ {
+			if col > 0 {
+				b.WriteByte(',')
+			}
+			n++
+			b.WriteByte('$')
+			b.WriteString(strconv.Itoa(n))
+		}
+		b.WriteByte(')')
+	}
+	return b.String()
+}
+
+// findingInsertColumnsSQL is the INSERT INTO findings (...) column header.
+func findingInsertColumnsSQL() string {
 	return `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
@@ -537,11 +576,13 @@ func (r *FindingRepository) upsertQuery() string {
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
 			remediation, pentest_campaign_id
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
-			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70,
-			$71, $72, $73, $74, $75, $76, $77, $78, $79, $80, $81)
+		)`
+}
+
+// findingUpsertConflictSQL is the shared ON CONFLICT clause appended after the
+// VALUES tuples for both the single-row and multi-row finding inserts.
+func findingUpsertConflictSQL() string {
+	return `
 		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET
 			vulnerability_id = EXCLUDED.vulnerability_id,
 			component_id = EXCLUDED.component_id,
@@ -609,19 +650,37 @@ func (r *FindingRepository) upsertQuery() string {
 
 // execFindingInsert executes the insert for a single finding using prepared statement.
 func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stmt, finding *vulnerability.Finding) error {
+	args, err := findingInsertArgs(finding)
+	if err != nil {
+		return err
+	}
+	if _, err := stmt.ExecContext(ctx, args...); err != nil {
+		return fmt.Errorf("failed to insert finding: %w", err)
+	}
+	return nil
+}
+
+// findingInsertColumnCount is the number of columns in the findings INSERT.
+// It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
+const findingInsertColumnCount = 81
+
+// findingInsertArgs returns the ordered argument list for a single findings
+// INSERT row. Shared by the single-row prepared-statement path and the
+// multi-row batch insert so the column order has one source of truth.
+func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 	metadata, err := json.Marshal(finding.Metadata())
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
 	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(finding)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	remediationJSON := marshalRemediation(finding.Remediation())
 
-	_, err = stmt.ExecContext(ctx,
+	return []any{
 		finding.ID().String(),
 		finding.TenantID().String(),
 		nullID(finding.VulnerabilityID()),
@@ -709,12 +768,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 		remediationJSON,
 		// Pentest campaign reference
 		nullIDPtr(finding.PentestCampaignID()),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to insert finding: %w", err)
-	}
-
-	return nil
+	}, nil
 }
 
 // IsPentestCampaignMember reports whether the user belongs to the given
