@@ -119,21 +119,57 @@ Freeing a scanner slot (`.sc` removal) happens **only after** the batch is expor
 - **`.sc` license utilisation** (tracked `active_ip_set` vs `Cap`) so scheduler headroom is visible.
 - Metrics via `internal/metrics` (Prometheus) as in RFC-005.
 
-## 3.9 Two execution modes (both first-class)
+## 3.9 Execution model: runner-mediated (polling) is the default
 
-A single logical Tenable integration runs in one of two modes, chosen per
-integration via `config.execution_mode`:
+### Deployment & trust model (the driving requirement)
 
-- **`direct`** — the backend talks to Tenable's REST API itself (Tenable cloud, or
-  an on-prem `.sc` the api can reach).
-- **`agent`** — a purpose-built agent on the customer network talks to the local
-  Tenable appliance and pushes results back (on-prem `.sc`/Nessus the api cannot
-  reach — typical for SecurityCenter behind a firewall).
+The expected production topology has the **OpenCTEM runner, Nessus, and Tenable
+all in the production zone**, while the **OpenCTEM control plane (api) sits in a
+separate zone**. The security requirement is that **the control plane holds as
+little authority over Nessus/Tenable as possible** — it must not store scanner
+credentials nor open connections into the production zone.
 
-Everything *above* the execution boundary is identical in both modes: the
-coverage scheduler (§3.3), license accounting (§3.2), the `.nessus → CTIS` parser
-(§3.4), the ingest pipeline + batch-scoped auto-resolve (§1), severity/criticality
-mapping, and tenant isolation. Only *where the Tenable REST calls happen* differs.
+This dictates a **runner-mediated, poll-based** design:
+
+```
+   ┌── production zone ───────────────────────┐        ┌── control zone ──────┐
+   │  OpenCTEM runner ──► Nessus / Tenable     │        │   OpenCTEM api       │
+   │       │  (holds creds locally)            │        │   (no scanner creds, │
+   │       └── outbound poll / push ───────────┼───────►│    no inbound access)│
+   └───────────────────────────────────────────┘        └──────────────────────┘
+        only OUTBOUND connections cross the zone boundary
+```
+
+- The **runner** is the *only* component with Nessus/Tenable credentials and the
+  *only* one that connects to the appliances — both stay inside the prod zone.
+- The runner reaches OpenCTEM **outbound only**: it long-polls for jobs and pushes
+  results. The api **never** initiates a connection into the prod zone and never
+  needs a network path to Nessus/Tenable.
+- Blast radius: compromising the control plane yields **no** scanner credentials
+  and **no** prod-network access. This is the whole point.
+
+This reuses OpenCTEM's existing **platform-agent machinery** (bootstrap-token
+register → lease → `POST /platform/poll` long-poll → job `ack`/`progress`/`result`,
+CTIS push via `PushCTIS`), so it is not new transport — just a new `tenable`
+capability on the runner.
+
+### The two modes
+
+A Tenable integration declares `config.execution_mode`:
+
+- **`agent` (runner-mediated, polling) — DEFAULT / recommended.** The runner in the
+  prod zone runs the scan against the local appliance and pushes CTIS back. The api
+  holds no creds and never reaches the appliance. This satisfies the trust model
+  above and is the path we build first.
+- **`direct` — optional, only when the operator accepts api↔Tenable.** The api
+  calls Tenable REST itself. Appropriate only for Tenable **cloud** or a
+  deliberately-allowed reachable `.sc` where the operator accepts the control plane
+  holding creds. Not for the segmented prod-zone case.
+
+Everything *above* the execution boundary is identical in both modes: the coverage
+scheduler (§3.3), license accounting (§3.2), the `.nessus → CTIS` parser (§3.4), the
+ingest pipeline + batch-scoped auto-resolve (§1), mapping, and tenant isolation.
+Only *where the Tenable REST calls happen* differs.
 
 ### Layered design (so the two modes share, not duplicate)
 
@@ -198,30 +234,50 @@ step so there is never a second copy.
   for that tenant; agent-pushed CTIS derives tenant from the **authenticated
   agent**, never from the `.nessus` file (same guarantee as all agent ingest).
 
-### Result correlation & reclaim across modes
+### Result correlation & reclaim (runner-mediated)
 
-The coverage `session_id` is the join key. `direct` ingests inline with it;
-`agent` carries it in the job and stamps it into the pushed report. Auto-resolve
-and `.sc` reclaim are gated on **ingest ACK** in both modes — in `agent` mode the
-reclaim runs where the appliance is reachable (the agent, after the api confirms
-the push), so the cap is freed locally.
+The coverage `session_id` is the join key. The api dispatches a job carrying it;
+the runner stamps it into the pushed report so the scheduler correlates the result
+to the batch. Because **only the runner can reach the appliance**, the runner owns
+the `.sc` reclaim (remove the batch's IPs) and performs it after the api ACKs the
+push, then reports reclaim completion via the job `result`. The api's `active_ip_set`
+accounting is authoritative for *dispatch* (it won't release the next batch until
+the runner confirms the prior batch's reclaim), while the runner is authoritative
+for the *appliance*. Auto-resolve is gated on ingest ACK as everywhere else.
+
+`direct` mode (optional) ingests inline and reclaims from the api.
+
+### Runner job lifecycle (reuses platform-agent transport)
+
+```
+api: scheduler picks batch B for session S  ──► enqueue tenable job {engine, targets:B, session:S}
+runner: POST /platform/poll (long-poll, outbound) ──► claims job
+runner: TenableClient.Launch(B) → poll local appliance → Export(.nessus) → parse → PushCTIS(session=S)
+runner: POST /jobs/{id}/progress … then result; on api ingest-ACK → reclaim B locally → result=done
+api: scheduler marks B scanned (LastScannedAt), frees active_ip_set, advances cursor
+```
+
+No new transport — the `tenable` capability rides the existing register/lease/poll/
+ack/result machinery.
 
 ### Does the agent / sdk-go need work?
 
-- **Phase 1 (shipped) and `direct` Phase 2:** **no agent/sdk-go work.** On-prem that
-  the api can't reach is still covered today by an external cron pushing `.nessus`
-  to `POST /assets/import/nessus-findings`.
-- **`agent` Phase 2:** yes — the shared parser + `TenableClient`, plus the agent
-  `tenable` tool. Building both modes shares L1/L2, so `agent` mode is mostly the
-  thin `AgentRunner` + executor wiring on top of the same client/parser.
+- **Runner-mediated mode (the default for the segmented prod-zone topology): YES** —
+  this is the primary path. sdk-go gets the shared `TenableClient` + parser, and the
+  agent gets a `tenable` tool in its `vulnscan` executor. The api gets only the
+  `AgentRunner` (job dispatch) — **no Tenable client and no scanner creds in the api**.
+- **`direct` mode (optional):** api-side only; agent/sdk-go need nothing.
+- **Today (Phase 1, shipped):** the manual `POST /assets/import/nessus-findings`
+  upload already covers a prod-zone appliance via an external cron — a working
+  stopgap until the runner `tenable` tool ships.
 
 ## 4. Roadmap (both engines)
 
 1. **Phase 1 — Findings ingestion + safety (lowest risk, highest de-risk).** `.nessus → CTIS findings` adapter; emit per-batch report with `tool=tenable` + session `scanID` + batch assets; confirm batch-scoped auto-resolve end-to-end with **manual `.nessus` files from both Pro and .sc** (both export the same format). No connector needed yet — validates the invariant and the parser for both engines at once.
-2. **Phase 2 — `TenableClient` + both execution modes (§3.9).** Sequenced so the two modes share L1/L2:
-   - **2a — Shared core:** migrate the `.nessus → CTIS` parser into the shared `ctis` module; build `TenableClient` (Nessus Pro + `.sc` REST, injectable HTTP client) + `LicensePolicy`; `TestConnection`.
-   - **2b — `direct` mode:** `DirectRunner` + per-tenant resolver (`ListByProvider(tenantID, ProviderTenable)`, decrypt creds — mirrors Jira Phase 0); a manual "scan this target list now → ingest" trigger. **No agent/sdk-go work.**
-   - **2c — `agent` mode:** `AgentRunner` (job dispatch with `session_id`); agent `tenable` tool in the `vulnscan` executor reusing the shared client/parser, pushing CTIS via `PushCTIS`; agent-local credentials; capability advertising + tenant-scoped routing.
+2. **Phase 2 — `TenableClient` + execution modes (§3.9), runner-mediated first.** Sequenced so the (default) runner mode lands first and `direct` reuses the same core:
+   - **2a — Shared core:** migrate the `.nessus → CTIS` parser into the shared `ctis` module; build `TenableClient` (Nessus Pro + `.sc` REST, injectable HTTP client) + `LicensePolicy`; `TestConnection`. (Lives where sdk-go/agent can import it.)
+   - **2b — `agent` (runner-mediated) mode — PRIMARY:** agent `tenable` tool in the `vulnscan` executor reusing the shared client/parser, **agent-local credentials**, capability advertising; api `AgentRunner` dispatches the job (session_id) over the existing poll/lease machinery + tenant-scoped routing. **The api holds no Tenable creds.**
+   - **2c — `direct` mode — OPTIONAL:** `DirectRunner` + per-tenant resolver (`ListByProvider(tenantID, ProviderTenable)`, decrypt creds — mirrors Jira Phase 0) for tenants who accept api↔Tenable (cloud / reachable `.sc`).
 3. **Phase 3 — Coverage scheduler.** Coverage-rotation selection (criticality + staleness, CIDR-aware IP counting), `TargetsPerJob` batching, `.sc` cap enforcement via tracked `active_ip_set`, Reclaim gated on ingest ACK, `LastScannedAt` advance, retry/timeout reuse.
 4. **Phase 4 — Observability + UI.** Coverage freshness, `.sc` license utilisation, sweep cadence; Discovery → "Scan Coverage" page + Tenable integration config UI under settings/integrations (security category).
 5. **Phase 5 (optional) — Generalise the seam** for a third scanner (Qualys/OpenVAS) and a Nessus-Agents commercial option.
