@@ -130,6 +130,29 @@ with short repo data-expiration as a passive backstop. The scheduler tracks the
 `active_ip_set` itself (doesn't trust instant reclaim), so a slow removal delays
 the next launch instead of breaching the cap.
 
+## Two execution modes (both first-class)
+
+A Tenable integration runs in one of two selectable modes (`config.execution_mode`),
+sharing everything above the execution boundary — scheduler, parser, ingest,
+mappings, isolation. Only *where the Tenable REST calls run* differs:
+
+- **`direct`** — the backend calls Tenable REST itself (cloud, or reachable `.sc`).
+  api-side `DirectRunner` + per-tenant resolver. **No agent/sdk-go work.**
+- **`agent`** — a purpose-built agent on the customer network calls the local
+  appliance and pushes CTIS back (on-prem `.sc` the api can't reach). Adds an agent
+  `tenable` tool + a shared `TenableClient`/parser; api-side `AgentRunner` dispatches
+  the job carrying the coverage `session_id`. Credentials can stay **agent-local**
+  (api never holds on-prem creds).
+
+The two modes share the L1 `TenableClient` (REST, injectable HTTP) and the L2
+`.nessus → CTIS` parser; only the thin `ScanEngineRunner` strategy differs. The
+parser is promoted to the shared `ctis` module so api and agent use one copy.
+Full design + code-ownership + tenant-isolation in
+[RFC-007 §3.9](../rfcs/RFC-007-license-aware-scan-coverage.md).
+
+Today (Phase 1): on-prem unreachable from the api is already covered by an external
+cron pushing `.nessus` to `POST /assets/import/nessus-findings` — no agent needed yet.
+
 ## Roadmap (RFC-007)
 
 | Phase | Scope | Status |
