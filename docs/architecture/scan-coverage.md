@@ -1,6 +1,7 @@
 # License-Aware Scan Coverage (Tenable Nessus Pro + Tenable.sc)
 
-> **Status**: Converter shipped (#139). Connector + scheduler designed in
+> **Status**: Converter (#139) + manual `.nessus` ingest endpoint shipped.
+> Live connector + scheduler designed in
 > [RFC-007](../rfcs/RFC-007-license-aware-scan-coverage.md). Complements
 > [Scan Orchestration](scan-orchestration.md) (agent-run scanners); this doc
 > covers **external** Tenable engines.
@@ -89,6 +90,28 @@ converter serves both.
   (default `tenable`), `MinSeverity` (drop info noise), `Now` (deterministic tests),
   `DefaultCriticality`.
 
+## Manual / cron ingest endpoint (shipped)
+
+Until the live Tenable connector lands, results enter OpenCTEM by uploading a
+`.nessus` export. This is the RFC's Phase 1 pilot path (an external script or
+operator pushes each batch's file):
+
+```
+POST /api/v1/assets/import/nessus-findings        (JWT; AssetsWrite + FindingsWrite)
+  ?session_id=<batch id>   optional — unique per batch (default: generated)
+  ?tool=tenable            optional — auto-resolve scope (default: tenable)
+  ?min_severity=1          optional — 0..4, drop info noise (default: 1)
+  body: the .nessus XML
+  → { "scan_session_id": "...", "result": { assets_*, findings_*, findings_auto_resolved, ... } }
+```
+
+Each upload is one batch: the handler builds a synthetic agent for the tenant
+(mirroring the ingest job processor), runs `nessus.Convert`, and ingests through
+the standard pipeline. Stale Tenable findings on the uploaded hosts are
+auto-resolved **scoped to that batch only**. Contrast with
+`POST /api/v1/assets/import/nessus`, which imports host assets only (no findings).
+Handler: `internal/infra/http/handler/asset_import_handler.go` `IngestNessusFindings`.
+
 ## Reused infrastructure (do not rebuild)
 
 | Need | Existing primitive |
@@ -111,7 +134,7 @@ the next launch instead of breaching the cap.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 1 | `.nessus → CTIS` findings adapter + batch-scoped safety | **Converter done** (#139); upload/ingest wiring with connector |
+| 1 | `.nessus → CTIS` findings adapter + batch-scoped safety + manual ingest endpoint | **Done** — converter (#139) + `POST /assets/import/nessus-findings` |
 | 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + per-tenant resolver | Planned |
 | 3 | Coverage scheduler (rotation, `.sc` cap, reclaim gated on ACK) | Planned |
 | 4 | Observability (freshness, license utilisation, sweep cadence) + UI | Planned |
@@ -120,6 +143,7 @@ the next launch instead of breaching the cap.
 
 ```
 internal/infra/scanner/nessus/converter.go    .nessus → *ctis.Report (shipped)
+internal/infra/http/handler/asset_import_handler.go   IngestNessusFindings endpoint (shipped)
 internal/app/asset/import.go                   ImportNessus (asset-only legacy path)
 internal/app/ingest/service.go                 scoped auto-resolve (safety invariant)
 pkg/domain/scan/entity.go                       Scan.TargetsPerJob, scheduler

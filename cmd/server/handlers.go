@@ -133,7 +133,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
-		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, log),
+		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log),
 		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
 
 		// Vulnerabilities & Exposures
