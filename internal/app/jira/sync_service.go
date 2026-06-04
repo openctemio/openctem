@@ -273,20 +273,11 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	}, nil
 }
 
-// mapSeverityToJiraPriority maps finding severity to Jira priority name.
+// mapSeverityToJiraPriority maps finding severity to Jira priority name using
+// the default mapping. Per-integration overrides are applied via MappingConfig
+// (see mapping.go); this keeps callers that have no integration context working.
 func mapSeverityToJiraPriority(severity string) string {
-	switch strings.ToLower(severity) {
-	case "critical":
-		return "Highest"
-	case "high":
-		return "High"
-	case "medium":
-		return "Medium"
-	case "low":
-		return "Low"
-	default:
-		return "Medium"
-	}
+	return DefaultMappingConfig().PriorityForSeverity(severity)
 }
 
 // LinkTicketInput is the payload for linking a Jira ticket to a finding.
@@ -490,20 +481,12 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 	return nil
 }
 
-// mapJiraStatusToFinding maps a Jira status name to a FindingStatus.
+// mapJiraStatusToFinding maps a Jira status name to a FindingStatus using the
+// default mapping. Per-integration overrides are applied via MappingConfig (see
+// mapping.go); this keeps callers without integration context working.
 // Returns (status, true) when a mapping exists, (_, false) otherwise.
 func mapJiraStatusToFinding(jiraStatus string) (vulnerability.FindingStatus, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(jiraStatus))
-	switch normalized {
-	case "in progress", "in review", "in development", "open":
-		return vulnerability.FindingStatusInProgress, true
-	case "done", "resolved", "closed", "completed", "fixed":
-		return vulnerability.FindingStatusFixApplied, true
-	case "to do", "backlog", "reopened":
-		return vulnerability.FindingStatusConfirmed, true
-	default:
-		return "", false
-	}
+	return DefaultMappingConfig().FindingStatusForJira(jiraStatus)
 }
 
 // deriveJiraTicketURL builds the canonical browse URL for a Jira issue.

@@ -81,17 +81,34 @@ token with the email from `config`/`metadata["email"]`; or a legacy packed
 | Finding severity → Jira priority | critical→Highest, high→High, medium→Medium, low→Low | `mapSeverityToJiraPriority` |
 | Jira status → finding status (inbound) | done/resolved/closed→fix_applied; in progress/in review→in_progress; to do/backlog/reopened→confirmed | `mapJiraStatusToFinding` |
 
-Customers with non-default Jira workflows are silently dropped today — RFC-006
-Phase 1/2 introduces per-integration `MappingConfig` (stored in
-`Integration.Config().ticketing`) with these as defaults.
+Customers with non-default Jira workflows are silently dropped today. The
+`MappingConfig` type (`internal/app/jira/mapping.go`, shipped) makes these
+configurable per integration: `DefaultMappingConfig()` reproduces the table
+above, and `ParseMappingConfig(integration.Config())` overlays overrides from
+`config.ticketing` (severity→priority, inbound status map, default priority,
+issue type) — partial configs only change what they specify; invalid status
+targets are skipped. The hardcoded functions now delegate to the default
+mapping (zero behaviour change). **Phase 2** wires `ParseMappingConfig` into the
+create + inbound-webhook paths (per-tenant), so a tenant's overrides take effect.
+
+Example `config.ticketing` override:
+
+```json
+{ "ticketing": {
+    "issue_type": "Task",
+    "default_priority": "P3",
+    "severity_to_priority": { "critical": "P1", "high": "P2" },
+    "status_inbound": { "Shipped": "fix_applied", "QA": "in_progress" }
+}}
+```
 
 ## Roadmap (RFC-006)
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Per-tenant client resolver | **Done** (#137, ui#152) |
-| 1 | `TicketProvider` interface + `MappingConfig` defaults | Planned |
-| 2 | Wire configurable mapping into create + inbound webhook | Planned |
+| 1 | `MappingConfig` type + defaults (zero behaviour change) | **Done** (mapping.go) |
+| 2 | Wire `ParseMappingConfig` into create + inbound webhook (per-tenant) + `TicketProvider` interface | Planned |
 | 3 | Outbound status sync via outbox/worker + echo-guard | Planned |
 | 4 | 2nd provider (ServiceNow/GitHub) + typed `finding_tickets` + UI | Planned |
 
@@ -102,7 +119,8 @@ objects to finding tickets. Today only the core issue API is used.
 ## Key files
 
 ```
-internal/app/jira/sync_service.go             SyncService, resolveClient, mappings, redaction
+internal/app/jira/sync_service.go             SyncService, resolveClient, redaction
+internal/app/jira/mapping.go                   MappingConfig (defaults + per-integration overrides)
 internal/infra/jira/client.go                 Jira REST client (CreateIssue/GetIssueStatus/TestConnection)
 internal/infra/jira/resolver.go               IntegrationClientResolver + app-interface adapter
 internal/infra/http/handler/jira_webhook_handler.go   create-ticket + inbound webhook
