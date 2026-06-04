@@ -119,41 +119,109 @@ Freeing a scanner slot (`.sc` removal) happens **only after** the batch is expor
 - **`.sc` license utilisation** (tracked `active_ip_set` vs `Cap`) so scheduler headroom is visible.
 - Metrics via `internal/metrics` (Prometheus) as in RFC-005.
 
-## 3.9 Deployment topology: API-direct vs agent-bridge (does agent/sdk-go need work?)
+## 3.9 Two execution modes (both first-class)
 
-Whether the **agent** and **sdk-go** need work depends entirely on whether the
-api can reach the Tenable instance:
+A single logical Tenable integration runs in one of two modes, chosen per
+integration via `config.execution_mode`:
 
-- **API-direct** — Tenable is reachable from the api (Tenable cloud, or a network
-  path to an on-prem `.sc`). The `ScanEngine` connector lives in the api
-  (§3.1/§3.5). **Agent and sdk-go need nothing.**
-- **Agent-bridge** — Tenable.sc is on-prem and **not reachable from the api**
-  (typical for SecurityCenter behind the corporate firewall). An agent on the
-  customer network bridges it:
-  - **sdk-go**: add `pkg/scanners/nessus` (or `tenable`) — `scanner.go` calls the
-    local Nessus/.sc REST API (launch/poll/export `.nessus`), `parser.go` converts
-    `.nessus → ctis.Report`. Mirrors the existing `pkg/scanners/{nuclei,trivy,…}`.
-  - **agent**: register a `tenable` tool in the `vulnscan` executor; it pushes the
-    CTIS report via the existing `pusher.PushCTIS` path and advertises the
-    capability so the scheduler routes Tenable jobs to it.
-  - **api**: no new ingest path (agent-CTIS ingest already exists); the coverage
-    scheduler (Phase 3) dispatches an **agent job** instead of calling Tenable
-    directly. Tenant isolation is preserved — agent ingest derives tenant from the
-    authenticated agent, never the `.nessus` file.
+- **`direct`** — the backend talks to Tenable's REST API itself (Tenable cloud, or
+  an on-prem `.sc` the api can reach).
+- **`agent`** — a purpose-built agent on the customer network talks to the local
+  Tenable appliance and pushes results back (on-prem `.sc`/Nessus the api cannot
+  reach — typical for SecurityCenter behind a firewall).
 
-**Converter ownership (decide before agent-bridge):** the `.nessus → CTIS` parser
-currently lives in `api/internal/infra/scanner/nessus`. The agent reports via
-`sdk-go/pkg/ctis`, so an agent-bridge path needs the same parser there. To avoid
-two diverging copies, promote the canonical Nessus parser into the shared **`ctis`
-module** and have both the api and sdk-go reuse it, rather than duplicating.
-Until agent-bridge is needed, the api-internal converter + manual upload endpoint
-(`POST /assets/import/nessus-findings`) are sufficient — **so no agent/sdk-go work
-is required for Phase 1, or for a Phase 2 that is API-direct.**
+Everything *above* the execution boundary is identical in both modes: the
+coverage scheduler (§3.3), license accounting (§3.2), the `.nessus → CTIS` parser
+(§3.4), the ingest pipeline + batch-scoped auto-resolve (§1), severity/criticality
+mapping, and tenant isolation. Only *where the Tenable REST calls happen* differs.
+
+### Layered design (so the two modes share, not duplicate)
+
+```
+   Coverage scheduler (Phase 3)               ── mode-agnostic
+        │ runner.Run(session, batch)
+        ▼
+   ScanEngineRunner  (strategy)
+   ├─ DirectRunner (api)   → in-process TenableClient → .nessus → ingest inline
+   └─ AgentRunner  (api)   → dispatch agent job ──► agent runs TenableClient ──► PushCTIS
+        ▲                                                    │
+        └──────────── shared building blocks ───────────────┘
+   L1 TenableClient   : Launch/Poll/Export/Reclaim (Nessus Pro + .sc REST)
+   L2 .nessus parser  : ReportItem → ctis.Finding  (the existing converter)
+```
+
+- **L1 `TenableClient`** and **L2 parser** are the *same code* in both modes — they
+  just execute in a different process. They take an **injectable HTTP client** so
+  the api supplies its SSRF-safe `pkg/httpsec` client and the agent supplies its
+  own. No Tenable logic is written twice.
+- **`ScanEngineRunner`** is the only mode-specific layer:
+  - `DirectRunner` (api): per-tenant resolver builds a `TenableClient`
+    (mirrors the Jira client resolver — `ListByProvider(tenantID, ProviderTenable)`,
+    decrypt creds), runs L1→L2, ingests with the coverage `session_id`.
+  - `AgentRunner` (api): creates a scan job/command for an agent advertising the
+    `tenable` capability, carrying `{engine, base_url, targets, session_id,
+    credential_ref}`. The agent runs L1→L2 and `PushCTIS` back to the api ingest
+    endpoint, stamping `metadata.id = session_id` so the scheduler correlates the
+    result to the batch.
+
+### Code ownership (respects the RFC-002 api↔sdk-go decoupling)
+
+| Component | Home | Used by |
+|-----------|------|---------|
+| L2 `.nessus → CTIS` parser | promote to the shared **`ctis` module** (zero-dep) | api (direct) + sdk-go/agent (agent) — one copy |
+| L1 `TenableClient` (REST, stdlib + ctis types, injectable HTTP) | a small shared package both can import | api (direct) + sdk-go `pkg/scanners/tenable` wrapper (agent) |
+| `DirectRunner`, per-tenant resolver | api `internal/infra/scanner/tenable` | api only |
+| `AgentRunner` (job dispatch) | api (scan orchestration) | api only |
+| `tenable` executor/tool | agent `vulnscan` executor | agent only |
+
+The api stays decoupled from the *whole* sdk-go: it imports only the shared parser
+(`ctis`) and the small Tenable client package — not `sdk-go`. The agent imports the
+same two via its existing `sdk-go` dependency. The today's api-internal converter
+(`internal/infra/scanner/nessus`) is migrated into the shared parser as the first
+step so there is never a second copy.
+
+### Credential locality (a security win for `agent` mode)
+
+- **`direct`**: creds live encrypted in the integration; the api decrypts per
+  request (AES-256-GCM), exactly like Jira.
+- **`agent`**: prefer **agent-local credentials** — the on-prem agent is configured
+  with access to its local Tenable; the api job says only "scan these targets for
+  session X" and the api **never holds the on-prem Tenable creds**. (Fallback: the
+  api may pass a credential reference over the authenticated agent channel, but
+  agent-local is the recommended posture for segmented networks.)
+
+### Tenant isolation in both modes
+
+- `direct`: per-tenant resolver — `ListByProvider(tenantID, ProviderTenable)` is
+  `WHERE tenant_id=$1` → a tenant only ever uses its own Tenable creds.
+- `agent`: the job is created for a tenant and routed only to an agent authorised
+  for that tenant; agent-pushed CTIS derives tenant from the **authenticated
+  agent**, never from the `.nessus` file (same guarantee as all agent ingest).
+
+### Result correlation & reclaim across modes
+
+The coverage `session_id` is the join key. `direct` ingests inline with it;
+`agent` carries it in the job and stamps it into the pushed report. Auto-resolve
+and `.sc` reclaim are gated on **ingest ACK** in both modes — in `agent` mode the
+reclaim runs where the appliance is reachable (the agent, after the api confirms
+the push), so the cap is freed locally.
+
+### Does the agent / sdk-go need work?
+
+- **Phase 1 (shipped) and `direct` Phase 2:** **no agent/sdk-go work.** On-prem that
+  the api can't reach is still covered today by an external cron pushing `.nessus`
+  to `POST /assets/import/nessus-findings`.
+- **`agent` Phase 2:** yes — the shared parser + `TenableClient`, plus the agent
+  `tenable` tool. Building both modes shares L1/L2, so `agent` mode is mostly the
+  thin `AgentRunner` + executor wiring on top of the same client/parser.
 
 ## 4. Roadmap (both engines)
 
 1. **Phase 1 — Findings ingestion + safety (lowest risk, highest de-risk).** `.nessus → CTIS findings` adapter; emit per-batch report with `tool=tenable` + session `scanID` + batch assets; confirm batch-scoped auto-resolve end-to-end with **manual `.nessus` files from both Pro and .sc** (both export the same format). No connector needed yet — validates the invariant and the parser for both engines at once.
-2. **Phase 2 — `ScanEngine` connector.** Interface + `LicensePolicy`; **Nessus Pro** impl (unlimited, simplest) and **Tenable.sc** impl (cap + repository/asset-list + Reclaim removal); per-tenant resolver (mirror Jira RFC-006 Phase 0); `TestConnection`; a manual "scan this target list now → ingest" trigger. **Topology fork (§3.9):** API-direct needs no agent/sdk-go work; agent-bridge (on-prem unreachable `.sc`) adds an sdk-go `pkg/scanners/nessus` adapter + an agent `tenable` tool, and the Nessus parser moves to the shared `ctis` module.
+2. **Phase 2 — `TenableClient` + both execution modes (§3.9).** Sequenced so the two modes share L1/L2:
+   - **2a — Shared core:** migrate the `.nessus → CTIS` parser into the shared `ctis` module; build `TenableClient` (Nessus Pro + `.sc` REST, injectable HTTP client) + `LicensePolicy`; `TestConnection`.
+   - **2b — `direct` mode:** `DirectRunner` + per-tenant resolver (`ListByProvider(tenantID, ProviderTenable)`, decrypt creds — mirrors Jira Phase 0); a manual "scan this target list now → ingest" trigger. **No agent/sdk-go work.**
+   - **2c — `agent` mode:** `AgentRunner` (job dispatch with `session_id`); agent `tenable` tool in the `vulnscan` executor reusing the shared client/parser, pushing CTIS via `PushCTIS`; agent-local credentials; capability advertising + tenant-scoped routing.
 3. **Phase 3 — Coverage scheduler.** Coverage-rotation selection (criticality + staleness, CIDR-aware IP counting), `TargetsPerJob` batching, `.sc` cap enforcement via tracked `active_ip_set`, Reclaim gated on ingest ACK, `LastScannedAt` advance, retry/timeout reuse.
 4. **Phase 4 — Observability + UI.** Coverage freshness, `.sc` license utilisation, sweep cadence; Discovery → "Scan Coverage" page + Tenable integration config UI under settings/integrations (security category).
 5. **Phase 5 (optional) — Generalise the seam** for a third scanner (Qualys/OpenVAS) and a Nessus-Agents commercial option.
@@ -174,6 +242,9 @@ is required for Phase 1, or for a Phase 2 that is API-direct.**
 - Dead/unreachable hosts: does "scanned but host down" advance `LastScannedAt`? (Proposal: track a separate `last_attempted_at` vs `last_assessed_at` so coverage metrics aren't inflated by unreachable hosts.)
 - Batch vs scan duration: a 500-IP authenticated scan can take hours — what sweep SLA per criticality tier?
 - Least-privilege API key scopes per engine (scan + export; `.sc`: asset/repository manage for reclaim) — document required permissions.
+- `agent`-mode credentials: agent-local (recommended, api never holds on-prem creds) vs api-passed credential reference over the agent channel — confirm the agent's local config story and whether any tenants need api-managed creds.
+- Shared `TenableClient` home: a standalone small package vs living beside the parser in the `ctis` module — must stay importable by both api and sdk-go without re-coupling api to the whole `sdk-go` (RFC-002).
+- `agent`-mode reclaim/long-poll: the agent must keep the `.sc` cap respected during a multi-hour scan it owns; does the scheduler's `active_ip_set` accounting move to the agent for agent-mode, or stay api-side with the agent reporting progress?
 
 ## 7. Risks
 
