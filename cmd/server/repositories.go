@@ -12,19 +12,19 @@ type Repositories struct {
 	Audit  *postgres.AuditRepository
 
 	// Assets & Components
-	Asset             *postgres.AssetRepository
-	RepoExt           *postgres.RepositoryExtensionRepository
-	Component         *postgres.ComponentRepository
-	AssetGroup        *postgres.AssetGroupRepository
-	AssetType         *postgres.AssetTypeRepository
-	AssetTypeCat      *postgres.AssetTypeCategoryRepository
-	ScopeTarget       *postgres.ScopeTargetRepository
-	ScopeExcl         *postgres.ScopeExclusionRepository
-	ScopeSchedule     *postgres.ScopeScheduleRepository
-	AssetService      *postgres.AssetServiceRepository      // CTEM: Network services on assets
-	AssetStateHistory *postgres.AssetStateHistoryRepository // CTEM: State change audit log
-	AssetRelationship          *postgres.AssetRelationshipRepository          // CTEM: Asset topology graph
-	RelationshipSuggestion     *postgres.RelationshipSuggestionRepository     // CTEM: Relationship suggestions
+	Asset                  *postgres.AssetRepository
+	RepoExt                *postgres.RepositoryExtensionRepository
+	Component              *postgres.ComponentRepository
+	AssetGroup             *postgres.AssetGroupRepository
+	AssetType              *postgres.AssetTypeRepository
+	AssetTypeCat           *postgres.AssetTypeCategoryRepository
+	ScopeTarget            *postgres.ScopeTargetRepository
+	ScopeExcl              *postgres.ScopeExclusionRepository
+	ScopeSchedule          *postgres.ScopeScheduleRepository
+	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
+	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
+	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
+	RelationshipSuggestion *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
 
 	// Vulnerabilities & Findings
 	Vulnerability    *postgres.VulnerabilityRepository
@@ -51,9 +51,9 @@ type Repositories struct {
 	PentestCampaign       *postgres.PentestCampaignRepository
 	PentestCampaignMember *postgres.PentestCampaignMemberRepository
 	PentestFinding        *postgres.PentestFindingRepository
-	PentestRetest    *postgres.PentestRetestRepository
-	PentestTemplate  *postgres.PentestTemplateRepository
-	PentestReport    *postgres.PentestReportRepository
+	PentestRetest         *postgres.PentestRetestRepository
+	PentestTemplate       *postgres.PentestTemplateRepository
+	PentestReport         *postgres.PentestReportRepository
 
 	// Attachments (file upload metadata)
 	Attachment *postgres.AttachmentRepository
@@ -82,13 +82,14 @@ type Repositories struct {
 	Integration                *postgres.IntegrationRepository
 	IntegrationSCMExt          *postgres.IntegrationSCMExtensionRepository
 	IntegrationNotificationExt *postgres.IntegrationNotificationExtensionRepository
-	Outbox         *postgres.OutboxRepository
-	OutboxEvent    *postgres.OutboxEventRepository
-	Notification   *postgres.NotificationRepository
+	Outbox                     *postgres.OutboxRepository
+	OutboxEvent                *postgres.OutboxEventRepository
+	Notification               *postgres.NotificationRepository
 
 	// Agents & Commands
-	Agent   *postgres.AgentRepository
-	Command *postgres.CommandRepository
+	Agent     *postgres.AgentRepository
+	Command   *postgres.CommandRepository
+	IngestJob *postgres.IngestJobRepository
 
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
@@ -177,19 +178,19 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Audit:  postgres.NewAuditRepository(db),
 
 		// Assets & Components
-		Asset:             postgres.NewAssetRepository(db),
-		RepoExt:           postgres.NewRepositoryExtensionRepository(db),
-		Component:         postgres.NewComponentRepository(db),
-		AssetGroup:        postgres.NewAssetGroupRepository(db),
-		AssetType:         postgres.NewAssetTypeRepository(db),
-		AssetTypeCat:      postgres.NewAssetTypeCategoryRepository(db),
-		ScopeTarget:       postgres.NewScopeTargetRepository(db),
-		ScopeExcl:         postgres.NewScopeExclusionRepository(db),
-		ScopeSchedule:     postgres.NewScopeScheduleRepository(db),
-		AssetService:      postgres.NewAssetServiceRepository(db),      // CTEM: Network services
-		AssetStateHistory: postgres.NewAssetStateHistoryRepository(db), // CTEM: State change audit
-		AssetRelationship:          postgres.NewAssetRelationshipRepository(db),          // CTEM: Asset topology graph
-		RelationshipSuggestion:     postgres.NewRelationshipSuggestionRepository(db),     // CTEM: Relationship suggestions
+		Asset:                  postgres.NewAssetRepository(db),
+		RepoExt:                postgres.NewRepositoryExtensionRepository(db),
+		Component:              postgres.NewComponentRepository(db),
+		AssetGroup:             postgres.NewAssetGroupRepository(db),
+		AssetType:              postgres.NewAssetTypeRepository(db),
+		AssetTypeCat:           postgres.NewAssetTypeCategoryRepository(db),
+		ScopeTarget:            postgres.NewScopeTargetRepository(db),
+		ScopeExcl:              postgres.NewScopeExclusionRepository(db),
+		ScopeSchedule:          postgres.NewScopeScheduleRepository(db),
+		AssetService:           postgres.NewAssetServiceRepository(db),           // CTEM: Network services
+		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
+		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
+		RelationshipSuggestion: postgres.NewRelationshipSuggestionRepository(db), // CTEM: Relationship suggestions
 
 		// Vulnerabilities & Findings
 		Vulnerability:    postgres.NewVulnerabilityRepository(db),
@@ -217,9 +218,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		PentestCampaign:       postgres.NewPentestCampaignRepository(db),
 		PentestCampaignMember: postgres.NewPentestCampaignMemberRepository(db),
 		PentestFinding:        postgres.NewPentestFindingRepository(db),
-		PentestRetest:   postgres.NewPentestRetestRepository(db),
-		PentestTemplate: postgres.NewPentestTemplateRepository(db),
-		PentestReport:   postgres.NewPentestReportRepository(db),
+		PentestRetest:         postgres.NewPentestRetestRepository(db),
+		PentestTemplate:       postgres.NewPentestTemplateRepository(db),
+		PentestReport:         postgres.NewPentestReportRepository(db),
 
 		// Attachments
 		Attachment: postgres.NewAttachmentRepository(db),
@@ -252,8 +253,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Notification: postgres.NewNotificationRepository(db),
 
 		// Agents & Commands
-		Agent:   postgres.NewAgentRepository(db),
-		Command: postgres.NewCommandRepository(db),
+		Agent:     postgres.NewAgentRepository(db),
+		Command:   postgres.NewCommandRepository(db),
+		IngestJob: postgres.NewIngestJobRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),

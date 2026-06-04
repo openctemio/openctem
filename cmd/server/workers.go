@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
+	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/app/outbox"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/config"
@@ -378,6 +379,25 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Expose the worker to the HTTP layer so the admin dry-run
 	// endpoint can call it without a duplicate instance.
 	w.AssetLifecycleWorker = lifecycleWorker
+
+	// Async-ingest worker (RFC-005). Drains the ingest_jobs queue through the
+	// normal ingest pipeline. Safe to register unconditionally: until the
+	// accept path enqueues jobs (async mode), the queue is empty and the
+	// worker reconciles to zero. Bounded batch/per-tick caps are the
+	// backpressure that protects the DB pool under heavy ingest.
+	if svc.Ingest != nil && repos.IngestJob != nil {
+		w.ControllerManager.Register(controller.NewIngestWorkerController(
+			repos.IngestJob,
+			ingest.NewJobProcessor(svc.Ingest),
+			&controller.IngestWorkerControllerConfig{
+				Interval:     2 * time.Second,
+				BatchSize:    5,
+				MaxPerTick:   50,
+				LeaseTimeout: 5 * time.Minute,
+				Logger:       log.With("controller", "ingest-worker"),
+			},
+		))
+	}
 
 	return w, nil
 }
