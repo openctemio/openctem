@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -11,6 +12,63 @@ import (
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// secretPatterns are masked out of any text pushed to a third-party ticket
+// (defense-in-depth, on top of suppressing the raw description for secret
+// findings). Conservative, low-false-positive patterns only.
+var secretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),                                                                // AWS access key id
+	regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`),                      // JWT
+	regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`), // PEM private key block
+}
+
+// secretAssignment matches `password: xxx` / `api_key=xxx` style assignments,
+// keeping the key name and redacting only the value.
+var secretAssignment = regexp.MustCompile(`(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|authorization|bearer)\b(\s*[:=]\s*|\s+)\S+`)
+
+// redactSecrets masks common secret material in free text before it leaves the
+// platform for a third-party ticketing system.
+func redactSecrets(text string) string {
+	for _, re := range secretPatterns {
+		text = re.ReplaceAllString(text, "[REDACTED]")
+	}
+	text = secretAssignment.ReplaceAllString(text, "$1$2[REDACTED]")
+	return text
+}
+
+// isSecretFinding reports whether a finding is a leaked-secret/credential
+// finding, whose raw description must never be copied verbatim into an external
+// ticket (it can contain the secret itself).
+func isSecretFinding(f *vulnerability.Finding) bool {
+	return f.Source() == vulnerability.FindingSourceSecret ||
+		f.FindingType() == vulnerability.FindingTypeSecret
+}
+
+// ticketDescription builds the Jira description for a finding. For secret
+// findings it deliberately omits the raw finding description (which may embed
+// the leaked secret), surfacing only the masked value + location and pointing
+// the reader back to the platform. For all other findings it runs the
+// description through redactSecrets as defense-in-depth.
+func ticketDescription(f *vulnerability.Finding) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "**Finding:** %s\n**Severity:** %s\n**Status:** %s\n",
+		f.Title(), f.Severity(), f.Status())
+	if f.FilePath() != "" {
+		fmt.Fprintf(&b, "**Location:** %s:%d\n", f.FilePath(), f.StartLine())
+	}
+
+	if isSecretFinding(f) {
+		b.WriteString("\nA secret was detected. The value is redacted here for safety — open the finding in the platform for full details.")
+		if mv := f.SecretMaskedValue(); mv != "" {
+			fmt.Fprintf(&b, "\n**Masked value:** %s", mv)
+		}
+		return b.String()
+	}
+
+	b.WriteString("\n")
+	b.WriteString(f.Description())
+	return redactSecrets(b.String())
+}
 
 // Client defines the interface for Jira REST API operations.
 type Client interface {
@@ -138,13 +196,10 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		issueType = "Bug"
 	}
 
-	description := fmt.Sprintf("**Finding:** %s\n**Severity:** %s\n**Status:** %s\n\n%s",
-		finding.Title(), finding.Severity(), finding.Status(), finding.Description())
-
 	result, err := s.jiraClient.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  input.ProjectKey,
-		Summary:     fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title()),
-		Description: description,
+		Summary:     redactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())),
+		Description: ticketDescription(finding),
 		IssueType:   issueType,
 		Priority:    priority,
 		Labels:      []string{"openctem", "security", string(finding.Severity())},

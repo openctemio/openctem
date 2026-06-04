@@ -2,6 +2,7 @@ package jira
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -124,5 +125,56 @@ func TestCreateTicketFromFinding_DifferentProjectStillCreates(t *testing.T) {
 	}
 	if client.calls != 1 {
 		t.Fatalf("expected 1 CreateIssue call for a new project, got %d", client.calls)
+	}
+}
+
+func TestRedactSecrets(t *testing.T) {
+	cases := []struct{ in, mustNotContain, mustContain string }{
+		{"key AKIAIOSFODNN7EXAMPLE here", "AKIAIOSFODNN7EXAMPLE", "[REDACTED]"},
+		{"token eyJhbGciOi.eyJzdWIiOiJ.SflKxwRJSMeKKF here", "SflKxwRJSMeKKF", "[REDACTED]"},
+		{"password: hunter2supersecret", "hunter2supersecret", "password: [REDACTED]"},
+		{"api_key=abcdef1234567890xyz", "abcdef1234567890xyz", "api_key=[REDACTED]"},
+	}
+	for _, c := range cases {
+		got := redactSecrets(c.in)
+		if strings.Contains(got, c.mustNotContain) {
+			t.Fatalf("redactSecrets(%q) still contains %q: %q", c.in, c.mustNotContain, got)
+		}
+		if !strings.Contains(got, c.mustContain) {
+			t.Fatalf("redactSecrets(%q) = %q, want it to contain %q", c.in, got, c.mustContain)
+		}
+	}
+}
+
+func TestTicketDescription_SecretFinding_SuppressesRawSecret(t *testing.T) {
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(),
+		vulnerability.FindingSourceSecret, "gitleaks", vulnerability.SeverityHigh, "AWS key in config")
+	if err != nil {
+		t.Fatalf("NewFinding: %v", err)
+	}
+	const rawSecret = "AKIAIOSFODNN7EXAMPLE"
+	f.SetDescription("Leaked credential: " + rawSecret + " found in config.yaml")
+	f.SetSecretMaskedValue("AKI****PLE")
+
+	desc := ticketDescription(f)
+	if strings.Contains(desc, rawSecret) {
+		t.Fatalf("secret-finding ticket leaked the raw secret: %q", desc)
+	}
+	if !strings.Contains(desc, "AKI****PLE") {
+		t.Fatalf("expected masked value in description: %q", desc)
+	}
+}
+
+func TestTicketDescription_NonSecretFinding_RedactsTokens(t *testing.T) {
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(),
+		vulnerability.FindingSourceDAST, "zap", vulnerability.SeverityMedium, "verbose error")
+	if err != nil {
+		t.Fatalf("NewFinding: %v", err)
+	}
+	f.SetDescription("Response leaked password: topSecretValue123 in body")
+
+	desc := ticketDescription(f)
+	if strings.Contains(desc, "topSecretValue123") {
+		t.Fatalf("non-secret ticket should still redact obvious secrets: %q", desc)
 	}
 }
