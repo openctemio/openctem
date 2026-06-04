@@ -35,7 +35,21 @@ type Config struct {
 	AgentConfig AgentConfigConfig
 	Storage     StorageConfig
 	Webhooks    WebhooksConfig
+	Ingest      IngestConfig
 }
+
+// IngestConfig controls asynchronous ingest (RFC-005).
+type IngestConfig struct {
+	// Mode is "sync" (default — process in the request) or "async" (enqueue +
+	// 202, processed by the ingest worker). Async is opt-in per deployment.
+	Mode string
+	// MaxPendingPerTenant bounds a tenant's queue depth; further submissions get
+	// 429 + Retry-After. 0 disables the check.
+	MaxPendingPerTenant int
+}
+
+// AsyncEnabled reports whether async ingest mode is on.
+func (c IngestConfig) AsyncEnabled() bool { return c.Mode == "async" }
 
 // WebhooksConfig holds shared secrets for incoming webhook HMAC verification (F-1).
 // These are platform-wide fallbacks; per-integration secrets can be layered on
@@ -682,6 +696,10 @@ func Load() (*Config, error) {
 			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
 			// middleware fails closed if empty.
 			JiraSecret: getEnv("JIRA_WEBHOOK_SECRET", ""),
+		},
+		Ingest: IngestConfig{
+			Mode:                getEnv("INGEST_MODE", "sync"),
+			MaxPendingPerTenant: getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
 		},
 		AITriage: AITriageConfig{
 			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),

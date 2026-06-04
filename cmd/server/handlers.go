@@ -75,6 +75,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	commandHandler.SetPipelineService(svc.Pipeline)
 
+	// Ingest handler — opt into async mode (RFC-005) when configured. Default
+	// (sync) leaves the handler processing reports in-request as before.
+	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Agent, log)
+	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
+		ingestHandler.SetAsyncIngest(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
+		log.Info("async ingest enabled", "max_pending_per_tenant", cfg.Ingest.MaxPendingPerTenant)
+	}
+
 	// Tenant handler with role service and asset service wired.
 	// Exposed as a package-level var so main.go can back-wire the
 	// asset lifecycle worker after both handlers and workers are
@@ -154,7 +162,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Agents & Commands
 		Command:          commandHandler,
 		Agent:            newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
-		Ingest:           handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
+		Ingest:           ingestHandler,
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),
 

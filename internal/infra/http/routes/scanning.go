@@ -86,6 +86,10 @@ func registerAgentRoutes(
 		r.POST("/ingest/chunk", ingestHandler.IngestChunk, ingestMW...)
 		r.GET("/ingest/scanners", ingestHandler.ListScanners)
 
+		// Async ingest job status poll (RFC-005). No-op store returns 404 when
+		// async mode is disabled.
+		r.GET("/ingest/jobs/{id}", ingestHandler.GetIngestJob)
+
 		// Command polling and status updates
 		r.GET("/commands", commandHandler.Poll)
 		r.POST("/commands/{id}/acknowledge", commandHandler.Acknowledge)

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
 	"github.com/openctemio/api/internal/app"
@@ -18,6 +19,8 @@ import (
 	"github.com/openctemio/api/internal/infra/adapters/core"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/agent"
+	"github.com/openctemio/api/pkg/domain/ingestjob"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/ctis"
 )
@@ -47,6 +50,21 @@ type IngestHandler struct {
 	agentService    *app.AgentService
 	adapterRegistry *adapters.Registry
 	logger          *logger.Logger
+
+	// Async ingest (RFC-005). Wired only when INGEST_MODE=async via
+	// SetAsyncIngest; nil/false means the legacy synchronous path is used.
+	ingestJobRepo       ingestjob.Repository
+	asyncMode           bool
+	maxPendingPerTenant int
+}
+
+// SetAsyncIngest enables async ingest: the CTIS endpoint enqueues the payload
+// and returns 202 instead of processing it in-request. Opt-in — when not
+// called, ingest stays fully synchronous.
+func (h *IngestHandler) SetAsyncIngest(repo ingestjob.Repository, maxPendingPerTenant int) {
+	h.ingestJobRepo = repo
+	h.asyncMode = true
+	h.maxPendingPerTenant = maxPendingPerTenant
 }
 
 // NewIngestHandler creates a new ingest handler.
@@ -294,6 +312,14 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Debug("failed to read request body", "error", err)
 		apierror.BadRequest("Failed to read request body").WriteJSON(w)
+		return
+	}
+
+	// Async mode (RFC-005): persist the raw payload + enqueue, return 202.
+	// Falls through to the synchronous path when async is off or the agent has
+	// no tenant context (platform agents are validated by the sync path).
+	if h.asyncMode && h.ingestJobRepo != nil && agt.TenantID != nil {
+		h.enqueueAsync(w, r, agt, bodyBytes)
 		return
 	}
 
@@ -1038,4 +1064,107 @@ func (h *IngestHandler) ListScanners(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		h.logger.Error("failed to encode response", "error", err)
 	}
+}
+
+// AsyncIngestResponse is the 202 body returned when async ingest is enabled.
+type AsyncIngestResponse struct {
+	JobID     string `json:"job_id"`
+	Status    string `json:"status"`
+	ReportID  string `json:"report_id"`
+	Duplicate bool   `json:"duplicate"` // true if an identical payload was already queued
+}
+
+// enqueueAsync validates the envelope, persists the raw payload, enqueues an
+// ingest job, and returns 202. The worker (controller.IngestWorkerController)
+// processes it. agt.TenantID is guaranteed non-nil by the caller.
+func (h *IngestHandler) enqueueAsync(w http.ResponseWriter, r *http.Request, agt *agent.Agent, bodyBytes []byte) {
+	ctx := r.Context()
+	tenantID := *agt.TenantID
+
+	// Queue-depth backpressure: a tenant with too many unprocessed jobs is told
+	// to back off rather than letting payload rows pile up unbounded.
+	if h.maxPendingPerTenant > 0 {
+		if pending, err := h.ingestJobRepo.CountPendingByTenant(ctx, tenantID); err == nil && pending >= h.maxPendingPerTenant {
+			w.Header().Set("Retry-After", "30")
+			apierror.TooManyRequests("ingest queue is full for this tenant; retry later").WriteJSON(w)
+			return
+		}
+	}
+
+	// Cheap envelope validation: must be a parseable CTIS report. (Full
+	// correctness is re-checked by the worker via the same pipeline.)
+	report, err := ingest.ParseReport(bodyBytes)
+	if err != nil {
+		apierror.BadRequest("Invalid CTIS payload").WriteJSON(w)
+		return
+	}
+
+	job := ingestjob.NewJob(tenantID, &agt.ID, report.Metadata.ID, report.Metadata.SourceType, bodyBytes)
+	stored, created, err := h.ingestJobRepo.Enqueue(ctx, job)
+	if err != nil {
+		h.logger.Error("failed to enqueue ingest job", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Location", "/api/v1/agent/ingest/jobs/"+stored.ID().String())
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(AsyncIngestResponse{
+		JobID:     stored.ID().String(),
+		Status:    stored.Status().String(),
+		ReportID:  stored.ReportID(),
+		Duplicate: !created,
+	})
+}
+
+// IngestJobStatusResponse is the body of the job-status poll endpoint.
+type IngestJobStatusResponse struct {
+	JobID    string          `json:"job_id"`
+	Status   string          `json:"status"`
+	ReportID string          `json:"report_id"`
+	Attempts int             `json:"attempts"`
+	Result   json.RawMessage `json:"result,omitempty"`
+	Error    string          `json:"error,omitempty"`
+}
+
+// GetIngestJob returns the status of an async ingest job (RFC-005 status poll).
+// GET /api/v1/agent/ingest/jobs/{id} — API-key auth, tenant-scoped.
+func (h *IngestHandler) GetIngestJob(w http.ResponseWriter, r *http.Request) {
+	agt := AgentFromContext(r.Context())
+	if agt == nil || agt.TenantID == nil {
+		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+	if h.ingestJobRepo == nil {
+		apierror.NotFound("ingest job").WriteJSON(w)
+		return
+	}
+
+	id, err := shared.IDFromString(chi.URLParam(r, "id"))
+	if err != nil {
+		apierror.BadRequest("invalid job id").WriteJSON(w)
+		return
+	}
+
+	job, err := h.ingestJobRepo.GetByID(r.Context(), *agt.TenantID, id)
+	if err != nil {
+		apierror.NotFound("ingest job").WriteJSON(w)
+		return
+	}
+
+	resp := IngestJobStatusResponse{
+		JobID:    job.ID().String(),
+		Status:   job.Status().String(),
+		ReportID: job.ReportID(),
+		Attempts: job.Attempts(),
+		Error:    job.LastError(),
+	}
+	if len(job.Result()) > 0 {
+		resp.Result = json.RawMessage(job.Result())
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }
