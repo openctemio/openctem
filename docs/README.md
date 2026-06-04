@@ -19,6 +19,8 @@
 - [Project Structure](architecture/project-structure.md) - Complete file structure
 - [Notification System](architecture/notification-system.md) - Real-time alerts, providers, async patterns
 - [Scan Orchestration](architecture/scan-orchestration.md) - Pipeline execution, agent coordination
+- [Scan Coverage (Tenable)](architecture/scan-coverage.md) - License-aware rolling coverage, Nessus Pro + Tenable.sc, .nessus→CTIS converter
+- [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
 - [Data Sources](architecture/data-sources.md) - Multi-source asset tracking, collectors, scanners
 - [Asset Schema](architecture/asset-schema.md) - Standard JSON schema for asset ingestion
 - [Asset Properties Schema](asset-properties-schema.md) - JSONB properties schema per asset type
