@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1156,21 +1157,26 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 		return 0, 0, nil
 	}
 
-	// Use a transaction for consistency
-	tx, err := r.db.BeginTx(ctx, nil)
+	// Fast path: one multi-row INSERT for the whole batch (one round-trip
+	// instead of one per asset — discovery reports can carry tens of thousands
+	// of assets). Falls back to the per-row path on any error, which also
+	// covers the case where the batch contains two assets with the same
+	// (tenant_id, name) — ON CONFLICT cannot update a row twice in one
+	// statement.
+	created, updated, err = r.upsertBatchMultiRow(ctx, assets)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to begin transaction: %w", err)
+		return r.upsertBatchPerRow(ctx, assets)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	return created, updated, nil
+}
 
-	// Prepare the upsert statement
-	// ON CONFLICT updates: properties (merged via merge_jsonb_deep), tags, last_seen, updated_at
-	// Also updates discovery fields only if they were previously null
-	query := `
+// assetUpsertColumnCount is the number of columns in the assets upsert. It MUST
+// stay in sync with assetUpsertColumnsSQL and assetUpsertArgs.
+const assetUpsertColumnCount = 27
+
+// assetUpsertColumnsSQL is the INSERT INTO assets (...) column header.
+func assetUpsertColumnsSQL() string {
+	return `
 		INSERT INTO assets (
 			id, tenant_id, parent_id, owner_id, name, asset_type, criticality, status,
 			scope, exposure, risk_score,
@@ -1178,8 +1184,13 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
 			discovery_source, discovery_tool, discovered_at,
 			first_seen, last_seen, created_at, updated_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+		)`
+}
+
+// assetUpsertConflictSQL is the shared ON CONFLICT clause (with RETURNING used
+// to distinguish inserts from updates via the xmax system column).
+func assetUpsertConflictSQL() string {
+	return `
 		ON CONFLICT (tenant_id, name) DO UPDATE SET
 			tags = (
 				SELECT array_agg(DISTINCT t)
@@ -1196,78 +1207,191 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 			discovery_source = COALESCE(assets.discovery_source, EXCLUDED.discovery_source),
 			discovery_tool = COALESCE(assets.discovery_tool, EXCLUDED.discovery_tool),
 			discovered_at = COALESCE(assets.discovered_at, EXCLUDED.discovered_at)
-		RETURNING (xmax = 0) AS inserted
-	`
+		RETURNING (xmax = 0) AS inserted`
+}
 
-	stmt, err := tx.PrepareContext(ctx, query)
+// assetValuesPlaceholders builds the VALUES tuples for rowCount rows with
+// contiguous placeholder numbering, e.g. "($1,...,$27),($28,...,$54)".
+func assetValuesPlaceholders(rowCount int) string {
+	var b strings.Builder
+	n := 0
+	for row := 0; row < rowCount; row++ {
+		if row > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('(')
+		for col := 0; col < assetUpsertColumnCount; col++ {
+			if col > 0 {
+				b.WriteByte(',')
+			}
+			n++
+			b.WriteByte('$')
+			b.WriteString(strconv.Itoa(n))
+		}
+		b.WriteByte(')')
+	}
+	return b.String()
+}
+
+// assetUpsertArgs returns the ordered argument list for a single assets upsert
+// row. Shared by the multi-row and per-row paths so column order has one
+// source of truth.
+func assetUpsertArgs(a *asset.Asset) ([]any, error) {
+	properties, err := json.Marshal(a.Properties())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal properties: %w", err)
+	}
+	return []any{
+		a.ID().String(),
+		nullIDValue(a.TenantID()),
+		nullIDPtr(a.ParentID()),
+		nullIDPtr(a.OwnerID()),
+		a.Name(),
+		a.Type().String(),
+		a.Criticality().String(),
+		a.Status().String(),
+		a.Scope().String(),
+		a.Exposure().String(),
+		a.RiskScore(),
+		a.Description(),
+		pq.Array(a.Tags()),
+		properties,
+		a.Provider().String(),
+		nullString(a.ExternalID()),
+		nullString(a.Classification()),
+		a.SyncStatus().String(),
+		nullTime(a.LastSyncedAt()),
+		nullString(a.SyncError()),
+		nullString(a.DiscoverySource()),
+		nullString(a.DiscoveryTool()),
+		nullTime(a.DiscoveredAt()),
+		a.FirstSeen(),
+		a.LastSeen(),
+		a.CreatedAt(),
+		a.UpdatedAt(),
+	}, nil
+}
+
+// ensureRepositoryExtensions inserts the asset_repositories rows required by the
+// repository_branches FK for any repository-type assets in the batch. Idempotent
+// (ON CONFLICT DO NOTHING). Runs in the same tx as the asset upsert.
+func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sql.Tx, assets []*asset.Asset) error {
+	for _, a := range assets {
+		if !a.Type().IsRepository() {
+			continue
+		}
+		const repoQuery = `
+			INSERT INTO asset_repositories (asset_id, full_name, default_branch, visibility)
+			VALUES ($1, $2, 'main', 'private')
+			ON CONFLICT (asset_id) DO NOTHING
+		`
+		if _, err := tx.ExecContext(ctx, repoQuery, a.ID().String(), a.Name()); err != nil {
+			return fmt.Errorf("failed to ensure repository extension for %s: %w", a.Name(), err)
+		}
+	}
+	return nil
+}
+
+// upsertBatchMultiRow upserts the whole batch in a single multi-row INSERT.
+func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*asset.Asset) (created int, updated int, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	args := make([]any, 0, len(assets)*assetUpsertColumnCount)
+	for _, a := range assets {
+		rowArgs, argErr := assetUpsertArgs(a)
+		if argErr != nil {
+			return 0, 0, argErr
+		}
+		args = append(args, rowArgs...)
+	}
+
+	query := assetUpsertColumnsSQL() + "\nVALUES " + assetValuesPlaceholders(len(assets)) + "\n" + assetUpsertConflictSQL()
+
+	rows, qErr := tx.QueryContext(ctx, query, args...)
+	if qErr != nil {
+		err = fmt.Errorf("failed to batch upsert assets: %w", qErr)
+		return 0, 0, err
+	}
+	for rows.Next() {
+		var inserted bool
+		if scanErr := rows.Scan(&inserted); scanErr != nil {
+			_ = rows.Close()
+			err = fmt.Errorf("failed to scan upsert result: %w", scanErr)
+			return 0, 0, err
+		}
+		if inserted {
+			created++
+		} else {
+			updated++
+		}
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		_ = rows.Close()
+		err = fmt.Errorf("error iterating upsert results: %w", rowsErr)
+		return 0, 0, err
+	}
+	_ = rows.Close()
+
+	if err = r.ensureRepositoryExtensions(ctx, tx, assets); err != nil {
+		return 0, 0, err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return 0, 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return created, updated, nil
+}
+
+// upsertBatchPerRow is the fallback: upsert each asset individually so a chunk
+// with intra-batch duplicate names (or one bad row) still makes progress and
+// surfaces a precise error.
+func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset.Asset) (created int, updated int, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt, err := tx.PrepareContext(ctx, assetUpsertColumnsSQL()+"\nVALUES "+assetValuesPlaceholders(1)+"\n"+assetUpsertConflictSQL())
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, a := range assets {
-		properties, err := json.Marshal(a.Properties())
-		if err != nil {
-			return created, updated, fmt.Errorf("failed to marshal properties: %w", err)
+		rowArgs, argErr := assetUpsertArgs(a)
+		if argErr != nil {
+			return created, updated, argErr
 		}
 
 		var inserted bool
-		err = stmt.QueryRowContext(ctx,
-			a.ID().String(),
-			nullIDValue(a.TenantID()),
-			nullIDPtr(a.ParentID()),
-			nullIDPtr(a.OwnerID()),
-			a.Name(),
-			a.Type().String(),
-			a.Criticality().String(),
-			a.Status().String(),
-			a.Scope().String(),
-			a.Exposure().String(),
-			a.RiskScore(),
-			a.Description(),
-			pq.Array(a.Tags()),
-			properties,
-			a.Provider().String(),
-			nullString(a.ExternalID()),
-			nullString(a.Classification()),
-			a.SyncStatus().String(),
-			nullTime(a.LastSyncedAt()),
-			nullString(a.SyncError()),
-			nullString(a.DiscoverySource()),
-			nullString(a.DiscoveryTool()),
-			nullTime(a.DiscoveredAt()),
-			a.FirstSeen(),
-			a.LastSeen(),
-			a.CreatedAt(),
-			a.UpdatedAt(),
-		).Scan(&inserted)
-
-		if err != nil {
+		if err = stmt.QueryRowContext(ctx, rowArgs...).Scan(&inserted); err != nil {
 			return created, updated, fmt.Errorf("failed to upsert asset %s: %w", a.Name(), err)
 		}
-
 		if inserted {
 			created++
 		} else {
 			updated++
 		}
-
-		// For repository-type assets, ensure asset_repositories entry exists
-		// This is required for FK constraint on repository_branches table
-		// We do this for BOTH insert and update to handle legacy assets without extension
-		if a.Type().IsRepository() {
-			repoQuery := `
-				INSERT INTO asset_repositories (asset_id, full_name, default_branch, visibility)
-				VALUES ($1, $2, 'main', 'private')
-				ON CONFLICT (asset_id) DO NOTHING
-			`
-			if _, err := tx.ExecContext(ctx, repoQuery, a.ID().String(), a.Name()); err != nil {
-				return created, updated, fmt.Errorf("failed to ensure repository extension for %s: %w", a.Name(), err)
-			}
-		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err = r.ensureRepositoryExtensions(ctx, tx, assets); err != nil {
+		return created, updated, err
+	}
+
+	if err = tx.Commit(); err != nil {
 		return created, updated, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
