@@ -158,6 +158,9 @@ type nessusItem struct {
 	CVEs         []string `xml:"cve"`
 	SeeAlso      string   `xml:"see_also"`
 	PluginOutput string   `xml:"plugin_output"`
+	VPRScore     string   `xml:"vpr_score"`
+	ExploitAvail string   `xml:"exploit_available"`
+	CPE          string   `xml:"cpe"`
 }
 
 // hostProps flattens the HostProperties tags into a map.
@@ -235,9 +238,25 @@ func buildFinding(item *nessusItem, assetID, assetValue string) ctis.Finding {
 
 	f.Description = strings.TrimSpace(strings.Join(nonEmpty(item.Synopsis, item.Description), "\n\n"))
 
+	// Scanner evidence (first-class as of CTIS network/evidence fields).
+	if out := strings.TrimSpace(item.PluginOutput); out != "" {
+		f.Evidence = out
+	}
+
+	// Network location — a network finding lives on a port/service, not a file.
+	if item.Port > 0 || item.ServiceName != "" {
+		f.Network = &ctis.NetworkLocation{
+			Host:     assetValue,
+			Port:     item.Port,
+			Protocol: item.Protocol,
+			Service:  item.ServiceName,
+		}
+	}
+
 	vuln := &ctis.VulnerabilityDetails{}
 	if len(item.CVEs) > 0 {
-		vuln.CVEID = item.CVEs[0]
+		vuln.CVEID = item.CVEs[0] // primary (back-compat)
+		vuln.CVEIDs = item.CVEs   // all CVEs grouped under this plugin
 	}
 	// Prefer CVSS v3 when present.
 	if score, ok := parseFloat(item.CVSS3Score); ok {
@@ -249,7 +268,16 @@ func buildFinding(item *nessusItem, assetID, assetValue string) ctis.Finding {
 		vuln.CVSSVersion = "2.0"
 		vuln.CVSSVector = item.CVSSVector
 	}
-	if vuln.CVEID != "" || vuln.CVSSScore > 0 {
+	if vpr, ok := parseFloat(item.VPRScore); ok {
+		vuln.VPRScore = vpr
+	}
+	if isTruthy(item.ExploitAvail) {
+		vuln.ExploitAvailable = true
+	}
+	if cpe := strings.TrimSpace(item.CPE); cpe != "" {
+		vuln.CPE = cpe
+	}
+	if vuln.CVEID != "" || vuln.CVSSScore > 0 || vuln.VPRScore > 0 || vuln.CPE != "" {
 		f.Vulnerability = vuln
 	}
 
@@ -257,23 +285,17 @@ func buildFinding(item *nessusItem, assetID, assetValue string) ctis.Finding {
 		f.Remediation = &ctis.Remediation{Recommendation: item.Solution}
 	}
 
-	// Network context that doesn't fit CTIS' code-centric location model.
-	f.Properties = ctis.Properties{}
-	if item.Port > 0 {
-		f.Properties["port"] = item.Port
-		f.Properties["protocol"] = item.Protocol
-	}
-	if item.ServiceName != "" {
-		f.Properties["service"] = item.ServiceName
-	}
-	if len(item.CVEs) > 1 {
-		f.Properties["cves"] = item.CVEs
-	}
-	if out := strings.TrimSpace(item.PluginOutput); out != "" {
-		f.Properties["plugin_output"] = out
-	}
-
 	return f
+}
+
+// isTruthy reports whether a Nessus boolean-ish string means true.
+func isTruthy(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "yes", "1":
+		return true
+	default:
+		return false
+	}
 }
 
 // mapSeverity maps a Nessus severity integer (0..4) to a CTIS severity.

@@ -105,6 +105,6 @@ require (
 )
 
 require (
-	github.com/openctemio/ctis v1.0.0
+	github.com/openctemio/ctis v1.0.1-0.20260604110506-ff6b005503fe
 	golang.org/x/tools v0.44.0
 )

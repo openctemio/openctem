@@ -29,7 +29,11 @@ const sampleNessus = `<?xml version="1.0" ?>
         <cvss_vector>AV:N/AC:L/Au:N/C:P/I:N/A:N</cvss_vector>
         <cvss3_base_score>7.5</cvss3_base_score>
         <cvss3_vector>CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N</cvss3_vector>
+        <vpr_score>8.9</vpr_score>
+        <exploit_available>true</exploit_available>
+        <cpe>cpe:/a:openssl:openssl</cpe>
         <cve>CVE-2014-0160</cve>
+        <cve>CVE-2014-0346</cve>
         <see_also>https://heartbleed.com
 https://www.openssl.org/news/secadv/20140407.txt</see_also>
         <plugin_output>TLSv1.1 is enabled and the server supports the heartbeat extension.</plugin_output>
@@ -130,11 +134,25 @@ func TestConvert_FindingMapping(t *testing.T) {
 		t.Fatalf("finding must reference its host asset, got %q", crit.AssetRef)
 	}
 	if crit.Vulnerability == nil || crit.Vulnerability.CVEID != "CVE-2014-0160" {
-		t.Fatalf("expected CVE-2014-0160, got %+v", crit.Vulnerability)
+		t.Fatalf("expected primary CVE-2014-0160, got %+v", crit.Vulnerability)
+	}
+	// All CVEs grouped under the plugin (first-class CVEIDs, not properties).
+	if len(crit.Vulnerability.CVEIDs) != 2 || crit.Vulnerability.CVEIDs[1] != "CVE-2014-0346" {
+		t.Fatalf("expected both CVEs in CVEIDs, got %v", crit.Vulnerability.CVEIDs)
 	}
 	// CVSS v3 preferred over v2.
 	if crit.Vulnerability.CVSSScore != 7.5 || crit.Vulnerability.CVSSVersion != "3.x" {
 		t.Fatalf("expected CVSS v3 7.5, got %v %q", crit.Vulnerability.CVSSScore, crit.Vulnerability.CVSSVersion)
+	}
+	// Tenable VPR + exploit + CPE now first-class.
+	if crit.Vulnerability.VPRScore != 8.9 {
+		t.Fatalf("expected VPR 8.9, got %v", crit.Vulnerability.VPRScore)
+	}
+	if !crit.Vulnerability.ExploitAvailable {
+		t.Fatal("expected ExploitAvailable=true")
+	}
+	if crit.Vulnerability.CPE != "cpe:/a:openssl:openssl" {
+		t.Fatalf("expected CPE, got %q", crit.Vulnerability.CPE)
 	}
 	if crit.Remediation == nil || !strings.Contains(crit.Remediation.Recommendation, "Upgrade OpenSSL") {
 		t.Fatalf("expected remediation from solution, got %+v", crit.Remediation)
@@ -142,8 +160,13 @@ func TestConvert_FindingMapping(t *testing.T) {
 	if len(crit.References) != 2 {
 		t.Fatalf("expected 2 see_also references, got %d", len(crit.References))
 	}
-	if crit.Properties["port"] != 443 {
-		t.Fatalf("expected port 443 in properties, got %v", crit.Properties["port"])
+	// Network location (first-class), not properties.
+	if crit.Network == nil || crit.Network.Port != 443 || crit.Network.Protocol != "tcp" || crit.Network.Service != "https" {
+		t.Fatalf("expected network 443/tcp/https, got %+v", crit.Network)
+	}
+	// Evidence first-class (was plugin_output in properties).
+	if !strings.Contains(crit.Evidence, "heartbeat extension") {
+		t.Fatalf("expected plugin output as evidence, got %q", crit.Evidence)
 	}
 	if crit.Fingerprint != "nessus:web01.corp.local:98765:443/tcp" {
 		t.Fatalf("unexpected fingerprint %q", crit.Fingerprint)

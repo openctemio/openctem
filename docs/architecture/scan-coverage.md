@@ -83,8 +83,11 @@ converter serves both.
 - `ReportHost` → CTIS asset (host/ip_address; FQDN preferred value; ip/os/mac/fqdn in properties).
 - `ReportItem` → CTIS vulnerability finding:
   - severity 0–4 → info/low/medium/high/critical;
-  - CVE + CVSS (v3 preferred over v2), remediation from `solution`, `see_also` → references;
-  - port/protocol/service + extra CVEs + plugin output in finding properties;
+  - CVSS (v3 preferred over v2), remediation from `solution`, `see_also` → references;
+  - first-class CTIS fields (no longer stuffed in `properties`): `vulnerability.cve_ids`
+    (all CVEs per plugin) + `cve_id` (primary), `vpr_score` (Tenable VPR),
+    `exploit_available`, `cpe`; `finding.network` {port, protocol, service};
+    `finding.evidence` (plugin_output);
   - stable fingerprint `nessus:<host>:<plugin>:<port>/<proto>` for cross-cycle dedup.
 - `ConvertOptions`: `ScanSessionID` (→ metadata.id, unique per batch), `ToolName`
   (default `tenable`), `MinSeverity` (drop info noise), `Now` (deterministic tests),
