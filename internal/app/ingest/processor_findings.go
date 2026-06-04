@@ -303,6 +303,14 @@ func (p *FindingProcessor) ProcessBatch(
 
 	// Step 4: Batch create new findings with partial success support
 	if len(newFindings) > 0 {
+		// Enrich BEFORE inserting so EPSS/KEV/priority/SLA are written by the
+		// initial INSERT. Previously this ran after the batch insert and then
+		// issued one UPDATE per finding to persist the enriched fields — N
+		// extra round-trips on the hottest ingest path. Enrichment is pure
+		// in-memory computation (catalog/rule lookups), so it does not depend
+		// on the findings being persisted first.
+		p.enrichAndClassify(ctx, tenantID, newFindings)
+
 		result, err := p.repo.CreateBatchWithResult(ctx, newFindings)
 		if err != nil {
 			// Fatal error - could not process any findings
@@ -351,48 +359,9 @@ func (p *FindingProcessor) ProcessBatch(
 				p.persistDataFlows(ctx, newFindings)
 			}
 
-			// Step 4c: Enrich with EPSS/KEV + classify priority (RFC-004)
-			if p.priorityClassifier != nil && result.Created > 0 {
-				createdForEnrich := make([]*vulnerability.Finding, 0, result.Created)
-				for i, f := range newFindings {
-					if result.Errors == nil || result.Errors[i] == "" {
-						createdForEnrich = append(createdForEnrich, f)
-					}
-				}
-				if len(createdForEnrich) > 0 {
-					// Build asset map for classification context.
-					// Uses dedup map so each unique asset is fetched once.
-					// Typical batch has 1-5 unique assets — acceptable for now.
-					assetMap := make(map[shared.ID]*asset.Asset)
-					for _, f := range createdForEnrich {
-						if _, ok := assetMap[f.AssetID()]; !ok {
-							a, err := p.assetRepo.GetByID(ctx, tenantID, f.AssetID())
-							if err == nil {
-								assetMap[f.AssetID()] = a
-							}
-						}
-					}
-					if err := p.priorityClassifier.EnrichAndClassifyBatch(ctx, tenantID, createdForEnrich, assetMap); err != nil {
-						p.logger.Warn("priority classification failed", "error", err)
-					} else {
-						// F3 wire: apply SLA deadline now that priority
-						// class is set. Failure is non-fatal — findings
-						// persist without a deadline and the SLA
-						// escalation controller surfaces them as NULL.
-						if p.slaApplier != nil {
-							if err := p.slaApplier.ApplyBatch(ctx, tenantID, createdForEnrich); err != nil {
-								p.logger.Warn("sla deadline apply failed", "error", err)
-							}
-						}
-						// Persist enriched findings (update EPSS/KEV/priority/SLA fields)
-						for _, f := range createdForEnrich {
-							if updateErr := p.repo.Update(ctx, f); updateErr != nil {
-								p.logger.Warn("failed to persist enriched finding", "id", f.ID(), "error", updateErr)
-							}
-						}
-					}
-				}
-			}
+			// Enrichment (EPSS/KEV/priority/SLA) is applied before the insert
+			// above, so the created rows already carry those fields — no
+			// post-insert UPDATE pass is needed here.
 
 			// Step 4d: Trigger workflow events for newly created findings
 			if p.findingCreatedCallback != nil && result.Created > 0 {
@@ -1533,6 +1502,42 @@ func mapCTISDataFlowLocationToStep(loc ctis.DataFlowLocation, locationType strin
 //
 // SECURITY: Enforces limits on number of data flows and locations per finding
 // to prevent DoS attacks via excessive data.
+// enrichAndClassify enriches findings in-memory with EPSS/KEV, classifies
+// their priority (RFC-004), and applies SLA deadlines, so the values are
+// written by the subsequent batch INSERT instead of a per-finding UPDATE pass.
+// All steps are best-effort: on failure the findings persist without the
+// enriched fields (matching the previous graceful-degradation behaviour).
+func (p *FindingProcessor) enrichAndClassify(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) {
+	if p.priorityClassifier == nil || len(findings) == 0 {
+		return
+	}
+
+	// Build asset map for classification context — each unique asset fetched
+	// once. Typical batch has 1-5 unique assets.
+	assetMap := make(map[shared.ID]*asset.Asset)
+	for _, f := range findings {
+		if _, ok := assetMap[f.AssetID()]; !ok {
+			if a, err := p.assetRepo.GetByID(ctx, tenantID, f.AssetID()); err == nil {
+				assetMap[f.AssetID()] = a
+			}
+		}
+	}
+
+	if err := p.priorityClassifier.EnrichAndClassifyBatch(ctx, tenantID, findings, assetMap); err != nil {
+		p.logger.Warn("priority classification failed", "error", err)
+		return
+	}
+
+	// Apply SLA deadline now that priority class is set. Non-fatal — findings
+	// persist without a deadline and the SLA escalation controller surfaces
+	// them as NULL.
+	if p.slaApplier != nil {
+		if err := p.slaApplier.ApplyBatch(ctx, tenantID, findings); err != nil {
+			p.logger.Warn("sla deadline apply failed", "error", err)
+		}
+	}
+}
+
 func (p *FindingProcessor) persistDataFlows(ctx context.Context, findings []*vulnerability.Finding) {
 	for _, f := range findings {
 		dataFlows := f.DataFlows()
