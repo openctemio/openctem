@@ -159,6 +159,13 @@ scheduler stays authoritative for dispatch/cap accounting. Full design, code
 ownership, credential locality, and tenant isolation in
 [RFC-007 §3.9](../rfcs/RFC-007-license-aware-scan-coverage.md).
 
+**Security verdict:** this model is secure enough for the segmented topology
+*provided* the mandatory controls R1–R4 ship with Phase 2 — runner-side target
+validation (don't trust the control plane; reuse `pkg/httpsec` allow-private mode),
+rotatable/scoped runner keys + audited pushes, least-privilege Tenable token + no
+plaintext creds, and single-tenant runners. See
+[RFC-007 §8](../rfcs/RFC-007-license-aware-scan-coverage.md).
+
 Today (Phase 1): a prod-zone appliance is already covered by an external cron pushing
 `.nessus` to `POST /assets/import/nessus-findings` — a stopgap until the runner
 `tenable` tool ships.

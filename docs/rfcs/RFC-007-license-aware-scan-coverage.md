@@ -310,3 +310,36 @@ ack/result machinery.
 - **Licensing/TOS** — only `.sc` repo-scoped removal/aging is endorsed; no churn-to-dodge on asset-counted products.
 - **Detection latency** — an asset is re-scanned each sweep; criticality-weighting bounds it for what matters, and the freshness dashboard makes it visible.
 - **Tool coexistence** — Tenable findings must not resolve agent-scanner (nuclei/trivy) findings; guaranteed by `toolName` scoping in auto-resolve (§1).
+
+## 8. Security assessment & hardening requirements
+
+**Verdict: the runner-mediated/polling model (§3.9) is the correct and
+security-superior choice for the segmented topology — and it is "secure enough"
+*provided* the controls R1–R4 below are implemented. They are acceptance criteria
+for Phase 2, not optional.** The architecture's core wins are real: the control
+plane holds no scanner credentials, it never opens a connection into the prod zone,
+and a control-plane compromise yields neither creds nor prod-network access.
+
+Threat-by-threat, with the required control:
+
+| # | Threat | Control (required) |
+|---|--------|--------------------|
+| R1 | A **compromised control plane** dispatches malicious scan jobs — weaponising the runner to probe arbitrary internal hosts (lateral recon) or DoS them. The runner would otherwise scan whatever targets it is told to. | The **runner does not blindly trust job payloads**: it validates every target against (a) the tenant's known asset scope / an operator allowlist, and (b) a sensitive-target blocklist — reuse `pkg/httpsec` in **allow-private mode** (RFC1918 allowed, but loopback/link-local/IMDS `169.254.169.254`/unspecified/multicast blocked). Bound max CIDR expansion + concurrency + scan intensity per job. |
+| R2 | **Runner API-key theft** → impersonate the runner: read job target lists (info disclosure) and **push forged CTIS** (inject false findings, or auto-resolve real ones to hide risk). | Scoped, **rotatable** runner keys over TLS; rate-limit poll/push; **audit every push** into the tamper-evident hash-chain (already built). Scope blast radius to one tenant (R4). Treat scanner-sourced auto-resolve as lower-authority (it already only touches that tool+scan+asset set). |
+| R3 | **Runner host compromise** (it is the only holder of scanner creds). | **Least-privilege Tenable token** (launch/export + `.sc` repo-manage for reclaim only — never admin); store creds via OS keyring / secrets manager, **never plaintext**; minimal, hardened runner image; creds never leave the prod zone. |
+| R4 | **Cross-tenant leak** via a shared runner. | **Single-tenant (tenant-owned) runners**; job routing is tenant-scoped; ingest derives tenant from the **authenticated agent**, never the `.nessus` file (already enforced). |
+
+Supporting controls: bootstrap tokens are usage-limited + expiring (existing) and
+delivered out-of-band; the runner needs exactly **one outbound HTTPS allowlist
+entry** (the control plane) and **zero inbound** — a clean prod firewall posture.
+
+**Residual / accepted risks** (inherent, not unique to this design): a compromised
+runner can submit false vulnerability data for *its own* tenant (true of any
+push-based scanner; mitigated by audit + key hygiene + R4 containment); and the
+control plane necessarily knows the inventory/targets it schedules (it *is* the
+inventory). Neither exposes credentials or crosses the zone boundary.
+
+**Comparison:** the optional `direct` mode is strictly *weaker* for the prod-zone
+case — it puts scanner creds in the control plane and requires an api→appliance
+network path. Hence `agent`/polling is the default and `direct` is reserved for
+cloud/reachable deployments where the operator explicitly accepts that trade-off.
