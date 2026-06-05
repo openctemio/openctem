@@ -162,7 +162,7 @@ cron pushing `.nessus` to `POST /assets/import/nessus-findings` — no agent nee
 |-------|-------|--------|
 | 1 | `.nessus → CTIS` findings adapter + batch-scoped safety + manual ingest endpoint | **Done** — converter (#139) + `POST /assets/import/nessus-findings` |
 | 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + per-tenant resolver | Planned |
-| 3 | Coverage scheduler (rotation, `.sc` cap, reclaim gated on ACK) | Planned |
+| 3 | Coverage scheduler (rotation, `.sc` cap, reclaim gated on ACK) | Planner core shipped (`internal/app/scancoverage`); scheduler controller TODO |
 | 4 | Observability (freshness, license utilisation, sweep cadence) + UI | Planned |
 
 ## Key files
@@ -170,6 +170,7 @@ cron pushing `.nessus` to `POST /assets/import/nessus-findings` — no agent nee
 ```
 internal/infra/scanner/nessus/converter.go    .nessus → *ctis.Report (shipped)
 internal/infra/http/handler/asset_import_handler.go   IngestNessusFindings endpoint (shipped)
+internal/app/scancoverage/planner.go           LicensePolicy + batch selection (pure core, shipped)
 internal/app/asset/import.go                   ImportNessus (asset-only legacy path)
 internal/app/ingest/service.go                 scoped auto-resolve (safety invariant)
 pkg/domain/scan/entity.go                       Scan.TargetsPerJob, scheduler
