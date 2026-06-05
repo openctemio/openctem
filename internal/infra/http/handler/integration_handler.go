@@ -328,11 +328,12 @@ type CreateIntegrationRequest struct {
 // UpdateIntegrationRequest represents the request to update an integration.
 // @Description Request body for updating an existing integration
 type UpdateIntegrationRequest struct {
-	Name            *string `json:"name" validate:"omitempty,min=1,max=255" example:"GitHub Production Updated"`
-	Description     *string `json:"description" validate:"omitempty,max=1000"`
-	Credentials     *string `json:"credentials" validate:"omitempty,max=5000"`
-	BaseURL         *string `json:"base_url" validate:"omitempty,url"`
-	SCMOrganization *string `json:"scm_organization" validate:"omitempty,max=255"`
+	Name            *string        `json:"name" validate:"omitempty,min=1,max=255" example:"GitHub Production Updated"`
+	Description     *string        `json:"description" validate:"omitempty,max=1000"`
+	Credentials     *string        `json:"credentials" validate:"omitempty,max=5000"`
+	BaseURL         *string        `json:"base_url" validate:"omitempty,url"`
+	SCMOrganization *string        `json:"scm_organization" validate:"omitempty,max=255"`
+	Config          map[string]any `json:"config,omitempty"`
 }
 
 // TestIntegrationCredentialsRequest represents the request to test credentials without creating.
@@ -762,6 +763,7 @@ func (h *IntegrationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Description:     req.Description,
 		Credentials:     req.Credentials,
 		BaseURL:         req.BaseURL,
+		Config:          req.Config,
 		SCMOrganization: req.SCMOrganization,
 	}
 

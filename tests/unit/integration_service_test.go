@@ -1302,6 +1302,49 @@ func TestUpdateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
 	}
 }
 
+// TestUpdateIntegration_Tenable_ConfigModeSwitch covers updating execution_mode
+// via config, incl. the security-sensitive direct→agent switch.
+func TestUpdateIntegration_Tenable_ConfigModeSwitch(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+	tenantID := shared.NewID().String()
+
+	// Start as direct (with creds + base_url from the shared helper).
+	in := validCreateInput(tenantID)
+	in.Name = "Tenable"
+	in.Provider = "tenable"
+	in.Config = map[string]any{"execution_mode": "direct"}
+	created, err := svc.CreateIntegration(context.Background(), in)
+	if err != nil {
+		t.Fatalf("create direct: %v", err)
+	}
+	id := created.ID().String()
+
+	// Switching to agent while credentials remain must be rejected.
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"execution_mode": "agent"},
+	}); err == nil {
+		t.Fatal("direct→agent must be rejected while credentials are still stored")
+	}
+
+	// Switching to agent AND clearing credentials is allowed.
+	empty := ""
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
+		Config:      map[string]any{"execution_mode": "agent"},
+		Credentials: &empty,
+	}); err != nil {
+		t.Fatalf("direct→agent with cleared credentials should be allowed: %v", err)
+	}
+
+	// Engine change persists.
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"engine": "tenable_sc"},
+	}); err != nil {
+		t.Fatalf("engine change should be allowed: %v", err)
+	}
+}
+
 func TestListIntegrations_InvalidTenantID(t *testing.T) {
 	repo := newMockIntegrationRepo()
 	scmRepo := newMockSCMExtRepo()

@@ -306,6 +306,10 @@ type UpdateIntegrationInput struct {
 	Credentials *string
 	BaseURL     *string
 
+	// Config replaces non-sensitive provider settings (e.g. Tenable
+	// execution_mode/engine). nil = leave unchanged.
+	Config map[string]any
+
 	// SCM-specific fields
 	SCMOrganization *string
 }
@@ -334,15 +338,43 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 	if input.Description != nil {
 		intg.SetDescription(*input.Description)
 	}
-	if input.Credentials != nil {
-		// Security (RFC-007 §8 R3/R4): never let an agent-mode Tenable
-		// integration gain credentials in the control plane via update — they
-		// belong on the runner. Fail-secure: missing/legacy config → agent.
-		if *input.Credentials != "" && intg.Provider() == integrationdom.ProviderTenable {
-			if tcfg, _ := scancoverage.ParseTenableConfig(intg.Config()); tcfg.ExecutionMode == scancoverage.ExecutionModeAgent {
-				return nil, fmt.Errorf("%w: agent-mode Tenable integration must not store credentials in the control plane; configure them on the runner", shared.ErrValidation)
-			}
+
+	// Tenable: validate the effective post-update state (mode/engine + whether
+	// credentials will be present + base URL) and re-enforce the agent-mode
+	// no-creds rule (RFC-007 §8 R3/R4), then normalize + persist config. This
+	// covers mode switches (e.g. direct→agent must clear creds; →direct needs
+	// creds + base_url) and adding creds to an agent integration.
+	if intg.Provider() == integrationdom.ProviderTenable {
+		merged := map[string]any{}
+		for k, v := range intg.Config() {
+			merged[k] = v
 		}
+		for k, v := range input.Config {
+			merged[k] = v
+		}
+		tcfg, cfgErr := scancoverage.ParseTenableConfig(merged)
+		if cfgErr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		willHaveCreds := intg.CredentialsEncrypted() != ""
+		if input.Credentials != nil {
+			willHaveCreds = *input.Credentials != ""
+		}
+		effURL := intg.BaseURL()
+		if input.BaseURL != nil {
+			effURL = *input.BaseURL
+		}
+		if cfgErr := scancoverage.ValidateTenableIntegration(tcfg, willHaveCreds, effURL); cfgErr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		merged["execution_mode"] = string(tcfg.ExecutionMode)
+		merged["engine"] = string(tcfg.Engine)
+		intg.SetConfig(merged)
+	} else if input.Config != nil {
+		intg.SetConfig(input.Config)
+	}
+
+	if input.Credentials != nil {
 		encrypted, err := s.encryptor.EncryptString(*input.Credentials)
 		if err != nil {
 			return nil, fmt.Errorf("encrypt credentials: %w", err)

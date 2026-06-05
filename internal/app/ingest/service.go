@@ -462,6 +462,12 @@ func (s *Service) validateAgent(agt *agent.Agent) error {
 
 // updateAgentStatsAsync updates agent statistics asynchronously with proper error handling.
 func (s *Service) updateAgentStatsAsync(agentID shared.ID, output *Output) {
+	// Skip for synthetic ingests with no real agent (e.g. tenant-initiated
+	// .nessus upload via the synthetic-agent path) — there is no agent row to
+	// update, and a zero ID would just produce a no-op write + a noisy warning.
+	if agentID.IsZero() {
+		return
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
