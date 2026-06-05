@@ -335,6 +335,14 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 		intg.SetDescription(*input.Description)
 	}
 	if input.Credentials != nil {
+		// Security (RFC-007 §8 R3/R4): never let an agent-mode Tenable
+		// integration gain credentials in the control plane via update — they
+		// belong on the runner. Fail-secure: missing/legacy config → agent.
+		if *input.Credentials != "" && intg.Provider() == integrationdom.ProviderTenable {
+			if tcfg, _ := scancoverage.ParseTenableConfig(intg.Config()); tcfg.ExecutionMode == scancoverage.ExecutionModeAgent {
+				return nil, fmt.Errorf("%w: agent-mode Tenable integration must not store credentials in the control plane; configure them on the runner", shared.ErrValidation)
+			}
+		}
 		encrypted, err := s.encryptor.EncryptString(*input.Credentials)
 		if err != nil {
 			return nil, fmt.Errorf("encrypt credentials: %w", err)

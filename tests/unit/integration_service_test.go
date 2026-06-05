@@ -1264,6 +1264,44 @@ func TestCreateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
 	}
 }
 
+// TestUpdateIntegration_Tenable_AgentModeRejectsCredentials ensures the
+// agent-mode no-credentials rule cannot be bypassed via update (RFC-007 §8).
+func TestUpdateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+	tenantID := shared.NewID().String()
+
+	// Create an agent-mode Tenable integration (no creds).
+	agentIn := validCreateInput(tenantID)
+	agentIn.Name = "Agent Tenable"
+	agentIn.Provider = "tenable"
+	agentIn.Credentials = ""
+	created, err := svc.CreateIntegration(context.Background(), agentIn)
+	if err != nil {
+		t.Fatalf("create agent tenable: %v", err)
+	}
+
+	// Updating it with credentials must be rejected.
+	creds := "tenable-secret"
+	if _, err := svc.UpdateIntegration(context.Background(), created.ID().String(), tenantID, app.UpdateIntegrationInput{Credentials: &creds}); err == nil {
+		t.Fatal("update must not let an agent-mode Tenable integration gain control-plane credentials")
+	}
+
+	// A direct-mode integration may have its credentials updated.
+	directIn := validCreateInput(tenantID)
+	directIn.Name = "Direct Tenable"
+	directIn.Provider = "tenable"
+	directIn.Config = map[string]any{"execution_mode": "direct"}
+	createdDirect, err := svc.CreateIntegration(context.Background(), directIn)
+	if err != nil {
+		t.Fatalf("create direct tenable: %v", err)
+	}
+	if _, err := svc.UpdateIntegration(context.Background(), createdDirect.ID().String(), tenantID, app.UpdateIntegrationInput{Credentials: &creds}); err != nil {
+		t.Fatalf("direct-mode credential update should be allowed: %v", err)
+	}
+}
+
 func TestListIntegrations_InvalidTenantID(t *testing.T) {
 	repo := newMockIntegrationRepo()
 	scmRepo := newMockSCMExtRepo()
