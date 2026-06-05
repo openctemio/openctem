@@ -1171,6 +1171,11 @@ func TestListIntegrations_Pagination(t *testing.T) {
 		input := validCreateInput(tenantID)
 		input.Name = p.name
 		input.Provider = p.provider
+		if p.provider == "tenable" {
+			// Tenable defaults to agent mode (no creds in control plane); the
+			// shared helper supplies creds, so use direct mode here.
+			input.Config = map[string]any{"execution_mode": "direct"}
+		}
 		_, err := svc.CreateIntegration(context.Background(), input)
 		if err != nil {
 			t.Fatalf("setup create %s failed: %v", p.name, err)
@@ -1212,6 +1217,7 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 		}
 		if strings.Contains(name, "Tenable") {
 			input.Provider = "tenable"
+			input.Config = map[string]any{"execution_mode": "direct"} // creds present → direct mode
 		}
 		_, err := svc.CreateIntegration(context.Background(), input)
 		if err != nil {
@@ -1230,6 +1236,31 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 	}
 	if result.Total != 2 {
 		t.Errorf("expected 2 results for 'Production' search, got %d", result.Total)
+	}
+}
+
+// TestCreateIntegration_Tenable_AgentModeRejectsCredentials locks in the
+// RFC-007 §8 security rule: an agent-mode Tenable integration must never store
+// credentials in the control plane (they belong on the runner).
+func TestCreateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+
+	input := validCreateInput(shared.NewID().String())
+	input.Name = "Agent Tenable"
+	input.Provider = "tenable" // no Config → defaults to agent mode; creds present
+	if _, err := svc.CreateIntegration(context.Background(), input); err == nil {
+		t.Fatal("agent-mode Tenable with credentials must be rejected")
+	}
+
+	// Same integration with no credentials is accepted in agent mode.
+	input2 := validCreateInput(shared.NewID().String())
+	input2.Name = "Agent Tenable OK"
+	input2.Provider = "tenable"
+	input2.Credentials = ""
+	if _, err := svc.CreateIntegration(context.Background(), input2); err != nil {
+		t.Fatalf("agent-mode Tenable without credentials should be accepted: %v", err)
 	}
 }
 

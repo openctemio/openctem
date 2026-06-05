@@ -321,6 +321,8 @@ type CreateIntegrationRequest struct {
 	BaseURL         string `json:"base_url" validate:"omitempty,url" example:"https://github.com"`
 	Credentials     string `json:"credentials" validate:"omitempty,max=5000" example:"YOUR_TOKEN_HERE"`
 	SCMOrganization string `json:"scm_organization" validate:"omitempty,max=255" example:"my-organization"`
+	// Config holds non-sensitive provider settings (e.g. Tenable execution_mode/engine).
+	Config map[string]any `json:"config,omitempty"`
 }
 
 // UpdateIntegrationRequest represents the request to update an integration.
@@ -643,6 +645,7 @@ func (h *IntegrationHandler) Create(w http.ResponseWriter, r *http.Request) {
 		AuthType:        req.AuthType,
 		BaseURL:         req.BaseURL,
 		Credentials:     req.Credentials,
+		Config:          req.Config,
 		SCMOrganization: req.SCMOrganization,
 	}
 

@@ -156,6 +156,20 @@ Full design + code-ownership + tenant-isolation in
 Today (Phase 1): on-prem unreachable from the api is already covered by an external
 cron pushing `.nessus` to `POST /assets/import/nessus-findings` — no agent needed yet.
 
+### Configuring a Tenable integration (shipped)
+
+A `provider=tenable` integration carries `config.execution_mode` (`agent` default |
+`direct`) and `config.engine` (`nessus_pro` default | `tenable_sc`). Creation is
+validated server-side (`internal/app/scancoverage/tenable_config.go`):
+
+- **agent mode MUST NOT store credentials in the control plane** (RFC-007 §8 R3/R4)
+  — they belong on the runner; supplying credentials is rejected.
+- **direct mode requires credentials + base_url** (the api calls Tenable).
+- unknown `execution_mode`/`engine` values are rejected; config is normalized so the
+  stored record always carries explicit values.
+
+The create-integration endpoint now accepts a `config` object to set these.
+
 ## Roadmap (RFC-007)
 
 | Phase | Scope | Status |

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/api/internal/app/scancoverage"
 	"github.com/openctemio/api/internal/infra/notifier"
 	"github.com/openctemio/api/internal/infra/scm"
 	"github.com/openctemio/api/pkg/crypto"
@@ -130,6 +131,10 @@ type CreateIntegrationInput struct {
 	BaseURL     string
 	Credentials string // Access token, API key, etc.
 
+	// Config holds non-sensitive provider-specific settings (JSONB), e.g. a
+	// Tenable integration's execution_mode / engine.
+	Config map[string]any
+
 	// SCM-specific fields
 	SCMOrganization string
 }
@@ -164,6 +169,25 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 		return nil, integrationdom.ErrInvalidAuthType
 	}
 
+	// Tenable integrations: validate execution mode/engine and enforce the
+	// security rule that agent-mode integrations never store credentials in the
+	// control plane (RFC-007 §8). Normalize config so it carries explicit
+	// execution_mode + engine.
+	if provider == integrationdom.ProviderTenable {
+		tcfg, cfgErr := scancoverage.ParseTenableConfig(input.Config)
+		if cfgErr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		if cfgErr := scancoverage.ValidateTenableIntegration(tcfg, input.Credentials != "", input.BaseURL); cfgErr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		if input.Config == nil {
+			input.Config = map[string]any{}
+		}
+		input.Config["execution_mode"] = string(tcfg.ExecutionMode)
+		input.Config["engine"] = string(tcfg.Engine)
+	}
+
 	// Check for duplicate integration name within tenant
 	existing, err := s.repo.GetByTenantAndName(ctx, tenantID, input.Name)
 	if err != nil && !errors.Is(err, integrationdom.ErrIntegrationNotFound) {
@@ -189,6 +213,9 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	}
 	if input.BaseURL != "" {
 		intg.SetBaseURL(input.BaseURL)
+	}
+	if len(input.Config) > 0 {
+		intg.SetConfig(input.Config)
 	}
 	if input.Credentials != "" {
 		// Defense-in-depth: warn loudly when persisting credentials
