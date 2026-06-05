@@ -215,6 +215,51 @@ the push), so the cap is freed locally.
   `tenable` tool. Building both modes shares L1/L2, so `agent` mode is mostly the
   thin `AgentRunner` + executor wiring on top of the same client/parser.
 
+## 3.10 The runner IS an OpenCTEM agent (no duplication)
+
+A "Tenable runner" must **not** be a parallel concept. It is an **OpenCTEM agent**
+and reuses the entire existing agent subsystem — bootstrap-token enrollment,
+heartbeat/health, status (online/offline/disabled), job poll/ack/result, CPU/mem
+metrics, version, region, and lifecycle. The agent model **already fits** with no
+new primitive: an agent has a **`Capabilities`** list (incl. `infra` —
+infrastructure scanning) and a **`Tools`** list (`semgrep`, `trivy`, `nuclei`,
+`nmap`, …), and scan jobs route by capability + preferred tool + tags
+(`internal/app/scan/trigger.go`). So:
+
+> **A Tenable runner = an agent with capability `infra` + tool `tenable` (or
+> `nessus`).** No new agent type, no separate "runner" entity.
+
+What each thing owns (do not blur them):
+
+| | **Agent** (existing subsystem) | **Tenable integration** (`agent` mode) |
+|---|---|---|
+| Identity | the runner process | scan *configuration* |
+| Holds | enrollment, heartbeat, jobs, metrics, lifecycle, **local Tenable creds** | engine + target scope; **no creds** |
+| Agent features | native | **inherited via the agent**, never re-implemented |
+
+**Binding (decision: C3).** The integration routes Tenable jobs to a
+**`tenable`-capable agent** by capability/tool/tag (default, like every other
+scanner), and **may optionally pin a specific `agent_id`**. Stored in the
+integration config (`agent_id` optional; otherwise capability-routed).
+
+**Status.** The integration's connected/pending state is **derived** from whether
+an online `tenable`-capable agent exists for the tenant — not a standalone flag.
+
+**Enrollment UX.** "Connect Tenable (runner mode)" should either (a) one-click
+*Enroll runner* — issue a bootstrap token pre-scoped to capability `infra` + tool
+`tenable`, after which the runner appears on the **Agents** page with full
+features — or (b) bind an existing `tenable`-capable agent. "Runner setup" deep-
+links to the real Agents enrollment flow; it is not a separate runner installer.
+
+**Terminology caution.** The agent domain already has an `AgentType` value
+`runner` (CI/CD one-shot) and its own `ExecutionMode`. To avoid clashing, the
+Tenable integration's mode is labelled **"Via runner"** vs **"Direct"** in the UI,
+not "agent/runner".
+
+**Net effect:** `agent`-mode Tenable adds *only* a tool implementation
+(`TenableClient` + parser on the agent) and a thin config binding. All
+"agent features" the operator expects come for free from the agent subsystem.
+
 ## 4. Roadmap (both engines)
 
 1. **Phase 1 — Findings ingestion + safety (lowest risk, highest de-risk).** `.nessus → CTIS findings` adapter; emit per-batch report with `tool=tenable` + session `scanID` + batch assets; confirm batch-scoped auto-resolve end-to-end with **manual `.nessus` files from both Pro and .sc** (both export the same format). No connector needed yet — validates the invariant and the parser for both engines at once.
