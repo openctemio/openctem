@@ -146,6 +146,8 @@ github.com/openctemio/ctis v1.0.0 h1:DJLUTXkBD3OK5ZyIOi/cc0sC6ZdspPKVXZxQv4y4LYI
 github.com/openctemio/ctis v1.0.0/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
 github.com/openctemio/ctis v1.0.1-0.20260604110506-ff6b005503fe h1:agLuNuvunwfxIVXtxA1Zy6G7BV2W35UnFMHzJ1x9wkQ=
 github.com/openctemio/ctis v1.0.1-0.20260604110506-ff6b005503fe/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
+github.com/openctemio/ctis v1.1.0 h1:yGvyolD/bir1WO6uCEIPK6jgSoa0ZY1um/GxhnM074Q=
+github.com/openctemio/ctis v1.1.0/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
 github.com/pjbgf/sha1cd v0.3.2 h1:a9wb0bp1oC2TGwStyn0Umc/IGKQnEgF0vVaZ8QF8eo4=
 github.com/pjbgf/sha1cd v0.3.2/go.mod h1:zQWigSxVmsHEZow5qaLtPYxpcKMMQpa09ixqBxuCS6A=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
