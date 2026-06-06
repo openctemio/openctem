@@ -69,7 +69,7 @@ sequenceDiagram
   AG->>API: HandleFindings (PushFindings: CTIS)
   API->>API: dedup by fingerprint; upsert finding_branch_occurrences (this branch)
   API->>API: auto-resolve ONLY on default branch + full coverage (canonical safe)
-  API-->>AG: suppressions (+ Phase 3: new-vs-target set)
+  API-->>AG: suppressions + new_fingerprints (baseline-diff)
   AG->>SCM: inline PR/MR comments (new findings on changed files)
   AG->>AG: gate: block if finding ≥ threshold OR KEV/exploit (minus suppressed)
   AG-->>CI: exit 0 (pass) / 1 (fail)
@@ -116,8 +116,8 @@ graph LR
 |---|---|---|
 | 1 | Risk-aware gate (KEV/exploit below threshold) | **Done** — agent #27 |
 | 2 | Per-branch occurrence lifecycle (auto_fixed on non-default) | **Already present** — ingest Step 3b |
-| 3 | MR new-vs-target suppression | **Done (api)** — `POST /agent/ingest/baseline-diff`; agent wiring next |
-| 4 | PR comment idempotency | **Done** — sdk-go #33 |
+| 3 | MR new-vs-target suppression | **Done (full)** — api #160 + sdk-go v0.4.0 (#35) + agent #28 |
+| 4 | PR comment idempotency + sticky summary | **Done** — sdk-go #33/#34 |
 | 5 | Per-branch read surface | **Already present** — findings API branch filters + occurrence_count |
 | 6 | Reporting export (PDF/Excel) + weekly digest | Partial (HTML summary exists) |
 | 7 | DX: GitHub Action / GitLab CI recipes | **Already present** — `agent/ci/{github,gitlab}/` |
@@ -125,16 +125,20 @@ graph LR
 **`POST /api/v1/agent/ingest/baseline-diff`** (agent API-key auth) — body
 `{repository, base_branch, fingerprints[]}` → `{new_fingerprints, pre_existing_fingerprints, base_branch_scanned}`.
 A finding already **open on the base branch** is pre-existing tech debt, so the
-agent (next step) gates / comments only on `new_fingerprints`. Computed from
-`finding_branch_occurrences` (source vs base). Unknown repo/branch → all new.
+agent gates / comments only on `new_fingerprints` (`gate.FilterNewFindings` +
+handler `NewFingerprints`). Computed from `finding_branch_occurrences` (source vs
+base). Unknown repo/branch → all new. The agent **fails safe**: if the diff call
+errors, findings are treated as new so nothing is hidden from the gate/comments.
 
 ## 6. Code map
 ```
 sdk-go/pkg/gitenv/                          CI env detect + MR comment
 sdk-go/pkg/handler/{handler,remote}.go      scan lifecycle + push + comments
 sdk-go/pkg/scanners/{semgrep,gitleaks,...}  run + parse → CTIS
-agent/main.go runOnce                        CI one-shot flow
-agent/internal/gate/security.go              risk-aware gate (Phase 1)
+agent/main.go runOnce                        CI one-shot flow + baselineNewSet (Phase 3)
+agent/internal/gate/security.go              risk-aware gate (Phase 1) + FilterNewFindings (Phase 3)
+sdk-go/pkg/client/client.go                  BaselineDiff (Phase 3)
+api internal/app/ingest/service.go BaselineDiff  new-vs-base partition (Phase 3)
 api internal/app/ingest/processor_findings.go  occurrence write (Step 6)
 api internal/app/ingest/service.go           default-branch + full-coverage auto-resolve gate
 migrations/000173_finding_branch_occurrences.up.sql  per-branch occurrence model
