@@ -64,6 +64,17 @@ func (m *mockIntegrationRepo) GetByID(_ context.Context, id integration.ID) (*in
 	return intg, nil
 }
 
+func (m *mockIntegrationRepo) GetByTenantAndID(_ context.Context, tenantID integration.ID, id integration.ID) (*integration.Integration, error) {
+	if m.getByIDErr != nil {
+		return nil, m.getByIDErr
+	}
+	intg, ok := m.integrations[id]
+	if !ok || intg.TenantID() != tenantID {
+		return nil, integration.ErrIntegrationNotFound
+	}
+	return intg, nil
+}
+
 func (m *mockIntegrationRepo) GetByTenantAndName(_ context.Context, tenantID integration.ID, name string) (*integration.Integration, error) {
 	if m.getByTenantNameErr != nil {
 		return nil, m.getByTenantNameErr
@@ -816,6 +827,48 @@ func TestUpdateIntegration_Success(t *testing.T) {
 	}
 	if updated.Description() != newDesc {
 		t.Errorf("expected description %q, got %q", newDesc, updated.Description())
+	}
+}
+
+func TestUpdateIntegration_WrongTenant_NotFound(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, newMockEncryptor())
+
+	ownerTenant := shared.NewID().String()
+	created, err := svc.CreateIntegration(context.Background(), validCreateInput(ownerTenant))
+	if err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	// A different tenant must not be able to update it — tenant-scoped fetch
+	// returns NotFound, never the other tenant's record.
+	otherTenant := shared.NewID().String()
+	newName := "hijack"
+	_, err = svc.UpdateIntegration(context.Background(), created.ID().String(), otherTenant, app.UpdateIntegrationInput{Name: &newName})
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant update must be NotFound, got %v", err)
+	}
+}
+
+func TestDeleteIntegration_WrongTenant_NotFound(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, newMockEncryptor())
+
+	ownerTenant := shared.NewID().String()
+	created, err := svc.CreateIntegration(context.Background(), validCreateInput(ownerTenant))
+	if err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	otherTenant := shared.NewID().String()
+	if err := svc.DeleteIntegration(context.Background(), created.ID().String(), otherTenant); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant delete must be NotFound, got %v", err)
+	}
+	// The integration must still exist for its real owner.
+	if _, err := svc.GetIntegration(context.Background(), created.ID().String()); err != nil {
+		t.Fatalf("integration should survive a cross-tenant delete attempt: %v", err)
 	}
 }
 

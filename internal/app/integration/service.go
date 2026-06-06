@@ -321,14 +321,15 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
 	}
 
-	intg, err := s.repo.GetByID(ctx, intgID)
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	// Tenant-scoped fetch: NotFound if it belongs to another tenant (no
+	// fetch-then-check window).
+	intg, err := s.repo.GetByTenantAndID(ctx, tid, intgID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify tenant ownership
-	if intg.TenantID().String() != tenantID {
-		return nil, integrationdom.ErrIntegrationNotFound
 	}
 
 	// Apply updates to integration
@@ -417,14 +418,13 @@ func (s *IntegrationService) DeleteIntegration(ctx context.Context, id string, t
 		return fmt.Errorf("%w: invalid ID", shared.ErrValidation)
 	}
 
-	// Verify ownership
-	intg, err := s.repo.GetByID(ctx, intgID)
+	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
-
-	if intg.TenantID().String() != tenantID {
-		return integrationdom.ErrIntegrationNotFound
+	// Tenant-scoped existence check: NotFound if it belongs to another tenant.
+	if _, err := s.repo.GetByTenantAndID(ctx, tid, intgID); err != nil {
+		return err
 	}
 
 	// Delete integration (extension tables cascade delete)
@@ -498,14 +498,14 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
 	}
 
-	intg, err := s.repo.GetByID(ctx, intgID)
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	// Tenant-scoped fetch: NotFound if it belongs to another tenant.
+	intg, err := s.repo.GetByTenantAndID(ctx, tid, intgID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify tenant ownership
-	if intg.TenantID().String() != tenantID {
-		return nil, integrationdom.ErrIntegrationNotFound
 	}
 
 	// Only SCM integrations support testing for now
