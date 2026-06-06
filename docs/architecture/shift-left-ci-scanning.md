@@ -115,12 +115,18 @@ graph LR
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Risk-aware gate (KEV/exploit below threshold) | **Done** — agent #27 |
-| 2 | Per-branch occurrence lifecycle (auto_fixed on non-default) | Planned |
-| 3 | MR new-vs-target suppression | Planned |
-| 4 | PR comment idempotency + provider parity | Planned |
-| 5 | Per-branch read surface (finish occurrence reads) | Planned |
-| 6 | Reporting export (PDF/Excel) + weekly digest + role routing | Planned |
-| 7 | DX: GitHub Action / GitLab CI recipes + docs | Planned |
+| 2 | Per-branch occurrence lifecycle (auto_fixed on non-default) | **Already present** — ingest Step 3b |
+| 3 | MR new-vs-target suppression | **Done (api)** — `POST /agent/ingest/baseline-diff`; agent wiring next |
+| 4 | PR comment idempotency | **Done** — sdk-go #33 |
+| 5 | Per-branch read surface | **Already present** — findings API branch filters + occurrence_count |
+| 6 | Reporting export (PDF/Excel) + weekly digest | Partial (HTML summary exists) |
+| 7 | DX: GitHub Action / GitLab CI recipes | **Already present** — `agent/ci/{github,gitlab}/` |
+
+**`POST /api/v1/agent/ingest/baseline-diff`** (agent API-key auth) — body
+`{repository, base_branch, fingerprints[]}` → `{new_fingerprints, pre_existing_fingerprints, base_branch_scanned}`.
+A finding already **open on the base branch** is pre-existing tech debt, so the
+agent (next step) gates / comments only on `new_fingerprints`. Computed from
+`finding_branch_occurrences` (source vs base). Unknown repo/branch → all new.
 
 ## 6. Code map
 ```

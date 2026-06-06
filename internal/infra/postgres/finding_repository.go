@@ -1554,6 +1554,42 @@ func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Contex
 	return n, nil
 }
 
+// FingerprintsOpenOnBranch returns the subset of fingerprints that currently
+// have an OPEN occurrence on the given branch (tenant-scoped). Used to compute
+// "new vs base branch" for PR/MR scans.
+func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenantID, branchID shared.ID, fingerprints []string) ([]string, error) {
+	if len(fingerprints) == 0 {
+		return nil, nil
+	}
+	const query = `
+		SELECT DISTINCT f.fingerprint
+		FROM finding_branch_occurrences o
+		JOIN findings f ON f.id = o.finding_id
+		WHERE o.tenant_id = $1
+		  AND o.branch_id = $2
+		  AND o.status = 'open'
+		  AND f.fingerprint = ANY($3)
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), branchID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query fingerprints open on branch: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]string, 0, len(fingerprints))
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, fmt.Errorf("scan fingerprint: %w", err)
+		}
+		out = append(out, fp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate fingerprints: %w", err)
+	}
+	return out, nil
+}
+
 // UpdateStatusBatch updates the status of multiple findings.
 // Security: Requires tenantID to prevent cross-tenant status modification.
 func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {

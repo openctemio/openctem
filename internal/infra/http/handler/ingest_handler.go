@@ -625,6 +625,52 @@ func (h *IngestHandler) CheckFingerprints(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(resp)
 }
 
+// BaselineDiffRequest asks which fingerprints are new vs a PR's base branch.
+type BaselineDiffRequest struct {
+	Repository   string   `json:"repository"`
+	BaseBranch   string   `json:"base_branch"`
+	Fingerprints []string `json:"fingerprints"`
+}
+
+// NewVsBase handles POST /api/v1/agent/ingest/new-vs-base
+// @Summary      New-vs-base-branch findings
+// @Description  Given the current scan's fingerprints + a PR base/target branch,
+// @Description  returns which are NEW (not already open on the base branch) so a
+// @Description  PR gate / inline comments focus only on findings the PR introduces.
+// @Tags         Agent
+// @Accept       json
+// @Produce      json
+// @Param        request  body      BaselineDiffRequest  true  "Repository, base branch, fingerprints"
+// @Success      200  {object}  ingest.BaselineDiffOutput
+// @Router       /agent/ingest/new-vs-base [post]
+func (h *IngestHandler) BaselineDiff(w http.ResponseWriter, r *http.Request) {
+	agt := AgentFromContext(r.Context())
+	if agt == nil {
+		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+
+	var req BaselineDiffRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	out, err := h.ingestService.BaselineDiff(r.Context(), agt, ingest.BaselineDiffInput{
+		Repository:   req.Repository,
+		BaseBranch:   req.BaseBranch,
+		Fingerprints: req.Fingerprints,
+	})
+	if err != nil {
+		h.logger.Error("new-vs-base check failed", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
 // =============================================================================
 // Chunked Ingestion Endpoint
 // =============================================================================

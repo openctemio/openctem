@@ -1369,3 +1369,7 @@ func (m *wfActionMockFindingRepo) UpsertBranchOccurrences(_ context.Context, _ s
 func (m *wfActionMockFindingRepo) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
 	return 0, nil
 }
+
+func (m *wfActionMockFindingRepo) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
+	return nil, nil
+}

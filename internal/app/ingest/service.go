@@ -434,6 +434,66 @@ func (s *Service) CheckFingerprints(ctx context.Context, agt *agent.Agent, input
 	}, nil
 }
 
+// NewVsBase computes which of the given fingerprints are new relative to a PR's
+// base/target branch (RFC-008 Phase 3). A finding already open on the base
+// branch is pre-existing tech debt — not introduced by the PR — so a PR gate /
+// inline comments should focus on the genuinely-new set. Tenant-scoped via the
+// authenticated agent. If the repository or base branch is unknown (no history),
+// every fingerprint is treated as new.
+func (s *Service) BaselineDiff(ctx context.Context, agt *agent.Agent, input BaselineDiffInput) (*BaselineDiffOutput, error) {
+	if agt == nil || agt.TenantID == nil {
+		return nil, fmt.Errorf("agent has no tenant context: platform agents require job assignment")
+	}
+	tenantID := *agt.TenantID
+
+	allNew := func() *BaselineDiffOutput {
+		return &BaselineDiffOutput{New: append([]string{}, input.Fingerprints...), BaseBranchKnown: false}
+	}
+
+	if len(input.Fingerprints) == 0 {
+		return &BaselineDiffOutput{New: []string{}, BaseBranchKnown: false}, nil
+	}
+	if input.Repository == "" || input.BaseBranch == "" || s.assetRepo == nil || s.branchRepo == nil || s.findingRepo == nil {
+		return allNew(), nil
+	}
+
+	repoAsset, err := s.assetRepo.GetByName(ctx, tenantID, input.Repository)
+	if err != nil || repoAsset == nil {
+		return allNew(), nil // unknown repo → no base history
+	}
+	baseBranch, err := s.branchRepo.GetByName(ctx, repoAsset.ID(), input.BaseBranch)
+	if err != nil || baseBranch == nil {
+		return allNew(), nil // base branch never scanned → all new
+	}
+
+	openOnBase, err := s.findingRepo.FingerprintsOpenOnBranch(ctx, tenantID, baseBranch.ID(), input.Fingerprints)
+	if err != nil {
+		return nil, fmt.Errorf("query fingerprints open on base branch: %w", err)
+	}
+
+	newFps, preFps := partitionByBaseline(input.Fingerprints, openOnBase)
+	return &BaselineDiffOutput{New: newFps, PreExisting: preFps, BaseBranchKnown: true}, nil
+}
+
+// partitionByBaseline splits fingerprints into those NOT already open on the
+// base branch (new — introduced by the PR) and those that are (pre-existing).
+func partitionByBaseline(fingerprints, openOnBase []string) (newFps, preExisting []string) {
+	pre := make(map[string]bool, len(openOnBase))
+	for _, fp := range openOnBase {
+		pre[fp] = true
+	}
+	newFps = make([]string, 0, len(fingerprints))
+	preExisting = make([]string, 0, len(openOnBase))
+	for _, fp := range fingerprints {
+		if pre[fp] {
+			preExisting = append(preExisting, fp)
+		} else {
+			newFps = append(newFps, fp)
+		}
+	}
+	return newFps, preExisting
+}
+
 // =============================================================================
 // Validation Methods
 // =============================================================================

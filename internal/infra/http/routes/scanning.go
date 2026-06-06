@@ -79,6 +79,7 @@ func registerAgentRoutes(
 		// Ingest endpoints use a 50MB body limit (vs 10MB default) for large scan reports
 		r.POST("/ingest", ingestHandler.IngestCTIS, ingestMW...) // Primary CTIS ingest endpoint
 		r.POST("/ingest/check", ingestHandler.CheckFingerprints, ingestMW...)
+		r.POST("/ingest/baseline-diff", ingestHandler.BaselineDiff, ingestMW...) // RFC-008 Phase 3: PR new-vs-target
 		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, ingestMW...)
 		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, ingestMW...)
 		r.POST("/ingest/recon", ingestHandler.IngestReconReport, ingestMW...)

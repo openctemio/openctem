@@ -949,3 +949,7 @@ func (m *mockFindingRepoForScope) ListActiveCVEsByTenant(_ context.Context, _ sh
 func (m *mockFindingRepoForScope) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
+
+func (m *mockFindingRepoForScope) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
+	return nil, nil
+}

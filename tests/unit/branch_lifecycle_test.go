@@ -427,3 +427,7 @@ func (m *MockFindingRepoForLifecycle) UpsertBranchOccurrences(_ context.Context,
 func (m *MockFindingRepoForLifecycle) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
 	return 0, nil
 }
+
+func (m *MockFindingRepoForLifecycle) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
+	return nil, nil
+}

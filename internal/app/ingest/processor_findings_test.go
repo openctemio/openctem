@@ -1596,3 +1596,7 @@ func (s *stubFindingRepository) UpsertBranchOccurrences(_ context.Context, _ sha
 func (s *stubFindingRepository) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
 	return 0, nil
 }
+
+func (s *stubFindingRepository) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
+	return nil, nil
+}
