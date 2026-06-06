@@ -170,13 +170,42 @@ validated server-side (`internal/app/scancoverage/tenable_config.go`):
 
 The create-integration endpoint now accepts a `config` object to set these.
 
+### Automatic rolling coverage (Phase 3, shipped — unlimited engine)
+
+Set these extra `config` keys on a `provider=tenable` integration to opt it into
+automatic, license-aware rolling coverage:
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `coverage_enabled` | Opt into auto-rotation (off → integration is just a connection) | `false` |
+| `batch_size` | Per-cycle batch (perf/time window) | `256` |
+| `agent_id` | Pin a specific runner (C3); omit → capability routing | — |
+| `template_uuid` | Override the runner's Nessus template | — |
+| `license_cap` / `safety_margin` | Active-IP cap for `tenable_sc` | — |
+
+The **coverage scheduler** (`internal/infra/controller/coverage_scheduler.go`) runs
+every 5 minutes: it lists coverage-enabled Tenable integrations cross-tenant, sizes a
+batch against the engine's license headroom (`internal/app/scancoverage/scheduler.go`
+→ `planner.go`), dispatches it to a runner
+(`internal/app/scancoverage/dispatcher.go` → a `scan` command with `scanner=tenable`),
+and advances the rotation cursor (`scan_coverage_state`, migration 000176) so the same
+assets sort last next cycle. The runner scans its local appliance and pushes CTIS back;
+ingest auto-resolve is scoped to the batch's `session_id` + assets.
+
+> **Scope:** today the scheduler drives only **unlimited engines (Nessus Pro)** —
+> exactly the 3000-IP-on-Nessus-Pro use case. **Capped engines (Tenable.sc) are
+> skipped** (logged) until active-IP accounting + reclaim-ACK ship (Phase 3.5):
+> dispatching them without that accounting could exceed the license, which the
+> scheduler refuses to risk.
+
 ## Roadmap (RFC-007)
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | `.nessus → CTIS` findings adapter + batch-scoped safety + manual ingest endpoint | **Done** — converter (#139) + `POST /assets/import/nessus-findings` |
-| 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + per-tenant resolver | Planned |
-| 3 | Coverage scheduler (rotation, `.sc` cap, reclaim gated on ACK) | Planner core shipped (`internal/app/scancoverage`); scheduler controller TODO |
+| 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + runner executor | **Done (mock-first)** — sdk-go tenable client/parser, agent `TenableExecutor`; live-appliance REST verification pending |
+| 3 | Coverage scheduler (rotation cursor, dispatch, license headroom) | **Done (unlimited engine)** — planner + dispatcher + scheduler + live controller + `scan_coverage_state` |
+| 3.5 | `.sc` active-IP accounting + reclaim gated on ingest ACK | Planned |
 | 4 | Observability (freshness, license utilisation, sweep cadence) + UI | Planned |
 
 ## Key files
@@ -185,8 +214,13 @@ The create-integration endpoint now accepts a `config` object to set these.
 internal/infra/scanner/nessus/converter.go    .nessus → *ctis.Report (shipped)
 internal/infra/http/handler/asset_import_handler.go   IngestNessusFindings endpoint (shipped)
 internal/app/scancoverage/planner.go           LicensePolicy + batch selection (pure core, shipped)
+internal/app/scancoverage/dispatcher.go         build scan command routed to a tenable runner (shipped)
+internal/app/scancoverage/scheduler.go          rotation pass: headroom -> select -> dispatch -> cursor (shipped)
+internal/app/scancoverage/tenable_config.go     parse config (engine/mode/coverage_enabled/batch/cap) (shipped)
+internal/infra/controller/coverage_scheduler.go live controller binding the scheduler to repos (shipped)
+internal/infra/postgres/scan_coverage_repository.go  candidates + rotation cursor (shipped)
+migrations/000176_scan_coverage_state.up.sql    per-asset rotation cursor table (shipped)
 internal/app/asset/import.go                   ImportNessus (asset-only legacy path)
 internal/app/ingest/service.go                 scoped auto-resolve (safety invariant)
 pkg/domain/scan/entity.go                       Scan.TargetsPerJob, scheduler
-pkg/domain/asset/repository_extension.go        LastScannedAt (rotation cursor)
 ```

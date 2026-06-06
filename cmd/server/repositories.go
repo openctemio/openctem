@@ -91,6 +91,9 @@ type Repositories struct {
 	Command   *postgres.CommandRepository
 	IngestJob *postgres.IngestJobRepository
 
+	// Scan coverage rotation (RFC-007)
+	ScanCoverage *postgres.ScanCoverageRepository
+
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
 	ScanSession      *postgres.ScanSessionRepository
@@ -256,6 +259,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Agent:     postgres.NewAgentRepository(db),
 		Command:   postgres.NewCommandRepository(db),
 		IngestJob: postgres.NewIngestJobRepository(db),
+
+		// Scan coverage rotation (RFC-007)
+		ScanCoverage: postgres.NewScanCoverageRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),

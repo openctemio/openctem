@@ -12,6 +12,7 @@ import (
 	assetapp "github.com/openctemio/api/internal/app/asset"
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/app/outbox"
+	"github.com/openctemio/api/internal/app/scancoverage"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
@@ -193,6 +194,20 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Interval:  60 * time.Second,
 			BatchSize: 100,
 			Logger:    log.With("controller", "scan-retry"),
+		},
+	))
+
+	// Coverage scheduler: license-aware rolling Tenable scan coverage (RFC-007).
+	// Dispatches license-sized batches to runners for coverage-enabled, unlimited
+	// (Nessus Pro) Tenable integrations and advances the rotation cursor. Capped
+	// engines (Tenable.sc) are skipped until active-IP accounting ships.
+	w.ControllerManager.Register(controller.NewCoverageScheduler(
+		repos.Integration,
+		repos.ScanCoverage,
+		scancoverage.NewDispatcher(repos.Command),
+		&controller.CoverageSchedulerConfig{
+			Interval: 5 * time.Minute,
+			Logger:   log.With("controller", "coverage-scheduler"),
 		},
 	))
 
