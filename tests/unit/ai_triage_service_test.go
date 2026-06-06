@@ -186,6 +186,9 @@ func (m *mockAITriageTenantRepo) ExistsBySlug(_ context.Context, _ string) (bool
 func (m *mockAITriageTenantRepo) ListActiveTenantIDs(_ context.Context) ([]shared.ID, error) {
 	return nil, nil
 }
+func (m *mockAITriageTenantRepo) CreateWithOwner(_ context.Context, _ *tenant.Tenant, _ *tenant.Membership) error {
+	return nil
+}
 func (m *mockAITriageTenantRepo) CreateMembership(_ context.Context, _ *tenant.Membership) error {
 	return nil
 }

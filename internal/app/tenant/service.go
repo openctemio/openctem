@@ -322,23 +322,16 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 		t.UpdateDescription(input.Description)
 	}
 
-	// Create tenant in database
-	if err := s.repo.Create(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to create tenant: %w", err)
-	}
-
-	// Create owner membership for the creator
+	// Build the owner membership before any write so a construction error can't
+	// leave a tenant without an owner.
 	membership, err := tenantdom.NewOwnerMembership(creatorUserID, t.ID())
 	if err != nil {
-		// Rollback tenant creation
-		_ = s.repo.Delete(ctx, t.ID())
 		return nil, fmt.Errorf("failed to create owner membership: %w", err)
 	}
 
-	if err := s.repo.CreateMembership(ctx, membership); err != nil {
-		// Rollback tenant creation
-		_ = s.repo.Delete(ctx, t.ID())
-		return nil, fmt.Errorf("failed to create owner membership: %w", err)
+	// Create tenant + owner membership atomically (no orphan tenant on failure).
+	if err := s.repo.CreateWithOwner(ctx, t, membership); err != nil {
+		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
 
 	s.logger.Info("tenant created", "id", t.ID().String(), "name", t.Name(), "owner", creatorUserID.String())

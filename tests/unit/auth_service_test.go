@@ -30,23 +30,23 @@ type mockAuthUserRepo struct {
 	users map[string]*user.User // keyed by ID
 
 	// Error overrides
-	createErr                    error
-	getByIDErr                   error
-	getByEmailErr                error
-	getByEmailForAuthErr         error
-	getByEmailVerificationErr    error
-	getByPasswordResetTokenErr   error
-	updateErr                    error
-	deleteErr                    error
-	existsByEmailResult          bool
-	existsByEmailErr             error
-	existsByKeycloakIDResult     bool
-	existsByKeycloakIDErr        error
-	getByKeycloakIDErr           error
-	upsertFromKeycloakErr        error
-	getByIDsErr                  error
-	countResult                  int64
-	countErr                     error
+	createErr                  error
+	getByIDErr                 error
+	getByEmailErr              error
+	getByEmailForAuthErr       error
+	getByEmailVerificationErr  error
+	getByPasswordResetTokenErr error
+	updateErr                  error
+	deleteErr                  error
+	existsByEmailResult        bool
+	existsByEmailErr           error
+	existsByKeycloakIDResult   bool
+	existsByKeycloakIDErr      error
+	getByKeycloakIDErr         error
+	upsertFromKeycloakErr      error
+	getByIDsErr                error
+	countResult                int64
+	countErr                   error
 
 	// Call tracking
 	createCalls int
@@ -198,22 +198,22 @@ type mockAuthTenantRepo struct {
 	userMemberships []tenant.UserMembership
 
 	// Error overrides
-	createErr              error
-	getByIDErr             error
-	getBySlugErr           error
-	updateErr              error
-	deleteErr              error
-	existsBySlugResult     bool
-	existsBySlugErr        error
-	createMembershipErr    error
-	getMembershipErr       error
-	getMembershipByIDErr   error
-	updateMembershipErr    error
-	deleteMembershipErr    error
-	getUserMembershipsErr  error
+	createErr               error
+	getByIDErr              error
+	getBySlugErr            error
+	updateErr               error
+	deleteErr               error
+	existsBySlugResult      bool
+	existsBySlugErr         error
+	createMembershipErr     error
+	getMembershipErr        error
+	getMembershipByIDErr    error
+	updateMembershipErr     error
+	deleteMembershipErr     error
+	getUserMembershipsErr   error
 	getInvitationByTokenErr error
-	acceptInvitationTxErr  error
-	listActiveTenantIDsErr error
+	acceptInvitationTxErr   error
+	listActiveTenantIDsErr  error
 
 	// Call tracking
 	createCalls           int
@@ -285,6 +285,20 @@ func (m *mockAuthTenantRepo) ListActiveTenantIDs(_ context.Context) ([]shared.ID
 		ids = append(ids, t.ID())
 	}
 	return ids, nil
+}
+
+func (m *mockAuthTenantRepo) CreateWithOwner(_ context.Context, t *tenant.Tenant, membership *tenant.Membership) error {
+	m.createCalls++
+	if m.createErr != nil {
+		return m.createErr
+	}
+	m.createMembershipCalls++
+	if m.createMembershipErr != nil {
+		return m.createMembershipErr
+	}
+	m.tenants[t.ID().String()] = t
+	m.memberships = append(m.memberships, membership)
+	return nil
 }
 
 func (m *mockAuthTenantRepo) CreateMembership(_ context.Context, membership *tenant.Membership) error {
@@ -454,10 +468,10 @@ type mockAuthSessionRepo struct {
 	oldestSession       *session.Session
 
 	// Call tracking
-	createCalls         int
-	updateCalls         int
-	revokeAllCalls      int
-	deleteExpiredCalls  int
+	createCalls        int
+	updateCalls        int
+	revokeAllCalls     int
+	deleteExpiredCalls int
 }
 
 func newMockAuthSessionRepo() *mockAuthSessionRepo {
@@ -2514,7 +2528,7 @@ func TestAuthService_EdgeCases(t *testing.T) {
 		hash, _ := hasher.Hash("ValidPassword123")
 		seedAuthLocalUser(deps.userRepo, "user@example.com", hash)
 		deps.sessionRepo.countActiveResult = 10 // At limit
-		deps.sessionRepo.oldestSession = nil     // No oldest session found
+		deps.sessionRepo.oldestSession = nil    // No oldest session found
 		deps.tenantRepo.userMemberships = []tenant.UserMembership{}
 
 		// Should still succeed even if no oldest session is found
@@ -2621,9 +2635,13 @@ func TestAuthService_PasswordValidation(t *testing.T) {
 }
 
 // Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
-func (m *mockAuthAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
-func (m *mockAuthAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
-func (m *mockAuthAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }
+func (m *mockAuthAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) {
+	return "", nil
+}
+func (m *mockAuthAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error { return nil }
+func (m *mockAuthAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+	return nil, nil
+}
 
 func (m *mockAuthAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
 	return nil

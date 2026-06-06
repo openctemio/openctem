@@ -64,13 +64,13 @@ type mockTenantRepo struct {
 	acceptInvTxCalls      int
 
 	// Return values
-	memberStats           *tenant.MemberStats
-	memberSearchResult    *tenant.MemberSearchResult
-	tenantsWithRole       []*tenant.TenantWithRole
-	membersWithUser       []*tenant.MemberWithUser
-	pendingInvitations    []*tenant.Invitation
-	membersByTenant       []*tenant.Membership
-	userMemberships       []tenant.UserMembership
+	memberStats               *tenant.MemberStats
+	memberSearchResult        *tenant.MemberSearchResult
+	tenantsWithRole           []*tenant.TenantWithRole
+	membersWithUser           []*tenant.MemberWithUser
+	pendingInvitations        []*tenant.Invitation
+	membersByTenant           []*tenant.Membership
+	userMemberships           []tenant.UserMembership
 	deletedExpiredCount       int64
 	deletedPendingByUserCount int64
 	existingMemberByEmail     *tenant.MemberWithUser
@@ -92,6 +92,23 @@ func (m *mockTenantRepo) Create(_ context.Context, t *tenant.Tenant) error {
 	}
 	m.tenants[t.ID().String()] = t
 	m.slugExists[t.Slug()] = true
+	return nil
+}
+
+// CreateWithOwner mirrors the atomic repo method: tenant + membership are
+// persisted together, or neither is (on either error nothing is stored).
+func (m *mockTenantRepo) CreateWithOwner(_ context.Context, t *tenant.Tenant, membership *tenant.Membership) error {
+	m.createCalls++
+	if m.createErr != nil {
+		return m.createErr
+	}
+	m.createMembershipCalls++
+	if m.createMembershipErr != nil {
+		return m.createMembershipErr
+	}
+	m.tenants[t.ID().String()] = t
+	m.slugExists[t.Slug()] = true
+	m.memberships[membership.ID().String()] = membership
 	return nil
 }
 
@@ -532,7 +549,7 @@ func TestTenantSvc_CreateTenant_RepoCreateError(t *testing.T) {
 	}
 }
 
-func TestTenantSvc_CreateTenant_MembershipCreateError_RollbacksTenant(t *testing.T) {
+func TestTenantSvc_CreateTenant_MembershipCreateError_NoOrphanTenant(t *testing.T) {
 	svc, repo := newTestTenantService()
 	repo.createMembershipErr = errors.New("membership db error")
 
@@ -545,9 +562,14 @@ func TestTenantSvc_CreateTenant_MembershipCreateError_RollbacksTenant(t *testing
 	if err == nil {
 		t.Fatal("expected error from membership creation")
 	}
-	// Verify tenant was deleted (rollback)
-	if repo.deleteCalls != 1 {
-		t.Errorf("expected 1 delete call (rollback), got %d", repo.deleteCalls)
+	// Tenant + membership are now created atomically (CreateWithOwner), so a
+	// membership failure rolls back the tenant in the same transaction — no
+	// orphan tenant and no separate compensating Delete.
+	if len(repo.tenants) != 0 {
+		t.Errorf("expected no persisted tenant after atomic failure, got %d", len(repo.tenants))
+	}
+	if repo.deleteCalls != 0 {
+		t.Errorf("expected no compensating delete (atomic rollback), got %d", repo.deleteCalls)
 	}
 }
 
