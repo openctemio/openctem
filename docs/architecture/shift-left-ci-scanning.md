@@ -115,12 +115,12 @@ graph LR
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Risk-aware gate (KEV/exploit below threshold) | **Done** — agent #27 |
-| 2 | Per-branch occurrence lifecycle (auto_fixed on non-default) | Planned |
-| 3 | MR new-vs-target suppression | Planned |
-| 4 | PR comment idempotency + provider parity | Planned |
-| 5 | Per-branch read surface (finish occurrence reads) | Planned |
-| 6 | Reporting export (PDF/Excel) + weekly digest + role routing | Planned |
-| 7 | DX: GitHub Action / GitLab CI recipes + docs | Planned |
+| 2 | Per-branch occurrence lifecycle (auto_fixed on non-default) | **Already present** — ingest `service.go` Step 3b (`AutoResolveStaleBranchOccurrences`) |
+| 3 | MR new-vs-target suppression | **Planned** (only substantive gap left; cross-repo) |
+| 4 | PR comment idempotency | **Done** — sdk-go #33 (hidden marker + list-and-skip) |
+| 5 | Per-branch read surface | **Already present** — findings API `branch_id`/`branch_status` filters + `occurrence_count` |
+| 6 | Reporting export (PDF/Excel) + weekly digest | Partial (HTML executive summary exists; PDF/Excel planned) |
+| 7 | DX: GitHub Action / GitLab CI recipes | **Already present** — `agent/ci/{github,gitlab}/` |
 
 ## 6. Code map
 ```

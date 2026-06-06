@@ -1,6 +1,6 @@
 # RFC-008: Native Shift-Left CI/CD Code Scanning (agent-first)
 
-- **Status**: Proposed (Phase 1 shipped)
+- **Status**: Largely implemented — an audit found Phases 2/5/7 already existed; Phases 1 & 4 shipped (agent #27, sdk-go #33); **Phase 3 (new-vs-target) is the only substantive gap left**; Phase 6 (PDF/Excel export) partial.
 - **Created**: 2026-06-06
 - **Owner**: Platform / Agent
 - **Problem**: We want first-class, **self-contained** shift-left code security in CI/CD — SAST/SCA/secret scanning that runs in the pipeline, decorates PRs/MRs, and gates merges — using **our own agent + platform**, not a third-party tool and not a back-forward bridge. The bar: best-in-class, on top of OpenCTEM's multi-tenant + risk-prioritization advantages.
@@ -49,10 +49,29 @@ An audit of our agent (2026-06) corrected an earlier mis-assessment. Our agent +
 
 Each phase: own PR(s), tests, CI-green, tenant-isolated, mock-first where no infra. Reuse existing pipeline (gitenv/handler/gate/ingest/occurrences/outbox/SCM clients).
 
+> **Audit note (2026-06-06):** implementing this RFC revealed the agent/platform
+> already covered most of it. Confirmed: Phase 2 already exists (ingest Step 3b),
+> Phase 5 already exists (findings API branch filters + occurrence_count), Phase 7
+> already exists (`agent/ci/{github,gitlab}/`). Phases 1 & 4 were the genuine
+> tractable gaps and are now shipped. **Phase 3 is the only substantive feature
+> left.** Statuses below updated accordingly.
+
 ### Phase 1 — Risk-aware gate ✅ SHIPPED (agent #27)
 Block CISA-KEV / exploit-available findings even below the severity threshold; suppressed never blocks; backward compatible; tested.
 
-### Phase 2 — Per-branch occurrence lifecycle (foundation for the rest)
+### Phase 2 — Per-branch occurrence lifecycle ✅ ALREADY PRESENT (ingest Step 3b)
+`service.go` runs `AutoResolveStaleBranchOccurrences` for any full-coverage scan, marking non-default-branch occurrences `auto_fixed` without touching canonical status. No work needed.
+
+### Phase 4 — PR comment idempotency ✅ SHIPPED (sdk-go #33)
+Hidden marker per finding + list-existing-and-skip (GitHub/GitLab/Manual); dedupes across re-runs and within a run. (Listed out of order to keep the shipped items together.)
+
+### Phase 5 — Per-branch read surface ✅ ALREADY PRESENT
+Findings API exposes `branch_id` / `branch_status` filters + `occurrence_count` / first/last-seen-branch. No work needed.
+
+### Phase 7 — DX recipes ✅ ALREADY PRESENT
+`agent/ci/github/` (action.yml + workflows) and `agent/ci/gitlab/` recipes exist.
+
+### Phase 2 (original text, superseded) — Per-branch occurrence lifecycle
 Make the occurrence write-side *correct* so reads are trustworthy:
 - On a **full-coverage scan of a non-default branch**, transition that branch's occurrences to `auto_fixed` when a finding is no longer seen — **without** touching the canonical `findings.status` (which stays default-branch-only). Preserves the existing safety invariant.
 - Keep `first_seen`/`last_seen` (+ scan + commit) accurate per branch.
