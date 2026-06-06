@@ -20,6 +20,7 @@
 - [Notification System](architecture/notification-system.md) - Real-time alerts, providers, async patterns
 - [Scan Orchestration](architecture/scan-orchestration.md) - Pipeline execution, agent coordination
 - [Scan Coverage (Tenable)](architecture/scan-coverage.md) - License-aware rolling coverage, Nessus Pro + Tenable.sc, .nessus→CTIS converter
+- [Shift-Left CI Scanning](architecture/shift-left-ci-scanning.md) - Agent-first SAST/SCA/secrets in CI: structure + dataflow diagrams, branch-aware findings, risk-aware gate, PR decoration (RFC-008)
 - [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
 - [Tenable — User & Data Flow](architecture/tenable-user-and-data-flow.md) - How operators interact with Tenable on the UI + end-to-end data flow (agent/direct/upload)
 - [Data Sources](architecture/data-sources.md) - Multi-source asset tracking, collectors, scanners
