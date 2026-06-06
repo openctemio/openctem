@@ -175,7 +175,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Tool:            handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
 		Capability:      handler.NewCapabilityHandler(svc.Capability, v, log),
-		Scan:            handler.NewScanHandler(svc.Scan, repos.User, v, log),
+		Scan:            handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CI:              handler.NewCIHandler(svc.Scan, log),
 		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
 

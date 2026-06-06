@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	scansvc "github.com/openctemio/api/internal/app/scan"
+	"github.com/openctemio/api/internal/app/scancoverage"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/scan"
@@ -24,19 +26,21 @@ import (
 
 // ScanHandler handles HTTP requests for scans.
 type ScanHandler struct {
-	service   *scansvc.Service
-	userRepo  user.Repository
-	validator *validator.Validator
-	logger    *logger.Logger
+	service       *scansvc.Service
+	userRepo      user.Repository
+	coverageStats scancoverage.CoverageStatsReader
+	validator     *validator.Validator
+	logger        *logger.Logger
 }
 
 // NewScanHandler creates a new ScanHandler.
-func NewScanHandler(service *scansvc.Service, userRepo user.Repository, v *validator.Validator, log *logger.Logger) *ScanHandler {
+func NewScanHandler(service *scansvc.Service, userRepo user.Repository, coverageStats scancoverage.CoverageStatsReader, v *validator.Validator, log *logger.Logger) *ScanHandler {
 	return &ScanHandler{
-		service:   service,
-		userRepo:  userRepo,
-		validator: v,
-		logger:    log.With("handler", "scan"),
+		service:       service,
+		userRepo:      userRepo,
+		coverageStats: coverageStats,
+		validator:     v,
+		logger:        log.With("handler", "scan"),
 	}
 }
 
@@ -807,6 +811,47 @@ func (h *ScanHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// CoverageStatus handles GET /api/v1/scans/coverage
+// @Summary      Scan coverage status
+// @Description  License-aware rolling coverage summary for the tenant's scannable
+// @Description  estate (RFC-007): how much was scanned within the freshness window,
+// @Description  what is stale or never scanned, and the critical-asset risk.
+// @Tags         Scans
+// @Produce      json
+// @Param        window_days  query  int  false  "Freshness window in days (default 30, max 3650)"
+// @Success      200  {object}  scancoverage.CoverageStats
+// @Router       /scans/coverage [get]
+func (h *ScanHandler) CoverageStatus(w http.ResponseWriter, r *http.Request) {
+	if h.coverageStats == nil {
+		apierror.InternalServerError("coverage stats unavailable").WriteJSON(w)
+		return
+	}
+	tenantID, ok := middleware.GetTenantIDFromContext(r.Context())
+	if !ok {
+		apierror.Unauthorized("missing tenant context").WriteJSON(w)
+		return
+	}
+
+	windowDays := scancoverage.DefaultCoverageWindowDays
+	if v := strings.TrimSpace(r.URL.Query().Get("window_days")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 || n > 3650 {
+			apierror.BadRequest("window_days must be an integer between 1 and 3650").WriteJSON(w)
+			return
+		}
+		windowDays = n
+	}
+
+	stats, err := h.coverageStats.CoverageStats(r.Context(), tenantID, windowDays)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(stats)
 }
 
 // --- Clone Handler ---

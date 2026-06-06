@@ -93,6 +93,60 @@ func (r *ScanCoverageRepository) ActiveIPs(_ context.Context, _ shared.ID) (int,
 	return 0, nil
 }
 
+// CoverageStats returns a point-in-time coverage summary for a tenant
+// (RFC-007 Phase 4 observability), computed with conditional aggregation over
+// the scannable estate LEFT JOIN the rotation cursor. windowDays defines the
+// freshness window. Tenant-scoped.
+func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID shared.ID, windowDays int) (*scancoverage.CoverageStats, error) {
+	if windowDays <= 0 {
+		windowDays = scancoverage.DefaultCoverageWindowDays
+	}
+	const query = `
+		WITH scannable AS (
+			SELECT a.criticality, c.last_dispatched_at
+			FROM assets a
+			LEFT JOIN scan_coverage_state c
+			       ON c.asset_id = a.id AND c.tenant_id = a.tenant_id
+			WHERE a.tenant_id = $1
+			  AND a.status = 'active'
+			  AND a.asset_type = ANY($2)
+		)
+		SELECT
+			count(*),
+			count(*) FILTER (WHERE last_dispatched_at IS NULL),
+			count(*) FILTER (WHERE last_dispatched_at >= now() - make_interval(days => $3)),
+			count(*) FILTER (WHERE last_dispatched_at IS NOT NULL
+			                   AND last_dispatched_at < now() - make_interval(days => $3)),
+			count(*) FILTER (WHERE last_dispatched_at IS NULL AND criticality = 'critical'),
+			count(*) FILTER (WHERE criticality = 'critical'
+			                   AND (last_dispatched_at IS NULL
+			                        OR last_dispatched_at < now() - make_interval(days => $3))),
+			min(last_dispatched_at)
+		FROM scannable`
+
+	stats := &scancoverage.CoverageStats{WindowDays: windowDays}
+	var oldest sql.NullTime
+	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), pq.Array(coverageAssetTypes), windowDays).Scan(
+		&stats.TotalScannable,
+		&stats.NeverScanned,
+		&stats.CoveredInWindow,
+		&stats.Stale,
+		&stats.CriticalNeverScanned,
+		&stats.CriticalUncovered,
+		&oldest,
+	); err != nil {
+		return nil, fmt.Errorf("coverage stats: %w", err)
+	}
+	if oldest.Valid {
+		t := oldest.Time
+		stats.OldestDispatchedAt = &t
+	}
+	if stats.TotalScannable > 0 {
+		stats.CoveragePercent = float64(stats.CoveredInWindow) / float64(stats.TotalScannable) * 100
+	}
+	return stats, nil
+}
+
 // MarkDispatched advances the rotation cursor for every asset in a dispatched
 // batch: it upserts scan_coverage_state with the dispatch time, session, and
 // command so those assets sort last next cycle. Idempotent per (asset).
@@ -129,5 +183,6 @@ func (r *ScanCoverageRepository) MarkDispatched(ctx context.Context, rec scancov
 
 // Compile-time checks: the repository satisfies the scheduler's ports.
 var (
-	_ scancoverage.CursorStore = (*ScanCoverageRepository)(nil)
+	_ scancoverage.CursorStore         = (*ScanCoverageRepository)(nil)
+	_ scancoverage.CoverageStatsReader = (*ScanCoverageRepository)(nil)
 )

@@ -206,7 +206,25 @@ ingest auto-resolve is scoped to the batch's `session_id` + assets.
 | 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + runner executor | **Done (mock-first)** — sdk-go tenable client/parser, agent `TenableExecutor`; live-appliance REST verification pending |
 | 3 | Coverage scheduler (rotation cursor, dispatch, license headroom) | **Done (unlimited engine)** — planner + dispatcher + scheduler + live controller + `scan_coverage_state` |
 | 3.5 | `.sc` active-IP accounting + reclaim gated on ingest ACK | Planned |
-| 4 | Observability (freshness, license utilisation, sweep cadence) + UI | Planned |
+| 4 | Observability (freshness, coverage %) | **Done (API)** — `GET /api/v1/scans/coverage`; UI pending |
+
+### Coverage observability (Phase 4, shipped — API)
+
+`GET /api/v1/scans/coverage?window_days=30` (JWT; `scans:read`) returns a
+tenant-scoped coverage summary so rolling scans become *verifiable*:
+
+```json
+{
+  "window_days": 30, "total_scannable": 3000, "never_scanned": 500,
+  "covered_in_window": 2400, "stale": 100,
+  "critical_never_scanned": 3, "critical_uncovered": 5,
+  "oldest_dispatched_at": "2026-05-02T...", "coverage_percent": 80.0
+}
+```
+
+Computed by `ScanCoverageRepository.CoverageStats` (one conditional-aggregation
+query over the scannable estate LEFT JOIN `scan_coverage_state`). `coverage_percent`
+= covered-in-window / total. The headline risk metric is `critical_never_scanned`.
 
 ## Key files
 
