@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,11 @@ import (
 )
 
 const maxResponseSize = 10 * 1024 * 1024 // 10MB
+
+// ErrNoMatchingTransition is returned by TransitionToStatus when the issue's
+// workflow offers no transition that lands on the requested status. The caller
+// should fall back to a comment rather than treat this as a hard failure.
+var ErrNoMatchingTransition = errors.New("no jira transition to target status")
 
 // Client is a Jira REST API client.
 type Client struct {
@@ -63,9 +69,9 @@ type CreateIssueInput struct {
 
 // CreateIssueResult contains the response from creating a Jira issue.
 type CreateIssueResult struct {
-	ID      string `json:"id"`
-	Key     string `json:"key"`      // e.g. "PROJ-123"
-	SelfURL string `json:"self"`     // REST API URL
+	ID        string `json:"id"`
+	Key       string `json:"key"`        // e.g. "PROJ-123"
+	SelfURL   string `json:"self"`       // REST API URL
 	BrowseURL string `json:"browse_url"` // Human-readable URL
 }
 
@@ -162,6 +168,149 @@ func (c *Client) GetIssueStatus(ctx context.Context, issueKey string) (string, e
 	}
 
 	return issue.Fields.Status.Name, nil
+}
+
+// Transition is an available Jira workflow transition for an issue.
+type Transition struct {
+	ID           string // transition id to POST (NOT the status name)
+	Name         string // transition name, e.g. "Done"
+	ToStatusName string // resulting status name, e.g. "Done"
+}
+
+// GetTransitions lists the workflow transitions currently available for an
+// issue. Jira has no "set status" — you POST one of these transition IDs, and
+// the available set depends on the issue's current status + project workflow.
+// Callers resolve a desired status name to a transition via ToStatusName.
+func (c *Client) GetTransitions(ctx context.Context, issueKey string) ([]Transition, error) {
+	u := fmt.Sprintf("%s/rest/api/2/issue/%s/transitions", c.baseURL, url.PathEscape(issueKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.SetBasicAuth(c.email, c.apiToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("jira api call: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("jira api error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var parsed struct {
+		Transitions []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			To   struct {
+				Name string `json:"name"`
+			} `json:"to"`
+		} `json:"transitions"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	out := make([]Transition, 0, len(parsed.Transitions))
+	for _, t := range parsed.Transitions {
+		out = append(out, Transition{ID: t.ID, Name: t.Name, ToStatusName: t.To.Name})
+	}
+	return out, nil
+}
+
+// DoTransition moves an issue through the given transition id. An optional
+// comment is attached atomically with the transition (Jira's update.comment).
+func (c *Client) DoTransition(ctx context.Context, issueKey, transitionID, comment string) error {
+	body := map[string]any{
+		"transition": map[string]string{"id": transitionID},
+	}
+	if comment != "" {
+		body["update"] = map[string]any{
+			"comment": []map[string]any{
+				{"add": map[string]string{"body": comment}},
+			},
+		}
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	u := fmt.Sprintf("%s/rest/api/2/issue/%s/transitions", c.baseURL, url.PathEscape(issueKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.SetBasicAuth(c.email, c.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("jira api call: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Jira returns 204 No Content on a successful transition.
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		return fmt.Errorf("jira transition error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// AddComment posts a comment on an issue. Used as the fall-back when the desired
+// status has no available transition (workflow forbids the move) so the change
+// is still visible to a human.
+func (c *Client) AddComment(ctx context.Context, issueKey, body string) error {
+	payload, err := json.Marshal(map[string]string{"body": body})
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	u := fmt.Sprintf("%s/rest/api/2/issue/%s/comment", c.baseURL, url.PathEscape(issueKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.SetBasicAuth(c.email, c.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("jira api call: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		return fmt.Errorf("jira comment error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// TransitionToStatus resolves a target status NAME to an available transition
+// and performs it. Returns ErrNoMatchingTransition if the workflow offers no
+// transition to that status, so the caller can fall back to AddComment. The
+// match is case-insensitive on the resulting status name.
+func (c *Client) TransitionToStatus(ctx context.Context, issueKey, targetStatus, comment string) error {
+	transitions, err := c.GetTransitions(ctx, issueKey)
+	if err != nil {
+		return err
+	}
+	for _, t := range transitions {
+		if strings.EqualFold(t.ToStatusName, targetStatus) {
+			return c.DoTransition(ctx, issueKey, t.ID, comment)
+		}
+	}
+	return ErrNoMatchingTransition
 }
 
 // TestConnection verifies Jira credentials by fetching server info.
