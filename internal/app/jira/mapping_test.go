@@ -25,13 +25,17 @@ func TestDefaultMapping_PreservesLegacyBehaviour(t *testing.T) {
 	}
 
 	// Status → finding parity.
+	// NOTE: "open" maps to confirmed (Jira's classic *initial/unstarted* status),
+	// not in_progress — a correctness fix over the original map.
 	statusCases := map[string]vulnerability.FindingStatus{
 		"In Progress": vulnerability.FindingStatusInProgress,
-		"open":        vulnerability.FindingStatusInProgress,
+		"open":        vulnerability.FindingStatusConfirmed,
 		"Done":        vulnerability.FindingStatusFixApplied,
 		"RESOLVED":    vulnerability.FindingStatusFixApplied,
+		"verified":    vulnerability.FindingStatusFixApplied,
 		"Backlog":     vulnerability.FindingStatusConfirmed,
 		"reopened":    vulnerability.FindingStatusConfirmed,
+		"Duplicate":   vulnerability.FindingStatusDuplicate,
 	}
 	for js, want := range statusCases {
 		got, ok := m.FindingStatusForJira(js)
@@ -130,5 +134,53 @@ func TestParseMappingConfig_ToleratesWrongTypes(t *testing.T) {
 	m := ParseMappingConfig(cfg) // must not panic
 	if m.PriorityForSeverity("critical") != "Highest" {
 		t.Error("malformed overrides should leave defaults intact")
+	}
+}
+
+func TestDefaultMapping_OutboundDefaults(t *testing.T) {
+	m := DefaultMappingConfig()
+	if m.SyncEnabled {
+		t.Error("outbound sync must default to DISABLED")
+	}
+	if got, ok := m.JiraStatusForFinding("resolved"); !ok || got != "Done" {
+		t.Errorf("resolved -> %q,%v; want Done,true", got, ok)
+	}
+	if got, ok := m.JiraStatusForFinding("in_progress"); !ok || got != "In Progress" {
+		t.Errorf("in_progress -> %q,%v; want In Progress,true", got, ok)
+	}
+	// A finding status with no default mapping must not push.
+	if _, ok := m.JiraStatusForFinding("false_positive"); ok {
+		t.Error("false_positive should be unmapped by default (no stock Jira status)")
+	}
+}
+
+func TestParseMappingConfig_OutboundOverlayAndSwitch(t *testing.T) {
+	m := ParseMappingConfig(map[string]any{
+		"ticketing": map[string]any{
+			"sync_enabled": true,
+			"status_outbound": map[string]any{
+				"false_positive": "Won't Do", // custom workflow status
+				"resolved":       "Shipped",  // override default
+				"not_a_status":   "Ignored",  // invalid finding-status key -> skipped
+				"in_progress":    "",         // empty -> skipped, default kept
+			},
+		},
+	})
+
+	if !m.SyncEnabled {
+		t.Error("sync_enabled:true must be parsed")
+	}
+	if got, _ := m.JiraStatusForFinding("false_positive"); got != "Won't Do" {
+		t.Errorf("false_positive -> %q; want Won't Do", got)
+	}
+	if got, _ := m.JiraStatusForFinding("resolved"); got != "Shipped" {
+		t.Errorf("resolved override -> %q; want Shipped", got)
+	}
+	if _, ok := m.JiraStatusForFinding("not_a_status"); ok {
+		t.Error("invalid finding-status key must be skipped")
+	}
+	// Empty value skipped → default ("In Progress") preserved.
+	if got, _ := m.JiraStatusForFinding("in_progress"); got != "In Progress" {
+		t.Errorf("in_progress empty override should keep default, got %q", got)
 	}
 }
