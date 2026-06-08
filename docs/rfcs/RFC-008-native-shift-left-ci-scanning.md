@@ -77,7 +77,8 @@ Server computes, for a PR/MR scan, which findings are **new vs the base branch**
 - Findings API already supports `branch_id` / `branch_status` filters + `occurrence_count`, reading the mig 000173 occurrence data.
 
 ### Phase 6 — Reporting / compliance 🟡 PARTIAL
-- HTML executive summary exists; PDF/Excel export + weekly digest + role-based routing still to build, on the existing notification/outbox infra. Fills the compliance-reporting gap (also helps the .sc-replacement story in RFC-007). **Only remaining phase.**
+- HTML executive summary exists; **CSV + XLSX findings export shipped** (`GET /pentest/campaigns/{id}/findings/export?format=csv|xlsx|json`, api #162 + ui #159 — `excelize`, formula-injection-sanitized, shared row builder).
+- **Still to build:** PDF export, and the **scheduled-report executor + weekly digest**. The scheduler is the bigger gap — `report_schedules` + `ListDue()` + a `report:generate_scheduled` task exist, but **no controller invokes `ListDue()`**, so configured schedules never run/deliver. Wiring it needs a generic (non-pentest) tenant report generator + an auto-email cron over the outbox — a design decision (what each report type contains) deferred to a follow-up. Fills the compliance-reporting gap (also helps the .sc-replacement story in RFC-007).
 
 ### Phase 7 — DX & docs ✅ SHIPPED (pre-existing)
 - `agent/ci/{github,gitlab}/` ship ready-to-paste Action / CI recipes; `-check-tools`/`-install-tools` UX exists.
