@@ -3,6 +3,7 @@ package jira
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -35,6 +36,24 @@ func (a clientAdapter) CreateIssue(ctx context.Context, in appjira.CreateIssueIn
 		Key:       res.Key,
 		BrowseURL: res.BrowseURL,
 	}, nil
+}
+
+func (a clientAdapter) GetIssueStatus(ctx context.Context, issueKey string) (string, error) {
+	return a.c.GetIssueStatus(ctx, issueKey)
+}
+
+func (a clientAdapter) TransitionToStatus(ctx context.Context, issueKey, targetStatus, comment string) error {
+	err := a.c.TransitionToStatus(ctx, issueKey, targetStatus, comment)
+	// Map the infra sentinel to the app-layer one so the caller can fall back
+	// to a comment without importing this package.
+	if errors.Is(err, ErrNoMatchingTransition) {
+		return appjira.ErrNoMatchingTransition
+	}
+	return err
+}
+
+func (a clientAdapter) AddComment(ctx context.Context, issueKey, body string) error {
+	return a.c.AddComment(ctx, issueKey, body)
 }
 
 func (a clientAdapter) TestConnection(ctx context.Context) error {
@@ -97,6 +116,26 @@ func (r *IntegrationClientResolver) Resolve(ctx context.Context, tenantID shared
 	}
 
 	return nil, appjira.ErrNoTicketingIntegration
+}
+
+// Compile-time check that the resolver also satisfies the mapping resolver.
+var _ appjira.MappingResolver = (*IntegrationClientResolver)(nil)
+
+// ResolveMapping loads the status/severity mapping for the tenant's first
+// connected Jira integration (overlaying config.ticketing onto the defaults).
+// Returns appjira.ErrNoTicketingIntegration when none is connected.
+func (r *IntegrationClientResolver) ResolveMapping(ctx context.Context, tenantID shared.ID) (appjira.MappingConfig, error) {
+	integrations, err := r.integrationRepo.ListByProvider(ctx, tenantID, integration.ProviderJira)
+	if err != nil {
+		return appjira.MappingConfig{}, fmt.Errorf("list jira integrations: %w", err)
+	}
+	for _, intg := range integrations {
+		if intg.Status() != integration.StatusConnected {
+			continue
+		}
+		return appjira.ParseMappingConfig(intg.Config()), nil
+	}
+	return appjira.MappingConfig{}, appjira.ErrNoTicketingIntegration
 }
 
 // buildClient assembles a Jira client from an integration's base URL and

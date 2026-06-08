@@ -1,10 +1,10 @@
 package jobs
 
 import (
-	"github.com/openctemio/api/internal/app/threat"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/openctemio/api/internal/app/threat"
 
 	"github.com/hibiken/asynq"
 

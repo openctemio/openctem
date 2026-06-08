@@ -28,6 +28,14 @@ type Worker struct {
 	logger                *logger.Logger
 	notificationProcessor NotificationProcessor
 	aiTriageProcessor     AITriageProcessor
+	jiraStatusSyncer      JiraStatusSyncer
+}
+
+// WithJiraStatusSyncer adds the outbound Jira status-sync handler to the worker.
+func WithJiraStatusSyncer(syncer JiraStatusSyncer) WorkerOption {
+	return func(w *Worker) {
+		w.jiraStatusSyncer = syncer
+	}
 }
 
 // WithNotificationProcessor adds a notification processor to the worker.
@@ -96,6 +104,13 @@ func NewWorker(cfg WorkerConfig, emailService *app.EmailService, log *logger.Log
 		aiTriageHandler := NewAITriageTaskHandler(w.aiTriageProcessor, log.Logger)
 		aiTriageHandler.RegisterHandlers(mux)
 		log.Info("AI triage task handlers registered")
+	}
+
+	// Register outbound Jira status-sync handler if wired
+	if w.jiraStatusSyncer != nil {
+		jiraSyncHandler := NewJiraSyncTaskHandler(w.jiraStatusSyncer, log.Logger)
+		jiraSyncHandler.RegisterHandlers(mux)
+		log.Info("jira status-sync task handler registered")
 	}
 
 	return w, nil

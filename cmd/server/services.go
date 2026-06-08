@@ -515,7 +515,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// static client stays nil; the resolver is the production path (mirrors the
 	// per-tenant SMTP resolver). Without this wire, create-ticket is inert.
 	s.JiraSync = jira.NewSyncService(repos.Finding, nil, log)
-	s.JiraSync.SetClientResolver(infrajira.NewIntegrationClientResolver(repos.Integration, s.Encryptor, log))
+	jiraResolver := infrajira.NewIntegrationClientResolver(repos.Integration, s.Encryptor, log)
+	s.JiraSync.SetClientResolver(jiraResolver)
+	// Same resolver also surfaces the per-tenant status maps for outbound sync.
+	s.JiraSync.SetMappingResolver(jiraResolver)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
@@ -1003,7 +1006,9 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 }
 
 // NewJobWorker creates a new job worker for processing background jobs.
-func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, log *logger.Logger) (*jobs.Worker, error) {
+// jiraSyncer (optional) handles outbound Jira status-sync tasks; pass nil to
+// disable that handler.
+func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, jiraSyncer jobs.JiraStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
 	if emailService == nil {
 		return nil, nil
 	}
@@ -1020,6 +1025,9 @@ func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageSe
 	var opts []jobs.WorkerOption
 	if aiTriageService != nil {
 		opts = append(opts, jobs.WithAITriageProcessor(aiTriageService))
+	}
+	if jiraSyncer != nil {
+		opts = append(opts, jobs.WithJiraStatusSyncer(jiraSyncer))
 	}
 
 	worker, err := jobs.NewWorker(workerCfg, emailService, log, opts...)

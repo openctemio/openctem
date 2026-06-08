@@ -141,6 +141,20 @@ func (c *Client) EnqueuePasswordReset(ctx context.Context, payload PasswordReset
 }
 
 // EnqueueAITriage enqueues an AI triage job with optional delay.
+// EnqueueJiraSyncFindingStatus queues an outbound Jira status-sync for a finding
+// (RFC-006 Phase 3c). Best-effort from the caller's perspective: the handler
+// no-ops when the tenant hasn't opted in.
+func (c *Client) EnqueueJiraSyncFindingStatus(ctx context.Context, payload JiraSyncFindingStatusPayload) error {
+	task, err := NewJiraSyncFindingStatusTask(payload)
+	if err != nil {
+		return fmt.Errorf("failed to create task: %w", err)
+	}
+	if _, err := c.client.EnqueueContext(ctx, task); err != nil {
+		return fmt.Errorf("failed to enqueue jira sync task: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) EnqueueAITriage(ctx context.Context, payload AITriagePayload, delay time.Duration) error {
 	task, err := NewAITriageTask(payload, delay)
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/websocket"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/keycloak"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -176,6 +177,20 @@ func run() int {
 		return 1
 	}
 	defer closeWithLog(jobClient, "job client", log)
+
+	// Outbound Jira status sync (RFC-006 Phase 3c): when a finding's status
+	// changes via the API, enqueue a background push to its linked Jira issue.
+	// The worker no-ops unless the tenant opted in (config.ticketing.sync_enabled).
+	if services.Vulnerability != nil {
+		services.Vulnerability.SetJiraStatusSyncHook(func(ctx context.Context, tenantID, findingID shared.ID) {
+			if err := jobClient.EnqueueJiraSyncFindingStatus(ctx, jobs.JiraSyncFindingStatusPayload{
+				TenantID:  tenantID.String(),
+				FindingID: findingID.String(),
+			}); err != nil {
+				log.Warn("failed to enqueue jira status sync", "error", err)
+			}
+		})
+	}
 
 	emailEnqueuer := jobs.NewEmailEnqueuerAdapter(jobClient)
 	services.Tenant = app.NewTenantService(repos.Tenant, log,

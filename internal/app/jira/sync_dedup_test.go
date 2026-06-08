@@ -23,6 +23,11 @@ func (c *stubCreateClient) CreateIssue(_ context.Context, _ CreateIssueInput) (*
 }
 
 func (c *stubCreateClient) TestConnection(_ context.Context) error { return nil }
+func (c *stubCreateClient) GetIssueStatus(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+func (c *stubCreateClient) TransitionToStatus(_ context.Context, _, _, _ string) error { return nil }
+func (c *stubCreateClient) AddComment(_ context.Context, _, _ string) error            { return nil }
 
 // stubFindingRepo implements only the two methods CreateTicketFromFinding uses;
 // the rest of the large interface is satisfied by the embedded nil interface.
