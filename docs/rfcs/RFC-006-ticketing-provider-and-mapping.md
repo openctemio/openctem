@@ -94,7 +94,7 @@ Keep `WorkItemURIs` for back-compat; optionally add a `finding_tickets` associat
 0. **Phase 0 (prerequisite — makes outbound actually work)** — per-tenant Jira **client resolution**: a resolver that loads the tenant's active Jira integration, decrypts its credentials, and builds a `jira.Client` on demand (mirrors `IntegrationSMTPResolver`). Without this, every outbound path is a no-op. Wire it into `SyncService` (resolve per call) so `CreateTicketFromFinding` works.
 1. **Phase 1** — `TicketProvider` interface; Jira `Client` conforms (add `Transition`/`AddComment`). `MappingConfig` loader with defaults = today's hardcoded maps. No behaviour change.
 2. **Phase 2** — wire configurable mapping into create + inbound webhook (read `config.ticketing`, fall back to defaults).
-3. **Phase 3** — outbound status sync via the async worker + echo-guard, behind a per-integration flag (default off).
+3. **Phase 3** — outbound status sync via the async worker + echo-guard, behind a per-integration flag (default off). **Detailed design: [RFC-006 Phase 3 — Bidirectional Jira Status Sync](./RFC-006-phase-3-bidirectional-sync.md)** (echo-guard, `ticket_links` table, outbound mapping, conflict policy, and a `WorkItem` seam so the same engine later serves a grouping `remediation_task`).
 4. **Phase 4** — second provider (GitHub Issues or ServiceNow) to validate the abstraction; optional typed `finding_tickets` table + mapping UI.
 
 ## 5. Alternatives considered

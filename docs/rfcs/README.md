@@ -41,6 +41,9 @@ RFC-006  Ticketing provider + mapping  (#136 design)
 ├─ Phase 1  TicketProvider iface + MappingConfig (defaults=today)   ── TODO
 ├─ Phase 2  wire configurable mapping into create + inbound webhook ── TODO
 ├─ Phase 3  outbound status sync via outbox/worker + echo-guard     ── TODO
+│           detailed design: RFC-006-phase-3-bidirectional-sync.md
+│           (ticket_links table, echo-guard, conflict policy,
+│            WorkItem seam → finding now, remediation_task later)
 └─ Phase 4  2nd provider (ServiceNow/GitHub) + finding_tickets + UI ── TODO
 
 Code touchpoints:
