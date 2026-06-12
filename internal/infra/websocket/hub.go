@@ -51,6 +51,12 @@ type Hub struct {
 	// The fan-in subscriber on each pod receives the payload and pushes
 	// it to h.broadcast for local delivery.
 	publisher BroadcastPublisher
+
+	// done is closed when Run exits. Every send onto the hub's channels selects
+	// on it so callers (HTTP handlers broadcasting, ReadPump/WritePump defers
+	// unregistering) cannot block forever once the hub stopped — an unguarded
+	// send after shutdown would stall graceful server shutdown.
+	done chan struct{}
 }
 
 // BroadcastPublisher is the minimum surface a cross-pod transport must
@@ -81,6 +87,7 @@ func NewHub(log *logger.Logger) *Hub {
 		unregister:     make(chan *Client),
 		logger:         log,
 		authorizeFn:    defaultAuthorize,
+		done:           make(chan struct{}),
 	}
 }
 
@@ -130,6 +137,11 @@ func (h *Hub) SetAuthorizeFunc(fn AuthorizeFunc) {
 // Run starts the hub's main loop.
 func (h *Hub) Run(ctx context.Context) {
 	h.logger.Info("websocket hub started")
+
+	// Signal all channel senders (Broadcast/Register/Unregister/DeliverLocal)
+	// that the loop is gone, so their selects fall through instead of blocking
+	// forever on channels nobody reads.
+	defer close(h.done)
 
 	for {
 		select {
@@ -192,14 +204,22 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 }
 
-// RegisterClient registers a new client.
+// RegisterClient registers a new client. No-op after the hub stopped (the
+// select on done prevents a permanent block on a channel nobody reads).
 func (h *Hub) RegisterClient(client *Client) {
-	h.register <- client
+	select {
+	case h.register <- client:
+	case <-h.done:
+		client.Close()
+	}
 }
 
-// UnregisterClient unregisters a client.
+// UnregisterClient unregisters a client. No-op after the hub stopped.
 func (h *Hub) UnregisterClient(client *Client) {
-	h.unregister <- client
+	select {
+	case h.unregister <- client:
+	case <-h.done:
+	}
 }
 
 // Broadcast sends a message to all clients subscribed to a channel.
@@ -216,15 +236,15 @@ func (h *Hub) Broadcast(channel string, msg *Message, tenantID string) {
 		if err := h.publisher.Publish(context.Background(), bm); err != nil {
 			h.logger.Error("ws broadcast publish failed, falling back to local only",
 				"channel", channel, "error", err)
-			h.broadcast <- bm
+			h.deliver(bm)
 		}
 		return
 	}
-	h.broadcast <- &BroadcastMessage{
+	h.deliver(&BroadcastMessage{
 		Channel:  channel,
 		Message:  msg,
 		TenantID: tenantID,
-	}
+	})
 }
 
 // DeliverLocal pushes a BroadcastMessage onto the local broadcast channel
@@ -233,7 +253,19 @@ func (h *Hub) Broadcast(channel string, msg *Message, tenantID string) {
 // into this pod's in-memory fan-out. External callers should use
 // Broadcast instead.
 func (h *Hub) DeliverLocal(msg *BroadcastMessage) {
-	h.broadcast <- msg
+	h.deliver(msg)
+}
+
+// deliver places a message on the broadcast channel unless the hub has
+// stopped — after Run exits nothing reads h.broadcast, and an unguarded send
+// would block the caller (an HTTP handler or the Redis subscriber) forever,
+// stalling graceful shutdown.
+func (h *Hub) deliver(msg *BroadcastMessage) {
+	select {
+	case h.broadcast <- msg:
+	case <-h.done:
+		h.logger.Debug("ws broadcast dropped: hub stopped", "channel", msg.Channel)
+	}
 }
 
 // SetPublisher attaches a cross-pod publisher (F-7). Must be called
