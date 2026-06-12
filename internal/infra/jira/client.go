@@ -137,9 +137,9 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 
 // GetIssueStatus fetches the current status of a Jira issue.
 func (c *Client) GetIssueStatus(ctx context.Context, issueKey string) (string, error) {
-	url := fmt.Sprintf("%s/rest/api/2/issue/%s?fields=status", c.baseURL, issueKey)
+	u := fmt.Sprintf("%s/rest/api/2/issue/%s?fields=status", c.baseURL, url.PathEscape(issueKey))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}

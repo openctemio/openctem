@@ -215,6 +215,9 @@ func (rl *RateLimiter) Allow(ctx context.Context, key string) (*RateLimitResult,
 		DefaultMetrics.ObserveOperation("ratelimit_allow", time.Since(start), err)
 		return nil, fmt.Errorf("rate limit check: %w", err)
 	}
+	if len(result) < 3 {
+		return nil, fmt.Errorf("rate limit check: unexpected redis response length %d", len(result))
+	}
 
 	allowed := result[0].(int64) == 1
 	remaining := int(result[1].(int64))
@@ -264,6 +267,9 @@ func (rl *RateLimiter) Status(ctx context.Context, key string) (*RateLimitResult
 		nowMs, windowStartMs, windowMs, rl.limit).Slice()
 	if err != nil {
 		return nil, fmt.Errorf("rate limit status: %w", err)
+	}
+	if len(result) < 3 {
+		return nil, fmt.Errorf("rate limit status: unexpected redis response length %d", len(result))
 	}
 
 	allowed := result[0].(int64) == 1
@@ -318,6 +324,9 @@ func (rl *RateLimiter) AllowN(ctx context.Context, key string, n int) (*RateLimi
 		nowMs, windowStartMs, windowMs, rl.limit, n, requestPrefix).Slice()
 	if err != nil {
 		return nil, fmt.Errorf("rate limit check n: %w", err)
+	}
+	if len(result) < 3 {
+		return nil, fmt.Errorf("rate limit check n: unexpected redis response length %d", len(result))
 	}
 
 	allowed := result[0].(int64) == 1
