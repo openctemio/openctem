@@ -21,6 +21,7 @@ func registerRemediationCampaignRoutes(
 		r.GET("/{id}", h.Get, middleware.Require(permission.RemediationRead))
 		r.PATCH("/{id}", h.Update, middleware.Require(permission.RemediationWrite))
 		r.PATCH("/{id}/status", h.UpdateStatus, middleware.Require(permission.RemediationWrite))
+		r.POST("/{id}/refresh", h.Refresh, middleware.Require(permission.RemediationWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.RemediationWrite))
 	}, tenantMiddlewares...)
 }

@@ -459,6 +459,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
+	// Wire the finding counter so campaign progress (finding_count/resolved_count/
+	// progress) is computed from live finding data instead of staying at zero.
+	s.RemediationCampaign.SetFindingCounter(repos.Finding)
 	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 
 	s.Compliance = app.NewComplianceService(

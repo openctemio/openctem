@@ -153,6 +153,20 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
 }
 
+// Refresh recomputes a campaign's finding counts/progress on demand and
+// returns the updated campaign.
+func (h *RemediationCampaignHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	campaign, err := h.service.RefreshCampaignProgress(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
+}
+
 // Delete deletes a campaign.
 func (h *RemediationCampaignHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())

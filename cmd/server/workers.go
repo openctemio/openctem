@@ -323,6 +323,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "risk-snapshot"),
 	))
 
+	// Remediation progress — periodically refresh campaign finding counts and
+	// auto-complete campaigns whose findings are all resolved.
+	if svc != nil && svc.RemediationCampaign != nil {
+		w.ControllerManager.Register(controller.NewRemediationProgressController(
+			svc.RemediationCampaign,
+			30*time.Minute,
+			log.With("controller", "remediation-progress"),
+		))
+	}
+
 	// Control test scheduler — daily sweep to mark stale detection coverage as overdue
 	w.ControllerManager.Register(controller.NewControlTestSchedulerController(
 		repos.ControlTest,

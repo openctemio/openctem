@@ -332,4 +332,11 @@ type CampaignRepository interface {
 	Update(ctx context.Context, campaign *Campaign) error
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	List(ctx context.Context, filter CampaignFilter, page pagination.Pagination) (pagination.Result[*Campaign], error)
+
+	// ListNonTerminal returns campaigns that are not in a terminal state
+	// (completed/canceled) across all tenants, ordered by least-recently
+	// updated first, up to limit. Used by the progress-reconcile controller
+	// to refresh finding counts and auto-complete. limit <= 0 means a
+	// repository-chosen default.
+	ListNonTerminal(ctx context.Context, limit int) ([]*Campaign, error)
 }
