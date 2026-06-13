@@ -609,6 +609,48 @@ func (s *RemediationCampaignService) CreateTicket(ctx context.Context, tenantID,
 	}, nil
 }
 
+// CampaignTicketLink is the external tracker link surfaced on a campaign in
+// read responses (so the UI can show / link to the epic).
+type CampaignTicketLink struct {
+	Provider string `json:"provider"`
+	IssueKey string `json:"issue_key"`
+	IssueURL string `json:"issue_url"`
+}
+
+// CampaignTicketFor returns the campaign's linked ticket, or nil when there is
+// none / ticketing isn't wired. Never errors on "no link" — absence is normal.
+func (s *RemediationCampaignService) CampaignTicketFor(ctx context.Context, tenantID, campaignID shared.ID) (*CampaignTicketLink, error) {
+	if s.ticketRepo == nil {
+		return nil, nil
+	}
+	link, err := s.ticketRepo.GetByCampaignAndProvider(ctx, tenantID, campaignID, "jira")
+	if err != nil {
+		if errors.Is(err, remediation.ErrCampaignTicketNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &CampaignTicketLink{Provider: link.Provider(), IssueKey: link.IssueKey(), IssueURL: link.IssueURL()}, nil
+}
+
+// CampaignTicketsFor batch-loads ticket links for the given campaigns, keyed by
+// campaign id string. Campaigns with no link are absent. Returns an empty map
+// when ticketing isn't wired.
+func (s *RemediationCampaignService) CampaignTicketsFor(ctx context.Context, tenantID shared.ID, campaignIDs []shared.ID) (map[string]*CampaignTicketLink, error) {
+	out := make(map[string]*CampaignTicketLink, len(campaignIDs))
+	if s.ticketRepo == nil || len(campaignIDs) == 0 {
+		return out, nil
+	}
+	links, err := s.ticketRepo.ListByCampaignIDs(ctx, tenantID, campaignIDs)
+	if err != nil {
+		return nil, err
+	}
+	for cid, link := range links {
+		out[cid] = &CampaignTicketLink{Provider: link.Provider(), IssueKey: link.IssueKey(), IssueURL: link.IssueURL()}
+	}
+	return out, nil
+}
+
 // buildEpicDescription renders the epic body from a campaign's current state.
 func buildEpicDescription(c *remediation.Campaign) string {
 	desc := c.Description()

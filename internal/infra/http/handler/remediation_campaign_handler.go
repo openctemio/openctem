@@ -58,9 +58,28 @@ func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Batch-load linked Jira epics so the list shows what's already ticketed
+	// (avoids N+1). Best-effort: a lookup failure just omits the links.
+	var tickets map[string]*app.CampaignTicketLink
+	if tid, terr := shared.IDFromString(tenantID); terr == nil {
+		ids := make([]shared.ID, 0, len(result.Data))
+		for _, c := range result.Data {
+			ids = append(ids, c.ID())
+		}
+		if m, lerr := h.service.CampaignTicketsFor(r.Context(), tid, ids); lerr == nil {
+			tickets = m
+		} else {
+			h.logger.Warn("failed to load campaign tickets for list", "error", lerr)
+		}
+	}
+
 	resp := make([]RemediationCampaignResponse, 0, len(result.Data))
 	for _, c := range result.Data {
-		resp = append(resp, toRemediationCampaignResp(c))
+		item := toRemediationCampaignResp(c)
+		if t := tickets[c.ID().String()]; t != nil {
+			item.Ticket = t
+		}
+		resp = append(resp, item)
 	}
 	writeJSON(w, http.StatusOK, pagination.NewResult(resp, result.Total, page))
 }
@@ -104,7 +123,16 @@ func (h *RemediationCampaignHandler) Get(w http.ResponseWriter, r *http.Request)
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
+
+	resp := toRemediationCampaignResp(campaign)
+	if tid, terr := shared.IDFromString(tenantID); terr == nil {
+		if link, lerr := h.service.CampaignTicketFor(r.Context(), tid, campaign.ID()); lerr == nil {
+			resp.Ticket = link
+		} else {
+			h.logger.Warn("failed to load campaign ticket", "id", id, "error", lerr)
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // UpdateStatus transitions campaign status.
@@ -255,6 +283,10 @@ type RemediationCampaignResponse struct {
 	Tags          []string       `json:"tags"`
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
+
+	// Ticket is the linked external tracker epic (e.g. Jira), or null when the
+	// campaign has no linked ticket. Lets the UI show/relink the epic.
+	Ticket *app.CampaignTicketLink `json:"ticket,omitempty"`
 }
 
 func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignResponse {

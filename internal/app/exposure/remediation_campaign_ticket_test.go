@@ -51,6 +51,14 @@ func (r *fakeTicketRepo) GetByIssueKey(_ context.Context, _ shared.ID, _, _ stri
 	return nil, remediation.ErrCampaignTicketNotFound
 }
 
+func (r *fakeTicketRepo) ListByCampaignIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[string]*remediation.CampaignTicket, error) {
+	out := map[string]*remediation.CampaignTicket{}
+	if r.existing != nil {
+		out[r.existing.CampaignID().String()] = r.existing
+	}
+	return out, nil
+}
+
 type fakeEpicCreator struct {
 	key, url        string
 	calls           int
@@ -184,5 +192,41 @@ func TestUpdateCampaignStatus_NoEpicLink_NoTransition(t *testing.T) {
 	}
 	if epic.transitionCalls != 0 {
 		t.Fatalf("no epic link → must not transition, got %d", epic.transitionCalls)
+	}
+}
+
+func TestCampaignTicketFor_PresentAndAbsent(t *testing.T) {
+	c := newCampaign(t)
+	link, _ := remediation.NewCampaignTicket(c.TenantID(), c.ID(), "jira", "SEC-5", "https://x/browse/SEC-5")
+
+	// Present
+	svc := newTicketSvc(c, &fakeTicketRepo{existing: link}, &fakeEpicCreator{})
+	got, err := svc.CampaignTicketFor(context.Background(), c.TenantID(), c.ID())
+	if err != nil {
+		t.Fatalf("CampaignTicketFor: %v", err)
+	}
+	if got == nil || got.IssueKey != "SEC-5" || got.Provider != "jira" {
+		t.Fatalf("expected SEC-5 link, got %+v", got)
+	}
+
+	// Absent → nil, nil
+	svc2 := newTicketSvc(c, &fakeTicketRepo{}, &fakeEpicCreator{})
+	got2, err := svc2.CampaignTicketFor(context.Background(), c.TenantID(), c.ID())
+	if err != nil || got2 != nil {
+		t.Fatalf("expected (nil,nil) when no link, got (%+v,%v)", got2, err)
+	}
+}
+
+func TestCampaignTicketsFor_Batch(t *testing.T) {
+	c := newCampaign(t)
+	link, _ := remediation.NewCampaignTicket(c.TenantID(), c.ID(), "jira", "SEC-9", "https://x/browse/SEC-9")
+	svc := newTicketSvc(c, &fakeTicketRepo{existing: link}, &fakeEpicCreator{})
+
+	m, err := svc.CampaignTicketsFor(context.Background(), c.TenantID(), []shared.ID{c.ID()})
+	if err != nil {
+		t.Fatalf("CampaignTicketsFor: %v", err)
+	}
+	if got := m[c.ID().String()]; got == nil || got.IssueKey != "SEC-9" {
+		t.Fatalf("expected SEC-9 in batch map, got %+v", m)
 	}
 }
