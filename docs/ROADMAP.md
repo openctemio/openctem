@@ -1,7 +1,7 @@
 # OpenCTEM — Project Assessment & Roadmap
 
 > Living strategic doc: where the platform stands, where it's strong, and the
-> prioritized work to make it best-in-class. Updated 2026-06-08.
+> prioritized work to make it best-in-class. Updated 2026-06-12.
 
 ## 1. What OpenCTEM is
 
@@ -34,13 +34,13 @@ back these up:
 The engine is strong; the **operator/management layer** that customers see weekly
 is thin:
 
-- **Reporting**: schedules can be created in the UI but **never execute** (no
-  controller runs `ListDue()`). PDF export missing. *(Being fixed — see Tier 1.)*
+- **Reporting**: scheduler controller now runs `ListDue()` end-to-end (#177);
+  remaining gaps are PDF export and technical/compliance report generators.
+  *(Core scheduler done — see Tier 1.)*
 - **Remediation workflow**: findings can become Jira tickets, but there's no
   first-class *remediation campaign* (group findings → owner → deadline →
-  progress) — the core Mobilization narrative.
-- **Trending**: no historical risk-posture snapshots → can't answer "are we better
-  than last month?", the question every CISO asks.
+  progress) — the core Mobilization narrative. **This is the main open Tier-1
+  item.**
 - **Ticketing breadth**: Jira only (provider abstraction exists, unused).
 - **Enterprise table-stakes**: no SSO/SAML; i18n framing exists (en/vi/ar
   direction) but no translation layer wired.
@@ -55,18 +55,23 @@ infrastructure, no product unknowns).
 
 ### Tier 1 — finish what's promised (highest ROI)
 
-1. **Report scheduler + weekly digest** *(in progress)* — make `report_schedules`
-   actually run. Pieces: generic exec-summary generator (`pkg/report.GenerateSummaryHTML`,
-   shipped #175) → scheduler controller polling `ListDue` → deliver to recipients
-   → `RecordRun` + next-run via `robfig/cron`. Default report content: findings by
-   severity, KEV/EPSS counts, SLA breaches, new-vs-resolved, top risky assets.
-2. **Remediation Campaigns (`remediation_task`)** — group N findings into a task
-   with owner / deadline / progress, **bidirectional Jira sync via the `WorkItem`
-   seam already designed in RFC-006 Phase 3e**. Completes the Mobilization pillar
-   and is literally the "create a task that syncs to Jira" ask.
-3. **Risk-posture trending** — a daily snapshot table (severity counts, open total,
-   KEV count, avg risk) + one cron + one chart. Unlocks "trend over time" across
-   dashboard, reports, and SLA.
+1. **Report scheduler + weekly digest** ✅ *(core shipped)* — `report_schedules`
+   now execute. Pieces delivered: generic exec-summary generator
+   (`pkg/report.GenerateSummaryHTML`, #175) → `ReportScheduler` controller polling
+   `ListDue` + rendering + email delivery + `RecordRun` + next-run via
+   `robfig/cron` (#177). *Remaining polish:* PDF export, technical/compliance
+   report generators, KEV/EPSS/SLA breakdown in the digest (needs extra queries —
+   `FindingStats` has no KEV/EPSS fields today).
+2. **Remediation Campaigns (`remediation_task`)** ⟵ **next** — group N findings
+   into a task with owner / deadline / progress, **bidirectional Jira sync via the
+   `WorkItem` seam already designed in RFC-006 Phase 3e**. Completes the
+   Mobilization pillar and is literally the "create a task that syncs to Jira" ask.
+   This is the remaining open Tier-1 item.
+3. **Risk-posture trending** ✅ *(already shipped)* — `risk_snapshots` table
+   (migration 000145), `RiskSnapshotController` (registered in `workers.go`, 6h
+   interval), `GET /dashboard/risk-trend` + `/velocity` endpoints, and UI trend
+   charts already exist. No further work required beyond surfacing the series in
+   scheduled reports (see #1 polish).
 
 ### Tier 2 — broaden reach
 
@@ -87,9 +92,10 @@ infrastructure, no product unknowns).
 
 ## 5. Recommendation
 
-Execute **Tier 1 in order (1 → 2 → 3)**. All three convert "good engine" into
-"product an operator opens every morning", reuse existing infrastructure, and
-need no new product decisions. Item 1 is underway (#175 + controller next).
+With Tier-1 #1 (report scheduler) and #3 (risk trending) shipped, the remaining
+highest-ROI item is **#2 Remediation Campaigns** — the one piece that turns
+"findings → tickets" into a managed Mobilization workflow. Build it next, then
+move to Tier 2 (GitHub Issues provider, agent auto-fix PRs).
 
 ## 6. Cross-references
 
