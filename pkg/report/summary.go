@@ -28,6 +28,12 @@ type SummaryInput struct {
 	WindowDays       int
 	NewInWindow      int64
 	ResolvedInWindow int64
+
+	// Risk posture (open findings) — the metrics that drive remediation
+	// priority. Zero values render as 0; the card always shows.
+	KevOpen      int64 // open findings on the CISA KEV list (known exploited)
+	EpssHighOpen int64 // open findings with EPSS >= 10%
+	SLABreached  int64 // open findings past their SLA deadline
 }
 
 // SeverityOrder is the high→low display order for severity rows.
@@ -131,6 +137,15 @@ const summaryTemplate = `<!DOCTYPE html>
     <td><div class="bar" style="width:{{.Pct}}%;background:{{.Color}}"></div></td>
   </tr>{{end}}
  </table>
+</div>
+<div class="card">
+ <h1 style="font-size:16px">Risk posture <span class="muted">(open findings)</span></h1>
+ <div class="kpis">
+  <div class="kpi"><div class="n" style="color:#dc2626">{{.KevOpen}}</div><div class="l">Known exploited (CISA KEV)</div></div>
+  <div class="kpi"><div class="n" style="color:#ea580c">{{.EpssHighOpen}}</div><div class="l">High EPSS (&ge;10%)</div></div>
+  <div class="kpi"><div class="n" style="color:#b91c1c">{{.SLABreached}}</div><div class="l">SLA breached</div></div>
+ </div>
+ <p class="muted">Known-exploited and SLA-breached findings are the first remediation priority.</p>
 </div>
 {{if .WindowDays}}<div class="card">
  <h1 style="font-size:16px">Last {{.WindowDays}} days</h1>

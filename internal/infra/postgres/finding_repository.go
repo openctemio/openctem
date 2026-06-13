@@ -2407,6 +2407,26 @@ func (r *FindingRepository) ListByAssetID(ctx context.Context, tenantID, assetID
 
 // CountByAssetID returns the count of findings for an asset.
 // Security: Requires tenantID to prevent cross-tenant data access.
+// CountWindow returns, for the trailing `days` window, how many findings were
+// newly detected (created_at) and how many were resolved (resolved_at, status
+// resolved/verified) — the new-vs-resolved trend a digest reports. Tenant-scoped.
+func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, days int) (newCount, resolvedCount int64, err error) {
+	if days <= 0 {
+		days = 7
+	}
+	query := `
+		SELECT
+			COALESCE(SUM(CASE WHEN created_at >= NOW() - ($2::int || ' days')::interval THEN 1 ELSE 0 END), 0) AS new_count,
+			COALESCE(SUM(CASE WHEN resolved_at >= NOW() - ($2::int || ' days')::interval
+				AND status IN ('resolved','verified') THEN 1 ELSE 0 END), 0) AS resolved_count
+		FROM findings
+		WHERE tenant_id = $1`
+	if err = r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(&newCount, &resolvedCount); err != nil {
+		return 0, 0, fmt.Errorf("failed to count finding window: %w", err)
+	}
+	return newCount, resolvedCount, nil
+}
+
 func (r *FindingRepository) CountByAssetID(ctx context.Context, tenantID, assetID shared.ID) (int64, error) {
 	// Security: Include tenant_id in WHERE clause
 	query := `SELECT COUNT(*) FROM findings WHERE asset_id = $1 AND tenant_id = $2`
@@ -2486,7 +2506,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN source = 'container' THEN 1 ELSE 0 END), 0) as source_container,
 			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
 			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
-			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external
+			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
+			-- Risk posture, open findings only (status not in a closed category).
+			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
+			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
+			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
 		FROM findings
 		WHERE tenant_id = $1
 	`
@@ -2519,6 +2543,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		sourceSast, sourceDast, sourceSca, sourceSecret              int64
 		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
 		sourceExternal                                               int64
+		kevOpen, epssHighOpen, slaBreached                           int64
 	)
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
@@ -2531,6 +2556,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		&sourceSast, &sourceDast, &sourceSca, &sourceSecret,
 		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
 		&sourceExternal,
+		&kevOpen, &epssHighOpen, &slaBreached,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get finding stats: %w", err)
@@ -2575,6 +2601,10 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	// Open = new + confirmed + in_progress + pentest active (draft, in_review, remediation, retest)
 	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview + statusRemediation + statusRetest
 	stats.ResolvedCount = statusResolved + statusVerified
+
+	stats.KevOpen = kevOpen
+	stats.EpssHighOpen = epssHighOpen
+	stats.SLABreached = slaBreached
 
 	return stats, nil
 }

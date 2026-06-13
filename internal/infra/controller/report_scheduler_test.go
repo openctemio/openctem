@@ -30,7 +30,12 @@ func (fakeStats) GetStats(_ context.Context, _ shared.ID, _, _ *shared.ID) (*vul
 	st := vulnerability.NewFindingStats()
 	st.Total, st.OpenCount, st.ResolvedCount = 10, 7, 3
 	st.BySeverity[vulnerability.SeverityHigh] = 4
+	st.KevOpen, st.EpssHighOpen, st.SLABreached = 2, 3, 1
 	return st, nil
+}
+
+func (fakeStats) CountWindow(_ context.Context, _ shared.ID, _ int) (int64, int64, error) {
+	return 5, 2, nil // new, resolved
 }
 
 type fakeEmailer struct {

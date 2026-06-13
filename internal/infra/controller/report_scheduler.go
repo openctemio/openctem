@@ -24,7 +24,13 @@ type ReportScheduleStore interface {
 // ReportStatsSource provides the finding aggregates a summary report renders.
 type ReportStatsSource interface {
 	GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, assetID *shared.ID) (*vulnerability.FindingStats, error)
+	// CountWindow returns new (created) vs resolved finding counts over the
+	// trailing `days` window — the digest's trend line.
+	CountWindow(ctx context.Context, tenantID shared.ID, days int) (newCount, resolvedCount int64, err error)
 }
+
+// reportWindowDays is the trailing window the digest's new-vs-resolved trend covers.
+const reportWindowDays = 7
 
 // ReportEmailer delivers a rendered HTML report to recipients.
 type ReportEmailer interface {
@@ -176,13 +182,29 @@ func (c *ReportScheduler) render(ctx context.Context, s *reportschedule.ReportSc
 		}
 	}
 
+	// Trend over the trailing window. Best-effort: a failure here just omits the
+	// window card (WindowDays stays 0) rather than failing the whole report.
+	var windowDays int
+	var newInWindow, resolvedInWindow int64
+	if n, res, werr := c.stats.CountWindow(ctx, s.TenantID(), reportWindowDays); werr == nil {
+		windowDays, newInWindow, resolvedInWindow = reportWindowDays, n, res
+	} else {
+		c.logger.Warn("report window counts failed; omitting trend", "tenant_id", s.TenantID().String(), "error", werr)
+	}
+
 	return report.GenerateSummaryHTML(report.SummaryInput{
-		TenantName:  name,
-		GeneratedAt: time.Now(),
-		Total:       stats.Total,
-		Open:        stats.OpenCount,
-		Resolved:    stats.ResolvedCount,
-		BySeverity:  bySev,
+		TenantName:       name,
+		GeneratedAt:      time.Now(),
+		Total:            stats.Total,
+		Open:             stats.OpenCount,
+		Resolved:         stats.ResolvedCount,
+		BySeverity:       bySev,
+		KevOpen:          stats.KevOpen,
+		EpssHighOpen:     stats.EpssHighOpen,
+		SLABreached:      stats.SLABreached,
+		WindowDays:       windowDays,
+		NewInWindow:      newInWindow,
+		ResolvedInWindow: resolvedInWindow,
 	})
 }
 

@@ -28,6 +28,26 @@ func TestGenerateSummaryHTML(t *testing.T) {
 	}
 }
 
+func TestGenerateSummaryHTML_RendersRiskPosture(t *testing.T) {
+	html, err := GenerateSummaryHTML(SummaryInput{
+		TenantName:  "Acme",
+		GeneratedAt: time.Date(2026, 6, 8, 9, 0, 0, 0, time.UTC),
+		Total:       42, Open: 30, Resolved: 12,
+		BySeverity:   map[string]int64{"critical": 4},
+		KevOpen:      7,
+		EpssHighOpen: 11,
+		SLABreached:  3,
+	})
+	if err != nil {
+		t.Fatalf("GenerateSummaryHTML: %v", err)
+	}
+	for _, want := range []string{"Risk posture", "CISA KEV", "High EPSS", "SLA breached", ">7<", ">11<", ">3<"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("risk posture section missing %q", want)
+		}
+	}
+}
+
 func TestGenerateSummaryHTML_EscapesTenantName(t *testing.T) {
 	html, err := GenerateSummaryHTML(SummaryInput{
 		TenantName:  `<script>alert(1)</script>`,
