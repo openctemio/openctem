@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/remediation"
@@ -20,12 +21,19 @@ type FindingCounter interface {
 	Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error)
 }
 
-// CampaignEpicCreator creates an external tracker epic for a tenant and returns
-// its key + URL. Implemented by *jira.SyncService (CreateEpic). Declared here
-// with primitive types so this package needs no dependency on the jira package.
+// CampaignEpicCreator creates and transitions an external tracker epic for a
+// tenant. Implemented by *jira.SyncService. Declared here with primitive types
+// so this package needs no dependency on the jira package.
 type CampaignEpicCreator interface {
 	CreateEpic(ctx context.Context, tenantID shared.ID, projectKey, summary, description string, labels []string) (issueKey, issueURL string, err error)
+	// TransitionEpic moves the linked epic to a target status name (echo-safe,
+	// comment fallback). Best-effort outbound campaign→epic status sync.
+	TransitionEpic(ctx context.Context, tenantID shared.ID, issueKey, targetStatus, comment string) error
 }
+
+// epicDoneStatus is the Jira status a campaign's epic is moved to on completion.
+// Jira's default done state; per-tenant override is a documented follow-up.
+const epicDoneStatus = "Done"
 
 // RemediationCampaignService manages remediation campaigns.
 type RemediationCampaignService struct {
@@ -236,8 +244,86 @@ func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, t
 		return nil, fmt.Errorf("failed to update campaign status: %w", err)
 	}
 
+	if campaign.Status() == remediation.CampaignStatusCompleted {
+		s.syncEpicOnCompletion(ctx, tid, cid, campaign.Name())
+	}
+
 	s.logger.Info("remediation campaign status updated", "id", campaignID, "status", newStatus)
 	return campaign, nil
+}
+
+// syncEpicOnCompletion best-effort transitions a completed campaign's linked
+// Jira epic to the done state. No-op when ticketing is unwired or the campaign
+// has no linked epic. Errors are logged, never propagated — a Jira hiccup must
+// not fail the campaign-completion request. Echo-guarded in TransitionEpic, so
+// safe to call from multiple completion paths (manual + auto-complete).
+func (s *RemediationCampaignService) syncEpicOnCompletion(ctx context.Context, tenantID, campaignID shared.ID, campaignName string) {
+	if s.ticketRepo == nil || s.epicCreator == nil {
+		return
+	}
+	link, err := s.ticketRepo.GetByCampaignAndProvider(ctx, tenantID, campaignID, "jira")
+	if err != nil {
+		return // not linked (or lookup failed) — nothing to sync
+	}
+	comment := fmt.Sprintf("OpenCTEM marked remediation campaign %q complete.", campaignName)
+	if terr := s.epicCreator.TransitionEpic(ctx, tenantID, link.IssueKey(), epicDoneStatus, comment); terr != nil {
+		s.logger.Warn("failed to sync campaign completion to epic",
+			"campaign_id", campaignID.String(), "issue_key", link.IssueKey(), "error", terr)
+	}
+}
+
+// HandleEpicStatusChange is the inbound half of campaign↔epic sync: when a
+// Jira webhook reports a campaign's linked epic moved to a done-ish status, the
+// campaign is marked completed. No-op when: ticketing is unwired, the status
+// isn't a done state, the issue isn't a campaign epic, or the campaign is
+// already terminal / not in a completable state. Idempotent and loop-safe — it
+// persists via repo.Update directly (not UpdateCampaignStatus), so it does NOT
+// re-trigger the outbound epic transition.
+func (s *RemediationCampaignService) HandleEpicStatusChange(ctx context.Context, tenantID shared.ID, issueKey, jiraStatus string) error {
+	if s.ticketRepo == nil || !isJiraDoneStatus(jiraStatus) {
+		return nil
+	}
+
+	link, err := s.ticketRepo.GetByIssueKey(ctx, tenantID, "jira", issueKey)
+	if err != nil {
+		if errors.Is(err, remediation.ErrCampaignTicketNotFound) {
+			return nil // not a campaign epic — nothing to do
+		}
+		return fmt.Errorf("lookup campaign by issue key: %w", err)
+	}
+
+	campaign, err := s.repo.GetByID(ctx, tenantID, link.CampaignID())
+	if err != nil {
+		return fmt.Errorf("load campaign for inbound epic sync: %w", err)
+	}
+	if campaign.Status() == remediation.CampaignStatusCompleted ||
+		campaign.Status() == remediation.CampaignStatusCanceled {
+		return nil // already terminal — echo-guard against the outbound loop
+	}
+
+	if cerr := campaign.Complete(); cerr != nil {
+		// Complete() requires active/validating; a draft/paused campaign can't be
+		// auto-completed from an epic move. Log and skip rather than force it.
+		s.logger.Warn("inbound epic done but campaign not completable",
+			"campaign_id", campaign.ID().String(), "status", campaign.Status(), "error", cerr)
+		return nil
+	}
+	s.recordRiskReduction(campaign)
+	if uerr := s.repo.Update(ctx, campaign); uerr != nil {
+		return fmt.Errorf("persist campaign completion from epic: %w", uerr)
+	}
+	s.logger.Info("remediation campaign completed from inbound jira epic",
+		"campaign_id", campaign.ID().String(), "issue_key", issueKey, "jira_status", jiraStatus)
+	return nil
+}
+
+// isJiraDoneStatus reports whether a Jira status name represents a done state.
+func isJiraDoneStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "done", "resolved", "closed", "complete", "completed":
+		return true
+	}
+	return false
 }
 
 // DeleteCampaign deletes a campaign.
@@ -275,6 +361,9 @@ func (s *RemediationCampaignService) RefreshCampaignProgress(ctx context.Context
 		if err := s.repo.Update(ctx, campaign); err != nil {
 			return nil, fmt.Errorf("failed to persist campaign progress: %w", err)
 		}
+	}
+	if campaign.Status() == remediation.CampaignStatusCompleted {
+		s.syncEpicOnCompletion(ctx, tid, cid, campaign.Name())
 	}
 	return campaign, nil
 }
@@ -314,6 +403,9 @@ func (s *RemediationCampaignService) ReconcileProgress(ctx context.Context) (int
 		if uerr := s.repo.Update(ctx, campaign); uerr != nil {
 			s.logger.Warn("failed to persist reconciled campaign", "id", campaign.ID().String(), "error", uerr)
 			continue
+		}
+		if campaign.Status() == remediation.CampaignStatusCompleted {
+			s.syncEpicOnCompletion(ctx, campaign.TenantID(), campaign.ID(), campaign.Name())
 		}
 		updated++
 	}

@@ -79,8 +79,45 @@ providers/issues can compose later:
 | Jira | `internal/app/jira/sync_service.go` (`CreateEpic`) |
 | Handler/route | `remediation_campaign_handler.go`, `routes/remediation.go` |
 
+## Outbound status sync (campaign → epic)
+
+When a campaign reaches `completed` — whether by an explicit status change, the
+manual progress `refresh`, or the background reconcile auto-complete — its
+linked epic is transitioned to **Done** (best-effort):
+
+- `RemediationCampaignService.syncEpicOnCompletion` looks up the campaign's Jira
+  link and calls `CampaignEpicCreator.TransitionEpic`.
+- `jira.SyncService.TransitionEpic` is echo-guarded (skips if the epic is
+  already at the target) and falls back to a **comment** when the workflow
+  offers no transition — the same pattern as finding-level outbound sync.
+- Errors are logged, never propagated: a Jira hiccup must not fail campaign
+  completion. The echo-guard makes it safe to fire from every completion path.
+
+Target status is `Done` (Jira's default done state); a per-tenant override is a
+follow-up.
+
+## Inbound status sync (epic → campaign)
+
+The reverse direction, mirroring finding-level inbound sync. A Jira webhook that
+moves a campaign's linked epic to a done state (`Done`/`Resolved`/`Closed`/
+`Complete`/`Completed`) marks the campaign **completed**.
+
+- `HandleJiraWebhook` calls `CampaignEpicSink.HandleEpicStatusChange` (best-
+  effort, independent of the finding path — an issue is either a finding ticket
+  or a campaign epic, and each sink no-ops on a key that isn't its own).
+- `RemediationCampaignService.HandleEpicStatusChange`: done-status guard →
+  `CampaignTicketRepository.GetByIssueKey` (reverse lookup) → load campaign →
+  `Complete()`. A draft/paused (non-completable) campaign is logged and skipped.
+- **Loop-safe**: it persists via `repo.Update` directly (not
+  `UpdateCampaignStatus`), so it does **not** re-fire the outbound transition;
+  and an already-terminal campaign is a clean no-op. So the
+  completion→epic-Done→webhook→inbound cycle converges immediately.
+
+Together with the outbound path, **campaign↔epic sync is now bidirectional** —
+matching the finding↔ticket sync.
+
 ## Planned follow-ups
 
-- **Bidirectional status sync** — reflect campaign completion → epic transition
-  and epic-done → campaign, mirroring the finding-level outbound/inbound sync.
+- **Per-tenant epic done-status mapping** (instead of the fixed `Done`).
+- **Richer inbound mapping** (e.g. epic In Progress → campaign active).
 - **GitHub Issues** as a second provider via the same `CampaignEpicCreator` seam.

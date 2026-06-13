@@ -69,4 +69,7 @@ type CampaignTicketRepository interface {
 	// GetByCampaignAndProvider returns the link for a campaign+provider, or
 	// ErrCampaignTicketNotFound.
 	GetByCampaignAndProvider(ctx context.Context, tenantID, campaignID shared.ID, provider string) (*CampaignTicket, error)
+	// GetByIssueKey returns the link for a provider issue key (the inbound
+	// direction: webhook → campaign), or ErrCampaignTicketNotFound.
+	GetByIssueKey(ctx context.Context, tenantID shared.ID, provider, issueKey string) (*CampaignTicket, error)
 }

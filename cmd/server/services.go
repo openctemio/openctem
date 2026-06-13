@@ -527,6 +527,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// here (JiraSync is created after the campaign service above).
 	if s.RemediationCampaign != nil {
 		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
+		// Inbound: a Jira webhook moving the campaign's epic to Done completes
+		// the campaign (the reverse of the outbound transition above).
+		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
 	}
 
 	// Initialize integration & notification services

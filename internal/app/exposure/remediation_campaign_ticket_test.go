@@ -24,6 +24,8 @@ func (r *ticketCampaignRepo) GetByID(_ context.Context, _ shared.ID, _ shared.ID
 	return r.c, nil
 }
 
+func (r *ticketCampaignRepo) Update(_ context.Context, _ *remediation.Campaign) error { return nil }
+
 type fakeTicketRepo struct {
 	remediation.CampaignTicketRepository
 	existing *remediation.CampaignTicket
@@ -42,10 +44,19 @@ func (r *fakeTicketRepo) Create(_ context.Context, t *remediation.CampaignTicket
 	return nil
 }
 
+func (r *fakeTicketRepo) GetByIssueKey(_ context.Context, _ shared.ID, _, _ string) (*remediation.CampaignTicket, error) {
+	if r.existing != nil {
+		return r.existing, nil
+	}
+	return nil, remediation.ErrCampaignTicketNotFound
+}
+
 type fakeEpicCreator struct {
-	key, url string
-	calls    int
-	err      error
+	key, url        string
+	calls           int
+	err             error
+	transitionCalls int
+	lastTransition  string
 }
 
 func (f *fakeEpicCreator) CreateEpic(_ context.Context, _ shared.ID, _, _, _ string, _ []string) (string, string, error) {
@@ -54,6 +65,12 @@ func (f *fakeEpicCreator) CreateEpic(_ context.Context, _ shared.ID, _, _, _ str
 		return "", "", f.err
 	}
 	return f.key, f.url, nil
+}
+
+func (f *fakeEpicCreator) TransitionEpic(_ context.Context, _ shared.ID, _, targetStatus, _ string) error {
+	f.transitionCalls++
+	f.lastTransition = targetStatus
+	return nil
 }
 
 func newCampaign(t *testing.T) *remediation.Campaign {
@@ -131,5 +148,41 @@ func TestCreateTicket_RequiresProjectKey(t *testing.T) {
 	_, err := svc.CreateTicket(context.Background(), shared.NewID().String(), c.ID().String(), "")
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("expected validation error, got %v", err)
+	}
+}
+
+func TestUpdateCampaignStatus_CompletionTransitionsEpic(t *testing.T) {
+	c := newCampaign(t)
+	if err := c.Activate(); err != nil { // draft -> active so it can complete
+		t.Fatalf("activate: %v", err)
+	}
+	link, _ := remediation.NewCampaignTicket(c.TenantID(), c.ID(), "jira", "SEC-7", "https://x/browse/SEC-7")
+	tr := &fakeTicketRepo{existing: link}
+	epic := &fakeEpicCreator{}
+	svc := newTicketSvc(c, tr, epic)
+
+	if _, err := svc.UpdateCampaignStatus(context.Background(), c.TenantID().String(), c.ID().String(),
+		string(remediation.CampaignStatusCompleted)); err != nil {
+		t.Fatalf("UpdateCampaignStatus: %v", err)
+	}
+	if epic.transitionCalls != 1 || epic.lastTransition != "Done" {
+		t.Fatalf("expected one transition to Done, got calls=%d last=%q", epic.transitionCalls, epic.lastTransition)
+	}
+}
+
+func TestUpdateCampaignStatus_NoEpicLink_NoTransition(t *testing.T) {
+	c := newCampaign(t)
+	if err := c.Activate(); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	epic := &fakeEpicCreator{}
+	svc := newTicketSvc(c, &fakeTicketRepo{}, epic) // no existing link
+
+	if _, err := svc.UpdateCampaignStatus(context.Background(), c.TenantID().String(), c.ID().String(),
+		string(remediation.CampaignStatusCompleted)); err != nil {
+		t.Fatalf("UpdateCampaignStatus: %v", err)
+	}
+	if epic.transitionCalls != 0 {
+		t.Fatalf("no epic link → must not transition, got %d", epic.transitionCalls)
 	}
 }

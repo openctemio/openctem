@@ -40,13 +40,22 @@ func (r *RemediationCampaignTicketRepository) Create(ctx context.Context, t *rem
 func (r *RemediationCampaignTicketRepository) GetByCampaignAndProvider(ctx context.Context, tenantID, campaignID shared.ID, provider string) (*remediation.CampaignTicket, error) {
 	query := "SELECT " + rctSelectCols + ` FROM remediation_campaign_tickets
 		WHERE tenant_id = $1 AND campaign_id = $2 AND provider = $3`
+	return r.scanOne(ctx, query, tenantID.String(), campaignID.String(), provider)
+}
 
+func (r *RemediationCampaignTicketRepository) GetByIssueKey(ctx context.Context, tenantID shared.ID, provider, issueKey string) (*remediation.CampaignTicket, error) {
+	query := "SELECT " + rctSelectCols + ` FROM remediation_campaign_tickets
+		WHERE tenant_id = $1 AND provider = $2 AND issue_key = $3`
+	return r.scanOne(ctx, query, tenantID.String(), provider, issueKey)
+}
+
+func (r *RemediationCampaignTicketRepository) scanOne(ctx context.Context, query string, args ...any) (*remediation.CampaignTicket, error) {
 	var (
 		id, tid, cid             string
 		prov, issueKey, issueURL string
 		createdAt, updatedAt     = sql.NullTime{}, sql.NullTime{}
 	)
-	err := r.db.QueryRowContext(ctx, query, tenantID.String(), campaignID.String(), provider).
+	err := r.db.QueryRowContext(ctx, query, args...).
 		Scan(&id, &tid, &cid, &prov, &issueKey, &issueURL, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
