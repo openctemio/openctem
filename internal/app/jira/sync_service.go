@@ -428,6 +428,40 @@ func (s *SyncService) CreateEpic(ctx context.Context, tenantID shared.ID, projec
 	return result.Key, result.BrowseURL, nil
 }
 
+// TransitionEpic moves a campaign's linked Jira epic to a target status NAME,
+// best-effort and echo-safe: it skips when the epic is already at the target,
+// and falls back to a comment when the workflow offers no transition (so the
+// change is visible to a human rather than failing). Campaign-agnostic plumbing
+// — the caller decides when/where to call it.
+func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, issueKey, targetStatus, comment string) error {
+	if issueKey == "" || targetStatus == "" {
+		return nil
+	}
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+
+	// Echo-guard: already at the target -> nothing to do.
+	if cur, gerr := client.GetIssueStatus(ctx, issueKey); gerr == nil && strings.EqualFold(cur, targetStatus) {
+		return nil
+	}
+
+	if terr := client.TransitionToStatus(ctx, issueKey, targetStatus, comment); terr != nil {
+		if errors.Is(terr, ErrNoMatchingTransition) {
+			body := fmt.Sprintf("OpenCTEM wanted to move this epic to %q but no transition is available from its current status — please move it manually.", targetStatus)
+			if cerr := client.AddComment(ctx, issueKey, body); cerr != nil {
+				return fmt.Errorf("comment fallback after no transition: %w", cerr)
+			}
+			s.logger.Info("jira epic outbound: no transition to target, commented instead", "issue_key", issueKey, "target", targetStatus)
+			return nil
+		}
+		return fmt.Errorf("transition jira epic: %w", terr)
+	}
+	s.logger.Info("jira epic outbound: synced campaign status to epic", "issue_key", issueKey, "target", targetStatus)
+	return nil
+}
+
 // mapSeverityToJiraPriority maps finding severity to Jira priority name using
 // the default mapping. Per-integration overrides are applied via MappingConfig
 // (see mapping.go); this keeps callers that have no integration context working.

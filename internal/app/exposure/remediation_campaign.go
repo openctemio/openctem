@@ -20,12 +20,19 @@ type FindingCounter interface {
 	Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error)
 }
 
-// CampaignEpicCreator creates an external tracker epic for a tenant and returns
-// its key + URL. Implemented by *jira.SyncService (CreateEpic). Declared here
-// with primitive types so this package needs no dependency on the jira package.
+// CampaignEpicCreator creates and transitions an external tracker epic for a
+// tenant. Implemented by *jira.SyncService. Declared here with primitive types
+// so this package needs no dependency on the jira package.
 type CampaignEpicCreator interface {
 	CreateEpic(ctx context.Context, tenantID shared.ID, projectKey, summary, description string, labels []string) (issueKey, issueURL string, err error)
+	// TransitionEpic moves the linked epic to a target status name (echo-safe,
+	// comment fallback). Best-effort outbound campaign→epic status sync.
+	TransitionEpic(ctx context.Context, tenantID shared.ID, issueKey, targetStatus, comment string) error
 }
+
+// epicDoneStatus is the Jira status a campaign's epic is moved to on completion.
+// Jira's default done state; per-tenant override is a documented follow-up.
+const epicDoneStatus = "Done"
 
 // RemediationCampaignService manages remediation campaigns.
 type RemediationCampaignService struct {
@@ -236,8 +243,32 @@ func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, t
 		return nil, fmt.Errorf("failed to update campaign status: %w", err)
 	}
 
+	if campaign.Status() == remediation.CampaignStatusCompleted {
+		s.syncEpicOnCompletion(ctx, tid, cid, campaign.Name())
+	}
+
 	s.logger.Info("remediation campaign status updated", "id", campaignID, "status", newStatus)
 	return campaign, nil
+}
+
+// syncEpicOnCompletion best-effort transitions a completed campaign's linked
+// Jira epic to the done state. No-op when ticketing is unwired or the campaign
+// has no linked epic. Errors are logged, never propagated — a Jira hiccup must
+// not fail the campaign-completion request. Echo-guarded in TransitionEpic, so
+// safe to call from multiple completion paths (manual + auto-complete).
+func (s *RemediationCampaignService) syncEpicOnCompletion(ctx context.Context, tenantID, campaignID shared.ID, campaignName string) {
+	if s.ticketRepo == nil || s.epicCreator == nil {
+		return
+	}
+	link, err := s.ticketRepo.GetByCampaignAndProvider(ctx, tenantID, campaignID, "jira")
+	if err != nil {
+		return // not linked (or lookup failed) — nothing to sync
+	}
+	comment := fmt.Sprintf("OpenCTEM marked remediation campaign %q complete.", campaignName)
+	if terr := s.epicCreator.TransitionEpic(ctx, tenantID, link.IssueKey(), epicDoneStatus, comment); terr != nil {
+		s.logger.Warn("failed to sync campaign completion to epic",
+			"campaign_id", campaignID.String(), "issue_key", link.IssueKey(), "error", terr)
+	}
 }
 
 // DeleteCampaign deletes a campaign.
@@ -275,6 +306,9 @@ func (s *RemediationCampaignService) RefreshCampaignProgress(ctx context.Context
 		if err := s.repo.Update(ctx, campaign); err != nil {
 			return nil, fmt.Errorf("failed to persist campaign progress: %w", err)
 		}
+	}
+	if campaign.Status() == remediation.CampaignStatusCompleted {
+		s.syncEpicOnCompletion(ctx, tid, cid, campaign.Name())
 	}
 	return campaign, nil
 }
@@ -314,6 +348,9 @@ func (s *RemediationCampaignService) ReconcileProgress(ctx context.Context) (int
 		if uerr := s.repo.Update(ctx, campaign); uerr != nil {
 			s.logger.Warn("failed to persist reconciled campaign", "id", campaign.ID().String(), "error", uerr)
 			continue
+		}
+		if campaign.Status() == remediation.CampaignStatusCompleted {
+			s.syncEpicOnCompletion(ctx, campaign.TenantID(), campaign.ID(), campaign.Name())
 		}
 		updated++
 	}

@@ -79,8 +79,26 @@ providers/issues can compose later:
 | Jira | `internal/app/jira/sync_service.go` (`CreateEpic`) |
 | Handler/route | `remediation_campaign_handler.go`, `routes/remediation.go` |
 
+## Outbound status sync (campaign → epic)
+
+When a campaign reaches `completed` — whether by an explicit status change, the
+manual progress `refresh`, or the background reconcile auto-complete — its
+linked epic is transitioned to **Done** (best-effort):
+
+- `RemediationCampaignService.syncEpicOnCompletion` looks up the campaign's Jira
+  link and calls `CampaignEpicCreator.TransitionEpic`.
+- `jira.SyncService.TransitionEpic` is echo-guarded (skips if the epic is
+  already at the target) and falls back to a **comment** when the workflow
+  offers no transition — the same pattern as finding-level outbound sync.
+- Errors are logged, never propagated: a Jira hiccup must not fail campaign
+  completion. The echo-guard makes it safe to fire from every completion path.
+
+Target status is `Done` (Jira's default done state); a per-tenant override is a
+follow-up.
+
 ## Planned follow-ups
 
-- **Bidirectional status sync** — reflect campaign completion → epic transition
-  and epic-done → campaign, mirroring the finding-level outbound/inbound sync.
+- **Inbound sync (epic → campaign)** — a Jira webhook moving the epic to Done
+  marks the campaign completed, mirroring the finding-level inbound path.
+- **Per-tenant epic done-status mapping** (instead of the fixed `Done`).
 - **GitHub Issues** as a second provider via the same `CampaignEpicCreator` seam.
