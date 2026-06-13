@@ -229,6 +229,8 @@ func registerVulnerabilityRoutes(
 
 		// Single finding operations
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))
+		// Priority explainability: why does this finding hold its P-class?
+		r.GET("/{id}/priority-explanation", h.ExplainPriority, middleware.Require(permission.FindingsRead))
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))

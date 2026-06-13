@@ -101,6 +101,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
+	if svc.PriorityClassification != nil {
+		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
+	}
 
 	handlers := routes.Handlers{
 		// Health

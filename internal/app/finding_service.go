@@ -16,6 +16,7 @@ type (
 	FindingSourceService            = finding.FindingSourceService
 	FindingSourceCacheService       = finding.FindingSourceCacheService
 	PriorityClassificationService   = finding.PriorityClassificationService
+	PriorityExplanation             = finding.PriorityExplanation
 	PriorityFloodGuard              = finding.PriorityFloodGuard
 	PriorityFloodConfig             = finding.PriorityFloodConfig
 	BulkGuard                       = finding.BulkGuard
