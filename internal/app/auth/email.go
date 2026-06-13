@@ -42,6 +42,26 @@ func (s *EmailService) SetTenantSMTPResolver(resolver TenantSMTPResolver) {
 	s.tenantSMTP = resolver
 }
 
+// SendReport emails an already-rendered HTML report to explicit recipients,
+// using the tenant's SMTP if configured (else the system default). Used by the
+// scheduled-report controller. No-op (returns nil) when there are no recipients;
+// errors if no SMTP sender is configured.
+func (s *EmailService) SendReport(ctx context.Context, tenantID string, to []string, subject, htmlBody string) error {
+	if len(to) == 0 {
+		return nil
+	}
+	sender := s.getSenderForTenant(ctx, tenantID)
+	if sender == nil || !sender.IsConfigured() {
+		return fmt.Errorf("email: no SMTP sender configured")
+	}
+	return sender.Send(ctx, &emaildom.Message{
+		To:      to,
+		Subject: subject,
+		Body:    htmlBody,
+		IsHTML:  true,
+	})
+}
+
 // getSenderForTenant returns a per-tenant SMTP sender if configured, or the default sender.
 func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) emaildom.Sender {
 	if s.tenantSMTP == nil || tenantID == "" {

@@ -211,6 +211,21 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Report scheduler: runs due report_schedules, renders the executive summary,
+	// and emails it to recipients. Only registered when email is configured
+	// (otherwise every run would fail delivery). This is the controller that was
+	// missing — schedules could be created in the UI but never executed.
+	if svc.Email != nil && svc.Email.IsConfigured() {
+		w.ControllerManager.Register(controller.NewReportScheduler(
+			repos.ReportSchedule,
+			repos.Finding,
+			svc.Email,
+			nil, // TenantNamer optional; report header falls back to tenant id
+			controller.ReportSchedulerConfig{Interval: time.Minute},
+			log,
+		))
+	}
+
 	w.ControllerManager.Register(controller.NewDataExpirationController(
 		repos.Suppression,
 		repos.ScopeExcl,
