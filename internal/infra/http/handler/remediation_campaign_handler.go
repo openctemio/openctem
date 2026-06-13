@@ -167,6 +167,31 @@ func (h *RemediationCampaignHandler) Refresh(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
 }
 
+// CreateTicket creates (or returns the existing) Jira epic for a campaign.
+func (h *RemediationCampaignHandler) CreateTicket(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var req struct {
+		ProjectKey string `json:"project_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if req.ProjectKey == "" {
+		apierror.BadRequest("project_key is required").WriteJSON(w)
+		return
+	}
+
+	info, err := h.service.CreateTicket(r.Context(), tenantID, id, req.ProjectKey)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, info)
+}
+
 // Delete deletes a campaign.
 func (h *RemediationCampaignHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())

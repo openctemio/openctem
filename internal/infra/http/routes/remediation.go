@@ -22,6 +22,7 @@ func registerRemediationCampaignRoutes(
 		r.PATCH("/{id}", h.Update, middleware.Require(permission.RemediationWrite))
 		r.PATCH("/{id}/status", h.UpdateStatus, middleware.Require(permission.RemediationWrite))
 		r.POST("/{id}/refresh", h.Refresh, middleware.Require(permission.RemediationWrite))
+		r.POST("/{id}/create-ticket", h.CreateTicket, middleware.Require(permission.RemediationWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.RemediationWrite))
 	}, tenantMiddlewares...)
 }

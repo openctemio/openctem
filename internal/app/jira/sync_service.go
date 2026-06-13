@@ -399,6 +399,35 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	}, nil
 }
 
+// CreateEpic creates a Jira epic for the given tenant and returns its key and
+// browse URL. It is provider-plumbing only — campaign-agnostic — so the
+// remediation campaign service can own the "campaign -> epic" orchestration
+// (idempotency + persistence) without coupling the jira package to the
+// remediation domain. Summary/description are secret-redacted defensively. The
+// signature uses primitives so callers can depend on a narrow interface without
+// importing the jira package.
+func (s *SyncService) CreateEpic(ctx context.Context, tenantID shared.ID, projectKey, summary, description string, labels []string) (issueKey, issueURL string, err error) {
+	if projectKey == "" {
+		return "", "", fmt.Errorf("%w: project_key is required", shared.ErrValidation)
+	}
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return "", "", err
+	}
+	result, err := client.CreateIssue(ctx, CreateIssueInput{
+		ProjectKey:  projectKey,
+		Summary:     redactSecrets(summary),
+		Description: redactSecrets(description),
+		IssueType:   "Epic",
+		Labels:      labels,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("create jira epic: %w", err)
+	}
+	s.logger.Info("jira epic created", "tenant_id", tenantID.String(), "issue_key", result.Key, "project", projectKey)
+	return result.Key, result.BrowseURL, nil
+}
+
 // mapSeverityToJiraPriority maps finding severity to Jira priority name using
 // the default mapping. Per-integration overrides are applied via MappingConfig
 // (see mapping.go); this keeps callers that have no integration context working.

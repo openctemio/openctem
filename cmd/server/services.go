@@ -522,6 +522,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetClientResolver(jiraResolver)
 	// Same resolver also surfaces the per-tenant status maps for outbound sync.
 	s.JiraSync.SetMappingResolver(jiraResolver)
+	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
+	// persistence; JiraSync provides the per-tenant epic create. Both deps set
+	// here (JiraSync is created after the campaign service above).
+	if s.RemediationCampaign != nil {
+		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
+	}
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)

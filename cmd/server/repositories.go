@@ -72,7 +72,8 @@ type Repositories struct {
 	ThreatActor *postgres.ThreatActorRepository
 
 	// Remediation Campaigns
-	RemediationCampaign *postgres.RemediationCampaignRepository
+	RemediationCampaign       *postgres.RemediationCampaignRepository
+	RemediationCampaignTicket *postgres.RemediationCampaignTicketRepository
 
 	// Business Units
 	BusinessUnit *postgres.BusinessUnitRepository
@@ -242,7 +243,8 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		ThreatActor: postgres.NewThreatActorRepository(db),
 
 		// Remediation Campaigns
-		RemediationCampaign: postgres.NewRemediationCampaignRepository(db),
+		RemediationCampaign:       postgres.NewRemediationCampaignRepository(db),
+		RemediationCampaignTicket: postgres.NewRemediationCampaignTicketRepository(db),
 
 		// Business Units
 		BusinessUnit: postgres.NewBusinessUnitRepository(db),

@@ -2,6 +2,7 @@ package exposure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -19,11 +20,20 @@ type FindingCounter interface {
 	Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error)
 }
 
+// CampaignEpicCreator creates an external tracker epic for a tenant and returns
+// its key + URL. Implemented by *jira.SyncService (CreateEpic). Declared here
+// with primitive types so this package needs no dependency on the jira package.
+type CampaignEpicCreator interface {
+	CreateEpic(ctx context.Context, tenantID shared.ID, projectKey, summary, description string, labels []string) (issueKey, issueURL string, err error)
+}
+
 // RemediationCampaignService manages remediation campaigns.
 type RemediationCampaignService struct {
-	repo    remediation.CampaignRepository
-	finding FindingCounter
-	logger  *logger.Logger
+	repo        remediation.CampaignRepository
+	finding     FindingCounter                       // nil → progress stays zero
+	ticketRepo  remediation.CampaignTicketRepository // nil → ticketing disabled
+	epicCreator CampaignEpicCreator                  // nil → ticketing disabled
+	logger      *logger.Logger
 }
 
 // NewRemediationCampaignService creates a new service.
@@ -38,6 +48,18 @@ func NewRemediationCampaignService(repo remediation.CampaignRepository, log *log
 func (s *RemediationCampaignService) SetFindingCounter(c FindingCounter) {
 	s.finding = c
 }
+
+// SetTicketing wires the campaign→Jira-epic integration. Safe to call after
+// construction; when either dependency is nil, CreateTicket returns an error
+// (the feature degrades off, the rest of the service is unaffected).
+func (s *RemediationCampaignService) SetTicketing(ticketRepo remediation.CampaignTicketRepository, epic CampaignEpicCreator) {
+	s.ticketRepo = ticketRepo
+	s.epicCreator = epic
+}
+
+// ErrTicketingNotConfigured is returned by CreateTicket when no epic creator /
+// ticket store is wired (e.g. no Jira integration configured).
+var ErrTicketingNotConfigured = fmt.Errorf("%w: campaign ticketing is not configured", shared.ErrValidation)
 
 // CreateRemediationCampaignInput holds input for creating a campaign.
 type CreateRemediationCampaignInput struct {
@@ -417,4 +439,94 @@ func firstString(raw map[string]any, key string) string {
 		return v
 	}
 	return ""
+}
+
+// CampaignTicketInfo describes a campaign's external tracker link.
+type CampaignTicketInfo struct {
+	CampaignID     string `json:"campaign_id"`
+	Provider       string `json:"provider"`
+	IssueKey       string `json:"issue_key"`
+	IssueURL       string `json:"issue_url"`
+	AlreadyExisted bool   `json:"already_existed"`
+}
+
+// CreateTicket creates a Jira epic for a campaign and links it. Idempotent: if
+// the campaign already has a Jira ticket, the existing link is returned without
+// creating a duplicate epic. Requires the ticketing integration to be wired
+// (SetTicketing) and the tenant to have a connected Jira integration.
+func (s *RemediationCampaignService) CreateTicket(ctx context.Context, tenantID, campaignID, projectKey string) (*CampaignTicketInfo, error) {
+	if s.ticketRepo == nil || s.epicCreator == nil {
+		return nil, ErrTicketingNotConfigured
+	}
+	if projectKey == "" {
+		return nil, fmt.Errorf("%w: project_key is required", shared.ErrValidation)
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	cid, err := shared.IDFromString(campaignID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid campaign id", shared.ErrValidation)
+	}
+
+	// Ensure the campaign exists and is tenant-scoped before touching Jira.
+	campaign, err := s.repo.GetByID(ctx, tid, cid)
+	if err != nil {
+		return nil, err
+	}
+
+	const provider = "jira"
+
+	// Idempotency: return the existing link instead of opening a second epic.
+	if existing, gerr := s.ticketRepo.GetByCampaignAndProvider(ctx, tid, cid, provider); gerr == nil {
+		return &CampaignTicketInfo{
+			CampaignID: campaignID, Provider: provider,
+			IssueKey: existing.IssueKey(), IssueURL: existing.IssueURL(),
+			AlreadyExisted: true,
+		}, nil
+	} else if !errors.Is(gerr, remediation.ErrCampaignTicketNotFound) {
+		return nil, fmt.Errorf("check existing campaign ticket: %w", gerr)
+	}
+
+	summary := fmt.Sprintf("[Remediation] %s", campaign.Name())
+	key, url, err := s.epicCreator.CreateEpic(ctx, tid, projectKey, summary, buildEpicDescription(campaign),
+		[]string{"openctem", "remediation-campaign"})
+	if err != nil {
+		return nil, fmt.Errorf("create campaign epic: %w", err)
+	}
+
+	link, err := remediation.NewCampaignTicket(tid, cid, provider, key, url)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ticketRepo.Create(ctx, link); err != nil {
+		// The epic was created in Jira but we failed to persist the link. Surface
+		// the error; a retry is idempotent on the Jira side only if the operator
+		// re-runs against the same project (a fresh create would duplicate). We
+		// log the orphaned key so it can be reconciled manually.
+		s.logger.Error("created jira epic but failed to persist campaign link",
+			"campaign_id", campaignID, "issue_key", key, "error", err)
+		return nil, fmt.Errorf("persist campaign ticket link: %w", err)
+	}
+
+	s.logger.Info("campaign jira epic created", "campaign_id", campaignID, "issue_key", key)
+	return &CampaignTicketInfo{
+		CampaignID: campaignID, Provider: provider,
+		IssueKey: key, IssueURL: url,
+	}, nil
+}
+
+// buildEpicDescription renders the epic body from a campaign's current state.
+func buildEpicDescription(c *remediation.Campaign) string {
+	desc := c.Description()
+	if desc == "" {
+		desc = "(no description)"
+	}
+	body := fmt.Sprintf("Remediation campaign tracked by OpenCTEM.\n\n%s\n\nProgress: %d/%d findings resolved (%.0f%%).",
+		desc, c.ResolvedCount(), c.FindingCount(), c.Progress())
+	if due := c.DueDate(); due != nil {
+		body += fmt.Sprintf("\nDue: %s", due.Format("2006-01-02"))
+	}
+	return body
 }
