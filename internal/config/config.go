@@ -246,6 +246,31 @@ type AuthConfig struct {
 	AccessTokenCookieName  string // Cookie name for access token (default: "auth_token")
 	RefreshTokenCookieName string // Cookie name for refresh token (default: "refresh_token")
 	TenantCookieName       string // Cookie name for tenant (default: "app_tenant")
+
+	// EntraSSO is the platform-wide Microsoft Entra ID SSO fallback. When a
+	// tenant has NOT configured its own entra_id identity provider, the SSO
+	// flow falls back to this shared config (if Enabled). A tenant's own
+	// provider always takes precedence.
+	EntraSSO EntraSSOConfig
+}
+
+// EntraSSOConfig holds the platform-wide (env-based) Microsoft Entra ID SSO
+// fallback used when a tenant has no entra_id provider of its own.
+type EntraSSOConfig struct {
+	Enabled        bool     // SSO_ENTRA_ENABLED
+	ClientID       string   // SSO_ENTRA_CLIENT_ID
+	ClientSecret   string   // SSO_ENTRA_CLIENT_SECRET (plaintext — env is the trust boundary)
+	TenantID       string   // SSO_ENTRA_TENANT_ID (Entra directory id; default "common")
+	AllowedDomains []string // SSO_ENTRA_ALLOWED_DOMAINS (csv; empty = any)
+	DefaultRole    string   // SSO_ENTRA_DEFAULT_ROLE (default "member")
+	AutoProvision  bool     // SSO_ENTRA_AUTO_PROVISION (default true)
+	DisplayName    string   // SSO_ENTRA_DISPLAY_NAME (default "Microsoft Entra ID")
+}
+
+// IsConfigured reports whether the platform-wide Entra SSO fallback is usable:
+// enabled and carrying the minimum credentials to drive an OAuth code flow.
+func (c EntraSSOConfig) IsConfigured() bool {
+	return c.Enabled && c.ClientID != "" && c.ClientSecret != ""
 }
 
 // OAuthConfig holds OAuth/Social login configuration.
@@ -613,6 +638,16 @@ func Load() (*Config, error) {
 			AccessTokenCookieName:     getEnv("AUTH_ACCESS_TOKEN_COOKIE_NAME", "auth_token"),     // Cookie name for access token
 			RefreshTokenCookieName:    getEnv("AUTH_REFRESH_TOKEN_COOKIE_NAME", "refresh_token"), // Cookie name for refresh token
 			TenantCookieName:          getEnv("AUTH_TENANT_COOKIE_NAME", "app_tenant"),           // Cookie name for tenant
+			EntraSSO: EntraSSOConfig{
+				Enabled:        getEnvBool("SSO_ENTRA_ENABLED", false),
+				ClientID:       getEnv("SSO_ENTRA_CLIENT_ID", ""),
+				ClientSecret:   getEnv("SSO_ENTRA_CLIENT_SECRET", ""),
+				TenantID:       getEnv("SSO_ENTRA_TENANT_ID", "common"),
+				AllowedDomains: getEnvSlice("SSO_ENTRA_ALLOWED_DOMAINS", nil),
+				DefaultRole:    getEnv("SSO_ENTRA_DEFAULT_ROLE", "member"),
+				AutoProvision:  getEnvBool("SSO_ENTRA_AUTO_PROVISION", true),
+				DisplayName:    getEnv("SSO_ENTRA_DISPLAY_NAME", "Microsoft Entra ID"),
+			},
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),
