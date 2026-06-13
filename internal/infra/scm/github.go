@@ -1,6 +1,7 @@
 package scm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -42,6 +43,18 @@ func NewGitHubClient(config Config) (*GitHubClient, error) {
 		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
 		baseURL:    baseURL,
 	}, nil
+}
+
+// newGitHubClientForTest builds a GitHubClient that talks to an arbitrary
+// baseURL (e.g. an httptest.Server) using a plain http client. It bypasses
+// the httpsec SSRF guards which reject loopback addresses, so it MUST only
+// be used from tests in this package.
+func newGitHubClientForTest(baseURL, token string) *GitHubClient {
+	return &GitHubClient{
+		config:     Config{Provider: ProviderGitHub, AccessToken: token},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		baseURL:    strings.TrimSuffix(baseURL, "/"),
+	}
 }
 
 // TestConnection verifies the connection and returns user/org info
@@ -334,6 +347,54 @@ func (c *GitHubClient) GetRepository(ctx context.Context, fullName string) (*Rep
 	}
 
 	return &repo, nil
+}
+
+// CreateIssue creates a GitHub issue in the given owner/repo and returns the
+// new issue's number and html_url.
+//
+// SECURITY: owner/repo are path-escaped to prevent path injection. On a
+// non-201 response the error includes only the status code — the response
+// body is NOT leaked verbatim (it may echo attacker-influenced input or
+// reveal internal detail).
+func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, string, error) {
+	payload := struct {
+		Title  string   `json:"title"`
+		Body   string   `json:"body"`
+		Labels []string `json:"labels,omitempty"`
+	}{
+		Title:  title,
+		Body:   body,
+		Labels: labels,
+	}
+
+	buf, err := json.Marshal(payload)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to encode issue payload: %w", err)
+	}
+
+	path := fmt.Sprintf("/repos/%s/%s/issues", url.PathEscape(owner), url.PathEscape(repo))
+	resp, err := c.doRequest(ctx, http.MethodPost, path, bytes.NewReader(buf))
+	if err != nil {
+		return 0, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		// Drain a bounded amount so the connection can be reused, but do
+		// not surface the body in the returned error.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		return 0, "", fmt.Errorf("failed to create github issue: unexpected status %d", resp.StatusCode)
+	}
+
+	var created struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return 0, "", fmt.Errorf("failed to decode issue response: %w", err)
+	}
+
+	return created.Number, created.HTMLURL, nil
 }
 
 // getRepositoryLanguages fetches all languages for a repository

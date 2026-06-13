@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/app/template"
+	"github.com/openctemio/api/internal/app/ticketing"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/jobs"
@@ -237,6 +238,9 @@ type Services struct {
 
 	// Jira Bidirectional Sync
 	JiraSync *jira.SyncService
+
+	// GitHub Issues ticket provider (create-from-finding + link only)
+	GitHubTicket *ticketing.GitHubTicketService
 
 	// AI Triage
 	AITriage *app.AITriageService
@@ -509,6 +513,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.APIKey = apikey.NewService(repos.APIKey, cfg.Encryption.Key, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 	s.JiraSync = jira.NewSyncService(repos.Finding, nil, log) // nil = Jira client configured via integration settings
+	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)

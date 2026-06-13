@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/api/internal/app/ticketing"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
@@ -117,12 +118,12 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		issueType = "Bug"
 	}
 
-	description := fmt.Sprintf("**Finding:** %s\n**Severity:** %s\n**Status:** %s\n\n%s",
-		finding.Title(), finding.Severity(), finding.Status(), finding.Description())
+	description := redactSecrets(fmt.Sprintf("**Finding:** %s\n**Severity:** %s\n**Status:** %s\n\n%s",
+		finding.Title(), finding.Severity(), finding.Status(), finding.Description()))
 
 	result, err := s.jiraClient.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  input.ProjectKey,
-		Summary:     fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title()),
+		Summary:     redactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())),
 		Description: description,
 		IssueType:   issueType,
 		Priority:    priority,
@@ -150,6 +151,13 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		TicketURL: result.BrowseURL,
 		LinkedAt:  time.Now().UTC(),
 	}, nil
+}
+
+// redactSecrets scrubs credential-shaped substrings from text before it is
+// embedded in a Jira ticket. It delegates to the shared ticketing
+// implementation so Jira and GitHub Issues cannot diverge.
+func redactSecrets(text string) string {
+	return ticketing.RedactSecrets(text)
 }
 
 // mapSeverityToJiraPriority maps finding severity to Jira priority name.
