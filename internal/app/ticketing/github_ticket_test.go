@@ -19,6 +19,8 @@ type fakeFindingRepo struct {
 	finding                         *vulnerability.Finding
 	updated                         []string
 	updateCalls                     int
+	findingUpdates                  int
+	uriLookupFails                  bool
 }
 
 func (f *fakeFindingRepo) GetByID(_ context.Context, _, _ shared.ID) (*vulnerability.Finding, error) {
@@ -31,6 +33,18 @@ func (f *fakeFindingRepo) GetByID(_ context.Context, _, _ shared.ID) (*vulnerabi
 func (f *fakeFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, uris []string) error {
 	f.updateCalls++
 	f.updated = uris
+	return nil
+}
+
+func (f *fakeFindingRepo) GetByWorkItemURI(_ context.Context, _ shared.ID, _ string) (*vulnerability.Finding, error) {
+	if f.uriLookupFails || f.finding == nil {
+		return nil, shared.ErrNotFound
+	}
+	return f.finding, nil
+}
+
+func (f *fakeFindingRepo) Update(_ context.Context, _ *vulnerability.Finding) error {
+	f.findingUpdates++
 	return nil
 }
 
@@ -234,5 +248,50 @@ func TestGitHubTicket_ValidationErrors(t *testing.T) {
 	})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("empty owner should be a validation error, got %v", err)
+	}
+}
+
+func TestHandleIssueEvent_ClosedTransitionsFinding(t *testing.T) {
+	f := newTestFinding(t, vulnerability.FindingSourceSCA)
+	// Move into a state from which fix_applied is reachable: new→confirmed→in_progress.
+	if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil); err != nil {
+		t.Fatalf("to confirmed: %v", err)
+	}
+	if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, "", nil); err != nil {
+		t.Fatalf("to in_progress: %v", err)
+	}
+	fr := &fakeFindingRepo{finding: f}
+	svc := NewGitHubTicketService(fr, &fakeIntegrationRepo{}, nil, logger.NewNop())
+
+	if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), "https://github.com/o/r/issues/5", "closed"); err != nil {
+		t.Fatalf("HandleIssueEvent: %v", err)
+	}
+	if fr.findingUpdates != 1 {
+		t.Fatalf("expected finding persisted once, got %d", fr.findingUpdates)
+	}
+	if f.Status() != vulnerability.FindingStatusFixApplied {
+		t.Fatalf("closed should move finding to fix_applied, got %s", f.Status())
+	}
+}
+
+func TestHandleIssueEvent_UnknownActionNoop(t *testing.T) {
+	fr := &fakeFindingRepo{finding: newTestFinding(t, vulnerability.FindingSourceSCA)}
+	svc := NewGitHubTicketService(fr, &fakeIntegrationRepo{}, nil, logger.NewNop())
+	if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), "https://github.com/o/r/issues/5", "labeled"); err != nil {
+		t.Fatalf("HandleIssueEvent: %v", err)
+	}
+	if fr.findingUpdates != 0 {
+		t.Fatalf("unmapped action must not update a finding, got %d", fr.findingUpdates)
+	}
+}
+
+func TestHandleIssueEvent_NoLinkedFindingNoop(t *testing.T) {
+	fr := &fakeFindingRepo{uriLookupFails: true}
+	svc := NewGitHubTicketService(fr, &fakeIntegrationRepo{}, nil, logger.NewNop())
+	if err := svc.HandleIssueEvent(context.Background(), shared.NewID(), "https://github.com/o/r/issues/9", "closed"); err != nil {
+		t.Fatalf("expected nil when no finding linked, got %v", err)
+	}
+	if fr.findingUpdates != 0 {
+		t.Fatalf("no linked finding must not update, got %d", fr.findingUpdates)
 	}
 }

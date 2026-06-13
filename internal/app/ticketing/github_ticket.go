@@ -2,6 +2,7 @@ package ticketing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -286,3 +287,54 @@ func issueKeyFromURL(uri string) string {
 
 // compile-time assurance that the real SCM client satisfies issueCreator.
 var _ issueCreator = (*scm.GitHubClient)(nil)
+
+// HandleIssueEvent is the inbound half of GitHub Issues sync: a webhook reporting
+// a linked issue closed/reopened updates the finding's status. Mirrors the Jira
+// inbound path. No-op when the action isn't a state change, no finding is linked
+// to the issue URL, or the resulting transition isn't allowed. Best-effort —
+// errors are returned for logging but a not-found link is a clean nil.
+func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID shared.ID, issueHTMLURL, action string) error {
+	target, ok := issueActionToStatus(action)
+	if !ok {
+		return nil // action we don't map (assigned, labeled, edited, …)
+	}
+	if strings.TrimSpace(issueHTMLURL) == "" {
+		return nil
+	}
+
+	finding, err := s.findingRepo.GetByWorkItemURI(ctx, tenantID, issueHTMLURL)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil // no finding linked to this issue — ignore
+		}
+		return fmt.Errorf("lookup finding by issue url: %w", err)
+	}
+
+	note := fmt.Sprintf("Synced from GitHub issue (%s)", action)
+	if terr := finding.TransitionStatus(target, note, nil); terr != nil {
+		// Not a hard error — the transition may be blocked (e.g. accepted/false_positive).
+		s.logger.Warn("github webhook: finding status transition not allowed",
+			"finding_id", finding.ID().String(), "current", finding.Status(), "target", target, "error", terr)
+		return nil
+	}
+	if uerr := s.findingRepo.Update(ctx, finding); uerr != nil {
+		return fmt.Errorf("update finding from github issue event: %w", uerr)
+	}
+	s.logger.Info("github webhook synced finding status",
+		"finding_id", finding.ID().String(), "issue_url", issueHTMLURL, "action", action, "status", target)
+	return nil
+}
+
+// issueActionToStatus maps a GitHub issues webhook action to a finding status.
+// closed → fix_applied (pending verification, mirrors Jira Done); reopened →
+// in_progress (work resumed). Other actions are not mapped.
+func issueActionToStatus(action string) (vulnerability.FindingStatus, bool) {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "closed":
+		return vulnerability.FindingStatusFixApplied, true
+	case "reopened":
+		return vulnerability.FindingStatusInProgress, true
+	default:
+		return "", false
+	}
+}

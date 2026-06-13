@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 
@@ -10,6 +12,13 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// GitHubIssueSink applies an inbound GitHub issue state change (closed/reopened)
+// to the linked finding. Implemented by *ticketing.GitHubTicketService. nil →
+// inbound issue→finding sync is inert.
+type GitHubIssueSink interface {
+	HandleIssueEvent(ctx context.Context, tenantID shared.ID, issueHTMLURL, action string) error
+}
+
 // githubWebhookMaxBody bounds the raw body read before signature verification.
 const githubWebhookMaxBody = 5 * 1024 * 1024 // 5 MiB
 
@@ -17,13 +26,20 @@ const githubWebhookMaxBody = 5 * 1024 * 1024 // 5 MiB
 // refreshes the pushed branch's metadata. Public endpoint (no JWT) — verified by
 // GitHub's X-Hub-Signature-256 HMAC against the tenant's per-tenant secret.
 type GitHubWebhookHandler struct {
-	service *app.IntegrationService
-	logger  *logger.Logger
+	service   *app.IntegrationService
+	issueSink GitHubIssueSink // nil → issue events are acked but not synced
+	logger    *logger.Logger
 }
 
 // NewGitHubWebhookHandler creates a new GitHubWebhookHandler.
 func NewGitHubWebhookHandler(svc *app.IntegrationService, log *logger.Logger) *GitHubWebhookHandler {
 	return &GitHubWebhookHandler{service: svc, logger: log}
+}
+
+// SetIssueSink wires inbound GitHub issue → finding status sync. Safe after
+// construction; nil disables it (issue events are still ack'd).
+func (h *GitHubWebhookHandler) SetIssueSink(sink GitHubIssueSink) {
+	h.issueSink = sink
 }
 
 // IncomingGitHubWebhook handles POST /api/v1/webhooks/incoming/github?tenant=.
@@ -69,8 +85,30 @@ func (h *GitHubWebhookHandler) IncomingGitHubWebhook(w http.ResponseWriter, r *h
 		return
 	}
 
+	event := r.Header.Get("X-GitHub-Event")
+
+	// issues events (closed/reopened) sync the linked finding's status — the
+	// reverse of create-ticket. Ack regardless so GitHub doesn't retry-storm.
+	if event == "issues" {
+		if h.issueSink != nil {
+			var payload struct {
+				Action string `json:"action"`
+				Issue  struct {
+					HTMLURL string `json:"html_url"`
+				} `json:"issue"`
+			}
+			if jerr := json.Unmarshal(body, &payload); jerr == nil && payload.Issue.HTMLURL != "" {
+				if serr := h.issueSink.HandleIssueEvent(r.Context(), tenantID, payload.Issue.HTMLURL, payload.Action); serr != nil {
+					h.logger.Error("github issue event sync failed", "tenant_id", tenantIDStr, "error", serr)
+				}
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	// Only push events drive branch updates; ack everything else (incl. ping).
-	if r.Header.Get("X-GitHub-Event") != "push" {
+	if event != "push" {
 		w.WriteHeader(http.StatusOK)
 		return
 	}

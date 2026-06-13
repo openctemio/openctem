@@ -110,6 +110,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, log)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
 
+	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
+	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
+	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
+
 	handlers := routes.Handlers{
 		// Health
 		Health: handler.NewHealthHandler(
@@ -150,7 +154,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingActions:            handler.NewFindingActionsHandler(svc.FindingActions, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
-		GitHubWebhook:             handler.NewGitHubWebhookHandler(svc.Integration, log),
+		GitHubWebhook:             githubWebhookHandler,
 		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:               handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
 		CredentialImport:          handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
