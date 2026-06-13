@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/app/template"
+	"github.com/openctemio/api/internal/app/ticketing"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
 	infrajira "github.com/openctemio/api/internal/infra/jira"
@@ -238,6 +239,9 @@ type Services struct {
 
 	// Jira Bidirectional Sync
 	JiraSync *jira.SyncService
+
+	// GitHub Issues ticket provider (create-from-finding + link only)
+	GitHubTicket *ticketing.GitHubTicketService
 
 	// AI Triage
 	AITriage *app.AITriageService
@@ -531,6 +535,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// the campaign (the reverse of the outbound transition above).
 		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
 	}
+	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
+	// request); resolves the tenant's GitHub integration credentials on demand.
+	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)

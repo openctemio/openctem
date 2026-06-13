@@ -105,6 +105,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
 	}
 
+	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
+	// secondary provider on the same create-ticket endpoint.
+	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, log)
+	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
+
 	handlers := routes.Handlers{
 		// Health
 		Health: handler.NewHealthHandler(
@@ -143,7 +148,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Vulnerability:             vulnHandler,
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:            handler.NewFindingActionsHandler(svc.FindingActions, log),
-		JiraWebhook:               handler.NewJiraWebhookHandler(svc.JiraSync, log),
+		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             handler.NewGitHubWebhookHandler(svc.Integration, log),
 		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
