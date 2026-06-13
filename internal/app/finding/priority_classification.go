@@ -465,6 +465,28 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		if a.Criticality() == asset.CriticalityCritical {
 			ctx.AssetIsCrownJewel = true
 		}
+
+		// Derive reachability from the asset's exposure level. The finding's own
+		// reachability flags are not currently populated by any scanner/ingest
+		// path, so without this the "KEV + reachable -> P0" and "critical +
+		// reachable -> P1" gates never fire. Asset exposure is the authoritative
+		// reachability signal we already have. Finding-level flags (future
+		// scanner data) still win via OR.
+		switch a.Exposure() {
+		case asset.ExposurePublic:
+			// Publicly accessible from the internet -> internet-reachable.
+			ctx.IsInternetAccessible = true
+			if ctx.ReachableFromCount == 0 {
+				ctx.ReachableFromCount = 1
+			}
+		case asset.ExposureRestricted, asset.ExposurePrivate:
+			// Reachable on an internal/restricted network but not from the
+			// public internet. Recorded but, by design, does NOT flip the
+			// external-attacker "reachable" gate (see ClassifyPriority).
+			ctx.IsNetworkAccessible = true
+		case asset.ExposureIsolated, asset.ExposureUnknown:
+			// Air-gapped/isolated or unknown -> leave conservative (not reachable).
+		}
 	}
 
 	return ctx
