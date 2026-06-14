@@ -533,12 +533,15 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 				)
 			}
 		}
-		// Initial run on startup to clear historical backlog.
-		go runCleanup()
 		w.SessionCleanupTicker = time.NewTicker(1 * time.Hour)
 		w.cleanupWG.Add(1)
 		go func() {
 			defer w.cleanupWG.Done()
+			// Initial run on startup to clear historical backlog. Done INSIDE the
+			// tracked goroutine (not a bare `go runCleanup()`) so graceful shutdown
+			// — Workers.Stop() → cleanupWG.Wait() — waits for it to finish before
+			// the DB is torn down, instead of leaving it racing a closed pool.
+			runCleanup()
 			for {
 				select {
 				case <-w.cleanupStopCh:

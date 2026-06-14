@@ -1015,12 +1015,15 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Has findings filter - use EXISTS subquery (finding_count is a computed JOIN alias, not a column)
+	// Has findings filter - use EXISTS subquery (finding_count is a computed JOIN alias, not a column).
+	// Scoped to a.tenant_id as defense-in-depth: a finding's tenant should always
+	// equal its asset's, but pinning it here means a stray cross-tenant finding
+	// row (a data-integrity bug) can never flip this filter for someone else.
 	if filter.HasFindings != nil {
 		if *filter.HasFindings {
-			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.status != 'resolved')")
+			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved')")
 		} else {
-			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.status != 'resolved')")
+			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved')")
 		}
 	}
 

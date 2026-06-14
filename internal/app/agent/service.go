@@ -8,6 +8,7 @@ import (
 	"fmt"
 	auditapp "github.com/openctemio/api/internal/app/audit"
 	"net"
+	"time"
 
 	"github.com/openctemio/api/pkg/crypto"
 	agentdom "github.com/openctemio/api/pkg/domain/agent"
@@ -377,9 +378,13 @@ func (s *AgentService) AuthenticateByAPIKey(ctx context.Context, apiKey string) 
 		return nil, shared.NewDomainError("FORBIDDEN", "agent is disabled", shared.ErrForbidden)
 	}
 
-	// Update last seen and health (async)
+	// Update last seen and health (async). Bounded with a timeout so a slow DB
+	// can't accumulate unbounded goroutines under heavy agent traffic.
+	agentID := a.ID
 	go func() {
-		_ = s.repo.UpdateLastSeen(context.Background(), a.ID)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.repo.UpdateLastSeen(ctx, agentID)
 	}()
 
 	return a, nil

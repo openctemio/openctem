@@ -71,10 +71,15 @@ func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		// Record usage (async - don't block request)
+		// Record usage (async - don't block request). Bounded with a timeout so a
+		// slow/hung DB can't pile up unbounded goroutines under a burst of admin
+		// requests (the same failure mode that previously OOM'd the audit writer).
+		ip := extractIP(r)
+		adminID := adminUser.ID()
 		go func() {
-			ip := extractIP(r)
-			if err := m.adminRepo.RecordUsage(context.Background(), adminUser.ID(), ip); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)
+			defer cancel()
+			if err := m.adminRepo.RecordUsage(ctx, adminID, ip); err != nil {
 				m.logger.Error("failed to record admin API key usage", "error", err)
 			}
 		}()

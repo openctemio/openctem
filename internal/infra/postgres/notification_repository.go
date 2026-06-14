@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -224,7 +225,7 @@ func (r *NotificationRepository) GetPreferences(ctx context.Context, tenantID, u
 		&tID, &uID, &inAppEnabled, &emailDigest, &mutedTypesJSON, &minSeverity, &updatedAt,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return notification.DefaultPreferences(tenantID, userID), nil
 		}
 		return nil, fmt.Errorf("failed to get preferences: %w", err)
