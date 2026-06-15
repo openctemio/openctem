@@ -13,6 +13,7 @@ and the code. Start here to remember "what was decided, why, and where it lives"
 | [RFC-006](RFC-006-ticketing-provider-and-mapping.md) | Ticketing: provider abstraction + configurable mapping | Phase 0 done | #136 | #134, #135, **#137** + ui#152 |
 | [RFC-007](RFC-007-license-aware-scan-coverage.md) | License-aware scan coverage (Tenable Nessus Pro + .sc) | Proposed, Phase 1 in progress | #138 | **#139** (converter) |
 | [RFC-008](RFC-008-native-shift-left-ci-scanning.md) | Native shift-left CI/CD code scanning (agent-first) | Proposed, Phase 1 shipped | — | agent **#27** (risk-aware gate) |
+| [RFC-009](RFC-009-enterprise-sso-saml-scim.md) | Enterprise SSO: SAML 2.0 + SCIM 2.0 provisioning | Proposed | — | — |
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
 
