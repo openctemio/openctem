@@ -84,13 +84,36 @@ secret.
 | Config | `internal/config/config.go` (`EntraSSOConfig`) |
 | Domain | `pkg/domain/identityprovider/entity.go` (providers, `AuthEndpoints`) |
 | Handler/routes | `internal/infra/http/handler/sso_handler.go`, `routes/auth.go` |
+| OIDC verifier | `internal/app/auth/oidc_verifier.go` (`oidcVerifier`, JWKS cache) |
+
+## ID-token validation (shipped)
+
+When the provider returns an `id_token` in the token-exchange response, the
+callback verifies it before completing login (`SSOService.verifyIDToken` →
+`oidcVerifier.verify`):
+
+- **Signature** — RS256 only, verified against the provider's JWKS
+  (`Provider.JWKSURL`), with keys cached per JWKS URL (1h TTL, refresh on
+  unknown `kid`). `alg=none` and non-RS256 are rejected.
+- **Audience** — must contain our `client_id`.
+- **Expiry** — `exp` required; `exp`/`nbf`/`iat` enforced with 2-minute leeway.
+- **Nonce** — must equal the nonce embedded in the signed `state` at authorize
+  time (constant-time compare); binds the token to this flow.
+- **Issuer** — provider-specific. For Entra the issuer must be
+  `https://login.microsoftonline.com/{tid}/v2.0` consistent with the token's
+  `tid` claim; single-tenant configs additionally require `tid` to match the
+  configured directory, while `common`/`organizations`/`consumers` accept any
+  directory (the email domain allow-list still applies).
+
+The check is **fail-closed** when an `id_token` is present. It is skipped when
+the provider returns no `id_token` (e.g. a tenant IdP configured without the
+`openid` scope) — the token response is server-to-server over TLS, so a missing
+`id_token` is not attacker-controllable. The access-token → Graph `/me` call
+remains the identity source; id_token validation is authenticity/replay
+hardening on top.
 
 ## Known follow-ups (not yet shipped)
 
-- **ID-token validation.** The callback authenticates via the access token →
-  Microsoft Graph `/me`; it does not yet verify the `id_token` signature or the
-  `nonce` claim. The `nonce` is sent on authorize but unused on callback.
-  Hardening opportunity (full OIDC), not a functional blocker for Entra/Graph.
 - **SAML / SCIM** — not supported (only OIDC/OAuth). See `docs/IDEAS.md` §3.5.
 - The env fallback currently covers `entra_id` only; Okta/Google could follow
   the same `envProvider` seam.

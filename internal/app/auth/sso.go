@@ -42,6 +42,7 @@ var (
 	ErrSSOInvalidRedirectURI  = errors.New("invalid redirect URI")
 	ErrSSOInvalidDefaultRole  = errors.New("invalid default role")
 	ErrSSONoEmail             = errors.New("SSO provider did not return an email address")
+	ErrSSOInvalidIDToken      = errors.New("SSO id_token failed validation")
 )
 
 // ssoMaxRedirectURILength is the maximum length for redirect URIs.
@@ -59,6 +60,7 @@ type SSOService struct {
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
 	httpClient       *http.Client
+	oidcVerifier     *oidcVerifier
 
 	// For tenant membership creation
 	tenantMemberRepo TenantMemberCreator
@@ -87,6 +89,13 @@ func NewSSOService(
 		RefreshTokenDuration: authCfg.RefreshTokenDuration,
 	})
 
+	// SSRF: the SSO token-exchange, userinfo, and JWKS endpoints are
+	// resolved from tenant-configured IdP records. SafeHTTPClient ensures the
+	// dialer refuses to connect to loopback / RFC1918 / link-local / IPv6
+	// private ranges at transport level, even if validateTenantIdentifier
+	// (Okta whitelist) is bypassed by a future provider addition.
+	httpClient := httpsec.SafeHTTPClient(30 * time.Second)
+
 	return &SSOService{
 		ipRepo:           ipRepo,
 		tenantRepo:       tenantRepo,
@@ -97,13 +106,8 @@ func NewSSOService(
 		tokenGenerator:   tokenGen,
 		authConfig:       authCfg,
 		logger:           log.With("service", "sso"),
-		// SSRF: the SSO token-exchange endpoint and userinfo endpoint
-		// are resolved from tenant-configured IdP records. Using
-		// SafeHTTPClient ensures the dialer refuses to connect to
-		// loopback / RFC1918 / link-local / IPv6 private ranges at
-		// transport level, even if validateTenantIdentifier (Okta
-		// whitelist) is bypassed by a future provider addition.
-		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
+		httpClient:       httpClient,
+		oidcVerifier:     newOIDCVerifier(httpClient, log.With("service", "sso-oidc")),
 	}
 }
 
@@ -366,8 +370,8 @@ type SSOCallbackResult struct {
 
 // HandleCallback handles the SSO OAuth callback.
 func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput) (*SSOCallbackResult, error) {
-	// Validate state and extract org slug
-	orgSlug, stateProvider, err := s.validateState(input.State)
+	// Validate state and extract org slug + nonce
+	orgSlug, stateProvider, nonce, err := s.validateState(input.State)
 	if err != nil {
 		return nil, ErrSSOInvalidState
 	}
@@ -395,6 +399,17 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	if err != nil {
 		s.logger.Error("SSO code exchange failed", "provider", input.Provider, "error", err)
 		return nil, ErrSSOExchangeFailed
+	}
+
+	// Verify the id_token (signature + nonce + issuer/audience) when the
+	// provider returns one. The token endpoint response is server-to-server
+	// over TLS, so a missing id_token (provider configured without the
+	// "openid" scope) is not attacker-controllable — verify when present,
+	// skip otherwise to stay backward compatible with such configs.
+	if err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce); err != nil {
+		s.logger.Warn("SSO id_token validation failed",
+			"provider", input.Provider, "source", rp.source, "error", err)
+		return nil, ErrSSOInvalidIDToken
 	}
 
 	// Get user info
@@ -459,6 +474,38 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	}, nil
 }
 
+// verifyIDToken validates the provider's id_token against its JWKS, the flow
+// nonce, our client_id (audience), and a provider-specific issuer check.
+//
+// It is a no-op (returns nil) when the provider publishes no JWKS or the token
+// response carried no id_token — see the call site for why a missing id_token
+// is safe to skip. When an id_token IS present, every check is enforced.
+func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) error {
+	jwksURL := rp.provider.JWKSURL(rp.tenantIdentifier)
+	if jwksURL == "" {
+		return nil // provider has no id_token to verify
+	}
+	if strings.TrimSpace(idToken) == "" {
+		s.logger.Debug("SSO provider returned no id_token; skipping id_token validation",
+			"provider", rp.provider, "source", rp.source)
+		return nil
+	}
+
+	exp := idTokenExpectations{
+		jwksURL:  jwksURL,
+		audience: rp.clientID,
+		nonce:    nonce,
+	}
+	if rp.provider == identityproviderdom.ProviderEntraID {
+		exp.validateIssuer = entraIssuerValidator(rp.tenantIdentifier)
+	}
+
+	if _, err := s.oidcVerifier.verify(ctx, idToken, exp); err != nil {
+		return err
+	}
+	return nil
+}
+
 // generateState generates a signed state token containing org slug, provider, and nonce.
 func (s *SSOService) generateState(orgSlug, provider string) (state string, nonce string, err error) {
 	randomBytes := make([]byte, 16)
@@ -499,11 +546,12 @@ func (s *SSOService) signState(data string) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// validateState validates the state token and returns org slug and provider.
-func (s *SSOService) validateState(state string) (orgSlug, provider string, err error) {
+// validateState validates the state token and returns org slug, provider, and
+// the nonce embedded at authorize time (compared against the id_token nonce).
+func (s *SSOService) validateState(state string) (orgSlug, provider, nonce string, err error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", "", errors.New("invalid state format")
+		return "", "", "", errors.New("invalid state format")
 	}
 
 	stateData, signature := parts[0], parts[1]
@@ -511,41 +559,43 @@ func (s *SSOService) validateState(state string) (orgSlug, provider string, err 
 	// Verify signature
 	expectedSig := s.signState(stateData)
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", "", errors.New("invalid state signature")
+		return "", "", "", errors.New("invalid state signature")
 	}
 
 	// Decode state data
 	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
 	if err != nil {
-		return "", "", errors.New("invalid state encoding")
+		return "", "", "", errors.New("invalid state encoding")
 	}
 
 	var data map[string]interface{}
 	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", "", errors.New("invalid state JSON")
+		return "", "", "", errors.New("invalid state JSON")
 	}
 
 	// Check expiration
 	expFloat, ok := data["exp"].(float64)
 	if !ok {
-		return "", "", errors.New("invalid state expiration")
+		return "", "", "", errors.New("invalid state expiration")
 	}
 	if time.Now().Unix() > int64(expFloat) {
-		return "", "", errors.New("state expired")
+		return "", "", "", errors.New("state expired")
 	}
 
 	orgSlug, _ = data["org"].(string)
 	provider, _ = data["provider"].(string)
+	nonce, _ = data["nonce"].(string)
 	if orgSlug == "" || provider == "" {
-		return "", "", errors.New("missing state fields")
+		return "", "", "", errors.New("missing state fields")
 	}
 
-	return orgSlug, provider, nil
+	return orgSlug, provider, nonce, nil
 }
 
 // ssoTokens represents OAuth token response.
 type ssoTokens struct {
 	AccessToken string `json:"access_token"`
+	IDToken     string `json:"id_token"`
 }
 
 // exchangeCode exchanges authorization code for tokens.
