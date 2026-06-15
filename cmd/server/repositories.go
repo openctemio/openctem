@@ -174,6 +174,9 @@ type Repositories struct {
 
 	// Validation evidence (CTEM Stage-4, migration 000178)
 	ValidationEvidence *postgres.ValidationEvidenceRepository
+
+	// SCIM provisioning bearer tokens (RFC-009, migration 000179)
+	ScimToken *postgres.ScimTokenRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -345,6 +348,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Validation evidence (CTEM Stage-4, migration 000178).
 		ValidationEvidence: postgres.NewValidationEvidenceRepository(db),
+
+		// SCIM provisioning bearer tokens (RFC-009, migration 000179).
+		ScimToken: postgres.NewScimTokenRepository(db),
 	}
 }
 

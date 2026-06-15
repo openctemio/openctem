@@ -23,6 +23,7 @@ import (
 	"github.com/openctemio/api/internal/app/pipeline"
 	"github.com/openctemio/api/internal/app/reclassify"
 	"github.com/openctemio/api/internal/app/scan"
+	"github.com/openctemio/api/internal/app/scim"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/app/ticketing"
@@ -285,6 +286,34 @@ type Services struct {
 
 	// SSO
 	SSO *app.SSOService
+
+	// SCIM 2.0 provisioning (RFC-009)
+	SCIMToken        *scim.TokenService
+	SCIMProvisioning *scim.ProvisioningService
+}
+
+// scimMembershipAdapter adapts TenantService to scim.MembershipManager, injecting
+// a system audit context so SCIM-driven membership changes go through the full
+// lifecycle (session revoke + permission-cache clear + audit).
+type scimMembershipAdapter struct {
+	svc *app.TenantService
+}
+
+func scimAuditContext(tenantID shared.ID) app.AuditContext {
+	return app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}
+}
+
+func (a scimMembershipAdapter) AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error {
+	_, err := a.svc.AddMember(ctx, tenantID.String(), app.AddMemberInput{UserID: userID, Role: role}, shared.ID{}, scimAuditContext(tenantID))
+	return err
+}
+
+func (a scimMembershipAdapter) SuspendMember(ctx context.Context, tenantID, membershipID shared.ID) error {
+	return a.svc.SuspendMember(ctx, membershipID.String(), scimAuditContext(tenantID))
+}
+
+func (a scimMembershipAdapter) ReactivateMember(ctx context.Context, tenantID, membershipID shared.ID) error {
+	return a.svc.ReactivateMember(ctx, membershipID.String(), scimAuditContext(tenantID))
 }
 
 // ServiceDeps contains dependencies needed to create services.
@@ -549,6 +578,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (dev only; production startup already refuses this above).
 	s.APIKey = apikey.NewService(repos.APIKey, cfg.Encryption.Key, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
+
+	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
+	s.SCIMToken = scim.NewTokenService(repos.ScimToken, cfg.Encryption.Key, log)
+	s.SCIMProvisioning = scim.NewProvisioningService(
+		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
+	)
 	// Outbound Jira ticketing resolves a client per tenant from that tenant's
 	// connected ticketing integration (base URL + decrypted credentials). The
 	// static client stays nil; the resolver is the production path (mirrors the

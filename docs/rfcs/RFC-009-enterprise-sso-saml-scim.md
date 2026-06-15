@@ -115,11 +115,14 @@ membership created, `active:false` suspends + revokes sessions, uniqueness →
 
 ### Phasing
 
-- **9a** — SCIM token entity + repo + migration + `ScimAuth` middleware + admin
-  endpoint to mint/revoke a tenant SCIM token (+ UI).
-- **9b** — `/scim/v2/Users` (create/read/list/filter/PATCH-active/DELETE) +
-  ServiceProviderConfig/Schemas + tests.
-- **9c** — `/scim/v2/Groups` + group→role mapping.
+- **9a** — SCIM token entity + repo + migration + `SCIMAuth` middleware + admin
+  endpoints to mint/list/revoke a tenant SCIM token. **SHIPPED** (UI deferred).
+- **9b** — `/scim/v2/Users` (create/read/list/filter/PATCH-active/PUT/DELETE) +
+  ServiceProviderConfig/ResourceTypes/Schemas + tests. **SHIPPED.** See
+  `docs/architecture/scim-provisioning.md`.
+- **9c** — `/scim/v2/Groups` + group→role mapping. _(deferred)_
+- **UI** — admin screen to mint/revoke the token + show the SCIM base URL.
+  _(deferred)_
 
 ---
 

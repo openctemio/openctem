@@ -54,6 +54,9 @@ type Handlers struct {
 	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint agents
 	IOC              *handler.IOCHandler              // nil if not initialized - IOC catalogue (feeds B6 correlator)
 	Validation       *handler.ValidationHandler       // nil if not initialized - CTEM Stage-4 validation evidence
+	SCIM             *handler.SCIMHandler             // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
+	SCIMToken        *handler.SCIMTokenHandler        // nil if not initialized - SCIM token admin
+	SCIMAuth         Middleware                       // SCIM bearer-token auth middleware (nil if SCIM disabled)
 	Agent            *handler.AgentHandler            // nil if not initialized (no database)
 	Pipeline         *handler.PipelineHandler         // nil if not initialized (no database)
 	ScanProfile      *handler.ScanProfileHandler      // nil if not initialized (no database)
@@ -361,6 +364,11 @@ func Register(
 	// CTEM Stage-4 validation evidence (agent ingest + finding evidence list)
 	if h.Validation != nil {
 		registerValidationRoutes(router, h.Validation, h.Ingest, authMiddleware, userSync)
+	}
+
+	// SCIM 2.0 provisioning (RFC-009) — bearer-token provisioning + admin token mgmt
+	if h.SCIM != nil || h.SCIMToken != nil {
+		registerSCIMRoutes(router, h.SCIM, h.SCIMToken, h.SCIMAuth, authMiddleware, userSync)
 	}
 
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
