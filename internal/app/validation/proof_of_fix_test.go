@@ -53,11 +53,15 @@ func (c *captureNotifier) NotifyFixRejected(_ context.Context, _, _ shared.ID, r
 
 type fakeFindingRepo struct {
 	current *vulnerability.Finding
+	getErr  error
 	updErr  error
 	updates int
 }
 
 func (f *fakeFindingRepo) Get(_ context.Context, _, _ shared.ID) (*vulnerability.Finding, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
 	return f.current, nil
 }
 

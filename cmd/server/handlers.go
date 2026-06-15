@@ -177,6 +177,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Ingest:           ingestHandler,
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),
+		Validation:       handler.NewValidationHandler(svc.ValidationEvidence, log),
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),

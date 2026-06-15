@@ -171,6 +171,9 @@ type Repositories struct {
 
 	// Indicators of Compromise (B6 runtime loop, migration 000156)
 	IOC *postgres.IOCRepository
+
+	// Validation evidence (CTEM Stage-4, migration 000178)
+	ValidationEvidence *postgres.ValidationEvidenceRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -339,6 +342,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// B6 runtime loop — IOC catalogue + match log (migration 000156).
 		IOC: postgres.NewIOCRepository(db),
+
+		// Validation evidence (CTEM Stage-4, migration 000178).
+		ValidationEvidence: postgres.NewValidationEvidenceRepository(db),
 	}
 }
 

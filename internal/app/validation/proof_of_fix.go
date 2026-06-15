@@ -137,21 +137,28 @@ func (s *ProofOfFixService) Retest(
 		return ev, false, fmt.Errorf("dispatch: %w", dispErr)
 	}
 
-	stood, err := s.applyOutcome(ctx, tenantID, findingID, ev)
+	stood, err := applyOutcomeToFinding(ctx, s.finding, s.notifier, tenantID, findingID, ev)
 	if err != nil {
 		return ev, false, err
 	}
 	return ev, stood, nil
 }
 
-// applyOutcome translates an Evidence outcome into a finding
-// status transition.
-func (s *ProofOfFixService) applyOutcome(
+// applyOutcomeToFinding translates an Evidence outcome into a finding status
+// transition. Shared by the proof-of-fix retest path and the evidence-ingest
+// path so the outcome→status mapping has a single source of truth:
+//
+//   - OutcomeNotDetected → resolved (exposure gone, fix stood) → returns true
+//   - OutcomeDetected    → in_progress (fix did not hold) + notify assignee
+//   - anything else      → no status change
+func applyOutcomeToFinding(
 	ctx context.Context,
+	finding FindingMutator,
+	notifier RetestNotifier,
 	tenantID, findingID shared.ID,
 	ev Evidence,
 ) (bool, error) {
-	f, err := s.finding.Get(ctx, tenantID, findingID)
+	f, err := finding.Get(ctx, tenantID, findingID)
 	if err != nil {
 		return false, fmt.Errorf("reload finding: %w", err)
 	}
@@ -161,7 +168,7 @@ func (s *ProofOfFixService) applyOutcome(
 		if err := f.TransitionStatus(vulnerability.FindingStatusResolved, "proof-of-fix: exposure no longer detected", nil); err != nil {
 			return false, fmt.Errorf("transition to resolved: %w", err)
 		}
-		if err := s.finding.Update(ctx, f); err != nil {
+		if err := finding.Update(ctx, f); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -170,11 +177,11 @@ func (s *ProofOfFixService) applyOutcome(
 		if err := f.TransitionStatus(vulnerability.FindingStatusInProgress, "proof-of-fix: fix did not hold", nil); err != nil {
 			return false, fmt.Errorf("transition to in_progress: %w", err)
 		}
-		if err := s.finding.Update(ctx, f); err != nil {
+		if err := finding.Update(ctx, f); err != nil {
 			return false, err
 		}
-		if s.notifier != nil {
-			_ = s.notifier.NotifyFixRejected(ctx, tenantID, findingID, ev.Summary)
+		if notifier != nil {
+			_ = notifier.NotifyFixRejected(ctx, tenantID, findingID, ev.Summary)
 		}
 		return false, nil
 

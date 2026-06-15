@@ -53,6 +53,7 @@ type Handlers struct {
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
 	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint agents
 	IOC              *handler.IOCHandler              // nil if not initialized - IOC catalogue (feeds B6 correlator)
+	Validation       *handler.ValidationHandler       // nil if not initialized - CTEM Stage-4 validation evidence
 	Agent            *handler.AgentHandler            // nil if not initialized (no database)
 	Pipeline         *handler.PipelineHandler         // nil if not initialized (no database)
 	ScanProfile      *handler.ScanProfileHandler      // nil if not initialized (no database)
@@ -355,6 +356,11 @@ func Register(
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
 	if h.Vulnerability != nil {
 		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, authMiddleware, userSync)
+	}
+
+	// CTEM Stage-4 validation evidence (agent ingest + finding evidence list)
+	if h.Validation != nil {
+		registerValidationRoutes(router, h.Validation, h.Ingest, authMiddleware, userSync)
 	}
 
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).

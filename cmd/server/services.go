@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"time"
+
 	"github.com/openctemio/api/internal/app/apikey"
 	"github.com/openctemio/api/internal/app/assignment"
 	"github.com/openctemio/api/internal/app/command"
 	"github.com/openctemio/api/internal/app/scope"
 	"github.com/openctemio/api/internal/app/threat"
 	"github.com/openctemio/api/internal/app/tool"
-	"time"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/attack"
@@ -25,6 +26,7 @@ import (
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/app/ticketing"
+	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
 	infrajira "github.com/openctemio/api/internal/infra/jira"
@@ -36,11 +38,27 @@ import (
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/attachment"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// findingMutatorAdapter adapts the postgres FindingRepository (GetByID) to the
+// validation.FindingMutator interface (Get) used by the evidence-ingest path.
+type findingMutatorAdapter struct {
+	repo *postgres.FindingRepository
+}
+
+func (a findingMutatorAdapter) Get(ctx context.Context, tenantID, findingID shared.ID) (*vulnerability.Finding, error) {
+	return a.repo.GetByID(ctx, tenantID, findingID)
+}
+
+func (a findingMutatorAdapter) Update(ctx context.Context, f *vulnerability.Finding) error {
+	return a.repo.Update(ctx, f)
+}
 
 // wsHubBroadcaster adapts websocket.Hub to app.ActivityBroadcaster and app.TriageBroadcaster interfaces.
 type wsHubBroadcaster struct {
@@ -223,6 +241,10 @@ type Services struct {
 
 	// Attack Simulation & Control Testing
 	Simulation *app.SimulationService
+
+	// Validation (CTEM Stage-4): proof-of-fix / technique-execution evidence
+	// recorded by agents, reconciling finding status from the outcome.
+	ValidationEvidence *validation.EvidenceIngestService
 
 	// Threat Actor Intelligence
 	ThreatActor *threat.ActorService
@@ -461,6 +483,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize Compliance service
 	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
+
+	// Validation (CTEM Stage-4): agents POST proof-of-fix / technique evidence,
+	// which is persisted (redacted) and reconciled into finding status.
+	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
+	s.ValidationEvidence = validation.NewEvidenceIngestService(
+		evidenceStore,
+		findingMutatorAdapter{repo: repos.Finding},
+		nil, // retest notifier: optional; status revert still happens without it
+		log,
+	)
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
