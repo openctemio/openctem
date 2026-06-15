@@ -1027,7 +1027,7 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 // NewJobWorker creates a new job worker for processing background jobs.
 // jiraSyncer (optional) handles outbound Jira status-sync tasks; pass nil to
 // disable that handler.
-func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, jiraSyncer jobs.JiraStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
+func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
 	if emailService == nil {
 		return nil, nil
 	}
@@ -1047,6 +1047,9 @@ func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageSe
 	}
 	if jiraSyncer != nil {
 		opts = append(opts, jobs.WithJiraStatusSyncer(jiraSyncer))
+	}
+	if githubSyncer != nil {
+		opts = append(opts, jobs.WithGitHubStatusSyncer(githubSyncer))
 	}
 
 	worker, err := jobs.NewWorker(workerCfg, emailService, log, opts...)

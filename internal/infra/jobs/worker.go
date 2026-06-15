@@ -29,12 +29,20 @@ type Worker struct {
 	notificationProcessor NotificationProcessor
 	aiTriageProcessor     AITriageProcessor
 	jiraStatusSyncer      JiraStatusSyncer
+	githubStatusSyncer    GitHubStatusSyncer
 }
 
 // WithJiraStatusSyncer adds the outbound Jira status-sync handler to the worker.
 func WithJiraStatusSyncer(syncer JiraStatusSyncer) WorkerOption {
 	return func(w *Worker) {
 		w.jiraStatusSyncer = syncer
+	}
+}
+
+// WithGitHubStatusSyncer adds the outbound GitHub issue status-sync handler.
+func WithGitHubStatusSyncer(syncer GitHubStatusSyncer) WorkerOption {
+	return func(w *Worker) {
+		w.githubStatusSyncer = syncer
 	}
 }
 
@@ -110,7 +118,12 @@ func NewWorker(cfg WorkerConfig, emailService *app.EmailService, log *logger.Log
 	if w.jiraStatusSyncer != nil {
 		jiraSyncHandler := NewJiraSyncTaskHandler(w.jiraStatusSyncer, log.Logger)
 		jiraSyncHandler.RegisterHandlers(mux)
-		log.Info("jira status-sync task handler registered")
+	}
+
+	if w.githubStatusSyncer != nil {
+		githubSyncHandler := NewGitHubSyncTaskHandler(w.githubStatusSyncer, log.Logger)
+		githubSyncHandler.RegisterHandlers(mux)
+		log.Info("github status-sync task handler registered")
 	}
 
 	return w, nil

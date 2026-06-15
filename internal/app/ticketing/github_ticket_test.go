@@ -58,11 +58,16 @@ func (f *fakeIntegrationRepo) ListByProvider(_ context.Context, _ integration.ID
 }
 
 type fakeIssueCreator struct {
-	calls    int
-	gotTitle string
-	gotBody  string
-	number   int
-	url      string
+	calls      int
+	gotTitle   string
+	gotBody    string
+	number     int
+	url        string
+	stateCalls int
+	gotState   string
+	gotOwner   string
+	gotRepo    string
+	gotNumber  int
 }
 
 func (f *fakeIssueCreator) CreateIssue(_ context.Context, _, _, title, body string, _ []string) (int, string, error) {
@@ -70,6 +75,12 @@ func (f *fakeIssueCreator) CreateIssue(_ context.Context, _, _, title, body stri
 	f.gotTitle = title
 	f.gotBody = body
 	return f.number, f.url, nil
+}
+
+func (f *fakeIssueCreator) UpdateIssueState(_ context.Context, owner, repo string, number int, state string) error {
+	f.stateCalls++
+	f.gotOwner, f.gotRepo, f.gotNumber, f.gotState = owner, repo, number, state
+	return nil
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -293,5 +304,62 @@ func TestHandleIssueEvent_NoLinkedFindingNoop(t *testing.T) {
 	}
 	if fr.findingUpdates != 0 {
 		t.Fatalf("no linked finding must not update, got %d", fr.findingUpdates)
+	}
+}
+
+func TestSyncFindingStatus_ClosedFindingClosesIssue(t *testing.T) {
+	tenantID := shared.NewID()
+	f := newTestFinding(t, vulnerability.FindingSourceSCA)
+	f.AddWorkItemURI("https://github.com/octo/repo/issues/7")
+	// Move to a closed-category status: new → confirmed → duplicate.
+	if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil); err != nil {
+		t.Fatalf("to confirmed: %v", err)
+	}
+	if err := f.TransitionStatus(vulnerability.FindingStatusDuplicate, "dup", nil); err != nil {
+		t.Fatalf("to duplicate: %v", err)
+	}
+	ir := &fakeIntegrationRepo{list: []*integration.Integration{connectedGitHubIntegration(t, tenantID)}}
+	ic := &fakeIssueCreator{}
+	s := newService(t, &fakeFindingRepo{finding: f}, ir, ic)
+
+	if err := s.SyncFindingStatus(context.Background(), tenantID, f.ID()); err != nil {
+		t.Fatalf("SyncFindingStatus: %v", err)
+	}
+	if ic.stateCalls != 1 || ic.gotState != "closed" {
+		t.Fatalf("expected one close, got calls=%d state=%q", ic.stateCalls, ic.gotState)
+	}
+	if ic.gotOwner != "octo" || ic.gotRepo != "repo" || ic.gotNumber != 7 {
+		t.Fatalf("wrong issue target: %s/%s#%d", ic.gotOwner, ic.gotRepo, ic.gotNumber)
+	}
+}
+
+func TestSyncFindingStatus_OpenFindingReopensIssue(t *testing.T) {
+	tenantID := shared.NewID()
+	f := newTestFinding(t, vulnerability.FindingSourceSCA) // status "new" = open
+	f.AddWorkItemURI("https://github.com/octo/repo/issues/9")
+	ir := &fakeIntegrationRepo{list: []*integration.Integration{connectedGitHubIntegration(t, tenantID)}}
+	ic := &fakeIssueCreator{}
+	s := newService(t, &fakeFindingRepo{finding: f}, ir, ic)
+
+	if err := s.SyncFindingStatus(context.Background(), tenantID, f.ID()); err != nil {
+		t.Fatalf("SyncFindingStatus: %v", err)
+	}
+	if ic.stateCalls != 1 || ic.gotState != "open" {
+		t.Fatalf("expected one open, got calls=%d state=%q", ic.stateCalls, ic.gotState)
+	}
+}
+
+func TestSyncFindingStatus_NoGitHubLinkNoop(t *testing.T) {
+	tenantID := shared.NewID()
+	f := newTestFinding(t, vulnerability.FindingSourceSCA)
+	f.AddWorkItemURI("https://org.atlassian.net/browse/SEC-1") // jira, not github
+	ic := &fakeIssueCreator{}
+	s := newService(t, &fakeFindingRepo{finding: f}, &fakeIntegrationRepo{}, ic)
+
+	if err := s.SyncFindingStatus(context.Background(), tenantID, f.ID()); err != nil {
+		t.Fatalf("SyncFindingStatus: %v", err)
+	}
+	if ic.stateCalls != 0 {
+		t.Fatalf("no github link → must not touch any issue, got %d", ic.stateCalls)
 	}
 }

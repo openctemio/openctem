@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,7 +47,15 @@ type GitHubTicketInput struct {
 // *scm.GitHubClient, which satisfies this interface.
 type issueCreator interface {
 	CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, string, error)
+	// UpdateIssueState sets an issue's state ("open"/"closed") for outbound
+	// finding→issue status sync.
+	UpdateIssueState(ctx context.Context, owner, repo string, number int, state string) error
 }
+
+// githubIssueURLRe extracts owner/repo/number from a GitHub issue browse URL,
+// e.g. "https://github.com/octo/repo/issues/42" → octo, repo, 42. Works for
+// GitHub Enterprise hosts too (it only anchors on the /{owner}/{repo}/issues/N tail).
+var githubIssueURLRe = regexp.MustCompile(`/([^/]+)/([^/]+)/issues/(\d+)(?:[/#?].*)?$`)
 
 // GitHubTicketService creates GitHub issues from findings and links them.
 //
@@ -179,6 +189,60 @@ func (s *GitHubTicketService) CreateTicketFromFinding(ctx context.Context, in Gi
 		TicketURL: htmlURL,
 		LinkedAt:  time.Now().UTC(),
 	}, nil
+}
+
+// SyncFindingStatus is the outbound half of GitHub Issues sync: when a finding's
+// status changes in OpenCTEM, close (resolved/closed-category) or reopen
+// (active) its linked GitHub issue. No-op when the finding has no linked GitHub
+// issue. Best-effort; enqueued from the same status-change hook as Jira and
+// runs in the background worker.
+func (s *GitHubTicketService) SyncFindingStatus(ctx context.Context, tenantID, findingID shared.ID) error {
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return fmt.Errorf("get finding: %w", err)
+	}
+
+	owner, repo, number, issueURL, ok := firstGitHubIssue(finding.WorkItemURIs())
+	if !ok {
+		return nil // finding isn't linked to a GitHub issue — nothing to sync
+	}
+
+	desired := "open"
+	if finding.Status().IsClosed() {
+		desired = "closed"
+	}
+
+	token, baseURL, err := s.resolveCredential(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	client, err := s.clientFactory(token, baseURL)
+	if err != nil {
+		return fmt.Errorf("build github client: %w", err)
+	}
+	if err := client.UpdateIssueState(ctx, owner, repo, number, desired); err != nil {
+		return fmt.Errorf("update github issue state: %w", err)
+	}
+	s.logger.Info("github outbound: synced finding status to issue",
+		"finding_id", findingID.String(), "issue_url", issueURL, "state", desired)
+	return nil
+}
+
+// firstGitHubIssue returns the owner/repo/number of the first GitHub issue URL
+// among a finding's work-item URIs, or ok=false when none is a GitHub issue.
+func firstGitHubIssue(uris []string) (owner, repo string, number int, url string, ok bool) {
+	for _, u := range uris {
+		m := githubIssueURLRe.FindStringSubmatch(u)
+		if m == nil {
+			continue
+		}
+		n, err := strconv.Atoi(m[3])
+		if err != nil {
+			continue
+		}
+		return m[1], m[2], n, u, true
+	}
+	return "", "", 0, "", false
 }
 
 // resolveCredential lists the tenant's GitHub integrations, picks the first

@@ -189,6 +189,15 @@ func run() int {
 			}); err != nil {
 				log.Warn("failed to enqueue jira status sync", "error", err)
 			}
+			// The same status-change trigger drives outbound GitHub Issues sync;
+			// the worker no-ops when the finding isn't linked to a GitHub issue.
+			// A finding links to at most one provider, so only the matching push acts.
+			if err := jobClient.EnqueueGitHubSyncFindingStatus(ctx, jobs.GitHubSyncFindingStatusPayload{
+				TenantID:  tenantID.String(),
+				FindingID: findingID.String(),
+			}); err != nil {
+				log.Warn("failed to enqueue github status sync", "error", err)
+			}
 		})
 	}
 

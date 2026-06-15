@@ -433,6 +433,34 @@ func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body
 	return created.Number, created.HTMLURL, nil
 }
 
+// UpdateIssueState sets a GitHub issue's state ("open" or "closed").
+// Used by outbound finding→issue status sync. owner/repo are path-escaped; on a
+// non-200 response the error carries only the status code (no body leak).
+func (c *GitHubClient) UpdateIssueState(ctx context.Context, owner, repo string, number int, state string) error {
+	if state != "open" && state != "closed" {
+		return fmt.Errorf("invalid issue state %q", state)
+	}
+	buf, err := json.Marshal(struct {
+		State string `json:"state"`
+	}{State: state})
+	if err != nil {
+		return fmt.Errorf("failed to encode issue state payload: %w", err)
+	}
+
+	path := fmt.Sprintf("/repos/%s/%s/issues/%d", url.PathEscape(owner), url.PathEscape(repo), number)
+	resp, err := c.doRequest(ctx, http.MethodPatch, path, bytes.NewReader(buf))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("failed to update github issue: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // getRepositoryLanguages fetches all languages for a repository
 func (c *GitHubClient) getRepositoryLanguages(ctx context.Context, fullName string) (map[string]int, error) {
 	path := fmt.Sprintf("/repos/%s/languages", fullName)

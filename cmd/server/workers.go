@@ -78,7 +78,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Initialize job worker if email service is configured
 	if svc.Email != nil {
 		var err error
-		w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, log)
+		w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, svc.GitHubTicket, log)
 		if err != nil {
 			return nil, err
 		}

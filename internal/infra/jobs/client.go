@@ -155,6 +155,20 @@ func (c *Client) EnqueueJiraSyncFindingStatus(ctx context.Context, payload JiraS
 	return nil
 }
 
+// EnqueueGitHubSyncFindingStatus queues an outbound GitHub issue status-sync for
+// a finding. Best-effort: the handler no-ops when the finding has no linked
+// GitHub issue.
+func (c *Client) EnqueueGitHubSyncFindingStatus(ctx context.Context, payload GitHubSyncFindingStatusPayload) error {
+	task, err := NewGitHubSyncFindingStatusTask(payload)
+	if err != nil {
+		return fmt.Errorf("failed to create task: %w", err)
+	}
+	if _, err := c.client.EnqueueContext(ctx, task); err != nil {
+		return fmt.Errorf("failed to enqueue github sync task: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) EnqueueAITriage(ctx context.Context, payload AITriagePayload, delay time.Duration) error {
 	task, err := NewAITriageTask(payload, delay)
 	if err != nil {

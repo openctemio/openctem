@@ -91,6 +91,81 @@ func TestGitHubClient_CreateIssue_PathEscaping(t *testing.T) {
 	}
 }
 
+func TestGitHubClient_UpdateIssueState_Success(t *testing.T) {
+	var gotPath, gotMethod, gotAuth string
+	var gotBody struct {
+		State string `json:"state"`
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		gotMethod = r.Method
+		gotAuth = r.Header.Get("Authorization")
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"number":7,"state":"closed"}`))
+	}))
+	defer srv.Close()
+
+	c := newGitHubClientForTest(srv.URL, "tok-xyz")
+	if err := c.UpdateIssueState(context.Background(), "octo", "re/po", 7, "closed"); err != nil {
+		t.Fatalf("UpdateIssueState returned error: %v", err)
+	}
+
+	if gotMethod != http.MethodPatch {
+		t.Errorf("method = %q, want PATCH", gotMethod)
+	}
+	if gotPath != "/repos/octo/re%2Fpo/issues/7" {
+		t.Errorf("path = %q, want escaped issue path", gotPath)
+	}
+	if gotAuth != "Bearer tok-xyz" {
+		t.Errorf("auth = %q, want Bearer tok-xyz", gotAuth)
+	}
+	if gotBody.State != "closed" {
+		t.Errorf("state = %q, want closed", gotBody.State)
+	}
+}
+
+func TestGitHubClient_UpdateIssueState_InvalidStateRejected(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := newGitHubClientForTest(srv.URL, "t")
+	if err := c.UpdateIssueState(context.Background(), "octo", "repo", 1, "reopened"); err == nil {
+		t.Fatal("expected error for invalid state, got nil")
+	}
+	if called {
+		t.Error("invalid state must be rejected before any HTTP request")
+	}
+}
+
+func TestGitHubClient_UpdateIssueState_NonOKIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"secret-internal-detail"}`))
+	}))
+	defer srv.Close()
+
+	c := newGitHubClientForTest(srv.URL, "t")
+	err := c.UpdateIssueState(context.Background(), "octo", "repo", 99, "open")
+	if err == nil {
+		t.Fatal("expected error for non-200 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "404") {
+		t.Errorf("error %q should include status code 404", err.Error())
+	}
+	if strings.Contains(err.Error(), "secret-internal-detail") {
+		t.Errorf("error %q must not leak response body", err.Error())
+	}
+}
+
 func TestGitHubClient_CreateIssue_NonCreatedIsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
