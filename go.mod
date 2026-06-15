@@ -110,6 +110,7 @@ require (
 )
 
 require (
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/openctemio/ctis v1.1.0
 	github.com/xuri/excelize/v2 v2.10.1
 	golang.org/x/tools v0.44.0
