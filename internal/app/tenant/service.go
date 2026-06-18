@@ -674,9 +674,18 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 		return err
 	}
 
-	actorID, err := shared.IDFromString(actx.ActorID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
+	// A system-initiated suspension (e.g. SCIM deprovisioning) has no human
+	// actor. Treat an empty ActorID as system → a zero suspended_by, which the
+	// repo persists as NULL (writing the all-zeros UUID would violate the
+	// suspended_by → users(id) FK). A non-empty but malformed ActorID is still
+	// rejected.
+	var actorID shared.ID
+	if actx.ActorID != "" {
+		parsed, perr := shared.IDFromString(actx.ActorID)
+		if perr != nil {
+			return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
+		}
+		actorID = parsed
 	}
 
 	if err := membership.Suspend(actorID); err != nil {

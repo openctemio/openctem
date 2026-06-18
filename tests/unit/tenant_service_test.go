@@ -2486,3 +2486,34 @@ func TestTenantSvc_AddMember_ZeroInviter_NullInvitedBy(t *testing.T) {
 		t.Errorf("invitedBy = %v, want nil for a zero inviter", found.InvitedBy())
 	}
 }
+
+// TestTenantSvc_SuspendMember_SystemActor_NullSuspendedBy guards SCIM/system
+// deprovisioning: SuspendMember with an empty ActorID (no human actor) must
+// succeed and leave suspended_by NULL, not error or write the all-zeros UUID
+// (which would violate the suspended_by -> users(id) FK).
+func TestTenantSvc_SuspendMember_SystemActor_NullSuspendedBy(t *testing.T) {
+	svc, repo := newTestTenantService()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	m, err := svc.AddMember(context.Background(), tenantID.String(),
+		app.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{},
+		app.AuditContext{TenantID: tenantID.String()})
+	if err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	// System suspend: no ActorID (as the SCIM adapter calls it).
+	if err := svc.SuspendMember(context.Background(), m.ID().String(),
+		app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}); err != nil {
+		t.Fatalf("SuspendMember (system actor): %v", err)
+	}
+
+	stored := repo.memberships[m.ID().String()]
+	if stored == nil || !stored.IsSuspended() {
+		t.Fatal("membership should be suspended")
+	}
+	if stored.SuspendedBy() != nil {
+		t.Errorf("suspended_by should be nil for a system actor, got %v", stored.SuspendedBy())
+	}
+}
