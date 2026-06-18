@@ -290,6 +290,7 @@ type Services struct {
 	// SCIM 2.0 provisioning (RFC-009)
 	SCIMToken        *scim.TokenService
 	SCIMProvisioning *scim.ProvisioningService
+	SCIMGroups       *scim.GroupService
 }
 
 // scimMembershipAdapter adapts TenantService to scim.MembershipManager, injecting
@@ -314,6 +315,12 @@ func (a scimMembershipAdapter) SuspendMember(ctx context.Context, tenantID, memb
 
 func (a scimMembershipAdapter) ReactivateMember(ctx context.Context, tenantID, membershipID shared.ID) error {
 	return a.svc.ReactivateMember(ctx, membershipID.String(), scimAuditContext(tenantID))
+}
+
+// UpdateMemberRole satisfies scim.RoleManager for SCIM group → role mapping.
+func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string) error {
+	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, scimAuditContext(tenantID))
+	return err
 }
 
 // ServiceDeps contains dependencies needed to create services.
@@ -583,6 +590,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.SCIMToken = scim.NewTokenService(repos.ScimToken, cfg.Encryption.Key, log)
 	s.SCIMProvisioning = scim.NewProvisioningService(
 		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
+	)
+	s.SCIMGroups = scim.NewGroupService(
+		repos.ScimGroup, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
 	// Outbound Jira ticketing resolves a client per tenant from that tenant's
 	// connected ticketing integration (base URL + decrypted credentials). The

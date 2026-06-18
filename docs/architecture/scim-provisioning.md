@@ -70,8 +70,31 @@ A tenant admin mints a SCIM token (shown once); the IdP presents it as
 | Token admin handler | `internal/infra/http/handler/scim_token_handler.go` |
 | Routes | `internal/infra/http/routes/scim.go` |
 
+## Groups → role mapping (Phase 9c)
+
+`/scim/v2/Groups` (create/read/list/PUT/PATCH/DELETE) lets the IdP push groups
+whose membership drives a user's **tenant role**:
+
+- A group whose `displayName` (case-insensitive) is a tenant role — `admin`,
+  `member`, or `viewer` — maps its members to that role. Non-role-named groups
+  (e.g. "Engineering") are stored but don't affect roles.
+- A user's **effective role** is the highest-privilege role-group they belong
+  to (`admin` > `member` > `viewer`); belonging to none defaults to `member`.
+  `owner` is **never** assignable via SCIM.
+- Group membership is **authoritative**: adding a user to an `admin` group
+  promotes them; removing them from their last role-group reverts to `member`.
+  Every add/remove/replace/delete reconciles affected users' roles through
+  `TenantService.UpdateMemberRole` (full audit + permission-cache invalidation).
+- PATCH supports both **Okta** (member value-arrays) and **Azure AD**
+  (`members[value eq "id"]` path filters) styles.
+
+Code: `pkg/domain/scimgroup`, `internal/app/scim/groups.go`,
+`internal/infra/postgres/scim_group_repository.go`,
+`internal/infra/http/handler/scim_group_handler.go`, migration `000180`.
+Verified end-to-end against real Postgres
+(`tests/integration/scim_groups_test.go`).
+
 ## Deferred (RFC-009)
 
-- **Groups** (`/scim/v2/Groups`) + group→role mapping (Phase 9c).
 - Admin **UI** to mint/revoke the token and show the SCIM base URL.
 - **SAML 2.0** SP login (Phase 9d–9f).

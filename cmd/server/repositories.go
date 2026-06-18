@@ -177,6 +177,9 @@ type Repositories struct {
 
 	// SCIM provisioning bearer tokens (RFC-009, migration 000179)
 	ScimToken *postgres.ScimTokenRepository
+
+	// SCIM groups (RFC-009 Phase 9c, migration 000180)
+	ScimGroup *postgres.ScimGroupRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -351,6 +354,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// SCIM provisioning bearer tokens (RFC-009, migration 000179).
 		ScimToken: postgres.NewScimTokenRepository(db),
+
+		// SCIM groups (RFC-009 Phase 9c, migration 000180).
+		ScimGroup: postgres.NewScimGroupRepository(db),
 	}
 }
 

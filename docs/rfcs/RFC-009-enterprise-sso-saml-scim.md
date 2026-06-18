@@ -120,7 +120,12 @@ membership created, `active:false` suspends + revokes sessions, uniqueness →
 - **9b** — `/scim/v2/Users` (create/read/list/filter/PATCH-active/PUT/DELETE) +
   ServiceProviderConfig/ResourceTypes/Schemas + tests. **SHIPPED.** See
   `docs/architecture/scim-provisioning.md`.
-- **9c** — `/scim/v2/Groups` + group→role mapping. _(deferred)_
+- **9c** — `/scim/v2/Groups` + group→role mapping. **SHIPPED.** A group whose
+  displayName (case-insensitive) is a tenant role (admin/member/viewer) maps its
+  members to that role; effective role = highest-privilege role-group, else
+  member; `owner` never assignable. PATCH supports Okta value-arrays + Azure
+  `members[value eq "id"]` path filters. Verified end-to-end against real
+  Postgres (provision → group → role reconcile → revert).
 - **UI** — admin screen to mint/revoke the token + show the SCIM base URL.
   _(deferred)_
 

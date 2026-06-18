@@ -178,9 +178,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),
 		Validation:       handler.NewValidationHandler(svc.ValidationEvidence, log),
-		SCIM:             handler.NewSCIMHandler(svc.SCIMProvisioning, log),
-		SCIMToken:        handler.NewSCIMTokenHandler(svc.SCIMToken, log),
-		SCIMAuth:         middleware.SCIMAuth(svc.SCIMToken),
+		SCIM: func() *handler.SCIMHandler {
+			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
+			h.SetGroupService(svc.SCIMGroups)
+			return h
+		}(),
+		SCIMToken: handler.NewSCIMTokenHandler(svc.SCIMToken, log),
+		SCIMAuth:  middleware.SCIMAuth(svc.SCIMToken),
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),

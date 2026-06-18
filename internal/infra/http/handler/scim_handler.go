@@ -29,6 +29,7 @@ const (
 // resolved by middleware.SCIMAuth (from the bearer token), never the body.
 type SCIMHandler struct {
 	provisioning *scim.ProvisioningService
+	groups       *scim.GroupService
 	logger       *logger.Logger
 }
 

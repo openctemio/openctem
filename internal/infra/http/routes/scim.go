@@ -28,6 +28,14 @@ func registerSCIMRoutes(
 			r.PUT("/Users/{id}", scimHandler.ReplaceUser)
 			r.PATCH("/Users/{id}", scimHandler.PatchUser)
 			r.DELETE("/Users/{id}", scimHandler.DeleteUser)
+
+			// Groups (RFC-009 Phase 9c) — membership drives tenant role.
+			r.GET("/Groups", scimHandler.ListGroups)
+			r.POST("/Groups", scimHandler.CreateGroup)
+			r.GET("/Groups/{id}", scimHandler.GetGroup)
+			r.PUT("/Groups/{id}", scimHandler.ReplaceGroup)
+			r.PATCH("/Groups/{id}", scimHandler.PatchGroup)
+			r.DELETE("/Groups/{id}", scimHandler.DeleteGroup)
 		}, scimAuth)
 	}
 
