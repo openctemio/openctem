@@ -499,7 +499,15 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
-	membership, err := tenantdom.NewMembership(input.UserID, parsedTenantID, role, &inviterUserID)
+	// A zero inviter (e.g. system/SCIM-driven provisioning, where there is no
+	// human inviter) must map to NULL invited_by — writing the all-zeros UUID
+	// would violate the invited_by → users(id) foreign key.
+	var invitedBy *shared.ID
+	if !inviterUserID.IsZero() {
+		invitedBy = &inviterUserID
+	}
+
+	membership, err := tenantdom.NewMembership(input.UserID, parsedTenantID, role, invitedBy)
 	if err != nil {
 		return nil, err
 	}

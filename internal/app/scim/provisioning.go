@@ -222,9 +222,14 @@ func (s *ProvisioningService) List(ctx context.Context, tenantID shared.ID, filt
 	if lo > total {
 		lo = total
 	}
+	// SCIM (RFC-7644 §3.4.2.4): count == 0 means "return no resources" (the
+	// client just wants totalResults). count < 0 is treated as "no limit".
 	hi := total
-	if count > 0 && lo+count < hi {
+	if count >= 0 {
 		hi = lo + count
+		if hi > total {
+			hi = total
+		}
 	}
 
 	out := make([]ScimUser, 0, hi-lo)

@@ -232,6 +232,25 @@ func TestProvision_List_FilterByEmail(t *testing.T) {
 	}
 }
 
+func TestProvision_List_CountZeroReturnsNoResources(t *testing.T) {
+	// SCIM: count=0 means "return totalResults but no Resources".
+	svc, users, members := newProvisioning()
+	tenantID := shared.NewID()
+	seedActiveMember(t, users, members, tenantID, "x@example.com")
+	seedActiveMember(t, users, members, tenantID, "y@example.com")
+
+	list, total, err := svc.List(context.Background(), tenantID, "", 1, 0)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("total = %d, want 2", total)
+	}
+	if len(list) != 0 {
+		t.Errorf("count=0 must return no resources, got %d", len(list))
+	}
+}
+
 func TestProvision_CreateInactive(t *testing.T) {
 	svc, _, members := newProvisioning()
 	tenantID := shared.NewID()

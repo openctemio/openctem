@@ -93,6 +93,17 @@ func (r *ScimTokenRepository) Update(ctx context.Context, t *scimtoken.ScimToken
 	return nil
 }
 
+// TouchLastUsed updates only last_used_at, and only while the token is still
+// active — so it can never overwrite a concurrent revoke.
+func (r *ScimTokenRepository) TouchLastUsed(ctx context.Context, id shared.ID, at time.Time) error {
+	const q = `UPDATE scim_tokens SET last_used_at = $1 WHERE id = $2 AND status = 'active'`
+	_, err := r.db.ExecContext(ctx, q, at, id.String())
+	if err != nil {
+		return fmt.Errorf("touch scim token: %w", err)
+	}
+	return nil
+}
+
 type scimRowScanner interface {
 	Scan(dest ...any) error
 }

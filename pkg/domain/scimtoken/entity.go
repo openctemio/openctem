@@ -94,4 +94,8 @@ type Repository interface {
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*ScimToken, error)
 	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*ScimToken, error)
 	Update(ctx context.Context, token *ScimToken) error
+	// TouchLastUsed records a use time WITHOUT touching status, and only for a
+	// still-active token. This avoids a last-used write on the auth path
+	// clobbering a concurrent revoke (which would resurrect the token).
+	TouchLastUsed(ctx context.Context, id shared.ID, at time.Time) error
 }

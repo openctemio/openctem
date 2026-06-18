@@ -2458,3 +2458,31 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 		})
 	}
 }
+
+// TestTenantSvc_AddMember_ZeroInviter_NullInvitedBy guards the SCIM/system
+// provisioning path: AddMember called with a zero inviter must produce a
+// membership with a NULL invited_by, not the all-zeros UUID — otherwise the
+// invited_by → users(id) foreign key is violated on insert.
+func TestTenantSvc_AddMember_ZeroInviter_NullInvitedBy(t *testing.T) {
+	svc, repo := newTestTenantService()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	if _, err := svc.AddMember(context.Background(), tenantID.String(),
+		app.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{}, app.AuditContext{}); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	var found *tenant.Membership
+	for _, m := range repo.memberships {
+		if m.UserID() == userID {
+			found = m
+		}
+	}
+	if found == nil {
+		t.Fatal("membership was not created")
+	}
+	if found.InvitedBy() != nil {
+		t.Errorf("invitedBy = %v, want nil for a zero inviter", found.InvitedBy())
+	}
+}
