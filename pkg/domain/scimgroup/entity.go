@@ -76,4 +76,10 @@ type Repository interface {
 	// RoleGroupNamesForUser returns the display names of the groups a user
 	// belongs to in a tenant, used to reconcile their effective role.
 	RoleGroupNamesForUser(ctx context.Context, tenantID, userID shared.ID) ([]string, error)
+
+	// GetRoleMappings returns the tenant's group-name → role overrides, keyed by
+	// lowercased group display name.
+	GetRoleMappings(ctx context.Context, tenantID shared.ID) (map[string]string, error)
+	// ReplaceRoleMappings replaces the tenant's group-name → role overrides.
+	ReplaceRoleMappings(ctx context.Context, tenantID shared.ID, mappings map[string]string) error
 }

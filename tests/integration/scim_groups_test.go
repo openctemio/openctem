@@ -107,6 +107,69 @@ func TestSCIMGroups_RoleMapping_RealDB(t *testing.T) {
 	}
 }
 
+// TestSCIMGroups_ConfigurableMapping_RealDB verifies that a per-tenant group →
+// role override (for arbitrary IdP group names) drives the role against real SQL.
+func TestSCIMGroups_ConfigurableMapping_RealDB(t *testing.T) {
+	sqlDB := setupTestDB(t)
+	db := &postgres.DB{DB: sqlDB}
+	log := logger.NewNop()
+	ctx := context.Background()
+
+	tenantID := createTestTenant(t, sqlDB, "scimmap")
+	email := "mapuser@example.com"
+	t.Cleanup(func() {
+		cleanupTestData(sqlDB, tenantID)
+		_, _ = sqlDB.Exec("DELETE FROM users WHERE email = $1", email)
+	})
+
+	userRepo := postgres.NewUserRepository(db)
+	tenantRepo := postgres.NewTenantRepository(db)
+	tenantSvc := app.NewTenantService(tenantRepo, log)
+	mgr := scimMemberMgr{svc: tenantSvc}
+	prov := scim.NewProvisioningService(userRepo, tenantRepo, mgr, log)
+	groupSvc := scim.NewGroupService(postgres.NewScimGroupRepository(db), tenantRepo, mgr, log)
+
+	res, _, err := prov.CreateOrActivate(ctx, tenantID, scim.ProvisionInput{UserName: email, Active: true})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	userID, _ := shared.IDFromString(res.ID)
+
+	roleOf := func() tenantdom.Role {
+		m, _ := tenantRepo.GetMembership(ctx, userID, tenantID)
+		return m.Role()
+	}
+
+	// Map an arbitrary IdP group name to admin.
+	if err := groupSvc.SetRoleMappings(ctx, tenantID, map[string]string{"Acme-OpenCTEM-Admins": "admin"}); err != nil {
+		t.Fatalf("set mappings: %v", err)
+	}
+
+	// A group with that name (not "admin") now promotes via the mapping.
+	if _, err := groupSvc.Create(ctx, tenantID, scim.GroupInput{
+		DisplayName: "Acme-OpenCTEM-Admins", MemberIDs: []shared.ID{userID},
+	}); err != nil {
+		t.Fatalf("create mapped group: %v", err)
+	}
+	if roleOf() != tenantdom.RoleAdmin {
+		t.Errorf("mapped group should promote to admin, got %s", roleOf())
+	}
+
+	// Round-trip the mapping read.
+	got, err := groupSvc.GetRoleMappings(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("get mappings: %v", err)
+	}
+	if got["acme-openctem-admins"] != "admin" {
+		t.Errorf("mapping read mismatch: %v", got)
+	}
+
+	// An invalid role is rejected.
+	if err := groupSvc.SetRoleMappings(ctx, tenantID, map[string]string{"x": "owner"}); err == nil {
+		t.Error("mapping to owner must be rejected")
+	}
+}
+
 // TestSCIMGroups_Repository_RoundTrip checks the group repository CRUD + member
 // ops against real SQL.
 func TestSCIMGroups_Repository_RoundTrip(t *testing.T) {

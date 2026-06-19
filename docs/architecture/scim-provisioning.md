@@ -78,6 +78,12 @@ whose membership drives a user's **tenant role**:
 - A group whose `displayName` (case-insensitive) is a tenant role — `admin`,
   `member`, or `viewer` — maps its members to that role. Non-role-named groups
   (e.g. "Engineering") are stored but don't affect roles.
+- **Configurable mapping** — because real IdPs name groups arbitrarily (e.g.
+  "Acme-OpenCTEM-Admins"), an admin can map any group display name to a role via
+  `GET`/`PUT /api/v1/scim-tokens/group-mappings` (JWT admin, body
+  `{"mappings": {"Acme-OpenCTEM-Admins": "admin"}}`). A mapping takes precedence
+  over the name-match default; `owner` is rejected. Saving re-reconciles all
+  current group members immediately.
 - A user's **effective role** is the highest-privilege role-group they belong
   to (`admin` > `member` > `viewer`); belonging to none defaults to `member`.
   `owner` is **never** assignable via SCIM.

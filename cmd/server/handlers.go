@@ -183,8 +183,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			h.SetGroupService(svc.SCIMGroups)
 			return h
 		}(),
-		SCIMToken: handler.NewSCIMTokenHandler(svc.SCIMToken, log),
-		SCIMAuth:  middleware.SCIMAuth(svc.SCIMToken),
+		SCIMToken: func() *handler.SCIMTokenHandler {
+			h := handler.NewSCIMTokenHandler(svc.SCIMToken, log)
+			h.SetGroupService(svc.SCIMGroups)
+			return h
+		}(),
+		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),

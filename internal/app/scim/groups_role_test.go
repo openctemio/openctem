@@ -22,8 +22,35 @@ func TestEffectiveRole(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := effectiveRole(tc.groups); got != tc.want {
-				t.Errorf("effectiveRole(%v) = %q, want %q", tc.groups, got, tc.want)
+			if got := effectiveRole(tc.groups, nil); got != tc.want {
+				t.Errorf("effectiveRole(%v, nil) = %q, want %q", tc.groups, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveRole_WithMappings(t *testing.T) {
+	mappings := map[string]string{
+		"acme-openctem-admins":  "admin",
+		"acme-openctem-readers": "viewer",
+	}
+	tests := []struct {
+		name   string
+		groups []string
+		want   string
+	}{
+		{"custom name mapped to admin", []string{"Acme-OpenCTEM-Admins"}, "admin"},
+		{"custom name mapped to viewer", []string{"Acme-OpenCTEM-Readers"}, "viewer"},
+		{"case-insensitive custom mapping", []string{"ACME-OPENCTEM-ADMINS"}, "admin"},
+		{"mapping wins highest across groups", []string{"Acme-OpenCTEM-Readers", "Acme-OpenCTEM-Admins"}, "admin"},
+		{"unmapped falls back to name-match", []string{"viewer"}, "viewer"},
+		{"unmapped custom group → member default", []string{"Engineering"}, "member"},
+		{"mapping + name-match combine", []string{"Engineering", "Acme-OpenCTEM-Readers"}, "viewer"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := effectiveRole(tc.groups, mappings); got != tc.want {
+				t.Errorf("effectiveRole(%v, mappings) = %q, want %q", tc.groups, got, tc.want)
 			}
 		})
 	}

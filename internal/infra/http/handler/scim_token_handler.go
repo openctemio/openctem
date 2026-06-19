@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -17,12 +18,63 @@ import (
 // The plaintext token is returned exactly once, at creation.
 type SCIMTokenHandler struct {
 	tokens *scim.TokenService
+	groups *scim.GroupService
 	logger *logger.Logger
 }
 
 // NewSCIMTokenHandler creates the handler.
 func NewSCIMTokenHandler(tokens *scim.TokenService, log *logger.Logger) *SCIMTokenHandler {
 	return &SCIMTokenHandler{tokens: tokens, logger: log.With("handler", "scim-token")}
+}
+
+// SetGroupService wires the SCIM group service for group→role mapping admin.
+func (h *SCIMTokenHandler) SetGroupService(g *scim.GroupService) { h.groups = g }
+
+type groupMappingsBody struct {
+	Mappings map[string]string `json:"mappings"`
+}
+
+// GetGroupMappings handles GET /api/v1/scim-tokens/group-mappings (JWT admin).
+func (h *SCIMTokenHandler) GetGroupMappings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil || h.groups == nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+	mappings, err := h.groups.GetRoleMappings(r.Context(), tenantID)
+	if err != nil {
+		h.logger.Error("get scim group mappings failed", "error", err)
+		apierror.InternalServerError("failed to load group mappings").WriteJSON(w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(groupMappingsBody{Mappings: mappings})
+}
+
+// SetGroupMappings handles PUT /api/v1/scim-tokens/group-mappings (JWT admin) —
+// replaces the tenant's group→role overrides and re-reconciles members.
+func (h *SCIMTokenHandler) SetGroupMappings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil || h.groups == nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+	var body groupMappingsBody
+	if derr := json.NewDecoder(r.Body).Decode(&body); derr != nil {
+		apierror.BadRequest("invalid JSON body").WriteJSON(w)
+		return
+	}
+	if err := h.groups.SetRoleMappings(r.Context(), tenantID, body.Mappings); err != nil {
+		if errors.Is(err, shared.ErrValidation) {
+			apierror.BadRequest("role must be admin, member, or viewer").WriteJSON(w)
+			return
+		}
+		h.logger.Error("set scim group mappings failed", "error", err)
+		apierror.InternalServerError("failed to save group mappings").WriteJSON(w)
+		return
+	}
+	h.GetGroupMappings(w, r)
 }
 
 type createSCIMTokenRequest struct {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/api/pkg/domain/scimgroup"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -218,6 +219,48 @@ func (r *ScimGroupRepository) RoleGroupNamesForUser(ctx context.Context, tenantI
 		names = append(names, n)
 	}
 	return names, rows.Err()
+}
+
+func (r *ScimGroupRepository) GetRoleMappings(ctx context.Context, tenantID shared.ID) (map[string]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT group_name, role FROM scim_group_role_mappings WHERE tenant_id = $1`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("get role mappings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]string{}
+	for rows.Next() {
+		var name, role string
+		if err := rows.Scan(&name, &role); err != nil {
+			return nil, fmt.Errorf("scan role mapping: %w", err)
+		}
+		out[name] = role
+	}
+	return out, rows.Err()
+}
+
+func (r *ScimGroupRepository) ReplaceRoleMappings(ctx context.Context, tenantID shared.ID, mappings map[string]string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM scim_group_role_mappings WHERE tenant_id = $1`, tenantID.String()); err != nil {
+		return fmt.Errorf("clear role mappings: %w", err)
+	}
+	for name, role := range mappings {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO scim_group_role_mappings (tenant_id, group_name, role) VALUES ($1, $2, $3)`,
+			tenantID.String(), strings.ToLower(strings.TrimSpace(name)), role,
+		); err != nil {
+			return fmt.Errorf("insert role mapping: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }
 
 func notFoundIfZero(res sql.Result) error {

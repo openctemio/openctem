@@ -162,20 +162,64 @@ func (s *GroupService) reconcileUser(ctx context.Context, tenantID, userID share
 	if err != nil {
 		return fmt.Errorf("group names: %w", err)
 	}
-	desired := effectiveRole(names)
+	mappings, err := s.groups.GetRoleMappings(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("role mappings: %w", err)
+	}
+	desired := effectiveRole(names, mappings)
 	if string(m.Role()) == desired {
 		return nil
 	}
 	return s.roles.UpdateMemberRole(ctx, tenantID, m.ID(), desired)
 }
 
-// effectiveRole maps a user's group display names to a tenant role: the
-// highest-privilege role-named group wins; none → member (default).
-func effectiveRole(groupNames []string) string {
+// GetRoleMappings returns the tenant's configured group → role overrides.
+func (s *GroupService) GetRoleMappings(ctx context.Context, tenantID shared.ID) (map[string]string, error) {
+	return s.groups.GetRoleMappings(ctx, tenantID)
+}
+
+// SetRoleMappings replaces the tenant's group → role overrides (admin action)
+// and re-reconciles every current group member so the change takes effect
+// immediately. Roles are validated; 'owner' is rejected.
+func (s *GroupService) SetRoleMappings(ctx context.Context, tenantID shared.ID, mappings map[string]string) error {
+	normalized := make(map[string]string, len(mappings))
+	for name, role := range mappings {
+		r := strings.ToLower(strings.TrimSpace(role))
+		switch r {
+		case string(tenantdom.RoleAdmin), string(tenantdom.RoleMember), string(tenantdom.RoleViewer):
+		default:
+			return fmt.Errorf("%w: role %q must be admin, member, or viewer", shared.ErrValidation, role)
+		}
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("%w: group name must not be empty", shared.ErrValidation)
+		}
+		normalized[name] = r
+	}
+	if err := s.groups.ReplaceRoleMappings(ctx, tenantID, normalized); err != nil {
+		return err
+	}
+	// Re-reconcile every member of the tenant's groups under the new mapping.
+	groups, err := s.groups.ListByTenant(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	var affected []shared.ID
+	for _, g := range groups {
+		affected = append(affected, g.Members()...)
+	}
+	s.reconcileUsers(ctx, tenantID, affected)
+	return nil
+}
+
+// effectiveRole maps a user's group display names to a tenant role. A
+// per-tenant mapping (keyed by lowercased display name) takes precedence; groups
+// with no mapping fall back to a name-match default. The highest-privilege
+// match wins; none → member.
+func effectiveRole(groupNames []string, mappings map[string]string) string {
 	best := ""
 	bestRank := 0
 	for _, n := range groupNames {
-		role, ok := roleFromGroupName(n)
+		role, ok := resolveGroupRole(n, mappings)
 		if !ok {
 			continue
 		}
@@ -188,6 +232,18 @@ func effectiveRole(groupNames []string) string {
 		return string(tenantdom.RoleMember)
 	}
 	return best
+}
+
+// resolveGroupRole resolves a single group name to a role: the tenant mapping
+// first, then the built-in name-match default.
+func resolveGroupRole(name string, mappings map[string]string) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(name))
+	if mappings != nil {
+		if role, ok := mappings[key]; ok {
+			return role, true
+		}
+	}
+	return roleFromGroupName(name)
 }
 
 func roleFromGroupName(name string) (string, bool) {

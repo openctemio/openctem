@@ -45,6 +45,9 @@ func registerSCIMRoutes(
 		router.Group("/api/v1/scim-tokens", func(r Router) {
 			r.GET("/", tokenHandler.List, middleware.RequireAdmin())
 			r.POST("/", tokenHandler.Create, middleware.RequireAdmin())
+			// Group → role mappings (register before /{id} so the literal wins).
+			r.GET("/group-mappings", tokenHandler.GetGroupMappings, middleware.RequireAdmin())
+			r.PUT("/group-mappings", tokenHandler.SetGroupMappings, middleware.RequireAdmin())
 			r.DELETE("/{id}", tokenHandler.Revoke, middleware.RequireAdmin())
 		}, tenantMiddlewares...)
 	}
