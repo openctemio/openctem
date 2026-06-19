@@ -180,6 +180,9 @@ type Repositories struct {
 
 	// SCIM groups (RFC-009 Phase 9c, migration 000180)
 	ScimGroup *postgres.ScimGroupRepository
+
+	// SAML SP config (RFC-009 Phase 9d, migration 000182)
+	SAMLProvider *postgres.SAMLProviderRepository
 }
 
 // NewRepositories initializes all repositories.
@@ -357,6 +360,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// SCIM groups (RFC-009 Phase 9c, migration 000180).
 		ScimGroup: postgres.NewScimGroupRepository(db),
+
+		// SAML SP config (RFC-009 Phase 9d, migration 000182).
+		SAMLProvider: postgres.NewSAMLProviderRepository(db),
 	}
 }
 

@@ -287,6 +287,9 @@ type Services struct {
 	// SSO
 	SSO *app.SSOService
 
+	// SAML 2.0 SP (RFC-009 9d/9e)
+	SAML *app.SAMLService
+
 	// SCIM 2.0 provisioning (RFC-009)
 	SCIMToken        *scim.TokenService
 	SCIMProvisioning *scim.ProvisioningService
@@ -1010,6 +1013,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log,
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
+
+	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
+	s.SAML = app.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
 }
 
 // InitEmailServices initializes email-related services.

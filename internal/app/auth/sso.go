@@ -867,6 +867,78 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*Sessi
 	}, nil
 }
 
+// ErrSSOFederatedTakeover is returned when a federated (e.g. SAML) login
+// resolves to an existing password-backed local account — logging into it from
+// an external assertion would be account takeover.
+var ErrSSOFederatedTakeover = errors.New("email is registered with a password; federated login not allowed")
+
+// CompleteFederatedLogin issues an OpenCTEM session for an externally
+// authenticated identity (e.g. a validated SAML assertion). It finds-or-creates
+// a claimable passwordless user, blocks takeover of password-backed local
+// accounts, auto-provisions tenant membership when requested, and creates the
+// session. Reused by the SAML SP flow so it shares the SSO session machinery.
+func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string, autoProvision bool) (*SSOCallbackResult, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, ErrSSONoEmail
+	}
+
+	u, err := s.userRepo.GetByEmail(ctx, email)
+	if err == nil && u != nil {
+		// Account-takeover guard: a password-backed local account must not be
+		// accessible via an external assertion.
+		if u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil {
+			return nil, ErrSSOFederatedTakeover
+		}
+		u.UpdateLastLogin()
+		if uerr := s.userRepo.Update(ctx, u); uerr != nil {
+			s.logger.Warn("federated login: update last login", "error", uerr)
+		}
+	} else {
+		// Create a claimable passwordless local user (same shape as an invite).
+		newU, cerr := userdom.New(email, name)
+		if cerr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cerr)
+		}
+		if cerr := s.userRepo.Create(ctx, newU); cerr != nil {
+			if retry, rerr := s.userRepo.GetByEmail(ctx, email); rerr == nil && retry != nil {
+				newU = retry
+			} else {
+				return nil, fmt.Errorf("create user: %w", cerr)
+			}
+		}
+		u = newU
+	}
+
+	if autoProvision && s.tenantMemberRepo != nil {
+		role := tenantdom.Role(defaultRole)
+		if !role.IsValid() || role == tenantdom.RoleOwner {
+			role = tenantdom.RoleMember
+		}
+		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), role, nil)
+		if memErr == nil {
+			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
+		}
+		if memErr != nil {
+			s.logger.Debug("federated auto-provision membership", "user_id", u.ID().String(), "error", memErr)
+		}
+	}
+
+	sessionResult, err := s.createSession(ctx, u)
+	if err != nil {
+		return nil, fmt.Errorf("create session: %w", err)
+	}
+	return &SSOCallbackResult{
+		AccessToken:  sessionResult.AccessToken,
+		RefreshToken: sessionResult.RefreshToken,
+		ExpiresIn:    int64(s.authConfig.AccessTokenDuration.Seconds()),
+		TokenType:    "Bearer",
+		User:         u,
+		TenantID:     t.ID().String(),
+		TenantSlug:   t.Slug(),
+	}, nil
+}
+
 // === Admin CRUD operations for identity provider configurations ===
 
 // CreateProviderInput is the input for creating an identity provider config.

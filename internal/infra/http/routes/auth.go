@@ -94,7 +94,31 @@ func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddl
 			ssoCallbackHandler := ChainFunc(h.SSO.Callback, loginRL)
 			r.POST("/sso/{provider}/callback", ssoCallbackHandler.ServeHTTP)
 		}
+
+		// SAML 2.0 SP metadata (public) — the admin registers this with their IdP.
+		// SP-initiated login + ACS (9e) land here in a follow-up.
+		if h.SAML != nil {
+			samlMetadata := ChainFunc(h.SAML.Metadata, loginRL)
+			r.GET("/saml/{org}/metadata", samlMetadata.ServeHTTP)
+		}
 	})
+}
+
+// registerSAMLAdminRoutes registers admin endpoints for a tenant's SAML config.
+func registerSAMLAdminRoutes(
+	router Router,
+	h *handler.SAMLHandler,
+	authMiddleware, userSyncMiddleware Middleware,
+) {
+	if h == nil {
+		return
+	}
+	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/settings/saml", func(r Router) {
+		r.GET("/", h.GetConfig, middleware.RequireAdmin())
+		r.PUT("/", h.SetConfig, middleware.RequireAdmin())
+		r.DELETE("/", h.DeleteConfig, middleware.RequireAdmin())
+	}, middlewares...)
 }
 
 // registerSSOAdminRoutes registers admin endpoints for managing tenant SSO identity providers.

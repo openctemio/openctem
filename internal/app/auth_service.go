@@ -9,6 +9,8 @@ import "github.com/openctemio/api/internal/app/auth"
 type (
 	AuthService             = auth.AuthService
 	SSOService              = auth.SSOService
+	SAMLService             = auth.SAMLService
+	SAMLConfigInput         = auth.SAMLConfigInput
 	OAuthService            = auth.OAuthService
 	SessionService          = auth.SessionService
 	EmailService            = auth.EmailService
@@ -63,6 +65,7 @@ type (
 var (
 	NewAuthService                = auth.NewAuthService
 	NewSSOService                 = auth.NewSSOService
+	NewSAMLService                = auth.NewSAMLService
 	NewOAuthService               = auth.NewOAuthService
 	NewSessionService             = auth.NewSessionService
 	NewEmailService               = auth.NewEmailService
@@ -91,6 +94,7 @@ var (
 	ErrSessionLimitReached      = auth.ErrSessionLimitReached
 	ErrSSODecryptionFailed      = auth.ErrSSODecryptionFailed
 	ErrSSODomainNotAllowed      = auth.ErrSSODomainNotAllowed
+	ErrSSOFederatedTakeover     = auth.ErrSSOFederatedTakeover
 	ErrSSOExchangeFailed        = auth.ErrSSOExchangeFailed
 	ErrSSOInvalidDefaultRole    = auth.ErrSSOInvalidDefaultRole
 	ErrSSOInvalidRedirectURI    = auth.ErrSSOInvalidRedirectURI

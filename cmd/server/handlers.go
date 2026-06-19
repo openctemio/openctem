@@ -314,6 +314,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
 	}
 
+	// SAML SP handler (RFC-009 9d): metadata + per-tenant config CRUD.
+	if svc.SAML != nil {
+		handlers.SAML = handler.NewSAMLHandler(svc.SAML, log)
+	}
+
 	return handlers
 }
 

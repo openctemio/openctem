@@ -167,10 +167,20 @@ against a staging Okta/Azure SAML app before GA.
 
 ### Phasing
 
-- **9d** — SAML config model + SP metadata endpoint.
-- **9e** — AuthnRequest + ACS with signature/condition validation + identity
-  mapping + tests.
-- **9f** — IdP-initiated flow + SLO (single logout), if required.
+- **9d** — SAML config model + SP metadata endpoint + admin config CRUD +
+  shared federated-login seam. **SHIPPED.** `saml_providers` table (migration
+  000182, disabled-by-default per tenant), `samlprovider` domain + repo,
+  `auth.SAMLService` (config CRUD + cert validation + SP metadata via
+  crewjam/saml), `GET /api/v1/auth/saml/{org}/metadata` (public) +
+  `GET/PUT/DELETE /api/v1/settings/saml` (admin). `SSOService.CompleteFederatedLogin`
+  issues the session, with an account-takeover guard (a password-backed local
+  account can't be logged into via an external assertion). Real-DB + unit
+  tested.
+- **9e** — SP-initiated AuthnRequest + ACS with crewjam/saml signature/condition
+  validation + InResponseTo replay protection (request-id tracked in a signed
+  cookie) + identity mapping via CompleteFederatedLogin + fixture tests.
+  _(next; the replay-sensitive, live-IdP-validation step)_
+- **9f** — IdP-initiated flow + SLO (single logout), if required. _(deferred)_
 
 ---
 

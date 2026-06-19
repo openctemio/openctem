@@ -172,7 +172,8 @@ type Handlers struct {
 	AdminDedup         *handler.AdminDedupHandler // RFC-001: Asset dedup review
 
 	// SSO handler (per-tenant SSO authentication)
-	SSO *handler.SSOHandler // nil if not initialized
+	SSO  *handler.SSOHandler  // nil if not initialized
+	SAML *handler.SAMLHandler // nil if not initialized - SAML 2.0 SP (RFC-009)
 
 	// Platform Stats handler (tenant-scoped platform agent stats)
 	PlatformStats *handler.PlatformStatsHandler
@@ -710,6 +711,11 @@ func Register(
 	// SSO Identity Provider admin routes (tenant from JWT token)
 	if h.SSO != nil {
 		registerSSOAdminRoutes(router, h.SSO, authMiddleware, userSync)
+	}
+
+	// SAML SP config admin routes (RFC-009 9d, tenant from JWT token)
+	if h.SAML != nil {
+		registerSAMLAdminRoutes(router, h.SAML, authMiddleware, userSync)
 	}
 
 	// ==========================================================================
