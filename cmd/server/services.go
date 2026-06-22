@@ -606,6 +606,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetClientResolver(jiraResolver)
 	// Same resolver also surfaces the per-tenant status maps for outbound sync.
 	s.JiraSync.SetMappingResolver(jiraResolver)
+	// Routing rules can match on a finding's asset scope/criticality — resolve
+	// that context from the asset repository.
+	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
 	// here (JiraSync is created after the campaign service above).
