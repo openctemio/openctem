@@ -1,3 +1,4 @@
+// Package module provides public types and helpers reusable across the codebase.
 package module
 
 import "strings"

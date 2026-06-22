@@ -1,3 +1,4 @@
+// Package scan implements the application service for the scan bounded context — orchestrates pkg/domain/scan entities and cross-cutting concerns (audit, notifications, RBAC).
 package scan
 
 import (

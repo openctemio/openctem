@@ -12,13 +12,15 @@ import (
 
 // BusinessUnitService manages business units.
 type BusinessUnitService struct {
-	repo   businessunitdom.Repository
-	logger *logger.Logger
+	repo         businessunitdom.Repository
+	assetChecker assetTenantChecker
+	logger       *logger.Logger
 }
 
-// NewBusinessUnitService creates a new service.
-func NewBusinessUnitService(repo businessunitdom.Repository, log *logger.Logger) *BusinessUnitService {
-	return &BusinessUnitService{repo: repo, logger: log}
+// NewBusinessUnitService creates a new service. assetChecker verifies that an
+// asset being linked belongs to the caller's tenant (may be nil in tests).
+func NewBusinessUnitService(repo businessunitdom.Repository, assetChecker assetTenantChecker, log *logger.Logger) *BusinessUnitService {
+	return &BusinessUnitService{repo: repo, assetChecker: assetChecker, logger: log}
 }
 
 // CreateBusinessUnitInput holds input for creating a BU.
@@ -105,16 +107,58 @@ func (s *BusinessUnitService) Delete(ctx context.Context, tenantID, buID string)
 
 // AddAsset links an asset to a BU.
 func (s *BusinessUnitService) AddAsset(ctx context.Context, tenantID, buID, assetID string) error {
-	tid, _ := shared.IDFromString(tenantID)
-	bid, _ := shared.IDFromString(buID)
-	aid, _ := shared.IDFromString(assetID)
-	return s.repo.AddAsset(ctx, tid, bid, aid)
+	tid, bid, aid, err := s.parseBUAssetIDs(tenantID, buID, assetID)
+	if err != nil {
+		return err
+	}
+	// Verify the BU and the asset both belong to this tenant before linking
+	// (the link table is otherwise tenant-blind, allowing a foreign asset to
+	// be associated and pollute risk rollups).
+	if _, err := s.repo.GetByID(ctx, tid, bid); err != nil {
+		return err
+	}
+	if s.assetChecker != nil {
+		if _, err := s.assetChecker.GetByID(ctx, tid, aid); err != nil {
+			return err
+		}
+	}
+	if err := s.repo.AddAsset(ctx, tid, bid, aid); err != nil {
+		return err
+	}
+	if err := s.repo.RecalculateCounts(ctx, tid, bid); err != nil {
+		s.logger.Warn("recalculate business unit counts", "bu_id", bid.String(), "error", err)
+	}
+	return nil
 }
 
 // RemoveAsset unlinks an asset from a BU.
 func (s *BusinessUnitService) RemoveAsset(ctx context.Context, tenantID, buID, assetID string) error {
-	tid, _ := shared.IDFromString(tenantID)
-	bid, _ := shared.IDFromString(buID)
-	aid, _ := shared.IDFromString(assetID)
-	return s.repo.RemoveAsset(ctx, tid, bid, aid)
+	tid, bid, aid, err := s.parseBUAssetIDs(tenantID, buID, assetID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.repo.GetByID(ctx, tid, bid); err != nil {
+		return err
+	}
+	if err := s.repo.RemoveAsset(ctx, tid, bid, aid); err != nil {
+		return err
+	}
+	if err := s.repo.RecalculateCounts(ctx, tid, bid); err != nil {
+		s.logger.Warn("recalculate business unit counts", "bu_id", bid.String(), "error", err)
+	}
+	return nil
+}
+
+// parseBUAssetIDs validates and parses the tenant, business-unit and asset IDs.
+func (s *BusinessUnitService) parseBUAssetIDs(tenantID, buID, assetID string) (tid, bid, aid shared.ID, err error) {
+	if tid, err = shared.IDFromString(tenantID); err != nil {
+		return tid, bid, aid, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	if bid, err = shared.IDFromString(buID); err != nil {
+		return tid, bid, aid, fmt.Errorf("%w: invalid business unit id", shared.ErrValidation)
+	}
+	if aid, err = shared.IDFromString(assetID); err != nil {
+		return tid, bid, aid, fmt.Errorf("%w: invalid asset id", shared.ErrValidation)
+	}
+	return tid, bid, aid, nil
 }

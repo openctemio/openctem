@@ -118,6 +118,18 @@ func (s *testPermVerService) Get(_ context.Context, tenantID, userID string) int
 	return val
 }
 
+func (s *testPermVerService) GetChecked(_ context.Context, tenantID, userID string) (int, bool) {
+	if tenantID == "" || userID == "" {
+		return 1, false
+	}
+	key := s.buildKey(tenantID, userID)
+	val, err := s.store.get(key)
+	if err != nil {
+		return 1, false
+	}
+	return val, true
+}
+
 func (s *testPermVerService) Increment(_ context.Context, tenantID, userID string) int {
 	if tenantID == "" || userID == "" {
 		return 1
@@ -294,6 +306,65 @@ func TestPermVer_Get_RedisError_DefaultsTo1(t *testing.T) {
 	version := svc.Get(ctx, "tenant-1", "user-1")
 	if version != 1 {
 		t.Errorf("expected default version 1 on error, got %d", version)
+	}
+}
+
+// GetChecked: ok must be TRUE only when the version is confirmed from Redis,
+// so the stale-permission gate fails open on a missing key or a Redis outage.
+
+func TestPermVer_GetChecked_ConfirmedWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	store := newPermVerStore()
+	svc := newTestPermVerService(store)
+	ctx := context.Background()
+
+	_ = svc.Set(ctx, "tenant-1", "user-1", 7)
+
+	version, ok := svc.GetChecked(ctx, "tenant-1", "user-1")
+	if !ok {
+		t.Fatal("expected ok=true for a present key")
+	}
+	if version != 7 {
+		t.Errorf("expected version 7, got %d", version)
+	}
+}
+
+func TestPermVer_GetChecked_NotConfirmedWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestPermVerService(newPermVerStore())
+	ctx := context.Background()
+
+	if _, ok := svc.GetChecked(ctx, "tenant-1", "nonexistent"); ok {
+		t.Fatal("expected ok=false for a missing key (fail open)")
+	}
+}
+
+func TestPermVer_GetChecked_NotConfirmedOnRedisError(t *testing.T) {
+	t.Parallel()
+
+	store := newPermVerStore()
+	store.getErr = errors.New("redis connection refused")
+	svc := newTestPermVerService(store)
+	ctx := context.Background()
+
+	if _, ok := svc.GetChecked(ctx, "tenant-1", "user-1"); ok {
+		t.Fatal("expected ok=false on a Redis error (fail open)")
+	}
+}
+
+func TestPermVer_GetChecked_NotConfirmedOnEmptyIDs(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestPermVerService(newPermVerStore())
+	ctx := context.Background()
+
+	if _, ok := svc.GetChecked(ctx, "", "user-1"); ok {
+		t.Error("expected ok=false for empty tenant")
+	}
+	if _, ok := svc.GetChecked(ctx, "tenant-1", ""); ok {
+		t.Error("expected ok=false for empty user")
 	}
 }
 

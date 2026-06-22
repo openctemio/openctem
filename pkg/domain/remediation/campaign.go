@@ -293,10 +293,15 @@ func (c *Campaign) Complete() error {
 	return nil
 }
 
-// Cancel transitions to canceled.
-func (c *Campaign) Cancel() {
+// Cancel transitions to canceled. Terminal states (completed, already
+// canceled) cannot be canceled — mirrors the guards on the other transitions.
+func (c *Campaign) Cancel() error {
+	if c.status == CampaignStatusCompleted || c.status == CampaignStatusCanceled {
+		return fmt.Errorf("%w: cannot cancel from %s", shared.ErrValidation, c.status)
+	}
 	c.status = CampaignStatusCanceled
 	c.updatedAt = time.Now()
+	return nil
 }
 
 // IsOverdue returns true if past due date and not completed.
@@ -327,4 +332,11 @@ type CampaignRepository interface {
 	Update(ctx context.Context, campaign *Campaign) error
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	List(ctx context.Context, filter CampaignFilter, page pagination.Pagination) (pagination.Result[*Campaign], error)
+
+	// ListNonTerminal returns campaigns that are not in a terminal state
+	// (completed/canceled) across all tenants, ordered by least-recently
+	// updated first, up to limit. Used by the progress-reconcile controller
+	// to refresh finding counts and auto-complete. limit <= 0 means a
+	// repository-chosen default.
+	ListNonTerminal(ctx context.Context, limit int) ([]*Campaign, error)
 }

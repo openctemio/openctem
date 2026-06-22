@@ -33,17 +33,17 @@ const simSelectCols = `id, tenant_id, name, description, simulation_type, status
 func (r *SimulationRepository) scanSim(scan func(dest ...any) error) (*simulation.Simulation, error) {
 	var (
 		id, tenantID, name, description         string
-		simType, status                          string
-		mitreTactic, mitreTechID, mitreTechName  string
-		targetAssetsJSON, configJSON              []byte
-		scheduleCron                              sql.NullString
-		lastRunAt, nextRunAt                     sql.NullTime
-		totalRuns                                int
-		lastResult                               sql.NullString
-		detectionRate, preventionRate             float64
-		tags                                     pq.StringArray
-		createdByStr                             sql.NullString
-		createdAt, updatedAt                     sql.NullTime
+		simType, status                         string
+		mitreTactic, mitreTechID, mitreTechName string
+		targetAssetsJSON, configJSON            []byte
+		scheduleCron                            sql.NullString
+		lastRunAt, nextRunAt                    sql.NullTime
+		totalRuns                               int
+		lastResult                              sql.NullString
+		detectionRate, preventionRate           float64
+		tags                                    pq.StringArray
+		createdByStr                            sql.NullString
+		createdAt, updatedAt                    sql.NullTime
 	)
 
 	err := scan(

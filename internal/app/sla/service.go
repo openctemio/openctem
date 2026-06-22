@@ -111,6 +111,15 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 		return nil, fmt.Errorf("failed to create SLA policy: %w", err)
 	}
 
+	// Enforce a single tenant default: if this policy is the default, clear it
+	// on every other tenant-wide policy. Otherwise GetTenantDefault would be
+	// non-deterministic with multiple defaults.
+	if policy.IsDefault() && policy.AssetID() == nil {
+		if err := s.repo.UnsetTenantDefaults(ctx, tenantID, policy.ID()); err != nil {
+			return nil, err
+		}
+	}
+
 	s.logger.Info("SLA policy created", "id", policy.ID().String(), "name", policy.Name())
 	return policy, nil
 }
@@ -264,6 +273,13 @@ func (s *Service) UpdateSLAPolicy(ctx context.Context, policyID, tenantID string
 
 	if err := s.repo.Update(ctx, policy); err != nil {
 		return nil, fmt.Errorf("failed to update SLA policy: %w", err)
+	}
+
+	// Enforce a single tenant default (see CreateSLAPolicy).
+	if policy.IsDefault() && policy.AssetID() == nil {
+		if err := s.repo.UnsetTenantDefaults(ctx, policy.TenantID(), policy.ID()); err != nil {
+			return nil, err
+		}
 	}
 
 	s.logger.Info("SLA policy updated", "id", policy.ID().String())
@@ -435,12 +451,21 @@ func (s *Service) CheckSLACompliance(
 		}, nil
 	}
 
-	// Calculate time elapsed
+	// Calculate time elapsed. Guard a zero/negative window: an unknown
+	// severity (e.g. "none", absent from DefaultSLADays → days=0) makes
+	// deadline == detectedAt, so the division would yield NaN/+Inf and NaN
+	// silently breaks json.Marshal of the result. Treat a non-positive
+	// window as fully elapsed.
 	totalDuration := deadline.Sub(detectedAt)
 	elapsed := now.Sub(detectedAt)
-	percentElapsed := float64(elapsed) / float64(totalDuration) * 100
-	if percentElapsed > 100 {
+	var percentElapsed float64
+	if totalDuration <= 0 {
 		percentElapsed = 100
+	} else {
+		percentElapsed = float64(elapsed) / float64(totalDuration) * 100
+		if percentElapsed > 100 {
+			percentElapsed = 100
+		}
 	}
 
 	daysRemaining := int(deadline.Sub(now).Hours() / 24)

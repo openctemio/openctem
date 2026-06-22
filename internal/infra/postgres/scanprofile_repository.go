@@ -160,6 +160,9 @@ func (r *ScanProfileRepository) List(ctx context.Context, filter scanprofile.Fil
 		}
 		profiles = append(profiles, p)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(profiles, total, page), nil
 }
@@ -321,6 +324,9 @@ func (r *ScanProfileRepository) ListWithSystemProfiles(ctx context.Context, tena
 			return result, err
 		}
 		profiles = append(profiles, p)
+	}
+	if err := rows.Err(); err != nil {
+		return result, err
 	}
 
 	return pagination.NewResult(profiles, total, page), nil

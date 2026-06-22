@@ -207,7 +207,13 @@ func (m *Membership) Suspend(by shared.ID) error {
 	now := time.Now().UTC()
 	m.status = MemberStatusSuspended
 	m.suspendedAt = &now
-	m.suspendedBy = &by
+	// A zero actor denotes a system-initiated suspension (e.g. SCIM
+	// deprovisioning) with no human suspender → leave suspended_by NULL.
+	if by.IsZero() {
+		m.suspendedBy = nil
+	} else {
+		m.suspendedBy = &by
+	}
 	return nil
 }
 

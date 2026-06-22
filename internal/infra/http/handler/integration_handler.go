@@ -321,16 +321,19 @@ type CreateIntegrationRequest struct {
 	BaseURL         string `json:"base_url" validate:"omitempty,url" example:"https://github.com"`
 	Credentials     string `json:"credentials" validate:"omitempty,max=5000" example:"YOUR_TOKEN_HERE"`
 	SCMOrganization string `json:"scm_organization" validate:"omitempty,max=255" example:"my-organization"`
+	// Config holds non-sensitive provider settings (e.g. Tenable execution_mode/engine).
+	Config map[string]any `json:"config,omitempty"`
 }
 
 // UpdateIntegrationRequest represents the request to update an integration.
 // @Description Request body for updating an existing integration
 type UpdateIntegrationRequest struct {
-	Name            *string `json:"name" validate:"omitempty,min=1,max=255" example:"GitHub Production Updated"`
-	Description     *string `json:"description" validate:"omitempty,max=1000"`
-	Credentials     *string `json:"credentials" validate:"omitempty,max=5000"`
-	BaseURL         *string `json:"base_url" validate:"omitempty,url"`
-	SCMOrganization *string `json:"scm_organization" validate:"omitempty,max=255"`
+	Name            *string        `json:"name" validate:"omitempty,min=1,max=255" example:"GitHub Production Updated"`
+	Description     *string        `json:"description" validate:"omitempty,max=1000"`
+	Credentials     *string        `json:"credentials" validate:"omitempty,max=5000"`
+	BaseURL         *string        `json:"base_url" validate:"omitempty,url"`
+	SCMOrganization *string        `json:"scm_organization" validate:"omitempty,max=255"`
+	Config          map[string]any `json:"config,omitempty"`
 }
 
 // TestIntegrationCredentialsRequest represents the request to test credentials without creating.
@@ -643,6 +646,7 @@ func (h *IntegrationHandler) Create(w http.ResponseWriter, r *http.Request) {
 		AuthType:        req.AuthType,
 		BaseURL:         req.BaseURL,
 		Credentials:     req.Credentials,
+		Config:          req.Config,
 		SCMOrganization: req.SCMOrganization,
 	}
 
@@ -759,6 +763,7 @@ func (h *IntegrationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Description:     req.Description,
 		Credentials:     req.Credentials,
 		BaseURL:         req.BaseURL,
+		Config:          req.Config,
 		SCMOrganization: req.SCMOrganization,
 	}
 
@@ -1519,5 +1524,140 @@ func (h *IntegrationHandler) GetNotificationEvents(w http.ResponseWriter, r *htt
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// JiraWebhookConfigResponse describes how to configure an inbound Jira webhook
+// so it verifies against this tenant's own secret.
+type JiraWebhookConfigResponse struct {
+	WebhookSecret   string `json:"webhook_secret"`
+	WebhookURL      string `json:"webhook_url"`
+	SignatureHeader string `json:"signature_header"`
+	TimestampHeader string `json:"timestamp_header"`
+}
+
+func jiraWebhookConfig(tenantID, secret string) JiraWebhookConfigResponse {
+	return JiraWebhookConfigResponse{
+		WebhookSecret:   secret,
+		WebhookURL:      "/api/v1/webhooks/incoming/jira?tenant=" + tenantID,
+		SignatureHeader: "X-OpenCTEM-Signature",
+		TimestampHeader: "X-OpenCTEM-Timestamp",
+	}
+}
+
+// GetJiraWebhookSecret handles GET /api/v1/integrations/jira/webhook-secret.
+// Returns (lazily creating if needed) the tenant's per-tenant inbound-webhook
+// HMAC secret so an admin can configure it in Jira. Requires a Jira integration.
+func (h *IntegrationHandler) GetJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+
+	secret, err := h.service.EnsureJiraWebhookSecret(r.Context(), tid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
+}
+
+// RotateJiraWebhookSecret handles POST /api/v1/integrations/jira/webhook-secret/rotate.
+// Generates a fresh secret (invalidating the previous one immediately) and
+// returns it. Requires a Jira integration.
+func (h *IntegrationHandler) RotateJiraWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+
+	secret, err := h.service.RotateJiraWebhookSecret(r.Context(), tid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(jiraWebhookConfig(tenantID, secret))
+}
+
+// GitHubWebhookConfigResponse describes how to configure a GitHub webhook so it
+// verifies against this tenant's secret.
+type GitHubWebhookConfigResponse struct {
+	WebhookSecret  string `json:"webhook_secret"`
+	WebhookURL     string `json:"webhook_url"`
+	ContentType    string `json:"content_type"`
+	SignatureType  string `json:"signature_type"`
+	RecommendedFor string `json:"recommended_events"`
+}
+
+func githubWebhookConfig(tenantID, secret string) GitHubWebhookConfigResponse {
+	return GitHubWebhookConfigResponse{
+		WebhookSecret:  secret,
+		WebhookURL:     "/api/v1/webhooks/incoming/github?tenant=" + tenantID,
+		ContentType:    "application/json",
+		SignatureType:  "X-Hub-Signature-256 (HMAC-SHA256)",
+		RecommendedFor: "push",
+	}
+}
+
+// GetGitHubWebhookSecret handles GET /api/v1/integrations/github/webhook-secret.
+func (h *IntegrationHandler) GetGitHubWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+	secret, err := h.service.EnsureGitHubWebhookSecret(r.Context(), tid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(githubWebhookConfig(tenantID, secret))
+}
+
+// RotateGitHubWebhookSecret handles POST /api/v1/integrations/github/webhook-secret/rotate.
+func (h *IntegrationHandler) RotateGitHubWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+	secret, err := h.service.RotateGitHubWebhookSecret(r.Context(), tid)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(githubWebhookConfig(tenantID, secret))
+}
+
+// ImportRepositories handles POST /api/v1/integrations/{id}/import-repositories.
+// It lists repositories from an SCM integration and upserts them as repository
+// assets for the tenant (dedup by full name; archived skipped unless requested).
+func (h *IntegrationHandler) ImportRepositories(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	integrationID := r.PathValue("id")
+
+	result, err := h.service.ImportSCMRepositories(r.Context(), app.ImportReposInput{
+		IntegrationID:   integrationID,
+		TenantID:        tenantID,
+		IncludeArchived: r.URL.Query().Get("include_archived") == queryParamTrue,
+	})
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
 }

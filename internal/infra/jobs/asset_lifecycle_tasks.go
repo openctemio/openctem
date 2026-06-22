@@ -15,9 +15,9 @@ const (
 
 // AssetLifecyclePayload contains config for the cleanup job.
 type AssetLifecyclePayload struct {
-	TenantID      string `json:"tenant_id"`
-	StaleDays     int    `json:"stale_days"`      // Assets unseen > N days get archived
-	DryRun        bool   `json:"dry_run"`         // If true, only log — don't archive
+	TenantID  string `json:"tenant_id"`
+	StaleDays int    `json:"stale_days"` // Assets unseen > N days get archived
+	DryRun    bool   `json:"dry_run"`    // If true, only log — don't archive
 }
 
 // NewAssetLifecycleTask creates a scheduled asset lifecycle cleanup task.

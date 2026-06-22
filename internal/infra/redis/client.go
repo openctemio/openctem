@@ -83,8 +83,16 @@ func New(cfg *config.RedisConfig, log *logger.Logger) (*Client, error) {
 
 		lastErr = err
 		if attempt < cfg.MaxRetries {
-			backoff := cfg.MinRetryDelay * time.Duration(1<<attempt)
-			if backoff > cfg.MaxRetryDelay {
+			// Cap the shift so a large MaxRetries can't overflow the
+			// exponential into a negative/zero duration (which would slip past
+			// the MaxRetryDelay ceiling and busy-loop). backoff <= 0 also
+			// catches any residual overflow.
+			shift := attempt
+			if shift > 16 {
+				shift = 16
+			}
+			backoff := cfg.MinRetryDelay * time.Duration(1<<shift)
+			if backoff <= 0 || backoff > cfg.MaxRetryDelay {
 				backoff = cfg.MaxRetryDelay
 			}
 			log.Warn("redis connection failed, retrying",

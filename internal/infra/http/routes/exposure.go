@@ -68,8 +68,11 @@ func registerThreatIntelRoutes(
 		// Sync status and management (admin operations)
 		r.GET("/sync", h.GetSyncStatuses, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/sync/{source}", h.GetSyncStatus, middleware.Require(permission.VulnerabilitiesRead))
-		r.POST("/sync", h.TriggerSync, middleware.Require(permission.VulnerabilitiesWrite))
-		r.PATCH("/sync/{source}", h.SetSyncEnabled, middleware.Require(permission.VulnerabilitiesWrite))
+		// Sync mutations carry the tenant overlay (active-membership etc.) so a
+		// suspended admin can't keep triggering syncs with a stale JWT.
+		tiSyncWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
+		r.POST("/sync", h.TriggerSync, tiSyncWriteMW...)
+		r.PATCH("/sync/{source}", h.SetSyncEnabled, tiSyncWriteMW...)
 
 		// CVE enrichment (combine EPSS + KEV data)
 		r.GET("/enrich/{cveId}", h.EnrichCVE, middleware.Require(permission.VulnerabilitiesRead))
@@ -159,20 +162,43 @@ func registerVulnerabilityRoutes(
 	// Build base middleware chain
 	baseMiddlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Vulnerability routes - global CVE database (no tenant required)
+	// Vulnerability routes - global CVE database (no tenant required for catalog ops).
+	// EXCEPTION: /{id}/affected-assets and /cve/{cveId}/affected-assets are
+	// blast-radius reverse lookups that JOIN findings × assets — those need
+	// tenant context. We apply middleware.RequireTenant() per-route below
+	// (chi doesn't allow two Group() blocks on the same mount path).
 	router.Group("/api/v1/vulnerabilities", func(r Router) {
 		// Read operations
 		r.GET("/", h.ListVulnerabilities, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/{id}", h.GetVulnerability, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/cve/{cveId}", h.GetVulnerabilityByCVE, middleware.Require(permission.VulnerabilitiesRead))
 
-		// Write operations (admin only)
-		r.POST("/", h.CreateVulnerability, middleware.Require(permission.VulnerabilitiesWrite))
-		r.PUT("/{id}", h.UpdateVulnerability, middleware.Require(permission.VulnerabilitiesWrite))
-		r.DELETE("/{id}", h.DeleteVulnerability, middleware.Require(permission.VulnerabilitiesDelete))
+		// Blast-radius reverse lookups + Active CVEs (tenant-scoped). Use
+		// tenantOverlayMiddlewares() to apply RequireTenant + active-membership
+		// + CSRF + rate-limit per-route, since chi forbids mounting a second
+		// Group on the same path. See routes.go.
+		tenantScopedMW := append(tenantOverlayMiddlewares(),
+			middleware.Require(permission.VulnerabilitiesRead))
+		// IMPORTANT: register /active/stats BEFORE /active and /{id} so the
+		// most-specific literal path wins.
+		r.GET("/active/stats", h.GetActiveCVEStats, tenantScopedMW...)
+		r.GET("/active", h.ListActiveCVEs, tenantScopedMW...)
+		r.GET("/{id}/affected-assets", h.ListAffectedAssets, tenantScopedMW...)
+		r.GET("/cve/{cveId}/affected-assets", h.ListAffectedAssetsByCVE, tenantScopedMW...)
+
+		// Write operations (admin only). Apply the tenant overlay
+		// (RequireTenant + active-membership + CSRF + rate-limit) so a
+		// suspended/removed admin can't keep mutating the global catalog with a
+		// still-valid JWT — matching the active CVE read routes above and every
+		// tenant-scoped write route.
+		vulnWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
+		vulnDeleteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesDelete))
+		r.POST("/", h.CreateVulnerability, vulnWriteMW...)
+		r.PUT("/{id}", h.UpdateVulnerability, vulnWriteMW...)
+		r.DELETE("/{id}", h.DeleteVulnerability, vulnDeleteMW...)
 	}, baseMiddlewares...)
 
-	// Build tenant middleware chain from JWT token
+	// Build tenant middleware chain from JWT token (used by /findings group below)
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	// Finding routes - tenant from JWT token
@@ -203,6 +229,8 @@ func registerVulnerabilityRoutes(
 
 		// Single finding operations
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))
+		// Priority explainability: why does this finding hold its P-class?
+		r.GET("/{id}/priority-explanation", h.ExplainPriority, middleware.Require(permission.FindingsRead))
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))

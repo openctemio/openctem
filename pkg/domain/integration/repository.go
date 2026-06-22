@@ -41,6 +41,11 @@ type Repository interface {
 	// CRUD operations
 	Create(ctx context.Context, i *Integration) error
 	GetByID(ctx context.Context, id ID) (*Integration, error)
+	// GetByTenantAndID fetches an integration scoped to a tenant, returning
+	// ErrIntegrationNotFound if it does not exist OR belongs to another tenant.
+	// Prefer this over GetByID + a post-fetch tenant check on tenant-facing paths
+	// (no fetch-then-check window).
+	GetByTenantAndID(ctx context.Context, tenantID ID, id ID) (*Integration, error)
 	GetByTenantAndName(ctx context.Context, tenantID ID, name string) (*Integration, error)
 	Update(ctx context.Context, i *Integration) error
 	Delete(ctx context.Context, id ID) error

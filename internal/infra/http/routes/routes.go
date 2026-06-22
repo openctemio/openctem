@@ -38,33 +38,37 @@ type Handlers struct {
 	Vulnerability   *handler.VulnerabilityHandler   // nil if not initialized (no database)
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
-	AITriage        *handler.AITriageHandler        // Always initialized - handles nil service gracefully
-	Dashboard       *handler.DashboardHandler       // nil if not initialized (no database)
-	Audit           *handler.AuditHandler           // nil if not initialized (no database)
-	Branch          *handler.BranchHandler          // nil if not initialized (no database)
-	SLA             *handler.SLAHandler             // nil if not initialized (no database)
-	Integration     *handler.IntegrationHandler     // nil if not initialized (no database)
-	AssetGroup      *handler.AssetGroupHandler      // nil if not initialized (no database)
-	Scope           *handler.ScopeHandler           // nil if not initialized (no database)
-	AssetType       *handler.AssetTypeHandler       // nil if not initialized (no database)
-	AttackSurface   *handler.AttackSurfaceHandler   // nil if not initialized (no database)
-	Docs            *handler.DocsHandler            // API documentation handler
-	Command         *handler.CommandHandler         // nil if not initialized (no database)
+	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
+	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
+	Audit            *handler.AuditHandler            // nil if not initialized (no database)
+	Branch           *handler.BranchHandler           // nil if not initialized (no database)
+	SLA              *handler.SLAHandler              // nil if not initialized (no database)
+	Integration      *handler.IntegrationHandler      // nil if not initialized (no database)
+	AssetGroup       *handler.AssetGroupHandler       // nil if not initialized (no database)
+	Scope            *handler.ScopeHandler            // nil if not initialized (no database)
+	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
+	AttackSurface    *handler.AttackSurfaceHandler    // nil if not initialized (no database)
+	Docs             *handler.DocsHandler             // API documentation handler
+	Command          *handler.CommandHandler          // nil if not initialized (no database)
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
 	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint agents
 	IOC              *handler.IOCHandler              // nil if not initialized - IOC catalogue (feeds B6 correlator)
-	Agent           *handler.AgentHandler           // nil if not initialized (no database)
-	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
-	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
-	Tool            *handler.ToolHandler            // nil if not initialized (no database)
-	ToolCategory    *handler.ToolCategoryHandler    // nil if not initialized (no database)
-	Capability      *handler.CapabilityHandler      // nil if not initialized (no database)
-	Scan            *handler.ScanHandler            // nil if not initialized (no database)
-	CI              *handler.CIHandler              // nil if not initialized (no database) - CI/CD snippet generator
-	ScanSession     *handler.ScanSessionHandler     // nil if not initialized (no database)
-	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
-	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
-	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
+	Validation       *handler.ValidationHandler       // nil if not initialized - CTEM Stage-4 validation evidence
+	SCIM             *handler.SCIMHandler             // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
+	SCIMToken        *handler.SCIMTokenHandler        // nil if not initialized - SCIM token admin
+	SCIMAuth         Middleware                       // SCIM bearer-token auth middleware (nil if SCIM disabled)
+	Agent            *handler.AgentHandler            // nil if not initialized (no database)
+	Pipeline         *handler.PipelineHandler         // nil if not initialized (no database)
+	ScanProfile      *handler.ScanProfileHandler      // nil if not initialized (no database)
+	Tool             *handler.ToolHandler             // nil if not initialized (no database)
+	ToolCategory     *handler.ToolCategoryHandler     // nil if not initialized (no database)
+	Capability       *handler.CapabilityHandler       // nil if not initialized (no database)
+	Scan             *handler.ScanHandler             // nil if not initialized (no database)
+	CI               *handler.CIHandler               // nil if not initialized (no database) - CI/CD snippet generator
+	ScanSession      *handler.ScanSessionHandler      // nil if not initialized (no database)
+	ScannerTemplate  *handler.ScannerTemplateHandler  // nil if not initialized (no database)
+	TemplateSource   *handler.TemplateSourceHandler   // nil if not initialized (no database)
+	SecretStore      *handler.SecretStoreHandler      // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
@@ -73,10 +77,10 @@ type Handlers struct {
 	Suppression      *handler.SuppressionHandler      // nil if not initialized (no database)
 
 	// CTEM Discovery handlers
-	AssetService      *handler.AssetServiceHandler      // nil if not initialized (no database)
-	AssetStateHistory *handler.AssetStateHistoryHandler // nil if not initialized (no database)
-	AssetRelationship          *handler.AssetRelationshipHandler          // nil if not initialized (no database)
-	RelationshipSuggestion     *handler.RelationshipSuggestionHandler     // nil if not initialized (no database)
+	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
+	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
+	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
+	RelationshipSuggestion *handler.RelationshipSuggestionHandler // nil if not initialized (no database)
 
 	// Access Control handlers
 	Group          *handler.GroupHandler          // nil if not initialized (no database)
@@ -91,11 +95,19 @@ type Handlers struct {
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
 
 	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
-	JiraWebhook *handler.JiraWebhookHandler // nil if not initialized (no database)
+	JiraWebhook   *handler.JiraWebhookHandler   // nil if not initialized (no database)
+	GitHubWebhook *handler.GitHubWebhookHandler // nil if not initialized (no database)
+
+	// JiraWebhookSecretResolver resolves the per-tenant Jira inbound-webhook
+	// HMAC secrets (stored on each tenant's Jira integration). When non-nil,
+	// the incoming-webhook route verifies against the requesting tenant's own
+	// secrets (plus the platform fallback), closing the cross-tenant spoofing
+	// gap of a single shared secret. nil falls back to the platform secret only.
+	JiraWebhookSecretResolver JiraWebhookSecretResolver
 
 	// Pentest Campaign Management handlers
-	Pentest                *handler.PentestHandler             // nil if not initialized (no database)
-	PentestCampaignRoleQry middleware.CampaignRoleQuerier       // Campaign role resolver for RBAC middleware
+	Pentest                *handler.PentestHandler        // nil if not initialized (no database)
+	PentestCampaignRoleQry middleware.CampaignRoleQuerier // Campaign role resolver for RBAC middleware
 
 	// File Attachments (shared across pentest, retest, campaign)
 	Attachment *handler.AttachmentHandler // nil if not initialized
@@ -120,11 +132,11 @@ type Handlers struct {
 	BusinessService *handler.BusinessServiceHandler // nil if not initialized
 
 	// CTEM RFC-005 handlers (direct SQL, no DDD repo layer yet)
-	CompensatingControl *handler.CompensatingControlHandler // nil if not initialized
-	AttackerProfile     *handler.AttackerProfileHandler     // nil if not initialized
-	CTEMCycle           *handler.CTEMCycleHandler           // nil if not initialized
+	CompensatingControl   *handler.CompensatingControlHandler   // nil if not initialized
+	AttackerProfile       *handler.AttackerProfileHandler       // nil if not initialized
+	CTEMCycle             *handler.CTEMCycleHandler             // nil if not initialized
 	VerificationChecklist *handler.VerificationChecklistHandler // nil if not initialized
-	PriorityRule         *handler.PriorityRuleHandler            // nil if not initialized
+	PriorityRule          *handler.PriorityRuleHandler          // nil if not initialized
 
 	// Asset Import (Nessus, K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
@@ -160,7 +172,8 @@ type Handlers struct {
 	AdminDedup         *handler.AdminDedupHandler // RFC-001: Asset dedup review
 
 	// SSO handler (per-tenant SSO authentication)
-	SSO *handler.SSOHandler // nil if not initialized
+	SSO  *handler.SSOHandler  // nil if not initialized
+	SAML *handler.SAMLHandler // nil if not initialized - SAML 2.0 SP (RFC-009)
 
 	// Platform Stats handler (tenant-scoped platform agent stats)
 	PlatformStats *handler.PlatformStatsHandler
@@ -207,6 +220,12 @@ func Register(
 	// instead of querying the database directly. nil falls back to
 	// tenantRepo (the legacy behaviour).
 	membershipReader middleware.MembershipReader,
+	// Permission sync services. When both are non-nil, EnrichPermissions is
+	// mounted on every token-tenant chain so revoked permissions / demoted
+	// admins are enforced within the token lifetime (real-time sync). nil
+	// disables it (legacy embedded-JWT-permission behaviour).
+	permCache *app.PermissionCacheService,
+	permVersion *app.PermissionVersionService,
 ) {
 	// Pick the membership reader: cache when available, repo otherwise.
 	if membershipReader == nil {
@@ -267,6 +286,16 @@ func Register(
 	// webhooks are NOT affected because they do not use
 	// buildTokenTenantMiddlewares.
 	csrfProtectionMiddleware = middleware.CSRFOptional(middleware.NewCSRFConfig(cfg.Auth, log))
+
+	// Real-time permission sync. When the permission cache + version services
+	// are wired, EnrichPermissions refreshes each request's permissions from
+	// Redis (DB fallback) and rejects state-mutating requests whose JWT
+	// permission version is confirmed-stale (e.g. a role was revoked or an
+	// admin demoted). Without it, permissions baked into the JWT stay live
+	// until the token expires. Fails open on a Redis outage (see GetChecked).
+	if permCache != nil && permVersion != nil {
+		permissionSyncMiddleware = middleware.NewPermissionSyncMiddleware(permCache, permVersion, log).EnrichPermissions
+	}
 
 	// UserSync middleware syncs authenticated users to local database
 	// Supports both local auth and OIDC auth
@@ -333,8 +362,24 @@ func Register(
 		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, authMiddleware, userSync)
 	}
 
+	// CTEM Stage-4 validation evidence (agent ingest + finding evidence list)
+	if h.Validation != nil {
+		registerValidationRoutes(router, h.Validation, h.Ingest, authMiddleware, userSync)
+	}
+
+	// SCIM 2.0 provisioning (RFC-009) — bearer-token provisioning + admin token mgmt
+	if h.SCIM != nil || h.SCIMToken != nil {
+		registerSCIMRoutes(router, h.SCIM, h.SCIMToken, h.SCIMAuth, authMiddleware, userSync)
+	}
+
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
-	registerIncomingWebhookRoutes(router, h.JiraWebhook, cfg.Webhooks.JiraSecret, log)
+	registerIncomingWebhookRoutes(router, h.JiraWebhook, h.JiraWebhookSecretResolver, cfg.Webhooks.JiraSecret, log)
+
+	// Public GitHub webhook endpoint — verified in the handler via GitHub's
+	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
+	if h.GitHubWebhook != nil {
+		router.POST("/api/v1/webhooks/incoming/github", h.GitHubWebhook.IncomingGitHubWebhook)
+	}
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
 	var activityRateLimiter *middleware.FindingActivityRateLimiter
@@ -458,7 +503,7 @@ func Register(
 
 	// Integration routes (tenant from JWT token)
 	if h.Integration != nil {
-		registerIntegrationRoutes(router, h.Integration, authMiddleware, userSync)
+		registerIntegrationRoutes(router, h.Integration, h.JiraWebhook, authMiddleware, userSync)
 	}
 
 	// Asset Group routes (tenant from JWT token)
@@ -502,9 +547,18 @@ func Register(
 		telemetryRateLimiter = middleware.NewTelemetryRateLimiter(200, 400, 10*time.Minute, log)
 	}
 
+	// Per-tenant limiter for the heavy report-ingest endpoints. Report ingest
+	// is far heavier per request than telemetry (up to 100k findings / 100MB),
+	// so it gets a much lower budget — enough for legitimate CI bursts, low
+	// enough to bound a runaway loop or compromised agent key.
+	var ingestRateLimiter *middleware.TelemetryRateLimiter
+	if cfg.RateLimit.Enabled {
+		ingestRateLimiter = middleware.NewTelemetryRateLimiter(20, 40, 10*time.Minute, log)
+	}
+
 	// Ingest/Agent routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
-		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter)
+		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter, ingestRateLimiter)
 	}
 
 	// Agent management routes (tenant from JWT token)
@@ -659,6 +713,11 @@ func Register(
 		registerSSOAdminRoutes(router, h.SSO, authMiddleware, userSync)
 	}
 
+	// SAML SP config admin routes (RFC-009 9d, tenant from JWT token)
+	if h.SAML != nil {
+		registerSAMLAdminRoutes(router, h.SAML, authMiddleware, userSync)
+	}
+
 	// ==========================================================================
 	// Platform Admin Routes (separate from tenant routes)
 	// ==========================================================================
@@ -715,6 +774,11 @@ var readRateLimitMiddleware Middleware //nolint:gochecknoglobals // set once dur
 // RequireMembership in tenant.go.
 var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
+// permissionSyncMiddleware enriches each token-tenant request with fresh
+// permissions from Redis and rejects confirmed-stale state-mutating requests.
+// Set once during Register; nil leaves the legacy embedded-JWT behaviour.
+var permissionSyncMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
 // This uses tenant ID from JWT claims instead of URL path.
 // Best practice: tenant-scoped access tokens eliminate IDOR by design.
@@ -729,6 +793,13 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 	if activeMembershipFromJWTMiddleware != nil {
 		middlewares = append(middlewares, activeMembershipFromJWTMiddleware)
 	}
+	// Real-time permission sync — runs after membership so user/tenant are in
+	// context and before the per-route Require() checks so they see the fresh
+	// permissions. Rejects confirmed-stale writes (revoked role / demoted
+	// admin); safe methods pass through with fresh perms.
+	if permissionSyncMiddleware != nil {
+		middlewares = append(middlewares, permissionSyncMiddleware)
+	}
 	// CSRF enforcement for cookie-bound sessions. Safe methods (GET,
 	// HEAD, OPTIONS) are exempt inside the middleware, so read
 	// endpoints are unaffected.
@@ -739,6 +810,33 @@ func buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware Middleware) 
 		middlewares = append(middlewares, readRateLimitMiddleware)
 	}
 	return middlewares
+}
+
+// tenantOverlayMiddlewares returns the EXTRA middlewares that
+// buildTokenTenantMiddlewares adds on top of buildBaseMiddlewares
+// (RequireTenant + active-membership + CSRF + rate-limit).
+//
+// Use case: a route group is mounted with baseMiddlewares (e.g. global
+// vulnerabilities catalog) but a few endpoints inside the group are
+// tenant-scoped (e.g. /vulnerabilities/{id}/affected-assets joins
+// per-tenant findings). Apply this overlay per-route to upgrade those
+// endpoints to the same security posture as a tokenTenant group, without
+// having to mount a second chi Group on the same path (chi forbids that).
+//
+// Order matters: caller MUST spread these BEFORE permission middleware so
+// RequireTenant runs first.
+func tenantOverlayMiddlewares() []Middleware {
+	mws := []Middleware{middleware.RequireTenant()}
+	if activeMembershipFromJWTMiddleware != nil {
+		mws = append(mws, activeMembershipFromJWTMiddleware)
+	}
+	if csrfProtectionMiddleware != nil {
+		mws = append(mws, csrfProtectionMiddleware)
+	}
+	if readRateLimitMiddleware != nil {
+		mws = append(mws, readRateLimitMiddleware)
+	}
+	return mws
 }
 
 // ChainFunc wraps a handler function with middleware(s).

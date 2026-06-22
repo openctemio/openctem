@@ -223,19 +223,19 @@ func (r *IntegrationSCMExtensionRepository) ListIntegrationsWithSCM(ctx context.
 // scanSCMExtension scans a single row into an SCMExtension.
 func (r *IntegrationSCMExtensionRepository) scanSCMExtension(row *sql.Row) (*integration.SCMExtension, error) {
 	var (
-		integrationID        string
-		scmOrganization      sql.NullString
-		repositoryCount      int
-		webhookID            sql.NullString
+		integrationID          string
+		scmOrganization        sql.NullString
+		repositoryCount        int
+		webhookID              sql.NullString
 		webhookSecretEncrypted []byte
-		webhookURL           sql.NullString
-		defaultBranchPattern sql.NullString
-		autoImportRepos      bool
-		importPrivateRepos   bool
-		importArchivedRepos  bool
-		includePatterns      pq.StringArray
-		excludePatterns      pq.StringArray
-		lastRepoSyncAt       sql.NullTime
+		webhookURL             sql.NullString
+		defaultBranchPattern   sql.NullString
+		autoImportRepos        bool
+		importPrivateRepos     bool
+		importArchivedRepos    bool
+		includePatterns        pq.StringArray
+		excludePatterns        pq.StringArray
+		lastRepoSyncAt         sql.NullTime
 	)
 
 	err := row.Scan(
@@ -302,18 +302,18 @@ func (r *IntegrationSCMExtensionRepository) scanIntegrationWithSCMRow(rows *sql.
 		updatedAt            time.Time
 		createdBy            sql.NullString
 		// SCM extension fields (nullable due to LEFT JOIN)
-		scmOrganization      sql.NullString
-		repositoryCount      sql.NullInt32
-		webhookID            sql.NullString
+		scmOrganization        sql.NullString
+		repositoryCount        sql.NullInt32
+		webhookID              sql.NullString
 		webhookSecretEncrypted []byte
-		webhookURL           sql.NullString
-		defaultBranchPattern sql.NullString
-		autoImportRepos      sql.NullBool
-		importPrivateRepos   sql.NullBool
-		importArchivedRepos  sql.NullBool
-		includePatterns      pq.StringArray
-		excludePatterns      pq.StringArray
-		lastRepoSyncAt       sql.NullTime
+		webhookURL             sql.NullString
+		defaultBranchPattern   sql.NullString
+		autoImportRepos        sql.NullBool
+		importPrivateRepos     sql.NullBool
+		importArchivedRepos    sql.NullBool
+		includePatterns        pq.StringArray
+		excludePatterns        pq.StringArray
+		lastRepoSyncAt         sql.NullTime
 	)
 
 	err := rows.Scan(

@@ -47,6 +47,7 @@ func registerAgentRoutes(
 	scanSessionHandler *handler.ScanSessionHandler,
 	runtimeTelemetryHandler *handler.RuntimeTelemetryHandler,
 	telemetryRateLimiter *middleware.TelemetryRateLimiter,
+	ingestRateLimiter *middleware.TelemetryRateLimiter,
 ) {
 	// Build middleware chain: API key auth
 	baseMiddleware := ingestHandler.AuthenticateSource
@@ -57,6 +58,16 @@ func registerAgentRoutes(
 	// Ingest body limit: 50MB for large scan reports (overrides global 10MB limit)
 	ingestBodyLimit := middleware.BodyLimit(middleware.IngestMaxBodySize)
 
+	// Per-tenant rate limit for the heavy report-ingest endpoints. Each request
+	// can carry up to 100k findings / 100MB decompressed, so an unbounded loop
+	// (or a compromised agent key) could exhaust DB/CPU. Pass-through when the
+	// limiter is nil (dev / opt-out). Applied AFTER AuthenticateSource so the
+	// tenant is in context.
+	ingestMW := []Middleware{ingestBodyLimit, decompressMiddleware}
+	if ingestRateLimiter != nil {
+		ingestMW = append(ingestMW, ingestRateLimiter.Middleware())
+	}
+
 	// Agent routes - authenticated via API key
 	router.Group("/api/v1/agent", func(r Router) {
 		// Heartbeat - essential for agent health monitoring
@@ -66,14 +77,19 @@ func registerAgentRoutes(
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
 		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
 		// Ingest endpoints use a 50MB body limit (vs 10MB default) for large scan reports
-		r.POST("/ingest", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware) // Primary CTIS ingest endpoint
-		r.POST("/ingest/check", ingestHandler.CheckFingerprints, ingestBodyLimit, decompressMiddleware)
-		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, ingestBodyLimit, decompressMiddleware)
-		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, ingestBodyLimit, decompressMiddleware)
-		r.POST("/ingest/recon", ingestHandler.IngestReconReport, ingestBodyLimit, decompressMiddleware)
-		r.POST("/ingest/scan", ingestHandler.IngestScan, ingestBodyLimit, decompressMiddleware)
-		r.POST("/ingest/chunk", ingestHandler.IngestChunk, ingestBodyLimit, decompressMiddleware)
+		r.POST("/ingest", ingestHandler.IngestCTIS, ingestMW...) // Primary CTIS ingest endpoint
+		r.POST("/ingest/check", ingestHandler.CheckFingerprints, ingestMW...)
+		r.POST("/ingest/baseline-diff", ingestHandler.BaselineDiff, ingestMW...) // RFC-008 Phase 3: PR new-vs-target
+		r.POST("/ingest/sarif", ingestHandler.IngestSARIF, ingestMW...)
+		r.POST("/ingest/ctis", ingestHandler.IngestCTIS, ingestMW...)
+		r.POST("/ingest/recon", ingestHandler.IngestReconReport, ingestMW...)
+		r.POST("/ingest/scan", ingestHandler.IngestScan, ingestMW...)
+		r.POST("/ingest/chunk", ingestHandler.IngestChunk, ingestMW...)
 		r.GET("/ingest/scanners", ingestHandler.ListScanners)
+
+		// Async ingest job status poll (RFC-005). No-op store returns 404 when
+		// async mode is disabled.
+		r.GET("/ingest/jobs/{id}", ingestHandler.GetIngestJob)
 
 		// Command polling and status updates
 		r.GET("/commands", commandHandler.Poll)
@@ -405,6 +421,8 @@ func registerScanRoutes(
 		r.GET("/stats", h.GetStats, middleware.Require(permission.ScansRead))
 		// Overview stats (consolidated from /scan-management/stats)
 		r.GET("/overview-stats", h.GetOverviewStats, middleware.Require(permission.ScansRead))
+		// License-aware rolling coverage status (RFC-007 Phase 4 observability)
+		r.GET("/coverage", h.CoverageStatus, middleware.Require(permission.ScansRead))
 		// Quick scan (consolidated from /quick-scan)
 		if triggerRateLimiter != nil {
 			r.POST("/quick", h.QuickScan, middleware.Require(permission.ScansWrite), triggerRateLimiter.QuickScanMiddleware())

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -289,6 +290,26 @@ func (h *RoleHandler) handleServiceError(w http.ResponseWriter, err error) {
 // =============================================================================
 
 // CreateRole handles POST /api/v1/roles
+// assertCanGrantPermissions blocks privilege-grant escalation: a non-admin
+// caller may only grant/assign permissions they themselves already hold.
+// Admins/owners (IsAdmin, derived from tenant membership) hold everything and
+// bypass. Returns a Forbidden error to write, or nil if allowed.
+func assertCanGrantPermissions(ctx context.Context, requested []string) *apierror.Error {
+	if middleware.IsAdmin(ctx) {
+		return nil
+	}
+	held := make(map[string]bool)
+	for _, p := range middleware.GetPermissions(ctx) {
+		held[p] = true
+	}
+	for _, p := range requested {
+		if !held[p] {
+			return apierror.Forbidden("cannot grant a permission you do not hold: " + p)
+		}
+	}
+	return nil
+}
+
 func (h *RoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -307,6 +328,17 @@ func (h *RoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
+		return
+	}
+
+	// Anti-escalation: only grant permissions the caller holds, and gate
+	// full-data-access behind admin.
+	if req.HasFullDataAccess && !middleware.IsAdmin(ctx) {
+		apierror.Forbidden("only admins can grant full data access").WriteJSON(w)
+		return
+	}
+	if e := assertCanGrantPermissions(ctx, req.Permissions); e != nil {
+		e.WriteJSON(w)
 		return
 	}
 
@@ -385,6 +417,15 @@ func (h *RoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
+		return
+	}
+
+	if req.HasFullDataAccess != nil && *req.HasFullDataAccess && !middleware.IsAdmin(ctx) {
+		apierror.Forbidden("only admins can grant full data access").WriteJSON(w)
+		return
+	}
+	if e := assertCanGrantPermissions(ctx, req.Permissions); e != nil {
+		e.WriteJSON(w)
 		return
 	}
 
@@ -467,6 +508,20 @@ func (h *RoleHandler) AssignRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Anti-escalation: a non-admin cannot assign a role carrying permissions
+	// they don't hold (e.g. the system admin role's bundle).
+	if !middleware.IsAdmin(ctx) {
+		targetRole, rErr := h.service.GetRole(ctx, req.RoleID)
+		if rErr != nil {
+			h.handleServiceError(w, rErr)
+			return
+		}
+		if e := assertCanGrantPermissions(ctx, targetRole.Permissions()); e != nil {
+			apierror.Forbidden("cannot assign a role with permissions you do not hold").WriteJSON(w)
+			return
+		}
+	}
+
 	input := app.AssignRoleInput{
 		TenantID: tenantID,
 		UserID:   userID,
@@ -517,6 +572,22 @@ func (h *RoleHandler) SetUserRoles(w http.ResponseWriter, r *http.Request) {
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
 		return
+	}
+
+	// Anti-escalation: a non-admin cannot assign any role carrying permissions
+	// they don't hold.
+	if !middleware.IsAdmin(ctx) {
+		for _, rid := range req.RoleIDs {
+			targetRole, rErr := h.service.GetRole(ctx, rid)
+			if rErr != nil {
+				h.handleServiceError(w, rErr)
+				return
+			}
+			if e := assertCanGrantPermissions(ctx, targetRole.Permissions()); e != nil {
+				apierror.Forbidden("cannot assign a role with permissions you do not hold").WriteJSON(w)
+				return
+			}
+		}
 	}
 
 	input := app.SetUserRolesInput{

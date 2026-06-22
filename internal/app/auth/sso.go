@@ -18,11 +18,11 @@ import (
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/api/pkg/domain/identityprovider"
-	"github.com/openctemio/api/pkg/httpsec"
 	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/api/pkg/domain/user"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -42,6 +42,7 @@ var (
 	ErrSSOInvalidRedirectURI  = errors.New("invalid redirect URI")
 	ErrSSOInvalidDefaultRole  = errors.New("invalid default role")
 	ErrSSONoEmail             = errors.New("SSO provider did not return an email address")
+	ErrSSOInvalidIDToken      = errors.New("SSO id_token failed validation")
 )
 
 // ssoMaxRedirectURILength is the maximum length for redirect URIs.
@@ -59,6 +60,7 @@ type SSOService struct {
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
 	httpClient       *http.Client
+	oidcVerifier     *oidcVerifier
 
 	// For tenant membership creation
 	tenantMemberRepo TenantMemberCreator
@@ -87,6 +89,13 @@ func NewSSOService(
 		RefreshTokenDuration: authCfg.RefreshTokenDuration,
 	})
 
+	// SSRF: the SSO token-exchange, userinfo, and JWKS endpoints are
+	// resolved from tenant-configured IdP records. SafeHTTPClient ensures the
+	// dialer refuses to connect to loopback / RFC1918 / link-local / IPv6
+	// private ranges at transport level, even if validateTenantIdentifier
+	// (Okta whitelist) is bypassed by a future provider addition.
+	httpClient := httpsec.SafeHTTPClient(30 * time.Second)
+
 	return &SSOService{
 		ipRepo:           ipRepo,
 		tenantRepo:       tenantRepo,
@@ -97,13 +106,8 @@ func NewSSOService(
 		tokenGenerator:   tokenGen,
 		authConfig:       authCfg,
 		logger:           log.With("service", "sso"),
-		// SSRF: the SSO token-exchange endpoint and userinfo endpoint
-		// are resolved from tenant-configured IdP records. Using
-		// SafeHTTPClient ensures the dialer refuses to connect to
-		// loopback / RFC1918 / link-local / IPv6 private ranges at
-		// transport level, even if validateTenantIdentifier (Okta
-		// whitelist) is bypassed by a future provider addition.
-		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
+		httpClient:       httpClient,
+		oidcVerifier:     newOIDCVerifier(httpClient, log.With("service", "sso-oidc")),
 	}
 }
 
@@ -132,11 +136,26 @@ func (s *SSOService) GetProvidersForTenant(ctx context.Context, orgSlug string) 
 	}
 
 	result := make([]SSOProviderInfo, 0, len(providers))
+	hasEntra := false
 	for _, p := range providers {
+		if p.Provider() == identityproviderdom.ProviderEntraID {
+			hasEntra = true
+		}
 		result = append(result, SSOProviderInfo{
 			ID:          p.ID(),
 			Provider:    string(p.Provider()),
 			DisplayName: p.DisplayName(),
+		})
+	}
+
+	// Surface the platform-wide Entra fallback so the tenant's login page shows
+	// the button even though it has no entra_id provider of its own. A tenant's
+	// own active provider takes precedence and suppresses the fallback entry.
+	if !hasEntra && s.authConfig.EntraSSO.IsConfigured() {
+		result = append(result, SSOProviderInfo{
+			ID:          "env:entra_id",
+			Provider:    string(identityproviderdom.ProviderEntraID),
+			DisplayName: s.authConfig.EntraSSO.DisplayName,
 		})
 	}
 	return result, nil
@@ -173,6 +192,102 @@ func validateRedirectURI(uri string) error {
 	return nil
 }
 
+// resolvedProvider is the effective SSO provider config for a tenant+provider,
+// regardless of whether it came from the tenant's own DB record or the
+// platform-wide env fallback. The client secret is already in plaintext (the
+// DB path decrypts it; the env path carries it directly), so downstream code
+// never decrypts again.
+type resolvedProvider struct {
+	provider         identityproviderdom.Provider
+	displayName      string
+	clientID         string
+	clientSecret     string
+	tenantIdentifier string
+	scopes           []string
+	allowedDomains   []string
+	autoProvision    bool
+	defaultRole      string
+	source           string // "tenant" or "env" — for logging/telemetry
+}
+
+// isDomainAllowed mirrors IdentityProvider.IsDomainAllowed: empty allow-list
+// means any domain is permitted.
+func (r *resolvedProvider) isDomainAllowed(emailDomain string) bool {
+	if len(r.allowedDomains) == 0 {
+		return true
+	}
+	for _, d := range r.allowedDomains {
+		if d == emailDomain {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveProvider returns the effective SSO config for a tenant+provider. A
+// tenant's own active provider always wins; when the tenant has none, it falls
+// back to the platform-wide env config (currently Entra ID only). Returns
+// ErrSSOProviderNotFound when neither is available.
+func (s *SSOService) resolveProvider(ctx context.Context, tenantID string, provider identityproviderdom.Provider) (*resolvedProvider, error) {
+	ip, err := s.ipRepo.GetByTenantAndProvider(ctx, tenantID, provider)
+	if err == nil {
+		if !ip.IsActive() {
+			return nil, ErrSSOProviderInactive
+		}
+		secret, derr := s.encryptor.DecryptString(ip.ClientSecretEncrypted())
+		if derr != nil {
+			s.logger.Error("failed to decrypt client secret", "provider_id", ip.ID(), "error", derr)
+			return nil, ErrSSODecryptionFailed
+		}
+		return &resolvedProvider{
+			provider:         ip.Provider(),
+			displayName:      ip.DisplayName(),
+			clientID:         ip.ClientID(),
+			clientSecret:     secret,
+			tenantIdentifier: ip.TenantIdentifier(),
+			scopes:           ip.Scopes(),
+			allowedDomains:   ip.AllowedDomains(),
+			autoProvision:    ip.AutoProvision(),
+			defaultRole:      ip.DefaultRole(),
+			source:           "tenant",
+		}, nil
+	}
+	if !errors.Is(err, identityproviderdom.ErrNotFound) {
+		return nil, fmt.Errorf("get provider: %w", err)
+	}
+
+	// Tenant has no provider of its own — fall back to the platform env config.
+	if rp := s.envProvider(provider); rp != nil {
+		return rp, nil
+	}
+	return nil, ErrSSOProviderNotFound
+}
+
+// envProvider builds a resolvedProvider from the platform-wide env config for
+// the given provider, or nil when no env fallback is configured/enabled.
+func (s *SSOService) envProvider(provider identityproviderdom.Provider) *resolvedProvider {
+	if provider == identityproviderdom.ProviderEntraID && s.authConfig.EntraSSO.IsConfigured() {
+		cfg := s.authConfig.EntraSSO
+		role := cfg.DefaultRole
+		if role == "" {
+			role = "member"
+		}
+		return &resolvedProvider{
+			provider:         identityproviderdom.ProviderEntraID,
+			displayName:      cfg.DisplayName,
+			clientID:         cfg.ClientID,
+			clientSecret:     cfg.ClientSecret,
+			tenantIdentifier: cfg.TenantID,
+			scopes:           []string{"openid", "email", "profile", "User.Read"},
+			allowedDomains:   cfg.AllowedDomains,
+			autoProvision:    cfg.AutoProvision,
+			defaultRole:      role,
+			source:           "env",
+		}
+	}
+	return nil
+}
+
 // GenerateAuthorizeURL builds the OAuth authorization URL for a tenant's SSO provider.
 func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthorizeInput) (*SSOAuthorizeResult, error) {
 	// SECURITY: Validate redirect URI to prevent open redirect attacks
@@ -186,25 +301,10 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 	}
 
 	provider := identityproviderdom.Provider(input.Provider)
-	ip, err := s.ipRepo.GetByTenantAndProvider(ctx, t.ID().String(), provider)
+	rp, err := s.resolveProvider(ctx, t.ID().String(), provider)
 	if err != nil {
-		if errors.Is(err, identityproviderdom.ErrNotFound) {
-			return nil, ErrSSOProviderNotFound
-		}
-		return nil, fmt.Errorf("get provider: %w", err)
+		return nil, err
 	}
-
-	if !ip.IsActive() {
-		return nil, ErrSSOProviderInactive
-	}
-
-	// Decrypt client secret to verify config is valid
-	clientSecret, err := s.encryptor.DecryptString(ip.ClientSecretEncrypted())
-	if err != nil {
-		s.logger.Error("failed to decrypt client secret", "provider_id", ip.ID(), "error", err)
-		return nil, ErrSSODecryptionFailed
-	}
-	_ = clientSecret // Just validating decryption works
 
 	// Generate state token with nonce for CSRF + replay protection
 	state, nonce, err := s.generateState(input.OrgSlug, input.Provider)
@@ -213,33 +313,33 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 	}
 
 	// Get provider-specific auth endpoint
-	authURL, _, _ := ip.Provider().AuthEndpoints(ip.TenantIdentifier())
+	authURL, _, _ := rp.provider.AuthEndpoints(rp.tenantIdentifier)
 	if authURL == "" {
 		return nil, ErrSSOProviderUnsupported
 	}
 
 	// Build authorization URL
 	params := url.Values{}
-	params.Set("client_id", ip.ClientID())
+	params.Set("client_id", rp.clientID)
 	params.Set("redirect_uri", input.RedirectURI)
 	params.Set("state", state)
 	params.Set("response_type", "code")
 	params.Set("nonce", nonce) // ID token replay prevention
 
-	if len(ip.Scopes()) > 0 {
-		params.Set("scope", strings.Join(ip.Scopes(), " "))
+	if len(rp.scopes) > 0 {
+		params.Set("scope", strings.Join(rp.scopes, " "))
 	}
 
 	// Provider-specific parameters
-	switch ip.Provider() {
+	switch rp.provider {
 	case identityproviderdom.ProviderEntraID:
 		params.Set("response_mode", "query")
 	case identityproviderdom.ProviderGoogleWorkspace:
 		params.Set("access_type", "offline")
 		params.Set("prompt", "select_account")
 		// Restrict to org domain
-		if len(ip.AllowedDomains()) > 0 {
-			params.Set("hd", ip.AllowedDomains()[0])
+		if len(rp.allowedDomains) > 0 {
+			params.Set("hd", rp.allowedDomains[0])
 		}
 	}
 
@@ -270,8 +370,8 @@ type SSOCallbackResult struct {
 
 // HandleCallback handles the SSO OAuth callback.
 func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput) (*SSOCallbackResult, error) {
-	// Validate state and extract org slug
-	orgSlug, stateProvider, err := s.validateState(input.State)
+	// Validate state and extract org slug + nonce
+	orgSlug, stateProvider, nonce, err := s.validateState(input.State)
 	if err != nil {
 		return nil, ErrSSOInvalidState
 	}
@@ -286,38 +386,35 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		return nil, ErrSSOTenantNotFound
 	}
 
-	// Look up provider config
+	// Look up provider config (tenant's own, or the platform env fallback)
 	provider := identityproviderdom.Provider(input.Provider)
-	ip, err := s.ipRepo.GetByTenantAndProvider(ctx, t.ID().String(), provider)
+	rp, err := s.resolveProvider(ctx, t.ID().String(), provider)
 	if err != nil {
-		if errors.Is(err, identityproviderdom.ErrNotFound) {
-			return nil, ErrSSOProviderNotFound
-		}
-		return nil, fmt.Errorf("get provider: %w", err)
-	}
-
-	if !ip.IsActive() {
-		return nil, ErrSSOProviderInactive
-	}
-
-	// Decrypt client secret
-	clientSecret, err := s.encryptor.DecryptString(ip.ClientSecretEncrypted())
-	if err != nil {
-		s.logger.Error("failed to decrypt client secret", "provider_id", ip.ID(), "error", err)
-		return nil, ErrSSODecryptionFailed
+		return nil, err
 	}
 
 	// Exchange code for tokens
-	_, tokenURL, _ := ip.Provider().AuthEndpoints(ip.TenantIdentifier())
-	tokens, err := s.exchangeCode(ctx, ip.ClientID(), clientSecret, input.Code, input.RedirectURI, tokenURL)
+	_, tokenURL, _ := rp.provider.AuthEndpoints(rp.tenantIdentifier)
+	tokens, err := s.exchangeCode(ctx, rp.clientID, rp.clientSecret, input.Code, input.RedirectURI, tokenURL)
 	if err != nil {
 		s.logger.Error("SSO code exchange failed", "provider", input.Provider, "error", err)
 		return nil, ErrSSOExchangeFailed
 	}
 
+	// Verify the id_token (signature + nonce + issuer/audience) when the
+	// provider returns one. The token endpoint response is server-to-server
+	// over TLS, so a missing id_token (provider configured without the
+	// "openid" scope) is not attacker-controllable — verify when present,
+	// skip otherwise to stay backward compatible with such configs.
+	if err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce); err != nil {
+		s.logger.Warn("SSO id_token validation failed",
+			"provider", input.Provider, "source", rp.source, "error", err)
+		return nil, ErrSSOInvalidIDToken
+	}
+
 	// Get user info
-	_, _, userInfoURL := ip.Provider().AuthEndpoints(ip.TenantIdentifier())
-	userInfo, err := s.getUserInfo(ctx, ip.Provider(), tokens.AccessToken, userInfoURL)
+	_, _, userInfoURL := rp.provider.AuthEndpoints(rp.tenantIdentifier)
+	userInfo, err := s.getUserInfo(ctx, rp.provider, tokens.AccessToken, userInfoURL)
 	if err != nil {
 		s.logger.Error("SSO user info failed", "provider", input.Provider, "error", err)
 		return nil, ErrSSOUserInfoFailed
@@ -330,19 +427,19 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 
 	// Validate email domain restriction
 	parts := strings.SplitN(userInfo.Email, "@", 2)
-	if len(parts) == 2 && !ip.IsDomainAllowed(parts[1]) {
+	if len(parts) == 2 && !rp.isDomainAllowed(parts[1]) {
 		return nil, ErrSSODomainNotAllowed
 	}
 
 	// Find or create user and provision into tenant
-	u, err := s.findOrCreateUser(ctx, userInfo, ip.Provider())
+	u, err := s.findOrCreateUser(ctx, userInfo, rp.provider)
 	if err != nil {
 		return nil, fmt.Errorf("find or create user: %w", err)
 	}
 
 	// Auto-provision into tenant if enabled
-	if ip.AutoProvision() && s.tenantMemberRepo != nil {
-		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), tenantdom.Role(ip.DefaultRole()), nil)
+	if rp.autoProvision && s.tenantMemberRepo != nil {
+		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), tenantdom.Role(rp.defaultRole), nil)
 		if memErr == nil {
 			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
 		}
@@ -375,6 +472,38 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		TenantID:     t.ID().String(),
 		TenantSlug:   t.Slug(),
 	}, nil
+}
+
+// verifyIDToken validates the provider's id_token against its JWKS, the flow
+// nonce, our client_id (audience), and a provider-specific issuer check.
+//
+// It is a no-op (returns nil) when the provider publishes no JWKS or the token
+// response carried no id_token — see the call site for why a missing id_token
+// is safe to skip. When an id_token IS present, every check is enforced.
+func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) error {
+	jwksURL := rp.provider.JWKSURL(rp.tenantIdentifier)
+	if jwksURL == "" {
+		return nil // provider has no id_token to verify
+	}
+	if strings.TrimSpace(idToken) == "" {
+		s.logger.Debug("SSO provider returned no id_token; skipping id_token validation",
+			"provider", rp.provider, "source", rp.source)
+		return nil
+	}
+
+	exp := idTokenExpectations{
+		jwksURL:  jwksURL,
+		audience: rp.clientID,
+		nonce:    nonce,
+	}
+	if rp.provider == identityproviderdom.ProviderEntraID {
+		exp.validateIssuer = entraIssuerValidator(rp.tenantIdentifier)
+	}
+
+	if _, err := s.oidcVerifier.verify(ctx, idToken, exp); err != nil {
+		return err
+	}
+	return nil
 }
 
 // generateState generates a signed state token containing org slug, provider, and nonce.
@@ -417,11 +546,12 @@ func (s *SSOService) signState(data string) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// validateState validates the state token and returns org slug and provider.
-func (s *SSOService) validateState(state string) (orgSlug, provider string, err error) {
+// validateState validates the state token and returns org slug, provider, and
+// the nonce embedded at authorize time (compared against the id_token nonce).
+func (s *SSOService) validateState(state string) (orgSlug, provider, nonce string, err error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", "", errors.New("invalid state format")
+		return "", "", "", errors.New("invalid state format")
 	}
 
 	stateData, signature := parts[0], parts[1]
@@ -429,41 +559,43 @@ func (s *SSOService) validateState(state string) (orgSlug, provider string, err 
 	// Verify signature
 	expectedSig := s.signState(stateData)
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", "", errors.New("invalid state signature")
+		return "", "", "", errors.New("invalid state signature")
 	}
 
 	// Decode state data
 	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
 	if err != nil {
-		return "", "", errors.New("invalid state encoding")
+		return "", "", "", errors.New("invalid state encoding")
 	}
 
 	var data map[string]interface{}
 	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", "", errors.New("invalid state JSON")
+		return "", "", "", errors.New("invalid state JSON")
 	}
 
 	// Check expiration
 	expFloat, ok := data["exp"].(float64)
 	if !ok {
-		return "", "", errors.New("invalid state expiration")
+		return "", "", "", errors.New("invalid state expiration")
 	}
 	if time.Now().Unix() > int64(expFloat) {
-		return "", "", errors.New("state expired")
+		return "", "", "", errors.New("state expired")
 	}
 
 	orgSlug, _ = data["org"].(string)
 	provider, _ = data["provider"].(string)
+	nonce, _ = data["nonce"].(string)
 	if orgSlug == "" || provider == "" {
-		return "", "", errors.New("missing state fields")
+		return "", "", "", errors.New("missing state fields")
 	}
 
-	return orgSlug, provider, nil
+	return orgSlug, provider, nonce, nil
 }
 
 // ssoTokens represents OAuth token response.
 type ssoTokens struct {
 	AccessToken string `json:"access_token"`
+	IDToken     string `json:"id_token"`
 }
 
 // exchangeCode exchanges authorization code for tokens.
@@ -732,6 +864,78 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*Sessi
 	return &SessionResult{
 		AccessToken:  tokenPair.AccessToken,
 		RefreshToken: tokenPair.RefreshToken,
+	}, nil
+}
+
+// ErrSSOFederatedTakeover is returned when a federated (e.g. SAML) login
+// resolves to an existing password-backed local account — logging into it from
+// an external assertion would be account takeover.
+var ErrSSOFederatedTakeover = errors.New("email is registered with a password; federated login not allowed")
+
+// CompleteFederatedLogin issues an OpenCTEM session for an externally
+// authenticated identity (e.g. a validated SAML assertion). It finds-or-creates
+// a claimable passwordless user, blocks takeover of password-backed local
+// accounts, auto-provisions tenant membership when requested, and creates the
+// session. Reused by the SAML SP flow so it shares the SSO session machinery.
+func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string, autoProvision bool) (*SSOCallbackResult, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, ErrSSONoEmail
+	}
+
+	u, err := s.userRepo.GetByEmail(ctx, email)
+	if err == nil && u != nil {
+		// Account-takeover guard: a password-backed local account must not be
+		// accessible via an external assertion.
+		if u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil {
+			return nil, ErrSSOFederatedTakeover
+		}
+		u.UpdateLastLogin()
+		if uerr := s.userRepo.Update(ctx, u); uerr != nil {
+			s.logger.Warn("federated login: update last login", "error", uerr)
+		}
+	} else {
+		// Create a claimable passwordless local user (same shape as an invite).
+		newU, cerr := userdom.New(email, name)
+		if cerr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cerr)
+		}
+		if cerr := s.userRepo.Create(ctx, newU); cerr != nil {
+			if retry, rerr := s.userRepo.GetByEmail(ctx, email); rerr == nil && retry != nil {
+				newU = retry
+			} else {
+				return nil, fmt.Errorf("create user: %w", cerr)
+			}
+		}
+		u = newU
+	}
+
+	if autoProvision && s.tenantMemberRepo != nil {
+		role := tenantdom.Role(defaultRole)
+		if !role.IsValid() || role == tenantdom.RoleOwner {
+			role = tenantdom.RoleMember
+		}
+		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), role, nil)
+		if memErr == nil {
+			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
+		}
+		if memErr != nil {
+			s.logger.Debug("federated auto-provision membership", "user_id", u.ID().String(), "error", memErr)
+		}
+	}
+
+	sessionResult, err := s.createSession(ctx, u)
+	if err != nil {
+		return nil, fmt.Errorf("create session: %w", err)
+	}
+	return &SSOCallbackResult{
+		AccessToken:  sessionResult.AccessToken,
+		RefreshToken: sessionResult.RefreshToken,
+		ExpiresIn:    int64(s.authConfig.AccessTokenDuration.Seconds()),
+		TokenType:    "Bearer",
+		User:         u,
+		TenantID:     t.ID().String(),
+		TenantSlug:   t.Slug(),
 	}, nil
 }
 

@@ -144,6 +144,9 @@ func (r *ReportScheduleRepository) List(ctx context.Context, filter reportschedu
 		}
 		items = append(items, s)
 	}
+	if err := rows.Err(); err != nil {
+		return pagination.Result[*reportschedule.ReportSchedule]{}, err
+	}
 
 	return pagination.NewResult(items, total, page), nil
 }
@@ -174,6 +177,9 @@ func (r *ReportScheduleRepository) ListDue(ctx context.Context, now time.Time) (
 		}
 		items = append(items, s)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return items, nil
 }
 
@@ -183,18 +189,18 @@ type reportScanner interface {
 
 func (r *ReportScheduleRepository) scan(row reportScanner) (*reportschedule.ReportSchedule, error) {
 	var (
-		id, tenantID                                                                  string
-		name, reportType, format                                                      string
-		optionsJSON, recipientsJSON                                                   []byte
-		deliveryChannel                                                               string
-		integrationID                                                                 sql.NullString
-		cronExpression, timezone                                                      string
-		isActive                                                                      bool
-		lastRunAt, nextRunAt                                                           *time.Time
-		lastStatus                                                                    string
-		runCount                                                                      int
-		createdByStr                                                                  sql.NullString
-		createdAt, updatedAt                                                          time.Time
+		id, tenantID                string
+		name, reportType, format    string
+		optionsJSON, recipientsJSON []byte
+		deliveryChannel             string
+		integrationID               sql.NullString
+		cronExpression, timezone    string
+		isActive                    bool
+		lastRunAt, nextRunAt        *time.Time
+		lastStatus                  string
+		runCount                    int
+		createdByStr                sql.NullString
+		createdAt, updatedAt        time.Time
 	)
 
 	err := row.Scan(

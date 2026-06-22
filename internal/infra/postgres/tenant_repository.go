@@ -237,6 +237,75 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 	return nil
 }
 
+// CreateWithOwner atomically creates a tenant and its owner membership (the
+// tenant_members row + the user_roles row) in a single transaction.
+//
+// Previously the service created the tenant, then the membership, in separate
+// statements and attempted a manual rollback (Delete) if the membership failed —
+// which could itself fail and leave an orphan tenant with no owner. This makes
+// the whole operation all-or-nothing.
+func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant, m *tenant.Membership) (err error) {
+	settings, err := json.Marshal(t.Settings())
+	if err != nil {
+		return fmt.Errorf("failed to marshal settings: %w", err)
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	const tenantQuery = `
+		INSERT INTO tenants (id, name, slug, description, logo_url, settings, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`
+	if _, err = tx.ExecContext(ctx, tenantQuery,
+		t.ID().String(), t.Name(), t.Slug(), t.Description(), t.LogoURL(),
+		settings, t.CreatedBy(), t.CreatedAt(), t.UpdatedAt(),
+	); err != nil {
+		return fmt.Errorf("failed to create tenant: %w", err)
+	}
+
+	var invitedBy sql.NullString
+	if m.InvitedBy() != nil {
+		invitedBy = sql.NullString{String: m.InvitedBy().String(), Valid: true}
+	}
+
+	const memberQuery = `
+		INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`
+	if _, err = tx.ExecContext(ctx, memberQuery,
+		m.ID().String(), m.UserID().String(), m.TenantID().String(),
+		m.Role().String(), invitedBy, m.JoinedAt(),
+	); err != nil {
+		return fmt.Errorf("failed to create membership: %w", err)
+	}
+
+	const userRolesQuery = `
+		INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_at, assigned_by)
+		SELECT $1, $2, r.id, $3, $4
+		FROM roles r
+		WHERE r.slug = $5 AND r.is_system = TRUE AND r.tenant_id IS NULL
+		ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
+	`
+	if _, err = tx.ExecContext(ctx, userRolesQuery,
+		m.UserID().String(), m.TenantID().String(), m.JoinedAt(), invitedBy, m.Role().String(),
+	); err != nil {
+		return fmt.Errorf("failed to create user role: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit tenant creation: %w", err)
+	}
+	return nil
+}
+
 // GetMembership retrieves a membership by user and tenant.
 // Role is fetched from v_user_effective_role view.
 // Status fields are populated so callers (e.g. RequireMembership middleware)

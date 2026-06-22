@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -48,6 +50,16 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 	if s.router == nil {
 		s.router = NewChiRouter()
 	}
+
+	// SECURITY (S-4): wire trusted-proxy CIDR allowlist into the IP-attribution
+	// helpers used by rate-limit middleware and auth audit logs. When the
+	// allowlist is empty the helpers honor only r.RemoteAddr — correct for
+	// direct-Internet deployments. With a CIDR list (e.g. K8s pod range,
+	// load-balancer subnet), X-Forwarded-For and X-Real-IP are honored only
+	// from peers in that range.
+	trustedProxies := httpsec.NewTrustedProxySet(cfg.Server.TrustedProxies)
+	middleware.SetTrustedProxies(trustedProxies)
+	handler.SetAuthTrustedProxies(trustedProxies)
 
 	// Create rate limiter with cleanup
 	rateLimitMw, rateLimitStop := middleware.RateLimitWithStop(&cfg.RateLimit, log)

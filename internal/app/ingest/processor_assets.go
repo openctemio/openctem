@@ -15,12 +15,23 @@ import (
 	"github.com/openctemio/ctis"
 )
 
+// DedupReviewEnqueuer enqueues a duplicate-asset review for admin approval when
+// the correlator finds multiple existing assets that should be consolidated.
+// Implementations must be idempotent (one pending review per keep asset).
+type DedupReviewEnqueuer interface {
+	UpsertReview(ctx context.Context,
+		tenantID, normalizedName, assetType, keepID, keepName string, keepFindingCount int,
+		mergeIDs, mergeNames []string, mergeFindingCount int) error
+}
+
 // AssetProcessor handles batch asset processing.
 type AssetProcessor struct {
 	repo           asset.Repository
 	repoExtRepo    asset.RepositoryExtensionRepository
 	relRepo        asset.RelationshipRepository
-	correlator     *AssetCorrelator // RFC-001: IP-based correlation (nil = disabled)
+	stateHistory   asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
+	correlator     *AssetCorrelator             // RFC-001: IP-based correlation (nil = disabled)
+	dedupEnqueuer  DedupReviewEnqueuer          // RFC-001: enqueue multi-match dupes for review (nil = disabled)
 	propsValidator *validator.PropertiesValidator
 	logger         *logger.Logger
 }
@@ -44,10 +55,69 @@ func (p *AssetProcessor) SetRelationshipRepository(repo asset.RelationshipReposi
 	p.relRepo = repo
 }
 
+// SetStateHistoryRepository wires the asset state-history store. When set, the
+// discovery pipeline records an `appeared` entry for each newly-created asset
+// and a `recovered` entry when a scan re-observes a stale/inactive asset
+// (reactivating it). Optional: nil → no history (preserves prior behaviour).
+func (p *AssetProcessor) SetStateHistoryRepository(repo asset.StateHistoryRepository) {
+	p.stateHistory = repo
+}
+
 // SetCorrelator sets the asset correlator for IP-based deduplication.
 // When nil (default), IP correlation is disabled.
 func (p *AssetProcessor) SetCorrelator(c *AssetCorrelator) {
 	p.correlator = c
+}
+
+// SetDedupEnqueuer wires the duplicate-review enqueuer. When nil (default),
+// multi-match duplicates detected during correlation are not enqueued.
+func (p *AssetProcessor) SetDedupEnqueuer(e DedupReviewEnqueuer) {
+	p.dedupEnqueuer = e
+}
+
+// enqueueDedupReview records a pending review when the correlator found several
+// existing assets sharing identity. Best-effort: a failure is logged and never
+// aborts ingestion.
+func (p *AssetProcessor) enqueueDedupReview(ctx context.Context, tenantID shared.ID, normalizedName, assetType string, keep *asset.Asset, mergeTargets []*asset.Asset) {
+	if p.dedupEnqueuer == nil || keep == nil || len(mergeTargets) == 0 {
+		return
+	}
+	mergeIDs := make([]string, 0, len(mergeTargets))
+	mergeNames := make([]string, 0, len(mergeTargets))
+	mergeFindings := 0
+	for _, m := range mergeTargets {
+		mergeIDs = append(mergeIDs, m.ID().String())
+		mergeNames = append(mergeNames, m.Name())
+		mergeFindings += m.FindingCount()
+	}
+	if err := p.dedupEnqueuer.UpsertReview(ctx, tenantID.String(), normalizedName, assetType,
+		keep.ID().String(), keep.Name(), keep.FindingCount(),
+		mergeIDs, mergeNames, mergeFindings); err != nil {
+		p.logger.Warn("failed to enqueue dedup review",
+			"keep_id", keep.ID().String(), "merge_count", len(mergeTargets), "error", err)
+	}
+}
+
+// recordDiscoveryHistory appends `appeared` rows for newly-created assets and
+// `recovered` rows for assets a scan re-observed after they went stale. Without
+// it, scanner-discovered assets produce no state history, leaving the activity
+// timeline + shadow-IT/recovery analytics blind to the bulk of discovery.
+// Best-effort: a failure is logged and never aborts ingestion.
+func (p *AssetProcessor) recordDiscoveryHistory(ctx context.Context, tenantID shared.ID, appeared []*asset.Asset, recoveredIDs []shared.ID) {
+	if p.stateHistory == nil || (len(appeared) == 0 && len(recoveredIDs) == 0) {
+		return
+	}
+	changes := make([]*asset.AssetStateChange, 0, len(appeared)+len(recoveredIDs))
+	for _, a := range appeared {
+		changes = append(changes, asset.RecordAssetAppeared(tenantID, a.ID(), asset.ChangeSourceScan, "discovered by scan"))
+	}
+	for _, id := range recoveredIDs {
+		changes = append(changes, asset.RecordAssetRecovered(tenantID, id, asset.ChangeSourceScan, "re-observed by scan"))
+	}
+	if err := p.stateHistory.CreateBatch(ctx, changes); err != nil {
+		p.logger.Warn("failed to record asset discovery state-history",
+			"tenant_id", tenantID.String(), "count", len(changes), "error", err)
+	}
 }
 
 // defaultCorrelationConfig returns the system default correlation config.
@@ -158,6 +228,9 @@ func (p *AssetProcessor) ProcessBatch(
 	// With IP correlation: if name doesn't match but IPs do, merge into existing.
 	newAssets := make([]*asset.Asset, 0)
 	updateAssets := make([]*asset.Asset, 0)
+	// Assets a scan re-observed after they had gone stale/inactive (reactivated
+	// by MarkSeen) — recorded as `recovered` state history after the upsert.
+	var recoveredIDs []shared.ID
 
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
@@ -176,7 +249,7 @@ func (p *AssetProcessor) ProcessBatch(
 
 		if existing, ok := existingMap[normalizedName]; ok {
 			// Name match → merge (existing behavior)
-			p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
+			p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool, &recoveredIDs)
 			updateAssets = append(updateAssets, existing)
 			assetMap[ctisAsset.ID] = existing.ID()
 		} else if p.correlator != nil && (coreType == asset.AssetTypeHost || coreType == asset.AssetTypeIPAddress) {
@@ -195,15 +268,16 @@ func (p *AssetProcessor) ProcessBatch(
 			if result != nil && result.Matched != nil {
 				// IP match found → merge into existing
 				existing := result.Matched
-				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
+				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool, &recoveredIDs)
 				updateAssets = append(updateAssets, existing)
 				assetMap[ctisAsset.ID] = existing.ID()
 
 				if result.ShouldRename {
+					oldName := existing.Name() // capture before UpdateName overwrites it
 					if err := existing.UpdateName(result.NewName); err == nil {
 						p.logger.Info("asset renamed via IP correlation",
 							"id", existing.ID().String(),
-							"old_name", existing.Name(),
+							"old_name", oldName,
 							"new_name", result.NewName,
 							"correlation_type", result.CorrelationType,
 						)
@@ -212,6 +286,12 @@ func (p *AssetProcessor) ProcessBatch(
 
 				// Cache for later assets in same batch
 				existingMap[normalizedName] = existing
+
+				// Multiple existing assets matched the same identity →
+				// enqueue an admin review to consolidate them (RFC-001).
+				if len(result.MergeTargets) > 0 {
+					p.enqueueDedupReview(ctx, tenantID, normalizedName, string(coreType), existing, result.MergeTargets)
+				}
 			} else {
 				// No correlation → create new
 				newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
@@ -253,7 +333,7 @@ func (p *AssetProcessor) ProcessBatch(
 
 			if result != nil && result.Matched != nil {
 				existing := result.Matched
-				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool)
+				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool, &recoveredIDs)
 				updateAssets = append(updateAssets, existing)
 				assetMap[ctisAsset.ID] = existing.ID()
 				existingMap[normalizedName] = existing
@@ -291,6 +371,10 @@ func (p *AssetProcessor) ProcessBatch(
 		}
 		output.AssetsCreated = created
 		output.AssetsUpdated = updated
+
+		// Record discovery state history (appeared for new assets, recovered
+		// for reactivated ones). Best-effort — never fails ingestion.
+		p.recordDiscoveryHistory(ctx, tenantID, newAssets, recoveredIDs)
 	}
 
 	// Step 5: Create/update repository extensions for repository assets
@@ -1314,9 +1398,14 @@ func (p *AssetProcessor) createAssetFromCTIS(
 }
 
 // mergeCTISIntoAsset merges CTIS data into an existing asset.
-func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool) {
-	// Mark as seen
+func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool, recovered *[]shared.ID) {
+	// Mark as seen. Capture the prior status first so we can tell when this
+	// scan reactivates a stale/inactive asset (MarkSeen flips it to active).
+	wasInactive := existing.Status() == asset.StatusStale || existing.Status() == asset.StatusInactive
 	existing.MarkSeen()
+	if recovered != nil && wasInactive && existing.Status() == asset.StatusActive {
+		*recovered = append(*recovered, existing.ID())
+	}
 
 	// Update owner ref if provided and not already set
 	if existing.OwnerRef() == "" {

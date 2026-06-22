@@ -64,6 +64,17 @@ func (m *mockIntegrationRepo) GetByID(_ context.Context, id integration.ID) (*in
 	return intg, nil
 }
 
+func (m *mockIntegrationRepo) GetByTenantAndID(_ context.Context, tenantID integration.ID, id integration.ID) (*integration.Integration, error) {
+	if m.getByIDErr != nil {
+		return nil, m.getByIDErr
+	}
+	intg, ok := m.integrations[id]
+	if !ok || intg.TenantID() != tenantID {
+		return nil, integration.ErrIntegrationNotFound
+	}
+	return intg, nil
+}
+
 func (m *mockIntegrationRepo) GetByTenantAndName(_ context.Context, tenantID integration.ID, name string) (*integration.Integration, error) {
 	if m.getByTenantNameErr != nil {
 		return nil, m.getByTenantNameErr
@@ -819,6 +830,48 @@ func TestUpdateIntegration_Success(t *testing.T) {
 	}
 }
 
+func TestUpdateIntegration_WrongTenant_NotFound(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, newMockEncryptor())
+
+	ownerTenant := shared.NewID().String()
+	created, err := svc.CreateIntegration(context.Background(), validCreateInput(ownerTenant))
+	if err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	// A different tenant must not be able to update it — tenant-scoped fetch
+	// returns NotFound, never the other tenant's record.
+	otherTenant := shared.NewID().String()
+	newName := "hijack"
+	_, err = svc.UpdateIntegration(context.Background(), created.ID().String(), otherTenant, app.UpdateIntegrationInput{Name: &newName})
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant update must be NotFound, got %v", err)
+	}
+}
+
+func TestDeleteIntegration_WrongTenant_NotFound(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, newMockEncryptor())
+
+	ownerTenant := shared.NewID().String()
+	created, err := svc.CreateIntegration(context.Background(), validCreateInput(ownerTenant))
+	if err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	otherTenant := shared.NewID().String()
+	if err := svc.DeleteIntegration(context.Background(), created.ID().String(), otherTenant); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant delete must be NotFound, got %v", err)
+	}
+	// The integration must still exist for its real owner.
+	if _, err := svc.GetIntegration(context.Background(), created.ID().String()); err != nil {
+		t.Fatalf("integration should survive a cross-tenant delete attempt: %v", err)
+	}
+}
+
 func TestUpdateIntegration_PartialUpdate_NameOnly(t *testing.T) {
 	repo := newMockIntegrationRepo()
 	scmRepo := newMockSCMExtRepo()
@@ -1171,6 +1224,11 @@ func TestListIntegrations_Pagination(t *testing.T) {
 		input := validCreateInput(tenantID)
 		input.Name = p.name
 		input.Provider = p.provider
+		if p.provider == "tenable" {
+			// Tenable defaults to agent mode (no creds in control plane); the
+			// shared helper supplies creds, so use direct mode here.
+			input.Config = map[string]any{"execution_mode": "direct"}
+		}
 		_, err := svc.CreateIntegration(context.Background(), input)
 		if err != nil {
 			t.Fatalf("setup create %s failed: %v", p.name, err)
@@ -1212,6 +1270,7 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 		}
 		if strings.Contains(name, "Tenable") {
 			input.Provider = "tenable"
+			input.Config = map[string]any{"execution_mode": "direct"} // creds present → direct mode
 		}
 		_, err := svc.CreateIntegration(context.Background(), input)
 		if err != nil {
@@ -1230,6 +1289,112 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 	}
 	if result.Total != 2 {
 		t.Errorf("expected 2 results for 'Production' search, got %d", result.Total)
+	}
+}
+
+// TestCreateIntegration_Tenable_AgentModeRejectsCredentials locks in the
+// RFC-007 §8 security rule: an agent-mode Tenable integration must never store
+// credentials in the control plane (they belong on the runner).
+func TestCreateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+
+	input := validCreateInput(shared.NewID().String())
+	input.Name = "Agent Tenable"
+	input.Provider = "tenable" // no Config → defaults to agent mode; creds present
+	if _, err := svc.CreateIntegration(context.Background(), input); err == nil {
+		t.Fatal("agent-mode Tenable with credentials must be rejected")
+	}
+
+	// Same integration with no credentials is accepted in agent mode.
+	input2 := validCreateInput(shared.NewID().String())
+	input2.Name = "Agent Tenable OK"
+	input2.Provider = "tenable"
+	input2.Credentials = ""
+	if _, err := svc.CreateIntegration(context.Background(), input2); err != nil {
+		t.Fatalf("agent-mode Tenable without credentials should be accepted: %v", err)
+	}
+}
+
+// TestUpdateIntegration_Tenable_AgentModeRejectsCredentials ensures the
+// agent-mode no-credentials rule cannot be bypassed via update (RFC-007 §8).
+func TestUpdateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+	tenantID := shared.NewID().String()
+
+	// Create an agent-mode Tenable integration (no creds).
+	agentIn := validCreateInput(tenantID)
+	agentIn.Name = "Agent Tenable"
+	agentIn.Provider = "tenable"
+	agentIn.Credentials = ""
+	created, err := svc.CreateIntegration(context.Background(), agentIn)
+	if err != nil {
+		t.Fatalf("create agent tenable: %v", err)
+	}
+
+	// Updating it with credentials must be rejected.
+	creds := "tenable-secret"
+	if _, err := svc.UpdateIntegration(context.Background(), created.ID().String(), tenantID, app.UpdateIntegrationInput{Credentials: &creds}); err == nil {
+		t.Fatal("update must not let an agent-mode Tenable integration gain control-plane credentials")
+	}
+
+	// A direct-mode integration may have its credentials updated.
+	directIn := validCreateInput(tenantID)
+	directIn.Name = "Direct Tenable"
+	directIn.Provider = "tenable"
+	directIn.Config = map[string]any{"execution_mode": "direct"}
+	createdDirect, err := svc.CreateIntegration(context.Background(), directIn)
+	if err != nil {
+		t.Fatalf("create direct tenable: %v", err)
+	}
+	if _, err := svc.UpdateIntegration(context.Background(), createdDirect.ID().String(), tenantID, app.UpdateIntegrationInput{Credentials: &creds}); err != nil {
+		t.Fatalf("direct-mode credential update should be allowed: %v", err)
+	}
+}
+
+// TestUpdateIntegration_Tenable_ConfigModeSwitch covers updating execution_mode
+// via config, incl. the security-sensitive direct→agent switch.
+func TestUpdateIntegration_Tenable_ConfigModeSwitch(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+	tenantID := shared.NewID().String()
+
+	// Start as direct (with creds + base_url from the shared helper).
+	in := validCreateInput(tenantID)
+	in.Name = "Tenable"
+	in.Provider = "tenable"
+	in.Config = map[string]any{"execution_mode": "direct"}
+	created, err := svc.CreateIntegration(context.Background(), in)
+	if err != nil {
+		t.Fatalf("create direct: %v", err)
+	}
+	id := created.ID().String()
+
+	// Switching to agent while credentials remain must be rejected.
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"execution_mode": "agent"},
+	}); err == nil {
+		t.Fatal("direct→agent must be rejected while credentials are still stored")
+	}
+
+	// Switching to agent AND clearing credentials is allowed.
+	empty := ""
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
+		Config:      map[string]any{"execution_mode": "agent"},
+		Credentials: &empty,
+	}); err != nil {
+		t.Fatalf("direct→agent with cleared credentials should be allowed: %v", err)
+	}
+
+	// Engine change persists.
+	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
+		Config: map[string]any{"engine": "tenable_sc"},
+	}); err != nil {
+		t.Fatalf("engine change should be allowed: %v", err)
 	}
 }
 
@@ -1914,8 +2079,8 @@ func TestNotificationExtension_BooleanSeveritySetters(t *testing.T) {
 func TestReconstructNotificationExtensionFromBooleans(t *testing.T) {
 	ext := integration.ReconstructNotificationExtensionFromBooleans(
 		shared.NewID(),
-		"", // channelID - deprecated
-		"", // channelName - deprecated
+		"",    // channelID - deprecated
+		"",    // channelName - deprecated
 		true,  // notifyOnCritical
 		true,  // notifyOnHigh
 		false, // notifyOnMedium
@@ -2347,13 +2512,13 @@ func TestNotificationExtension_MinIntervalDefaults(t *testing.T) {
 func TestReconstructNotificationExtension_EmptySeverities_UsesDefaults(t *testing.T) {
 	ext := integration.ReconstructNotificationExtension(
 		shared.NewID(),
-		"", // channelID - deprecated
-		"", // channelName - deprecated
-		nil,   // empty severities -> defaults
-		nil,   // empty event types -> defaults
-		"",    // messageTemplate
-		true,  // includeDetails
-		0,     // minIntervalMinutes (0 -> default 5)
+		"",   // channelID - deprecated
+		"",   // channelName - deprecated
+		nil,  // empty severities -> defaults
+		nil,  // empty event types -> defaults
+		"",   // messageTemplate
+		true, // includeDetails
+		0,    // minIntervalMinutes (0 -> default 5)
 	)
 
 	if !ext.IsSeverityEnabled(integration.SeverityCritical) {
@@ -2395,5 +2560,128 @@ func TestReconstructNotificationExtension_CustomSeverities(t *testing.T) {
 	}
 	if ext.MinIntervalMinutes() != 30 {
 		t.Errorf("expected min interval 30, got %d", ext.MinIntervalMinutes())
+	}
+}
+
+// =============================================================================
+// Per-tenant Jira inbound-webhook secret (EnsureJiraWebhookSecret / Rotate / List)
+// =============================================================================
+
+func TestJiraWebhookSecret_NoIntegration_ReturnsNotFound(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), crypto.NewNoOpEncryptor())
+
+	_, err := svc.EnsureJiraWebhookSecret(context.Background(), shared.NewID())
+	if err == nil {
+		t.Fatal("expected error when tenant has no Jira integration")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestJiraWebhookSecret_EnsureGeneratesAndPersists(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	cipher, err := crypto.NewCipher(make([]byte, 32))
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), cipher)
+
+	tenantID := shared.NewID()
+	jira := integration.NewIntegration(shared.NewID(), tenantID, "Jira", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+	repo.integrations[jira.ID()] = jira
+
+	secret, err := svc.EnsureJiraWebhookSecret(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if secret == "" {
+		t.Fatal("expected a non-empty secret")
+	}
+
+	// Persisted encrypted (not stored as plaintext) on the integration metadata.
+	stored, _ := jira.Metadata()["webhook_secret_encrypted"].(string)
+	if stored == "" {
+		t.Fatal("expected encrypted secret persisted in metadata")
+	}
+	if stored == secret {
+		t.Error("secret must be stored encrypted, not as plaintext")
+	}
+
+	// Ensure is idempotent — returns the same secret, does not regenerate.
+	secret2, err := svc.EnsureJiraWebhookSecret(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("ensure(2): %v", err)
+	}
+	if secret2 != secret {
+		t.Errorf("Ensure should be idempotent: got %q then %q", secret, secret2)
+	}
+}
+
+func TestJiraWebhookSecret_RotateChangesSecret(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	cipher, err := crypto.NewCipher(make([]byte, 32))
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), cipher)
+
+	tenantID := shared.NewID()
+	jira := integration.NewIntegration(shared.NewID(), tenantID, "Jira", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+	repo.integrations[jira.ID()] = jira
+
+	first, err := svc.EnsureJiraWebhookSecret(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	rotated, err := svc.RotateJiraWebhookSecret(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if rotated == first {
+		t.Error("rotate should produce a different secret")
+	}
+
+	// List returns the current (rotated) secret only.
+	secrets, err := svc.ListJiraWebhookSecrets(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(secrets) != 1 || secrets[0] != rotated {
+		t.Errorf("expected [rotated], got %v", secrets)
+	}
+}
+
+func TestJiraWebhookSecret_ListIsTenantScoped(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	cipher, err := crypto.NewCipher(make([]byte, 32))
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), cipher)
+
+	tenantA := shared.NewID()
+	tenantB := shared.NewID()
+	jiraA := integration.NewIntegration(shared.NewID(), tenantA, "JiraA", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+	jiraB := integration.NewIntegration(shared.NewID(), tenantB, "JiraB", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+	repo.integrations[jiraA.ID()] = jiraA
+	repo.integrations[jiraB.ID()] = jiraB
+
+	secretA, _ := svc.EnsureJiraWebhookSecret(context.Background(), tenantA)
+	_, _ = svc.EnsureJiraWebhookSecret(context.Background(), tenantB)
+
+	listA, err := svc.ListJiraWebhookSecrets(context.Background(), tenantA)
+	if err != nil {
+		t.Fatalf("list A: %v", err)
+	}
+	if len(listA) != 1 || listA[0] != secretA {
+		t.Fatalf("tenant A list should contain only A's secret, got %v", listA)
+	}
+	// Tenant B's secret must never appear in tenant A's candidate set.
+	for _, s := range listA {
+		if s == "" {
+			t.Error("unexpected empty secret")
+		}
 	}
 }

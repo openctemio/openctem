@@ -104,9 +104,21 @@ func (s *Service) SetRelationshipRepository(repo asset.RelationshipRepository) {
 	s.assetProcessor.SetRelationshipRepository(repo)
 }
 
+// SetAssetStateHistoryRepository wires the asset state-history store so the
+// discovery pipeline records appeared/recovered events. Optional.
+func (s *Service) SetAssetStateHistoryRepository(repo asset.StateHistoryRepository) {
+	s.assetProcessor.SetStateHistoryRepository(repo)
+}
+
 // SetCorrelator sets the asset correlator for IP-based deduplication (RFC-001).
 func (s *Service) SetCorrelator(c *AssetCorrelator) {
 	s.assetProcessor.SetCorrelator(c)
+}
+
+// SetDedupEnqueuer wires the duplicate-review enqueuer used when correlation
+// detects multiple existing assets sharing identity (RFC-001).
+func (s *Service) SetDedupEnqueuer(e DedupReviewEnqueuer) {
+	s.assetProcessor.SetDedupEnqueuer(e)
 }
 
 // SetActivityService sets the finding activity service for audit trail during ingestion.
@@ -152,8 +164,6 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 	if report == nil {
 		return nil, shared.NewDomainError("INVALID_INPUT", "report is required", nil)
 	}
-
-	fmt.Printf("%+v\n", report)
 
 	// Validate report limits
 	if err := s.validator.ValidateReport(report); err != nil {
@@ -240,7 +250,7 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 	// 3. Tool name available for scoping
 	//
 	// This follows GitHub/GitLab best practices where default branch is source of truth.
-	if input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil {
+	if input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != "" {
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
 
@@ -250,29 +260,30 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 			"branch", input.GetBranchInfo().Name,
 		)
 
-		// Collect all resolved IDs across assets to batch activity recording
-		var allResolvedIDs []shared.ID
-
+		// Auto-resolve across all assets in a single query rather than one per
+		// asset. Pass nil branchID to resolve findings on any default branch.
+		assetIDs := make([]shared.ID, 0, len(assetMap))
 		for _, assetID := range assetMap {
-			// Pass nil for branchID to auto-resolve findings on any default branch.
-			// In the future, we can look up the specific branch and pass its ID.
-			resolvedIDs, err := s.findingRepo.AutoResolveStale(ctx, tenantID, assetID, toolName, scanID, nil)
-			if err != nil {
-				s.logger.Warn("failed to auto-resolve stale findings",
-					"asset_id", assetID.String(),
-					"tool_name", toolName,
-					"error", err,
-				)
-			} else if len(resolvedIDs) > 0 {
-				output.FindingsAutoResolved += len(resolvedIDs)
-				app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolvedIDs)))
-				s.logger.Info("auto-resolved stale findings",
-					"asset_id", assetID.String(),
-					"tool_name", toolName,
-					"count", len(resolvedIDs),
-				)
-				allResolvedIDs = append(allResolvedIDs, resolvedIDs...)
-			}
+			assetIDs = append(assetIDs, assetID)
+		}
+
+		var allResolvedIDs []shared.ID
+		resolvedIDs, err := s.findingRepo.AutoResolveStaleByAssets(ctx, tenantID, assetIDs, toolName, scanID, nil)
+		if err != nil {
+			s.logger.Warn("failed to auto-resolve stale findings",
+				"tool_name", toolName,
+				"asset_count", len(assetIDs),
+				"error", err,
+			)
+		} else if len(resolvedIDs) > 0 {
+			output.FindingsAutoResolved += len(resolvedIDs)
+			app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolvedIDs)))
+			s.logger.Info("auto-resolved stale findings",
+				"tool_name", toolName,
+				"asset_count", len(assetIDs),
+				"count", len(resolvedIDs),
+			)
+			allResolvedIDs = append(allResolvedIDs, resolvedIDs...)
 		}
 
 		// Record audit trail once for all auto-resolved findings (single batch INSERT)
@@ -291,6 +302,13 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 			s.logger.Debug("auto-resolve skipped: not default branch",
 				"branch", branchInfo.Name,
 			)
+		case report.Metadata.ID == "":
+			// Without a scan identity we cannot tell which findings belong to
+			// THIS scan, so the "not seen in this scan" staleness test would
+			// match (and resolve) the tenant's entire existing finding set.
+			s.logger.Warn("auto-resolve skipped: report metadata.id is empty",
+				"tool_name", report.Tool.Name,
+			)
 		default:
 			coverageType := input.CoverageType
 			if coverageType == "" && report.Metadata.CoverageType != "" {
@@ -299,6 +317,34 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 			s.logger.Debug("auto-resolve skipped: coverage type not full",
 				"coverage_type", coverageType,
 			)
+		}
+	}
+
+	// Step 3b: Per-branch occurrence auto-resolve (branch-aware occurrence model).
+	// Unlike the finding-level auto-resolve above (default branch only), this runs
+	// for ANY full-coverage scan and marks occurrences on the SCANNED branch that
+	// the scan no longer reports as auto_fixed — so per-branch state reflects what
+	// is actually present on that branch. Additive: it only touches occurrence
+	// rows, never the finding's headline status. Best-effort.
+	if input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
+		report.Tool != nil && report.Metadata.ID != "" &&
+		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
+		toolName := report.Tool.Name
+		scanID := report.Metadata.ID
+		branchName := report.Metadata.Branch.Name
+		for _, assetID := range assetMap {
+			br, err := s.branchRepo.GetByName(ctx, assetID, branchName)
+			if err != nil || br == nil {
+				continue // not a repository asset / branch not tracked — skip
+			}
+			n, err := s.findingRepo.AutoResolveStaleBranchOccurrences(ctx, tenantID, br.ID(), toolName, scanID)
+			if err != nil {
+				s.logger.Warn("failed to auto-resolve stale branch occurrences",
+					"asset_id", assetID.String(), "branch", branchName, "error", err)
+			} else if n > 0 {
+				s.logger.Info("auto-resolved stale branch occurrences",
+					"asset_id", assetID.String(), "branch", branchName, "count", n)
+			}
 		}
 	}
 
@@ -388,6 +434,66 @@ func (s *Service) CheckFingerprints(ctx context.Context, agt *agent.Agent, input
 	}, nil
 }
 
+// NewVsBase computes which of the given fingerprints are new relative to a PR's
+// base/target branch (RFC-008 Phase 3). A finding already open on the base
+// branch is pre-existing tech debt — not introduced by the PR — so a PR gate /
+// inline comments should focus on the genuinely-new set. Tenant-scoped via the
+// authenticated agent. If the repository or base branch is unknown (no history),
+// every fingerprint is treated as new.
+func (s *Service) BaselineDiff(ctx context.Context, agt *agent.Agent, input BaselineDiffInput) (*BaselineDiffOutput, error) {
+	if agt == nil || agt.TenantID == nil {
+		return nil, fmt.Errorf("agent has no tenant context: platform agents require job assignment")
+	}
+	tenantID := *agt.TenantID
+
+	allNew := func() *BaselineDiffOutput {
+		return &BaselineDiffOutput{New: append([]string{}, input.Fingerprints...), BaseBranchKnown: false}
+	}
+
+	if len(input.Fingerprints) == 0 {
+		return &BaselineDiffOutput{New: []string{}, BaseBranchKnown: false}, nil
+	}
+	if input.Repository == "" || input.BaseBranch == "" || s.assetRepo == nil || s.branchRepo == nil || s.findingRepo == nil {
+		return allNew(), nil
+	}
+
+	repoAsset, err := s.assetRepo.GetByName(ctx, tenantID, input.Repository)
+	if err != nil || repoAsset == nil {
+		return allNew(), nil // unknown repo → no base history
+	}
+	baseBranch, err := s.branchRepo.GetByName(ctx, repoAsset.ID(), input.BaseBranch)
+	if err != nil || baseBranch == nil {
+		return allNew(), nil // base branch never scanned → all new
+	}
+
+	openOnBase, err := s.findingRepo.FingerprintsOpenOnBranch(ctx, tenantID, baseBranch.ID(), input.Fingerprints)
+	if err != nil {
+		return nil, fmt.Errorf("query fingerprints open on base branch: %w", err)
+	}
+
+	newFps, preFps := partitionByBaseline(input.Fingerprints, openOnBase)
+	return &BaselineDiffOutput{New: newFps, PreExisting: preFps, BaseBranchKnown: true}, nil
+}
+
+// partitionByBaseline splits fingerprints into those NOT already open on the
+// base branch (new — introduced by the PR) and those that are (pre-existing).
+func partitionByBaseline(fingerprints, openOnBase []string) (newFps, preExisting []string) {
+	pre := make(map[string]bool, len(openOnBase))
+	for _, fp := range openOnBase {
+		pre[fp] = true
+	}
+	newFps = make([]string, 0, len(fingerprints))
+	preExisting = make([]string, 0, len(openOnBase))
+	for _, fp := range fingerprints {
+		if pre[fp] {
+			preExisting = append(preExisting, fp)
+		} else {
+			newFps = append(newFps, fp)
+		}
+	}
+	return newFps, preExisting
+}
+
 // =============================================================================
 // Validation Methods
 // =============================================================================
@@ -416,6 +522,12 @@ func (s *Service) validateAgent(agt *agent.Agent) error {
 
 // updateAgentStatsAsync updates agent statistics asynchronously with proper error handling.
 func (s *Service) updateAgentStatsAsync(agentID shared.ID, output *Output) {
+	// Skip for synthetic ingests with no real agent (e.g. tenant-initiated
+	// .nessus upload via the synthetic-agent path) — there is no agent row to
+	// update, and a zero ID would just produce a no-op write + a noisy warning.
+	if agentID.IsZero() {
+		return
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

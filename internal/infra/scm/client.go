@@ -3,6 +3,7 @@ package scm
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -125,6 +126,17 @@ type Client interface {
 
 	// GetRepository returns a single repository by full name (owner/repo)
 	GetRepository(ctx context.Context, fullName string) (*Repository, error)
+
+	// ListBranches returns the branches of a repository (owner/repo). Providers
+	// that do not implement it return ErrBranchListingUnsupported.
+	ListBranches(ctx context.Context, fullName string, opts ListOptions) ([]Branch, error)
+}
+
+// Branch is a repository branch as reported by an SCM provider.
+type Branch struct {
+	Name      string
+	Protected bool
+	CommitSHA string
 }
 
 // ClientFactory creates SCM clients based on provider
@@ -158,6 +170,9 @@ var (
 	ErrRateLimited         = NewSCMError("rate limit exceeded", "RATE_LIMITED")
 	ErrNotFound            = NewSCMError("resource not found", "NOT_FOUND")
 	ErrPermissionDenied    = NewSCMError("permission denied", "PERMISSION_DENIED")
+	// ErrBranchListingUnsupported is returned by providers that have not yet
+	// implemented ListBranches.
+	ErrBranchListingUnsupported = NewSCMError("branch listing not supported for this provider", "BRANCH_LISTING_UNSUPPORTED")
 )
 
 // SCMError represents an error from an SCM provider
@@ -187,6 +202,17 @@ func (e *SCMError) Wrap(err error) *SCMError {
 		Code:    e.Code,
 		Wrapped: err,
 	}
+}
+
+// Is reports whether target is an SCMError with the same code. This lets
+// errors.Is match a wrapped SCM error (e.g. ErrAuthFailed.Wrap(...), which is a
+// fresh instance) against the package sentinels like ErrAuthFailed.
+func (e *SCMError) Is(target error) bool {
+	var t *SCMError
+	if errors.As(target, &t) {
+		return e.Code == t.Code
+	}
+	return false
 }
 
 // Unwrap returns the wrapped error

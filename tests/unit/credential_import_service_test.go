@@ -21,9 +21,9 @@ import (
 // =============================================================================
 
 type credImportMockExposureRepo struct {
-	events          map[string]*exposure.ExposureEvent
-	fingerprintMap  map[string]*exposure.ExposureEvent // fingerprint -> event
-	tenantEvents    map[string][]*exposure.ExposureEvent // tenantID -> events
+	events         map[string]*exposure.ExposureEvent
+	fingerprintMap map[string]*exposure.ExposureEvent   // fingerprint -> event
+	tenantEvents   map[string][]*exposure.ExposureEvent // tenantID -> events
 
 	// Configurable errors
 	createErr     error
@@ -221,6 +221,10 @@ func (m *credImportMockExposureRepo) CountBySeverity(_ context.Context, _ shared
 		return m.countBySeverityResult, nil
 	}
 	return map[exposure.Severity]int64{}, nil
+}
+
+func (m *credImportMockExposureRepo) MeanTimeToResolveHours(_ context.Context, _ shared.ID) (float64, bool, error) {
+	return 0, false, nil
 }
 
 // addExistingEvent is a helper to pre-populate the repo with an event.
@@ -1260,9 +1264,9 @@ func TestCredentialImportService_ImportCSV_MixedValidAndInvalidRows(t *testing.T
 
 	records := [][]string{
 		{"identifier", "credential_type", "source_type"},
-		{"valid@test.com", "password", "data_breach"},       // valid
-		{"invalid@test.com", "bogus_type", "data_breach"},   // invalid cred type
-		{"valid2@test.com", "api_key", "code_repository"},   // valid
+		{"valid@test.com", "password", "data_breach"},     // valid
+		{"invalid@test.com", "bogus_type", "data_breach"}, // invalid cred type
+		{"valid2@test.com", "api_key", "code_repository"}, // valid
 	}
 
 	result, err := svc.ImportCSV(context.Background(), tenantID.String(), records, credential.DefaultImportOptions())

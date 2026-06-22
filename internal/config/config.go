@@ -1,3 +1,4 @@
+// Package config loads and validates application configuration from environment variables.
 package config
 
 import (
@@ -34,7 +35,21 @@ type Config struct {
 	AgentConfig AgentConfigConfig
 	Storage     StorageConfig
 	Webhooks    WebhooksConfig
+	Ingest      IngestConfig
 }
+
+// IngestConfig controls asynchronous ingest (RFC-005).
+type IngestConfig struct {
+	// Mode is "sync" (default — process in the request) or "async" (enqueue +
+	// 202, processed by the ingest worker). Async is opt-in per deployment.
+	Mode string
+	// MaxPendingPerTenant bounds a tenant's queue depth; further submissions get
+	// 429 + Retry-After. 0 disables the check.
+	MaxPendingPerTenant int
+}
+
+// AsyncEnabled reports whether async ingest mode is on.
+func (c IngestConfig) AsyncEnabled() bool { return c.Mode == "async" }
 
 // WebhooksConfig holds shared secrets for incoming webhook HMAC verification (F-1).
 // These are platform-wide fallbacks; per-integration secrets can be layered on
@@ -95,6 +110,13 @@ type ServerConfig struct {
 	MaxBodySize           int64
 	SessionTimeoutMinutes int // Session timeout in minutes (0 = disabled, default: 30)
 	MaxConcurrentRequests int // Maximum concurrent requests (default: 1000)
+	// TrustedProxies is the list of CIDR ranges (or bare IPs) whose
+	// X-Real-IP / X-Forwarded-For headers will be honored. Requests from
+	// peers outside this list have their forwarding headers ignored —
+	// preventing IP spoofing of rate-limit and audit-log keys (S-4).
+	// Empty list = treat the API as directly Internet-facing.
+	// Configure via SERVER_TRUSTED_PROXIES (comma-separated CIDRs).
+	TrustedProxies []string
 }
 
 // GRPCConfig holds gRPC server configuration.
@@ -224,6 +246,31 @@ type AuthConfig struct {
 	AccessTokenCookieName  string // Cookie name for access token (default: "auth_token")
 	RefreshTokenCookieName string // Cookie name for refresh token (default: "refresh_token")
 	TenantCookieName       string // Cookie name for tenant (default: "app_tenant")
+
+	// EntraSSO is the platform-wide Microsoft Entra ID SSO fallback. When a
+	// tenant has NOT configured its own entra_id identity provider, the SSO
+	// flow falls back to this shared config (if Enabled). A tenant's own
+	// provider always takes precedence.
+	EntraSSO EntraSSOConfig
+}
+
+// EntraSSOConfig holds the platform-wide (env-based) Microsoft Entra ID SSO
+// fallback used when a tenant has no entra_id provider of its own.
+type EntraSSOConfig struct {
+	Enabled        bool     // SSO_ENTRA_ENABLED
+	ClientID       string   // SSO_ENTRA_CLIENT_ID
+	ClientSecret   string   // SSO_ENTRA_CLIENT_SECRET (plaintext — env is the trust boundary)
+	TenantID       string   // SSO_ENTRA_TENANT_ID (Entra directory id; default "common")
+	AllowedDomains []string // SSO_ENTRA_ALLOWED_DOMAINS (csv; empty = any)
+	DefaultRole    string   // SSO_ENTRA_DEFAULT_ROLE (default "member")
+	AutoProvision  bool     // SSO_ENTRA_AUTO_PROVISION (default true)
+	DisplayName    string   // SSO_ENTRA_DISPLAY_NAME (default "Microsoft Entra ID")
+}
+
+// IsConfigured reports whether the platform-wide Entra SSO fallback is usable:
+// enabled and carrying the minimum credentials to drive an OAuth code flow.
+func (c EntraSSOConfig) IsConfigured() bool {
+	return c.Enabled && c.ClientID != "" && c.ClientSecret != ""
 }
 
 // OAuthConfig holds OAuth/Social login configuration.
@@ -347,6 +394,12 @@ type AgentConfig struct {
 	// Enabled controls whether agent health checking is enabled.
 	// Default: true.
 	Enabled bool
+
+	// SCMSyncInterval is how often the scheduled SCM repository/branch sync runs.
+	// 0 (default) disables it — repositories are then only imported on demand via
+	// POST /integrations/{id}/import-repositories. Set SCM_SYNC_INTERVAL (e.g. 6h)
+	// to enable periodic auto-import + branch sync + expired-token detection.
+	SCMSyncInterval time.Duration
 
 	// LoadBalancing holds configuration for agent load balancing weights.
 	LoadBalancing LoadBalancingConfig
@@ -515,6 +568,7 @@ func Load() (*Config, error) {
 			MaxBodySize:           getEnvInt64("SERVER_MAX_BODY_SIZE", 10<<20), // 10MB default
 			SessionTimeoutMinutes: getEnvInt("SESSION_TIMEOUT_MINUTES", 30),    // 30 minutes default
 			MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 1000),  // 1000 concurrent requests default
+			TrustedProxies:        getEnvSlice("SERVER_TRUSTED_PROXIES", nil),
 		},
 		GRPC: GRPCConfig{
 			Port: getEnvInt("GRPC_PORT", 9090),
@@ -584,6 +638,16 @@ func Load() (*Config, error) {
 			AccessTokenCookieName:     getEnv("AUTH_ACCESS_TOKEN_COOKIE_NAME", "auth_token"),     // Cookie name for access token
 			RefreshTokenCookieName:    getEnv("AUTH_REFRESH_TOKEN_COOKIE_NAME", "refresh_token"), // Cookie name for refresh token
 			TenantCookieName:          getEnv("AUTH_TENANT_COOKIE_NAME", "app_tenant"),           // Cookie name for tenant
+			EntraSSO: EntraSSOConfig{
+				Enabled:        getEnvBool("SSO_ENTRA_ENABLED", false),
+				ClientID:       getEnv("SSO_ENTRA_CLIENT_ID", ""),
+				ClientSecret:   getEnv("SSO_ENTRA_CLIENT_SECRET", ""),
+				TenantID:       getEnv("SSO_ENTRA_TENANT_ID", "common"),
+				AllowedDomains: getEnvSlice("SSO_ENTRA_ALLOWED_DOMAINS", nil),
+				DefaultRole:    getEnv("SSO_ENTRA_DEFAULT_ROLE", "member"),
+				AutoProvision:  getEnvBool("SSO_ENTRA_AUTO_PROVISION", true),
+				DisplayName:    getEnv("SSO_ENTRA_DISPLAY_NAME", "Microsoft Entra ID"),
+			},
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),
@@ -647,6 +711,7 @@ func Load() (*Config, error) {
 			Enabled:             getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
 			HeartbeatTimeout:    getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			HealthCheckInterval: getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
+			SCMSyncInterval:     getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("AGENT_LB_JOB_WEIGHT", 0.30),
 				CPUWeight:                getEnvFloat("AGENT_LB_CPU_WEIGHT", 0.40),
@@ -666,6 +731,10 @@ func Load() (*Config, error) {
 			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
 			// middleware fails closed if empty.
 			JiraSecret: getEnv("JIRA_WEBHOOK_SECRET", ""),
+		},
+		Ingest: IngestConfig{
+			Mode:                getEnv("INGEST_MODE", "sync"),
+			MaxPendingPerTenant: getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
 		},
 		AITriage: AITriageConfig{
 			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),
@@ -795,12 +864,12 @@ func (c *Config) validateEncryption() error {
 
 	// Auto-detect format if not specified
 	if format == "" {
-		switch {
-		case keyLen == 32:
+		switch keyLen {
+		case 32:
 			format = "raw"
-		case keyLen == 64:
+		case 64:
 			format = "hex"
-		case keyLen == 44:
+		case 44:
 			format = "base64"
 		default:
 			return fmt.Errorf("APP_ENCRYPTION_KEY has invalid length %d (expected 32 raw, 64 hex, or 44 base64)", keyLen)
@@ -1145,7 +1214,7 @@ func getEnvSlice(key string, defaultValue []string) []string {
 
 func splitAndTrim(s, sep string) []string {
 	parts := make([]string, 0)
-	for _, p := range strings.Split(s, sep) {
+	for p := range strings.SplitSeq(s, sep) {
 		trimmed := strings.TrimSpace(p)
 		if trimmed != "" {
 			parts = append(parts, trimmed)

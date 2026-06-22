@@ -1,3 +1,4 @@
+// Package tenant implements the application service for the tenant bounded context — orchestrates pkg/domain/tenant entities and cross-cutting concerns (audit, notifications, RBAC).
 package tenant
 
 import (
@@ -321,23 +322,16 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 		t.UpdateDescription(input.Description)
 	}
 
-	// Create tenant in database
-	if err := s.repo.Create(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to create tenant: %w", err)
-	}
-
-	// Create owner membership for the creator
+	// Build the owner membership before any write so a construction error can't
+	// leave a tenant without an owner.
 	membership, err := tenantdom.NewOwnerMembership(creatorUserID, t.ID())
 	if err != nil {
-		// Rollback tenant creation
-		_ = s.repo.Delete(ctx, t.ID())
 		return nil, fmt.Errorf("failed to create owner membership: %w", err)
 	}
 
-	if err := s.repo.CreateMembership(ctx, membership); err != nil {
-		// Rollback tenant creation
-		_ = s.repo.Delete(ctx, t.ID())
-		return nil, fmt.Errorf("failed to create owner membership: %w", err)
+	// Create tenant + owner membership atomically (no orphan tenant on failure).
+	if err := s.repo.CreateWithOwner(ctx, t, membership); err != nil {
+		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
 
 	s.logger.Info("tenant created", "id", t.ID().String(), "name", t.Name(), "owner", creatorUserID.String())
@@ -505,7 +499,15 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 
-	membership, err := tenantdom.NewMembership(input.UserID, parsedTenantID, role, &inviterUserID)
+	// A zero inviter (e.g. system/SCIM-driven provisioning, where there is no
+	// human inviter) must map to NULL invited_by — writing the all-zeros UUID
+	// would violate the invited_by → users(id) foreign key.
+	var invitedBy *shared.ID
+	if !inviterUserID.IsZero() {
+		invitedBy = &inviterUserID
+	}
+
+	membership, err := tenantdom.NewMembership(input.UserID, parsedTenantID, role, invitedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -533,13 +535,28 @@ type UpdateMemberRoleInput struct {
 }
 
 // UpdateMemberRole updates a member's role.
-func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID string, input UpdateMemberRoleInput, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+// getOwnMembership fetches a membership and verifies it belongs to the caller's
+// tenant (callerTenantID, from the audit context / route tenant). Returns
+// ErrNotFound on any mismatch or missing tenant — anti-enumeration — so a
+// tenant admin cannot manage members of another tenant via a guessed
+// membership ID.
+func (s *TenantService) getOwnMembership(ctx context.Context, membershipID, callerTenantID string) (*tenantdom.Membership, error) {
 	parsedID, err := shared.IDFromString(membershipID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
 	}
-
 	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	if callerTenantID == "" || membership.TenantID().String() != callerTenantID {
+		return nil, shared.ErrNotFound
+	}
+	return membership, nil
+}
+
+func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID string, input UpdateMemberRoleInput, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
+	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -590,12 +607,7 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 
 // RemoveMember removes a member from a tenant.
 func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
-	parsedID, err := shared.IDFromString(membershipID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
-	}
-
-	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
 		return err
 	}
@@ -608,7 +620,7 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
 
-	if err := s.repo.DeleteMembership(ctx, parsedID); err != nil {
+	if err := s.repo.DeleteMembership(ctx, membership.ID()); err != nil {
 		return err
 	}
 
@@ -657,19 +669,23 @@ func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, a
 // immediately revoked: sessions are invalidated, permission cache
 // cleared, and JWT exchange should check membership status.
 func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
-	parsedID, err := shared.IDFromString(membershipID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
-	}
-
-	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
 		return err
 	}
 
-	actorID, err := shared.IDFromString(actx.ActorID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
+	// A system-initiated suspension (e.g. SCIM deprovisioning) has no human
+	// actor. Treat an empty ActorID as system → a zero suspended_by, which the
+	// repo persists as NULL (writing the all-zeros UUID would violate the
+	// suspended_by → users(id) FK). A non-empty but malformed ActorID is still
+	// rejected.
+	var actorID shared.ID
+	if actx.ActorID != "" {
+		parsed, perr := shared.IDFromString(actx.ActorID)
+		if perr != nil {
+			return fmt.Errorf("%w: invalid acting user id", shared.ErrValidation)
+		}
+		actorID = parsed
 	}
 
 	if err := membership.Suspend(actorID); err != nil {
@@ -735,12 +751,7 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 
 // ReactivateMember restores a suspended member's access.
 func (s *TenantService) ReactivateMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
-	parsedID, err := shared.IDFromString(membershipID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid membership id format", shared.ErrValidation)
-	}
-
-	membership, err := s.repo.GetMembershipByID(ctx, parsedID)
+	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
 		return err
 	}

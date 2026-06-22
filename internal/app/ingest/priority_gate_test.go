@@ -259,10 +259,6 @@ func TestPriorityGate_FilterProperties_FeatureOffReturnsInputUnchanged(t *testin
 	incoming := map[string]any{"a": 1, "b": 2}
 	allowed, skipped := g.FilterProperties(settings, src, incoming, nil)
 
-	// Same map reference — zero-allocation happy path.
-	if &allowed == &incoming { // can't compare maps by pointer directly
-		// fallthrough; documented invariant is "same map contents"
-	}
 	if len(allowed) != 2 {
 		t.Errorf("expected pass-through of 2 entries, got %d", len(allowed))
 	}

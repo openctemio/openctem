@@ -277,7 +277,7 @@ func TestBulkAssignAssets_Success(t *testing.T) {
 		OwnershipType: "primary",
 	}
 
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestBulkAssignAssets_AllOwnershipTypes(t *testing.T) {
 				OwnershipType: ot,
 			}
 
-			result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+			result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
 			if err != nil {
 				t.Fatalf("expected no error for ownership type %s, got: %v", ot, err)
 			}
@@ -421,7 +421,7 @@ func TestBulkAssignAssets_MixedValidInvalidAssetIDs(t *testing.T) {
 		OwnershipType: "primary",
 	}
 
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error (partial success), got: %v", err)
 	}
@@ -486,7 +486,7 @@ func TestBulkAssignAssets_RefreshErrorNonBlocking(t *testing.T) {
 	}
 
 	// Refresh errors should NOT block the bulk assign operation
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("refresh errors should not block, got: %v", err)
 	}
@@ -537,7 +537,7 @@ func TestBulkAssignAssets_LargeDataset(t *testing.T) {
 		OwnershipType: "secondary",
 	}
 
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error for 100 assets, got: %v", err)
 	}
@@ -567,7 +567,7 @@ func TestBulkAssignAssets_PartialBulkInsert(t *testing.T) {
 		OwnershipType: "primary",
 	}
 
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -598,7 +598,7 @@ func TestAssignAsset_UsesIncrementalRefresh(t *testing.T) {
 		OwnershipType: "primary",
 	}
 
-	err := svc.AssignAsset(context.Background(), input, shared.NewID(), app.AuditContext{})
+	err := svc.AssignAsset(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -627,7 +627,7 @@ func TestAssignAsset_RefreshErrorNonBlocking(t *testing.T) {
 	}
 
 	// Refresh error should NOT block the assign operation
-	err := svc.AssignAsset(context.Background(), input, shared.NewID(), app.AuditContext{})
+	err := svc.AssignAsset(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("refresh error should not block assign, got: %v", err)
 	}
@@ -651,7 +651,7 @@ func TestUnassignAsset_UsesIncrementalRefresh(t *testing.T) {
 		AssetID: shared.NewID().String(),
 	}
 
-	err := svc.UnassignAsset(context.Background(), input, app.AuditContext{})
+	err := svc.UnassignAsset(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -678,7 +678,7 @@ func TestUnassignAsset_RefreshErrorNonBlocking(t *testing.T) {
 		AssetID: shared.NewID().String(),
 	}
 
-	err := svc.UnassignAsset(context.Background(), input, app.AuditContext{})
+	err := svc.UnassignAsset(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("refresh error should not block unassign, got: %v", err)
 	}
@@ -705,7 +705,7 @@ func TestAddMember_UsesIncrementalRefresh(t *testing.T) {
 		Role:    "member",
 	}
 
-	_, err := svc.AddMember(context.Background(), input, app.AuditContext{})
+	_, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -734,7 +734,7 @@ func TestAddMember_RefreshErrorNonBlocking(t *testing.T) {
 		Role:    "member",
 	}
 
-	_, err := svc.AddMember(context.Background(), input, app.AuditContext{})
+	_, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("refresh error should not block member add, got: %v", err)
 	}
@@ -764,7 +764,7 @@ func TestRemoveMember_UsesIncrementalRefresh(t *testing.T) {
 	ownerMember, _ := group.NewMember(g.ID(), ownerID, group.MemberRoleOwner, nil)
 	groupRepo.members[g.ID()] = []*group.Member{ownerMember, member}
 
-	err := svc.RemoveMember(context.Background(), g.ID().String(), memberID, app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), g.ID().String(), memberID, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}

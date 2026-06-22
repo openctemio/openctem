@@ -36,7 +36,7 @@ func BodyLimit(maxBytes int64) func(http.Handler) http.Handler {
 	}
 }
 
-// BodyLimitHandler is an error handler for body limit exceeded.
+// HandleBodyLimitError is an error handler for body limit exceeded.
 // Use this in your error handling middleware to catch http.MaxBytesError.
 func HandleBodyLimitError(w http.ResponseWriter, _ *http.Request) {
 	apierror.New(http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE",

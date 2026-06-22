@@ -128,8 +128,9 @@ func (p *GeminiProvider) Complete(ctx context.Context, req CompletionRequest) (*
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Build API URL with model and API key
-	apiURL := fmt.Sprintf("%s%s:generateContent?key=%s", geminiAPIURLBase, p.model, p.apiKey)
+	// Build API URL with model. The API key goes in the x-goog-api-key header,
+	// never in the query string (URLs are logged by proxies/trace tooling).
+	apiURL := fmt.Sprintf("%s%s:generateContent", geminiAPIURLBase, p.model)
 
 	// Create HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(jsonBody))
@@ -138,6 +139,7 @@ func (p *GeminiProvider) Complete(ctx context.Context, req CompletionRequest) (*
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-goog-api-key", p.apiKey)
 
 	// Execute with retries
 	var resp *http.Response
@@ -155,6 +157,7 @@ func (p *GeminiProvider) Complete(ctx context.Context, req CompletionRequest) (*
 			// Recreate request body reader for retry
 			httpReq, _ = http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(jsonBody))
 			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set("x-goog-api-key", p.apiKey)
 		}
 
 		resp, lastErr = p.httpClient.Do(httpReq)

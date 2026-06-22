@@ -223,6 +223,10 @@ func (r *OutboxRepository) FetchPendingBatch(ctx context.Context, workerID strin
 	if err != nil {
 		return nil, fmt.Errorf("query pending outbox: %w", err)
 	}
+	// scanOutboxRows does not close; close here like the other callers do.
+	// tx.Rollback() does NOT close an open *sql.Rows, so without this the
+	// connection leaks on every outbox poll cycle (the hottest query path).
+	defer func() { _ = rows.Close() }()
 
 	outboxes, err := r.scanOutboxRows(rows)
 	if err != nil {

@@ -100,6 +100,18 @@ func (i Input) ShouldAutoResolve() bool {
 	return coverageType == CoverageTypeFull && i.IsDefaultBranchScan()
 }
 
+// IsFullCoverage reports whether this is a full scan (covers the whole codebase),
+// regardless of which branch it ran on. Used to gate per-branch occurrence
+// auto-resolve: only a full scan can conclude that a no-longer-reported finding
+// is actually gone from that branch (an incremental/partial scan cannot).
+func (i Input) IsFullCoverage() bool {
+	coverageType := i.CoverageType
+	if coverageType == "" && i.Report != nil && i.Report.Metadata.CoverageType != "" {
+		coverageType = CoverageType(i.Report.Metadata.CoverageType)
+	}
+	return coverageType == CoverageTypeFull
+}
+
 // Output represents the result of ingestion.
 type Output struct {
 	ReportID             string   `json:"report_id"`
@@ -145,4 +157,26 @@ type CheckFingerprintsInput struct {
 type CheckFingerprintsOutput struct {
 	Existing []string `json:"existing"`
 	Missing  []string `json:"missing"`
+}
+
+// BaselineDiffInput asks which of the given fingerprints are NEW relative to a PR's
+// base/target branch — i.e. not already present (open) on that branch.
+type BaselineDiffInput struct {
+	// Repository is the repository asset name (e.g. "owner/repo").
+	Repository string `json:"repository"`
+	// BaseBranch is the PR/MR target branch (e.g. "main").
+	BaseBranch string `json:"base_branch"`
+	// Fingerprints are the findings from the current (source-branch) scan.
+	Fingerprints []string `json:"fingerprints"`
+}
+
+// BaselineDiffOutput reports which fingerprints are new vs the base branch.
+type BaselineDiffOutput struct {
+	// New are fingerprints NOT already open on the base branch (introduced by the PR).
+	New []string `json:"new_fingerprints"`
+	// PreExisting are fingerprints already open on the base branch (tech debt).
+	PreExisting []string `json:"pre_existing_fingerprints"`
+	// BaseBranchKnown is false when the base branch has no scan history yet
+	// (then everything is treated as new).
+	BaseBranchKnown bool `json:"base_branch_scanned"`
 }

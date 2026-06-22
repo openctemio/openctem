@@ -135,6 +135,9 @@ func (r *PipelineRunRepository) List(ctx context.Context, filter pipeline.RunFil
 		}
 		runs = append(runs, run)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(runs, total, page), nil
 }
@@ -242,6 +245,9 @@ func (r *PipelineRunRepository) GetActiveByPipelineID(ctx context.Context, pipel
 		}
 		runs = append(runs, run)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return runs, nil
 }
@@ -262,6 +268,9 @@ func (r *PipelineRunRepository) GetActiveByAssetID(ctx context.Context, assetID 
 			return nil, err
 		}
 		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return runs, nil
@@ -580,6 +589,9 @@ func (r *PipelineRunRepository) ListByScanID(ctx context.Context, scanID shared.
 			return nil, 0, err
 		}
 		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
 	}
 
 	return runs, total, nil
@@ -967,6 +979,9 @@ func (r *StepRunRepository) GetByPipelineRunID(ctx context.Context, pipelineRunI
 		}
 		stepRuns = append(stepRuns, sr)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return stepRuns, nil
 }
@@ -1025,6 +1040,9 @@ func (r *StepRunRepository) List(ctx context.Context, filter pipeline.StepRunFil
 			return nil, err
 		}
 		stepRuns = append(stepRuns, sr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return stepRuns, nil
@@ -1149,6 +1167,9 @@ func (r *StepRunRepository) GetPendingByDependencies(ctx context.Context, pipeli
 			return nil, err
 		}
 		stepRuns = append(stepRuns, sr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return stepRuns, nil

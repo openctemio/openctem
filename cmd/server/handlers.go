@@ -75,6 +75,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	commandHandler.SetPipelineService(svc.Pipeline)
 
+	// Ingest handler — opt into async mode (RFC-005) when configured. Default
+	// (sync) leaves the handler processing reports in-request as before.
+	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Agent, log)
+	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
+		ingestHandler.SetAsyncIngest(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
+		log.Info("async ingest enabled", "max_pending_per_tenant", cfg.Ingest.MaxPendingPerTenant)
+	}
+
 	// Tenant handler with role service and asset service wired.
 	// Exposed as a package-level var so main.go can back-wire the
 	// asset lifecycle worker after both handlers and workers are
@@ -93,6 +101,18 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
+	if svc.PriorityClassification != nil {
+		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
+	}
+
+	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
+	// secondary provider on the same create-ticket endpoint.
+	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, log)
+	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
+
+	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
+	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
+	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
 
 	handlers := routes.Handlers{
 		// Health
@@ -125,21 +145,28 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
-		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, log),
+		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log),
 		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
 
 		// Vulnerabilities & Exposures
-		Vulnerability:    vulnHandler,
-		FindingActivity:  handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
-		FindingActions:   handler.NewFindingActionsHandler(svc.FindingActions, log),
-		JiraWebhook:      handler.NewJiraWebhookHandler(svc.JiraSync, log),
-		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
-		ThreatIntel:      handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
-		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
+		Vulnerability:             vulnHandler,
+		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		FindingActions:            handler.NewFindingActionsHandler(svc.FindingActions, log),
+		JiraWebhook:               jiraWebhookHandler,
+		JiraWebhookSecretResolver: svc.Integration,
+		GitHubWebhook:             githubWebhookHandler,
+		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
+		ThreatIntel:               handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
+		CredentialImport:          handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
 		Dashboard: handler.NewDashboardHandler(svc.Dashboard, log),
-		Branch:    handler.NewBranchHandler(svc.Branch, v, log),
+		Branch: func() *handler.BranchHandler {
+			h := handler.NewBranchHandler(svc.Branch, v, log)
+			// S-2: wire AssetService so branch handler can verify repo ownership.
+			h.SetAssetService(svc.Asset)
+			return h
+		}(),
 
 		// Integration
 		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),
@@ -147,9 +174,21 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Agents & Commands
 		Command:          commandHandler,
 		Agent:            newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
-		Ingest:           handler.NewIngestHandler(svc.Ingest, svc.Agent, log),
+		Ingest:           ingestHandler,
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),
+		Validation:       handler.NewValidationHandler(svc.ValidationEvidence, log),
+		SCIM: func() *handler.SCIMHandler {
+			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
+			h.SetGroupService(svc.SCIMGroups)
+			return h
+		}(),
+		SCIMToken: func() *handler.SCIMTokenHandler {
+			h := handler.NewSCIMTokenHandler(svc.SCIMToken, log)
+			h.SetGroupService(svc.SCIMGroups)
+			return h
+		}(),
+		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
@@ -160,7 +199,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Tool:            handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
 		Capability:      handler.NewCapabilityHandler(svc.Capability, v, log),
-		Scan:            handler.NewScanHandler(svc.Scan, repos.User, v, log),
+		Scan:            handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CI:              handler.NewCIHandler(svc.Scan, log),
 		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
 
@@ -172,7 +211,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Pentest Campaign Management
 		Pentest: func() *handler.PentestHandler {
-			h := handler.NewPentestHandler(svc.Pentest, repos.User, log)
+			h := handler.NewPentestHandler(svc.Pentest, repos.User, v, log)
 			h.SetImportService(app.NewFindingImportService(repos.Finding, log))
 			return h
 		}(),
@@ -263,7 +302,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
 
 		// WebSocket for real-time communication
-		WebSocket: websocket.NewHandler(deps.WebSocketHub, log),
+		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
 
 		// F-8: wire the single-use ticket redeemer when configured so the
 		// /ws route uses ticket auth instead of the JWT chain.
@@ -273,6 +312,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// SSO handler (always initialized - uses DB-stored provider configs)
 	if svc.SSO != nil {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
+	}
+
+	// SAML SP handler (RFC-009 9d): metadata + per-tenant config CRUD.
+	if svc.SAML != nil {
+		handlers.SAML = handler.NewSAMLHandler(svc.SAML, log)
 	}
 
 	return handlers

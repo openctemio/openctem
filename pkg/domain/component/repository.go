@@ -56,6 +56,36 @@ type Repository interface {
 
 	// GetLicenseStats retrieves license statistics for a tenant.
 	GetLicenseStats(ctx context.Context, tenantID shared.ID) ([]LicenseStats, error)
+
+	// ListAssetUsage retrieves the assets that use a given global component
+	// (blast-radius reverse lookup). Joins asset_components × assets,
+	// scoped to the tenant. Returns empty result when the component is not
+	// used by any asset of this tenant.
+	//
+	// When atRiskOnly is true, only assets that have at least one open
+	// finding (status in new/confirmed/in_progress) for this component are
+	// returned. Default false → returns every asset using the component
+	// regardless of vulnerability status (full SBOM view).
+	ListAssetUsage(
+		ctx context.Context,
+		tenantID shared.ID,
+		componentID shared.ID,
+		atRiskOnly bool,
+		page pagination.Pagination,
+	) (pagination.Result[ComponentAssetUsage], error)
+
+	// ListVulnerabilities returns the CVEs that affect a global component
+	// within the given tenant. Aggregates findings GROUP BY vulnerability_id
+	// so a CVE appearing on multiple assets returns one row with
+	// affected_assets_count rolled up. When includeResolved is false, only
+	// open-status findings (new/confirmed/in_progress) count toward the row
+	// but the CVE is still included if at least one open finding exists.
+	ListVulnerabilities(
+		ctx context.Context,
+		tenantID, componentID shared.ID,
+		includeResolved bool,
+		page pagination.Pagination,
+	) (pagination.Result[ComponentVulnerability], error)
 }
 
 // Filter defines criteria for filtering components.

@@ -266,7 +266,7 @@ func (r *AssetStateHistoryRepository) GetLatestByAsset(ctx context.Context, tena
 		SELECT DISTINCT ON (h.asset_id)
 			h.id, h.tenant_id, h.asset_id,
 			h.change_type, h.field, h.old_value, h.new_value,
-			h.reason, h.source, h.changed_by, h.changed_at
+			h.reason, h.metadata, h.source, h.changed_by, h.changed_at, h.created_at
 		FROM asset_state_history h
 		WHERE h.tenant_id = $1 %s
 		ORDER BY h.asset_id, h.changed_at DESC
@@ -338,7 +338,7 @@ func (r *AssetStateHistoryRepository) GetShadowITCandidates(ctx context.Context,
 		SELECT
 			h.id, h.tenant_id, h.asset_id,
 			h.change_type, h.field, h.old_value, h.new_value,
-			h.reason, h.source, h.changed_by, h.changed_at
+			h.reason, h.metadata, h.source, h.changed_by, h.changed_at, h.created_at
 		FROM asset_state_history h
 		JOIN assets a ON h.asset_id = a.id
 		WHERE h.tenant_id = $1

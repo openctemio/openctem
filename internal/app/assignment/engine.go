@@ -1,3 +1,4 @@
+// Package assignment implements the application service for the assignment bounded context — orchestrates pkg/domain/assignment entities and cross-cutting concerns (audit, notifications, RBAC).
 package assignment
 
 import (

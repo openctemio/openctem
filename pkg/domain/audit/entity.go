@@ -1,3 +1,4 @@
+// Package audit provides public types and helpers reusable across the codebase.
 package audit
 
 import (

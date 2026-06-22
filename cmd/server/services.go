@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"time"
+
 	"github.com/openctemio/api/internal/app/apikey"
 	"github.com/openctemio/api/internal/app/assignment"
 	"github.com/openctemio/api/internal/app/command"
 	"github.com/openctemio/api/internal/app/scope"
 	"github.com/openctemio/api/internal/app/threat"
 	"github.com/openctemio/api/internal/app/tool"
-	"time"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/attack"
@@ -22,10 +23,14 @@ import (
 	"github.com/openctemio/api/internal/app/pipeline"
 	"github.com/openctemio/api/internal/app/reclassify"
 	"github.com/openctemio/api/internal/app/scan"
+	"github.com/openctemio/api/internal/app/scim"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/app/template"
+	"github.com/openctemio/api/internal/app/ticketing"
+	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
+	infrajira "github.com/openctemio/api/internal/infra/jira"
 	"github.com/openctemio/api/internal/infra/jobs"
 	"github.com/openctemio/api/internal/infra/llm"
 	"github.com/openctemio/api/internal/infra/postgres"
@@ -34,11 +39,27 @@ import (
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/attachment"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// findingMutatorAdapter adapts the postgres FindingRepository (GetByID) to the
+// validation.FindingMutator interface (Get) used by the evidence-ingest path.
+type findingMutatorAdapter struct {
+	repo *postgres.FindingRepository
+}
+
+func (a findingMutatorAdapter) Get(ctx context.Context, tenantID, findingID shared.ID) (*vulnerability.Finding, error) {
+	return a.repo.GetByID(ctx, tenantID, findingID)
+}
+
+func (a findingMutatorAdapter) Update(ctx context.Context, f *vulnerability.Finding) error {
+	return a.repo.Update(ctx, f)
+}
 
 // wsHubBroadcaster adapts websocket.Hub to app.ActivityBroadcaster and app.TriageBroadcaster interfaces.
 type wsHubBroadcaster struct {
@@ -222,6 +243,10 @@ type Services struct {
 	// Attack Simulation & Control Testing
 	Simulation *app.SimulationService
 
+	// Validation (CTEM Stage-4): proof-of-fix / technique-execution evidence
+	// recorded by agents, reconciling finding status from the outcome.
+	ValidationEvidence *validation.EvidenceIngestService
+
 	// Threat Actor Intelligence
 	ThreatActor *threat.ActorService
 
@@ -237,6 +262,9 @@ type Services struct {
 
 	// Jira Bidirectional Sync
 	JiraSync *jira.SyncService
+
+	// GitHub Issues ticket provider (create-from-finding + link only)
+	GitHubTicket *ticketing.GitHubTicketService
 
 	// AI Triage
 	AITriage *app.AITriageService
@@ -258,6 +286,44 @@ type Services struct {
 
 	// SSO
 	SSO *app.SSOService
+
+	// SAML 2.0 SP (RFC-009 9d/9e)
+	SAML *app.SAMLService
+
+	// SCIM 2.0 provisioning (RFC-009)
+	SCIMToken        *scim.TokenService
+	SCIMProvisioning *scim.ProvisioningService
+	SCIMGroups       *scim.GroupService
+}
+
+// scimMembershipAdapter adapts TenantService to scim.MembershipManager, injecting
+// a system audit context so SCIM-driven membership changes go through the full
+// lifecycle (session revoke + permission-cache clear + audit).
+type scimMembershipAdapter struct {
+	svc *app.TenantService
+}
+
+func scimAuditContext(tenantID shared.ID) app.AuditContext {
+	return app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}
+}
+
+func (a scimMembershipAdapter) AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error {
+	_, err := a.svc.AddMember(ctx, tenantID.String(), app.AddMemberInput{UserID: userID, Role: role}, shared.ID{}, scimAuditContext(tenantID))
+	return err
+}
+
+func (a scimMembershipAdapter) SuspendMember(ctx context.Context, tenantID, membershipID shared.ID) error {
+	return a.svc.SuspendMember(ctx, membershipID.String(), scimAuditContext(tenantID))
+}
+
+func (a scimMembershipAdapter) ReactivateMember(ctx context.Context, tenantID, membershipID shared.ID) error {
+	return a.svc.ReactivateMember(ctx, membershipID.String(), scimAuditContext(tenantID))
+}
+
+// UpdateMemberRole satisfies scim.RoleManager for SCIM group → role mapping.
+func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, membershipID shared.ID, role string) error {
+	_, err := a.svc.UpdateMemberRole(ctx, membershipID.String(), app.UpdateMemberRoleInput{Role: role}, scimAuditContext(tenantID))
+	return err
 }
 
 // ServiceDeps contains dependencies needed to create services.
@@ -306,6 +372,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// endpoint can write lifecycle_paused_until without going
 	// through the full load-modify-save path.
 	s.Asset.SetLifecycleRepository(repos.Asset)
+	s.Asset.SetStateHistoryRepository(repos.AssetStateHistory)
 
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
@@ -325,8 +392,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 
 	// Initialize component & branch services
-	s.Component = app.NewComponentService(repos.Component, log)
-	s.SBOMImport = app.NewSBOMImportService(repos.Component, log)
+	s.Component = app.NewComponentService(repos.Component, repos.Asset, log)
+	s.SBOMImport = app.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
 	s.Branch = app.NewBranchService(repos.Branch, log)
 
@@ -455,9 +522,22 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize Compliance service
 	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
+
+	// Validation (CTEM Stage-4): agents POST proof-of-fix / technique evidence,
+	// which is persisted (redacted) and reconciled into finding status.
+	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
+	s.ValidationEvidence = validation.NewEvidenceIngestService(
+		evidenceStore,
+		findingMutatorAdapter{repo: repos.Finding},
+		nil, // retest notifier: optional; status revert still happens without it
+		log,
+	)
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
-	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, log)
+	// Wire the finding counter so campaign progress (finding_count/resolved_count/
+	// progress) is computed from live finding data instead of staying at zero.
+	s.RemediationCampaign.SetFindingCounter(repos.Finding)
+	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 
 	s.Compliance = app.NewComplianceService(
 		repos.ComplianceFramework, repos.ComplianceControl,
@@ -508,12 +588,42 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (dev only; production startup already refuses this above).
 	s.APIKey = apikey.NewService(repos.APIKey, cfg.Encryption.Key, log)
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
-	s.JiraSync = jira.NewSyncService(repos.Finding, nil, log) // nil = Jira client configured via integration settings
+
+	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
+	s.SCIMToken = scim.NewTokenService(repos.ScimToken, cfg.Encryption.Key, log)
+	s.SCIMProvisioning = scim.NewProvisioningService(
+		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
+	)
+	s.SCIMGroups = scim.NewGroupService(
+		repos.ScimGroup, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
+	)
+	// Outbound Jira ticketing resolves a client per tenant from that tenant's
+	// connected ticketing integration (base URL + decrypted credentials). The
+	// static client stays nil; the resolver is the production path (mirrors the
+	// per-tenant SMTP resolver). Without this wire, create-ticket is inert.
+	s.JiraSync = jira.NewSyncService(repos.Finding, nil, log)
+	jiraResolver := infrajira.NewIntegrationClientResolver(repos.Integration, s.Encryptor, log)
+	s.JiraSync.SetClientResolver(jiraResolver)
+	// Same resolver also surfaces the per-tenant status maps for outbound sync.
+	s.JiraSync.SetMappingResolver(jiraResolver)
+	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
+	// persistence; JiraSync provides the per-tenant epic create. Both deps set
+	// here (JiraSync is created after the campaign service above).
+	if s.RemediationCampaign != nil {
+		s.RemediationCampaign.SetTicketing(repos.RemediationCampaignTicket, s.JiraSync)
+		// Inbound: a Jira webhook moving the campaign's epic to Done completes
+		// the campaign (the reverse of the outbound transition above).
+		s.JiraSync.SetCampaignSink(s.RemediationCampaign)
+	}
+	// GitHub Issues as a 2nd finding-ticket provider (selected per create-ticket
+	// request); resolves the tenant's GitHub integration credentials on demand.
+	s.GitHubTicket = ticketing.NewGitHubTicketService(repos.Finding, repos.Integration, s.Encryptor, log)
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
+	s.Integration.SetRepoImportRepos(repos.Asset, repos.RepoExt, repos.Branch)
 
 	s.Outbox = outbox.NewService(
 		repos.Outbox,
@@ -543,17 +653,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Agent, repos.Branch, repos.Tenant, repos.Audit, log)
-	s.Ingest.SetDataFlowRepository(repos.DataFlow)              // Wire data flow persistence
-	s.Ingest.SetComponentRepository(repos.Component)            // Wire component linking for SCA findings
-	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)    // Wire repository extension for auto web_url
-	s.Ingest.SetRelationshipRepository(repos.AssetRelationship) // Wire subdomain-to-domain relationships
-	s.Ingest.SetActivityService(s.FindingActivity)              // Wire activity logging for auto-resolve/reopen
+	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
+	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
+	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
+	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
+	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
+	s.Ingest.SetActivityService(s.FindingActivity)                   // Wire activity logging for auto-resolve/reopen
 	// Wire IP correlation for host dedup (RFC-001)
 	// System defaults; per-tenant overrides come from tenant settings at ingest time
 	s.Ingest.SetCorrelator(ingest.NewAssetCorrelator(repos.Asset, log, ingest.CorrelationConfig{
 		StaleAssetDays: 30,
 		MaxIPsPerAsset: 20,
 	}))
+	// Enqueue an admin dedup review when correlation finds multiple existing
+	// assets sharing identity (RFC-001) — populates the previously-empty queue.
+	s.Ingest.SetDedupEnqueuer(repos.AssetDedup)
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
@@ -780,6 +894,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithRoleAuditService(s.Audit),
 		app.WithRolePermissionVersionService(s.PermVersion),
 		app.WithRolePermissionCacheService(s.PermCache),
+		app.WithRoleMembershipReader(s.MembershipCache),
 	)
 
 	// Wire permission services to tenant service
@@ -898,6 +1013,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log,
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
+
+	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
+	s.SAML = app.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
 }
 
 // InitEmailServices initializes email-related services.
@@ -990,7 +1108,9 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 }
 
 // NewJobWorker creates a new job worker for processing background jobs.
-func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, log *logger.Logger) (*jobs.Worker, error) {
+// jiraSyncer (optional) handles outbound Jira status-sync tasks; pass nil to
+// disable that handler.
+func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
 	if emailService == nil {
 		return nil, nil
 	}
@@ -1007,6 +1127,12 @@ func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageSe
 	var opts []jobs.WorkerOption
 	if aiTriageService != nil {
 		opts = append(opts, jobs.WithAITriageProcessor(aiTriageService))
+	}
+	if jiraSyncer != nil {
+		opts = append(opts, jobs.WithJiraStatusSyncer(jiraSyncer))
+	}
+	if githubSyncer != nil {
+		opts = append(opts, jobs.WithGitHubStatusSyncer(githubSyncer))
 	}
 
 	worker, err := jobs.NewWorker(workerCfg, emailService, log, opts...)

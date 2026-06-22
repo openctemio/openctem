@@ -21,6 +21,10 @@ type Repository interface {
 	// Used by background jobs that need to process data across all tenants.
 	ListActiveTenantIDs(ctx context.Context) ([]shared.ID, error)
 
+	// CreateWithOwner atomically creates a tenant and its owner membership in a
+	// single transaction (all-or-nothing — no orphan tenant if membership fails).
+	CreateWithOwner(ctx context.Context, t *Tenant, membership *Membership) error
+
 	// Membership operations
 	CreateMembership(ctx context.Context, membership *Membership) error
 	GetMembership(ctx context.Context, userID shared.ID, tenantID shared.ID) (*Membership, error)

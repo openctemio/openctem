@@ -137,6 +137,9 @@ func (r *TenantToolConfigRepository) List(ctx context.Context, filter tool.Tenan
 		}
 		configs = append(configs, c)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(configs, total, page), nil
 }
@@ -337,6 +340,9 @@ func (r *TenantToolConfigRepository) ListEnabledTools(ctx context.Context, tenan
 		}
 		configs = append(configs, c)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return configs, nil
 }
@@ -499,6 +505,9 @@ func (r *TenantToolConfigRepository) ListToolsWithConfig(
 			return result, err
 		}
 		items = append(items, twc)
+	}
+	if err := rows.Err(); err != nil {
+		return result, err
 	}
 
 	return pagination.NewResult(items, total, page), nil

@@ -4,7 +4,6 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/openctemio/api/internal/config"
 	redisinfra "github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -178,31 +178,29 @@ func RateLimit(cfg *config.RateLimitConfig, log *logger.Logger) func(http.Handle
 }
 
 // getClientIP extracts the real client IP from the request.
-// Note: In production behind a trusted proxy, configure your proxy
-// to set X-Real-IP or the rightmost X-Forwarded-For IP.
+//
+// SECURITY (S-4): Forwarding headers (X-Real-IP, X-Forwarded-For) are
+// honored ONLY when the immediate TCP peer (r.RemoteAddr) is in the
+// configured trusted-proxy CIDR allowlist. Without this guard, attackers
+// could spoof IPs to defeat the per-IP rate limit and corrupt audit
+// logging on login / password-reset flows.
+//
+// trustedProxies is package-level state populated once at startup via
+// SetTrustedProxies. When unset (e.g. tests, no SERVER_TRUSTED_PROXIES),
+// only r.RemoteAddr is trusted — which is correct for direct-Internet
+// deployments.
 func getClientIP(r *http.Request) string {
-	// Check X-Real-IP header (typically set by nginx)
-	if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
-		return strings.TrimSpace(xrip)
-	}
+	return httpsec.ClientIP(r, trustedProxies)
+}
 
-	// Check X-Forwarded-For header
-	// Warning: This can be spoofed if not behind a trusted proxy
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the list (client IP)
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
+// trustedProxies is wired by cmd/server during init. It can stay nil for
+// tests / direct-Internet deployments — ClientIP falls back to r.RemoteAddr.
+var trustedProxies *httpsec.TrustedProxySet //nolint:gochecknoglobals // set once at startup
 
-	// Fall back to RemoteAddr
-	// Remove port if present
-	ip := r.RemoteAddr
-	if idx := strings.LastIndex(ip, ":"); idx != -1 {
-		return ip[:idx]
-	}
-	return ip
+// SetTrustedProxies configures the package-level trusted-proxy set used by
+// rate-limit and audit-log paths. Call once during server bootstrap.
+func SetTrustedProxies(set *httpsec.TrustedProxySet) {
+	trustedProxies = set
 }
 
 // DistributedRateLimitConfig configures the distributed rate limit middleware.

@@ -303,6 +303,14 @@ func (p *FindingProcessor) ProcessBatch(
 
 	// Step 4: Batch create new findings with partial success support
 	if len(newFindings) > 0 {
+		// Enrich BEFORE inserting so EPSS/KEV/priority/SLA are written by the
+		// initial INSERT. Previously this ran after the batch insert and then
+		// issued one UPDATE per finding to persist the enriched fields — N
+		// extra round-trips on the hottest ingest path. Enrichment is pure
+		// in-memory computation (catalog/rule lookups), so it does not depend
+		// on the findings being persisted first.
+		p.enrichAndClassify(ctx, tenantID, newFindings)
+
 		result, err := p.repo.CreateBatchWithResult(ctx, newFindings)
 		if err != nil {
 			// Fatal error - could not process any findings
@@ -351,48 +359,9 @@ func (p *FindingProcessor) ProcessBatch(
 				p.persistDataFlows(ctx, newFindings)
 			}
 
-			// Step 4c: Enrich with EPSS/KEV + classify priority (RFC-004)
-			if p.priorityClassifier != nil && result.Created > 0 {
-				createdForEnrich := make([]*vulnerability.Finding, 0, result.Created)
-				for i, f := range newFindings {
-					if result.Errors == nil || result.Errors[i] == "" {
-						createdForEnrich = append(createdForEnrich, f)
-					}
-				}
-				if len(createdForEnrich) > 0 {
-					// Build asset map for classification context.
-					// Uses dedup map so each unique asset is fetched once.
-					// Typical batch has 1-5 unique assets — acceptable for now.
-					assetMap := make(map[shared.ID]*asset.Asset)
-					for _, f := range createdForEnrich {
-						if _, ok := assetMap[f.AssetID()]; !ok {
-							a, err := p.assetRepo.GetByID(ctx, tenantID, f.AssetID())
-							if err == nil {
-								assetMap[f.AssetID()] = a
-							}
-						}
-					}
-					if err := p.priorityClassifier.EnrichAndClassifyBatch(ctx, tenantID, createdForEnrich, assetMap); err != nil {
-						p.logger.Warn("priority classification failed", "error", err)
-					} else {
-						// F3 wire: apply SLA deadline now that priority
-						// class is set. Failure is non-fatal — findings
-						// persist without a deadline and the SLA
-						// escalation controller surfaces them as NULL.
-						if p.slaApplier != nil {
-							if err := p.slaApplier.ApplyBatch(ctx, tenantID, createdForEnrich); err != nil {
-								p.logger.Warn("sla deadline apply failed", "error", err)
-							}
-						}
-						// Persist enriched findings (update EPSS/KEV/priority/SLA fields)
-						for _, f := range createdForEnrich {
-							if updateErr := p.repo.Update(ctx, f); updateErr != nil {
-								p.logger.Warn("failed to persist enriched finding", "id", f.ID(), "error", updateErr)
-							}
-						}
-					}
-				}
-			}
+			// Enrichment (EPSS/KEV/priority/SLA) is applied before the insert
+			// above, so the created rows already carry those fields — no
+			// post-insert UPDATE pass is needed here.
 
 			// Step 4d: Trigger workflow events for newly created findings
 			if p.findingCreatedCallback != nil && result.Created > 0 {
@@ -470,6 +439,37 @@ func (p *FindingProcessor) ProcessBatch(
 		}
 	}
 
+	// Step 6: Branch-aware occurrence model. Record, per branch, where each
+	// finding was observed in this scan. Matched by fingerprint so it covers
+	// both newly-created and enriched findings, and is additive to the finding
+	// row (which keeps its branch-independent identity). Best-effort: a failure
+	// here must not fail the ingest.
+	reportCommit := ""
+	if report.Metadata.Branch != nil {
+		reportCommit = report.Metadata.Branch.CommitSHA
+	}
+	occurrences := make([]vulnerability.BranchOccurrenceUpsert, 0, len(validFindings))
+	for _, fm := range validFindings {
+		if fm.branchID == nil {
+			continue
+		}
+		commit := reportCommit
+		if commit == "" && fm.finding.Location != nil {
+			commit = fm.finding.Location.CommitSHA
+		}
+		occurrences = append(occurrences, vulnerability.BranchOccurrenceUpsert{
+			Fingerprint: fm.fingerprint,
+			BranchID:    *fm.branchID,
+			ScanID:      report.Metadata.ID,
+			CommitSHA:   commit,
+		})
+	}
+	if len(occurrences) > 0 {
+		if err := p.repo.UpsertBranchOccurrences(ctx, tenantID, occurrences); err != nil {
+			p.logger.Warn("failed to record branch occurrences", "error", err, "count", len(occurrences))
+		}
+	}
+
 	return nil
 }
 
@@ -530,14 +530,41 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 			input.FilePath = ctisFinding.Location.Path
 			input.StartLine = ctisFinding.Location.StartLine
 			input.EndLine = ctisFinding.Location.EndLine
+			input.StartColumn = ctisFinding.Location.StartColumn
+			input.EndColumn = ctisFinding.Location.EndColumn
 		}
 
-		// Add CVE for SCA findings
-		if ctisFinding.Vulnerability != nil && ctisFinding.Vulnerability.CVEID != "" {
-			input.VulnerabilityID = ctisFinding.Vulnerability.CVEID
+		// Populate type-specific fields so fingerprint.Generate selects the
+		// correct type-aware algorithm (see fingerprint.DetectType). Without
+		// these, every finding fell back to the generic algorithm, which both
+		// false-merged distinct SCA/secret findings and churned fingerprints
+		// across scans when incidental fields (line numbers, messages) shifted.
+		if v := ctisFinding.Vulnerability; v != nil {
+			input.PackageName = v.Package
+			input.PackageVersion = v.AffectedVersion
+			if v.CVEID != "" {
+				input.VulnerabilityID = v.CVEID
+			}
+		}
+		if s := ctisFinding.Secret; s != nil {
+			// MaskedValue is stable per-secret and carries no plaintext.
+			input.SecretValue = s.MaskedValue
+		}
+		if m := ctisFinding.Misconfiguration; m != nil {
+			input.ResourceType = m.ResourceType
+			input.ResourceName = m.ResourceName
+		}
+		if w := ctisFinding.Web3; w != nil {
+			input.ContractAddress = w.ContractAddress
+			input.ChainID = int(w.ChainID)
+			input.SWCID = w.SWCID
+			input.FunctionSignature = w.FunctionSignature
 		}
 
-		baseFingerprint = fingerprint.Generate(input)
+		// GenerateAuto detects the type from the populated fields above and
+		// applies the matching type-aware algorithm (plain Generate would key
+		// everything by the generic location-based scheme).
+		baseFingerprint = fingerprint.GenerateAuto(input)
 	}
 
 	// Create composite fingerprint including assetID
@@ -795,6 +822,12 @@ func (p *FindingProcessor) setFindingTypeAndSpecializedFields(f *vulnerability.F
 	switch findingType {
 	case vulnerability.FindingTypeSecret:
 		p.setSecretFields(f, ctisFinding)
+		// SECURITY: for a secret finding the raw code snippet / context is the
+		// leaked credential's source line. Never persist it in cleartext —
+		// replace it with the masked value (or a generic placeholder) so the DB
+		// and any snippet rendering cannot expose the secret. The scanner is
+		// expected to pre-mask, but we redact server-side as defense in depth.
+		p.redactSecretSnippet(f)
 	case vulnerability.FindingTypeCompliance:
 		p.setComplianceFields(f, ctisFinding)
 	case vulnerability.FindingTypeWeb3:
@@ -802,6 +835,19 @@ func (p *FindingProcessor) setFindingTypeAndSpecializedFields(f *vulnerability.F
 	case vulnerability.FindingTypeMisconfiguration:
 		p.setMisconfigFields(f, ctisFinding)
 	}
+}
+
+// redactSecretSnippet strips the raw code snippet/context from a secret finding
+// so the live credential is never persisted in cleartext. The masked value is
+// kept as the only snippet representation; if none is available a generic
+// placeholder is used.
+func (p *FindingProcessor) redactSecretSnippet(f *vulnerability.Finding) {
+	if masked := f.SecretMaskedValue(); masked != "" {
+		f.SetSnippet(masked)
+	} else {
+		f.SetSnippet("[redacted secret]")
+	}
+	f.SetContextSnippet("")
 }
 
 // inferFindingType determines the FindingType based on source and CTIS finding data.
@@ -1301,26 +1347,21 @@ func (p *FindingProcessor) getOrCreateBranch(ctx context.Context, repositoryID s
 	// Try to find existing branch by name
 	existingBranch, err := p.branchRepo.GetByName(ctx, repositoryID, branchInfo.Name)
 	if err == nil && existingBranch != nil {
-		// Branch exists - batch updates into a single write
-		needsUpdate := false
-
 		if branchInfo.CommitSHA != "" && branchInfo.CommitSHA != existingBranch.LastCommitSHA() {
 			existingBranch.UpdateLastCommit(branchInfo.CommitSHA, "", "", "", time.Now().UTC())
-			needsUpdate = true
-		}
-
-		if branchInfo.IsDefaultBranch && !existingBranch.IsDefault() {
-			existingBranch.SetDefault(true)
-			needsUpdate = true
-		}
-
-		if needsUpdate {
 			if err := p.branchRepo.Update(ctx, existingBranch); err != nil {
 				p.logger.Warn("failed to update branch",
 					"branch_id", existingBranch.ID().String(),
 					"error", err,
 				)
 			}
+		}
+
+		// Default-branch designation is applied atomically (single-default
+		// invariant) and only when the repo has no default yet — see
+		// maybeSetDefaultBranch.
+		if branchInfo.IsDefaultBranch && !existingBranch.IsDefault() {
+			p.maybeSetDefaultBranch(ctx, repositoryID, existingBranch.ID())
 		}
 
 		id := existingBranch.ID()
@@ -1335,14 +1376,13 @@ func (p *FindingProcessor) getOrCreateBranch(ctx context.Context, repositoryID s
 		return nil, fmt.Errorf("failed to create branch entity: %w", err)
 	}
 
-	if branchInfo.IsDefaultBranch {
-		newBranch.SetDefault(true)
-	}
-
 	if branchInfo.CommitSHA != "" {
 		newBranch.UpdateLastCommit(branchInfo.CommitSHA, "", "", "", time.Now().UTC())
 	}
 
+	// is_default is intentionally NOT set here; it is applied atomically after
+	// creation via maybeSetDefaultBranch (single-default invariant + no
+	// hijacking an existing default from an untrusted scan report).
 	if err := p.branchRepo.Create(ctx, newBranch); err != nil {
 		// Race condition: another goroutine may have created the branch
 		// between our GetByName and Create calls. Retry the lookup.
@@ -1359,15 +1399,46 @@ func (p *FindingProcessor) getOrCreateBranch(ctx context.Context, repositoryID s
 		return nil, fmt.Errorf("failed to create branch: %w", err)
 	}
 
+	if branchInfo.IsDefaultBranch {
+		p.maybeSetDefaultBranch(ctx, repositoryID, newBranch.ID())
+	}
+
 	p.logger.Debug("created new branch record",
 		"repository_id", repositoryID.String(),
 		"branch_name", branchInfo.Name,
 		"branch_id", newBranch.ID().String(),
-		"is_default", newBranch.IsDefault(),
 	)
 
 	id := newBranch.ID()
 	return &id, nil
+}
+
+// maybeSetDefaultBranch designates branchID as the repository's default branch,
+// but ONLY when the repo has no default yet. It uses the atomic SetDefaultBranch
+// (which unsets any sibling default) to preserve the single-default invariant.
+//
+// It deliberately does NOT flip an existing default: the default-branch flag in
+// a scan report is attacker-influenceable, and silently re-pointing the default
+// would re-scope default-branch auto-resolve and could be abused to mass-resolve
+// a repo's real findings. Changing the default is an explicit API operation.
+func (p *FindingProcessor) maybeSetDefaultBranch(ctx context.Context, repositoryID, branchID shared.ID) {
+	if current, err := p.branchRepo.GetDefaultBranch(ctx, repositoryID); err == nil && current != nil {
+		if current.ID() != branchID {
+			p.logger.Debug("ingest reported a default branch but repository already has one; not changing",
+				"repository_id", repositoryID.String(),
+				"reported_branch_id", branchID.String(),
+				"current_default_branch_id", current.ID().String(),
+			)
+		}
+		return
+	}
+	if err := p.branchRepo.SetDefaultBranch(ctx, repositoryID, branchID); err != nil {
+		p.logger.Warn("failed to set default branch on ingest",
+			"repository_id", repositoryID.String(),
+			"branch_id", branchID.String(),
+			"error", err,
+		)
+	}
 }
 
 // mapCTISDataFlowToDomain converts a CTIS DataFlow to a domain DataFlow value object.
@@ -1431,6 +1502,42 @@ func mapCTISDataFlowLocationToStep(loc ctis.DataFlowLocation, locationType strin
 //
 // SECURITY: Enforces limits on number of data flows and locations per finding
 // to prevent DoS attacks via excessive data.
+// enrichAndClassify enriches findings in-memory with EPSS/KEV, classifies
+// their priority (RFC-004), and applies SLA deadlines, so the values are
+// written by the subsequent batch INSERT instead of a per-finding UPDATE pass.
+// All steps are best-effort: on failure the findings persist without the
+// enriched fields (matching the previous graceful-degradation behaviour).
+func (p *FindingProcessor) enrichAndClassify(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) {
+	if p.priorityClassifier == nil || len(findings) == 0 {
+		return
+	}
+
+	// Build asset map for classification context — each unique asset fetched
+	// once. Typical batch has 1-5 unique assets.
+	assetMap := make(map[shared.ID]*asset.Asset)
+	for _, f := range findings {
+		if _, ok := assetMap[f.AssetID()]; !ok {
+			if a, err := p.assetRepo.GetByID(ctx, tenantID, f.AssetID()); err == nil {
+				assetMap[f.AssetID()] = a
+			}
+		}
+	}
+
+	if err := p.priorityClassifier.EnrichAndClassifyBatch(ctx, tenantID, findings, assetMap); err != nil {
+		p.logger.Warn("priority classification failed", "error", err)
+		return
+	}
+
+	// Apply SLA deadline now that priority class is set. Non-fatal — findings
+	// persist without a deadline and the SLA escalation controller surfaces
+	// them as NULL.
+	if p.slaApplier != nil {
+		if err := p.slaApplier.ApplyBatch(ctx, tenantID, findings); err != nil {
+			p.logger.Warn("sla deadline apply failed", "error", err)
+		}
+	}
+}
+
 func (p *FindingProcessor) persistDataFlows(ctx context.Context, findings []*vulnerability.Finding) {
 	for _, f := range findings {
 		dataFlows := f.DataFlows()

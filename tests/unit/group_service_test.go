@@ -253,7 +253,7 @@ func createTestGroup(t *testing.T, svc *app.GroupService, tenantID shared.ID, na
 		Slug:      slug,
 		GroupType: "team",
 	}
-	g, err := svc.CreateGroup(context.Background(), input, shared.NewID(), app.AuditContext{})
+	g, err := svc.CreateGroup(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("failed to create test group: %v", err)
 	}
@@ -478,7 +478,7 @@ func TestUpdateGroup_Success(t *testing.T) {
 		Description: &newDesc,
 	}
 
-	result, err := svc.UpdateGroup(context.Background(), g.ID().String(), input, app.AuditContext{})
+	result, err := svc.UpdateGroup(context.Background(), g.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("UpdateGroup failed: %v", err)
 	}
@@ -519,7 +519,7 @@ func TestUpdateGroup_ActivateDeactivate(t *testing.T) {
 	// Deactivate
 	inactive := false
 	input := app.UpdateGroupInput{IsActive: &inactive}
-	result, err := svc.UpdateGroup(context.Background(), g.ID().String(), input, app.AuditContext{})
+	result, err := svc.UpdateGroup(context.Background(), g.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Deactivate failed: %v", err)
 	}
@@ -530,7 +530,7 @@ func TestUpdateGroup_ActivateDeactivate(t *testing.T) {
 	// Activate
 	active := true
 	input = app.UpdateGroupInput{IsActive: &active}
-	result, err = svc.UpdateGroup(context.Background(), g.ID().String(), input, app.AuditContext{})
+	result, err = svc.UpdateGroup(context.Background(), g.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Activate failed: %v", err)
 	}
@@ -550,7 +550,7 @@ func TestDeleteGroup_Success(t *testing.T) {
 
 	g := createTestGroup(t, svc, tenantID, "To Delete", "to-delete")
 
-	err := svc.DeleteGroup(context.Background(), g.ID().String(), app.AuditContext{})
+	err := svc.DeleteGroup(context.Background(), g.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("DeleteGroup failed: %v", err)
 	}
@@ -692,7 +692,7 @@ func TestAddMember_Success(t *testing.T) {
 		Role:    "member",
 	}
 
-	member, err := svc.AddMember(context.Background(), input, app.AuditContext{})
+	member, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("AddMember failed: %v", err)
 	}
@@ -723,13 +723,13 @@ func TestAddMember_AlreadyAMember(t *testing.T) {
 		Role:    "member",
 	}
 
-	_, err := svc.AddMember(context.Background(), input, app.AuditContext{})
+	_, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("First AddMember failed: %v", err)
 	}
 
 	// Try adding same member again
-	_, err = svc.AddMember(context.Background(), input, app.AuditContext{})
+	_, err = svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("Expected error for duplicate member")
 	}
@@ -798,7 +798,7 @@ func TestRemoveMember_Success(t *testing.T) {
 		UserID:  ownerID,
 		Role:    "owner",
 	}
-	_, err := svc.AddMember(context.Background(), ownerInput, app.AuditContext{})
+	_, err := svc.AddMember(context.Background(), ownerInput, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Failed to add owner: %v", err)
 	}
@@ -809,13 +809,13 @@ func TestRemoveMember_Success(t *testing.T) {
 		UserID:  memberID,
 		Role:    "member",
 	}
-	_, err = svc.AddMember(context.Background(), memberInput, app.AuditContext{})
+	_, err = svc.AddMember(context.Background(), memberInput, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("Failed to add member: %v", err)
 	}
 
 	// Remove the regular member
-	err = svc.RemoveMember(context.Background(), g.ID().String(), memberID, app.AuditContext{})
+	err = svc.RemoveMember(context.Background(), g.ID().String(), memberID, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("RemoveMember failed: %v", err)
 	}
@@ -853,13 +853,13 @@ func TestRemoveMember_LastOwner(t *testing.T) {
 		Slug:      "team-zeta",
 		GroupType: "team",
 	}
-	g, err := svc.CreateGroup(context.Background(), input, creatorID, app.AuditContext{})
+	g, err := svc.CreateGroup(context.Background(), input, creatorID, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("CreateGroup failed: %v", err)
 	}
 
 	// Try to remove the sole owner
-	err = svc.RemoveMember(context.Background(), g.ID().String(), creatorID, app.AuditContext{})
+	err = svc.RemoveMember(context.Background(), g.ID().String(), creatorID, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("Expected error when removing last owner")
 	}
@@ -886,7 +886,7 @@ func TestListGroupMembers_Success(t *testing.T) {
 			UserID:  shared.NewID(),
 			Role:    "member",
 		}
-		_, err := svc.AddMember(context.Background(), input, app.AuditContext{})
+		_, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
 		if err != nil {
 			t.Fatalf("AddMember failed: %v", err)
 		}

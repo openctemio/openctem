@@ -45,6 +45,29 @@ func (p Provider) AuthEndpoints(tenantIdentifier string) (authURL, tokenURL, use
 	return "", "", ""
 }
 
+// JWKSURL returns the provider's JWKS (signing-key) endpoint used to verify
+// id_token signatures, or "" when the provider has no OIDC id_token to verify.
+// tenantIdentifier mirrors AuthEndpoints (e.g. the Azure directory id; "common"
+// when unset).
+func (p Provider) JWKSURL(tenantIdentifier string) string {
+	switch p {
+	case ProviderEntraID:
+		tid := tenantIdentifier
+		if tid == "" {
+			tid = "common"
+		}
+		return "https://login.microsoftonline.com/" + tid + "/discovery/v2.0/keys"
+	case ProviderGoogleWorkspace:
+		return "https://www.googleapis.com/oauth2/v3/certs"
+	case ProviderOkta:
+		if tenantIdentifier == "" {
+			return ""
+		}
+		return tenantIdentifier + "/oauth2/default/v1/keys"
+	}
+	return ""
+}
+
 // IdentityProvider represents a tenant-scoped SSO configuration.
 type IdentityProvider struct {
 	id                    string

@@ -1,4 +1,4 @@
-// Package template_source defines the TemplateSource domain entity for managing external template sources.
+// Package templatesource defines the TemplateSource domain entity for managing external template sources.
 package templatesource
 
 import (

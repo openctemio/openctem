@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -9,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/domain/permission"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -93,6 +95,11 @@ func registerAuditRoutes(
 		// operator should not be able to dismiss a chain break by
 		// running verify with wider permissions than read.
 		r.GET("/verify", h.VerifyChain, middleware.RequireAdmin())
+
+		// Re-baseline the hash-chain (re-sign from current data) to clear
+		// breaks from a known-benign hashing change. Admin-only + audited —
+		// it overwrites the tamper-evident chain, so it is deliberately gated.
+		r.POST("/rebaseline", h.RebaselineChain, middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 }
 
@@ -137,6 +144,7 @@ func registerSLARoutes(
 func registerIntegrationRoutes(
 	router Router,
 	h *handler.IntegrationHandler,
+	jiraHandler *handler.JiraWebhookHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -163,6 +171,20 @@ func registerIntegrationRoutes(
 		// Test credentials without creating (must be before /{id} routes)
 		r.POST("/test-credentials", h.TestCredentials, middleware.Require(permission.IntegrationsManage))
 
+		// Per-tenant Jira inbound-webhook secret (static paths; must be before
+		// /{id} routes). Gated by IntegrationsManage because the response
+		// contains a secret.
+		r.GET("/jira/webhook-secret", h.GetJiraWebhookSecret, middleware.Require(permission.IntegrationsManage))
+		r.POST("/jira/webhook-secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage))
+		r.GET("/github/webhook-secret", h.GetGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
+		r.POST("/github/webhook-secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
+
+		// List Jira projects for the destination-project picker (static path;
+		// must be before /{id} routes). nil handler = no DB → skip.
+		if jiraHandler != nil {
+			r.GET("/jira/projects", jiraHandler.ListJiraProjects, middleware.Require(permission.IntegrationsRead))
+		}
+
 		// Get, update, delete specific integration
 		r.GET("/{id}", h.Get, middleware.Require(permission.IntegrationsRead))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.IntegrationsManage))
@@ -171,6 +193,7 @@ func registerIntegrationRoutes(
 		// Integration actions
 		r.POST("/{id}/test", h.Test, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.IntegrationsManage))
+		r.POST("/{id}/import-repositories", h.ImportRepositories, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.IntegrationsManage))
 
@@ -358,30 +381,61 @@ func registerWebhookRoutes(
 // HMAC-SHA256 of the body signed with JIRA_WEBHOOK_SECRET before the
 // handler runs — preventing cross-tenant spoofing by external callers.
 
+// JiraWebhookSecretResolver returns the candidate HMAC secrets for a tenant's
+// inbound Jira webhooks (one per configured Jira integration). Implemented by
+// the integration service.
+type JiraWebhookSecretResolver interface {
+	ListJiraWebhookSecrets(ctx context.Context, tenantID shared.ID) ([]string, error)
+}
+
 // registerIncomingWebhookRoutes registers public incoming webhook endpoints.
 // These endpoints are NOT protected by JWT — they are called by external services (e.g. Jira).
 // Tenant routing is done via a ?tenant= query parameter that each external service configures.
 //
-// F-1: each endpoint is now wrapped in middleware.VerifyHMAC using a
-// provider-specific shared secret. Requests without a valid
-// X-OpenCTEM-Signature over the raw body are rejected before the handler
-// runs, preventing cross-tenant spoofing.
+// Each request is verified with HMAC-SHA256 over the raw body (middleware.VerifyHMACMulti).
+// The accepted secrets are, in order:
+//   - the requesting tenant's own per-integration webhook secrets (resolved via
+//     resolver using the ?tenant= param) — this is what prevents cross-tenant
+//     spoofing, since a tenant only ever holds its own secrets;
+//   - the platform-wide jiraSecret as a backward-compatible fallback for
+//     deployments that have not yet configured per-tenant secrets.
+//
+// If neither resolves to anything the middleware fails closed (rejects every
+// request), so the endpoint is never reachable without explicit configuration.
 func registerIncomingWebhookRoutes(
 	router Router,
 	jiraHandler *handler.JiraWebhookHandler,
+	resolver JiraWebhookSecretResolver,
 	jiraSecret string,
 	log *logger.Logger,
 ) {
 	if jiraHandler == nil {
 		return
 	}
-	// If the platform secret is empty the middleware fails closed (rejects
-	// every request), so the endpoint is never reachable without explicit
-	// configuration.
-	hmacMW := middleware.VerifyHMAC(
+	hmacMW := middleware.VerifyHMACMulti(
 		"X-OpenCTEM-Signature",
-		func(*http.Request) (string, bool) {
-			return jiraSecret, jiraSecret != ""
+		func(r *http.Request) ([]string, bool) {
+			secrets := make([]string, 0, 2)
+
+			// Per-tenant secrets for the tenant named in ?tenant=. Failures to
+			// resolve (bad tenant id, lookup error) simply contribute no
+			// candidates — they never widen acceptance to another tenant.
+			if resolver != nil {
+				if tid, err := shared.IDFromString(r.URL.Query().Get("tenant")); err == nil {
+					if tenantSecrets, err := resolver.ListJiraWebhookSecrets(r.Context(), tid); err == nil {
+						secrets = append(secrets, tenantSecrets...)
+					} else {
+						log.Warn("failed to resolve tenant Jira webhook secrets", "error", err)
+					}
+				}
+			}
+
+			// Backward-compatible platform fallback.
+			if jiraSecret != "" {
+				secrets = append(secrets, jiraSecret)
+			}
+
+			return secrets, len(secrets) > 0
 		},
 		log,
 	)

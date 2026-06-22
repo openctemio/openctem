@@ -105,6 +105,15 @@ func (s *stubFindingRepo) ListByVulnerabilityID(_ context.Context, _, _ shared.I
 func (s *stubFindingRepo) ListByComponentID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
 	return pagination.Result[*vulnerability.Finding]{}, nil
 }
+func (s *stubFindingRepo) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
+}
+func (s *stubFindingRepo) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
+	return pagination.Result[vulnerability.ActiveCVE]{}, nil
+}
+func (s *stubFindingRepo) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
+}
 func (s *stubFindingRepo) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
 	return 0, nil
 }
@@ -146,6 +155,10 @@ func (s *stubFindingRepo) CountBySeverityForScan(_ context.Context, _ shared.ID,
 	return vulnerability.SeverityCounts{}, nil
 }
 func (s *stubFindingRepo) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+
+func (s *stubFindingRepo) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
 func (s *stubFindingRepo) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
@@ -504,3 +517,15 @@ func TestDifferentTenantsProduceDifferentActivities(t *testing.T) {
 	}
 }
 
+
+func (s *stubFindingRepo) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
+	return nil
+}
+
+func (s *stubFindingRepo) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
+	return 0, nil
+}
+
+func (s *stubFindingRepo) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
+	return nil, nil
+}

@@ -123,6 +123,24 @@ func (r *IntegrationRepository) GetByTenantAndName(ctx context.Context, tenantID
 	return r.scanIntegration(row)
 }
 
+// GetByTenantAndID fetches an integration scoped to a tenant. Returns
+// ErrIntegrationNotFound if it does not exist or belongs to another tenant —
+// the tenant predicate is enforced in SQL, so there is no fetch-then-check
+// window for a caller to forget.
+func (r *IntegrationRepository) GetByTenantAndID(ctx context.Context, tenantID integration.ID, id integration.ID) (*integration.Integration, error) {
+	query := `
+		SELECT id, tenant_id, name, description, category, provider,
+			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
+			   config, metadata, stats, created_at, updated_at, created_by
+		FROM integrations
+		WHERE tenant_id = $1 AND id = $2
+	`
+
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
+	return r.scanIntegration(row)
+}
+
 // Update updates an existing integration.
 func (r *IntegrationRepository) Update(ctx context.Context, i *integration.Integration) error {
 	config, err := json.Marshal(i.Config())

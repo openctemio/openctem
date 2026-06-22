@@ -33,7 +33,7 @@ func NewGroupSyncService(groupRepo groupdom.Repository, log *logger.Logger) *Gro
 //   - GitLab: group ID, API token
 //   - Azure AD: tenant ID, client credentials
 //   - Okta: domain, API token
-func (s *GroupSyncService) SyncFromProvider(ctx context.Context, tenantID shared.ID, provider string, config map[string]interface{}) error {
+func (s *GroupSyncService) SyncFromProvider(ctx context.Context, tenantID shared.ID, provider string, config map[string]any) error {
 	src := groupdom.ExternalSource(provider)
 	if !src.IsValid() {
 		return fmt.Errorf("%w: unsupported provider '%s'", shared.ErrValidation, provider)

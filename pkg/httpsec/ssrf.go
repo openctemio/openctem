@@ -125,6 +125,42 @@ func IsIPBlocked(ip net.IP) bool {
 	return false
 }
 
+// ValidateHost resolves host (a bare hostname or host:port) and rejects it if
+// any resolved A/AAAA record falls in a blocked CIDR, under the same policy as
+// the HTTP SSRF guard. For non-HTTP outbound targets such as SMTP relays.
+// Fail-closed on DNS resolution failure. Internal targets (RFC1918) are only
+// permitted when the operator sets the allow-private flag (same as webhooks).
+func ValidateHost(ctx context.Context, host string) error {
+	if host == "" {
+		return fmt.Errorf("empty host")
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	lower := strings.ToLower(strings.TrimSpace(host))
+	for _, blocked := range dangerousHosts {
+		if lower == blocked {
+			return fmt.Errorf("host %q is blocked", host)
+		}
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if IsIPBlocked(ip) {
+			return fmt.Errorf("host %s resolves to a blocked address", host)
+		}
+		return nil
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return fmt.Errorf("dns lookup failed for %q: %w", host, err)
+	}
+	for _, ip := range ips {
+		if IsIPBlocked(ip.IP) {
+			return fmt.Errorf("host %q resolves to blocked address %s", host, ip.IP)
+		}
+	}
+	return nil
+}
+
 // ValidationResult carries the parsed URL + the DNS-pinned IP set so
 // callers that want to prevent DNS rebinding can dial one of the
 // resolved IPs rather than re-resolve at dial time.

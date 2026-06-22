@@ -63,7 +63,13 @@ func (r *RuleOverrideRepository) Create(ctx context.Context, override *rule.Over
 	return nil
 }
 
-// GetByID retrieves an override by ID.
+// GetByID retrieves an override by ID WITHOUT tenant scoping.
+//
+// WARNING: rule_overrides IS tenant-scoped (tenant_id NOT NULL). This
+// tenant-less lookup is for platform/admin paths only; tenant-facing callers
+// MUST use GetByTenantAndID or it is a cross-tenant IDOR.
+//
+//getbyid:unsafe - tenant-less by design; use GetByTenantAndID for tenant callers (see warning).
 func (r *RuleOverrideRepository) GetByID(ctx context.Context, id shared.ID) (*rule.Override, error) {
 	query := r.selectQuery() + " WHERE id = $1"
 	row := r.db.QueryRowContext(ctx, query, id.String())
@@ -115,6 +121,9 @@ func (r *RuleOverrideRepository) List(ctx context.Context, filter rule.OverrideF
 		}
 		overrides = append(overrides, override)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(overrides, total, page), nil
 }
@@ -149,6 +158,9 @@ func (r *RuleOverrideRepository) ListByTenantAndTool(ctx context.Context, tenant
 			return nil, err
 		}
 		overrides = append(overrides, override)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return overrides, nil

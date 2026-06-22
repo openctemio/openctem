@@ -24,6 +24,10 @@ type Repository interface {
 	// GetTenantDefault retrieves the default policy for a tenant.
 	GetTenantDefault(ctx context.Context, tenantID shared.ID) (*Policy, error)
 
+	// UnsetTenantDefaults clears is_default on all of the tenant's tenant-wide
+	// policies except exceptID, enforcing a single default per tenant.
+	UnsetTenantDefaults(ctx context.Context, tenantID, exceptID shared.ID) error
+
 	// Update updates an existing policy.
 	Update(ctx context.Context, policy *Policy) error
 

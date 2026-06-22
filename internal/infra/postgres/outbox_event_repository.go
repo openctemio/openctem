@@ -61,6 +61,11 @@ func (r *OutboxEventRepository) Create(ctx context.Context, event *outbox.Event)
 			$16, $17, $18,
 			$19, $20
 		)
+		-- Idempotent: the event id equals the source outbox id, and archive +
+		-- delete-from-outbox are two separate statements. If the process dies
+		-- after this INSERT but before the outbox DELETE, the entry is
+		-- reprocessed next cycle; DO NOTHING prevents a duplicate event row.
+		ON CONFLICT (id) DO NOTHING
 	`
 
 	_, err = r.db.ExecContext(ctx, query,

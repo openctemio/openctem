@@ -1,11 +1,13 @@
+// Package jira implements the application service for the jira bounded context — orchestrates pkg/domain/jira entities and cross-cutting concerns (audit, notifications, RBAC).
 package jira
 
 import (
 	"context"
 	"fmt"
-	"github.com/openctemio/api/internal/app"
 	"sync"
 	"time"
+
+	"github.com/openctemio/api/internal/app"
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"

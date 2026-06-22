@@ -48,7 +48,7 @@ func (r *FindingRepository) ListComponentCVEPairs(
 	}
 	if filter.OnlyOpenFindings {
 		conditions = append(conditions,
-			"f.status NOT IN ('resolved','verified','false_positive','accepted')")
+			"f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')")
 	}
 	if filter.MinSeverity != nil {
 		conditions = append(conditions, fmt.Sprintf(

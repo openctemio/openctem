@@ -336,6 +336,34 @@ func makeTestOutboxEntry(tenantID shared.ID, eventType, severity string) *outbox
 	)
 }
 
+// makeTestOutboxEntryExhausted is like makeTestOutboxEntry but with no retries
+// left (retryCount == maxRetries), so an all-failed result is terminal.
+func makeTestOutboxEntryExhausted(tenantID shared.ID, eventType, severity string) *outbox.Outbox {
+	now := time.Now()
+	return outbox.Reconstitute(
+		outbox.NewID(),
+		tenantID,
+		eventType,
+		"finding",
+		nil,
+		"Test Notification",
+		"Test notification body",
+		outbox.Severity(severity),
+		"https://example.com/finding/1",
+		map[string]any{"key": "value"},
+		outbox.OutboxStatusPending,
+		3,
+		3,
+		"",
+		now,
+		nil,
+		"",
+		now,
+		now,
+		nil,
+	)
+}
+
 // makeConnectedIntegration creates a connected notification integration.
 func makeConnectedIntegration(tenantID shared.ID, provider integration.Provider, ext *integration.NotificationExtension) *integration.IntegrationWithNotification {
 	intgID := shared.NewID()
@@ -762,11 +790,12 @@ func TestShouldSendToIntegration_SeverityFiltering(t *testing.T) {
 				t.Fatalf("expected no error, got %v", err)
 			}
 
-			// When integration matches but send fails (decrypt error), the entry is still
-			// archived to events and deleted from outbox, so processOutboxEntry returns nil
-			// and counts as "processed" at the batch level.
-			// When integration doesn't match, entry is completed (skipped) and also "processed".
-			// Either way, processed=1, failed=0.
+			// When the integration MATCHES but the send fails (decrypt error) and the
+			// entry is still retryable, processOutboxEntry re-queues it for retry
+			// (status back to pending, persisted via Update) instead of archiving +
+			// deleting it — it returns nil, so it still counts as "processed".
+			// When the integration does NOT match, the entry is completed (skipped),
+			// archived, and deleted. Either way, processed=1, failed=0.
 			if processed != 1 {
 				t.Errorf("expected 1 processed, got processed=%d failed=%d", processed, failed)
 			}
@@ -774,10 +803,19 @@ func TestShouldSendToIntegration_SeverityFiltering(t *testing.T) {
 				t.Errorf("expected 0 failed at batch level, got %d", failed)
 			}
 
-			// Verify whether integration was matched by checking event archive
+			// Verify whether the integration matched by its side effect:
+			//   matched + send failed (retryable) -> re-queued via Update, NOT archived
+			//   not matched                       -> completed/skipped -> archived
 			if tt.expectedShouldSend {
+				if outboxRepo.updateCalls != 1 {
+					t.Errorf("expected 1 update call (matched, send failed, re-queued for retry), got %d", outboxRepo.updateCalls)
+				}
+				if eventRepo.createCalls != 0 {
+					t.Errorf("expected 0 event archive calls (entry re-queued, not archived), got %d", eventRepo.createCalls)
+				}
+			} else {
 				if eventRepo.createCalls != 1 {
-					t.Errorf("expected 1 event archive call (integration matched), got %d", eventRepo.createCalls)
+					t.Errorf("expected 1 event archive call (skipped entry archived), got %d", eventRepo.createCalls)
 				}
 			}
 		})
@@ -1479,13 +1517,13 @@ func TestNotificationExtension_ShouldNotifyEventType(t *testing.T) {
 			name:      "empty event types gets defaults - scan_completed not in defaults",
 			eventType: integration.EventTypeScanCompleted,
 			enabled:   []integration.EventType{}, // Reconstruct replaces empty with defaults
-			expected:  false,                      // scan_completed not in defaults
+			expected:  false,                     // scan_completed not in defaults
 		},
 		{
 			name:      "empty event types gets defaults - new_finding in defaults",
 			eventType: integration.EventTypeNewFinding,
 			enabled:   []integration.EventType{}, // Reconstruct replaces empty with defaults
-			expected:  true,                       // new_finding is a default type
+			expected:  true,                      // new_finding is a default type
 		},
 		{
 			name:      "legacy findings maps to new_finding",
@@ -2078,25 +2116,66 @@ func TestProcessOutboxBatch_MixedIntegrationResults(t *testing.T) {
 		listIntWithNotifResult: []*integration.IntegrationWithNotification{intg1, intg2},
 	}
 
-	// Both integrations will fail because decrypt fails, but the entry still
-	// gets archived to events and deleted from outbox successfully, so
-	// processOutboxEntry returns nil (counts as processed, not failed).
+	// Both integrations fail (decrypt fails), but the entry is still retryable
+	// (retryCount 0 < maxRetries 3), so processOutboxEntry re-queues it for
+	// retry (status back to pending, persisted via Update) instead of archiving
+	// + deleting it. It returns nil, so it still counts as processed.
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, failDecrypt())
 
 	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
 	if err != nil {
 		t.Fatalf("expected no batch error, got %v", err)
 	}
-	// Entry is processed (archived + deleted) even though all sends failed
 	if processed != 1 {
-		t.Errorf("expected 1 processed (archived despite all send failures), got %d", processed)
+		t.Errorf("expected 1 processed (re-queued for retry), got %d", processed)
 	}
 	if failed != 0 {
 		t.Errorf("expected 0 failed at batch level, got %d", failed)
 	}
-	// Verify the event was archived
+	// A retryable all-failed entry is re-queued, NOT archived or deleted.
+	if outboxRepo.updateCalls != 1 {
+		t.Errorf("expected 1 update call (re-queued for retry), got %d", outboxRepo.updateCalls)
+	}
+	if eventRepo.createCalls != 0 {
+		t.Errorf("expected 0 event archive calls (re-queued, not archived), got %d", eventRepo.createCalls)
+	}
+	if outboxRepo.deleteCalls != 0 {
+		t.Errorf("expected 0 delete calls (re-queued, not deleted), got %d", outboxRepo.deleteCalls)
+	}
+}
+
+// TestProcessOutboxBatch_AllFailedExhausted verifies that when an entry has
+// NO retries left, an all-integrations-failed result still archives + deletes
+// it (terminal failure) — i.e. the retry guard does not break the terminal path.
+func TestProcessOutboxBatch_AllFailedExhausted(t *testing.T) {
+	tenantID := shared.NewID()
+	entry := makeTestOutboxEntryExhausted(tenantID, "new_finding", "critical")
+
+	intg1 := makeConnectedIntegration(tenantID, integration.ProviderSlack, nil)
+
+	outboxRepo := &mockOutboxRepo{
+		fetchPendingResult: []*outbox.Outbox{entry},
+	}
+	eventRepo := &mockEventRepo{}
+	notifRepo := &mockNotifExtRepoForService{
+		listIntWithNotifResult: []*integration.IntegrationWithNotification{intg1},
+	}
+
+	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, failDecrypt())
+
+	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
+	if err != nil {
+		t.Fatalf("expected no batch error, got %v", err)
+	}
+	if processed != 1 || failed != 0 {
+		t.Errorf("expected processed=1 failed=0, got processed=%d failed=%d", processed, failed)
+	}
+	// Exhausted entry is terminal -> archived + deleted, NOT re-queued.
 	if eventRepo.createCalls != 1 {
-		t.Errorf("expected 1 event archive call, got %d", eventRepo.createCalls)
+		t.Errorf("expected 1 event archive call (terminal failure), got %d", eventRepo.createCalls)
+	}
+	if outboxRepo.deleteCalls != 1 {
+		t.Errorf("expected 1 delete call (terminal failure), got %d", outboxRepo.deleteCalls)
 	}
 }
 

@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/api/internal/app/jira"
+	"github.com/openctemio/api/internal/app/ticketing"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -23,11 +25,23 @@ import (
 type JiraWebhookHandler struct {
 	service *jira.SyncService
 	logger  *logger.Logger
+
+	// github is the optional GitHub Issues ticket provider. Nil unless wired
+	// via SetGitHubTicketService — when nil, requests with provider=github are
+	// rejected with 400.
+	github *ticketing.GitHubTicketService
 }
 
 // NewJiraWebhookHandler creates a new JiraWebhookHandler.
 func NewJiraWebhookHandler(svc *jira.SyncService, log *logger.Logger) *JiraWebhookHandler {
 	return &JiraWebhookHandler{service: svc, logger: log}
+}
+
+// SetGitHubTicketService wires the optional GitHub Issues ticket provider.
+// Safe to call after construction; a nil value leaves GitHub ticketing
+// disabled.
+func (h *JiraWebhookHandler) SetGitHubTicketService(svc *ticketing.GitHubTicketService) {
+	h.github = svc
 }
 
 // LinkTicketRequest is the request body for POST /api/v1/findings/{id}/link-ticket.
@@ -118,12 +132,21 @@ func (h *JiraWebhookHandler) UnlinkTicket(w http.ResponseWriter, r *http.Request
 
 // CreateTicketRequest is the request body for POST /api/v1/findings/{id}/create-ticket.
 type CreateTicketRequest struct {
-	ProjectKey string `json:"project_key"`
+	// Provider selects the ticket backend: "jira" (default) or "github".
+	Provider string `json:"provider,omitempty"`
+
+	// Jira fields.
+	ProjectKey string `json:"project_key,omitempty"`
 	IssueType  string `json:"issue_type,omitempty"`
+
+	// GitHub fields (required when provider=github).
+	Owner string `json:"owner,omitempty"`
+	Repo  string `json:"repo,omitempty"`
 }
 
 // CreateTicket handles POST /api/v1/findings/{id}/create-ticket.
-// Auto-creates a Jira ticket from a finding and links it.
+// Auto-creates a ticket (Jira by default, or a GitHub issue) from a finding
+// and links it.
 func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	findingID := chi.URLParam(r, "id")
@@ -135,6 +158,11 @@ func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request
 	var req CreateTicketRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	if strings.EqualFold(req.Provider, "github") {
+		h.createGitHubTicket(w, r, tenantID, findingID, req)
 		return
 	}
 
@@ -152,6 +180,56 @@ func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// createGitHubTicket handles the provider=github branch of CreateTicket.
+func (h *JiraWebhookHandler) createGitHubTicket(w http.ResponseWriter, r *http.Request, tenantID, findingID string, req CreateTicketRequest) {
+	if h.github == nil {
+		apierror.BadRequest("github ticketing not configured").WriteJSON(w)
+		return
+	}
+
+	result, err := h.github.CreateTicketFromFinding(r.Context(), ticketing.GitHubTicketInput{
+		TenantID:  tenantID,
+		FindingID: findingID,
+		Owner:     req.Owner,
+		Repo:      req.Repo,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// ListJiraProjects handles GET /api/v1/integrations/jira/projects.
+// Returns the Jira projects visible to the tenant's connected ticketing
+// integration, for the admin destination-project picker (so an operator
+// selects the default project from a list rather than typing a raw key).
+func (h *JiraWebhookHandler) ListJiraProjects(w http.ResponseWriter, r *http.Request) {
+	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+
+	projects, err := h.service.ListProjects(r.Context(), tid)
+	if err != nil {
+		if errors.Is(err, jira.ErrNoTicketingIntegration) {
+			apierror.NotFound("no connected Jira integration").WriteJSON(w)
+			return
+		}
+		h.logger.Error("list jira projects failed", "error", err)
+		apierror.InternalServerError("failed to list Jira projects").WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"projects": projects})
 }
 
 // IncomingJiraWebhook handles POST /api/v1/webhooks/incoming/jira.

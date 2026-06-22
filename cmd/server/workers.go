@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"database/sql"
-	"github.com/openctemio/api/internal/app/command"
+	"sync"
 	"time"
+
+	"github.com/openctemio/api/internal/app/command"
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
+	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/app/outbox"
+	"github.com/openctemio/api/internal/app/scancoverage"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
@@ -36,6 +40,13 @@ type Workers struct {
 	SessionCleanupTicker *time.Ticker
 	sessionService       *app.SessionService
 	ControllerManager    *controller.Manager
+
+	// cleanupStopCh signals the ticker-driven cleanup goroutines (notification
+	// + session) to exit; cleanupWG lets Stop() join them. time.Ticker.Stop()
+	// does not close its channel, so a bare `for range ticker.C` loop would
+	// leak the goroutine — these let them shut down cleanly.
+	cleanupStopCh chan struct{}
+	cleanupWG     sync.WaitGroup
 
 	// AssetLifecycleWorker is exposed so the HTTP layer can invoke
 	// the dry-run endpoint against the same worker instance the
@@ -67,7 +78,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Initialize job worker if email service is configured
 	if svc.Email != nil {
 		var err error
-		w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, log)
+		w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, svc.GitHubTicket, log)
 		if err != nil {
 			return nil, err
 		}
@@ -186,6 +197,35 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Coverage scheduler: license-aware rolling Tenable scan coverage (RFC-007).
+	// Dispatches license-sized batches to runners for coverage-enabled, unlimited
+	// (Nessus Pro) Tenable integrations and advances the rotation cursor. Capped
+	// engines (Tenable.sc) are skipped until active-IP accounting ships.
+	w.ControllerManager.Register(controller.NewCoverageScheduler(
+		repos.Integration,
+		repos.ScanCoverage,
+		scancoverage.NewDispatcher(repos.Command),
+		&controller.CoverageSchedulerConfig{
+			Interval: 5 * time.Minute,
+			Logger:   log.With("controller", "coverage-scheduler"),
+		},
+	))
+
+	// Report scheduler: runs due report_schedules, renders the executive summary,
+	// and emails it to recipients. Only registered when email is configured
+	// (otherwise every run would fail delivery). This is the controller that was
+	// missing — schedules could be created in the UI but never executed.
+	if svc.Email != nil && svc.Email.IsConfigured() {
+		w.ControllerManager.Register(controller.NewReportScheduler(
+			repos.ReportSchedule,
+			repos.Finding,
+			svc.Email,
+			nil, // TenantNamer optional; report header falls back to tenant id
+			controller.ReportSchedulerConfig{Interval: time.Minute},
+			log,
+		))
+	}
+
 	w.ControllerManager.Register(controller.NewDataExpirationController(
 		repos.Suppression,
 		repos.ScopeExcl,
@@ -237,6 +277,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "owner-resolution"),
 	))
 
+	// Scheduled SCM repository/branch sync — disabled unless SCM_SYNC_INTERVAL
+	// is set. Imports repos + branches for connected SCM integrations and flips
+	// connections to "error" when their tokens expire.
+	if cfg.Worker.SCMSyncInterval > 0 && svc.Integration != nil {
+		w.ControllerManager.Register(controller.NewSCMSyncController(
+			svc.Integration,
+			cfg.Worker.SCMSyncInterval,
+			log.With("controller", "scm-sync"),
+		))
+	}
+
 	// B1/B2 priority reclassification sweep — drains the in-memory
 	// queue populated by ControlChangePublisher (and future EPSS/KEV/
 	// rule producers) and re-runs ClassifyFinding on the scoped set.
@@ -271,6 +322,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		deps.DB,
 		log.With("controller", "risk-snapshot"),
 	))
+
+	// Remediation progress — periodically refresh campaign finding counts and
+	// auto-complete campaigns whose findings are all resolved.
+	if svc != nil && svc.RemediationCampaign != nil {
+		w.ControllerManager.Register(controller.NewRemediationProgressController(
+			svc.RemediationCampaign,
+			30*time.Minute,
+			log.With("controller", "remediation-progress"),
+		))
+	}
 
 	// Control test scheduler — daily sweep to mark stale detection coverage as overdue
 	w.ControllerManager.Register(controller.NewControlTestSchedulerController(
@@ -346,6 +407,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// every deployment even before operators opt in.
 	lifecycleWorker := assetapp.NewAssetLifecycleWorker(deps.DB, repos.Tenant, log)
 	lifecycleWorker.SetAuditService(svc.Audit)
+	lifecycleWorker.SetStateHistoryRepository(repos.AssetStateHistory)
 	w.ControllerManager.Register(controller.NewAssetLifecycleController(
 		lifecycleWorker,
 		repos.Tenant,
@@ -357,6 +419,25 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Expose the worker to the HTTP layer so the admin dry-run
 	// endpoint can call it without a duplicate instance.
 	w.AssetLifecycleWorker = lifecycleWorker
+
+	// Async-ingest worker (RFC-005). Drains the ingest_jobs queue through the
+	// normal ingest pipeline. Safe to register unconditionally: until the
+	// accept path enqueues jobs (async mode), the queue is empty and the
+	// worker reconciles to zero. Bounded batch/per-tick caps are the
+	// backpressure that protects the DB pool under heavy ingest.
+	if svc.Ingest != nil && repos.IngestJob != nil {
+		w.ControllerManager.Register(controller.NewIngestWorkerController(
+			repos.IngestJob,
+			ingest.NewJobProcessor(svc.Ingest),
+			&controller.IngestWorkerControllerConfig{
+				Interval:     2 * time.Second,
+				BatchSize:    5,
+				MaxPerTick:   50,
+				LeaseTimeout: 5 * time.Minute,
+				Logger:       log.With("controller", "ingest-worker"),
+			},
+		))
+	}
 
 	return w, nil
 }
@@ -395,19 +476,29 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 	// Start finding lifecycle scheduler
 	w.FindingLifecycleScheduler.Start()
 
+	// Shared stop channel for the ticker-driven cleanup goroutines below.
+	w.cleanupStopCh = make(chan struct{})
+
 	// Start notification cleanup worker (runs daily, 90-day retention)
 	if w.notificationService != nil {
 		w.NotificationCleanupTicker = time.NewTicker(24 * time.Hour)
+		w.cleanupWG.Add(1)
 		go func() {
-			for range w.NotificationCleanupTicker.C {
-				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-				deleted, err := w.notificationService.CleanupOld(cleanupCtx, 90)
-				if err != nil {
-					log.Error("notification cleanup failed", "error", err)
-				} else if deleted > 0 {
-					log.Info("notification cleanup completed", "deleted", deleted)
+			defer w.cleanupWG.Done()
+			for {
+				select {
+				case <-w.cleanupStopCh:
+					return
+				case <-w.NotificationCleanupTicker.C:
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+					deleted, err := w.notificationService.CleanupOld(cleanupCtx, 90)
+					if err != nil {
+						log.Error("notification cleanup failed", "error", err)
+					} else if deleted > 0 {
+						log.Info("notification cleanup completed", "deleted", deleted)
+					}
+					cancel()
 				}
-				cancel()
 			}
 		}()
 		log.Info("notification cleanup worker started", "interval", "24h", "retention_days", 90)
@@ -442,12 +533,22 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 				)
 			}
 		}
-		// Initial run on startup to clear historical backlog.
-		go runCleanup()
 		w.SessionCleanupTicker = time.NewTicker(1 * time.Hour)
+		w.cleanupWG.Add(1)
 		go func() {
-			for range w.SessionCleanupTicker.C {
-				runCleanup()
+			defer w.cleanupWG.Done()
+			// Initial run on startup to clear historical backlog. Done INSIDE the
+			// tracked goroutine (not a bare `go runCleanup()`) so graceful shutdown
+			// — Workers.Stop() → cleanupWG.Wait() — waits for it to finish before
+			// the DB is torn down, instead of leaving it racing a closed pool.
+			runCleanup()
+			for {
+				select {
+				case <-w.cleanupStopCh:
+					return
+				case <-w.SessionCleanupTicker.C:
+					runCleanup()
+				}
 			}
 		}()
 		log.Info("session cleanup worker started", "interval", "1h")
@@ -501,18 +602,20 @@ func (w *Workers) Stop(log *logger.Logger) {
 	w.FindingLifecycleScheduler.Stop()
 	log.Info("finding lifecycle scheduler stopped")
 
-	// Stop notification cleanup worker
-	if w.NotificationCleanupTicker != nil {
-		log.Info("stopping notification cleanup worker...")
-		w.NotificationCleanupTicker.Stop()
-		log.Info("notification cleanup worker stopped")
-	}
-
-	// Stop session cleanup worker
-	if w.SessionCleanupTicker != nil {
-		log.Info("stopping session cleanup worker...")
-		w.SessionCleanupTicker.Stop()
-		log.Info("session cleanup worker stopped")
+	// Stop the ticker-driven cleanup workers. Signal them to exit, stop the
+	// tickers, then join — time.Ticker.Stop() alone doesn't close the channel,
+	// so the goroutines need the stop signal to actually return.
+	if w.cleanupStopCh != nil {
+		log.Info("stopping cleanup workers...")
+		close(w.cleanupStopCh)
+		if w.NotificationCleanupTicker != nil {
+			w.NotificationCleanupTicker.Stop()
+		}
+		if w.SessionCleanupTicker != nil {
+			w.SessionCleanupTicker.Stop()
+		}
+		w.cleanupWG.Wait()
+		log.Info("cleanup workers stopped")
 	}
 
 	// Stop controller manager

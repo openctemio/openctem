@@ -7,10 +7,19 @@ import (
 	"io"
 	"strings"
 
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	componentdom "github.com/openctemio/api/pkg/domain/component"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// assetTenantChecker verifies that an asset belongs to a tenant. SBOM import
+// links components to a caller-supplied asset_id, so without this check a user
+// could attach components to another tenant's asset (IDOR). The tenant-scoped
+// GetByID returns ErrNotFound when the asset is not in the tenant.
+type assetTenantChecker interface {
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*assetdom.Asset, error)
+}
 
 // SPDX specifies "NOASSERTION" as the string used when a licence
 // cannot be determined. Treat it like an empty value.
@@ -23,19 +32,27 @@ const (
 	cycloneDXScopeOptional  = "optional"
 	cycloneDXScopeExcluded  = "excluded"
 	cycloneDXExtRefTypePurl = "purl"
+
+	// maxSBOMComponents caps how many components a single SBOM import may
+	// process. The byte-size limit alone allows an SBOM with a very large
+	// number of tiny components, each becoming a synchronous Upsert+Link
+	// round-trip — a connection-pool exhaustion DoS. Reject oversized SBOMs.
+	maxSBOMComponents = 10000
 )
 
 // SBOMImportService handles importing SBOM files (CycloneDX, SPDX).
 type SBOMImportService struct {
-	repo   componentdom.Repository
-	logger *logger.Logger
+	repo         componentdom.Repository
+	assetChecker assetTenantChecker
+	logger       *logger.Logger
 }
 
 // NewSBOMImportService creates a new SBOMImportService.
-func NewSBOMImportService(repo componentdom.Repository, log *logger.Logger) *SBOMImportService {
+func NewSBOMImportService(repo componentdom.Repository, assetChecker assetTenantChecker, log *logger.Logger) *SBOMImportService {
 	return &SBOMImportService{
-		repo:   repo,
-		logger: log.With("service", "sbom-import"),
+		repo:         repo,
+		assetChecker: assetChecker,
+		logger:       log.With("service", "sbom-import"),
 	}
 }
 
@@ -59,6 +76,15 @@ func (s *SBOMImportService) ImportSBOM(ctx context.Context, tenantID, assetID st
 	aid, err := shared.IDFromString(assetID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid asset ID", shared.ErrValidation)
+	}
+
+	// Verify the target asset belongs to this tenant before linking any
+	// components to it (prevents cross-tenant component injection via a
+	// guessed/known asset UUID). Returns ErrNotFound → 404 otherwise.
+	if s.assetChecker != nil {
+		if _, err := s.assetChecker.GetByID(ctx, tid, aid); err != nil {
+			return nil, err
+		}
 	}
 
 	// Read body (max 50MB)
@@ -113,6 +139,9 @@ func (s *SBOMImportService) importCycloneDX(ctx context.Context, tenantID, asset
 	var bom cycloneDXBOM
 	if err := json.Unmarshal(data, &bom); err != nil {
 		return nil, fmt.Errorf("%w: invalid CycloneDX JSON", shared.ErrValidation)
+	}
+	if len(bom.Components) > maxSBOMComponents {
+		return nil, fmt.Errorf("%w: SBOM has %d components, exceeds limit of %d", shared.ErrValidation, len(bom.Components), maxSBOMComponents)
 	}
 
 	result := &SBOMImportResult{
@@ -187,6 +216,9 @@ func (s *SBOMImportService) importSPDX(ctx context.Context, tenantID, assetID sh
 	var doc spdxDocument
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("%w: invalid SPDX JSON", shared.ErrValidation)
+	}
+	if len(doc.Packages) > maxSBOMComponents {
+		return nil, fmt.Errorf("%w: SBOM has %d packages, exceeds limit of %d", shared.ErrValidation, len(doc.Packages), maxSBOMComponents)
 	}
 
 	result := &SBOMImportResult{
@@ -307,34 +339,9 @@ func detectEcosystemFromPURL(purl string) string {
 	if idx <= 0 {
 		return "other"
 	}
-	ecosystem := purl[:idx]
-	// Normalize known aliases
-	switch strings.ToLower(ecosystem) {
-	case "npm":
-		return "npm"
-	case "pypi":
-		return "pypi"
-	case "maven":
-		return "maven"
-	case "golang", "go":
-		return "go"
-	case "cargo":
-		return "cargo"
-	case "nuget":
-		return "nuget"
-	case "gem", "rubygems":
-		return "rubygems"
-	case "composer", "packagist":
-		return "composer"
-	case "cocoapods":
-		return "cocoapods"
-	case "hex":
-		return "hex"
-	case "pub":
-		return "pub"
-	case "swift", "swiftpm":
-		return "swiftpm"
-	default:
-		return "other"
-	}
+	// Reuse the canonical alias map (ParseEcosystem) instead of a local switch
+	// so PURL types like crates/crates.io→cargo, gradle→maven, etc. normalize
+	// consistently with ingest + component CRUD. Unknown → other.
+	eco, _ := componentdom.ParseEcosystem(purl[:idx])
+	return eco.String()
 }

@@ -818,6 +818,19 @@ git commit -m "fix(security): add input validation
 - Priority-flood guard renamed: `P0FloodGuard` → `PriorityFloodGuard` with configurable `ProtectedClass`
 - Q1/Q2/Q3 gate integration tests in `tests/integration/ctem_*_test.go`
 
-### Migrations: 156 total (000001–000156)
+### Migrations: 176 total (000001–000176)
 
-**Last Updated**: 2026-04-20
+### Local builds: `GOWORK=off`
+
+The repo ships a `go.work` that lists the `sdk-go` submodule, but that submodule
+path is frequently not populated in a fresh checkout. When it isn't, `go build` /
+`go test` / `golangci-lint` fail with `cannot load module sdk-go listed in
+go.work`. **Prefix local Go commands with `GOWORK=off`** (which is what CI does):
+
+```bash
+GOWORK=off go build ./...
+GOWORK=off go test ./...
+GOWORK=off golangci-lint run ./...
+```
+
+**Last Updated**: 2026-06-06

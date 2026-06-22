@@ -1,3 +1,7 @@
+// Package activity provides the application service that records, queries,
+// and aggregates user-facing activity events (asset created, finding
+// reopened, scan triggered, etc). The service is the orchestration layer
+// over pkg/domain/activity entities + a repository implementation.
 package activity
 
 import (
@@ -113,9 +117,9 @@ type RecordActivityInput struct {
 	ActivityType   string                 `validate:"required"`
 	ActorID        *string                `validate:"omitempty,uuid"`
 	ActorType      string                 `validate:"required"`
-	Changes        map[string]interface{} `validate:"required"`
+	Changes        map[string]any `validate:"required"`
 	Source         string
-	SourceMetadata map[string]interface{}
+	SourceMetadata map[string]any
 }
 
 // MaxChangesSize is the maximum allowed size for the changes JSONB field (15KB).
@@ -216,7 +220,7 @@ func (s *FindingActivityService) RecordBatchAutoResolved(
 			vulnerability.ActivityAutoResolved,
 			nil, // no actor - system action
 			vulnerability.ActorTypeSystem,
-			map[string]interface{}{
+			map[string]any{
 				"reason":  "not_found_in_full_scan",
 				"scanner": toolName,
 				"scan_id": scanID,
@@ -258,7 +262,7 @@ func (s *FindingActivityService) RecordBatchAutoReopened(
 			vulnerability.ActivityAutoReopened,
 			nil, // no actor - system action
 			vulnerability.ActorTypeSystem,
-			map[string]interface{}{
+			map[string]any{
 				"reason": "finding_detected_again",
 			},
 			vulnerability.SourceAuto,
@@ -288,7 +292,7 @@ func (s *FindingActivityService) RecordStatusChange(
 	reason string,
 	source string,
 ) (*vulnerability.FindingActivity, error) {
-	changes := map[string]interface{}{
+	changes := map[string]any{
 		"old_status": oldStatus,
 		"new_status": newStatus,
 	}
@@ -315,7 +319,7 @@ func (s *FindingActivityService) RecordSeverityChange(
 	oldSeverity, newSeverity string,
 	source string,
 ) (*vulnerability.FindingActivity, error) {
-	changes := map[string]interface{}{
+	changes := map[string]any{
 		"old_severity": oldSeverity,
 		"new_severity": newSeverity,
 	}
@@ -339,7 +343,7 @@ func (s *FindingActivityService) RecordAssignment(
 	assigneeID, assigneeName, assigneeEmail string,
 	source string,
 ) (*vulnerability.FindingActivity, error) {
-	changes := map[string]interface{}{
+	changes := map[string]any{
 		"assignee_id":    assigneeID,
 		"assignee_name":  assigneeName,
 		"assignee_email": assigneeEmail,
@@ -364,7 +368,7 @@ func (s *FindingActivityService) RecordUnassignment(
 	previousAssigneeName string,
 	source string,
 ) (*vulnerability.FindingActivity, error) {
-	changes := map[string]interface{}{
+	changes := map[string]any{
 		"previous_assignee_name": previousAssigneeName,
 	}
 
@@ -388,7 +392,7 @@ func (s *FindingActivityService) RecordCommentAdded(
 	commentID, content string,
 	source string,
 ) (*vulnerability.FindingActivity, error) {
-	changes := map[string]interface{}{
+	changes := map[string]any{
 		"comment_id": commentID,
 	}
 	if content != "" {
@@ -421,7 +425,7 @@ func (s *FindingActivityService) RecordCommentUpdated(
 	commentID string,
 	source string,
 ) (*vulnerability.FindingActivity, error) {
-	changes := map[string]interface{}{
+	changes := map[string]any{
 		"comment_id": commentID,
 	}
 
@@ -444,7 +448,7 @@ func (s *FindingActivityService) RecordCommentDeleted(
 	commentID string,
 	source string,
 ) (*vulnerability.FindingActivity, error) {
-	changes := map[string]interface{}{
+	changes := map[string]any{
 		"comment_id": commentID,
 	}
 
@@ -483,9 +487,9 @@ func (s *FindingActivityService) RecordScanDetected(
 	ctx context.Context,
 	tenantID, findingID string,
 	scanID, scanner, scanType string,
-	sourceMetadata map[string]interface{},
+	sourceMetadata map[string]any,
 ) (*vulnerability.FindingActivity, error) {
-	changes := map[string]interface{}{
+	changes := map[string]any{
 		"scan_id":   scanID,
 		"scanner":   scanner,
 		"scan_type": scanType,
@@ -508,7 +512,7 @@ func (s *FindingActivityService) RecordCreated(
 	ctx context.Context,
 	tenantID, findingID string,
 	source string,
-	sourceMetadata map[string]interface{},
+	sourceMetadata map[string]any,
 ) (*vulnerability.FindingActivity, error) {
 	return s.RecordActivity(ctx, RecordActivityInput{
 		TenantID:       tenantID,
@@ -516,7 +520,7 @@ func (s *FindingActivityService) RecordCreated(
 		ActivityType:   string(vulnerability.ActivityCreated),
 		ActorID:        nil,
 		ActorType:      string(vulnerability.ActorTypeSystem),
-		Changes:        map[string]interface{}{},
+		Changes:        map[string]any{},
 		Source:         source,
 		SourceMetadata: sourceMetadata,
 	})

@@ -13,6 +13,23 @@ import (
 	"github.com/openctemio/api/pkg/pagination"
 )
 
+// branchSortColumns is the allowlist of user-selectable ORDER BY columns for
+// branch listing. Keys are the values accepted from the `sort` query param;
+// values are the literal, trusted column names. Anything not in this map falls
+// back to the default sort — this prevents ORDER BY SQL injection.
+var branchSortColumns = map[string]string{
+	"name":            "name",
+	"branch_type":     "branch_type",
+	"is_default":      "is_default",
+	"is_protected":    "is_protected",
+	"last_commit_at":  "last_commit_at",
+	"last_scanned_at": "last_scanned_at",
+	"scan_status":     "scan_status",
+	"findings_total":  "findings_total",
+	"created_at":      "created_at",
+	"updated_at":      "updated_at",
+}
+
 // BranchRepository implements branch.Repository using PostgreSQL.
 type BranchRepository struct {
 	db *DB
@@ -180,14 +197,21 @@ func (r *BranchRepository) List(ctx context.Context, filter branch.Filter, opts 
 		countQuery += " WHERE " + whereClause
 	}
 
-	// Apply sorting
+	// Apply sorting. SECURITY: opts.SortBy originates from the user-supplied
+	// `sort` query param and is interpolated into ORDER BY, so it MUST be
+	// validated against a fixed column allowlist (no raw interpolation) to
+	// prevent ORDER BY SQL injection.
+	orderColumn, ok := branchSortColumns[opts.SortBy]
+	if !ok {
+		orderColumn = "" // fall back to the default sort
+	}
 	orderBy := defaultSortOrder
-	if opts.SortBy != "" {
+	if orderColumn != "" {
 		direction := sortOrderASC
 		if opts.SortOrder == sortOrderDescLower {
 			direction = sortOrderDESC
 		}
-		orderBy = fmt.Sprintf("%s %s", opts.SortBy, direction)
+		orderBy = fmt.Sprintf("%s %s", orderColumn, direction)
 	}
 	baseQuery += " ORDER BY " + orderBy
 	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
@@ -503,20 +527,20 @@ func nullIntPtr(v *int) interface{} {
 }
 
 // CompareBranches compares findings between two branches by fingerprint.
-func (r *BranchRepository) CompareBranches(ctx context.Context, repositoryID shared.ID, baseBranch, compareBranch string) (*branch.BranchComparison, error) {
+func (r *BranchRepository) CompareBranches(ctx context.Context, tenantID, repositoryID shared.ID, baseBranch, compareBranch string) (*branch.BranchComparison, error) {
 	query := `
 		WITH base_findings AS (
 			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
 			FROM findings f
 			JOIN repository_branches rb ON f.branch_id = rb.id
-			WHERE rb.repository_id = $1 AND rb.name = $2
+			WHERE rb.repository_id = $1 AND rb.name = $2 AND f.tenant_id = $4
 			  AND f.status NOT IN ('resolved', 'false_positive')
 		),
 		compare_findings AS (
 			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
 			FROM findings f
 			JOIN repository_branches rb ON f.branch_id = rb.id
-			WHERE rb.repository_id = $1 AND rb.name = $3
+			WHERE rb.repository_id = $1 AND rb.name = $3 AND f.tenant_id = $4
 			  AND f.status NOT IN ('resolved', 'false_positive')
 		)
 		SELECT
@@ -531,7 +555,7 @@ func (r *BranchRepository) CompareBranches(ctx context.Context, repositoryID sha
 		NewBySeverity: make(map[string]int),
 	}
 
-	err := r.db.QueryRowContext(ctx, query, repositoryID.String(), baseBranch, compareBranch).Scan(
+	err := r.db.QueryRowContext(ctx, query, repositoryID.String(), baseBranch, compareBranch, tenantID.String()).Scan(
 		&result.NewFindings,
 		&result.ResolvedFindings,
 		&result.CommonFindings,
@@ -547,13 +571,13 @@ func (r *BranchRepository) CompareBranches(ctx context.Context, repositoryID sha
 			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
 			FROM findings f
 			JOIN repository_branches rb ON f.branch_id = rb.id
-			WHERE rb.repository_id = $1 AND rb.name = $3
+			WHERE rb.repository_id = $1 AND rb.name = $3 AND f.tenant_id = $4
 			  AND f.status NOT IN ('resolved', 'false_positive')
 		) cf
 		WHERE cf.fingerprint NOT IN (
 			SELECT f.fingerprint FROM findings f
 			JOIN repository_branches rb ON f.branch_id = rb.id
-			WHERE rb.repository_id = $1 AND rb.name = $2
+			WHERE rb.repository_id = $1 AND rb.name = $2 AND f.tenant_id = $4
 			  AND f.status NOT IN ('resolved', 'false_positive')
 		)
 		ORDER BY CASE cf.severity
@@ -562,7 +586,7 @@ func (r *BranchRepository) CompareBranches(ctx context.Context, repositoryID sha
 		LIMIT 50
 	`
 
-	rows, err := r.db.QueryContext(ctx, detailQuery, repositoryID.String(), baseBranch, compareBranch)
+	rows, err := r.db.QueryContext(ctx, detailQuery, repositoryID.String(), baseBranch, compareBranch, tenantID.String())
 	if err != nil {
 		return result, nil // Non-critical, return counts without details
 	}

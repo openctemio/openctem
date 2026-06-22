@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/internal/infra/websocket"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/keycloak"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -177,6 +178,29 @@ func run() int {
 	}
 	defer closeWithLog(jobClient, "job client", log)
 
+	// Outbound Jira status sync (RFC-006 Phase 3c): when a finding's status
+	// changes via the API, enqueue a background push to its linked Jira issue.
+	// The worker no-ops unless the tenant opted in (config.ticketing.sync_enabled).
+	if services.Vulnerability != nil {
+		services.Vulnerability.SetJiraStatusSyncHook(func(ctx context.Context, tenantID, findingID shared.ID) {
+			if err := jobClient.EnqueueJiraSyncFindingStatus(ctx, jobs.JiraSyncFindingStatusPayload{
+				TenantID:  tenantID.String(),
+				FindingID: findingID.String(),
+			}); err != nil {
+				log.Warn("failed to enqueue jira status sync", "error", err)
+			}
+			// The same status-change trigger drives outbound GitHub Issues sync;
+			// the worker no-ops when the finding isn't linked to a GitHub issue.
+			// A finding links to at most one provider, so only the matching push acts.
+			if err := jobClient.EnqueueGitHubSyncFindingStatus(ctx, jobs.GitHubSyncFindingStatusPayload{
+				TenantID:  tenantID.String(),
+				FindingID: findingID.String(),
+			}); err != nil {
+				log.Warn("failed to enqueue github status sync", "error", err)
+			}
+		})
+	}
+
 	emailEnqueuer := jobs.NewEmailEnqueuerAdapter(jobClient)
 	services.Tenant = app.NewTenantService(repos.Tenant, log,
 		app.WithTenantAuditService(services.Audit),
@@ -187,6 +211,14 @@ func run() int {
 	// the constructor above replaces services.Tenant, dropping the
 	// SetSessionService call from initServices().
 	services.Tenant.SetSessionService(services.Session)
+	// Re-wire the membership cache too. Without this, SuspendMember /
+	// ReactivateMember / UpdateMemberRole / RemoveMember silently skip cache
+	// invalidation (membershipCache == nil), so a revoked member keeps tenant
+	// access until the cache TTL expires — breaking the documented 0-second
+	// revocation guarantee.
+	if services.MembershipCache != nil {
+		services.Tenant.SetMembershipCache(services.MembershipCache)
+	}
 
 	// Wire AI triage job enqueuer if service is enabled
 	if services.AITriage != nil {
@@ -257,7 +289,7 @@ func run() int {
 	}
 
 	server := http.NewServer(cfg, log)
-	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache)
+	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache, services.PermCache, services.PermVersion)
 
 	// Handle --routes flag
 	if *showRoutes {

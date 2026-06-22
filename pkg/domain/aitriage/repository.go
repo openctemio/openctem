@@ -83,7 +83,7 @@ type Repository interface {
 
 	// MarkStuckAsFailed marks a stuck triage job as failed.
 	// Returns true if the job was updated, false if it was already in a terminal state.
-	MarkStuckAsFailed(ctx context.Context, id shared.ID, errorMessage string) (bool, error)
+	MarkStuckAsFailed(ctx context.Context, tenantID, id shared.ID, errorMessage string) (bool, error)
 }
 
 // TriageContext contains all data needed to process a triage job.

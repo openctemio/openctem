@@ -26,13 +26,13 @@ type ssoMockIPRepo struct {
 	providers map[string]*identityprovider.IdentityProvider // keyed by ID
 
 	// Error overrides
-	createErr              error
-	getByIDErr             error
-	getByTenantAndProvErr  error
-	updateErr              error
-	deleteErr              error
-	listByTenantErr        error
-	listActiveByTenantErr  error
+	createErr             error
+	getByIDErr            error
+	getByTenantAndProvErr error
+	updateErr             error
+	deleteErr             error
+	listByTenantErr       error
+	listActiveByTenantErr error
 
 	// Call tracking
 	createCalls int
@@ -142,19 +142,19 @@ type ssoMockTenantRepo struct {
 	memberships []*tenant.Membership
 
 	// Error overrides
-	createErr             error
-	getByIDErr            error
-	getBySlugErr          error
-	updateErr             error
-	deleteErr             error
-	existsBySlugResult    bool
-	existsBySlugErr       error
-	createMembershipErr   error
-	getMembershipErr      error
-	getMembershipByIDErr  error
-	updateMembershipErr   error
-	deleteMembershipErr   error
-	getUserMembershipsErr error
+	createErr              error
+	getByIDErr             error
+	getBySlugErr           error
+	updateErr              error
+	deleteErr              error
+	existsBySlugResult     bool
+	existsBySlugErr        error
+	createMembershipErr    error
+	getMembershipErr       error
+	getMembershipByIDErr   error
+	updateMembershipErr    error
+	deleteMembershipErr    error
+	getUserMembershipsErr  error
 	listActiveTenantIDsErr error
 }
 
@@ -220,6 +220,18 @@ func (m *ssoMockTenantRepo) ListActiveTenantIDs(_ context.Context) ([]shared.ID,
 		return nil, m.listActiveTenantIDsErr
 	}
 	return nil, nil
+}
+
+func (m *ssoMockTenantRepo) CreateWithOwner(_ context.Context, t *tenant.Tenant, membership *tenant.Membership) error {
+	if m.createErr != nil {
+		return m.createErr
+	}
+	if m.createMembershipErr != nil {
+		return m.createMembershipErr
+	}
+	m.addTenant(t)
+	m.memberships = append(m.memberships, membership)
+	return nil
 }
 
 func (m *ssoMockTenantRepo) CreateMembership(_ context.Context, membership *tenant.Membership) error {
@@ -346,21 +358,21 @@ type ssoMockUserRepo struct {
 	users map[string]*user.User // keyed by ID
 
 	// Error overrides
-	createErr              error
-	getByIDErr             error
-	getByEmailErr          error
-	getByEmailForAuthErr   error
-	updateErr              error
-	deleteErr              error
-	existsByEmailResult    bool
-	existsByEmailErr       error
-	existsByKeycloakIDResult bool
-	existsByKeycloakIDErr  error
-	getByKeycloakIDErr     error
-	upsertFromKeycloakErr  error
-	getByIDsErr            error
-	countResult            int64
-	countErr               error
+	createErr                  error
+	getByIDErr                 error
+	getByEmailErr              error
+	getByEmailForAuthErr       error
+	updateErr                  error
+	deleteErr                  error
+	existsByEmailResult        bool
+	existsByEmailErr           error
+	existsByKeycloakIDResult   bool
+	existsByKeycloakIDErr      error
+	getByKeycloakIDErr         error
+	upsertFromKeycloakErr      error
+	getByIDsErr                error
+	countResult                int64
+	countErr                   error
 	getByEmailVerificationErr  error
 	getByPasswordResetTokenErr error
 
@@ -2378,4 +2390,67 @@ func makeDomainsList(n int) []string {
 		domains = append(domains, "domain"+strings.Repeat("x", i%10)+".com")
 	}
 	return domains
+}
+
+// =============================================================================
+// Tests: CompleteFederatedLogin (shared SAML/federated session tail)
+// =============================================================================
+
+func TestSSOService_CompleteFederatedLogin_NewUser(t *testing.T) {
+	userRepo := newSSOmockUserRepo()
+	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), userRepo,
+		newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+	tn := createTestTenant("acme")
+
+	res, err := svc.CompleteFederatedLogin(context.Background(), tn, "new@example.com", "New User", "member", false)
+	if err != nil {
+		t.Fatalf("CompleteFederatedLogin: %v", err)
+	}
+	if res.AccessToken == "" || res.RefreshToken == "" {
+		t.Error("expected a session token pair")
+	}
+	if res.User == nil || res.User.Email() != "new@example.com" {
+		t.Errorf("unexpected user: %+v", res.User)
+	}
+}
+
+func TestSSOService_CompleteFederatedLogin_TakeoverGuardBlocksPasswordUser(t *testing.T) {
+	userRepo := newSSOmockUserRepo()
+	// Seed a password-backed local account.
+	local, err := user.NewLocalUser("local@example.com", "Local User", "hashed-password")
+	if err != nil {
+		t.Fatalf("seed local user: %v", err)
+	}
+	_ = userRepo.Create(context.Background(), local)
+
+	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), userRepo,
+		newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+	tn := createTestTenant("acme")
+
+	_, err = svc.CompleteFederatedLogin(context.Background(), tn, "local@example.com", "Local User", "member", false)
+	if !errors.Is(err, app.ErrSSOFederatedTakeover) {
+		t.Fatalf("expected ErrSSOFederatedTakeover for a password-backed account, got %v", err)
+	}
+}
+
+func TestSSOService_CompleteFederatedLogin_ReusesPasswordlessUser(t *testing.T) {
+	userRepo := newSSOmockUserRepo()
+	// A passwordless local user (e.g. invited / SCIM-provisioned) is claimable.
+	invited, err := user.New("invited@example.com", "Invited")
+	if err != nil {
+		t.Fatalf("seed invited user: %v", err)
+	}
+	_ = userRepo.Create(context.Background(), invited)
+
+	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), userRepo,
+		newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+	tn := createTestTenant("acme")
+
+	res, err := svc.CompleteFederatedLogin(context.Background(), tn, "invited@example.com", "Invited", "member", false)
+	if err != nil {
+		t.Fatalf("CompleteFederatedLogin (passwordless): %v", err)
+	}
+	if res.User.ID() != invited.ID() {
+		t.Error("should reuse the existing passwordless user, not create a new one")
+	}
 }

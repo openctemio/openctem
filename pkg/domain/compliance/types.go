@@ -69,6 +69,17 @@ const (
 	ImpactInformational ImpactType = "informational"
 )
 
+// ParseImpactType validates and parses an impact type string. Returns an error
+// for unknown values so arbitrary strings are not persisted.
+func ParseImpactType(s string) (ImpactType, error) {
+	switch ImpactType(s) {
+	case ImpactDirect, ImpactIndirect, ImpactInformational:
+		return ImpactType(s), nil
+	default:
+		return "", fmt.Errorf("invalid impact type: %s", s)
+	}
+}
+
 // EvidenceType represents the type of evidence for an assessment.
 type EvidenceType string
 

@@ -1,3 +1,4 @@
+// Package group provides public types and helpers reusable across the codebase.
 package group
 
 import (

@@ -9,8 +9,24 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/pkg/domain/role"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// mockMembershipReader satisfies the role membership reader used by
+// RoleService to verify a role-assignment target is a member of the tenant.
+// userID strings present in members are treated as members; everything else
+// returns shared.ErrNotFound.
+type mockMembershipReader struct {
+	members map[string]bool
+}
+
+func (m *mockMembershipReader) GetMembership(_ context.Context, userID, tenantID shared.ID) (*tenant.Membership, error) {
+	if m.members[userID.String()] {
+		return tenant.NewMembership(userID, tenantID, tenant.RoleMember, nil)
+	}
+	return nil, shared.ErrNotFound
+}
 
 // =============================================================================
 // Mock Role Repository
@@ -24,33 +40,35 @@ type mockRoleRepo struct {
 	userRoles map[string][]role.ID
 
 	// Error overrides for specific methods
-	createErr         error
-	getByIDErr        error
-	getBySlugErr      error
-	updateErr         error
-	deleteErr         error
-	assignRoleErr     error
-	removeRoleErr     error
-	listForTenantErr  error
-	listSystemErr     error
-	getUserRolesErr   error
-	getUserPermsErr   error
-	setUserRolesErr   error
-	bulkAssignErr     error
-	listMembersErr    error
-	countUsersErr     error
-	hasFullAccessErr  error
+	createErr        error
+	getByIDErr       error
+	getBySlugErr     error
+	updateErr        error
+	deleteErr        error
+	assignRoleErr    error
+	removeRoleErr    error
+	listForTenantErr error
+	listSystemErr    error
+	getUserRolesErr  error
+	getUserPermsErr  error
+	setUserRolesErr  error
+	bulkAssignErr    error
+	listMembersErr   error
+	countUsersErr    error
+	hasFullAccessErr error
 
 	// Call tracking
-	createCalls       int
-	getByIDCalls      int
-	getBySlugCalls    int
-	updateCalls       int
-	deleteCalls       int
-	assignRoleCalls   int
-	removeRoleCalls   int
-	listMembersCalls  int
-	countUsersCalls   int
+	createCalls      int
+	getByIDCalls     int
+	getBySlugCalls   int
+	updateCalls      int
+	deleteCalls      int
+	assignRoleCalls  int
+	removeRoleCalls  int
+	listMembersCalls int
+	countUsersCalls  int
+	bulkAssignCalls  int
+	bulkAssignUserN  int // user count passed to the last bulk assign
 
 	// Additional behavior
 	hasFullAccessResult bool
@@ -198,10 +216,12 @@ func (m *mockRoleRepo) SetUserRoles(_ context.Context, _ role.ID, _ role.ID, _ [
 	return nil
 }
 
-func (m *mockRoleRepo) BulkAssignRoleToUsers(_ context.Context, _ role.ID, _ role.ID, _ []role.ID, _ *role.ID) error {
+func (m *mockRoleRepo) BulkAssignRoleToUsers(_ context.Context, _ role.ID, _ role.ID, userIDs []role.ID, _ *role.ID) error {
 	if m.bulkAssignErr != nil {
 		return m.bulkAssignErr
 	}
+	m.bulkAssignCalls++
+	m.bulkAssignUserN = len(userIDs)
 	return nil
 }
 
@@ -1110,5 +1130,95 @@ func TestListModulesWithPermissions_Success(t *testing.T) {
 	}
 	if len(modules) != 2 {
 		t.Errorf("expected 2 modules, got %d", len(modules))
+	}
+}
+
+// =============================================================================
+// Role-assignment tenant-membership guard
+// =============================================================================
+
+// newRoleServiceWithMembership builds a RoleService wired with a membership
+// reader so the ensureTenantMember guard is active.
+func newRoleServiceWithMembership(members ...string) (*app.RoleService, *mockRoleRepo) {
+	roleRepo := newMockRoleRepo()
+	permRepo := newMockPermissionRepo()
+	memberSet := make(map[string]bool, len(members))
+	for _, m := range members {
+		memberSet[m] = true
+	}
+	svc := app.NewRoleService(roleRepo, permRepo, logger.NewNop(),
+		app.WithRoleMembershipReader(&mockMembershipReader{members: memberSet}),
+	)
+	return svc, roleRepo
+}
+
+func TestAssignRole_NonMember_Rejected(t *testing.T) {
+	tenantID := role.NewID()
+	userID := role.NewID()
+	// membership reader knows of NO members → the target is not a member
+	svc, repo := newRoleServiceWithMembership()
+	r := seedCustomRole(repo, tenantID, "analyst", "Analyst", nil)
+
+	err := svc.AssignRole(context.Background(), app.AssignRoleInput{
+		TenantID: tenantID.String(),
+		UserID:   userID.String(),
+		RoleID:   r.ID().String(),
+	}, role.NewID().String(), app.AuditContext{})
+
+	if err == nil {
+		t.Fatal("expected role assignment to a non-member to be rejected")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+	if repo.assignRoleCalls != 0 {
+		t.Errorf("expected no repo assignment for a non-member, got %d", repo.assignRoleCalls)
+	}
+}
+
+func TestAssignRole_Member_Succeeds(t *testing.T) {
+	tenantID := role.NewID()
+	userID := role.NewID()
+	svc, repo := newRoleServiceWithMembership(userID.String())
+	r := seedCustomRole(repo, tenantID, "analyst", "Analyst", nil)
+
+	err := svc.AssignRole(context.Background(), app.AssignRoleInput{
+		TenantID: tenantID.String(),
+		UserID:   userID.String(),
+		RoleID:   r.ID().String(),
+	}, role.NewID().String(), app.AuditContext{})
+
+	if err != nil {
+		t.Fatalf("expected member assignment to succeed, got %v", err)
+	}
+	if repo.assignRoleCalls != 1 {
+		t.Errorf("expected 1 repo assignment, got %d", repo.assignRoleCalls)
+	}
+}
+
+func TestBulkAssignRole_SkipsNonMembers(t *testing.T) {
+	tenantID := role.NewID()
+	member := role.NewID()
+	nonMember := role.NewID()
+	svc, repo := newRoleServiceWithMembership(member.String())
+	r := seedCustomRole(repo, tenantID, "analyst", "Analyst", nil)
+
+	res, err := svc.BulkAssignRoleToUsers(context.Background(), app.BulkAssignRoleToUsersInput{
+		TenantID: tenantID.String(),
+		RoleID:   r.ID().String(),
+		UserIDs:  []string{member.String(), nonMember.String()},
+	}, role.NewID().String(), app.AuditContext{})
+
+	if err != nil {
+		t.Fatalf("expected bulk assign to succeed, got %v", err)
+	}
+	if res.SuccessCount != 1 || res.FailedCount != 1 {
+		t.Errorf("expected 1 success / 1 failed, got %d / %d", res.SuccessCount, res.FailedCount)
+	}
+	if repo.bulkAssignCalls != 1 {
+		t.Errorf("expected 1 bulk repo call (members only), got %d", repo.bulkAssignCalls)
+	}
+	if repo.bulkAssignUserN != 1 {
+		t.Errorf("expected only the 1 member passed to the repo, got %d", repo.bulkAssignUserN)
 	}
 }

@@ -1076,7 +1076,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			FROM assets a
 			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1
 				AND f.status NOT IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
-			WHERE a.tenant_id = $1 AND a.is_crown_jewel = TRUE
+			WHERE a.tenant_id = $1 AND COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE) = TRUE
 		),
 		mttr_critical AS (
 			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
@@ -1208,10 +1208,10 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 	`
 
 	var (
-		mttrCritical, mttrHigh, mttrMedium, mttrLow             float64
-		mttrP0, mttrP1, mttrP2, mttrP3                         float64
-		mttrOverall                                             float64
-		sampleSize                                              int
+		mttrCritical, mttrHigh, mttrMedium, mttrLow float64
+		mttrP0, mttrP1, mttrP2, mttrP3              float64
+		mttrOverall                                 float64
+		sampleSize                                  int
 	)
 
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(

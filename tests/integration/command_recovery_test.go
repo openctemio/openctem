@@ -25,8 +25,8 @@ func TestRecoverStuckTenantCommands(t *testing.T) {
 	offlineAgentID := createTestAgent(t, db, tenantID, "offline")
 
 	t.Run("RecoverCommandsFromOfflineAgent", func(t *testing.T) {
-		// Create a command assigned to offline agent
-		cmdID := createTestCommand(t, db, tenantID, offlineAgentID, "pending", 0)
+		// A command the offline agent acknowledged 30 min ago but never finished.
+		cmdID := createTestAckStuckCommand(t, db, tenantID, offlineAgentID, 0)
 
 		// Run recovery function
 		var recovered int
@@ -60,8 +60,8 @@ func TestRecoverStuckTenantCommands(t *testing.T) {
 	})
 
 	t.Run("DontRecoverCommandsFromOnlineAgent_WhenRecent", func(t *testing.T) {
-		// Create a RECENT command assigned to online agent (not stuck)
-		cmdID := createTestRecentCommand(t, db, tenantID, agentID, "pending", 0)
+		// Acknowledged just now (not stuck) — recovery must leave it assigned.
+		cmdID := createTestAckRecentCommand(t, db, tenantID, agentID, 0)
 
 		// Run recovery function with 10 minute threshold
 		var recovered int
@@ -90,8 +90,9 @@ func TestRecoverStuckTenantCommands(t *testing.T) {
 	})
 
 	t.Run("RespectMaxRetries", func(t *testing.T) {
-		// Create a command that has already been retried max times
-		cmdID := createTestCommand(t, db, tenantID, offlineAgentID, "pending", 3)
+		// Stuck+acknowledged but already at max dispatch_attempts — recovery must
+		// not pick it up (fail_exhausted_commands handles it instead).
+		cmdID := createTestAckStuckCommand(t, db, tenantID, offlineAgentID, 3)
 
 		// Run recovery function with max_retries=3
 		var recovered int
@@ -291,10 +292,10 @@ func TestRecoveryAndFailIntegration(t *testing.T) {
 	offlineAgentID := createTestAgent(t, db, tenantID, "offline")
 
 	t.Run("FullRecoveryWorkflow", func(t *testing.T) {
-		// Simulate: command assigned to agent that goes offline
-		cmdID := createTestCommand(t, db, tenantID, offlineAgentID, "pending", 0)
+		// Simulate: command acknowledged by an agent that then goes offline.
+		cmdID := createTestAckStuckCommand(t, db, tenantID, offlineAgentID, 0)
 
-		// First recovery attempt
+		// First recovery attempt (dispatch_attempts 0 -> 1)
 		var recovered int
 		db.QueryRow("SELECT recover_stuck_tenant_commands(10, 3)").Scan(&recovered)
 		if recovered != 1 {
@@ -308,24 +309,24 @@ func TestRecoveryAndFailIntegration(t *testing.T) {
 			t.Error("Command should be unassigned after recovery")
 		}
 
-		// Simulate: re-assigned to offline agent again (happens when no other agents)
-		db.Exec("UPDATE commands SET agent_id = $1 WHERE id = $2", offlineAgentID.String(), cmdID.String())
+		// Re-dispatched to an agent that acknowledges then goes offline again.
+		markAckStuck(t, db, cmdID, offlineAgentID)
 
-		// Second recovery
+		// Second recovery (1 -> 2)
 		db.QueryRow("SELECT recover_stuck_tenant_commands(10, 3)").Scan(&recovered)
 		if recovered != 1 {
 			t.Errorf("Second recovery should recover 1 command, got %d", recovered)
 		}
 
-		// Third recovery
-		db.Exec("UPDATE commands SET agent_id = $1 WHERE id = $2", offlineAgentID.String(), cmdID.String())
+		// Third recovery (2 -> 3)
+		markAckStuck(t, db, cmdID, offlineAgentID)
 		db.QueryRow("SELECT recover_stuck_tenant_commands(10, 3)").Scan(&recovered)
 		if recovered != 1 {
 			t.Errorf("Third recovery should recover 1 command, got %d", recovered)
 		}
 
-		// Fourth attempt - should NOT recover (max retries = 3)
-		db.Exec("UPDATE commands SET agent_id = $1 WHERE id = $2", offlineAgentID.String(), cmdID.String())
+		// Fourth attempt - should NOT recover (dispatch_attempts now at max = 3)
+		markAckStuck(t, db, cmdID, offlineAgentID)
 		db.QueryRow("SELECT recover_stuck_tenant_commands(10, 3)").Scan(&recovered)
 		if recovered != 0 {
 			t.Errorf("Fourth recovery should NOT recover (max retries), got %d", recovered)
@@ -410,7 +411,7 @@ func createTestAgent(t *testing.T, db *sql.DB, tenantID shared.ID, health string
 	t.Helper()
 
 	id := shared.NewID()
-	apiKeyHash := fmt.Sprintf("test-hash-%s", id.String()[:8])
+	apiKeyHash := fmt.Sprintf("test-hash-%s", id.String())
 	apiKeyPrefix := fmt.Sprintf("test-%s", id.String()[:4])
 
 	_, err := db.Exec(`
@@ -462,18 +463,54 @@ func cleanupCommandTestData(db *sql.DB, tenantID shared.ID) {
 	db.Exec("DELETE FROM tenants WHERE id = $1", tenantID.String())
 }
 
-// createTestRecentCommand creates a command that was just created (not stuck).
-func createTestRecentCommand(t *testing.T, db *sql.DB, tenantID, agentID shared.ID, status string, dispatchAttempts int) shared.ID {
+// createTestAckStuckCommand creates an 'acknowledged' tenant command that was
+// acknowledged long ago (stuck) and is still assigned to an agent. This is the
+// state recover_stuck_tenant_commands acts on: an agent acknowledged the
+// command, then went offline without completing it.
+func createTestAckStuckCommand(t *testing.T, db *sql.DB, tenantID, agentID shared.ID, dispatchAttempts int) shared.ID {
 	t.Helper()
 
 	id := shared.NewID()
 
 	_, err := db.Exec(`
-		INSERT INTO commands (id, tenant_id, agent_id, type, status, payload, is_platform_job, dispatch_attempts, created_at)
-		VALUES ($1, $2, $3, 'scan', $4, '{}', false, $5, NOW())
-	`, id.String(), tenantID.String(), agentID.String(), status, dispatchAttempts)
+		INSERT INTO commands (id, tenant_id, agent_id, type, status, payload, is_platform_job, dispatch_attempts, created_at, acknowledged_at)
+		VALUES ($1, $2, $3, 'scan', 'acknowledged', '{}', false, $4, NOW() - INTERVAL '30 minutes', NOW() - INTERVAL '30 minutes')
+	`, id.String(), tenantID.String(), agentID.String(), dispatchAttempts)
 	if err != nil {
-		t.Fatalf("Failed to create test recent command: %v", err)
+		t.Fatalf("Failed to create test acknowledged stuck command: %v", err)
+	}
+
+	return id
+}
+
+// markAckStuck puts an existing command back into the stuck-acknowledged state
+// (re-assigned to an agent that acknowledged it 30 minutes ago), simulating the
+// command being re-dispatched and the new agent going offline again.
+func markAckStuck(t *testing.T, db *sql.DB, cmdID, agentID shared.ID) {
+	t.Helper()
+	_, err := db.Exec(`
+		UPDATE commands
+		SET agent_id = $1, status = 'acknowledged', acknowledged_at = NOW() - INTERVAL '30 minutes'
+		WHERE id = $2
+	`, agentID.String(), cmdID.String())
+	if err != nil {
+		t.Fatalf("Failed to re-stick command: %v", err)
+	}
+}
+
+// createTestAckRecentCommand creates an 'acknowledged' command acknowledged just
+// now (not stuck) — recovery must leave it alone.
+func createTestAckRecentCommand(t *testing.T, db *sql.DB, tenantID, agentID shared.ID, dispatchAttempts int) shared.ID {
+	t.Helper()
+
+	id := shared.NewID()
+
+	_, err := db.Exec(`
+		INSERT INTO commands (id, tenant_id, agent_id, type, status, payload, is_platform_job, dispatch_attempts, created_at, acknowledged_at)
+		VALUES ($1, $2, $3, 'scan', 'acknowledged', '{}', false, $4, NOW(), NOW())
+	`, id.String(), tenantID.String(), agentID.String(), dispatchAttempts)
+	if err != nil {
+		t.Fatalf("Failed to create test acknowledged recent command: %v", err)
 	}
 
 	return id

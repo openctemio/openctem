@@ -1,3 +1,4 @@
+// Package assettype provides public types and helpers reusable across the codebase.
 package assettype
 
 import (

@@ -40,8 +40,13 @@ func registerTenantRoutes(
 		// Create a new tenant
 		r.POST("/", h.Create)
 
-		// Get tenant by ID or slug
-		r.GET("/{tenant}", h.Get)
+		// Get tenant by ID or slug — MUST be scoped to the caller's
+		// membership. Without TenantContext + RequireMembership any
+		// authenticated user could read any tenant's record + settings
+		// by guessing its id/slug (cross-tenant IDOR).
+		r.GET("/{tenant}", h.Get,
+			middleware.TenantContext(tenantRepo),
+			middleware.RequireMembership(membershipReader))
 	}, baseMiddlewares...)
 
 	// Tenantless module-preset catalogue — used by the team-creation

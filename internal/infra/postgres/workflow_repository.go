@@ -120,6 +120,9 @@ func (r *WorkflowRepository) List(ctx context.Context, filter workflow.WorkflowF
 		}
 		workflows = append(workflows, w)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(workflows, total, page), nil
 }
@@ -492,6 +495,9 @@ func (r *WorkflowRepository) ListActiveWithTriggerType(ctx context.Context, tena
 		}
 		workflows = append(workflows, w)
 		workflowIDs = append(workflowIDs, w.ID.String())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	if len(workflows) == 0 {

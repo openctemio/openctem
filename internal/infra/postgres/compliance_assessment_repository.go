@@ -142,14 +142,14 @@ func (r *ComplianceAssessmentRepository) GetOverdueCount(ctx context.Context, te
 func (r *ComplianceAssessmentRepository) scanAssessment(scan func(dest ...any) error) (*compliance.Assessment, error) {
 	var (
 		idStr, tenantIDStr, frameworkIDStr, controlIDStr string
-		status                                          string
-		priority, owner, notes                          sql.NullString
-		evidenceType                                    sql.NullString
-		evidenceIDs                                     []string
-		evidenceCount, findingCount                     int
-		assessedByStr                                   sql.NullString
-		assessedAt, dueDate                             sql.NullTime
-		createdAt, updatedAt                            time.Time
+		status                                           string
+		priority, owner, notes                           sql.NullString
+		evidenceType                                     sql.NullString
+		evidenceIDs                                      []string
+		evidenceCount, findingCount                      int
+		assessedByStr                                    sql.NullString
+		assessedAt, dueDate                              sql.NullTime
+		createdAt, updatedAt                             time.Time
 	)
 
 	err := scan(

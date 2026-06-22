@@ -396,3 +396,24 @@ func (m *teamMockMemberRepo) RemoveCampaignMemberSafely(_ context.Context, _, _,
 	m.deleteByUserIDCalled = true
 	return targetRole, nil
 }
+
+func (m *teamMockMemberRepo) UpdateRoleSafely(_ context.Context, _, _, targetUserID string, newRole pentest.CampaignRole) (pentest.CampaignRole, error) {
+	var targetRole pentest.CampaignRole
+	leadCount := 0
+	for _, member := range m.listByCampaign {
+		if member.Role() == pentest.CampaignRoleLead {
+			leadCount++
+		}
+		if member.UserID().String() == targetUserID {
+			targetRole = member.Role()
+		}
+	}
+	if targetRole == "" {
+		return "", pentest.ErrMemberNotFound
+	}
+	if targetRole == pentest.CampaignRoleLead && newRole != pentest.CampaignRoleLead && leadCount <= 1 {
+		return "", pentest.ErrLastLead
+	}
+	m.updateRoleCalled = true
+	return targetRole, nil
+}

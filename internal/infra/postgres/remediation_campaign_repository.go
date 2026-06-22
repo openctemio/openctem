@@ -258,3 +258,36 @@ func (r *RemediationCampaignRepository) List(ctx context.Context, filter remedia
 
 	return pagination.NewResult(items, int64(total), page), nil
 }
+
+// ListNonTerminal returns non-terminal campaigns across all tenants, oldest
+// update first, so the progress-reconcile controller refreshes the most stale
+// campaigns first. limit <= 0 falls back to a default of 500.
+func (r *RemediationCampaignRepository) ListNonTerminal(ctx context.Context, limit int) ([]*remediation.Campaign, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+
+	query := "SELECT " + rcSelectCols + ` FROM remediation_campaigns
+		WHERE status NOT IN ('completed', 'canceled')
+		ORDER BY updated_at ASC
+		LIMIT $1`
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list non-terminal campaigns: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*remediation.Campaign, 0)
+	for rows.Next() {
+		c, err := r.scanCampaign(rows.Scan)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan campaign: %w", err)
+		}
+		items = append(items, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate campaigns: %w", err)
+	}
+	return items, nil
+}

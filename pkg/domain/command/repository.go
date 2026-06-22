@@ -32,6 +32,13 @@ type Repository interface {
 	// GetPendingForAgent retrieves pending commands for an agent.
 	GetPendingForAgent(ctx context.Context, tenantID shared.ID, agentID *shared.ID, limit int) ([]*Command, error)
 
+	// ClaimForAgent atomically transitions a still-pending command to
+	// acknowledged for the given agent, only if it is still pending and
+	// either unassigned or already assigned to this agent. Returns false if
+	// another concurrent poller already claimed it — this is what prevents
+	// the same unassigned command being double-dispatched to two agents.
+	ClaimForAgent(ctx context.Context, tenantID, commandID shared.ID, agentID string) (bool, error)
+
 	// List lists commands with filters and pagination.
 	List(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*Command], error)
 

@@ -100,6 +100,16 @@ func (m *wfActionMockFindingRepo) ListByComponentID(_ context.Context, _, _ shar
 	return pagination.Result[*vulnerability.Finding]{}, nil
 }
 
+func (m *wfActionMockFindingRepo) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
+}
+func (m *wfActionMockFindingRepo) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
+	return pagination.Result[vulnerability.ActiveCVE]{}, nil
+}
+func (m *wfActionMockFindingRepo) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
+}
+
 func (m *wfActionMockFindingRepo) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
 	return int64(len(m.findings)), nil
 }
@@ -155,6 +165,10 @@ func (m *wfActionMockFindingRepo) CountBySeverityForScan(_ context.Context, _ sh
 }
 
 func (m *wfActionMockFindingRepo) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+
+func (m *wfActionMockFindingRepo) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
 
@@ -1346,4 +1360,16 @@ func (m *wfActionMockFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ sha
 
 func (m *wfActionMockFindingRepo) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
 	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
+}
+
+func (m *wfActionMockFindingRepo) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
+	return nil
+}
+
+func (m *wfActionMockFindingRepo) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
+	return 0, nil
+}
+
+func (m *wfActionMockFindingRepo) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
+	return nil, nil
 }

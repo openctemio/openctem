@@ -25,7 +25,11 @@ import (
 //     normally pass a canonical JSON of the log or a concatenation of
 //     the scalar columns.
 //   - timestamp binds the hash to real time so reordering chain rows
-//     is detectable.
+//     is detectable. It is truncated to microseconds before hashing
+//     because PostgreSQL timestamptz only stores microsecond resolution:
+//     hashing the in-memory nanosecond time at write but the
+//     microsecond-truncated value read back at verify would make EVERY
+//     row mismatch on the round-trip.
 //
 // An empty prevHash is valid — it marks the first entry per tenant.
 // The returned string is lower-case hex, 64 characters. The function is
@@ -38,7 +42,10 @@ func ComputeAuditChainHash(prevHash, auditLogID, payload string, ts time.Time) s
 	writeField(h, prevHash)
 	writeField(h, auditLogID)
 	writeField(h, payload)
-	writeField(h, ts.UTC().Format(time.RFC3339Nano))
+	// Truncate to microseconds (PostgreSQL timestamptz resolution) so the
+	// write-time in-memory timestamp and the verify-time value read back
+	// from the DB hash identically.
+	writeField(h, ts.UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano))
 	return hex.EncodeToString(h.Sum(nil))
 }
 

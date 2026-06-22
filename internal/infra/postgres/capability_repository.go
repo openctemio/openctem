@@ -843,7 +843,7 @@ func (r *ToolCapabilityRepository) validateToolOwnership(ctx context.Context, te
 
 	var exists int
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(&exists)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("%w: tool not found or access denied", shared.ErrForbidden)
 	}
 	if err != nil {

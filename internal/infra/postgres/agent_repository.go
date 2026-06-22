@@ -186,6 +186,9 @@ func (r *AgentRepository) List(ctx context.Context, filter agent.Filter, page pa
 		}
 		agents = append(agents, a)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(agents, total, page), nil
 }
@@ -353,6 +356,9 @@ func (r *AgentRepository) FindByCapabilities(ctx context.Context, tenantID share
 		}
 		agents = append(agents, a)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return agents, nil
 }
@@ -455,6 +461,9 @@ func (r *AgentRepository) FindAvailableWithCapacity(ctx context.Context, tenantI
 			return nil, err
 		}
 		agents = append(agents, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return agents, nil
@@ -1103,6 +1112,9 @@ func (r *AgentRepository) GetAgentsOfflineSince(ctx context.Context, since time.
 			return nil, err
 		}
 		agents = append(agents, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return agents, nil

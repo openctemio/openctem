@@ -1,3 +1,4 @@
+// Package sla provides public types and helpers reusable across the codebase.
 package sla
 
 import (

@@ -1,4 +1,4 @@
-// Package asset_group provides domain models for asset group management.
+// Package assetgroup provides domain models for asset group management.
 // Asset groups organize assets for CTEM (Continuous Threat Exposure Management) scoping.
 package assetgroup
 

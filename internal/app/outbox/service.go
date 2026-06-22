@@ -1,3 +1,4 @@
+// Package outbox implements the application service for the outbox bounded context — orchestrates pkg/domain/outbox entities and cross-cutting concerns (audit, notifications, RBAC).
 package outbox
 
 import (
@@ -229,6 +230,17 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 		entry.MarkCompleted()
 	}
 
+	// If MarkFailed rescheduled the entry for retry (status back to pending with
+	// a backoff), it must STAY in the outbox — persist and return. Without this,
+	// the code below archived + deleted it, so any transient downstream failure
+	// (Slack 5xx, SMTP timeout) silently dropped the notification on the first
+	// attempt and the entire exponential-backoff retry path was dead code.
+	if entry.Status() == outboxdom.OutboxStatusPending {
+		return s.outboxRepo.Update(ctx, entry)
+	}
+
+	s.alertIfDeadLettered(entry)
+
 	// Archive to notification_events
 	event := outboxdom.NewEventFromOutbox(entry, results)
 	if err := s.eventRepo.Create(ctx, event); err != nil {
@@ -259,6 +271,26 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 	)
 
 	return nil
+}
+
+// alertIfDeadLettered emits an ERROR for a terminal 'dead' entry — a
+// notification that failed permanently (retries exhausted). It is about to be
+// archived + removed from the outbox, so without an explicit ERROR it would
+// vanish silently (otherwise logged only at Debug, indistinguishable from
+// success). Ops can alert on this message + level=error.
+func (s *Service) alertIfDeadLettered(entry *outboxdom.Outbox) {
+	if entry.Status() != outboxdom.OutboxStatusDead {
+		return
+	}
+	s.log.Error("notification dead-lettered after exhausting retries",
+		"outbox_id", entry.ID().String(),
+		"tenant_id", entry.TenantID().String(),
+		"event_type", entry.EventType(),
+		"title", entry.Title(),
+		"retry_count", entry.RetryCount(),
+		"max_retries", entry.MaxRetries(),
+		"last_error", entry.LastError(),
+	)
 }
 
 // getNotificationIntegrationsForTenant gets all connected notification integrations for a tenant.

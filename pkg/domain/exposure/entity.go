@@ -1,3 +1,4 @@
+// Package exposure provides public types and helpers reusable across the codebase.
 package exposure
 
 import (

@@ -285,7 +285,7 @@ func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 
 	commandID := chi.URLParam(r, "id")
 
-	cmd, err := h.service.Acknowledge(r.Context(), agt.TenantID.String(), commandID)
+	cmd, err := h.service.Acknowledge(r.Context(), agt.TenantID.String(), agt.ID.String(), commandID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -317,7 +317,7 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 
 	commandID := chi.URLParam(r, "id")
 
-	cmd, err := h.service.Start(r.Context(), agt.TenantID.String(), commandID)
+	cmd, err := h.service.Start(r.Context(), agt.TenantID.String(), agt.ID.String(), commandID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -358,6 +358,7 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 
 	cmd, err := h.service.Complete(r.Context(), command.CompleteInput{
 		TenantID:  agt.TenantID.String(),
+		AgentID:   agt.ID.String(),
 		CommandID: commandID,
 		Result:    req.Result,
 	})
@@ -451,6 +452,7 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 
 	cmd, err := h.service.Fail(r.Context(), command.FailInput{
 		TenantID:     agt.TenantID.String(),
+		AgentID:      agt.ID.String(),
 		CommandID:    commandID,
 		ErrorMessage: req.ErrorMessage,
 	})

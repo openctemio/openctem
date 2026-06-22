@@ -1,3 +1,4 @@
+// Package template implements the application service for the template bounded context — orchestrates pkg/domain/template entities and cross-cutting concerns (audit, notifications, RBAC).
 package template
 
 import (

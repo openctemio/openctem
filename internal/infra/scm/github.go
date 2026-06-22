@@ -1,6 +1,7 @@
 package scm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -274,13 +275,13 @@ func (c *GitHubClient) ListRepositories(ctx context.Context, opts ListOptions) (
 		}
 		repos = convertGHRepos(ghRepos)
 
-		// Get total from Link header if available
+		// Estimate total from the rel="last" page in the Link header. GitHub's
+		// list API does not expose an exact count, so we use lastPage*perPage
+		// (page-accurate, vs the previous arbitrary len*10). Falls back to the
+		// current page size when there is no "last" link (single page).
 		total = len(repos)
-		if linkHeader := resp.Header.Get("Link"); linkHeader != "" {
-			if strings.Contains(linkHeader, "last") {
-				// There are more pages
-				total = len(repos) * 10 // Estimate
-			}
+		if lastPage := lastPageFromLinkHeader(resp.Header.Get("Link")); lastPage > opts.Page && opts.PerPage > 0 {
+			total = lastPage * opts.PerPage
 		}
 	}
 
@@ -336,6 +337,130 @@ func (c *GitHubClient) GetRepository(ctx context.Context, fullName string) (*Rep
 	return &repo, nil
 }
 
+// ListBranches returns the branches of a repository, walking pages up to a cap.
+func (c *GitHubClient) ListBranches(ctx context.Context, fullName string, opts ListOptions) ([]Branch, error) {
+	perPage := opts.PerPage
+	if perPage <= 0 || perPage > 100 {
+		perPage = 100
+	}
+	const maxPages = 20 // cap: up to maxPages*perPage branches
+	var branches []Branch
+	for page := 1; page <= maxPages; page++ {
+		path := fmt.Sprintf("/repos/%s/branches?page=%d&per_page=%d", fullName, page, perPage)
+		resp, err := c.doRequest(ctx, "GET", path, nil)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusUnauthorized {
+			resp.Body.Close()
+			return nil, ErrAuthFailed.Wrap(fmt.Errorf("invalid or expired token"))
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			return nil, ErrNotFound.Wrap(fmt.Errorf("repository %s not found", fullName))
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		}
+		var page1 []struct {
+			Name      string `json:"name"`
+			Protected bool   `json:"protected"`
+			Commit    struct {
+				SHA string `json:"sha"`
+			} `json:"commit"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&page1); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		resp.Body.Close()
+		for _, b := range page1 {
+			branches = append(branches, Branch{Name: b.Name, Protected: b.Protected, CommitSHA: b.Commit.SHA})
+		}
+		if len(page1) < perPage {
+			break
+		}
+	}
+	return branches, nil
+}
+
+// CreateIssue creates a GitHub issue in the given owner/repo and returns the
+// new issue's number and html_url.
+//
+// SECURITY: owner/repo are path-escaped to prevent path injection. On a
+// non-201 response the error includes only the status code — the response
+// body is NOT leaked verbatim (it may echo attacker-influenced input or
+// reveal internal detail).
+func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, string, error) {
+	payload := struct {
+		Title  string   `json:"title"`
+		Body   string   `json:"body"`
+		Labels []string `json:"labels,omitempty"`
+	}{
+		Title:  title,
+		Body:   body,
+		Labels: labels,
+	}
+
+	buf, err := json.Marshal(payload)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to encode issue payload: %w", err)
+	}
+
+	path := fmt.Sprintf("/repos/%s/%s/issues", url.PathEscape(owner), url.PathEscape(repo))
+	resp, err := c.doRequest(ctx, http.MethodPost, path, bytes.NewReader(buf))
+	if err != nil {
+		return 0, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		// Drain a bounded amount so the connection can be reused, but do
+		// not surface the body in the returned error.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		return 0, "", fmt.Errorf("failed to create github issue: unexpected status %d", resp.StatusCode)
+	}
+
+	var created struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return 0, "", fmt.Errorf("failed to decode issue response: %w", err)
+	}
+
+	return created.Number, created.HTMLURL, nil
+}
+
+// UpdateIssueState sets a GitHub issue's state ("open" or "closed").
+// Used by outbound finding→issue status sync. owner/repo are path-escaped; on a
+// non-200 response the error carries only the status code (no body leak).
+func (c *GitHubClient) UpdateIssueState(ctx context.Context, owner, repo string, number int, state string) error {
+	if state != "open" && state != "closed" {
+		return fmt.Errorf("invalid issue state %q", state)
+	}
+	buf, err := json.Marshal(struct {
+		State string `json:"state"`
+	}{State: state})
+	if err != nil {
+		return fmt.Errorf("failed to encode issue state payload: %w", err)
+	}
+
+	path := fmt.Sprintf("/repos/%s/%s/issues/%d", url.PathEscape(owner), url.PathEscape(repo), number)
+	resp, err := c.doRequest(ctx, http.MethodPatch, path, bytes.NewReader(buf))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		return fmt.Errorf("failed to update github issue: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // getRepositoryLanguages fetches all languages for a repository
 func (c *GitHubClient) getRepositoryLanguages(ctx context.Context, fullName string) (map[string]int, error) {
 	path := fmt.Sprintf("/repos/%s/languages", fullName)
@@ -360,6 +485,35 @@ func (c *GitHubClient) getRepositoryLanguages(ctx context.Context, fullName stri
 }
 
 // Helper methods
+
+// lastPageFromLinkHeader extracts the page number of the rel="last" link from a
+// GitHub-style Link header, or 0 if there is none / it can't be parsed. Example:
+//
+//	<https://api.github.com/user/repos?page=2>; rel="next",
+//	<https://api.github.com/user/repos?page=5>; rel="last"
+func lastPageFromLinkHeader(linkHeader string) int {
+	if linkHeader == "" {
+		return 0
+	}
+	for _, part := range strings.Split(linkHeader, ",") {
+		if !strings.Contains(part, `rel="last"`) {
+			continue
+		}
+		start := strings.Index(part, "<")
+		end := strings.Index(part, ">")
+		if start < 0 || end <= start {
+			continue
+		}
+		u, err := url.Parse(part[start+1 : end])
+		if err != nil {
+			continue
+		}
+		if p, err := strconv.Atoi(u.Query().Get("page")); err == nil && p > 0 {
+			return p
+		}
+	}
+	return 0
+}
 
 func (c *GitHubClient) doRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
 	reqURL := c.baseURL + path

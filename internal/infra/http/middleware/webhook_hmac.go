@@ -51,11 +51,32 @@ const (
 // per-integration, or per-path. Return ("", false) to reject.
 type WebhookSecretFn func(r *http.Request) (secret string, ok bool)
 
-// VerifyHMAC returns middleware that enforces HMAC-SHA256 on the request body.
-// headerName is the header that carries the signature (e.g. "X-OpenCTEM-Signature").
-// If the resolved secret is empty, the middleware refuses all requests — this
-// is intentional to prevent silent bypass when configuration is missing.
+// WebhookSecretsFn returns the set of candidate HMAC secrets accepted for an
+// incoming request. The signature is valid if it matches ANY candidate (e.g. a
+// tenant with several integrations, or a per-tenant secret plus a platform
+// fallback). Return (nil/empty, false) to reject. Implementations should derive
+// the candidates from the request in a tenant-scoped way so one tenant's secret
+// can never verify another tenant's request.
+type WebhookSecretsFn func(r *http.Request) (secrets []string, ok bool)
+
+// VerifyHMAC returns middleware that enforces HMAC-SHA256 on the request body
+// using a single resolved secret. It is a thin wrapper over VerifyHMACMulti.
 func VerifyHMAC(headerName string, secretFn WebhookSecretFn, log *logger.Logger) func(http.Handler) http.Handler {
+	return VerifyHMACMulti(headerName, func(r *http.Request) ([]string, bool) {
+		secret, ok := secretFn(r)
+		if !ok || secret == "" {
+			return nil, false
+		}
+		return []string{secret}, true
+	}, log)
+}
+
+// VerifyHMACMulti returns middleware that enforces HMAC-SHA256 on the request
+// body, accepting the signature if it matches any secret returned by secretsFn.
+// headerName is the header that carries the signature (e.g. "X-OpenCTEM-Signature").
+// If no candidate secrets are resolved, the middleware refuses all requests —
+// this is intentional to prevent silent bypass when configuration is missing.
+func VerifyHMACMulti(headerName string, secretsFn WebhookSecretsFn, log *logger.Logger) func(http.Handler) http.Handler {
 	if headerName == "" {
 		headerName = "X-OpenCTEM-Signature"
 	}
@@ -101,8 +122,8 @@ func VerifyHMAC(headerName string, secretFn WebhookSecretFn, log *logger.Logger)
 				return
 			}
 
-			secret, ok := secretFn(r)
-			if !ok || secret == "" {
+			secrets, ok := secretsFn(r)
+			if !ok || len(secrets) == 0 {
 				// Fail closed — do not process an unsigned-equivalent request.
 				log.Error("webhook rejected: no secret configured", "path", r.URL.Path)
 				apierror.Unauthorized("webhook not configured").WriteJSON(w)
@@ -128,9 +149,23 @@ func VerifyHMAC(headerName string, secretFn WebhookSecretFn, log *logger.Logger)
 			// MUST be in the signed payload, otherwise an attacker could
 			// strip the timestamp header and replace it with a fresh one
 			// while keeping the original body+signature.
-			expected := computeHMACWithTimestamp(body, tsHeader, secret)
+			//
+			// The signature is accepted if it matches ANY candidate secret.
+			// Every candidate is checked with a constant-time compare and we do
+			// not short-circuit the loop on a match, so verification time does
+			// not leak which (or how many) secrets matched.
 			provided := normalizeSig(sigHeader)
-			if provided == "" || subtle.ConstantTimeCompare([]byte(expected), []byte(provided)) != 1 {
+			matched := 0
+			for _, secret := range secrets {
+				if secret == "" {
+					continue
+				}
+				expected := computeHMACWithTimestamp(body, tsHeader, secret)
+				if provided != "" && subtle.ConstantTimeCompare([]byte(expected), []byte(provided)) == 1 {
+					matched++
+				}
+			}
+			if matched == 0 {
 				log.Warn("webhook rejected: bad signature", "path", r.URL.Path, "remote_ip", r.RemoteAddr)
 				apierror.Unauthorized("invalid webhook signature").WriteJSON(w)
 				return
@@ -153,7 +188,6 @@ func computeHMACWithTimestamp(body []byte, ts, secret string) string {
 	_, _ = m.Write(body)
 	return hex.EncodeToString(m.Sum(nil))
 }
-
 
 // normalizeSig accepts either raw hex ("ab12...") or "sha256=ab12..." and
 // returns the lowercase hex portion. Returns "" on malformed input.

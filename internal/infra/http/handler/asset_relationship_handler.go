@@ -73,8 +73,11 @@ type CreateRelationshipRequest struct {
 // path (`/assets/{id}/relationships/batch`) and is shared across the
 // whole batch.
 type BatchCreateRelationshipItem struct {
-	Type            string   `json:"type" validate:"required"`
-	TargetAssetID   string   `json:"target_asset_id" validate:"required,uuid"`
+	Type string `json:"type" validate:"required"`
+	// No `uuid` constraint: the batch is allSettled-style, so a malformed
+	// target ID must surface as a per-item error (handled in the service),
+	// not reject the entire batch at the validation layer.
+	TargetAssetID   string   `json:"target_asset_id" validate:"required"`
 	Description     string   `json:"description" validate:"max=1000"`
 	Confidence      string   `json:"confidence" validate:"omitempty"`
 	DiscoveryMethod string   `json:"discovery_method" validate:"omitempty"`

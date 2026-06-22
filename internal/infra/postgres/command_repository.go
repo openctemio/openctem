@@ -149,6 +149,9 @@ func (r *CommandRepository) GetPendingForAgent(ctx context.Context, tenantID sha
 		}
 		commands = append(commands, cmd)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return commands, nil
 }
@@ -191,8 +194,33 @@ func (r *CommandRepository) List(ctx context.Context, filter command.Filter, pag
 		}
 		commands = append(commands, cmd)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(commands, total, page), nil
+}
+
+// ClaimForAgent atomically acknowledges a still-pending command for the given
+// agent. The status='pending' guard makes the claim a no-op (0 rows) if another
+// poller already acknowledged it, so two agents polling the same unassigned
+// command can't both proceed (double dispatch).
+func (r *CommandRepository) ClaimForAgent(ctx context.Context, tenantID, commandID shared.ID, agentID string) (bool, error) {
+	query := `
+		UPDATE commands
+		SET status = 'acknowledged', agent_id = $3, acknowledged_at = NOW()
+		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
+		  AND (agent_id IS NULL OR agent_id = $3)
+	`
+	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), agentID)
+	if err != nil {
+		return false, fmt.Errorf("failed to claim command: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	return rowsAffected > 0, nil
 }
 
 // Update updates a command.
@@ -206,7 +234,7 @@ func (r *CommandRepository) Update(ctx context.Context, cmd *command.Command) er
 		    is_platform_job = $15, platform_agent_id = $16,
 		    auth_token_hash = $17, auth_token_prefix = $18, auth_token_expires_at = $19,
 		    queue_priority = $20, queued_at = $21, dispatch_attempts = $22
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $23
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -232,6 +260,7 @@ func (r *CommandRepository) Update(ctx context.Context, cmd *command.Command) er
 		cmd.QueuePriority,
 		nullTime(cmd.QueuedAt),
 		cmd.DispatchAttempts,
+		cmd.TenantID.String(),
 	)
 
 	if err != nil {
@@ -659,6 +688,9 @@ func (r *CommandRepository) FindExpired(ctx context.Context) ([]*command.Command
 		}
 		commands = append(commands, cmd)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return commands, nil
 }
@@ -761,6 +793,9 @@ func (r *CommandRepository) GetQueuedPlatformJobs(ctx context.Context, limit int
 			return nil, err
 		}
 		commands = append(commands, cmd)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return commands, nil
@@ -927,6 +962,9 @@ func (r *CommandRepository) ListPlatformJobsByTenant(ctx context.Context, tenant
 		}
 		commands = append(commands, cmd)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(commands, total, page), nil
 }
@@ -987,6 +1025,9 @@ func (r *CommandRepository) ListPlatformJobsAdmin(ctx context.Context, agentID, 
 		}
 		commands = append(commands, cmd)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(commands, total, page), nil
 }
@@ -1016,6 +1057,9 @@ func (r *CommandRepository) GetPlatformJobsByAgent(ctx context.Context, agentID 
 			return nil, err
 		}
 		commands = append(commands, cmd)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return commands, nil

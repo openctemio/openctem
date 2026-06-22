@@ -1,3 +1,4 @@
+// Package secretstore provides public types and helpers reusable across the codebase.
 package secretstore
 
 import (

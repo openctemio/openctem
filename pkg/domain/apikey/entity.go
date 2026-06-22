@@ -1,3 +1,4 @@
+// Package apikey provides public types and helpers reusable across the codebase.
 package apikey
 
 import (

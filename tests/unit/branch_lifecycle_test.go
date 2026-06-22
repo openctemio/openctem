@@ -45,6 +45,11 @@ func (m *MockFindingRepoForLifecycle) AutoResolveStale(ctx context.Context, tena
 	return m.AutoResolveStaleReturn, m.AutoResolveStaleError
 }
 
+func (m *MockFindingRepoForLifecycle) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	m.AutoResolveStaleCalled = true
+	return m.AutoResolveStaleReturn, m.AutoResolveStaleError
+}
+
 // Minimal implementations for interface compliance
 func (m *MockFindingRepoForLifecycle) Create(ctx context.Context, f *vulnerability.Finding) error {
 	return nil
@@ -88,6 +93,15 @@ func (m *MockFindingRepoForLifecycle) ListByVulnerabilityID(ctx context.Context,
 // Security: ListByComponentID now requires tenantID for tenant isolation
 func (m *MockFindingRepoForLifecycle) ListByComponentID(ctx context.Context, tenantID, compID shared.ID, opts vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
 	return pagination.Result[*vulnerability.Finding]{}, nil
+}
+func (m *MockFindingRepoForLifecycle) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
+}
+func (m *MockFindingRepoForLifecycle) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
+	return pagination.Result[vulnerability.ActiveCVE]{}, nil
+}
+func (m *MockFindingRepoForLifecycle) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 func (m *MockFindingRepoForLifecycle) Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error) {
 	return 0, nil
@@ -404,4 +418,16 @@ func (m *MockFindingRepoForLifecycle) UpdateWorkItemURIs(_ context.Context, _, _
 
 func (m *MockFindingRepoForLifecycle) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
 	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
+}
+
+func (m *MockFindingRepoForLifecycle) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
+	return nil
+}
+
+func (m *MockFindingRepoForLifecycle) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
+	return 0, nil
+}
+
+func (m *MockFindingRepoForLifecycle) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
+	return nil, nil
 }

@@ -256,3 +256,84 @@ func TestVerifyHMAC_MissingTimestamp_Rejects(t *testing.T) {
 		t.Fatalf("status = %d, want 401 (missing timestamp must be rejected)", rec.Code)
 	}
 }
+
+// =============================================================================
+// VerifyHMACMulti — multiple candidate secrets (per-tenant Jira webhook secrets
+// plus a platform fallback). The signature is valid if it matches ANY candidate.
+// =============================================================================
+
+func TestVerifyHMACMulti_AcceptsAnyCandidate(t *testing.T) {
+	log := logger.NewNop()
+	body := []byte(`{"a":1}`)
+	// Body signed with the second candidate.
+	sig, ts := signWithTS(body, "tenant-secret-B")
+	mw := VerifyHMACMulti("X-OpenCTEM-Signature", func(*http.Request) ([]string, bool) {
+		return []string{"tenant-secret-A", "tenant-secret-B", "platform-fallback"}, true
+	}, log)
+	rec := runMW(t, mw, downstream(t, body), body, map[string]string{
+		"X-OpenCTEM-Signature": sig,
+		"X-OpenCTEM-Timestamp": ts,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (signature matches a candidate)", rec.Code)
+	}
+}
+
+func TestVerifyHMACMulti_RejectsWhenNoCandidateMatches(t *testing.T) {
+	log := logger.NewNop()
+	body := []byte(`{"a":1}`)
+	// Signed with a secret not in the candidate set.
+	sig, ts := signWithTS(body, "some-other-tenant-secret")
+	mw := VerifyHMACMulti("X-OpenCTEM-Signature", func(*http.Request) ([]string, bool) {
+		return []string{"tenant-secret-A", "platform-fallback"}, true
+	}, log)
+	rec := runMW(t, mw, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatalf("handler must not run when no candidate matches")
+	}), body, map[string]string{
+		"X-OpenCTEM-Signature": sig,
+		"X-OpenCTEM-Timestamp": ts,
+	})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestVerifyHMACMulti_NoCandidates_FailsClosed(t *testing.T) {
+	log := logger.NewNop()
+	body := []byte(`{"a":1}`)
+	sig, ts := signWithTS(body, "anything")
+	mw := VerifyHMACMulti("X-OpenCTEM-Signature", func(*http.Request) ([]string, bool) {
+		return nil, false
+	}, log)
+	rec := runMW(t, mw, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatalf("handler must not run with no candidate secrets")
+	}), body, map[string]string{
+		"X-OpenCTEM-Signature": sig,
+		"X-OpenCTEM-Timestamp": ts,
+	})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (fail-closed)", rec.Code)
+	}
+}
+
+// TestVerifyHMACMulti_CrossTenantIsolation models the security property: a
+// request carrying tenant B's signature is rejected when the resolver only
+// returns tenant A's secrets (as it would, since secrets are tenant-scoped).
+func TestVerifyHMACMulti_CrossTenantIsolation(t *testing.T) {
+	log := logger.NewNop()
+	body := []byte(`{"ticket":"PROJ-1"}`)
+	sigFromB, ts := signWithTS(body, "tenant-B-secret")
+	// Resolver for tenant A returns only tenant A's secret (no platform fallback).
+	mw := VerifyHMACMulti("X-OpenCTEM-Signature", func(*http.Request) ([]string, bool) {
+		return []string{"tenant-A-secret"}, true
+	}, log)
+	rec := runMW(t, mw, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatalf("tenant B signature must not verify against tenant A secret")
+	}), body, map[string]string{
+		"X-OpenCTEM-Signature": sigFromB,
+		"X-OpenCTEM-Timestamp": ts,
+	})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (cross-tenant spoof rejected)", rec.Code)
+	}
+}

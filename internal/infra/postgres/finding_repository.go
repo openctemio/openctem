@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -463,28 +464,35 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 	return result, nil
 }
 
-// insertChunk inserts a chunk of findings in a single transaction.
+// insertChunk inserts a chunk of findings in a SINGLE multi-row INSERT.
+//
+// Previously this looped a prepared statement once per finding (N round-trips
+// per chunk). A single multi-row INSERT collapses that to one round-trip,
+// which dominates ingest latency for large scan reports. The statement is
+// atomic on its own, so no explicit transaction is needed.
+//
+// On failure (including the rare case where the same chunk contains two
+// findings with an identical (tenant_id, fingerprint) — which ON CONFLICT
+// cannot update twice in one statement), CreateBatchWithResult falls back to
+// per-row inserts, preserving partial-success error isolation.
 func (r *FindingRepository) insertChunk(ctx context.Context, findings []*vulnerability.Finding) error {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+	if len(findings) == 0 {
+		return nil
 	}
-	defer func() { _ = tx.Rollback() }()
 
-	stmt, err := tx.PrepareContext(ctx, r.upsertQuery())
-	if err != nil {
-		return fmt.Errorf("failed to prepare statement: %w", err)
-	}
-	defer stmt.Close()
-
+	args := make([]any, 0, len(findings)*findingInsertColumnCount)
 	for _, finding := range findings {
-		if err := r.execFindingInsert(ctx, stmt, finding); err != nil {
+		rowArgs, err := findingInsertArgs(finding)
+		if err != nil {
 			return err
 		}
+		args = append(args, rowArgs...)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+	query := findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(len(findings)) + "\n" + findingUpsertConflictSQL()
+
+	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to batch insert findings: %w", err)
 	}
 
 	return nil
@@ -515,8 +523,39 @@ func (r *FindingRepository) insertSingleFinding(ctx context.Context, finding *vu
 	return nil
 }
 
-// upsertQuery returns the INSERT ... ON CONFLICT query for findings.
+// upsertQuery returns the single-row INSERT ... ON CONFLICT query for findings
+// (used by the per-row fallback path). It is the column header + a one-row
+// VALUES tuple + the shared conflict clause.
 func (r *FindingRepository) upsertQuery() string {
+	return findingInsertColumnsSQL() + "\nVALUES " + findingValuesPlaceholders(1) + "\n" + findingUpsertConflictSQL()
+}
+
+// findingValuesPlaceholders builds the VALUES tuples for rowCount rows, e.g.
+// "($1,...,$81),($82,...,$162)". Placeholder numbering is contiguous across
+// rows so it lines up with a flattened argument slice.
+func findingValuesPlaceholders(rowCount int) string {
+	var b strings.Builder
+	n := 0
+	for row := 0; row < rowCount; row++ {
+		if row > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('(')
+		for col := 0; col < findingInsertColumnCount; col++ {
+			if col > 0 {
+				b.WriteByte(',')
+			}
+			n++
+			b.WriteByte('$')
+			b.WriteString(strconv.Itoa(n))
+		}
+		b.WriteByte(')')
+	}
+	return b.String()
+}
+
+// findingInsertColumnsSQL is the INSERT INTO findings (...) column header.
+func findingInsertColumnsSQL() string {
 	return `
 		INSERT INTO findings (
 			id, tenant_id, vulnerability_id, asset_id, branch_id, component_id, source,
@@ -537,11 +576,13 @@ func (r *FindingRepository) upsertQuery() string {
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
 			remediation, pentest_campaign_id
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
-			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
-			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70,
-			$71, $72, $73, $74, $75, $76, $77, $78, $79, $80, $81)
+		)`
+}
+
+// findingUpsertConflictSQL is the shared ON CONFLICT clause appended after the
+// VALUES tuples for both the single-row and multi-row finding inserts.
+func findingUpsertConflictSQL() string {
+	return `
 		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET
 			vulnerability_id = EXCLUDED.vulnerability_id,
 			component_id = EXCLUDED.component_id,
@@ -609,19 +650,37 @@ func (r *FindingRepository) upsertQuery() string {
 
 // execFindingInsert executes the insert for a single finding using prepared statement.
 func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stmt, finding *vulnerability.Finding) error {
+	args, err := findingInsertArgs(finding)
+	if err != nil {
+		return err
+	}
+	if _, err := stmt.ExecContext(ctx, args...); err != nil {
+		return fmt.Errorf("failed to insert finding: %w", err)
+	}
+	return nil
+}
+
+// findingInsertColumnCount is the number of columns in the findings INSERT.
+// It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
+const findingInsertColumnCount = 81
+
+// findingInsertArgs returns the ordered argument list for a single findings
+// INSERT row. Shared by the single-row prepared-statement path and the
+// multi-row batch insert so the column order has one source of truth.
+func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 	metadata, err := json.Marshal(finding.Metadata())
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
 	partialFingerprints, relatedLocations, stacks, attachments, err := marshalFindingSARIFFields(finding)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	remediationJSON := marshalRemediation(finding.Remediation())
 
-	_, err = stmt.ExecContext(ctx,
+	return []any{
 		finding.ID().String(),
 		finding.TenantID().String(),
 		nullID(finding.VulnerabilityID()),
@@ -709,12 +768,22 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 		remediationJSON,
 		// Pentest campaign reference
 		nullIDPtr(finding.PentestCampaignID()),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to insert finding: %w", err)
-	}
+	}, nil
+}
 
-	return nil
+// IsPentestCampaignMember reports whether the user belongs to the given
+// pentest campaign in this tenant. Used by the generic findings surface to
+// gate single-finding reads of pentest findings by campaign membership.
+func (r *FindingRepository) IsPentestCampaignMember(ctx context.Context, tenantID, campaignID, userID string) (bool, error) {
+	const q = `SELECT EXISTS (
+		SELECT 1 FROM pentest_campaign_members
+		WHERE tenant_id = $1 AND campaign_id = $2 AND user_id = $3
+	)`
+	var ok bool
+	if err := r.db.QueryRowContext(ctx, q, tenantID, campaignID, userID).Scan(&ok); err != nil {
+		return false, err
+	}
+	return ok, nil
 }
 
 // GetByID retrieves a finding by ID.
@@ -799,35 +868,35 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
-		finding.ID().String(),                 // $1
-		nullID(finding.VulnerabilityID()),     // $2
-		nullID(finding.ComponentID()),         // $3
-		nullID(finding.ToolID()),              // $4
-		nullString(finding.ToolVersion()),     // $5
-		nullString(finding.Snippet()),         // $6
-		finding.Message(),                     // $7
-		finding.Severity().String(),           // $8
-		finding.Status().String(),             // $9
-		nullString(finding.Resolution()),      // $10
+		finding.ID().String(),                  // $1
+		nullID(finding.VulnerabilityID()),      // $2
+		nullID(finding.ComponentID()),          // $3
+		nullID(finding.ToolID()),               // $4
+		nullString(finding.ToolVersion()),      // $5
+		nullString(finding.Snippet()),          // $6
+		finding.Message(),                      // $7
+		finding.Severity().String(),            // $8
+		finding.Status().String(),              // $9
+		nullString(finding.Resolution()),       // $10
 		nullString(finding.ResolutionMethod()), // $11
-		nullTime(finding.ResolvedAt()),        // $12
-		nullID(finding.ResolvedBy()),          // $13
-		nullString(finding.ScanID()),          // $14
-		metadata,                              // $15
-		finding.UpdatedAt(),                   // $16
-		nullID(finding.AssignedTo()),          // $17
-		nullTime(finding.AssignedAt()),        // $18
-		nullID(finding.AssignedBy()),          // $19
-		finding.TenantID().String(),           // $20 (WHERE)
-		nullString(finding.Title()),           // $21
-		nullString(finding.Description()),     // $22
-		pq.Array(finding.Tags()),              // $23
+		nullTime(finding.ResolvedAt()),         // $12
+		nullID(finding.ResolvedBy()),           // $13
+		nullString(finding.ScanID()),           // $14
+		metadata,                               // $15
+		finding.UpdatedAt(),                    // $16
+		nullID(finding.AssignedTo()),           // $17
+		nullTime(finding.AssignedAt()),         // $18
+		nullID(finding.AssignedBy()),           // $19
+		finding.TenantID().String(),            // $20 (WHERE)
+		nullString(finding.Title()),            // $21
+		nullString(finding.Description()),      // $22
+		pq.Array(finding.Tags()),               // $23
 		nullFloat64(finding.CVSSScore()),       // $24
-		nullString(finding.CVSSVector()),      // $25
-		nullString(finding.CVEID()),           // $26
-		pq.Array(finding.CWEIDs()),            // $27
-		pq.Array(finding.OWASPIDs()),          // $28
-		remediationJSON,                       // $29
+		nullString(finding.CVSSVector()),       // $25
+		nullString(finding.CVEID()),            // $26
+		pq.Array(finding.CWEIDs()),             // $27
+		pq.Array(finding.OWASPIDs()),           // $28
+		remediationJSON,                        // $29
 		// Priority classification (RFC-004)
 		nullFloat64(finding.EPSSScore()),              // $30
 		nullFloat64(finding.EPSSPercentile()),         // $31
@@ -977,6 +1046,339 @@ func (r *FindingRepository) ListByComponentID(ctx context.Context, tenantID, com
 	return r.List(ctx, filter, opts, page)
 }
 
+// ListActiveCVEsByTenant returns the distinct CVEs currently impacting assets in
+// the given tenant. Aggregates findings GROUP BY vulnerability_id and joins the
+// global vulnerabilities table for CVE metadata. Sort: severity → KEV → EPSS →
+// affected_assets desc.
+func (r *FindingRepository) ListActiveCVEsByTenant(
+	ctx context.Context,
+	tenantID shared.ID,
+	filter vulnerability.ActiveCVEFilter,
+	page pagination.Pagination,
+) (pagination.Result[vulnerability.ActiveCVE], error) {
+	empty := pagination.NewResult([]vulnerability.ActiveCVE{}, 0, page)
+
+	// Build dynamic WHERE for outer (vulnerabilities-level) filters
+	var whereClauses []string
+	args := []any{tenantID.String()}
+	argN := 2
+
+	statusFilter := ""
+	if !filter.IncludeResolved {
+		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+
+	if len(filter.SeverityIn) > 0 {
+		placeholders := make([]string, 0, len(filter.SeverityIn))
+		for _, s := range filter.SeverityIn {
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argN))
+			args = append(args, s)
+			argN++
+		}
+		whereClauses = append(whereClauses, fmt.Sprintf("v.severity IN (%s)", strings.Join(placeholders, ",")))
+	}
+	if filter.KEVOnly {
+		whereClauses = append(whereClauses, "v.cisa_kev_date_added IS NOT NULL")
+	}
+	if filter.MinCVSS != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(v.cvss_score, 0) >= $%d", argN))
+		args = append(args, *filter.MinCVSS)
+		argN++
+	}
+	if filter.MinEPSS != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(v.epss_score, 0) >= $%d", argN))
+		args = append(args, *filter.MinEPSS)
+		argN++
+	}
+	if filter.ExploitAvailable != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("COALESCE(v.exploit_available, false) = $%d", argN))
+		args = append(args, *filter.ExploitAvailable)
+		argN++
+	}
+
+	outerWhere := ""
+	if len(whereClauses) > 0 {
+		outerWhere = " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	countQuery := `
+		WITH agg AS (
+			SELECT f.vulnerability_id
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
+			GROUP BY f.vulnerability_id
+		)
+		SELECT COUNT(*) FROM agg
+		JOIN vulnerabilities v ON v.id = agg.vulnerability_id` + outerWhere
+
+	limitArg := argN
+	offsetArg := argN + 1
+	args = append(args, page.Limit(), page.Offset())
+
+	listQuery := `
+		WITH agg AS (
+			SELECT
+				f.vulnerability_id,
+				COUNT(DISTINCT f.asset_id)               AS affected_assets_count,
+				COUNT(DISTINCT f.component_id) FILTER (WHERE f.component_id IS NOT NULL) AS affected_components_count,
+				COUNT(*)                                 AS total_finding_count,
+				COUNT(*) FILTER (WHERE f.status IN ('new','confirmed','in_progress')) AS open_finding_count,
+				MIN(CASE f.status
+					WHEN 'new'         THEN 1
+					WHEN 'confirmed'   THEN 2
+					WHEN 'in_progress' THEN 3
+					WHEN 'accepted'    THEN 4
+					WHEN 'false_positive' THEN 5
+					WHEN 'resolved'    THEN 6
+					ELSE 7 END) AS worst_status_rank,
+				MIN(f.first_detected_at) AS first_detected_at,
+				MAX(f.last_seen_at)      AS last_seen_at
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
+			GROUP BY f.vulnerability_id
+		)
+		SELECT
+			v.id, v.cve_id, v.title, v.severity,
+			v.cvss_score, v.epss_score,
+			(v.cisa_kev_date_added IS NOT NULL) AS in_cisa_kev,
+			COALESCE(v.exploit_maturity, 'none') AS exploit_maturity,
+			COALESCE(v.exploit_available, false) AS exploit_available,
+			COALESCE(v.fixed_versions, '{}'::text[]) AS fixed_versions,
+			v.published_at,
+			agg.affected_assets_count,
+			agg.affected_components_count,
+			agg.total_finding_count,
+			agg.open_finding_count,
+			(ARRAY['new','confirmed','in_progress','accepted','false_positive','resolved','unknown']::text[])[LEAST(agg.worst_status_rank, 7)] AS worst_finding_status,
+			agg.first_detected_at, agg.last_seen_at
+		FROM agg
+		JOIN vulnerabilities v ON v.id = agg.vulnerability_id` + outerWhere + `
+		ORDER BY
+			CASE v.severity
+				WHEN 'critical' THEN 1
+				WHEN 'high'     THEN 2
+				WHEN 'medium'   THEN 3
+				WHEN 'low'      THEN 4
+				WHEN 'info'     THEN 5
+				ELSE 6
+			END,
+			(v.cisa_kev_date_added IS NOT NULL) DESC,
+			COALESCE(v.epss_score, 0) DESC,
+			agg.affected_assets_count DESC
+		LIMIT $` + fmt.Sprintf("%d", limitArg) + ` OFFSET $` + fmt.Sprintf("%d", offsetArg)
+
+	countArgs := args[:len(args)-2]
+
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return empty, fmt.Errorf("failed to count active CVEs: %w", err)
+	}
+	if total == 0 {
+		return empty, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, listQuery, args...)
+	if err != nil {
+		return empty, fmt.Errorf("failed to list active CVEs: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]vulnerability.ActiveCVE, 0, page.Limit())
+	for rows.Next() {
+		var v vulnerability.ActiveCVE
+		var cvss, epss sql.NullFloat64
+		var fixed pq.StringArray
+		var publishedAt sql.NullTime
+		if err := rows.Scan(
+			&v.VulnerabilityID, &v.CVEID, &v.Title, &v.Severity,
+			&cvss, &epss,
+			&v.InCISAKEV, &v.ExploitMaturity, &v.ExploitAvailable, &fixed,
+			&publishedAt,
+			&v.AffectedAssetsCount, &v.AffectedComponentsCount,
+			&v.TotalFindingCount, &v.OpenFindingCount,
+			&v.WorstFindingStatus,
+			&v.FirstDetectedAt, &v.LastSeenAt,
+		); err != nil {
+			return empty, fmt.Errorf("failed to scan active CVE row: %w", err)
+		}
+		if cvss.Valid {
+			s := cvss.Float64
+			v.CVSSScore = &s
+		}
+		if epss.Valid {
+			e := epss.Float64
+			v.EPSSScore = &e
+		}
+		if publishedAt.Valid {
+			t := publishedAt.Time
+			v.PublishedAt = &t
+		}
+		v.FixedVersions = []string(fixed)
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		return empty, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return pagination.NewResult(out, total, page), nil
+}
+
+// GetActiveCVEStats returns aggregate counts for the tenant's active CVEs.
+// Uses FILTER aggregates for a single round-trip (8 counts in 1 query).
+func (r *FindingRepository) GetActiveCVEStats(
+	ctx context.Context,
+	tenantID shared.ID,
+	includeResolved bool,
+) (*vulnerability.ActiveCVEStats, error) {
+	statusFilter := ""
+	if !includeResolved {
+		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+
+	query := `
+		WITH agg AS (
+			SELECT DISTINCT f.vulnerability_id
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.vulnerability_id IS NOT NULL` + statusFilter + `
+		)
+		SELECT
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE v.severity = 'critical') AS crit,
+			COUNT(*) FILTER (WHERE v.severity = 'high')     AS high,
+			COUNT(*) FILTER (WHERE v.severity = 'medium')   AS med,
+			COUNT(*) FILTER (WHERE v.severity = 'low')      AS low,
+			COUNT(*) FILTER (WHERE v.severity = 'info')     AS info,
+			COUNT(*) FILTER (WHERE v.cisa_kev_date_added IS NOT NULL) AS kev,
+			COUNT(*) FILTER (WHERE COALESCE(v.exploit_available, false) = true) AS exploit
+		FROM agg
+		JOIN vulnerabilities v ON v.id = agg.vulnerability_id
+	`
+
+	var stats vulnerability.ActiveCVEStats
+	var crit, high, med, low, info int
+	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+		&stats.Total, &crit, &high, &med, &low, &info,
+		&stats.KEVCount, &stats.ExploitAvailableCount,
+	); err != nil {
+		return nil, fmt.Errorf("failed to get active CVE stats: %w", err)
+	}
+	stats.BySeverity = map[string]int{
+		"critical": crit, "high": high, "medium": med, "low": low, "info": info,
+	}
+	return &stats, nil
+}
+
+// ListAffectedAssetsByVulnerabilityID returns the distinct assets affected by a CVE
+// (blast-radius reverse lookup). Aggregates findings GROUP BY asset_id and joins
+// against the assets table for context. Sorted by criticality, then by worst SLA
+// status, then by risk_score.
+func (r *FindingRepository) ListAffectedAssetsByVulnerabilityID(
+	ctx context.Context,
+	tenantID, vulnID shared.ID,
+	includeResolved bool,
+	page pagination.Pagination,
+) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+	empty := pagination.NewResult([]vulnerability.VulnerabilityAffectedAsset{}, 0, page)
+
+	// When includeResolved=false, restrict to open statuses (new/confirmed/in_progress).
+	statusFilter := ""
+	if !includeResolved {
+		statusFilter = ` AND f.status IN ('new','confirmed','in_progress')`
+	}
+
+	countQuery := `
+		SELECT COUNT(DISTINCT f.asset_id)
+		FROM findings f
+		WHERE f.tenant_id = $1 AND f.vulnerability_id = $2` + statusFilter
+
+	listQuery := `
+		WITH agg AS (
+			SELECT
+				f.asset_id,
+				COUNT(*) AS finding_count,
+				COUNT(*) FILTER (WHERE f.status IN ('new','confirmed','in_progress')) AS open_count,
+				MIN(CASE f.severity
+					WHEN 'critical' THEN 1
+					WHEN 'high'     THEN 2
+					WHEN 'medium'   THEN 3
+					WHEN 'low'      THEN 4
+					WHEN 'info'     THEN 5
+					ELSE 6 END) AS sev_rank,
+				MIN(CASE f.sla_status
+					WHEN 'exceeded' THEN 1
+					WHEN 'overdue'  THEN 2
+					WHEN 'warning'  THEN 3
+					WHEN 'on_track' THEN 4
+					ELSE 5 END) AS sla_rank,
+				MIN(f.first_detected_at) AS first_detected_at,
+				MAX(f.last_seen_at)      AS last_seen_at,
+				(ARRAY_AGG(f.id ORDER BY f.last_seen_at DESC))[1]     AS sample_finding_id,
+				(ARRAY_AGG(f.status ORDER BY f.last_seen_at DESC))[1] AS sample_finding_status
+			FROM findings f
+			WHERE f.tenant_id = $1 AND f.vulnerability_id = $2` + statusFilter + `
+			GROUP BY f.asset_id
+		)
+		SELECT
+			a.id, a.name, a.asset_type, a.criticality, a.status, a.exposure,
+			a.risk_score, COALESCE(a.is_internet_accessible, false),
+			agg.finding_count, agg.open_count,
+			(ARRAY['critical','high','medium','low','info','none']::text[])[LEAST(agg.sev_rank, 6)] AS highest_severity,
+			(ARRAY['exceeded','overdue','warning','on_track','not_applicable']::text[])[LEAST(agg.sla_rank, 5)] AS worst_sla_status,
+			agg.first_detected_at, agg.last_seen_at,
+			agg.sample_finding_id, agg.sample_finding_status
+		FROM agg
+		JOIN assets a ON a.id = agg.asset_id
+		ORDER BY
+			CASE a.criticality
+				WHEN 'critical' THEN 1
+				WHEN 'high'     THEN 2
+				WHEN 'medium'   THEN 3
+				WHEN 'low'      THEN 4
+				ELSE 5
+			END,
+			agg.sla_rank ASC,
+			a.risk_score DESC,
+			a.name ASC
+		LIMIT $3 OFFSET $4
+	`
+
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String(), vulnID.String()).Scan(&total); err != nil {
+		return empty, fmt.Errorf("failed to count affected assets: %w", err)
+	}
+	if total == 0 {
+		return empty, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, listQuery,
+		tenantID.String(), vulnID.String(), page.Limit(), page.Offset())
+	if err != nil {
+		return empty, fmt.Errorf("failed to list affected assets: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]vulnerability.VulnerabilityAffectedAsset, 0, page.Limit())
+	for rows.Next() {
+		var a vulnerability.VulnerabilityAffectedAsset
+		if err := rows.Scan(
+			&a.AssetID, &a.AssetName, &a.AssetType, &a.Criticality, &a.AssetStatus, &a.Exposure,
+			&a.RiskScore, &a.IsInternetExposed,
+			&a.FindingCount, &a.OpenFindingCount,
+			&a.HighestSeverity, &a.WorstSLAStatus,
+			&a.FirstDetectedAt, &a.LastSeenAt,
+			&a.SampleFindingID, &a.SampleFindingStatus,
+		); err != nil {
+			return empty, fmt.Errorf("failed to scan affected asset row: %w", err)
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return empty, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return pagination.NewResult(out, total, page), nil
+}
+
 // Count returns the count of findings matching the filter.
 func (r *FindingRepository) Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error) {
 	query := `SELECT COUNT(*) FROM findings`
@@ -1063,6 +1465,129 @@ func (r *FindingRepository) CheckFingerprintsExist(ctx context.Context, tenantID
 	}
 
 	return result, nil
+}
+
+// UpsertBranchOccurrences records per-branch observations for findings matched by
+// (tenant_id, fingerprint). It is a single set-based upsert over parallel arrays:
+// a new occurrence is inserted, or an existing (finding, branch) row is bumped
+// (last_seen + commit) and reopened if it had been auto-resolved. Findings whose
+// fingerprint is not (yet) persisted simply match nothing — harmless.
+func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantID shared.ID, items []vulnerability.BranchOccurrenceUpsert) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	fingerprints := make([]string, len(items))
+	branchIDs := make([]string, len(items))
+	scanIDs := make([]string, len(items))
+	commits := make([]string, len(items))
+	for i, it := range items {
+		fingerprints[i] = it.Fingerprint
+		branchIDs[i] = it.BranchID.String()
+		scanIDs[i] = it.ScanID
+		commits[i] = it.CommitSHA
+	}
+
+	// gen_random_uuid() for the PK; the JOIN to findings resolves the canonical
+	// finding row by fingerprint, and the JOIN to repository_branches both
+	// validates the branch exists and supplies the denormalized repository_id.
+	const query = `
+		INSERT INTO finding_branch_occurrences (
+			tenant_id, finding_id, branch_id, repository_id, status,
+			first_seen_scan_id, first_commit_sha, last_seen_scan_id, last_commit_sha
+		)
+		SELECT f.tenant_id, f.id, b.id, b.repository_id, 'open',
+			NULLIF(inp.scan_id, ''), NULLIF(inp.commit_sha, ''),
+			NULLIF(inp.scan_id, ''), NULLIF(inp.commit_sha, '')
+		FROM unnest($2::text[], $3::uuid[], $4::text[], $5::text[])
+			AS inp(fingerprint, branch_id, scan_id, commit_sha)
+		JOIN findings f ON f.tenant_id = $1 AND f.fingerprint = inp.fingerprint
+		JOIN repository_branches b ON b.id = inp.branch_id
+		ON CONFLICT (finding_id, branch_id) DO UPDATE SET
+			last_seen_at = NOW(),
+			last_seen_scan_id = EXCLUDED.last_seen_scan_id,
+			last_commit_sha = EXCLUDED.last_commit_sha,
+			status = CASE WHEN finding_branch_occurrences.status = 'auto_fixed'
+			              THEN 'open' ELSE finding_branch_occurrences.status END,
+			updated_at = NOW()
+	`
+
+	if _, err := r.db.ExecContext(ctx, query, tenantID.String(),
+		pq.Array(fingerprints), pq.Array(branchIDs), pq.Array(scanIDs), pq.Array(commits),
+	); err != nil {
+		return fmt.Errorf("failed to upsert branch occurrences: %w", err)
+	}
+	return nil
+}
+
+// AutoResolveStaleBranchOccurrences marks open occurrences on a branch as
+// auto_fixed when the current full scan (scanID, scoped to toolName via the
+// parent finding) no longer reported them. "Not reported" is detected by the
+// occurrence's last_seen_scan_id NOT matching the current scan id — every
+// occurrence seen in this scan was just bumped to scanID by
+// UpsertBranchOccurrences. Tool scoping prevents a scan from one tool resolving
+// another tool's occurrences on the same branch.
+func (r *FindingRepository) AutoResolveStaleBranchOccurrences(ctx context.Context, tenantID, branchID shared.ID, toolName, scanID string) (int64, error) {
+	// Guard: with an empty scan id the `last_seen_scan_id IS DISTINCT FROM $4`
+	// test matches occurrences last seen under any non-empty scan (and the ones
+	// this very scan just upserted as NULL via NULLIF), mass-resolving them.
+	// Resolve nothing without a scan identity.
+	if scanID == "" {
+		return 0, nil
+	}
+	const query = `
+		UPDATE finding_branch_occurrences o
+		SET status = 'auto_fixed', resolved_at = NOW(), resolved_reason = 'not_seen_in_scan', updated_at = NOW()
+		FROM findings f
+		WHERE o.finding_id = f.id
+		  AND o.tenant_id = $1
+		  AND o.branch_id = $2
+		  AND o.status = 'open'
+		  AND f.tool_name = $3
+		  AND o.last_seen_scan_id IS DISTINCT FROM $4
+	`
+	res, err := r.db.ExecContext(ctx, query, tenantID.String(), branchID.String(), toolName, scanID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to auto-resolve stale branch occurrences: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// FingerprintsOpenOnBranch returns the subset of fingerprints that currently
+// have an OPEN occurrence on the given branch (tenant-scoped). Used to compute
+// "new vs base branch" for PR/MR scans.
+func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenantID, branchID shared.ID, fingerprints []string) ([]string, error) {
+	if len(fingerprints) == 0 {
+		return nil, nil
+	}
+	const query = `
+		SELECT DISTINCT f.fingerprint
+		FROM finding_branch_occurrences o
+		JOIN findings f ON f.id = o.finding_id
+		WHERE o.tenant_id = $1
+		  AND o.branch_id = $2
+		  AND o.status = 'open'
+		  AND f.fingerprint = ANY($3)
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), branchID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query fingerprints open on branch: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]string, 0, len(fingerprints))
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, fmt.Errorf("scan fingerprint: %w", err)
+		}
+		out = append(out, fp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate fingerprints: %w", err)
+	}
+	return out, nil
 }
 
 // UpdateStatusBatch updates the status of multiple findings.
@@ -1820,11 +2345,11 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		// metadata JSONB column. Copy the full map so the handler's
 		// toUnifiedPentestFindingResponse() can read steps_to_reproduce,
 		// poc_code, business_impact, etc. from SourceMetadata().
-		SourceMetadata:      meta,
-		PentestCampaignID:   parseNullID(row.pentestCampaignID),
-		CreatedAt:           row.createdAt,
-		UpdatedAt:           row.updatedAt,
-		CreatedBy:           parseNullID(row.createdBy),
+		SourceMetadata:    meta,
+		PentestCampaignID: parseNullID(row.pentestCampaignID),
+		CreatedAt:         row.createdAt,
+		UpdatedAt:         row.updatedAt,
+		CreatedBy:         parseNullID(row.createdBy),
 		// SARIF 2.1.0 fields
 		Confidence:          confidence,
 		Impact:              nullStringValue(row.impact),
@@ -1882,6 +2407,26 @@ func (r *FindingRepository) ListByAssetID(ctx context.Context, tenantID, assetID
 
 // CountByAssetID returns the count of findings for an asset.
 // Security: Requires tenantID to prevent cross-tenant data access.
+// CountWindow returns, for the trailing `days` window, how many findings were
+// newly detected (created_at) and how many were resolved (resolved_at, status
+// resolved/verified) — the new-vs-resolved trend a digest reports. Tenant-scoped.
+func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID, days int) (newCount, resolvedCount int64, err error) {
+	if days <= 0 {
+		days = 7
+	}
+	query := `
+		SELECT
+			COALESCE(SUM(CASE WHEN created_at >= NOW() - ($2::int || ' days')::interval THEN 1 ELSE 0 END), 0) AS new_count,
+			COALESCE(SUM(CASE WHEN resolved_at >= NOW() - ($2::int || ' days')::interval
+				AND status IN ('resolved','verified') THEN 1 ELSE 0 END), 0) AS resolved_count
+		FROM findings
+		WHERE tenant_id = $1`
+	if err = r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(&newCount, &resolvedCount); err != nil {
+		return 0, 0, fmt.Errorf("failed to count finding window: %w", err)
+	}
+	return newCount, resolvedCount, nil
+}
+
 func (r *FindingRepository) CountByAssetID(ctx context.Context, tenantID, assetID shared.ID) (int64, error) {
 	// Security: Include tenant_id in WHERE clause
 	query := `SELECT COUNT(*) FROM findings WHERE asset_id = $1 AND tenant_id = $2`
@@ -1939,7 +2484,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END), 0) as high,
 			COALESCE(SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END), 0) as medium,
 			COALESCE(SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END), 0) as low,
-			COALESCE(SUM(CASE WHEN severity = 'info' THEN 1 ELSE 0 END), 0) as info,
+			COALESCE(SUM(CASE WHEN severity IN ('info', 'none') THEN 1 ELSE 0 END), 0) as info,
 			COALESCE(SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END), 0) as status_new,
 			COALESCE(SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) as status_confirmed,
 			COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) as status_in_progress,
@@ -1961,7 +2506,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 			COALESCE(SUM(CASE WHEN source = 'container' THEN 1 ELSE 0 END), 0) as source_container,
 			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
 			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
-			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external
+			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
+			-- Risk posture, open findings only (status not in a closed category).
+			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
+			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
+			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached
 		FROM findings
 		WHERE tenant_id = $1
 	`
@@ -1994,6 +2543,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		sourceSast, sourceDast, sourceSca, sourceSecret              int64
 		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
 		sourceExternal                                               int64
+		kevOpen, epssHighOpen, slaBreached                           int64
 	)
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
@@ -2006,6 +2556,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		&sourceSast, &sourceDast, &sourceSca, &sourceSecret,
 		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
 		&sourceExternal,
+		&kevOpen, &epssHighOpen, &slaBreached,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get finding stats: %w", err)
@@ -2051,6 +2602,10 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview + statusRemediation + statusRetest
 	stats.ResolvedCount = statusResolved + statusVerified
 
+	stats.KevOpen = kevOpen
+	stats.EpssHighOpen = epssHighOpen
+	stats.SLABreached = slaBreached
+
 	return stats, nil
 }
 
@@ -2072,9 +2627,29 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	}
 
 	if filter.BranchID != nil {
-		conditions = append(conditions, fmt.Sprintf("branch_id = $%d", argIndex))
+		// Branch-aware filter (occurrence model): a finding is "on" a branch if
+		// it has an occurrence there — not just if its legacy branch_id (the
+		// single first-attributed branch) happens to match. On backfilled data
+		// this is equivalent to the old `branch_id = X`; going forward it
+		// correctly returns the same vuln across every branch it appears on.
+		// The finding's own status filter still controls open/resolved.
+		//
+		// BranchStatus optionally narrows by the per-branch occurrence state:
+		// "open" (present now) or "fixed" (auto-resolved/closed on the branch).
+		// Anything else means "any state" (default), preserving prior behaviour.
+		occCond := fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM finding_branch_occurrences o WHERE o.finding_id = findings.id AND o.branch_id = $%d",
+			argIndex)
 		args = append(args, filter.BranchID.String())
 		argIndex++
+		switch filter.BranchStatus {
+		case "open":
+			occCond += " AND o.status = 'open'"
+		case "fixed":
+			occCond += " AND o.status IN ('auto_fixed', 'resolved')"
+		}
+		occCond += ")"
+		conditions = append(conditions, occCond)
 	}
 
 	if filter.ComponentID != nil {
@@ -2153,6 +2728,16 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		argIndex++
 	}
 
+	// Full-text search across title, description, and file path. The service
+	// sets this from the ?search= param; previously it was silently ignored.
+	if filter.Search != nil && *filter.Search != "" {
+		conditions = append(conditions, fmt.Sprintf(
+			"(title ILIKE $%d OR description ILIKE $%d OR file_path ILIKE $%d)",
+			argIndex, argIndex, argIndex))
+		args = append(args, wrapLikePattern(*filter.Search))
+		argIndex++
+	}
+
 	// Pentest campaign filter
 	if filter.PentestCampaignID != nil {
 		conditions = append(conditions, fmt.Sprintf("pentest_campaign_id = $%d", argIndex))
@@ -2191,6 +2776,22 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			)`, userIdx, tenantIdx))
 	}
 
+	// Pentest membership visibility for the GENERIC findings surface: show
+	// non-pentest findings to everyone, but pentest findings only to members
+	// of their campaign. Closes the same-tenant exposure where any user with
+	// findings:read could read pentest evidence by filtering source=pentest.
+	if filter.PentestMemberOrNonPentestUserID != nil && filter.TenantID != nil {
+		userIdx := argIndex
+		tenantIdx := argIndex + 1
+		args = append(args, filter.PentestMemberOrNonPentestUserID.String(), filter.TenantID.String())
+		argIndex += 2
+		conditions = append(conditions, fmt.Sprintf(
+			`(source != 'pentest' OR pentest_campaign_id IN (
+				SELECT campaign_id FROM pentest_campaign_members
+				WHERE user_id = $%d AND tenant_id = $%d
+			))`, userIdx, tenantIdx))
+	}
+
 	// Layer 2: Data Scope - filter findings by user's group membership on assets
 	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
 	if filter.DataScopeUserID != nil && filter.TenantID != nil {
@@ -2215,6 +2816,13 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 // If branchID is nil, auto-resolves findings where branch_id points to any default branch.
 // Returns the IDs of auto-resolved findings for activity logging.
 func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID shared.ID, assetID shared.ID, toolName string, currentScanID string, branchID *shared.ID) ([]shared.ID, error) {
+	// Guard: an empty scan id makes the `scan_id != $current` staleness test
+	// match every existing finding (they all differ from ""), which would
+	// silently resolve the tenant's entire finding set. Without a scan identity
+	// staleness is undeterminable, so resolve nothing.
+	if currentScanID == "" {
+		return nil, nil
+	}
 	// Auto-resolve findings that:
 	// 1. Belong to the same tenant, asset, and tool
 	// 2. Are on the default branch (via JOIN to repository_branches.is_default = true)
@@ -2272,6 +2880,93 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to auto-resolve stale findings: %w", err)
+	}
+	defer rows.Close()
+
+	var resolvedIDs []shared.ID
+	for rows.Next() {
+		var idStr string
+		if err := rows.Scan(&idStr); err != nil {
+			return nil, fmt.Errorf("failed to scan resolved finding id: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		resolvedIDs = append(resolvedIDs, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating resolved findings: %w", err)
+	}
+
+	return resolvedIDs, nil
+}
+
+// AutoResolveStaleByAssets resolves stale findings across many assets in one
+// query (asset_id = ANY($2)) instead of issuing AutoResolveStale per asset.
+// Same staleness rules and source/status protections as AutoResolveStale.
+func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, toolName string, currentScanID string, branchID *shared.ID) ([]shared.ID, error) {
+	// Same guard as AutoResolveStale: without a scan identity, staleness is
+	// undeterminable and would resolve everything.
+	if currentScanID == "" || len(assetIDs) == 0 {
+		return nil, nil
+	}
+
+	assetIDStrs := make([]string, len(assetIDs))
+	for i, a := range assetIDs {
+		assetIDStrs[i] = a.String()
+	}
+
+	var query string
+	var args []interface{}
+
+	if branchID != nil {
+		query = `
+			UPDATE findings f
+			SET status = 'resolved',
+				resolution = 'auto_fixed',
+				resolution_method = 'scan_verified',
+				resolved_at = NOW(),
+				updated_at = NOW()
+			FROM repository_branches rb
+			WHERE f.tenant_id = $1
+				AND f.asset_id = ANY($2)
+				AND f.tool_name = $3
+				AND f.scan_id != $4
+				AND f.branch_id = $5
+				AND f.branch_id = rb.id
+				AND rb.is_default = true
+				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
+			RETURNING f.id
+		`
+		args = []interface{}{tenantID.String(), pq.Array(assetIDStrs), toolName, currentScanID, branchID.String()}
+	} else {
+		query = `
+			UPDATE findings f
+			SET status = 'resolved',
+				resolution = 'auto_fixed',
+				resolution_method = 'scan_verified',
+				resolved_at = NOW(),
+				updated_at = NOW()
+			FROM repository_branches rb
+			WHERE f.tenant_id = $1
+				AND f.asset_id = ANY($2)
+				AND f.tool_name = $3
+				AND f.scan_id != $4
+				AND f.branch_id = rb.id
+				AND rb.is_default = true
+				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
+			RETURNING f.id
+		`
+		args = []interface{}{tenantID.String(), pq.Array(assetIDStrs), toolName, currentScanID}
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to auto-resolve stale findings by assets: %w", err)
 	}
 	defer rows.Close()
 
@@ -2439,7 +3134,7 @@ func (r *FindingRepository) CountBySeverityForScan(ctx context.Context, tenantID
 			COALESCE(SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END), 0) AS high,
 			COALESCE(SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END), 0) AS medium,
 			COALESCE(SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END), 0) AS low,
-			COALESCE(SUM(CASE WHEN severity = 'info' THEN 1 ELSE 0 END), 0) AS info,
+			COALESCE(SUM(CASE WHEN severity IN ('info', 'none') THEN 1 ELSE 0 END), 0) AS info,
 			COUNT(*) AS total
 		FROM findings
 		WHERE tenant_id = $1 AND scan_id = $2 AND status NOT IN ('false_positive', 'resolved')

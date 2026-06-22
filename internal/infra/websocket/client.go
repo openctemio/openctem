@@ -128,16 +128,22 @@ func (c *Client) GetSubscriptions() []string {
 
 // SendMessage sends a message to the client.
 func (c *Client) SendMessage(msg *Message) error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return nil
-	}
-	c.mu.Unlock()
-
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
+	}
+
+	// Hold the mutex across BOTH the closed-check and the channel send, and
+	// have Close() close c.send under the same mutex. The previous code
+	// released the lock between the check and the send, leaving a window where
+	// a concurrent Close could close the channel first — a send on a closed
+	// channel panics and crashes the whole process on a routine websocket
+	// disconnect under load. The send is non-blocking (select/default), so
+	// holding the lock here cannot deadlock against Close.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil
 	}
 
 	select {
@@ -156,13 +162,14 @@ func (c *Client) SendMessage(msg *Message) error {
 // Close closes the client connection.
 func (c *Client) Close() {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.closed {
-		c.mu.Unlock()
 		return
 	}
 	c.closed = true
-	c.mu.Unlock()
 
+	// close(c.send) happens under c.mu so it can never race a send in
+	// SendMessage (which also holds c.mu across its send) — see comment there.
 	close(c.send)
 	c.conn.Close()
 }

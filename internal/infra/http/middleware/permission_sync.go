@@ -81,8 +81,11 @@ func (m *PermissionSyncMiddleware) EnrichPermissions(next http.Handler) http.Han
 			return
 		}
 
-		// Get current permission version from Redis
-		currentVersion := m.permVersion.Get(ctx, tenantID, userID)
+		// Get current permission version from Redis. versionConfirmed is
+		// false on a missing key (no permission change ever) or a Redis
+		// error — in both cases we must NOT treat the request as stale, so a
+		// cache outage can't 409 every write (fail open).
+		currentVersion, versionConfirmed := m.permVersion.GetChecked(ctx, tenantID, userID)
 
 		// Check JWT's permission version
 		var jwtPermVersion int
@@ -90,8 +93,8 @@ func (m *PermissionSyncMiddleware) EnrichPermissions(next http.Handler) http.Han
 			jwtPermVersion = claims.PermVersion
 		}
 
-		// Detect stale permissions
-		isStale := jwtPermVersion > 0 && jwtPermVersion != currentVersion
+		// Detect stale permissions — only on a CONFIRMED version mismatch.
+		isStale := versionConfirmed && jwtPermVersion > 0 && jwtPermVersion != currentVersion
 		if isStale {
 			// Set header to notify frontend that permissions are stale
 			w.Header().Set(HeaderPermissionStale, "true")

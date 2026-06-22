@@ -245,6 +245,92 @@ func TestGenerateFindingFingerprint_CompositeFormat(t *testing.T) {
 	assert.True(t, isValidFingerprint(result), "result should be a valid hex fingerprint")
 }
 
+// Type-aware dedup: once Vulnerability.Package is populated the input is
+// detected as SCA, which keys on package+version+CVE and IGNORES incidental
+// location noise. Two scans of the same vulnerable dependency at different
+// reported lines must therefore collapse to one finding.
+func TestGenerateFindingFingerprint_SCAStableAcrossLocationNoise(t *testing.T) {
+	assetID := shared.NewID()
+
+	mk := func(startLine int) *ctis.Finding {
+		return &ctis.Finding{
+			RuleID: "sca-check",
+			Title:  "Vulnerable Dependency",
+			Location: &ctis.FindingLocation{
+				Path:      "package-lock.json",
+				StartLine: startLine,
+			},
+			Vulnerability: &ctis.VulnerabilityDetails{
+				Package:         "lodash",
+				AffectedVersion: "4.17.20",
+				CVEID:           "CVE-2021-23337",
+			},
+		}
+	}
+
+	fpA := generateFindingFingerprint(assetID, mk(12), nil)
+	fpB := generateFindingFingerprint(assetID, mk(987), nil)
+
+	assert.Equal(t, fpA, fpB,
+		"SCA fingerprint must be stable across location changes for the same package+version+CVE")
+}
+
+// Distinct packages (or versions) must produce distinct SCA fingerprints so
+// that genuinely different dependency vulns are never false-merged.
+func TestGenerateFindingFingerprint_SCADistinctPackages(t *testing.T) {
+	assetID := shared.NewID()
+
+	base := func(pkg, ver string) *ctis.Finding {
+		return &ctis.Finding{
+			RuleID: "sca-check",
+			Title:  "Vulnerable Dependency",
+			Vulnerability: &ctis.VulnerabilityDetails{
+				Package:         pkg,
+				AffectedVersion: ver,
+				CVEID:           "CVE-2021-23337",
+			},
+		}
+	}
+
+	fpLodash := generateFindingFingerprint(assetID, base("lodash", "4.17.20"), nil)
+	fpAxios := generateFindingFingerprint(assetID, base("axios", "0.21.0"), nil)
+	fpLodashV2 := generateFindingFingerprint(assetID, base("lodash", "4.17.21"), nil)
+
+	assert.NotEqual(t, fpLodash, fpAxios, "different packages must not share a fingerprint")
+	assert.NotEqual(t, fpLodash, fpLodashV2, "different versions must not share a fingerprint")
+}
+
+// Secret findings are keyed by location + secret hash (upstream design: the
+// same masked value at the same spot dedups, but two distinct secrets sharing
+// a line must stay separate). The masked value feeds the hash, so distinct
+// secrets at the same location must NOT collapse.
+func TestGenerateFindingFingerprint_SecretByMaskedValue(t *testing.T) {
+	assetID := shared.NewID()
+
+	mk := func(masked string, line int) *ctis.Finding {
+		return &ctis.Finding{
+			RuleID: "secret-aws-key",
+			Title:  "AWS key detected",
+			Location: &ctis.FindingLocation{
+				Path:      "config.env",
+				StartLine: line,
+			},
+			Secret: &ctis.SecretDetails{
+				SecretType:  "aws_access_key",
+				MaskedValue: masked,
+			},
+		}
+	}
+
+	same1 := generateFindingFingerprint(assetID, mk("AKIA****WXYZ", 3), nil)
+	same2 := generateFindingFingerprint(assetID, mk("AKIA****WXYZ", 3), nil)
+	otherSecret := generateFindingFingerprint(assetID, mk("AKIA****ABCD", 3), nil)
+
+	assert.Equal(t, same1, same2, "same masked secret at same location must dedup")
+	assert.NotEqual(t, same1, otherSecret,
+		"two distinct secrets on the same line must not be merged")
+}
+
 func TestGenerateFindingFingerprint_ShortProvidedFingerprintFallsBackToSDK(t *testing.T) {
 	assetID := shared.NewID()
 
@@ -1190,6 +1276,15 @@ func (s *stubFindingRepository) ListByVulnerabilityID(_ context.Context, _, _ sh
 func (s *stubFindingRepository) ListByComponentID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
 	return pagination.Result[*vulnerability.Finding]{}, nil
 }
+func (s *stubFindingRepository) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
+}
+func (s *stubFindingRepository) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
+	return pagination.Result[vulnerability.ActiveCVE]{}, nil
+}
+func (s *stubFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
+}
 func (s *stubFindingRepository) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
 	return 0, nil
 }
@@ -1230,6 +1325,10 @@ func (s *stubFindingRepository) CountBySeverityForScan(_ context.Context, _ shar
 	return vulnerability.SeverityCounts{}, nil
 }
 func (s *stubFindingRepository) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+
+func (s *stubFindingRepository) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
 func (s *stubFindingRepository) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
@@ -1383,4 +1482,121 @@ func TestFindingProcessor_NoStampWhenVulnerabilityAbsent(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, repo.created, 1)
 	assert.Nil(t, repo.created[0].VulnerabilityID(), "VulnerabilityID should not be set when finding has no Vulnerability block")
+}
+
+// =============================================================================
+// redactSecretSnippet — never persist a secret's raw source line
+// =============================================================================
+
+func newSecretFindingForTest(t *testing.T) *vulnerability.Finding {
+	t.Helper()
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceSecret, "gitleaks", vulnerability.SeverityHigh, "hardcoded secret")
+	require.NoError(t, err)
+	return f
+}
+
+func TestRedactSecretSnippet_UsesMaskedValueAndClearsContext(t *testing.T) {
+	p := &FindingProcessor{}
+	f := newSecretFindingForTest(t)
+	f.SetSnippet("AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE")
+	f.SetContextSnippet("foo()\nAWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE\nbar()")
+	f.SetSecretMaskedValue("AKIA****************MPLE")
+
+	p.redactSecretSnippet(f)
+
+	assert.Equal(t, "AKIA****************MPLE", f.Snippet(), "raw secret snippet must be replaced by masked value")
+	assert.Equal(t, "", f.ContextSnippet(), "context snippet (may contain the secret) must be cleared")
+	assert.NotContains(t, f.Snippet(), "AKIAIOSFODNN7EXAMPLE")
+}
+
+func TestRedactSecretSnippet_PlaceholderWhenNoMaskedValue(t *testing.T) {
+	p := &FindingProcessor{}
+	f := newSecretFindingForTest(t)
+	f.SetSnippet("token = ghp_REALSECRETVALUE1234567890")
+
+	p.redactSecretSnippet(f)
+
+	assert.Equal(t, "[redacted secret]", f.Snippet())
+	assert.NotContains(t, f.Snippet(), "ghp_REALSECRETVALUE1234567890")
+}
+
+// =============================================================================
+// maybeSetDefaultBranch — single-default invariant + no hijacking an existing
+// default from an (untrusted) scan report
+// =============================================================================
+
+// defaultBranchStubRepo is a minimal branch.Repository for testing default-branch logic.
+type defaultBranchStubRepo struct {
+	defaultBranch *branch.Branch
+	setCalls      []shared.ID
+}
+
+func (s *defaultBranchStubRepo) GetDefaultBranch(_ context.Context, _ shared.ID) (*branch.Branch, error) {
+	if s.defaultBranch == nil {
+		return nil, shared.ErrNotFound
+	}
+	return s.defaultBranch, nil
+}
+func (s *defaultBranchStubRepo) SetDefaultBranch(_ context.Context, _ shared.ID, branchID shared.ID) error {
+	s.setCalls = append(s.setCalls, branchID)
+	return nil
+}
+func (s *defaultBranchStubRepo) Create(context.Context, *branch.Branch) error { return nil }
+func (s *defaultBranchStubRepo) GetByID(context.Context, shared.ID) (*branch.Branch, error) {
+	return nil, nil
+}
+func (s *defaultBranchStubRepo) GetByName(context.Context, shared.ID, string) (*branch.Branch, error) {
+	return nil, nil
+}
+func (s *defaultBranchStubRepo) Update(context.Context, *branch.Branch) error { return nil }
+func (s *defaultBranchStubRepo) Delete(context.Context, shared.ID) error      { return nil }
+func (s *defaultBranchStubRepo) List(context.Context, branch.Filter, branch.ListOptions, pagination.Pagination) (pagination.Result[*branch.Branch], error) {
+	return pagination.Result[*branch.Branch]{}, nil
+}
+func (s *defaultBranchStubRepo) ListByRepository(context.Context, shared.ID) ([]*branch.Branch, error) {
+	return nil, nil
+}
+func (s *defaultBranchStubRepo) Count(context.Context, branch.Filter) (int64, error) { return 0, nil }
+func (s *defaultBranchStubRepo) ExistsByName(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+func (s *defaultBranchStubRepo) CompareBranches(context.Context, shared.ID, shared.ID, string, string) (*branch.BranchComparison, error) {
+	return nil, nil
+}
+
+func TestMaybeSetDefaultBranch_SetsWhenNoneExists(t *testing.T) {
+	stub := &defaultBranchStubRepo{defaultBranch: nil}
+	p := &FindingProcessor{branchRepo: stub, logger: logger.NewNop()}
+
+	repoID := shared.NewID()
+	branchID := shared.NewID()
+	p.maybeSetDefaultBranch(context.Background(), repoID, branchID)
+
+	require.Len(t, stub.setCalls, 1, "should promote to default when repo has none")
+	assert.Equal(t, branchID, stub.setCalls[0])
+}
+
+func TestMaybeSetDefaultBranch_DoesNotHijackExistingDefault(t *testing.T) {
+	repoID := shared.NewID()
+	existing, err := branch.NewBranch(repoID, "main", branch.TypeMain)
+	require.NoError(t, err)
+	stub := &defaultBranchStubRepo{defaultBranch: existing}
+	p := &FindingProcessor{branchRepo: stub, logger: logger.NewNop()}
+
+	// A scan reports a *different* branch as default — must be ignored.
+	p.maybeSetDefaultBranch(context.Background(), repoID, shared.NewID())
+
+	assert.Empty(t, stub.setCalls, "must not change an existing default from an untrusted scan report")
+}
+
+func (s *stubFindingRepository) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
+	return nil
+}
+
+func (s *stubFindingRepository) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
+	return 0, nil
+}
+
+func (s *stubFindingRepository) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
+	return nil, nil
 }

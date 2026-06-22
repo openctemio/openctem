@@ -1,3 +1,4 @@
+// Package auth implements the application service for the auth bounded context — orchestrates pkg/domain/auth entities and cross-cutting concerns (audit, notifications, RBAC).
 package auth
 
 import (
@@ -21,6 +22,11 @@ import (
 )
 
 // AuthService errors.
+// dummyLoginPasswordHash is a valid bcrypt (cost 12) hash used only to spend
+// constant time on the user-not-found login path, so account existence cannot
+// be inferred from response latency.
+const dummyLoginPasswordHash = "$2a$12$odsIwJ3GzB7hgHr/gUWeiOYuDSW0mzDtq.CWaifNmuy7t9vmuKaoW"
+
 var (
 	ErrInvalidCredentials       = errors.New("invalid email or password")
 	ErrAccountLocked            = errors.New("account is locked due to too many failed attempts")
@@ -437,6 +443,10 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult
 	u, err := s.userRepo.GetByEmailForAuth(ctx, email)
 	if err != nil {
 		if shared.IsNotFound(err) {
+			// Constant-time defense: run a dummy bcrypt verify so the
+			// user-not-found path costs the same as a real (wrong-password)
+			// login, preventing account enumeration via response timing.
+			_ = s.passwordHasher.Verify(input.Password, dummyLoginPasswordHash)
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
@@ -649,12 +659,18 @@ type ExchangeTokenInput struct {
 }
 
 // ExchangeTokenResult represents the result of token exchange.
+//
+// RefreshToken is the NEW refresh token issued during rotation (S-3-rotate).
+// Caller is expected to overwrite the old refresh_token cookie with this value
+// — failing to do so means the next ExchangeToken call will fail (the old
+// token is now marked used).
 type ExchangeTokenResult struct {
-	AccessToken string
-	TenantID    string
-	TenantSlug  string
-	Role        string
-	ExpiresAt   time.Time
+	AccessToken  string
+	RefreshToken string
+	TenantID     string
+	TenantSlug   string
+	Role         string
+	ExpiresAt    time.Time
 }
 
 // ExchangeToken exchanges a global refresh token for a tenant-scoped access token.
@@ -678,6 +694,19 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 			return nil, sessiondom.ErrRefreshTokenNotFound
 		}
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
+	}
+
+	// Replay-attack detection: a token that was already used (rotated) being
+	// presented again means it was stolen — revoke the entire family so
+	// neither the attacker nor the legitimate chain can continue. Mirrors
+	// RefreshToken; without it, theft replayed via this endpoint went
+	// undetected.
+	if storedToken.IsUsed() {
+		s.logger.Warn("possible replay attack detected", "family", storedToken.Family().String())
+		if err := s.refreshTokenRepo.RevokeByFamily(ctx, storedToken.Family()); err != nil {
+			s.logger.Error("failed to revoke token family", "error", err)
+		}
+		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// Check if token is valid (not used, not revoked, not expired)
@@ -753,6 +782,41 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		s.logger.Error("failed to update session activity", "error", err)
 	}
 
+	// S-3-rotate: rotate refresh token (mark old as used + issue new in same family).
+	// Matches the pattern used in CreateFirstTeam (line ~1300) and Refresh.
+	// Without rotation, a stolen refresh token remains valid for the full window;
+	// with rotation, theft is detected on the next legitimate use (token-already-used).
+	if err := storedToken.MarkUsed(); err != nil {
+		s.logger.Error("failed to mark refresh token as used", "error", err)
+	} else {
+		if err := s.refreshTokenRepo.Update(ctx, storedToken); err != nil {
+			s.logger.Error("failed to update refresh token", "error", err)
+		}
+	}
+
+	newRefreshTokenStr, _, err := s.tokenGenerator.GenerateGlobalRefreshToken(
+		u.ID().String(),
+		u.Email(),
+		u.Name(),
+		sess.ID().String(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+	}
+	newRefreshToken, err := sessiondom.NewRefreshTokenInFamily(
+		u.ID(),
+		sess.ID(),
+		newRefreshTokenStr,
+		storedToken.Family(),
+		s.config.RefreshTokenDuration,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create refresh token: %w", err)
+	}
+	if err := s.refreshTokenRepo.Create(ctx, newRefreshToken); err != nil {
+		return nil, fmt.Errorf("failed to save refresh token: %w", err)
+	}
+
 	s.logger.Debug("token exchanged",
 		"user_id", u.ID().String(),
 		"tenant_id", input.TenantID,
@@ -760,11 +824,12 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	)
 
 	return &ExchangeTokenResult{
-		AccessToken: accessToken.AccessToken,
-		TenantID:    accessToken.TenantID,
-		TenantSlug:  accessToken.TenantSlug,
-		Role:        accessToken.Role,
-		ExpiresAt:   accessToken.ExpiresAt,
+		AccessToken:  accessToken.AccessToken,
+		RefreshToken: newRefreshTokenStr,
+		TenantID:     accessToken.TenantID,
+		TenantSlug:   accessToken.TenantSlug,
+		Role:         accessToken.Role,
+		ExpiresAt:    accessToken.ExpiresAt,
 	}, nil
 }
 

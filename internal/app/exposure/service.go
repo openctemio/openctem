@@ -1,3 +1,4 @@
+// Package exposure implements the application service for the exposure bounded context — orchestrates pkg/domain/exposure entities and cross-cutting concerns (audit, notifications, RBAC).
 package exposure
 
 import (
@@ -510,7 +511,15 @@ func (s *ExposureService) changeState(ctx context.Context, tenantID, exposureID,
 }
 
 // GetStateHistory retrieves the state change history for an exposure event.
-func (s *ExposureService) GetStateHistory(ctx context.Context, exposureID string) ([]*exposuredom.StateHistory, error) {
+// Scoped to the caller's tenant: it first verifies the exposure belongs to the
+// tenant (GetExposureSecure returns NotFound cross-tenant) — otherwise any
+// authenticated user with findings:read could read any tenant's exposure
+// history (state changes, reasons, changed_by) by guessing the UUID.
+func (s *ExposureService) GetStateHistory(ctx context.Context, tenantID, exposureID string) ([]*exposuredom.StateHistory, error) {
+	if _, err := s.GetExposureSecure(ctx, tenantID, exposureID); err != nil {
+		return nil, err
+	}
+
 	parsedID, err := shared.IDFromString(exposureID)
 	if err != nil {
 		return nil, shared.ErrNotFound
@@ -537,8 +546,10 @@ func (s *ExposureService) GetExposureStats(ctx context.Context, tenantID string)
 	}
 
 	stateMap := make(map[string]int64)
+	var total int64
 	for k, v := range byState {
 		stateMap[k.String()] = v
+		total += v
 	}
 
 	severityMap := make(map[string]int64)
@@ -546,10 +557,25 @@ func (s *ExposureService) GetExposureStats(ctx context.Context, tenantID string)
 		severityMap[k.String()] = v
 	}
 
-	return map[string]any{
-		"by_state":    stateMap,
-		"by_severity": severityMap,
-	}, nil
+	stats := map[string]any{
+		"by_state":       stateMap,
+		"by_severity":    severityMap,
+		"total":          total,
+		"active_count":   stateMap[exposuredom.StateActive.String()],
+		"resolved_count": stateMap[exposuredom.StateResolved.String()],
+	}
+
+	// MTTR is optional — only surface it when there is at least one resolved
+	// event with a resolution timestamp to average.
+	mttrHours, ok, err := s.repo.MeanTimeToResolveHours(ctx, parsedTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute MTTR: %w", err)
+	}
+	if ok {
+		stats["mttr_hours"] = mttrHours
+	}
+
+	return stats, nil
 }
 
 // DeleteExposure deletes an exposure event.

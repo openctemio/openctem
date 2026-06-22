@@ -1,3 +1,4 @@
+// Package workflow implements the application service for the workflow bounded context — orchestrates pkg/domain/workflow entities and cross-cutting concerns (audit, notifications, RBAC).
 package workflow
 
 import (

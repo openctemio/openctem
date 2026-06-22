@@ -1,3 +1,4 @@
+// Package aitriage implements the application service for the aitriage bounded context — orchestrates pkg/domain/aitriage entities and cross-cutting concerns (audit, notifications, RBAC).
 package aitriage
 
 import (
@@ -1422,7 +1423,7 @@ func (s *AITriageService) RecoverStuckJobs(ctx context.Context, input RecoverStu
 	errorMsg := fmt.Sprintf("Job stuck in queue for more than %s - marked as failed by recovery job", input.StuckDuration.String())
 
 	for _, job := range stuckJobs {
-		updated, err := s.triageRepo.MarkStuckAsFailed(ctx, job.ID(), errorMsg)
+		updated, err := s.triageRepo.MarkStuckAsFailed(ctx, job.TenantID(), job.ID(), errorMsg)
 		if err != nil {
 			s.logger.Error("failed to mark stuck job as failed",
 				"job_id", job.ID().String(),

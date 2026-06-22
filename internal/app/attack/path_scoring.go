@@ -1,3 +1,4 @@
+// Package attack implements the application service for the attack bounded context — orchestrates pkg/domain/attack entities and cross-cutting concerns (audit, notifications, RBAC).
 package attack
 
 import (

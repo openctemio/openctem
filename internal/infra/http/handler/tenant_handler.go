@@ -905,6 +905,23 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Anti-escalation: an inviter may only grant roles whose permissions they
+	// themselves hold. Otherwise an admin could invite a user with the system
+	// owner/admin role bundle, escalating beyond their own ceiling on accept.
+	if !middleware.IsAdmin(r.Context()) && h.roleService != nil {
+		for _, rid := range req.RoleIDs {
+			role, rErr := h.roleService.GetRole(r.Context(), rid)
+			if rErr != nil {
+				h.handleServiceError(w, rErr)
+				return
+			}
+			if e := assertCanGrantPermissions(r.Context(), role.Permissions()); e != nil {
+				apierror.Forbidden("cannot invite with a role whose permissions you do not hold").WriteJSON(w)
+				return
+			}
+		}
+	}
+
 	// In simplified model, all invited users are "member"
 	// Permissions come from RBAC roles (roleIDs)
 	input := app.CreateInvitationInput{

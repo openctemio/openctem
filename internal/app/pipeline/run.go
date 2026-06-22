@@ -38,6 +38,19 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 		return nil, err
 	}
 
+	// SECURITY: GetTemplateWithSteps loads by ID without tenant scoping, so we
+	// must verify the caller may use this template before triggering it.
+	// A template is usable iff it is a system template (shared, auto-cloned
+	// below) or it belongs to the caller's tenant. Without this check a user
+	// could trigger another tenant's private pipeline by guessing its ID.
+	if !template.IsSystemTemplate && template.TenantID.String() != input.TenantID {
+		s.logger.Warn("SECURITY: cross-tenant pipeline trigger attempt",
+			"template_id", template.ID.String(),
+			"template_tenant_id", template.TenantID.String(),
+			"caller_tenant_id", input.TenantID)
+		return nil, shared.ErrNotFound
+	}
+
 	// Handle system templates: auto-clone for the tenant
 	// System templates cannot be triggered directly - they must be cloned first
 	// to ensure proper tenant isolation and tracking

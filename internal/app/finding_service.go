@@ -16,6 +16,7 @@ type (
 	FindingSourceService            = finding.FindingSourceService
 	FindingSourceCacheService       = finding.FindingSourceCacheService
 	PriorityClassificationService   = finding.PriorityClassificationService
+	PriorityExplanation             = finding.PriorityExplanation
 	PriorityFloodGuard              = finding.PriorityFloodGuard
 	PriorityFloodConfig             = finding.PriorityFloodConfig
 	BulkGuard                       = finding.BulkGuard
@@ -49,6 +50,7 @@ type (
 	KEVRepository                 = finding.KEVRepository
 	ListFindingsInput             = finding.ListFindingsInput
 	ListVulnerabilitiesInput      = finding.ListVulnerabilitiesInput
+	ListActiveCVEsInput           = finding.ListActiveCVEsInput
 	PriorityAuditEntry            = finding.PriorityAuditEntry
 	PriorityAuditRepository       = finding.PriorityAuditRepository
 	PriorityChangeEvent           = finding.PriorityChangeEvent

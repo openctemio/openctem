@@ -1,3 +1,4 @@
+// Package ctemcycle provides public types and helpers reusable across the codebase.
 package ctemcycle
 
 import (

@@ -227,7 +227,7 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 		group.SetTags(input.Tags)
 	}
 
-	if err := s.repo.Update(ctx, group); err != nil {
+	if err := s.repo.Update(ctx, tenantID, group); err != nil {
 		return nil, err
 	}
 
@@ -235,12 +235,17 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 	return group, nil
 }
 
-// DeleteAssetGroup deletes an asset group.
-func (s *AssetGroupService) DeleteAssetGroup(ctx context.Context, id shared.ID) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+// DeleteAssetGroup deletes an asset group within the given tenant scope.
+// Security: tenantID required so the SQL DELETE is tenant-scoped (S-1 audit).
+func (s *AssetGroupService) DeleteAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) error {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	if err := s.repo.Delete(ctx, tenantID, id); err != nil {
 		return err
 	}
-	s.logger.Info("asset group deleted", "id", id)
+	s.logger.Info("asset group deleted", "id", id, "tenant_id", tenantIDStr)
 	return nil
 }
 
@@ -325,8 +330,28 @@ func (s *AssetGroupService) GetAssetGroupStats(ctx context.Context, tenantID str
 	return s.repo.GetStats(ctx, tid)
 }
 
+// verifyGroupTenant ensures the group belongs to the given tenant before any
+// membership operation. The asset_group_members queries are keyed only by
+// group_id (the join table has no tenant_id), so without this guard a caller
+// could read or mutate another tenant's group by supplying its UUID (IDOR).
+// Returns assetgroup.ErrNotFound (→ 404) when the group is not in the tenant.
+func (s *AssetGroupService) verifyGroupTenant(ctx context.Context, tenantIDStr string, groupID shared.ID) error {
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	if _, err := s.repo.GetByTenantAndID(ctx, tenantID, groupID); err != nil {
+		return err
+	}
+	return nil
+}
+
 // AddAssetsToGroup adds assets to a group.
-func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, groupID shared.ID, assetIDs []string) error {
+func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, tenantID string, groupID shared.ID, assetIDs []string) error {
+	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
+		return err
+	}
+
 	ids := make([]shared.ID, 0, len(assetIDs))
 	for _, idStr := range assetIDs {
 		id, err := shared.IDFromString(idStr)
@@ -366,7 +391,11 @@ func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, groupID shared
 }
 
 // RemoveAssetsFromGroup removes assets from a group.
-func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, groupID shared.ID, assetIDs []string) error {
+func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, tenantID string, groupID shared.ID, assetIDs []string) error {
+	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
+		return err
+	}
+
 	ids := make([]shared.ID, 0, len(assetIDs))
 	for _, idStr := range assetIDs {
 		id, err := shared.IDFromString(idStr)
@@ -406,13 +435,19 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, groupID s
 }
 
 // GetGroupAssets retrieves assets in a group.
-func (s *AssetGroupService) GetGroupAssets(ctx context.Context, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupAsset], error) {
+func (s *AssetGroupService) GetGroupAssets(ctx context.Context, tenantID string, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupAsset], error) {
+	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
+		return pagination.Result[*assetgroupdom.GroupAsset]{}, err
+	}
 	page := pagination.New(pageNum, perPage)
 	return s.repo.GetGroupAssets(ctx, groupID, page)
 }
 
 // GetGroupFindings retrieves findings for assets in a group.
-func (s *AssetGroupService) GetGroupFindings(ctx context.Context, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupFinding], error) {
+func (s *AssetGroupService) GetGroupFindings(ctx context.Context, tenantID string, groupID shared.ID, pageNum, perPage int) (pagination.Result[*assetgroupdom.GroupFinding], error) {
+	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
+		return pagination.Result[*assetgroupdom.GroupFinding]{}, err
+	}
 	page := pagination.New(pageNum, perPage)
 	return s.repo.GetGroupFindings(ctx, groupID, page)
 }
@@ -425,11 +460,12 @@ type BulkUpdateInput struct {
 }
 
 // BulkUpdateAssetGroups updates multiple asset groups.
-func (s *AssetGroupService) BulkUpdateAssetGroups(ctx context.Context, tenantID string, input BulkUpdateInput) (int, error) {
-	updated := 0
+func (s *AssetGroupService) BulkUpdateAssetGroups(ctx context.Context, tenantID string, input BulkUpdateInput) *BulkGroupResult {
+	res := &BulkGroupResult{}
 	for _, idStr := range input.GroupIDs {
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
+			res.fail(idStr, "invalid group ID")
 			continue
 		}
 
@@ -439,27 +475,45 @@ func (s *AssetGroupService) BulkUpdateAssetGroups(ctx context.Context, tenantID 
 		})
 		if err != nil {
 			s.logger.Warn("bulk update failed for group", "id", idStr, "error", err)
+			res.fail(idStr, err.Error())
 			continue
 		}
-		updated++
+		res.Succeeded++
 	}
-	return updated, nil
+	return res
 }
 
 // BulkDeleteAssetGroups deletes multiple asset groups.
-func (s *AssetGroupService) BulkDeleteAssetGroups(ctx context.Context, groupIDs []string) (int, error) {
-	deleted := 0
+func (s *AssetGroupService) BulkDeleteAssetGroups(ctx context.Context, tenantIDStr string, groupIDs []string) *BulkGroupResult {
+	res := &BulkGroupResult{}
 	for _, idStr := range groupIDs {
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
+			res.fail(idStr, "invalid group ID")
 			continue
 		}
 
-		if err := s.DeleteAssetGroup(ctx, id); err != nil {
+		if err := s.DeleteAssetGroup(ctx, tenantIDStr, id); err != nil {
 			s.logger.Warn("bulk delete failed for group", "id", idStr, "error", err)
+			res.fail(idStr, err.Error())
 			continue
 		}
-		deleted++
+		res.Succeeded++
 	}
-	return deleted, nil
+	return res
+}
+
+// BulkGroupResult reports the outcome of a best-effort bulk asset-group
+// operation: how many items succeeded/failed and a per-item error for each
+// failure, so callers can tell which IDs failed and why (rather than only a
+// success count).
+type BulkGroupResult struct {
+	Succeeded int      `json:"succeeded"`
+	Failed    int      `json:"failed"`
+	Errors    []string `json:"errors,omitempty"`
+}
+
+func (r *BulkGroupResult) fail(id, msg string) {
+	r.Failed++
+	r.Errors = append(r.Errors, fmt.Sprintf("%s: %s", id, msg))
 }

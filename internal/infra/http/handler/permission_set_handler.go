@@ -277,7 +277,7 @@ func (h *PermissionSetHandler) GetPermissionSet(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	psWithItems, err := h.service.GetPermissionSetWithItems(ctx, id)
+	psWithItems, err := h.service.GetPermissionSetWithItems(ctx, id, middleware.MustGetTenantID(ctx))
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

@@ -1,4 +1,4 @@
-// Package credential defines the Credential domain entity for secure credential storage.
+// Package secretstore defines the Credential domain entity for secure credential storage.
 package secretstore
 
 import (

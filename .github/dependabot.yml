@@ -6,6 +6,11 @@ updates:
   # Go modules
   - package-ecosystem: "gomod"
     directory: "/"
+    # Target the integration branch — the repo's workflow is "PRs target develop,
+    # never main". Without this, dependabot bases PRs on the default branch (main),
+    # which can be behind develop and fail CI (e.g. a chi bump flagging RealIP that
+    # develop has already removed).
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -36,6 +41,7 @@ updates:
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -53,6 +59,7 @@ updates:
   # Docker
   - package-ecosystem: "docker"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"

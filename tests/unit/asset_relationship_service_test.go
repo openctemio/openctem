@@ -666,7 +666,7 @@ func TestAssetRelationshipService_CreateRelationship(t *testing.T) {
 			TenantID:        tenantID.String(),
 			SourceAssetID:   src.ID().String(),
 			TargetAssetID:   tgt.ID().String(),
-			Type:             "runs_on",
+			Type:            "runs_on",
 			DiscoveryMethod: "telepathy",
 		})
 		if err == nil {
@@ -1346,7 +1346,7 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		assetID := shared.NewID()
+		assetID := createRelTestAsset(t, assetRepo, tenantID, "rel-src").ID()
 		targetID := shared.NewID()
 
 		rwa1 := buildRelationshipWithAssets(tenantID, assetID, targetID, asset.RelTypeDependsOn)
@@ -1375,9 +1375,10 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		relRepo := NewMockRelationshipRepository()
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
+		emptyAssetID := createRelTestAsset(t, assetRepo, tenantID, "rel-empty").ID().String()
 		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		results, total, err := svc.ListAssetRelationships(ctx, tenantID.String(), shared.NewID().String(), asset.RelationshipFilter{})
+		results, total, err := svc.ListAssetRelationships(ctx, tenantID.String(), emptyAssetID, asset.RelationshipFilter{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1394,7 +1395,7 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		assetRepo := NewMockAssetRepository()
 		log := newRelTestLogger()
 
-		assetID := shared.NewID()
+		assetID := createRelTestAsset(t, assetRepo, tenantID, "rel-filter").ID()
 		rwa := buildRelationshipWithAssets(tenantID, assetID, shared.NewID(), asset.RelTypeRunsOn)
 		relRepo.AddRelationshipWithAssets(rwa)
 
@@ -1432,9 +1433,10 @@ func TestAssetRelationshipService_ListAssetRelationships(t *testing.T) {
 		relRepo.listResult = []*asset.RelationshipWithAssets{rwa}
 		relRepo.listTotal = 1
 
+		preAssetID := createRelTestAsset(t, assetRepo, tenantID, "rel-pre").ID().String()
 		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
 
-		results, total, err := svc.ListAssetRelationships(ctx, tenantID.String(), shared.NewID().String(), asset.RelationshipFilter{})
+		results, total, err := svc.ListAssetRelationships(ctx, tenantID.String(), preAssetID, asset.RelationshipFilter{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1742,6 +1744,7 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 		log := newRelTestLogger()
 		svc := app.NewAssetRelationshipService(relRepo, assetRepo, log)
 
+		edgeAssetID := createRelTestAsset(t, assetRepo, tenantID, "rel-edge").ID().String()
 		minWeight := 3
 		maxWeight := 8
 		filter := asset.RelationshipFilter{
@@ -1756,7 +1759,7 @@ func TestAssetRelationshipService_EdgeCases(t *testing.T) {
 			PerPage:          50,
 		}
 
-		_, _, err := svc.ListAssetRelationships(ctx, tenantID.String(), shared.NewID().String(), filter)
+		_, _, err := svc.ListAssetRelationships(ctx, tenantID.String(), edgeAssetID, filter)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

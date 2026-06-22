@@ -64,13 +64,13 @@ type mockTenantRepo struct {
 	acceptInvTxCalls      int
 
 	// Return values
-	memberStats           *tenant.MemberStats
-	memberSearchResult    *tenant.MemberSearchResult
-	tenantsWithRole       []*tenant.TenantWithRole
-	membersWithUser       []*tenant.MemberWithUser
-	pendingInvitations    []*tenant.Invitation
-	membersByTenant       []*tenant.Membership
-	userMemberships       []tenant.UserMembership
+	memberStats               *tenant.MemberStats
+	memberSearchResult        *tenant.MemberSearchResult
+	tenantsWithRole           []*tenant.TenantWithRole
+	membersWithUser           []*tenant.MemberWithUser
+	pendingInvitations        []*tenant.Invitation
+	membersByTenant           []*tenant.Membership
+	userMemberships           []tenant.UserMembership
 	deletedExpiredCount       int64
 	deletedPendingByUserCount int64
 	existingMemberByEmail     *tenant.MemberWithUser
@@ -92,6 +92,23 @@ func (m *mockTenantRepo) Create(_ context.Context, t *tenant.Tenant) error {
 	}
 	m.tenants[t.ID().String()] = t
 	m.slugExists[t.Slug()] = true
+	return nil
+}
+
+// CreateWithOwner mirrors the atomic repo method: tenant + membership are
+// persisted together, or neither is (on either error nothing is stored).
+func (m *mockTenantRepo) CreateWithOwner(_ context.Context, t *tenant.Tenant, membership *tenant.Membership) error {
+	m.createCalls++
+	if m.createErr != nil {
+		return m.createErr
+	}
+	m.createMembershipCalls++
+	if m.createMembershipErr != nil {
+		return m.createMembershipErr
+	}
+	m.tenants[t.ID().String()] = t
+	m.slugExists[t.Slug()] = true
+	m.memberships[membership.ID().String()] = membership
 	return nil
 }
 
@@ -532,7 +549,7 @@ func TestTenantSvc_CreateTenant_RepoCreateError(t *testing.T) {
 	}
 }
 
-func TestTenantSvc_CreateTenant_MembershipCreateError_RollbacksTenant(t *testing.T) {
+func TestTenantSvc_CreateTenant_MembershipCreateError_NoOrphanTenant(t *testing.T) {
 	svc, repo := newTestTenantService()
 	repo.createMembershipErr = errors.New("membership db error")
 
@@ -545,9 +562,14 @@ func TestTenantSvc_CreateTenant_MembershipCreateError_RollbacksTenant(t *testing
 	if err == nil {
 		t.Fatal("expected error from membership creation")
 	}
-	// Verify tenant was deleted (rollback)
-	if repo.deleteCalls != 1 {
-		t.Errorf("expected 1 delete call (rollback), got %d", repo.deleteCalls)
+	// Tenant + membership are now created atomically (CreateWithOwner), so a
+	// membership failure rolls back the tenant in the same transaction — no
+	// orphan tenant and no separate compensating Delete.
+	if len(repo.tenants) != 0 {
+		t.Errorf("expected no persisted tenant after atomic failure, got %d", len(repo.tenants))
+	}
+	if repo.deleteCalls != 0 {
+		t.Errorf("expected no compensating delete (atomic rollback), got %d", repo.deleteCalls)
 	}
 }
 
@@ -1001,7 +1023,7 @@ func TestTenantSvc_UpdateMemberRole_Success(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "admin"}
 
-	result, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{})
+	result, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1042,7 +1064,7 @@ func TestTenantSvc_UpdateMemberRole_CannotChangeOwnerRole(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "admin"}
 
-	_, err := svc.UpdateMemberRole(context.Background(), ownerMs.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateMemberRole(context.Background(), ownerMs.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error when changing owner role")
 	}
@@ -1058,7 +1080,7 @@ func TestTenantSvc_UpdateMemberRole_CannotPromoteToOwner(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "owner"}
 
-	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error when promoting to owner")
 	}
@@ -1074,7 +1096,7 @@ func TestTenantSvc_UpdateMemberRole_InvalidRole(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "superadmin"}
 
-	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error for invalid role")
 	}
@@ -1091,7 +1113,7 @@ func TestTenantSvc_UpdateMemberRole_RepoError(t *testing.T) {
 
 	input := app.UpdateMemberRoleInput{Role: "admin"}
 
-	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateMemberRole(context.Background(), ms.ID().String(), input, app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -1106,7 +1128,7 @@ func TestTenantSvc_RemoveMember_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
 
-	err := svc.RemoveMember(context.Background(), ms.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), ms.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1141,7 +1163,7 @@ func TestTenantSvc_RemoveMember_CannotRemoveOwner(t *testing.T) {
 	tenantID := shared.NewID()
 	ownerMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleOwner)
 
-	err := svc.RemoveMember(context.Background(), ownerMs.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), ownerMs.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error when removing owner")
 	}
@@ -1156,7 +1178,7 @@ func TestTenantSvc_RemoveMember_RepoError(t *testing.T) {
 	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
 	repo.deleteMembershipErr = errors.New("db error")
 
-	err := svc.RemoveMember(context.Background(), ms.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), ms.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -1167,7 +1189,7 @@ func TestTenantSvc_RemoveMember_RemoveAdminAllowed(t *testing.T) {
 	tenantID := shared.NewID()
 	adminMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleAdmin)
 
-	err := svc.RemoveMember(context.Background(), adminMs.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), adminMs.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected admin removal to succeed, got %v", err)
 	}
@@ -1178,7 +1200,7 @@ func TestTenantSvc_RemoveMember_RemoveViewerAllowed(t *testing.T) {
 	tenantID := shared.NewID()
 	viewerMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleViewer)
 
-	err := svc.RemoveMember(context.Background(), viewerMs.ID().String(), app.AuditContext{})
+	err := svc.RemoveMember(context.Background(), viewerMs.ID().String(), app.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected viewer removal to succeed, got %v", err)
 	}
@@ -2434,5 +2456,64 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 				t.Errorf("expected ErrValidation, got %v", err)
 			}
 		})
+	}
+}
+
+// TestTenantSvc_AddMember_ZeroInviter_NullInvitedBy guards the SCIM/system
+// provisioning path: AddMember called with a zero inviter must produce a
+// membership with a NULL invited_by, not the all-zeros UUID — otherwise the
+// invited_by → users(id) foreign key is violated on insert.
+func TestTenantSvc_AddMember_ZeroInviter_NullInvitedBy(t *testing.T) {
+	svc, repo := newTestTenantService()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	if _, err := svc.AddMember(context.Background(), tenantID.String(),
+		app.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{}, app.AuditContext{}); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	var found *tenant.Membership
+	for _, m := range repo.memberships {
+		if m.UserID() == userID {
+			found = m
+		}
+	}
+	if found == nil {
+		t.Fatal("membership was not created")
+	}
+	if found.InvitedBy() != nil {
+		t.Errorf("invitedBy = %v, want nil for a zero inviter", found.InvitedBy())
+	}
+}
+
+// TestTenantSvc_SuspendMember_SystemActor_NullSuspendedBy guards SCIM/system
+// deprovisioning: SuspendMember with an empty ActorID (no human actor) must
+// succeed and leave suspended_by NULL, not error or write the all-zeros UUID
+// (which would violate the suspended_by -> users(id) FK).
+func TestTenantSvc_SuspendMember_SystemActor_NullSuspendedBy(t *testing.T) {
+	svc, repo := newTestTenantService()
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	m, err := svc.AddMember(context.Background(), tenantID.String(),
+		app.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{},
+		app.AuditContext{TenantID: tenantID.String()})
+	if err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	// System suspend: no ActorID (as the SCIM adapter calls it).
+	if err := svc.SuspendMember(context.Background(), m.ID().String(),
+		app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}); err != nil {
+		t.Fatalf("SuspendMember (system actor): %v", err)
+	}
+
+	stored := repo.memberships[m.ID().String()]
+	if stored == nil || !stored.IsSuspended() {
+		t.Fatal("membership should be suspended")
+	}
+	if stored.SuspendedBy() != nil {
+		t.Errorf("suspended_by should be nil for a system actor, got %v", stored.SuspendedBy())
 	}
 }

@@ -1,3 +1,4 @@
+// Package integration implements the application service for the integration bounded context — orchestrates pkg/domain/integration entities and cross-cutting concerns (audit, notifications, RBAC).
 package integration
 
 import (
@@ -8,14 +9,37 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/api/internal/app/scancoverage"
 	"github.com/openctemio/api/internal/infra/notifier"
 	"github.com/openctemio/api/internal/infra/scm"
 	"github.com/openctemio/api/pkg/crypto"
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
+	branchdom "github.com/openctemio/api/pkg/domain/branch"
 	integrationdom "github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/outbox"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// validateNotificationWebhookURL rejects an SSRF-unsafe webhook URL for
+// providers whose credential IS a URL (Slack/Teams/custom webhook). Defense in
+// depth: the notifier clients also dial via httpsec.SafeHTTPClient, but
+// validating at create/update gives early feedback and blocks storing an
+// internal-targeting URL. No-op for empty credentials or non-URL providers
+// (Telegram bot token, Email SMTP config).
+func validateNotificationWebhookURL(provider integrationdom.Provider, credentials string) error {
+	if credentials == "" {
+		return nil
+	}
+	switch provider {
+	case integrationdom.ProviderSlack, integrationdom.ProviderTeams, integrationdom.ProviderWebhook:
+		if _, err := httpsec.ValidateURL(credentials); err != nil {
+			return fmt.Errorf("%w: webhook URL rejected: %v", shared.ErrValidation, err)
+		}
+	}
+	return nil
+}
 
 // testNotificationRateLimit defines the minimum interval between test notifications per integration.
 const testNotificationRateLimit = 30 * time.Second
@@ -30,6 +54,12 @@ type IntegrationService struct {
 	notificationFactory   *notifier.ClientFactory
 	encryptor             crypto.Encryptor
 	logger                *logger.Logger
+
+	// Optional stores for SCM repository import / branch sync (wired via
+	// SetRepoImportRepos). nil when import is not configured.
+	assetRepo   assetdom.Repository
+	repoExtRepo assetdom.RepositoryExtensionRepository
+	branchRepo  branchdom.Repository
 
 	// Rate limiting for test notifications
 	testRateLimitMu  sync.RWMutex
@@ -101,6 +131,10 @@ type CreateIntegrationInput struct {
 	BaseURL     string
 	Credentials string // Access token, API key, etc.
 
+	// Config holds non-sensitive provider-specific settings (JSONB), e.g. a
+	// Tenable integration's execution_mode / engine.
+	Config map[string]any
+
 	// SCM-specific fields
 	SCMOrganization string
 }
@@ -135,6 +169,25 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 		return nil, integrationdom.ErrInvalidAuthType
 	}
 
+	// Tenable integrations: validate execution mode/engine and enforce the
+	// security rule that agent-mode integrations never store credentials in the
+	// control plane (RFC-007 §8). Normalize config so it carries explicit
+	// execution_mode + engine.
+	if provider == integrationdom.ProviderTenable {
+		tcfg, cfgErr := scancoverage.ParseTenableConfig(input.Config)
+		if cfgErr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		if cfgErr := scancoverage.ValidateTenableIntegration(tcfg, input.Credentials != "", input.BaseURL); cfgErr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		if input.Config == nil {
+			input.Config = map[string]any{}
+		}
+		input.Config["execution_mode"] = string(tcfg.ExecutionMode)
+		input.Config["engine"] = string(tcfg.Engine)
+	}
+
 	// Check for duplicate integration name within tenant
 	existing, err := s.repo.GetByTenantAndName(ctx, tenantID, input.Name)
 	if err != nil && !errors.Is(err, integrationdom.ErrIntegrationNotFound) {
@@ -160,6 +213,9 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	}
 	if input.BaseURL != "" {
 		intg.SetBaseURL(input.BaseURL)
+	}
+	if len(input.Config) > 0 {
+		intg.SetConfig(input.Config)
 	}
 	if input.Credentials != "" {
 		// Defense-in-depth: warn loudly when persisting credentials
@@ -250,6 +306,10 @@ type UpdateIntegrationInput struct {
 	Credentials *string
 	BaseURL     *string
 
+	// Config replaces non-sensitive provider settings (e.g. Tenable
+	// execution_mode/engine). nil = leave unchanged.
+	Config map[string]any
+
 	// SCM-specific fields
 	SCMOrganization *string
 }
@@ -261,14 +321,15 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
 	}
 
-	intg, err := s.repo.GetByID(ctx, intgID)
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	// Tenant-scoped fetch: NotFound if it belongs to another tenant (no
+	// fetch-then-check window).
+	intg, err := s.repo.GetByTenantAndID(ctx, tid, intgID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify tenant ownership
-	if intg.TenantID().String() != tenantID {
-		return nil, integrationdom.ErrIntegrationNotFound
 	}
 
 	// Apply updates to integration
@@ -278,6 +339,42 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 	if input.Description != nil {
 		intg.SetDescription(*input.Description)
 	}
+
+	// Tenable: validate the effective post-update state (mode/engine + whether
+	// credentials will be present + base URL) and re-enforce the agent-mode
+	// no-creds rule (RFC-007 §8 R3/R4), then normalize + persist config. This
+	// covers mode switches (e.g. direct→agent must clear creds; →direct needs
+	// creds + base_url) and adding creds to an agent integration.
+	if intg.Provider() == integrationdom.ProviderTenable {
+		merged := map[string]any{}
+		for k, v := range intg.Config() {
+			merged[k] = v
+		}
+		for k, v := range input.Config {
+			merged[k] = v
+		}
+		tcfg, cfgErr := scancoverage.ParseTenableConfig(merged)
+		if cfgErr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		willHaveCreds := intg.CredentialsEncrypted() != ""
+		if input.Credentials != nil {
+			willHaveCreds = *input.Credentials != ""
+		}
+		effURL := intg.BaseURL()
+		if input.BaseURL != nil {
+			effURL = *input.BaseURL
+		}
+		if cfgErr := scancoverage.ValidateTenableIntegration(tcfg, willHaveCreds, effURL); cfgErr != nil {
+			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
+		}
+		merged["execution_mode"] = string(tcfg.ExecutionMode)
+		merged["engine"] = string(tcfg.Engine)
+		intg.SetConfig(merged)
+	} else if input.Config != nil {
+		intg.SetConfig(input.Config)
+	}
+
 	if input.Credentials != nil {
 		encrypted, err := s.encryptor.EncryptString(*input.Credentials)
 		if err != nil {
@@ -321,14 +418,13 @@ func (s *IntegrationService) DeleteIntegration(ctx context.Context, id string, t
 		return fmt.Errorf("%w: invalid ID", shared.ErrValidation)
 	}
 
-	// Verify ownership
-	intg, err := s.repo.GetByID(ctx, intgID)
+	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
-
-	if intg.TenantID().String() != tenantID {
-		return integrationdom.ErrIntegrationNotFound
+	// Tenant-scoped existence check: NotFound if it belongs to another tenant.
+	if _, err := s.repo.GetByTenantAndID(ctx, tid, intgID); err != nil {
+		return err
 	}
 
 	// Delete integration (extension tables cascade delete)
@@ -402,14 +498,14 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
 	}
 
-	intg, err := s.repo.GetByID(ctx, intgID)
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	// Tenant-scoped fetch: NotFound if it belongs to another tenant.
+	intg, err := s.repo.GetByTenantAndID(ctx, tid, intgID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify tenant ownership
-	if intg.TenantID().String() != tenantID {
-		return nil, integrationdom.ErrIntegrationNotFound
 	}
 
 	// Only SCM integrations support testing for now
@@ -660,7 +756,29 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 		Search:  input.Search,
 	})
 	if err != nil {
+		// If the provider rejected our credentials, reflect that on the
+		// integration status so the UI stops showing "Connected" — otherwise
+		// the stored status (set at create/last successful test) goes stale and
+		// the connection looks healthy while every sync fails.
+		if errors.Is(err, scm.ErrAuthFailed) {
+			intg.SetError("Stored credentials are invalid or expired")
+			if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
+				s.logger.Warn("failed to mark integration credentials invalid", "integration_id", intgID.String(), "error", updateErr)
+			}
+		}
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
+	}
+
+	// The provider accepted our credentials. If a previous sync had flipped
+	// the integration to error (e.g. an expired token, since recovered), this
+	// is the recovery edge back to connected — without it the integration is
+	// stuck in error forever and the scheduled syncer (which only walks
+	// connected integrations) can never pick it up again.
+	if intg.Status() != integrationdom.StatusConnected {
+		intg.SetConnected()
+		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
+			s.logger.Warn("failed to restore integration connected status", "integration_id", intgID.String(), "error", updateErr)
+		}
 	}
 
 	// Update repository count if this is the first page and no search filter
@@ -1534,6 +1652,11 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 		intg.SetDescription(input.Description)
 	}
 
+	// SSRF guard for URL-credential providers (Slack/Teams/webhook).
+	if err := validateNotificationWebhookURL(provider, input.Credentials); err != nil {
+		return nil, err
+	}
+
 	// Handle credentials and metadata based on provider
 	switch provider {
 	case integrationdom.ProviderEmail:
@@ -1707,6 +1830,11 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 
 	// Handle credentials and metadata based on provider
 	provider := intg.Provider()
+	if input.Credentials != nil {
+		if err := validateNotificationWebhookURL(provider, *input.Credentials); err != nil {
+			return nil, err
+		}
+	}
 	switch provider {
 	case integrationdom.ProviderEmail:
 		// For email: split into metadata (non-sensitive) and credentials (sensitive)

@@ -1,3 +1,4 @@
+// Package accesscontrol provides public types and helpers reusable across the codebase.
 package accesscontrol
 
 import (

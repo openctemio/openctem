@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,22 @@ import (
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
+
+// verifyAccessibleTemplate confirms a pipeline/workflow template is usable by
+// the given tenant: either it belongs to the tenant, or it is a shared system
+// template. Returns shared.ErrNotFound otherwise. This prevents cross-tenant
+// IDOR when a template is resolved by raw ID (e.g. QuickScan).
+func (s *Service) verifyAccessibleTemplate(ctx context.Context, tenantID, templateID shared.ID) error {
+	if _, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, templateID); err == nil {
+		return nil
+	} else if !errors.Is(err, shared.ErrNotFound) {
+		return err
+	}
+	if _, err := s.templateRepo.GetSystemTemplateByID(ctx, templateID); err == nil {
+		return nil
+	}
+	return shared.ErrNotFound
+}
 
 // =============================================================================
 // Scan Runs Operations
@@ -159,9 +176,33 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		}
 		pipelineID = &pid
 
-		// Verify workflow exists
-		if _, err := s.templateRepo.GetByID(ctx, pid); err != nil {
+		// SECURITY: verify the workflow/pipeline template belongs to this
+		// tenant (or is a system template). GetByID alone is unscoped and
+		// would let a caller trigger another tenant's private pipeline (IDOR).
+		if err := s.verifyAccessibleTemplate(ctx, tenantID, pid); err != nil {
+			s.logger.Warn("SECURITY: cross-tenant quick-scan workflow attempt",
+				"tenant_id", input.TenantID, "workflow_id", input.WorkflowID)
 			return nil, fmt.Errorf("workflow not found: %w", err)
+		}
+	} else {
+		// SECURITY: single-scanner QuickScan bypasses CreateScan, so apply the
+		// same SSRF target validation (blocks internal/localhost/private IPs)
+		// and scanner-config validation here before targets reach an agent.
+		validatedTargets, err := s.validateScanTargets(CreateScanInput{
+			TenantID: input.TenantID,
+			Targets:  input.Targets,
+		})
+		if err != nil {
+			return nil, err
+		}
+		input.Targets = validatedTargets
+
+		if err := s.validateScanSecurityInputs(ctx, tenantID, CreateScanInput{
+			TenantID:      input.TenantID,
+			Tags:          input.Tags,
+			ScannerConfig: input.Config,
+		}); err != nil {
+			return nil, err
 		}
 	}
 

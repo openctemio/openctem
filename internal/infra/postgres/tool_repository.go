@@ -169,6 +169,9 @@ func (r *ToolRepository) List(ctx context.Context, filter tool.ToolFilter, page 
 		}
 		tools = append(tools, t)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return pagination.NewResult(tools, total, page), nil
 }
@@ -194,6 +197,9 @@ func (r *ToolRepository) ListByNames(ctx context.Context, names []string) ([]*to
 		}
 		tools = append(tools, t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return tools, nil
 }
@@ -214,6 +220,9 @@ func (r *ToolRepository) ListByCategoryID(ctx context.Context, categoryID shared
 			return nil, err
 		}
 		tools = append(tools, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return tools, nil
@@ -248,6 +257,9 @@ func (r *ToolRepository) ListByCategoryName(ctx context.Context, categoryName st
 		}
 		tools = append(tools, t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return tools, nil
 }
@@ -268,6 +280,9 @@ func (r *ToolRepository) ListByCapability(ctx context.Context, capability string
 			return nil, err
 		}
 		tools = append(tools, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return tools, nil

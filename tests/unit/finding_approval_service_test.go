@@ -187,6 +187,15 @@ func (m *mockFindingRepository) ListByVulnerabilityID(_ context.Context, _, _ sh
 func (m *mockFindingRepository) ListByComponentID(_ context.Context, _, _ shared.ID, _ vulnerability.FindingListOptions, _ pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
 	return pagination.Result[*vulnerability.Finding]{}, nil
 }
+func (m *mockFindingRepository) ListAffectedAssetsByVulnerabilityID(_ context.Context, _, _ shared.ID, _ bool, _ pagination.Pagination) (pagination.Result[vulnerability.VulnerabilityAffectedAsset], error) {
+	return pagination.Result[vulnerability.VulnerabilityAffectedAsset]{}, nil
+}
+func (m *mockFindingRepository) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
+	return pagination.Result[vulnerability.ActiveCVE]{}, nil
+}
+func (m *mockFindingRepository) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
+}
 func (m *mockFindingRepository) Count(_ context.Context, _ vulnerability.FindingFilter) (int64, error) {
 	return 0, nil
 }
@@ -240,6 +249,10 @@ func (m *mockFindingRepository) CountBySeverityForScan(_ context.Context, _ shar
 	return vulnerability.SeverityCounts{}, nil
 }
 func (m *mockFindingRepository) AutoResolveStale(_ context.Context, _ shared.ID, _ shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
+	return nil, nil
+}
+
+func (m *mockFindingRepository) AutoResolveStaleByAssets(_ context.Context, _ shared.ID, _ []shared.ID, _ string, _ string, _ *shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
 func (m *mockFindingRepository) AutoReopenByFingerprint(_ context.Context, _ shared.ID, _ string) (*shared.ID, error) {
@@ -357,6 +370,34 @@ func TestFindingApprovalService_RequestApproval_Success(t *testing.T) {
 
 	// Verify it was stored
 	assert.Len(t, approvalRepo.approvals, 1)
+}
+
+// The approval workflow must only accept statuses that require approval
+// (false_positive / accepted / accepted_risk). Requesting e.g. "resolved"
+// would otherwise launder a finding past the findings:verify gate and the
+// state machine once approved.
+func TestFindingApprovalService_RequestApproval_RejectsNonApprovalStatus(t *testing.T) {
+	for _, status := range []string{"resolved", "confirmed", "in_progress", "fix_applied"} {
+		t.Run(status, func(t *testing.T) {
+			tenantID := shared.NewID()
+			findingID := shared.NewID()
+			findingRepo := newMockFindingRepository()
+			findingRepo.findings[findingID] = &vulnerability.Finding{}
+			approvalRepo := newMockApprovalRepository()
+			svc := newApprovalTestService(findingRepo, approvalRepo)
+
+			_, err := svc.RequestApproval(context.Background(), app.RequestApprovalInput{
+				TenantID:        tenantID.String(),
+				FindingID:       findingID.String(),
+				RequestedStatus: status,
+				Justification:   "trying to launder status via approval",
+				RequestedBy:     shared.NewID().String(),
+			})
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, shared.ErrValidation), "want validation error, got %v", err)
+			assert.Empty(t, approvalRepo.approvals, "no approval should be stored")
+		})
+	}
 }
 
 func TestFindingApprovalService_RequestApproval_FindingNotFound(t *testing.T) {
@@ -1164,4 +1205,16 @@ func (m *mockFindingRepository) UpdateWorkItemURIs(_ context.Context, _, _ share
 
 func (m *mockFindingRepository) ListComponentCVEPairs(_ context.Context, _ shared.ID, _ vulnerability.ComponentCVEFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.ComponentCVEPair], error) {
 	return pagination.Result[*vulnerability.ComponentCVEPair]{}, nil
+}
+
+func (m *mockFindingRepository) UpsertBranchOccurrences(_ context.Context, _ shared.ID, _ []vulnerability.BranchOccurrenceUpsert) error {
+	return nil
+}
+
+func (m *mockFindingRepository) AutoResolveStaleBranchOccurrences(_ context.Context, _, _ shared.ID, _, _ string) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockFindingRepository) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
+	return nil, nil
 }

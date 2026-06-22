@@ -530,10 +530,13 @@ func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string
 		return nil, err
 	}
 
-	// If email is not public, fetch from /user/emails
-	email := userData.Email
+	// Always resolve a VERIFIED email via /user/emails. The public profile
+	// email (userData.Email) is not guaranteed verified, and since accounts
+	// are matched by email, accepting an unverified attacker-controlled email
+	// could federate into a victim's account. Require a verified email.
+	email, _ := s.getGitHubPrimaryEmail(ctx, accessToken)
 	if email == "" {
-		email, _ = s.getGitHubPrimaryEmail(ctx, accessToken)
+		return nil, errors.New("github account has no verified email")
 	}
 
 	name := userData.Name
