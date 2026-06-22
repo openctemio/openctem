@@ -11,7 +11,9 @@
 
 OpenCTEM links findings to external tickets and keeps status in sync **both ways**:
 
-- **Create** a Jira ticket from a finding (`POST /api/v1/findings/{id}/create-ticket`).
+- **Create** a Jira ticket from a finding (`POST /api/v1/findings/{id}/create-ticket`)
+  into the tenant's **default project** (or an explicit `project_key`); the
+  project picker is fed by `GET /api/v1/integrations/jira/projects`.
 - **Link / unlink** an existing ticket to a finding.
 - **Inbound** (`POST /api/v1/webhooks/incoming/jira?tenant=<id>`): a Jira status
   change updates the finding status (and can trigger a verification scan).
@@ -69,10 +71,12 @@ token with the email from `config`/`metadata["email"]`; or a legacy packed
 
 1. In Jira, create an API token (Atlassian account → Security).
 2. In OpenCTEM: Settings → Integrations → Ticketing → Connect, provider **Jira**.
-   Enter base URL, the Atlassian account email, and the API token. Optionally a
-   project key.
+   Enter base URL, the Atlassian account email, and the API token. Pick the
+   **default destination project** from the picker — `GET /api/v1/integrations/jira/projects`
+   lists the projects visible to the credentials (stored as `config.ticketing.project_key`).
 3. Create a ticket from any finding via the finding actions, or the
    `create-ticket` endpoint with `{"project_key": "SEC", "issue_type": "Bug"}`.
+   When the request omits `project_key`, the tenant's default project is used.
 4. (Inbound) Configure a Jira webhook to
    `POST /api/v1/webhooks/incoming/jira?tenant=<tenant-id>` (HMAC via
    `JiraSecret`, fail-closed).
@@ -141,6 +145,7 @@ own names via `config.ticketing`.
 
 ```json
 { "ticketing": {
+    "project_key": "SEC",
     "issue_type": "Task",
     "default_priority": "P3",
     "severity_to_priority": { "critical": "P1", "high": "P2" },
@@ -152,11 +157,20 @@ own names via `config.ticketing`.
 
 | Key | Direction | Meaning |
 |-----|-----------|---------|
+| `project_key` | create | **Default destination project** for tickets when the `create-ticket` request omits one. Empty = the request must pass `project_key`. |
 | `sync_enabled` | outbound | Master switch for OpenCTEM→Jira status push. **Default `false`.** |
 | `status_outbound` | outbound | finding status → Jira status NAME. Unset finding status = no push; unreachable target = comment. Defaults cover stock Jira (To Do/In Progress/Done). |
 | `status_inbound` | inbound | Jira status name → finding status (overlays defaults; case-insensitive). |
 | `severity_to_priority` | create | finding severity → Jira priority. |
 | `issue_type` / `default_priority` | create | defaults for new issues. |
+
+> **Create now applies the per-tenant mapping.** `CreateTicketFromFinding`
+> resolves `config.ticketing` and uses it for the destination project
+> (`project_key`), issue type, and severity→priority — instead of the previous
+> hardcoded `Bug` + stock priority table. With no config the defaults reproduce
+> the original behavior exactly. Destination resolution: explicit
+> request `project_key` → tenant default `project_key` → else a validation error
+> (we never guess where a ticket goes).
 
 > Inbound never auto-applies `false_positive`/`accepted` (they require approval),
 > and every Jira "done"-like status maps to `fix_applied` (not `resolved`, which
@@ -171,12 +185,16 @@ own names via `config.ticketing`.
 | 0 | Per-tenant client resolver | **Done** (#137, ui#152) |
 | 1 | `MappingConfig` type + defaults (zero behaviour change) | **Done** (mapping.go) |
 | 2 | Configurable mapping (`status_outbound`/`status_inbound`/`sync_enabled`) per integration + UI editor | **Done** (#168, ui#170) |
+| 2b | Wire mapping into **create** (project/issue-type/priority) + default project + project picker | **Done** |
 | 3 | Outbound status sync (asynq + echo-guard, opt-in) | **Done** (#167, #171) |
-| 4 | 2nd provider (ServiceNow/GitHub) + typed `ticket_links` table | Planned (optional) |
+| 4a | Routing rules (asset scope/criticality/severity → project_key) | Planned |
+| 4b | 2nd provider (ServiceNow/GitHub) + typed `ticket_links` table | Planned (optional) |
 
-Related future work (no RFC yet): **Jira Assets / JSM CMDB** — pull asset
-business-context to enrich prioritisation, push discovered assets, link CI
-objects to finding tickets. Today only the core issue API is used.
+Related future work (its own RFC): **Jira Assets / JSM CMDB** — pull asset
+business-context to enrich prioritization, push discovered assets, link CI
+objects to finding tickets. Today only the core issue API is used. A Jira
+**project** is a routing destination (config), **not** an OpenCTEM asset; the
+Jira *site* is the thing that can be modeled as a `web_application` asset.
 
 ## Key files
 
@@ -185,7 +203,7 @@ internal/app/jira/sync_service.go             SyncService: create, inbound webho
                                               SyncFindingStatus(ToTicket) (outbound), resolvers, redaction
 internal/app/jira/mapping.go                   MappingConfig (severity/status maps, status_outbound, sync_enabled)
 internal/infra/jira/client.go                 Jira REST client (CreateIssue/GetIssueStatus/
-                                              GetTransitions/DoTransition/AddComment/TransitionToStatus)
+                                              GetTransitions/DoTransition/AddComment/TransitionToStatus/ListProjects)
 internal/infra/jira/resolver.go               IntegrationClientResolver: ClientResolver + MappingResolver + adapter
 internal/infra/jobs/jira_sync_tasks.go        asynq task + handler for outbound status sync
 internal/infra/http/handler/jira_webhook_handler.go   create-ticket + inbound webhook

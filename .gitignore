@@ -76,3 +76,4 @@ data/
 
 # Claude code
 ./.claude/settings.local.json
+.claude/worktrees/

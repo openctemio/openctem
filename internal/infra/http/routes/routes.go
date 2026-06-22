@@ -503,7 +503,7 @@ func Register(
 
 	// Integration routes (tenant from JWT token)
 	if h.Integration != nil {
-		registerIntegrationRoutes(router, h.Integration, authMiddleware, userSync)
+		registerIntegrationRoutes(router, h.Integration, h.JiraWebhook, authMiddleware, userSync)
 	}
 
 	// Asset Group routes (tenant from JWT token)

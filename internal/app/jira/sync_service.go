@@ -81,7 +81,18 @@ type Client interface {
 	TransitionToStatus(ctx context.Context, issueKey, targetStatus, comment string) error
 	// AddComment posts a comment on the issue.
 	AddComment(ctx context.Context, issueKey, body string) error
+	// ListProjects returns the projects visible to the configured credentials,
+	// for the admin project picker (so an operator chooses the destination
+	// project from a list instead of typing a key). Paginated server-side.
+	ListProjects(ctx context.Context) ([]ProjectRef, error)
 	TestConnection(ctx context.Context) error
+}
+
+// ProjectRef is a Jira project as surfaced to the admin project picker.
+type ProjectRef struct {
+	ID   string `json:"id"`
+	Key  string `json:"key"`
+	Name string `json:"name"`
 }
 
 // ErrNoMatchingTransition mirrors the infra client's sentinel at the app layer
@@ -247,6 +258,33 @@ func (s *SyncService) resolveClient(ctx context.Context, tenantID shared.ID) (Cl
 	return nil, ErrNoTicketingIntegration
 }
 
+// resolveMapping loads the tenant's ticketing MappingConfig (severity→priority,
+// default project/issue type, status maps). Unlike SyncFindingStatus this never
+// fails the caller for a missing mapping: with no resolver wired (tests) or no
+// ticketing integration, it returns DefaultMappingConfig() so create keeps its
+// original behavior.
+func (s *SyncService) resolveMapping(ctx context.Context, tenantID shared.ID) MappingConfig {
+	if s.mappingResolver == nil {
+		return DefaultMappingConfig()
+	}
+	m, err := s.mappingResolver.ResolveMapping(ctx, tenantID)
+	if err != nil {
+		return DefaultMappingConfig()
+	}
+	return m
+}
+
+// ListProjects returns the Jira projects visible to the tenant's connected
+// ticketing integration, for the admin project picker. Returns
+// ErrNoTicketingIntegration when the tenant has no connected Jira integration.
+func (s *SyncService) ListProjects(ctx context.Context, tenantID shared.ID) ([]ProjectRef, error) {
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return client.ListProjects(ctx)
+}
+
 // CreateTicketInput is the payload for auto-creating a Jira ticket from a finding.
 type CreateTicketInput struct {
 	TenantID   string `json:"tenant_id"`
@@ -334,10 +372,6 @@ func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, f
 
 // CreateTicketFromFinding auto-creates a Jira ticket from a finding and links it.
 func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateTicketInput) (*TicketInfo, error) {
-	if input.ProjectKey == "" {
-		return nil, fmt.Errorf("%w: project_key is required", shared.ErrValidation)
-	}
-
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
@@ -345,6 +379,20 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	findingID, err := shared.IDFromString(input.FindingID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid finding ID", shared.ErrValidation)
+	}
+
+	// Per-tenant ticketing config drives the destination project, issue type,
+	// and severity→priority mapping. Defaults reproduce the original behavior.
+	mapping := s.resolveMapping(ctx, tenantID)
+
+	// Destination project: explicit request wins, else the tenant's configured
+	// default. With neither, the caller has to say where the ticket goes.
+	projectKey := strings.TrimSpace(input.ProjectKey)
+	if projectKey == "" {
+		projectKey = mapping.DefaultProjectKey
+	}
+	if projectKey == "" {
+		return nil, fmt.Errorf("%w: project_key is required (no default project configured)", shared.ErrValidation)
 	}
 
 	jiraClient, err := s.resolveClient(ctx, tenantID)
@@ -363,12 +411,12 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	// would open a second Jira issue for the same finding. Jira browse URLs are
 	// ".../browse/<PROJECT>-<n>", so an existing work-item URL containing
 	// "/browse/<ProjectKey>-" means this finding is already ticketed here.
-	browseMarker := "/browse/" + input.ProjectKey + "-"
+	browseMarker := "/browse/" + projectKey + "-"
 	for _, uri := range finding.WorkItemURIs() {
 		if strings.Contains(uri, browseMarker) {
 			key := uri[strings.LastIndex(uri, "/")+1:]
 			s.logger.Info("jira ticket already exists for finding; skipping create",
-				"finding_id", findingID.String(), "ticket_key", key, "project", input.ProjectKey)
+				"finding_id", findingID.String(), "ticket_key", key, "project", projectKey)
 			return &TicketInfo{
 				FindingID: findingID.String(),
 				TicketKey: key,
@@ -378,16 +426,21 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		}
 	}
 
-	// Map finding severity to Jira priority
-	priority := mapSeverityToJiraPriority(string(finding.Severity()))
+	// Map finding severity to Jira priority via the tenant's mapping (defaults
+	// reproduce the original critical→Highest … low→Low table).
+	priority := mapping.PriorityForSeverity(string(finding.Severity()))
 
-	issueType := input.IssueType
+	// Issue type: explicit request wins, else the tenant default, else "Bug".
+	issueType := strings.TrimSpace(input.IssueType)
+	if issueType == "" {
+		issueType = mapping.DefaultIssueType
+	}
 	if issueType == "" {
 		issueType = "Bug"
 	}
 
 	result, err := jiraClient.CreateIssue(ctx, CreateIssueInput{
-		ProjectKey:  input.ProjectKey,
+		ProjectKey:  projectKey,
 		Summary:     redactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())),
 		Description: ticketDescription(finding),
 		IssueType:   issueType,
@@ -479,13 +532,6 @@ func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, is
 	}
 	s.logger.Info("jira epic outbound: synced campaign status to epic", "issue_key", issueKey, "target", targetStatus)
 	return nil
-}
-
-// mapSeverityToJiraPriority maps finding severity to Jira priority name using
-// the default mapping. Per-integration overrides are applied via MappingConfig
-// (see mapping.go); this keeps callers that have no integration context working.
-func mapSeverityToJiraPriority(severity string) string {
-	return DefaultMappingConfig().PriorityForSeverity(severity)
 }
 
 // LinkTicketInput is the payload for linking a Jira ticket to a finding.

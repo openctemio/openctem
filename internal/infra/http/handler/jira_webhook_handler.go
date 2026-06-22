@@ -205,6 +205,33 @@ func (h *JiraWebhookHandler) createGitHubTicket(w http.ResponseWriter, r *http.R
 	_ = json.NewEncoder(w).Encode(result)
 }
 
+// ListJiraProjects handles GET /api/v1/integrations/jira/projects.
+// Returns the Jira projects visible to the tenant's connected ticketing
+// integration, for the admin destination-project picker (so an operator
+// selects the default project from a list rather than typing a raw key).
+func (h *JiraWebhookHandler) ListJiraProjects(w http.ResponseWriter, r *http.Request) {
+	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+
+	projects, err := h.service.ListProjects(r.Context(), tid)
+	if err != nil {
+		if errors.Is(err, jira.ErrNoTicketingIntegration) {
+			apierror.NotFound("no connected Jira integration").WriteJSON(w)
+			return
+		}
+		h.logger.Error("list jira projects failed", "error", err)
+		apierror.InternalServerError("failed to list Jira projects").WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"projects": projects})
+}
+
 // IncomingJiraWebhook handles POST /api/v1/webhooks/incoming/jira.
 // This is a PUBLIC endpoint (no JWT) intended to receive Jira webhook deliveries.
 // Tenant routing is via the ?tenant= query param — each Jira project configures one endpoint per tenant.

@@ -144,6 +144,7 @@ func registerSLARoutes(
 func registerIntegrationRoutes(
 	router Router,
 	h *handler.IntegrationHandler,
+	jiraHandler *handler.JiraWebhookHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -177,6 +178,12 @@ func registerIntegrationRoutes(
 		r.POST("/jira/webhook-secret/rotate", h.RotateJiraWebhookSecret, middleware.Require(permission.IntegrationsManage))
 		r.GET("/github/webhook-secret", h.GetGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
 		r.POST("/github/webhook-secret/rotate", h.RotateGitHubWebhookSecret, middleware.Require(permission.IntegrationsManage))
+
+		// List Jira projects for the destination-project picker (static path;
+		// must be before /{id} routes). nil handler = no DB → skip.
+		if jiraHandler != nil {
+			r.GET("/jira/projects", jiraHandler.ListJiraProjects, middleware.Require(permission.IntegrationsRead))
+		}
 
 		// Get, update, delete specific integration
 		r.GET("/{id}", h.Get, middleware.Require(permission.IntegrationsRead))

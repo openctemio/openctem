@@ -56,6 +56,18 @@ func (a clientAdapter) AddComment(ctx context.Context, issueKey, body string) er
 	return a.c.AddComment(ctx, issueKey, body)
 }
 
+func (a clientAdapter) ListProjects(ctx context.Context) ([]appjira.ProjectRef, error) {
+	projects, err := a.c.ListProjects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]appjira.ProjectRef, 0, len(projects))
+	for _, p := range projects {
+		refs = append(refs, appjira.ProjectRef{ID: p.ID, Key: p.Key, Name: p.Name})
+	}
+	return refs, nil
+}
+
 func (a clientAdapter) TestConnection(ctx context.Context) error {
 	return a.c.TestConnection(ctx)
 }

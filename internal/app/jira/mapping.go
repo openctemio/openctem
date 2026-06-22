@@ -40,6 +40,13 @@ type MappingConfig struct {
 
 	// DefaultIssueType is the Jira issue type used when a request omits one.
 	DefaultIssueType string
+
+	// DefaultProjectKey is the Jira project a finding's ticket lands in when the
+	// caller does not specify one (the per-tenant "where do tickets go" setting,
+	// chosen once in the integration's ticketing config). Empty = none, in which
+	// case the caller MUST pass a project key explicitly. Loaded from
+	// config.ticketing.project_key.
+	DefaultProjectKey string
 }
 
 // DefaultMappingConfig returns the mapping that reproduces the platform's
@@ -180,6 +187,9 @@ func ParseMappingConfig(config map[string]any) MappingConfig {
 	}
 	if v, ok := stringValue(section, "default_priority"); ok {
 		m.DefaultPriority = v
+	}
+	if v, ok := stringValue(section, "project_key"); ok {
+		m.DefaultProjectKey = strings.TrimSpace(v)
 	}
 
 	if raw, ok := section["severity_to_priority"].(map[string]any); ok {
