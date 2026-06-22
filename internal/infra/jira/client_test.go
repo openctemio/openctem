@@ -112,3 +112,45 @@ func TestDoTransition_ErrorStatus(t *testing.T) {
 		t.Fatal("expected error on non-204 transition response")
 	}
 }
+
+func TestListProjects_PaginatesUntilIsLast(t *testing.T) {
+	page := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/project/search") {
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// First page: 2 projects, not last. Second page: 1 project, last.
+		if page == 0 {
+			page++
+			_, _ = io.WriteString(w, `{"values":[{"id":"1","key":"SEC","name":"Security"},{"id":"2","key":"PAY","name":"Payments"}],"isLast":false}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"values":[{"id":"3","key":"OPS","name":"Ops"}],"isLast":true}`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
+	got, err := c.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 projects across 2 pages, got %d: %+v", len(got), got)
+	}
+	if got[0].Key != "SEC" || got[2].Key != "OPS" {
+		t.Fatalf("unexpected order/content: %+v", got)
+	}
+}
+
+func TestListProjects_ErrorStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
+	if _, err := c.ListProjects(context.Background()); err == nil {
+		t.Fatal("expected error on non-200 status")
+	}
+}

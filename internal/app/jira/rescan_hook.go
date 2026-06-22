@@ -4,9 +4,10 @@ package jira
 import (
 	"context"
 	"fmt"
-	"github.com/openctemio/api/internal/app"
 	"sync"
 	"time"
+
+	"github.com/openctemio/api/internal/app"
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"

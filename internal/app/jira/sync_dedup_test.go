@@ -14,11 +14,13 @@ import (
 // stubCreateClient records CreateIssue calls; only CreateIssue is on the
 // SyncService's Client interface.
 type stubCreateClient struct {
-	calls int32
+	calls     int32
+	lastInput CreateIssueInput
 }
 
-func (c *stubCreateClient) CreateIssue(_ context.Context, _ CreateIssueInput) (*CreateIssueResult, error) {
+func (c *stubCreateClient) CreateIssue(_ context.Context, in CreateIssueInput) (*CreateIssueResult, error) {
 	atomic.AddInt32(&c.calls, 1)
+	c.lastInput = in
 	return &CreateIssueResult{Key: "PROJ-999", BrowseURL: "https://x.atlassian.net/browse/PROJ-999"}, nil
 }
 
@@ -28,6 +30,7 @@ func (c *stubCreateClient) GetIssueStatus(_ context.Context, _ string) (string, 
 }
 func (c *stubCreateClient) TransitionToStatus(_ context.Context, _, _, _ string) error { return nil }
 func (c *stubCreateClient) AddComment(_ context.Context, _, _ string) error            { return nil }
+func (c *stubCreateClient) ListProjects(_ context.Context) ([]ProjectRef, error)       { return nil, nil }
 
 // stubFindingRepo implements only the two methods CreateTicketFromFinding uses;
 // the rest of the large interface is satisfied by the embedded nil interface.

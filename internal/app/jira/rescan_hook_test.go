@@ -3,10 +3,11 @@ package jira
 import (
 	"context"
 	"errors"
-	"github.com/openctemio/api/internal/app"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app"
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"

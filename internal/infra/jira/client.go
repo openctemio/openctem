@@ -313,6 +313,62 @@ func (c *Client) TransitionToStatus(ctx context.Context, issueKey, targetStatus,
 	return ErrNoMatchingTransition
 }
 
+// Project is a Jira project as returned by the project-search endpoint.
+type Project struct {
+	ID   string `json:"id"`
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
+// maxProjectPages bounds the project-search pagination so a very large or
+// misbehaving instance can't make us loop unboundedly.
+const maxProjectPages = 40
+
+// ListProjects returns the projects visible to the configured credentials,
+// for the admin project picker. It pages through Jira's project-search
+// endpoint (50 per page) until isLast.
+func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
+	const pageSize = 50
+	var projects []Project
+	startAt := 0
+	for page := 0; page < maxProjectPages; page++ {
+		u := fmt.Sprintf("%s/rest/api/2/project/search?startAt=%d&maxResults=%d", c.baseURL, startAt, pageSize)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.SetBasicAuth(c.email, c.apiToken)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("jira api call: %w", err)
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read response: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("jira api error (status %d)", resp.StatusCode)
+		}
+
+		var pageResp struct {
+			Values []Project `json:"values"`
+			IsLast bool      `json:"isLast"`
+		}
+		if err := json.Unmarshal(body, &pageResp); err != nil {
+			return nil, fmt.Errorf("parse response: %w", err)
+		}
+		projects = append(projects, pageResp.Values...)
+		if pageResp.IsLast || len(pageResp.Values) == 0 {
+			break
+		}
+		startAt += len(pageResp.Values)
+	}
+	return projects, nil
+}
+
 // TestConnection verifies Jira credentials by fetching server info.
 func (c *Client) TestConnection(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/rest/api/2/serverInfo", nil)
