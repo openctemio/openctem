@@ -77,3 +77,6 @@ data/
 # Claude code
 ./.claude/settings.local.json
 .claude/worktrees/
+
+# Claude Code local (per-developer) settings — never commit
+.claude/settings.local.json
