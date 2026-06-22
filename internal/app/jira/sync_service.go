@@ -163,6 +163,11 @@ type SyncService struct {
 	// outbound sync (SyncFindingStatus). nil → outbound sync is inert.
 	mappingResolver MappingResolver
 
+	// assetRouteResolver supplies a finding's asset attributes (scope,
+	// criticality, groups) so routing rules can match on them. nil → routing
+	// matches only on finding-level fields (severity, tags).
+	assetRouteResolver AssetRouteResolver
+
 	// B3: optional hook fired when a Jira webhook transitions
 	// a finding into `fix_applied`. Wired to the verification-scan
 	// trigger to close the "Jira Done → auto rescan" feedback edge
@@ -225,6 +230,41 @@ func (s *SyncService) SetClientResolver(r ClientResolver) {
 // sync. Safe to call after construction; nil disables outbound sync.
 func (s *SyncService) SetMappingResolver(r MappingResolver) {
 	s.mappingResolver = r
+}
+
+// AssetRouteResolver supplies a finding's asset-level routing attributes so
+// routing rules can match on them. Optional: when nil, routing matches only on
+// finding-level fields (severity, tags). Implemented in infra by loading the
+// asset (+ its group memberships).
+type AssetRouteResolver interface {
+	ResolveAssetRoute(ctx context.Context, tenantID, assetID shared.ID) (scope, criticality string, groups []string, err error)
+}
+
+// SetAssetRouteResolver wires the optional asset-context resolver used by
+// routing rules. Safe to call after construction.
+func (s *SyncService) SetAssetRouteResolver(r AssetRouteResolver) {
+	s.assetRouteResolver = r
+}
+
+// routeContext builds the RouteContext for a finding. Severity + tags are
+// always available; asset scope/criticality/groups are filled in when an
+// AssetRouteResolver is wired and the lookup succeeds. The lookup is
+// best-effort — a routing context failure must never block ticket creation.
+func (s *SyncService) routeContext(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding) RouteContext {
+	rc := RouteContext{
+		Severity: string(finding.Severity()),
+		Tags:     finding.Tags(),
+	}
+	if s.assetRouteResolver != nil && !finding.AssetID().IsZero() {
+		scope, criticality, groups, err := s.assetRouteResolver.ResolveAssetRoute(ctx, tenantID, finding.AssetID())
+		if err != nil {
+			s.logger.Debug("routing: asset context lookup failed; matching on finding fields only",
+				"finding_id", finding.ID().String(), "error", err)
+		} else {
+			rc.Scope, rc.Criticality, rc.Groups = scope, criticality, groups
+		}
+	}
+	return rc
 }
 
 // SyncFindingStatus is the async entrypoint for outbound status sync: it
@@ -385,16 +425,6 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	// and severity→priority mapping. Defaults reproduce the original behavior.
 	mapping := s.resolveMapping(ctx, tenantID)
 
-	// Destination project: explicit request wins, else the tenant's configured
-	// default. With neither, the caller has to say where the ticket goes.
-	projectKey := strings.TrimSpace(input.ProjectKey)
-	if projectKey == "" {
-		projectKey = mapping.DefaultProjectKey
-	}
-	if projectKey == "" {
-		return nil, fmt.Errorf("%w: project_key is required (no default project configured)", shared.ErrValidation)
-	}
-
 	jiraClient, err := s.resolveClient(ctx, tenantID)
 	if err != nil {
 		return nil, err
@@ -403,6 +433,27 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
 	if err != nil {
 		return nil, fmt.Errorf("get finding: %w", err)
+	}
+
+	// Destination project resolution, in priority order:
+	//   1. explicit request project_key (caller knows best),
+	//   2. a matching routing rule (route by team/severity/asset attributes),
+	//   3. the tenant's default project,
+	//   4. else a validation error — we never guess where a ticket goes.
+	// A routing rule may also override the issue type for that route.
+	projectKey := strings.TrimSpace(input.ProjectKey)
+	routeIssueType := ""
+	if projectKey == "" {
+		if rule, ok := mapping.RouteFor(s.routeContext(ctx, tenantID, finding)); ok {
+			projectKey = rule.ProjectKey
+			routeIssueType = rule.IssueType
+		}
+	}
+	if projectKey == "" {
+		projectKey = mapping.DefaultProjectKey
+	}
+	if projectKey == "" {
+		return nil, fmt.Errorf("%w: project_key is required (no routing match and no default project configured)", shared.ErrValidation)
 	}
 
 	// Idempotency: if this finding already has a ticket in the target project,
@@ -430,8 +481,12 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	// reproduce the original critical→Highest … low→Low table).
 	priority := mapping.PriorityForSeverity(string(finding.Severity()))
 
-	// Issue type: explicit request wins, else the tenant default, else "Bug".
+	// Issue type: explicit request wins, else the matched route's override, else
+	// the tenant default, else "Bug".
 	issueType := strings.TrimSpace(input.IssueType)
+	if issueType == "" {
+		issueType = routeIssueType
+	}
 	if issueType == "" {
 		issueType = mapping.DefaultIssueType
 	}
