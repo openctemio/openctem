@@ -14,6 +14,7 @@ and the code. Start here to remember "what was decided, why, and where it lives"
 | [RFC-007](RFC-007-license-aware-scan-coverage.md) | License-aware scan coverage (Tenable Nessus Pro + .sc) | Proposed, Phase 1 in progress | #138 | **#139** (converter) |
 | [RFC-008](RFC-008-native-shift-left-ci-scanning.md) | Native shift-left CI/CD code scanning (agent-first) | Proposed, Phase 1 shipped | — | agent **#27** (risk-aware gate) |
 | [RFC-009](RFC-009-enterprise-sso-saml-scim.md) | Enterprise SSO: SAML 2.0 + SCIM 2.0 provisioning | SCIM (9a–9c) done; SAML 9d done | — | SCIM Users/token/Groups; SAML config+metadata |
+| [RFC-010](RFC-010-jira-assets-cmdb.md) | Jira Assets / JSM CMDB integration (enrich + reconcile) | Proposed | — | — |
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
 
@@ -53,9 +54,12 @@ Code touchpoints:
   internal/infra/http/handler/jira_webhook_handler.go
 ```
 
-Open follow-up not yet an RFC: **Jira Assets / JSM CMDB** integration (pull
-business-context to enrich prioritisation; push discovered assets; link CI to
-tickets). Today only the core issue API is used — Assets API is not touched.
+Open follow-up, now designed in **[RFC-010](RFC-010-jira-assets-cmdb.md)**:
+**Jira Assets / JSM CMDB** integration (pull business-context to enrich
+prioritization; reconcile/push discovered assets; link CI to tickets). Today
+only the core issue API is used — the Assets API is not touched. Note: a Jira
+*project* is a ticket routing destination (config), **not** an asset; Jira
+**Assets/CMDB objects** are the asset records RFC-010 reconciles.
 
 ---
 
