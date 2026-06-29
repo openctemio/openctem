@@ -831,12 +831,19 @@ func (s *SSOService) mapAuthProvider(provider identityproviderdom.Provider) user
 
 // createSession creates a new session for the user.
 func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
-	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), "", "user")
+	// Bind the token to its session: generate the session id first, embed it in
+	// the JWT, then persist the session under the SAME id — so an SSO session is
+	// revocable (mirrors the password Login flow). Previously the token was
+	// minted with an empty session id, leaving the token and session row
+	// unlinked, so the SSO access token could not be revoked.
+	sessionID := shared.NewID()
+	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), sessionID.String(), "user")
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
-	newSession, err := sessiondom.New(
+	newSession, err := sessiondom.NewWithID(
+		sessionID,
 		u.ID(),
 		tokenPair.AccessToken,
 		"", // IP address from request context

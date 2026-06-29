@@ -17,6 +17,7 @@ import (
 
 	"github.com/openctemio/api/internal/config"
 	sessiondom "github.com/openctemio/api/pkg/domain/session"
+	"github.com/openctemio/api/pkg/domain/shared"
 	userdom "github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/jwt"
@@ -99,7 +100,7 @@ func NewOAuthService(
 		tokenGenerator:   tokenGen,
 		config:           oauthCfg,
 		authConfig:       authCfg,
-		logger: log.With("service", "oauth"),
+		logger:           log.With("service", "oauth"),
 		// SSRF: OAuth userinfo + token endpoints for Google / GitHub /
 		// Microsoft are hardcoded strings in this file, so no SSRF via
 		// config. Using SafeHTTPClient remains valuable: if a follow-
@@ -702,14 +703,20 @@ type SessionResult struct {
 
 // createSession creates a new session for the user.
 func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
-	// Generate token pair first (with empty session ID - will be set after session creation)
-	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), "", "user")
+	// Bind the token to its session: generate the session id first, embed it in
+	// the JWT, then persist the session under the SAME id — so an OAuth session
+	// is revocable (mirrors the password Login flow). Previously the token was
+	// minted with an empty session id, leaving the token and session row
+	// unlinked, so the OAuth access token could not be revoked.
+	sessionID := shared.NewID()
+	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), sessionID.String(), "user")
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate tokens: %w", err)
 	}
 
-	// Create session with the access token
-	newSession, err := sessiondom.New(
+	// Create session under the same id embedded in the token.
+	newSession, err := sessiondom.NewWithID(
+		sessionID,
 		u.ID(),
 		tokenPair.AccessToken,
 		"", // IP address - can be set from request context
