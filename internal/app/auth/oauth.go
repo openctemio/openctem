@@ -645,18 +645,26 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
-		// SECURITY: Verify auth provider matches to prevent account takeover.
-		// A local user with a password cannot be logged in via OAuth.
+		// SECURITY: an account is bound to the auth provider that created it.
+		// Users are matched by email, but a verified email at one IdP does NOT
+		// prove ownership of an account created at another. On a provider
+		// mismatch the ONLY safe adoption is a CLAIMABLE LOCAL account (invited,
+		// no password yet) signing in via its IdP for the first time. Block
+		// every other mismatch — a password-backed local account AND a different
+		// federated provider (e.g. account created via Google, login attempted
+		// via GitHub) — otherwise it is a cross-IdP account takeover.
 		existingProvider := existingUser.AuthProvider()
 		expectedProvider := provider.ToAuthProvider()
 
-		if existingProvider != expectedProvider && existingProvider == userdom.AuthProviderLocal {
-			if existingUser.PasswordHash() != nil {
-				s.logger.Warn("OAuth login blocked: email exists with local auth",
+		if existingProvider != expectedProvider {
+			claimableLocal := existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() == nil
+			if !claimableLocal {
+				s.logger.Warn("OAuth login blocked: email registered with a different auth provider",
 					"email", userInfo.Email,
-					"oauth_provider", provider,
+					"existing_provider", existingProvider,
+					"oauth_provider", expectedProvider,
 				)
-				return nil, fmt.Errorf("this email is registered with password login")
+				return nil, fmt.Errorf("this email is registered with a different login method")
 			}
 		}
 

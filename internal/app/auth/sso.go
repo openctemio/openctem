@@ -760,17 +760,21 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
-		// SECURITY: Verify auth provider matches to prevent account takeover.
-		// A local user cannot be logged in via SSO (and vice versa) unless
-		// the auth provider matches or the user was created by this SSO provider.
+		// SECURITY: an account is bound to the auth provider that created it.
+		// Users are matched by email, but a verified email at one IdP does NOT
+		// prove ownership of an account created at another. On a provider
+		// mismatch the ONLY safe adoption is a CLAIMABLE LOCAL account (invited,
+		// no password yet) signing in via its IdP for the first time. Block
+		// every other mismatch — a password-backed local account AND a different
+		// federated provider (e.g. account created via Google, login attempted
+		// via a different SSO) — otherwise it is a cross-IdP account takeover.
 		existingProvider := existingUser.AuthProvider()
 		expectedProvider := s.mapAuthProvider(provider)
 
-		if existingProvider != expectedProvider && existingProvider != userdom.AuthProviderOIDC {
-			// Allow local users to be "upgraded" to SSO only if they have no password set
-			// (i.e., they were invited but haven't set a password yet).
-			if existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() != nil {
-				s.logger.Warn("SSO login blocked: email exists with different auth provider",
+		if existingProvider != expectedProvider {
+			claimableLocal := existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() == nil
+			if !claimableLocal {
+				s.logger.Warn("SSO login blocked: email registered with a different auth provider",
 					"email", userInfo.Email,
 					"existing_provider", existingProvider,
 					"sso_provider", expectedProvider,
