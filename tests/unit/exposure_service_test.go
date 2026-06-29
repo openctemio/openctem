@@ -1736,14 +1736,18 @@ func TestExposureService_DeleteExposure_WithoutTenantID(t *testing.T) {
 
 	event := createTestExposureEvent(t, svc, tenantID.String())
 
-	// Empty tenantID should skip tenant check
+	// An empty tenant must be REJECTED. It previously skipped the ownership
+	// check (an IDOR); now it fails closed with a validation error and does not
+	// delete anything.
 	err := svc.DeleteExposure(context.Background(), event.ID().String(), "")
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if err == nil {
+		t.Fatal("expected empty tenant to be rejected")
 	}
-
-	if repo.deleteCalls != 1 {
-		t.Errorf("expected 1 Delete call, got %d", repo.deleteCalls)
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected validation error, got %v", err)
+	}
+	if repo.deleteCalls != 0 {
+		t.Errorf("must not delete on empty tenant, got %d Delete calls", repo.deleteCalls)
 	}
 }
 

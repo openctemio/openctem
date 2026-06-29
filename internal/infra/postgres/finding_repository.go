@@ -2999,8 +2999,9 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 	// Do NOT reopen manually resolved, false_positive, or accepted findings
 	query := `
 		UPDATE findings
-		SET status = 'open',
+		SET status = 'confirmed',
 			resolution = NULL,
+			resolution_method = NULL,
 			resolved_at = NULL,
 			resolved_by = NULL,
 			updated_at = NOW()

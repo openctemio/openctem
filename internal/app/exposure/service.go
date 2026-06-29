@@ -590,15 +590,15 @@ func (s *ExposureService) DeleteExposure(ctx context.Context, exposureID, tenant
 		return err
 	}
 
-	// Verify event belongs to the tenant
-	if tenantID != "" {
-		parsedTenantID, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return fmt.Errorf("%w: invalid tenant ID format", shared.ErrValidation)
-		}
-		if event.TenantID() != parsedTenantID {
-			return shared.ErrNotFound
-		}
+	// Verify the event belongs to the caller's tenant. Tenant is REQUIRED — an
+	// empty tenant must never skip this ownership check (that would be an IDOR),
+	// so fail closed on a missing/invalid tenant.
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: tenant is required", shared.ErrValidation)
+	}
+	if event.TenantID() != parsedTenantID {
+		return shared.ErrNotFound
 	}
 
 	return s.repo.Delete(ctx, parsedID)

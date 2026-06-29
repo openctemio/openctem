@@ -293,19 +293,21 @@ func (s *Service) DeleteSLAPolicy(ctx context.Context, policyID, tenantID string
 		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
-	// IDOR prevention: verify policy belongs to the tenant before deletion
-	if tenantID != "" {
-		policy, err := s.repo.GetByID(ctx, parsedID)
-		if err != nil {
-			return err
-		}
-		if policy.TenantID().String() != tenantID {
-			return shared.ErrNotFound
-		}
-		// Prevent deletion of default policy
-		if policy.IsDefault() {
-			return fmt.Errorf("%w: cannot delete default SLA policy", shared.ErrValidation)
-		}
+	// IDOR prevention: verify the policy belongs to the caller's tenant before
+	// deletion. Tenant is REQUIRED — never skip this check on an empty tenant.
+	if tenantID == "" {
+		return fmt.Errorf("%w: tenant is required", shared.ErrValidation)
+	}
+	policy, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+	if policy.TenantID().String() != tenantID {
+		return shared.ErrNotFound
+	}
+	// Prevent deletion of default policy
+	if policy.IsDefault() {
+		return fmt.Errorf("%w: cannot delete default SLA policy", shared.ErrValidation)
 	}
 
 	if err := s.repo.Delete(ctx, parsedID); err != nil {
