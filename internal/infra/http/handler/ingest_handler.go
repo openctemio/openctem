@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/infra/adapters"
 	"github.com/openctemio/api/internal/infra/adapters/core"
+	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/agent"
@@ -262,6 +263,18 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 
 		// Add agent to context
 		ctx := context.WithValue(r.Context(), agentContextKey, agt)
+		// Expose the authenticated agent's tenant to tenant-keyed
+		// middleware that runs later in the chain (ingest/telemetry
+		// rate limiters). Agent API-key auth is the tenant-binding
+		// authority on these routes; without this the per-tenant rate
+		// limiters key on an empty string and pass through every
+		// request — the "compromised key replays at line rate" abuse
+		// the limiters exist to stop. Platform agents (nil tenant)
+		// are rejected by the per-handler nil-tenant guards before
+		// they act, so we only need the common tenant-bound case here.
+		if agt.TenantID != nil {
+			ctx = context.WithValue(ctx, middleware.TenantIDKey, agt.TenantID.String())
+		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
