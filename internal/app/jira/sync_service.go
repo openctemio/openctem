@@ -462,10 +462,18 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 	// would open a second Jira issue for the same finding. Jira browse URLs are
 	// ".../browse/<PROJECT>-<n>", so an existing work-item URL containing
 	// "/browse/<ProjectKey>-" means this finding is already ticketed here.
-	browseMarker := "/browse/" + projectKey + "-"
+	// Compare case-insensitively: Jira browse URLs use the upper-case project
+	// key even if the integration was configured with a lower-case key, and
+	// without this the check would miss and a duplicate ticket would be created.
+	browseMarker := strings.ToUpper("/browse/" + projectKey + "-")
 	for _, uri := range finding.WorkItemURIs() {
-		if strings.Contains(uri, browseMarker) {
+		if strings.Contains(strings.ToUpper(uri), browseMarker) {
+			// Prefer the canonical key via the shared regex (robust to trailing
+			// slashes / query strings); fall back to the trailing path segment.
 			key := uri[strings.LastIndex(uri, "/")+1:]
+			if m := jiraBrowseKeyRe.FindStringSubmatch(uri); m != nil {
+				key = m[1]
+			}
 			s.logger.Info("jira ticket already exists for finding; skipping create",
 				"finding_id", findingID.String(), "ticket_key", key, "project", projectKey)
 			return &TicketInfo{

@@ -130,3 +130,52 @@ func TestListProjects_NoIntegration(t *testing.T) {
 		t.Fatal("expected ErrNoTicketingIntegration")
 	}
 }
+
+// A lower-case configured project key must still match the upper-case Jira
+// browse URL (idempotency is case-insensitive) — otherwise a duplicate ticket
+// is created on every retry.
+func TestCreateTicketFromFinding_IdempotentCaseInsensitiveProject(t *testing.T) {
+	client := &stubCreateClient{}
+	repo := &stubFindingRepo{finding: buildFinding(t, "https://x.atlassian.net/browse/SEC-5")}
+	s := newSync(repo, client)
+	mapping := DefaultMappingConfig()
+	mapping.DefaultProjectKey = "sec" // lower-case, as a misconfig might be
+	s.SetMappingResolver(stubMappingResolver{mapping: mapping})
+
+	info, err := s.CreateTicketFromFinding(context.Background(), CreateTicketInput{
+		TenantID:  shared.NewID().String(),
+		FindingID: shared.NewID().String(),
+	})
+	if err != nil {
+		t.Fatalf("CreateTicketFromFinding: %v", err)
+	}
+	if client.calls != 0 {
+		t.Fatalf("expected NO create (already ticketed, case-insensitive); got %d", client.calls)
+	}
+	if info.TicketKey != "SEC-5" {
+		t.Fatalf("ticket key = %q, want SEC-5", info.TicketKey)
+	}
+}
+
+// The idempotent-hit key extraction must be robust to a query string / trailing
+// junk on the stored browse URL.
+func TestCreateTicketFromFinding_IdempotentDirtyURLKey(t *testing.T) {
+	client := &stubCreateClient{}
+	repo := &stubFindingRepo{finding: buildFinding(t, "https://x.atlassian.net/browse/SEC-7?focusedCommentId=9")}
+	s := newSync(repo, client)
+
+	info, err := s.CreateTicketFromFinding(context.Background(), CreateTicketInput{
+		TenantID:   shared.NewID().String(),
+		FindingID:  shared.NewID().String(),
+		ProjectKey: "SEC",
+	})
+	if err != nil {
+		t.Fatalf("CreateTicketFromFinding: %v", err)
+	}
+	if client.calls != 0 {
+		t.Fatalf("expected NO create (already ticketed); got %d", client.calls)
+	}
+	if info.TicketKey != "SEC-7" {
+		t.Fatalf("ticket key = %q, want SEC-7 (clean, no query string)", info.TicketKey)
+	}
+}
