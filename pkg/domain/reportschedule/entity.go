@@ -7,9 +7,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
 )
+
+// validReportTypes are the report types the scheduler can actually generate
+// (mirrors ReportScheduler.supportsType). Anything else would persist and then
+// be silently skipped at run time, so reject it at creation.
+var validReportTypes = map[string]bool{
+	"executive_summary": true,
+	"summary":           true,
+	"findings":          true,
+}
+
+// cronParser matches the parser the scheduler uses (5-field standard cron:
+// minute hour dom month dow) so a schedule that validates here also parses at
+// run time.
+var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 // ReportSchedule represents a recurring report delivery configuration.
 type ReportSchedule struct {
@@ -51,8 +67,14 @@ func NewReportSchedule(tenantID shared.ID, name, reportType, format, cron string
 	if len(cron) > 200 {
 		return nil, fmt.Errorf("%w: cron expression too long", shared.ErrValidation)
 	}
+	if _, err := cronParser.Parse(cron); err != nil {
+		return nil, fmt.Errorf("%w: invalid cron expression", shared.ErrValidation)
+	}
 	if reportType == "" {
 		return nil, fmt.Errorf("%w: report type is required", shared.ErrValidation)
+	}
+	if !validReportTypes[strings.ToLower(strings.TrimSpace(reportType))] {
+		return nil, fmt.Errorf("%w: unsupported report type %q", shared.ErrValidation, reportType)
 	}
 	if format == "" {
 		return nil, fmt.Errorf("%w: format is required", shared.ErrValidation)
@@ -97,7 +119,7 @@ func ReconstituteReportSchedule(
 		options: options, recipients: recipients,
 		deliveryChannel: deliveryChannel, integrationID: integrationID,
 		cronExpression: cronExpression, timezone: timezone,
-		isActive: isActive,
+		isActive:  isActive,
 		lastRunAt: lastRunAt, nextRunAt: nextRunAt,
 		lastStatus: lastStatus, runCount: runCount,
 		createdBy: createdBy,
@@ -106,25 +128,25 @@ func ReconstituteReportSchedule(
 }
 
 // Getters
-func (s *ReportSchedule) ID() shared.ID              { return s.id }
-func (s *ReportSchedule) TenantID() shared.ID         { return s.tenantID }
-func (s *ReportSchedule) Name() string                { return s.name }
-func (s *ReportSchedule) ReportType() string           { return s.reportType }
-func (s *ReportSchedule) Format() string               { return s.format }
-func (s *ReportSchedule) Options() map[string]any      { return s.options }
-func (s *ReportSchedule) Recipients() []Recipient      { return s.recipients }
-func (s *ReportSchedule) DeliveryChannel() string      { return s.deliveryChannel }
-func (s *ReportSchedule) IntegrationID() *shared.ID    { return s.integrationID }
-func (s *ReportSchedule) CronExpression() string       { return s.cronExpression }
-func (s *ReportSchedule) Timezone() string             { return s.timezone }
-func (s *ReportSchedule) IsActive() bool               { return s.isActive }
-func (s *ReportSchedule) LastRunAt() *time.Time        { return s.lastRunAt }
-func (s *ReportSchedule) LastStatus() string           { return s.lastStatus }
-func (s *ReportSchedule) NextRunAt() *time.Time        { return s.nextRunAt }
-func (s *ReportSchedule) RunCount() int                { return s.runCount }
-func (s *ReportSchedule) CreatedBy() *shared.ID        { return s.createdBy }
-func (s *ReportSchedule) CreatedAt() time.Time         { return s.createdAt }
-func (s *ReportSchedule) UpdatedAt() time.Time         { return s.updatedAt }
+func (s *ReportSchedule) ID() shared.ID             { return s.id }
+func (s *ReportSchedule) TenantID() shared.ID       { return s.tenantID }
+func (s *ReportSchedule) Name() string              { return s.name }
+func (s *ReportSchedule) ReportType() string        { return s.reportType }
+func (s *ReportSchedule) Format() string            { return s.format }
+func (s *ReportSchedule) Options() map[string]any   { return s.options }
+func (s *ReportSchedule) Recipients() []Recipient   { return s.recipients }
+func (s *ReportSchedule) DeliveryChannel() string   { return s.deliveryChannel }
+func (s *ReportSchedule) IntegrationID() *shared.ID { return s.integrationID }
+func (s *ReportSchedule) CronExpression() string    { return s.cronExpression }
+func (s *ReportSchedule) Timezone() string          { return s.timezone }
+func (s *ReportSchedule) IsActive() bool            { return s.isActive }
+func (s *ReportSchedule) LastRunAt() *time.Time     { return s.lastRunAt }
+func (s *ReportSchedule) LastStatus() string        { return s.lastStatus }
+func (s *ReportSchedule) NextRunAt() *time.Time     { return s.nextRunAt }
+func (s *ReportSchedule) RunCount() int             { return s.runCount }
+func (s *ReportSchedule) CreatedBy() *shared.ID     { return s.createdBy }
+func (s *ReportSchedule) CreatedAt() time.Time      { return s.createdAt }
+func (s *ReportSchedule) UpdatedAt() time.Time      { return s.updatedAt }
 
 // Update sets mutable fields.
 func (s *ReportSchedule) Update(name, reportType, format, cron, timezone string) {
