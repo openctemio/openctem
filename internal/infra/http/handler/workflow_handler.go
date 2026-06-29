@@ -209,6 +209,16 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 
 	userUUID, _ := shared.IDFromString(userID) // May be empty for service accounts
 
+	// AuthZ: a user may only build action nodes whose underlying mutation they
+	// are permitted to perform directly (WorkflowsWrite alone is not enough).
+	actionCfgs := make([]*NodeConfigRequest, len(req.Nodes))
+	for i := range req.Nodes {
+		actionCfgs[i] = req.Nodes[i].Config
+	}
+	if !h.requireActionPermissions(w, r, actionCfgs...) {
+		return
+	}
+
 	// Convert nodes
 	nodes := make([]app.CreateNodeInput, len(req.Nodes))
 	for i, n := range req.Nodes {
@@ -462,6 +472,16 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 
 	userUUID, _ := shared.IDFromString(userID)
 
+	// AuthZ: action nodes are gated by the permission of their underlying
+	// mutation, mirroring the direct API routes (see workflow_action_authz.go).
+	actionCfgs := make([]*NodeConfigRequest, len(req.Nodes))
+	for i := range req.Nodes {
+		actionCfgs[i] = req.Nodes[i].Config
+	}
+	if !h.requireActionPermissions(w, r, actionCfgs...) {
+		return
+	}
+
 	// Convert nodes
 	nodes := make([]app.CreateNodeInput, len(req.Nodes))
 	for i, n := range req.Nodes {
@@ -545,6 +565,11 @@ func (h *WorkflowHandler) AddNode(w http.ResponseWriter, r *http.Request) {
 
 	userUUID, _ := shared.IDFromString(userID)
 
+	// AuthZ: gate action nodes by their underlying mutation's permission.
+	if !h.requireActionPermissions(w, r, req.Config) {
+		return
+	}
+
 	input := app.AddNodeInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
@@ -618,6 +643,11 @@ func (h *WorkflowHandler) UpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userUUID, _ := shared.IDFromString(userID)
+
+	// AuthZ: gate action nodes by their underlying mutation's permission.
+	if !h.requireActionPermissions(w, r, req.Config) {
+		return
+	}
 
 	input := app.UpdateNodeInput{
 		TenantID:    tenantUUID,
