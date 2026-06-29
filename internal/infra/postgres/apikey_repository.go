@@ -222,7 +222,7 @@ func (r *APIKeyRepository) Update(ctx context.Context, key *apikey.APIKey) error
 			name = $2, description = $3, scopes = $4, rate_limit = $5,
 			status = $6, expires_at = $7, last_used_at = $8, last_used_ip = $9,
 			use_count = $10, revoked_at = $11, revoked_by = $12, updated_at = $13
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $14
 	`
 
 	var revokedBy *string
@@ -245,6 +245,7 @@ func (r *APIKeyRepository) Update(ctx context.Context, key *apikey.APIKey) error
 		key.RevokedAt(),
 		revokedBy,
 		key.UpdatedAt(),
+		key.TenantID().String(),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {

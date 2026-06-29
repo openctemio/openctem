@@ -85,8 +85,8 @@ func (r *ScimTokenRepository) ListByTenant(ctx context.Context, tenantID shared.
 }
 
 func (r *ScimTokenRepository) Update(ctx context.Context, t *scimtoken.ScimToken) error {
-	const q = `UPDATE scim_tokens SET status = $1, last_used_at = $2 WHERE id = $3`
-	_, err := r.db.ExecContext(ctx, q, string(t.Status()), t.LastUsedAt(), t.ID().String())
+	const q = `UPDATE scim_tokens SET status = $1, last_used_at = $2 WHERE id = $3 AND tenant_id = $4`
+	_, err := r.db.ExecContext(ctx, q, string(t.Status()), t.LastUsedAt(), t.ID().String(), t.TenantID().String())
 	if err != nil {
 		return fmt.Errorf("update scim token: %w", err)
 	}

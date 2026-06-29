@@ -218,7 +218,7 @@ func (r *SecretStoreRepository) Update(ctx context.Context, c *secretstore.Crede
 			last_rotated_at = $6,
 			expires_at = $7,
 			updated_at = $8
-		WHERE id = $9
+		WHERE id = $9 AND tenant_id = $10
 	`
 
 	var lastUsedAt, lastRotatedAt, expiresAt sql.NullTime
@@ -243,6 +243,7 @@ func (r *SecretStoreRepository) Update(ctx context.Context, c *secretstore.Crede
 		expiresAt,
 		c.UpdatedAt,
 		c.ID.String(),
+		c.TenantID.String(),
 	)
 
 	if err != nil {
