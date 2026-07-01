@@ -104,9 +104,16 @@ func (r *ComplianceAssessmentRepository) ListByFramework(ctx context.Context, te
 
 // GetStatsByFramework returns compliance stats for a framework.
 func (r *ComplianceAssessmentRepository) GetStatsByFramework(ctx context.Context, tenantID, frameworkID shared.ID) (*compliance.FrameworkStats, error) {
+	// total is the LIVE control count from the same LEFT JOIN, not the
+	// denormalized compliance_frameworks.total_controls scalar. That scalar is
+	// set once at seed time and never recomputed when controls are added, so
+	// mixing it with the live per-status buckets produced ComplianceScore values
+	// above 100% (stale total < live count) or negative (custom framework with
+	// total_controls=0 and any not_applicable control → negative denominator).
+	// COUNT(c.id) keeps total consistent with the buckets (total == their sum).
 	query := `
 		SELECT
-			(SELECT total_controls FROM compliance_frameworks WHERE id = $2) as total,
+			COUNT(c.id) as total,
 			COUNT(*) FILTER (WHERE a.status = 'implemented') as implemented,
 			COUNT(*) FILTER (WHERE a.status = 'partial') as partial,
 			COUNT(*) FILTER (WHERE a.status = 'not_implemented') as not_implemented,
