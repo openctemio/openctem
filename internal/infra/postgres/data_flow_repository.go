@@ -453,7 +453,7 @@ func (r *DataFlowRepository) ListFlowLocationsByFile(ctx context.Context, tenant
 		LIMIT $3 OFFSET $4
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, filePath, tenantID.String(), page.Limit, page.Offset())
+	rows, err := r.db.QueryContext(ctx, query, filePath, tenantID.String(), page.Limit(), page.Offset())
 	if err != nil {
 		return pagination.Result[*vulnerability.FindingFlowLocation]{}, fmt.Errorf("failed to list flow locations: %w", err)
 	}
@@ -496,7 +496,7 @@ func (r *DataFlowRepository) ListFlowLocationsByFunction(ctx context.Context, te
 		LIMIT $3 OFFSET $4
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, functionName, tenantID.String(), page.Limit, page.Offset())
+	rows, err := r.db.QueryContext(ctx, query, functionName, tenantID.String(), page.Limit(), page.Offset())
 	if err != nil {
 		return pagination.Result[*vulnerability.FindingFlowLocation]{}, fmt.Errorf("failed to list flow locations: %w", err)
 	}

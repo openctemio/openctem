@@ -2443,8 +2443,12 @@ func (r *FindingRepository) CountByAssetID(ctx context.Context, tenantID, assetI
 // CountOpenByAssetID returns the count of open findings for an asset.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (r *FindingRepository) CountOpenByAssetID(ctx context.Context, tenantID, assetID shared.ID) (int64, error) {
-	// Security: Include tenant_id in WHERE clause
-	query := `SELECT COUNT(*) FROM findings WHERE asset_id = $1 AND tenant_id = $2 AND status IN ('open', 'in_progress')`
+	// Security: Include tenant_id in WHERE clause.
+	// 'open' is NOT a valid finding status (the enum is new/confirmed/
+	// in_progress/fix_applied/resolved/...), so the old IN ('open','in_progress')
+	// silently counted ONLY in_progress and dropped new+confirmed. Use the same
+	// open-status set the rest of this repository uses for open counts.
+	query := `SELECT COUNT(*) FROM findings WHERE asset_id = $1 AND tenant_id = $2 AND status IN ('new','confirmed','in_progress')`
 
 	var count int64
 	err := r.db.QueryRowContext(ctx, query, assetID.String(), tenantID.String()).Scan(&count)
