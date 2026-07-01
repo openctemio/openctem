@@ -574,7 +574,11 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		return s.failTriage(ctx, result, "failed to mark completed: "+err.Error())
 	}
 	if err := s.triageRepo.Update(ctx, result); err != nil {
-		return fmt.Errorf("failed to save triage result: %w", err)
+		// Move the row out of 'processing' (set by AcquireTriageSlot) — otherwise
+		// it is stuck there with tokens already spent, and a retry that requires
+		// pending/processing may be rejected. Mirrors the MarkCompleted-failure
+		// branch above, which also fails the triage rather than returning raw.
+		return s.failTriage(ctx, result, "failed to save triage result: "+err.Error())
 	}
 
 	// SECURITY: when the validator couldn't fit the LLM output into
@@ -888,9 +892,11 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 	// OPTIMIZATION: Batch check which findings exist (1 query instead of N)
 	existsMap, err := s.findingRepo.ExistsByIDs(ctx, tenantID, validFindingIDs)
 	if err != nil {
-		s.logger.Warn("failed to batch check findings, falling back to individual checks", "error", err)
-		// Continue with empty map - will check individually
-		existsMap = make(map[shared.ID]bool)
+		// The "fall back to individual checks" was never implemented — the code
+		// just used an EMPTY map, so the loop below reported EVERY finding as
+		// "finding not found" on any transient DB error. Fail the request loudly
+		// instead of mislabeling every finding.
+		return nil, fmt.Errorf("failed to check findings existence: %w", err)
 	}
 
 	// Process each valid finding
