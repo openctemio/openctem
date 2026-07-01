@@ -285,6 +285,30 @@ func AgentFromContext(ctx context.Context) *agent.Agent {
 	return agt
 }
 
+// requireAgentTenant verifies the authenticated agent carries tenant context,
+// writing a 403 and returning false for platform agents (tenant_id NULL) that
+// have no business performing these tenant-scoped operations. Mirrors the
+// scansession handler's guard and prevents a nil-pointer deref of
+// agt.TenantID (recovered as a 500) on the command / telemetry / chunk-ingest
+// paths. Callers must return immediately when it returns false.
+func requireAgentTenant(w http.ResponseWriter, agt *agent.Agent) bool {
+	if agt.TenantID == nil {
+		apierror.Forbidden("Platform agents require tenant context for this operation").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// agentTenantString returns the agent's tenant ID as a string, or "" when the
+// agent has no tenant (platform agent). For informational log/response fields
+// where a missing tenant must not panic.
+func agentTenantString(agt *agent.Agent) string {
+	if agt == nil || agt.TenantID == nil {
+		return ""
+	}
+	return agt.TenantID.String()
+}
+
 // WorkerFromContext is an alias for AgentFromContext for backward compatibility.
 // Deprecated: Use AgentFromContext instead.
 func WorkerFromContext(ctx context.Context) *agent.Agent {
@@ -572,7 +596,7 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]interface{}{
 		"status":    "ok",
 		"agent_id":  agt.ID.String(),
-		"tenant_id": agt.TenantID.String(),
+		"tenant_id": agentTenantString(agt), // "" for tenant-less platform agents
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -707,6 +731,9 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+	if !requireAgentTenant(w, agt) {
 		return
 	}
 

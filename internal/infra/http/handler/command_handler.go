@@ -1,12 +1,13 @@
 package handler
 
 import (
-	"github.com/openctemio/api/internal/app/command"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
+
+	"github.com/openctemio/api/internal/app/command"
 
 	"github.com/go-chi/chi/v5"
 
@@ -241,6 +242,9 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
 		return
 	}
+	if !requireAgentTenant(w, agt) {
+		return
+	}
 
 	limit := parseQueryInt(r.URL.Query().Get("limit"), 10)
 
@@ -282,6 +286,9 @@ func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
 		return
 	}
+	if !requireAgentTenant(w, agt) {
+		return
+	}
 
 	commandID := chi.URLParam(r, "id")
 
@@ -312,6 +319,9 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+	if !requireAgentTenant(w, agt) {
 		return
 	}
 
@@ -345,6 +355,9 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+	if !requireAgentTenant(w, agt) {
 		return
 	}
 
@@ -440,6 +453,9 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+	if !requireAgentTenant(w, agt) {
 		return
 	}
 

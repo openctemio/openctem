@@ -77,6 +77,9 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 		apierror.Unauthorized("agent authentication required").WriteJSON(w)
 		return
 	}
+	if !requireAgentTenant(w, agt) {
+		return
+	}
 
 	var req ingestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
