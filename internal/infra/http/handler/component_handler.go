@@ -486,6 +486,14 @@ func (h *ComponentHandler) Get(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	// GetComponent returns (nil, nil) for a not-found component (the repo maps
+	// sql.ErrNoRows to a nil component, a contract other callers rely on). Guard
+	// it here — otherwise toComponentResponse(nil) dereferences nil and turns a
+	// missing component into a 500 instead of a 404.
+	if c == nil {
+		apierror.NotFound("Component not found").WriteJSON(w)
+		return
+	}
 
 	// Global components are not tenant-scoped currently.
 	// We might restrict based on "is this component used by any of my assets", but for now it's a global catalog lookup.
