@@ -65,8 +65,14 @@ func (s *ActorService) CreateActor(ctx context.Context, input CreateActorInput) 
 
 // GetActor retrieves a threat actor by ID.
 func (s *ActorService) GetActor(ctx context.Context, tenantID, actorID string) (*threatactor.ThreatActor, error) {
-	tid, _ := shared.IDFromString(tenantID)
-	aid, _ := shared.IDFromString(actorID)
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	aid, err := shared.IDFromString(actorID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid actor id", shared.ErrValidation)
+	}
 	return s.repo.GetByID(ctx, tid, aid)
 }
 
@@ -79,7 +85,15 @@ func (s *ActorService) ListActors(ctx context.Context, tenantID string, filter t
 
 // DeleteActor deletes a threat actor.
 func (s *ActorService) DeleteActor(ctx context.Context, tenantID, actorID string) error {
-	tid, _ := shared.IDFromString(tenantID)
-	aid, _ := shared.IDFromString(actorID)
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	aid, err := shared.IDFromString(actorID)
+	if err != nil {
+		// A malformed id must be a 400, not a silent no-op DELETE that returns
+		// 204 and makes the caller believe something was deleted.
+		return fmt.Errorf("%w: invalid actor id", shared.ErrValidation)
+	}
 	return s.repo.Delete(ctx, tid, aid)
 }
