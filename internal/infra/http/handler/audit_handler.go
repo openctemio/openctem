@@ -419,6 +419,9 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 			perPage = parsed
 		}
 	}
+	if perPage <= 0 {
+		perPage = 20 // guard: ?per_page=0 → int(Total)/perPage divide-by-zero panic below
+	}
 
 	result, err := h.service.GetResourceHistory(r.Context(), tenantID, resourceType, resourceID, page, perPage)
 	if err != nil {
@@ -483,6 +486,9 @@ func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
 		if parsed, err := strconv.Atoi(pp); err == nil {
 			perPage = parsed
 		}
+	}
+	if perPage <= 0 {
+		perPage = 20 // guard: ?per_page=0 → int(Total)/perPage divide-by-zero panic below
 	}
 
 	result, err := h.service.GetUserActivity(r.Context(), userID, page, perPage)
