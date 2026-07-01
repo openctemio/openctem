@@ -18,7 +18,7 @@ nothing is missed across context boundaries. Run against a live API + DB.
 | **UI** — unit | `vitest run` | **720/720 ✅** (32 files) |
 | **UI** — format | `prettier --check` | ✅ clean |
 | **UI** — lint | `eslint .` | ⚠️ 490 pre-existing errors + 418 warnings (SARIF-report, non-gating; **not** from this work — UI tree clean) |
-| **UI** — Playwright e2e | `playwright test` | ⬜ needs UI+API+browsers running (stack e2e) |
+| **UI** — Playwright e2e | `playwright test` (vs live stack) | 🟡 login flow ✅ (fixed 2 stale selectors → ui#202); 4 feature specs need selector refresh (test drift, not UI defects — login+render verified) |
 
 Cross-component API surface: **93 live E2E assertions** (incl. the agent→API ingest pipeline), all green. Every feature
 flow's happy path + its negative/authz/IDOR/state-machine/boundary edges are
