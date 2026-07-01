@@ -856,6 +856,8 @@ func seedAuthLocalUser(repo *mockAuthUserRepo, email, passwordHash string) *user
 		nil,
 		0,
 		nil,
+		nil, // federatedIssuer
+		nil, // federatedSubject
 	)
 	repo.users[u.ID().String()] = u
 	return u
@@ -885,6 +887,8 @@ func seedAuthOIDCUser(repo *mockAuthUserRepo, email string) *user.User {
 		nil,
 		0,
 		nil,
+		nil, // federatedIssuer
+		nil, // federatedSubject
 	)
 	repo.users[u.ID().String()] = u
 	return u
@@ -913,6 +917,8 @@ func seedAuthSuspendedUser(repo *mockAuthUserRepo, email, passwordHash string) *
 		nil,
 		0,
 		nil,
+		nil, // federatedIssuer
+		nil, // federatedSubject
 	)
 	repo.users[u.ID().String()] = u
 	return u
@@ -942,6 +948,8 @@ func seedAuthLockedUser(repo *mockAuthUserRepo, email, passwordHash string) *use
 		nil,
 		5,
 		&lockUntil,
+		nil, // federatedIssuer
+		nil, // federatedSubject
 	)
 	repo.users[u.ID().String()] = u
 	return u
@@ -971,6 +979,8 @@ func seedAuthUnverifiedUser(repo *mockAuthUserRepo, email, passwordHash, verific
 		nil,
 		0,
 		nil,
+		nil, // federatedIssuer
+		nil, // federatedSubject
 	)
 	repo.users[u.ID().String()] = u
 	return u
@@ -1000,6 +1010,8 @@ func seedAuthUserWithResetToken(repo *mockAuthUserRepo, email, passwordHash, res
 		&expiresAt,
 		0,
 		nil,
+		nil, // federatedIssuer
+		nil, // federatedSubject
 	)
 	repo.users[u.ID().String()] = u
 	return u
@@ -1029,6 +1041,8 @@ func seedAuthUserWithExpiredResetToken(repo *mockAuthUserRepo, email, passwordHa
 		&expiresAt,
 		0,
 		nil,
+		nil, // federatedIssuer
+		nil, // federatedSubject
 	)
 	repo.users[u.ID().String()] = u
 	return u
@@ -1058,6 +1072,8 @@ func seedAuthUserWithExpiredVerification(repo *mockAuthUserRepo, email, password
 		nil,
 		0,
 		nil,
+		nil, // federatedIssuer
+		nil, // federatedSubject
 	)
 	repo.users[u.ID().String()] = u
 	return u
@@ -2509,6 +2525,7 @@ func TestAuthService_EdgeCases(t *testing.T) {
 			user.AuthProviderLocal,
 			nil, // No password hash
 			true, nil, nil, nil, nil, 0, nil,
+			nil, nil, // federated issuer/subject
 		)
 		deps.userRepo.users[u.ID().String()] = u
 

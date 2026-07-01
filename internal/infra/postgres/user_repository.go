@@ -16,7 +16,8 @@ import (
 // userColumns is the list of columns to select for a user.
 const userColumns = `id, keycloak_id, email, name, avatar_url, phone, status, preferences, last_login_at, created_at, updated_at,
 	auth_provider, password_hash, email_verified, email_verification_token, email_verification_expires_at,
-	password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until`
+	password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until,
+	federated_issuer, federated_subject`
 
 // UserRepository implements user.Repository using PostgreSQL.
 type UserRepository struct {
@@ -39,9 +40,10 @@ func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 		INSERT INTO users (
 			id, keycloak_id, email, name, avatar_url, phone, status, preferences, last_login_at, created_at, updated_at,
 			auth_provider, password_hash, email_verified, email_verification_token, email_verification_expires_at,
-			password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until
+			password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until,
+			federated_issuer, federated_subject
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -65,6 +67,8 @@ func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 		nullTime(u.PasswordResetExpiresAt()),
 		u.FailedLoginAttempts(),
 		nullTime(u.LockedUntil()),
+		u.FederatedIssuer(),
+		u.FederatedSubject(),
 	)
 
 	if err != nil {
@@ -195,7 +199,8 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		    auth_provider = $11, password_hash = $12, email_verified = $13,
 		    email_verification_token = $14, email_verification_expires_at = $15,
 		    password_reset_token = $16, password_reset_expires_at = $17,
-		    failed_login_attempts = $18, locked_until = $19
+		    failed_login_attempts = $18, locked_until = $19,
+		    federated_issuer = $20, federated_subject = $21
 		WHERE id = $1
 	`
 
@@ -219,6 +224,8 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		nullTime(u.PasswordResetExpiresAt()),
 		u.FailedLoginAttempts(),
 		nullTime(u.LockedUntil()),
+		u.FederatedIssuer(),
+		u.FederatedSubject(),
 	)
 
 	if err != nil {
@@ -404,6 +411,8 @@ type userScanFields struct {
 	passwordResetExpiresAt     sql.NullTime
 	failedLoginAttempts        int
 	lockedUntil                sql.NullTime
+	federatedIssuer            sql.NullString
+	federatedSubject           sql.NullString
 }
 
 func (r *UserRepository) scanUser(row *sql.Row) (*user.User, error) {
@@ -416,6 +425,7 @@ func (r *UserRepository) scanUser(row *sql.Row) (*user.User, error) {
 		&f.emailVerificationToken, &f.emailVerificationExpiresAt,
 		&f.passwordResetToken, &f.passwordResetExpiresAt,
 		&f.failedLoginAttempts, &f.lockedUntil,
+		&f.federatedIssuer, &f.federatedSubject,
 	)
 	if err != nil {
 		return nil, err
@@ -434,6 +444,7 @@ func (r *UserRepository) scanUserFromRows(rows *sql.Rows) (*user.User, error) {
 		&f.emailVerificationToken, &f.emailVerificationExpiresAt,
 		&f.passwordResetToken, &f.passwordResetExpiresAt,
 		&f.failedLoginAttempts, &f.lockedUntil,
+		&f.federatedIssuer, &f.federatedSubject,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan user: %w", err)
@@ -506,6 +517,16 @@ func (r *UserRepository) reconstructUser(f userScanFields) (*user.User, error) {
 		lockedUntil = &f.lockedUntil.Time
 	}
 
+	var federatedIssuer *string
+	if f.federatedIssuer.Valid {
+		federatedIssuer = &f.federatedIssuer.String
+	}
+
+	var federatedSubject *string
+	if f.federatedSubject.Valid {
+		federatedSubject = &f.federatedSubject.String
+	}
+
 	return user.Reconstitute(
 		parsedID,
 		kcID,
@@ -527,6 +548,8 @@ func (r *UserRepository) reconstructUser(f userScanFields) (*user.User, error) {
 		passwordResetExpiresAt,
 		f.failedLoginAttempts,
 		lockedUntil,
+		federatedIssuer,
+		federatedSubject,
 	), nil
 }
 

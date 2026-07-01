@@ -72,6 +72,12 @@ func (p AuthProvider) IsOAuth() bool {
 	return false
 }
 
+// IsFederated returns true for any external identity provider — the named
+// OAuth providers (IsOAuth) plus generic OIDC/Okta. Broader than IsOAuth.
+func (p AuthProvider) IsFederated() bool {
+	return p.IsOAuth() || p == AuthProviderOIDC
+}
+
 // String returns the string representation of the auth provider.
 func (p AuthProvider) String() string {
 	return string(p)
@@ -101,6 +107,14 @@ type User struct {
 	passwordResetExpiresAt     *time.Time
 	failedLoginAttempts        int
 	lockedUntil                *time.Time
+
+	// Federated identity binding (SSO/OIDC). Records the stable IdP identity
+	// (OIDC issuer + subject) that created/owns this account, so a verified
+	// email asserted by a DIFFERENT IdP cannot adopt it. Nil for local users
+	// and for federated users created before this was tracked (bound on next
+	// login). See findOrCreateUser in internal/app/auth/sso.go.
+	federatedIssuer  *string
+	federatedSubject *string
 }
 
 // NewFromKeycloak creates a new User from Keycloak claims.
@@ -223,6 +237,36 @@ func NewOAuthUser(email, name, avatarURL string, provider AuthProvider) (*User, 
 	}, nil
 }
 
+// NewFederatedUser creates a user authenticated by any external identity
+// provider — the OAuth social providers OR generic OIDC/Okta. NewOAuthUser
+// rejects AuthProviderOIDC (its IsOAuth check excludes it), which made the SSO
+// account-creation path fail for Okta and generic-OIDC IdPs (mapAuthProvider
+// maps both to AuthProviderOIDC). The SSO create path must use this instead.
+func NewFederatedUser(email, name, avatarURL string, provider AuthProvider) (*User, error) {
+	if email == "" {
+		return nil, fmt.Errorf("%w: email is required", shared.ErrValidation)
+	}
+	if !provider.IsFederated() {
+		return nil, fmt.Errorf("%w: invalid federated provider: %s", shared.ErrValidation, provider)
+	}
+
+	now := time.Now().UTC()
+	return &User{
+		id:            shared.NewID(),
+		keycloakID:    nil,
+		email:         email,
+		name:          name,
+		avatarURL:     avatarURL,
+		status:        StatusActive,
+		preferences:   Preferences{},
+		lastLoginAt:   &now,
+		createdAt:     now,
+		updatedAt:     now,
+		authProvider:  provider,
+		emailVerified: true, // the IdP verified the email
+	}, nil
+}
+
 // Reconstitute recreates a User from persistence.
 func Reconstitute(
 	id shared.ID,
@@ -242,6 +286,9 @@ func Reconstitute(
 	passwordResetExpiresAt *time.Time,
 	failedLoginAttempts int,
 	lockedUntil *time.Time,
+	// Federated identity (nil for local / pre-tracking federated users)
+	federatedIssuer *string,
+	federatedSubject *string,
 ) *User {
 	return &User{
 		id:                         id,
@@ -264,7 +311,32 @@ func Reconstitute(
 		passwordResetExpiresAt:     passwordResetExpiresAt,
 		failedLoginAttempts:        failedLoginAttempts,
 		lockedUntil:                lockedUntil,
+		federatedIssuer:            federatedIssuer,
+		federatedSubject:           federatedSubject,
 	}
+}
+
+// FederatedIssuer returns the OIDC issuer bound to this account, or nil if the
+// account has no recorded federated identity (local user, or a federated user
+// created before issuer binding was tracked).
+func (u *User) FederatedIssuer() *string { return u.federatedIssuer }
+
+// FederatedSubject returns the OIDC subject bound to this account, or nil.
+func (u *User) FederatedSubject() *string { return u.federatedSubject }
+
+// BindFederatedIdentity records the IdP identity (OIDC issuer + subject) that
+// owns this account. No-op when issuer is empty (nothing reliable to bind, e.g.
+// a provider that returned no id_token). Used on first federation and to
+// backfill a pre-tracking account on its next login (trust-on-first-use).
+func (u *User) BindFederatedIdentity(issuer, subject string) {
+	if issuer == "" {
+		return
+	}
+	u.federatedIssuer = &issuer
+	if subject != "" {
+		u.federatedSubject = &subject
+	}
+	u.updatedAt = time.Now().UTC()
 }
 
 // ID returns the user ID.
