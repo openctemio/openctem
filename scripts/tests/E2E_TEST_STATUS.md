@@ -3,6 +3,27 @@
 Persistent checklist + status for **every feature flow** in the OpenCTEM API, so
 nothing is missed across context boundaries. Run against a live API + DB.
 
+## Whole-platform test status (2026-07-01)
+
+| Component | What was run | Result |
+|---|---|---|
+| **API** — E2E flows | `test_e2e_ctem_lifecycle` (all feature areas, happy path) | **38/38 ✅** |
+| **API** — regression | `test_e2e_regression_bugfixes` (#228–242) | **15/15 ✅** |
+| **API** — test-cases | `test_e2e_testcases` (VAL/NF/AZ/IDOR/SM/BND) | **31/31 ✅** |
+| **API+Agent** — ingest | `test_e2e_agent_ingest` (agent key → CTIS ingest → query) | **9/9 ✅** |
+| **API** — unit/integration | CI `go test ./...` (Test job) | ✅ green on develop |
+| **SDK (sdk-go)** | `go build ./...` + `go test ./...` | ✅ build clean, all tests pass |
+| **Agent** | `go build ./...` + `go test ./...` | ✅ build clean, all tests pass |
+| **UI** — types | `tsc --noEmit` | ✅ clean |
+| **UI** — unit | `vitest run` | **720/720 ✅** (32 files) |
+| **UI** — format | `prettier --check` | ✅ clean |
+| **UI** — lint | `eslint .` | ⚠️ 490 pre-existing errors + 418 warnings (SARIF-report, non-gating; **not** from this work — UI tree clean) |
+| **UI** — Playwright e2e | `playwright test` | ⬜ needs UI+API+browsers running (stack e2e) |
+
+Cross-component API surface: **93 live E2E assertions** (incl. the agent→API ingest pipeline), all green. Every feature
+flow's happy path + its negative/authz/IDOR/state-machine/boundary edges are
+asserted. See `E2E_TESTCASE_MAP.md` for the full feature × scenario matrix.
+
 ## How to run
 
 ```bash
