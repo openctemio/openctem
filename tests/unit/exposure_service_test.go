@@ -689,21 +689,20 @@ func TestExposureService_ListExposures_InvalidFilterValues(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 	tenantID := shared.NewID()
 
-	// Invalid event types and severities should be silently ignored
-	result, err := svc.ListExposures(context.Background(), app.ListExposuresInput{
-		TenantID:   tenantID.String(),
-		EventTypes: []string{"invalid_type"},
-		Severities: []string{"ultra_high"},
-		States:     []string{"nonexistent_state"},
-		Page:       1,
-		PerPage:    20,
-	})
-	if err != nil {
-		t.Fatalf("expected no error even with invalid filters, got %v", err)
+	// An unparseable filter value must be REJECTED, not silently dropped —
+	// dropping every value in a dimension left it unapplied and returned ALL
+	// exposures (fail-open). Each invalid dimension should yield a validation
+	// error rather than "here's everything".
+	cases := []app.ListExposuresInput{
+		{TenantID: tenantID.String(), EventTypes: []string{"invalid_type"}, Page: 1, PerPage: 20},
+		{TenantID: tenantID.String(), Severities: []string{"ultra_high"}, Page: 1, PerPage: 20},
+		{TenantID: tenantID.String(), States: []string{"nonexistent_state"}, Page: 1, PerPage: 20},
 	}
-
-	if result.Total != 0 {
-		t.Errorf("expected 0 total, got %d", result.Total)
+	for _, in := range cases {
+		_, err := svc.ListExposures(context.Background(), in)
+		if err == nil || !errors.Is(err, shared.ErrValidation) {
+			t.Fatalf("expected ErrValidation for invalid filter %+v, got %v", in, err)
+		}
 	}
 }
 

@@ -309,41 +309,42 @@ func (s *ExposureService) ListExposures(ctx context.Context, input ListExposures
 	if input.AssetID != "" {
 		filter = filter.WithAssetID(input.AssetID)
 	}
+	// Reject unparseable filter values instead of dropping them. Dropping every
+	// value in a dimension left that dimension unapplied, so a typo'd filter
+	// (e.g. ?severity=criticl) silently returned ALL exposures instead of an
+	// error — a fail-open "show everything".
 	if len(input.EventTypes) > 0 {
 		types := make([]exposuredom.EventType, 0, len(input.EventTypes))
 		for _, t := range input.EventTypes {
 			et, err := exposuredom.ParseEventType(t)
-			if err == nil {
-				types = append(types, et)
+			if err != nil {
+				return pagination.Result[*exposuredom.ExposureEvent]{}, fmt.Errorf("%w: invalid event_type %q", shared.ErrValidation, t)
 			}
+			types = append(types, et)
 		}
-		if len(types) > 0 {
-			filter = filter.WithEventTypes(types...)
-		}
+		filter = filter.WithEventTypes(types...)
 	}
 	if len(input.Severities) > 0 {
 		sevs := make([]exposuredom.Severity, 0, len(input.Severities))
 		for _, sev := range input.Severities {
 			s, err := exposuredom.ParseSeverity(sev)
-			if err == nil {
-				sevs = append(sevs, s)
+			if err != nil {
+				return pagination.Result[*exposuredom.ExposureEvent]{}, fmt.Errorf("%w: invalid severity %q", shared.ErrValidation, sev)
 			}
+			sevs = append(sevs, s)
 		}
-		if len(sevs) > 0 {
-			filter = filter.WithSeverities(sevs...)
-		}
+		filter = filter.WithSeverities(sevs...)
 	}
 	if len(input.States) > 0 {
 		states := make([]exposuredom.State, 0, len(input.States))
 		for _, st := range input.States {
 			state, err := exposuredom.ParseState(st)
-			if err == nil {
-				states = append(states, state)
+			if err != nil {
+				return pagination.Result[*exposuredom.ExposureEvent]{}, fmt.Errorf("%w: invalid state %q", shared.ErrValidation, st)
 			}
+			states = append(states, state)
 		}
-		if len(states) > 0 {
-			filter = filter.WithStates(states...)
-		}
+		filter = filter.WithStates(states...)
 	}
 	if len(input.Sources) > 0 {
 		filter = filter.WithSources(input.Sources...)
