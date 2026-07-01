@@ -80,3 +80,8 @@ data/
 
 # Claude Code local (per-developer) settings — never commit
 .claude/settings.local.json
+
+# E2E test runtime artifacts
+scripts/tests/.e2e_results.tsv
+scripts/tests/.e2e_results.tsv.fails
+scripts/tests/.e2e_runlog.txt
