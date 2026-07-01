@@ -188,6 +188,10 @@ func (p *ComponentProcessor) ProcessBatch(
 	output.DependenciesLinked = compOutput.DependenciesLinked
 	output.LicensesLinked = compOutput.LicensesLinked
 	output.Warnings = append(output.Warnings, compOutput.Warnings...)
+	// Merge component errors too — the ingest audit log derives its
+	// success/partial/failed result from len(output.Errors). Without this a SBOM
+	// import where every component failed was recorded as a full success.
+	output.Errors = append(output.Errors, compOutput.Errors...)
 
 	return nil
 }
