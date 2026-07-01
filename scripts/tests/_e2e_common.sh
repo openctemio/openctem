@@ -122,6 +122,38 @@ e2e_bootstrap_auth() {
     print_info "tenant_id=$TENANT_ID"
 }
 
+# e2e_new_user SUFFIX -> echoes "TOKEN<TAB>TENANT<TAB>JAR" for a fresh isolated
+# tenant/user (own cookie jar). Used for cross-tenant IDOR tests. Note: this does
+# a register+login+create-team (3 auth ops) — space callers to respect 3/min.
+e2e_new_user() {
+    local suffix="$1"
+    local email="e2e-${suffix}-${TIMESTAMP}@openctem-test.local" pass="TestP@ss123!"
+    local jar; jar=$(mktemp /tmp/openctem_e2e_jar.XXXXXX)
+    curl -s -c "$jar" -b "$jar" -o /dev/null -X POST "${API_URL}/api/v1/auth/register" \
+        -H "Content-Type: application/json" -d "{\"email\":\"$email\",\"password\":\"$pass\",\"name\":\"U$suffix\"}"
+    curl -s -c "$jar" -b "$jar" -o /dev/null -X POST "${API_URL}/api/v1/auth/login" \
+        -H "Content-Type: application/json" -d "{\"email\":\"$email\",\"password\":\"$pass\"}"
+    local csrf; csrf=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$jar")
+    local r; r=$(curl -s -c "$jar" -b "$jar" -X POST "${API_URL}/api/v1/auth/create-first-team" \
+        -H "Content-Type: application/json" -H "X-CSRF-Token: $csrf" \
+        -d "{\"team_name\":\"T$suffix\",\"team_slug\":\"e2e-${suffix}-${TIMESTAMP}\"}")
+    printf '%s\t%s\t%s' "$(echo "$r" | jq -r '.access_token')" "$(echo "$r" | jq -r '.tenant_id')" "$jar"
+}
+
+# raw_request METHOD ENDPOINT TOKEN JAR [BODY] -> sets HTTP_CODE,BODY, sends CSRF
+# from JAR for mutations. For acting as a specific (e.g. cross-tenant) user.
+raw_request() {
+    local method="$1" endpoint="$2" token="$3" jar="$4" data="$5"
+    local args=(-s -w "\n%{http_code}" -X "$method" "${API_URL}${endpoint}"
+        -H "Content-Type: application/json" -H "Authorization: Bearer $token" -c "$jar" -b "$jar")
+    case "$method" in POST|PUT|PATCH|DELETE)
+        local c; c=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$jar" 2>/dev/null)
+        [ -n "$c" ] && args+=(-H "X-CSRF-Token: $c") ;; esac
+    [ -n "$data" ] && args+=(-d "$data")
+    curl "${args[@]}" > "$RESPONSE_FILE" 2>/dev/null
+    HTTP_CODE=$(tail -n1 "$RESPONSE_FILE"); BODY=$(sed '$d' "$RESPONSE_FILE")
+}
+
 e2e_finish() {
     echo ""
     echo -e "${BLUE}==============================================================================${NC}"
