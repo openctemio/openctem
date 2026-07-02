@@ -132,3 +132,24 @@ func Enforce(c ValidationCoverage, t CoverageThresholds) error {
 	}
 	return fmt.Errorf("%w: %s", ErrCoverageBelowSLO, msg)
 }
+
+// SeverityCoverage is validation coverage for one severity band: how many of a
+// tenant's findings at that severity have at least one validation evidence
+// record. Answers the operator question "how much of my exposure has actually
+// been re-checked?" (the CTEM Validation KPI), keyed on the always-present
+// severity rather than the computed priority class.
+type SeverityCoverage struct {
+	Severity  string `json:"severity"`
+	Total     int    `json:"total"`
+	Validated int    `json:"validated"`
+}
+
+// Pct returns the validated ratio in [0,100]; zero total is reported as 0 so an
+// empty band does not inflate the headline (unlike the SLO Pct, which treats
+// "nothing to cover" as trivially met for gate purposes).
+func (s SeverityCoverage) Pct() float64 {
+	if s.Total == 0 {
+		return 0
+	}
+	return float64(s.Validated) / float64(s.Total) * 100
+}

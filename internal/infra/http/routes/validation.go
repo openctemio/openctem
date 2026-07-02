@@ -31,9 +31,12 @@ func registerValidationRoutes(
 		}, ingestHandler.AuthenticateSource)
 	}
 
-	// User read — finding evidence list.
+	// User read — finding evidence list + tenant validation coverage KPI.
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/findings/{id}/evidence", func(r Router) {
 		r.GET("/", h.ListFindingEvidence, middleware.Require(permission.FindingsRead))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/validation/coverage", func(r Router) {
+		r.GET("/", h.Coverage, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 }

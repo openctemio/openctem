@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -15,16 +16,24 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// CoverageReader returns per-severity validation coverage for a tenant.
+// Implemented by *postgres.ValidationEvidenceRepository.
+type CoverageReader interface {
+	CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error)
+}
+
 // ValidationHandler exposes CTEM Stage-4 validation evidence:
 //   - agents POST validation/proof-of-fix evidence for a finding (API-key auth)
 //   - users GET the evidence recorded for a finding (JWT auth, findings:read)
+//   - users GET tenant validation coverage by severity (the Validation KPI)
 //
 // The agent path is tenant-scoped via the authenticated agent's tenant — the
 // handler NEVER accepts a tenant override from the body, so a compromised agent
 // cannot write into another tenant.
 type ValidationHandler struct {
-	ingest *validation.EvidenceIngestService
-	logger *logger.Logger
+	ingest   *validation.EvidenceIngestService
+	coverage CoverageReader
+	logger   *logger.Logger
 }
 
 // NewValidationHandler creates the handler.
@@ -34,6 +43,10 @@ func NewValidationHandler(ingest *validation.EvidenceIngestService, log *logger.
 		logger: log.With("handler", "validation"),
 	}
 }
+
+// SetCoverageReader wires the coverage KPI source. When unset the coverage
+// endpoint responds 503.
+func (h *ValidationHandler) SetCoverageReader(r CoverageReader) { h.coverage = r }
 
 // evidenceTargetIn is the wire form of validation.Target.
 type evidenceTargetIn struct {
@@ -223,4 +236,60 @@ func (h *ValidationHandler) ListFindingEvidence(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{"evidence": out})
+}
+
+// severityCoverageOut is the read shape for one severity band.
+type severityCoverageOut struct {
+	Severity  string  `json:"severity"`
+	Total     int     `json:"total"`
+	Validated int     `json:"validated"`
+	Pct       float64 `json:"pct"`
+}
+
+// Coverage handles GET /api/v1/validation/coverage — the tenant's validation
+// KPI: per severity, how many findings have at least one validation evidence
+// record. (JWT, findings:read.)
+func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
+	if h.coverage == nil {
+		apierror.InternalServerError("validation coverage is not configured").WriteJSON(w)
+		return
+	}
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+
+	bands, err := h.coverage.CoverageBySeverity(r.Context(), tenantID)
+	if err != nil {
+		h.logger.Error("validation coverage query failed", "error", err)
+		apierror.InternalServerError("failed to compute validation coverage").WriteJSON(w)
+		return
+	}
+
+	out := make([]severityCoverageOut, 0, len(bands))
+	var total, validated int
+	for _, b := range bands {
+		out = append(out, severityCoverageOut{
+			Severity:  b.Severity,
+			Total:     b.Total,
+			Validated: b.Validated,
+			Pct:       b.Pct(),
+		})
+		total += b.Total
+		validated += b.Validated
+	}
+	overall := 0.0
+	if total > 0 {
+		overall = float64(validated) / float64(total) * 100
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"by_severity": out,
+		"total":       total,
+		"validated":   validated,
+		"overall_pct": overall,
+	})
 }

@@ -84,4 +84,10 @@ do_request GET "/api/v1/findings/$FINDING_ID" "" "$(auth_hdr)"
 assert_status "200" "get finding after validation"
 assert_json '.status == "resolved"' "finding resolved by validation outcome"
 
+# Validation coverage KPI reflects the validated finding.
+do_request GET "/api/v1/validation/coverage" "" "$(auth_hdr)"
+assert_status "200" "get validation coverage"
+assert_json '.validated >= 1' "coverage counts at least one validated finding"
+assert_json '.by_severity | map(select(.severity=="high")) | .[0].validated >= 1' "high-severity band shows the validated finding"
+
 e2e_finish

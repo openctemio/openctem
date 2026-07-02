@@ -121,6 +121,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
 	findingActionsHandler.SetValidationRunner(svc.ValidationRun)
 
+	// Validation handler + coverage KPI reader.
+	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
+	validationHandler.SetCoverageReader(repos.ValidationEvidence)
+
 	handlers := routes.Handlers{
 		// Health
 		Health: handler.NewHealthHandler(
@@ -184,7 +188,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Ingest:           ingestHandler,
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),
-		Validation:       handler.NewValidationHandler(svc.ValidationEvidence, log),
+		Validation:       validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
