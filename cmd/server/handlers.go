@@ -74,6 +74,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Command handler with pipeline service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	commandHandler.SetPipelineService(svc.Pipeline)
+	// Map completed validation jobs into finding evidence.
+	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
 	// (sync) leaves the handler processing reports in-request as before.
@@ -114,6 +116,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
 
+	// Finding actions handler with the CTEM Stage-4 validation runner wired.
+	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
+	findingActionsHandler.SetValidationRunner(svc.ValidationRun)
+
 	handlers := routes.Handlers{
 		// Health
 		Health: handler.NewHealthHandler(
@@ -151,7 +157,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Vulnerabilities & Exposures
 		Vulnerability:             vulnHandler,
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
-		FindingActions:            handler.NewFindingActionsHandler(svc.FindingActions, log),
+		FindingActions:            findingActionsHandler,
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             githubWebhookHandler,

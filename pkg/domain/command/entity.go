@@ -31,6 +31,10 @@ const (
 	CommandTypeHealthCheck  CommandType = "health_check"
 	CommandTypeConfigUpdate CommandType = "config_update"
 	CommandTypeCancel       CommandType = "cancel"
+	// CommandTypeValidate is a CTEM Stage-4 validation job: an agent re-checks a
+	// finding (safe-check / nuclei / adversary emulation) and reports an outcome
+	// that is mapped back into validation evidence on completion.
+	CommandTypeValidate CommandType = "validate"
 )
 
 // CommandStatus represents the status of a command.

@@ -247,6 +247,9 @@ type Services struct {
 	// recorded by agents, reconciling finding status from the outcome.
 	ValidationEvidence *validation.EvidenceIngestService
 
+	// ValidationRun dispatches validation (safe-check) jobs for findings.
+	ValidationRun *validation.RunService
+
 	// Threat Actor Intelligence
 	ThreatActor *threat.ActorService
 
@@ -530,6 +533,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		evidenceStore,
 		findingMutatorAdapter{repo: repos.Finding},
 		nil, // retest notifier: optional; status revert still happens without it
+		log,
+	)
+	// Producer side: dispatch a safe-check validation job for a finding. The
+	// agent runs the probe and reports back; the command-completion hook maps
+	// the result into evidence via ValidationEvidence above.
+	s.ValidationRun = validation.NewRunService(
+		repos.Finding,
+		repos.Asset,
+		validation.NewCommandDispatcher(repos.Command, log),
+		validation.DefaultSelector{},
+		[]validation.ExecutorKind{validation.KindSafeCheck},
 		log,
 	)
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)

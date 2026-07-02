@@ -252,6 +252,8 @@ func registerVulnerabilityRoutes(
 		// (only available when finding actions handler is wired)
 		if findingActionsHandler != nil {
 			r.POST("/{id}/request-verification", findingActionsHandler.RequestVerificationScan, middleware.Require(permission.FindingsWrite))
+			// CTEM Stage-4: dispatch a validation (safe-check) job for this finding.
+			r.POST("/{id}/validate", findingActionsHandler.RequestValidation, middleware.Require(permission.FindingsWrite))
 		}
 
 		// Tags
