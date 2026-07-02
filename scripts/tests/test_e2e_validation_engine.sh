@@ -90,4 +90,30 @@ assert_status "200" "get validation coverage"
 assert_json '.validated >= 1' "coverage counts at least one validated finding"
 assert_json '.by_severity | map(select(.severity=="high")) | .[0].validated >= 1' "high-severity band shows the validated finding"
 
+# Regression guard: a finding with MULTIPLE evidence rows must NOT inflate the
+# per-severity total (total = distinct findings, not evidence rows). Dispatch a
+# second validation for the same finding, then assert the high band still counts
+# exactly one finding (this tenant has exactly one high finding).
+do_request POST "/api/v1/findings/$FINDING_ID/validate" "" "$(auth_hdr)"
+assert_status "202" "second validate dispatch"
+COMMAND_ID2="$(extract_json "$BODY" '.command_id')"
+do_request POST "/api/v1/agent/commands/$COMMAND_ID2/acknowledge" "" "X-API-Key: $API_KEY"
+assert_status "200" "ack second command"
+do_request POST "/api/v1/agent/commands/$COMMAND_ID2/start" "" "X-API-Key: $API_KEY"
+assert_status "200" "start second command"
+do_request POST "/api/v1/agent/commands/$COMMAND_ID2/complete" \
+  "{\"result\":{\"outcome\":\"not_detected\",\"summary\":\"re-check 2\"}}" "X-API-Key: $API_KEY"
+assert_status "200" "complete second command (2nd evidence row)"
+
+# Poll until the second evidence row is ingested, then assert no inflation.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  do_request GET "/api/v1/findings/$FINDING_ID/evidence" "" "$(auth_hdr)"
+  if echo "$BODY" | jq -e '.evidence | length >= 2' >/dev/null 2>&1; then break; fi
+  sleep 0.5
+done
+assert_json '.evidence | length >= 2' "finding now has two evidence rows"
+do_request GET "/api/v1/validation/coverage" "" "$(auth_hdr)"
+assert_status "200" "get coverage after second evidence"
+assert_json '.by_severity | map(select(.severity=="high")) | .[0].total == 1' "high total counts the finding once (not per-evidence)"
+
 e2e_finish

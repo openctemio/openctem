@@ -64,7 +64,7 @@ func (r *ValidationEvidenceRepository) Create(ctx context.Context, ev validation
 func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error) {
 	const q = `
 		SELECT f.severity,
-		       COUNT(*)                        AS total,
+		       COUNT(DISTINCT f.id)            AS total,
 		       COUNT(DISTINCT ve.finding_id)   AS validated
 		  FROM findings f
 		  LEFT JOIN validation_evidence ve
