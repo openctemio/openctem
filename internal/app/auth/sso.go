@@ -66,9 +66,11 @@ type SSOService struct {
 	tenantMemberRepo TenantMemberCreator
 }
 
-// TenantMemberCreator creates tenant memberships for auto-provisioned users.
+// TenantMemberCreator creates tenant memberships for auto-provisioned users and
+// looks up existing membership (used to gate federated account binding).
 type TenantMemberCreator interface {
 	CreateMembership(ctx context.Context, m *tenantdom.Membership) error
+	GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenantdom.Membership, error)
 }
 
 // NewSSOService creates a new SSOService.
@@ -935,6 +937,11 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*Sessi
 // an external assertion would be account takeover.
 var ErrSSOFederatedTakeover = errors.New("email is registered with a password; federated login not allowed")
 
+// ErrSSOFederatedNotMember is returned when a federated login matches an
+// existing global user who is not a member of the target tenant — blocking a
+// malicious tenant from forging an assertion for another tenant's user.
+var ErrSSOFederatedNotMember = errors.New("federated login not permitted: user is not a member of this organization")
+
 // CompleteFederatedLogin issues an OpenCTEM session for an externally
 // authenticated identity (e.g. a validated SAML assertion). It finds-or-creates
 // a claimable passwordless user, blocks takeover of password-backed local
@@ -952,6 +959,22 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 		// accessible via an external assertion.
 		if u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil {
 			return nil, ErrSSOFederatedTakeover
+		}
+		// Cross-tenant takeover guard: users are global, so GetByEmail can match a
+		// user who belongs to a DIFFERENT tenant. A federated assertion (SAML in
+		// particular, where the tenant admin holds the IdP signing key) must not
+		// bind to a pre-existing user unless they are already a member of THIS
+		// tenant — otherwise a malicious tenant could forge an assertion for any
+		// global email and mint a session as that victim. Brand-new users (no
+		// match) are created + auto-provisioned below; existing users must have
+		// been invited (membership) first. Fail closed on lookup error.
+		if s.tenantMemberRepo != nil {
+			m, mErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID())
+			if mErr != nil || m == nil {
+				s.logger.Warn("federated login refused: user is not a member of the target tenant",
+					"user_id", u.ID().String(), "tenant_id", t.ID().String())
+				return nil, ErrSSOFederatedNotMember
+			}
 		}
 		u.UpdateLastLogin()
 		if uerr := s.userRepo.Update(ctx, u); uerr != nil {
