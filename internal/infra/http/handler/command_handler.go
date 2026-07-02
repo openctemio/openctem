@@ -423,11 +423,22 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 		return
 	}
 
-	var result validation.ValidateResultPayload
+	// The result may carry the verdict at the top level (a client completing the
+	// command directly) OR nested under `metadata` — which is where the SDK
+	// command poller places an executor's CommandExecutionResult.Metadata (the
+	// real agent path). Accept both.
+	var result struct {
+		validation.ValidateResultPayload
+		Metadata validation.ValidateResultPayload `json:"metadata"`
+	}
 	if cmd.Result != nil {
 		_ = json.Unmarshal(cmd.Result, &result)
 	}
-	if result.Outcome == "" {
+	verdict := result.ValidateResultPayload
+	if verdict.Outcome == "" {
+		verdict = result.Metadata
+	}
+	if verdict.Outcome == "" {
 		// No outcome reported — nothing to reconcile (the run failed to produce
 		// a verdict). Leave the finding untouched.
 		h.logger.Warn("validate command completed without an outcome",
@@ -444,9 +455,9 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 		},
 		StartedAt: cmd.CreatedAt,
 		EndedAt:   time.Now(),
-		Outcome:   validation.Outcome(result.Outcome),
-		Summary:   result.Summary,
-		RawMeta:   result.Evidence,
+		Outcome:   validation.Outcome(verdict.Outcome),
+		Summary:   verdict.Summary,
+		RawMeta:   verdict.Evidence,
 	}
 	tenantID := cmd.TenantID
 

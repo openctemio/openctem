@@ -54,6 +54,31 @@ func validateCommand(t *testing.T, tenantID, findingID shared.ID, outcome string
 	return cmd
 }
 
+// validateCommandMetadataResult builds a validate command whose result nests the
+// verdict under `metadata` — the shape the SDK command poller produces from an
+// agent's CommandExecutionResult.Metadata.
+func validateCommandMetadataResult(t *testing.T, tenantID, findingID shared.ID, outcome string) *commanddom.Command {
+	t.Helper()
+	payload, _ := json.Marshal(validation.ValidateCommandPayload{
+		FindingID:    findingID.String(),
+		ExecutorKind: "safe-check",
+		Technique:    "T1046",
+	})
+	cmd, err := commanddom.NewCommand(tenantID, commanddom.CommandTypeValidate, commanddom.CommandPriorityNormal, payload)
+	if err != nil {
+		t.Fatalf("new command: %v", err)
+	}
+	result, _ := json.Marshal(map[string]any{
+		"status": "completed",
+		"metadata": map[string]any{
+			"outcome": outcome,
+			"summary": "port closed",
+		},
+	})
+	cmd.Complete(result)
+	return cmd
+}
+
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -94,6 +119,31 @@ func TestTriggerValidationEvidence_MapsResultToIngestWithCommandTenant(t *testin
 	}
 	if ev.ExecutorKind != "safe-check" {
 		t.Errorf("evidence executor kind = %q, want safe-check", ev.ExecutorKind)
+	}
+}
+
+func TestTriggerValidationEvidence_ReadsOutcomeFromMetadata(t *testing.T) {
+	ing := &captureIngester{}
+	h := &CommandHandler{logger: logger.NewNop()}
+	h.SetValidationIngest(ing)
+
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	cmd := validateCommandMetadataResult(t, tenantID, findingID, "detected")
+
+	h.triggerValidationEvidence(cmd)
+
+	waitFor(t, func() bool {
+		calls, _, _, _ := ing.snapshot()
+		return calls == 1
+	})
+
+	_, gotTenant, gotFinding, ev := ing.snapshot()
+	if gotTenant != tenantID || gotFinding != findingID {
+		t.Errorf("ingest tenant/finding = %s/%s, want %s/%s", gotTenant, gotFinding, tenantID, findingID)
+	}
+	if ev.Outcome != validation.OutcomeDetected {
+		t.Errorf("evidence outcome = %q, want detected (from metadata)", ev.Outcome)
 	}
 }
 
