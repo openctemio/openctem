@@ -20,11 +20,18 @@ type Result struct {
 	Options accesscontrol.AssignmentOptions
 }
 
+// AssetTypeResolver returns the asset type (e.g. "domain", "repository") for a
+// finding's asset, so rules scoped by AssetTypes can be evaluated. Optional —
+// when unset, rules with an AssetTypes condition cannot match (previous
+// behavior); wiring it makes those rules work.
+type AssetTypeResolver func(ctx context.Context, tenantID, assetID shared.ID) (string, error)
+
 // Engine evaluates assignment rules against findings
 // and returns the list of matching groups with their options.
 type Engine struct {
-	acRepo accesscontrol.Repository
-	logger *logger.Logger
+	acRepo       accesscontrol.Repository
+	assetTypeFor AssetTypeResolver
+	logger       *logger.Logger
 }
 
 // NewEngine creates a new Engine.
@@ -33,6 +40,21 @@ func NewEngine(acRepo accesscontrol.Repository, log *logger.Logger) *Engine {
 		acRepo: acRepo,
 		logger: log.With("service", "assignment-engine"),
 	}
+}
+
+// SetAssetTypeResolver wires the resolver used to evaluate AssetTypes conditions.
+// Without it, rules that filter by asset type never match (they need the type).
+func (e *Engine) SetAssetTypeResolver(r AssetTypeResolver) { e.assetTypeFor = r }
+
+// rulesNeedAssetType reports whether any rule filters by asset type, so we only
+// pay for the asset lookup when it can affect the outcome.
+func rulesNeedAssetType(rules []*accesscontrol.AssignmentRule) bool {
+	for _, r := range rules {
+		if len(r.Conditions().AssetTypes) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // EvaluateRules evaluates all active assignment rules for a tenant against a finding.
@@ -52,6 +74,21 @@ func (e *Engine) EvaluateRules(ctx context.Context, tenantID shared.ID, finding 
 		return nil, nil
 	}
 
+	// Resolve the finding's asset type ONCE, only when some rule actually filters
+	// by it — otherwise AssetTypes conditions can never match (they need the type
+	// and it isn't carried on the finding).
+	assetType := ""
+	if e.assetTypeFor != nil && rulesNeedAssetType(rules) {
+		if aid := finding.AssetID(); !aid.IsZero() {
+			if t, terr := e.assetTypeFor(ctx, tenantID, aid); terr == nil {
+				assetType = t
+			} else {
+				e.logger.Warn("failed to resolve asset type for assignment rules",
+					"asset_id", aid.String(), "error", terr)
+			}
+		}
+	}
+
 	seen := make(map[shared.ID]struct{})
 	results := make([]Result, 0, len(rules))
 
@@ -59,7 +96,7 @@ func (e *Engine) EvaluateRules(ctx context.Context, tenantID shared.ID, finding 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if e.MatchesConditions(rule.Conditions(), finding) {
+		if e.MatchesConditions(rule.Conditions(), finding, assetType) {
 			gid := rule.TargetGroupID()
 			if _, exists := seen[gid]; !exists {
 				seen[gid] = struct{}{}

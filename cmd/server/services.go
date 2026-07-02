@@ -866,6 +866,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize assignment engine and wire to vulnerability service for auto-routing
 	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)
+	// Resolve a finding's asset type so rules scoped by AssetTypes can match
+	// (without this, such rules never fire).
+	assignmentEngine.SetAssetTypeResolver(func(ctx context.Context, tenantID, assetID shared.ID) (string, error) {
+		a, err := repos.Asset.GetByID(ctx, tenantID, assetID)
+		if err != nil {
+			return "", err
+		}
+		return a.Type().String(), nil
+	})
 	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
 
 	// Wire engine and finding repo to assignment rule service for TestRule
