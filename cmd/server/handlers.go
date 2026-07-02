@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"net/url"
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
@@ -320,12 +321,32 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
 	}
 
-	// SAML SP handler (RFC-009 9d): metadata + per-tenant config CRUD.
+	// SAML SP handler (RFC-009 9d+9e): metadata, config CRUD, and the
+	// SP-initiated browser login (login redirect + ACS session cookies).
 	if svc.SAML != nil {
-		handlers.SAML = handler.NewSAMLHandler(svc.SAML, log)
+		handlers.SAML = handler.NewSAMLHandler(
+			svc.SAML,
+			handler.NewCookieConfig(cfg.Auth),
+			frontendOrigin(cfg.OAuth.FrontendCallbackURL),
+			log,
+		)
 	}
 
 	return handlers
+}
+
+// frontendOrigin extracts scheme://host from the configured frontend callback
+// URL so the SAML browser flow can redirect to the SPA root after login. Falls
+// back to the raw value (or localhost) if it cannot be parsed.
+func frontendOrigin(callbackURL string) string {
+	if callbackURL == "" {
+		return "http://localhost:3000"
+	}
+	u, err := url.Parse(callbackURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return callbackURL
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // InitLocalAuthHandler initializes the local auth handler.

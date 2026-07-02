@@ -177,9 +177,22 @@ against a staging Okta/Azure SAML app before GA.
   account can't be logged into via an external assertion). Real-DB + unit
   tested.
 - **9e** — SP-initiated AuthnRequest + ACS with crewjam/saml signature/condition
-  validation + InResponseTo replay protection (request-id tracked in a signed
-  cookie) + identity mapping via CompleteFederatedLogin + fixture tests.
-  _(next; the replay-sensitive, live-IdP-validation step)_
+  validation + InResponseTo binding (request-id tracked in a short-TTL
+  `saml_authn_{org}` cookie, SameSite=None+Secure for the cross-site POST-back)
+  + identity mapping via `CompleteFederatedLogin`. **SHIPPED.**
+  - `GET  /api/v1/auth/saml/{org}/login` → 302 to the IdP with the AuthnRequest.
+  - `POST /api/v1/auth/saml/{org}/acs` → validates the signed response, sets the
+    session cookies (refresh/access/tenant, same contract as local + OAuth
+    login), 302 to the frontend. Errors redirect to `/login?error=saml` (the
+    specific failure is logged, never leaked).
+  - Additive + gated: disabled by default per tenant; existing OIDC/OAuth/local
+    logins are untouched. `SAMLService.{Login,ACS,buildIDPMetadata,
+    extractEmailName}`; handler `SAMLHandler.{Login,ACS}`.
+  - Verified: unit tests (`buildIDPMetadata`, `extractEmailName`, cert
+    validation) + E2E live guard `test_e2e_saml_login.sh` (AuthnRequest redirect
+    + request cookie + disabled-refuses). **Real-IdP interop (Okta/EntraID/
+    ADFS) is the acceptance gate before enabling for a production tenant** — the
+    signed-assertion crypto path is crewjam's, exercised structurally here.
 - **9f** — IdP-initiated flow + SLO (single logout), if required. _(deferred)_
 
 ---

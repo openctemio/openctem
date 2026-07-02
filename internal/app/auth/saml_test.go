@@ -7,11 +7,14 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/crewjam/saml"
 
 	samldom "github.com/openctemio/api/pkg/domain/samlprovider"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -128,6 +131,104 @@ func TestSAMLUpsertConfig_StoresAndUpdates(t *testing.T) {
 	}
 	if p2.DefaultRole() != "admin" || p2.IDPEntityID() != "https://idp2" {
 		t.Errorf("update not applied: %+v", p2)
+	}
+}
+
+func TestBuildIDPMetadata(t *testing.T) {
+	certPEM := genTestCertPEM(t)
+	p := samldom.Reconstruct(shared.NewID(), shared.NewID(),
+		"https://idp.example.com/entity", "https://idp.example.com/sso", certPEM,
+		nil, "member", true, true, time.Now(), time.Now())
+
+	md, err := buildIDPMetadata(p)
+	if err != nil {
+		t.Fatalf("buildIDPMetadata: %v", err)
+	}
+	if md.EntityID != "https://idp.example.com/entity" {
+		t.Errorf("entity id = %q", md.EntityID)
+	}
+	if len(md.IDPSSODescriptors) != 1 {
+		t.Fatalf("want 1 IDPSSODescriptor, got %d", len(md.IDPSSODescriptors))
+	}
+	sso := md.IDPSSODescriptors[0]
+	if len(sso.SingleSignOnServices) != 1 || sso.SingleSignOnServices[0].Location != "https://idp.example.com/sso" {
+		t.Errorf("sso endpoint = %+v", sso.SingleSignOnServices)
+	}
+	// The cert data must be base64 DER that parses back to an X.509 cert — this
+	// is exactly what crewjam getIDPSigningCerts does to verify assertions.
+	certData := sso.KeyDescriptors[0].KeyInfo.X509Data.X509Certificates[0].Data
+	der, err := base64.StdEncoding.DecodeString(certData)
+	if err != nil {
+		t.Fatalf("cert data not base64: %v", err)
+	}
+	if _, err := x509.ParseCertificate(der); err != nil {
+		t.Fatalf("cert data not a valid DER cert: %v", err)
+	}
+}
+
+func TestBuildIDPMetadata_InvalidCert(t *testing.T) {
+	p := samldom.Reconstruct(shared.NewID(), shared.NewID(),
+		"e", "https://idp/sso", "not-a-pem",
+		nil, "member", true, true, time.Now(), time.Now())
+	if _, err := buildIDPMetadata(p); err == nil {
+		t.Fatal("expected error for invalid cert PEM")
+	}
+}
+
+func TestExtractEmailName(t *testing.T) {
+	tests := []struct {
+		name      string
+		assertion *saml.Assertion
+		wantEmail string
+		wantName  string
+	}{
+		{
+			name:      "email nameid (lowercased)",
+			assertion: &saml.Assertion{Subject: &saml.Subject{NameID: &saml.NameID{Value: "Alice@Example.com"}}},
+			wantEmail: "alice@example.com",
+		},
+		{
+			name: "email + displayName attributes",
+			assertion: &saml.Assertion{
+				AttributeStatements: []saml.AttributeStatement{{
+					Attributes: []saml.Attribute{
+						{Name: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress", Values: []saml.AttributeValue{{Value: "bob@corp.com"}}},
+						{FriendlyName: "displayName", Name: "urn:oid:2.16.840.1.113730.3.1.241", Values: []saml.AttributeValue{{Value: "Bob Jones"}}},
+					},
+				}},
+			},
+			wantEmail: "bob@corp.com",
+			wantName:  "Bob Jones",
+		},
+		{
+			name: "mail + cn attributes",
+			assertion: &saml.Assertion{
+				AttributeStatements: []saml.AttributeStatement{{
+					Attributes: []saml.Attribute{
+						{Name: "mail", Values: []saml.AttributeValue{{Value: "carol@x.io"}}},
+						{Name: "cn", Values: []saml.AttributeValue{{Value: "Carol"}}},
+					},
+				}},
+			},
+			wantEmail: "carol@x.io",
+			wantName:  "Carol",
+		},
+		{
+			name:      "non-email nameid yields no email",
+			assertion: &saml.Assertion{Subject: &saml.Subject{NameID: &saml.NameID{Value: "not-an-email"}}},
+			wantEmail: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			email, name := extractEmailName(tc.assertion)
+			if email != tc.wantEmail {
+				t.Errorf("email = %q, want %q", email, tc.wantEmail)
+			}
+			if name != tc.wantName {
+				t.Errorf("name = %q, want %q", name, tc.wantName)
+			}
+		})
 	}
 }
 

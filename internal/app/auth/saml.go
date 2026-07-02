@@ -3,9 +3,11 @@ package auth
 import (
 	"context"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"encoding/xml"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -23,6 +25,11 @@ var (
 	ErrSAMLTenantNotFound = ErrSSOTenantNotFound
 	ErrSAMLNotConfigured  = samldom.ErrNotFound
 	ErrSAMLInvalidCert    = fmt.Errorf("%w: invalid IdP certificate (expected a PEM-encoded X.509 certificate)", shared.ErrValidation)
+	ErrSAMLDisabled       = fmt.Errorf("%w: SAML login is not enabled for this organization", shared.ErrValidation)
+	// ErrSAMLResponseInvalid is a generic error for any assertion-validation
+	// failure (signature, conditions, audience, InResponseTo). The specific
+	// reason is logged server-side, never returned to the caller.
+	ErrSAMLResponseInvalid = fmt.Errorf("%w: SAML response could not be validated", shared.ErrValidation)
 )
 
 func samlValidationErr(msg string) error { return fmt.Errorf("%w: %s", shared.ErrValidation, msg) }
@@ -146,4 +153,157 @@ func validateCertificatePEM(certPEM string) error {
 		return ErrSAMLInvalidCert
 	}
 	return nil
+}
+
+// Login starts an SP-initiated SAML login (RFC-009 9e). It returns the IdP
+// redirect URL (carrying the deflate+base64 AuthnRequest) and the request ID,
+// which the caller stores in a short-lived cookie so the ACS can bind the
+// response's InResponseTo (replay/CSRF protection).
+func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string) (redirectURL, requestID string, err error) {
+	sp, _, err := s.resolveServiceProvider(ctx, orgSlug, baseURL)
+	if err != nil {
+		return "", "", err
+	}
+	authnReq, err := sp.MakeAuthenticationRequest(sp.IDPMetadata.IDPSSODescriptors[0].SingleSignOnServices[0].Location, saml.HTTPRedirectBinding, saml.HTTPPostBinding)
+	if err != nil {
+		return "", "", fmt.Errorf("build authn request: %w", err)
+	}
+	u, err := authnReq.Redirect(orgSlug, sp)
+	if err != nil {
+		return "", "", fmt.Errorf("build redirect: %w", err)
+	}
+	return u.String(), authnReq.ID, nil
+}
+
+// ACS validates an IdP SAML response and completes the federated login. The
+// caller supplies possibleRequestIDs (from the request-tracking cookie) so the
+// assertion's InResponseTo is bound to a request this SP actually initiated.
+func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.Request, possibleRequestIDs []string) (*SSOCallbackResult, error) {
+	sp, tenantAndCfg, err := s.resolveServiceProvider(ctx, orgSlug, baseURL)
+	if err != nil {
+		return nil, err
+	}
+	assertion, perr := sp.ParseResponse(r, possibleRequestIDs)
+	if perr != nil {
+		// Never leak the specific crypto/condition failure to the caller.
+		s.logger.Warn("saml assertion validation failed", "org", orgSlug, "error", perr)
+		return nil, ErrSAMLResponseInvalid
+	}
+
+	email, name := extractEmailName(assertion)
+	if email == "" {
+		return nil, samlValidationErr("assertion has no email address (NameID or email attribute)")
+	}
+
+	cfg := tenantAndCfg.cfg
+	if at := strings.LastIndex(email, "@"); at >= 0 && !cfg.IsDomainAllowed(email[at+1:]) {
+		return nil, ErrSSODomainNotAllowed
+	}
+
+	return s.sso.CompleteFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision())
+}
+
+// resolvedSAML bundles the tenant + its enabled SAML config.
+type resolvedSAML struct {
+	tenant *tenantdom.Tenant
+	cfg    *samldom.SAMLProvider
+}
+
+// resolveServiceProvider loads the tenant + enabled SAML config and builds a
+// crewjam ServiceProvider with the IdP metadata (cert + SSO endpoint) attached.
+func (s *SAMLService) resolveServiceProvider(ctx context.Context, orgSlug, baseURL string) (*saml.ServiceProvider, resolvedSAML, error) {
+	t, err := s.tenantRepo.GetBySlug(ctx, orgSlug)
+	if err != nil {
+		return nil, resolvedSAML{}, ErrSAMLTenantNotFound
+	}
+	p, err := s.repo.GetByTenant(ctx, t.ID())
+	if err != nil {
+		return nil, resolvedSAML{}, ErrSAMLNotConfigured
+	}
+	if !p.Enabled() {
+		return nil, resolvedSAML{}, ErrSAMLDisabled
+	}
+	md, err := buildIDPMetadata(p)
+	if err != nil {
+		return nil, resolvedSAML{}, err
+	}
+	sp := s.baseServiceProvider(orgSlug, baseURL)
+	sp.IDPMetadata = md
+	return sp, resolvedSAML{tenant: t, cfg: p}, nil
+}
+
+// buildIDPMetadata assembles the crewjam EntityDescriptor from the stored IdP
+// entity id, SSO URL and signing certificate — the trust anchor ParseResponse
+// uses to verify the assertion signature.
+func buildIDPMetadata(p *samldom.SAMLProvider) (*saml.EntityDescriptor, error) {
+	block, _ := pem.Decode([]byte(p.IDPCertificate()))
+	if block == nil {
+		return nil, ErrSAMLInvalidCert
+	}
+	certB64 := base64.StdEncoding.EncodeToString(block.Bytes)
+
+	return &saml.EntityDescriptor{
+		EntityID: p.IDPEntityID(),
+		IDPSSODescriptors: []saml.IDPSSODescriptor{{
+			SSODescriptor: saml.SSODescriptor{
+				RoleDescriptor: saml.RoleDescriptor{
+					KeyDescriptors: []saml.KeyDescriptor{{
+						Use: "signing",
+						KeyInfo: saml.KeyInfo{
+							X509Data: saml.X509Data{
+								X509Certificates: []saml.X509Certificate{{Data: certB64}},
+							},
+						},
+					}},
+				},
+			},
+			SingleSignOnServices: []saml.Endpoint{{
+				Binding:  saml.HTTPRedirectBinding,
+				Location: p.IDPSSOURL(),
+			}},
+		}},
+	}, nil
+}
+
+// samlEmailAttrKeys / samlNameAttrKeys are lowercase substrings matched against
+// an attribute's Name/FriendlyName to locate the email and display name.
+var samlEmailAttrKeys = []string{"emailaddress", "email", "mail", "urn:oid:0.9.2342.19200300.100.1.3"}
+var samlNameAttrKeys = []string{"displayname", "name", "cn", "urn:oid:2.16.840.1.113730.3.1.241"}
+
+// extractEmailName pulls the user's email and display name from the assertion —
+// the NameID (when it is an email) plus common attribute names across IdPs.
+func extractEmailName(a *saml.Assertion) (email, name string) {
+	if a.Subject != nil && a.Subject.NameID != nil {
+		if v := strings.TrimSpace(a.Subject.NameID.Value); strings.Contains(v, "@") {
+			email = v
+		}
+	}
+	for _, st := range a.AttributeStatements {
+		for _, attr := range st.Attributes {
+			if len(attr.Values) == 0 {
+				continue
+			}
+			val := strings.TrimSpace(attr.Values[0].Value)
+			if val == "" {
+				continue
+			}
+			key := strings.ToLower(attr.Name + " " + attr.FriendlyName)
+			if email == "" && matchesAny(key, samlEmailAttrKeys) && strings.Contains(val, "@") {
+				email = val
+			}
+			if name == "" && matchesAny(key, samlNameAttrKeys) {
+				name = val
+			}
+		}
+	}
+	return strings.ToLower(strings.TrimSpace(email)), strings.TrimSpace(name)
+}
+
+func matchesAny(s string, subs []string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
