@@ -113,6 +113,20 @@ func (r *AssetDedupRepository) UpsertReview(
 	return nil
 }
 
+// ReviewKeepAssetID returns the surviving (keep) asset ID for a review. Used by
+// the handler to recompute finding fingerprints on the keep asset after a merge.
+// Tenant-scoped to prevent cross-tenant access.
+func (r *AssetDedupRepository) ReviewKeepAssetID(ctx context.Context, tenantID, reviewID string) (string, error) {
+	var keepID string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT keep_asset_id FROM asset_dedup_review WHERE id = $1 AND tenant_id = $2`,
+		reviewID, tenantID).Scan(&keepID)
+	if err != nil {
+		return "", fmt.Errorf("get review keep asset id: %w", err)
+	}
+	return keepID, nil
+}
+
 // ApproveAndMerge executes a merge: moves findings/services/relationships from
 // merge assets into the keep asset, then deletes merge assets.
 // tenantID is verified against the review to prevent cross-tenant access.

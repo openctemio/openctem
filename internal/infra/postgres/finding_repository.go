@@ -2440,6 +2440,69 @@ func (r *FindingRepository) CountByAssetID(ctx context.Context, tenantID, assetI
 	return count, nil
 }
 
+// RecomputeFingerprintsForAsset recomputes and persists the fingerprint of every
+// finding currently pointing at assetID.
+//
+// Motivation: an asset merge repoints findings to the surviving asset with a raw
+// UPDATE (see AssetDedupRepository.ApproveAndMerge) that does NOT recompute the
+// fingerprint. Because the fingerprint embeds the asset_id (see
+// Finding.GenerateFingerprint), a repointed finding keeps a stale fingerprint
+// that (a) no longer dedupes against future scans of the surviving asset —
+// accumulating duplicates — and (b) is inconsistent with what ingest would
+// produce. This restores that invariant after a merge.
+//
+// When a recomputed fingerprint collides with a finding that already exists on
+// the surviving asset (UNIQUE(tenant_id, fingerprint)), the repointed finding is
+// the duplicate and is deleted, keeping the pre-existing one.
+//
+// Idempotent: findings whose asset_id is unchanged recompute to the same value
+// and are skipped, so it is safe to re-run.
+func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, tenantID, assetID shared.ID) (updated, deduped int, err error) {
+	// Read all findings for the asset up front (into a slice) so that the
+	// subsequent UPDATE/DELETE mutations do not shift pagination offsets.
+	var all []*vulnerability.Finding
+	page := pagination.Pagination{Page: 1, PerPage: 500}
+	for {
+		res, lerr := r.ListByAssetID(ctx, tenantID, assetID, vulnerability.FindingListOptions{}, page)
+		if lerr != nil {
+			return updated, deduped, fmt.Errorf("failed to list findings for fingerprint recompute: %w", lerr)
+		}
+		all = append(all, res.Data...)
+		if len(res.Data) == 0 || page.Page >= res.TotalPages {
+			break
+		}
+		page.Page++
+	}
+
+	for _, f := range all {
+		oldFP := f.Fingerprint()
+		newFP := f.GenerateFingerprint()
+		if newFP == oldFP {
+			continue
+		}
+		_, uerr := r.db.ExecContext(ctx,
+			`UPDATE findings SET fingerprint = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+			newFP, f.ID().String(), tenantID.String())
+		if uerr == nil {
+			updated++
+			continue
+		}
+		if !isUniqueViolation(uerr) {
+			return updated, deduped, fmt.Errorf("failed to update finding fingerprint: %w", uerr)
+		}
+		// A finding already occupies (tenant_id, newFP) on the surviving asset:
+		// this repointed finding is a duplicate — delete it, keeping the existing.
+		if _, derr := r.db.ExecContext(ctx,
+			`DELETE FROM findings WHERE id = $1 AND tenant_id = $2`,
+			f.ID().String(), tenantID.String()); derr != nil {
+			return updated, deduped, fmt.Errorf("failed to delete duplicate finding after fingerprint collision: %w", derr)
+		}
+		deduped++
+	}
+
+	return updated, deduped, nil
+}
+
 // CountOpenByAssetID returns the count of open findings for an asset.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (r *FindingRepository) CountOpenByAssetID(ctx context.Context, tenantID, assetID shared.ID) (int64, error) {
