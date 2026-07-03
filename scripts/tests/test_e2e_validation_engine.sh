@@ -5,7 +5,7 @@
 #   agent polls/ack/start/complete the command with an outcome
 #   command-completion hook maps the result -> validation evidence
 #   GET /findings/{id}/evidence   -> shows the recorded evidence
-#   finding status reconciled from the outcome (confirmed -> resolved)
+#   finding status reconciled from the outcome (fix_applied -> resolved)
 set -uo pipefail
 cd "$(dirname "$0")"
 # shellcheck source=_e2e_common.sh
@@ -29,11 +29,24 @@ do_request POST /api/v1/findings \
 assert_status "200|201" "create finding"
 FINDING_ID="$(extract_json "$BODY" '.id')"
 
-# Move new -> confirmed so a not_detected outcome legally resolves it.
+# Walk new -> confirmed -> in_progress -> fix_applied. Validation only auto-
+# resolves a finding that is in `fix_applied` (the proof-of-fix state): a
+# reachability probe returning not_detected on a merely-`confirmed` finding is
+# NOT proof the vuln is fixed, so the engine leaves confirmed findings untouched.
 do_request POST /api/v1/findings/bulk/status \
   "{\"finding_ids\":[\"$FINDING_ID\"],\"status\":\"confirmed\"}" \
   "$(auth_hdr)"
 assert_status "200|201" "confirm finding"
+
+do_request POST /api/v1/findings/bulk/status \
+  "{\"finding_ids\":[\"$FINDING_ID\"],\"status\":\"in_progress\"}" \
+  "$(auth_hdr)"
+assert_status "200|201" "finding -> in_progress"
+
+do_request POST /api/v1/findings/bulk/status \
+  "{\"finding_ids\":[\"$FINDING_ID\"],\"status\":\"fix_applied\",\"resolution\":\"fix applied, awaiting validation\"}" \
+  "$(auth_hdr)"
+assert_status "200|201" "finding -> fix_applied (proof-of-fix state)"
 
 # --- Producer: request validation ------------------------------------------
 do_request POST "/api/v1/findings/$FINDING_ID/validate" "" "$(auth_hdr)"
@@ -79,7 +92,7 @@ else
 fi
 assert_json '.evidence[0].executor_kind == "safe-check"' "evidence executor_kind is safe-check"
 
-# Finding status reconciled to resolved (confirmed -> resolved on not_detected).
+# Finding status reconciled to resolved (fix_applied -> resolved on not_detected).
 do_request GET "/api/v1/findings/$FINDING_ID" "" "$(auth_hdr)"
 assert_status "200" "get finding after validation"
 assert_json '.status == "resolved"' "finding resolved by validation outcome"

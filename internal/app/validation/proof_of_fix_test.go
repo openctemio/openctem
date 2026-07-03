@@ -103,6 +103,46 @@ func newProofSvc(disp ValidationDispatcher, cap AgentCapability) (*ProofOfFixSer
 	return NewProofOfFixService(disp, cap, evStore, repo, notif), repo, notif
 }
 
+// atConfirmed builds a finding in the `confirmed` state (a real, open vuln that
+// has NOT had a fix applied) — the state a direct /validate is most often run on.
+func atConfirmed(t *testing.T) *vulnerability.Finding {
+	t.Helper()
+	f, err := vulnerability.NewFinding(
+		shared.NewID(), shared.NewID(),
+		vulnerability.FindingSourceManual, "T-1",
+		vulnerability.SeverityHigh, "test",
+	)
+	if err != nil {
+		t.Fatalf("new finding: %v", err)
+	}
+	if err := f.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil); err != nil {
+		t.Fatalf("transition confirmed: %v", err)
+	}
+	return f
+}
+
+// Regression: a not_detected outcome must NOT auto-resolve a CONFIRMED finding.
+// A non-intrusive reachability probe is not proof the vulnerability is fixed, and
+// the confirmed→resolved edge requires findings:verify — which this automated
+// path would otherwise bypass. Evidence is still recorded; only the status stays.
+func TestRetest_NotDetected_DoesNotResolveConfirmed(t *testing.T) {
+	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "safe-check"}}
+	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
+	svc, repo, _ := newProofSvc(disp, cap)
+	repo.current = atConfirmed(t)
+
+	_, stood, err := svc.Retest(context.Background(), shared.NewID(), shared.NewID(), "T1046", Target{}, "", nil)
+	if err != nil {
+		t.Fatalf("retest: %v", err)
+	}
+	if stood {
+		t.Fatal("a confirmed finding must not report as resolved from a reachability probe")
+	}
+	if repo.current.Status() != vulnerability.FindingStatusConfirmed {
+		t.Fatalf("confirmed finding must stay confirmed, got %s", repo.current.Status())
+	}
+}
+
 func TestRetest_NotDetected_Resolves(t *testing.T) {
 	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "safe-check"}}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
