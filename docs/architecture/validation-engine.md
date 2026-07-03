@@ -74,13 +74,58 @@ agent executes technique ──► POST /api/v1/validation/evidence ──► pe
 - **Outcome mapping has one home** — `applyOutcomeToFinding` is shared by the
   ingest path and the `ProofOfFixService.Retest` (dispatch) path.
 
+## Dispatch (producer side) — RFC-011 MVP
+
+The ingest side above records evidence that arrives "out of band". RFC-011 adds
+the **producer**: an operator (or automation) can *ask* for a validation run,
+and the result flows back through the same ingest path — no new agent HTTP
+surface.
+
+```
+POST /api/v1/findings/{id}/validate  (JWT, findings:write)
+      │  RunService.ValidateFinding: resolve finding → asset → Target,
+      │  Selector picks safe-check, build ValidationJob
+      ▼
+CommandDispatcher → command (type=validate, tenant-scoped) → agent poll queue
+      │  agent runs the safe-check probe, reports {outcome,summary} on
+      │  POST /agent/commands/{id}/complete
+      ▼
+CommandHandler.Complete → triggerValidationEvidence(cmd)
+      │  maps result → Evidence, tenant taken from the COMMAND (authoritative)
+      ▼
+EvidenceIngestService.Ingest → persist (redacted) + reconcile finding status
+```
+
+| Piece | Where |
+|-------|-------|
+| `validate` command type | `pkg/domain/command/entity.go` (`CommandTypeValidate`), migration `000184_command_type_validate` |
+| Async dispatcher (job → command) | `internal/app/validation/dispatcher.go` (`CommandDispatcher`) |
+| Producer service (finding → job) | `internal/app/validation/run.go` (`RunService.ValidateFinding`) |
+| Producer endpoint | `POST /api/v1/findings/{id}/validate` (`FindingActionsHandler.RequestValidation`) |
+| Result → evidence hook | `internal/infra/http/handler/command_handler.go` (`triggerValidationEvidence`) |
+
+**Why the completion hook, not a direct agent POST to `/validation/evidence`:**
+that endpoint requires a *tenant* agent (takes tenant from the agent). Routing
+the result through the command-completion hook lets the tenant come from the
+**command** — the single authoritative source — and reuses the wired
+poll/ack/start/complete queue instead of the not-yet-wired platform-job
+transport.
+
+**Round-1 scope:** only the `safe-check` executor kind (non-intrusive TCP/TLS/
+HTTP reachability re-check, technique `T1046`). `Selector`/`DefaultSelector`
+already prefer it and gate the riskier kinds behind an attacker profile; the
+routing is built so `nuclei` re-check slots in next without rework.
+
 ## Not yet shipped (deferred)
 
+- **Agent-side executor** — the API enqueues `validate` commands, but the agent
+  binary does not yet execute them (the tenant-runner uses `sdk-go/pkg/core`
+  with a fixed command-type switch; adding `validate` there is a follow-up
+  sdk-go release + agent bump). Until then the loop is driven by the E2E harness
+  / any client that completes the command with an outcome.
 - **Synchronous dispatcher** — `ValidationDispatcher`/`ProofOfFixService.Retest`
-  exist (queue a job, block for the agent's reply) but are not wired to a
-  production agent queue. The ingest endpoint is the activation seam that makes
-  Validation functional today: the agent runs the technique on its own schedule
-  and POSTs back, rather than the API blocking on a dispatch.
+  (block for the agent's reply) remain unused; the async producer above is the
+  functional path.
 - **Pentest retest wiring** — `POST /pentest/findings/{id}/retests` does not yet
   call the ingest/proof-of-fix path.
 - **Coverage SLO enforcement** at cycle-close (`coverage.go` exists, not gated).

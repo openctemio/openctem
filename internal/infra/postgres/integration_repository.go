@@ -174,7 +174,7 @@ func (r *IntegrationRepository) Update(ctx context.Context, i *integration.Integ
 			metadata = $13,
 			stats = $14,
 			updated_at = $15
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $16
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -193,6 +193,7 @@ func (r *IntegrationRepository) Update(ctx context.Context, i *integration.Integ
 		metadata,
 		stats,
 		i.UpdatedAt(),
+		i.TenantID().String(),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {

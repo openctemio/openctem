@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"net/url"
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
@@ -74,6 +75,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Command handler with pipeline service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	commandHandler.SetPipelineService(svc.Pipeline)
+	// Map completed validation jobs into finding evidence.
+	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
 	// (sync) leaves the handler processing reports in-request as before.
@@ -114,6 +117,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
 
+	// Finding actions handler with the CTEM Stage-4 validation runner wired.
+	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
+	findingActionsHandler.SetValidationRunner(svc.ValidationRun)
+
+	// Validation handler + coverage KPI reader.
+	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
+	validationHandler.SetCoverageReader(repos.ValidationEvidence)
+
 	handlers := routes.Handlers{
 		// Health
 		Health: handler.NewHealthHandler(
@@ -151,7 +162,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Vulnerabilities & Exposures
 		Vulnerability:             vulnHandler,
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
-		FindingActions:            handler.NewFindingActionsHandler(svc.FindingActions, log),
+		FindingActions:            findingActionsHandler,
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             githubWebhookHandler,
@@ -177,7 +188,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Ingest:           ingestHandler,
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),
-		Validation:       handler.NewValidationHandler(svc.ValidationEvidence, log),
+		Validation:       validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
@@ -314,12 +325,32 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
 	}
 
-	// SAML SP handler (RFC-009 9d): metadata + per-tenant config CRUD.
+	// SAML SP handler (RFC-009 9d+9e): metadata, config CRUD, and the
+	// SP-initiated browser login (login redirect + ACS session cookies).
 	if svc.SAML != nil {
-		handlers.SAML = handler.NewSAMLHandler(svc.SAML, log)
+		handlers.SAML = handler.NewSAMLHandler(
+			svc.SAML,
+			handler.NewCookieConfig(cfg.Auth),
+			frontendOrigin(cfg.OAuth.FrontendCallbackURL),
+			log,
+		)
 	}
 
 	return handlers
+}
+
+// frontendOrigin extracts scheme://host from the configured frontend callback
+// URL so the SAML browser flow can redirect to the SPA root after login. Falls
+// back to the raw value (or localhost) if it cannot be parsed.
+func frontendOrigin(callbackURL string) string {
+	if callbackURL == "" {
+		return "http://localhost:3000"
+	}
+	u, err := url.Parse(callbackURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return callbackURL
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // InitLocalAuthHandler initializes the local auth handler.

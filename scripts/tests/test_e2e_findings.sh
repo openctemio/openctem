@@ -106,6 +106,13 @@ do_request() {
     local curl_args=(-s -w "\n%{http_code}" -X "$method" "${API_URL}${endpoint}"
         -H "Content-Type: application/json"
         -c "$COOKIE_JAR" -b "$COOKIE_JAR")
+    # CSRF: send the X-CSRF-Token double-submit header on state-changing methods,
+    # read from the csrf_token cookie login set (added by e2e CSRF retrofit).
+    case "$method" in
+        POST|PUT|PATCH|DELETE)
+            local _csrf; _csrf=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$COOKIE_JAR" 2>/dev/null)
+            [ -n "$_csrf" ] && curl_args+=(-H "X-CSRF-Token: $_csrf") ;;
+    esac
 
     for header in "$@"; do
         curl_args+=(-H "$header")

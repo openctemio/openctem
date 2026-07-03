@@ -1,16 +1,18 @@
 package handler
 
 import (
-	"github.com/openctemio/api/internal/app/command"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
 
+	"github.com/openctemio/api/internal/app/command"
+
 	"github.com/go-chi/chi/v5"
 
 	pipelinesvc "github.com/openctemio/api/internal/app/pipeline"
+	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	commanddom "github.com/openctemio/api/pkg/domain/command"
@@ -19,12 +21,19 @@ import (
 	"github.com/openctemio/api/pkg/validator"
 )
 
+// validationEvidenceIngester records a completed validation job's outcome as
+// finding evidence. Implemented by *validation.EvidenceIngestService.
+type validationEvidenceIngester interface {
+	Ingest(ctx context.Context, tenantID, findingID shared.ID, simRunID *shared.ID, ev validation.Evidence) (validation.IngestResult, error)
+}
+
 // CommandHandler handles command-related HTTP requests.
 type CommandHandler struct {
-	service         *command.Service
-	pipelineService *pipelinesvc.Service
-	validator       *validator.Validator
-	logger          *logger.Logger
+	service          *command.Service
+	pipelineService  *pipelinesvc.Service
+	validationIngest validationEvidenceIngester
+	validator        *validator.Validator
+	logger           *logger.Logger
 }
 
 // NewCommandHandler creates a new command handler.
@@ -39,6 +48,12 @@ func NewCommandHandler(svc *command.Service, v *validator.Validator, log *logger
 // SetPipelineService sets the pipeline service for triggering pipeline progression.
 func (h *CommandHandler) SetPipelineService(svc *pipelinesvc.Service) {
 	h.pipelineService = svc
+}
+
+// SetValidationIngest wires the validation evidence ingester used to map a
+// completed validate command's result into finding evidence.
+func (h *CommandHandler) SetValidationIngest(svc validationEvidenceIngester) {
+	h.validationIngest = svc
 }
 
 // CommandResponse represents a command in API responses.
@@ -241,6 +256,9 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
 		return
 	}
+	if !requireAgentTenant(w, agt) {
+		return
+	}
 
 	limit := parseQueryInt(r.URL.Query().Get("limit"), 10)
 
@@ -282,6 +300,9 @@ func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
 		return
 	}
+	if !requireAgentTenant(w, agt) {
+		return
+	}
 
 	commandID := chi.URLParam(r, "id")
 
@@ -312,6 +333,9 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+	if !requireAgentTenant(w, agt) {
 		return
 	}
 
@@ -347,6 +371,9 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
 		return
 	}
+	if !requireAgentTenant(w, agt) {
+		return
+	}
 
 	commandID := chi.URLParam(r, "id")
 
@@ -370,8 +397,81 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	// Trigger pipeline progression if this command is part of a pipeline
 	h.triggerPipelineProgression(r.Context(), cmd)
 
+	// Map a completed validation job's result into finding evidence.
+	h.triggerValidationEvidence(cmd)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+}
+
+// triggerValidationEvidence maps a completed CommandTypeValidate command's
+// result into finding evidence via the ingest service. The tenant is taken
+// from the command itself (authoritative), never from the reporting agent.
+// Best-effort and asynchronous — a mapping failure never blocks the agent's
+// completion response.
+func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
+	if h.validationIngest == nil || cmd == nil || cmd.Type != commanddom.CommandTypeValidate {
+		return
+	}
+
+	var payload validation.ValidateCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || payload.FindingID == "" {
+		return
+	}
+	findingID, err := shared.IDFromString(payload.FindingID)
+	if err != nil {
+		return
+	}
+
+	// The result may carry the verdict at the top level (a client completing the
+	// command directly) OR nested under `metadata` — which is where the SDK
+	// command poller places an executor's CommandExecutionResult.Metadata (the
+	// real agent path). Accept both.
+	var result struct {
+		validation.ValidateResultPayload
+		Metadata validation.ValidateResultPayload `json:"metadata"`
+	}
+	if cmd.Result != nil {
+		_ = json.Unmarshal(cmd.Result, &result)
+	}
+	verdict := result.ValidateResultPayload
+	if verdict.Outcome == "" {
+		verdict = result.Metadata
+	}
+	if verdict.Outcome == "" {
+		// No outcome reported — nothing to reconcile (the run failed to produce
+		// a verdict). Leave the finding untouched.
+		h.logger.Warn("validate command completed without an outcome",
+			"command_id", cmd.ID.String(), "finding_id", payload.FindingID)
+		return
+	}
+
+	ev := validation.Evidence{
+		ExecutorKind: payload.ExecutorKind,
+		Technique:    validation.TechniqueID(payload.Technique),
+		Target: validation.Target{
+			Type:    payload.Target.Type,
+			Address: payload.Target.Address,
+		},
+		StartedAt: cmd.CreatedAt,
+		EndedAt:   time.Now(),
+		Outcome:   validation.Outcome(verdict.Outcome),
+		Summary:   verdict.Summary,
+		RawMeta:   verdict.Evidence,
+	}
+	tenantID := cmd.TenantID
+
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := h.validationIngest.Ingest(bgCtx, tenantID, findingID, nil, ev); err != nil {
+			h.logger.Error("failed to record validation evidence",
+				"command_id", cmd.ID.String(),
+				"finding_id", payload.FindingID,
+				"error", err,
+			)
+		}
+	}()
 }
 
 // triggerPipelineProgression triggers pipeline progression when a command completes.
@@ -440,6 +540,9 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+	if !requireAgentTenant(w, agt) {
 		return
 	}
 

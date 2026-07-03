@@ -11,7 +11,7 @@ require (
 	github.com/klauspost/compress v1.18.6
 	github.com/lib/pq v1.12.3
 	github.com/prometheus/client_golang v1.23.2
-	github.com/redis/go-redis/v9 v9.20.1
+	github.com/redis/go-redis/v9 v9.21.0
 	golang.org/x/crypto v0.53.0
 	golang.org/x/net v0.56.0
 	golang.org/x/time v0.15.0
@@ -117,5 +117,5 @@ require (
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/openctemio/ctis v1.1.0
 	github.com/xuri/excelize/v2 v2.10.1
-	golang.org/x/tools v0.46.0
+	golang.org/x/tools v0.47.0
 )

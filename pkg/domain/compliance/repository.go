@@ -68,13 +68,23 @@ type FrameworkStats struct {
 	NotAssessed    int64
 }
 
-// ComplianceScore calculates the compliance percentage.
+// ComplianceScore calculates the compliance percentage, clamped to [0, 100].
+// The clamp is defense-in-depth: with a consistent live total (see
+// GetStatsByFramework) the score is naturally in range, but a stale/denormalized
+// total must never surface a >100% or negative score to the UI.
 func (s *FrameworkStats) ComplianceScore() float64 {
 	assessable := s.TotalControls - s.NotApplicable
-	if assessable == 0 {
+	if assessable <= 0 {
 		return 100.0
 	}
-	return float64(s.Implemented) / float64(assessable) * 100.0
+	score := float64(s.Implemented) / float64(assessable) * 100.0
+	if score < 0 {
+		return 0
+	}
+	if score > 100 {
+		return 100
+	}
+	return score
 }
 
 // MappingRepository defines the interface for finding-to-control mapping persistence.

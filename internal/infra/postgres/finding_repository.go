@@ -2440,11 +2440,58 @@ func (r *FindingRepository) CountByAssetID(ctx context.Context, tenantID, assetI
 	return count, nil
 }
 
+// KEVCriticalCountsByAsset returns, per asset, the number of OPEN findings that
+// are in CISA-KEV and that are critical severity. Used by exposure-chain analysis
+// to identify which assets are worth reaching in an attack path. Tenant-scoped.
+func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenantID shared.ID) (kev, critical map[string]int, err error) {
+	query := `
+		SELECT asset_id,
+			COUNT(*) FILTER (WHERE is_in_kev) AS kev_count,
+			COUNT(*) FILTER (WHERE severity = 'critical') AS critical_count
+		FROM findings
+		WHERE tenant_id = $1
+			AND asset_id IS NOT NULL
+			AND status IN ('new','confirmed','in_progress')
+		GROUP BY asset_id
+		HAVING COUNT(*) FILTER (WHERE is_in_kev) > 0
+			OR COUNT(*) FILTER (WHERE severity = 'critical') > 0`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to count kev/critical findings by asset: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	kev = make(map[string]int)
+	critical = make(map[string]int)
+	for rows.Next() {
+		var assetID string
+		var kevCount, critCount int
+		if err := rows.Scan(&assetID, &kevCount, &critCount); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan kev/critical counts: %w", err)
+		}
+		if kevCount > 0 {
+			kev[assetID] = kevCount
+		}
+		if critCount > 0 {
+			critical[assetID] = critCount
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed iterating kev/critical counts: %w", err)
+	}
+	return kev, critical, nil
+}
+
 // CountOpenByAssetID returns the count of open findings for an asset.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (r *FindingRepository) CountOpenByAssetID(ctx context.Context, tenantID, assetID shared.ID) (int64, error) {
-	// Security: Include tenant_id in WHERE clause
-	query := `SELECT COUNT(*) FROM findings WHERE asset_id = $1 AND tenant_id = $2 AND status IN ('open', 'in_progress')`
+	// Security: Include tenant_id in WHERE clause.
+	// 'open' is NOT a valid finding status (the enum is new/confirmed/
+	// in_progress/fix_applied/resolved/...), so the old IN ('open','in_progress')
+	// silently counted ONLY in_progress and dropped new+confirmed. Use the same
+	// open-status set the rest of this repository uses for open counts.
+	query := `SELECT COUNT(*) FROM findings WHERE asset_id = $1 AND tenant_id = $2 AND status IN ('new','confirmed','in_progress')`
 
 	var count int64
 	err := r.db.QueryRowContext(ctx, query, assetID.String(), tenantID.String()).Scan(&count)
@@ -2999,8 +3046,9 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 	// Do NOT reopen manually resolved, false_positive, or accepted findings
 	query := `
 		UPDATE findings
-		SET status = 'open',
+		SET status = 'confirmed',
 			resolution = NULL,
+			resolution_method = NULL,
 			resolved_at = NULL,
 			resolved_by = NULL,
 			updated_at = NOW()

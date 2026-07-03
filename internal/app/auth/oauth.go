@@ -17,6 +17,7 @@ import (
 
 	"github.com/openctemio/api/internal/config"
 	sessiondom "github.com/openctemio/api/pkg/domain/session"
+	"github.com/openctemio/api/pkg/domain/shared"
 	userdom "github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/jwt"
@@ -99,7 +100,7 @@ func NewOAuthService(
 		tokenGenerator:   tokenGen,
 		config:           oauthCfg,
 		authConfig:       authCfg,
-		logger: log.With("service", "oauth"),
+		logger:           log.With("service", "oauth"),
 		// SSRF: OAuth userinfo + token endpoints for Google / GitHub /
 		// Microsoft are hardcoded strings in this file, so no SSRF via
 		// config. Using SafeHTTPClient remains valuable: if a follow-
@@ -645,18 +646,26 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
-		// SECURITY: Verify auth provider matches to prevent account takeover.
-		// A local user with a password cannot be logged in via OAuth.
+		// SECURITY: an account is bound to the auth provider that created it.
+		// Users are matched by email, but a verified email at one IdP does NOT
+		// prove ownership of an account created at another. On a provider
+		// mismatch the ONLY safe adoption is a CLAIMABLE LOCAL account (invited,
+		// no password yet) signing in via its IdP for the first time. Block
+		// every other mismatch — a password-backed local account AND a different
+		// federated provider (e.g. account created via Google, login attempted
+		// via GitHub) — otherwise it is a cross-IdP account takeover.
 		existingProvider := existingUser.AuthProvider()
 		expectedProvider := provider.ToAuthProvider()
 
-		if existingProvider != expectedProvider && existingProvider == userdom.AuthProviderLocal {
-			if existingUser.PasswordHash() != nil {
-				s.logger.Warn("OAuth login blocked: email exists with local auth",
+		if existingProvider != expectedProvider {
+			claimableLocal := existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() == nil
+			if !claimableLocal {
+				s.logger.Warn("OAuth login blocked: email registered with a different auth provider",
 					"email", userInfo.Email,
-					"oauth_provider", provider,
+					"existing_provider", existingProvider,
+					"oauth_provider", expectedProvider,
 				)
-				return nil, fmt.Errorf("this email is registered with password login")
+				return nil, fmt.Errorf("this email is registered with a different login method")
 			}
 		}
 
@@ -694,14 +703,20 @@ type SessionResult struct {
 
 // createSession creates a new session for the user.
 func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
-	// Generate token pair first (with empty session ID - will be set after session creation)
-	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), "", "user")
+	// Bind the token to its session: generate the session id first, embed it in
+	// the JWT, then persist the session under the SAME id — so an OAuth session
+	// is revocable (mirrors the password Login flow). Previously the token was
+	// minted with an empty session id, leaving the token and session row
+	// unlinked, so the OAuth access token could not be revoked.
+	sessionID := shared.NewID()
+	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), sessionID.String(), "user")
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate tokens: %w", err)
 	}
 
-	// Create session with the access token
-	newSession, err := sessiondom.New(
+	// Create session under the same id embedded in the token.
+	newSession, err := sessiondom.NewWithID(
+		sessionID,
 		u.ID(),
 		tokenPair.AccessToken,
 		"", // IP address - can be set from request context

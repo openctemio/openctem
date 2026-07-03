@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -17,15 +18,29 @@ import (
 	"github.com/openctemio/api/pkg/pagination"
 )
 
+// ValidationRunner dispatches a CTEM Stage-4 validation job for a finding and
+// returns the command ID it was queued under. Implemented by
+// *validation.RunService.
+type ValidationRunner interface {
+	ValidateFinding(ctx context.Context, tenantID, findingID shared.ID) (shared.ID, error)
+}
+
 // FindingActionsHandler handles closed-loop finding lifecycle operations.
 type FindingActionsHandler struct {
-	service *app.FindingActionsService
-	logger  *logger.Logger
+	service          *app.FindingActionsService
+	validationRunner ValidationRunner
+	logger           *logger.Logger
 }
 
 // NewFindingActionsHandler creates a new FindingActionsHandler.
 func NewFindingActionsHandler(svc *app.FindingActionsService, log *logger.Logger) *FindingActionsHandler {
 	return &FindingActionsHandler{service: svc, logger: log}
+}
+
+// SetValidationRunner wires the validation-run service. When unset, the
+// validate endpoint responds 503 (feature not configured).
+func (h *FindingActionsHandler) SetValidationRunner(r ValidationRunner) {
+	h.validationRunner = r
 }
 
 // --- Group View ---
@@ -330,6 +345,47 @@ func (h *FindingActionsHandler) RequestVerificationScan(w http.ResponseWriter, r
 	h.writeJSON(w, http.StatusAccepted, result)
 }
 
+// RequestValidation handles POST /api/v1/findings/{id}/validate
+// It dispatches a CTEM Stage-4 validation job (safe-check re-check) for the
+// finding. The job runs on an agent; the outcome is applied to the finding
+// asynchronously when the agent completes the command.
+func (h *FindingActionsHandler) RequestValidation(w http.ResponseWriter, r *http.Request) {
+	if h.validationRunner == nil {
+		apierror.InternalServerError("validation is not configured").WriteJSON(w)
+		return
+	}
+
+	tenantID := middleware.MustGetTenantID(r.Context())
+	findingID := chi.URLParam(r, "id")
+	if findingID == "" {
+		apierror.BadRequest("finding id is required").WriteJSON(w)
+		return
+	}
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+	fid, err := shared.IDFromString(findingID)
+	if err != nil {
+		apierror.BadRequest("invalid finding id").WriteJSON(w)
+		return
+	}
+
+	cmdID, err := h.validationRunner.ValidateFinding(r.Context(), tid, fid)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	h.writeJSON(w, http.StatusAccepted, map[string]any{
+		"finding_id": findingID,
+		"command_id": cmdID.String(),
+		"status":     "queued",
+	})
+}
+
 // --- Auto-Assign ---
 
 // AssignToOwnersRequest is the request body for POST /api/v1/findings/actions/assign-to-owners
@@ -433,7 +489,11 @@ func (h *FindingActionsHandler) buildPagination(r *http.Request, defaultPerPage 
 		}
 	}
 
-	return pagination.New(perPage, (page-1)*perPage)
+	// pagination.New(page, perPage) computes the offset internally. The args
+	// were swapped (perPage passed as page, a pre-computed offset as perPage),
+	// so page 1 became New(20,0) → LIMIT 20 OFFSET 980 and any dataset under
+	// ~980 groups returned an empty first page.
+	return pagination.New(page, perPage)
 }
 
 func (h *FindingActionsHandler) handleError(w http.ResponseWriter, err error) {

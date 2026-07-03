@@ -185,7 +185,8 @@ type BulkFixAppliedInput struct {
 // BulkFixAppliedResult is the result of bulk fix-applied operation.
 type BulkFixAppliedResult struct {
 	Updated        int            `json:"updated"`
-	Skipped        int            `json:"skipped"`
+	Skipped        int            `json:"skipped"` // not permitted / invalid transition (expected)
+	Failed         int            `json:"failed"`  // persistence error — retry-worthy, distinct from Skipped
 	ByCVE          map[string]int `json:"by_cve,omitempty"`
 	AssetsAffected int            `json:"assets_affected"`
 }
@@ -314,8 +315,11 @@ func (s *FindingActionsService) BulkFixApplied(
 		}
 
 		if err := s.findingRepo.Update(ctx, f); err != nil {
+			// A persistence failure is NOT a skip — count it separately so the
+			// caller can distinguish "not permitted / invalid" (Skipped) from
+			// "write failed, the fix_applied transition was lost, retry" (Failed).
 			s.logger.Warn("failed to update finding", "finding_id", f.ID(), "error", err)
-			result.Skipped++
+			result.Failed++
 			continue
 		}
 

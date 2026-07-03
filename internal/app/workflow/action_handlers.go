@@ -105,17 +105,17 @@ func (h *FindingActionHandler) assignTeam(ctx context.Context, input *ActionInpu
 		return nil, fmt.Errorf("team_id is required for assign_team action")
 	}
 
-	h.logger.Info("assigning finding to team",
+	// assign_team has no backing service yet. Fail loudly instead of returning
+	// {"assigned": true} — a silent no-op makes operators believe the finding
+	// was routed to a team when nothing happened. See updateStatus/assignUser
+	// for the wired pattern this should follow once a team-assignment service
+	// exists.
+	h.logger.Warn("assign_team workflow action is not implemented",
 		"finding_id", findingID,
 		"team_id", teamID,
 	)
 
-	return map[string]any{
-		"finding_id": findingID,
-		"team_id":    teamID,
-		"assigned":   true,
-		"action":     "assign_team",
-	}, nil
+	return nil, fmt.Errorf("assign_team workflow action is not implemented")
 }
 
 func (h *FindingActionHandler) updatePriority(ctx context.Context, input *ActionInput) (map[string]any, error) {
@@ -129,17 +129,14 @@ func (h *FindingActionHandler) updatePriority(ctx context.Context, input *Action
 		return nil, fmt.Errorf("priority is required for update_priority action")
 	}
 
-	h.logger.Info("updating finding priority",
+	// update_priority has no backing service yet — fail loudly rather than
+	// report a false {"updated": true} success.
+	h.logger.Warn("update_priority workflow action is not implemented",
 		"finding_id", findingID,
 		"priority", priority,
 	)
 
-	return map[string]any{
-		"finding_id": findingID,
-		"priority":   priority,
-		"updated":    true,
-		"action":     "update_priority",
-	}, nil
+	return nil, fmt.Errorf("update_priority workflow action is not implemented")
 }
 
 func (h *FindingActionHandler) updateStatus(ctx context.Context, input *ActionInput) (map[string]any, error) {
@@ -491,7 +488,7 @@ func (h *TicketActionHandler) createTicket(ctx context.Context, input *ActionInp
 	// Required fields
 	integrationID, _ := config["integration_id"].(string)
 	title, _ := config["title"].(string)
-	description, _ := config["description"].(string)
+	project, _ := config["project"].(string)
 
 	if integrationID == "" {
 		return nil, fmt.Errorf("integration_id is required for create_ticket action")
@@ -500,38 +497,18 @@ func (h *TicketActionHandler) createTicket(ctx context.Context, input *ActionInp
 		return nil, fmt.Errorf("title is required for create_ticket action")
 	}
 
-	// Optional fields
-	project, _ := config["project"].(string)
-	issueType, _ := config["issue_type"].(string)
-	priority, _ := config["priority"].(string)
-	labels, _ := config["labels"].([]any)
-
-	labelStrings := make([]string, 0)
-	for _, l := range labels {
-		labelStrings = append(labelStrings, fmt.Sprintf("%v", l))
-	}
-
-	h.logger.Info("creating ticket from workflow",
+	// create_ticket is not wired to the integration service yet, so it would
+	// previously return {"created": true} without filing anything — operators
+	// would believe Jira/GitHub issues were created when none were. Fail loudly
+	// until it is wired to the same ticket-creation path as the direct
+	// POST /findings/{id}/create-ticket route.
+	h.logger.Warn("create_ticket workflow action is not implemented",
 		"integration_id", integrationID,
 		"title", title,
 		"project", project,
 	)
 
-	// In a real implementation, this would use the integration service
-	// to create a ticket in Jira, GitHub Issues, etc.
-
-	return map[string]any{
-		"integration_id": integrationID,
-		"title":          title,
-		"description":    description,
-		"project":        project,
-		"issue_type":     issueType,
-		"priority":       priority,
-		"labels":         labelStrings,
-		"created":        true,
-		"action":         "create_ticket",
-		// In real implementation: "ticket_id", "ticket_url"
-	}, nil
+	return nil, fmt.Errorf("create_ticket workflow action is not implemented")
 }
 
 func (h *TicketActionHandler) updateTicket(ctx context.Context, input *ActionInput) (map[string]any, error) {
@@ -547,25 +524,14 @@ func (h *TicketActionHandler) updateTicket(ctx context.Context, input *ActionInp
 		return nil, fmt.Errorf("ticket_id is required for update_ticket action")
 	}
 
-	// Fields to update
-	status, _ := config["status"].(string)
-	comment, _ := config["comment"].(string)
-	assignee, _ := config["assignee"].(string)
-
-	h.logger.Info("updating ticket from workflow",
+	// update_ticket is not wired to the integration service yet — fail loudly
+	// rather than report a false {"updated": true}.
+	h.logger.Warn("update_ticket workflow action is not implemented",
 		"integration_id", integrationID,
 		"ticket_id", ticketID,
 	)
 
-	return map[string]any{
-		"integration_id": integrationID,
-		"ticket_id":      ticketID,
-		"status":         status,
-		"comment":        comment,
-		"assignee":       assignee,
-		"updated":        true,
-		"action":         "update_ticket",
-	}, nil
+	return nil, fmt.Errorf("update_ticket workflow action is not implemented")
 }
 
 // ----------------------------------------------------------------------------

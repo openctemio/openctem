@@ -270,6 +270,29 @@ func (h *ComplianceHandler) MapFindingToControl(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusCreated, toComplianceMappingResponse(mapping))
 }
 
+// AutoMapFinding handles POST /api/v1/compliance/findings/{findingId}/controls/auto-map
+// — deterministically maps a finding to OWASP Top 10 (2021) controls from its
+// OWASP ids / CWEs. Idempotent; returns the newly-created mappings.
+func (h *ComplianceHandler) AutoMapFinding(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	findingID := chi.URLParam(r, "findingId")
+
+	created, err := h.service.AutoMapFinding(r.Context(), tenantID, findingID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	out := make([]ComplianceMappingResponse, 0, len(created))
+	for _, m := range created {
+		out = append(out, toComplianceMappingResponse(m))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"created": out,
+		"count":   len(out),
+	})
+}
+
 // UnmapFindingFromControl removes a finding-to-control mapping.
 func (h *ComplianceHandler) UnmapFindingFromControl(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -324,14 +347,14 @@ type ComplianceFrameworkResponse struct {
 
 // ComplianceControlResponse is the API response for a compliance control.
 type ComplianceControlResponse struct {
-	ID              string  `json:"id"`
-	FrameworkID     string  `json:"framework_id"`
-	ControlID       string  `json:"control_id"`
-	Title           string  `json:"title"`
-	Description     string  `json:"description"`
-	Category        string  `json:"category"`
-	ParentControlID *string `json:"parent_control_id,omitempty"`
-	SortOrder       int     `json:"sort_order"`
+	ID              string    `json:"id"`
+	FrameworkID     string    `json:"framework_id"`
+	ControlID       string    `json:"control_id"`
+	Title           string    `json:"title"`
+	Description     string    `json:"description"`
+	Category        string    `json:"category"`
+	ParentControlID *string   `json:"parent_control_id,omitempty"`
+	SortOrder       int       `json:"sort_order"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 

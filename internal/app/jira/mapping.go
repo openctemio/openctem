@@ -47,6 +47,31 @@ type MappingConfig struct {
 	// case the caller MUST pass a project key explicitly. Loaded from
 	// config.ticketing.project_key.
 	DefaultProjectKey string
+
+	// Routing selects a destination project (and optionally issue type) by
+	// matching attributes of the finding and its asset — e.g. route the Payments
+	// team's critical findings to the PAY project. Rules are evaluated in order;
+	// the first match wins. Falls through to DefaultProjectKey when nothing
+	// matches. Loaded from config.ticketing.routing.
+	Routing []RoutingRule
+}
+
+// RoutingRule maps findings matching ALL of its (non-empty) conditions to a
+// destination project. Within a condition the values are OR'd; across
+// conditions they are AND'd; an empty condition is a wildcard. This is how
+// "each Jira project = a team/business unit" is expressed without making a
+// project an asset.
+type RoutingRule struct {
+	// Match conditions (lower-cased, case-insensitive). Empty slice = any.
+	Severity    []string // finding severity: critical/high/medium/low/info
+	Tag         []string // finding tags (any overlap matches)
+	Scope       []string // asset scope: external/internal/cloud/partner/vendor/shadow
+	Criticality []string // asset criticality: critical/high/medium/low/none
+	AssetGroup  []string // asset group name/slug (any overlap matches)
+
+	// Target.
+	ProjectKey string // destination project (required for a usable rule)
+	IssueType  string // optional issue-type override for this route
 }
 
 // DefaultMappingConfig returns the mapping that reproduces the platform's
@@ -233,7 +258,67 @@ func ParseMappingConfig(config map[string]any) MappingConfig {
 		m.SyncEnabled = v
 	}
 
+	if raw, ok := section["routing"].([]any); ok {
+		m.Routing = parseRoutingRules(raw)
+	}
+
 	return m
+}
+
+// parseRoutingRules reads config.ticketing.routing — an array of
+// {match:{severity,tag,scope,criticality,asset_group}, project_key, issue_type}.
+// Rules without a project_key are dropped (they could never route anywhere).
+func parseRoutingRules(raw []any) []RoutingRule {
+	rules := make([]RoutingRule, 0, len(raw))
+	for _, item := range raw {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		projectKey := strings.TrimSpace(stringFromAny(obj["project_key"]))
+		if projectKey == "" {
+			continue // a rule with no destination is meaningless
+		}
+		rule := RoutingRule{
+			ProjectKey: projectKey,
+			IssueType:  strings.TrimSpace(stringFromAny(obj["issue_type"])),
+		}
+		if match, ok := obj["match"].(map[string]any); ok {
+			rule.Severity = lowerStringSlice(match["severity"])
+			rule.Tag = lowerStringSlice(match["tag"])
+			rule.Scope = lowerStringSlice(match["scope"])
+			rule.Criticality = lowerStringSlice(match["criticality"])
+			rule.AssetGroup = lowerStringSlice(match["asset_group"])
+		}
+		rules = append(rules, rule)
+	}
+	return rules
+}
+
+// lowerStringSlice coerces a JSON value (a single string or an array of
+// strings) into a lower-cased, trimmed, non-empty string slice.
+func lowerStringSlice(v any) []string {
+	var out []string
+	switch t := v.(type) {
+	case string:
+		if s := strings.ToLower(strings.TrimSpace(t)); s != "" {
+			out = append(out, s)
+		}
+	case []any:
+		for _, e := range t {
+			if s, ok := e.(string); ok {
+				if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func stringFromAny(v any) string {
+	s, _ := v.(string)
+	return s
 }
 
 func stringValue(m map[string]any, key string) (string, bool) {
@@ -242,4 +327,68 @@ func stringValue(m map[string]any, key string) (string, bool) {
 		return "", false
 	}
 	return v, true
+}
+
+// RouteContext carries the finding + asset attributes a RoutingRule matches
+// against. Finding-level fields (severity, tags) are always available; the
+// asset-level fields are populated by an AssetRouteResolver when one is wired,
+// and are otherwise empty (so asset-conditioned rules simply don't match).
+type RouteContext struct {
+	Severity    string
+	Tags        []string
+	Scope       string
+	Criticality string
+	Groups      []string
+}
+
+// matches reports whether every non-empty condition of the rule is satisfied by
+// the context (conditions AND'd; values within a condition OR'd; empty = any).
+func (r RoutingRule) matches(rc RouteContext) bool {
+	return matchScalar(r.Severity, rc.Severity) &&
+		matchScalar(r.Scope, rc.Scope) &&
+		matchScalar(r.Criticality, rc.Criticality) &&
+		matchOverlap(r.Tag, rc.Tags) &&
+		matchOverlap(r.AssetGroup, rc.Groups)
+}
+
+// matchScalar: empty filter = wildcard; else the (lower-cased) value must be in
+// the filter.
+func matchScalar(filter []string, value string) bool {
+	if len(filter) == 0 {
+		return true
+	}
+	value = strings.ToLower(strings.TrimSpace(value))
+	for _, f := range filter {
+		if f == value {
+			return true
+		}
+	}
+	return false
+}
+
+// matchOverlap: empty filter = wildcard; else any value must be in the filter.
+func matchOverlap(filter, values []string) bool {
+	if len(filter) == 0 {
+		return true
+	}
+	for _, v := range values {
+		v = strings.ToLower(strings.TrimSpace(v))
+		for _, f := range filter {
+			if f == v {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// RouteFor returns the first routing rule that matches the context, or
+// (RoutingRule{}, false) when none match.
+func (m MappingConfig) RouteFor(rc RouteContext) (RoutingRule, bool) {
+	for _, rule := range m.Routing {
+		if rule.matches(rc) {
+			return rule, true
+		}
+	}
+	return RoutingRule{}, false
 }

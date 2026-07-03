@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -15,17 +17,85 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// SAMLHandler exposes the SAML 2.0 SP endpoints (RFC-009 9d): the public SP
-// metadata an admin registers with their IdP, and admin config CRUD. The
-// SP-initiated login + ACS (9e) are added on top of this in a follow-up.
+// SAMLHandler exposes the SAML 2.0 SP endpoints (RFC-009 9d+9e): the public SP
+// metadata an admin registers with their IdP, admin config CRUD, and the
+// SP-initiated browser login (login redirect + ACS).
 type SAMLHandler struct {
-	svc    *app.SAMLService
-	logger *logger.Logger
+	svc         *app.SAMLService
+	cookieCfg   CookieConfig
+	frontendURL string // origin the browser is redirected to after login
+	logger      *logger.Logger
 }
 
-// NewSAMLHandler creates the handler.
-func NewSAMLHandler(svc *app.SAMLService, log *logger.Logger) *SAMLHandler {
-	return &SAMLHandler{svc: svc, logger: log.With("handler", "saml")}
+// NewSAMLHandler creates the handler. cookieCfg + frontendURL drive the
+// browser login flow (session cookies + post-login redirect).
+func NewSAMLHandler(svc *app.SAMLService, cookieCfg CookieConfig, frontendURL string, log *logger.Logger) *SAMLHandler {
+	return &SAMLHandler{svc: svc, cookieCfg: cookieCfg, frontendURL: frontendURL, logger: log.With("handler", "saml")}
+}
+
+// samlRequestCookie is the short-lived cookie that carries the AuthnRequest ID
+// so the ACS can bind the response's InResponseTo. It must be SameSite=None +
+// Secure because the IdP delivers the response as a cross-site top-level POST
+// (Lax cookies are not sent on cross-site POST) — SAML therefore requires HTTPS.
+func samlRequestCookieName(org string) string { return "saml_authn_" + org }
+
+// Login handles GET /api/v1/auth/saml/{org}/login — SP-initiated login.
+func (h *SAMLHandler) Login(w http.ResponseWriter, r *http.Request) {
+	org := chi.URLParam(r, "org")
+	redirectURL, requestID, err := h.svc.Login(r.Context(), org, requestBaseURL(r))
+	if err != nil {
+		h.redirectWithError(w, r, err)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     samlRequestCookieName(org),
+		Value:    requestID,
+		Path:     "/",
+		MaxAge:   300,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	})
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+// ACS handles POST /api/v1/auth/saml/{org}/acs — the IdP posts the SAML
+// response here. On success it establishes the session cookies and redirects
+// the browser to the frontend.
+func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
+	org := chi.URLParam(r, "org")
+
+	var possibleRequestIDs []string
+	if c, cerr := r.Cookie(samlRequestCookieName(org)); cerr == nil && c.Value != "" {
+		possibleRequestIDs = []string{c.Value}
+	}
+	// Clear the single-use request cookie regardless of the outcome.
+	http.SetCookie(w, &http.Cookie{
+		Name: samlRequestCookieName(org), Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
+	})
+
+	result, err := h.svc.ACS(r.Context(), org, requestBaseURL(r), r, possibleRequestIDs)
+	if err != nil {
+		h.redirectWithError(w, r, err)
+		return
+	}
+
+	// Establish the session: refresh (httpOnly) + access + tenant cookies, the
+	// same contract the local-login and OAuth flows use.
+	SetRefreshTokenCookie(w, result.RefreshToken, time.Now().Add(30*24*time.Hour), h.cookieCfg)
+	SetAccessTokenCookie(w, result.AccessToken, time.Now().Add(time.Duration(result.ExpiresIn)*time.Second), h.cookieCfg)
+	SetTenantCookie(w, result.TenantID, result.TenantSlug, "", h.cookieCfg)
+
+	http.Redirect(w, r, h.frontendURL, http.StatusFound)
+}
+
+// redirectWithError sends the browser back to the frontend login page with a
+// generic error flag (never leaks the specific SAML failure).
+func (h *SAMLHandler) redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
+	h.logger.Warn("saml login failed", "error", err)
+	dest := strings.TrimSuffix(h.frontendURL, "/") + "/login?error=saml"
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 // requestBaseURL derives the deployment origin (scheme://host), honoring the

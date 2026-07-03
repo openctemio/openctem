@@ -66,9 +66,11 @@ type SSOService struct {
 	tenantMemberRepo TenantMemberCreator
 }
 
-// TenantMemberCreator creates tenant memberships for auto-provisioned users.
+// TenantMemberCreator creates tenant memberships for auto-provisioned users and
+// looks up existing membership (used to gate federated account binding).
 type TenantMemberCreator interface {
 	CreateMembership(ctx context.Context, m *tenantdom.Membership) error
+	GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenantdom.Membership, error)
 }
 
 // NewSSOService creates a new SSOService.
@@ -406,7 +408,8 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	// over TLS, so a missing id_token (provider configured without the
 	// "openid" scope) is not attacker-controllable — verify when present,
 	// skip otherwise to stay backward compatible with such configs.
-	if err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce); err != nil {
+	verifiedIssuer, verifiedSubject, err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce)
+	if err != nil {
 		s.logger.Warn("SSO id_token validation failed",
 			"provider", input.Provider, "source", rp.source, "error", err)
 		return nil, ErrSSOInvalidIDToken
@@ -419,6 +422,12 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		s.logger.Error("SSO user info failed", "provider", input.Provider, "error", err)
 		return nil, ErrSSOUserInfoFailed
 	}
+
+	// Carry the verified id_token identity into account binding. These come
+	// from the signature-verified, JWKS-pinned id_token (not the userinfo
+	// body), so they are authoritative for distinguishing IdPs.
+	userInfo.Issuer = verifiedIssuer
+	userInfo.Subject = verifiedSubject
 
 	// SECURITY: Require email from SSO provider
 	if userInfo.Email == "" {
@@ -480,15 +489,18 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 // It is a no-op (returns nil) when the provider publishes no JWKS or the token
 // response carried no id_token — see the call site for why a missing id_token
 // is safe to skip. When an id_token IS present, every check is enforced.
-func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) error {
+// Returns the verified (issuer, subject) from the id_token so the caller can
+// bind the account to the IdP identity. Both are empty when there is no
+// id_token to verify (provider without JWKS, or configured without "openid").
+func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) (issuer, subject string, err error) {
 	jwksURL := rp.provider.JWKSURL(rp.tenantIdentifier)
 	if jwksURL == "" {
-		return nil // provider has no id_token to verify
+		return "", "", nil // provider has no id_token to verify
 	}
 	if strings.TrimSpace(idToken) == "" {
 		s.logger.Debug("SSO provider returned no id_token; skipping id_token validation",
 			"provider", rp.provider, "source", rp.source)
-		return nil
+		return "", "", nil
 	}
 
 	exp := idTokenExpectations{
@@ -500,10 +512,11 @@ func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, id
 		exp.validateIssuer = entraIssuerValidator(rp.tenantIdentifier)
 	}
 
-	if _, err := s.oidcVerifier.verify(ctx, idToken, exp); err != nil {
-		return err
+	claims, err := s.oidcVerifier.verify(ctx, idToken, exp)
+	if err != nil {
+		return "", "", err
 	}
-	return nil
+	return claims.Issuer, claims.Subject, nil
 }
 
 // generateState generates a signed state token containing org slug, provider, and nonce.
@@ -643,6 +656,12 @@ type SSOUserInfo struct {
 	Email     string
 	Name      string
 	AvatarURL string
+
+	// Issuer + Subject are the verified id_token's federated identity (OIDC
+	// iss/sub), used to bind the account to the IdP that owns it. Empty when
+	// the provider returned no id_token to verify — binding is then skipped.
+	Issuer  string
+	Subject string
 }
 
 // getUserInfo fetches user information from the SSO provider.
@@ -760,40 +779,22 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
-		// SECURITY: Verify auth provider matches to prevent account takeover.
-		// A local user cannot be logged in via SSO (and vice versa) unless
-		// the auth provider matches or the user was created by this SSO provider.
-		existingProvider := existingUser.AuthProvider()
-		expectedProvider := s.mapAuthProvider(provider)
-
-		if existingProvider != expectedProvider && existingProvider != userdom.AuthProviderOIDC {
-			// Allow local users to be "upgraded" to SSO only if they have no password set
-			// (i.e., they were invited but haven't set a password yet).
-			if existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() != nil {
-				s.logger.Warn("SSO login blocked: email exists with different auth provider",
-					"email", userInfo.Email,
-					"existing_provider", existingProvider,
-					"sso_provider", expectedProvider,
-				)
-				return nil, fmt.Errorf("%w: this email is registered with a different login method", ErrSSODomainNotAllowed)
-			}
-		}
-
-		existingUser.UpdateLastLogin()
-		if updateErr := s.userRepo.Update(ctx, existingUser); updateErr != nil {
-			s.logger.Warn("failed to update last login", "error", updateErr)
-		}
-		return existingUser, nil
+		return s.adoptExistingUser(ctx, existingUser, userInfo, provider)
 	}
 
 	// Map identity provider to auth provider
 	authProvider := s.mapAuthProvider(provider)
 
 	// Create new user
-	newUser, err := userdom.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, authProvider)
+	// NewFederatedUser (not NewOAuthUser) so Okta / generic-OIDC providers —
+	// which mapAuthProvider maps to AuthProviderOIDC — can actually create an
+	// account; NewOAuthUser rejects OIDC and broke first-login for those IdPs.
+	newUser, err := userdom.NewFederatedUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, authProvider)
 	if err != nil {
 		return nil, err
 	}
+	// Record the IdP identity on first federation (no-op if no id_token issuer).
+	newUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
 
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
 		// Handle race condition: another concurrent request may have created
@@ -801,14 +802,71 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 		// Retry the lookup if creation fails (likely unique constraint violation).
 		retryUser, retryErr := s.userRepo.GetByEmail(ctx, userInfo.Email)
 		if retryErr == nil && retryUser != nil {
+			// SECURITY: the concurrently-created (or previously-missed) account
+			// must pass the SAME adoption guard as the normal path — otherwise a
+			// login whose initial GetByEmail errored/missed could adopt a
+			// different-provider or password-backed local account here without
+			// any provider/issuer check (takeover via the race/error path).
 			s.logger.Debug("user created by concurrent request, using existing", "email", userInfo.Email)
-			return retryUser, nil
+			return s.adoptExistingUser(ctx, retryUser, userInfo, provider)
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
 	s.logger.Info("created SSO user", "user_id", newUser.ID().String(), "email", userInfo.Email, "provider", provider)
 	return newUser, nil
+}
+
+// adoptExistingUser applies the account-takeover guard before returning an
+// existing account for a federated login, then records the login. It is the
+// SINGLE place adoption is authorized, so BOTH the normal lookup path and the
+// create-race retry path enforce the same checks:
+//
+//  1. Provider match — an account is bound to the auth provider that created
+//     it; the only safe cross-provider adoption is a claimable LOCAL account
+//     (invited, no password) being claimed via its IdP for the first time.
+//  2. IdP issuer binding — the provider enum is coarse (every Okta org and
+//     every generic OIDC IdP collapse to AuthProviderOIDC), so a recorded
+//     verified id_token issuer must match; a pre-tracking/claimable account is
+//     bound trust-on-first-use.
+func (s *SSOService) adoptExistingUser(ctx context.Context, existingUser *userdom.User, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
+	existingProvider := existingUser.AuthProvider()
+	expectedProvider := s.mapAuthProvider(provider)
+
+	if existingProvider != expectedProvider {
+		claimableLocal := existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() == nil
+		if !claimableLocal {
+			s.logger.Warn("SSO login blocked: email registered with a different auth provider",
+				"email", userInfo.Email,
+				"existing_provider", existingProvider,
+				"sso_provider", expectedProvider,
+			)
+			return nil, fmt.Errorf("%w: this email is registered with a different login method", ErrSSODomainNotAllowed)
+		}
+	}
+
+	if userInfo.Issuer != "" {
+		if bound := existingUser.FederatedIssuer(); bound != nil && *bound != "" {
+			if *bound != userInfo.Issuer {
+				s.logger.Warn("SSO login blocked: email bound to a different identity provider",
+					"email", userInfo.Email,
+					"bound_issuer", *bound,
+					"login_issuer", userInfo.Issuer,
+				)
+				return nil, fmt.Errorf("%w: this email is registered with a different identity provider", ErrSSODomainNotAllowed)
+			}
+		} else {
+			existingUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
+			s.logger.Info("bound federated identity to existing account",
+				"email", userInfo.Email, "issuer", userInfo.Issuer)
+		}
+	}
+
+	existingUser.UpdateLastLogin()
+	if updateErr := s.userRepo.Update(ctx, existingUser); updateErr != nil {
+		s.logger.Warn("failed to update last login", "error", updateErr)
+	}
+	return existingUser, nil
 }
 
 // mapAuthProvider maps identity provider to user auth provider.
@@ -827,12 +885,19 @@ func (s *SSOService) mapAuthProvider(provider identityproviderdom.Provider) user
 
 // createSession creates a new session for the user.
 func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
-	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), "", "user")
+	// Bind the token to its session: generate the session id first, embed it in
+	// the JWT, then persist the session under the SAME id — so an SSO session is
+	// revocable (mirrors the password Login flow). Previously the token was
+	// minted with an empty session id, leaving the token and session row
+	// unlinked, so the SSO access token could not be revoked.
+	sessionID := shared.NewID()
+	tokenPair, err := s.tokenGenerator.GenerateTokenPair(u.ID().String(), sessionID.String(), "user")
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
-	newSession, err := sessiondom.New(
+	newSession, err := sessiondom.NewWithID(
+		sessionID,
 		u.ID(),
 		tokenPair.AccessToken,
 		"", // IP address from request context
@@ -872,6 +937,11 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*Sessi
 // an external assertion would be account takeover.
 var ErrSSOFederatedTakeover = errors.New("email is registered with a password; federated login not allowed")
 
+// ErrSSOFederatedNotMember is returned when a federated login matches an
+// existing global user who is not a member of the target tenant — blocking a
+// malicious tenant from forging an assertion for another tenant's user.
+var ErrSSOFederatedNotMember = errors.New("federated login not permitted: user is not a member of this organization")
+
 // CompleteFederatedLogin issues an OpenCTEM session for an externally
 // authenticated identity (e.g. a validated SAML assertion). It finds-or-creates
 // a claimable passwordless user, blocks takeover of password-backed local
@@ -889,6 +959,22 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 		// accessible via an external assertion.
 		if u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil {
 			return nil, ErrSSOFederatedTakeover
+		}
+		// Cross-tenant takeover guard: users are global, so GetByEmail can match a
+		// user who belongs to a DIFFERENT tenant. A federated assertion (SAML in
+		// particular, where the tenant admin holds the IdP signing key) must not
+		// bind to a pre-existing user unless they are already a member of THIS
+		// tenant — otherwise a malicious tenant could forge an assertion for any
+		// global email and mint a session as that victim. Brand-new users (no
+		// match) are created + auto-provisioned below; existing users must have
+		// been invited (membership) first. Fail closed on lookup error.
+		if s.tenantMemberRepo != nil {
+			m, mErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID())
+			if mErr != nil || m == nil {
+				s.logger.Warn("federated login refused: user is not a member of the target tenant",
+					"user_id", u.ID().String(), "tenant_id", t.ID().String())
+				return nil, ErrSSOFederatedNotMember
+			}
 		}
 		u.UpdateLastLogin()
 		if uerr := s.userRepo.Update(ctx, u); uerr != nil {

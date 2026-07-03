@@ -87,6 +87,15 @@ func run() int {
 	defer closeWithLog(db, "database", log)
 	log.Info("database connected")
 
+	// Fail fast if the DB schema is behind the migrations shipped with this
+	// binary — otherwise every request touching a not-yet-migrated column 500s
+	// (a silent, total outage). Refuse to start with an actionable message
+	// instead. Best-effort / bypassable via SKIP_SCHEMA_CHECK=true.
+	if err := verifySchemaUpToDate(ctx, db.DB, migrationsDirPath(), log); err != nil {
+		log.Error("database schema check failed — refusing to start", "error", err)
+		return 1
+	}
+
 	redisClient, err := redis.New(&cfg.Redis, log)
 	if err != nil {
 		log.Error("failed to connect to redis", "error", err)

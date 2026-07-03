@@ -151,6 +151,17 @@ func (s *ProofOfFixService) Retest(
 //   - OutcomeNotDetected → resolved (exposure gone, fix stood) → returns true
 //   - OutcomeDetected    → in_progress (fix did not hold) + notify assignee
 //   - anything else      → no status change
+//
+// Automated reconciliation applies ONLY to a finding in `fix_applied` — the
+// proof-of-fix state where an owner marked "I fixed it" and is awaiting
+// verification (per the FSM, fix_applied→resolved is the "scanner verified"
+// edge). For any other state (notably `confirmed`), a non-intrusive safe-check
+// probe is NOT proof the underlying vulnerability is fixed — it may not even
+// exercise this finding's class, and the target could be transiently
+// unreachable. Auto-closing there would silently resolve a live finding and
+// bypass the findings:verify gate the confirmed→resolved edge requires. In
+// those cases the evidence is still recorded (by the caller); only the status
+// is left for a human to decide.
 func applyOutcomeToFinding(
 	ctx context.Context,
 	finding FindingMutator,
@@ -161,6 +172,11 @@ func applyOutcomeToFinding(
 	f, err := finding.Get(ctx, tenantID, findingID)
 	if err != nil {
 		return false, fmt.Errorf("reload finding: %w", err)
+	}
+
+	// Proof-of-fix gate: only a fix_applied finding is auto-reconciled.
+	if f.Status() != vulnerability.FindingStatusFixApplied {
+		return false, nil
 	}
 
 	switch ev.Outcome {

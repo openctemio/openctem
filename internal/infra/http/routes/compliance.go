@@ -43,6 +43,7 @@ func registerComplianceRoutes(
 	router.Group("/api/v1/compliance/findings", func(r Router) {
 		r.GET("/{findingId}/controls", h.GetFindingControls, middleware.Require(permission.ComplianceMappingsRead))
 		r.POST("/{findingId}/controls", h.MapFindingToControl, middleware.Require(permission.ComplianceMappingsWrite))
+		r.POST("/{findingId}/controls/auto-map", h.AutoMapFinding, middleware.Require(permission.ComplianceMappingsWrite))
 		r.DELETE("/{findingId}/controls/{mappingId}", h.UnmapFindingFromControl, middleware.Require(permission.ComplianceMappingsWrite))
 	}, tenantMiddlewares...)
 }

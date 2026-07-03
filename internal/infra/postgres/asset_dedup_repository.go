@@ -390,7 +390,15 @@ func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID string,
 		}
 		row := make(map[string]any)
 		for i, col := range cols {
-			row[col] = values[i]
+			// lib/pq scans TEXT/VARCHAR columns into an interface{} as []byte.
+			// Left as-is, JSON-encoding turns every text field (asset names,
+			// reason, ...) into a base64 blob in the admin merge-log response.
+			// Convert to string so they serialize as readable text.
+			if b, ok := values[i].([]byte); ok {
+				row[col] = string(b)
+			} else {
+				row[col] = values[i]
+			}
 		}
 		results = append(results, row)
 	}

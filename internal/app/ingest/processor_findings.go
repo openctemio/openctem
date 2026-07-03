@@ -483,25 +483,32 @@ func (p *FindingProcessor) CheckFingerprints(
 		return []string{}, []string{}, nil
 	}
 
-	// Limit the number of fingerprints to check at once
-	const maxFingerprints = 100
-	if len(fingerprints) > maxFingerprints {
-		fingerprints = fingerprints[:maxFingerprints]
-	}
+	existing = make([]string, 0, len(fingerprints))
+	missing = make([]string, 0, len(fingerprints))
 
-	existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, fingerprints)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to check fingerprints: %w", err)
-	}
+	// Check in batches so a single query stays bounded, but check ALL
+	// fingerprints — the previous code truncated to the first 100, so a caller
+	// that sent >100 and used `missing` to decide what to upload silently lost
+	// visibility of fingerprints 101+. The request body size is already capped
+	// upstream, so the batch count is bounded.
+	const batchSize = 100
+	for start := 0; start < len(fingerprints); start += batchSize {
+		end := start + batchSize
+		if end > len(fingerprints) {
+			end = len(fingerprints)
+		}
+		batch := fingerprints[start:end]
 
-	existing = make([]string, 0)
-	missing = make([]string, 0)
-
-	for _, fp := range fingerprints {
-		if existsMap[fp] {
-			existing = append(existing, fp)
-		} else {
-			missing = append(missing, fp)
+		existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, batch)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to check fingerprints: %w", err)
+		}
+		for _, fp := range batch {
+			if existsMap[fp] {
+				existing = append(existing, fp)
+			} else {
+				missing = append(missing, fp)
+			}
 		}
 	}
 

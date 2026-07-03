@@ -407,6 +407,23 @@ func (r *KEVRepository) UpsertBatch(ctx context.Context, entries []*threatintel.
 		return nil
 	}
 
+	// Dedup by CVE id before building the batch. A single INSERT ... ON CONFLICT
+	// (cve_id) DO UPDATE cannot touch the same conflict row twice — a chunk that
+	// contains a CVE id more than once (a malformed/duplicated feed row) would
+	// otherwise abort the WHOLE chunk with "ON CONFLICT DO UPDATE command cannot
+	// affect row a second time". Keep the last occurrence (upsert = last wins).
+	seen := make(map[string]int, len(entries))
+	deduped := make([]*threatintel.KEVEntry, 0, len(entries))
+	for _, e := range entries {
+		if idx, ok := seen[e.CVEID()]; ok {
+			deduped[idx] = e
+			continue
+		}
+		seen[e.CVEID()] = len(deduped)
+		deduped = append(deduped, e)
+	}
+	entries = deduped
+
 	// Build bulk upsert query
 	valueStrings := make([]string, 0, len(entries))
 	valueArgs := make([]interface{}, 0, len(entries)*10)

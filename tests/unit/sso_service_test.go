@@ -667,6 +667,8 @@ func (m *ssoMockEncryptor) DecryptString(encoded string) (string, error) {
 type ssoMockTenantMemberCreator struct {
 	createMembershipErr error
 	createCalls         int
+	membership          *tenant.Membership
+	membershipErr       error
 }
 
 func newSSOmockTenantMemberCreator() *ssoMockTenantMemberCreator {
@@ -679,6 +681,10 @@ func (m *ssoMockTenantMemberCreator) CreateMembership(_ context.Context, _ *tena
 		return m.createMembershipErr
 	}
 	return nil
+}
+
+func (m *ssoMockTenantMemberCreator) GetMembership(_ context.Context, _, _ shared.ID) (*tenant.Membership, error) {
+	return m.membership, m.membershipErr
 }
 
 // =============================================================================

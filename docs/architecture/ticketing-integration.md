@@ -151,13 +151,18 @@ own names via `config.ticketing`.
     "severity_to_priority": { "critical": "P1", "high": "P2" },
     "status_inbound":  { "Shipped": "fix_applied", "QA": "in_progress" },
     "sync_enabled":    true,
-    "status_outbound": { "resolved": "Done", "false_positive": "Won't Do", "in_progress": "In Dev" }
+    "status_outbound": { "resolved": "Done", "false_positive": "Won't Do", "in_progress": "In Dev" },
+    "routing": [
+      { "match": { "scope": ["external"], "severity": ["critical","high"] }, "project_key": "EXT", "issue_type": "Security Bug" },
+      { "match": { "tag": ["pci"] }, "project_key": "PCI" }
+    ]
 }}
 ```
 
 | Key | Direction | Meaning |
 |-----|-----------|---------|
-| `project_key` | create | **Default destination project** for tickets when the `create-ticket` request omits one. Empty = the request must pass `project_key`. |
+| `project_key` | create | **Default destination project** when the request omits one and no routing rule matches. Empty = the request must pass `project_key`. |
+| `routing` | create | Ordered rules selecting the destination project (+ optional `issue_type`) by finding/asset attributes — **first match wins**, falls through to `project_key`. See below. |
 | `sync_enabled` | outbound | Master switch for OpenCTEM→Jira status push. **Default `false`.** |
 | `status_outbound` | outbound | finding status → Jira status NAME. Unset finding status = no push; unreachable target = comment. Defaults cover stock Jira (To Do/In Progress/Done). |
 | `status_inbound` | inbound | Jira status name → finding status (overlays defaults; case-insensitive). |
@@ -168,9 +173,27 @@ own names via `config.ticketing`.
 > resolves `config.ticketing` and uses it for the destination project
 > (`project_key`), issue type, and severity→priority — instead of the previous
 > hardcoded `Bug` + stock priority table. With no config the defaults reproduce
-> the original behavior exactly. Destination resolution: explicit
-> request `project_key` → tenant default `project_key` → else a validation error
-> (we never guess where a ticket goes).
+> the original behavior exactly. **Destination resolution order:** explicit
+> request `project_key` → first matching **routing** rule → tenant default
+> `project_key` → else a validation error (we never guess where a ticket goes).
+
+#### Routing rules
+
+`routing` is how "each Jira project = a team / business unit" is expressed
+**without making a project an asset**. Each rule has a `match` block and a
+target `project_key` (+ optional `issue_type`):
+
+- **Conditions** — `severity`, `tag` (finding-level); `scope`, `criticality`,
+  `asset_group` (asset-level). Each accepts a string or array; values are
+  case-insensitive. Within a condition values are **OR**'d; across conditions
+  they are **AND**'d; an omitted condition is a wildcard.
+- **Order matters** — the first matching rule wins; put the most specific rules
+  first. A rule with no `project_key` is dropped (it could never route).
+- **Asset attributes** (`scope`/`criticality`) come from the finding's asset via
+  `AssetRouteResolver` (`internal/infra/jira/asset_route_resolver.go`). The
+  `asset_group` dimension is parsed and matchable but **not yet populated** by
+  the resolver (group-membership wiring is a follow-up) — use `scope`/
+  `criticality`/`severity`/`tag` today.
 
 > Inbound never auto-applies `false_positive`/`accepted` (they require approval),
 > and every Jira "done"-like status maps to `fix_applied` (not `resolved`, which
@@ -184,11 +207,29 @@ own names via `config.ticketing`.
 |-------|-------|--------|
 | 0 | Per-tenant client resolver | **Done** (#137, ui#152) |
 | 1 | `MappingConfig` type + defaults (zero behaviour change) | **Done** (mapping.go) |
-| 2 | Configurable mapping (`status_outbound`/`status_inbound`/`sync_enabled`) per integration + UI editor | **Done** (#168, ui#170) |
-| 2b | Wire mapping into **create** (project/issue-type/priority) + default project + project picker | **Done** |
+| 2 | Configurable mapping (`status_outbound`/`status_inbound`/`sync_enabled`) backend + UI editor | **Done** (#168 backend; UI in ui#193) |
+| 2b | Wire mapping into **create** (project/issue-type/priority) + default project + project picker | **Done** (#207, ui#184) |
 | 3 | Outbound status sync (asynq + echo-guard, opt-in) | **Done** (#167, #171) |
-| 4a | Routing rules (asset scope/criticality/severity → project_key) | Planned |
+| 4a | Routing rules (severity/tag/asset scope/criticality → project_key) | **Done** (#209; UI in ui#189; asset_group dimension deferred) |
 | 4b | 2nd provider (ServiceNow/GitHub) + typed `ticket_links` table | Planned (optional) |
+
+### UI surfaces (shipped)
+
+The full operator UI is in the `ui` repo:
+
+| Surface | Where | PR |
+|---------|-------|-----|
+| Connect Jira (base URL + email + token) | Settings → Integrations → Ticketing | ui#152 |
+| **Default project picker** (lists `GET /integrations/jira/projects`) + sync toggle | Configure dialog | ui#184 |
+| **Mapping editor** (issue type, default priority, severity→priority, outbound status names) | Configure dialog | ui#193 |
+| **Routing rules editor** (severity/scope/criticality/tag → project) | "Routing" dialog on the integration card | ui#189 |
+| **Create ticket from a finding** | findings table row menu + finding **detail drawer** | ui#189 (row), ui#192 (drawer) |
+
+> Note: an earlier roadmap entry credited a `ui#170` mapping editor that was never
+> actually merged to `develop`; the real mapping/create-ticket/routing UI landed in
+> ui#184/#189/#192/#193 (some recovered from a stacked-PR mishap — see git history).
+> Inbound status-name mapping editor (arbitrary Jira status → finding status) is the
+> one remaining UI gap; stock-Jira inbound defaults cover the common case.
 
 Related future work (its own RFC): **Jira Assets / JSM CMDB** — pull asset
 business-context to enrich prioritization, push discovered assets, link CI
@@ -205,6 +246,7 @@ internal/app/jira/mapping.go                   MappingConfig (severity/status ma
 internal/infra/jira/client.go                 Jira REST client (CreateIssue/GetIssueStatus/
                                               GetTransitions/DoTransition/AddComment/TransitionToStatus/ListProjects)
 internal/infra/jira/resolver.go               IntegrationClientResolver: ClientResolver + MappingResolver + adapter
+internal/infra/jira/asset_route_resolver.go   AssetRouteResolver: asset scope/criticality for routing rules
 internal/infra/jobs/jira_sync_tasks.go        asynq task + handler for outbound status sync
 internal/infra/http/handler/jira_webhook_handler.go   create-ticket + inbound webhook
 internal/app/finding/vulnerability_service.go  UpdateFindingStatus → enqueue outbound sync (SetJiraStatusSyncHook)

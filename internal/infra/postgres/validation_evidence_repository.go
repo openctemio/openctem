@@ -58,6 +58,41 @@ func (r *ValidationEvidenceRepository) Create(ctx context.Context, ev validation
 	return nil
 }
 
+// CoverageBySeverity returns, per severity band, the total findings and how
+// many have at least one validation evidence record (tenant-scoped). Drives the
+// validation coverage KPI. Findings with no severity are grouped under "".
+func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error) {
+	const q = `
+		SELECT f.severity,
+		       COUNT(DISTINCT f.id)            AS total,
+		       COUNT(DISTINCT ve.finding_id)   AS validated
+		  FROM findings f
+		  LEFT JOIN validation_evidence ve
+		         ON ve.tenant_id = f.tenant_id AND ve.finding_id = f.id
+		 WHERE f.tenant_id = $1
+		 GROUP BY f.severity
+		 ORDER BY f.severity
+	`
+	rows, err := r.db.QueryContext(ctx, q, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("query validation coverage: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []validation.SeverityCoverage
+	for rows.Next() {
+		var sc validation.SeverityCoverage
+		if err := rows.Scan(&sc.Severity, &sc.Total, &sc.Validated); err != nil {
+			return nil, fmt.Errorf("scan validation coverage: %w", err)
+		}
+		out = append(out, sc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate validation coverage: %w", err)
+	}
+	return out, nil
+}
+
 // ListByFinding returns every evidence row for a finding, newest first, scoped
 // to the tenant.
 func (r *ValidationEvidenceRepository) ListByFinding(ctx context.Context, tenantID, findingID shared.ID) ([]validation.StoredEvidence, error) {

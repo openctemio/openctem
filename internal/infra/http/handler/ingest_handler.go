@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/infra/adapters"
 	"github.com/openctemio/api/internal/infra/adapters/core"
+	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/agent"
@@ -262,6 +263,18 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 
 		// Add agent to context
 		ctx := context.WithValue(r.Context(), agentContextKey, agt)
+		// Expose the authenticated agent's tenant to tenant-keyed
+		// middleware that runs later in the chain (ingest/telemetry
+		// rate limiters). Agent API-key auth is the tenant-binding
+		// authority on these routes; without this the per-tenant rate
+		// limiters key on an empty string and pass through every
+		// request — the "compromised key replays at line rate" abuse
+		// the limiters exist to stop. Platform agents (nil tenant)
+		// are rejected by the per-handler nil-tenant guards before
+		// they act, so we only need the common tenant-bound case here.
+		if agt.TenantID != nil {
+			ctx = context.WithValue(ctx, middleware.TenantIDKey, agt.TenantID.String())
+		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -270,6 +283,30 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 func AgentFromContext(ctx context.Context) *agent.Agent {
 	agt, _ := ctx.Value(agentContextKey).(*agent.Agent)
 	return agt
+}
+
+// requireAgentTenant verifies the authenticated agent carries tenant context,
+// writing a 403 and returning false for platform agents (tenant_id NULL) that
+// have no business performing these tenant-scoped operations. Mirrors the
+// scansession handler's guard and prevents a nil-pointer deref of
+// agt.TenantID (recovered as a 500) on the command / telemetry / chunk-ingest
+// paths. Callers must return immediately when it returns false.
+func requireAgentTenant(w http.ResponseWriter, agt *agent.Agent) bool {
+	if agt.TenantID == nil {
+		apierror.Forbidden("Platform agents require tenant context for this operation").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// agentTenantString returns the agent's tenant ID as a string, or "" when the
+// agent has no tenant (platform agent). For informational log/response fields
+// where a missing tenant must not panic.
+func agentTenantString(agt *agent.Agent) string {
+	if agt == nil || agt.TenantID == nil {
+		return ""
+	}
+	return agt.TenantID.String()
 }
 
 // WorkerFromContext is an alias for AgentFromContext for backward compatibility.
@@ -559,7 +596,7 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]interface{}{
 		"status":    "ok",
 		"agent_id":  agt.ID.String(),
-		"tenant_id": agt.TenantID.String(),
+		"tenant_id": agentTenantString(agt), // "" for tenant-less platform agents
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -694,6 +731,9 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+	if !requireAgentTenant(w, agt) {
 		return
 	}
 

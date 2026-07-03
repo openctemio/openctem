@@ -379,3 +379,37 @@ func TestEvaluateRules(t *testing.T) {
 		assert.Equal(t, "p1", results[0].Options.SetFindingPriority)
 	})
 }
+
+// EvaluateRules must resolve the finding's asset type so AssetTypes-scoped rules
+// can match — before the resolver was wired, such rules never fired.
+func TestEvaluateRules_AssetTypeCondition_NeedsResolver(t *testing.T) {
+	log := logger.NewNop()
+	tenantID := shared.NewID()
+	groupID := shared.NewID()
+	rule := makeRule(t, tenantID, groupID,
+		accesscontrol.AssignmentConditions{AssetTypes: []string{"domain"}},
+		accesscontrol.AssignmentOptions{})
+	repo := &mockACRepo{rules: []*accesscontrol.AssignmentRule{rule}}
+	finding := newTestFinding(t, vulnerability.SeverityHigh, "semgrep",
+		vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability)
+
+	// No resolver → an AssetTypes rule cannot match (the regression this fixes).
+	res, err := NewEngine(repo, log).EvaluateRules(context.Background(), tenantID, finding)
+	require.NoError(t, err)
+	assert.Empty(t, res, "AssetTypes rule must not match without a resolver")
+
+	// Resolver returning the matching type → the rule fires.
+	e := NewEngine(repo, log)
+	e.SetAssetTypeResolver(func(context.Context, shared.ID, shared.ID) (string, error) { return "domain", nil })
+	res, err = e.EvaluateRules(context.Background(), tenantID, finding)
+	require.NoError(t, err)
+	require.Len(t, res, 1)
+	assert.Equal(t, groupID, res[0].GroupID)
+
+	// Resolver returning a different type → no match.
+	e2 := NewEngine(repo, log)
+	e2.SetAssetTypeResolver(func(context.Context, shared.ID, shared.ID) (string, error) { return "repository", nil })
+	res, err = e2.EvaluateRules(context.Background(), tenantID, finding)
+	require.NoError(t, err)
+	assert.Empty(t, res)
+}

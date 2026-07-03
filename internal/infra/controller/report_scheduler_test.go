@@ -51,10 +51,19 @@ func (f *fakeEmailer) SendReport(_ context.Context, _ string, to []string, _, _ 
 
 func newSchedule(t *testing.T, reportType, cron string, recipients ...string) *reportschedule.ReportSchedule {
 	t.Helper()
-	s, err := reportschedule.NewReportSchedule(shared.NewID(), "Weekly", reportType, "html", cron)
-	if err != nil {
-		t.Fatalf("NewReportSchedule: %v", err)
-	}
+	// Reconstitute (not NewReportSchedule) so these scheduler tests can build
+	// schedules with intentionally-invalid report_type/cron — simulating rows
+	// already persisted (e.g. created before validation existed) — to exercise
+	// the scheduler's defensive runtime handling. Creation-time validation lives
+	// in NewReportSchedule and is covered by entity_validation_test.go.
+	now := time.Now()
+	s := reportschedule.ReconstituteReportSchedule(
+		shared.NewID(), shared.NewID(),
+		"Weekly", reportType, "html",
+		map[string]any{}, nil, "email", nil,
+		cron, "UTC", true,
+		nil, nil, "", 0, nil, now, now,
+	)
 	rs := make([]reportschedule.Recipient, 0, len(recipients))
 	for _, e := range recipients {
 		rs = append(rs, reportschedule.Recipient{Email: e})
@@ -130,8 +139,9 @@ func TestReportScheduler_UnsupportedType_Skips(t *testing.T) {
 }
 
 func TestReportScheduler_BadCron_FallsBackTo24h(t *testing.T) {
-	// NewReportSchedule allows any non-empty cron; an unparseable one must not
-	// stall the schedule — next run defaults to +24h.
+	// A schedule already persisted with an unparseable cron (validation now
+	// rejects these at creation, but older rows may exist) must not stall the
+	// scheduler — next run defaults to +24h.
 	s := newSchedule(t, "executive_summary", "not a cron", "x@acme.com")
 	store := &fakeStore{due: []*reportschedule.ReportSchedule{s}}
 	em := &fakeEmailer{configured: true}

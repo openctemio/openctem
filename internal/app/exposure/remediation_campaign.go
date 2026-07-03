@@ -423,7 +423,15 @@ func (s *RemediationCampaignService) recomputeProgress(ctx context.Context, camp
 
 	base := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
 
-	total, err := s.finding.Count(ctx, base)
+	// The denominator must be the WHOLE campaign scope regardless of status, so
+	// it stays stable as findings resolve. If the campaign filter pinned a
+	// status (e.g. status=open), counting `total` against it while counting
+	// `resolved` against the closed statuses made the two sets DISJOINT — as
+	// findings moved open→closed, total shrank while resolved grew, so
+	// resolved/total exceeded 100% and TryAutoComplete could fire prematurely.
+	totalFilter := base
+	totalFilter.Statuses = nil
+	total, err := s.finding.Count(ctx, totalFilter)
 	if err != nil {
 		return false, fmt.Errorf("count campaign findings: %w", err)
 	}

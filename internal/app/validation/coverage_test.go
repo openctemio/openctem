@@ -96,3 +96,19 @@ func TestEnforce_ZeroTotalIsTriviallyMet(t *testing.T) {
 		t.Fatalf("empty cycle must pass: %v", err)
 	}
 }
+
+func TestSeverityCoverage_Pct(t *testing.T) {
+	cases := []struct {
+		sc   SeverityCoverage
+		want float64
+	}{
+		{SeverityCoverage{Severity: "high", Total: 0, Validated: 0}, 0},
+		{SeverityCoverage{Severity: "high", Total: 4, Validated: 1}, 25},
+		{SeverityCoverage{Severity: "critical", Total: 2, Validated: 2}, 100},
+	}
+	for _, c := range cases {
+		if got := c.sc.Pct(); got != c.want {
+			t.Errorf("%s: Pct()=%v want %v", c.sc.Severity, got, c.want)
+		}
+	}
+}

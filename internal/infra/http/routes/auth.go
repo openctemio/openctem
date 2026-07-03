@@ -95,11 +95,18 @@ func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddl
 			r.POST("/sso/{provider}/callback", ssoCallbackHandler.ServeHTTP)
 		}
 
-		// SAML 2.0 SP metadata (public) — the admin registers this with their IdP.
-		// SP-initiated login + ACS (9e) land here in a follow-up.
+		// SAML 2.0 SP endpoints (public). Metadata is registered with the IdP;
+		// login starts SP-initiated auth; ACS receives the IdP's signed response.
 		if h.SAML != nil {
 			samlMetadata := ChainFunc(h.SAML.Metadata, loginRL)
 			r.GET("/saml/{org}/metadata", samlMetadata.ServeHTTP)
+			samlLogin := ChainFunc(h.SAML.Login, loginRL)
+			r.GET("/saml/{org}/login", samlLogin.ServeHTTP)
+			// ACS is a cross-site top-level POST from the IdP — it carries the
+			// signed SAML assertion (validated server-side), not a CSRF-token
+			// form, so it must not sit behind the CSRF middleware.
+			samlACS := ChainFunc(h.SAML.ACS, loginRL)
+			r.POST("/saml/{org}/acs", samlACS.ServeHTTP)
 		}
 	})
 }

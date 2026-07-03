@@ -247,6 +247,9 @@ type Services struct {
 	// recorded by agents, reconciling finding status from the outcome.
 	ValidationEvidence *validation.EvidenceIngestService
 
+	// ValidationRun dispatches validation (safe-check) jobs for findings.
+	ValidationRun *validation.RunService
+
 	// Threat Actor Intelligence
 	ThreatActor *threat.ActorService
 
@@ -378,6 +381,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
+	// Wire the KEV/critical finding counter for exposure-chain analysis.
+	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.AssetImport = app.NewAssetImportService(repos.Asset, log)
@@ -532,6 +537,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		nil, // retest notifier: optional; status revert still happens without it
 		log,
 	)
+	// Producer side: dispatch a safe-check validation job for a finding. The
+	// agent runs the probe and reports back; the command-completion hook maps
+	// the result into evidence via ValidationEvidence above.
+	s.ValidationRun = validation.NewRunService(
+		repos.Finding,
+		repos.Asset,
+		validation.NewCommandDispatcher(repos.Command, log),
+		validation.DefaultSelector{},
+		[]validation.ExecutorKind{validation.KindSafeCheck},
+		log,
+	)
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
@@ -606,6 +622,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetClientResolver(jiraResolver)
 	// Same resolver also surfaces the per-tenant status maps for outbound sync.
 	s.JiraSync.SetMappingResolver(jiraResolver)
+	// Routing rules can match on a finding's asset scope/criticality — resolve
+	// that context from the asset repository.
+	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
 	// here (JiraSync is created after the campaign service above).
@@ -863,6 +882,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize assignment engine and wire to vulnerability service for auto-routing
 	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)
+	// Resolve a finding's asset type so rules scoped by AssetTypes can match
+	// (without this, such rules never fire).
+	assignmentEngine.SetAssetTypeResolver(func(ctx context.Context, tenantID, assetID shared.ID) (string, error) {
+		a, err := repos.Asset.GetByID(ctx, tenantID, assetID)
+		if err != nil {
+			return "", err
+		}
+		return a.Type().String(), nil
+	})
 	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
 
 	// Wire engine and finding repo to assignment rule service for TestRule

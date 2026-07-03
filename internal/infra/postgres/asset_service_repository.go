@@ -377,7 +377,11 @@ func (r *AssetServiceRepository) UpsertBatch(ctx context.Context, services []*as
 			created_at, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
-		ON CONFLICT (tenant_id, asset_id, port, protocol)
+		-- conflict target must match the actual unique constraint
+		-- unique_asset_service (asset_id, port, protocol) (migration 000009).
+		-- The previous (tenant_id, asset_id, port, protocol) matched no index,
+		-- so any call aborted with "no unique/exclusion constraint matching".
+		ON CONFLICT (asset_id, port, protocol)
 		DO UPDATE SET
 			name = EXCLUDED.name,
 			service_type = EXCLUDED.service_type,

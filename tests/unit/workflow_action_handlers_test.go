@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/api/internal/app"
@@ -392,7 +393,9 @@ func TestWfActionFinding_AssignUser_ServiceError(t *testing.T) {
 // FindingActionHandler — assignTeam
 // =============================================================================
 
-func TestWfActionFinding_AssignTeam_Success(t *testing.T) {
+// assign_team is not wired to a real service; it must fail loudly rather than
+// report a false success (was {"assigned": true}).
+func TestWfActionFinding_AssignTeam_NotImplemented(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
 	h := app.NewFindingActionHandler(vulnSvc, log)
@@ -408,14 +411,11 @@ func TestWfActionFinding_AssignTeam_Success(t *testing.T) {
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "not implemented") {
+		t.Fatalf("expected 'not implemented' error, got err=%v out=%v", err, out)
 	}
-	if out["assigned"] != true {
-		t.Errorf("expected assigned=true, got %v", out["assigned"])
-	}
-	if out["team_id"] != teamID.String() {
-		t.Errorf("expected team_id=%s, got %v", teamID.String(), out["team_id"])
+	if out != nil {
+		t.Errorf("expected nil result alongside error, got %v", out)
 	}
 }
 
@@ -459,7 +459,8 @@ func TestWfActionFinding_AssignTeam_MissingTeamID(t *testing.T) {
 // FindingActionHandler — updatePriority
 // =============================================================================
 
-func TestWfActionFinding_UpdatePriority_Success(t *testing.T) {
+// update_priority is not wired to a real service; it must fail loudly.
+func TestWfActionFinding_UpdatePriority_NotImplemented(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
 	h := app.NewFindingActionHandler(vulnSvc, log)
@@ -474,14 +475,11 @@ func TestWfActionFinding_UpdatePriority_Success(t *testing.T) {
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "not implemented") {
+		t.Fatalf("expected 'not implemented' error, got err=%v out=%v", err, out)
 	}
-	if out["updated"] != true {
-		t.Errorf("expected updated=true, got %v", out["updated"])
-	}
-	if out["priority"] != "high" {
-		t.Errorf("expected priority=high, got %v", out["priority"])
+	if out != nil {
+		t.Errorf("expected nil result alongside error, got %v", out)
 	}
 }
 
@@ -993,7 +991,9 @@ func TestWfActionPipeline_UnsupportedAction(t *testing.T) {
 // TicketActionHandler — createTicket
 // =============================================================================
 
-func TestWfActionTicket_CreateTicket_Success(t *testing.T) {
+// create_ticket is not wired to the integration service; it must fail loudly
+// rather than report {"created": true} without filing anything.
+func TestWfActionTicket_CreateTicket_NotImplemented(t *testing.T) {
 	log := logger.NewNop()
 	h := app.NewTicketActionHandler(nil, log)
 
@@ -1009,17 +1009,11 @@ func TestWfActionTicket_CreateTicket_Success(t *testing.T) {
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "not implemented") {
+		t.Fatalf("expected 'not implemented' error, got err=%v out=%v", err, out)
 	}
-	if out["created"] != true {
-		t.Errorf("expected created=true, got %v", out["created"])
-	}
-	if out["title"] != "Fix SQL Injection" {
-		t.Errorf("expected title=Fix SQL Injection, got %v", out["title"])
-	}
-	if out["action"] != "create_ticket" {
-		t.Errorf("expected action=create_ticket, got %v", out["action"])
+	if out != nil {
+		t.Errorf("expected nil result alongside error, got %v", out)
 	}
 }
 
@@ -1057,7 +1051,8 @@ func TestWfActionTicket_CreateTicket_MissingTitle(t *testing.T) {
 // TicketActionHandler — updateTicket
 // =============================================================================
 
-func TestWfActionTicket_UpdateTicket_Success(t *testing.T) {
+// update_ticket is not wired to the integration service; it must fail loudly.
+func TestWfActionTicket_UpdateTicket_NotImplemented(t *testing.T) {
 	log := logger.NewNop()
 	h := app.NewTicketActionHandler(nil, log)
 
@@ -1071,14 +1066,11 @@ func TestWfActionTicket_UpdateTicket_Success(t *testing.T) {
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "not implemented") {
+		t.Fatalf("expected 'not implemented' error, got err=%v out=%v", err, out)
 	}
-	if out["updated"] != true {
-		t.Errorf("expected updated=true, got %v", out["updated"])
-	}
-	if out["ticket_id"] != "SEC-123" {
-		t.Errorf("expected ticket_id=SEC-123, got %v", out["ticket_id"])
+	if out != nil {
+		t.Errorf("expected nil result alongside error, got %v", out)
 	}
 }
 
@@ -1305,33 +1297,6 @@ func TestWfAction_RegisterAllActionHandlersWithAI_AllNil(t *testing.T) {
 // =============================================================================
 // Edge-case: unsupported priority (update_priority passes any string through)
 // =============================================================================
-
-func TestWfActionFinding_UpdatePriority_AnyStringIsAccepted(t *testing.T) {
-	// The handler does not validate the priority value — it accepts any non-empty string.
-	vulnSvc, findingRepo := newWfActionVulnService()
-	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
-
-	tenantID := shared.NewID()
-	f := newWfActionTestFinding(tenantID, nil)
-	findingRepo.addFinding(f)
-
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdatePriority, map[string]any{
-		"finding_id": f.ID().String(),
-		"priority":   "banana",
-	}, nil)
-
-	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error for arbitrary priority string, got %v", err)
-	}
-	if out["priority"] != "banana" {
-		t.Errorf("expected priority=banana, got %v", out["priority"])
-	}
-}
-
-
-
 
 
 func (m *wfActionMockFindingRepo) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
