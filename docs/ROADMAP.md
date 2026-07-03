@@ -1,7 +1,7 @@
 # OpenCTEM — Project Assessment & Roadmap
 
 > Living strategic doc: where the platform stands, where it's strong, and the
-> prioritized work to make it best-in-class. Updated 2026-06-12.
+> prioritized work to make it best-in-class. Updated 2026-07-03.
 
 ## 1. What OpenCTEM is
 
@@ -24,6 +24,13 @@ back these up:
   gate, idempotent PR/MR comments + sticky summary, **new-vs-base** PR scoping.
 - **Mobilization**: bidirectional Jira sync (create + inbound + outbound status,
   opt-in, echo-safe), per-tenant configurable status maps.
+- **Validation** is now real (RFC-011): `POST /findings/{id}/validate` dispatches
+  a non-intrusive safe-check platform job → agent probe → result mapped to
+  validation evidence → finding status reconciliation + coverage KPI. The "V" in
+  CTEM is no longer a fake in-process heuristic.
+- **Enterprise SSO**: SAML SP-initiated login + ACS (signature/condition/replay
+  validated), SCIM user+group provisioning, and EntraID OIDC id_token/nonce
+  verification all shipped (RFC-009).
 - **Reliability**: transactional outbox + asynq queues, `FOR UPDATE SKIP LOCKED`,
   audit hash-chain, paired migrations, preflight-migrate gate.
 - **Code-level security**: across ~9 reviewer-passes only ~8 genuine bugs surfaced
@@ -34,16 +41,17 @@ back these up:
 The engine is strong; the **operator/management layer** that customers see weekly
 is thin:
 
-- **Reporting**: scheduler controller now runs `ListDue()` end-to-end (#177);
-  remaining gaps are PDF export and technical/compliance report generators.
-  *(Core scheduler done — see Tier 1.)*
+- **Reporting**: scheduler controller runs `ListDue()` end-to-end (#177) and PDF
+  export shipped (`pkg/report/pdf.go`); remaining gap is technical/compliance
+  report generators + KEV/EPSS/SLA breakdown in the digest.
+  *(Core scheduler + PDF done — see Tier 1.)*
 - **Remediation workflow**: findings can become Jira tickets, but there's no
   first-class *remediation campaign* (group findings → owner → deadline →
   progress) — the core Mobilization narrative. **This is the main open Tier-1
   item.**
 - **Ticketing breadth**: Jira only (provider abstraction exists, unused).
-- **Enterprise table-stakes**: no SSO/SAML; i18n framing exists (en/vi/ar
-  direction) but no translation layer wired.
+- **Enterprise table-stakes**: SSO/SAML/SCIM now shipped (RFC-009); the remaining
+  gap is i18n — framing exists (en/vi/ar direction) but no translation layer wired.
 - Operational debt: `.sc` active-IP accounting deferred; live Nessus REST only
   mock-verified; dependency drift between develop/main (self-healing via
   retargeted dependabot).
@@ -59,9 +67,9 @@ infrastructure, no product unknowns).
    now execute. Pieces delivered: generic exec-summary generator
    (`pkg/report.GenerateSummaryHTML`, #175) → `ReportScheduler` controller polling
    `ListDue` + rendering + email delivery + `RecordRun` + next-run via
-   `robfig/cron` (#177). *Remaining polish:* PDF export, technical/compliance
-   report generators, KEV/EPSS/SLA breakdown in the digest (needs extra queries —
-   `FindingStats` has no KEV/EPSS fields today).
+   `robfig/cron` (#177), plus PDF export (`pkg/report/pdf.go`). *Remaining polish:*
+   technical/compliance report generators, KEV/EPSS/SLA breakdown in the digest
+   (needs extra queries — `FindingStats` has no KEV/EPSS fields today).
 2. **Remediation Campaigns (`remediation_task`)** ⟵ **next** — group N findings
    into a task with owner / deadline / progress, **bidirectional Jira sync via the
    `WorkItem` seam already designed in RFC-006 Phase 3e**. Completes the
@@ -84,7 +92,9 @@ infrastructure, no product unknowns).
 
 ### Tier 3 — commercial foundation
 
-7. **SSO / SAML** — enterprise procurement table-stakes.
+7. **SSO / SAML** ✅ *(shipped, RFC-009)* — SAML SP login + ACS, SCIM
+   provisioning, EntraID OIDC id_token/nonce verification. Enterprise
+   procurement table-stakes now met.
 8. **i18n translation layer** — the direction/RTL scaffold exists; wire a real
    string catalog (notably for the vi market).
 9. **Compliance packs** — map findings → ISO 27001 / PCI / SOC2 controls
