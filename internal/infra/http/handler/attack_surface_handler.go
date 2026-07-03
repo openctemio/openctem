@@ -214,6 +214,33 @@ func (h *AttackSurfaceHandler) GetAttackPaths(w http.ResponseWriter, r *http.Req
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+// GetExposureChains handles GET /api/v1/attack-surface/exposure-chains.
+// It returns the concrete shortest attack chains from public entry points to
+// assets carrying open KEV or critical findings, ranked by urgency — the
+// "how the internet reaches a dangerous asset" view that plain reachability
+// scoring (GetAttackPaths) does not surface.
+func (h *AttackSurfaceHandler) GetExposureChains(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tenantIDStr := middleware.MustGetTenantID(ctx)
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID format").WriteJSON(w)
+		return
+	}
+
+	result, err := h.service.GetExposureChains(ctx, tenantID)
+	if err != nil {
+		h.logger.Error("failed to compute exposure chains", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
 // toStatsResponse converts service stats to API response.
 func (h *AttackSurfaceHandler) toStatsResponse(stats *attack.SurfaceStats) AttackSurfaceStatsResponse {
 	// Convert asset breakdown

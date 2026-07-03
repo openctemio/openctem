@@ -381,6 +381,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.ScopeSchedule, repos.Asset, log)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
+	// Wire the KEV/critical finding counter for exposure-chain analysis.
+	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.AssetImport = app.NewAssetImportService(repos.Asset, log)

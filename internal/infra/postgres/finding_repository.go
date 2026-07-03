@@ -2503,6 +2503,49 @@ func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, t
 	return updated, deduped, nil
 }
 
+// KEVCriticalCountsByAsset returns, per asset, the number of OPEN findings that
+// are in CISA-KEV and that are critical severity. Used by exposure-chain analysis
+// to identify which assets are worth reaching in an attack path. Tenant-scoped.
+func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenantID shared.ID) (kev, critical map[string]int, err error) {
+	query := `
+		SELECT asset_id,
+			COUNT(*) FILTER (WHERE is_in_kev) AS kev_count,
+			COUNT(*) FILTER (WHERE severity = 'critical') AS critical_count
+		FROM findings
+		WHERE tenant_id = $1
+			AND asset_id IS NOT NULL
+			AND status IN ('new','confirmed','in_progress')
+		GROUP BY asset_id
+		HAVING COUNT(*) FILTER (WHERE is_in_kev) > 0
+			OR COUNT(*) FILTER (WHERE severity = 'critical') > 0`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to count kev/critical findings by asset: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	kev = make(map[string]int)
+	critical = make(map[string]int)
+	for rows.Next() {
+		var assetID string
+		var kevCount, critCount int
+		if err := rows.Scan(&assetID, &kevCount, &critCount); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan kev/critical counts: %w", err)
+		}
+		if kevCount > 0 {
+			kev[assetID] = kevCount
+		}
+		if critCount > 0 {
+			critical[assetID] = critCount
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed iterating kev/critical counts: %w", err)
+	}
+	return kev, critical, nil
+}
+
 // CountOpenByAssetID returns the count of open findings for an asset.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (r *FindingRepository) CountOpenByAssetID(ctx context.Context, tenantID, assetID shared.ID) (int64, error) {

@@ -87,9 +87,10 @@ type SurfaceStatsData struct {
 
 // SurfaceService provides attack surface operations.
 type SurfaceService struct {
-	assetRepo asset.Repository
-	relRepo   asset.RelationshipRepository
-	logger    *logger.Logger
+	assetRepo   asset.Repository
+	relRepo     asset.RelationshipRepository
+	findingRisk FindingRiskCounter
+	logger      *logger.Logger
 }
 
 // NewSurfaceService creates a new SurfaceService.
@@ -99,6 +100,13 @@ func NewSurfaceService(assetRepo asset.Repository, relRepo asset.RelationshipRep
 		relRepo:   relRepo,
 		logger:    log.With("service", "attack_surface"),
 	}
+}
+
+// SetFindingRiskCounter wires the KEV/critical finding counter used by
+// exposure-chain analysis. Optional: without it, GetExposureChains returns an
+// empty result rather than failing.
+func (s *SurfaceService) SetFindingRiskCounter(c FindingRiskCounter) {
+	s.findingRisk = c
 }
 
 // GetAttackPathScores computes attack path scoring for the tenant.

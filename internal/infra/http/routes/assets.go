@@ -332,6 +332,9 @@ func registerAttackSurfaceRoutes(
 		// Attack path scoring — BFS reachability analysis from public entry points.
 		// Returns top assets ranked by composite path score (reachability × risk × criticality).
 		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead))
+		// Exposure chains — concrete shortest paths from public entry points to
+		// assets carrying KEV/critical findings, ranked by urgency.
+		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 
