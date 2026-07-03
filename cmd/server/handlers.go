@@ -300,7 +300,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
 		// Asset Dedup Review (RFC-001)
-		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, repos.Finding, log),
+		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
 
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),

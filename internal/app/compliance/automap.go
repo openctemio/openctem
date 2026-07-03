@@ -47,11 +47,13 @@ var cweToOWASP = map[string]string{
 	"CWE-327": "A02", "CWE-328": "A02", "CWE-916": "A02",
 	// A03 Injection
 	"CWE-79": "A03", "CWE-89": "A03", "CWE-78": "A03", "CWE-94": "A03",
-	"CWE-77": "A03", "CWE-90": "A03", "CWE-91": "A03", "CWE-611": "A03",
+	"CWE-77": "A03", "CWE-90": "A03", "CWE-91": "A03",
 	// A04 Insecure Design
 	"CWE-209": "A04", "CWE-256": "A04", "CWE-501": "A04", "CWE-657": "A04",
 	// A05 Security Misconfiguration
+	// CWE-611 (XXE) merged into A05:2021 (was its own A4:2017 category).
 	"CWE-16": "A05", "CWE-548": "A05", "CWE-732": "A05", "CWE-1004": "A05",
+	"CWE-611": "A05",
 	// A06 Vulnerable and Outdated Components
 	"CWE-937": "A06", "CWE-1035": "A06", "CWE-1104": "A06",
 	// A07 Identification and Authentication Failures
