@@ -2483,6 +2483,86 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 	return kev, critical, nil
 }
 
+// RecomputeFingerprintsForAsset recomputes and persists the fingerprint of every
+// finding currently pointing at assetID, using the CORRECT scheme per finding.
+//
+// Motivation: an asset merge repoints findings to the surviving asset with a raw
+// UPDATE (AssetDedupRepository.ApproveAndMerge) that does not recompute the
+// fingerprint. Every fingerprint scheme embeds the asset_id, so a repointed
+// finding keeps a stale fingerprint that never dedupes against future scans of
+// the surviving asset — accumulating duplicates.
+//
+// Two schemes coexist and must be recomputed differently (getting this wrong is
+// how a previous attempt corrupted data):
+//   - Ingested findings use the 64-char COMPOSITE sha256(asset_id + ":" + base).
+//     The base is persisted at ingest (FingerprintBaseKey) so we recompute
+//     CompositeFingerprint(keepID, base). Findings ingested before the base was
+//     persisted have no base to recompute from and are left untouched (skipped).
+//   - Manually-created findings use the 32-char Finding.GenerateFingerprint,
+//     which re-derives from the finding's fields + its (now updated) asset_id, so
+//     calling it again yields the correct value.
+//
+// On a UNIQUE(tenant_id, fingerprint) collision the repointed finding is the
+// duplicate and is deleted, keeping the pre-existing one. Idempotent.
+func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, tenantID, assetID shared.ID) (updated, deduped int, err error) {
+	// Read all findings for the asset up front so the mutations below do not
+	// shift pagination offsets mid-iteration.
+	var all []*vulnerability.Finding
+	page := pagination.Pagination{Page: 1, PerPage: 500}
+	for {
+		res, lerr := r.ListByAssetID(ctx, tenantID, assetID, vulnerability.FindingListOptions{}, page)
+		if lerr != nil {
+			return updated, deduped, fmt.Errorf("failed to list findings for fingerprint recompute: %w", lerr)
+		}
+		all = append(all, res.Data...)
+		if len(res.Data) == 0 || page.Page >= res.TotalPages {
+			break
+		}
+		page.Page++
+	}
+
+	for _, f := range all {
+		oldFP := f.Fingerprint()
+		newFP := recomputeFindingFingerprint(f, assetID.String())
+		if newFP == "" || newFP == oldFP {
+			continue
+		}
+		_, uerr := r.db.ExecContext(ctx,
+			`UPDATE findings SET fingerprint = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+			newFP, f.ID().String(), tenantID.String())
+		if uerr == nil {
+			updated++
+			continue
+		}
+		if !isUniqueViolation(uerr) {
+			return updated, deduped, fmt.Errorf("failed to update finding fingerprint: %w", uerr)
+		}
+		// A finding already occupies (tenant_id, newFP) on the surviving asset:
+		// this repointed finding is a duplicate — delete it, keep the existing.
+		if _, derr := r.db.ExecContext(ctx,
+			`DELETE FROM findings WHERE id = $1 AND tenant_id = $2`,
+			f.ID().String(), tenantID.String()); derr != nil {
+			return updated, deduped, fmt.Errorf("failed to delete duplicate finding after fingerprint collision: %w", derr)
+		}
+		deduped++
+	}
+	return updated, deduped, nil
+}
+
+// recomputeFindingFingerprint returns the correct fingerprint for f now that it
+// lives on keepAssetID, per the scheme it was created with, or "" when it cannot
+// be safely recomputed (a composite finding whose base was not persisted).
+func recomputeFindingFingerprint(f *vulnerability.Finding, keepAssetID string) string {
+	if base, ok := f.PartialFingerprints()[vulnerability.FingerprintBaseKey]; ok && base != "" {
+		return vulnerability.CompositeFingerprint(keepAssetID, base)
+	}
+	if len(f.Fingerprint()) == 32 {
+		// Manual scheme: re-derives from f.assetID (already updated to keepID) + fields.
+		return f.GenerateFingerprint()
+	}
+	return ""
+}
+
 // CountOpenByAssetID returns the count of open findings for an asset.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (r *FindingRepository) CountOpenByAssetID(ctx context.Context, tenantID, assetID shared.ID) (int64, error) {

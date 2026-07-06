@@ -1,12 +1,12 @@
 package ingest
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
 // =============================================================================
@@ -146,9 +146,7 @@ func buildCompositeKey(m map[string]any, keyFields []string) string {
 // This ensures findings are unique per-asset, preventing incorrect deduplication across assets.
 // Format: sha256(assetID + ":" + baseFingerprint)
 func createCompositeFingerprint(assetID, baseFingerprint string) string {
-	data := assetID + ":" + baseFingerprint
-	hash := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(hash[:])
+	return vulnerability.CompositeFingerprint(assetID, baseFingerprint)
 }
 
 // =============================================================================

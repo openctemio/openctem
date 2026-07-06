@@ -135,6 +135,7 @@ func (p *FindingProcessor) ProcessBatch(
 		assetID     shared.ID
 		branchID    *shared.ID // FK to asset_branches
 		fingerprint string
+		base        string // pre-composite base, persisted for post-merge recompute
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -206,8 +207,9 @@ func (p *FindingProcessor) ProcessBatch(
 			continue
 		}
 
-		// Generate fingerprint
-		fp := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
+		// Generate fingerprint (+ the base, persisted so the composite can be
+		// recomputed for a new asset_id after an asset merge).
+		fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
 
 		// Get branch ID for this asset (if available)
 		var branchID *shared.ID
@@ -221,6 +223,7 @@ func (p *FindingProcessor) ProcessBatch(
 			assetID:     targetAssetID,
 			branchID:    branchID,
 			fingerprint: fp,
+			base:        base,
 		})
 		fingerprints = append(fingerprints, fp)
 	}
@@ -256,7 +259,7 @@ func (p *FindingProcessor) ProcessBatch(
 				existingSnippets[fm.fingerprint] = fm.finding.Location.Snippet
 			}
 			// Build Finding from scan data for enrichment
-			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, cveMap)
+			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
 				existingNewData = append(existingNewData, newData)
 			} else {
@@ -264,7 +267,7 @@ func (p *FindingProcessor) ProcessBatch(
 				unenrichedFingerprints = append(unenrichedFingerprints, fm.fingerprint)
 			}
 		} else {
-			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, cveMap)
+			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
 				output.FindingsSkipped++
@@ -518,7 +521,10 @@ func (p *FindingProcessor) CheckFingerprints(
 // generateFindingFingerprint generates a fingerprint for a CTIS finding.
 // The fingerprint includes assetID to ensure findings are unique per-asset.
 // This prevents the same vulnerability on different assets from being deduplicated incorrectly.
-func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, tool *ctis.Tool) string {
+// It returns both the composite fingerprint (stored on the finding) and the
+// pre-composite base, so the base can be persisted (see FingerprintBaseKey) and
+// the composite recomputed for a new asset_id after an asset merge.
+func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, tool *ctis.Tool) (composite, base string) {
 	// Generate base fingerprint
 	var baseFingerprint string
 
@@ -576,7 +582,7 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 
 	// Create composite fingerprint including assetID
 	// This ensures the same vulnerability on different assets produces different fingerprints
-	return createCompositeFingerprint(assetID.String(), baseFingerprint)
+	return createCompositeFingerprint(assetID.String(), baseFingerprint), baseFingerprint
 }
 
 // buildFinding creates a Finding domain entity from a CTIS finding.
@@ -589,6 +595,7 @@ func (p *FindingProcessor) buildFinding(
 	report *ctis.Report,
 	ctisFinding *ctis.Finding,
 	fp string,
+	base string,
 	cveMap map[string]shared.ID,
 ) (*vulnerability.Finding, error) {
 	// Map severity
@@ -632,6 +639,12 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set core identifiers
 	f.SetFingerprint(fp)
+	// Persist the pre-composite base so the composite fingerprint can be
+	// recomputed for a new asset_id after an asset merge (the stored fingerprint
+	// embeds the old asset_id and would otherwise never dedupe post-merge).
+	if base != "" {
+		f.AddPartialFingerprint(vulnerability.FingerprintBaseKey, base)
+	}
 	f.SetAgentID(agentID)
 	f.SetScanID(report.Metadata.ID)
 	if branchID != nil {
