@@ -75,6 +75,10 @@ type OAuthService struct {
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
 	httpClient       *http.Client
+	// oidcVerifier validates the signed id_token for providers that return one
+	// (Microsoft/Entra), so identity is taken from verified claims rather than
+	// a mutable directory attribute. See getMicrosoftUserInfo.
+	oidcVerifier *oidcVerifier
 }
 
 // NewOAuthService creates a new OAuthService.
@@ -106,7 +110,8 @@ func NewOAuthService(
 		// config. Using SafeHTTPClient remains valuable: if a follow-
 		// redirect ever lands on a tenant-controlled host, the dialer
 		// refuses the connection instead of silently following.
-		httpClient: httpsec.SafeHTTPClient(30 * time.Second),
+		httpClient:   httpsec.SafeHTTPClient(30 * time.Second),
+		oidcVerifier: newOIDCVerifier(httpsec.SafeHTTPClient(30*time.Second), log),
 	}
 }
 
@@ -202,7 +207,7 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	}
 
 	// Get user info from provider
-	userInfo, err := s.getUserInfo(ctx, input.Provider, tokens.AccessToken)
+	userInfo, err := s.getUserInfo(ctx, input.Provider, tokens)
 	if err != nil {
 		s.logger.Error("failed to get user info", "provider", input.Provider, "error", err)
 		return nil, ErrOAuthUserInfoFailed
@@ -380,6 +385,7 @@ func (s *OAuthService) validateState(state string, expectedProvider OAuthProvide
 // OAuth token response.
 type oauthTokens struct {
 	AccessToken  string `json:"access_token"`
+	IDToken      string `json:"id_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in,omitempty"`
@@ -439,17 +445,24 @@ type OAuthUserInfo struct {
 	Email     string
 	Name      string
 	AvatarURL string
+	// Issuer + Subject are the immutable federated identity from a verified
+	// id_token (set for Microsoft). When present, the account is bound to and
+	// matched by this pair rather than the mutable email alone.
+	Issuer  string
+	Subject string
 }
 
 // getUserInfo fetches user information from the OAuth provider.
-func (s *OAuthService) getUserInfo(ctx context.Context, provider OAuthProvider, accessToken string) (*OAuthUserInfo, error) {
+func (s *OAuthService) getUserInfo(ctx context.Context, provider OAuthProvider, tokens *oauthTokens) (*OAuthUserInfo, error) {
 	switch provider {
 	case OAuthProviderGoogle:
-		return s.getGoogleUserInfo(ctx, accessToken)
+		return s.getGoogleUserInfo(ctx, tokens.AccessToken)
 	case OAuthProviderGitHub:
-		return s.getGitHubUserInfo(ctx, accessToken)
+		return s.getGitHubUserInfo(ctx, tokens.AccessToken)
 	case OAuthProviderMicrosoft:
-		return s.getMicrosoftUserInfo(ctx, accessToken)
+		// Identity comes from the signed id_token (verified below), NOT the
+		// mutable Graph `mail` attribute — see getMicrosoftUserInfo.
+		return s.getMicrosoftUserInfo(ctx, tokens.IDToken)
 	}
 	return nil, ErrInvalidProvider
 }
@@ -598,46 +611,68 @@ func (s *OAuthService) getGitHubPrimaryEmail(ctx context.Context, accessToken st
 	return "", errors.New("no verified email found")
 }
 
-// getMicrosoftUserInfo fetches user info from Microsoft Graph.
-func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, accessToken string) (*OAuthUserInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://graph.microsoft.com/v1.0/me", nil)
+// getMicrosoftUserInfo derives identity from the VERIFIED id_token, NOT the
+// mutable Microsoft Graph `mail` attribute.
+//
+// SECURITY (nOAuth): with the multi-tenant `/common` authority, any Entra tenant
+// can complete the flow, and a rogue tenant can set a user's `mail` to a
+// victim's address without owning the domain. Matching accounts on that value
+// was an account-takeover vector. We instead:
+//   - verify the id_token signature (Entra JWKS) + audience + issuer(+tid), and
+//   - require `xms_edov == true` ("email domain owner verified") before trusting
+//     the email — parity with the verified-email requirement already enforced
+//     for Google and GitHub. A domain can be verified in only one Entra tenant,
+//     so a domain-verified email is a reliable identifier.
+//
+// NOTE: `xms_edov` must be emitted by the app registration (optional claim). If
+// it is absent the login is refused, fail-closed, rather than trusting an
+// unverified email. The immutable (issuer, subject) is also returned so the
+// account can be bound to the IdP identity.
+func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string) (*OAuthUserInfo, error) {
+	if strings.TrimSpace(idToken) == "" {
+		return nil, errors.New("microsoft login returned no id_token (the 'openid' scope is required)")
+	}
+	cfg := s.getProviderConfig(OAuthProviderMicrosoft)
+	if cfg == nil {
+		return nil, ErrInvalidProvider
+	}
+
+	claims, err := s.oidcVerifier.verify(ctx, idToken, idTokenExpectations{
+		jwksURL:        "https://login.microsoftonline.com/common/discovery/v2.0/keys",
+		audience:       cfg.ClientID,
+		validateIssuer: entraIssuerValidator("common"),
+		skipNonce:      true, // code flow: id_token delivered server-to-server
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("microsoft id_token verification failed: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	resp, err := s.httpClient.Do(req)
+	info, err := microsoftUserInfoFromClaims(claims)
 	if err != nil {
+		s.logger.Warn("microsoft login blocked", "reason", err.Error(),
+			"email", claims.Email, "tid", claims.TID, "subject", claims.Subject)
 		return nil, err
 	}
-	defer resp.Body.Close()
+	return info, nil
+}
 
-	if resp.StatusCode != http.StatusOK {
-		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("failed to get user info: %s", string(body))
+// microsoftUserInfoFromClaims applies the nOAuth email-verification gate to
+// already-verified Entra id_token claims and maps them to OAuthUserInfo. It is
+// the security-critical mapping (the signature/issuer/audience checks are done
+// by oidcVerifier.verify), so it is a pure function to keep it unit-testable.
+func microsoftUserInfoFromClaims(claims *oidcClaims) (*OAuthUserInfo, error) {
+	if claims.XMSEdov == nil || !*claims.XMSEdov {
+		return nil, errors.New("email not verified by Microsoft (email domain not owner-verified)")
 	}
-
-	var data struct {
-		ID                string `json:"id"`
-		Mail              string `json:"mail"`
-		UserPrincipalName string `json:"userPrincipalName"`
-		DisplayName       string `json:"displayName"`
+	if strings.TrimSpace(claims.Email) == "" {
+		return nil, errors.New("microsoft id_token has no email claim")
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-
-	email := data.Mail
-	if email == "" {
-		email = data.UserPrincipalName
-	}
-
 	return &OAuthUserInfo{
-		ID:        data.ID,
-		Email:     email,
-		Name:      data.DisplayName,
-		AvatarURL: "", // Microsoft Graph requires additional call for photo
+		ID:      claims.Subject,
+		Email:   claims.Email,
+		Name:    claims.Name,
+		Issuer:  claims.Issuer,
+		Subject: claims.Subject,
 	}, nil
 }
 
@@ -669,6 +704,23 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			}
 		}
 
+		// Defense-in-depth: when the provider supplied a verified federated
+		// identity (issuer+subject from a signed id_token, e.g. Microsoft), pin
+		// the account to it. If already pinned, a DIFFERENT identity presenting
+		// the same email is rejected; otherwise bind it now (safe here — the
+		// email was domain-verified before we reached this point).
+		if userInfo.Issuer != "" && userInfo.Subject != "" {
+			if boundIss, boundSub := existingUser.FederatedIssuer(), existingUser.FederatedSubject(); boundIss != nil && boundSub != nil {
+				if *boundIss != userInfo.Issuer || *boundSub != userInfo.Subject {
+					s.logger.Warn("OAuth login blocked: federated identity mismatch for email",
+						"email", userInfo.Email, "oauth_provider", expectedProvider)
+					return nil, fmt.Errorf("this email is registered with a different login method")
+				}
+			} else {
+				existingUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
+			}
+		}
+
 		// Update last login
 		existingUser.UpdateLastLogin()
 		if err := s.userRepo.Update(ctx, existingUser); err != nil {
@@ -681,6 +733,9 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	newUser, err := userdom.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, provider.ToAuthProvider())
 	if err != nil {
 		return nil, err
+	}
+	if userInfo.Issuer != "" && userInfo.Subject != "" {
+		newUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
 	}
 
 	if err := s.userRepo.Create(ctx, newUser); err != nil {

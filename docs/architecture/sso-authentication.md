@@ -112,6 +112,34 @@ the provider returns no `id_token` (e.g. a tenant IdP configured without the
 remains the identity source; id_token validation is authenticity/replay
 hardening on top.
 
+## Global "Sign in with Microsoft" — nOAuth hardening (shipped)
+
+The global OAuth path (`oauth.go`) uses the multi-tenant `/common` authority, so
+**any** Entra tenant can complete the flow. Identity therefore comes from the
+**verified `id_token`**, never the mutable Microsoft Graph `mail` attribute — a
+rogue tenant can set a user's `mail` to a victim's address without owning the
+domain (the "nOAuth" account-takeover class).
+
+`getMicrosoftUserInfo` now:
+
+- verifies the `id_token` (signature via Entra JWKS, audience == `client_id`,
+  issuer `https://login.microsoftonline.com/{tid}/v2.0`; nonce is skipped only
+  here because the code-flow `id_token` is delivered server-to-server), and
+- **requires `xms_edov == true`** ("email domain owner verified") before trusting
+  the `email` claim — parity with the verified-email requirement already enforced
+  for Google and GitHub. A domain can be verified in exactly one Entra tenant, so
+  a domain-verified email is a reliable identifier. Absent/false ⇒ login refused.
+
+The account is also pinned to the immutable `(issuer, subject)`
+(`BindFederatedIdentity`); a different federated identity presenting the same
+email is rejected.
+
+> **Operator action required:** add the **`xms_edov`** optional claim (ID token)
+> to the app registration used for `OAUTH_MICROSOFT_*` (Azure portal → App
+> registration → Token configuration → Add optional claim → ID → `xms_edov`).
+> Without it, Microsoft logins are refused fail-closed rather than trusting an
+> unverified email.
+
 ## Known follow-ups (not yet shipped)
 
 - **SAML / SCIM** — not supported (only OIDC/OAuth). See `docs/IDEAS.md` §3.5.

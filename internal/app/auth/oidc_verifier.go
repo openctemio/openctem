@@ -58,10 +58,17 @@ func newOIDCVerifier(client *http.Client, log *logger.Logger) *oidcVerifier {
 type idTokenExpectations struct {
 	jwksURL  string
 	audience string // must equal the client_id used in the flow
-	nonce    string // must equal the id_token's nonce claim
+	nonce    string // must equal the id_token's nonce claim (unless skipNonce)
 	// validateIssuer is provider-specific because some issuers are
 	// tenant-dependent (e.g. Entra's issuer embeds the directory id).
 	validateIssuer func(issuer, tid string) error
+	// skipNonce omits the nonce check. Only safe for the authorization-code
+	// flow with a confidential client, where the id_token is delivered
+	// server-to-server from the token endpoint (never through the browser), so
+	// id_token injection — the attack nonce defends against — is not possible.
+	// The signature, audience, issuer and (for Entra) email-domain-verified
+	// checks still apply. NEVER set this for an implicit/hybrid or SSO flow.
+	skipNonce bool
 }
 
 // oidcClaims holds the standard + provider claims we read from an id_token.
@@ -69,6 +76,12 @@ type oidcClaims struct {
 	Nonce string `json:"nonce"`
 	TID   string `json:"tid"`
 	Email string `json:"email"`
+	Name  string `json:"name"`
+	// XMSEdov ("email domain owner verified") is Entra's signal that the email
+	// claim belongs to a domain the token's tenant has verified. It is the
+	// documented defense against the nOAuth class where a rogue tenant sets a
+	// user's mutable `mail` to a victim's address. nil/false ⇒ email untrusted.
+	XMSEdov *bool `json:"xms_edov"`
 	jwtv5.RegisteredClaims
 }
 
@@ -78,7 +91,7 @@ func (v *oidcVerifier) verify(ctx context.Context, idToken string, exp idTokenEx
 	if strings.TrimSpace(idToken) == "" {
 		return nil, errors.New("empty id_token")
 	}
-	if exp.nonce == "" {
+	if !exp.skipNonce && exp.nonce == "" {
 		return nil, errors.New("missing expected nonce")
 	}
 
@@ -100,9 +113,12 @@ func (v *oidcVerifier) verify(ctx context.Context, idToken string, exp idTokenEx
 	}
 
 	// Nonce binds the token to our authorize request (replay/injection guard).
-	// Constant-time to avoid leaking the nonce via comparison timing.
-	if subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(exp.nonce)) != 1 {
-		return nil, errors.New("id_token nonce mismatch")
+	// Constant-time to avoid leaking the nonce via comparison timing. Skipped
+	// only for the code flow (see idTokenExpectations.skipNonce).
+	if !exp.skipNonce {
+		if subtle.ConstantTimeCompare([]byte(claims.Nonce), []byte(exp.nonce)) != 1 {
+			return nil, errors.New("id_token nonce mismatch")
+		}
 	}
 
 	if exp.validateIssuer != nil {
