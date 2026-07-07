@@ -102,14 +102,18 @@ type AttackerProfile struct {
 // long-poll for jobs that match their advertised ExecutorKinds.
 // Result is delivered via POST /api/v1/validation/evidence.
 type ValidationJob struct {
-	JobID          shared.ID
-	TenantID       shared.ID
-	FindingID      shared.ID
-	ExecutorKind   ExecutorKind
-	Technique      TechniqueID
-	Target         Target
-	ProfileID      shared.ID
-	TimeoutSeconds int
+	JobID     shared.ID
+	TenantID  shared.ID
+	FindingID shared.ID
+	// SimulationRunID links this job to an attack-simulation run (RFC-012). A
+	// job carries a finding, a simulation run, or both; the completion hook
+	// reconciles whichever is present.
+	SimulationRunID shared.ID
+	ExecutorKind    ExecutorKind
+	Technique       TechniqueID
+	Target          Target
+	ProfileID       shared.ID
+	TimeoutSeconds  int
 }
 
 // ValidationDispatcher submits a job for an agent and returns the

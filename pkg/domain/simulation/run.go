@@ -112,3 +112,10 @@ func (r *SimulationRun) Fail(errMsg string) {
 func (r *SimulationRun) SetTriggeredBy(userID shared.ID) {
 	r.triggeredBy = &userID
 }
+
+// SetOutput attaches output metadata without changing the run's status. Used to
+// annotate a still-running run that has been dispatched to an agent (RFC-012),
+// before the async completion hook finalizes it.
+func (r *SimulationRun) SetOutput(output map[string]any) {
+	r.output = output
+}

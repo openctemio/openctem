@@ -93,6 +93,37 @@ func TestCommandDispatcher_Dispatch_RejectsZeroIDs(t *testing.T) {
 	}
 }
 
+// RFC-012: a job may carry a simulation run instead of a finding. The payload
+// then sets simulation_run_id and leaves finding_id empty.
+func TestCommandDispatcher_Dispatch_SimulationJob(t *testing.T) {
+	cc := &fakeCommandCreator{}
+	d := NewCommandDispatcher(cc, logger.NewNop())
+
+	simRun := shared.NewID()
+	job := ValidationJob{
+		JobID:           shared.NewID(),
+		TenantID:        shared.NewID(),
+		SimulationRunID: simRun,
+		ExecutorKind:    KindSafeCheck,
+		Technique:       "T1046",
+		Target:          Target{AssetID: shared.NewID(), Type: "domain", Address: "example.com"},
+	}
+	if _, err := d.Dispatch(context.Background(), job); err != nil {
+		t.Fatalf("Dispatch(simulation job): %v", err)
+	}
+
+	var p ValidateCommandPayload
+	if err := json.Unmarshal(cc.created.Payload, &p); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if p.SimulationRunID != simRun.String() {
+		t.Errorf("payload simulation_run_id = %q, want %q", p.SimulationRunID, simRun.String())
+	}
+	if p.FindingID != "" {
+		t.Errorf("payload finding_id = %q, want empty for a simulation job", p.FindingID)
+	}
+}
+
 func TestCommandDispatcher_Dispatch_PropagatesRepoError(t *testing.T) {
 	cc := &fakeCommandCreator{err: errors.New("db down")}
 	d := NewCommandDispatcher(cc, logger.NewNop())

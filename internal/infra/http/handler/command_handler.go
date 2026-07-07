@@ -27,11 +27,19 @@ type validationEvidenceIngester interface {
 	Ingest(ctx context.Context, tenantID, findingID shared.ID, simRunID *shared.ID, ev validation.Evidence) (validation.IngestResult, error)
 }
 
+// simulationRunFinalizer finalizes an attack-simulation run from a completed
+// safe-check command's outcome (RFC-012 Phase 1b). Implemented by
+// *compliance.SimulationService.
+type simulationRunFinalizer interface {
+	FinalizeRun(ctx context.Context, tenantID, runID shared.ID, outcome, summary string) error
+}
+
 // CommandHandler handles command-related HTTP requests.
 type CommandHandler struct {
 	service          *command.Service
 	pipelineService  *pipelinesvc.Service
 	validationIngest validationEvidenceIngester
+	simFinalizer     simulationRunFinalizer
 	validator        *validator.Validator
 	logger           *logger.Logger
 }
@@ -54,6 +62,12 @@ func (h *CommandHandler) SetPipelineService(svc *pipelinesvc.Service) {
 // completed validate command's result into finding evidence.
 func (h *CommandHandler) SetValidationIngest(svc validationEvidenceIngester) {
 	h.validationIngest = svc
+}
+
+// SetSimulationFinalizer wires the simulation-run finalizer used to complete a
+// running attack-simulation from a validate command's safe-check outcome.
+func (h *CommandHandler) SetSimulationFinalizer(svc simulationRunFinalizer) {
+	h.simFinalizer = svc
 }
 
 // CommandResponse represents a command in API responses.
@@ -400,8 +414,60 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	// Map a completed validation job's result into finding evidence.
 	h.triggerValidationEvidence(cmd)
 
+	// Finalize a running attack-simulation from a completed safe-check (RFC-012).
+	h.triggerSimulationFinalize(cmd)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+}
+
+// triggerSimulationFinalize finalizes a running attack-simulation run when the
+// completed validate command carries a simulation_run_id (RFC-012 Phase 1b).
+// The tenant is taken from the command (authoritative). Best-effort and
+// asynchronous; leaves the finding-evidence path (triggerValidationEvidence)
+// entirely untouched.
+func (h *CommandHandler) triggerSimulationFinalize(cmd *commanddom.Command) {
+	if h.simFinalizer == nil || cmd == nil || cmd.Type != commanddom.CommandTypeValidate {
+		return
+	}
+
+	var payload validation.ValidateCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || payload.SimulationRunID == "" {
+		return
+	}
+	runID, err := shared.IDFromString(payload.SimulationRunID)
+	if err != nil {
+		return
+	}
+
+	// Extract the verdict (top-level or nested under metadata — the SDK poller
+	// path), mirroring triggerValidationEvidence.
+	var result struct {
+		validation.ValidateResultPayload
+		Metadata validation.ValidateResultPayload `json:"metadata"`
+	}
+	if cmd.Result != nil {
+		_ = json.Unmarshal(cmd.Result, &result)
+	}
+	verdict := result.ValidateResultPayload
+	if verdict.Outcome == "" {
+		verdict = result.Metadata
+	}
+	if verdict.Outcome == "" {
+		h.logger.Warn("validate command for simulation completed without an outcome",
+			"command_id", cmd.ID.String(), "simulation_run_id", payload.SimulationRunID)
+		return
+	}
+
+	tenantID := cmd.TenantID
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.simFinalizer.FinalizeRun(bgCtx, tenantID, runID, verdict.Outcome, verdict.Summary); err != nil {
+			h.logger.Error("failed to finalize simulation run from safe-check",
+				"command_id", cmd.ID.String(), "simulation_run_id", payload.SimulationRunID, "error", err)
+		}
+	}()
 }
 
 // triggerValidationEvidence maps a completed CommandTypeValidate command's

@@ -77,6 +77,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetPipelineService(svc.Pipeline)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
+	commandHandler.SetSimulationFinalizer(svc.Simulation)
 
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
 	// (sync) leaves the handler processing reports in-request as before.

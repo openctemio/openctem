@@ -569,6 +569,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Persist simulation runs (previously the run repo was never wired, so every
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
+	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
+	// (network-addressable target + safe-checkable technique) runs for real via
+	// the validation dispatcher; the command-completion hook finalizes the run.
+	s.Simulation.SetSafeCheckDispatcher(s.ValidationRun)
 
 	// Validation (CTEM Stage-4): agents POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.

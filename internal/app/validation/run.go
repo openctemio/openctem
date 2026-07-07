@@ -155,3 +155,65 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 	)
 	return cmdID, nil
 }
+
+// DispatchSimulationCheck dispatches a real safe-check probe for an
+// attack-simulation run (RFC-012 Phase 1b). Unlike ValidateFinding it is not
+// finding-scoped: the job carries the simulation run id, and the completion
+// hook finalizes the run from the agent's outcome. Returns
+// ErrNotNetworkAddressable when the target asset cannot be reachability-probed,
+// or a selector error when the technique is not safe-checkable — in both cases
+// the caller falls back to the (clearly-labeled) synthetic path.
+func (s *RunService) DispatchSimulationCheck(ctx context.Context, tenantID, simRunID, assetID shared.ID, technique string) (shared.ID, error) {
+	if tenantID.IsZero() || simRunID.IsZero() || assetID.IsZero() {
+		return shared.ID{}, fmt.Errorf("%w: tenant, run and asset ids are required", shared.ErrValidation)
+	}
+
+	a, err := s.assets.GetByID(ctx, tenantID, assetID)
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("asset lookup: %w", err)
+	}
+	if !isNetworkAddressable(a.Type()) {
+		return shared.ID{}, ErrNotNetworkAddressable
+	}
+	address := strings.TrimSpace(a.Name())
+	if address == "" {
+		return shared.ID{}, fmt.Errorf("%w: asset has no address to validate against", shared.ErrValidation)
+	}
+
+	// Only dispatch when the simulation's technique is one the safe-check
+	// executor genuinely supports; otherwise let the caller fall back.
+	tech := TechniqueID(technique)
+	kind, err := s.selector.Select(tech, nil, s.available)
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("no safe-check executor for technique %s: %w", technique, err)
+	}
+
+	job := ValidationJob{
+		JobID:           shared.NewID(),
+		TenantID:        tenantID,
+		SimulationRunID: simRunID,
+		ExecutorKind:    kind,
+		Technique:       tech,
+		Target: Target{
+			AssetID: assetID,
+			Type:    a.Type().String(),
+			Address: address,
+		},
+		TimeoutSeconds: defaultTimeoutSeconds,
+	}
+
+	cmdID, err := s.dispatcher.Dispatch(ctx, job)
+	if err != nil {
+		return shared.ID{}, err
+	}
+
+	s.logger.Info("simulation safe-check dispatched",
+		"tenant_id", tenantID.String(),
+		"simulation_run_id", simRunID.String(),
+		"asset_id", assetID.String(),
+		"executor_kind", string(kind),
+		"technique", technique,
+		"command_id", cmdID.String(),
+	)
+	return cmdID, nil
+}
