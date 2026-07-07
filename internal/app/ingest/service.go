@@ -145,6 +145,13 @@ func (s *Service) SetSLAApplier(applier SLAApplier) {
 	s.findingProcessor.SetSLAApplier(applier)
 }
 
+// SetAssignmentApplier wires the post-insert group-routing applier so
+// scanner-ingested findings are auto-routed to groups via assignment rules.
+// Nil-safe: when not wired, findings are not auto-routed (prior behavior).
+func (s *Service) SetAssignmentApplier(applier AssignmentApplier) {
+	s.findingProcessor.SetAssignmentApplier(applier)
+}
+
 // =============================================================================
 // Main Ingestion Methods
 // =============================================================================

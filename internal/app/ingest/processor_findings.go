@@ -43,6 +43,12 @@ type FindingProcessor struct {
 	// Nil-safe: when not wired, findings get NULL sla_deadline as before.
 	slaApplier SLAApplier
 
+	// assignmentApplier routes created findings to groups via assignment rules.
+	// Runs POST-insert (FGA records need persisted finding IDs), unlike the
+	// pre-insert priority/SLA enrichers. Nil-safe: when unwired, scanner
+	// findings are not auto-routed (prior behavior).
+	assignmentApplier AssignmentApplier
+
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
 }
@@ -57,6 +63,14 @@ type PriorityClassifier interface {
 // the P0..P3 class drives the deadline (F3 invariant).
 type SLAApplier interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
+}
+
+// AssignmentApplier routes persisted findings to groups by evaluating the
+// tenant's assignment rules and bulk-creating finding→group records. Runs
+// POST-insert (the FGA foreign key needs persisted finding IDs). Implemented by
+// *assignment.BatchAssigner. Returns the number of assignments created.
+type AssignmentApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) (int, error)
 }
 
 // activityRecorder is the subset of FindingActivityService needed by the processor.
@@ -105,6 +119,12 @@ func (p *FindingProcessor) SetPriorityClassifier(classifier PriorityClassifier) 
 // as before (sla_deadline left NULL).
 func (p *FindingProcessor) SetSLAApplier(applier SLAApplier) {
 	p.slaApplier = applier
+}
+
+// SetAssignmentApplier wires the post-insert group-routing applier. Nil-safe:
+// when unwired, scanner findings are not auto-routed to groups.
+func (p *FindingProcessor) SetAssignmentApplier(applier AssignmentApplier) {
+	p.assignmentApplier = applier
 }
 
 // ProcessBatch processes all findings using batch operations.
@@ -378,6 +398,25 @@ func (p *FindingProcessor) ProcessBatch(
 				}
 				if len(createdFindings) > 0 {
 					p.findingCreatedCallback(ctx, tenantID, createdFindings)
+				}
+			}
+
+			// Step 4e: Route newly-created findings to groups via assignment
+			// rules (post-insert — FGA records need persisted finding IDs).
+			// Best-effort: a failure is logged and never aborts ingestion.
+			if p.assignmentApplier != nil && result.Created > 0 {
+				createdFindings := make([]*vulnerability.Finding, 0, result.Created)
+				for i, f := range newFindings {
+					if result.Errors == nil || result.Errors[i] == "" {
+						createdFindings = append(createdFindings, f)
+					}
+				}
+				if len(createdFindings) > 0 {
+					if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, createdFindings); err != nil {
+						p.logger.Warn("failed to auto-route findings to groups", "error", err, "count", len(createdFindings))
+					} else if assigned > 0 {
+						p.logger.Info("auto-routed findings to groups", "assignments", assigned)
+					}
 				}
 			}
 		}

@@ -1,6 +1,9 @@
 package accesscontrol
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // OwnershipType represents the type of asset ownership.
 type OwnershipType string
@@ -134,4 +137,26 @@ type AssignmentConditions struct {
 type AssignmentOptions struct {
 	NotifyGroup        bool   `json:"notify_group,omitempty"`
 	SetFindingPriority string `json:"set_finding_priority,omitempty"`
+}
+
+// PriorityRank maps SetFindingPriority to a finding rank score (0-100), or nil
+// when unset/unrecognized. Single source of truth for both the single-finding
+// (CreateFinding) and bulk-ingest assignment paths.
+func (o AssignmentOptions) PriorityRank() *float64 {
+	var rank float64
+	switch strings.ToLower(o.SetFindingPriority) {
+	case "critical":
+		rank = 90
+	case "high":
+		rank = 70
+	case "medium":
+		rank = 50
+	case "low":
+		rank = 30
+	case "info", "informational":
+		rank = 10
+	default:
+		return nil
+	}
+	return &rank
 }

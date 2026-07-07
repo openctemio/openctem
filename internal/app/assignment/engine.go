@@ -74,11 +74,67 @@ func (e *Engine) EvaluateRules(ctx context.Context, tenantID shared.ID, finding 
 		return nil, nil
 	}
 
+	needAssetType := e.assetTypeFor != nil && rulesNeedAssetType(rules)
+	results := e.matchRules(ctx, tenantID, finding, rules, needAssetType)
+
+	e.logger.Info("assignment rules evaluated",
+		"tenant_id", tenantID.String(),
+		"total_rules", len(rules),
+		"matched_groups", len(results),
+	)
+
+	return results, nil
+}
+
+// EvaluateBatch evaluates active assignment rules against many findings, listing
+// the tenant's rule set ONCE (vs once per finding in EvaluateRules). Returns a
+// map from finding ID to its matching results; findings with no match are
+// omitted. Used by the ingest path to route a whole scan batch efficiently.
+func (e *Engine) EvaluateBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) (map[shared.ID][]Result, error) {
+	if len(findings) == 0 {
+		return nil, nil
+	}
+
+	rules, err := e.acRepo.ListActiveRulesByPriority(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list assignment rules: %w", err)
+	}
+	if len(rules) == 0 {
+		return nil, nil
+	}
+
+	needAssetType := e.assetTypeFor != nil && rulesNeedAssetType(rules)
+	out := make(map[shared.ID][]Result, len(findings))
+	for _, f := range findings {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if f == nil {
+			continue
+		}
+		if results := e.matchRules(ctx, tenantID, f, rules, needAssetType); len(results) > 0 {
+			out[f.ID()] = results
+		}
+	}
+
+	e.logger.Info("assignment rules evaluated (batch)",
+		"tenant_id", tenantID.String(),
+		"total_rules", len(rules),
+		"findings", len(findings),
+		"matched_findings", len(out),
+	)
+	return out, nil
+}
+
+// matchRules evaluates a pre-listed rule set against one finding, resolving the
+// finding's asset type only when needAssetType is set. Shared by EvaluateRules
+// (single) and EvaluateBatch (bulk) so the matching logic stays in one place.
+func (e *Engine) matchRules(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding, rules []*accesscontrol.AssignmentRule, needAssetType bool) []Result {
 	// Resolve the finding's asset type ONCE, only when some rule actually filters
 	// by it — otherwise AssetTypes conditions can never match (they need the type
 	// and it isn't carried on the finding).
 	assetType := ""
-	if e.assetTypeFor != nil && rulesNeedAssetType(rules) {
+	if needAssetType {
 		if aid := finding.AssetID(); !aid.IsZero() {
 			if t, terr := e.assetTypeFor(ctx, tenantID, aid); terr == nil {
 				assetType = t
@@ -91,11 +147,7 @@ func (e *Engine) EvaluateRules(ctx context.Context, tenantID shared.ID, finding 
 
 	seen := make(map[shared.ID]struct{})
 	results := make([]Result, 0, len(rules))
-
 	for _, rule := range rules {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
 		if e.MatchesConditions(rule.Conditions(), finding, assetType) {
 			gid := rule.TargetGroupID()
 			if _, exists := seen[gid]; !exists {
@@ -114,14 +166,7 @@ func (e *Engine) EvaluateRules(ctx context.Context, tenantID shared.ID, finding 
 			}
 		}
 	}
-
-	e.logger.Info("assignment rules evaluated",
-		"tenant_id", tenantID.String(),
-		"total_rules", len(rules),
-		"matched_groups", len(results),
-	)
-
-	return results, nil
+	return results
 }
 
 // MatchesConditions checks if a finding matches the given conditions.

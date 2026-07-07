@@ -898,6 +898,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
 
+	// Close the auto-assign gap on bulk ingest: route scanner-created findings
+	// to groups post-insert, mirroring the single CreateFinding path. Lists
+	// rules once per batch (not per finding) and bulk-inserts the assignments.
+	s.Ingest.SetAssignmentApplier(assignment.NewBatchAssigner(assignmentEngine, repos.AccessControl, repos.Finding, log))
+
 	// Wire engine and finding repo to assignment rule service for TestRule
 	s.AssignmentRule.SetAssignmentEngine(assignmentEngine)
 	s.AssignmentRule.SetFindingRepository(repos.Finding)
