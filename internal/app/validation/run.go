@@ -30,6 +30,33 @@ const defaultTimeoutSeconds = 120
 // safe-check kind is allowed to run (see kindSupportsTechnique).
 const safeCheckTechnique TechniqueID = "T1046"
 
+// ErrNotNetworkAddressable is returned when a finding's asset has no network
+// address a safe-check reachability probe can dial (e.g. a code repository,
+// container image, or cloud-account finding). Callers that auto-dispatch
+// validation (e.g. proof-of-fix on fix_applied) treat it as an expected skip,
+// not a failure.
+var ErrNotNetworkAddressable = fmt.Errorf("%w: asset is not network-addressable for a safe-check re-check", shared.ErrValidation)
+
+// networkAddressableTypes is the set of asset types whose Name() is a host,
+// IP, or URL a safe-check probe can reach over the network. Types outside this
+// set (repository, container, cloud_account, …) cannot be reachability-probed.
+var networkAddressableTypes = map[asset.AssetType]bool{
+	asset.AssetTypeDomain:         true,
+	asset.AssetTypeSubdomain:      true,
+	asset.AssetTypeIPAddress:      true,
+	asset.AssetTypeWebsite:        true,
+	asset.AssetTypeWebApplication: true,
+	asset.AssetTypeAPI:            true,
+	asset.AssetTypeService:        true,
+	asset.AssetTypeHost:           true,
+}
+
+// isNetworkAddressable reports whether a safe-check reachability probe can
+// meaningfully target an asset of the given type.
+func isNetworkAddressable(t asset.AssetType) bool {
+	return networkAddressableTypes[t]
+}
+
 // RunService turns "validate this finding" into a dispatched validation job.
 // It resolves the finding's asset into a Target, picks an executor kind via the
 // Selector against the fleet's available kinds, and hands the job to the
@@ -83,6 +110,10 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 	a, err := s.assets.GetByID(ctx, tenantID, assetID)
 	if err != nil {
 		return shared.ID{}, fmt.Errorf("asset lookup: %w", err)
+	}
+
+	if !isNetworkAddressable(a.Type()) {
+		return shared.ID{}, ErrNotNetworkAddressable
 	}
 
 	address := strings.TrimSpace(a.Name())

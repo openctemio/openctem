@@ -123,6 +123,34 @@ func TestRunService_ValidateFinding_NoExecutorAvailable(t *testing.T) {
 	}
 }
 
+func TestRunService_ValidateFinding_RejectsNonNetworkAsset(t *testing.T) {
+	assetID := shared.NewID()
+	f := newTestFinding(t, assetID)
+	// A code repository has no host/IP a safe-check probe can dial.
+	repo, err := asset.NewAsset("github.com/acme/app", asset.AssetTypeRepository, asset.CriticalityHigh)
+	if err != nil {
+		t.Fatalf("new asset: %v", err)
+	}
+	disp := &fakeJobDispatcher{id: shared.NewID()}
+
+	svc := NewRunService(
+		fakeFindingLookup{f: f},
+		fakeAssetLookup{a: repo},
+		disp,
+		DefaultSelector{},
+		[]ExecutorKind{KindSafeCheck},
+		logger.NewNop(),
+	)
+
+	_, err = svc.ValidateFinding(context.Background(), shared.NewID(), f.ID())
+	if !errors.Is(err, ErrNotNetworkAddressable) {
+		t.Fatalf("error = %v, want ErrNotNetworkAddressable", err)
+	}
+	if disp.got.FindingID != (shared.ID{}) {
+		t.Error("dispatcher should not be called for a non-network asset")
+	}
+}
+
 func TestRunService_ValidateFinding_PropagatesFindingLookupError(t *testing.T) {
 	disp := &fakeJobDispatcher{}
 	svc := NewRunService(

@@ -767,6 +767,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// when a finding transitions to fix_applied and the user requests scan-based verification.
 	s.FindingActions.SetVerificationScanTrigger(app.NewVerificationScanTriggerAdapter(s.Scan))
 
+	// Closed-loop CTEM: auto-queue a proof-of-fix safe-check re-check when
+	// findings transition to fix_applied, so a "fixed" claim is verified rather
+	// than trusted. Bounded + best-effort; non-network findings are skipped.
+	s.FindingActions.SetAutoValidator(s.ValidationRun)
+
 	// B3 wire: when a Jira "Done" webhook arrives and the
 	// finding transitions to fix_applied, automatically trigger a
 	// verification scan via FindingActions. Per-finding 24h cooldown
