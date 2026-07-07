@@ -1600,3 +1600,37 @@ func (s *stubFindingRepository) AutoResolveStaleBranchOccurrences(_ context.Cont
 func (s *stubFindingRepository) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
 	return nil, nil
 }
+
+// TestBuildFinding_PersistsBaseWithSARIFPartialFingerprints is a regression guard:
+// buildFinding must persist the composite base in partial_fingerprints EVEN when
+// the finding carries SARIF partialFingerprints. setFindingSARIFFields REPLACES
+// the whole partial_fingerprints map, which previously wiped the base (stored
+// earlier) — silently defeating the post-merge fingerprint recompute for SARIF
+// scanners (CodeQL always emits partialFingerprints).
+func TestBuildFinding_PersistsBaseWithSARIFPartialFingerprints(t *testing.T) {
+	p := NewFindingProcessor(&stubFindingRepository{}, nil, stubAssetRepoGetByID{}, logger.NewNop())
+
+	assetID := shared.NewID()
+	cf := &ctis.Finding{
+		ID:       "f1",
+		Type:     ctis.FindingTypeVulnerability,
+		Title:    "SARIF finding",
+		Severity: ctis.SeverityHigh,
+		RuleID:   "rule-1",
+		// SARIF partialFingerprints present — this is what wiped the base pre-fix.
+		PartialFingerprints: map[string]string{"primaryLocationLineHash": "deadbeef"},
+	}
+	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "scan-1"}, Tool: &ctis.Tool{Name: "codeql"}}
+
+	fp, base := generateFindingFingerprint(assetID, cf, report.Tool)
+	require.NotEmpty(t, base, "precondition: expected a non-empty base")
+
+	f, err := p.buildFinding(context.Background(), shared.NewID(), assetID, nil, shared.NewID(), report, cf, fp, base, nil)
+	require.NoError(t, err)
+
+	pf := f.PartialFingerprints()
+	assert.Equal(t, base, pf[vulnerability.FingerprintBaseKey],
+		"composite base must survive the SARIF partial_fingerprints replacement")
+	assert.Equal(t, "deadbeef", pf["primaryLocationLineHash"],
+		"SARIF partial fingerprint should also survive")
+}

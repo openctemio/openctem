@@ -639,12 +639,6 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set core identifiers
 	f.SetFingerprint(fp)
-	// Persist the pre-composite base so the composite fingerprint can be
-	// recomputed for a new asset_id after an asset merge (the stored fingerprint
-	// embeds the old asset_id and would otherwise never dedupe post-merge).
-	if base != "" {
-		f.AddPartialFingerprint(vulnerability.FingerprintBaseKey, base)
-	}
 	f.SetAgentID(agentID)
 	f.SetScanID(report.Metadata.ID)
 	if branchID != nil {
@@ -670,6 +664,16 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set SARIF 2.1.0 fields
 	p.setFindingSARIFFields(f, ctisFinding)
+
+	// Persist the pre-composite base so the composite fingerprint can be
+	// recomputed for a new asset_id after an asset merge (the stored fingerprint
+	// embeds the old asset_id and would otherwise never dedupe post-merge).
+	// MUST run AFTER setFindingSARIFFields — that call REPLACES the whole
+	// partial_fingerprints map (SARIF partialFingerprints), which would wipe the
+	// base if it were stored earlier.
+	if base != "" {
+		f.AddPartialFingerprint(vulnerability.FingerprintBaseKey, base)
+	}
 
 	// Set CTEM fields (exposure, remediation, business impact)
 	p.setFindingCTEMFields(f, ctisFinding)

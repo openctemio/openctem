@@ -139,6 +139,14 @@ email is rejected.
 > registration → Token configuration → Add optional claim → ID → `xms_edov`).
 > Without it, Microsoft logins are refused fail-closed rather than trusting an
 > unverified email.
+>
+> **Expected refusals (by design, not a bug):** because trust requires a
+> domain-owner-verified email, the global button refuses **personal Microsoft
+> accounts** (outlook.com / live.com / hotmail.com) and **B2B guest users whose
+> email is on a domain not verified in the signing tenant**. Work/school accounts
+> whose domain the tenant owns get `xms_edov == true` and sign in normally. Use
+> the **per-tenant Entra SSO** path to admit specific external identities under an
+> explicit domain allow-list.
 
 ## Known follow-ups (not yet shipped)
 

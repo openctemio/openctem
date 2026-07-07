@@ -42,6 +42,9 @@ func TestKEVCriticalCountsByAsset(t *testing.T) {
 	insert(assetA, "high", "new", true, "a-kev-1")
 	insert(assetA, "critical", "confirmed", false, "a-crit-1")
 	insert(assetA, "critical", "resolved", false, "a-crit-resolved")
+	// A KEV finding whose fix is applied but NOT yet verified is still a live
+	// exposure — it must be counted (fix_applied is in the canonical active set).
+	insert(assetA, "high", "fix_applied", true, "a-kev-fixapplied")
 	// asset B: 1 open low non-KEV (must not appear at all).
 	insert(assetB, "low", "new", false, "b-low-1")
 
@@ -51,8 +54,8 @@ func TestKEVCriticalCountsByAsset(t *testing.T) {
 		t.Fatalf("KEVCriticalCountsByAsset: %v", err)
 	}
 
-	if kev[assetA.String()] != 1 {
-		t.Errorf("asset A KEV: expected 1, got %d", kev[assetA.String()])
+	if kev[assetA.String()] != 2 {
+		t.Errorf("asset A KEV: expected 2 (new + fix_applied), got %d", kev[assetA.String()])
 	}
 	if critical[assetA.String()] != 1 {
 		t.Errorf("asset A critical (open only): expected 1, got %d", critical[assetA.String()])

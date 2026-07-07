@@ -175,3 +175,22 @@ func TestBuildExposureChains_NoTargets(t *testing.T) {
 		t.Errorf("expected 1 entry point counted, got %d", res.Summary.EntryPoints)
 	}
 }
+
+// A target reachable only through a DANGLING hop (an edge to an asset missing
+// from the node set — a stale relationship) must NOT be emitted as a gapped,
+// wrong-length chain; the whole chain is skipped.
+func TestBuildExposureChains_SkipsDanglingHop(t *testing.T) {
+	nodes := []asset.AssetNode{
+		node("web", "public", "medium", false),
+		node("db", "private", "critical", false),
+		// "ghost" intentionally absent from nodes (dangling relationship).
+	}
+	edges := []asset.RelationshipEdge{
+		edge("web", "ghost", asset.RelTypeExposes),
+		edge("ghost", "db", asset.RelTypeDependsOn),
+	}
+	res := buildExposureChains(nodes, edges, map[string]int{}, map[string]int{"db": 1})
+	if len(res.Chains) != 0 {
+		t.Fatalf("expected 0 chains (target only reachable via a dangling hop), got %d", len(res.Chains))
+	}
+}

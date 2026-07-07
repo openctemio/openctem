@@ -2451,7 +2451,10 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 		FROM findings
 		WHERE tenant_id = $1
 			AND asset_id IS NOT NULL
-			AND status IN ('new','confirmed','in_progress')
+			-- Canonical active set (ActiveFindingStatuses): includes fix_applied,
+			-- which is "fix marked, NOT yet verified" — such a KEV/critical finding
+			-- is still a live exposure and must stay on the attack path.
+			AND status IN ('new','confirmed','in_progress','fix_applied')
 		GROUP BY asset_id
 		HAVING COUNT(*) FILTER (WHERE is_in_kev) > 0
 			OR COUNT(*) FILTER (WHERE severity = 'critical') > 0`
@@ -2523,7 +2526,7 @@ func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, t
 
 	for _, f := range all {
 		oldFP := f.Fingerprint()
-		newFP := recomputeFindingFingerprint(f, assetID.String())
+		newFP, composite := recomputeFindingFingerprint(f, assetID.String())
 		if newFP == "" || newFP == oldFP {
 			continue
 		}
@@ -2537,8 +2540,17 @@ func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, t
 		if !isUniqueViolation(uerr) {
 			return updated, deduped, fmt.Errorf("failed to update finding fingerprint: %w", uerr)
 		}
-		// A finding already occupies (tenant_id, newFP) on the surviving asset:
-		// this repointed finding is a duplicate — delete it, keep the existing.
+		// Collision on (tenant_id, newFP). For the COMPOSITE scheme this is
+		// unambiguous: a native finding recomputes to its unchanged value and was
+		// skipped above (newFP == oldFP), so only a moved duplicate can reach here
+		// — delete it, keep the existing. For the MANUAL scheme a native finding
+		// whose fields drifted after creation (GenerateFingerprint runs only at
+		// create) can also collide, so deleting could destroy a legitimate
+		// finding — skip it instead (the moved duplicate simply keeps its stale
+		// fingerprint, no worse than before the merge).
+		if !composite {
+			continue
+		}
 		if _, derr := r.db.ExecContext(ctx,
 			`DELETE FROM findings WHERE id = $1 AND tenant_id = $2`,
 			f.ID().String(), tenantID.String()); derr != nil {
@@ -2550,17 +2562,18 @@ func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, t
 }
 
 // recomputeFindingFingerprint returns the correct fingerprint for f now that it
-// lives on keepAssetID, per the scheme it was created with, or "" when it cannot
-// be safely recomputed (a composite finding whose base was not persisted).
-func recomputeFindingFingerprint(f *vulnerability.Finding, keepAssetID string) string {
+// lives on keepAssetID and whether it is the composite scheme. Returns "" when
+// it cannot be safely recomputed (a composite finding whose base was not
+// persisted). `composite` is true only for the base-derived composite scheme.
+func recomputeFindingFingerprint(f *vulnerability.Finding, keepAssetID string) (newFP string, composite bool) {
 	if base, ok := f.PartialFingerprints()[vulnerability.FingerprintBaseKey]; ok && base != "" {
-		return vulnerability.CompositeFingerprint(keepAssetID, base)
+		return vulnerability.CompositeFingerprint(keepAssetID, base), true
 	}
 	if len(f.Fingerprint()) == 32 {
 		// Manual scheme: re-derives from f.assetID (already updated to keepID) + fields.
-		return f.GenerateFingerprint()
+		return f.GenerateFingerprint(), false
 	}
-	return ""
+	return "", false
 }
 
 // CountOpenByAssetID returns the count of open findings for an asset.

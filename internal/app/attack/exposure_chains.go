@@ -221,7 +221,11 @@ func considerChain(
 	for i := len(rev) - 1; i >= 0; i-- {
 		n := nodeByID[rev[i]]
 		if n == nil {
-			continue
+			// A hop references an asset missing from the node set (a dangling
+			// relationship / stale edge). Emitting a gapped path would misreport
+			// the chain's length and route, so skip this chain entirely — a
+			// clean path from another entry point still records the target.
+			return
 		}
 		hops = append(hops, ChainHop{
 			AssetID:   n.ID,
