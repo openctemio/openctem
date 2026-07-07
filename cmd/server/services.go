@@ -496,6 +496,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Reclassifier = reclassify.NewReclassifier(
 		repos.Finding, repos.Asset, s.PriorityClassification, log,
 	)
+	// Recompute the SLA deadline when a sweep escalates a finding's priority
+	// (e.g. a CVE newly listed in KEV → P0), so the deadline tightens instead
+	// of staying at its laxer pre-escalation value.
+	s.Reclassifier.SetSLARecomputer(sla.NewApplier(s.SLA))
 
 	// B6 runtime loop — IOC catalogue + correlator. The correlator is
 	// attached to the runtime telemetry handler in handlers.go so every
