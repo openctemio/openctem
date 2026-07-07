@@ -16,6 +16,7 @@ and the code. Start here to remember "what was decided, why, and where it lives"
 | [RFC-009](RFC-009-enterprise-sso-saml-scim.md) | Enterprise SSO: SAML 2.0 + SCIM 2.0 provisioning | SCIM (9a–9c) done; SAML 9d+9e done (login+ACS) | — | SCIM Users/token/Groups; SAML config+metadata+login/ACS |
 | [RFC-010](RFC-010-jira-assets-cmdb.md) | Jira Assets / JSM CMDB integration (enrich + reconcile) | Proposed | — | — |
 | [RFC-011](RFC-011-validation-engine-dispatch.md) | Validation engine: dispatch (make the "V" executable) | Phase 1 (safe-check) shipped | — | validate command + dispatcher + producer endpoint + completion hook |
+| [RFC-012](RFC-012-real-bas-execution.md) | Real BAS / attack-simulation execution (de-synthesize the "V") | Phase 0 (honesty) shipped | — | relabel synthetic runs unverified; Phase 1 = real safe-check dispatch |
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
 

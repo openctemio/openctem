@@ -333,41 +333,51 @@ func (s *SimulationService) executeSimulationTechnique(sim *simulation.Simulatio
 	output["tactic"] = sim.MitreTactic()
 	output["simulation_type"] = string(sim.SimulationType())
 
+	// HONESTY (RFC-012 Phase 0): no live technique is executed here — the
+	// outcome below is derived from configuration, not from exercising a
+	// control. Flag every run as an unverified *simulation* so operators are
+	// never told a control was validated when nothing ran. Phase 1 replaces
+	// this with a real agent-dispatched safe-check (see RFC-012).
+	output["verified"] = false
+	output["execution_mode"] = "simulated"
+	output["disclaimer"] = "No live technique execution — this is a configuration-based simulation of the expected posture, not a validated control test (RFC-012 Phase 0)."
+
 	config := sim.Config()
 
 	// Check if this is a dry run
 	if dryRun, ok := config["dry_run"].(bool); ok && dryRun {
 		output["dry_run"] = true
-		return simulation.RunResultDetected, "dry_run: no actual execution", "n/a", output
+		return simulation.RunResultError, "dry_run: no execution performed", "n/a", output
 	}
 
-	// Evaluate detection based on simulation type and configuration
+	// Derive the *simulated* expected posture from configuration. These values
+	// describe intent, not a live result — hence verified:false above.
 	detectionSource, _ := config["detection_source"].(string)
 
 	switch sim.SimulationType() {
 	case simulation.SimulationTypeAtomic:
-		// Atomic: single technique test
-		// Detection is validated against the configured detection source (SIEM, EDR, etc.)
+		// Atomic: single technique test. A configured detection source means the
+		// operator EXPECTS coverage — it is not proof the technique was caught.
 		if detectionSource != "" {
-			detection = fmt.Sprintf("Validated against %s", detectionSource)
+			detection = fmt.Sprintf("Simulated: detection expected via %s (not live-validated)", detectionSource)
 			result = simulation.RunResultDetected
 			output["detection_source"] = detectionSource
-			output["detection_validated"] = true
+			output["detection_validated"] = false
 		} else {
-			detection = "No detection source configured"
+			detection = "Simulated: no detection source configured"
 			result = simulation.RunResultBypassed
 			output["detection_validated"] = false
 		}
 
 	case simulation.SimulationTypeCampaign:
-		// Campaign: multi-step attack chain
-		detection = "Campaign execution completed"
+		// Campaign: multi-step attack chain (simulated, not executed).
+		detection = "Simulated: campaign posture (steps not live-executed)"
 		result = simulation.RunResultPartial
 		output["campaign_steps"] = len(sim.TargetAssets())
 
 	case simulation.SimulationTypeControlTest:
-		// Control test: verify specific security control
-		detection = "Control test executed"
+		// Control test: describes the expected control, not a live exercise.
+		detection = "Simulated: control-test posture (not live-executed)"
 		result = simulation.RunResultDetected
 		output["control_test"] = true
 
@@ -376,13 +386,15 @@ func (s *SimulationService) executeSimulationTechnique(sim *simulation.Simulatio
 		result = simulation.RunResultError
 	}
 
-	// Check prevention
-	if result == simulation.RunResultDetected {
-		prevention = "Attack technique was detected by security controls"
-	} else if result == simulation.RunResultBypassed {
-		prevention = "Attack technique bypassed security controls"
-	} else {
-		prevention = "Partial detection — some controls triggered"
+	// Prevention text mirrors the simulated posture — worded to avoid asserting
+	// a real control outcome.
+	switch result {
+	case simulation.RunResultDetected:
+		prevention = "Simulated: technique expected to be detected (not live-validated)"
+	case simulation.RunResultBypassed:
+		prevention = "Simulated: technique expected to bypass controls (not live-validated)"
+	default:
+		prevention = "Simulated: partial expected coverage (not live-validated)"
 	}
 
 	return result, detection, prevention, output
