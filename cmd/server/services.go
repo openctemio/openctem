@@ -61,6 +61,41 @@ func (a findingMutatorAdapter) Update(ctx context.Context, f *vulnerability.Find
 	return a.repo.Update(ctx, f)
 }
 
+// workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
+// action's JiraTicketService (primitive params, so the workflow package needn't
+// import app/jira — that would cycle through the app shim).
+type workflowJiraTicketAdapter struct{ svc *jira.SyncService }
+
+func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (app.TicketRef, error) {
+	info, err := a.svc.CreateTicketFromFinding(ctx, jira.CreateTicketInput{
+		TenantID: tenantID, FindingID: findingID, ProjectKey: projectKey, IssueType: issueType,
+	})
+	if err != nil {
+		return app.TicketRef{}, err
+	}
+	return app.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+}
+
+func (a workflowJiraTicketAdapter) SyncFindingStatus(ctx context.Context, tenantID, findingID shared.ID) error {
+	return a.svc.SyncFindingStatus(ctx, tenantID, findingID)
+}
+
+// workflowGitHubTicketAdapter adapts *ticketing.GitHubTicketService to the
+// workflow ticket action's GitHubTicketService.
+type workflowGitHubTicketAdapter struct {
+	svc *ticketing.GitHubTicketService
+}
+
+func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (app.TicketRef, error) {
+	info, err := a.svc.CreateTicketFromFinding(ctx, ticketing.GitHubTicketInput{
+		TenantID: tenantID, FindingID: findingID, Owner: owner, Repo: repo,
+	})
+	if err != nil {
+		return app.TicketRef{}, err
+	}
+	return app.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+}
+
 // wsHubBroadcaster adapts websocket.Hub to app.ActivityBroadcaster and app.TriageBroadcaster interfaces.
 type wsHubBroadcaster struct {
 	hub *websocket.Hub
@@ -822,13 +857,29 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithExecutorAuditService(s.Audit),
 	)
 
-	// Register all action handlers for the workflow executor
-	app.RegisterAllActionHandlers(
+	// Register all action handlers for the workflow executor. Use the AI-aware
+	// variant so trigger_ai_triage is actually registered (it was coded but the
+	// non-AI register never wired it), and pass the Jira/GitHub ticket adapters
+	// so create_ticket/update_ticket file real issues instead of returning a
+	// false success. Adapters are built only when the underlying service exists
+	// so a nil service yields a nil interface (not a non-nil box over nil).
+	var wfJira app.WorkflowJiraTicketService
+	if s.JiraSync != nil {
+		wfJira = workflowJiraTicketAdapter{svc: s.JiraSync}
+	}
+	var wfGitHub app.WorkflowGitHubTicketService
+	if s.GitHubTicket != nil {
+		wfGitHub = workflowGitHubTicketAdapter{svc: s.GitHubTicket}
+	}
+	app.RegisterAllActionHandlersWithAI(
 		workflowExecutor,
 		s.Vulnerability,
 		s.Pipeline,
 		s.Scan,
 		s.Integration,
+		s.AITriage,
+		wfJira,
+		wfGitHub,
 		log,
 	)
 
