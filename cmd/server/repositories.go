@@ -65,8 +65,9 @@ type Repositories struct {
 	ComplianceMapping    *postgres.ComplianceMappingRepository
 
 	// Attack Simulation & Control Testing
-	Simulation  *postgres.SimulationRepository
-	ControlTest *postgres.ControlTestRepository
+	Simulation    *postgres.SimulationRepository
+	SimulationRun *postgres.SimulationRunRepository
+	ControlTest   *postgres.ControlTestRepository
 
 	// Threat Actor Intelligence
 	ThreatActor *postgres.ThreatActorRepository
@@ -248,8 +249,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		ComplianceMapping:    postgres.NewComplianceMappingRepository(db),
 
 		// Attack Simulation & Control Testing
-		Simulation:  postgres.NewSimulationRepository(db),
-		ControlTest: postgres.NewControlTestRepository(db),
+		Simulation:    postgres.NewSimulationRepository(db),
+		SimulationRun: postgres.NewSimulationRunRepository(db),
+		ControlTest:   postgres.NewControlTestRepository(db),
 
 		// Threat Actor Intelligence
 		ThreatActor: postgres.NewThreatActorRepository(db),

@@ -566,6 +566,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize Compliance service
 	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
+	// Persist simulation runs (previously the run repo was never wired, so every
+	// run was computed and discarded — run history was always empty).
+	s.Simulation.SetRunRepo(repos.SimulationRun)
 
 	// Validation (CTEM Stage-4): agents POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
