@@ -59,6 +59,9 @@ const (
 	ProviderSnyk        Provider = "snyk"
 	ProviderTenable     Provider = "tenable"
 	ProviderCrowdStrike Provider = "crowdstrike"
+	// ProviderDefectDojo is a vulnerability-aggregation front-end whose 200+
+	// scanner parsers we ingest via CTIS (RFC-013 co-existence connector).
+	ProviderDefectDojo Provider = "defectdojo"
 )
 
 // Cloud Providers
@@ -96,7 +99,7 @@ func (p Provider) IsValid() bool {
 	case ProviderGitHub, ProviderGitLab, ProviderBitbucket, ProviderAzureDevOps:
 		return true
 	// Security
-	case ProviderWiz, ProviderSnyk, ProviderTenable, ProviderCrowdStrike:
+	case ProviderWiz, ProviderSnyk, ProviderTenable, ProviderCrowdStrike, ProviderDefectDojo:
 		return true
 	// Cloud
 	case ProviderAWS, ProviderGCP, ProviderAzure:
@@ -117,7 +120,7 @@ func (p Provider) Category() Category {
 	switch p {
 	case ProviderGitHub, ProviderGitLab, ProviderBitbucket, ProviderAzureDevOps:
 		return CategorySCM
-	case ProviderWiz, ProviderSnyk, ProviderTenable, ProviderCrowdStrike:
+	case ProviderWiz, ProviderSnyk, ProviderTenable, ProviderCrowdStrike, ProviderDefectDojo:
 		return CategorySecurity
 	case ProviderAWS, ProviderGCP, ProviderAzure:
 		return CategoryCloud
