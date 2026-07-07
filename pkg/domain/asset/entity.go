@@ -274,6 +274,20 @@ func (a *Asset) Exposure() Exposure {
 	return a.exposure
 }
 
+// SetExposure sets the asset's internet-exposure level and stamps the change
+// time. No-op when unchanged. Exposure is the authoritative reachability signal
+// the prioritization engine consumes (public ⇒ internet-reachable), so keeping
+// it accurate is what makes the "KEV + reachable → P0" gates fire.
+func (a *Asset) SetExposure(exposure Exposure) {
+	if a.exposure == exposure {
+		return
+	}
+	a.exposure = exposure
+	now := time.Now().UTC()
+	a.exposureChangedAt = &now
+	a.updatedAt = now
+}
+
 // RiskScore returns the asset risk score.
 func (a *Asset) RiskScore() int {
 	return a.riskScore

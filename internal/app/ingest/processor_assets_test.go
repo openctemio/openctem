@@ -3,6 +3,7 @@ package ingest
 import (
 	"testing"
 
+	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/ctis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -353,6 +354,39 @@ func TestFindCommonPathPrefix(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result := findCommonPathPrefix(tc.paths)
 			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestInferAssetExposure(t *testing.T) {
+	mk := func(name string, typ asset.AssetType, ip string) *asset.Asset {
+		a, err := asset.NewAsset(name, typ, asset.CriticalityMedium)
+		if err != nil {
+			t.Fatalf("NewAsset: %v", err)
+		}
+		if ip != "" {
+			a.SetProperties(map[string]any{"ip": ip})
+		}
+		return a
+	}
+	cases := []struct {
+		name string
+		a    *asset.Asset
+		want asset.Exposure
+	}{
+		{"domain is internet-facing", mk("example.com", asset.AssetTypeDomain, ""), asset.ExposurePublic},
+		{"website is internet-facing", mk("https://app.example.com", asset.AssetTypeWebsite, ""), asset.ExposurePublic},
+		{"host with public IP", mk("web-1", asset.AssetTypeHost, "8.8.8.8"), asset.ExposurePublic},
+		{"host with private IP stays unknown", mk("db-1", asset.AssetTypeHost, "10.0.0.5"), asset.ExposureUnknown},
+		{"host with no IP stays unknown", mk("worker-1", asset.AssetTypeHost, ""), asset.ExposureUnknown},
+		{"ip_address (public) via name", mk("203.0.113.9", asset.AssetTypeIPAddress, ""), asset.ExposurePublic},
+		{"ip_address (private) via name", mk("192.168.1.10", asset.AssetTypeIPAddress, ""), asset.ExposureUnknown},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := inferAssetExposure(c.a); got != c.want {
+				t.Fatalf("inferAssetExposure = %q, want %q", got, c.want)
+			}
 		})
 	}
 }
