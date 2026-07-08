@@ -32,10 +32,10 @@ type mockAgentRepo struct {
 	claimJobErr  error
 
 	// Call tracking
-	createCalls    int
-	updateCalls    int
-	lastSeenCalls  int
-	claimJobCalls  int
+	createCalls     int
+	updateCalls     int
+	lastSeenCalls   int
+	claimJobCalls   int
 	releaseJobCalls int
 }
 
@@ -118,6 +118,10 @@ func (m *mockAgentRepo) Update(_ context.Context, a *agent.Agent) error {
 		return m.updateErr
 	}
 	m.agents[a.ID] = a
+	return nil
+}
+
+func (m *mockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
 	return nil
 }
 

@@ -1,12 +1,13 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/tool"
 	"context"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -535,7 +536,10 @@ func (m *toolSvcMockAgentRepo) List(_ context.Context, _ agent.Filter, _ paginat
 	return pagination.Result[*agent.Agent]{}, nil
 }
 func (m *toolSvcMockAgentRepo) Update(_ context.Context, _ *agent.Agent) error { return nil }
-func (m *toolSvcMockAgentRepo) Delete(_ context.Context, _ shared.ID) error    { return nil }
+func (m *toolSvcMockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
+	return nil
+}
+func (m *toolSvcMockAgentRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
 func (m *toolSvcMockAgentRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
 	return nil
 }

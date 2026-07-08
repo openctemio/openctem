@@ -17,18 +17,18 @@ import (
 
 type mockDashboardRepo struct {
 	// Error overrides
-	getAssetStatsErr           error
-	getFindingStatsErr         error
-	getRepositoryStatsErr      error
-	getRecentActivityErr       error
-	getFindingTrendErr         error
-	getAllStatsErr             error
-	getGlobalAssetStatsErr     error
-	getGlobalFindingStatsErr   error
-	getGlobalRepositoryStatsErr error
-	getGlobalRecentActivityErr error
-	getFilteredAssetStatsErr   error
-	getFilteredFindingStatsErr error
+	getAssetStatsErr              error
+	getFindingStatsErr            error
+	getRepositoryStatsErr         error
+	getRecentActivityErr          error
+	getFindingTrendErr            error
+	getAllStatsErr                error
+	getGlobalAssetStatsErr        error
+	getGlobalFindingStatsErr      error
+	getGlobalRepositoryStatsErr   error
+	getGlobalRecentActivityErr    error
+	getFilteredAssetStatsErr      error
+	getFilteredFindingStatsErr    error
 	getFilteredRepositoryStatsErr error
 	getFilteredRecentActivityErr  error
 
@@ -51,15 +51,15 @@ type mockDashboardRepo struct {
 	filteredRecentActivity []app.ActivityItem
 
 	// Call tracking
-	getAllStatsCalls             int
-	getFindingTrendCalls        int
-	getGlobalAssetStatsCalls    int
-	getGlobalFindingStatsCalls  int
-	getGlobalRepoStatsCalls     int
-	getGlobalRecentActivityCalls int
-	getFilteredAssetStatsCalls  int
-	getFilteredFindingStatsCalls int
-	getFilteredRepoStatsCalls   int
+	getAllStatsCalls               int
+	getFindingTrendCalls           int
+	getGlobalAssetStatsCalls       int
+	getGlobalFindingStatsCalls     int
+	getGlobalRepoStatsCalls        int
+	getGlobalRecentActivityCalls   int
+	getFilteredAssetStatsCalls     int
+	getFilteredFindingStatsCalls   int
+	getFilteredRepoStatsCalls      int
 	getFilteredRecentActivityCalls int
 
 	// Capture arguments
@@ -303,17 +303,17 @@ func TestDashboardService_GetStats(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		setupRepo      func(*mockDashboardRepo)
-		wantAssetCount int
-		wantFindCount  int
-		wantRepoCount  int
-		wantTrendLen   int
+		name            string
+		setupRepo       func(*mockDashboardRepo)
+		wantAssetCount  int
+		wantFindCount   int
+		wantRepoCount   int
+		wantTrendLen    int
 		wantActivityLen int
-		wantAvgRisk    float64
-		wantAvgCVSS    float64
-		wantOverdue    int
-		wantErr        bool
+		wantAvgRisk     float64
+		wantAvgCVSS     float64
+		wantOverdue     int
+		wantErr         bool
 	}{
 		{
 			name: "happy path - all data returned",
@@ -542,12 +542,12 @@ func TestDashboardService_GetGlobalStats(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		setupRepo      func(*mockDashboardRepo)
-		wantAssetCount int
-		wantFindCount  int
-		wantRepoCount  int
-		wantTrendLen   int
+		name            string
+		setupRepo       func(*mockDashboardRepo)
+		wantAssetCount  int
+		wantFindCount   int
+		wantRepoCount   int
+		wantTrendLen    int
 		wantActivityLen int
 	}{
 		{
@@ -768,13 +768,13 @@ func TestDashboardService_GetStatsForTenants(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		tenantIDs      []string
-		setupRepo      func(*mockDashboardRepo)
-		wantAssetCount int
-		wantFindCount  int
-		wantRepoCount  int
-		wantTrendLen   int
+		name            string
+		tenantIDs       []string
+		setupRepo       func(*mockDashboardRepo)
+		wantAssetCount  int
+		wantFindCount   int
+		wantRepoCount   int
+		wantTrendLen    int
 		wantActivityLen int
 	}{
 		{
@@ -797,8 +797,8 @@ func TestDashboardService_GetStatsForTenants(t *testing.T) {
 			tenantIDs: []string{"tenant-1"},
 			setupRepo: func(m *mockDashboardRepo) {
 				m.filteredAssetStats = app.AssetStatsData{
-					Total:  10,
-					ByType: map[string]int{"website": 10},
+					Total:    10,
+					ByType:   map[string]int{"website": 10},
 					ByStatus: map[string]int{"active": 10},
 				}
 				m.filteredFindingStats = app.FindingStatsData{

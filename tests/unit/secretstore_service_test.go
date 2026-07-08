@@ -34,14 +34,14 @@ type secretMockRepo struct {
 	countErr            error
 
 	// Call tracking
-	createCalls         int
+	createCalls           int
 	getByTenantAndIDCalls int
 	getByTenantNameCalls  int
-	listCalls           int
-	updateCalls         int
-	deleteCalls         int
-	updateLastUsedCalls int
-	countCalls          int
+	listCalls             int
+	updateCalls           int
+	deleteCalls           int
+	updateLastUsedCalls   int
+	countCalls            int
 
 	// Captured arguments
 	lastListInput secretstore.ListInput
@@ -1235,9 +1235,15 @@ func TestSecretDecryptCredentialData_NoExpiration(t *testing.T) {
 }
 
 // Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
-func (m *secretMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
-func (m *secretMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
-func (m *secretMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }
+func (m *secretMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) {
+	return "", nil
+}
+func (m *secretMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error {
+	return nil
+}
+func (m *secretMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+	return nil, nil
+}
 
 func (m *secretMockAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
 	return nil

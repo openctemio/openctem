@@ -19,14 +19,14 @@ import (
 
 // findingSrcMockRepository implements findingsource.Repository for testing.
 type findingSrcMockRepository struct {
-	sources               map[string]*findingsource.FindingSource
-	sourcesWithCat        []*findingsource.FindingSourceWithCategory
-	listErr               error
-	listWithCatErr        error
-	listActiveErr         error
-	listActiveWithCatErr  error
-	listActiveByCatErr    error
-	isValidCodeFn         func(ctx context.Context, code string) (bool, error)
+	sources              map[string]*findingsource.FindingSource
+	sourcesWithCat       []*findingsource.FindingSourceWithCategory
+	listErr              error
+	listWithCatErr       error
+	listActiveErr        error
+	listActiveWithCatErr error
+	listActiveByCatErr   error
+	isValidCodeFn        func(ctx context.Context, code string) (bool, error)
 }
 
 func newFindingSrcMockRepository() *findingSrcMockRepository {

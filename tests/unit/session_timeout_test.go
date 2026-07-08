@@ -77,7 +77,7 @@ func TestSessionTimeout(t *testing.T) {
 	t.Run("NoIssuedAtClaim_NotExpired", func(t *testing.T) {
 		// Token without iat claim should be treated as not expired (graceful)
 		claims := &localjwt.Claims{
-			UserID: "user-123",
+			UserID:           "user-123",
 			RegisteredClaims: jwt.RegisteredClaims{
 				// IssuedAt is nil
 			},

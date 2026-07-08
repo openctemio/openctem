@@ -311,6 +311,20 @@ func (r *AgentRepository) UpdateLastSeen(ctx context.Context, id shared.ID) erro
 	return err
 }
 
+// UpdateKeyExpiry sets only the inline API-key expiry. The status = 'active'
+// guard means it is a no-op for a concurrently disabled/revoked agent, so it can
+// never revive one — unlike a full-row Update that would rewrite status.
+func (r *AgentRepository) UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error {
+	query := `
+		UPDATE agents
+		SET key_expires_at = $2,
+		    updated_at = NOW()
+		WHERE id = $1 AND status = 'active'
+	`
+	_, err := r.db.ExecContext(ctx, query, id.String(), nullTime(expiresAt))
+	return err
+}
+
 // IncrementStats increments agent statistics.
 func (r *AgentRepository) IncrementStats(ctx context.Context, id shared.ID, findings, scans, errors int64) error {
 	query := `

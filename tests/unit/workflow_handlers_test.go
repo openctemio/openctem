@@ -900,7 +900,7 @@ func TestWfHandlerHTTPRequestSensitiveHeadersBlocked(t *testing.T) {
 		"headers": map[string]any{
 			"host":            "evil.example.com", // blocked — lowercase key
 			"x-forwarded-for": "1.2.3.4",          // blocked
-			"X-Custom-Safe":   "should-pass",       // allowed
+			"X-Custom-Safe":   "should-pass",      // allowed
 		},
 	}, nil)
 

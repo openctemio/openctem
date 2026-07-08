@@ -193,8 +193,8 @@ type mockOAuthSessionRepo struct {
 	deleteExpiredErr   error
 
 	// Result overrides
-	countActiveResult  int
-	oldestSession      *session.Session
+	countActiveResult int
+	oldestSession     *session.Session
 
 	// Call tracking
 	createCalls int

@@ -1,7 +1,6 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/apikey"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app/apikey"
 
 	"github.com/openctemio/api/pkg/crypto"
 	apikeydom "github.com/openctemio/api/pkg/domain/apikey"

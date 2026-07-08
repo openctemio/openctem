@@ -458,17 +458,25 @@ func (s *AgentService) issueOverlappingKey(ctx context.Context, fresh *agentdom.
 		return fmt.Errorf("issue overlapping key: %w", err)
 	}
 
-	// Retire the static inline key (best-effort): once past the grace it stops
-	// authenticating, so the original never-expiring bootstrap credential does
+	// Retire the static inline key (best-effort): schedule it to lapse a short
+	// grace from now, so the original never-expiring bootstrap credential does
 	// not remain valid after the agent has switched to rotating keys.
-	if !fresh.IsKeyExpired() {
+	//
+	// Guard on KeyExpiresAt == nil (NOT !IsKeyExpired): retirement must happen
+	// exactly once, on the first overlap renewal while the key is still
+	// never-expiring. Using !IsKeyExpired would re-run on every renewal that
+	// lands before the grace lapses and keep pushing the grace forward — under a
+	// short TTL that would keep the static bootstrap key alive forever.
+	//
+	// UpdateKeyExpiry writes only key_expires_at under a status='active' guard,
+	// so it cannot clobber a concurrent admin revoke back to active (and a
+	// revoked agent's stale inline key is moot — auth rejects the agent anyway).
+	if fresh.KeyExpiresAt == nil {
 		grace := time.Now().Add(overlapGrace)
 		if grace.After(expiresAt) {
 			grace = expiresAt
 		}
-		fresh.KeyExpiresAt = &grace
-		fresh.UpdatedAt = time.Now()
-		if err := s.repo.Update(ctx, fresh); err != nil {
+		if err := s.repo.UpdateKeyExpiry(ctx, fresh.ID, &grace); err != nil {
 			s.logger.Warn("failed to retire inline key after overlap renewal",
 				"agent_id", fresh.ID.String(), "error", err)
 		}

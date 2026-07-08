@@ -151,7 +151,9 @@ func (m *wfActionMockFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.
 	return nil
 }
 
-func (m *wfActionMockFindingRepo) DeleteByAssetID(_ context.Context, _, _ shared.ID) error { return nil }
+func (m *wfActionMockFindingRepo) DeleteByAssetID(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
 
 func (m *wfActionMockFindingRepo) DeleteByScanID(_ context.Context, _ shared.ID, _ string) error {
 	return nil
@@ -1258,7 +1260,6 @@ func TestWfAction_RegisterAllActionHandlersWithAI_AllNil(t *testing.T) {
 // =============================================================================
 // Edge-case: unsupported priority (update_priority passes any string through)
 // =============================================================================
-
 
 func (m *wfActionMockFindingRepo) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil

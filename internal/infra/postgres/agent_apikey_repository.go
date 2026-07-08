@@ -104,7 +104,6 @@ func (r *AgentAPIKeyRepository) List(ctx context.Context, filter agentdom.APIKey
 	if filter.IsActive != nil {
 		query += fmt.Sprintf(" AND is_active = $%d", i)
 		args = append(args, *filter.IsActive)
-		i++
 	}
 	query += " " + orderByCreatedAtDesc
 

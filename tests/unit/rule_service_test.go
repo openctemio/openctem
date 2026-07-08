@@ -23,12 +23,12 @@ import (
 // --- Source Repository ---
 
 type ruleSvcMockSourceRepo struct {
-	mu      sync.Mutex
-	sources map[string]*rule.Source
-	createErr error
-	updateErr error
-	deleteErr error
-	listErr   error
+	mu                 sync.Mutex
+	sources            map[string]*rule.Source
+	createErr          error
+	updateErr          error
+	deleteErr          error
+	listErr            error
 	needingSyncSources []*rule.Source
 }
 
@@ -138,10 +138,10 @@ func (m *ruleSvcMockSourceRepo) Delete(_ context.Context, id shared.ID) error {
 // --- Rule Repository ---
 
 type ruleSvcMockRuleRepo struct {
-	mu    sync.Mutex
-	rules map[string]*rule.Rule
-	listErr     error
-	upsertErr   error
+	mu                sync.Mutex
+	rules             map[string]*rule.Rule
+	listErr           error
+	upsertErr         error
 	deleteBySourceErr error
 }
 
@@ -285,8 +285,8 @@ func (m *ruleSvcMockRuleRepo) CountByTenantAndTool(_ context.Context, _ shared.I
 // --- Bundle Repository ---
 
 type ruleSvcMockBundleRepo struct {
-	mu      sync.Mutex
-	bundles map[string]*rule.Bundle
+	mu            sync.Mutex
+	bundles       map[string]*rule.Bundle
 	createErr     error
 	updateErr     error
 	deleteErr     error
@@ -494,8 +494,8 @@ func (m *ruleSvcMockOverrideRepo) DeleteExpired(_ context.Context) (int64, error
 // --- Sync History Repository ---
 
 type ruleSvcMockSyncHistoryRepo struct {
-	mu      sync.Mutex
-	entries []*rule.SyncHistory
+	mu        sync.Mutex
+	entries   []*rule.SyncHistory
 	createErr error
 }
 
@@ -3065,9 +3065,15 @@ func TestGenerateBundleVersion_ExactlyEightCharHash(t *testing.T) {
 }
 
 // Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
-func (m *ruleSvcMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
-func (m *ruleSvcMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
-func (m *ruleSvcMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }
+func (m *ruleSvcMockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) {
+	return "", nil
+}
+func (m *ruleSvcMockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error {
+	return nil
+}
+func (m *ruleSvcMockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+	return nil, nil
+}
 
 func (m *ruleSvcMockAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
 	return nil

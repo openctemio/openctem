@@ -58,6 +58,7 @@ type agentSvcMockRepo struct {
 	getByAPIKeyHashCalls  int
 	listCalls             int
 	updateCalls           int
+	updateKeyExpiryCalls  int
 	deleteCalls           int
 	updateLastSeenCalls   int
 	incrementStatsCalls   int
@@ -188,6 +189,21 @@ func (m *agentSvcMockRepo) Update(_ context.Context, a *agent.Agent) error {
 		return m.updateErr
 	}
 	m.agents[a.ID.String()] = a
+	return nil
+}
+
+func (m *agentSvcMockRepo) UpdateKeyExpiry(_ context.Context, id shared.ID, expiresAt *time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateKeyExpiryCalls++
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	a, ok := m.agents[id.String()]
+	if !ok || !a.Status.CanAuthenticate() { // status='active' guard
+		return nil
+	}
+	a.KeyExpiresAt = expiresAt
 	return nil
 }
 
@@ -2393,6 +2409,47 @@ func TestAgentService_RenewAPIKey_Overlap(t *testing.T) {
 	// Old inline key still works during the overlap grace window.
 	if _, err := svc.AuthenticateByAPIKey(context.Background(), oldKey); err != nil {
 		t.Errorf("expected the old inline key to still work during overlap, got %v", err)
+	}
+}
+
+// Regression (RFC-014 defect): the inline bootstrap key must be retired exactly
+// ONCE, on the first overlap renewal. A prior guard (!IsKeyExpired) re-ran the
+// retirement on every renewal that landed before the grace lapsed, pushing the
+// grace forward and keeping the original static key alive forever under short
+// TTLs. The fix guards on KeyExpiresAt == nil.
+func TestAgentService_RenewAPIKey_Overlap_RetiresInlineKeyOnce(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	keyRepo := newMockAgentAPIKeyRepo()
+	svc := newAgentSvcTestService(repo)
+	svc.SetKeyTTL(1 * time.Hour)
+	svc.SetAPIKeyRepository(keyRepo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateAgent(context.Background(), app.CreateAgentInput{
+		TenantID: tenantID.String(), Name: "retire-agent", Type: "runner",
+	})
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	// Renew several times, each before the grace would lapse.
+	for i := 0; i < 3; i++ {
+		if _, _, err := svc.RenewAPIKey(context.Background(), out.Agent); err != nil {
+			t.Fatalf("renew %d: %v", i, err)
+		}
+	}
+
+	// The inline key must have been retired exactly once (not re-extended).
+	if repo.updateKeyExpiryCalls != 1 {
+		t.Errorf("expected inline key retired exactly once, got %d UpdateKeyExpiry calls", repo.updateKeyExpiryCalls)
+	}
+	stored := repo.agents[out.Agent.ID.String()]
+	if stored.KeyExpiresAt == nil {
+		t.Fatal("expected inline key to have an expiry after overlap renewal")
+	}
+	// And the retirement grace is bounded (≤ ~15m out), not pushed to a full TTL.
+	if time.Until(*stored.KeyExpiresAt) > 20*time.Minute {
+		t.Errorf("inline expiry pushed too far out (%v) — retirement re-extended?", time.Until(*stored.KeyExpiresAt))
 	}
 }
 

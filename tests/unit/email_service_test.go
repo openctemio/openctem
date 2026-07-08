@@ -23,10 +23,10 @@ type emailMockSender struct {
 	sendErr      error
 
 	// Track SendTemplate calls
-	sendTemplateCalls    int
-	lastTo               string
-	lastTemplate         email.Template
-	lastData             any
+	sendTemplateCalls int
+	lastTo            string
+	lastTemplate      email.Template
+	lastData          any
 }
 
 func (m *emailMockSender) Send(_ context.Context, _ *email.Message) error {

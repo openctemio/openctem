@@ -364,7 +364,7 @@ func (m *mockRunRepo) Update(_ context.Context, r *pipeline.Run) error {
 	return nil
 }
 
-func (m *mockRunRepo) Delete(_ context.Context, _ shared.ID) error                        { return nil }
+func (m *mockRunRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
 func (m *mockRunRepo) GetWithStepRuns(_ context.Context, _ shared.ID) (*pipeline.Run, error) {
 	return nil, nil
 }
@@ -431,9 +431,9 @@ func (m *mockStepRepo) GetByPipelineID(_ context.Context, pipelineID shared.ID) 
 func (m *mockStepRepo) GetByKey(_ context.Context, _ shared.ID, _ string) (*pipeline.Step, error) {
 	return nil, nil
 }
-func (m *mockStepRepo) Update(_ context.Context, _ *pipeline.Step) error              { return nil }
-func (m *mockStepRepo) Delete(_ context.Context, _ shared.ID) error                   { return nil }
-func (m *mockStepRepo) DeleteByPipelineID(_ context.Context, _ shared.ID) error       { return nil }
+func (m *mockStepRepo) Update(_ context.Context, _ *pipeline.Step) error        { return nil }
+func (m *mockStepRepo) Delete(_ context.Context, _ shared.ID) error             { return nil }
+func (m *mockStepRepo) DeleteByPipelineID(_ context.Context, _ shared.ID) error { return nil }
 func (m *mockStepRepo) DeleteByPipelineIDInTx(_ context.Context, _ *sql.Tx, _ shared.ID) error {
 	return nil
 }
@@ -512,8 +512,8 @@ func (m *mockCommandRepo) List(_ context.Context, _ commanddom.Filter, _ paginat
 	return pagination.Result[*commanddom.Command]{}, nil
 }
 func (m *mockCommandRepo) Update(_ context.Context, _ *commanddom.Command) error { return nil }
-func (m *mockCommandRepo) Delete(_ context.Context, _ shared.ID) error        { return nil }
-func (m *mockCommandRepo) ExpireOldCommands(_ context.Context) (int64, error) { return 0, nil }
+func (m *mockCommandRepo) Delete(_ context.Context, _ shared.ID) error           { return nil }
+func (m *mockCommandRepo) ExpireOldCommands(_ context.Context) (int64, error)    { return 0, nil }
 func (m *mockCommandRepo) FindExpired(_ context.Context) ([]*commanddom.Command, error) {
 	return nil, nil
 }
@@ -685,8 +685,8 @@ func (m *mockToolRepo) ListByCapability(_ context.Context, _ string) ([]*tool.To
 func (m *mockToolRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string) (*tool.Tool, error) {
 	return nil, nil
 }
-func (m *mockToolRepo) Update(_ context.Context, _ *tool.Tool) error  { return nil }
-func (m *mockToolRepo) Delete(_ context.Context, _ shared.ID) error   { return nil }
+func (m *mockToolRepo) Update(_ context.Context, _ *tool.Tool) error       { return nil }
+func (m *mockToolRepo) Delete(_ context.Context, _ shared.ID) error        { return nil }
 func (m *mockToolRepo) BulkCreate(_ context.Context, _ []*tool.Tool) error { return nil }
 func (m *mockToolRepo) BulkUpdateVersions(_ context.Context, _ map[shared.ID]tool.VersionInfo) error {
 	return nil
@@ -738,12 +738,12 @@ func (m *mockTemplateSyncer) SyncSource(_ context.Context, _ *templatesource.Tem
 // =============================================================================
 
 type mockAgentSelector struct {
-	available     bool
-	message       string
+	available      bool
+	message        string
 	canUsePlatform bool
 	platformReason string
-	selectResult  *scanservice.SelectAgentResult
-	selectErr     error
+	selectResult   *scanservice.SelectAgentResult
+	selectErr      error
 }
 
 func (m *mockAgentSelector) CheckAgentAvailability(_ context.Context, _ shared.ID, _ string, _ bool) *scanservice.AgentAvailability {

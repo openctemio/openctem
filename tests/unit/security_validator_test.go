@@ -110,7 +110,7 @@ func (m *secValMockToolRepo) ListAvailableTools(_ context.Context, _ shared.ID, 
 	return pagination.Result[*tool.Tool]{}, nil
 }
 func (m *secValMockToolRepo) DeleteTenantTool(_ context.Context, _, _ shared.ID) error { return nil }
-func (m *secValMockToolRepo) BulkCreate(_ context.Context, _ []*tool.Tool) error        { return nil }
+func (m *secValMockToolRepo) BulkCreate(_ context.Context, _ []*tool.Tool) error       { return nil }
 func (m *secValMockToolRepo) BulkUpdateVersions(_ context.Context, _ map[shared.ID]tool.VersionInfo) error {
 	return nil
 }
@@ -254,13 +254,13 @@ func TestSecValValidateStepConfig_ToolNameInvalidChars(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	invalidNames := []string{
-		"tool name",  // space
-		"tool@name",  // @
-		"tool/name",  // slash
-		"tool;name",  // semicolon
-		"tool$name",  // dollar
-		"tôöl",       // accented chars
-		"a b",        // space
+		"tool name", // space
+		"tool@name", // @
+		"tool/name", // slash
+		"tool;name", // semicolon
+		"tool$name", // dollar
+		"tôöl",      // accented chars
+		"a b",       // space
 	}
 
 	for _, name := range invalidNames {
@@ -1002,13 +1002,13 @@ func TestSecValValidateIdentifier_InvalidChars(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	invalidNames := []string{
-		"step key",    // space
-		"step@key",   // @
-		"step/key",   // slash
-		"step.key",   // dot
-		"step;key",   // semicolon
-		"step$key",   // dollar
-		"stép",       // accented char
+		"step key", // space
+		"step@key", // @
+		"step/key", // slash
+		"step.key", // dot
+		"step;key", // semicolon
+		"step$key", // dollar
+		"stép",     // accented char
 	}
 
 	for _, name := range invalidNames {
@@ -1241,9 +1241,9 @@ func TestSecValValidateCronExpression_InvalidCharsInField(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	invalidExprs := []string{
-		"a * * * *",          // letters in minute field
-		"0 b * * *",          // letters in hour field
-		"0 0 c * *",          // letters in day field
+		"a * * * *", // letters in minute field
+		"0 b * * *", // letters in hour field
+		"0 0 c * *", // letters in day field
 	}
 
 	for _, expr := range invalidExprs {

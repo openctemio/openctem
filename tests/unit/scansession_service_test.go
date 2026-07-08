@@ -193,7 +193,10 @@ func (m *scanSessionMockAgentRepo) List(_ context.Context, _ agent.Filter, _ pag
 }
 
 func (m *scanSessionMockAgentRepo) Update(_ context.Context, _ *agent.Agent) error { return nil }
-func (m *scanSessionMockAgentRepo) Delete(_ context.Context, _ shared.ID) error     { return nil }
+func (m *scanSessionMockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
+	return nil
+}
+func (m *scanSessionMockAgentRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
 func (m *scanSessionMockAgentRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
 	return nil
 }

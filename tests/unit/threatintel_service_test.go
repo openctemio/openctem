@@ -1,11 +1,12 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/threat"
 	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app/threat"
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/threatintel"
@@ -17,14 +18,14 @@ import (
 // ============================================================================
 
 type threatIntelMockEPSSRepo struct {
-	scores       map[string]*threatintel.EPSSScore
-	highRiskFn   func(ctx context.Context, threshold float64, limit int) ([]*threatintel.EPSSScore, error)
-	countVal     int64
-	countErr     error
-	upsertErr    error
-	getByIDErr   error
-	getByIDsErr  error
-	highRiskErr  error
+	scores      map[string]*threatintel.EPSSScore
+	highRiskFn  func(ctx context.Context, threshold float64, limit int) ([]*threatintel.EPSSScore, error)
+	countVal    int64
+	countErr    error
+	upsertErr   error
+	getByIDErr  error
+	getByIDsErr error
+	highRiskErr error
 }
 
 func newThreatIntelMockEPSSRepo() *threatIntelMockEPSSRepo {
@@ -116,19 +117,19 @@ func (m *threatIntelMockEPSSRepo) DeleteAll(_ context.Context) error {
 // ============================================================================
 
 type threatIntelMockKEVRepo struct {
-	entries          map[string]*threatintel.KEVEntry
-	countVal         int64
-	countErr         error
-	upsertErr        error
-	getByIDErr       error
-	existsVal        bool
-	existsErr        error
-	pastDueEntries   []*threatintel.KEVEntry
-	pastDueErr       error
-	recentEntries    []*threatintel.KEVEntry
-	recentErr        error
-	ransomEntries    []*threatintel.KEVEntry
-	ransomErr        error
+	entries        map[string]*threatintel.KEVEntry
+	countVal       int64
+	countErr       error
+	upsertErr      error
+	getByIDErr     error
+	existsVal      bool
+	existsErr      error
+	pastDueEntries []*threatintel.KEVEntry
+	pastDueErr     error
+	recentEntries  []*threatintel.KEVEntry
+	recentErr      error
+	ransomEntries  []*threatintel.KEVEntry
+	ransomErr      error
 }
 
 func newThreatIntelMockKEVRepo() *threatIntelMockKEVRepo {
@@ -235,10 +236,10 @@ func (m *threatIntelMockKEVRepo) DeleteAll(_ context.Context) error {
 // ============================================================================
 
 type threatIntelMockSyncStatusRepo struct {
-	statuses    map[string]*threatintel.SyncStatus
-	getAllErr   error
-	getByErr   error
-	updateErr  error
+	statuses  map[string]*threatintel.SyncStatus
+	getAllErr error
+	getByErr  error
+	updateErr error
 }
 
 func newThreatIntelMockSyncStatusRepo() *threatIntelMockSyncStatusRepo {
@@ -316,8 +317,8 @@ func newThreatIntelMockRepo() *threatIntelMockRepo {
 	}
 }
 
-func (m *threatIntelMockRepo) EPSS() threatintel.EPSSRepository       { return m.epss }
-func (m *threatIntelMockRepo) KEV() threatintel.KEVRepository         { return m.kev }
+func (m *threatIntelMockRepo) EPSS() threatintel.EPSSRepository             { return m.epss }
+func (m *threatIntelMockRepo) KEV() threatintel.KEVRepository               { return m.kev }
 func (m *threatIntelMockRepo) SyncStatus() threatintel.SyncStatusRepository { return m.syncStatus }
 
 func (m *threatIntelMockRepo) EnrichCVEs(_ context.Context, cveIDs []string) (map[string]*threatintel.ThreatIntelEnrichment, error) {

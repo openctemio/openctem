@@ -9,9 +9,9 @@ import (
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
-	"github.com/openctemio/api/pkg/pagination"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
 )
 
 // =============================================================================

@@ -19,10 +19,10 @@ import (
 // =============================================================================
 
 type moduleMockRepo struct {
-	modules      []*module.Module
-	modulesByID  map[string]*module.Module
-	subModules   map[string][]*module.Module
-	allSubMods   map[string][]*module.Module
+	modules     []*module.Module
+	modulesByID map[string]*module.Module
+	subModules  map[string][]*module.Module
+	allSubMods  map[string][]*module.Module
 
 	listAllErr       error
 	listActiveErr    error
@@ -117,8 +117,8 @@ type moduleTenanMockRepo struct {
 	upsertBatchCalls    int
 	deleteByTenantCalls int
 
-	lastUpsertTenantID shared.ID
-	lastUpsertUpdates  []module.TenantModuleUpdate
+	lastUpsertTenantID  shared.ID
+	lastUpsertUpdates   []module.TenantModuleUpdate
 	lastUpsertUpdatedBy *shared.ID
 
 	lastDeleteTenantID shared.ID
@@ -1442,9 +1442,15 @@ func TestModuleService_UpdateTenantModules_ReturnsUpdatedConfig(t *testing.T) {
 }
 
 // Hash-chain stubs — no-op for unit tests that only exercise LogEvent.
-func (m *moduleAuditMockRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) { return "", nil }
-func (m *moduleAuditMockRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error    { return nil }
-func (m *moduleAuditMockRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) { return nil, nil }
+func (m *moduleAuditMockRepo) LatestChainHash(_ context.Context, _ shared.ID) (string, error) {
+	return "", nil
+}
+func (m *moduleAuditMockRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error {
+	return nil
+}
+func (m *moduleAuditMockRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+	return nil, nil
+}
 
 func (m *moduleAuditMockRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
 	return nil

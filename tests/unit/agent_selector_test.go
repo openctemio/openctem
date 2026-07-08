@@ -61,7 +61,10 @@ func (m *agentSelMockAgentRepo) List(_ context.Context, _ agent.Filter, _ pagina
 	return pagination.Result[*agent.Agent]{}, nil
 }
 func (m *agentSelMockAgentRepo) Update(_ context.Context, _ *agent.Agent) error { return nil }
-func (m *agentSelMockAgentRepo) Delete(_ context.Context, _ shared.ID) error    { return nil }
+func (m *agentSelMockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
+	return nil
+}
+func (m *agentSelMockAgentRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
 func (m *agentSelMockAgentRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
 	return nil
 }
@@ -356,7 +359,7 @@ func TestAgentSelSelectAgent_EqualLoad(t *testing.T) {
 
 	repo := newAgentSelMockAgentRepo()
 
-	first := makeAgentSelAgent("first", 2, 4) // 50% load
+	first := makeAgentSelAgent("first", 2, 4)   // 50% load
 	second := makeAgentSelAgent("second", 2, 4) // 50% load
 
 	repo.availableAgents = []*agent.Agent{first, second}
@@ -612,8 +615,8 @@ func TestAgentSelLeastLoaded_ZeroCurrentJobs(t *testing.T) {
 
 	repo := newAgentSelMockAgentRepo()
 
-	idle := makeAgentSelAgent("idle", 0, 5)  // 0% load
-	busy := makeAgentSelAgent("busy", 4, 5)  // 80% load
+	idle := makeAgentSelAgent("idle", 0, 5) // 0% load
+	busy := makeAgentSelAgent("busy", 4, 5) // 80% load
 
 	repo.availableAgents = []*agent.Agent{busy, idle}
 

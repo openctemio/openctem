@@ -1,11 +1,12 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/attack"
 	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app/attack"
 
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -256,42 +257,42 @@ func makeAttackSurfaceAsset(
 	createdAt, updatedAt, lastSeen time.Time,
 ) *asset.Asset {
 	return asset.Reconstitute(
-		shared.NewID(),        // assetID
-		serviceTenantID,       // tenantID
-		nil,                   // parentID
-		nil,                   // ownerID
-		name,                  // name
-		assetType,             // assetType
-		criticality,           // criticality
-		asset.StatusActive,    // status
-		asset.ScopeExternal,   // scope
-		exposure,              // exposure
-		50,                    // riskScore
-		findingCount,          // findingCount
-		"test description",    // description
-		nil,                   // tags
-		nil,                   // properties
-		asset.ProviderManual,  // provider
-		"",                    // externalID
-		"",                    // classification
+		shared.NewID(),         // assetID
+		serviceTenantID,        // tenantID
+		nil,                    // parentID
+		nil,                    // ownerID
+		name,                   // name
+		assetType,              // assetType
+		criticality,            // criticality
+		asset.StatusActive,     // status
+		asset.ScopeExternal,    // scope
+		exposure,               // exposure
+		50,                     // riskScore
+		findingCount,           // findingCount
+		"test description",     // description
+		nil,                    // tags
+		nil,                    // properties
+		asset.ProviderManual,   // provider
+		"",                     // externalID
+		"",                     // classification
 		asset.SyncStatusSynced, // syncStatus
-		nil,                   // lastSyncedAt
-		"",                    // syncError
-		"",                    // discoverySource
-		"",                    // discoveryTool
-		nil,                   // discoveredAt
-		nil,                   // complianceScope
-		"",                    // dataClassification
-		false,                 // piiDataExposed
-		false,                 // phiDataExposed
-		nil,                   // regulatoryOwnerID
-		false,                 // isInternetAccessible
-		nil,                   // exposureChangedAt
-		asset.ExposureUnknown, // lastExposureLevel
-		createdAt,             // firstSeen
-		lastSeen,              // lastSeen
-		createdAt,             // createdAt
-		updatedAt,             // updatedAt
+		nil,                    // lastSyncedAt
+		"",                     // syncError
+		"",                     // discoverySource
+		"",                     // discoveryTool
+		nil,                    // discoveredAt
+		nil,                    // complianceScope
+		"",                     // dataClassification
+		false,                  // piiDataExposed
+		false,                  // phiDataExposed
+		nil,                    // regulatoryOwnerID
+		false,                  // isInternetAccessible
+		nil,                    // exposureChangedAt
+		asset.ExposureUnknown,  // lastExposureLevel
+		createdAt,              // firstSeen
+		lastSeen,               // lastSeen
+		createdAt,              // createdAt
+		updatedAt,              // updatedAt
 	)
 }
 
@@ -301,7 +302,7 @@ func makeAttackSurfaceAsset(
 
 func TestAttackSurfaceService_GetStats_Success(t *testing.T) {
 	repo := newMockAttackSurfaceRepo()
-	repo.countResults = []int64{42, 10, 3}  // total, exposed, critical
+	repo.countResults = []int64{42, 10, 3} // total, exposed, critical
 	repo.countErrors = []error{nil, nil, nil}
 	repo.avgRiskScore = 65.5
 	repo.breakdownResult = map[string]asset.AssetTypeStats{
@@ -622,7 +623,7 @@ func TestAttackSurfaceService_GetStats_RecentChangesAdded(t *testing.T) {
 
 func TestAttackSurfaceService_GetStats_RecentChangesChanged(t *testing.T) {
 	createdAt := time.Now().UTC().Add(-48 * time.Hour) // Created 2 days ago
-	updatedAt := time.Now().UTC()                       // Updated now
+	updatedAt := time.Now().UTC()                      // Updated now
 	changedAsset := makeAttackSurfaceAsset("old-service.example.com", asset.AssetTypeHost, asset.ExposurePrivate,
 		asset.CriticalityLow, 1, createdAt, updatedAt, updatedAt)
 

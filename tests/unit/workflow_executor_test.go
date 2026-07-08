@@ -97,12 +97,12 @@ func (m *wfExecMockWorkflowRepo) ListActiveWithTriggerType(ctx context.Context, 
 
 // wfExecMockRunRepo implements workflow.RunRepository for executor tests.
 type wfExecMockRunRepo struct {
-	mu             sync.RWMutex
-	runs           map[string]*workflow.Run
-	getWithNRErr   error
-	getByIDErr     error
-	updateErr      error
-	updateCount    int
+	mu           sync.RWMutex
+	runs         map[string]*workflow.Run
+	getWithNRErr error
+	getByIDErr   error
+	updateErr    error
+	updateCount  int
 }
 
 func newWfExecMockRunRepo() *wfExecMockRunRepo {
@@ -303,9 +303,9 @@ func (m *wfExecMockNodeRunRepo) getUpdateCount() int {
 // =============================================================================
 
 type wfExecMockActionHandler struct {
-	mu          sync.Mutex
-	callCount   int
-	returnErr   error
+	mu           sync.Mutex
+	callCount    int
+	returnErr    error
 	returnOutput map[string]any
 }
 

@@ -99,4 +99,26 @@ func TestAgentKeyExpiry_RoundTrip(t *testing.T) {
 	if got3.KeyExpiresAt != nil {
 		t.Errorf("expected nil KeyExpiresAt after SetAPIKey, got %v", got3.KeyExpiresAt)
 	}
+
+	// UpdateKeyExpiry on an ACTIVE agent sets the column.
+	guardExp := time.Now().Add(30 * time.Minute).Truncate(time.Microsecond)
+	if err := repo.UpdateKeyExpiry(ctx, a.ID, &guardExp); err != nil {
+		t.Fatalf("UpdateKeyExpiry (active): %v", err)
+	}
+	if got, _ := repo.GetByID(ctx, a.ID); got.KeyExpiresAt == nil || !got.KeyExpiresAt.Equal(guardExp) {
+		t.Errorf("expected UpdateKeyExpiry to set expiry on active agent, got %v", got.KeyExpiresAt)
+	}
+
+	// Status guard: once the agent is revoked, UpdateKeyExpiry is a no-op — it
+	// must never rewrite a revoked agent's key (DEFECT 2 fix).
+	if _, err := db.ExecContext(ctx, `UPDATE agents SET status = 'revoked' WHERE id = $1`, a.ID.String()); err != nil {
+		t.Fatalf("revoke agent: %v", err)
+	}
+	future := time.Now().Add(99 * time.Hour).Truncate(time.Microsecond)
+	if err := repo.UpdateKeyExpiry(ctx, a.ID, &future); err != nil {
+		t.Fatalf("UpdateKeyExpiry (revoked): %v", err)
+	}
+	if got, _ := repo.GetByID(ctx, a.ID); got.KeyExpiresAt == nil || got.KeyExpiresAt.Equal(future) {
+		t.Errorf("status guard failed: revoked agent's key_expires_at was rewritten to %v", got.KeyExpiresAt)
+	}
 }

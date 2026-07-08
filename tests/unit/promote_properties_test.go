@@ -161,8 +161,8 @@ func TestPromoteKnownProperties_CamelToSnakeNormalization(t *testing.T) {
 			"openPorts":   []any{"22", "80"},
 			"apiType":     "REST",
 			"baseUrl":     "https://example.com",
-			"vendor":      "Dell",      // already snake_case — stays
-			"record_type": "A",         // already snake_case — stays
+			"vendor":      "Dell", // already snake_case — stays
+			"record_type": "A",    // already snake_case — stays
 		},
 	}
 
@@ -195,8 +195,8 @@ func TestPromoteKnownProperties_CamelSnakeDuplicate(t *testing.T) {
 		Name: "srv-01",
 		Type: "host",
 		Properties: map[string]any{
-			"cpu_cores": 16,      // snake_case (should win)
-			"cpuCores":  8,       // camelCase (should be dropped)
+			"cpu_cores": 16, // snake_case (should win)
+			"cpuCores":  8,  // camelCase (should be dropped)
 		},
 	}
 
