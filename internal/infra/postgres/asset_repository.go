@@ -1175,17 +1175,26 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 
 // assetUpsertColumnCount is the number of columns in the assets upsert. It MUST
 // stay in sync with assetUpsertColumnsSQL and assetUpsertArgs.
-const assetUpsertColumnCount = 27
+const assetUpsertColumnCount = 34
 
 // assetUpsertColumnsSQL is the INSERT INTO assets (...) column header.
+//
+// The sub_type + CTEM block (is_internet_accessible, exposure_changed_at,
+// compliance_scope, data_classification, pii/phi_data_exposed) were previously
+// omitted here, so discovery-ingested assets lost their sub-type and all
+// scanner-provided business-context/exposure signals — even though the single
+// Create/Update path persisted them. That silently starved the prioritization
+// engine and broke sub_type faceting. They are first-class here now.
 func assetUpsertColumnsSQL() string {
 	return `
 		INSERT INTO assets (
-			id, tenant_id, parent_id, owner_id, name, asset_type, criticality, status,
+			id, tenant_id, parent_id, owner_id, name, asset_type, sub_type, criticality, status,
 			scope, exposure, risk_score,
 			description, tags, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
 			discovery_source, discovery_tool, discovered_at,
+			is_internet_accessible, exposure_changed_at,
+			compliance_scope, data_classification, pii_data_exposed, phi_data_exposed,
 			first_seen, last_seen, created_at, updated_at
 		)`
 }
@@ -1209,7 +1218,19 @@ func assetUpsertConflictSQL() string {
 			updated_at = NOW(),
 			discovery_source = COALESCE(assets.discovery_source, EXCLUDED.discovery_source),
 			discovery_tool = COALESCE(assets.discovery_tool, EXCLUDED.discovery_tool),
-			discovered_at = COALESCE(assets.discovered_at, EXCLUDED.discovered_at)
+			discovered_at = COALESCE(assets.discovered_at, EXCLUDED.discovered_at),
+			-- sub_type + CTEM signals: fill gaps and let a scanner escalate
+			-- exposure/PII/PHI (sticky-true), union compliance frameworks. Never
+			-- clears an established value.
+			sub_type = COALESCE(assets.sub_type, EXCLUDED.sub_type),
+			data_classification = COALESCE(assets.data_classification, EXCLUDED.data_classification),
+			is_internet_accessible = assets.is_internet_accessible OR EXCLUDED.is_internet_accessible,
+			pii_data_exposed = assets.pii_data_exposed OR EXCLUDED.pii_data_exposed,
+			phi_data_exposed = assets.phi_data_exposed OR EXCLUDED.phi_data_exposed,
+			compliance_scope = (
+				SELECT array_agg(DISTINCT cs)
+				FROM unnest(assets.compliance_scope || EXCLUDED.compliance_scope) AS cs
+			)
 		RETURNING (xmax = 0) AS inserted`
 }
 
@@ -1251,6 +1272,7 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 		nullIDPtr(a.OwnerID()),
 		a.Name(),
 		a.Type().String(),
+		nullString(a.SubType()),
 		a.Criticality().String(),
 		a.Status().String(),
 		a.Scope().String(),
@@ -1268,6 +1290,12 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 		nullString(a.DiscoverySource()),
 		nullString(a.DiscoveryTool()),
 		nullTime(a.DiscoveredAt()),
+		a.IsInternetAccessible(),
+		nullTime(a.ExposureChangedAt()),
+		pq.Array(a.ComplianceScope()),
+		nullString(string(a.DataClassification())),
+		a.PIIDataExposed(),
+		a.PHIDataExposed(),
 		a.FirstSeen(),
 		a.LastSeen(),
 		a.CreatedAt(),

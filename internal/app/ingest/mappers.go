@@ -317,6 +317,34 @@ func buildServiceProperties(svc *ctis.ServiceTechnical) map[string]any {
 		props["extra_info"] = svc.ExtraInfo
 	}
 
+	// CPE is the CVE-correlation join key — dropping it (as before) silently
+	// degraded vuln matching. Preserve it plus the TLS/cert + state/auth detail
+	// the scanner provides.
+	if svc.CPE != "" {
+		props["cpe"] = svc.CPE
+	}
+	if svc.TLSVersion != "" {
+		props["tls_version"] = svc.TLSVersion
+	}
+	if svc.TLSCertSubject != "" {
+		props["tls_cert_subject"] = svc.TLSCertSubject
+	}
+	if svc.TLSCertIssuer != "" {
+		props["tls_cert_issuer"] = svc.TLSCertIssuer
+	}
+	if svc.TLSCertExpiry != "" {
+		props["tls_cert_expiry"] = svc.TLSCertExpiry
+	}
+	if svc.State != "" {
+		props["state"] = svc.State
+	}
+	if svc.AuthRequired {
+		props["auth_required"] = true
+	}
+	if len(svc.AuthMethods) > 0 {
+		props["auth_methods"] = svc.AuthMethods
+	}
+
 	return props
 }
 
