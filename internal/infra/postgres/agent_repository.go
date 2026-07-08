@@ -53,9 +53,9 @@ func (r *AgentRepository) Create(ctx context.Context, a *agent.Agent) error {
 			version, hostname, ip_address,
 			max_concurrent_jobs, current_jobs,
 			last_seen_at, last_error_at, total_findings, total_scans, error_count,
-			created_at, updated_at
+			created_at, updated_at, key_expires_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
 	`
 
 	var ipAddr sql.NullString
@@ -93,6 +93,7 @@ func (r *AgentRepository) Create(ctx context.Context, a *agent.Agent) error {
 		a.ErrorCount,
 		a.CreatedAt,
 		a.UpdatedAt,
+		nullTime(a.KeyExpiresAt),
 	)
 
 	if err != nil {
@@ -220,7 +221,7 @@ func (r *AgentRepository) Update(ctx context.Context, a *agent.Agent) error {
 		    disk_read_mbps = $24, disk_write_mbps = $25, network_rx_mbps = $26, network_tx_mbps = $27,
 		    load_score = $28, metrics_updated_at = $29,
 		    last_seen_at = $30, last_error_at = $31, total_findings = $32, total_scans = $33, error_count = $34,
-		    updated_at = $35
+		    updated_at = $35, key_expires_at = $36
 		WHERE id = $1
 	`
 
@@ -265,6 +266,7 @@ func (r *AgentRepository) Update(ctx context.Context, a *agent.Agent) error {
 		a.TotalScans,
 		a.ErrorCount,
 		a.UpdatedAt,
+		nullTime(a.KeyExpiresAt),
 	)
 
 	if err != nil {
@@ -544,7 +546,7 @@ func (r *AgentRepository) selectQuery() string {
 		       load_score, metrics_updated_at,
 		       last_seen_at, last_offline_at, last_error_at,
 		       total_findings, total_scans, error_count,
-		       created_at, updated_at
+		       created_at, updated_at, key_expires_at
 		FROM agents
 	`
 }
@@ -644,6 +646,7 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 		lastSeenAt       sql.NullTime
 		lastOfflineAt    sql.NullTime
 		lastErrorAt      sql.NullTime
+		keyExpiresAt     sql.NullTime
 	)
 
 	err := row.Scan(
@@ -687,6 +690,7 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 		&a.ErrorCount,
 		&a.CreatedAt,
 		&a.UpdatedAt,
+		&keyExpiresAt,
 	)
 
 	if err != nil {
@@ -756,6 +760,9 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 	if lastErrorAt.Valid {
 		a.LastErrorAt = &lastErrorAt.Time
 	}
+	if keyExpiresAt.Valid {
+		a.KeyExpiresAt = &keyExpiresAt.Time
+	}
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
@@ -807,6 +814,7 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 		lastSeenAt       sql.NullTime
 		lastOfflineAt    sql.NullTime
 		lastErrorAt      sql.NullTime
+		keyExpiresAt     sql.NullTime
 	)
 
 	err := rows.Scan(
@@ -850,6 +858,7 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 		&a.ErrorCount,
 		&a.CreatedAt,
 		&a.UpdatedAt,
+		&keyExpiresAt,
 	)
 
 	if err != nil {
@@ -915,6 +924,9 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 	}
 	if lastErrorAt.Valid {
 		a.LastErrorAt = &lastErrorAt.Time
+	}
+	if keyExpiresAt.Valid {
+		a.KeyExpiresAt = &keyExpiresAt.Time
 	}
 
 	if len(metadata) > 0 {

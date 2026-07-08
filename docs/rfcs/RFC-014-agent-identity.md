@@ -95,8 +95,8 @@ sites are security-critical, so **no phase is rushed**.
 
 | Phase | Work | Risk / notes |
 |-------|------|-------------|
-| **1a** | **Agent self-renew endpoint** `POST /agents/renew` (auth by current key → new key), reusing `generateAgentAPIKey`+`repo.Update`. The auto-rotate building block. | Additive, **no schema change**; works for tenant + platform agents. |
-| **1b** | **Key expiry**: `agents.key_expires_at` column + `Agent.IsKeyExpired()` + enforce in `AuthenticateByAPIKey`. Backward-compat: NULL = never expires. Renew sets a fresh expiry. | Touches 5 agent scan/column sites + auth path → careful, DB-tested. |
+| **1a** ✅ | **Agent self-renew endpoint** `POST /api/v1/agent/renew` (auth by current key → new key), reusing `generateAgentAPIKey`+`repo.Update`. The auto-rotate building block. **Shipped #282.** | Additive, **no schema change**; works for tenant + platform agents. |
+| **1b** ✅ | **Key expiry**: `agents.key_expires_at` column (migration 000185) + `Agent.IsKeyExpired()` + enforce in `AuthenticateByAPIKey`. Backward-compat: NULL = never expires. Renew sets a fresh expiry **only when `AGENT_KEY_TTL` is configured** (default off → no behavior change); the renew response returns `expires_at`. **Shipped this PR.** | Touched both agent scanners + INSERT/UPDATE/SELECT + auth path → DB round-trip test against the real schema. |
 | **2** | **Auto-renew via lease**: agent renews before expiry off its existing lease heartbeat (kubelet-style). Enroll **all** agents (not just platform) so static keys shrink to ~0. | Reuses the lease system. |
 | **3** | **Rotation overlap + per-key audit**: wire `agent.APIKey` multi-key (grace window, `LastUsedAt`/`UseCount`/IP). | New `agent_api_keys` table + repo. |
 | **4** | **Scope enforcement** (`RunnerScopes/SensorScopes`) at the authz layer. | Least-privilege. |

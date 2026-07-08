@@ -219,7 +219,7 @@ type Services struct {
 	Integration    *app.IntegrationService
 	DefectDojoSync *defectdojo.SyncService
 	Outbox         *outbox.Service
-	Notification *app.NotificationService
+	Notification   *app.NotificationService
 
 	// Agents & Commands
 	Agent   *app.AgentService
@@ -746,6 +746,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// AuthenticateByAPIKey falls back to the legacy plain-SHA256 lookup
 	// for rows written before the pepper was deployed.
 	s.Agent.SetPepper(cfg.Encryption.Key)
+	// Optional short-lived agent credentials (RFC-014 Phase 1b). Zero =
+	// disabled (renewed keys never expire), preserving today's behavior.
+	s.Agent.SetKeyTTL(cfg.AgentConfig.KeyTTL)
 	s.Command = command.NewService(repos.Command, log)
 
 	// Initialize ingest service (unified ingestion engine)

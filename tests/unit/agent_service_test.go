@@ -1111,7 +1111,7 @@ func TestAgentService_RenewAPIKey_Success(t *testing.T) {
 	a := repo.seedAgent(tenantID, "agent-1", agent.AgentTypeRunner)
 	oldHash := a.APIKeyHash
 
-	newKey, err := svc.RenewAPIKey(context.Background(), a)
+	newKey, _, err := svc.RenewAPIKey(context.Background(), a)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1132,7 +1132,7 @@ func TestAgentService_RenewAPIKey_PlatformAgent(t *testing.T) {
 	a.TenantID = nil
 	a.IsPlatformAgent = true
 
-	newKey, err := svc.RenewAPIKey(context.Background(), a)
+	newKey, _, err := svc.RenewAPIKey(context.Background(), a)
 	if err != nil {
 		t.Fatalf("expected no error for platform agent renewal, got %v", err)
 	}
@@ -1145,7 +1145,7 @@ func TestAgentService_RenewAPIKey_NilAgent(t *testing.T) {
 	repo := newAgentSvcMockRepo()
 	svc := newAgentSvcTestService(repo)
 
-	_, err := svc.RenewAPIKey(context.Background(), nil)
+	_, _, err := svc.RenewAPIKey(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error for nil agent")
 	}
@@ -1164,7 +1164,7 @@ func TestAgentService_RenewAPIKey_RevokedAgent(t *testing.T) {
 	a.Revoke("compromised")
 	repo.agents[a.ID.String()] = a
 
-	_, err := svc.RenewAPIKey(context.Background(), a)
+	_, _, err := svc.RenewAPIKey(context.Background(), a)
 	if err == nil {
 		t.Fatal("expected error for revoked agent")
 	}
@@ -1189,7 +1189,7 @@ func TestAgentService_RenewAPIKey_OldKeyStopsWorking(t *testing.T) {
 	}
 	oldKey := out.APIKey
 
-	newKey, err := svc.RenewAPIKey(context.Background(), out.Agent)
+	newKey, _, err := svc.RenewAPIKey(context.Background(), out.Agent)
 	if err != nil {
 		t.Fatalf("renew failed: %v", err)
 	}
@@ -1212,9 +1212,129 @@ func TestAgentService_RenewAPIKey_UpdateError(t *testing.T) {
 	a := repo.seedAgent(tenantID, "agent-1", agent.AgentTypeRunner)
 	repo.updateErr = errors.New("update failed")
 
-	_, err := svc.RenewAPIKey(context.Background(), a)
+	_, _, err := svc.RenewAPIKey(context.Background(), a)
 	if err == nil {
 		t.Fatal("expected error when repo.Update fails")
+	}
+}
+
+func TestAgent_IsKeyExpired(t *testing.T) {
+	past := time.Now().Add(-time.Minute)
+	future := time.Now().Add(time.Minute)
+	cases := []struct {
+		name    string
+		expires *time.Time
+		want    bool
+	}{
+		{"nil never expires", nil, false},
+		{"future not expired", &future, false},
+		{"past expired", &past, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &agent.Agent{KeyExpiresAt: tc.expires}
+			if got := a.IsKeyExpired(); got != tc.want {
+				t.Errorf("IsKeyExpired() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Default service (no key TTL configured): a renewed key never expires — the
+// returned expiry and the stored KeyExpiresAt are both nil (today's behavior).
+func TestAgentService_RenewAPIKey_NoTTL_NeverExpires(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedAgent(tenantID, "agent-1", agent.AgentTypeRunner)
+
+	_, expiresAt, err := svc.RenewAPIKey(context.Background(), a)
+	if err != nil {
+		t.Fatalf("renew failed: %v", err)
+	}
+	if expiresAt != nil {
+		t.Errorf("expected nil expiry with no TTL configured, got %v", expiresAt)
+	}
+	if repo.agents[a.ID.String()].KeyExpiresAt != nil {
+		t.Error("expected stored KeyExpiresAt to be nil with no TTL")
+	}
+}
+
+// With a key TTL configured, a renewed key carries a fresh future expiry, both
+// returned to the caller and persisted on the agent.
+func TestAgentService_RenewAPIKey_WithTTL_SetsExpiry(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+	svc.SetKeyTTL(1 * time.Hour)
+	tenantID := shared.NewID()
+	a := repo.seedAgent(tenantID, "agent-1", agent.AgentTypeRunner)
+
+	before := time.Now()
+	_, expiresAt, err := svc.RenewAPIKey(context.Background(), a)
+	if err != nil {
+		t.Fatalf("renew failed: %v", err)
+	}
+	if expiresAt == nil {
+		t.Fatal("expected a non-nil expiry when TTL is configured")
+	}
+	if !expiresAt.After(before.Add(59 * time.Minute)) {
+		t.Errorf("expected expiry ~1h out, got %v (before=%v)", expiresAt, before)
+	}
+	stored := repo.agents[a.ID.String()].KeyExpiresAt
+	if stored == nil || !stored.Equal(*expiresAt) {
+		t.Errorf("expected persisted KeyExpiresAt %v to match returned %v", stored, expiresAt)
+	}
+}
+
+// An expired key is rejected at authentication even though the agent is active.
+func TestAgentService_AuthenticateByAPIKey_ExpiredKey(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateAgent(context.Background(), app.CreateAgentInput{
+		TenantID: tenantID.String(),
+		Name:     "expired-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	past := time.Now().Add(-1 * time.Hour)
+	out.Agent.KeyExpiresAt = &past
+	repo.agents[out.Agent.ID.String()] = out.Agent
+
+	_, err = svc.AuthenticateByAPIKey(context.Background(), out.APIKey)
+	if err == nil {
+		t.Fatal("expected error for expired key")
+	}
+	if !errors.Is(err, shared.ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized for expired key, got %v", err)
+	}
+}
+
+// A key with a future expiry (or NULL, the back-compat default) still authenticates.
+func TestAgentService_AuthenticateByAPIKey_UnexpiredKey(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateAgent(context.Background(), app.CreateAgentInput{
+		TenantID: tenantID.String(),
+		Name:     "unexpired-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	future := time.Now().Add(1 * time.Hour)
+	out.Agent.KeyExpiresAt = &future
+	repo.agents[out.Agent.ID.String()] = out.Agent
+
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), out.APIKey); err != nil {
+		t.Errorf("expected a future-expiry key to authenticate, got %v", err)
 	}
 }
 

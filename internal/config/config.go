@@ -97,6 +97,11 @@ type AgentConfigConfig struct {
 	// PublicAPIURL is the URL agents will connect to (embedded in templates).
 	// If empty, falls back to App.URL.
 	PublicAPIURL string
+	// KeyTTL is how long a self-renewed agent API key stays valid before it
+	// must be renewed again (RFC-014 Phase 1b). Zero (the default) disables
+	// expiry: renewed keys never expire. Set AGENT_KEY_TTL (e.g. "24h") to opt
+	// into short-lived, auto-rotating agent credentials.
+	KeyTTL time.Duration
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -548,6 +553,7 @@ func Load() (*Config, error) {
 		AgentConfig: AgentConfigConfig{
 			TemplatesDir: getEnv("AGENT_CONFIG_TEMPLATES_DIR", "configs/agent-templates"),
 			PublicAPIURL: getEnv("AGENT_PUBLIC_API_URL", ""),
+			KeyTTL:       getEnvDuration("AGENT_KEY_TTL", 0),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),

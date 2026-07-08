@@ -33,6 +33,12 @@ type AgentService struct {
 	// access to application config cannot brute-force the raw API key
 	// from a leaked key_hash column.
 	pepper string
+	// keyTTL is how long a self-renewed API key stays valid before it must be
+	// renewed again (RFC-014 Phase 1b). Zero (the default) disables expiry:
+	// renewed keys never expire, preserving today's behavior. Set via
+	// SetKeyTTL at boot. Only self-renewal honors it; created and
+	// admin-regenerated keys never expire regardless.
+	keyTTL time.Duration
 }
 
 // NewAgentService creates a new AgentService.
@@ -50,6 +56,13 @@ func NewAgentService(repo agentdom.Repository, auditService *auditapp.AuditServi
 // handles any traffic.
 func (s *AgentService) SetPepper(pepper string) {
 	s.pepper = pepper
+}
+
+// SetKeyTTL configures how long a self-renewed API key stays valid. Zero (the
+// default) disables expiry — renewed keys never expire. Should be called once
+// at boot before the service handles traffic.
+func (s *AgentService) SetKeyTTL(ttl time.Duration) {
+	s.keyTTL = ttl
 }
 
 // CreateAgentInput represents the input for creating an agent.
@@ -358,34 +371,46 @@ func (s *AgentService) RegenerateAPIKey(ctx context.Context, tenantID, agentID s
 // stale in-memory copy, and re-check CanAuthenticate to refuse renewal for an
 // agent that was disabled/revoked in the auth→renew window. Works for both
 // tenant and platform (nil-tenant) agents since the lookup/update key on ID.
-func (s *AgentService) RenewAPIKey(ctx context.Context, a *agentdom.Agent) (string, error) {
+//
+// When a key TTL is configured (SetKeyTTL), the new key carries a fresh expiry
+// and the agent is expected to renew again before it lapses; otherwise the key
+// never expires (today's behavior). Returns the new key and its expiry (nil =
+// never expires) so the agent can schedule its next renewal.
+func (s *AgentService) RenewAPIKey(ctx context.Context, a *agentdom.Agent) (string, *time.Time, error) {
 	if a == nil {
-		return "", shared.NewDomainError("UNAUTHORIZED", "no authenticated agent", shared.ErrUnauthorized)
+		return "", nil, shared.NewDomainError("UNAUTHORIZED", "no authenticated agent", shared.ErrUnauthorized)
 	}
 
 	fresh, err := s.repo.GetByID(ctx, a.ID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if !fresh.Status.CanAuthenticate() {
 		if fresh.Status == agentdom.AgentStatusRevoked {
-			return "", shared.NewDomainError("FORBIDDEN", "agent access has been revoked", shared.ErrForbidden)
+			return "", nil, shared.NewDomainError("FORBIDDEN", "agent access has been revoked", shared.ErrForbidden)
 		}
-		return "", shared.NewDomainError("FORBIDDEN", "agent is disabled", shared.ErrForbidden)
+		return "", nil, shared.NewDomainError("FORBIDDEN", "agent is disabled", shared.ErrForbidden)
 	}
 
 	apiKey, hash, prefix, err := s.generateAgentAPIKey()
 	if err != nil {
-		return "", fmt.Errorf("failed to generate API key: %w", err)
+		return "", nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
-	fresh.SetAPIKey(hash, prefix)
+	var expiresAt *time.Time
+	if s.keyTTL > 0 {
+		t := time.Now().Add(s.keyTTL)
+		expiresAt = &t
+	}
+
+	fresh.SetAPIKeyWithExpiry(hash, prefix, expiresAt)
 	if err := s.repo.Update(ctx, fresh); err != nil {
-		return "", err
+		return "", nil, err
 	}
 
-	s.logger.Info("agent renewed its API key", "agent_id", fresh.ID.String(), "is_platform", fresh.IsPlatformAgent)
-	return apiKey, nil
+	s.logger.Info("agent renewed its API key",
+		"agent_id", fresh.ID.String(), "is_platform", fresh.IsPlatformAgent, "expires_at", expiresAt)
+	return apiKey, expiresAt, nil
 }
 
 // AuthenticateByAPIKey authenticates an agent by API key.
@@ -419,6 +444,14 @@ func (s *AgentService) AuthenticateByAPIKey(ctx context.Context, apiKey string) 
 			return nil, shared.NewDomainError("FORBIDDEN", "agent access has been revoked", shared.ErrForbidden)
 		}
 		return nil, shared.NewDomainError("FORBIDDEN", "agent is disabled", shared.ErrForbidden)
+	}
+
+	// Reject an expired key (RFC-014 Phase 1b). NULL expiry (the default and
+	// every legacy row) never expires, so this is a no-op until an operator
+	// configures a key TTL and agents renew. An expired agent must re-enroll or
+	// be admin-regenerated; unauthorized (not forbidden) signals "renew/re-auth".
+	if a.IsKeyExpired() {
+		return nil, shared.NewDomainError("UNAUTHORIZED", "api key expired", shared.ErrUnauthorized)
 	}
 
 	// Update last seen and health (async). Bounded with a timeout so a slow DB

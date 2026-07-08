@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -606,8 +607,11 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 
 // RenewKeyResponse is returned by the agent self-renew endpoint. The new key is
 // shown once, exactly like creation/regeneration — the server stores only its hash.
+// ExpiresAt is when the new key stops authenticating (nil/omitted = never
+// expires); the agent uses it to schedule its next renewal.
 type RenewKeyResponse struct {
-	APIKey string `json:"api_key"`
+	APIKey    string     `json:"api_key"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // RenewKey handles POST /api/v1/agent/renew
@@ -629,7 +633,7 @@ func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newKey, err := h.agentService.RenewAPIKey(r.Context(), agt)
+	newKey, expiresAt, err := h.agentService.RenewAPIKey(r.Context(), agt)
 	if err != nil {
 		if errors.Is(err, shared.ErrForbidden) {
 			// Disabled/revoked in the auth→renew window. Generic message; log specifics.
@@ -643,7 +647,7 @@ func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(&RenewKeyResponse{APIKey: newKey})
+	_ = json.NewEncoder(w).Encode(&RenewKeyResponse{APIKey: newKey, ExpiresAt: expiresAt})
 }
 
 // =============================================================================

@@ -164,6 +164,11 @@ type Agent struct {
 	// API key for authentication
 	APIKeyHash   string
 	APIKeyPrefix string
+	// KeyExpiresAt is when the current API key stops authenticating.
+	// nil = never expires (the default for created/admin-regenerated keys and
+	// every row predating RFC-014 Phase 1b). Self-renewal sets a fresh expiry
+	// when the server is configured with a key TTL.
+	KeyExpiresAt *time.Time
 
 	// Metadata and configuration
 	Labels   map[string]interface{}
@@ -245,11 +250,27 @@ func NewAgent(
 	}, nil
 }
 
-// SetAPIKey sets the hashed API key and prefix.
+// SetAPIKey sets the hashed API key and prefix, clearing any expiry (the key
+// never expires). Used on creation and admin hard-rotation, where the operator
+// has not opted into short-lived credentials.
 func (a *Agent) SetAPIKey(hash, prefix string) {
+	a.SetAPIKeyWithExpiry(hash, prefix, nil)
+}
+
+// SetAPIKeyWithExpiry sets the hashed API key and prefix with an expiry.
+// A nil expiresAt means the key never expires. Used by self-renewal to issue a
+// short-lived credential (RFC-014); the agent renews again before it lapses.
+func (a *Agent) SetAPIKeyWithExpiry(hash, prefix string, expiresAt *time.Time) {
 	a.APIKeyHash = hash
 	a.APIKeyPrefix = prefix
+	a.KeyExpiresAt = expiresAt
 	a.UpdatedAt = time.Now()
+}
+
+// IsKeyExpired reports whether the current API key has passed its expiry.
+// A nil KeyExpiresAt (never-expiring key, the default) is never expired.
+func (a *Agent) IsKeyExpired() bool {
+	return a.KeyExpiresAt != nil && time.Now().After(*a.KeyExpiresAt)
 }
 
 // UpdateLastSeen updates the last seen timestamp and sets health to online.
@@ -548,13 +569,13 @@ type PlatformAgentStatsResult struct {
 // TenantAgentStats holds aggregate statistics for a tenant's agents,
 // computed via SQL aggregation. Powers the agents page stat cards.
 type TenantAgentStats struct {
-	Total          int            `json:"total"`
-	ByStatus       map[string]int `json:"by_status"`        // active, disabled, revoked, ...
-	ByHealth       map[string]int `json:"by_health"`        // online, offline, error, unknown
-	ByType         map[string]int `json:"by_type"`          // runner, worker, collector, sensor
-	ByMode         map[string]int `json:"by_execution_mode"` // standalone, daemon
-	ActiveJobs     int            `json:"active_jobs"`       // SUM(current_jobs) for online daemon agents
-	OnlineActive   int            `json:"online_active"`     // status=active AND health=online
+	Total        int            `json:"total"`
+	ByStatus     map[string]int `json:"by_status"`         // active, disabled, revoked, ...
+	ByHealth     map[string]int `json:"by_health"`         // online, offline, error, unknown
+	ByType       map[string]int `json:"by_type"`           // runner, worker, collector, sensor
+	ByMode       map[string]int `json:"by_execution_mode"` // standalone, daemon
+	ActiveJobs   int            `json:"active_jobs"`       // SUM(current_jobs) for online daemon agents
+	OnlineActive int            `json:"online_active"`     // status=active AND health=online
 }
 
 // ScoreForJob calculates a score for job matching (higher is better).
