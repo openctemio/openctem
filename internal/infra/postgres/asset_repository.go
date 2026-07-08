@@ -382,18 +382,22 @@ func (r *AssetRepository) selectQuery() string {
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at,
 			   a.lifecycle_paused_until, a.manual_status_override
 		FROM assets a
-		LEFT JOIN (
-			SELECT asset_id,
+		-- LATERAL correlates the finding aggregate to each selected asset (and its
+		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
+		-- instead of materializing a full-findings-table GROUP BY on every asset
+		-- read. Decisive for single GetByID and multi-tenant deployments; asset_id
+		-- is globally unique so the counts are identical to the old join.
+		LEFT JOIN LATERAL (
+			SELECT
 				COUNT(*) as finding_count,
-				SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as finding_critical,
-				SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END) as finding_high,
-				SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END) as finding_medium,
-				SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END) as finding_low,
-				SUM(CASE WHEN severity = 'info' THEN 1 ELSE 0 END) as finding_info
-			FROM findings
-			WHERE status != 'resolved'
-			GROUP BY asset_id
-		) fc ON fc.asset_id = a.id
+				COUNT(*) FILTER (WHERE f.severity = 'critical') as finding_critical,
+				COUNT(*) FILTER (WHERE f.severity = 'high') as finding_high,
+				COUNT(*) FILTER (WHERE f.severity = 'medium') as finding_medium,
+				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
+				COUNT(*) FILTER (WHERE f.severity = 'info') as finding_info
+			FROM findings f
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved'
+		) fc ON true
 	`
 }
 
@@ -1944,11 +1948,13 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE),
 			COALESCE(fc.finding_count, 0)
 		FROM assets a
-		LEFT JOIN (
-			SELECT asset_id, COUNT(*) AS finding_count
-			FROM findings
-			GROUP BY asset_id
-		) fc ON fc.asset_id = a.id
+		-- Per-asset indexed count (see selectQuery) instead of a full-findings
+		-- GROUP BY. Counts all findings for the asset, matching prior behavior.
+		LEFT JOIN LATERAL (
+			SELECT COUNT(*) AS finding_count
+			FROM findings f
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id
+		) fc ON true
 		WHERE a.tenant_id = $1
 		ORDER BY a.created_at
 	`
