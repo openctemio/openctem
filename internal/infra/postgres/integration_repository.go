@@ -502,6 +502,48 @@ func (r *IntegrationRepository) ListByProvider(ctx context.Context, tenantID int
 	return result, nil
 }
 
+// ListDueForSync returns connected integrations of a provider that are due for a
+// scheduled sync (next_sync_at is null or in the past), across ALL tenants, up
+// to limit, oldest-due first. Cross-tenant by design — the scheduler runs
+// per-tenant sync under each integration's own tenant. Kept off the domain
+// Repository interface (narrow, scheduler-only).
+func (r *IntegrationRepository) ListDueForSync(ctx context.Context, provider integration.Provider, now time.Time, limit int) ([]*integration.Integration, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `
+		SELECT id, tenant_id, name, description, category, provider,
+			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
+			   config, metadata, stats, created_at, updated_at, created_by
+		FROM integrations
+		WHERE provider = $1
+		  AND status = 'connected'
+		  AND sync_interval_minutes > 0
+		  AND (next_sync_at IS NULL OR next_sync_at <= $2)
+		ORDER BY next_sync_at ASC NULLS FIRST
+		LIMIT $3
+	`
+	rows, err := r.db.QueryContext(ctx, query, provider.String(), now.UTC(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list integrations due for sync: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make([]*integration.Integration, 0)
+	for rows.Next() {
+		intg, err := r.scanIntegrationRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, intg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return result, nil
+}
+
 // scanIntegration scans a single row into an Integration.
 func (r *IntegrationRepository) scanIntegration(row *sql.Row) (*integration.Integration, error) {
 	var (

@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
+	"github.com/openctemio/api/internal/app/defectdojo"
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/app/outbox"
 	"github.com/openctemio/api/internal/app/scancoverage"
@@ -17,8 +18,19 @@ import (
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/jobs"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// ddTenantSyncerAdapter adapts *defectdojo.SyncService (which returns a
+// SyncResult) to the scheduler's error-only TenantSyncer, so the controller
+// package need not import app/defectdojo.
+type ddTenantSyncerAdapter struct{ svc *defectdojo.SyncService }
+
+func (a ddTenantSyncerAdapter) SyncTenant(ctx context.Context, tenantID shared.ID) error {
+	_, err := a.svc.SyncTenant(ctx, tenantID)
+	return err
+}
 
 // Workers holds all background worker instances.
 type Workers struct {
@@ -263,6 +275,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Logger:   log.With("controller", "scope-reconciliation"),
 		},
 	))
+
+	// RFC-013 Phase 2c: periodically pull due DefectDojo integrations so the
+	// co-existence sync is hands-off (nil-safe when the sync service is absent).
+	if svc.DefectDojoSync != nil {
+		w.ControllerManager.Register(controller.NewDefectDojoSyncController(
+			repos.Integration,
+			ddTenantSyncerAdapter{svc: svc.DefectDojoSync},
+			log,
+		))
+	}
 
 	// Threat intel — daily EPSS + KEV refresh + auto-escalate KEV findings
 	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
