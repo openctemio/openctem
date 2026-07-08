@@ -182,6 +182,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Integration
 		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),
+		DefectDojo:  handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Agents & Commands
 		Command:          commandHandler,

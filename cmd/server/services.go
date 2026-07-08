@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/app/apikey"
 	"github.com/openctemio/api/internal/app/assignment"
 	"github.com/openctemio/api/internal/app/command"
+	"github.com/openctemio/api/internal/app/defectdojo"
 	"github.com/openctemio/api/internal/app/scope"
 	"github.com/openctemio/api/internal/app/threat"
 	"github.com/openctemio/api/internal/app/tool"
@@ -192,8 +193,9 @@ type Services struct {
 	Dashboard *app.DashboardService
 
 	// Integrations & Notifications
-	Integration  *app.IntegrationService
-	Outbox       *outbox.Service
+	Integration    *app.IntegrationService
+	DefectDojoSync *defectdojo.SyncService
+	Outbox         *outbox.Service
 	Notification *app.NotificationService
 
 	// Agents & Commands
@@ -718,6 +720,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Agent, repos.Branch, repos.Tenant, repos.Audit, log)
+	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
+	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
+	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url

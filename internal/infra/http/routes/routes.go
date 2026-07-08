@@ -44,6 +44,7 @@ type Handlers struct {
 	Branch           *handler.BranchHandler           // nil if not initialized (no database)
 	SLA              *handler.SLAHandler              // nil if not initialized (no database)
 	Integration      *handler.IntegrationHandler      // nil if not initialized (no database)
+	DefectDojo       *handler.DefectDojoHandler       // nil if not initialized / no DefectDojo sync
 	AssetGroup       *handler.AssetGroupHandler       // nil if not initialized (no database)
 	Scope            *handler.ScopeHandler            // nil if not initialized (no database)
 	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
@@ -503,7 +504,7 @@ func Register(
 
 	// Integration routes (tenant from JWT token)
 	if h.Integration != nil {
-		registerIntegrationRoutes(router, h.Integration, h.JiraWebhook, authMiddleware, userSync)
+		registerIntegrationRoutes(router, h.Integration, h.JiraWebhook, h.DefectDojo, authMiddleware, userSync)
 	}
 
 	// Asset Group routes (tenant from JWT token)
