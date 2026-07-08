@@ -62,6 +62,28 @@ func (a findingMutatorAdapter) Update(ctx context.Context, f *vulnerability.Find
 	return a.repo.Update(ctx, f)
 }
 
+// assetOwnerMatcher resolves an asset's owner_ref email to a user id for
+// auto-ownership, but ONLY when that user is a member of the tenant — never
+// assigning ownership to a user outside the tenant (isolation). A no-match is
+// returned as (nil, nil), not an error, so auto-match stays best-effort.
+// Wires the previously-dead AssetService.SetUserMatcher.
+type assetOwnerMatcher struct {
+	users   *postgres.UserRepository
+	tenants *postgres.TenantRepository
+}
+
+func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID shared.ID, email string) (*shared.ID, error) {
+	u, err := m.users.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, nil //nolint:nilerr // unknown email → no match, not an error (best-effort auto-match)
+	}
+	if _, err := m.tenants.GetMembership(ctx, u.ID(), tenantID); err != nil {
+		return nil, nil //nolint:nilerr // not a member of this tenant → do not assign
+	}
+	id := u.ID()
+	return &id, nil
+}
+
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
 // action's JiraTicketService (primitive params, so the workflow package needn't
 // import app/jira — that would cycle through the app shim).
@@ -404,6 +426,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize asset services
 	s.Asset = app.NewAssetService(repos.Asset, log)
 	s.Asset.SetRepositoryExtensionRepository(repos.RepoExt)
+	// Wire owner_ref→user auto-resolution (was dead: SetUserMatcher never called,
+	// so an email owner_ref never resolved to a real user_id). Membership-checked.
+	s.Asset.SetUserMatcher(assetOwnerMatcher{users: repos.User, tenants: repos.Tenant})
 	s.Asset.SetAssetGroupRepository(repos.AssetGroup)
 	s.Asset.SetAccessControlRepository(repos.AccessControl)
 	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
