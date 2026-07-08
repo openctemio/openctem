@@ -97,8 +97,8 @@ sites are security-critical, so **no phase is rushed**.
 |-------|------|-------------|
 | **1a** ✅ | **Agent self-renew endpoint** `POST /api/v1/agent/renew` (auth by current key → new key), reusing `generateAgentAPIKey`+`repo.Update`. The auto-rotate building block. **Shipped #282.** | Additive, **no schema change**; works for tenant + platform agents. |
 | **1b** ✅ | **Key expiry**: `agents.key_expires_at` column (migration 000185) + `Agent.IsKeyExpired()` + enforce in `AuthenticateByAPIKey`. Backward-compat: NULL = never expires. Renew sets a fresh expiry **only when `AGENT_KEY_TTL` is configured** (default off → no behavior change); the renew response returns `expires_at`. **Shipped this PR.** | Touched both agent scanners + INSERT/UPDATE/SELECT + auth path → DB round-trip test against the real schema. |
-| **2** | **Auto-renew via lease**: agent renews before expiry off its existing lease heartbeat (kubelet-style). Enroll **all** agents (not just platform) so static keys shrink to ~0. | Reuses the lease system. |
-| **3** | **Rotation overlap + per-key audit**: wire `agent.APIKey` multi-key (grace window, `LastUsedAt`/`UseCount`/IP). | New `agent_api_keys` table + repo. |
+| **2** ✅* | **Auto-renew via lease**: agent renews before expiry off its existing lease heartbeat (kubelet-style). | SDK `KeyRenewManager` + agent wiring done (sdk-go #45 + agent branch); *pending sdk-go v0.5.0 release. |
+| **3** ✅ | **Rotation overlap + per-key audit**: wired the (pre-existing) `agent_api_keys` table via `AgentAPIKeyRepository`; auth accepts inline key **or** an active/valid key row; self-renew under a TTL issues the new key as a row so the superseded key stays valid during overlap; inline bootstrap key retired after a grace; per-key `use_count`/`last_used`. **Shipped this PR.** | Additive to the auth path; DB round-trip test against the real `agent_api_keys` schema. |
 | **4** | **Scope enforcement** (`RunnerScopes/SensorScopes`) at the authz layer. | Least-privilege. |
 | **5** | **OIDC federation for CI runners.** | Zero stored secret. |
 | — | **External connectors unchanged** (per-tenant encrypted creds + webhook HMAC). | Correct as-is. |

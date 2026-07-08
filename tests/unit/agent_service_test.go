@@ -2,6 +2,8 @@ package unit
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"sync"
@@ -2252,4 +2254,172 @@ func TestAgentService_NilAuditService_DoesNotPanic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeleteAgent should not panic with nil audit service: %v", err)
 	}
+}
+
+// ============================================================================
+// Tests: multi-key store (RFC-014 Phase 3 rotation overlap)
+// ============================================================================
+
+// mockAgentAPIKeyRepo is an in-memory agent.APIKeyRepository for the overlap tests.
+type mockAgentAPIKeyRepo struct {
+	mu        sync.Mutex
+	byID      map[string]*agent.APIKey
+	createErr error
+}
+
+func newMockAgentAPIKeyRepo() *mockAgentAPIKeyRepo {
+	return &mockAgentAPIKeyRepo{byID: make(map[string]*agent.APIKey)}
+}
+
+func (m *mockAgentAPIKeyRepo) Create(_ context.Context, k *agent.APIKey) error {
+	if m.createErr != nil {
+		return m.createErr
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := *k
+	m.byID[k.ID.String()] = &cp
+	return nil
+}
+func (m *mockAgentAPIKeyRepo) GetByID(_ context.Context, id shared.ID) (*agent.APIKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if k, ok := m.byID[id.String()]; ok {
+		cp := *k
+		return &cp, nil
+	}
+	return nil, agent.ErrAgentNotFound
+}
+func (m *mockAgentAPIKeyRepo) GetByHash(_ context.Context, hash string) (*agent.APIKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range m.byID {
+		if k.KeyHash == hash && k.IsActive {
+			cp := *k
+			return &cp, nil
+		}
+	}
+	return nil, agent.ErrAgentNotFound
+}
+func (m *mockAgentAPIKeyRepo) GetByAgentID(_ context.Context, agentID shared.ID) ([]*agent.APIKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*agent.APIKey
+	for _, k := range m.byID {
+		if k.AgentID == agentID {
+			cp := *k
+			out = append(out, &cp)
+		}
+	}
+	return out, nil
+}
+func (m *mockAgentAPIKeyRepo) List(_ context.Context, _ agent.APIKeyFilter) ([]*agent.APIKey, error) {
+	return nil, nil
+}
+func (m *mockAgentAPIKeyRepo) Update(_ context.Context, k *agent.APIKey) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := *k
+	m.byID[k.ID.String()] = &cp
+	return nil
+}
+func (m *mockAgentAPIKeyRepo) Delete(_ context.Context, id shared.ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.byID, id.String())
+	return nil
+}
+func (m *mockAgentAPIKeyRepo) RecordUsage(_ context.Context, id shared.ID, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if k, ok := m.byID[id.String()]; ok {
+		k.UseCount++
+	}
+	return nil
+}
+func (m *mockAgentAPIKeyRepo) Revoke(_ context.Context, id shared.ID, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if k, ok := m.byID[id.String()]; ok {
+		k.Revoke(reason)
+	}
+	return nil
+}
+func (m *mockAgentAPIKeyRepo) CountActiveByAgentID(_ context.Context, agentID shared.ID) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, k := range m.byID {
+		if k.AgentID == agentID && k.IsActive {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// Renew under a TTL with the multi-key store issues a NEW key row that
+// authenticates, while the old inline key keeps working during the overlap.
+func TestAgentService_RenewAPIKey_Overlap(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	keyRepo := newMockAgentAPIKeyRepo()
+	svc := newAgentSvcTestService(repo)
+	svc.SetKeyTTL(1 * time.Hour)
+	svc.SetAPIKeyRepository(keyRepo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateAgent(context.Background(), app.CreateAgentInput{
+		TenantID: tenantID.String(), Name: "overlap-agent", Type: "runner",
+	})
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	oldKey := out.APIKey
+
+	newKey, exp, err := svc.RenewAPIKey(context.Background(), out.Agent)
+	if err != nil {
+		t.Fatalf("renew: %v", err)
+	}
+	if exp == nil {
+		t.Fatal("expected an expiry under TTL")
+	}
+	// The new key was issued as a key row (not an inline-hash replacement).
+	if n, _ := keyRepo.CountActiveByAgentID(context.Background(), out.Agent.ID); n != 1 {
+		t.Errorf("expected 1 key row after overlap renewal, got %d", n)
+	}
+	// New key authenticates via the key row.
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), newKey); err != nil {
+		t.Errorf("expected the new key to authenticate via the key row, got %v", err)
+	}
+	// Old inline key still works during the overlap grace window.
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), oldKey); err != nil {
+		t.Errorf("expected the old inline key to still work during overlap, got %v", err)
+	}
+}
+
+// An expired key row does not authenticate.
+func TestAgentService_AuthenticateByAPIKey_ExpiredKeyRow(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	keyRepo := newMockAgentAPIKeyRepo()
+	svc := newAgentSvcTestService(repo)
+	svc.SetAPIKeyRepository(keyRepo)
+	tenantID := shared.NewID()
+	a := repo.seedAgent(tenantID, "agent-1", agent.AgentTypeRunner)
+
+	// Seed an expired, active key row whose hash matches a known plaintext.
+	plaintext := "rda_rowkey_expired_000000000000"
+	k, _ := agent.NewAPIKey(a.ID, "expired", agent.RunnerScopes())
+	k.SetKeyHash(hashForTest(svc, plaintext), "rda_expired0")
+	past := time.Now().Add(-time.Hour)
+	k.SetExpiration(past)
+	_ = keyRepo.Create(context.Background(), k)
+
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), plaintext); err == nil {
+		t.Fatal("expected expired key row to be rejected")
+	}
+}
+
+// hashForTest reproduces the service's key-hash (no pepper configured in tests).
+func hashForTest(_ *app.AgentService, plaintext string) string {
+	sum := sha256.Sum256([]byte(plaintext))
+	return hex.EncodeToString(sum[:])
 }

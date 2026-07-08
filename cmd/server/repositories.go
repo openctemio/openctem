@@ -89,9 +89,10 @@ type Repositories struct {
 	Notification               *postgres.NotificationRepository
 
 	// Agents & Commands
-	Agent     *postgres.AgentRepository
-	Command   *postgres.CommandRepository
-	IngestJob *postgres.IngestJobRepository
+	Agent       *postgres.AgentRepository
+	AgentAPIKey *postgres.AgentAPIKeyRepository
+	Command     *postgres.CommandRepository
+	IngestJob   *postgres.IngestJobRepository
 
 	// Scan coverage rotation (RFC-007)
 	ScanCoverage *postgres.ScanCoverageRepository
@@ -272,9 +273,10 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Notification: postgres.NewNotificationRepository(db),
 
 		// Agents & Commands
-		Agent:     postgres.NewAgentRepository(db),
-		Command:   postgres.NewCommandRepository(db),
-		IngestJob: postgres.NewIngestJobRepository(db),
+		Agent:       postgres.NewAgentRepository(db),
+		AgentAPIKey: postgres.NewAgentAPIKeyRepository(db),
+		Command:     postgres.NewCommandRepository(db),
+		IngestJob:   postgres.NewIngestJobRepository(db),
 
 		// Scan coverage rotation (RFC-007)
 		ScanCoverage: postgres.NewScanCoverageRepository(db),

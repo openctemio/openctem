@@ -39,6 +39,12 @@ type AgentService struct {
 	// SetKeyTTL at boot. Only self-renewal honors it; created and
 	// admin-regenerated keys never expire regardless.
 	keyTTL time.Duration
+	// apiKeyRepo is the optional multi-key store (RFC-014 Phase 3). When wired,
+	// AuthenticateByAPIKey also accepts keys from agent_api_keys, and self-renewal
+	// under a key TTL issues a NEW key row (rotation overlap) instead of replacing
+	// the inline hash — so a renewed key coexists with the one it supersedes. Nil
+	// (the default) keeps the single-inline-key behavior.
+	apiKeyRepo agentdom.APIKeyRepository
 }
 
 // NewAgentService creates a new AgentService.
@@ -63,6 +69,12 @@ func (s *AgentService) SetPepper(pepper string) {
 // at boot before the service handles traffic.
 func (s *AgentService) SetKeyTTL(ttl time.Duration) {
 	s.keyTTL = ttl
+}
+
+// SetAPIKeyRepository wires the multi-key store (RFC-014 Phase 3). Optional;
+// when nil the service uses only the single inline key per agent.
+func (s *AgentService) SetAPIKeyRepository(repo agentdom.APIKeyRepository) {
+	s.apiKeyRepo = repo
 }
 
 // CreateAgentInput represents the input for creating an agent.
@@ -403,6 +415,19 @@ func (s *AgentService) RenewAPIKey(ctx context.Context, a *agentdom.Agent) (stri
 		expiresAt = &t
 	}
 
+	// Rotation overlap (RFC-014 Phase 3): with the multi-key store wired AND a
+	// TTL configured, issue the new key as its own agent_api_keys row so the key
+	// it supersedes stays valid until that key's own expiry — zero-downtime
+	// rotation. Without both, fall back to replacing the single inline hash.
+	if s.apiKeyRepo != nil && expiresAt != nil {
+		if err := s.issueOverlappingKey(ctx, fresh, hash, prefix, *expiresAt); err != nil {
+			return "", nil, err
+		}
+		s.logger.Info("agent renewed its API key (overlap)",
+			"agent_id", fresh.ID.String(), "is_platform", fresh.IsPlatformAgent, "expires_at", expiresAt)
+		return apiKey, expiresAt, nil
+	}
+
 	fresh.SetAPIKeyWithExpiry(hash, prefix, expiresAt)
 	if err := s.repo.Update(ctx, fresh); err != nil {
 		return "", nil, err
@@ -411,6 +436,79 @@ func (s *AgentService) RenewAPIKey(ctx context.Context, a *agentdom.Agent) (stri
 	s.logger.Info("agent renewed its API key",
 		"agent_id", fresh.ID.String(), "is_platform", fresh.IsPlatformAgent, "expires_at", expiresAt)
 	return apiKey, expiresAt, nil
+}
+
+// overlapGrace is how long the superseded static (inline) key stays valid after
+// an overlapping renewal, covering in-flight requests before it is retired.
+const overlapGrace = 15 * time.Minute
+
+// issueOverlappingKey issues the renewed key as a new agent_api_keys row so the
+// key it supersedes keeps working during the overlap window (rotation overlap).
+// It also retires the long-lived inline bootstrap key (a short grace, so the
+// static credential doesn't linger valid forever after the first renewal) and
+// prunes already-expired key rows to bound accumulation.
+func (s *AgentService) issueOverlappingKey(ctx context.Context, fresh *agentdom.Agent, hash, prefix string, expiresAt time.Time) error {
+	key, err := agentdom.NewAPIKey(fresh.ID, "renewed", scopesForAgent(fresh.Type))
+	if err != nil {
+		return err
+	}
+	key.SetKeyHash(hash, prefix)
+	key.SetExpiration(expiresAt)
+	if err := s.apiKeyRepo.Create(ctx, key); err != nil {
+		return fmt.Errorf("issue overlapping key: %w", err)
+	}
+
+	// Retire the static inline key (best-effort): once past the grace it stops
+	// authenticating, so the original never-expiring bootstrap credential does
+	// not remain valid after the agent has switched to rotating keys.
+	if !fresh.IsKeyExpired() {
+		grace := time.Now().Add(overlapGrace)
+		if grace.After(expiresAt) {
+			grace = expiresAt
+		}
+		fresh.KeyExpiresAt = &grace
+		fresh.UpdatedAt = time.Now()
+		if err := s.repo.Update(ctx, fresh); err != nil {
+			s.logger.Warn("failed to retire inline key after overlap renewal",
+				"agent_id", fresh.ID.String(), "error", err)
+		}
+	}
+
+	s.pruneExpiredKeys(ctx, fresh.ID)
+	return nil
+}
+
+// pruneExpiredKeys revokes an agent's active-but-expired key rows so the active
+// set stays bounded to the current overlap pair. Best-effort; failures are logged.
+func (s *AgentService) pruneExpiredKeys(ctx context.Context, agentID shared.ID) {
+	keys, err := s.apiKeyRepo.GetByAgentID(ctx, agentID)
+	if err != nil {
+		return
+	}
+	for _, k := range keys {
+		if k.IsActive && k.IsExpired() {
+			if err := s.apiKeyRepo.Revoke(ctx, k.ID, "expired"); err != nil {
+				s.logger.Debug("prune expired key failed", "key_id", k.ID.String(), "error", err)
+			}
+		}
+	}
+}
+
+// scopesForAgent returns the default least-privilege scope set for an agent type
+// (used when minting a rotated key). Prep for scope enforcement (Phase 4).
+func scopesForAgent(t agentdom.AgentType) []string {
+	switch t {
+	case agentdom.AgentTypeRunner:
+		return agentdom.RunnerScopes()
+	case agentdom.AgentTypeCollector:
+		return agentdom.CollectorScopes()
+	case agentdom.AgentTypeSensor:
+		return agentdom.SensorScopes()
+	case agentdom.AgentTypeWorker:
+		return agentdom.WorkerScopes()
+	default:
+		return agentdom.DefaultAgentScopes()
+	}
 }
 
 // AuthenticateByAPIKey authenticates an agent by API key.
@@ -435,6 +533,12 @@ func (s *AgentService) AuthenticateByAPIKey(ctx context.Context, apiKey string) 
 		a, err = s.repo.GetByAPIKeyHash(ctx, legacyHash)
 	}
 	if err != nil {
+		// Inline-hash miss: try the multi-key store (RFC-014 Phase 3). Only
+		// reached for keys issued by self-renewal under rotation overlap; the
+		// common inline-key path above is unchanged.
+		if agent, rowErr := s.authByAPIKeyRow(ctx, apiKey, hash); rowErr == nil {
+			return agent, nil
+		}
 		return nil, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
 	}
 
@@ -461,6 +565,48 @@ func (s *AgentService) AuthenticateByAPIKey(ctx context.Context, apiKey string) 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = s.repo.UpdateLastSeen(ctx, agentID)
+	}()
+
+	return a, nil
+}
+
+// authByAPIKeyRow resolves an agent via the multi-key agent_api_keys store
+// (RFC-014 Phase 3). Returns ErrUnauthorized on any miss/invalid so the caller
+// falls through to a single generic error. GetByHash already filters to active
+// keys; IsValid additionally rejects expired ones. The owning agent's
+// admin-controlled status still governs — a revoked/disabled agent cannot
+// authenticate with any of its keys.
+func (s *AgentService) authByAPIKeyRow(ctx context.Context, apiKey, pepperedHash string) (*agentdom.Agent, error) {
+	if s.apiKeyRepo == nil {
+		return nil, shared.ErrUnauthorized
+	}
+
+	key, err := s.apiKeyRepo.GetByHash(ctx, pepperedHash)
+	if err != nil && s.pepper != "" {
+		key, err = s.apiKeyRepo.GetByHash(ctx, crypto.HashToken(apiKey))
+	}
+	if err != nil || key == nil || !key.IsValid() {
+		return nil, shared.ErrUnauthorized
+	}
+
+	a, err := s.repo.GetByID(ctx, key.AgentID)
+	if err != nil {
+		return nil, shared.ErrUnauthorized
+	}
+	if !a.Status.CanAuthenticate() {
+		if a.Status == agentdom.AgentStatusRevoked {
+			return nil, shared.NewDomainError("FORBIDDEN", "agent access has been revoked", shared.ErrForbidden)
+		}
+		return nil, shared.NewDomainError("FORBIDDEN", "agent is disabled", shared.ErrForbidden)
+	}
+
+	// Async per-key audit + agent liveness.
+	keyID, agentID := key.ID, a.ID
+	go func() {
+		bg, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.apiKeyRepo.RecordUsage(bg, keyID, "")
+		_ = s.repo.UpdateLastSeen(bg, agentID)
 	}()
 
 	return a, nil

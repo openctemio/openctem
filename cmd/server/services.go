@@ -749,6 +749,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Optional short-lived agent credentials (RFC-014 Phase 1b). Zero =
 	// disabled (renewed keys never expire), preserving today's behavior.
 	s.Agent.SetKeyTTL(cfg.AgentConfig.KeyTTL)
+	// Multi-key store for rotation overlap (RFC-014 Phase 3). Additive: auth
+	// still accepts the inline key; renewal under a TTL issues overlapping keys.
+	s.Agent.SetAPIKeyRepository(repos.AgentAPIKey)
 	s.Command = command.NewService(repos.Command, log)
 
 	// Initialize ingest service (unified ingestion engine)

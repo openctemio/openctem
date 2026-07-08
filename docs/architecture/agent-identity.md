@@ -43,6 +43,8 @@ REVOKE   Status = revoked  → auth short-circuits immediately        [shipped]
 | **Agent self-renew** (Phase 1a) | `POST /api/v1/agent/renew` (agent API-key auth) → `AgentService.RenewAPIKey` | agent rotates its **own** key; works for tenant **and** platform agents; TOCTOU-safe (re-reads status by id) |
 | **Key expiry** (Phase 1b) | `agents.key_expires_at` (migration `000185`), `Agent.IsKeyExpired()`, enforced in `AuthenticateByAPIKey` | **NULL = never expires** (default + all legacy rows) |
 | Configurable key TTL | `AGENT_KEY_TTL` env → `AgentService.SetKeyTTL` | **default `0` = disabled**; only self-renew honors it |
+| **Rotation overlap** (Phase 3) | `AgentAPIKeyRepository` over the `agent_api_keys` table; auth accepts the inline key **or** an active/valid key row | self-renew under a TTL issues the new key as a row so the superseded key stays valid during overlap; inline bootstrap key retired after a 15-min grace; per-key `use_count`/`last_used` audit |
+| Agent auto-renew (Phase 2, SDK) | `sdk-go` `KeyRenewManager` + agent `-key-autorenew` flag | renews at ~½ TTL, swaps both clients, persists to the creds file; *pending the sdk-go v0.5.0 release |
 
 ### Enabling short-lived credentials (`AGENT_KEY_TTL`)
 
@@ -61,9 +63,7 @@ renewed keys never expire** and behavior is identical to before Phase 1b.
 
 | Phase | Capability | Scope |
 |-------|-----------|-------|
-| **2** | Daemon agents auto-renew off their existing lease heartbeat (kubelet-style, before expiry) | **cross-repo** — `sdk-go/pkg/platform/lease.go` renew loop + credential swap + persistence, then agent bump |
-| **3** | Rotation overlap + per-key audit — wire the designed-but-unwired multi-key model (`pkg/domain/agent/api_key.go`: `Scopes`, `ExpiresAt`, `LastUsedAt`, `UseCount`) | new `agent_api_keys` table + repo; auth checks N and N+1 in a grace window (zero-downtime rotation) |
-| **4** | Scope enforcement (`RunnerScopes` / `SensorScopes`) at the authz layer | least-privilege, like k8s NodeRestriction; rides on the Phase-3 multi-key |
+| **4** | Scope enforcement (`RunnerScopes` / `SensorScopes`) at the authz layer | least-privilege, like k8s NodeRestriction; rides on the Phase-3 multi-key (rotated keys already carry per-type scopes) |
 | **5** | OIDC federation for ephemeral CI runners — exchange the CI provider's OIDC token for a short-lived scoped agent token | zero stored secret; strongest option for CI |
 
 ## Why not a shared account token
