@@ -25,47 +25,47 @@ type agentSvcMockRepo struct {
 	agents map[string]*agent.Agent // keyed by agent ID string
 
 	// Error injection
-	createErr                  error
-	getByIDErr                 error
-	getByTenantAndIDErr        error
-	getByAPIKeyHashErr         error
-	listErr                    error
-	updateErr                  error
-	deleteErr                  error
-	updateLastSeenErr          error
-	incrementStatsErr          error
-	findAvailableErr           error
-	findAvailableWithCapErr    error
-	claimJobErr                error
-	releaseJobErr              error
+	createErr                   error
+	getByIDErr                  error
+	getByTenantAndIDErr         error
+	getByAPIKeyHashErr          error
+	listErr                     error
+	updateErr                   error
+	deleteErr                   error
+	updateLastSeenErr           error
+	incrementStatsErr           error
+	findAvailableErr            error
+	findAvailableWithCapErr     error
+	claimJobErr                 error
+	releaseJobErr               error
 	getAvailableCapabilitiesErr error
-	hasAgentForCapabilityErr   error
-	getPlatformAgentStatsErr   error
+	hasAgentForCapabilityErr    error
+	getPlatformAgentStatsErr    error
 
 	// Return overrides
-	availableAgents     []*agent.Agent
-	availableCapAgents  []*agent.Agent
-	capabilities        []string
-	hasCapability       bool
-	platformStats       *agent.PlatformAgentStatsResult
+	availableAgents    []*agent.Agent
+	availableCapAgents []*agent.Agent
+	capabilities       []string
+	hasCapability      bool
+	platformStats      *agent.PlatformAgentStatsResult
 
 	// Call tracking
-	createCalls              int
-	getByIDCalls             int
-	getByTenantAndIDCalls    int
-	getByAPIKeyHashCalls     int
-	listCalls                int
-	updateCalls              int
-	deleteCalls              int
-	updateLastSeenCalls      int
-	incrementStatsCalls      int
-	findAvailableCalls       int
-	findAvailableCapCalls    int
-	claimJobCalls            int
-	releaseJobCalls          int
-	getAvailCapCalls         int
-	hasAgentCapCalls         int
-	getPlatformStatsCalls    int
+	createCalls           int
+	getByIDCalls          int
+	getByTenantAndIDCalls int
+	getByAPIKeyHashCalls  int
+	listCalls             int
+	updateCalls           int
+	deleteCalls           int
+	updateLastSeenCalls   int
+	incrementStatsCalls   int
+	findAvailableCalls    int
+	findAvailableCapCalls int
+	claimJobCalls         int
+	releaseJobCalls       int
+	getAvailCapCalls      int
+	hasAgentCapCalls      int
+	getPlatformStatsCalls int
 
 	// Last args
 	lastFilter     agent.Filter
@@ -1101,6 +1101,124 @@ func TestAgentService_RegenerateAPIKey_UpdateError(t *testing.T) {
 }
 
 // ============================================================================
+// Tests: RenewAPIKey (self-service credential rotation)
+// ============================================================================
+
+func TestAgentService_RenewAPIKey_Success(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedAgent(tenantID, "agent-1", agent.AgentTypeRunner)
+	oldHash := a.APIKeyHash
+
+	newKey, err := svc.RenewAPIKey(context.Background(), a)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !strings.HasPrefix(newKey, "rda_") {
+		t.Errorf("expected renewed key to start with 'rda_', got %q", newKey)
+	}
+	if repo.agents[a.ID.String()].APIKeyHash == oldHash {
+		t.Error("expected API key hash to change after renewal")
+	}
+}
+
+// Renewal works for a platform (nil-tenant) agent — the self-renew path must not
+// be tenant-scoped, unlike the admin RegenerateAPIKey.
+func TestAgentService_RenewAPIKey_PlatformAgent(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+	a := repo.seedAgent(shared.NewID(), "platform-1", agent.AgentTypeRunner)
+	a.TenantID = nil
+	a.IsPlatformAgent = true
+
+	newKey, err := svc.RenewAPIKey(context.Background(), a)
+	if err != nil {
+		t.Fatalf("expected no error for platform agent renewal, got %v", err)
+	}
+	if !strings.HasPrefix(newKey, "rda_") {
+		t.Errorf("expected renewed key to start with 'rda_', got %q", newKey)
+	}
+}
+
+func TestAgentService_RenewAPIKey_NilAgent(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+
+	_, err := svc.RenewAPIKey(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error for nil agent")
+	}
+	if !errors.Is(err, shared.ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+// A revoked/disabled agent cannot renew, even if it still holds a working key
+// (defends the auth→renew TOCTOU window: status is re-read from the repo).
+func TestAgentService_RenewAPIKey_RevokedAgent(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedAgent(tenantID, "revoked-1", agent.AgentTypeRunner)
+	a.Revoke("compromised")
+	repo.agents[a.ID.String()] = a
+
+	_, err := svc.RenewAPIKey(context.Background(), a)
+	if err == nil {
+		t.Fatal("expected error for revoked agent")
+	}
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("expected ErrForbidden, got %v", err)
+	}
+}
+
+// End-to-end: after renewal the old key stops authenticating and the new key works.
+func TestAgentService_RenewAPIKey_OldKeyStopsWorking(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateAgent(context.Background(), app.CreateAgentInput{
+		TenantID: tenantID.String(),
+		Name:     "renew-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	oldKey := out.APIKey
+
+	newKey, err := svc.RenewAPIKey(context.Background(), out.Agent)
+	if err != nil {
+		t.Fatalf("renew failed: %v", err)
+	}
+	if newKey == oldKey {
+		t.Fatal("expected renewed key to differ from the old key")
+	}
+
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), oldKey); err == nil {
+		t.Error("expected the old key to stop authenticating after renewal")
+	}
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), newKey); err != nil {
+		t.Errorf("expected the new key to authenticate, got %v", err)
+	}
+}
+
+func TestAgentService_RenewAPIKey_UpdateError(t *testing.T) {
+	repo := newAgentSvcMockRepo()
+	svc := newAgentSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedAgent(tenantID, "agent-1", agent.AgentTypeRunner)
+	repo.updateErr = errors.New("update failed")
+
+	_, err := svc.RenewAPIKey(context.Background(), a)
+	if err == nil {
+		t.Fatal("expected error when repo.Update fails")
+	}
+}
+
+// ============================================================================
 // Tests: AuthenticateByAPIKey
 // ============================================================================
 
@@ -1824,7 +1942,7 @@ func TestAgentService_GetPlatformStats_WithPremiumTier(t *testing.T) {
 		TotalAgents:   2,
 		TotalCapacity: 10,
 		TierBreakdown: map[string]agent.TierBreakdown{
-			"shared": {TotalAgents: 1, TotalCapacity: 5},
+			"shared":  {TotalAgents: 1, TotalCapacity: 5},
 			"premium": {TotalAgents: 1, TotalCapacity: 5},
 		},
 	}

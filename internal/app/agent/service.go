@@ -6,9 +6,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	auditapp "github.com/openctemio/api/internal/app/audit"
 	"net"
 	"time"
+
+	auditapp "github.com/openctemio/api/internal/app/audit"
 
 	"github.com/openctemio/api/pkg/crypto"
 	agentdom "github.com/openctemio/api/pkg/domain/agent"
@@ -342,6 +343,48 @@ func (s *AgentService) RegenerateAPIKey(ctx context.Context, tenantID, agentID s
 		_ = s.auditService.LogAgentKeyRegenerated(ctx, *auditCtx, agentID, a.Name)
 	}
 
+	return apiKey, nil
+}
+
+// RenewAPIKey lets an already-authenticated agent rotate its own credential.
+//
+// Unlike RegenerateAPIKey (an admin action, tenant+id scoped), this is the
+// self-service, kubelet-style renewal an agent drives itself: it presents its
+// current key, gets authenticated by AuthenticateByAPIKey upstream, and calls
+// this to mint a fresh one. The building block for auto-rotating credentials.
+//
+// The passed agent is the one resolved from the presented key. We re-read it by
+// ID so a concurrent admin status change (disable/revoke) is not clobbered by a
+// stale in-memory copy, and re-check CanAuthenticate to refuse renewal for an
+// agent that was disabled/revoked in the auth→renew window. Works for both
+// tenant and platform (nil-tenant) agents since the lookup/update key on ID.
+func (s *AgentService) RenewAPIKey(ctx context.Context, a *agentdom.Agent) (string, error) {
+	if a == nil {
+		return "", shared.NewDomainError("UNAUTHORIZED", "no authenticated agent", shared.ErrUnauthorized)
+	}
+
+	fresh, err := s.repo.GetByID(ctx, a.ID)
+	if err != nil {
+		return "", err
+	}
+	if !fresh.Status.CanAuthenticate() {
+		if fresh.Status == agentdom.AgentStatusRevoked {
+			return "", shared.NewDomainError("FORBIDDEN", "agent access has been revoked", shared.ErrForbidden)
+		}
+		return "", shared.NewDomainError("FORBIDDEN", "agent is disabled", shared.ErrForbidden)
+	}
+
+	apiKey, hash, prefix, err := s.generateAgentAPIKey()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	fresh.SetAPIKey(hash, prefix)
+	if err := s.repo.Update(ctx, fresh); err != nil {
+		return "", err
+	}
+
+	s.logger.Info("agent renewed its API key", "agent_id", fresh.ID.String(), "is_platform", fresh.IsPlatformAgent)
 	return apiKey, nil
 }
 

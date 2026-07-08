@@ -73,6 +73,12 @@ func registerAgentRoutes(
 		// Heartbeat - essential for agent health monitoring
 		r.POST("/heartbeat", ingestHandler.Heartbeat)
 
+		// Self-service credential renewal: the agent rotates its own key by
+		// presenting the current one. Authenticated by AuthenticateSource like
+		// every other endpoint in this group; the building block for
+		// auto-rotating credentials (RFC-014).
+		r.POST("/renew", ingestHandler.RenewKey)
+
 		// Ingest findings/assets
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
 		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
