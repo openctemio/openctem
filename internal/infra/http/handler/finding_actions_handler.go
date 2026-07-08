@@ -29,6 +29,7 @@ type ValidationRunner interface {
 type FindingActionsHandler struct {
 	service          *app.FindingActionsService
 	validationRunner ValidationRunner
+	sourceAnalytics  *app.SourceAnalyticsService
 	logger           *logger.Logger
 }
 
@@ -41,6 +42,28 @@ func NewFindingActionsHandler(svc *app.FindingActionsService, log *logger.Logger
 // validate endpoint responds 503 (feature not configured).
 func (h *FindingActionsHandler) SetValidationRunner(r ValidationRunner) {
 	h.validationRunner = r
+}
+
+// SetSourceAnalytics wires the finding source-analytics service (Tool Insights +
+// DefectDojo-dependency ratio). When unset, the endpoint responds 503.
+func (h *FindingActionsHandler) SetSourceAnalytics(s *app.SourceAnalyticsService) {
+	h.sourceAnalytics = s
+}
+
+// SourceAnalytics handles GET /api/v1/findings/analytics/sources — per-source /
+// per-tool finding breakdown plus the DefectDojo-dependency ratio.
+func (h *FindingActionsHandler) SourceAnalytics(w http.ResponseWriter, r *http.Request) {
+	if h.sourceAnalytics == nil {
+		apierror.InternalServerError("source analytics not configured").WriteJSON(w)
+		return
+	}
+	tenantID := middleware.MustGetTenantID(r.Context())
+	result, err := h.sourceAnalytics.GetSourceAnalytics(r.Context(), tenantID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, result)
 }
 
 // --- Group View ---

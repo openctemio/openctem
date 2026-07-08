@@ -121,6 +121,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Finding actions handler with the CTEM Stage-4 validation runner wired.
 	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
 	findingActionsHandler.SetValidationRunner(svc.ValidationRun)
+	findingActionsHandler.SetSourceAnalytics(svc.SourceAnalytics)
 
 	// Validation handler + coverage KPI reader.
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)

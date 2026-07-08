@@ -213,6 +213,7 @@ func registerVulnerabilityRoutes(
 		if findingActionsHandler != nil {
 			r.GET("/groups", findingActionsHandler.ListFindingGroups, middleware.Require(permission.FindingsRead))
 			r.GET("/related-cves/{cveId}", findingActionsHandler.GetRelatedCVEs, middleware.Require(permission.FindingsRead))
+			r.GET("/analytics/sources", findingActionsHandler.SourceAnalytics, middleware.Require(permission.FindingsRead))
 		}
 
 		// Bulk operations (must be before /{id})

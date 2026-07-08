@@ -179,6 +179,7 @@ type Services struct {
 	Vulnerability    *app.VulnerabilityService
 	FindingActivity  *app.FindingActivityService
 	FindingActions   *app.FindingActionsService
+	SourceAnalytics  *app.SourceAnalyticsService
 	Exposure         *app.ExposureService
 	ThreatIntel      *threat.IntelService
 	CredentialImport *app.CredentialImportService
@@ -460,6 +461,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.Finding, repos.AccessControl, repos.Group, repos.Asset,
 		s.FindingActivity, deps.DB, log,
 	)
+	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
+	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
+	// SourceBreakdown query.
+	s.SourceAnalytics = app.NewSourceAnalyticsService(repos.Finding, log)
 
 	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
