@@ -6,6 +6,7 @@ package remediation
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/api/internal/app/finding"
 	remediationdom "github.com/openctemio/api/pkg/domain/remediation"
@@ -88,7 +89,7 @@ func (s *GroupService) ResolveGroup(ctx context.Context, tenantID shared.ID, in 
 		idStrs[i] = id.String()
 	}
 
-	s.logger.Info("resolving remediation group", "tenant", tenantID.String(), "key", in.Key, "count", len(idStrs), "status", status)
+	s.logger.Info("resolving remediation group", "tenant", tenantID.String(), "key", sanitizeLogValue(in.Key), "count", len(idStrs), "status", status)
 	return s.resolver.BulkUpdateFindingsStatus(ctx, tenantID.String(), finding.BulkUpdateStatusInput{
 		FindingIDs:          idStrs,
 		Status:              status,
@@ -96,6 +97,23 @@ func (s *GroupService) ResolveGroup(ctx context.Context, tenantID shared.ID, in 
 		ActorID:             in.ActorID,
 		HasVerifyPermission: in.HasVerifyPermission,
 	})
+}
+
+// sanitizeLogValue strips CR/LF and other control characters from an
+// attacker-influenceable value before it is logged, preventing log-forging when
+// the logger runs in text mode. The remediation key comes from the request URL,
+// so it is user-controlled. Also length-capped to bound log size.
+func sanitizeLogValue(s string) string {
+	const maxLen = 128
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r < 0x20 {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // closedStatusStrings returns the closed finding statuses as strings, to exclude

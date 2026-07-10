@@ -139,6 +139,20 @@ func TestResolveGroup_GuardBlocks(t *testing.T) {
 	}
 }
 
+// sanitizeLogValue strips CR/LF/control chars so a user-controlled key can't
+// forge log entries (CodeQL log-injection).
+func TestSanitizeLogValue(t *testing.T) {
+	if got := sanitizeLogValue("sol:abc\ninjected: fake"); got != "sol:abcinjected: fake" {
+		t.Errorf("newline not stripped: %q", got)
+	}
+	if got := sanitizeLogValue("a\r\nb\tc"); got != "abc" {
+		t.Errorf("control chars not stripped: %q", got)
+	}
+	if got := sanitizeLogValue("sca:pkg:npm/lodash"); got != "sca:pkg:npm/lodash" {
+		t.Errorf("legit key altered: %q", got)
+	}
+}
+
 // ListGroups excludes closed statuses (passes them to the repo).
 func TestListGroups_ExcludesClosed(t *testing.T) {
 	keys := &mockKeyRepo{groups: []remediationdom.Group{{Key: "sol:x", FindingCount: 3}}}
