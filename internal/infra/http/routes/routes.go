@@ -444,12 +444,12 @@ func Register(
 
 	// Attack Simulation & Control Testing routes
 	if h.Simulation != nil {
-		registerSimulationRoutes(router, h.Simulation, authMiddleware, userSync)
+		registerSimulationRoutes(router, h.Simulation, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSimulation))
 	}
 
 	// Threat Actor Intelligence routes
 	if h.ThreatActor != nil {
-		registerThreatActorRoutes(router, h.ThreatActor, authMiddleware, userSync)
+		registerThreatActorRoutes(router, h.ThreatActor, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatIntel))
 	}
 
 	// Indicators of Compromise (IOC catalogue, feeds B6 correlator)
@@ -459,7 +459,7 @@ func Register(
 
 	// Remediation Campaign routes
 	if h.RemediationCampaign != nil {
-		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync)
+		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.ReportSchedule != nil {
 		registerReportScheduleRoutes(router, h.ReportSchedule, authMiddleware, userSync)

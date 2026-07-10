@@ -12,8 +12,9 @@ func registerSimulationRoutes(
 	h *handler.SimulationHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Attack Simulations
 	router.Group("/api/v1/simulations", func(r Router) {
