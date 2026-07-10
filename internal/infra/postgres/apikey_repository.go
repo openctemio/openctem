@@ -216,6 +216,20 @@ func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apik
 }
 
 // Update updates an API key.
+// TouchLastUsed records that the key was just used. A single indexed UPDATE;
+// callers treat its error as best-effort so usage telemetry never blocks auth.
+func (r *APIKeyRepository) TouchLastUsed(ctx context.Context, id apikey.ID, ip string) error {
+	const q = `
+		UPDATE api_keys
+		SET last_used_at = now(), last_used_ip = $2, use_count = use_count + 1
+		WHERE id = $1`
+	_, err := r.db.ExecContext(ctx, q, id.String(), ip)
+	if err != nil {
+		return fmt.Errorf("touch api key last-used: %w", err)
+	}
+	return nil
+}
+
 func (r *APIKeyRepository) Update(ctx context.Context, key *apikey.APIKey) error {
 	query := `
 		UPDATE api_keys SET

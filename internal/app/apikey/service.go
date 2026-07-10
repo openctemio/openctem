@@ -5,13 +5,18 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/api/pkg/crypto"
 	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// keyPrefix is the required prefix of every OpenCTEM API key.
+const keyPrefix = "oct_"
 
 // Service provides business logic for API key management. pepper is
 // the server-side secret mixed into every new key's stored hash via
@@ -130,6 +135,43 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 		Key:       key,
 		Plaintext: plaintext,
 	}, nil
+}
+
+// Authenticate resolves a raw `oct_` API key to its active key entity, or a
+// generic ErrAPIKeyNotFound. It hashes the presented key and looks it up; a
+// peppered-hash miss falls back to the legacy plain-SHA256 hash so pre-pepper
+// keys still authenticate. Every failure mode — wrong prefix, unknown key,
+// revoked, or expired — returns the SAME error so a caller can't enumerate valid
+// keys or distinguish states. On success it best-effort records last-used
+// metadata (never blocks or fails auth on it).
+func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeydom.APIKey, error) {
+	if !strings.HasPrefix(rawKey, keyPrefix) {
+		return nil, apikeydom.ErrAPIKeyNotFound
+	}
+
+	key, err := s.repo.GetByHash(ctx, crypto.HashTokenPeppered(rawKey, s.pepper))
+	if err != nil {
+		// Legacy rows (pre-pepper) stored a plain SHA-256 hash; retry with it
+		// so old keys keep working after the pepper was introduced.
+		if s.pepper != "" && errors.Is(err, shared.ErrNotFound) {
+			key, err = s.repo.GetByHash(ctx, crypto.HashToken(rawKey))
+		}
+		if err != nil {
+			return nil, apikeydom.ErrAPIKeyNotFound
+		}
+	}
+
+	// IsActive covers both status (revoked/expired) and expiry timestamp.
+	if !key.IsActive() {
+		return nil, apikeydom.ErrAPIKeyNotFound
+	}
+
+	// Best-effort usage telemetry — a failure here must never fail auth.
+	if terr := s.repo.TouchLastUsed(ctx, key.ID(), ip); terr != nil {
+		s.logger.Debug("api key touch-last-used failed", "id", key.ID().String(), "error", terr.Error())
+	}
+
+	return key, nil
 }
 
 // ListInput represents input for listing API keys.
