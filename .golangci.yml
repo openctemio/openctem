@@ -60,11 +60,40 @@ linters:
     - sqlclosecheck
     - rowserrcheck
 
+    # Architecture
+    - depguard
+
 # =============================================================================
 # LINTER SETTINGS
 # =============================================================================
 
 linters-settings:
+  # Freeze the healthy layering found in the module-coupling audit: the CORE
+  # domain (asset/vulnerability/component/…) imports only `shared`, never a
+  # feature domain or an app service. This rule stops core from re-entangling
+  # with features (see docs/architecture/module-coupling-and-decoupling.md).
+  depguard:
+    rules:
+      core-domain-isolation:
+        list-mode: lax
+        files:
+          - "**/pkg/domain/asset/**"
+          - "**/pkg/domain/vulnerability/**"
+          - "**/pkg/domain/component/**"
+          - "**/pkg/domain/relationship/**"
+          - "**/pkg/domain/findingsource/**"
+        deny:
+          - pkg: github.com/openctemio/api/internal/app
+            desc: "core domain must not depend on app services (layering violation)"
+          - pkg: github.com/openctemio/api/pkg/domain/pentest
+            desc: "core domain must not import a feature domain"
+          - pkg: github.com/openctemio/api/pkg/domain/remediation
+            desc: "core domain must not import a feature domain"
+          - pkg: github.com/openctemio/api/pkg/domain/compliance
+            desc: "core domain must not import a feature domain"
+          - pkg: github.com/openctemio/api/pkg/domain/simulation
+            desc: "core domain must not import a feature domain"
+
   errcheck:
     check-type-assertions: false
     check-blank: false

@@ -112,10 +112,13 @@ Un-weave pentest from core so it becomes a real bolt-on:
 - Make the attachment access-check a **pluggable checker**, not `svc.Pentest`.
 - Rewrite `ctem_cycle_handler`'s `pentest_findings` JOIN behind the interface.
 
-### Cross-cutting — enforce the layering with a lint
-Add a **depguard** rule (CI): `pkg/domain/<core>` and `internal/app/<core>` must
-**not** import feature packages. This freezes the healthy direction so new code
-can't re-entangle core with features.
+### Cross-cutting — enforce the layering with a lint — **DONE (domain layer)**
+A **depguard** rule (`core-domain-isolation` in `.golangci.yml`) now forbids the
+core domain packages (`asset`, `vulnerability`, `component`, `relationship`,
+`findingsource`) from importing any feature domain or `internal/app` service —
+freezing the healthy direction so new code can't re-entangle core with features.
+Follow-up: extend to `internal/app/<core>` once its existing optional
+feature-service imports (aitriage/validation, removed in Phase 3) are gone.
 
 ## Verdict
 
