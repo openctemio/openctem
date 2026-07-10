@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/api/internal/app/assignment"
 	"github.com/openctemio/api/internal/app/command"
 	"github.com/openctemio/api/internal/app/defectdojo"
+	"github.com/openctemio/api/internal/app/remediation"
 	"github.com/openctemio/api/internal/app/scope"
 	"github.com/openctemio/api/internal/app/threat"
 	"github.com/openctemio/api/internal/app/tool"
@@ -315,6 +316,7 @@ type Services struct {
 
 	// Remediation Campaigns
 	RemediationCampaign *app.RemediationCampaignService
+	RemediationGroup    *remediation.GroupService
 
 	// Business Units
 	BusinessUnit *app.BusinessUnitService
@@ -1005,6 +1007,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// to groups post-insert, mirroring the single CreateFinding path. Lists
 	// rules once per batch (not per finding) and bulk-inserts the assignments.
 	s.Ingest.SetAssignmentApplier(assignment.NewBatchAssigner(assignmentEngine, repos.AccessControl, repos.Finding, log))
+
+	// Remediation groups (RFC-015): derive each ingested finding's fix-identity
+	// key so a whole "solution family" can be resolved in one action. The service
+	// reuses the finding bulk-status path + its abuse guard.
+	s.Ingest.SetRemediationKeyApplier(remediation.NewKeyApplier(repos.FindingRemediationKey, log))
+	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 
 	// Wire engine and finding repo to assignment rule service for TestRule
 	s.AssignmentRule.SetAssignmentEngine(assignmentEngine)

@@ -27,16 +27,17 @@ type Router = infrahttp.Router
 
 // Handlers holds all HTTP handlers for route registration.
 type Handlers struct {
-	Health          *handler.HealthHandler
-	Auth            *handler.AuthHandler            // OIDC auth info handler
-	LocalAuth       *handler.LocalAuthHandler       // Local auth handler (nil if OIDC-only)
-	OAuth           *handler.OAuthHandler           // OAuth handler for social login (nil if not configured)
-	Asset           *handler.AssetHandler           // nil if not initialized (no database)
-	Tenant          *handler.TenantHandler          // nil if not initialized (no database)
-	User            *handler.UserHandler            // nil if not initialized (no database)
-	Component       *handler.ComponentHandler       // nil if not initialized (no database)
-	Vulnerability   *handler.VulnerabilityHandler   // nil if not initialized (no database)
-	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
+	Health           *handler.HealthHandler
+	Auth             *handler.AuthHandler             // OIDC auth info handler
+	LocalAuth        *handler.LocalAuthHandler        // Local auth handler (nil if OIDC-only)
+	OAuth            *handler.OAuthHandler            // OAuth handler for social login (nil if not configured)
+	Asset            *handler.AssetHandler            // nil if not initialized (no database)
+	Tenant           *handler.TenantHandler           // nil if not initialized (no database)
+	User             *handler.UserHandler             // nil if not initialized (no database)
+	Component        *handler.ComponentHandler        // nil if not initialized (no database)
+	Vulnerability    *handler.VulnerabilityHandler    // nil if not initialized (no database)
+	RemediationGroup *handler.RemediationGroupHandler // nil if not initialized (no database)
+	FindingActivity  *handler.FindingActivityHandler  // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
 	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
 	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
@@ -360,7 +361,7 @@ func Register(
 
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
 	if h.Vulnerability != nil {
-		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, authMiddleware, userSync)
+		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, h.RemediationGroup, authMiddleware, userSync)
 	}
 
 	// CTEM Stage-4 validation evidence (agent ingest + finding evidence list)

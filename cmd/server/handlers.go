@@ -163,6 +163,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Vulnerabilities & Exposures
 		Vulnerability:             vulnHandler,
+		RemediationGroup:          handler.NewRemediationGroupHandler(svc.RemediationGroup),
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:            findingActionsHandler,
 		JiraWebhook:               jiraWebhookHandler,

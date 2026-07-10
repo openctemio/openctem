@@ -152,6 +152,12 @@ func (s *Service) SetAssignmentApplier(applier AssignmentApplier) {
 	s.findingProcessor.SetAssignmentApplier(applier)
 }
 
+// SetRemediationKeyApplier wires post-insert remediation-group key derivation
+// (RFC-015). Nil-safe: when not wired, findings are not grouped.
+func (s *Service) SetRemediationKeyApplier(applier RemediationKeyApplier) {
+	s.findingProcessor.SetRemediationKeyApplier(applier)
+}
+
 // =============================================================================
 // Main Ingestion Methods
 // =============================================================================

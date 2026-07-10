@@ -156,6 +156,7 @@ func registerVulnerabilityRoutes(
 	h *handler.VulnerabilityHandler,
 	findingActionsHandler *handler.FindingActionsHandler,
 	jiraHandler *handler.JiraWebhookHandler,
+	remediationGroupHandler *handler.RemediationGroupHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -219,6 +220,12 @@ func registerVulnerabilityRoutes(
 		// Bulk operations (must be before /{id})
 		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.Require(permission.FindingsWrite))
 		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.Require(permission.FindingsWrite))
+
+		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
+		if remediationGroupHandler != nil {
+			r.GET("/remediation-groups", remediationGroupHandler.ListGroups, middleware.Require(permission.FindingsRead))
+			r.POST("/remediation-groups/{key}/resolve", remediationGroupHandler.ResolveGroup, middleware.Require(permission.FindingsWrite))
+		}
 
 		// Actions (must be before /{id})
 		if findingActionsHandler != nil {

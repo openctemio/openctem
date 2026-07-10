@@ -18,7 +18,8 @@ and the code. Start here to remember "what was decided, why, and where it lives"
 | [RFC-011](RFC-011-validation-engine-dispatch.md) | Validation engine: dispatch (make the "V" executable) | Phase 1 (safe-check) shipped | — | validate command + dispatcher + producer endpoint + completion hook |
 | [RFC-012](RFC-012-real-bas-execution.md) | Real BAS / attack-simulation execution (de-synthesize the "V") | Phase 0–1 shipped | — | honesty (#270); persist runs (#271); real safe-check dispatch (#272) |
 | [RFC-013](RFC-013-defectdojo-coexistence.md) | DefectDojo co-existence connector (buy breadth, build brain; phase DD out) | Phases 1–2c shipped | — | converter (#273); live sync (#274); dependency metric (#275); auto-scheduler (#280) |
-| [RFC-014](RFC-014-agent-identity.md) | k8s-style agent identity (short-lived, auto-rotating credentials) | Phases 1a–1b, 3 shipped; 2 pending release | #281 | self-renew (#282); key expiry + `AGENT_KEY_TTL` (#283); rotation overlap / `agent_api_keys` (this PR); agent auto-renew SDK (sdk-go #45, pending v0.5.0); 4 = scopes TODO |
+| [RFC-014](RFC-014-agent-identity.md) | k8s-style agent identity (short-lived, auto-rotating credentials) | Phases 1a–3 shipped; agent auto-renew shipped (sdk-go v0.5.0) | #281 | self-renew (#282); key expiry (#283); rotation overlap (#285/#286); agent auto-renew (sdk-go #45 / agent #35); 4 = scopes TODO |
+| [RFC-015](RFC-015-remediation-groups.md) | Remediation groups — fix a whole "solution family" in one action | Phase 1 shipped | — | `remediation_key` derivation + `finding_remediation_keys` side-table + `GET/POST /findings/remediation-groups` (this PR); 2 = UI + verify loop; 3 = campaign unify |
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
 

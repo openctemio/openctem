@@ -51,6 +51,11 @@ type FindingProcessor struct {
 
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
+
+	// remediationKeyApplier derives + records each created finding's remediation
+	// group key (RFC-015). Runs POST-insert (needs persisted finding IDs).
+	// Nil-safe: when unwired, findings simply aren't grouped.
+	remediationKeyApplier RemediationKeyApplier
 }
 
 // PriorityClassifier enriches findings with EPSS/KEV and assigns priority class.
@@ -76,6 +81,13 @@ type AssignmentApplier interface {
 // activityRecorder is the subset of FindingActivityService needed by the processor.
 type activityRecorder interface {
 	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) error
+}
+
+// RemediationKeyApplier derives and persists each finding's remediation group
+// key. Runs POST-insert (needs persisted finding IDs). Implemented by
+// *remediation.KeyApplier. Best-effort: errors are logged, never fatal.
+type RemediationKeyApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
 
 // NewFindingProcessor creates a new finding processor.
@@ -125,6 +137,11 @@ func (p *FindingProcessor) SetSLAApplier(applier SLAApplier) {
 // when unwired, scanner findings are not auto-routed to groups.
 func (p *FindingProcessor) SetAssignmentApplier(applier AssignmentApplier) {
 	p.assignmentApplier = applier
+}
+
+// SetRemediationKeyApplier wires remediation-group key derivation (RFC-015).
+func (p *FindingProcessor) SetRemediationKeyApplier(applier RemediationKeyApplier) {
+	p.remediationKeyApplier = applier
 }
 
 // ProcessBatch processes all findings using batch operations.
@@ -380,6 +397,14 @@ func (p *FindingProcessor) ProcessBatch(
 			// Step 4b: Persist data flows for newly created findings
 			if p.dataFlowRepo != nil && result.Created > 0 {
 				p.persistDataFlows(ctx, newFindings)
+			}
+
+			// Step 4b2: Derive remediation-group keys (RFC-015). Best-effort;
+			// grouping is a convenience layer, never blocks ingest.
+			if p.remediationKeyApplier != nil && result.Created > 0 {
+				if err := p.remediationKeyApplier.ApplyBatch(ctx, tenantID, newFindings); err != nil {
+					p.logger.Warn("failed to derive remediation keys", "error", err)
+				}
 			}
 
 			// Enrichment (EPSS/KEV/priority/SLA) is applied before the insert
