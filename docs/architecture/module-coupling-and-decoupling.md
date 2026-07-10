@@ -78,12 +78,17 @@
 Goal: **turn a module off via config, and the system keeps running.** Phased,
 each additive and independently shippable.
 
-### Phase 1 — make the module system actually gate (low risk, high value)
-Add a `RequireModule(moduleID)` middleware that reads `tenant_modules` (cached,
-like permission sync) and 404/403s a disabled module's route group. Wrap each
-`register<Feature>Routes` group. This turns the existing UI-only toggle into real
-per-tenant enforcement **without touching any service or schema**. Core modules
-(`CoreModuleIDs`) are never gateable.
+### Phase 1 — make the module system actually gate (low risk, high value) — **STARTED**
+A `RequireModule(moduleID)` middleware (`middleware.ModuleGate`) reads a tenant's
+explicitly-disabled modules (via `ModuleService.TenantDisabledModules`), caches
+them per-tenant (60s TTL), and **403s a disabled module's route group**. It is
+**fail-open**: nil gate, missing tenant, core module, or any lookup miss →
+allowed, so it can never block legitimate traffic. Wired to the **pentest** and
+**compliance** groups first (appended after tenant extraction); remaining
+optional feature groups get wrapped incrementally the same way. Turns the
+existing UI-only toggle into real per-tenant enforcement **without touching any
+service logic or schema**. Core modules (`CoreModuleIDs`) are never gateable.
+Follow-up: explicit cache invalidation on toggle (currently TTL-bounded).
 
 ### Phase 2 — per-deployment optional construction (leaf features first)
 Give `NewServices`/`NewRepositories` a seam to **skip** a module's construction

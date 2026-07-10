@@ -674,6 +674,14 @@ func splitModules(allModules []*moduledom.Module) ([]*moduledom.Module, map[stri
 }
 
 // getTenantDisabledModules returns a set of module IDs disabled by the tenant.
+// TenantDisabledModules returns the set of module IDs a tenant has explicitly
+// disabled. Fail-open: an unconfigured repo, a bad tenant id, or a query error
+// yields an empty set (nothing disabled), so route gating never blocks on a
+// lookup problem. Used by the module-gating middleware.
+func (s *ModuleService) TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool {
+	return s.getTenantDisabledModules(ctx, tenantID)
+}
+
 func (s *ModuleService) getTenantDisabledModules(ctx context.Context, tenantID string) map[string]bool {
 	disabled := make(map[string]bool)
 	if s.tenantModuleRepo == nil {
@@ -765,13 +773,13 @@ type ModulePresetOutput struct {
 
 // PresetDiffOutput describes what would change if a preset were applied.
 type PresetDiffOutput struct {
-	PresetID    string              `json:"preset_id"`
-	PresetName  string              `json:"preset_name"`
-	ToEnable    []ModuleRefOutput   `json:"to_enable"`
-	ToDisable   []ModuleRefOutput   `json:"to_disable"`
-	Unchanged   int                 `json:"unchanged"`
-	TotalAfter  int                 `json:"total_after"`
-	AuditNotice string              `json:"audit_notice,omitempty"`
+	PresetID    string            `json:"preset_id"`
+	PresetName  string            `json:"preset_name"`
+	ToEnable    []ModuleRefOutput `json:"to_enable"`
+	ToDisable   []ModuleRefOutput `json:"to_disable"`
+	Unchanged   int               `json:"unchanged"`
+	TotalAfter  int               `json:"total_after"`
+	AuditNotice string            `json:"audit_notice,omitempty"`
 }
 
 // ModuleRefOutput is a thin (id, name) pair used in diff listings.
@@ -940,7 +948,7 @@ func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.Audi
 	}
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantModulesUpdated, audit.ResourceTypeTenant, tenantID).
-		WithMessage("Module preset applied: " + p.Name).
+		WithMessage("Module preset applied: "+p.Name).
 		WithSeverity(audit.SeverityMedium).
 		WithMetadata("preset_id", p.ID).
 		WithMetadata("preset_name", p.Name)

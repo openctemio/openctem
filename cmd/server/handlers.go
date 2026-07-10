@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"net/url"
+	"time"
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
@@ -128,6 +129,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	validationHandler.SetCoverageReader(repos.ValidationEvidence)
 
 	handlers := routes.Handlers{
+		// Per-tenant module route gating (RFC: module coupling plan Phase 1).
+		// Fail-open: only an explicitly-disabled non-core module is blocked.
+		ModuleGate: middleware.NewModuleGate(svc.Module, time.Minute),
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),

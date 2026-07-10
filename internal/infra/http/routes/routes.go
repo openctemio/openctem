@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/websocket"
+	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/jwt"
@@ -59,6 +60,7 @@ type Handlers struct {
 	SCIM             *handler.SCIMHandler             // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
 	SCIMToken        *handler.SCIMTokenHandler        // nil if not initialized - SCIM token admin
 	SCIMAuth         Middleware                       // SCIM bearer-token auth middleware (nil if SCIM disabled)
+	ModuleGate       *middleware.ModuleGate           // per-tenant module route gating (nil-safe: fail-open)
 	Agent            *handler.AgentHandler            // nil if not initialized (no database)
 	Pipeline         *handler.PipelineHandler         // nil if not initialized (no database)
 	ScanProfile      *handler.ScanProfileHandler      // nil if not initialized (no database)
@@ -427,7 +429,7 @@ func Register(
 
 	// Pentest Campaign Management routes (tenant from JWT token)
 	if h.Pentest != nil {
-		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync, h.PentestCampaignRoleQry)
+		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync, h.PentestCampaignRoleQry, h.ModuleGate.RequireModule(moduledom.ModulePentest))
 	}
 
 	// Attachment routes (file upload/download, shared across pentest/retest/campaign)
@@ -437,7 +439,7 @@ func Register(
 
 	// Compliance Framework Management routes (tenant from JWT token)
 	if h.Compliance != nil {
-		registerComplianceRoutes(router, h.Compliance, authMiddleware, userSync)
+		registerComplianceRoutes(router, h.Compliance, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCompliance))
 	}
 
 	// Attack Simulation & Control Testing routes
