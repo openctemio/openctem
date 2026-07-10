@@ -35,4 +35,9 @@ type KeyRepository interface {
 	// OpenFindingIDs returns the tenant's open, non-pentest finding IDs in a group
 	// — the set a "resolve group" action transitions.
 	OpenFindingIDs(ctx context.Context, tenantID shared.ID, key string, excludeStatuses []string) ([]shared.ID, error)
+
+	// CountByKey returns (total, resolved) non-pentest findings sharing the key —
+	// total across all statuses, resolved being those in closedStatuses. Used to
+	// track a solution-family campaign's progress without a generic FindingFilter.
+	CountByKey(ctx context.Context, tenantID shared.ID, key string, closedStatuses []string) (total, resolved int64, err error)
 }

@@ -122,3 +122,25 @@ func (r *FindingRemediationKeyRepository) OpenFindingIDs(ctx context.Context, te
 	}
 	return ids, rows.Err()
 }
+
+// CountByKey returns (total, resolved) non-pentest findings sharing the key —
+// total across every status, resolved being those whose status is in
+// closedStatuses. Single round trip via FILTER so a keyed campaign's progress
+// stays a cheap side-table rollup.
+func (r *FindingRemediationKeyRepository) CountByKey(ctx context.Context, tenantID shared.ID, key string, closedStatuses []string) (int64, int64, error) {
+	const q = `
+		SELECT
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE f.status = ANY($3::text[])) AS resolved
+		FROM finding_remediation_keys frk
+		JOIN findings f ON f.id = frk.finding_id
+		WHERE frk.tenant_id = $1
+		  AND frk.remediation_key = $2
+		  AND f.source <> 'pentest'`
+
+	var total, resolved int64
+	if err := r.db.QueryRowContext(ctx, q, tenantID.String(), key, pq.Array(closedStatuses)).Scan(&total, &resolved); err != nil {
+		return 0, 0, fmt.Errorf("count findings by remediation key: %w", err)
+	}
+	return total, resolved, nil
+}

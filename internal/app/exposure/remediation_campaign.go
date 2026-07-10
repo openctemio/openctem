@@ -43,6 +43,20 @@ type CampaignFindingResolver interface {
 	ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in CampaignResolveInput) (resolvedCount int, err error)
 }
 
+// CampaignKeyResolver serves campaigns scoped to a remediation-group key (a
+// "solution family" — every finding one fix resolves). Progress and resolution
+// for such a campaign are computed from the remediation side-table, NOT from a
+// generic FindingFilter (the key isn't expressible as one). Nil → keyed
+// campaigns cannot compute progress or resolve. Implemented by an adapter over
+// the remediation key repository + group resolver at the composition root.
+type CampaignKeyResolver interface {
+	// CountByKey returns (total, resolved) findings sharing the remediation key.
+	CountByKey(ctx context.Context, tenantID shared.ID, key string) (total, resolved int64, err error)
+	// ResolveGroupByKey bulk-resolves the OPEN findings under the key, reusing
+	// the same guarded bulk-status path as the standalone group resolve.
+	ResolveGroupByKey(ctx context.Context, tenantID string, key string, in CampaignResolveInput) (resolvedCount int, err error)
+}
+
 // CampaignResolveInput parameterizes a campaign resolve.
 type CampaignResolveInput struct {
 	Status              string // fix_applied (default) or resolved
@@ -57,6 +71,7 @@ type RemediationCampaignService struct {
 	repo        remediation.CampaignRepository
 	finding     FindingCounter                       // nil → progress stays zero
 	resolver    CampaignFindingResolver              // nil → resolve action disabled
+	keyResolver CampaignKeyResolver                  // nil → keyed campaigns can't count/resolve
 	ticketRepo  remediation.CampaignTicketRepository // nil → ticketing disabled
 	epicCreator CampaignEpicCreator                  // nil → ticketing disabled
 	logger      *logger.Logger
@@ -81,17 +96,43 @@ func (s *RemediationCampaignService) SetFindingResolver(r CampaignFindingResolve
 	s.resolver = r
 }
 
+// SetKeyResolver wires progress + resolution for campaigns scoped to a
+// remediation-group key (a solution family). When unset, such campaigns keep
+// zero progress and their resolve fails closed (never a tenant-wide resolve).
+func (s *RemediationCampaignService) SetKeyResolver(r CampaignKeyResolver) {
+	s.keyResolver = r
+}
+
 // ResolveCampaignFindings resolves every OPEN finding matching the campaign's
 // filter in one action — reusing the finding bulk-status path + abuse guard.
 // Defaults to fix_applied ("patched, pending rescan verification"). Returns the
 // number of findings transitioned.
 func (s *RemediationCampaignService) ResolveCampaignFindings(ctx context.Context, tenantID, campaignID string, in CampaignResolveInput) (int, error) {
-	if s.resolver == nil {
-		return 0, fmt.Errorf("%w: campaign resolve is not configured", shared.ErrValidation)
-	}
 	campaign, err := s.GetCampaign(ctx, tenantID, campaignID)
 	if err != nil {
 		return 0, err
+	}
+
+	// A keyed campaign (solution family) MUST resolve through the key path only.
+	// Its remediation_key is not expressible as a FindingFilter, so falling
+	// through to the generic resolver would map it to a tenant-only filter and
+	// close every finding in the tenant. Fail closed if the key path is unwired.
+	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
+		if s.keyResolver == nil {
+			return 0, fmt.Errorf("%w: keyed campaign resolve is not configured", shared.ErrValidation)
+		}
+		n, kerr := s.keyResolver.ResolveGroupByKey(ctx, tenantID, key, in)
+		if kerr != nil {
+			return 0, kerr
+		}
+		s.logger.Info("resolved remediation campaign findings by key",
+			"tenant", sanitizeLogValue(tenantID), "campaign_id", sanitizeLogValue(campaignID),
+			"resolved", n, "status", sanitizeLogValue(in.Status))
+		return n, nil
+	}
+
+	if s.resolver == nil {
+		return 0, fmt.Errorf("%w: campaign resolve is not configured", shared.ErrValidation)
 	}
 	filter := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
 	n, err := s.resolver.ResolveOpenByFilter(ctx, tenantID, filter, in)
@@ -99,8 +140,27 @@ func (s *RemediationCampaignService) ResolveCampaignFindings(ctx context.Context
 		return 0, err
 	}
 	s.logger.Info("resolved remediation campaign findings",
-		"tenant", tenantID, "campaign_id", campaignID, "resolved", n, "status", in.Status)
+		"tenant", sanitizeLogValue(tenantID), "campaign_id", sanitizeLogValue(campaignID),
+		"resolved", n, "status", sanitizeLogValue(in.Status))
 	return n, nil
+}
+
+// sanitizeLogValue strips CR/LF and control characters from a
+// user-influenceable value before it is logged, preventing log forging
+// (CodeQL go/log-injection). Mirrors the remediation group service's helper —
+// the shared logger can emit plain text, where an unescaped newline would let a
+// caller forge log lines.
+func sanitizeLogValue(s string) string {
+	const maxLen = 128
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r < 0x20 {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // SetTicketing wires the campaign→Jira-epic integration. Safe to call after
@@ -463,6 +523,22 @@ func (s *RemediationCampaignService) ReconcileProgress(ctx context.Context) (int
 // true when either count changed (so the caller knows whether to persist).
 // No-op (false, nil) when no finding counter is wired.
 func (s *RemediationCampaignService) recomputeProgress(ctx context.Context, campaign *remediation.Campaign) (bool, error) {
+	// Keyed campaigns (solution families) count from the remediation side-table:
+	// the remediation_key can't be expressed as a FindingFilter, so the generic
+	// counter would count the wrong (tenant-wide) set.
+	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
+		if s.keyResolver == nil {
+			return false, nil
+		}
+		total, resolved, err := s.keyResolver.CountByKey(ctx, campaign.TenantID(), key)
+		if err != nil {
+			return false, fmt.Errorf("count campaign findings by key: %w", err)
+		}
+		prevFindings, prevResolved := campaign.FindingCount(), campaign.ResolvedCount()
+		campaign.UpdateProgress(int(total), int(resolved))
+		return prevFindings != campaign.FindingCount() || prevResolved != campaign.ResolvedCount(), nil
+	}
+
 	if s.finding == nil {
 		return false, nil
 	}
@@ -504,6 +580,14 @@ func (s *RemediationCampaignService) recordRiskReduction(campaign *remediation.C
 	before := float64(campaign.FindingCount())
 	after := float64(campaign.FindingCount() - campaign.ResolvedCount())
 	campaign.RecordRiskReduction(before, after)
+}
+
+// campaignRemediationKey returns the remediation-group key a campaign is scoped
+// to, or "" when the campaign is a plain filter-based campaign. A non-empty key
+// means the campaign tracks a solution family and must use the key path for
+// both progress and resolution (never the generic finding filter).
+func campaignRemediationKey(raw map[string]any) string {
+	return firstString(raw, "remediation_key")
 }
 
 // campaignFilterToFindingFilter maps a campaign's JSONB finding_filter onto a

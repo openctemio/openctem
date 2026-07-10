@@ -23,10 +23,21 @@ func (f *fakeResolver) ResolveOpenByFilter(_ context.Context, _ string, filter v
 	return f.n, nil
 }
 
-// Without a resolver wired, the action is unavailable (not a silent no-op).
+// Without a resolver wired, a (non-keyed) campaign's resolve is unavailable —
+// ErrValidation, not a silent no-op. The campaign must exist first, since the
+// service loads it to decide keyed-vs-generic before checking the resolver.
 func TestResolveCampaignFindings_NoResolver(t *testing.T) {
 	s := newService(newFakeCampaignRepo(), nil)
-	_, err := s.ResolveCampaignFindings(context.Background(), shared.NewID().String(), shared.NewID().String(), CampaignResolveInput{})
+	tid := shared.NewID()
+	c, err := s.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
+		TenantID:      tid.String(),
+		Name:          "No resolver",
+		FindingFilter: map[string]any{"severity": "high"},
+	})
+	if err != nil {
+		t.Fatalf("create campaign: %v", err)
+	}
+	_, err = s.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), CampaignResolveInput{})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("expected ErrValidation when resolver unwired, got %v", err)
 	}

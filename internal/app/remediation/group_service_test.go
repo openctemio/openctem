@@ -31,6 +31,10 @@ func (m *mockKeyRepo) OpenFindingIDs(_ context.Context, _ shared.ID, key string,
 	return m.openIDs, m.openErr
 }
 
+func (m *mockKeyRepo) CountByKey(_ context.Context, _ shared.ID, _ string, _ []string) (int64, int64, error) {
+	return 0, 0, nil
+}
+
 type mockResolver struct {
 	gotInput finding.BulkUpdateStatusInput
 	called   bool

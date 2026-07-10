@@ -138,6 +138,44 @@ func (a campaignFindingResolver) ResolveOpenByFilter(ctx context.Context, tenant
 	return res.Updated, nil
 }
 
+// campaignKeyResolver serves campaigns scoped to a remediation-group key (a
+// solution family): progress from the side-table rollup, resolution via the
+// same guarded group-resolve path as the standalone "resolve group" action.
+// Kept here so exposure needn't import the remediation group service or the
+// key repository.
+type campaignKeyResolver struct {
+	keys  *postgres.FindingRemediationKeyRepository
+	group *remediation.GroupService
+}
+
+func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string) (int64, int64, error) {
+	closed := vulnerability.ClosedFindingStatuses()
+	closedStrs := make([]string, len(closed))
+	for i, s := range closed {
+		closedStrs[i] = string(s)
+	}
+	return a.keys.CountByKey(ctx, tenantID, key, closedStrs)
+}
+
+func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (int, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0, err
+	}
+	res, err := a.group.ResolveGroup(ctx, tid, remediation.ResolveGroupInput{
+		Key:                 key,
+		Status:              in.Status,
+		Resolution:          in.Resolution,
+		ActorID:             in.ActorID,
+		HasVerifyPermission: in.HasVerifyPermission,
+		OperatorApproved:    in.Approved,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.Updated, nil
+}
+
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
 // action's JiraTicketService (primitive params, so the workflow package needn't
 // import app/jira — that would cycle through the app shim).
@@ -1069,6 +1107,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// reuses the finding bulk-status path + its abuse guard.
 	s.Ingest.SetRemediationKeyApplier(remediation.NewKeyApplier(repos.FindingRemediationKey, log))
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
+
+	// A remediation campaign can be scoped to a group key (solution family): its
+	// progress + resolve then run off the side-table / group-resolve path rather
+	// than a generic finding filter. Wired here (not at campaign construction)
+	// because it needs the group service built above.
+	if s.RemediationCampaign != nil {
+		s.RemediationCampaign.SetKeyResolver(campaignKeyResolver{keys: repos.FindingRemediationKey, group: s.RemediationGroup})
+	}
 
 	// Wire engine and finding repo to assignment rule service for TestRule
 	s.AssignmentRule.SetAssignmentEngine(assignmentEngine)
