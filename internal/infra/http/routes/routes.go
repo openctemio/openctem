@@ -38,7 +38,11 @@ type Handlers struct {
 	Component        *handler.ComponentHandler        // nil if not initialized (no database)
 	Vulnerability    *handler.VulnerabilityHandler    // nil if not initialized (no database)
 	RemediationGroup *handler.RemediationGroupHandler // nil if not initialized (no database)
-	FindingActivity  *handler.FindingActivityHandler  // nil if not initialized (no database)
+	MCP              *handler.MCPHandler              // read-only MCP server; nil if not initialized
+	// MCPAuth is the tenant-scoped `oct_` API-key auth middleware guarding the
+	// MCP endpoint. Set alongside MCP; nil disables the endpoint.
+	MCPAuth         Middleware
+	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
 	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
 	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
@@ -455,6 +459,12 @@ func Register(
 	// Indicators of Compromise (IOC catalogue, feeds B6 correlator)
 	if h.IOC != nil {
 		registerIOCRoutes(router, h.IOC, authMiddleware, userSync)
+	}
+
+	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
+	// Per-IP rate limit runs before auth to throttle junk-token floods.
+	if h.MCP != nil && h.MCPAuth != nil {
+		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth)
 	}
 
 	// Remediation Campaign routes

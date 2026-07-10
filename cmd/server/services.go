@@ -44,6 +44,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
+	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/jwt"
@@ -174,6 +175,20 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 		return 0, err
 	}
 	return res.Updated, nil
+}
+
+// apikeyMembershipAdapter adapts the tenant repository to apikey.MembershipChecker
+// so a user-scoped API key stops authenticating the moment its owner's membership
+// is suspended or removed. Fails closed: a missing membership or lookup error is
+// reported as "not active" (the caller rejects the key).
+type apikeyMembershipAdapter struct{ tenants tenant.Repository }
+
+func (a apikeyMembershipAdapter) IsActiveMember(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	m, err := a.tenants.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		return false, err
+	}
+	return m.Status() == tenant.MemberStatusActive, nil
 }
 
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
@@ -777,6 +792,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// SHA-256. See crypto.HashTokenPeppered. Unset key → unpeppered
 	// (dev only; production startup already refuses this above).
 	s.APIKey = apikey.NewService(repos.APIKey, cfg.Encryption.Key, log)
+	// Gate user-scoped keys on active membership so member offboarding revokes
+	// them immediately (the key's own status can't reflect member lifecycle).
+	s.APIKey.SetMembershipChecker(apikeyMembershipAdapter{tenants: repos.Tenant})
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 
 	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.

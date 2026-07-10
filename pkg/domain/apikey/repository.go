@@ -31,4 +31,8 @@ type Repository interface {
 	List(ctx context.Context, filter Filter) (ListResult, error)
 	Update(ctx context.Context, key *APIKey) error
 	Delete(ctx context.Context, id, tenantID ID) error
+	// TouchLastUsed records that the key was just used (last_used_at/ip +
+	// use_count). Best-effort — callers ignore its error so telemetry never
+	// blocks authentication.
+	TouchLastUsed(ctx context.Context, id ID, ip string) error
 }

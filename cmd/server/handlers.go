@@ -134,8 +134,24 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	moduleGate := middleware.NewModuleGate(svc.Module, time.Minute)
 	svc.Module.SetModuleCacheInvalidator(moduleGate)
 
+	// Read-only MCP server: exposes this tenant's CTEM data to an AI client over
+	// JSON-RPC, authenticated by a tenant-scoped `oct_` API key (not the browser
+	// JWT). Built only when the read services and the API-key service exist.
+	var mcpHandler *handler.MCPHandler
+	var mcpAuth routes.Middleware
+	if svc.APIKey != nil && svc.Vulnerability != nil && svc.PriorityClassification != nil &&
+		svc.AttackSurface != nil && svc.RemediationGroup != nil && svc.Compliance != nil && svc.Asset != nil {
+		mcpHandler = handler.NewMCPHandler(
+			svc.Vulnerability, svc.PriorityClassification, svc.AttackSurface,
+			svc.RemediationGroup, svc.Compliance, svc.Asset, log,
+		)
+		mcpAuth = middleware.APIKeyAuth(svc.APIKey, log)
+	}
+
 	handlers := routes.Handlers{
 		ModuleGate: moduleGate,
+		MCP:        mcpHandler,
+		MCPAuth:    mcpAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),
