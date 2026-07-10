@@ -51,10 +51,18 @@ type ModuleService struct {
 	auditService     *auditapp.AuditService
 	versionService   *VersionService
 	wsBroadcaster    WSBroadcaster
+	cacheInvalidator ModuleCacheInvalidator
 	logger           *logger.Logger
 
 	toggleLocks   map[string]*sync.Mutex
 	toggleLocksMu sync.Mutex
+}
+
+// ModuleCacheInvalidator drops a tenant's cached module-enablement so a toggle
+// takes effect immediately rather than after the gate's TTL. Implemented by
+// *middleware.ModuleGate. Optional — nil relies on the TTL alone.
+type ModuleCacheInvalidator interface {
+	Invalidate(tenantID string)
 }
 
 // WSBroadcaster is the minimal interface ModuleService needs to fan
@@ -115,6 +123,13 @@ func (s *ModuleService) SetWSBroadcaster(b WSBroadcaster) {
 	s.wsBroadcaster = b
 }
 
+// SetModuleCacheInvalidator wires the route-gate cache invalidator so a module
+// toggle is enforced immediately. Optional — without it, gating updates within
+// the gate's TTL.
+func (s *ModuleService) SetModuleCacheInvalidator(inv ModuleCacheInvalidator) {
+	s.cacheInvalidator = inv
+}
+
 // GetTenantModuleVersion returns the current module-config version for
 // a tenant. Used by HTTP handlers to construct ETag headers; the
 // returned value is opaque to callers (treat as a token, not a count).
@@ -132,6 +147,10 @@ func (s *ModuleService) GetTenantModuleVersion(ctx context.Context, tenantID str
 // here. Worst case: client sees stale data until next focus / 5-min
 // SWR dedup expires.
 func (s *ModuleService) notifyModuleChange(ctx context.Context, tenantID string) {
+	// Drop the route-gate's cached enablement so the toggle enforces immediately.
+	if s.cacheInvalidator != nil {
+		s.cacheInvalidator.Invalidate(tenantID)
+	}
 	if s.versionService == nil && s.wsBroadcaster == nil {
 		return
 	}

@@ -128,10 +128,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
 	validationHandler.SetCoverageReader(repos.ValidationEvidence)
 
+	// Per-tenant module route gating (module-coupling plan Phase 1). Fail-open:
+	// only an explicitly-disabled non-core module is blocked. Wired back into the
+	// module service so a toggle invalidates the gate cache immediately.
+	moduleGate := middleware.NewModuleGate(svc.Module, time.Minute)
+	svc.Module.SetModuleCacheInvalidator(moduleGate)
+
 	handlers := routes.Handlers{
-		// Per-tenant module route gating (RFC: module coupling plan Phase 1).
-		// Fail-open: only an explicitly-disabled non-core module is blocked.
-		ModuleGate: middleware.NewModuleGate(svc.Module, time.Minute),
+		ModuleGate: moduleGate,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),

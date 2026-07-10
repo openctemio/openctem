@@ -87,8 +87,10 @@ allowed, so it can never block legitimate traffic. Wired to the **pentest** and
 **compliance** groups first (appended after tenant extraction); remaining
 optional feature groups get wrapped incrementally the same way. Turns the
 existing UI-only toggle into real per-tenant enforcement **without touching any
-service logic or schema**. Core modules (`CoreModuleIDs`) are never gateable.
-Follow-up: explicit cache invalidation on toggle (currently TTL-bounded).
+service logic or schema**. Core modules (`CoreModuleIDs`) are never gateable. A module toggle now
+**invalidates the gate cache immediately** (`ModuleService.notifyModuleChange`
+→ `ModuleGate.Invalidate`), so enforcement is instant, not TTL-bounded.
+Follow-up: wrap the remaining optional feature groups.
 
 ### Phase 2 — per-deployment optional construction (leaf features first)
 Give `NewServices`/`NewRepositories` a seam to **skip** a module's construction
