@@ -106,7 +106,7 @@ operator can choose `resolved` for immediate close.
 |---|---|
 | **1** (this PR) | `remediation_key` column + derivation at ingest + group query/repo + `GET /remediation-groups` + `POST /remediation-groups/{key}/resolve` (reuses BulkGuard+BulkUpdate) + backfill. Tests incl. DB round-trip. |
 | **2** | UI "Remediations / By solution" view with per-group **Resolve all**; wire the `fix_applied → verified-on-rescan` loop end to end. |
-| **3** | Unify with Remediation Campaigns — a group can spawn a campaign/ticket; campaign "complete" bulk-resolves; richer keys (Tenable solution-id, OS advisory id). |
+| **3** (partial) | Unify with Remediation Campaigns — **campaign can now actively resolve its open findings** (`POST /remediation/campaigns/{id}/resolve`, reuses the finding bulk path + abuse guard; was a passive tracker). Remaining: group→campaign/ticket spawn; richer keys (Tenable solution-id, OS advisory id). |
 
 ## Testing
 

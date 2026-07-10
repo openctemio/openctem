@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/domain/remediation"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -136,6 +137,42 @@ func (h *RemediationCampaignHandler) Get(w http.ResponseWriter, r *http.Request)
 }
 
 // UpdateStatus transitions campaign status.
+// Resolve handles POST /api/v1/remediation/campaigns/{id}/resolve — actively
+// resolves the campaign's open findings in one action (RFC-015 Phase 3).
+func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var req struct {
+		Status     string `json:"status"`
+		Resolution string `json:"resolution"`
+		Approved   bool   `json:"approved"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apierror.BadRequest("invalid request body").WriteJSON(w)
+			return
+		}
+	}
+	if req.Status != "" && req.Status != "fix_applied" && req.Status != "resolved" {
+		apierror.BadRequest("status must be fix_applied or resolved").WriteJSON(w)
+		return
+	}
+
+	resolved, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, app.CampaignResolveInput{
+		Status:              req.Status,
+		Resolution:          req.Resolution,
+		ActorID:             middleware.GetUserID(r.Context()),
+		HasVerifyPermission: middleware.HasPermission(r.Context(), string(permission.FindingsVerify)),
+		Approved:            req.Approved,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"resolved": resolved})
+}
+
 func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")

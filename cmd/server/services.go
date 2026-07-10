@@ -18,6 +18,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/attack"
+	"github.com/openctemio/api/internal/app/exposure"
 	"github.com/openctemio/api/internal/app/ingest"
 	iocapp "github.com/openctemio/api/internal/app/ioc"
 	"github.com/openctemio/api/internal/app/jira"
@@ -83,6 +84,58 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 	}
 	id := u.ID()
 	return &id, nil
+}
+
+// campaignFindingResolver adapts the finding bulk-status path + abuse guard to
+// exposure.CampaignFindingResolver, so completing/resolving a remediation
+// campaign actively closes its open findings (RFC-015 Phase 3). Kept here (not
+// in exposure) so exposure needn't import the finding service or the guard.
+type campaignFindingResolver struct {
+	vuln  *app.VulnerabilityService
+	guard *app.BulkGuard
+}
+
+// maxCampaignResolve caps how many findings one campaign-resolve touches; the
+// abuse guard still enforces the tenant ceiling / hourly budget within this.
+const maxCampaignResolve = 2000
+
+func (a campaignFindingResolver) ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in exposure.CampaignResolveInput) (int, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0, err
+	}
+	filter.ExcludeStatuses = vulnerability.ClosedFindingStatuses()
+	ids, err := a.vuln.ListFindingIDs(ctx, filter, maxCampaignResolve)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if a.guard != nil {
+		if err := a.guard.CheckBulk(ctx, tid, len(ids), in.Approved); err != nil {
+			return 0, err
+		}
+	}
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = id.String()
+	}
+	status := in.Status
+	if status == "" {
+		status = string(vulnerability.FindingStatusFixApplied)
+	}
+	res, err := a.vuln.BulkUpdateFindingsStatus(ctx, tenantID, app.BulkUpdateStatusInput{
+		FindingIDs:          idStrs,
+		Status:              status,
+		Resolution:          in.Resolution,
+		ActorID:             in.ActorID,
+		HasVerifyPermission: in.HasVerifyPermission,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.Updated, nil
 }
 
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
@@ -633,6 +686,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
 	// progress) is computed from live finding data instead of staying at zero.
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
+	// Phase 3: let a campaign actively resolve its open findings (reuses the
+	// finding bulk path + abuse guard).
+	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
 	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 
 	s.Compliance = app.NewComplianceService(

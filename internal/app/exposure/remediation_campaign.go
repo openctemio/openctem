@@ -35,10 +35,28 @@ type CampaignEpicCreator interface {
 // Jira's default done state; per-tenant override is a documented follow-up.
 const epicDoneStatus = "Done"
 
+// CampaignFindingResolver bulk-resolves the OPEN findings matching a filter,
+// turning a campaign from a passive progress tracker into an active closer
+// (RFC-015 Phase 3). Nil → the resolve action is unavailable. Implemented by an
+// adapter over the finding bulk-status path + its abuse guard.
+type CampaignFindingResolver interface {
+	ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in CampaignResolveInput) (resolvedCount int, err error)
+}
+
+// CampaignResolveInput parameterizes a campaign resolve.
+type CampaignResolveInput struct {
+	Status              string // fix_applied (default) or resolved
+	Resolution          string
+	ActorID             string
+	HasVerifyPermission bool
+	Approved            bool
+}
+
 // RemediationCampaignService manages remediation campaigns.
 type RemediationCampaignService struct {
 	repo        remediation.CampaignRepository
 	finding     FindingCounter                       // nil → progress stays zero
+	resolver    CampaignFindingResolver              // nil → resolve action disabled
 	ticketRepo  remediation.CampaignTicketRepository // nil → ticketing disabled
 	epicCreator CampaignEpicCreator                  // nil → ticketing disabled
 	logger      *logger.Logger
@@ -55,6 +73,34 @@ func NewRemediationCampaignService(repo remediation.CampaignRepository, log *log
 // avoid an import cycle at the composition root.
 func (s *RemediationCampaignService) SetFindingCounter(c FindingCounter) {
 	s.finding = c
+}
+
+// SetFindingResolver wires the bulk resolver that makes ResolveCampaignFindings
+// available (RFC-015 Phase 3). When unset, the resolve action is unavailable.
+func (s *RemediationCampaignService) SetFindingResolver(r CampaignFindingResolver) {
+	s.resolver = r
+}
+
+// ResolveCampaignFindings resolves every OPEN finding matching the campaign's
+// filter in one action — reusing the finding bulk-status path + abuse guard.
+// Defaults to fix_applied ("patched, pending rescan verification"). Returns the
+// number of findings transitioned.
+func (s *RemediationCampaignService) ResolveCampaignFindings(ctx context.Context, tenantID, campaignID string, in CampaignResolveInput) (int, error) {
+	if s.resolver == nil {
+		return 0, fmt.Errorf("%w: campaign resolve is not configured", shared.ErrValidation)
+	}
+	campaign, err := s.GetCampaign(ctx, tenantID, campaignID)
+	if err != nil {
+		return 0, err
+	}
+	filter := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
+	n, err := s.resolver.ResolveOpenByFilter(ctx, tenantID, filter, in)
+	if err != nil {
+		return 0, err
+	}
+	s.logger.Info("resolved remediation campaign findings",
+		"tenant", tenantID, "campaign_id", campaignID, "resolved", n, "status", in.Status)
+	return n, nil
 }
 
 // SetTicketing wires the campaign→Jira-epic integration. Safe to call after

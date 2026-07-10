@@ -13,6 +13,7 @@ type (
 	ListExposuresInput             = exposure.ListExposuresInput
 	UpdateRemediationCampaignInput = exposure.UpdateRemediationCampaignInput
 	CampaignTicketLink             = exposure.CampaignTicketLink
+	CampaignResolveInput           = exposure.CampaignResolveInput
 )
 
 var (
