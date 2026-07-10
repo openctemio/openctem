@@ -83,10 +83,12 @@ A `RequireModule(moduleID)` middleware (`middleware.ModuleGate`) reads a tenant'
 explicitly-disabled modules (via `ModuleService.TenantDisabledModules`), caches
 them per-tenant (60s TTL), and **403s a disabled module's route group**. It is
 **fail-open**: nil gate, missing tenant, core module, or any lookup miss →
-allowed, so it can never block legitimate traffic. Wired to the **pentest, compliance, attack-simulation, threat-intel, and
-remediation** groups (appended after tenant extraction); the remaining optional
-feature groups with a clean module-ID mapping get wrapped incrementally the same
-way. Turns the
+allowed, so it can never block legitimate traffic. Wired to the **pentest, compliance, attack-simulation, threat-intel,
+remediation, pipelines, and workflows** groups (appended after tenant
+extraction). Bundled register functions that register several unrelated feature
+groups (e.g. `registerExposureRoutes` also mounts threat-intel + credentials)
+need per-*group* gating rather than per-function and are deferred; groups with
+no module-ID mapping (validation) are not gateable. Turns the
 existing UI-only toggle into real per-tenant enforcement **without touching any
 service logic or schema**. Core modules (`CoreModuleIDs`) are never gateable. A module toggle now
 **invalidates the gate cache immediately** (`ModuleService.notifyModuleChange`

@@ -177,9 +177,10 @@ func registerPipelineRoutes(
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	triggerRateLimiter *middleware.TriggerRateLimiter,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token; gate after tenant extraction.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Pipeline Template routes - tenant from JWT token
 	router.Group("/api/v1/pipelines", func(r Router) {
@@ -651,9 +652,10 @@ func registerWorkflowRoutes(
 	h *handler.WorkflowHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token; gate after tenant extraction.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Workflow routes - tenant from JWT token
 	router.Group("/api/v1/workflows", func(r Router) {

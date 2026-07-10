@@ -579,7 +579,7 @@ func Register(
 
 	// Pipeline routes (tenant from JWT token)
 	if h.Pipeline != nil {
-		registerPipelineRoutes(router, h.Pipeline, authMiddleware, userSync, triggerRateLimiter)
+		registerPipelineRoutes(router, h.Pipeline, authMiddleware, userSync, triggerRateLimiter, h.ModuleGate.RequireModule(moduledom.ModulePipelines))
 	}
 
 	// Scan Profile routes (tenant from JWT token)
@@ -629,7 +629,7 @@ func Register(
 
 	// Workflow routes (tenant from JWT token)
 	if h.Workflow != nil {
-		registerWorkflowRoutes(router, h.Workflow, authMiddleware, userSync)
+		registerWorkflowRoutes(router, h.Workflow, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleWorkflows))
 	}
 
 	// Suppression routes (tenant from JWT token)
