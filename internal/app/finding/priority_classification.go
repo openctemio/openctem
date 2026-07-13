@@ -24,6 +24,12 @@ type PriorityClassificationService struct {
 	ruleRepo      PriorityRuleRepository
 	auditRepo     PriorityAuditRepository
 	controlLookup CompensatingControlLookup // optional, may be nil
+	// reachabilityOracle feeds attack-path reachability into classification:
+	// an internal asset that sits on a validated internet→KEV/crown-jewel attack
+	// path is treated as reachable, so the "KEV+reachable→P0" / "critical+
+	// reachable→P1" gates fire for the whole chain, not just directly-public
+	// assets. Optional — nil keeps the asset-exposure-only fallback (no change).
+	reachabilityOracle ReachabilityOracle
 	// F3 / optional publisher that fires a priority-changed
 	// event whenever class transitions. Nil → no publishing (safe
 	// default; classification still runs).
@@ -39,6 +45,36 @@ type PriorityClassificationService struct {
 // SetControlLookup wires the compensating control lookup for priority calculation.
 func (s *PriorityClassificationService) SetControlLookup(lookup CompensatingControlLookup) {
 	s.controlLookup = lookup
+}
+
+// ReachabilityOracle returns, for a tenant, the set of asset IDs that sit on a
+// validated attack path from a public entry point to a KEV/crown-jewel target
+// (entry points + hops + targets of the exposure-chain graph). Implemented over
+// the attack-surface service with a short TTL cache so per-finding classification
+// stays cheap.
+type ReachabilityOracle interface {
+	ReachableFromPublic(ctx context.Context, tenantID shared.ID) (map[string]bool, error)
+}
+
+// SetReachabilityOracle wires attack-path reachability into classification.
+// Optional — nil keeps the asset-exposure-only fallback.
+func (s *PriorityClassificationService) SetReachabilityOracle(o ReachabilityOracle) {
+	s.reachabilityOracle = o
+}
+
+// reachableSet fetches the tenant's attack-path-reachable asset set; a nil oracle
+// or any error yields an empty set (classification degrades to the exposure-only
+// fallback — never blocks).
+func (s *PriorityClassificationService) reachableSet(ctx context.Context, tenantID shared.ID) map[string]bool {
+	if s.reachabilityOracle == nil {
+		return nil
+	}
+	set, err := s.reachabilityOracle.ReachableFromPublic(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("attack-path reachability lookup failed", "tenant_id", tenantID.String(), "error", err.Error())
+		return nil
+	}
+	return set
 }
 
 // SetChangePublisher wires the priority-change event publisher. Safe to
@@ -182,8 +218,8 @@ func (s *PriorityClassificationService) ClassifyFinding(
 		telemetry.ObserveStageLatency(telemetry.StagePrioritization, tenantID.String(), time.Since(stageStart))
 	}()
 
-	// Build priority context
-	pctx := s.buildPriorityContext(finding, assetEntity)
+	// Build priority context (with attack-path reachability, if wired)
+	pctx := s.buildPriorityContext(finding, assetEntity, s.reachableSet(ctx, tenantID))
 
 	// Evaluate tenant override rules first
 	rules, err := s.ruleRepo.ListActiveByTenant(ctx, tenantID)
@@ -372,6 +408,9 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		}
 	}
 
+	// Attack-path reachability set, computed once for the whole batch.
+	reachable := s.reachableSet(ctx, tenantID)
+
 	// Enrich + classify each finding
 	for _, f := range findings {
 		// Enrich with EPSS
@@ -398,7 +437,7 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 			continue
 		}
 
-		pctx := s.buildPriorityContext(f, a)
+		pctx := s.buildPriorityContext(f, a, reachable)
 		if reduction, ok := controlReduction[f.AssetID()]; ok && reduction > 0 {
 			pctx.IsProtected = true
 			pctx.ControlReductionFactor = reduction
@@ -438,9 +477,11 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 }
 
 // buildPriorityContext constructs PriorityContext from finding + asset.
+// reachable is the tenant's attack-path-reachable asset set (may be nil).
 func (s *PriorityClassificationService) buildPriorityContext(
 	f *vulnerability.Finding,
 	a *asset.Asset,
+	reachable map[string]bool,
 ) vulnerability.PriorityContext {
 	ctx := vulnerability.PriorityContext{
 		Severity:             f.Severity(),
@@ -486,6 +527,18 @@ func (s *PriorityClassificationService) buildPriorityContext(
 			ctx.IsNetworkAccessible = true
 		case asset.ExposureIsolated, asset.ExposureUnknown:
 			// Air-gapped/isolated or unknown -> leave conservative (not reachable).
+		}
+
+		// Attack-path reachability (close-the-loop): an asset sitting on a
+		// validated path from a public entry point to a KEV/crown-jewel target is
+		// reachable even when its own exposure is private/internal. This makes the
+		// exposure-chain engine actually feed prioritization instead of being
+		// display-only. Additive — it can only raise reachability, never lower it.
+		if reachable[a.ID().String()] {
+			ctx.IsInternetAccessible = true
+			if ctx.ReachableFromCount == 0 {
+				ctx.ReachableFromCount = 1
+			}
 		}
 	}
 

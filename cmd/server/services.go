@@ -660,6 +660,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// dashboard.
 	s.PriorityClassification.SetPriorityFloodGuard(app.NewPriorityFloodGuard(app.PriorityFloodConfig{}))
 
+	// Close-the-loop: feed attack-path reachability (from the exposure-chain
+	// graph) into prioritization, so an internal asset on a validated
+	// internet→KEV/crown-jewel path is treated as reachable. Cached 5m/tenant.
+	if s.AttackSurface != nil {
+		s.PriorityClassification.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
+	}
+
 	// B1/B2 reclassification pipeline wiring:
 	//   producers → ControlChangePublisher → MemoryQueue
 	//   PriorityReclassifyController (workers.go) → Reclassifier → ClassifyFinding

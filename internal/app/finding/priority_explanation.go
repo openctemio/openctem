@@ -67,7 +67,7 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 		}
 	}
 
-	pctx := s.buildPriorityContext(f, a)
+	pctx := s.buildPriorityContext(f, a, s.reachableSet(ctx, tenantID))
 
 	// Compensating-control reduction (same as the live classify path).
 	if s.controlLookup != nil && !f.AssetID().IsZero() {
