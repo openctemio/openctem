@@ -493,6 +493,11 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		ReachableFromCount:   f.ReachableFromCount(),
 		IsInternetAccessible: f.IsInternetAccessible(),
 		IsNetworkAccessible:  f.IsNetworkAccessible(),
+		// Business impact (from CTIS finding data) — raises findings the
+		// exploitability gates would bury (close-the-loop).
+		HighDataExposure: f.DataExposureRisk() == vulnerability.DataExposureRiskHigh ||
+			f.DataExposureRisk() == vulnerability.DataExposureRiskCritical,
+		HasComplianceImpact: len(f.ComplianceImpact()) > 0,
 	}
 
 	if a != nil {
