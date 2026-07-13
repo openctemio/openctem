@@ -176,6 +176,33 @@ func TestResolution_MixedValidInvalidBundles_UsesValid(t *testing.T) {
 	}
 }
 
+// Sub-module inheritance is curation-aware: an un-curated parent (no sub named
+// in the baseline) inherits all its sub-modules, but a parent whose baseline
+// already names a specific sub must NOT have its other siblings force-enabled.
+func TestApplySubModuleInheritance_CurationAware(t *testing.T) {
+	all := []*moduledom.Module{
+		mod("assets", true), // parent, no assets.* named → inherit all
+		mod("assets.domain", false),
+		mod("assets.ip", false),
+		mod("ai_triage", false), // parent, a sub IS named → curated
+		mod("ai_triage.auto", false),
+		mod("ai_triage.bulk", false),
+		mod("ai_triage.byok", false),
+	}
+	target := map[string]bool{"assets": true, "ai_triage": true, "ai_triage.auto": true}
+	applySubModuleInheritance(target, all)
+
+	if !target["assets.domain"] || !target["assets.ip"] {
+		t.Error("un-curated parent must inherit all its asset-type sub-modules")
+	}
+	if !target["ai_triage.auto"] {
+		t.Error("the explicitly named sub must stay enabled")
+	}
+	if target["ai_triage.byok"] || target["ai_triage.bulk"] {
+		t.Error("a curated parent must NOT blanket-enable its unnamed sibling sub-modules")
+	}
+}
+
 // SubscribeBundles rejects an unknown bundle and accepts + dedupes known ones.
 func TestSubscribeBundles_ValidatesAndDedupes(t *testing.T) {
 	store := &fakeBundleStore{}
