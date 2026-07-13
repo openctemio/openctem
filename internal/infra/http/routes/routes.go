@@ -589,7 +589,11 @@ func Register(
 
 	// Pipeline routes (tenant from JWT token)
 	if h.Pipeline != nil {
-		registerPipelineRoutes(router, h.Pipeline, authMiddleware, userSync, triggerRateLimiter, h.ModuleGate.RequireModule(moduledom.ModulePipelines))
+		// Gate on scan_pipelines — the real module presets/subscriptions grant
+		// and the id the UI sidebar uses. The legacy bare "pipelines" module was
+		// a duplicate (deprecated in migration 000187); gating on it 403'd
+		// pipeline routes for any tenant on a bundle subscription.
+		registerPipelineRoutes(router, h.Pipeline, authMiddleware, userSync, triggerRateLimiter, h.ModuleGate.RequireModule(moduledom.ModuleScanPipelines))
 	}
 
 	// Scan Profile routes (tenant from JWT token)

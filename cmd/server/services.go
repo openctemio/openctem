@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -180,7 +181,10 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 // moduleBundleStore adapts the tenant repository to module.BundleStore, storing
 // a tenant's product-bundle subscription in its settings JSON. Read on the
 // module-resolution path (cached by the gate); written on subscribe.
-type moduleBundleStore struct{ tenants tenant.Repository }
+type moduleBundleStore struct {
+	tenants tenant.Repository
+	db      *sql.DB
+}
 
 func (a moduleBundleStore) GetSubscribedBundles(ctx context.Context, tenantID string) ([]string, error) {
 	tid, err := shared.IDFromString(tenantID)
@@ -194,21 +198,44 @@ func (a moduleBundleStore) GetSubscribedBundles(ctx context.Context, tenantID st
 	return t.TypedSettings().SubscribedBundles, nil
 }
 
+// SetSubscribedBundles writes ONLY the subscribed_bundles key inside the tenant
+// settings JSONB — never a read-modify-write of the whole blob. This avoids a
+// lost-update clobber: a concurrent write to any other settings field (AI
+// config, branding, risk weights, …) can't wipe the subscription, and vice
+// versa. Empty selection removes the key entirely (= no subscription = all on).
 func (a moduleBundleStore) SetSubscribedBundles(ctx context.Context, tenantID string, bundleIDs []string) error {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return err
 	}
-	t, err := a.tenants.GetByID(ctx, tid)
+
+	var result sql.Result
+	if len(bundleIDs) == 0 {
+		result, err = a.db.ExecContext(ctx,
+			`UPDATE tenants
+			 SET settings = COALESCE(settings, '{}'::jsonb) - 'subscribed_bundles',
+			     updated_at = now()
+			 WHERE id = $1`,
+			tid.String())
+	} else {
+		payload, mErr := json.Marshal(bundleIDs)
+		if mErr != nil {
+			return fmt.Errorf("marshal subscribed bundles: %w", mErr)
+		}
+		result, err = a.db.ExecContext(ctx,
+			`UPDATE tenants
+			 SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{subscribed_bundles}', $2::jsonb, true),
+			     updated_at = now()
+			 WHERE id = $1`,
+			tid.String(), payload)
+	}
 	if err != nil {
-		return err
+		return fmt.Errorf("update subscribed bundles: %w", err)
 	}
-	st := t.TypedSettings()
-	st.SubscribedBundles = bundleIDs
-	if err := t.UpdateSettings(st); err != nil {
-		return err
+	if rows, rErr := result.RowsAffected(); rErr == nil && rows == 0 {
+		return fmt.Errorf("%w: tenant %s", shared.ErrNotFound, tid.String())
 	}
-	return a.tenants.Update(ctx, t)
+	return nil
 }
 
 // apikeyMembershipAdapter adapts the tenant repository to apikey.MembershipChecker
@@ -1226,7 +1253,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Module.SetAuditService(s.Audit)
 	// Product-bundle subscription: resolves the enabled-module baseline live from
 	// the tenant's chosen bundles (empty = every module on, backward-compatible).
-	s.Module.SetBundleStore(moduleBundleStore{tenants: repos.Tenant})
+	s.Module.SetBundleStore(moduleBundleStore{tenants: repos.Tenant, db: deps.DB})
 	// Per-tenant module-config version counter (Redis-backed). Used
 	// for ETag generation on module-list endpoints and as the cache-
 	// key suffix in any future Redis payload cache. Bumped on every

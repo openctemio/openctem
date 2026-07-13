@@ -823,18 +823,45 @@ func resolveBundleBaseline(bundleIDs []string) map[string]bool {
 	return baseline
 }
 
-// applySubModuleInheritance turns on every "<parent>.<sub>" sub-module whose
-// parent is enabled in target. Shared by buildPresetDiff and bundle resolution
-// so a bundle that enables a parent (e.g. "integrations") implicitly enables its
-// sub-modules without enumerating them.
+// applySubModuleInheritance enables a parent's "<parent>.<sub>" sub-modules in
+// target, but is CURATION-AWARE: if the baseline already names any sub of a
+// parent, the preset is deliberately selecting a subset of that parent's
+// sub-modules, so we respect it and do NOT blanket-enable the siblings. Only
+// when a parent is enabled and NO sub of it is named do we inherit all its
+// sub-modules.
+//
+// Why: presets curate feature sub-modules on purpose — e.g. vm_essentials lists
+// only ai_triage.auto + ai_triage.bulk, while ctem_full adds ai_triage.workflow
+// + custom_prompts. Blanket inheritance would erase that distinction and turn on
+// ai_triage.byok/agent for vm_essentials too. The un-curated case is the
+// asset-type one ("assets" core on ⇒ every assets.* type available), where no
+// preset names individual assets.* children so inheritance still applies.
 func applySubModuleInheritance(target map[string]bool, allModules []*moduledom.Module) {
+	subsByParent := make(map[string][]string)
 	for _, m := range allModules {
 		id := m.ID()
 		if !strings.Contains(id, ".") {
 			continue
 		}
-		if target[strings.SplitN(id, ".", 2)[0]] {
-			target[id] = true
+		parent := strings.SplitN(id, ".", 2)[0]
+		subsByParent[parent] = append(subsByParent[parent], id)
+	}
+	for parent, subs := range subsByParent {
+		if !target[parent] {
+			continue // parent not enabled — nothing to inherit
+		}
+		curated := false
+		for _, sub := range subs {
+			if target[sub] {
+				curated = true
+				break
+			}
+		}
+		if curated {
+			continue // preset selected a specific subset — honor it
+		}
+		for _, sub := range subs {
+			target[sub] = true
 		}
 	}
 }
