@@ -2,6 +2,36 @@ package module
 
 import "testing"
 
+// gatedModuleIDs mirrors every module id used in a RequireModule(...) route gate
+// (internal/infra/http/routes). Keep in sync with those call sites.
+//
+// Invariant (TestRouteGatesAreGrantableByCTEMFull): a route gated on a module
+// that CTEM Full — the "everything" bundle — does NOT grant would return 403 for
+// EVERY subscribed tenant, since no bundle enables more than CTEM Full. That is
+// exactly the bug where the pipeline gate used bare "pipelines" while presets
+// grant "scan_pipelines" (fixed api #305). This guard fails CI if a gate points
+// at an id outside the grantable set.
+var gatedModuleIDs = []string{
+	ModuleCompliance,
+	ModuleAttackSimulation,
+	ModulePentest,
+	ModuleRemediation,
+	ModuleScanPipelines,
+	ModuleThreatIntel,
+	ModuleWorkflows,
+}
+
+func TestRouteGatesAreGrantableByCTEMFull(t *testing.T) {
+	full := ResolvePresetModules(FindPreset("ctem_full"))
+	for _, id := range gatedModuleIDs {
+		if CoreModuleIDs[id] || full[id] {
+			continue
+		}
+		t.Errorf("route gate RequireModule(%q) is not granted by CTEM Full nor core — "+
+			"subscribed tenants would get 403; align the gate to the id presets grant", id)
+	}
+}
+
 // legacyDuplicateModuleIDs are single-word module IDs from the original
 // migration 000004 seed that were later superseded by a more specific
 // vocabulary the presets + dependency graph actually use:
