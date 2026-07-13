@@ -584,7 +584,10 @@ var presetCTEMFull = ModulePreset{
 		"ctem_cycles", "attacker_profiles", "relationships",
 		// Discovery
 		"components", "branches", "credentials",
+		// Discovery — vulnerability database is part of the CTEM discovery surface
+		"vulnerabilities",
 		// Prioritization
+		"exposures",
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
 		"ai_triage.workflow", "ai_triage.custom_prompts",
 		"priority_rules", "risk_analysis", "business_impact",

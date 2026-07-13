@@ -153,6 +153,29 @@ func TestResolution_OverrideOff_BeatsBaselineOn(t *testing.T) {
 	}
 }
 
+// Regression (empty-baseline lockout): a subscription of ONLY unknown bundle IDs
+// — e.g. a bundle was renamed/removed from the catalog after the tenant
+// subscribed — must NOT disable every module. It fails safe to all-on.
+func TestResolution_UnknownBundlesFailSafeToAllOn(t *testing.T) {
+	s := newResolutionService([]string{"removed-bundle", "typo"}, nil)
+	d := s.getTenantDisabledModules(context.Background(), tid)
+	if len(d) != 0 {
+		t.Fatalf("a subscription of only-unknown bundles must disable nothing (fail safe), got %v", d)
+	}
+}
+
+// A mix of valid + invalid bundle IDs still subsets to the valid one.
+func TestResolution_MixedValidInvalidBundles_UsesValid(t *testing.T) {
+	s := newResolutionService([]string{"asm", "removed-bundle"}, nil)
+	d := s.getTenantDisabledModules(context.Background(), tid)
+	if d["attack_surface"] {
+		t.Error("the valid bundle (asm) must keep attack_surface enabled")
+	}
+	if !d["sbom_export"] {
+		t.Error("sbom_export (not in asm) must be disabled")
+	}
+}
+
 // SubscribeBundles rejects an unknown bundle and accepts + dedupes known ones.
 func TestSubscribeBundles_ValidatesAndDedupes(t *testing.T) {
 	store := &fakeBundleStore{}

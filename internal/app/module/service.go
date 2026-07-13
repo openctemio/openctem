@@ -756,7 +756,22 @@ func (s *ModuleService) getTenantDisabledModules(ctx context.Context, tenantID s
 	// — so existing tenants are completely unaffected.
 	if bundles := s.subscribedBundles(ctx, tenantID); len(bundles) > 0 {
 		baseline := resolveBundleBaseline(bundles)
-		if allModules, mErr := s.moduleRepo.ListActiveModules(ctx); mErr == nil {
+		allModules, mErr := s.moduleRepo.ListActiveModules(ctx)
+		switch {
+		case len(baseline) == 0:
+			// Every subscribed bundle ID is unknown — e.g. a bundle was removed
+			// or renamed in the catalog AFTER the tenant subscribed. FAIL SAFE:
+			// treat as no subscription (all modules on) rather than disabling
+			// every feature module and locking the tenant out. A valid bundle
+			// always yields a non-empty baseline (ResolvePresetModules includes
+			// core + mandatory), so an empty baseline means no bundle resolved.
+			s.logger.Warn("subscribed bundles resolved to an empty baseline (unknown bundle ids); ignoring subscription",
+				"tenant_id", tenantID, "bundles", bundles)
+		case mErr != nil:
+			// Could not load the catalog — fail open (no subsetting) so a lookup
+			// error never blocks a tenant's modules.
+			s.logger.Warn("bundle resolution: failed to list modules", "tenant_id", tenantID, "error", mErr)
+		default:
 			applySubModuleInheritance(baseline, allModules)
 			for _, m := range allModules {
 				id := m.ID()
@@ -767,8 +782,6 @@ func (s *ModuleService) getTenantDisabledModules(ctx context.Context, tenantID s
 					disabled[id] = true // outside the subscription and not admin-re-enabled
 				}
 			}
-		} else {
-			s.logger.Warn("bundle resolution: failed to list modules", "tenant_id", tenantID, "error", mErr)
 		}
 	}
 
