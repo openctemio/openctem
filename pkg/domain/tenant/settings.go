@@ -29,6 +29,13 @@ type Settings struct {
 	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
 	AssetSource    AssetSourceSettings    `json:"asset_source"`
 	AssetLifecycle AssetLifecycleSettings `json:"asset_lifecycle"`
+
+	// SubscribedBundles is the set of product-bundle IDs the tenant runs
+	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the
+	// backward-compatible default). When non-empty, the module service
+	// resolves the enabled set live as the union of these bundles (+core+
+	// mandatory+deps), with per-module tenant_modules overrides layered on top.
+	SubscribedBundles []string `json:"subscribed_bundles,omitempty"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.

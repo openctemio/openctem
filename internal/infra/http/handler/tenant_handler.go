@@ -163,7 +163,7 @@ type CreateTenantRequest struct {
 	Slug        string `json:"slug" validate:"required,min=3,max=100,slug"`
 	Description string `json:"description" validate:"max=500"`
 	// ModulePresetID optionally binds a module preset at creation time.
-	// Empty = no preset applied (every active catalogue module is on by
+	// Empty = no preset applied (every active catalog module is on by
 	// default, i.e. ctem_full-equivalent — kept for backward compat).
 	// Valid values match pkg/domain/module/presets.go (e.g.
 	// "vm_essentials", "asset_inventory", "bug_bounty").
@@ -2102,7 +2102,7 @@ func (h *TenantHandler) ResetTenantModules(w http.ResponseWriter, r *http.Reques
 }
 
 // ListModulePresets handles GET /api/v1/tenants/{tenant}/settings/modules/presets.
-// Returns the static preset catalogue so the UI can render the picker.
+// Returns the static preset catalog so the UI can render the picker.
 // Does NOT require tenant context for reads, but gated behind
 // RequireTeamAdmin so the pricing/persona copy isn't exposed to
 // unauthenticated probes.
@@ -2114,6 +2114,62 @@ func (h *TenantHandler) ListModulePresets(w http.ResponseWriter, r *http.Request
 	presets := h.moduleService.ListModulePresets(r.Context())
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"presets": presets})
+}
+
+type subscribeBundlesRequest struct {
+	BundleIDs []string `json:"bundle_ids"`
+}
+
+// GetModuleBundles returns the tenant's current bundle subscription plus the
+// available bundle catalog. Empty subscription = the tenant runs every module.
+func (h *TenantHandler) GetModuleBundles(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"subscribed": h.moduleService.GetSubscribedBundles(r.Context(), tenantID.String()),
+		"available":  h.moduleService.ListModulePresets(r.Context()),
+	})
+}
+
+// SubscribeModuleBundles replaces the tenant's bundle subscription. An empty
+// list clears it (every module on). The enabled-module set is then resolved live
+// from the chosen bundles; per-module overrides still apply on top.
+func (h *TenantHandler) SubscribeModuleBundles(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+	var req subscribeBundlesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	actx := h.buildAuditContext(r)
+	if err := h.moduleService.SubscribeBundles(r.Context(), tenantID.String(), req.BundleIDs, actx); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	// Return the fresh module config so the UI can refresh in one round trip.
+	config, err := h.moduleService.GetTenantModuleConfig(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(config)
 }
 
 // PreviewModulePreset handles POST /.../settings/modules/presets/{presetId}/preview.

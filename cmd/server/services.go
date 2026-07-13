@@ -177,6 +177,40 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 	return res.Updated, nil
 }
 
+// moduleBundleStore adapts the tenant repository to module.BundleStore, storing
+// a tenant's product-bundle subscription in its settings JSON. Read on the
+// module-resolution path (cached by the gate); written on subscribe.
+type moduleBundleStore struct{ tenants tenant.Repository }
+
+func (a moduleBundleStore) GetSubscribedBundles(ctx context.Context, tenantID string) ([]string, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	t, err := a.tenants.GetByID(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return t.TypedSettings().SubscribedBundles, nil
+}
+
+func (a moduleBundleStore) SetSubscribedBundles(ctx context.Context, tenantID string, bundleIDs []string) error {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return err
+	}
+	t, err := a.tenants.GetByID(ctx, tid)
+	if err != nil {
+		return err
+	}
+	st := t.TypedSettings()
+	st.SubscribedBundles = bundleIDs
+	if err := t.UpdateSettings(st); err != nil {
+		return err
+	}
+	return a.tenants.Update(ctx, t)
+}
+
 // apikeyMembershipAdapter adapts the tenant repository to apikey.MembershipChecker
 // so a user-scoped API key stops authenticating the moment its owner's membership
 // is suspended or removed. Fails closed: a missing membership or lookup error is
@@ -1183,6 +1217,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Module = app.NewModuleService(repos.Module, log)
 	s.Module.SetTenantModuleRepo(repos.TenantModule)
 	s.Module.SetAuditService(s.Audit)
+	// Product-bundle subscription: resolves the enabled-module baseline live from
+	// the tenant's chosen bundles (empty = every module on, backward-compatible).
+	s.Module.SetBundleStore(moduleBundleStore{tenants: repos.Tenant})
 	// Per-tenant module-config version counter (Redis-backed). Used
 	// for ETag generation on module-list endpoints and as the cache-
 	// key suffix in any future Redis payload cache. Bumped on every
