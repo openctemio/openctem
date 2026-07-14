@@ -253,9 +253,14 @@ func (c *Campaign) RecordRiskReduction(before, after float64) {
 	c.updatedAt = time.Now()
 }
 
-// Activate transitions to active status.
+// Activate transitions to active status. Allowed from draft (first start),
+// paused (resume), and validating (validation failed — the fix didn't hold, so
+// the campaign returns to active remediation; CTEM Stage-4 loops back to
+// Mobilization rather than force-completing an unverified fix).
 func (c *Campaign) Activate() error {
-	if c.status != CampaignStatusDraft && c.status != CampaignStatusPaused {
+	if c.status != CampaignStatusDraft &&
+		c.status != CampaignStatusPaused &&
+		c.status != CampaignStatusValidating {
 		return fmt.Errorf("%w: cannot activate from %s", shared.ErrValidation, c.status)
 	}
 	c.status = CampaignStatusActive
@@ -264,6 +269,19 @@ func (c *Campaign) Activate() error {
 		c.startDate = &now
 	}
 	c.updatedAt = now
+	return nil
+}
+
+// Reopen transitions a completed campaign back to active — e.g. a resolved
+// finding regressed (runtime IOC re-open) and needs remediating again. Clears
+// the completion timestamp so the campaign reads as in-progress work.
+func (c *Campaign) Reopen() error {
+	if c.status != CampaignStatusCompleted {
+		return fmt.Errorf("%w: cannot reopen from %s", shared.ErrValidation, c.status)
+	}
+	c.status = CampaignStatusActive
+	c.completedAt = nil
+	c.updatedAt = time.Now()
 	return nil
 }
 

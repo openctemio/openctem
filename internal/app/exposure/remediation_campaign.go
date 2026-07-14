@@ -408,7 +408,13 @@ func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, t
 
 	switch remediation.CampaignStatus(newStatus) {
 	case remediation.CampaignStatusActive:
-		err = campaign.Activate()
+		// active from a completed campaign is a Reopen (regression); from
+		// draft/paused/validating it's a normal Activate/resume/rework.
+		if campaign.Status() == remediation.CampaignStatusCompleted {
+			err = campaign.Reopen()
+		} else {
+			err = campaign.Activate()
+		}
 	case remediation.CampaignStatusPaused:
 		err = campaign.Pause()
 	case remediation.CampaignStatusValidating:
