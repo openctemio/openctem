@@ -103,6 +103,8 @@ func (h *RemediationCampaignHandler) Create(w http.ResponseWriter, r *http.Reque
 		Priority:      req.Priority,
 		FindingFilter: req.FindingFilter,
 		AssignedTo:    req.AssignedTo,
+		AssignedTeam:  req.AssignedTeam,
+		StartDate:     req.StartDate,
 		DueDate:       req.DueDate,
 		Tags:          req.Tags,
 		ActorID:       userID,
@@ -210,8 +212,11 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		Description:   req.Description,
 		Priority:      req.Priority,
 		Tags:          req.Tags,
+		StartDate:     req.StartDate,
 		DueDate:       req.DueDate,
 		FindingFilter: req.FindingFilter,
+		AssignedTo:    req.AssignedTo,
+		AssignedTeam:  req.AssignedTeam,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -291,6 +296,8 @@ type CreateRemCampaignRequest struct {
 	Priority      string         `json:"priority"`
 	FindingFilter map[string]any `json:"finding_filter"`
 	AssignedTo    string         `json:"assigned_to"`
+	AssignedTeam  string         `json:"assigned_team"`
+	StartDate     string         `json:"start_date"`
 	DueDate       string         `json:"due_date"`
 	Tags          []string       `json:"tags"`
 }
@@ -300,8 +307,11 @@ type UpdateRemCampaignRequest struct {
 	Description   *string        `json:"description,omitempty"`
 	Priority      *string        `json:"priority,omitempty"`
 	Tags          []string       `json:"tags,omitempty"`
+	StartDate     *time.Time     `json:"start_date,omitempty"`
 	DueDate       *time.Time     `json:"due_date,omitempty"`
 	FindingFilter map[string]any `json:"finding_filter,omitempty"`
+	AssignedTo    *string        `json:"assigned_to,omitempty"`
+	AssignedTeam  *string        `json:"assigned_team,omitempty"`
 }
 
 type RemediationCampaignResponse struct {
@@ -311,6 +321,8 @@ type RemediationCampaignResponse struct {
 	Status        string         `json:"status"`
 	Priority      string         `json:"priority"`
 	FindingFilter map[string]any `json:"finding_filter,omitempty"`
+	AssignedTo    string         `json:"assigned_to,omitempty"`
+	AssignedTeam  string         `json:"assigned_team,omitempty"`
 	FindingCount  int            `json:"finding_count"`
 	ResolvedCount int            `json:"resolved_count"`
 	Progress      float64        `json:"progress"`
@@ -338,6 +350,8 @@ func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignRespo
 		Status:        string(c.Status()),
 		Priority:      string(c.Priority()),
 		FindingFilter: c.FindingFilter(),
+		AssignedTo:    idPtrToString(c.AssignedTo()),
+		AssignedTeam:  idPtrToString(c.AssignedTeam()),
 		FindingCount:  c.FindingCount(),
 		ResolvedCount: c.ResolvedCount(),
 		Progress:      c.Progress(),
@@ -352,4 +366,13 @@ func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignRespo
 		CreatedAt:     c.CreatedAt(),
 		UpdatedAt:     c.UpdatedAt(),
 	}
+}
+
+// idPtrToString renders an optional ID as a string ("" when nil), for response
+// serialization of nullable assignment fields.
+func idPtrToString(id *shared.ID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }
