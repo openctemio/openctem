@@ -284,6 +284,9 @@ type UpdateRemediationCampaignInput struct {
 	Priority    *string
 	Tags        []string
 	DueDate     *time.Time
+	// FindingFilter re-scopes the campaign (e.g. a task's "link to finding").
+	// nil = leave the existing scope untouched; non-nil (incl. {}) = replace it.
+	FindingFilter map[string]any
 }
 
 // UpdateCampaign updates campaign fields (name, description, priority, tags, due_date).
@@ -310,6 +313,15 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 	}
 	if input.DueDate != nil {
 		campaign.SetDueDate(input.DueDate)
+	}
+	if input.FindingFilter != nil {
+		// Re-scoping the campaign (e.g. linking a finding) — apply then recompute
+		// the counts immediately so "N findings linked" reflects the new scope
+		// without waiting for the reconcile sweep.
+		campaign.SetFindingFilter(input.FindingFilter)
+		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
+			s.logger.Warn("recompute after re-scope failed", "id", campaignID, "error", rerr)
+		}
 	}
 
 	if err := s.repo.Update(ctx, campaign); err != nil {

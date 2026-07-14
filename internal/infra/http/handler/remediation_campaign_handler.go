@@ -205,11 +205,12 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 	}
 
 	campaign, err := h.service.UpdateCampaign(r.Context(), tenantID, id, app.UpdateRemediationCampaignInput{
-		Name:        req.Name,
-		Description: req.Description,
-		Priority:    req.Priority,
-		Tags:        req.Tags,
-		DueDate:     req.DueDate,
+		Name:          req.Name,
+		Description:   req.Description,
+		Priority:      req.Priority,
+		Tags:          req.Tags,
+		DueDate:       req.DueDate,
+		FindingFilter: req.FindingFilter,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -293,11 +294,12 @@ type CreateRemCampaignRequest struct {
 }
 
 type UpdateRemCampaignRequest struct {
-	Name        *string    `json:"name,omitempty"`
-	Description *string    `json:"description,omitempty"`
-	Priority    *string    `json:"priority,omitempty"`
-	Tags        []string   `json:"tags,omitempty"`
-	DueDate     *time.Time `json:"due_date,omitempty"`
+	Name          *string        `json:"name,omitempty"`
+	Description   *string        `json:"description,omitempty"`
+	Priority      *string        `json:"priority,omitempty"`
+	Tags          []string       `json:"tags,omitempty"`
+	DueDate       *time.Time     `json:"due_date,omitempty"`
+	FindingFilter map[string]any `json:"finding_filter,omitempty"`
 }
 
 type RemediationCampaignResponse struct {
