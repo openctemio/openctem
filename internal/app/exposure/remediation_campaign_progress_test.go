@@ -116,6 +116,39 @@ func TestCreateCampaign_SeedsProgress(t *testing.T) {
 	}
 }
 
+// An unscoped campaign ({} filter) must NOT inherit the tenant-wide count — the
+// "every campaign shows N findings linked" bug. Even with a counter that would
+// return 89, the empty-scope guard pins it to 0.
+func TestCreateCampaign_EmptyFilter_TracksNothing(t *testing.T) {
+	repo := newFakeCampaignRepo()
+	counter := &fakeCounter{total: 89, resolved: 7}
+	svc := newService(repo, counter)
+
+	c, err := svc.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
+		TenantID: shared.NewID().String(),
+		Name:     "Unscoped",
+		// no FindingFilter → empty scope
+	})
+	if err != nil {
+		t.Fatalf("CreateCampaign: %v", err)
+	}
+	if c.FindingCount() != 0 || c.ResolvedCount() != 0 {
+		t.Fatalf("unscoped campaign must track nothing, got %d/%d", c.FindingCount(), c.ResolvedCount())
+	}
+}
+
+func TestFindingFilterHasScope(t *testing.T) {
+	tid := shared.NewID()
+	empty := campaignFilterToFindingFilter(tid, map[string]any{})
+	if findingFilterHasScope(empty) {
+		t.Error("empty campaign filter must have no scope")
+	}
+	scoped := campaignFilterToFindingFilter(tid, map[string]any{"severities": []any{"critical"}})
+	if !findingFilterHasScope(scoped) {
+		t.Error("severity-scoped campaign filter must have scope")
+	}
+}
+
 func TestCreateCampaign_NoCounter_StaysZero(t *testing.T) {
 	repo := newFakeCampaignRepo()
 	svc := newService(repo, nil) // no counter wired
@@ -138,7 +171,11 @@ func TestGetCampaign_RefreshesLive(t *testing.T) {
 	svc := newService(repo, counter)
 
 	tid := shared.NewID().String()
-	c, err := svc.CreateCampaign(context.Background(), CreateRemediationCampaignInput{TenantID: tid, Name: "C"})
+	c, err := svc.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
+		TenantID:      tid,
+		Name:          "C",
+		FindingFilter: map[string]any{"severities": []any{"critical"}},
+	})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -160,7 +197,13 @@ func TestReconcileProgress_AutoCompletes(t *testing.T) {
 	svc := newService(repo, counter)
 
 	tid := shared.NewID().String()
-	c, err := svc.CreateCampaign(context.Background(), CreateRemediationCampaignInput{TenantID: tid, Name: "Activate me"})
+	// Scoped campaign — an unscoped ({}) campaign now correctly tracks nothing,
+	// so give it a real filter to exercise the auto-complete path.
+	c, err := svc.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
+		TenantID:      tid,
+		Name:          "Activate me",
+		FindingFilter: map[string]any{"severities": []any{"critical"}},
+	})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
