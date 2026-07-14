@@ -135,6 +135,11 @@ func (s *RemediationCampaignService) ResolveCampaignFindings(ctx context.Context
 		return 0, fmt.Errorf("%w: campaign resolve is not configured", shared.ErrValidation)
 	}
 	filter := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
+	// Refuse to resolve an unscoped campaign: an empty filter would map to a
+	// tenant-only filter and close every open finding in the tenant.
+	if !findingFilterHasScope(filter) {
+		return 0, fmt.Errorf("%w: campaign has no scope — refusing tenant-wide resolve", shared.ErrValidation)
+	}
 	n, err := s.resolver.ResolveOpenByFilter(ctx, tenantID, filter, in)
 	if err != nil {
 		return 0, err
@@ -224,6 +229,13 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		}
 		campaign.SetAssignment(&assignee, nil)
 	}
+	// Due date arrives as an ISO/RFC3339 string from the UI; parse it so "New
+	// Task" persists a deadline (it was silently dropped — only edit kept it).
+	if input.DueDate != "" {
+		if due, derr := time.Parse(time.RFC3339, input.DueDate); derr == nil {
+			campaign.SetDueDate(&due)
+		}
+	}
 
 	if err := s.repo.Create(ctx, campaign); err != nil {
 		return nil, fmt.Errorf("failed to create remediation campaign: %w", err)
@@ -279,6 +291,9 @@ type UpdateRemediationCampaignInput struct {
 	Priority    *string
 	Tags        []string
 	DueDate     *time.Time
+	// FindingFilter re-scopes the campaign (e.g. a task's "link to finding").
+	// nil = leave the existing scope untouched; non-nil (incl. {}) = replace it.
+	FindingFilter map[string]any
 }
 
 // UpdateCampaign updates campaign fields (name, description, priority, tags, due_date).
@@ -305,6 +320,15 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 	}
 	if input.DueDate != nil {
 		campaign.SetDueDate(input.DueDate)
+	}
+	if input.FindingFilter != nil {
+		// Re-scoping the campaign (e.g. linking a finding) — apply then recompute
+		// the counts immediately so "N findings linked" reflects the new scope
+		// without waiting for the reconcile sweep.
+		campaign.SetFindingFilter(input.FindingFilter)
+		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
+			s.logger.Warn("recompute after re-scope failed", "id", campaignID, "error", rerr)
+		}
 	}
 
 	if err := s.repo.Update(ctx, campaign); err != nil {
@@ -545,6 +569,15 @@ func (s *RemediationCampaignService) recomputeProgress(ctx context.Context, camp
 
 	base := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
 
+	// An unscoped campaign ({} filter) maps to a tenant-only filter that matches
+	// every finding — so all such campaigns would report the same tenant-wide
+	// count. Treat "no scope" as "tracks nothing" until it is given a filter/key.
+	if !findingFilterHasScope(base) {
+		prevFindings, prevResolved := campaign.FindingCount(), campaign.ResolvedCount()
+		campaign.UpdateProgress(0, 0)
+		return prevFindings != 0 || prevResolved != 0, nil
+	}
+
 	// The denominator must be the WHOLE campaign scope regardless of status, so
 	// it stays stable as findings resolve. If the campaign filter pinned a
 	// status (e.g. status=open), counting `total` against it while counting
@@ -620,6 +653,10 @@ func campaignFilterToFindingFilter(tenantID shared.ID, raw map[string]any) vulne
 	if cves := stringValues(raw, "cve_ids", "cve_id"); len(cves) > 0 {
 		f.CVEIDs = cves
 	}
+	// Explicitly linked findings (a remediation task's "link to finding").
+	if ids := stringValues(raw, "finding_ids", "finding_id"); len(ids) > 0 {
+		f.FindingIDs = ids
+	}
 	if assetID := firstString(raw, "asset_id"); assetID != "" {
 		if id, err := shared.IDFromString(assetID); err == nil {
 			f.AssetID = &id
@@ -632,6 +669,23 @@ func campaignFilterToFindingFilter(tenantID shared.ID, raw map[string]any) vulne
 		f.Search = &search
 	}
 	return f
+}
+
+// findingFilterHasScope reports whether a campaign's converted filter narrows
+// beyond the tenant. An empty campaign filter ({}) maps to a tenant-only filter
+// that matches EVERY finding — the cause of the "every campaign shows N findings
+// linked" bug, and a resolve-all footgun. An unscoped campaign must therefore
+// own nothing (count 0) and must never resolve. Keyed campaigns are handled on a
+// separate path and always have scope.
+func findingFilterHasScope(f vulnerability.FindingFilter) bool {
+	return len(f.Severities) > 0 ||
+		len(f.Sources) > 0 ||
+		len(f.Statuses) > 0 ||
+		len(f.CVEIDs) > 0 ||
+		len(f.FindingIDs) > 0 ||
+		f.AssetID != nil ||
+		f.ToolName != nil ||
+		f.Search != nil
 }
 
 // stringValues extracts string values for the first present key, accepting

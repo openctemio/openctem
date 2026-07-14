@@ -2845,6 +2845,16 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		conditions = append(conditions, fmt.Sprintf("source IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
+	if len(filter.FindingIDs) > 0 {
+		placeholders := make([]string, len(filter.FindingIDs))
+		for i, id := range filter.FindingIDs {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, id)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("id IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
 	// CTEM prioritization filters (RFC-017).
 	if len(filter.PriorityClasses) > 0 {
 		placeholders := make([]string, len(filter.PriorityClasses))
