@@ -103,6 +103,7 @@ func (h *RemediationCampaignHandler) Create(w http.ResponseWriter, r *http.Reque
 		Priority:      req.Priority,
 		FindingFilter: req.FindingFilter,
 		AssignedTo:    req.AssignedTo,
+		DueDate:       req.DueDate,
 		Tags:          req.Tags,
 		ActorID:       userID,
 	})
@@ -290,6 +291,7 @@ type CreateRemCampaignRequest struct {
 	Priority      string         `json:"priority"`
 	FindingFilter map[string]any `json:"finding_filter"`
 	AssignedTo    string         `json:"assigned_to"`
+	DueDate       string         `json:"due_date"`
 	Tags          []string       `json:"tags"`
 }
 

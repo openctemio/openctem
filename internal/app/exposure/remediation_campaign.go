@@ -229,6 +229,13 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		}
 		campaign.SetAssignment(&assignee, nil)
 	}
+	// Due date arrives as an ISO/RFC3339 string from the UI; parse it so "New
+	// Task" persists a deadline (it was silently dropped — only edit kept it).
+	if input.DueDate != "" {
+		if due, derr := time.Parse(time.RFC3339, input.DueDate); derr == nil {
+			campaign.SetDueDate(&due)
+		}
+	}
 
 	if err := s.repo.Create(ctx, campaign); err != nil {
 		return nil, fmt.Errorf("failed to create remediation campaign: %w", err)
