@@ -996,10 +996,11 @@ func (r *FindingRepository) List(ctx context.Context, filter vulnerability.Findi
 		countQuery += " WHERE " + whereClause
 	}
 
-	// Apply sorting (default to created_at DESC)
-	orderBy := defaultSortOrder
+	// Apply sorting. Default to CTEM priority order (P0-first, then severity,
+	// then recency) so the list surfaces what to work on next — not created_at.
+	orderBy := vulnerability.DefaultFindingSort
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderBy = opts.Sort.SQLWithDefault(defaultSortOrder)
+		orderBy = opts.Sort.SQLWithDefault(vulnerability.DefaultFindingSort)
 	}
 	baseQuery += " ORDER BY " + orderBy
 	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
@@ -2842,6 +2843,35 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			argIndex++
 		}
 		conditions = append(conditions, fmt.Sprintf("source IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// CTEM prioritization filters (RFC-017).
+	if len(filter.PriorityClasses) > 0 {
+		placeholders := make([]string, len(filter.PriorityClasses))
+		for i, pc := range filter.PriorityClasses {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, pc)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("priority_class IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	if filter.IsInKEV != nil {
+		conditions = append(conditions, fmt.Sprintf("is_in_kev = $%d", argIndex))
+		args = append(args, *filter.IsInKEV)
+		argIndex++
+	}
+
+	if filter.IsReachable != nil {
+		conditions = append(conditions, fmt.Sprintf("is_reachable = $%d", argIndex))
+		args = append(args, *filter.IsReachable)
+		argIndex++
+	}
+
+	if filter.EPSSMin != nil {
+		conditions = append(conditions, fmt.Sprintf("epss_score >= $%d", argIndex))
+		args = append(args, *filter.EPSSMin)
+		argIndex++
 	}
 
 	if filter.ToolName != nil && *filter.ToolName != "" {
