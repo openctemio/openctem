@@ -245,12 +245,17 @@ func TestReconcileProgress_NoCounter_NoOp(t *testing.T) {
 func TestCampaignFilterToFindingFilter_MapsKeys(t *testing.T) {
 	tid := shared.NewID()
 	raw := map[string]any{
-		"severities": []any{"critical", "high"},
-		"cve_id":     "CVE-2021-44228",
-		"source":     "trivy",
-		"search":     "log4j",
+		"severities":  []any{"critical", "high"},
+		"cve_id":      "CVE-2021-44228",
+		"source":      "trivy",
+		"search":      "log4j",
+		"finding_ids": []any{"01930000-0000-7000-8000-000000000001"},
 	}
 	f := campaignFilterToFindingFilter(tid, raw)
+
+	if len(f.FindingIDs) != 1 || f.FindingIDs[0] != "01930000-0000-7000-8000-000000000001" {
+		t.Fatalf("finding_ids not mapped: %v", f.FindingIDs)
+	}
 
 	if f.TenantID == nil || *f.TenantID != tid {
 		t.Fatalf("tenant not pinned")

@@ -634,6 +634,10 @@ func campaignFilterToFindingFilter(tenantID shared.ID, raw map[string]any) vulne
 	if cves := stringValues(raw, "cve_ids", "cve_id"); len(cves) > 0 {
 		f.CVEIDs = cves
 	}
+	// Explicitly linked findings (a remediation task's "link to finding").
+	if ids := stringValues(raw, "finding_ids", "finding_id"); len(ids) > 0 {
+		f.FindingIDs = ids
+	}
 	if assetID := firstString(raw, "asset_id"); assetID != "" {
 		if id, err := shared.IDFromString(assetID); err == nil {
 			f.AssetID = &id
@@ -659,6 +663,7 @@ func findingFilterHasScope(f vulnerability.FindingFilter) bool {
 		len(f.Sources) > 0 ||
 		len(f.Statuses) > 0 ||
 		len(f.CVEIDs) > 0 ||
+		len(f.FindingIDs) > 0 ||
 		f.AssetID != nil ||
 		f.ToolName != nil ||
 		f.Search != nil
