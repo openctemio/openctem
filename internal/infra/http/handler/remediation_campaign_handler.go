@@ -103,6 +103,7 @@ func (h *RemediationCampaignHandler) Create(w http.ResponseWriter, r *http.Reque
 		Priority:      req.Priority,
 		FindingFilter: req.FindingFilter,
 		AssignedTo:    req.AssignedTo,
+		AssignedTeam:  req.AssignedTeam,
 		DueDate:       req.DueDate,
 		Tags:          req.Tags,
 		ActorID:       userID,
@@ -213,6 +214,7 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		DueDate:       req.DueDate,
 		FindingFilter: req.FindingFilter,
 		AssignedTo:    req.AssignedTo,
+		AssignedTeam:  req.AssignedTeam,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -292,6 +294,7 @@ type CreateRemCampaignRequest struct {
 	Priority      string         `json:"priority"`
 	FindingFilter map[string]any `json:"finding_filter"`
 	AssignedTo    string         `json:"assigned_to"`
+	AssignedTeam  string         `json:"assigned_team"`
 	DueDate       string         `json:"due_date"`
 	Tags          []string       `json:"tags"`
 }
@@ -304,6 +307,7 @@ type UpdateRemCampaignRequest struct {
 	DueDate       *time.Time     `json:"due_date,omitempty"`
 	FindingFilter map[string]any `json:"finding_filter,omitempty"`
 	AssignedTo    *string        `json:"assigned_to,omitempty"`
+	AssignedTeam  *string        `json:"assigned_team,omitempty"`
 }
 
 type RemediationCampaignResponse struct {

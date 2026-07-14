@@ -188,6 +188,7 @@ type CreateRemediationCampaignInput struct {
 	Priority      string
 	FindingFilter map[string]any
 	AssignedTo    string
+	AssignedTeam  string
 	StartDate     string
 	DueDate       string
 	Tags          []string
@@ -222,12 +223,23 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		actorID, _ := shared.IDFromString(input.ActorID)
 		campaign.SetCreatedBy(actorID)
 	}
-	if input.AssignedTo != "" {
-		assignee, aerr := shared.IDFromString(input.AssignedTo)
-		if aerr != nil {
-			return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
+	if input.AssignedTo != "" || input.AssignedTeam != "" {
+		var toPtr, teamPtr *shared.ID
+		if input.AssignedTo != "" {
+			assignee, aerr := shared.IDFromString(input.AssignedTo)
+			if aerr != nil {
+				return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
+			}
+			toPtr = &assignee
 		}
-		campaign.SetAssignment(&assignee, nil)
+		if input.AssignedTeam != "" {
+			team, terr := shared.IDFromString(input.AssignedTeam)
+			if terr != nil {
+				return nil, fmt.Errorf("%w: invalid assigned_team id", shared.ErrValidation)
+			}
+			teamPtr = &team
+		}
+		campaign.SetAssignment(toPtr, teamPtr)
 	}
 	// Due date arrives as an ISO/RFC3339 string from the UI; parse it so "New
 	// Task" persists a deadline (it was silently dropped — only edit kept it).
@@ -297,6 +309,9 @@ type UpdateRemediationCampaignInput struct {
 	// AssignedTo sets the owner. nil = leave unchanged; ptr to "" = unassign;
 	// ptr to a user UUID = assign that user.
 	AssignedTo *string
+	// AssignedTeam sets the validator (the "who verifies" — segregation from the
+	// fixer). Same nil/""/uuid semantics as AssignedTo.
+	AssignedTeam *string
 }
 
 // UpdateCampaign updates campaign fields (name, description, priority, tags, due_date).
@@ -333,16 +348,34 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 			s.logger.Warn("recompute after re-scope failed", "id", campaignID, "error", rerr)
 		}
 	}
-	if input.AssignedTo != nil {
-		if *input.AssignedTo == "" {
-			campaign.SetAssignment(nil, campaign.AssignedTeam()) // unassign the owner
-		} else {
-			uid, aerr := shared.IDFromString(*input.AssignedTo)
-			if aerr != nil {
-				return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
+	if input.AssignedTo != nil || input.AssignedTeam != nil {
+		// Each side is independently updatable: nil = keep current, "" = clear,
+		// uuid = set. Start from the current values so one doesn't wipe the other.
+		toPtr := campaign.AssignedTo()
+		teamPtr := campaign.AssignedTeam()
+		if input.AssignedTo != nil {
+			if *input.AssignedTo == "" {
+				toPtr = nil
+			} else {
+				uid, aerr := shared.IDFromString(*input.AssignedTo)
+				if aerr != nil {
+					return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
+				}
+				toPtr = &uid
 			}
-			campaign.SetAssignment(&uid, campaign.AssignedTeam())
 		}
+		if input.AssignedTeam != nil {
+			if *input.AssignedTeam == "" {
+				teamPtr = nil
+			} else {
+				tid, terr := shared.IDFromString(*input.AssignedTeam)
+				if terr != nil {
+					return nil, fmt.Errorf("%w: invalid assigned_team id", shared.ErrValidation)
+				}
+				teamPtr = &tid
+			}
+		}
+		campaign.SetAssignment(toPtr, teamPtr)
 	}
 
 	if err := s.repo.Update(ctx, campaign); err != nil {
