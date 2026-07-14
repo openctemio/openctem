@@ -212,6 +212,7 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		Tags:          req.Tags,
 		DueDate:       req.DueDate,
 		FindingFilter: req.FindingFilter,
+		AssignedTo:    req.AssignedTo,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -302,6 +303,7 @@ type UpdateRemCampaignRequest struct {
 	Tags          []string       `json:"tags,omitempty"`
 	DueDate       *time.Time     `json:"due_date,omitempty"`
 	FindingFilter map[string]any `json:"finding_filter,omitempty"`
+	AssignedTo    *string        `json:"assigned_to,omitempty"`
 }
 
 type RemediationCampaignResponse struct {
@@ -311,6 +313,8 @@ type RemediationCampaignResponse struct {
 	Status        string         `json:"status"`
 	Priority      string         `json:"priority"`
 	FindingFilter map[string]any `json:"finding_filter,omitempty"`
+	AssignedTo    string         `json:"assigned_to,omitempty"`
+	AssignedTeam  string         `json:"assigned_team,omitempty"`
 	FindingCount  int            `json:"finding_count"`
 	ResolvedCount int            `json:"resolved_count"`
 	Progress      float64        `json:"progress"`
@@ -338,6 +342,8 @@ func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignRespo
 		Status:        string(c.Status()),
 		Priority:      string(c.Priority()),
 		FindingFilter: c.FindingFilter(),
+		AssignedTo:    idPtrToString(c.AssignedTo()),
+		AssignedTeam:  idPtrToString(c.AssignedTeam()),
 		FindingCount:  c.FindingCount(),
 		ResolvedCount: c.ResolvedCount(),
 		Progress:      c.Progress(),
@@ -352,4 +358,13 @@ func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignRespo
 		CreatedAt:     c.CreatedAt(),
 		UpdatedAt:     c.UpdatedAt(),
 	}
+}
+
+// idPtrToString renders an optional ID as a string ("" when nil), for response
+// serialization of nullable assignment fields.
+func idPtrToString(id *shared.ID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }

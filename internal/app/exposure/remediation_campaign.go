@@ -294,6 +294,9 @@ type UpdateRemediationCampaignInput struct {
 	// FindingFilter re-scopes the campaign (e.g. a task's "link to finding").
 	// nil = leave the existing scope untouched; non-nil (incl. {}) = replace it.
 	FindingFilter map[string]any
+	// AssignedTo sets the owner. nil = leave unchanged; ptr to "" = unassign;
+	// ptr to a user UUID = assign that user.
+	AssignedTo *string
 }
 
 // UpdateCampaign updates campaign fields (name, description, priority, tags, due_date).
@@ -328,6 +331,17 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		campaign.SetFindingFilter(input.FindingFilter)
 		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
 			s.logger.Warn("recompute after re-scope failed", "id", campaignID, "error", rerr)
+		}
+	}
+	if input.AssignedTo != nil {
+		if *input.AssignedTo == "" {
+			campaign.SetAssignment(nil, campaign.AssignedTeam()) // unassign the owner
+		} else {
+			uid, aerr := shared.IDFromString(*input.AssignedTo)
+			if aerr != nil {
+				return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
+			}
+			campaign.SetAssignment(&uid, campaign.AssignedTeam())
 		}
 	}
 
