@@ -396,6 +396,34 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 	return campaign, nil
 }
 
+// ReopenCampaignsForFinding reopens every completed campaign whose explicit
+// scope includes the given finding — called when that finding regresses (a
+// resolved finding re-opened by the runtime IOC correlator). Best-effort per
+// campaign: one failure is logged and does not abort the rest. Returns the
+// number of campaigns actually reopened. Takes shared.ID to match the IOC
+// reopener contract.
+func (s *RemediationCampaignService) ReopenCampaignsForFinding(ctx context.Context, tenantID, findingID shared.ID, reason string) (int, error) {
+	campaigns, err := s.repo.ListCompletedContainingFinding(ctx, tenantID, findingID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list campaigns for finding regression: %w", err)
+	}
+	reopened := 0
+	for _, campaign := range campaigns {
+		if rerr := campaign.Reopen(); rerr != nil {
+			s.logger.Warn("campaign reopen skipped", "id", campaign.ID().String(), "error", rerr)
+			continue
+		}
+		if uerr := s.repo.Update(ctx, campaign); uerr != nil {
+			s.logger.Warn("campaign reopen persist failed", "id", campaign.ID().String(), "error", uerr)
+			continue
+		}
+		reopened++
+		s.logger.Info("remediation campaign reopened on finding regression",
+			"id", campaign.ID().String(), "finding_id", findingID.String(), "reason", reason)
+	}
+	return reopened, nil
+}
+
 // UpdateCampaignStatus transitions campaign status.
 func (s *RemediationCampaignService) UpdateCampaignStatus(ctx context.Context, tenantID, campaignID, newStatus string) (*remediation.Campaign, error) {
 	tid, _ := shared.IDFromString(tenantID)

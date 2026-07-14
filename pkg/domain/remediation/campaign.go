@@ -363,4 +363,9 @@ type CampaignRepository interface {
 	// to refresh finding counts and auto-complete. limit <= 0 means a
 	// repository-chosen default.
 	ListNonTerminal(ctx context.Context, limit int) ([]*Campaign, error)
+
+	// ListCompletedContainingFinding returns completed campaigns (tenant-scoped)
+	// whose explicit finding_ids scope contains the given finding. Used to reopen
+	// a campaign when one of its resolved findings regresses (runtime IOC re-open).
+	ListCompletedContainingFinding(ctx context.Context, tenantID, findingID shared.ID) ([]*Campaign, error)
 }

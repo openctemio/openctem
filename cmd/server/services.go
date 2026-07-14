@@ -810,6 +810,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
 	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
+	// Close the CTEM continuous loop: when the IOC correlator re-opens a resolved
+	// finding, reopen any completed campaign that tracked it. The reopener was
+	// built earlier (line ~719), so wire the campaign side effect now via a setter.
+	if r, ok := iocReopener.(interface {
+		SetCampaignReopener(iocapp.CampaignReopener)
+	}); ok {
+		r.SetCampaignReopener(s.RemediationCampaign)
+	}
 	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 
 	s.Compliance = app.NewComplianceService(

@@ -2,6 +2,7 @@ package exposure
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/openctemio/api/pkg/domain/remediation"
@@ -61,6 +62,20 @@ func (r *fakeCampaignRepo) ListNonTerminal(_ context.Context, _ int) ([]*remedia
 	items := make([]*remediation.Campaign, 0, len(r.store))
 	for _, c := range r.store {
 		if c.Status() != remediation.CampaignStatusCompleted && c.Status() != remediation.CampaignStatusCanceled {
+			items = append(items, c)
+		}
+	}
+	return items, nil
+}
+
+func (r *fakeCampaignRepo) ListCompletedContainingFinding(_ context.Context, _, findingID shared.ID) ([]*remediation.Campaign, error) {
+	items := make([]*remediation.Campaign, 0)
+	for _, c := range r.store {
+		if c.Status() != remediation.CampaignStatusCompleted {
+			continue
+		}
+		ids, _ := c.FindingFilter()["finding_ids"].([]string)
+		if slices.Contains(ids, findingID.String()) {
 			items = append(items, c)
 		}
 	}

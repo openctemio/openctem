@@ -24,14 +24,26 @@ type AuditLogger interface {
 	LogEvent(ctx context.Context, actx app.AuditContext, event app.AuditEvent) error
 }
 
+// CampaignReopener reopens any completed remediation campaign that tracked the
+// regressed finding, so a runtime re-open flows through to the mobilization
+// state. *app.RemediationCampaignService satisfies it. Optional — nil skips it.
+type CampaignReopener interface {
+	ReopenCampaignsForFinding(ctx context.Context, tenantID, findingID shared.ID, reason string) (int, error)
+}
+
 // reopenAdapter implements FindingReopener on top of the existing
 // finding repository and audit service. Kept in this package so the
 // correlator's interface is the only contract the outside world
 // sees; the concrete wiring is the adapter's job.
 type reopenAdapter struct {
-	findings FindingRepo
-	auditor  AuditLogger
+	findings  FindingRepo
+	auditor   AuditLogger
+	campaigns CampaignReopener // optional — reopen campaigns tracking the finding
 }
+
+// SetCampaignReopener wires the (optional) campaign-reopen side effect. Set at
+// the composition root once the remediation service exists.
+func (a *reopenAdapter) SetCampaignReopener(r CampaignReopener) { a.campaigns = r }
 
 // NewFindingReopener returns a FindingReopener backed by the real
 // finding repo + audit service. Pass a nil auditor to skip audit
@@ -82,6 +94,16 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 			WithMetadata("source", "ioc_correlator").
 			WithSeverity(audit.SeverityHigh)
 		_ = a.auditor.LogEvent(ctx, app.AuditContext{TenantID: tenantID.String()}, ev)
+	}
+
+	// A resolved finding just regressed — reopen any completed campaign that was
+	// tracking it so mobilization reflects the re-open. Best-effort; a failure
+	// here must not fail the finding reopen itself.
+	if a.campaigns != nil {
+		if _, cerr := a.campaigns.ReopenCampaignsForFinding(ctx, tenantID, findingID, reason); cerr != nil {
+			// logged by the reopener; nothing else to do here
+			_ = cerr
+		}
 	}
 	return true, nil
 }

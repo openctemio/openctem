@@ -291,3 +291,34 @@ func (r *RemediationCampaignRepository) ListNonTerminal(ctx context.Context, lim
 	}
 	return items, nil
 }
+
+// ListCompletedContainingFinding returns completed, tenant-scoped campaigns whose
+// finding_ids scope contains the given finding. JSONB containment (@>) matches an
+// element inside finding_filter->'finding_ids'. Bounded to completed campaigns for
+// the tenant — a GIN index on finding_filter would keep this cheap at scale.
+func (r *RemediationCampaignRepository) ListCompletedContainingFinding(ctx context.Context, tenantID, findingID shared.ID) ([]*remediation.Campaign, error) {
+	query := "SELECT " + rcSelectCols + ` FROM remediation_campaigns
+		WHERE tenant_id = $1
+		  AND status = 'completed'
+		  AND finding_filter->'finding_ids' @> $2::jsonb`
+
+	contains := fmt.Sprintf("[%q]", findingID.String())
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), contains)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list completed campaigns for finding: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*remediation.Campaign, 0)
+	for rows.Next() {
+		c, err := r.scanCampaign(rows.Scan)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan campaign: %w", err)
+		}
+		items = append(items, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate campaigns: %w", err)
+	}
+	return items, nil
+}
