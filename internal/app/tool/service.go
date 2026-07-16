@@ -225,6 +225,7 @@ func (s *Service) ListToolsByCapability(ctx context.Context, capability string) 
 // UpdateInput represents the input for updating a tool.
 type UpdateInput struct {
 	ToolID           string         `json:"tool_id" validate:"required,uuid"`
+	TenantID         string         `json:"-"` // set from the JWT tenant context, not the body
 	DisplayName      string         `json:"display_name" validate:"max=100"`
 	Description      string         `json:"description" validate:"max=1000"`
 	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
@@ -248,6 +249,18 @@ func (s *Service) UpdateTool(ctx context.Context, input UpdateInput) (*tooldom.T
 
 	t, err := s.GetTool(ctx, input.ToolID)
 	if err != nil {
+		return nil, err
+	}
+
+	// Tenant scoping: a tenant may only manage its OWN custom tools. Platform/
+	// builtin tools are not tenant-editable — without this a tenant admin could
+	// rewrite a shared scanner's install/version command (executed by agents
+	// across all tenants) or tamper with another tenant's custom tool.
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	if err := t.CanManage(tenantID); err != nil {
 		return nil, err
 	}
 
@@ -287,11 +300,21 @@ func (s *Service) UpdateTool(ctx context.Context, input UpdateInput) (*tooldom.T
 
 // DeleteTool deletes a tool from the registry.
 // Before deleting, cascade deactivates any active pipelines that use this tool.
-func (s *Service) DeleteTool(ctx context.Context, toolID string) error {
+func (s *Service) DeleteTool(ctx context.Context, tenantID, toolID string) error {
 	s.logger.Info("deleting tool", "tool_id", toolID)
 
 	t, err := s.GetTool(ctx, toolID)
 	if err != nil {
+		return err
+	}
+
+	// Tenant scoping (see UpdateTool): only the owning tenant may delete its
+	// custom tools; platform/builtin tools are not tenant-deletable.
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	if err := t.CanManage(tid); err != nil {
 		return err
 	}
 

@@ -161,8 +161,11 @@ func (s *PermissionService) CreatePermissionSet(ctx context.Context, input Creat
 		}
 		parentSetID = &pid
 
-		// Verify parent set exists
-		_, err = s.permissionSetRepo.GetByID(ctx, pid)
+		// Verify the parent set exists AND is accessible to this tenant — a
+		// system set or the caller's own set. Without the tenant check a tenant
+		// could set parent_set_id to another tenant's set and inherit its
+		// permissions (cross-tenant disclosure/escalation).
+		_, err = s.permissionSetForTenant(ctx, pid, input.TenantID)
 		if err != nil {
 			return nil, fmt.Errorf("parent permission set not found: %w", err)
 		}

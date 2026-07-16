@@ -370,7 +370,7 @@ func (h *RoleHandler) GetRole(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	roleID := chi.URLParam(r, "roleId")
 
-	ro, err := h.service.GetRole(ctx, roleID)
+	ro, err := h.service.GetRole(ctx, middleware.MustGetTenantID(ctx), roleID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -439,7 +439,7 @@ func (h *RoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 
 	actx := h.buildAuditContext(r)
 
-	ro, err := h.service.UpdateRole(ctx, roleID, input, actx)
+	ro, err := h.service.UpdateRole(ctx, middleware.MustGetTenantID(ctx), roleID, input, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -456,7 +456,7 @@ func (h *RoleHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 
 	actx := h.buildAuditContext(r)
 
-	if err := h.service.DeleteRole(ctx, roleID, actx); err != nil {
+	if err := h.service.DeleteRole(ctx, middleware.MustGetTenantID(ctx), roleID, actx); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -511,7 +511,7 @@ func (h *RoleHandler) AssignRole(w http.ResponseWriter, r *http.Request) {
 	// Anti-escalation: a non-admin cannot assign a role carrying permissions
 	// they don't hold (e.g. the system admin role's bundle).
 	if !middleware.IsAdmin(ctx) {
-		targetRole, rErr := h.service.GetRole(ctx, req.RoleID)
+		targetRole, rErr := h.service.GetRole(ctx, middleware.MustGetTenantID(ctx), req.RoleID)
 		if rErr != nil {
 			h.handleServiceError(w, rErr)
 			return
@@ -578,7 +578,7 @@ func (h *RoleHandler) SetUserRoles(w http.ResponseWriter, r *http.Request) {
 	// they don't hold.
 	if !middleware.IsAdmin(ctx) {
 		for _, rid := range req.RoleIDs {
-			targetRole, rErr := h.service.GetRole(ctx, rid)
+			targetRole, rErr := h.service.GetRole(ctx, middleware.MustGetTenantID(ctx), rid)
 			if rErr != nil {
 				h.handleServiceError(w, rErr)
 				return

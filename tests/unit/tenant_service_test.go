@@ -1917,16 +1917,29 @@ func TestTenantSvc_DeleteInvitation_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	inv := seedPendingInvitation(repo, tenantID, "user@test.com", tenant.RoleMember, shared.NewID())
 
-	err := svc.DeleteInvitation(context.Background(), inv.ID().String())
+	err := svc.DeleteInvitation(context.Background(), tenantID.String(), inv.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestTenantSvc_DeleteInvitation_CrossTenantForbidden(t *testing.T) {
+	svc, repo := newTestTenantService()
+	ownerTenant := shared.NewID()
+	inv := seedPendingInvitation(repo, ownerTenant, "user@test.com", tenant.RoleMember, shared.NewID())
+
+	// A different tenant must not be able to delete another tenant's invitation.
+	attackerTenant := shared.NewID()
+	err := svc.DeleteInvitation(context.Background(), attackerTenant.String(), inv.ID().String())
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for cross-tenant delete, got %v", err)
 	}
 }
 
 func TestTenantSvc_DeleteInvitation_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	err := svc.DeleteInvitation(context.Background(), "bad-uuid")
+	err := svc.DeleteInvitation(context.Background(), shared.NewID().String(), "bad-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -1937,9 +1950,11 @@ func TestTenantSvc_DeleteInvitation_InvalidID(t *testing.T) {
 
 func TestTenantSvc_DeleteInvitation_RepoError(t *testing.T) {
 	svc, repo := newTestTenantService()
+	tenantID := shared.NewID()
+	inv := seedPendingInvitation(repo, tenantID, "user@test.com", tenant.RoleMember, shared.NewID())
 	repo.deleteInvitationErr = errors.New("db error")
 
-	err := svc.DeleteInvitation(context.Background(), shared.NewID().String())
+	err := svc.DeleteInvitation(context.Background(), tenantID.String(), inv.ID().String())
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -2418,7 +2433,7 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 			return err
 		}},
 		{"ListPendingInvitations", func() error { _, err := svc.ListPendingInvitations(context.Background(), invalidID); return err }},
-		{"DeleteInvitation", func() error { return svc.DeleteInvitation(context.Background(), invalidID) }},
+		{"DeleteInvitation", func() error { return svc.DeleteInvitation(context.Background(), invalidID, invalidID) }},
 		{"GetTenantSettings", func() error { _, err := svc.GetTenantSettings(context.Background(), invalidID); return err }},
 		{"UpdateTenantSettings", func() error {
 			_, err := svc.UpdateTenantSettings(context.Background(), invalidID, tenant.DefaultSettings(), app.AuditContext{})

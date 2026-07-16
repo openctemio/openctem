@@ -1,10 +1,11 @@
 package handler
 
 import (
-	"github.com/openctemio/api/internal/app/tool"
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/go-chi/chi/v5"
 
@@ -417,6 +418,8 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Tags:             req.Tags,
 	}
 
+	input.TenantID = middleware.GetTenantID(r.Context())
+
 	t, err := h.service.UpdateTool(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
@@ -443,8 +446,9 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Router       /tools/{id} [delete]
 func (h *ToolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
 
-	if err := h.service.DeleteTool(r.Context(), toolID); err != nil {
+	if err := h.service.DeleteTool(r.Context(), tenantID, toolID); err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}

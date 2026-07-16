@@ -476,7 +476,7 @@ func TestGetRole_Success(t *testing.T) {
 	tenantID := role.NewID()
 	r := seedCustomRole(repo, tenantID, "viewer", "Viewer", nil)
 
-	found, err := svc.GetRole(context.Background(), r.ID().String())
+	found, err := svc.GetRole(context.Background(), tenantID.String(), r.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -488,10 +488,23 @@ func TestGetRole_Success(t *testing.T) {
 	}
 }
 
+func TestGetRole_CrossTenantForbidden(t *testing.T) {
+	svc, repo, _ := newTestRoleService()
+	owner := role.NewID()
+	r := seedCustomRole(repo, owner, "secret", "Secret", nil)
+
+	// A different tenant must not be able to read another tenant's custom role.
+	attacker := role.NewID()
+	_, err := svc.GetRole(context.Background(), attacker.String(), r.ID().String())
+	if !errors.Is(err, role.ErrRoleNotFound) {
+		t.Fatalf("expected ErrRoleNotFound for cross-tenant read, got %v", err)
+	}
+}
+
 func TestGetRole_NotFound(t *testing.T) {
 	svc, _, _ := newTestRoleService()
 
-	_, err := svc.GetRole(context.Background(), role.NewID().String())
+	_, err := svc.GetRole(context.Background(), role.NewID().String(), role.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for role not found")
 	}
@@ -503,7 +516,7 @@ func TestGetRole_NotFound(t *testing.T) {
 func TestGetRole_InvalidID(t *testing.T) {
 	svc, _, _ := newTestRoleService()
 
-	_, err := svc.GetRole(context.Background(), "invalid-id")
+	_, err := svc.GetRole(context.Background(), role.NewID().String(), "invalid-id")
 	if err == nil {
 		t.Fatal("expected error for invalid role ID")
 	}
@@ -526,7 +539,7 @@ func TestUpdateRole_Success(t *testing.T) {
 		Name: &newName,
 	}
 
-	updated, err := svc.UpdateRole(context.Background(), r.ID().String(), input, app.AuditContext{})
+	updated, err := svc.UpdateRole(context.Background(), tenantID.String(), r.ID().String(), input, app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -546,7 +559,7 @@ func TestUpdateRole_NotFound(t *testing.T) {
 		Name: &newName,
 	}
 
-	_, err := svc.UpdateRole(context.Background(), role.NewID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateRole(context.Background(), role.NewID().String(), role.NewID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for role not found")
 	}
@@ -564,7 +577,7 @@ func TestUpdateRole_SystemRoleCannotBeModified(t *testing.T) {
 		Name: &newName,
 	}
 
-	_, err := svc.UpdateRole(context.Background(), sysRole.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateRole(context.Background(), role.NewID().String(), sysRole.ID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for system role modification")
 	}
@@ -583,7 +596,7 @@ func TestUpdateRole_UpdatePermissions(t *testing.T) {
 		Permissions: newPerms,
 	}
 
-	updated, err := svc.UpdateRole(context.Background(), r.ID().String(), input, app.AuditContext{})
+	updated, err := svc.UpdateRole(context.Background(), tenantID.String(), r.ID().String(), input, app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -604,7 +617,7 @@ func TestUpdateRole_InvalidPermissions(t *testing.T) {
 		Permissions: []string{"invalid:perm"},
 	}
 
-	_, err := svc.UpdateRole(context.Background(), r.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateRole(context.Background(), tenantID.String(), r.ID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid permissions")
 	}
@@ -624,7 +637,7 @@ func TestUpdateRole_RepoError(t *testing.T) {
 		Name: &newName,
 	}
 
-	_, err := svc.UpdateRole(context.Background(), r.ID().String(), input, app.AuditContext{})
+	_, err := svc.UpdateRole(context.Background(), tenantID.String(), r.ID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -639,7 +652,7 @@ func TestDeleteRole_Success(t *testing.T) {
 	tenantID := role.NewID()
 	r := seedCustomRole(repo, tenantID, "temp-role", "Temp Role", nil)
 
-	err := svc.DeleteRole(context.Background(), r.ID().String(), app.AuditContext{})
+	err := svc.DeleteRole(context.Background(), tenantID.String(), r.ID().String(), app.AuditContext{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -658,7 +671,7 @@ func TestDeleteRole_RoleInUse(t *testing.T) {
 	r := seedCustomRole(repo, tenantID, "in-use", "In Use Role", nil)
 	repo.deleteErr = role.ErrRoleInUse
 
-	err := svc.DeleteRole(context.Background(), r.ID().String(), app.AuditContext{})
+	err := svc.DeleteRole(context.Background(), tenantID.String(), r.ID().String(), app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for role in use")
 	}
@@ -670,7 +683,7 @@ func TestDeleteRole_RoleInUse(t *testing.T) {
 func TestDeleteRole_NotFound(t *testing.T) {
 	svc, _, _ := newTestRoleService()
 
-	err := svc.DeleteRole(context.Background(), role.NewID().String(), app.AuditContext{})
+	err := svc.DeleteRole(context.Background(), role.NewID().String(), role.NewID().String(), app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for role not found")
 	}
@@ -683,7 +696,7 @@ func TestDeleteRole_SystemRoleCannotBeDeleted(t *testing.T) {
 	svc, repo, _ := newTestRoleService()
 	sysRole := seedSystemRole(repo, role.AdminRoleID, "admin", "Admin")
 
-	err := svc.DeleteRole(context.Background(), sysRole.ID().String(), app.AuditContext{})
+	err := svc.DeleteRole(context.Background(), role.NewID().String(), sysRole.ID().String(), app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for system role deletion")
 	}
@@ -695,7 +708,7 @@ func TestDeleteRole_SystemRoleCannotBeDeleted(t *testing.T) {
 func TestDeleteRole_InvalidID(t *testing.T) {
 	svc, _, _ := newTestRoleService()
 
-	err := svc.DeleteRole(context.Background(), "bad-uuid", app.AuditContext{})
+	err := svc.DeleteRole(context.Background(), role.NewID().String(), "bad-uuid", app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}

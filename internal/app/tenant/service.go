@@ -1130,10 +1130,26 @@ func (s *TenantService) ListPendingInvitations(ctx context.Context, tenantID str
 }
 
 // DeleteInvitation cancels an invitation.
-func (s *TenantService) DeleteInvitation(ctx context.Context, invitationID string) error {
+func (s *TenantService) DeleteInvitation(ctx context.Context, tenantID, invitationID string) error {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(invitationID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+
+	// Tenant scoping: only the owning tenant may delete an invitation (mirrors
+	// ResendInvitation). Without this any team-admin could cancel another
+	// tenant's pending invitations by guessing IDs. Not-found on mismatch to
+	// avoid existence disclosure.
+	inv, err := s.repo.GetInvitationByID(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+	if inv.TenantID().String() != parsedTenantID.String() {
+		return shared.ErrNotFound
 	}
 
 	if err := s.repo.DeleteInvitation(ctx, parsedID); err != nil {

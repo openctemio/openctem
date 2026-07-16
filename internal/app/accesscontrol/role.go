@@ -248,14 +248,40 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 	return r, nil
 }
 
-// GetRole retrieves a role by ID.
-func (s *RoleService) GetRole(ctx context.Context, roleID string) (*roledom.Role, error) {
+// assertRoleTenant enforces tenant ownership: a caller may access system roles
+// (tenant-nil, global) and its own tenant's custom roles, but never another
+// tenant's custom role. Cross-tenant access returns not-found (no existence
+// disclosure). Without this, a tenant admin could read/rewrite/delete another
+// tenant's roles by guessing IDs.
+func assertRoleTenant(r *roledom.Role, tenantID string) error {
+	if r.TenantID() == nil {
+		return nil // system role: globally readable
+	}
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	if *r.TenantID() != tid {
+		return roledom.ErrRoleNotFound
+	}
+	return nil
+}
+
+// GetRole retrieves a role by ID, scoped to the caller's tenant.
+func (s *RoleService) GetRole(ctx context.Context, tenantID, roleID string) (*roledom.Role, error) {
 	id, err := roledom.ParseID(roleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	return s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := assertRoleTenant(r, tenantID); err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // GetRoleBySlug retrieves a role by slug.
@@ -282,7 +308,7 @@ type UpdateRoleInput struct {
 }
 
 // UpdateRole updates a role.
-func (s *RoleService) UpdateRole(ctx context.Context, roleID string, input UpdateRoleInput, actx auditapp.AuditContext) (*roledom.Role, error) {
+func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, input UpdateRoleInput, actx auditapp.AuditContext) (*roledom.Role, error) {
 	id, err := roledom.ParseID(roleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
@@ -296,6 +322,11 @@ func (s *RoleService) UpdateRole(ctx context.Context, roleID string, input Updat
 	// Cannot modify system roles
 	if r.IsSystem() {
 		return nil, fmt.Errorf("%w: cannot modify system role", shared.ErrValidation)
+	}
+
+	// Tenant scoping: only the owning tenant may modify a custom role.
+	if err := assertRoleTenant(r, tenantID); err != nil {
+		return nil, err
 	}
 
 	// Track changes for audit
@@ -385,7 +416,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, roleID string, input Updat
 }
 
 // DeleteRole deletes a role.
-func (s *RoleService) DeleteRole(ctx context.Context, roleID string, actx auditapp.AuditContext) error {
+func (s *RoleService) DeleteRole(ctx context.Context, tenantID, roleID string, actx auditapp.AuditContext) error {
 	id, err := roledom.ParseID(roleID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
@@ -399,6 +430,11 @@ func (s *RoleService) DeleteRole(ctx context.Context, roleID string, actx audita
 	// Cannot delete system roles
 	if r.IsSystem() {
 		return fmt.Errorf("%w: cannot delete system role", shared.ErrValidation)
+	}
+
+	// Tenant scoping: only the owning tenant may delete a custom role.
+	if err := assertRoleTenant(r, tenantID); err != nil {
+		return err
 	}
 
 	roleName := r.Name()

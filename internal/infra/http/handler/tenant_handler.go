@@ -910,7 +910,7 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 	// owner/admin role bundle, escalating beyond their own ceiling on accept.
 	if !middleware.IsAdmin(r.Context()) && h.roleService != nil {
 		for _, rid := range req.RoleIDs {
-			role, rErr := h.roleService.GetRole(r.Context(), rid)
+			role, rErr := h.roleService.GetRole(r.Context(), middleware.MustGetTenantID(r.Context()), rid)
 			if rErr != nil {
 				h.handleServiceError(w, rErr)
 				return
@@ -950,7 +950,7 @@ func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.DeleteInvitation(r.Context(), invitationID); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), middleware.MustGetTenantID(r.Context()), invitationID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1113,8 +1113,9 @@ func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Delete the invitation
-	if err := h.service.DeleteInvitation(r.Context(), invitation.ID().String()); err != nil {
+	// Delete the invitation (public decline: the token authorizes it; pass the
+	// invitation's own tenant so the scoping check is satisfied).
+	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String()); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
