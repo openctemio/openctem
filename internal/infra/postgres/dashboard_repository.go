@@ -252,6 +252,9 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			FROM findings f LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
 			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review')
 		),
+		avg_risk AS (
+			SELECT COALESCE(AVG(risk_score), 0) AS val FROM assets WHERE tenant_id = $1
+		),
 		repo_total AS (
 			SELECT COUNT(*) AS cnt FROM assets WHERE tenant_id = $1 AND asset_type = 'repository'
 		),
@@ -268,6 +271,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		UNION ALL SELECT grp, key, cnt, 0 FROM finding_by_severity
 		UNION ALL SELECT grp, key, cnt, 0 FROM finding_by_status
 		UNION ALL SELECT 'avg_cvss', '', 0, val FROM avg_cvss
+		UNION ALL SELECT 'avg_risk', '', 0, val FROM avg_risk
 		UNION ALL SELECT 'repo_total', '', cnt, 0 FROM repo_total
 		UNION ALL SELECT 'repo_findings', '', cnt, 0 FROM repo_with_findings`,
 		tid,
@@ -304,6 +308,8 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			result.Findings.ByStatus[key] = cnt
 		case "avg_cvss":
 			result.Findings.AverageCVSS = val
+		case "avg_risk":
+			result.Assets.AverageRiskScore = val
 		case "repo_total":
 			result.Repos.Total = cnt
 		case "repo_findings":
@@ -722,6 +728,18 @@ func (r *DashboardRepository) GetFilteredAssetStats(ctx context.Context, tenantI
 		stats.ByStatus[status] = count
 	}
 	if err := rows.Err(); err != nil {
+		return stats, err
+	}
+
+	// Average risk score across the tenants' assets. Previously never populated,
+	// so the primary dashboard showed 0.0 for every tenant even though the
+	// /assets and attack-surface views (AssetRepository.GetAverageRiskScore)
+	// showed the correct number. Mirror that query for consistency.
+	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE tenant_id IN (`+placeholders+`)`,
+		args...,
+	).Scan(&stats.AverageRiskScore); err != nil {
 		return stats, err
 	}
 
