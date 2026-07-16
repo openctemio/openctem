@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"math"
 	"testing"
 
 	"github.com/openctemio/api/pkg/domain/asset"
@@ -817,5 +818,200 @@ func TestAsset_CalculateRiskScoreWithConfig_NilFallback(t *testing.T) {
 
 	if score < 80 || score > 100 {
 		t.Errorf("nil config should use legacy, got %d", score)
+	}
+}
+
+// =============================================================================
+// H2: Score composition mode — de-saturate the top of the range
+// =============================================================================
+
+// TestH2_ScoreCompositionMode_Default verifies that the zero-value / empty
+// ScoreCompositionMode resolves to "multiply" (byte-identical to the pre-change
+// formula) so that existing tenants — whose stored settings JSON has no
+// score_composition_mode key — see NO change in their scores.
+func TestH2_ScoreCompositionMode_Default(t *testing.T) {
+	base := asset.LegacyRiskScoringConfig()
+
+	empty := base
+	empty.ScoreCompositionMode = "" // simulates an un-migrated existing tenant
+	multiply := base
+	multiply.ScoreCompositionMode = asset.ScoreCompositionMultiply
+
+	emptyEngine := asset.NewRiskScoringEngine(empty)
+	multiplyEngine := asset.NewRiskScoringEngine(multiply)
+
+	exposures := []asset.Exposure{
+		asset.ExposurePublic, asset.ExposureRestricted, asset.ExposurePrivate,
+		asset.ExposureIsolated, asset.ExposureUnknown,
+	}
+	crits := []asset.Criticality{
+		asset.CriticalityCritical, asset.CriticalityHigh, asset.CriticalityMedium,
+		asset.CriticalityLow, asset.CriticalityNone,
+	}
+	findings := []int{0, 1, 3, 7, 15}
+
+	for _, exp := range exposures {
+		for _, crit := range crits {
+			for _, f := range findings {
+				a := makeTestAsset(t, exp, crit, f)
+				if got, want := emptyEngine.CalculateScore(a), multiplyEngine.CalculateScore(a); got != want {
+					t.Errorf("empty mode must equal multiply mode for %v/%v/%d findings: got %d, want %d",
+						exp, crit, f, got, want)
+				}
+			}
+		}
+	}
+}
+
+// TestH2_ShadowScoreComparison scores a representative exposure × criticality ×
+// findingCount matrix under BOTH composition modes and prints an old-vs-new
+// table. It asserts:
+//
+//	(a) multiply mode is byte-identical to the pre-change output (independently
+//	    recomputed here as round(raw × multiplier) clamped);
+//	(b) amplify_headroom never exceeds 100 (the boost fills headroom, so the
+//	    final clamp never has to fire for it);
+//	(c) amplify_headroom preserves ordering within an exposure level (higher raw
+//	    ⇒ score never decreases); and
+//	(d) amplify_headroom de-saturates — strictly fewer cells pinned at exactly
+//	    100 than multiply mode.
+func TestH2_ShadowScoreComparison(t *testing.T) {
+	base := asset.LegacyRiskScoringConfig()
+
+	multiplyCfg := base
+	multiplyCfg.ScoreCompositionMode = asset.ScoreCompositionMultiply
+	amplifyCfg := base
+	amplifyCfg.ScoreCompositionMode = asset.ScoreCompositionAmplifyHeadroom
+
+	mulEngine := asset.NewRiskScoringEngine(multiplyCfg)
+	ampEngine := asset.NewRiskScoringEngine(amplifyCfg)
+
+	// Independent reference for the pre-change formula. We reconstruct raw the
+	// same way CalculateScore does (weights sum to 100, CTEM disabled) using
+	// only public config fields, then apply round(raw × multiplier) + clamp.
+	oldFormula := func(exp asset.Exposure, crit asset.Criticality, f int) int {
+		w := multiplyCfg.Weights // CTEM disabled & weight 0 → no redistribution
+		expScore := map[asset.Exposure]int{
+			asset.ExposurePublic:     multiplyCfg.ExposureScores.Public,
+			asset.ExposureRestricted: multiplyCfg.ExposureScores.Restricted,
+			asset.ExposurePrivate:    multiplyCfg.ExposureScores.Private,
+			asset.ExposureIsolated:   multiplyCfg.ExposureScores.Isolated,
+			asset.ExposureUnknown:    multiplyCfg.ExposureScores.Unknown,
+		}[exp]
+		critScore := map[asset.Criticality]int{
+			asset.CriticalityCritical: multiplyCfg.CriticalityScores.Critical,
+			asset.CriticalityHigh:     multiplyCfg.CriticalityScores.High,
+			asset.CriticalityMedium:   multiplyCfg.CriticalityScores.Medium,
+			asset.CriticalityLow:      multiplyCfg.CriticalityScores.Low,
+			asset.CriticalityNone:     multiplyCfg.CriticalityScores.None,
+		}[crit]
+		findScore := f * multiplyCfg.FindingImpact.PerFindingPoints
+		if findScore > multiplyCfg.FindingImpact.FindingCap {
+			findScore = multiplyCfg.FindingImpact.FindingCap
+		}
+		raw := float64(expScore)*float64(w.Exposure)/100.0 +
+			float64(critScore)*float64(w.Criticality)/100.0 +
+			float64(findScore)*float64(w.Findings)/100.0
+		mult := map[asset.Exposure]float64{
+			asset.ExposurePublic:     multiplyCfg.ExposureMultipliers.Public,
+			asset.ExposureRestricted: multiplyCfg.ExposureMultipliers.Restricted,
+			asset.ExposurePrivate:    multiplyCfg.ExposureMultipliers.Private,
+			asset.ExposureIsolated:   multiplyCfg.ExposureMultipliers.Isolated,
+			asset.ExposureUnknown:    multiplyCfg.ExposureMultipliers.Unknown,
+		}[exp]
+		final := int(math.Round(raw * mult))
+		if final > 100 {
+			final = 100
+		}
+		if final < 0 {
+			final = 0
+		}
+		return final
+	}
+
+	expLabels := []struct {
+		exp   asset.Exposure
+		label string
+	}{
+		{asset.ExposurePublic, "public"},
+		{asset.ExposureRestricted, "restricted"},
+		{asset.ExposurePrivate, "private"},
+		{asset.ExposureIsolated, "isolated"},
+		{asset.ExposureUnknown, "unknown"},
+	}
+	critLabels := []struct {
+		crit  asset.Criticality
+		label string
+	}{
+		{asset.CriticalityCritical, "critical"},
+		{asset.CriticalityHigh, "high"},
+		{asset.CriticalityMedium, "medium"},
+		{asset.CriticalityLow, "low"},
+		{asset.CriticalityNone, "none"},
+	}
+	findings := []int{0, 1, 3, 7, 15}
+
+	var mulPinned, ampPinned int
+
+	t.Logf("%-11s %-9s %-8s | %-8s %-8s %-5s", "exposure", "crit", "findings", "multiply", "amplify", "delta")
+	t.Logf("%s", "-----------------------------------------------------------------")
+
+	for _, el := range expLabels {
+		for _, cl := range critLabels {
+			for _, f := range findings {
+				a := makeTestAsset(t, el.exp, cl.crit, f)
+				mul := mulEngine.CalculateScore(a)
+				amp := ampEngine.CalculateScore(a)
+
+				// (a) multiply == independent pre-change reference.
+				if want := oldFormula(el.exp, cl.crit, f); mul != want {
+					t.Errorf("multiply mode not byte-identical for %s/%s/%d: got %d, want %d",
+						el.label, cl.label, f, mul, want)
+				}
+
+				// (b) amplify never exceeds 100.
+				if amp > 100 {
+					t.Errorf("amplify score exceeded 100 for %s/%s/%d: got %d", el.label, cl.label, f, amp)
+				}
+
+				t.Logf("%-11s %-9s %-8d | %-8d %-8d %+d", el.label, cl.label, f, mul, amp, amp-mul)
+
+				if mul == 100 {
+					mulPinned++
+				}
+				if amp == 100 {
+					ampPinned++
+				}
+			}
+		}
+	}
+
+	// (c) Ordering preservation within each exposure level. Criticality and
+	// finding counts are both listed in descending order above (critical→none,
+	// but findings ascending), so we assert monotonicity along a clean axis:
+	// fixing exposure+criticality, findings ascending must not decrease amplify.
+	for _, el := range expLabels {
+		for _, cl := range critLabels {
+			prev := -1
+			for _, f := range findings {
+				a := makeTestAsset(t, el.exp, cl.crit, f)
+				amp := ampEngine.CalculateScore(a)
+				if amp < prev {
+					t.Errorf("amplify ordering violated for %s/%s: findings=%d scored %d < previous %d",
+						el.label, cl.label, f, amp, prev)
+				}
+				prev = amp
+			}
+		}
+	}
+
+	// (d) De-saturation: amplify pins strictly fewer cells at exactly 100.
+	t.Logf("cells pinned at 100 — multiply=%d, amplify=%d", mulPinned, ampPinned)
+	if mulPinned == 0 {
+		t.Fatal("test matrix produced no multiply-mode saturation; cannot demonstrate de-saturation")
+	}
+	if ampPinned >= mulPinned {
+		t.Errorf("amplify should de-saturate: expected fewer cells at 100 than multiply (mul=%d, amp=%d)",
+			mulPinned, ampPinned)
 	}
 }

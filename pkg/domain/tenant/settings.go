@@ -448,6 +448,18 @@ type AISettings struct {
 // Risk Scoring Settings
 // =============================================================================
 
+// Score composition modes control how the exposure multiplier is combined with
+// the weighted raw score. These mirror the constants in pkg/domain/asset and are
+// duplicated here to keep the tenant domain free of an asset import.
+const (
+	// ScoreCompositionMultiply is the historical behavior (final = raw × multiplier).
+	// Default; kept byte-identical for risk-trend continuity.
+	ScoreCompositionMultiply = "multiply"
+	// ScoreCompositionAmplifyHeadroom de-saturates the top of the range by filling
+	// remaining headroom rather than overflowing past 100 (opt-in).
+	ScoreCompositionAmplifyHeadroom = "amplify_headroom"
+)
+
 // RiskScoringSettings configures the risk scoring formula per tenant.
 type RiskScoringSettings struct {
 	Preset              string                   `json:"preset,omitempty"`
@@ -458,6 +470,11 @@ type RiskScoringSettings struct {
 	FindingImpact       FindingImpactConfig      `json:"finding_impact"`
 	CTEMPoints          CTEMPointsConfig         `json:"ctem_points"`
 	RiskLevels          RiskLevelConfig          `json:"risk_levels"`
+
+	// ScoreCompositionMode selects how the exposure multiplier composes with the
+	// weighted raw score: "multiply" (default) or "amplify_headroom". Empty / unset
+	// resolves to "multiply" so pre-existing tenant settings are unchanged.
+	ScoreCompositionMode string `json:"score_composition_mode,omitempty"`
 }
 
 type ComponentWeights struct {
@@ -551,6 +568,7 @@ func LegacyRiskScoringSettings() RiskScoringSettings {
 		RiskLevels: RiskLevelConfig{
 			CriticalMin: 80, HighMin: 60, MediumMin: 40, LowMin: 20,
 		},
+		ScoreCompositionMode: ScoreCompositionMultiply,
 	}
 }
 
@@ -590,6 +608,7 @@ func DefaultRiskScoringPreset() RiskScoringSettings {
 		RiskLevels: RiskLevelConfig{
 			CriticalMin: 80, HighMin: 60, MediumMin: 40, LowMin: 20,
 		},
+		ScoreCompositionMode: ScoreCompositionMultiply,
 	}
 }
 
@@ -731,6 +750,12 @@ func (s *RiskScoringSettings) Validate() error {
 	}
 	if s.RiskLevels.CriticalMin > 100 || s.RiskLevels.LowMin < 1 {
 		return fmt.Errorf("%w: risk levels must be between 1-100", shared.ErrValidation)
+	}
+	switch s.ScoreCompositionMode {
+	case "", ScoreCompositionMultiply, ScoreCompositionAmplifyHeadroom:
+		// "" resolves to multiply (backward compatible).
+	default:
+		return fmt.Errorf("%w: score_composition_mode must be 'multiply' or 'amplify_headroom'", shared.ErrValidation)
 	}
 	return nil
 }
