@@ -342,6 +342,15 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		"tenant_runner_only": sc.RunOnTenantRunner,
 		"agent_preference":   string(sc.AgentPreference),
 		"context":            run.Context,
+		// The agent SDK (ScanCommandPayload) reads `scanner`, `config` and a
+		// single `target`, not `scanner_name`/`scanner_config` — send both sets
+		// so the command dispatches correctly (contract drift previously left
+		// the agent with an empty scanner: "scanner not found").
+		"scanner": sc.ScannerName,
+		"config":  sc.ScannerConfig,
+	}
+	if len(sc.Targets) > 0 {
+		payloadMap["target"] = sc.Targets[0]
 	}
 
 	// Embed custom templates if configured
