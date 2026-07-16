@@ -327,7 +327,7 @@ func (h *ExposureHandler) List(w http.ResponseWriter, r *http.Request) {
 		LastSeenAfter:   parseQueryInt64(query.Get("last_seen_after"), 0),
 		LastSeenBefore:  parseQueryInt64(query.Get("last_seen_before"), 0),
 		Page:            parseQueryInt(query.Get("page"), 1),
-		PerPage:         parseQueryInt(query.Get("per_page"), 20),
+		PerPage:         parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 		SortBy:          query.Get("sort_by"),
 		SortOrder:       query.Get("sort_order"),
 	}

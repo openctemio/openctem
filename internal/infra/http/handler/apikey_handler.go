@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"github.com/openctemio/api/internal/app/apikey"
 	"encoding/json"
 	"errors"
+	"github.com/openctemio/api/internal/app/apikey"
 	"net/http"
 	"time"
 
@@ -127,7 +127,7 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 		Status:    query.Get("status"),
 		Search:    query.Get("search"),
 		Page:      parseQueryInt(query.Get("page"), 1),
-		PerPage:   parseQueryInt(query.Get("per_page"), 20),
+		PerPage:   parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 		SortBy:    query.Get("sort"),
 		SortOrder: query.Get("order"),
 	}

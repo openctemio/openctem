@@ -30,18 +30,29 @@ func NewBusinessUnitHandler(svc *app.BusinessUnitService, log *logger.Logger) *B
 // List lists business units.
 func (h *BusinessUnitHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
-	if perPage < 1 { perPage = 20 } else if perPage > 100 { perPage = 100 }
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
+	if perPage < 1 {
+		perPage = 20
+	} else if perPage > 100 {
+		perPage = 100
+	}
 	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 
 	filter := businessunit.Filter{}
-	if q := r.URL.Query().Get("search"); q != "" { filter.Search = &q }
+	if q := r.URL.Query().Get("search"); q != "" {
+		filter.Search = &q
+	}
 
 	result, err := h.service.List(r.Context(), tenantID, filter, page)
-	if err != nil { h.handleError(w, err); return }
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
 
 	resp := make([]BUResponse, 0, len(result.Data))
-	for _, bu := range result.Data { resp = append(resp, toBUResp(bu)) }
+	for _, bu := range result.Data {
+		resp = append(resp, toBUResp(bu))
+	}
 	writeJSON(w, http.StatusOK, pagination.NewResult(resp, result.Total, page))
 }
 
@@ -50,13 +61,17 @@ func (h *BusinessUnitHandler) Create(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	var req CreateBURequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w); return
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
 	}
 	bu, err := h.service.Create(r.Context(), app.CreateBusinessUnitInput{
 		TenantID: tenantID, Name: req.Name, Description: req.Description,
 		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail, Tags: req.Tags,
 	})
-	if err != nil { h.handleError(w, err); return }
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusCreated, toBUResp(bu))
 }
 
@@ -64,7 +79,10 @@ func (h *BusinessUnitHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessUnitHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	bu, err := h.service.Get(r.Context(), tenantID, chi.URLParam(r, "id"))
-	if err != nil { h.handleError(w, err); return }
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, toBUResp(bu))
 }
 
@@ -92,7 +110,8 @@ func (h *BusinessUnitHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessUnitHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	if err := h.service.Delete(r.Context(), tenantID, chi.URLParam(r, "id")); err != nil {
-		h.handleError(w, err); return
+		h.handleError(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -101,12 +120,16 @@ func (h *BusinessUnitHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessUnitHandler) AddAsset(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	buID := chi.URLParam(r, "id")
-	var req struct { AssetID string `json:"asset_id"` }
+	var req struct {
+		AssetID string `json:"asset_id"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w); return
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
 	}
 	if err := h.service.AddAsset(r.Context(), tenantID, buID, req.AssetID); err != nil {
-		h.handleError(w, err); return
+		h.handleError(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -117,7 +140,8 @@ func (h *BusinessUnitHandler) RemoveAsset(w http.ResponseWriter, r *http.Request
 	buID := chi.URLParam(r, "id")
 	assetID := chi.URLParam(r, "assetId")
 	if err := h.service.RemoveAsset(r.Context(), tenantID, buID, assetID); err != nil {
-		h.handleError(w, err); return
+		h.handleError(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

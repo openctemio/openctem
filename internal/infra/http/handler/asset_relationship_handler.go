@@ -119,7 +119,7 @@ func (h *AssetRelationshipHandler) ListByAsset(w http.ResponseWriter, r *http.Re
 	filter := asset.RelationshipFilter{
 		Direction: query.Get("direction"),
 		Page:      parseQueryInt(query.Get("page"), 1),
-		PerPage:   parseQueryInt(query.Get("per_page"), 50),
+		PerPage:   parseQueryIntBounded(query.Get("per_page"), 50, 1, MaxPerPage),
 	}
 
 	if types := query.Get("types"); types != "" {

@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"github.com/openctemio/api/internal/app/threat"
 	"encoding/json"
 	"errors"
+	"github.com/openctemio/api/internal/app/threat"
 	"net/http"
 	"time"
 
@@ -31,7 +31,7 @@ func NewThreatActorHandler(svc *threat.ActorService, log *logger.Logger) *Threat
 func (h *ThreatActorHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	if perPage < 1 {
 		perPage = 20
 	} else if perPage > 100 {
@@ -151,23 +151,23 @@ type CreateThreatActorRequest struct {
 }
 
 type ThreatActorResponse struct {
-	ID                 string                           `json:"id"`
-	Name               string                           `json:"name"`
-	Aliases            []string                         `json:"aliases"`
-	Description        string                           `json:"description"`
-	ActorType          string                           `json:"actor_type"`
-	Sophistication     string                           `json:"sophistication,omitempty"`
-	Motivation         string                           `json:"motivation,omitempty"`
-	CountryOfOrigin    string                           `json:"country_of_origin,omitempty"`
-	IsActive           bool                             `json:"is_active"`
-	MitreGroupID       string                           `json:"mitre_group_id,omitempty"`
-	TTPs               []threatactor.TTP                `json:"ttps"`
-	TargetIndustries   []string                         `json:"target_industries"`
-	TargetRegions      []string                         `json:"target_regions"`
-	ExternalReferences []threatactor.ExternalReference   `json:"external_references"`
-	Tags               []string                         `json:"tags"`
-	CreatedAt          time.Time                        `json:"created_at"`
-	UpdatedAt          time.Time                        `json:"updated_at"`
+	ID                 string                          `json:"id"`
+	Name               string                          `json:"name"`
+	Aliases            []string                        `json:"aliases"`
+	Description        string                          `json:"description"`
+	ActorType          string                          `json:"actor_type"`
+	Sophistication     string                          `json:"sophistication,omitempty"`
+	Motivation         string                          `json:"motivation,omitempty"`
+	CountryOfOrigin    string                          `json:"country_of_origin,omitempty"`
+	IsActive           bool                            `json:"is_active"`
+	MitreGroupID       string                          `json:"mitre_group_id,omitempty"`
+	TTPs               []threatactor.TTP               `json:"ttps"`
+	TargetIndustries   []string                        `json:"target_industries"`
+	TargetRegions      []string                        `json:"target_regions"`
+	ExternalReferences []threatactor.ExternalReference `json:"external_references"`
+	Tags               []string                        `json:"tags"`
+	CreatedAt          time.Time                       `json:"created_at"`
+	UpdatedAt          time.Time                       `json:"updated_at"`
 }
 
 func toThreatActorResponse(a *threatactor.ThreatActor) ThreatActorResponse {

@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/openctemio/api/internal/app/scope"
 	"net/http"
 	"time"
 
@@ -358,7 +358,7 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 		Tags:        parseQueryArray(query.Get("tags")),
 		Search:      query.Get("search"),
 		Page:        parseQueryInt(query.Get("page"), 1),
-		PerPage:     parseQueryInt(query.Get("per_page"), 20),
+		PerPage:     parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	result, err := h.service.ListTargets(r.Context(), input)
@@ -632,7 +632,7 @@ func (h *ScopeHandler) ListExclusions(w http.ResponseWriter, r *http.Request) {
 		IsApproved:     parseQueryBoolPtr(query.Get("is_approved")),
 		Search:         query.Get("search"),
 		Page:           parseQueryInt(query.Get("page"), 1),
-		PerPage:        parseQueryInt(query.Get("per_page"), 20),
+		PerPage:        parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	result, err := h.service.ListExclusions(r.Context(), input)
@@ -918,7 +918,7 @@ func (h *ScopeHandler) ListSchedules(w http.ResponseWriter, r *http.Request) {
 		Enabled:       parseQueryBoolPtr(query.Get("enabled")),
 		Search:        query.Get("search"),
 		Page:          parseQueryInt(query.Get("page"), 1),
-		PerPage:       parseQueryInt(query.Get("per_page"), 20),
+		PerPage:       parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	result, err := h.service.ListSchedules(r.Context(), input)

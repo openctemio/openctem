@@ -533,7 +533,7 @@ func (h *IntegrationHandler) List(w http.ResponseWriter, r *http.Request) {
 		Status:    query.Get("status"),
 		Search:    query.Get("search"),
 		Page:      parseQueryInt(query.Get("page"), 1),
-		PerPage:   parseQueryInt(query.Get("per_page"), 20),
+		PerPage:   parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 		SortBy:    query.Get("sort"),
 		SortOrder: query.Get("order"),
 	}
@@ -1047,7 +1047,7 @@ func (h *IntegrationHandler) ListRepositories(w http.ResponseWriter, r *http.Req
 		TenantID:      tenantID,
 		Search:        query.Get("search"),
 		Page:          parseQueryInt(query.Get("page"), 1),
-		PerPage:       parseQueryInt(query.Get("per_page"), 30),
+		PerPage:       parseQueryIntBounded(query.Get("per_page"), 30, 1, MaxPerPage),
 	}
 
 	result, err := h.service.ListSCMRepositories(r.Context(), input)

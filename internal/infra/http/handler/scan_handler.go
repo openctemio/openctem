@@ -406,7 +406,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 		Tags:         parseQueryArray(r.URL.Query().Get("tags")),
 		Search:       r.URL.Query().Get("search"),
 		Page:         parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:      parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:      parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	result, err := h.service.ListScans(r.Context(), input)

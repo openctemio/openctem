@@ -32,7 +32,7 @@ func NewRemediationCampaignHandler(svc *app.RemediationCampaignService, log *log
 func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	if perPage < 1 {
 		perPage = 20
 	} else if perPage > 100 {

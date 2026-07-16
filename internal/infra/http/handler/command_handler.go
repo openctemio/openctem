@@ -226,7 +226,7 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 		Status:   r.URL.Query().Get("status"),
 		Priority: r.URL.Query().Get("priority"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	result, err := h.service.List(r.Context(), input)

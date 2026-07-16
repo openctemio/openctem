@@ -159,7 +159,7 @@ func (h *WebhookHandler) List(w http.ResponseWriter, r *http.Request) {
 		EventType: query.Get("event_type"),
 		Search:    query.Get("search"),
 		Page:      parseQueryInt(query.Get("page"), 1),
-		PerPage:   parseQueryInt(query.Get("per_page"), 20),
+		PerPage:   parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 		SortBy:    query.Get("sort"),
 		SortOrder: query.Get("order"),
 	}
@@ -301,7 +301,7 @@ func (h *WebhookHandler) ListDeliveries(w http.ResponseWriter, r *http.Request) 
 		TenantID:  tenantID,
 		Status:    query.Get("status"),
 		Page:      parseQueryInt(query.Get("page"), 1),
-		PerPage:   parseQueryInt(query.Get("per_page"), 20),
+		PerPage:   parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	result, err := h.service.ListDeliveries(r.Context(), input)

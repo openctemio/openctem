@@ -27,20 +27,20 @@ func NewReportScheduleHandler(svc *app.ReportScheduleService, log *logger.Logger
 }
 
 type reportScheduleResponse struct {
-	ID              string                       `json:"id"`
-	Name            string                       `json:"name"`
-	ReportType      string                       `json:"report_type"`
-	Format          string                       `json:"format"`
-	CronExpression  string                       `json:"cron_expression"`
-	Timezone        string                       `json:"timezone"`
-	Recipients      []reportschedule.Recipient   `json:"recipients"`
-	DeliveryChannel string                       `json:"delivery_channel"`
-	IsActive        bool                         `json:"is_active"`
-	LastRunAt       *time.Time                   `json:"last_run_at,omitempty"`
-	LastStatus      string                       `json:"last_status,omitempty"`
-	NextRunAt       *time.Time                   `json:"next_run_at,omitempty"`
-	RunCount        int                          `json:"run_count"`
-	CreatedAt       time.Time                    `json:"created_at"`
+	ID              string                     `json:"id"`
+	Name            string                     `json:"name"`
+	ReportType      string                     `json:"report_type"`
+	Format          string                     `json:"format"`
+	CronExpression  string                     `json:"cron_expression"`
+	Timezone        string                     `json:"timezone"`
+	Recipients      []reportschedule.Recipient `json:"recipients"`
+	DeliveryChannel string                     `json:"delivery_channel"`
+	IsActive        bool                       `json:"is_active"`
+	LastRunAt       *time.Time                 `json:"last_run_at,omitempty"`
+	LastStatus      string                     `json:"last_status,omitempty"`
+	NextRunAt       *time.Time                 `json:"next_run_at,omitempty"`
+	RunCount        int                        `json:"run_count"`
+	CreatedAt       time.Time                  `json:"created_at"`
 }
 
 func toReportScheduleResponse(s *reportschedule.ReportSchedule) reportScheduleResponse {
@@ -58,7 +58,7 @@ func toReportScheduleResponse(s *reportschedule.ReportSchedule) reportScheduleRe
 // List handles GET /api/v1/reports/schedules
 func (h *ReportScheduleHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	if perPage > 100 {
 		perPage = 100
 	}
@@ -97,13 +97,13 @@ func (h *ReportScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 
 	var req struct {
-		Name           string                       `json:"name"`
-		ReportType     string                       `json:"report_type"`
-		Format         string                       `json:"format"`
-		CronExpression string                       `json:"cron_expression"`
-		Timezone       string                       `json:"timezone"`
-		Recipients     []reportschedule.Recipient   `json:"recipients"`
-		Options        map[string]any               `json:"options"`
+		Name           string                     `json:"name"`
+		ReportType     string                     `json:"report_type"`
+		Format         string                     `json:"format"`
+		CronExpression string                     `json:"cron_expression"`
+		Timezone       string                     `json:"timezone"`
+		Recipients     []reportschedule.Recipient `json:"recipients"`
+		Options        map[string]any             `json:"options"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)

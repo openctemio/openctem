@@ -67,7 +67,7 @@ func (h *RelationshipSuggestionHandler) List(w http.ResponseWriter, r *http.Requ
 	query := r.URL.Query()
 	page := pagination.New(
 		parseQueryInt(query.Get("page"), 1),
-		parseQueryInt(query.Get("per_page"), 20),
+		parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	)
 
 	search := query.Get("search")
