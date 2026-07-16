@@ -960,7 +960,7 @@ func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.
 		SELECT snapshot_date, risk_score_avg, findings_open, sla_compliance_pct,
 			p0_open, p1_open, p2_open, p3_open
 		FROM risk_snapshots
-		WHERE tenant_id = $1 AND snapshot_date >= CURRENT_DATE - $2
+		WHERE tenant_id = $1 AND snapshot_date >= CURRENT_DATE - MAKE_INTERVAL(days => $2)
 		ORDER BY snapshot_date ASC
 	`
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), days)
