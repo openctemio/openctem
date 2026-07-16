@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -12,10 +14,12 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	pipelinesvc "github.com/openctemio/api/internal/app/pipeline"
+	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	commanddom "github.com/openctemio/api/pkg/domain/command"
+	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -152,6 +156,19 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A "scan" command may embed custom scanner-template content that the agent
+	// writes to disk and executes. The agent only validates template name/size,
+	// NOT content, so a CommandsWrite user could smuggle a malicious template
+	// (nuclei code:/javascript:/exec, ReDoS matchers) that bypasses the
+	// validator applied when templates are stored/synced. Enforce the same
+	// authoritative server-side validation on any inline template here.
+	if req.Type == "scan" {
+		if err := validateInlineScanTemplates(req.Payload); err != nil {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return
+		}
+	}
+
 	tenantID := middleware.GetTenantID(r.Context())
 
 	cmd, err := h.service.Create(r.Context(), command.CreateInput{
@@ -170,6 +187,51 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+}
+
+// validateInlineScanTemplates rejects a scan command that embeds custom scanner
+// templates with dangerous content. Inline templates travel in the command
+// payload as `custom_templates: [{name, template_type, content(base64)}]`; the
+// agent decodes and executes them but only checks name/size, so the content
+// must pass the same authoritative validator (NucleiValidator etc.) applied at
+// template store/sync time.
+func validateInlineScanTemplates(payload json.RawMessage) error {
+	if len(payload) == 0 {
+		return nil
+	}
+	var p struct {
+		CustomTemplates []struct {
+			Name         string `json:"name"`
+			TemplateType string `json:"template_type"`
+			Content      string `json:"content"` // base64-encoded
+		} `json:"custom_templates"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		// Not a well-formed template-bearing payload; shape is handled downstream.
+		return nil
+	}
+	for i, t := range p.CustomTemplates {
+		name := t.Name
+		if name == "" {
+			name = fmt.Sprintf("#%d", i)
+		}
+		// Content is base64 (matches how the server embeds and the agent decodes
+		// templates). Validate the decoded bytes; if it isn't valid base64, fall
+		// back to validating the raw bytes so nothing slips past.
+		content := []byte(t.Content)
+		if decoded, derr := base64.StdEncoding.DecodeString(t.Content); derr == nil {
+			content = decoded
+		}
+		res := template.ValidateTemplate(scannertemplate.TemplateType(t.TemplateType), content)
+		if res == nil || !res.Valid || res.HasErrors() {
+			msg := "failed server-side template validation"
+			if res != nil && res.HasErrors() {
+				msg = res.ErrorMessages()
+			}
+			return fmt.Errorf("custom template %q rejected: %s", name, msg)
+		}
+	}
+	return nil
 }
 
 // Get handles GET /api/v1/commands/{id}
