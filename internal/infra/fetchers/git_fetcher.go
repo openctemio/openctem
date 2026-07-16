@@ -14,11 +14,31 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 const defaultBranch = "main"
+
+// gitCloneTimeout bounds a single HTTP git operation. It is generous
+// (template repos are shallow, depth=1) so large legitimate clones are not
+// cut short, while still capping a hung/slow-loris remote.
+const gitCloneTimeout = 5 * time.Minute
+
+// init routes go-git's HTTP/HTTPS transport through an SSRF-guarded
+// *http.Client whose dialer rejects internal / cloud-metadata addresses.
+// go-git's protocol registry is process-global and not safe to mutate
+// concurrently with clones, so we install once at package init — before any
+// fetcher can run — rather than per-clone. ssh:// and file:// keep their
+// upstream transports (rejected where unsafe by go-git itself).
+func init() {
+	safeTransport := http.NewClient(httpsec.SafeHTTPClient(gitCloneTimeout))
+	client.InstallProtocol("https", safeTransport)
+	client.InstallProtocol("http", safeTransport)
+}
 
 // GitConfig contains configuration for Git fetcher.
 type GitConfig struct {
@@ -324,6 +344,16 @@ func (f *GitFetcher) ListFiles(ctx context.Context, extensions []string) ([]stri
 }
 
 func (f *GitFetcher) cloneRepo(ctx context.Context) (*git.Repository, error) {
+	// SSRF guard for http(s) template sources: resolve DNS and reject hosts
+	// mapping to internal / metadata ranges before go-git dials. ssh:// and
+	// file:// URLs are handled (and rejected where unsafe) upstream, so only
+	// validate the http(s) schemes ValidateURL understands.
+	if u := f.config.URL; strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+		if _, err := httpsec.ValidateURL(u); err != nil {
+			return nil, fmt.Errorf("git clone blocked: %w", err)
+		}
+	}
+
 	branch := f.config.Branch
 	if branch == "" {
 		branch = defaultBranch

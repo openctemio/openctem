@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // maxFindingsPerSync bounds a single sync so a huge DefectDojo backlog can't
@@ -25,19 +27,37 @@ type Client struct {
 	baseURL string
 	token   string
 	http    *http.Client
+	// guarded is true when we built the default SSRF-safe client (nil was
+	// passed). In that case getJSON also pre-validates every request URL
+	// with httpsec.ValidateURL. When a caller injects its own *http.Client
+	// it owns transport safety (and unit tests inject a loopback httptest
+	// client), so the upfront URL guard is skipped.
+	guarded bool
 }
 
 // NewClient builds a DefectDojo client. baseURL is the instance root
 // (e.g. https://dd.example.com); token is a DefectDojo API v2 token. A nil
-// httpClient gets a sane default with a timeout.
+// httpClient gets a sane, SSRF-safe default with a timeout.
 func NewClient(baseURL, token string, httpClient *http.Client) *Client {
+	guarded := false
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		// SSRF-safe default: the dialer rejects connections to internal /
+		// metadata ranges, and CheckRedirect re-validates every redirect
+		// target so a 30x cannot bounce the request onto an internal host.
+		httpClient = httpsec.SafeHTTPClient(30 * time.Second)
+		httpClient.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
+			if _, err := httpsec.ValidateURL(req.URL.String()); err != nil {
+				return fmt.Errorf("defectdojo: blocked redirect target: %w", err)
+			}
+			return nil
+		}
+		guarded = true
 	}
 	return &Client{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		token:   strings.TrimSpace(token),
 		http:    httpClient,
+		guarded: guarded,
 	}
 }
 
@@ -126,6 +146,19 @@ func (c *Client) getJSON(ctx context.Context, pathOrURL string, out any) error {
 	endpoint := pathOrURL
 	if strings.HasPrefix(pathOrURL, "/") {
 		endpoint = c.baseURL + pathOrURL
+	}
+
+	// SSRF guard: validate the fully-resolved endpoint before dialing.
+	// This covers both the base URL (first hop / TestConnection) and
+	// DefectDojo's absolute `next` pagination links, which are attacker-
+	// influenceable if the instance is compromised. Rejects non-http(s)
+	// schemes and hosts resolving to internal/metadata ranges; the
+	// client's dialer re-checks at dial time to close the rebinding window.
+	// Only enforced on the default guarded client (see Client.guarded).
+	if c.guarded {
+		if _, err := httpsec.ValidateURL(endpoint); err != nil {
+			return fmt.Errorf("defectdojo: blocked request URL: %w", err)
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)

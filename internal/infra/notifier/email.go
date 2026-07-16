@@ -145,11 +145,16 @@ func (c *EmailClient) TestConnection(ctx context.Context) (*SendResult, error) {
 func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
 	// SSRF guard: a tenant controls SMTPHost, so block loopback / link-local
 	// (cloud IMDS) / RFC1918 targets before dialing (internal relays require
-	// the operator allow-private flag, same as outbound webhooks).
-	if err := httpsec.ValidateHost(ctx, c.config.SMTPHost); err != nil {
+	// the operator allow-private flag, same as outbound webhooks). Pin the
+	// validated IP and dial THAT instead of the hostname — dialing the
+	// hostname would re-resolve DNS, reopening a rebinding TOCTOU where the
+	// second lookup could return an internal IP. TLS still uses the hostname
+	// as ServerName so certificate validation is unaffected.
+	safeIP, err := httpsec.ResolveSafeHost(ctx, c.config.SMTPHost)
+	if err != nil {
 		return fmt.Errorf("smtp host rejected: %w", err)
 	}
-	addr := net.JoinHostPort(c.config.SMTPHost, strconv.Itoa(c.config.SMTPPort))
+	addr := net.JoinHostPort(safeIP.String(), strconv.Itoa(c.config.SMTPPort))
 
 	// Create TLS config
 	tlsConfig := &tls.Config{
@@ -158,7 +163,6 @@ func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
 	}
 
 	var conn net.Conn
-	var err error
 
 	// Connect based on TLS settings
 	if c.config.UseTLS {
