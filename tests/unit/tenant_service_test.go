@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
@@ -298,8 +299,11 @@ func (m *mockTenantRepo) GetInvitationByToken(_ context.Context, token string) (
 	if m.getInvitationByTokenErr != nil {
 		return nil, m.getInvitationByTokenErr
 	}
+	// Emulate hash-at-rest: the service hashes the raw token before lookup, so
+	// the incoming `token` is a hash. Seeded invitations hold the raw token, so
+	// hash it before comparing.
 	for _, inv := range m.invitations {
-		if inv.Token() == token {
+		if crypto.HashToken(inv.Token()) == token {
 			return inv, nil
 		}
 	}

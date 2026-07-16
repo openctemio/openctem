@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -787,24 +788,35 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 		Email: req.Email,
 	})
 
-	// Send password reset email if we got a token
+	// Send password reset email asynchronously if we got a token.
+	// Anti-enumeration (AUTHZ-6): the email send only happens for existing
+	// local users, so performing it inline would leak account existence via
+	// response latency. Dispatching it in a detached goroutine keeps the
+	// synchronous response time independent of whether the account exists.
 	if result != nil && result.Token != "" && h.emailService != nil {
-		// Get user name for email (we don't expose errors)
-		userName := "" // Default to empty name for privacy
-		if err := h.emailService.SendPasswordResetEmail(
-			r.Context(),
-			req.Email,
-			userName,
-			result.Token,
-			h.authConfig.PasswordResetDuration,
-			ipAddress,
-		); err != nil {
-			h.logger.Error("failed to send password reset email",
-				"email", req.Email,
-				"error", err,
-			)
-			// Don't reveal the error to prevent enumeration
-		}
+		email := req.Email
+		token := result.Token
+		resetDuration := h.authConfig.PasswordResetDuration
+		go func() {
+			// Detach from the request context (which is cancelled once we
+			// respond) but keep request-scoped values for tracing.
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+			defer cancel()
+			if err := h.emailService.SendPasswordResetEmail(
+				ctx,
+				email,
+				"", // empty name for privacy
+				token,
+				resetDuration,
+				ipAddress,
+			); err != nil {
+				h.logger.Error("failed to send password reset email",
+					"email", email,
+					"error", err,
+				)
+				// Don't reveal the error to prevent enumeration
+			}
+		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")

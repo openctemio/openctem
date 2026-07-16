@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/api/internal/app/audit"
 
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -959,9 +960,21 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		return nil, err
 	}
 
+	// Hash-at-rest: persist only the SHA-256 hash of the token, never the raw
+	// value. The raw token is what the invitee receives (email link + the
+	// creator's API response); lookups hash the presented token before the
+	// WHERE token = $1 query. Mirrors the refresh/reset-token pattern.
+	rawToken := invitation.Token()
+	invitation.SetToken(crypto.HashToken(rawToken))
+
 	if err := s.repo.CreateInvitation(ctx, invitation); err != nil {
 		return nil, fmt.Errorf("failed to create invitation: %w", err)
 	}
+
+	// Restore the raw token on the in-memory entity so the email payload and
+	// the creator's API response carry the usable link token (the DB row keeps
+	// the hash written above).
+	invitation.SetToken(rawToken)
 
 	s.logger.Info("invitation created", "tenant_id", tenantID, "email", input.Email, "role", role, "role_ids", input.RoleIDs)
 
@@ -1019,15 +1032,17 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 }
 
 // GetInvitationByToken retrieves an invitation by its token.
+// Tokens are stored hashed at rest, so the raw token is hashed before lookup.
 func (s *TenantService) GetInvitationByToken(ctx context.Context, token string) (*tenantdom.Invitation, error) {
-	return s.repo.GetInvitationByToken(ctx, token)
+	return s.repo.GetInvitationByToken(ctx, crypto.HashToken(token))
 }
 
 // AcceptInvitation accepts an invitation and creates a membership.
 // userID is the local user ID (from users table) of the person accepting the invitation.
 // userEmail is used to verify the invitation is intended for this user.
 func (s *TenantService) AcceptInvitation(ctx context.Context, token string, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
-	invitation, err := s.repo.GetInvitationByToken(ctx, token)
+	// Tokens are stored hashed at rest; hash the presented token before lookup.
+	invitation, err := s.repo.GetInvitationByToken(ctx, crypto.HashToken(token))
 	if err != nil {
 		return nil, err
 	}
@@ -1174,10 +1189,14 @@ func (s *TenantService) CleanupExpiredInvitations(ctx context.Context) (int64, e
 }
 
 // ResendInvitation re-enqueues the invitation email for a pending
-// invitation. Does NOT change the token, expiry, or any other fields
-// on the invitation row — just fires the email again. This lets admins
-// recover from lost/spam-filtered invitation emails without having to
-// delete + recreate (which invalidates the old token).
+// invitation. This lets admins recover from lost/spam-filtered invitation
+// emails without having to delete + recreate.
+//
+// Because tokens are stored hashed at rest, the original raw token can no
+// longer be recovered to re-send. Resend therefore ROTATES the token: a fresh
+// raw token is generated, its hash is persisted, and the raw value is emailed.
+// Any previously-issued link for this invitation stops working. Expiry and all
+// other fields are left unchanged.
 //
 // Returns ErrNotFound if the invitation doesn't exist, and ErrValidation
 // if the invitation has already been accepted or has expired.
@@ -1211,6 +1230,19 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 	if s.emailEnqueuer == nil {
 		return fmt.Errorf("%w: email service is not configured", shared.ErrValidation)
 	}
+
+	// Rotate the token: only the hash is stored, so the raw token cannot be
+	// recovered from the existing row. Generate a fresh one, persist its hash,
+	// and email the raw value below.
+	rawToken, rerr := inv.RotateToken()
+	if rerr != nil {
+		return fmt.Errorf("failed to rotate invitation token: %w", rerr)
+	}
+	inv.SetToken(crypto.HashToken(rawToken))
+	if err := s.repo.UpdateInvitation(ctx, inv); err != nil {
+		return fmt.Errorf("failed to persist rotated invitation token: %w", err)
+	}
+	inv.SetToken(rawToken) // raw token for the email payload below
 
 	// Look up inviter name + tenant name for the email template
 	inviterName := "A team member"

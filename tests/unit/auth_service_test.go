@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -957,6 +958,9 @@ func seedAuthLockedUser(repo *mockAuthUserRepo, email, passwordHash string) *use
 
 // Helper: create a user with email verification token.
 func seedAuthUnverifiedUser(repo *mockAuthUserRepo, email, passwordHash, verificationToken string) *user.User {
+	// Tokens are stored hashed at rest; mirror the service's write behaviour so
+	// lookups (which hash the raw input) match.
+	verificationToken = crypto.HashToken(verificationToken)
 	expiresAt := time.Now().Add(24 * time.Hour)
 	u := user.Reconstitute(
 		shared.NewID(),
@@ -988,6 +992,7 @@ func seedAuthUnverifiedUser(repo *mockAuthUserRepo, email, passwordHash, verific
 
 // Helper: create a user with password reset token.
 func seedAuthUserWithResetToken(repo *mockAuthUserRepo, email, passwordHash, resetToken string) *user.User {
+	resetToken = crypto.HashToken(resetToken) // hash-at-rest
 	expiresAt := time.Now().Add(1 * time.Hour)
 	u := user.Reconstitute(
 		shared.NewID(),
@@ -1019,6 +1024,7 @@ func seedAuthUserWithResetToken(repo *mockAuthUserRepo, email, passwordHash, res
 
 // Helper: create a user with expired reset token.
 func seedAuthUserWithExpiredResetToken(repo *mockAuthUserRepo, email, passwordHash, resetToken string) *user.User {
+	resetToken = crypto.HashToken(resetToken)   // hash-at-rest
 	expiresAt := time.Now().Add(-1 * time.Hour) // Already expired
 	u := user.Reconstitute(
 		shared.NewID(),
@@ -1050,7 +1056,8 @@ func seedAuthUserWithExpiredResetToken(repo *mockAuthUserRepo, email, passwordHa
 
 // Helper: create a user with expired email verification token.
 func seedAuthUserWithExpiredVerification(repo *mockAuthUserRepo, email, passwordHash, verificationToken string) *user.User {
-	expiresAt := time.Now().Add(-1 * time.Hour) // Already expired
+	verificationToken = crypto.HashToken(verificationToken) // hash-at-rest
+	expiresAt := time.Now().Add(-1 * time.Hour)             // Already expired
 	u := user.Reconstitute(
 		shared.NewID(),
 		nil,

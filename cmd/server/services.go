@@ -1322,6 +1322,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = app.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
+	// Stamp the current permission version onto issued access tokens so the
+	// permission-sync middleware can reject stale tokens after a role change
+	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
+	s.Auth.SetPermissionVersionService(s.PermVersion)
 
 	// F-8: single-use WebSocket ticket service, Redis-backed.
 	if redisClient != nil {

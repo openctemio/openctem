@@ -12,6 +12,7 @@ import (
 	auditapp "github.com/openctemio/api/internal/app/audit"
 
 	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/api/pkg/crypto"
 	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
@@ -55,6 +56,10 @@ type AuthService struct {
 	auditService     *auditapp.AuditService
 	roleService      *accesscontrol.RoleService // Optional: for database-driven role permissions
 	smtpChecker      SMTPAvailabilityCheck      // Optional: enables smart email verification
+	// permVersionSvc, when set, stamps issued tenant-scoped access tokens with
+	// the user's current permission version so the permission-sync middleware
+	// can reject stale tokens after a role revocation/demotion (AUTHZ-3).
+	permVersionSvc *accesscontrol.PermissionVersionService
 }
 
 // SMTPAvailabilityCheck reports whether outbound email is available, either via
@@ -113,6 +118,25 @@ func NewAuthService(
 // instead of using hardcoded role-permission mappings.
 func (s *AuthService) SetRoleService(roleService *accesscontrol.RoleService) {
 	s.roleService = roleService
+}
+
+// SetPermissionVersionService wires the permission version service so issued
+// tenant-scoped access tokens carry the user's current permission version.
+// Without it, tokens carry version 0 and the stale-permission check in the
+// permission-sync middleware never fires (AUTHZ-3).
+func (s *AuthService) SetPermissionVersionService(svc *accesscontrol.PermissionVersionService) {
+	s.permVersionSvc = svc
+}
+
+// currentPermVersion returns the user's current permission version for the
+// tenant, initializing the Redis key to 1 if it does not yet exist so that a
+// later Increment produces a detectable mismatch. Returns 0 when no version
+// service is wired (the middleware then treats the token as never-stale).
+func (s *AuthService) currentPermVersion(ctx context.Context, tenantID, userID string) int {
+	if s.permVersionSvc == nil {
+		return 0
+	}
+	return s.permVersionSvc.EnsureVersion(ctx, tenantID, userID)
 }
 
 // SetSMTPChecker injects the SMTP availability checker used for smart email
@@ -308,6 +332,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	existingUser, err := s.userRepo.GetByEmail(ctx, email)
 	if err == nil && existingUser != nil {
 		s.logger.Info("registration attempt for existing email", "email", email)
+		// Constant-time defense: spend the same bcrypt cost the real
+		// registration path pays when hashing the new password, so account
+		// existence cannot be inferred from response latency (AUTHZ-6).
+		_ = s.passwordHasher.Verify(input.Password, dummyLoginPasswordHash)
 		// Return a fake successful result to prevent email enumeration
 		// The UI should always show "Check your email for verification"
 		return &RegisterResult{
@@ -347,7 +375,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	//      heuristic / SMTP check / global env.
 	verificationTenantID := ""
 	if input.InvitationToken != "" && s.tenantRepo != nil {
-		if inv, ierr := s.tenantRepo.GetInvitationByToken(ctx, input.InvitationToken); ierr == nil && inv != nil {
+		if inv, ierr := s.tenantRepo.GetInvitationByToken(ctx, crypto.HashToken(input.InvitationToken)); ierr == nil && inv != nil {
 			verificationTenantID = inv.TenantID().String()
 		}
 		// Failure to look up the invitation is NOT fatal here — we just
@@ -368,7 +396,8 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		}
 		verificationToken = token
 		expiresAt := time.Now().Add(s.config.EmailVerificationDuration)
-		newUser.SetEmailVerificationToken(token, expiresAt)
+		// Store only the hash at rest; the raw token is emailed to the user.
+		newUser.SetEmailVerificationToken(crypto.HashToken(token), expiresAt)
 	} else {
 		// Auto-verify email if verification not required
 		// (e.g., no SMTP configured — sending verification email is impossible)
@@ -1060,7 +1089,8 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 
 // VerifyEmail verifies a user's email with the verification token.
 func (s *AuthService) VerifyEmail(ctx context.Context, token string) error {
-	u, err := s.userRepo.GetByEmailVerificationToken(ctx, token)
+	// Tokens are stored hashed at rest; look up by hash of the raw token.
+	u, err := s.userRepo.GetByEmailVerificationToken(ctx, crypto.HashToken(token))
 	if err != nil {
 		if shared.IsNotFound(err) {
 			return ErrInvalidVerificationToken
@@ -1119,7 +1149,8 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 	}
 
 	expiresAt := time.Now().Add(s.config.PasswordResetDuration)
-	u.SetPasswordResetToken(token, expiresAt)
+	// Store only the hash at rest; the raw token is emailed to the user.
+	u.SetPasswordResetToken(crypto.HashToken(token), expiresAt)
 
 	if err := s.userRepo.Update(ctx, u); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
@@ -1138,7 +1169,8 @@ type ResetPasswordInput struct {
 
 // ResetPassword resets a user's password using the reset token.
 func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInput) error {
-	u, err := s.userRepo.GetByPasswordResetToken(ctx, input.Token)
+	// Tokens are stored hashed at rest; look up by hash of the raw token.
+	u, err := s.userRepo.GetByPasswordResetToken(ctx, crypto.HashToken(input.Token))
 	if err != nil {
 		if shared.IsNotFound(err) {
 			return ErrInvalidResetToken
@@ -1243,6 +1275,16 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 
 	if err := s.userRepo.Update(ctx, u); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
+	}
+
+	// Security: revoke all existing sessions and refresh-token families so a
+	// password change (like a reset) invalidates any other/stolen sessions
+	// (AUTHZ-10). Mirrors ResetPassword's revocation behaviour.
+	if err := s.sessionRepo.RevokeAllByUserID(ctx, u.ID()); err != nil {
+		s.logger.Error("failed to revoke sessions after password change", "error", err)
+	}
+	if err := s.refreshTokenRepo.RevokeByUserID(ctx, u.ID()); err != nil {
+		s.logger.Error("failed to revoke refresh tokens after password change", "error", err)
 	}
 
 	s.logger.Info("password changed", "user_id", userID)
@@ -1489,8 +1531,8 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Get the invitation by token
-	invitation, err := s.tenantRepo.GetInvitationByToken(ctx, input.InvitationToken)
+	// Get the invitation by token (stored hashed at rest — hash before lookup)
+	invitation, err := s.tenantRepo.GetInvitationByToken(ctx, crypto.HashToken(input.InvitationToken))
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			return nil, fmt.Errorf("%w: invitation not found or expired", shared.ErrNotFound)
@@ -1665,6 +1707,10 @@ func (s *AuthService) generateTenantScopedAccessToken(
 	membership jwt.TenantMembership,
 	isAdmin bool,
 ) (*jwt.TenantScopedAccessToken, error) {
+	// Current permission version, stamped into the token so the permission-sync
+	// middleware can detect a post-issuance role change (AUTHZ-3).
+	permVersion := s.currentPermVersion(ctx, membership.TenantID, userID)
+
 	// If roleService is available, try to get permissions from database
 	if s.roleService != nil {
 		permissions, err := s.roleService.GetUserPermissions(ctx, membership.TenantID, userID)
@@ -1712,6 +1758,7 @@ func (s *AuthService) generateTenantScopedAccessToken(
 				permissions,
 				roleSlugs,
 				isAdmin,
+				permVersion,
 			)
 		} else {
 			s.logger.Debug("no permissions found in database, falling back to role mapping",
@@ -1732,6 +1779,7 @@ func (s *AuthService) generateTenantScopedAccessToken(
 		userID, email, name, sessionID,
 		membership,
 		isAdmin,
+		permVersion,
 	)
 }
 
