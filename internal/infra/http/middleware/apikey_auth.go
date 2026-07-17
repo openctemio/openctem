@@ -10,6 +10,32 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// API-key context keys. The authenticated key's id and non-secret prefix are
+// stashed so downstream handlers (e.g. the MCP audit trail) can attribute an
+// action to the specific key without re-reading the raw token.
+const (
+	APIKeyIDKey     logger.ContextKey = "api_key_id"
+	APIKeyPrefixKey logger.ContextKey = "api_key_prefix"
+)
+
+// GetAPIKeyID returns the authenticated API key's id, or "" if the request was
+// not authenticated by an `oct_` key.
+func GetAPIKeyID(ctx context.Context) string {
+	if v, ok := ctx.Value(APIKeyIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// GetAPIKeyPrefix returns the authenticated API key's non-secret prefix (the
+// first 8 chars), or "" if the request was not API-key authenticated.
+func GetAPIKeyPrefix(ctx context.Context) string {
+	if v, ok := ctx.Value(APIKeyPrefixKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // APIKeyAuthenticator is the slice of the apikey service the middleware needs.
 // Declared here (not imported from the app package) so the middleware depends
 // only on the domain type. Satisfied by *apikey.Service.
@@ -45,6 +71,8 @@ func APIKeyAuth(auth APIKeyAuthenticator, log *logger.Logger) func(http.Handler)
 
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, TenantIDKey, key.TenantID().String())
+			ctx = context.WithValue(ctx, APIKeyIDKey, key.ID().String())
+			ctx = context.WithValue(ctx, APIKeyPrefixKey, key.KeyPrefix())
 			if uid := key.UserID(); uid != nil {
 				ctx = context.WithValue(ctx, UserIDKey, uid.String())
 			}

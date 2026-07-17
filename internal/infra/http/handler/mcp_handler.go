@@ -9,10 +9,12 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/attack"
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	appcompliance "github.com/openctemio/api/internal/app/compliance"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	assetdom "github.com/openctemio/api/pkg/domain/asset"
+	auditdom "github.com/openctemio/api/pkg/domain/audit"
 	remediationdom "github.com/openctemio/api/pkg/domain/remediation"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
@@ -60,7 +62,10 @@ type mcpFindingReader interface {
 	// GetFindingWithScope enforces the caller's data-scope + pentest membership
 	// (never the admin-bypass GetFinding).
 	GetFindingWithScope(ctx context.Context, tenantID, findingID, actingUserID string, isAdmin bool) (*vulnerability.Finding, error)
-	GetFindingStats(ctx context.Context, tenantID string) (*vulnerability.FindingStats, error)
+	// GetFindingStatsWithScope applies the caller's group data-scope (isAdmin=false),
+	// so aggregate posture is confined exactly like list_findings — never the
+	// admin-wide GetFindingStats.
+	GetFindingStatsWithScope(ctx context.Context, input app.GetFindingStatsInput) (*vulnerability.FindingStats, error)
 	ListActiveCVEs(ctx context.Context, in app.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error)
 }
 
@@ -113,6 +118,10 @@ type MCPHandler struct {
 	assets     mcpAssetReader
 	logger     *logger.Logger
 	tools      []mcpTool
+	// audit records every tools/call (success and error). Optional: when nil the
+	// handler behaves identically minus the audit trail, so tests and stub builds
+	// need not provide one.
+	audit *auditapp.AuditService
 }
 
 // NewMCPHandler builds the handler and its tool registry from existing services.
@@ -136,6 +145,13 @@ func NewMCPHandler(
 	}
 	h.tools = h.buildTools()
 	return h
+}
+
+// SetAuditService wires the audit logger so every MCP tools/call emits a
+// non-repudiable audit event (which key, tenant, user, tool, sanitized args,
+// outcome). Nil-safe: when unset, tool calls run identically minus the audit.
+func (h *MCPHandler) SetAuditService(svc *auditapp.AuditService) {
+	h.audit = svc
 }
 
 // ServeHTTP handles a single JSON-RPC 2.0 request over HTTP POST. The tenant is
@@ -171,9 +187,9 @@ func (h *MCPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "ping":
 		h.writeResult(w, req.ID, struct{}{})
 	case "tools/list":
-		h.writeResult(w, req.ID, h.toolsListResult())
+		h.writeResult(w, req.ID, h.toolsListResult(r.Context()))
 	case "tools/call":
-		h.handleToolsCall(w, r.Context(), req, tenantID)
+		h.handleToolsCall(w, r, req, tenantID)
 	default:
 		h.writeError(w, req.ID, rpcMethodNotFound, "method not found")
 	}
@@ -193,9 +209,16 @@ func (h *MCPHandler) initializeResult() map[string]any {
 	}
 }
 
-func (h *MCPHandler) toolsListResult() map[string]any {
+// toolsListResult advertises only the tools the calling key can actually run:
+// a tool is listed only if its RequiredPerm passes HasPermission for this
+// context (API keys are never admin, so this consults just the key's scopes).
+// A scopeless/narrow key therefore never even sees tools it cannot call.
+func (h *MCPHandler) toolsListResult(ctx context.Context) map[string]any {
 	list := make([]map[string]any, 0, len(h.tools))
 	for _, t := range h.tools {
+		if t.RequiredPerm != "" && !middleware.HasPermission(ctx, t.RequiredPerm) {
+			continue
+		}
 		list = append(list, map[string]any{
 			"name":        t.Name,
 			"description": t.Description,
@@ -205,7 +228,8 @@ func (h *MCPHandler) toolsListResult() map[string]any {
 	return map[string]any{"tools": list}
 }
 
-func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, ctx context.Context, req jsonrpcRequest, tenantID string) {
+func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req jsonrpcRequest, tenantID string) {
+	ctx := r.Context()
 	var p struct {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -231,6 +255,7 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, ctx context.Context,
 	// tool's required permission — the same gate the equivalent REST route uses.
 	// API keys are never admin, so HasPermission consults only the key's scopes.
 	if tool.RequiredPerm != "" && !middleware.HasPermission(ctx, tool.RequiredPerm) {
+		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultDenied, true, 0)
 		h.writeResult(w, req.ID, toolResult("permission denied: this API key lacks the scope required for this tool ("+tool.RequiredPerm+")", true))
 		return
 	}
@@ -242,6 +267,7 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, ctx context.Context,
 		// messages are surfaced verbatim; any other (internal/service) error is
 		// redacted to avoid leaking DB/internal detail — logged in full server-side.
 		h.logger.Warn("mcp tool error", "tool", tool.Name, "error", err.Error())
+		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultFailure, true, 0)
 		var ie toolInputError
 		if errors.As(err, &ie) {
 			h.writeResult(w, req.ID, toolResult(ie.Error(), true))
@@ -255,7 +281,92 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, ctx context.Context,
 		h.writeError(w, req.ID, rpcInternalError, "internal error")
 		return
 	}
+	h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultSuccess, false, len(text))
 	h.writeResult(w, req.ID, toolResult(string(text), false))
+}
+
+// auditToolCall records one MCP tools/call. It is nil-safe (no audit service →
+// no-op). The args summary is SANITIZED: only argument keys and any id/severity/
+// status/exposure-style scalar filters are recorded — never free-text search
+// content or full finding data — so the trail can't become a data-exfil channel.
+func (h *MCPHandler) auditToolCall(r *http.Request, tenantID, toolName string, args json.RawMessage, result auditdom.Result, isError bool, resultSize int) {
+	if h.audit == nil {
+		return
+	}
+	ctx := r.Context()
+	event := auditapp.AuditEvent{
+		Action:       auditdom.ActionMCPToolCalled,
+		ResourceType: auditdom.ResourceTypeMCPTool,
+		ResourceID:   toolName,
+		Result:       result,
+		Severity:     auditdom.SeverityLow,
+		Message:      "MCP tool called: " + toolName,
+		Metadata: map[string]any{
+			"tool":           toolName,
+			"is_error":       isError,
+			"result_size":    resultSize,
+			"args":           sanitizeMCPArgs(args),
+			"api_key_id":     middleware.GetAPIKeyID(ctx),
+			"api_key_prefix": middleware.GetAPIKeyPrefix(ctx),
+		},
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   tenantID,
+		ActorID:    middleware.GetUserID(ctx),
+		ActorEmail: middleware.GetUsername(ctx),
+		ActorIP:    auditClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	_ = h.audit.LogEvent(ctx, actx, event)
+}
+
+// mcpAuditSafeArgs is the allowlist of tool-argument keys whose scalar value is
+// safe to record verbatim in the audit trail (ids and enum-like filters). Any
+// other key (e.g. free-text `search`) is recorded present-but-redacted so the
+// audit log never stores query content or finding data.
+var mcpAuditSafeArgs = map[string]bool{
+	"id": true, "severity": true, "status": true, "source": true,
+	"exposure": true, "criticality": true, "kev_only": true,
+	"min_epss": true, "limit": true,
+}
+
+// sanitizeMCPArgs reduces raw tool arguments to an audit-safe summary: every
+// key present, with the value only for allowlisted non-sensitive scalars.
+func sanitizeMCPArgs(raw json.RawMessage) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return map[string]any{"_unparsable": true}
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if mcpAuditSafeArgs[k] {
+			var val any
+			if err := json.Unmarshal(v, &val); err == nil {
+				if s, ok := val.(string); ok && len(s) > 128 {
+					val = s[:128]
+				}
+				out[k] = val
+				continue
+			}
+		}
+		out[k] = "<redacted>"
+	}
+	return out
+}
+
+// auditClientIP resolves the caller IP, preferring proxy headers.
+func auditClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return xff
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	return r.RemoteAddr
 }
 
 // toolResult wraps text as an MCP tools/call result content block.

@@ -30,6 +30,19 @@ const (
 	mcpMaxLimit     = 100
 )
 
+// parseToolArgs unmarshals an optional-filter tool's arguments. Empty/omitted
+// arguments are fine (the tool runs with defaults); malformed JSON is surfaced
+// as a toolInputError instead of being silently swallowed into a default result.
+func parseToolArgs(raw json.RawMessage, dst any) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(raw, dst); err != nil {
+		return toolInputError{"invalid arguments: malformed JSON"}
+	}
+	return nil
+}
+
 func clampLimit(n int) int {
 	if n <= 0 {
 		return mcpDefaultLimit
@@ -187,7 +200,9 @@ type findingListArgs struct {
 
 func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
 	var a findingListArgs
-	_ = json.Unmarshal(raw, &a)
+	if err := parseToolArgs(raw, &a); err != nil {
+		return nil, err
+	}
 
 	in := app.ListFindingsInput{
 		TenantID:     tenantID,
@@ -236,7 +251,14 @@ func (h *MCPHandler) toolGetFinding(ctx context.Context, tenantID string, raw js
 }
 
 func (h *MCPHandler) toolFindingStats(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
-	stats, err := h.findings.GetFindingStats(ctx, tenantID)
+	// Scoped stats: confine the aggregate to the key owner's group data-scope
+	// (IsAdmin=false), mirroring how list_findings builds its scope — so a
+	// restricted key never sees posture for findings it can't list.
+	stats, err := h.findings.GetFindingStatsWithScope(ctx, app.GetFindingStatsInput{
+		TenantID:     tenantID,
+		ActingUserID: actingUser(ctx),
+		IsAdmin:      false,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +291,9 @@ type activeCVEArgs struct {
 
 func (h *MCPHandler) toolListActiveCVEs(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
 	var a activeCVEArgs
-	_ = json.Unmarshal(raw, &a)
+	if err := parseToolArgs(raw, &a); err != nil {
+		return nil, err
+	}
 
 	in := app.ListActiveCVEsInput{
 		TenantID: tenantID,
@@ -293,6 +317,14 @@ func (h *MCPHandler) toolExplainPriority(ctx context.Context, tenantID string, r
 	if err := json.Unmarshal(raw, &a); err != nil || a.ID == "" {
 		return nil, toolInputError{"id is required"}
 	}
+	// Data-scope gate: ExplainFinding is tenant-only (no scope, no pentest gate),
+	// so first resolve the finding through the SAME scoped path get_finding uses.
+	// If the key's data-scope / pentest membership can't read it, this returns the
+	// not-found/denied error and we never reveal priority factors — parity with
+	// get_finding's 404 for out-of-scope findings.
+	if _, err := h.findings.GetFindingWithScope(ctx, tenantID, a.ID, actingUser(ctx), false); err != nil {
+		return nil, err
+	}
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, toolInputError{"invalid tenant"}
@@ -304,6 +336,10 @@ func (h *MCPHandler) toolExplainPriority(ctx context.Context, tenantID string, r
 	return h.priority.ExplainFinding(ctx, tid, fid)
 }
 
+// toolExposureChains is an intentionally TENANT-WIDE aggregate: the attack-path
+// engine (GetExposureChains) computes graph-level exposure chains across the
+// whole tenant estate and exposes no per-user data-scope variant. It is gated by
+// the assets:read scope only; there is no *WithScope path to route through.
 func (h *MCPHandler) toolExposureChains(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -312,6 +348,9 @@ func (h *MCPHandler) toolExposureChains(ctx context.Context, tenantID string, _ 
 	return h.surface.GetExposureChains(ctx, tid)
 }
 
+// toolListRemediationGroups is an intentionally TENANT-WIDE aggregate: a
+// remediation group is a solution family spanning many findings/assets and the
+// service (ListGroups) has no per-user data-scope variant. Gated by findings:read.
 func (h *MCPHandler) toolListRemediationGroups(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -333,7 +372,9 @@ type assetListArgs struct {
 
 func (h *MCPHandler) toolListAssets(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
 	var a assetListArgs
-	_ = json.Unmarshal(raw, &a)
+	if err := parseToolArgs(raw, &a); err != nil {
+		return nil, err
+	}
 
 	in := app.ListAssetsInput{
 		TenantID:     tenantID,
@@ -360,6 +401,9 @@ func (h *MCPHandler) toolListAssets(ctx context.Context, tenantID string, raw js
 	return map[string]any{"total": res.Total, "assets": out}, nil
 }
 
+// toolCompliancePosture is an intentionally TENANT-WIDE aggregate: framework /
+// control posture is a tenant-level rollup with no per-user data-scope variant
+// (GetComplianceStats). Gated by the compliance:frameworks:read scope.
 func (h *MCPHandler) toolCompliancePosture(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
 	return h.compliance.GetComplianceStats(ctx, tenantID)
 }

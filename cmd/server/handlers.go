@@ -145,6 +145,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			svc.Vulnerability, svc.PriorityClassification, svc.AttackSurface,
 			svc.RemediationGroup, svc.Compliance, svc.Asset, log,
 		)
+		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
+		mcpHandler.SetAuditService(svc.Audit)
 		mcpAuth = middleware.APIKeyAuth(svc.APIKey, log)
 	}
 

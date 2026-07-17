@@ -238,6 +238,10 @@ const (
 	ActionAITriageTokenLimit      Action = "ai_triage.token_limit_exceeded"
 	ActionAITriageNeedsReview     Action = "ai_triage.needs_review"     // validator flagged output
 	ActionAITriageBudgetExhausted Action = "ai_triage.budget_exhausted" // tenant hit monthly token ceiling
+
+	// MCP actions — read-only Model Context Protocol tool invocations by an
+	// `oct_` API key. Every tools/call is audited (success and error alike).
+	ActionMCPToolCalled Action = "mcp.tool_called"
 )
 
 // String returns the string representation of the action.
@@ -300,7 +304,8 @@ func (a Action) IsValid() bool {
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
-		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
+		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionMCPToolCalled:
 		return true
 	}
 	return false
@@ -362,6 +367,8 @@ func (a Action) Category() string {
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
 		return "pentest_campaign"
+	case ActionMCPToolCalled:
+		return "mcp"
 	}
 	return "unknown"
 }
@@ -402,6 +409,7 @@ const (
 	ResourceTypeRuleOverride     ResourceType = "rule_override"
 	ResourceTypeIngest           ResourceType = "ingest"
 	ResourceTypeAITriage         ResourceType = "ai_triage"
+	ResourceTypeMCPTool          ResourceType = "mcp_tool"
 )
 
 // String returns the string representation of the resource type.
@@ -421,7 +429,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
-		ResourceTypeCampaign:
+		ResourceTypeCampaign, ResourceTypeMCPTool:
 		return true
 	}
 	return false
