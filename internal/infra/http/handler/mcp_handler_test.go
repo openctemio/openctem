@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/api/pkg/domain/audit"
+	pentestdom "github.com/openctemio/api/pkg/domain/pentest"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
@@ -29,6 +31,9 @@ type fakeFindingReader struct {
 	// scopeErr, when set, is returned by the scoped read paths so tests can
 	// simulate a data-scope/pentest-membership denial.
 	scopeErr error
+	// finding, when set, is returned by GetFindingWithScope so tests can exercise
+	// rich-DTO projection (e.g. evidence redaction).
+	finding *vulnerability.Finding
 }
 
 func (f *fakeFindingReader) ListFindings(_ context.Context, in app.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error) {
@@ -41,7 +46,7 @@ func (f *fakeFindingReader) GetFindingWithScope(_ context.Context, tenantID, _, 
 	if f.scopeErr != nil {
 		return nil, f.scopeErr
 	}
-	return nil, nil
+	return f.finding, nil
 }
 func (f *fakeFindingReader) GetFindingStatsWithScope(_ context.Context, in app.GetFindingStatsInput) (*vulnerability.FindingStats, error) {
 	f.gotTenant = in.TenantID
@@ -66,7 +71,13 @@ type rpcResp struct {
 }
 
 func newTestMCP(fr mcpFindingReader) *MCPHandler {
-	return NewMCPHandler(fr, nil, nil, nil, nil, nil, logger.NewNop())
+	return NewMCPHandler(fr, nil, nil, nil, nil, nil, nil, logger.NewNop())
+}
+
+// newTestMCPWithPentest wires a fake pentest reader for the report-writing tools
+// and prompts.
+func newTestMCPWithPentest(fr mcpFindingReader, pr mcpPentestReader) *MCPHandler {
+	return NewMCPHandler(fr, nil, nil, nil, nil, nil, pr, logger.NewNop())
 }
 
 // allReadScopes is the set of permissions a fully-scoped MCP key would carry.
@@ -406,4 +417,393 @@ func (m *fakeAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) 
 }
 func (m *fakeAuditRepo) UpdateChainEntryHashes(_ context.Context, _ shared.ID, _, _ string) error {
 	return nil
+}
+
+// --- pentest report-writing tools + prompts ----------------------------------
+
+// fakePentestReader records the tenant/user it was called with and returns
+// canned campaign/finding/retest/template data.
+type fakePentestReader struct {
+	gotTenant  string
+	gotUser    string
+	gotIsAdmin bool
+	accessErr  error // returned by CheckCampaignAccess
+	campaign   *pentestdom.Campaign
+	stats      *pentestdom.CampaignStats
+	findings   []*vulnerability.Finding
+	retests    []*pentestdom.Retest
+	templates  []*pentestdom.Template
+	members    []*pentestdom.CampaignMember
+}
+
+func (p *fakePentestReader) CheckCampaignAccess(_ context.Context, tenantID, _, userID string, isAdmin bool) error {
+	p.gotTenant = tenantID
+	p.gotUser = userID
+	p.gotIsAdmin = isAdmin
+	return p.accessErr
+}
+func (p *fakePentestReader) GetCampaign(_ context.Context, tenantID, _ string) (*pentestdom.Campaign, error) {
+	p.gotTenant = tenantID
+	return p.campaign, nil
+}
+func (p *fakePentestReader) ListCampaignMembers(_ context.Context, tenantID, _ string) ([]*pentestdom.CampaignMember, error) {
+	p.gotTenant = tenantID
+	return p.members, nil
+}
+func (p *fakePentestReader) GetCampaignStats(_ context.Context, tenantID, _ string) (*pentestdom.CampaignStats, error) {
+	p.gotTenant = tenantID
+	if p.stats == nil {
+		return &pentestdom.CampaignStats{}, nil
+	}
+	return p.stats, nil
+}
+func (p *fakePentestReader) ListAllPentestFindings(_ context.Context, tenantID, _, viewerUserID, _ string, isAdmin bool, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+	p.gotTenant = tenantID
+	p.gotUser = viewerUserID
+	p.gotIsAdmin = isAdmin
+	return pagination.NewResult(p.findings, int64(len(p.findings)), page), nil
+}
+func (p *fakePentestReader) ListCampaignRetests(_ context.Context, tenantID, _ string) ([]*pentestdom.Retest, error) {
+	p.gotTenant = tenantID
+	return p.retests, nil
+}
+func (p *fakePentestReader) ListTemplates(_ context.Context, tenantID string, _ pentestdom.TemplateFilter, page pagination.Pagination) (pagination.Result[*pentestdom.Template], error) {
+	p.gotTenant = tenantID
+	return pagination.NewResult(p.templates, int64(len(p.templates)), page), nil
+}
+
+// makePentestFinding builds a source='pentest' finding carrying rich fields plus
+// raw evidence/PoC/request-response blobs in source_metadata — so tests can
+// assert those raw blobs are NEVER projected into the MCP DTO.
+func makePentestFinding(t *testing.T) *vulnerability.Finding {
+	t.Helper()
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(),
+		vulnerability.FindingSourcePentest, "pentest-manual", vulnerability.SeverityHigh, "SQLi in login")
+	if err != nil {
+		t.Fatalf("new finding: %v", err)
+	}
+	f.SetTitle("SQL Injection in login form")
+	f.SetSourceMetadata(map[string]any{
+		"steps_to_reproduce":   []any{"step one", "step two"},
+		"business_impact":      "full DB compromise",
+		"technical_impact":     "auth bypass",
+		"remediation_guidance": "use parameterized queries",
+		"owasp_category":       "A03:2021",
+		"mitre_technique_id":   "T1190",
+		"cvss_version":         "3.1",
+		"reference_urls":       []any{"https://example.com/ref"},
+		"affected_assets":      []any{"login.example.com"},
+		// Sensitive raw blobs that must NOT leak through MCP:
+		"poc_code":          "SUPER_SECRET_POC_PAYLOAD' OR '1'='1",
+		"evidence":          []any{map[string]any{"blob": "RAW_EVIDENCE_BLOB_DO_NOT_LEAK"}},
+		"request_responses": []any{map[string]any{"request": "RAW_CAPTURE_DO_NOT_LEAK"}},
+	})
+	return f
+}
+
+func newTestCampaign(t *testing.T) *pentestdom.Campaign {
+	t.Helper()
+	c, err := pentestdom.NewCampaign(shared.NewID(), "__test campaign",
+		pentestdom.CampaignType("black_box"), pentestdom.CampaignPriority("high"))
+	if err != nil {
+		t.Fatalf("new campaign: %v", err)
+	}
+	return c
+}
+
+const testTenantUUID = "018f5a1e-0000-7000-8000-000000000001"
+
+// get_campaign must use the CONTEXT tenant, never a tenant smuggled in args.
+func TestMCP_GetCampaign_ScopedToContextTenant(t *testing.T) {
+	pr := &fakePentestReader{campaign: newTestCampaign(t)}
+	h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_campaign","arguments":{"tenant_id":"tenant-EVIL","id":"018f5a1e-0000-7000-8000-0000000000cc"}}}`
+	_, resp := doRPCScoped(t, h, "tenant-GOOD", "user-1", []string{"pentest:campaigns:read"}, body)
+	if resp.Error != nil {
+		t.Fatalf("get_campaign errored: %+v", resp.Error)
+	}
+	if pr.gotTenant != "tenant-GOOD" {
+		t.Fatalf("tool must use the context tenant, got %q", pr.gotTenant)
+	}
+	if pr.gotIsAdmin {
+		t.Error("MCP campaign read must run with IsAdmin=false")
+	}
+	if pr.gotUser != "user-1" {
+		t.Errorf("membership gate must use the acting user, got %q", pr.gotUser)
+	}
+}
+
+// A non-member key (CheckCampaignAccess denies) gets an error result.
+func TestMCP_GetCampaign_NonMemberDenied(t *testing.T) {
+	pr := &fakePentestReader{campaign: newTestCampaign(t), accessErr: errors.New("not a campaign member")}
+	h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_campaign","arguments":{"id":"018f5a1e-0000-7000-8000-0000000000cc"}}}`
+	_, resp := doRPCScoped(t, h, testTenantUUID, "user-1", []string{"pentest:campaigns:read"}, body)
+	var r struct {
+		IsError bool `json:"isError"`
+	}
+	if err := json.Unmarshal(resp.Result, &r); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !r.IsError {
+		t.Fatal("expected a denial error for a non-member key")
+	}
+}
+
+// list_campaign_findings must pass the context tenant + acting user (membership
+// filter), never an args-smuggled tenant, and never IsAdmin.
+func TestMCP_ListCampaignFindings_ScopedToContextTenant(t *testing.T) {
+	pr := &fakePentestReader{findings: []*vulnerability.Finding{makePentestFinding(t)}}
+	h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_campaign_findings","arguments":{"tenant_id":"tenant-EVIL","campaign_id":"018f5a1e-0000-7000-8000-0000000000cc"}}}`
+	_, resp := doRPCScoped(t, h, "tenant-GOOD", "user-1", []string{"pentest:findings:read"}, body)
+	if resp.Error != nil {
+		t.Fatalf("list_campaign_findings errored: %+v", resp.Error)
+	}
+	if pr.gotTenant != "tenant-GOOD" {
+		t.Fatalf("tool must use the context tenant, got %q", pr.gotTenant)
+	}
+	if pr.gotUser != "user-1" {
+		t.Errorf("membership subquery must use acting user, got %q", pr.gotUser)
+	}
+	if pr.gotIsAdmin {
+		t.Error("MCP finding list must run with IsAdmin=false")
+	}
+}
+
+// A user-less key must be denied campaign findings (fail-closed): otherwise the
+// membership subquery would be skipped and leak the whole campaign.
+func TestMCP_ListCampaignFindings_UserlessKeyDenied(t *testing.T) {
+	pr := &fakePentestReader{findings: []*vulnerability.Finding{makePentestFinding(t)}}
+	h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_campaign_findings","arguments":{"campaign_id":"018f5a1e-0000-7000-8000-0000000000cc"}}}`
+	// empty user simulates a key minted without an owning user.
+	_, resp := doRPCScoped(t, h, testTenantUUID, "", []string{"pentest:findings:read"}, body)
+	var r struct {
+		IsError bool `json:"isError"`
+	}
+	if err := json.Unmarshal(resp.Result, &r); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !r.IsError {
+		t.Fatal("expected a user-less key to be denied campaign findings")
+	}
+	if pr.gotTenant != "" {
+		t.Fatal("the finding list must not run for a user-less key")
+	}
+}
+
+// get_pentest_finding must return rich fields but NEVER raw evidence/PoC/
+// request-response blobs — only counts + has_poc.
+func TestMCP_GetPentestFinding_RedactsEvidence(t *testing.T) {
+	fr := &fakeFindingReader{finding: makePentestFinding(t)}
+	pr := &fakePentestReader{}
+	h := newTestMCPWithPentest(fr, pr)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_pentest_finding","arguments":{"id":"018f5a1e-0000-7000-8000-0000000000aa"}}}`
+	_, resp := doRPCScoped(t, h, testTenantUUID, "user-1", []string{"pentest:findings:read"}, body)
+	if resp.Error != nil {
+		t.Fatalf("get_pentest_finding errored: %+v", resp.Error)
+	}
+	var r struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+		IsError bool `json:"isError"`
+	}
+	if err := json.Unmarshal(resp.Result, &r); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if r.IsError || len(r.Content) == 0 {
+		t.Fatalf("expected a finding result, got %+v", r)
+	}
+	text := r.Content[0].Text
+	// Raw blobs must never appear.
+	for _, secret := range []string{"SUPER_SECRET_POC_PAYLOAD", "RAW_EVIDENCE_BLOB_DO_NOT_LEAK", "RAW_CAPTURE_DO_NOT_LEAK"} {
+		if strings.Contains(text, secret) {
+			t.Fatalf("raw blob leaked into MCP result: %q found in %s", secret, text)
+		}
+	}
+	// But the redacted metadata must be present.
+	var dto mcpPentestFindingDTO
+	if err := json.Unmarshal([]byte(text), &dto); err != nil {
+		t.Fatalf("decode finding dto: %v", err)
+	}
+	if dto.HasPoC == nil || !*dto.HasPoC {
+		t.Error("expected has_poc=true (poc_code present but redacted)")
+	}
+	if dto.EvidenceCount == nil || *dto.EvidenceCount != 1 {
+		t.Errorf("expected evidence_count=1, got %v", dto.EvidenceCount)
+	}
+	if dto.RequestResponseCount == nil || *dto.RequestResponseCount != 1 {
+		t.Errorf("expected request_response_count=1, got %v", dto.RequestResponseCount)
+	}
+	if dto.BusinessImpact != "full DB compromise" {
+		t.Errorf("expected rich business_impact, got %q", dto.BusinessImpact)
+	}
+	if fr.gotScopeUser != "user-1" {
+		t.Errorf("scoped read must use acting user, got %q", fr.gotScopeUser)
+	}
+}
+
+// Each new pentest tool must emit an audit event.
+func TestMCP_PentestToolAuditLogged(t *testing.T) {
+	cases := []struct {
+		tool  string
+		args  string
+		scope string
+	}{
+		{"get_campaign", `{"id":"018f5a1e-0000-7000-8000-0000000000cc"}`, "pentest:campaigns:read"},
+		{"list_campaign_findings", `{"campaign_id":"018f5a1e-0000-7000-8000-0000000000cc"}`, "pentest:findings:read"},
+		{"list_retests", `{"campaign_id":"018f5a1e-0000-7000-8000-0000000000cc"}`, "pentest:retests:read"},
+		{"list_finding_templates", `{}`, "pentest:templates:read"},
+		{"campaign_report_stats", `{"campaign_id":"018f5a1e-0000-7000-8000-0000000000cc"}`, "pentest:campaigns:read"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.tool, func(t *testing.T) {
+			pr := &fakePentestReader{campaign: newTestCampaign(t)}
+			repo := &fakeAuditRepo{}
+			h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+			h.SetAuditService(auditapp.NewAuditService(repo, logger.NewNop()))
+			body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tc.tool + `","arguments":` + tc.args + `}}`
+			_, resp := doRPCScoped(t, h, testTenantUUID, "user-1", []string{tc.scope}, body)
+			if resp.Error != nil {
+				t.Fatalf("%s errored: %+v", tc.tool, resp.Error)
+			}
+			if len(repo.logs) != 1 {
+				t.Fatalf("expected 1 audit event for %s, got %d", tc.tool, len(repo.logs))
+			}
+			if repo.logs[0].Action() != auditdom.ActionMCPToolCalled {
+				t.Errorf("expected mcp.tool_called, got %q", repo.logs[0].Action())
+			}
+			if repo.logs[0].ResourceID() != tc.tool {
+				t.Errorf("expected resource id %q, got %q", tc.tool, repo.logs[0].ResourceID())
+			}
+		})
+	}
+}
+
+// initialize must advertise the prompts capability.
+func TestMCP_InitializeAdvertisesPrompts(t *testing.T) {
+	h := newTestMCPWithPentest(&fakeFindingReader{}, &fakePentestReader{})
+	_, resp := doRPC(t, h, "tenant-a", `{"jsonrpc":"2.0","id":1,"method":"initialize"}`)
+	if resp.Error != nil {
+		t.Fatalf("initialize errored: %+v", resp.Error)
+	}
+	var r struct {
+		Capabilities map[string]any `json:"capabilities"`
+	}
+	if err := json.Unmarshal(resp.Result, &r); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := r.Capabilities["prompts"]; !ok {
+		t.Error("initialize must advertise the prompts capability")
+	}
+}
+
+// prompts/list returns the report-writing prompts (scope-filtered).
+func TestMCP_PromptsList(t *testing.T) {
+	h := newTestMCPWithPentest(&fakeFindingReader{}, &fakePentestReader{})
+	_, resp := doRPCScoped(t, h, testTenantUUID, "user-1",
+		[]string{"pentest:campaigns:read", "pentest:findings:read"},
+		`{"jsonrpc":"2.0","id":1,"method":"prompts/list"}`)
+	if resp.Error != nil {
+		t.Fatalf("prompts/list errored: %+v", resp.Error)
+	}
+	var r struct {
+		Prompts []struct {
+			Name      string `json:"name"`
+			Arguments []struct {
+				Name     string `json:"name"`
+				Required bool   `json:"required"`
+			} `json:"arguments"`
+		} `json:"prompts"`
+	}
+	if err := json.Unmarshal(resp.Result, &r); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	seen := make(map[string]bool, len(r.Prompts))
+	for _, p := range r.Prompts {
+		seen[p.Name] = true
+	}
+	for _, want := range []string{"exec_summary", "finding_writeup", "remediation_guidance", "attack_narrative"} {
+		if !seen[want] {
+			t.Errorf("expected prompt %q to be listed", want)
+		}
+	}
+}
+
+// prompts/list is scope-filtered: a key without pentest scopes sees no prompts.
+func TestMCP_PromptsListFilteredByScope(t *testing.T) {
+	h := newTestMCPWithPentest(&fakeFindingReader{}, &fakePentestReader{})
+	_, resp := doRPCScoped(t, h, testTenantUUID, "user-1", []string{"findings:read"},
+		`{"jsonrpc":"2.0","id":1,"method":"prompts/list"}`)
+	var r struct {
+		Prompts []struct {
+			Name string `json:"name"`
+		} `json:"prompts"`
+	}
+	if err := json.Unmarshal(resp.Result, &r); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(r.Prompts) != 0 {
+		t.Errorf("expected no prompts for a key lacking pentest scopes, got %d", len(r.Prompts))
+	}
+}
+
+// prompts/get exec_summary returns role-tagged messages injecting campaign
+// context, and audits the read.
+func TestMCP_PromptsGet_ExecSummary(t *testing.T) {
+	pr := &fakePentestReader{campaign: newTestCampaign(t), stats: &pentestdom.CampaignStats{TotalFindings: 5, CriticalFindings: 1}}
+	repo := &fakeAuditRepo{}
+	h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+	h.SetAuditService(auditapp.NewAuditService(repo, logger.NewNop()))
+	body := `{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{"name":"exec_summary","arguments":{"campaign_id":"018f5a1e-0000-7000-8000-0000000000cc"}}}`
+	_, resp := doRPCScoped(t, h, testTenantUUID, "user-1", []string{"pentest:campaigns:read"}, body)
+	if resp.Error != nil {
+		t.Fatalf("prompts/get errored: %+v", resp.Error)
+	}
+	var r struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(resp.Result, &r); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(r.Messages) < 2 {
+		t.Fatalf("expected an instruction + data message, got %d", len(r.Messages))
+	}
+	// The data message must carry the injected campaign context.
+	joined := r.Messages[0].Content.Text + "\n" + r.Messages[1].Content.Text
+	if !strings.Contains(joined, "__test campaign") {
+		t.Error("expected injected campaign context in prompt messages")
+	}
+	if !strings.Contains(joined, "untrusted data") {
+		t.Error("expected the prompt-injection guard wording in the data message")
+	}
+	if pr.gotUser != "user-1" || pr.gotTenant != testTenantUUID {
+		t.Errorf("prompt read must be tenant+membership scoped, got tenant=%q user=%q", pr.gotTenant, pr.gotUser)
+	}
+	if len(repo.logs) != 1 || repo.logs[0].Action() != auditdom.ActionMCPPromptGotten {
+		t.Fatalf("expected 1 mcp.prompt_gotten audit event, got %+v", repo.logs)
+	}
+}
+
+// prompts/get must deny a key lacking the prompt's scope.
+func TestMCP_PromptsGet_RequiresScope(t *testing.T) {
+	pr := &fakePentestReader{campaign: newTestCampaign(t)}
+	h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+	body := `{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{"name":"exec_summary","arguments":{"campaign_id":"018f5a1e-0000-7000-8000-0000000000cc"}}}`
+	_, resp := doRPCScoped(t, h, testTenantUUID, "user-1", []string{"findings:read"}, body)
+	if resp.Error == nil {
+		t.Fatal("expected a permission error when the key lacks the prompt scope")
+	}
+	if pr.gotTenant != "" {
+		t.Error("the prompt data read must not run when the key lacks its scope")
+	}
 }

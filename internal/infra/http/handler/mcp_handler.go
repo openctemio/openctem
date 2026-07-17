@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	auditdom "github.com/openctemio/api/pkg/domain/audit"
+	pentestdom "github.com/openctemio/api/pkg/domain/pentest"
 	remediationdom "github.com/openctemio/api/pkg/domain/remediation"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
@@ -90,6 +91,22 @@ type mcpAssetReader interface {
 	GetAsset(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, error)
 }
 
+// mcpPentestReader is the narrow read surface the pentest report-writing tools
+// and prompts need. All methods are tenant-scoped; the CAMPAIGN-MEMBERSHIP gate
+// for non-admin MCP keys is applied by the executors (CheckCampaignAccess for
+// campaign-scoped reads; ListAllPentestFindings pushes a membership subquery;
+// per-finding reads route through mcpFindingReader.GetFindingWithScope). This
+// interface itself performs no membership check — callers must gate first.
+type mcpPentestReader interface {
+	CheckCampaignAccess(ctx context.Context, tenantID, campaignID, userID string, isAdmin bool) error
+	GetCampaign(ctx context.Context, tenantID, campaignID string) (*pentestdom.Campaign, error)
+	ListCampaignMembers(ctx context.Context, tenantID, campaignID string) ([]*pentestdom.CampaignMember, error)
+	GetCampaignStats(ctx context.Context, tenantID, campaignID string) (*pentestdom.CampaignStats, error)
+	ListAllPentestFindings(ctx context.Context, tenantID, campaignID, viewerUserID, search string, isAdmin bool, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error)
+	ListCampaignRetests(ctx context.Context, tenantID, campaignID string) ([]*pentestdom.Retest, error)
+	ListTemplates(ctx context.Context, tenantID string, filter pentestdom.TemplateFilter, page pagination.Pagination) (pagination.Result[*pentestdom.Template], error)
+}
+
 // mcpTool is one callable tool: an MCP declaration plus a tenant-scoped executor.
 type mcpTool struct {
 	Name        string
@@ -116,8 +133,10 @@ type MCPHandler struct {
 	groups     mcpGroupReader
 	compliance mcpComplianceReader
 	assets     mcpAssetReader
+	pentest    mcpPentestReader
 	logger     *logger.Logger
 	tools      []mcpTool
+	prompts    []mcpPrompt
 	// audit records every tools/call (success and error). Optional: when nil the
 	// handler behaves identically minus the audit trail, so tests and stub builds
 	// need not provide one.
@@ -132,6 +151,7 @@ func NewMCPHandler(
 	groups mcpGroupReader,
 	compliance mcpComplianceReader,
 	assets mcpAssetReader,
+	pentest mcpPentestReader,
 	log *logger.Logger,
 ) *MCPHandler {
 	h := &MCPHandler{
@@ -141,9 +161,11 @@ func NewMCPHandler(
 		groups:     groups,
 		compliance: compliance,
 		assets:     assets,
+		pentest:    pentest,
 		logger:     log.With("handler", "mcp"),
 	}
 	h.tools = h.buildTools()
+	h.prompts = h.buildPrompts()
 	return h
 }
 
@@ -190,6 +212,10 @@ func (h *MCPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeResult(w, req.ID, h.toolsListResult(r.Context()))
 	case "tools/call":
 		h.handleToolsCall(w, r, req, tenantID)
+	case "prompts/list":
+		h.writeResult(w, req.ID, h.promptsListResult(r.Context()))
+	case "prompts/get":
+		h.handlePromptsGet(w, r, req, tenantID)
 	default:
 		h.writeError(w, req.ID, rpcMethodNotFound, "method not found")
 	}
@@ -198,14 +224,19 @@ func (h *MCPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *MCPHandler) initializeResult() map[string]any {
 	return map[string]any{
 		"protocolVersion": mcpProtocolVersion,
-		"capabilities":    map[string]any{"tools": map[string]any{}},
+		"capabilities": map[string]any{
+			"tools":   map[string]any{},
+			"prompts": map[string]any{},
+		},
 		"serverInfo": map[string]any{
 			"name":    "openctem-mcp",
 			"version": "1.0.0",
 		},
 		"instructions": "Read-only access to this tenant's OpenCTEM CTEM data: " +
 			"findings, KEV/EPSS-prioritized CVEs, attack-path exposure chains, " +
-			"remediation groups (solution families), compliance posture, and assets.",
+			"remediation groups (solution families), compliance posture, assets, and " +
+			"pentest campaigns/findings/retests/templates. Prompts provide pentest " +
+			"report-section templates pre-filled with campaign context for drafting.",
 	}
 }
 
@@ -321,6 +352,40 @@ func (h *MCPHandler) auditToolCall(r *http.Request, tenantID, toolName string, a
 	_ = h.audit.LogEvent(ctx, actx, event)
 }
 
+// auditPromptGet records one MCP prompts/get. Nil-safe like auditToolCall. The
+// args summary is sanitized identically (only id/enum-like scalars kept), so the
+// injected campaign/finding content never lands in the audit trail.
+func (h *MCPHandler) auditPromptGet(r *http.Request, tenantID, promptName string, args json.RawMessage, result auditdom.Result, isError bool) {
+	if h.audit == nil {
+		return
+	}
+	ctx := r.Context()
+	event := auditapp.AuditEvent{
+		Action:       auditdom.ActionMCPPromptGotten,
+		ResourceType: auditdom.ResourceTypeMCPPrompt,
+		ResourceID:   promptName,
+		Result:       result,
+		Severity:     auditdom.SeverityLow,
+		Message:      "MCP prompt fetched: " + promptName,
+		Metadata: map[string]any{
+			"prompt":         promptName,
+			"is_error":       isError,
+			"args":           sanitizeMCPArgs(args),
+			"api_key_id":     middleware.GetAPIKeyID(ctx),
+			"api_key_prefix": middleware.GetAPIKeyPrefix(ctx),
+		},
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   tenantID,
+		ActorID:    middleware.GetUserID(ctx),
+		ActorEmail: middleware.GetUsername(ctx),
+		ActorIP:    auditClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	_ = h.audit.LogEvent(ctx, actx, event)
+}
+
 // mcpAuditSafeArgs is the allowlist of tool-argument keys whose scalar value is
 // safe to record verbatim in the audit trail (ids and enum-like filters). Any
 // other key (e.g. free-text `search`) is recorded present-but-redacted so the
@@ -329,6 +394,8 @@ var mcpAuditSafeArgs = map[string]bool{
 	"id": true, "severity": true, "status": true, "source": true,
 	"exposure": true, "criticality": true, "kev_only": true,
 	"min_epss": true, "limit": true,
+	// pentest report-writing tools/prompts: ids + enum-like filters only.
+	"campaign_id": true, "finding_id": true, "section": true, "category": true,
 }
 
 // sanitizeMCPArgs reduces raw tool arguments to an audit-safe summary: every

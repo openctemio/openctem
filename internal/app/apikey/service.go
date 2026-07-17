@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/api/pkg/crypto"
 	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
+	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -116,6 +117,16 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 	}
 
 	if len(input.Scopes) > 0 {
+		// Reject typo'd / non-existent scopes at mint time. A scope that isn't a
+		// real permission is dead weight at best and a silent least-privilege
+		// misconfiguration at worst (the key would appear to grant access it can
+		// never actually pass HasPermission for). Validated against the single
+		// source of truth, permission.AllPermissions().
+		for _, scope := range input.Scopes {
+			if _, ok := permission.ParsePermission(scope); !ok {
+				return nil, fmt.Errorf("%w: unknown scope %q", shared.ErrValidation, scope)
+			}
+		}
 		key.SetScopes(input.Scopes)
 	}
 

@@ -140,10 +140,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	var mcpHandler *handler.MCPHandler
 	var mcpAuth routes.Middleware
 	if svc.APIKey != nil && svc.Vulnerability != nil && svc.PriorityClassification != nil &&
-		svc.AttackSurface != nil && svc.RemediationGroup != nil && svc.Compliance != nil && svc.Asset != nil {
+		svc.AttackSurface != nil && svc.RemediationGroup != nil && svc.Compliance != nil &&
+		svc.Asset != nil && svc.Pentest != nil {
 		mcpHandler = handler.NewMCPHandler(
 			svc.Vulnerability, svc.PriorityClassification, svc.AttackSurface,
-			svc.RemediationGroup, svc.Compliance, svc.Asset, log,
+			svc.RemediationGroup, svc.Compliance, svc.Asset, svc.Pentest, log,
 		)
 		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
 		mcpHandler.SetAuditService(svc.Audit)

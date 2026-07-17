@@ -242,6 +242,10 @@ const (
 	// MCP actions — read-only Model Context Protocol tool invocations by an
 	// `oct_` API key. Every tools/call is audited (success and error alike).
 	ActionMCPToolCalled Action = "mcp.tool_called"
+	// ActionMCPPromptGotten records a prompts/get: an AI client pulled a report
+	// section template pre-filled with campaign/finding context. Audited because
+	// it reads the same gated pentest data a tools/call does.
+	ActionMCPPromptGotten Action = "mcp.prompt_gotten"
 )
 
 // String returns the string representation of the action.
@@ -305,7 +309,7 @@ func (a Action) IsValid() bool {
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
-		ActionMCPToolCalled:
+		ActionMCPToolCalled, ActionMCPPromptGotten:
 		return true
 	}
 	return false
@@ -367,7 +371,7 @@ func (a Action) Category() string {
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
 		return "pentest_campaign"
-	case ActionMCPToolCalled:
+	case ActionMCPToolCalled, ActionMCPPromptGotten:
 		return "mcp"
 	}
 	return "unknown"
@@ -410,6 +414,7 @@ const (
 	ResourceTypeIngest           ResourceType = "ingest"
 	ResourceTypeAITriage         ResourceType = "ai_triage"
 	ResourceTypeMCPTool          ResourceType = "mcp_tool"
+	ResourceTypeMCPPrompt        ResourceType = "mcp_prompt"
 )
 
 // String returns the string representation of the resource type.
@@ -429,7 +434,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
-		ResourceTypeCampaign, ResourceTypeMCPTool:
+		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt:
 		return true
 	}
 	return false

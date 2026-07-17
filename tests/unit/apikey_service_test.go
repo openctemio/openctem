@@ -305,7 +305,7 @@ func TestCreateAPIKey(t *testing.T) {
 				UserID:        userID.String(),
 				Name:          "Full API Key",
 				Description:   "A detailed description",
-				Scopes:        []string{"read:assets", "write:findings"},
+				Scopes:        []string{"assets:read", "findings:read"},
 				RateLimit:     500,
 				ExpiresInDays: 30,
 				CreatedBy:     createdBy.String(),
@@ -1718,7 +1718,7 @@ func TestAuthenticate_Success(t *testing.T) {
 	created, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(),
 		Name:     "MCP key",
-		Scopes:   []string{"mcp:read"},
+		Scopes:   []string{"findings:read"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
