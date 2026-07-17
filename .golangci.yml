@@ -175,6 +175,7 @@ linters-settings:
     ignore-words:
       - openctem
       - canceled
+      - mitre
 
   prealloc:
     simple: true

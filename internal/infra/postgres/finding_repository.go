@@ -97,7 +97,23 @@ func getRecommendationFromRemediation(r *vulnerability.FindingRemediation) strin
 
 // Create persists a new finding.
 func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.Finding) error {
-	metadata, err := json.Marshal(finding.Metadata())
+	// Merge sourceMetadata INTO metadata for persistence, mirroring Update().
+	// The pentest module stores its fields (steps_to_reproduce, poc_code,
+	// business_impact, owasp_category, mitre_technique_id, cvss_version, etc.)
+	// in sourceMetadata, but the DB has a single `metadata` JSONB column. Without
+	// this merge, all pentest source_metadata is silently dropped on create and
+	// only reappears after the first edit. No-op for scanner findings, which do
+	// not populate sourceMetadata.
+	mergedMeta := finding.Metadata()
+	if mergedMeta == nil {
+		mergedMeta = make(map[string]any)
+	}
+	if sm := finding.SourceMetadata(); sm != nil {
+		for k, v := range sm {
+			mergedMeta[k] = v
+		}
+	}
+	metadata, err := json.Marshal(mergedMeta)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
@@ -126,12 +142,14 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id, created_by
+			remediation, pentest_campaign_id, created_by,
+			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
-			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82)
+			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
+			$83, $84, $85, $86, $87)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -226,6 +244,15 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		nullID(finding.PentestCampaignID()),
 		// Creator (NULL for automated scanner findings, set for manually-authored pentest findings)
 		nullID(finding.CreatedBy()),
+		// Classification columns. Previously omitted from the single-row INSERT, so a
+		// freshly-created pentest/manual finding lost its CVSS score+vector and
+		// CVE/CWE/OWASP until the first edit (Update() persisted them). Sourced from
+		// the same getters Update() and the batch inserter use.
+		nullFloat64(finding.CVSSScore()), // $83
+		nullString(finding.CVSSVector()), // $84
+		nullString(finding.CVEID()),      // $85
+		pq.Array(finding.CWEIDs()),       // $86
+		pq.Array(finding.OWASPIDs()),     // $87
 	)
 
 	if err != nil {
@@ -269,12 +296,14 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id, created_by
+			remediation, pentest_campaign_id, created_by,
+			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
-			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82)
+			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
+			$83, $84, $85, $86, $87)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -369,6 +398,13 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		nullID(finding.PentestCampaignID()),
 		// Creator user ID
 		nullID(finding.CreatedBy()),
+		// Classification columns — mirror Create(); persist CVSS + CVE/CWE/OWASP on
+		// insert so a manually-created finding keeps its scoring without an edit.
+		nullFloat64(finding.CVSSScore()), // $83
+		nullString(finding.CVSSVector()), // $84
+		nullString(finding.CVEID()),      // $85
+		pq.Array(finding.CWEIDs()),       // $86
+		pq.Array(finding.OWASPIDs()),     // $87
 	)
 
 	if err != nil {
@@ -828,9 +864,9 @@ func (r *FindingRepository) GetByIDs(ctx context.Context, tenantID shared.ID, id
 func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.Finding) error {
 	// Merge sourceMetadata INTO metadata for persistence. The pentest module
 	// stores steps_to_reproduce, poc_code, business_impact, etc. in
-	// sourceMetadata, but the DB has a single `metadata` JSONB column.
-	// During Create, this merge happens in the service. During Update, we
-	// need to re-merge here to persist pentest field changes.
+	// sourceMetadata, but the DB has a single `metadata` JSONB column. Both
+	// Create() and Update() perform this same merge so pentest fields persist
+	// through the finding's whole lifecycle.
 	mergedMeta := finding.Metadata()
 	if mergedMeta == nil {
 		mergedMeta = make(map[string]any)
