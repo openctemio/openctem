@@ -43,7 +43,7 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 	// Title block.
 	pdf.SetFont("Helvetica", "B", 22)
 	pdf.SetTextColor(20, 20, 20)
-	pdf.MultiCell(0, 10, tr("Penetration Test Report"), "", "L", false)
+	pdf.MultiCell(0, 10, tr(input.TypeLabel()), "", "L", false)
 	if input.Campaign.Name != "" {
 		pdf.SetFont("Helvetica", "B", 14)
 		pdf.SetTextColor(70, 70, 70)
@@ -99,12 +99,43 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 
 	// Findings.
 	pdf.Ln(4)
-	sectionHeading(pdf, tr, fmt.Sprintf("Findings (%d)", len(input.Findings)))
-	if len(input.Findings) == 0 {
-		bodyText(pdf, tr, "No findings recorded for this campaign.")
+	if input.ShowDetailedFindings() {
+		sectionHeading(pdf, tr, fmt.Sprintf("Findings (%d)", len(input.Findings)))
+		if len(input.Findings) == 0 {
+			bodyText(pdf, tr, "No findings recorded for this campaign.")
+		}
+		for i, f := range input.Findings {
+			renderFinding(pdf, tr, i+1, f, input.IncludePOC)
+		}
+	} else {
+		// Executive summary: compact findings listing, no per-finding detail.
+		sectionHeading(pdf, tr, fmt.Sprintf("Findings Summary (%d)", len(input.Findings)))
+		if len(input.Findings) == 0 {
+			bodyText(pdf, tr, "No findings recorded for this campaign.")
+		}
+		for i, f := range input.Findings {
+			line := fmt.Sprintf("%d. %s  [%s]", i+1, f.Title, strings.ToUpper(f.Severity))
+			if f.CVSSScore > 0 {
+				line += fmt.Sprintf("  CVSS %.1f", f.CVSSScore)
+			}
+			bulletLine(pdf, tr, line)
+		}
 	}
-	for i, f := range input.Findings {
-		renderFinding(pdf, tr, i+1, f, input.IncludePOC)
+
+	// Retest results.
+	if input.ShowRetests() {
+		pdf.Ln(4)
+		sectionHeading(pdf, tr, fmt.Sprintf("Retest Results (%d)", len(input.Retests)))
+		for _, rt := range input.Retests {
+			line := fmt.Sprintf("%s  [%s]  -  %s", rt.FindingTitle, strings.ToUpper(rt.FindingSeverity), strings.ToUpper(rt.Status))
+			if rt.TestedAt != "" {
+				line += "  (" + rt.TestedAt + ")"
+			}
+			bulletLine(pdf, tr, line)
+			if strings.TrimSpace(rt.Notes) != "" {
+				bodyText(pdf, tr, rt.Notes)
+			}
+		}
 	}
 
 	var buf bytes.Buffer
