@@ -664,6 +664,7 @@ func (s *FindingActionsService) AutoAssignToOwners(
 	}
 
 	filter.TenantID = &tid
+	filter.DataScopeUserID = &aid // SEC-01: enforce data scope (mirror BulkVerify/RejectByFilter)
 	result := &AutoAssignToOwnersResult{ByOwner: make(map[string]int)}
 
 	const batchSize = 100
@@ -717,7 +718,6 @@ func (s *FindingActionsService) AutoAssignToOwners(
 		}
 	}
 
-	_ = aid // suppress unused
 	return result, nil
 }
 

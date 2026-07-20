@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -31,6 +32,23 @@ func NewScanSessionHandler(svc *app.ScanSessionService, v *validator.Validator, 
 		service:   svc,
 		validator: v,
 		logger:    log,
+	}
+}
+
+// handleServiceError maps service/domain errors to the correct HTTP status.
+// Without this, not-found and validation errors were reported as 500, breaking
+// the documented contract and masking client errors as server errors.
+func (h *ScanSessionHandler) handleServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("Scan session").WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(cleanErrorMessage(err, "Invalid request")).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden("").WriteJSON(w)
+	default:
+		h.logger.Error("scan session service error", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
 	}
 }
 
@@ -153,8 +171,7 @@ func (h *ScanSessionHandler) RegisterScan(w http.ResponseWriter, r *http.Request
 		Branch:         req.Branch,
 	})
 	if err != nil {
-		h.logger.Error("failed to register scan", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.handleServiceError(w, err)
 		return
 	}
 
@@ -226,8 +243,7 @@ func (h *ScanSessionHandler) UpdateScan(w http.ResponseWriter, r *http.Request) 
 		FindingsBySeverity: req.FindingsBySeverity,
 	})
 	if err != nil {
-		h.logger.Error("failed to update scan", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.handleServiceError(w, err)
 		return
 	}
 
@@ -272,8 +288,7 @@ func (h *ScanSessionHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 
 	session, err := h.service.GetScan(r.Context(), tenantID, scanID)
 	if err != nil {
-		h.logger.Error("failed to get scan", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.handleServiceError(w, err)
 		return
 	}
 
@@ -321,8 +336,7 @@ func (h *ScanSessionHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.ListScanSessions(r.Context(), tenantID, input, page)
 	if err != nil {
-		h.logger.Error("failed to list scan sessions", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.handleServiceError(w, err)
 		return
 	}
 
@@ -363,8 +377,7 @@ func (h *ScanSessionHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	session, err := h.service.GetScan(r.Context(), tenantID, scanID)
 	if err != nil {
-		h.logger.Error("failed to get scan session", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.handleServiceError(w, err)
 		return
 	}
 
@@ -402,8 +415,7 @@ func (h *ScanSessionHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.service.GetStats(r.Context(), tenantID, since)
 	if err != nil {
-		h.logger.Error("failed to get stats", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.handleServiceError(w, err)
 		return
 	}
 
@@ -436,8 +448,7 @@ func (h *ScanSessionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	err = h.service.DeleteScan(r.Context(), tenantID, scanID)
 	if err != nil {
-		h.logger.Error("failed to delete scan session", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
+		h.handleServiceError(w, err)
 		return
 	}
 

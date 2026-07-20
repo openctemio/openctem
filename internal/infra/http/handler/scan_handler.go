@@ -416,9 +416,18 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	// Batch-resolve creator names in one query to avoid an N+1 (previously each
+	// row triggered its own users lookup inside toScanResponse).
+	nameByID := h.resolveScanCreatorNames(ctx, result.Data)
 	items := make([]*ScanDetailResponse, len(result.Data))
 	for i, s := range result.Data {
-		items[i] = h.toScanResponse(ctx, s)
+		var name *string
+		if s.CreatedBy != nil {
+			if n, ok := nameByID[s.CreatedBy.String()]; ok {
+				name = &n
+			}
+		}
+		items[i] = buildScanResponse(s, name)
 	}
 
 	resp := map[string]any{
@@ -991,8 +1000,61 @@ func (h *ScanHandler) GetScanRun(w http.ResponseWriter, r *http.Request) {
 
 // --- Conversion Helpers ---
 
-// toScanResponse converts a domain scan to API response, enriching with user name if available.
+// toScanResponse converts a domain scan to API response, enriching with the
+// creator's name via a single per-scan lookup. Used by single-item endpoints.
+// List endpoints must NOT call this in a loop (N+1) — use buildScanResponse with
+// a pre-resolved name map instead (see ListScans / resolveScanCreatorNames).
 func (h *ScanHandler) toScanResponse(ctx context.Context, s *scan.Scan) *ScanDetailResponse {
+	var createdByName *string
+	if s.CreatedBy != nil && h.userRepo != nil {
+		if u, err := h.userRepo.GetByID(ctx, *s.CreatedBy); err == nil && u != nil {
+			name := u.Name()
+			createdByName = &name
+		}
+	}
+	return buildScanResponse(s, createdByName)
+}
+
+// resolveScanCreatorNames batch-loads creator display names for a page of scans
+// in a single query, returning an id→name map. Avoids the N+1 that a per-row
+// GetByID inside the response loop would cause on GET /scans.
+func (h *ScanHandler) resolveScanCreatorNames(ctx context.Context, scans []*scan.Scan) map[string]string {
+	if h.userRepo == nil || len(scans) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(scans))
+	ids := make([]shared.ID, 0, len(scans))
+	for _, s := range scans {
+		if s.CreatedBy == nil {
+			continue
+		}
+		key := s.CreatedBy.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		ids = append(ids, *s.CreatedBy)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	users, err := h.userRepo.GetByIDs(ctx, ids)
+	if err != nil {
+		h.logger.Warn("failed to batch-resolve scan creator names", "error", err)
+		return nil
+	}
+	nameByID := make(map[string]string, len(users))
+	for _, u := range users {
+		if u != nil {
+			nameByID[u.ID().String()] = u.Name()
+		}
+	}
+	return nameByID
+}
+
+// buildScanResponse converts a domain scan to API response using a pre-resolved
+// creator name (nil = unknown/omitted). Pure — no DB access.
+func buildScanResponse(s *scan.Scan, createdByName *string) *ScanDetailResponse {
 	// Handle nullable AssetGroupID
 	assetGroupID := ""
 	if !s.AssetGroupID.IsZero() {
@@ -1071,14 +1133,7 @@ func (h *ScanHandler) toScanResponse(ctx context.Context, s *scan.Scan) *ScanDet
 	if s.CreatedBy != nil {
 		cb := s.CreatedBy.String()
 		resp.CreatedBy = &cb
-
-		// Lookup user name if userRepo is available
-		if h.userRepo != nil {
-			if u, err := h.userRepo.GetByID(ctx, *s.CreatedBy); err == nil && u != nil {
-				name := u.Name()
-				resp.CreatedByName = &name
-			}
-		}
+		resp.CreatedByName = createdByName
 	}
 
 	return resp
