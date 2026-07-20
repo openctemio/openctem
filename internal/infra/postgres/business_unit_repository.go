@@ -25,6 +25,7 @@ func NewBusinessUnitRepository(db *DB) *BusinessUnitRepository {
 }
 
 const buSelectCols = `id, tenant_id, name, description, owner_name, owner_email,
+	criticality, risk_tolerance, parent_id,
 	asset_count, finding_count, avg_risk_score, critical_finding_count,
 	tags, created_at, updated_at`
 
@@ -33,12 +34,15 @@ func (r *BusinessUnitRepository) scanBU(scan func(dest ...any) error) (*business
 		id, tenantID                        string
 		name, desc                          string
 		ownerName, ownerEmail               sql.NullString
+		criticality, riskTolerance          string
+		parentID                            sql.NullString
 		assetCount, findingCount, critCount int
 		avgRisk                             float64
 		tags                                pq.StringArray
 		createdAt, updatedAt                time.Time
 	)
 	err := scan(&id, &tenantID, &name, &desc, &ownerName, &ownerEmail,
+		&criticality, &riskTolerance, &parentID,
 		&assetCount, &findingCount, &avgRisk, &critCount,
 		&tags, &createdAt, &updatedAt)
 	if err != nil {
@@ -46,20 +50,30 @@ func (r *BusinessUnitRepository) scanBU(scan func(dest ...any) error) (*business
 	}
 	pid, _ := shared.IDFromString(id)
 	ptid, _ := shared.IDFromString(tenantID)
+	var parent *shared.ID
+	if parentID.Valid && parentID.String != "" {
+		if pp, perr := shared.IDFromString(parentID.String); perr == nil {
+			parent = &pp
+		}
+	}
 	return businessunit.ReconstituteBusinessUnit(
 		pid, ptid, name, desc, ownerName.String, ownerEmail.String,
+		businessunit.Criticality(criticality), businessunit.RiskTolerance(riskTolerance), parent,
 		assetCount, findingCount, avgRisk, critCount,
 		[]string(tags), createdAt, updatedAt,
 	), nil
 }
 
 func (r *BusinessUnitRepository) Create(ctx context.Context, bu *businessunit.BusinessUnit) error {
-	query := `INSERT INTO business_units (id, tenant_id, name, description, owner_name, owner_email, tags, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
+	query := `INSERT INTO business_units
+		(id, tenant_id, name, description, owner_name, owner_email,
+		 criticality, risk_tolerance, parent_id, tags, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
 	_, err := r.db.ExecContext(ctx, query,
 		bu.ID().String(), bu.TenantID().String(), bu.Name(), bu.Description(),
-		bu.OwnerName(), bu.OwnerEmail(), pq.StringArray(bu.Tags()),
-		bu.CreatedAt(), bu.UpdatedAt())
+		bu.OwnerName(), bu.OwnerEmail(),
+		bu.Criticality().String(), bu.RiskTolerance().String(), nullableID(bu.ParentID()),
+		pq.StringArray(bu.Tags()), bu.CreatedAt(), bu.UpdatedAt())
 	if err != nil {
 		return fmt.Errorf("failed to create business unit: %w", err)
 	}
@@ -80,11 +94,13 @@ func (r *BusinessUnitRepository) GetByID(ctx context.Context, tenantID, id share
 
 func (r *BusinessUnitRepository) Update(ctx context.Context, bu *businessunit.BusinessUnit) error {
 	query := `UPDATE business_units SET name=$3, description=$4, owner_name=$5, owner_email=$6,
-		asset_count=$7, finding_count=$8, avg_risk_score=$9, critical_finding_count=$10,
-		tags=$11, updated_at=$12 WHERE tenant_id=$1 AND id=$2`
+		criticality=$7, risk_tolerance=$8, parent_id=$9,
+		asset_count=$10, finding_count=$11, avg_risk_score=$12, critical_finding_count=$13,
+		tags=$14, updated_at=$15 WHERE tenant_id=$1 AND id=$2`
 	_, err := r.db.ExecContext(ctx, query,
 		bu.TenantID().String(), bu.ID().String(),
 		bu.Name(), bu.Description(), bu.OwnerName(), bu.OwnerEmail(),
+		bu.Criticality().String(), bu.RiskTolerance().String(), nullableID(bu.ParentID()),
 		bu.AssetCount(), bu.FindingCount(), bu.AvgRiskScore(), bu.CriticalFindingCount(),
 		pq.StringArray(bu.Tags()), bu.UpdatedAt())
 	if err != nil {

@@ -2,6 +2,7 @@ package asset
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	businessunitdom "github.com/openctemio/api/pkg/domain/businessunit"
@@ -23,14 +24,19 @@ func NewBusinessUnitService(repo businessunitdom.Repository, assetChecker assetT
 	return &BusinessUnitService{repo: repo, assetChecker: assetChecker, logger: log}
 }
 
-// CreateBusinessUnitInput holds input for creating a BU.
+// CreateBusinessUnitInput holds input for creating a BU. Criticality,
+// RiskTolerance and ParentID are optional (nil = use default / none); an
+// empty ParentID string clears the parent.
 type CreateBusinessUnitInput struct {
-	TenantID    string
-	Name        string
-	Description string
-	OwnerName   string
-	OwnerEmail  string
-	Tags        []string
+	TenantID      string
+	Name          string
+	Description   string
+	OwnerName     string
+	OwnerEmail    string
+	Criticality   *string
+	RiskTolerance *string
+	ParentID      *string
+	Tags          []string
 }
 
 // Create creates a new business unit.
@@ -45,11 +51,90 @@ func (s *BusinessUnitService) Create(ctx context.Context, input CreateBusinessUn
 	}
 	bu.Update(input.Name, input.Description, input.OwnerName, input.OwnerEmail)
 	bu.SetTags(input.Tags)
+	if err := applyCriticality(bu, input.Criticality); err != nil {
+		return nil, err
+	}
+	if err := applyRiskTolerance(bu, input.RiskTolerance); err != nil {
+		return nil, err
+	}
+	if err := s.applyParent(ctx, tid, bu, input.ParentID); err != nil {
+		return nil, err
+	}
 	if err := s.repo.Create(ctx, bu); err != nil {
 		return nil, fmt.Errorf("failed to create business unit: %w", err)
 	}
 	return bu, nil
 }
+
+// applyCriticality sets criticality from an optional string (nil = leave as-is).
+func applyCriticality(bu *businessunitdom.BusinessUnit, val *string) error {
+	if val == nil || *val == "" {
+		return nil
+	}
+	c, ok := businessunitdom.ParseCriticality(*val)
+	if !ok {
+		return fmt.Errorf("%w: invalid criticality %q", shared.ErrValidation, *val)
+	}
+	return bu.SetCriticality(c)
+}
+
+// applyRiskTolerance sets risk tolerance from an optional string (nil = leave as-is).
+func applyRiskTolerance(bu *businessunitdom.BusinessUnit, val *string) error {
+	if val == nil || *val == "" {
+		return nil
+	}
+	t, ok := businessunitdom.ParseRiskTolerance(*val)
+	if !ok {
+		return fmt.Errorf("%w: invalid risk_tolerance %q", shared.ErrValidation, *val)
+	}
+	return bu.SetRiskTolerance(t)
+}
+
+// applyParent resolves and validates an optional parent_id. nil = leave
+// unchanged; empty string = clear the parent; otherwise the referenced BU must
+// exist within the same tenant, must not be the unit itself, and must not
+// introduce a cycle in the hierarchy.
+func (s *BusinessUnitService) applyParent(ctx context.Context, tid shared.ID, bu *businessunitdom.BusinessUnit, val *string) error {
+	if val == nil {
+		return nil
+	}
+	if *val == "" {
+		return bu.SetParent(nil)
+	}
+	pid, err := shared.IDFromString(*val)
+	if err != nil {
+		return fmt.Errorf("%w: invalid parent_id", shared.ErrValidation)
+	}
+	if pid == bu.ID() {
+		return fmt.Errorf("%w: a business unit cannot be its own parent", shared.ErrValidation)
+	}
+	// Same-tenant enforcement: GetByID is tenant-scoped, so a cross-tenant or
+	// bogus parent simply is not found → reject as a validation error.
+	parent, err := s.repo.GetByID(ctx, tid, pid)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return fmt.Errorf("%w: parent business unit not found in this tenant", shared.ErrValidation)
+		}
+		return fmt.Errorf("failed to resolve parent business unit: %w", err)
+	}
+	// Cycle guard: walk the prospective parent's ancestor chain; if this unit
+	// appears, linking would create a cycle.
+	cursor := parent
+	for hops := 0; cursor != nil && cursor.ParentID() != nil && hops < maxHierarchyDepth; hops++ {
+		if *cursor.ParentID() == bu.ID() {
+			return fmt.Errorf("%w: parent assignment would create a hierarchy cycle", shared.ErrValidation)
+		}
+		next, err := s.repo.GetByID(ctx, tid, *cursor.ParentID())
+		if err != nil {
+			break // broken/inaccessible ancestor — nothing more to check
+		}
+		cursor = next
+	}
+	return bu.SetParent(&pid)
+}
+
+// maxHierarchyDepth bounds the ancestor walk when detecting cycles.
+const maxHierarchyDepth = 64
 
 // Get retrieves a BU.
 func (s *BusinessUnitService) Get(ctx context.Context, tenantID, buID string) (*businessunitdom.BusinessUnit, error) {
@@ -65,15 +150,20 @@ func (s *BusinessUnitService) List(ctx context.Context, tenantID string, filter 
 	return s.repo.List(ctx, filter, page)
 }
 
-// UpdateBusinessUnitInput holds input for updating a BU.
+// UpdateBusinessUnitInput holds input for updating a BU. Criticality,
+// RiskTolerance and ParentID are optional (nil = leave unchanged); an empty
+// ParentID string clears the parent.
 type UpdateBusinessUnitInput struct {
-	TenantID    string
-	ID          string
-	Name        string
-	Description string
-	OwnerName   string
-	OwnerEmail  string
-	Tags        []string
+	TenantID      string
+	ID            string
+	Name          string
+	Description   string
+	OwnerName     string
+	OwnerEmail    string
+	Criticality   *string
+	RiskTolerance *string
+	ParentID      *string
+	Tags          []string
 }
 
 // Update updates an existing business unit.
@@ -92,6 +182,15 @@ func (s *BusinessUnitService) Update(ctx context.Context, input UpdateBusinessUn
 	}
 	bu.Update(input.Name, input.Description, input.OwnerName, input.OwnerEmail)
 	bu.SetTags(input.Tags)
+	if err := applyCriticality(bu, input.Criticality); err != nil {
+		return nil, err
+	}
+	if err := applyRiskTolerance(bu, input.RiskTolerance); err != nil {
+		return nil, err
+	}
+	if err := s.applyParent(ctx, tid, bu, input.ParentID); err != nil {
+		return nil, err
+	}
 	if err := s.repo.Update(ctx, bu); err != nil {
 		return nil, fmt.Errorf("failed to update business unit: %w", err)
 	}

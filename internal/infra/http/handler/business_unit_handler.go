@@ -66,7 +66,9 @@ func (h *BusinessUnitHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	bu, err := h.service.Create(r.Context(), app.CreateBusinessUnitInput{
 		TenantID: tenantID, Name: req.Name, Description: req.Description,
-		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail, Tags: req.Tags,
+		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail,
+		Criticality: req.Criticality, RiskTolerance: req.RiskTolerance, ParentID: req.ParentID,
+		Tags: req.Tags,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -97,7 +99,9 @@ func (h *BusinessUnitHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	bu, err := h.service.Update(r.Context(), app.UpdateBusinessUnitInput{
 		TenantID: tenantID, ID: buID, Name: req.Name, Description: req.Description,
-		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail, Tags: req.Tags,
+		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail,
+		Criticality: req.Criticality, RiskTolerance: req.RiskTolerance, ParentID: req.ParentID,
+		Tags: req.Tags,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -159,11 +163,18 @@ func (h *BusinessUnitHandler) handleError(w http.ResponseWriter, err error) {
 }
 
 type CreateBURequest struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	OwnerName   string   `json:"owner_name"`
-	OwnerEmail  string   `json:"owner_email"`
-	Tags        []string `json:"tags"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	OwnerName   string `json:"owner_name"`
+	OwnerEmail  string `json:"owner_email"`
+	// Optional. Pointer semantics: nil (omitted) leaves the field at its
+	// default/current value. Criticality: critical|high|medium|low.
+	// RiskTolerance: low|medium|high. ParentID: a same-tenant business_unit id,
+	// or "" to clear the parent.
+	Criticality   *string  `json:"criticality"`
+	RiskTolerance *string  `json:"risk_tolerance"`
+	ParentID      *string  `json:"parent_id"`
+	Tags          []string `json:"tags"`
 }
 
 type BUResponse struct {
@@ -172,6 +183,9 @@ type BUResponse struct {
 	Description          string    `json:"description"`
 	OwnerName            string    `json:"owner_name,omitempty"`
 	OwnerEmail           string    `json:"owner_email,omitempty"`
+	Criticality          string    `json:"criticality"`
+	RiskTolerance        string    `json:"risk_tolerance"`
+	ParentID             *string   `json:"parent_id"`
 	AssetCount           int       `json:"asset_count"`
 	FindingCount         int       `json:"finding_count"`
 	AvgRiskScore         float64   `json:"avg_risk_score"`
@@ -182,9 +196,16 @@ type BUResponse struct {
 }
 
 func toBUResp(bu *businessunit.BusinessUnit) BUResponse {
+	var parentID *string
+	if pid := bu.ParentID(); pid != nil {
+		s := pid.String()
+		parentID = &s
+	}
 	return BUResponse{
 		ID: bu.ID().String(), Name: bu.Name(), Description: bu.Description(),
 		OwnerName: bu.OwnerName(), OwnerEmail: bu.OwnerEmail(),
+		Criticality: bu.Criticality().String(), RiskTolerance: bu.RiskTolerance().String(),
+		ParentID:   parentID,
 		AssetCount: bu.AssetCount(), FindingCount: bu.FindingCount(),
 		AvgRiskScore: bu.AvgRiskScore(), CriticalFindingCount: bu.CriticalFindingCount(),
 		Tags: bu.Tags(), CreatedAt: bu.CreatedAt(), UpdatedAt: bu.UpdatedAt(),

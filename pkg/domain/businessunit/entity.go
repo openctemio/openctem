@@ -18,6 +18,9 @@ type BusinessUnit struct {
 	description          string
 	ownerName            string
 	ownerEmail           string
+	criticality          Criticality
+	riskTolerance        RiskTolerance
+	parentID             *shared.ID
 	assetCount           int
 	findingCount         int
 	avgRiskScore         float64
@@ -27,7 +30,7 @@ type BusinessUnit struct {
 	updatedAt            time.Time
 }
 
-// NewBusinessUnit creates a new business unit.
+// NewBusinessUnit creates a new business unit with sensible defaults.
 func NewBusinessUnit(tenantID shared.ID, name string) (*BusinessUnit, error) {
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
@@ -35,6 +38,7 @@ func NewBusinessUnit(tenantID shared.ID, name string) (*BusinessUnit, error) {
 	now := time.Now()
 	return &BusinessUnit{
 		id: shared.NewID(), tenantID: tenantID, name: name,
+		criticality: CriticalityMedium, riskTolerance: RiskToleranceMedium,
 		tags: []string{}, createdAt: now, updatedAt: now,
 	}, nil
 }
@@ -42,12 +46,14 @@ func NewBusinessUnit(tenantID shared.ID, name string) (*BusinessUnit, error) {
 // ReconstituteBusinessUnit creates from persisted data.
 func ReconstituteBusinessUnit(
 	id, tenantID shared.ID, name, description, ownerName, ownerEmail string,
+	criticality Criticality, riskTolerance RiskTolerance, parentID *shared.ID,
 	assetCount, findingCount int, avgRiskScore float64, criticalFindingCount int,
 	tags []string, createdAt, updatedAt time.Time,
 ) *BusinessUnit {
 	return &BusinessUnit{
 		id: id, tenantID: tenantID, name: name, description: description,
 		ownerName: ownerName, ownerEmail: ownerEmail,
+		criticality: criticality, riskTolerance: riskTolerance, parentID: parentID,
 		assetCount: assetCount, findingCount: findingCount,
 		avgRiskScore: avgRiskScore, criticalFindingCount: criticalFindingCount,
 		tags: tags, createdAt: createdAt, updatedAt: updatedAt,
@@ -55,19 +61,22 @@ func ReconstituteBusinessUnit(
 }
 
 // Getters
-func (b *BusinessUnit) ID() shared.ID             { return b.id }
-func (b *BusinessUnit) TenantID() shared.ID       { return b.tenantID }
-func (b *BusinessUnit) Name() string              { return b.name }
-func (b *BusinessUnit) Description() string       { return b.description }
-func (b *BusinessUnit) OwnerName() string         { return b.ownerName }
-func (b *BusinessUnit) OwnerEmail() string        { return b.ownerEmail }
-func (b *BusinessUnit) AssetCount() int           { return b.assetCount }
-func (b *BusinessUnit) FindingCount() int         { return b.findingCount }
-func (b *BusinessUnit) AvgRiskScore() float64     { return b.avgRiskScore }
-func (b *BusinessUnit) CriticalFindingCount() int { return b.criticalFindingCount }
-func (b *BusinessUnit) Tags() []string            { return b.tags }
-func (b *BusinessUnit) CreatedAt() time.Time      { return b.createdAt }
-func (b *BusinessUnit) UpdatedAt() time.Time      { return b.updatedAt }
+func (b *BusinessUnit) ID() shared.ID                { return b.id }
+func (b *BusinessUnit) TenantID() shared.ID          { return b.tenantID }
+func (b *BusinessUnit) Name() string                 { return b.name }
+func (b *BusinessUnit) Description() string          { return b.description }
+func (b *BusinessUnit) OwnerName() string            { return b.ownerName }
+func (b *BusinessUnit) OwnerEmail() string           { return b.ownerEmail }
+func (b *BusinessUnit) Criticality() Criticality     { return b.criticality }
+func (b *BusinessUnit) RiskTolerance() RiskTolerance { return b.riskTolerance }
+func (b *BusinessUnit) ParentID() *shared.ID         { return b.parentID }
+func (b *BusinessUnit) AssetCount() int              { return b.assetCount }
+func (b *BusinessUnit) FindingCount() int            { return b.findingCount }
+func (b *BusinessUnit) AvgRiskScore() float64        { return b.avgRiskScore }
+func (b *BusinessUnit) CriticalFindingCount() int    { return b.criticalFindingCount }
+func (b *BusinessUnit) Tags() []string               { return b.tags }
+func (b *BusinessUnit) CreatedAt() time.Time         { return b.createdAt }
+func (b *BusinessUnit) UpdatedAt() time.Time         { return b.updatedAt }
 
 // Update sets mutable fields.
 func (b *BusinessUnit) Update(name, description, ownerName, ownerEmail string) {
@@ -84,6 +93,38 @@ func (b *BusinessUnit) Update(name, description, ownerName, ownerEmail string) {
 func (b *BusinessUnit) SetTags(tags []string) {
 	b.tags = tags
 	b.updatedAt = time.Now()
+}
+
+// SetCriticality validates and sets the business criticality.
+func (b *BusinessUnit) SetCriticality(c Criticality) error {
+	if !c.IsValid() {
+		return fmt.Errorf("%w: invalid criticality %q", shared.ErrValidation, c)
+	}
+	b.criticality = c
+	b.updatedAt = time.Now()
+	return nil
+}
+
+// SetRiskTolerance validates and sets the risk tolerance.
+func (b *BusinessUnit) SetRiskTolerance(t RiskTolerance) error {
+	if !t.IsValid() {
+		return fmt.Errorf("%w: invalid risk_tolerance %q", shared.ErrValidation, t)
+	}
+	b.riskTolerance = t
+	b.updatedAt = time.Now()
+	return nil
+}
+
+// SetParent sets the parent business unit. A unit cannot be its own parent.
+// Same-tenant and cycle enforcement live in the service layer, which has
+// repository access to walk the ancestor chain.
+func (b *BusinessUnit) SetParent(parentID *shared.ID) error {
+	if parentID != nil && *parentID == b.id {
+		return fmt.Errorf("%w: a business unit cannot be its own parent", shared.ErrValidation)
+	}
+	b.parentID = parentID
+	b.updatedAt = time.Now()
+	return nil
 }
 
 // UpdateStats updates cached statistics.
