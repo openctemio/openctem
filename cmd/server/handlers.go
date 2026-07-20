@@ -112,7 +112,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
-	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, log)
+	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
 
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
@@ -269,7 +269,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Simulation: handler.NewSimulationHandler(svc.Simulation, log),
 
 		// Threat Actor Intelligence
-		ThreatActor: handler.NewThreatActorHandler(svc.ThreatActor, log),
+		ThreatActor: handler.NewThreatActorHandler(svc.ThreatActor, v, log),
 
 		// Remediation Campaigns
 		RemediationCampaign: handler.NewRemediationCampaignHandler(svc.RemediationCampaign, log),

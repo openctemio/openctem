@@ -3,28 +3,48 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"github.com/openctemio/api/internal/app/threat"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openctemio/api/internal/app/threat"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/threatactor"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/api/pkg/validator"
 )
 
 // ThreatActorHandler handles threat actor HTTP endpoints.
 type ThreatActorHandler struct {
-	service *threat.ActorService
-	logger  *logger.Logger
+	service   *threat.ActorService
+	validator *validator.Validator
+	logger    *logger.Logger
 }
 
 // NewThreatActorHandler creates a new threat actor handler.
-func NewThreatActorHandler(svc *threat.ActorService, log *logger.Logger) *ThreatActorHandler {
-	return &ThreatActorHandler{service: svc, logger: log}
+func NewThreatActorHandler(svc *threat.ActorService, v *validator.Validator, log *logger.Logger) *ThreatActorHandler {
+	return &ThreatActorHandler{service: svc, validator: v, logger: log}
+}
+
+// decodeAndValidate reads the JSON body into dst and runs struct validation so
+// the `validate:` tags on the request structs are actually enforced. On failure
+// it writes a 400 and returns false, so callers do
+// `if !h.decodeAndValidate(w, r, &req) { return }`.
+func (h *ThreatActorHandler) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return false
+	}
+	if h.validator != nil {
+		if err := h.validator.Validate(dst); err != nil {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return false
+		}
+	}
+	return true
 }
 
 // List lists all threat actors for the tenant.
@@ -67,8 +87,7 @@ func (h *ThreatActorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	var req CreateThreatActorRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
+	if !h.decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -136,18 +155,18 @@ func (h *ThreatActorHandler) handleError(w http.ResponseWriter, err error) {
 // ─── Request/Response Types ───
 
 type CreateThreatActorRequest struct {
-	Name             string            `json:"name"`
-	Aliases          []string          `json:"aliases"`
-	Description      string            `json:"description"`
-	ActorType        string            `json:"actor_type"`
-	Sophistication   string            `json:"sophistication"`
-	Motivation       string            `json:"motivation"`
-	CountryOfOrigin  string            `json:"country_of_origin"`
-	MitreGroupID     string            `json:"mitre_group_id"`
-	TTPs             []threatactor.TTP `json:"ttps"`
-	TargetIndustries []string          `json:"target_industries"`
-	TargetRegions    []string          `json:"target_regions"`
-	Tags             []string          `json:"tags"`
+	Name             string            `json:"name" validate:"required,min=1,max=255"`
+	Aliases          []string          `json:"aliases" validate:"omitempty,max=50,dive,max=255"`
+	Description      string            `json:"description" validate:"omitempty,max=5000"`
+	ActorType        string            `json:"actor_type" validate:"omitempty,oneof=apt cybercrime hacktivist insider nation_state unknown"`
+	Sophistication   string            `json:"sophistication" validate:"omitempty,max=100"`
+	Motivation       string            `json:"motivation" validate:"omitempty,max=255"`
+	CountryOfOrigin  string            `json:"country_of_origin" validate:"omitempty,max=100"`
+	MitreGroupID     string            `json:"mitre_group_id" validate:"omitempty,max=50"`
+	TTPs             []threatactor.TTP `json:"ttps" validate:"omitempty,max=500"`
+	TargetIndustries []string          `json:"target_industries" validate:"omitempty,max=100,dive,max=255"`
+	TargetRegions    []string          `json:"target_regions" validate:"omitempty,max=100,dive,max=255"`
+	Tags             []string          `json:"tags" validate:"omitempty,max=100,dive,max=100"`
 }
 
 type ThreatActorResponse struct {

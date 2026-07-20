@@ -186,39 +186,68 @@ func (s *ExposureService) IngestExposure(ctx context.Context, input CreateExposu
 	return event, nil
 }
 
-// BulkIngestExposures ingests multiple exposure events.
+// IngestItemError describes a single input item that was dropped during bulk
+// ingest because it failed enum/asset validation. Index is the item's position
+// in the request slice; Reason is a short human-readable cause.
+type IngestItemError struct {
+	Index  int    `json:"index"`
+	Reason string `json:"reason"`
+}
+
+// BulkIngestResult carries the successfully-ingested events plus the per-item
+// validation failures that were partial-success dropped. This lets callers
+// report what was rejected instead of silently returning a lower count.
+type BulkIngestResult struct {
+	Events   []*exposuredom.ExposureEvent
+	Failures []IngestItemError
+}
+
+// BulkIngestExposures ingests multiple exposure events, returning only the
+// successfully-created events. Retained for callers/tests that don't need the
+// per-item failure report; delegates to BulkIngestExposuresReport.
 // OPTIMIZED: Uses batch upsert instead of individual upserts to reduce N+1 queries.
 func (s *ExposureService) BulkIngestExposures(ctx context.Context, inputs []CreateExposureInput) ([]*exposuredom.ExposureEvent, error) {
+	res, err := s.BulkIngestExposuresReport(ctx, inputs)
+	if err != nil {
+		return nil, err
+	}
+	return res.Events, nil
+}
+
+// BulkIngestExposuresReport ingests multiple exposure events with partial
+// success: items that fail enum/asset validation are dropped (not fatal), and
+// reported back in Result.Failures so the caller can surface them.
+func (s *ExposureService) BulkIngestExposuresReport(ctx context.Context, inputs []CreateExposureInput) (BulkIngestResult, error) {
 	if len(inputs) == 0 {
-		return []*exposuredom.ExposureEvent{}, nil
+		return BulkIngestResult{Events: []*exposuredom.ExposureEvent{}}, nil
 	}
 
 	events := make([]*exposuredom.ExposureEvent, 0, len(inputs))
-	var validationErrors []error
+	var failures []IngestItemError
 
 	// First pass: validate and create event objects
-	for _, input := range inputs {
+	for i, input := range inputs {
 		tenantID, err := shared.IDFromString(input.TenantID)
 		if err != nil {
-			validationErrors = append(validationErrors, fmt.Errorf("invalid tenant ID: %w", err))
+			failures = append(failures, IngestItemError{Index: i, Reason: "invalid tenant ID"})
 			continue
 		}
 
 		eventType, err := exposuredom.ParseEventType(input.EventType)
 		if err != nil {
-			validationErrors = append(validationErrors, fmt.Errorf("invalid event type: %w", err))
+			failures = append(failures, IngestItemError{Index: i, Reason: "invalid event type"})
 			continue
 		}
 
 		severity, err := exposuredom.ParseSeverity(input.Severity)
 		if err != nil {
-			validationErrors = append(validationErrors, fmt.Errorf("invalid severity: %w", err))
+			failures = append(failures, IngestItemError{Index: i, Reason: "invalid severity"})
 			continue
 		}
 
 		event, err := exposuredom.NewExposureEvent(tenantID, eventType, severity, input.Title, input.Source, input.Details)
 		if err != nil {
-			validationErrors = append(validationErrors, err)
+			failures = append(failures, IngestItemError{Index: i, Reason: err.Error()})
 			continue
 		}
 
@@ -229,7 +258,7 @@ func (s *ExposureService) BulkIngestExposures(ctx context.Context, inputs []Crea
 		if input.AssetID != "" {
 			id, err := shared.IDFromString(input.AssetID)
 			if err != nil {
-				validationErrors = append(validationErrors, fmt.Errorf("invalid asset ID: %w", err))
+				failures = append(failures, IngestItemError{Index: i, Reason: "invalid asset ID"})
 				continue
 			}
 			event.SetAssetID(&id)
@@ -238,21 +267,21 @@ func (s *ExposureService) BulkIngestExposures(ctx context.Context, inputs []Crea
 		events = append(events, event)
 	}
 
-	if len(validationErrors) > 0 {
+	if len(failures) > 0 {
 		s.logger.Warn("some exposure events failed validation",
 			"total", len(inputs),
 			"valid", len(events),
-			"invalid", len(validationErrors))
+			"invalid", len(failures))
 	}
 
 	// Second pass: batch upsert all valid events
 	if len(events) > 0 {
 		if err := s.repo.BulkUpsert(ctx, events); err != nil {
-			return nil, fmt.Errorf("failed to bulk ingest exposure events: %w", err)
+			return BulkIngestResult{}, fmt.Errorf("failed to bulk ingest exposure events: %w", err)
 		}
 	}
 
-	return events, nil
+	return BulkIngestResult{Events: events, Failures: failures}, nil
 }
 
 // GetExposure retrieves an exposure event by ID.

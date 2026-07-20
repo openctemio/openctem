@@ -79,6 +79,14 @@ type BulkIngestRequest struct {
 	Exposures []CreateExposureRequest `json:"exposures" validate:"required,min=1,max=1000,dive"`
 }
 
+// BulkIngestError reports a single exposure item that was dropped during bulk
+// ingest because it failed enum/asset validation. Index is the item's position
+// in the request's exposures array.
+type BulkIngestError struct {
+	Index  int    `json:"index"`
+	Reason string `json:"reason"`
+}
+
 // StateHistoryResponse represents a state history entry in API responses.
 type StateHistoryResponse struct {
 	ID            string            `json:"id"`
@@ -411,15 +419,23 @@ func (h *ExposureHandler) BulkIngest(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	events, err := h.service.BulkIngestExposures(r.Context(), inputs)
+	result, err := h.service.BulkIngestExposuresReport(r.Context(), inputs)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	items := make([]ExposureResponse, 0, len(events))
-	for _, e := range events {
+	items := make([]ExposureResponse, 0, len(result.Events))
+	for _, e := range result.Events {
 		items = append(items, toExposureResponse(e))
+	}
+
+	// Partial-success: items that failed enum/asset validation are dropped
+	// (not fatal — this batch path intentionally returns 201). Surface which
+	// items were rejected so clients aren't left guessing at a lower count.
+	errorItems := make([]BulkIngestError, 0, len(result.Failures))
+	for _, f := range result.Failures {
+		errorItems = append(errorItems, BulkIngestError{Index: f.Index, Reason: f.Reason})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -427,6 +443,8 @@ func (h *ExposureHandler) BulkIngest(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ingested": len(items),
 		"items":    items,
+		"failed":   len(errorItems),
+		"errors":   errorItems,
 	})
 }
 

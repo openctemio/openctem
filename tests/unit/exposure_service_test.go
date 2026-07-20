@@ -969,6 +969,54 @@ func TestExposureService_BulkIngestExposures_RepoError(t *testing.T) {
 	}
 }
 
+func TestExposureService_BulkIngestExposuresReport_ReportsFailures(t *testing.T) {
+	svc, repo, _ := newExposureTestService()
+	tenantID := shared.NewID()
+
+	inputs := []app.CreateExposureInput{
+		validCreateExposureInput(tenantID.String()),                                                             // index 0 — valid
+		{TenantID: tenantID.String(), EventType: "bogus", Severity: "high", Title: "Bad Type", Source: "test"},  // index 1 — invalid event type
+		{TenantID: tenantID.String(), EventType: "port_open", Severity: "bogus", Title: "Bad Sev", Source: "t"}, // index 2 — invalid severity
+	}
+	inputs[0].Title = "Valid Exposure"
+
+	res, err := svc.BulkIngestExposuresReport(context.Background(), inputs)
+	if err != nil {
+		t.Fatalf("expected no error for partial success, got %v", err)
+	}
+
+	if len(res.Events) != 1 {
+		t.Errorf("expected 1 ingested event, got %d", len(res.Events))
+	}
+	if len(res.Failures) != 2 {
+		t.Fatalf("expected 2 failures, got %d", len(res.Failures))
+	}
+	if res.Failures[0].Index != 1 {
+		t.Errorf("expected first failure index 1, got %d", res.Failures[0].Index)
+	}
+	if res.Failures[1].Index != 2 {
+		t.Errorf("expected second failure index 2, got %d", res.Failures[1].Index)
+	}
+	if res.Failures[0].Reason == "" || res.Failures[1].Reason == "" {
+		t.Error("expected non-empty failure reasons")
+	}
+	if repo.bulkUpsertCalls != 1 {
+		t.Errorf("expected 1 BulkUpsert call, got %d", repo.bulkUpsertCalls)
+	}
+}
+
+func TestExposureService_BulkIngestExposuresReport_EmptyHasNoFailures(t *testing.T) {
+	svc, _, _ := newExposureTestService()
+
+	res, err := svc.BulkIngestExposuresReport(context.Background(), []app.CreateExposureInput{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(res.Events) != 0 || len(res.Failures) != 0 {
+		t.Errorf("expected empty result, got %d events / %d failures", len(res.Events), len(res.Failures))
+	}
+}
+
 func TestExposureService_BulkIngestExposures_WithInvalidAssetID(t *testing.T) {
 	svc, _, _ := newExposureTestService()
 	tenantID := shared.NewID()
