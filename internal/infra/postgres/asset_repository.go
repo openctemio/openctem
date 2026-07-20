@@ -1179,7 +1179,7 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 
 // assetUpsertColumnCount is the number of columns in the assets upsert. It MUST
 // stay in sync with assetUpsertColumnsSQL and assetUpsertArgs.
-const assetUpsertColumnCount = 34
+const assetUpsertColumnCount = 35
 
 // assetUpsertColumnsSQL is the INSERT INTO assets (...) column header.
 //
@@ -1192,7 +1192,7 @@ const assetUpsertColumnCount = 34
 func assetUpsertColumnsSQL() string {
 	return `
 		INSERT INTO assets (
-			id, tenant_id, parent_id, owner_id, name, asset_type, sub_type, criticality, status,
+			id, tenant_id, parent_id, owner_id, owner_ref, name, asset_type, sub_type, criticality, status,
 			scope, exposure, risk_score,
 			description, tags, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
@@ -1223,6 +1223,9 @@ func assetUpsertConflictSQL() string {
 			discovery_source = COALESCE(assets.discovery_source, EXCLUDED.discovery_source),
 			discovery_tool = COALESCE(assets.discovery_tool, EXCLUDED.discovery_tool),
 			discovered_at = COALESCE(assets.discovered_at, EXCLUDED.discovered_at),
+			-- owner_ref: fill gap only (never clear an operator-set owner),
+			-- mirroring the single-asset ingest update path.
+			owner_ref = COALESCE(assets.owner_ref, EXCLUDED.owner_ref),
 			-- sub_type + CTEM signals: fill gaps and let a scanner escalate
 			-- exposure/PII/PHI (sticky-true), union compliance frameworks. Never
 			-- clears an established value.
@@ -1274,6 +1277,7 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 		nullIDValue(a.TenantID()),
 		nullIDPtr(a.ParentID()),
 		nullIDPtr(a.OwnerID()),
+		nullString(a.OwnerRef()),
 		a.Name(),
 		a.Type().String(),
 		nullString(a.SubType()),

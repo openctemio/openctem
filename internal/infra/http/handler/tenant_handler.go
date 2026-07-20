@@ -1149,6 +1149,7 @@ type GeneralSettingsResponse struct {
 type SecuritySettingsResponse struct {
 	SSOEnabled            bool     `json:"sso_enabled"`
 	SSOProvider           string   `json:"sso_provider,omitempty"`
+	SSOConfigURL          string   `json:"sso_config_url,omitempty"`
 	MFARequired           bool     `json:"mfa_required"`
 	SessionTimeoutMin     int      `json:"session_timeout_min"`
 	IPWhitelist           []string `json:"ip_whitelist"`
@@ -1186,6 +1187,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 		Security: SecuritySettingsResponse{
 			SSOEnabled:            s.Security.SSOEnabled,
 			SSOProvider:           s.Security.SSOProvider,
+			SSOConfigURL:          s.Security.SSOConfigURL,
 			MFARequired:           s.Security.MFARequired,
 			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
 			IPWhitelist:           s.Security.IPWhitelist,
