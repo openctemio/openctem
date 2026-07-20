@@ -197,6 +197,14 @@ var sensitiveConfigKeys = map[string]bool{
 	"key":            true,
 }
 
+// nonSensitiveConfigKeys are config keys that match a sensitive substring
+// pattern but are NOT secrets. They must round-trip in plaintext so the UI can
+// read them back and not overwrite them with "[REDACTED]" on a wholesale
+// re-save. Exact (lowercased) match only.
+var nonSensitiveConfigKeys = map[string]bool{
+	"project_key": true, // Jira project key (e.g. "PROJ") — an identifier, not a secret
+}
+
 // sanitizeConfigMap removes sensitive values from a config/metadata map.
 // Returns a new map with sensitive values replaced by "[REDACTED]".
 // Descends into nested maps AND slices: integration configs occasionally
@@ -210,6 +218,16 @@ func sanitizeConfigMap(config map[string]any) map[string]any {
 	sanitized := make(map[string]any, len(config))
 	for k, v := range config {
 		keyLower := strings.ToLower(k)
+
+		// Known non-secret keys that would otherwise match a sensitive substring
+		// (e.g. project_key contains "key") are returned in plaintext so the UI
+		// can read them back and not corrupt them when the config is re-saved
+		// wholesale. Exact match only — real *_key secrets (access_key, signing_key)
+		// are NOT listed and stay redacted.
+		if nonSensitiveConfigKeys[keyLower] {
+			sanitized[k] = sanitizeConfigValue(v)
+			continue
+		}
 
 		isSensitive := false
 		for sensitiveKey := range sensitiveConfigKeys {
