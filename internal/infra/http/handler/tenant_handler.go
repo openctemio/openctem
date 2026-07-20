@@ -1241,11 +1241,17 @@ func (h *TenantHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateGeneralSettingsRequest represents the request to update general settings.
+// Fields are pointers so a partial PATCH only touches the fields it sends —
+// omitted fields are left untouched (not reset to empty).
 type UpdateGeneralSettingsRequest struct {
-	Timezone string `json:"timezone"`
-	Language string `json:"language" validate:"omitempty,oneof=en vi ja ko zh"`
-	Industry string `json:"industry" validate:"max=100"`
-	Website  string `json:"website" validate:"omitempty,url,max=500"`
+	Timezone *string `json:"timezone"`
+	Language *string `json:"language" validate:"omitempty,oneof=en vi ja ko zh"`
+	Industry *string `json:"industry" validate:"omitempty,max=100"`
+	// No `url` tag: with pointer fields omitempty does not skip a non-nil
+	// pointer to "", so `url` would reject an explicit empty string (used to
+	// clear the field). GeneralSettings.Validate enforces URL format when
+	// the value is non-empty.
+	Website *string `json:"website" validate:"omitempty,max=500"`
 }
 
 // UpdateGeneralSettings handles PATCH /api/v1/tenants/{tenant}/settings/general
@@ -1287,15 +1293,19 @@ func (h *TenantHandler) UpdateGeneralSettings(w http.ResponseWriter, r *http.Req
 }
 
 // UpdateSecuritySettingsRequest represents the request to update security settings.
+// Scalar fields are pointers so a partial PATCH only touches what it sends;
+// slice fields keep their nil-vs-[] meaning (omitted => unchanged, [] => clear).
 type UpdateSecuritySettingsRequest struct {
-	SSOEnabled            bool     `json:"sso_enabled"`
-	SSOProvider           string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
-	SSOConfigURL          string   `json:"sso_config_url" validate:"omitempty,url"`
-	MFARequired           bool     `json:"mfa_required"`
-	SessionTimeoutMin     int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
+	SSOEnabled  *bool   `json:"sso_enabled"`
+	SSOProvider *string `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
+	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
+	// SecuritySettings.Validate checks the URL when SSO is enabled.
+	SSOConfigURL          *string  `json:"sso_config_url"`
+	MFARequired           *bool    `json:"mfa_required"`
+	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
-	EmailVerificationMode string   `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -1341,10 +1351,14 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 }
 
 // UpdateAPISettingsRequest represents the request to update API settings.
+// Scalar fields are pointers so a partial PATCH only touches what it sends;
+// WebhookEvents keeps its nil-vs-[] meaning (omitted => unchanged, [] => clear).
 type UpdateAPISettingsRequest struct {
-	APIKeyEnabled bool     `json:"api_key_enabled"`
-	WebhookURL    string   `json:"webhook_url" validate:"omitempty,url"`
-	WebhookSecret string   `json:"webhook_secret"`
+	APIKeyEnabled *bool `json:"api_key_enabled"`
+	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
+	// APISettings.Validate checks the URL when non-empty.
+	WebhookURL    *string  `json:"webhook_url"`
+	WebhookSecret *string  `json:"webhook_secret"`
 	WebhookEvents []string `json:"webhook_events"`
 }
 
@@ -1387,10 +1401,14 @@ func (h *TenantHandler) UpdateAPISettings(w http.ResponseWriter, r *http.Request
 }
 
 // UpdateBrandingSettingsRequest represents the request to update branding settings.
+// Fields are pointers so a partial PATCH only touches what it sends — omitted
+// fields (e.g. the logo when only the color changes) are left untouched.
 type UpdateBrandingSettingsRequest struct {
-	PrimaryColor string `json:"primary_color"`
-	LogoDarkURL  string `json:"logo_dark_url" validate:"omitempty,url"`
-	LogoData     string `json:"logo_data"` // Base64 encoded logo (max 150KB)
+	PrimaryColor *string `json:"primary_color"`
+	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
+	// BrandingSettings.Validate checks the URL when non-empty.
+	LogoDarkURL *string `json:"logo_dark_url"`
+	LogoData    *string `json:"logo_data"` // Base64 encoded logo (max 150KB)
 }
 
 // UpdateBrandingSettings handles PATCH /api/v1/tenants/{tenant}/settings/branding
