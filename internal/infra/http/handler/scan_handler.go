@@ -431,7 +431,11 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]any{
+		// "items" is the historical key the UI (scans/page.tsx) reads; "data" is
+		// added as a non-breaking alias so this endpoint also matches the
+		// documented list envelope convention ({"data":[...]}) for new consumers.
 		"items":       items,
+		"data":        items,
 		"total":       result.Total,
 		"page":        result.Page,
 		"per_page":    result.PerPage,

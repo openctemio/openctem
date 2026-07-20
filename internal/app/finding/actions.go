@@ -667,6 +667,16 @@ func (s *FindingActionsService) AutoAssignToOwners(
 	filter.DataScopeUserID = &aid // SEC-01: enforce data scope (mirror BulkVerify/RejectByFilter)
 	result := &AutoAssignToOwnersResult{ByOwner: make(map[string]int)}
 
+	// Cache asset lookups by ID across all pages so repeated findings on the same
+	// asset don't re-query it (mirror BulkFixApplied's dedup). Many findings
+	// typically share one asset, so this collapses an N+1 into one query/asset.
+	type assetInfo struct {
+		ownerID *shared.ID
+		name    string
+		found   bool
+	}
+	assetCache := make(map[shared.ID]assetInfo)
+
 	const batchSize = 100
 	// pagination.New is (page, perPage) — page is 1-based. Iterate by page;
 	// the prior (batchSize, offset) call clamped perPage and pinned OFFSET to
@@ -687,19 +697,24 @@ func (s *FindingActionsService) AutoAssignToOwners(
 				continue
 			}
 
-			// Get asset owner
-			assetEntity, err := s.assetRepo.GetByID(ctx, f.TenantID(), f.AssetID())
-			if err != nil {
+			// Get asset owner (cached — dedup repeated assets across pages)
+			info, ok := assetCache[f.AssetID()]
+			if !ok {
+				if assetEntity, err := s.assetRepo.GetByID(ctx, f.TenantID(), f.AssetID()); err == nil {
+					info = assetInfo{ownerID: assetEntity.OwnerID(), name: assetEntity.Name(), found: true}
+				}
+				assetCache[f.AssetID()] = info
+			}
+			if !info.found {
 				continue
 			}
 
-			ownerID := assetEntity.OwnerID()
-			if ownerID == nil {
+			if info.ownerID == nil {
 				result.Unassigned++
 				continue
 			}
 
-			if err := f.Assign(*ownerID, aid); err != nil {
+			if err := f.Assign(*info.ownerID, aid); err != nil {
 				continue
 			}
 
@@ -714,7 +729,7 @@ func (s *FindingActionsService) AutoAssignToOwners(
 			}
 
 			result.Assigned++
-			result.ByOwner[assetEntity.Name()]++
+			result.ByOwner[info.name]++
 		}
 	}
 

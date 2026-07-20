@@ -90,7 +90,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"data":       result.Data,
+		"data": result.Data,
 		"pagination": map[string]any{
 			"total":    result.Total,
 			"page":     result.Page,
@@ -137,6 +137,7 @@ type FixAppliedRequest struct {
 type FindingFilterRequest struct {
 	CVEIDs    []string `json:"cve_ids" validate:"max=100,dive,max=255"`
 	AssetTags []string `json:"asset_tags" validate:"max=100,dive,max=255"`
+	AssetIDs  []string `json:"asset_ids" validate:"max=100,dive,uuid"`
 }
 
 // FixApplied handles POST /api/v1/findings/actions/fix-applied
@@ -159,8 +160,23 @@ func (h *FindingActionsHandler) FixApplied(w http.ResponseWriter, r *http.Reques
 		apierror.BadRequest("Maximum 100 asset tags allowed").WriteJSON(w)
 		return
 	}
+	if len(req.Filter.AssetIDs) > 100 {
+		apierror.BadRequest("Maximum 100 asset IDs allowed").WriteJSON(w)
+		return
+	}
 	if len(req.Note) > 5000 {
 		apierror.BadRequest("Note must be at most 5000 characters").WriteJSON(w)
+		return
+	}
+
+	// Require a scoping filter. Without this guard an empty filter would match
+	// every in_progress finding (bounded only by the 1000 cap) — the same
+	// "ids or filter required" guard Verify/RejectFix use, adapted to this
+	// filter-only action. This also turns the previously-dropped asset_ids
+	// path (UI's asset-grouped "mark fixed") from a dangerous broad match into
+	// a properly scoped one via WithAssetID below.
+	if len(req.Filter.CVEIDs) == 0 && len(req.Filter.AssetTags) == 0 && len(req.Filter.AssetIDs) == 0 {
+		apierror.BadRequest("filter (cve_ids, asset_tags, or asset_ids) is required").WriteJSON(w)
 		return
 	}
 
@@ -170,6 +186,16 @@ func (h *FindingActionsHandler) FixApplied(w http.ResponseWriter, r *http.Reques
 	}
 	if len(req.Filter.AssetTags) > 0 {
 		filter = filter.WithAssetTags(req.Filter.AssetTags)
+	}
+	// The domain filter scopes to a single asset; the UI's asset-grouped action
+	// sends exactly one asset_id. Use the first if provided.
+	if len(req.Filter.AssetIDs) > 0 {
+		assetID, err := shared.IDFromString(req.Filter.AssetIDs[0])
+		if err != nil {
+			apierror.BadRequest("Invalid asset_id").WriteJSON(w)
+			return
+		}
+		filter = filter.WithAssetID(assetID)
 	}
 
 	input := app.BulkFixAppliedInput{
@@ -192,9 +218,9 @@ func (h *FindingActionsHandler) FixApplied(w http.ResponseWriter, r *http.Reques
 
 // VerifyRequest supports both finding_ids and filter. At least one must be provided.
 type VerifyRequest struct {
-	FindingIDs []string             `json:"finding_ids" validate:"max=100,dive,uuid"` // verify specific findings
+	FindingIDs []string              `json:"finding_ids" validate:"max=100,dive,uuid"` // verify specific findings
 	Filter     *FindingFilterRequest `json:"filter"`                                   // verify all matching filter
-	Note       string               `json:"note" validate:"max=5000"`
+	Note       string                `json:"note" validate:"max=5000"`
 }
 
 // Verify handles POST /api/v1/findings/actions/verify
@@ -260,9 +286,9 @@ func (h *FindingActionsHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 // RejectFixRequest supports both finding_ids and filter.
 type RejectFixRequest struct {
-	FindingIDs []string             `json:"finding_ids" validate:"max=100"`
+	FindingIDs []string              `json:"finding_ids" validate:"max=100"`
 	Filter     *FindingFilterRequest `json:"filter"`
-	Reason     string               `json:"reason" validate:"max=5000"`
+	Reason     string                `json:"reason" validate:"max=5000"`
 }
 
 // RejectFix handles POST /api/v1/findings/actions/reject-fix
