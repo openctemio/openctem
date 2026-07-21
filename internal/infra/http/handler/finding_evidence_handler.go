@@ -110,6 +110,43 @@ func (h *VulnerabilityHandler) ListFindingEvidence(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, map[string]any{"data": items, "total": len(items)})
 }
 
+// DeleteFindingEvidence handles DELETE /api/v1/findings/{id}/evidence/notes/{noteId}.
+//
+// Removes a manually-added evidence note from a generic (non-pentest) finding.
+// The finding is loaded tenant-scoped and the note is confirmed to belong to it
+// before deletion — a note from another finding/tenant returns 404, and a
+// non-note attachment is refused (400). Returns 204 on success.
+func (h *VulnerabilityHandler) DeleteFindingEvidence(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	id := r.PathValue("id")
+	if id == "" {
+		apierror.BadRequest("Finding ID is required").WriteJSON(w)
+		return
+	}
+	noteID := r.PathValue("noteId")
+	if noteID == "" {
+		apierror.BadRequest("Note ID is required").WriteJSON(w)
+		return
+	}
+
+	if err := h.service.DeleteFindingEvidence(r.Context(), id, tenantID, noteID); err != nil {
+		h.handleServiceError(w, err, "Finding evidence")
+		return
+	}
+
+	if h.auditService != nil {
+		event := auditapp.NewSuccessEvent(auditdom.ActionFindingEvidenceDeleted, auditdom.ResourceTypeFinding, id).
+			WithResourceName(id).
+			WithMessage("Evidence note removed from finding").
+			WithMetadata("evidence_id", noteID).
+			WithSeverity(auditdom.SeverityLow)
+		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // AddRemediationStepRequest is the body for POST /findings/{id}/remediation/steps.
 type AddRemediationStepRequest struct {
 	Step string `json:"step"`

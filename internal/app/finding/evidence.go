@@ -44,6 +44,7 @@ type EvidenceStore interface {
 	Upload(ctx context.Context, input integration.UploadInput) (*attachmentdom.Attachment, error)
 	ListByContext(ctx context.Context, tenantID shared.ID, contextType, contextID string) ([]*attachmentdom.Attachment, error)
 	Download(ctx context.Context, tenantID, attachmentID string) (io.ReadCloser, string, string, error)
+	Delete(ctx context.Context, tenantID, attachmentID string) error
 }
 
 // SetEvidenceStore wires the attachment-backed evidence store. Safe to call
@@ -75,6 +76,10 @@ type FindingEvidence struct {
 	DownloadURL string    `json:"download_url,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UploadedBy  string    `json:"uploaded_by,omitempty"`
+	// UploadedByName is the resolved display name (or email) of the uploader.
+	// Best-effort enrichment — left empty when the user cannot be resolved; the
+	// UploadedBy UUID is always present for compatibility.
+	UploadedByName string `json:"uploaded_by_name,omitempty"`
 }
 
 // AddEvidenceInput is the input for attaching a note-type evidence to a finding.
@@ -182,7 +187,115 @@ func (s *VulnerabilityService) ListFindingEvidence(ctx context.Context, findingI
 	for _, att := range atts {
 		out = append(out, s.attachmentToEvidence(ctx, f.TenantID(), att))
 	}
+	s.enrichUploaderNames(ctx, out)
 	return out, nil
+}
+
+// enrichUploaderNames resolves each evidence record's UploadedBy UUID to a
+// display name (falling back to email), batching the lookup into a single
+// GetByIDs call. Best-effort: a missing user or a nil userRepo simply leaves
+// UploadedByName empty — the UUID stays for compatibility. The UUIDs originate
+// from tenant-scoped attachments, so this never crosses the tenant boundary.
+func (s *VulnerabilityService) enrichUploaderNames(ctx context.Context, evs []*FindingEvidence) {
+	if s.userRepo == nil || len(evs) == 0 {
+		return
+	}
+
+	seen := make(map[string]struct{}, len(evs))
+	ids := make([]shared.ID, 0, len(evs))
+	for _, ev := range evs {
+		if ev.UploadedBy == "" {
+			continue
+		}
+		if _, dup := seen[ev.UploadedBy]; dup {
+			continue
+		}
+		uid, err := shared.IDFromString(ev.UploadedBy)
+		if err != nil {
+			continue
+		}
+		seen[ev.UploadedBy] = struct{}{}
+		ids = append(ids, uid)
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	users, err := s.userRepo.GetByIDs(ctx, ids)
+	if err != nil {
+		s.logger.Warn("failed to resolve evidence uploader names", "error", err)
+		return
+	}
+
+	nameByID := make(map[string]string, len(users))
+	for _, u := range users {
+		name := strings.TrimSpace(u.Name())
+		if name == "" {
+			name = u.Email()
+		}
+		nameByID[u.ID().String()] = name
+	}
+	for _, ev := range evs {
+		if name, ok := nameByID[ev.UploadedBy]; ok {
+			ev.UploadedByName = name
+		}
+	}
+}
+
+// DeleteFindingEvidence removes a note-type evidence record from a generic
+// (non-pentest) finding.
+//
+// Authorization mirrors the add path: the finding is loaded tenant-scoped and
+// pentest-managed findings are rejected. The note is then confirmed to belong
+// to THIS finding's own attachment context (context_type=finding,
+// context_id=findingID, tenant=f.TenantID) BEFORE any delete — an attachment id
+// from a different finding or tenant is absent from that list and yields
+// ErrNotFound, so we never delete by attachment id alone. Only note-type
+// attachments (JSON payload with the evidence-note filename prefix) may be
+// removed here; a plain file/pentest attachment sharing the context is refused.
+func (s *VulnerabilityService) DeleteFindingEvidence(ctx context.Context, findingID, tenantID, noteID string) error {
+	if s.evidenceStore == nil {
+		return fmt.Errorf("%w: evidence store not configured", shared.ErrValidation)
+	}
+
+	// Tenant-scoped load + pentest guard (404/400 on cross-tenant / pentest).
+	f, err := s.getFindingWithTenantCheck(ctx, findingID, tenantID)
+	if err != nil {
+		return err
+	}
+
+	// Cross-finding / cross-tenant guard: only ever inspect THIS finding's own
+	// attachment context, so a note belonging elsewhere is simply not found.
+	atts, err := s.evidenceStore.ListByContext(ctx, f.TenantID(), evidenceContextType, f.ID().String())
+	if err != nil {
+		return fmt.Errorf("failed to list evidence: %w", err)
+	}
+
+	var target *attachmentdom.Attachment
+	for _, att := range atts {
+		if att.ID().String() == noteID {
+			target = att
+			break
+		}
+	}
+	if target == nil {
+		return shared.ErrNotFound
+	}
+
+	// Refuse to delete anything that is not a note — this endpoint must never
+	// remove arbitrary uploaded files that happen to share the finding context.
+	isNote := target.ContentType() == "application/json" && strings.HasPrefix(target.Filename(), evidenceNotePrefix)
+	if !isNote {
+		return fmt.Errorf("%w: attachment is not a deletable evidence note", shared.ErrValidation)
+	}
+
+	if err := s.evidenceStore.Delete(ctx, f.TenantID().String(), target.ID().String()); err != nil {
+		return fmt.Errorf("failed to delete evidence: %w", err)
+	}
+
+	s.logger.Info("finding evidence deleted",
+		"finding_id", f.ID().String(), "evidence_id", target.ID().String())
+	return nil
 }
 
 // attachmentToEvidence maps a stored attachment to the evidence view. For note

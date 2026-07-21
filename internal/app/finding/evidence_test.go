@@ -10,9 +10,28 @@ import (
 	"github.com/openctemio/api/internal/app/integration"
 	attachmentdom "github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// stubUserRepo implements only GetByIDs (the sole method the evidence
+// name-resolution path uses). The embedded nil interface satisfies the rest of
+// user.Repository; any un-overridden call panics (intended).
+type stubUserRepo struct {
+	user.Repository
+	byID map[string]*user.User
+}
+
+func (r *stubUserRepo) GetByIDs(_ context.Context, ids []shared.ID) ([]*user.User, error) {
+	out := make([]*user.User, 0, len(ids))
+	for _, id := range ids {
+		if u, ok := r.byID[id.String()]; ok {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
 
 // stubFindingRepo implements only the methods the evidence/steps paths need.
 // The embedded nil interface satisfies the rest of vulnerability.FindingRepository;
@@ -79,6 +98,33 @@ func (s *stubEvidenceStore) Download(_ context.Context, _, attachmentID string) 
 		return nil, "", "", shared.ErrNotFound
 	}
 	return io.NopCloser(bytes.NewReader(body)), "application/json", "note.json", nil
+}
+
+func (s *stubEvidenceStore) Delete(_ context.Context, _, attachmentID string) error {
+	if _, ok := s.blobs[attachmentID]; !ok {
+		return shared.ErrNotFound
+	}
+	delete(s.blobs, attachmentID)
+	for key, atts := range s.byContext {
+		kept := atts[:0]
+		for _, att := range atts {
+			if att.ID().String() != attachmentID {
+				kept = append(kept, att)
+			}
+		}
+		s.byContext[key] = kept
+	}
+	return nil
+}
+
+// addFileAttachment seeds a non-note (plain file) attachment into a finding's
+// context so tests can assert the delete path refuses it.
+func (s *stubEvidenceStore) addFileAttachment(tenantID shared.ID, contextID string) *attachmentdom.Attachment {
+	att := attachmentdom.NewAttachment(tenantID, "screenshot.png", "image/png", 123, "key/screenshot.png", shared.NewID(), evidenceContextType, contextID)
+	s.blobs[att.ID().String()] = []byte("png")
+	key := ctxKey(evidenceContextType, contextID)
+	s.byContext[key] = append(s.byContext[key], att)
+	return att
 }
 
 func newTestService(repo vulnerability.FindingRepository, store EvidenceStore) *VulnerabilityService {
@@ -192,6 +238,168 @@ func TestAddFindingEvidence_EmptyDescription(t *testing.T) {
 	})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("empty description: want ErrValidation, got %v", err)
+	}
+}
+
+func addNote(t *testing.T, s *VulnerabilityService, f *vulnerability.Finding, tenantID, userID shared.ID) *FindingEvidence {
+	t.Helper()
+	ev, err := s.AddFindingEvidence(context.Background(), AddEvidenceInput{
+		FindingID:   f.ID().String(),
+		TenantID:    tenantID.String(),
+		UserID:      userID.String(),
+		Description: "note body",
+	})
+	if err != nil {
+		t.Fatalf("AddFindingEvidence: %v", err)
+	}
+	return ev
+}
+
+func TestDeleteFindingEvidence_HappyPath(t *testing.T) {
+	tenantID := shared.NewID()
+	f := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	store := newStubEvidenceStore()
+	s := newTestService(seedRepo(f), store)
+
+	ev := addNote(t, s, f, tenantID, shared.NewID())
+
+	if err := s.DeleteFindingEvidence(context.Background(), f.ID().String(), tenantID.String(), ev.ID); err != nil {
+		t.Fatalf("DeleteFindingEvidence: %v", err)
+	}
+
+	list, err := s.ListFindingEvidence(context.Background(), f.ID().String(), tenantID.String())
+	if err != nil {
+		t.Fatalf("ListFindingEvidence: %v", err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("expected note removed, still have %d", len(list))
+	}
+}
+
+func TestDeleteFindingEvidence_CrossTenantIsNotFound(t *testing.T) {
+	ownerTenant := shared.NewID()
+	f := mkFinding(t, ownerTenant, vulnerability.FindingSourceDAST)
+	store := newStubEvidenceStore()
+	s := newTestService(seedRepo(f), store)
+
+	ev := addNote(t, s, f, ownerTenant, shared.NewID())
+
+	// A different tenant must not resolve the finding at all → 404, note stays.
+	err := s.DeleteFindingEvidence(context.Background(), f.ID().String(), shared.NewID().String(), ev.ID)
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant delete: want ErrNotFound, got %v", err)
+	}
+	if _, ok := store.blobs[ev.ID]; !ok {
+		t.Fatalf("note was deleted on a cross-tenant request")
+	}
+}
+
+func TestDeleteFindingEvidence_NoteOfDifferentFindingIsNotFound(t *testing.T) {
+	tenantID := shared.NewID()
+	f1 := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	f2 := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	store := newStubEvidenceStore()
+	// Seed both findings under the same repo/tenant.
+	repo := &stubFindingRepo{byID: map[string]*vulnerability.Finding{
+		f1.TenantID().String() + "/" + f1.ID().String(): f1,
+		f2.TenantID().String() + "/" + f2.ID().String(): f2,
+	}}
+	s := newTestService(repo, store)
+
+	// Note belongs to f2.
+	ev := addNote(t, s, f2, tenantID, shared.NewID())
+
+	// Deleting via f1 must not touch f2's note.
+	err := s.DeleteFindingEvidence(context.Background(), f1.ID().String(), tenantID.String(), ev.ID)
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-finding delete: want ErrNotFound, got %v", err)
+	}
+	if _, ok := store.blobs[ev.ID]; !ok {
+		t.Fatalf("note of a different finding was deleted")
+	}
+}
+
+func TestDeleteFindingEvidence_NonNoteAttachmentRefused(t *testing.T) {
+	tenantID := shared.NewID()
+	f := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	store := newStubEvidenceStore()
+	s := newTestService(seedRepo(f), store)
+
+	file := store.addFileAttachment(tenantID, f.ID().String())
+
+	err := s.DeleteFindingEvidence(context.Background(), f.ID().String(), tenantID.String(), file.ID().String())
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("non-note delete: want ErrValidation, got %v", err)
+	}
+	if _, ok := store.blobs[file.ID().String()]; !ok {
+		t.Fatalf("non-note attachment was deleted")
+	}
+}
+
+func TestDeleteFindingEvidence_PentestFindingRejected(t *testing.T) {
+	tenantID := shared.NewID()
+	f := mkFinding(t, tenantID, vulnerability.FindingSourcePentest)
+	s := newTestService(seedRepo(f), newStubEvidenceStore())
+
+	err := s.DeleteFindingEvidence(context.Background(), f.ID().String(), tenantID.String(), shared.NewID().String())
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("pentest finding on generic delete path: want ErrValidation, got %v", err)
+	}
+}
+
+// --- Uploader name resolution ----------------------------------------------
+
+func TestListFindingEvidence_ResolvesUploaderName(t *testing.T) {
+	tenantID := shared.NewID()
+	f := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	store := newStubEvidenceStore()
+	s := newTestService(seedRepo(f), store)
+
+	uploader := shared.NewID()
+	u, err := user.NewLocalUserWithID(uploader, "alice@example.com", "Alice Analyst")
+	if err != nil {
+		t.Fatalf("NewLocalUserWithID: %v", err)
+	}
+	s.SetUserRepository(&stubUserRepo{byID: map[string]*user.User{uploader.String(): u}})
+
+	addNote(t, s, f, tenantID, uploader)
+
+	list, err := s.ListFindingEvidence(context.Background(), f.ID().String(), tenantID.String())
+	if err != nil {
+		t.Fatalf("ListFindingEvidence: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 evidence, got %d", len(list))
+	}
+	if list[0].UploadedBy != uploader.String() {
+		t.Fatalf("UploadedBy UUID dropped: %q", list[0].UploadedBy)
+	}
+	if list[0].UploadedByName != "Alice Analyst" {
+		t.Fatalf("UploadedByName = %q, want Alice Analyst", list[0].UploadedByName)
+	}
+}
+
+func TestListFindingEvidence_MissingUploaderToleratesGracefully(t *testing.T) {
+	tenantID := shared.NewID()
+	f := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	store := newStubEvidenceStore()
+	s := newTestService(seedRepo(f), store)
+
+	// Empty user repo → uploader cannot be resolved; UUID must remain, name empty.
+	s.SetUserRepository(&stubUserRepo{byID: map[string]*user.User{}})
+
+	uploader := shared.NewID()
+	addNote(t, s, f, tenantID, uploader)
+
+	list, err := s.ListFindingEvidence(context.Background(), f.ID().String(), tenantID.String())
+	if err != nil {
+		t.Fatalf("ListFindingEvidence: %v", err)
+	}
+	if len(list) != 1 || list[0].UploadedBy != uploader.String() {
+		t.Fatalf("expected UUID preserved, got %+v", list)
+	}
+	if list[0].UploadedByName != "" {
+		t.Fatalf("UploadedByName should be empty for unknown user, got %q", list[0].UploadedByName)
 	}
 }
 

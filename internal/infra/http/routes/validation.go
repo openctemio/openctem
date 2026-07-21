@@ -48,6 +48,7 @@ func registerValidationRoutes(
 				// it does not collide with the validation GET on "/".
 				r.POST("/", vulnHandler.AddFindingEvidence, middleware.Require(permission.FindingsWrite))
 				r.GET("/notes", vulnHandler.ListFindingEvidence, middleware.Require(permission.FindingsRead))
+				r.DELETE("/notes/{noteId}", vulnHandler.DeleteFindingEvidence, middleware.Require(permission.FindingsWrite))
 			}
 		}, tenantMiddlewares...)
 	}
