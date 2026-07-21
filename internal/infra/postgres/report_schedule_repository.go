@@ -197,7 +197,7 @@ func (r *ReportScheduleRepository) scan(row reportScanner) (*reportschedule.Repo
 		cronExpression, timezone    string
 		isActive                    bool
 		lastRunAt, nextRunAt        *time.Time
-		lastStatus                  string
+		lastStatus                  sql.NullString
 		runCount                    int
 		createdByStr                sql.NullString
 		createdAt, updatedAt        time.Time
@@ -244,7 +244,7 @@ func (r *ReportScheduleRepository) scan(row reportScanner) (*reportschedule.Repo
 		options, recipients,
 		deliveryChannel, intID,
 		cronExpression, timezone,
-		isActive, lastRunAt, nextRunAt, lastStatus, runCount,
+		isActive, lastRunAt, nextRunAt, lastStatus.String, runCount,
 		createdBy, createdAt, updatedAt,
 	), nil
 }
