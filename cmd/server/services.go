@@ -771,6 +771,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			return nil, fmt.Errorf("unsupported tenant storage provider: %s", cfg.Provider)
 		}
 	})
+	// Wire the attachment store as the backing store for manual finding evidence
+	// (POST/GET /findings/{id}/evidence). Tenant-scoped; does not touch the
+	// pentest campaign gate.
+	s.Vulnerability.SetEvidenceStore(s.Attachment)
 
 	// Initialize Compliance service
 	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)

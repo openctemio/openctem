@@ -25,7 +25,10 @@ type (
 	BulkGuardConfig                 = finding.BulkGuardConfig
 
 	AddCommentInput               = finding.AddCommentInput
+	AddEvidenceInput              = finding.AddEvidenceInput
 	AddStatusChangeCommentInput   = finding.AddStatusChangeCommentInput
+	EvidenceStore                 = finding.EvidenceStore
+	FindingEvidence               = finding.FindingEvidence
 	ApproveStatusInput            = finding.ApproveStatusInput
 	AutoAssignToOwnersResult      = finding.AutoAssignToOwnersResult
 	BulkAssignInput               = finding.BulkAssignInput

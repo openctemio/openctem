@@ -372,7 +372,7 @@ func Register(
 
 	// CTEM Stage-4 validation evidence (agent ingest + finding evidence list)
 	if h.Validation != nil {
-		registerValidationRoutes(router, h.Validation, h.Ingest, authMiddleware, userSync)
+		registerValidationRoutes(router, h.Validation, h.Vulnerability, h.Ingest, authMiddleware, userSync)
 	}
 
 	// SCIM 2.0 provisioning (RFC-009) — bearer-token provisioning + admin token mgmt

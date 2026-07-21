@@ -75,6 +75,12 @@ const (
 	ActionFindingUnassigned    Action = "finding.unassigned"
 	ActionFindingCommented     Action = "finding.commented"
 	ActionFindingBulkUpdated   Action = "finding.bulk_updated"
+	// ActionFindingEvidenceAdded records a manually-attached piece of evidence
+	// (note/file) on a generic (non-pentest) finding.
+	ActionFindingEvidenceAdded Action = "finding.evidence_added"
+	// ActionFindingRemediationStepAdded records a manually-appended remediation
+	// step on a generic finding.
+	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -272,6 +278,7 @@ func (a Action) IsValid() bool {
 		ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted,
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
+		ActionFindingEvidenceAdded, ActionFindingRemediationStepAdded,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
@@ -339,7 +346,8 @@ func (a Action) Category() string {
 	case ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted:
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
-		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated:
+		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
+		ActionFindingEvidenceAdded, ActionFindingRemediationStepAdded:
 		return "finding"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"

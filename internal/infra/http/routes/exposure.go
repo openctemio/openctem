@@ -270,6 +270,11 @@ func registerVulnerabilityRoutes(
 		// Data flows (attack paths / taint tracking)
 		r.GET("/{id}/dataflows", h.GetFindingDataFlows, middleware.Require(permission.FindingsRead))
 
+		// Manual remediation steps (append-preserving) on generic findings.
+		// NOTE: manual evidence lives on the /{id}/evidence mount registered by
+		// registerValidationRoutes (chi forbids a second mount on that path).
+		r.POST("/{id}/remediation/steps", h.AddRemediationStep, middleware.Require(permission.FindingsWrite))
+
 		// Jira ticket linking — store/remove Jira ticket references on findings
 		if jiraHandler != nil {
 			r.POST("/{id}/link-ticket", jiraHandler.LinkTicket, middleware.Require(permission.FindingsWrite))
