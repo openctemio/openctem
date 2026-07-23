@@ -45,6 +45,29 @@ func registerAttackerProfileRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerThreatModelRoutes registers continuous threat-modeling routes.
+//
+// Permission decision: a dedicated ThreatModelsRead/Write permission would need a
+// new permissions + role_permissions seed migration (see 000153_ctem_permissions),
+// which is disproportionate for this step. Threat models are read-derived from
+// the asset graph + findings, so we gate reads with AssetsRead and generation
+// (a compute/write over that data) with AssetsWrite. Swap to a dedicated
+// ctem:threat_models:* permission when that seed migration lands.
+func registerThreatModelRoutes(
+	router Router,
+	h *handler.ThreatModelHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/threat-models", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.POST("/generate", h.Generate, middleware.Require(permission.AssetsWrite))
+		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
 // registerBusinessServiceRoutes registers business service CRUD routes.
 func registerBusinessServiceRoutes(
 	router Router,
