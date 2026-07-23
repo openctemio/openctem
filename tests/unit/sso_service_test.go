@@ -698,6 +698,13 @@ func newTestAuthConfig() config.AuthConfig {
 		AccessTokenDuration:  15 * time.Minute,
 		RefreshTokenDuration: 7 * 24 * time.Hour,
 		SessionDuration:      30 * 24 * time.Hour,
+		// Exact-match redirect_uri allow-list (origin-only entries authorize any
+		// path on that exact origin) covering the origins used across these tests.
+		AllowedRedirectURIs: []string{
+			"https://app.example.com",
+			"http://localhost:3000",
+			"http://127.0.0.1:8080",
+		},
 	}
 }
 

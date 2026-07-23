@@ -367,6 +367,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
 	}
 
+	// Verified-domain handler (SSO P1 domain-ownership verification)
+	if svc.DomainVerify != nil {
+		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)
+	}
+
 	// SAML SP handler (RFC-009 9d+9e): metadata, config CRUD, and the
 	// SP-initiated browser login (login redirect + ACS session cookies).
 	if svc.SAML != nil {

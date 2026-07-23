@@ -150,6 +150,28 @@ func registerSSOAdminRoutes(
 	}, middlewares...)
 }
 
+// registerVerifiedDomainRoutes registers admin endpoints for managing a
+// tenant's DNS-verified domains (SSO P1). These gate SSO JIT auto-provisioning,
+// so all operations require admin+. Uses the JWT-tenant chain — RequireAdmin
+// reads the JWT IsAdmin flag (see registerSSOAdminRoutes for why not
+// RequireTeamAdmin).
+func registerVerifiedDomainRoutes(
+	router Router,
+	h *handler.VerifiedDomainHandler,
+	authMiddleware, userSyncMiddleware Middleware,
+) {
+	if h == nil {
+		return
+	}
+	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/settings/verified-domains", func(r Router) {
+		r.GET("/", h.List, middleware.RequireAdmin())
+		r.POST("/", h.AddDomain, middleware.RequireAdmin())
+		r.POST("/{id}/verify", h.Verify, middleware.RequireAdmin())
+		r.DELETE("/{id}", h.Delete, middleware.RequireAdmin())
+	}, middlewares...)
+}
+
 // registerUserRoutes registers user profile management endpoints.
 func registerUserRoutes(
 	router Router,

@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -257,6 +258,18 @@ type AuthConfig struct {
 	// flow falls back to this shared config (if Enabled). A tenant's own
 	// provider always takes precedence.
 	EntraSSO EntraSSOConfig
+
+	// AllowedRedirectURIs is the exact-match allow-list for the caller-supplied
+	// redirect_uri of the per-tenant SSO OIDC flow (SSO_ALLOWED_REDIRECT_URIS,
+	// csv). It is the OAuth 2.1 / RFC 9700 open-redirect guard: the frontend
+	// callback the SSO flow returns to must match one of these entries exactly.
+	// Each entry is a trusted frontend origin (scheme+host[:port], authorizing
+	// any path on that exact origin) or an origin+path prefix (ending in "/",
+	// restricting to that path). No wildcards, no suffix matching. When left
+	// empty at load time it is derived from the configured frontend origins
+	// (CORS allowed origins + OAuth frontend callback) so the shipped UI keeps
+	// working; an empty list at request time fails closed (rejects every URI).
+	AllowedRedirectURIs []string
 }
 
 // EntraSSOConfig holds the platform-wide (env-based) Microsoft Entra ID SSO
@@ -662,6 +675,7 @@ func Load() (*Config, error) {
 				DisplayName:    getEnv("SSO_ENTRA_DISPLAY_NAME", "Microsoft Entra ID"),
 				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),
 			},
+			AllowedRedirectURIs: getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),
@@ -776,11 +790,51 @@ func Load() (*Config, error) {
 		},
 	}
 
+	// SSO redirect-URI allow-list (OAuth 2.1 / RFC 9700): pin the caller-supplied
+	// redirect_uri to trusted frontend origins. An explicit SSO_ALLOWED_REDIRECT_URIS
+	// wins; otherwise derive the origins already trusted elsewhere in config so the
+	// shipped UI callback keeps working out of the box.
+	if len(cfg.Auth.AllowedRedirectURIs) == 0 {
+		cfg.Auth.AllowedRedirectURIs = deriveSSORedirectAllowList(cfg)
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
+}
+
+// deriveSSORedirectAllowList builds the default SSO redirect_uri allow-list from
+// the frontend origins already configured elsewhere (CORS allowed origins, the
+// OAuth frontend callback, and the email base URL). Each is reduced to its exact
+// origin (scheme://host[:port]); a request-time redirect_uri on that exact origin
+// is then permitted. Operators can override/tighten via SSO_ALLOWED_REDIRECT_URIS.
+func deriveSSORedirectAllowList(cfg *Config) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(cfg.CORS.AllowedOrigins)+2)
+	add := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		u, err := url.Parse(raw)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return
+		}
+		origin := u.Scheme + "://" + u.Host
+		if _, ok := seen[origin]; ok {
+			return
+		}
+		seen[origin] = struct{}{}
+		out = append(out, origin)
+	}
+	for _, o := range cfg.CORS.AllowedOrigins {
+		add(o)
+	}
+	add(cfg.OAuth.FrontendCallbackURL)
+	add(cfg.SMTP.BaseURL)
+	return out
 }
 
 // Validate validates the configuration.

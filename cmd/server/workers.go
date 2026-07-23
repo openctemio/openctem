@@ -257,6 +257,21 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Domain re-verify sweep (SSO P1): periodically re-checks verified domains;
+	// a domain whose TXT record vanished is downgraded to failed (fail-closed),
+	// so a lapsed/hijacked domain loses SSO JIT authority.
+	if svc.DomainVerify != nil {
+		w.ControllerManager.Register(controller.NewDomainReverifyController(
+			svc.DomainVerify,
+			&controller.DomainReverifyControllerConfig{
+				Interval:  12 * time.Hour,
+				Staleness: 24 * time.Hour,
+				BatchSize: 100,
+				Logger:    log.With("controller", "domain-reverify"),
+			},
+		))
+	}
+
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(
 		repos.FindingApproval,
 		repos.Finding,

@@ -159,6 +159,9 @@ type Repositories struct {
 	// SSO Identity Providers
 	IdentityProvider *postgres.IdentityProviderRepository
 
+	// Domain-ownership verification (SSO P1, migration 000191)
+	VerifiedDomain *postgres.VerifiedDomainRepository
+
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
 
@@ -345,6 +348,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// SSO Identity Providers
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
+		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),

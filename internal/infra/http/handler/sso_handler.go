@@ -154,6 +154,8 @@ func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
 		apierror.BadRequest("SSO provider is not active").WriteJSON(w)
 	case errors.Is(err, app.ErrSSOInvalidState):
 		apierror.BadRequest("Invalid or expired state token").WriteJSON(w)
+	case errors.Is(err, app.ErrSSOInvalidRedirectURI):
+		apierror.BadRequest("Invalid redirect URI").WriteJSON(w)
 	case errors.Is(err, app.ErrSSOExchangeFailed):
 		apierror.BadRequest("Failed to complete SSO authentication").WriteJSON(w)
 	case errors.Is(err, app.ErrSSOUserInfoFailed):

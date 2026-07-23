@@ -184,6 +184,9 @@ type Handlers struct {
 	SSO  *handler.SSOHandler  // nil if not initialized
 	SAML *handler.SAMLHandler // nil if not initialized - SAML 2.0 SP (RFC-009)
 
+	// VerifiedDomain handler (SSO P1 domain-ownership verification)
+	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
+
 	// Platform Stats handler (tenant-scoped platform agent stats)
 	PlatformStats *handler.PlatformStatsHandler
 
@@ -740,6 +743,11 @@ func Register(
 	// SAML SP config admin routes (RFC-009 9d, tenant from JWT token)
 	if h.SAML != nil {
 		registerSAMLAdminRoutes(router, h.SAML, authMiddleware, userSync)
+	}
+
+	// Verified-domain admin routes (SSO P1, tenant from JWT token)
+	if h.VerifiedDomain != nil {
+		registerVerifiedDomainRoutes(router, h.VerifiedDomain, authMiddleware, userSync)
 	}
 
 	// ==========================================================================

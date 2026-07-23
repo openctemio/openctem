@@ -52,7 +52,7 @@ func newSSOForTest(ipRepo *fakeIPRepo, entra config.EntraSSOConfig) *SSOService 
 		ipRepo:     ipRepo,
 		tenantRepo: &fakeTenantRepo{t: t},
 		encryptor:  identityEncryptor{},
-		authConfig: config.AuthConfig{EntraSSO: entra},
+		authConfig: config.AuthConfig{EntraSSO: entra, AllowedRedirectURIs: []string{"https://app.example.com"}},
 		logger:     logger.NewNop(),
 	}
 }

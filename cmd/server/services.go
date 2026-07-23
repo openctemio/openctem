@@ -19,6 +19,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/attack"
+	"github.com/openctemio/api/internal/app/auth/domainverify"
 	"github.com/openctemio/api/internal/app/exposure"
 	"github.com/openctemio/api/internal/app/ingest"
 	iocapp "github.com/openctemio/api/internal/app/ioc"
@@ -520,6 +521,9 @@ type Services struct {
 
 	// SSO
 	SSO *app.SSOService
+
+	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
+	DomainVerify *domainverify.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *app.SAMLService
@@ -1368,6 +1372,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log,
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
+
+	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
+	// auto-provisioning gate — a non-member is auto-joined only when the email
+	// domain is DNS-verified for the tenant (see SSOService.jitProvisioningAllowed).
+	s.DomainVerify = domainverify.NewService(repos.VerifiedDomain, domainverify.NewNetResolver(), log)
+	s.SSO.SetDomainVerifier(s.DomainVerify)
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
 	s.SAML = app.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
