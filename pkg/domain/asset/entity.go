@@ -946,6 +946,15 @@ func (a *Asset) SetRegulatoryOwnerID(ownerID *shared.ID) {
 // CTEM: Enhanced Exposure Tracking Methods
 // =============================================================================
 
+// IsCrownJewel reports whether the asset is flagged as a crown jewel. The flag's
+// source of truth is properties["is_crown_jewel"] (written by UpdateCrownJewel);
+// the dedicated column is a read-optimized denormalization, so read from
+// properties here to stay consistent with the write path.
+func (a *Asset) IsCrownJewel() bool {
+	cj, _ := a.properties["is_crown_jewel"].(bool)
+	return cj
+}
+
 // IsInternetAccessible returns whether the asset is directly internet accessible.
 func (a *Asset) IsInternetAccessible() bool {
 	return a.isInternetAccessible

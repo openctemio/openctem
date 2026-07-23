@@ -294,6 +294,7 @@ type AssetResponse struct {
 	PIIDataExposed       bool     `json:"pii_data_exposed"`
 	PHIDataExposed       bool     `json:"phi_data_exposed"`
 	IsInternetAccessible bool     `json:"is_internet_accessible"`
+	IsCrownJewel         bool     `json:"is_crown_jewel"`
 
 	// Sync
 	SyncStatus   string     `json:"sync_status,omitempty"`
@@ -401,6 +402,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		PIIDataExposed:       a.PIIDataExposed(),
 		PHIDataExposed:       a.PHIDataExposed(),
 		IsInternetAccessible: a.IsInternetAccessible(),
+		IsCrownJewel:         a.IsCrownJewel(),
 
 		// Sync
 		SyncStatus:   a.SyncStatus().String(),
