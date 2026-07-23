@@ -30,6 +30,7 @@ import (
 	"github.com/openctemio/api/internal/app/scim"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/app/template"
+	"github.com/openctemio/api/internal/app/threatmodel"
 	"github.com/openctemio/api/internal/app/ticketing"
 	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/config"
@@ -360,6 +361,7 @@ type Services struct {
 	RelationshipSuggestion *app.RelationshipSuggestionService
 	Scope                  *scope.Service
 	AttackSurface          *attack.SurfaceService
+	ThreatModel            *threatmodel.Service
 
 	// Configuration (read-only system config)
 	FindingSource      *app.FindingSourceService
@@ -615,6 +617,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
+	// Continuous threat modeling: composes exposure chains + attacker profiles +
+	// ATT&CK catalog + live findings into a per-scope threat model.
+	s.ThreatModel = threatmodel.NewService(
+		repos.ThreatModel, s.AttackSurface, repos.Asset, repos.AssetRelationship,
+		repos.AttackerProfileReader, repos.Finding, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.AssetImport = app.NewAssetImportService(repos.Asset, log)

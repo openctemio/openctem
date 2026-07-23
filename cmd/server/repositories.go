@@ -25,6 +25,8 @@ type Repositories struct {
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
 	RelationshipSuggestion *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
+	ThreatModel            *postgres.ThreatModelRepository            // CTEM: Continuous threat models
+	AttackerProfileReader  *postgres.AttackerProfileReader            // CTEM: Attacker profiles (generation input)
 
 	// Vulnerabilities & Findings
 	Vulnerability    *postgres.VulnerabilityRepository
@@ -210,6 +212,8 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
 		RelationshipSuggestion: postgres.NewRelationshipSuggestionRepository(db), // CTEM: Relationship suggestions
+		ThreatModel:            postgres.NewThreatModelRepository(db),            // CTEM: Continuous threat models
+		AttackerProfileReader:  postgres.NewAttackerProfileReader(db),            // CTEM: Attacker profiles (generation input)
 
 		// Vulnerabilities & Findings
 		Vulnerability:    postgres.NewVulnerabilityRepository(db),

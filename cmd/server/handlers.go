@@ -30,6 +30,15 @@ func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc
 	return h
 }
 
+// newThreatModelHandler wires the continuous-threat-modeling handler, or nil
+// when the generation service was not initialized (e.g. no database).
+func newThreatModelHandler(svc *Services, log *logger.Logger) *handler.ThreatModelHandler {
+	if svc == nil || svc.ThreatModel == nil {
+		return nil
+	}
+	return handler.NewThreatModelHandler(svc.ThreatModel, log)
+}
+
 // HandlerDeps contains dependencies needed to create handlers.
 type HandlerDeps struct {
 	Config       *config.Config
@@ -340,6 +349,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, log),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          handler.NewPriorityRuleHandler(deps.DB.DB, log),
+		ThreatModel:           newThreatModelHandler(svc, log),
 
 		// Platform Stats (tenant-scoped platform agent statistics)
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
