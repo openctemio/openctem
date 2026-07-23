@@ -81,6 +81,50 @@ func (s *Service) Get(ctx context.Context, tenantID, id shared.ID, filter tmdom.
 	return model, threats, nil
 }
 
+// Coverage returns the model and its aggregated tactic × technique coverage
+// matrix (worst-case status rollup per technique, per-status counts, totals). It
+// reuses ListThreats (all threats for the model) and enriches technique names +
+// mitigation lists from the ATT&CK catalog. Tenant-scoped via GetByID/ListThreats.
+func (s *Service) Coverage(ctx context.Context, tenantID, id shared.ID) (*tmdom.ThreatModel, Coverage, error) {
+	model, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, Coverage{}, err
+	}
+	threats, err := s.repo.ListThreats(ctx, tenantID, id, tmdom.ThreatFilter{})
+	if err != nil {
+		return nil, Coverage{}, err
+	}
+	return model, buildCoverage(threats, s.techniqueMeta(ctx, model.TechniqueDatasetVersion)), nil
+}
+
+// techniqueMeta builds the technique_id → {name, mitigation ids} lookup from the
+// ATT&CK catalog for the model's dataset version. On a catalog read error it logs
+// and returns nil so coverage still renders (names blank, mitigation ids sourced
+// from the threats) rather than failing the whole endpoint.
+func (s *Service) techniqueMeta(ctx context.Context, datasetVersion string) map[string]TechniqueMeta {
+	if datasetVersion == "" {
+		datasetVersion = tmdom.DefaultDatasetVersion
+	}
+	mits, err := s.repo.ListTechniqueMitigations(ctx, datasetVersion)
+	if err != nil {
+		s.logger.Warn("load technique catalog for coverage; names will be blank",
+			"error", err, "dataset_version", datasetVersion)
+		return nil
+	}
+	meta := make(map[string]TechniqueMeta, len(mits))
+	for _, m := range mits {
+		e := meta[m.TechniqueID]
+		if e.Name == "" {
+			e.Name = m.TechniqueName
+		}
+		if m.MitigationID != "" {
+			e.MitigationIDs = append(e.MitigationIDs, m.MitigationID)
+		}
+		meta[m.TechniqueID] = e
+	}
+	return meta
+}
+
 // GenerateForScope (re)generates the threat model for a scope and returns the
 // persisted model. It is idempotent: when the graph/findings/profile inputs are
 // unchanged since the last generation (equal input_hash) it returns the existing

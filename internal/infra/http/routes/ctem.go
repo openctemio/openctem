@@ -65,6 +65,7 @@ func registerThreatModelRoutes(
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 		r.POST("/generate", h.Generate, middleware.Require(permission.AssetsWrite))
 		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+		r.GET("/{id}/coverage", h.Coverage, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 

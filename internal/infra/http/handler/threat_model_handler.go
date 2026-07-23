@@ -75,6 +75,58 @@ type ThreatModelDetailResponse struct {
 	Threats []ThreatResponse `json:"threats"`
 }
 
+// ---- coverage responses ----------------------------------------------------
+
+// CoverageStatusCounts is the per-status threat breakdown for a technique cell.
+type CoverageStatusCounts struct {
+	Open        int `json:"open"`
+	Mitigated   int `json:"mitigated"`
+	Covered     int `json:"covered"`
+	Accepted    int `json:"accepted"`
+	Theoretical int `json:"theoretical"`
+}
+
+// CoverageTechniqueResponse is one technique cell of the coverage matrix.
+type CoverageTechniqueResponse struct {
+	TechniqueID   string               `json:"technique_id"`
+	TechniqueName string               `json:"technique_name,omitempty"`
+	Status        string               `json:"status"`
+	Counts        CoverageStatusCounts `json:"counts"`
+	MaxScore      float64              `json:"max_score"`
+	MitigationIDs []string             `json:"mitigation_ids,omitempty"`
+	ThreatCount   int                  `json:"threat_count"`
+}
+
+// CoverageTacticResponse groups technique cells under a tactic.
+type CoverageTacticResponse struct {
+	Tactic     string                      `json:"tactic"`
+	Techniques []CoverageTechniqueResponse `json:"techniques"`
+}
+
+// CoverageTotalsResponse is the model-wide rollup over technique cells.
+type CoverageTotalsResponse struct {
+	Techniques  int     `json:"techniques"`
+	Open        int     `json:"open"`
+	Mitigated   int     `json:"mitigated"`
+	Covered     int     `json:"covered"`
+	Accepted    int     `json:"accepted"`
+	Theoretical int     `json:"theoretical"`
+	CoveragePct float64 `json:"coverage_pct"`
+}
+
+// ThreatModelCoverageResponse is the tactic × technique coverage matrix payload.
+// The UI colors a heatmap by per-technique status and can map technique_id +
+// status/max_score to an ATT&CK Navigator layer client-side.
+type ThreatModelCoverageResponse struct {
+	ThreatModelID  string                   `json:"threat_model_id"`
+	ScopeType      string                   `json:"scope_type"`
+	ScopeRefID     string                   `json:"scope_ref_id,omitempty"`
+	DatasetVersion string                   `json:"dataset_version"`
+	GeneratedAt    time.Time                `json:"generated_at"`
+	Tactics        []CoverageTacticResponse `json:"tactics"`
+	Totals         CoverageTotalsResponse   `json:"totals"`
+}
+
 // GenerateThreatModelRequest is the body for POST /threat-models/generate.
 type GenerateThreatModelRequest struct {
 	ScopeType  string `json:"scope_type"`
@@ -162,6 +214,32 @@ func (h *ThreatModelHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// Coverage returns the model's tactic × technique coverage matrix (worst-case
+// status rollup per technique, per-status counts, totals + coverage_pct).
+func (h *ThreatModelHandler) Coverage(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.tenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := shared.IDFromString(chi.URLParam(r, "id"))
+	if err != nil {
+		apierror.BadRequest("invalid threat model id").WriteJSON(w)
+		return
+	}
+
+	model, cov, err := h.service.Coverage(r.Context(), tenantID, id)
+	if err != nil {
+		if errors.Is(err, tmdom.ErrNotFound) {
+			apierror.NotFound("threat model not found").WriteJSON(w)
+			return
+		}
+		h.logger.Error("threat model coverage", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, toCoverageResponse(model, cov))
+}
+
 // Generate (re)generates the model for a scope and returns it.
 func (h *ThreatModelHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenant(w, r)
@@ -234,6 +312,50 @@ func toModelResponse(m *tmdom.ThreatModel) ThreatModelResponse {
 	}
 	if m.ScopeRefID != nil {
 		resp.ScopeRefID = m.ScopeRefID.String()
+	}
+	return resp
+}
+
+func toCoverageResponse(m *tmdom.ThreatModel, cov threatmodel.Coverage) ThreatModelCoverageResponse {
+	resp := ThreatModelCoverageResponse{
+		ThreatModelID:  m.ID.String(),
+		ScopeType:      m.ScopeType.String(),
+		DatasetVersion: m.TechniqueDatasetVersion,
+		GeneratedAt:    m.GeneratedAt,
+		Tactics:        make([]CoverageTacticResponse, len(cov.Tactics)),
+		Totals: CoverageTotalsResponse{
+			Techniques:  cov.Totals.Techniques,
+			Open:        cov.Totals.Open,
+			Mitigated:   cov.Totals.Mitigated,
+			Covered:     cov.Totals.Covered,
+			Accepted:    cov.Totals.Accepted,
+			Theoretical: cov.Totals.Theoretical,
+			CoveragePct: cov.Totals.CoveragePct,
+		},
+	}
+	if m.ScopeRefID != nil {
+		resp.ScopeRefID = m.ScopeRefID.String()
+	}
+	for i, tac := range cov.Tactics {
+		techs := make([]CoverageTechniqueResponse, len(tac.Techniques))
+		for j, tc := range tac.Techniques {
+			techs[j] = CoverageTechniqueResponse{
+				TechniqueID:   tc.TechniqueID,
+				TechniqueName: tc.TechniqueName,
+				Status:        tc.Status,
+				Counts: CoverageStatusCounts{
+					Open:        tc.Counts.Open,
+					Mitigated:   tc.Counts.Mitigated,
+					Covered:     tc.Counts.Covered,
+					Accepted:    tc.Counts.Accepted,
+					Theoretical: tc.Counts.Theoretical,
+				},
+				MaxScore:      tc.MaxScore,
+				MitigationIDs: tc.MitigationIDs,
+				ThreatCount:   tc.ThreatCount,
+			}
+		}
+		resp.Tactics[i] = CoverageTacticResponse{Tactic: tac.Tactic, Techniques: techs}
 	}
 	return resp
 }
