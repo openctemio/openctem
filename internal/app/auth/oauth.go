@@ -729,6 +729,15 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 		return existingUser, nil
 	}
 
+	// SECURITY (FIX 4): when public registration is disabled, social login may
+	// only bind to an existing/pre-invited account (handled above) — it must NOT
+	// create a brand-new user. Reaching here means no account exists, so refuse.
+	if !s.authConfig.AllowRegistration {
+		s.logger.Warn("OAuth login refused: registration disabled and no account exists",
+			"email", userInfo.Email, "provider", provider)
+		return nil, ErrRegistrationDisabled
+	}
+
 	// Create new user
 	newUser, err := userdom.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, provider.ToAuthProvider())
 	if err != nil {

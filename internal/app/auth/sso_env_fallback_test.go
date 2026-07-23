@@ -62,16 +62,19 @@ func enabledEntra() config.EntraSSOConfig {
 		Enabled:      true,
 		ClientID:     "env-client-id",
 		ClientSecret: "env-secret",
-		TenantID:     "dir-1234",
+		TenantID:     "dir-1234", // pinned directory GUID → auto-provision allowed
 		DefaultRole:  "member",
 		DisplayName:  "Microsoft Entra ID",
+		// FIX 1: the env fallback is opt-in per tenant slug. The test tenant
+		// ("acme", see newSSOForTest) must be on the allow-list to use it.
+		AllowedTenants: []string{"acme"},
 	}
 }
 
 func TestResolveProvider_EnvFallbackWhenTenantHasNone(t *testing.T) {
 	svc := newSSOForTest(&fakeIPRepo{byProvider: map[identityproviderdom.Provider]*identityproviderdom.IdentityProvider{}}, enabledEntra())
 
-	rp, err := svc.resolveProvider(context.Background(), "tid", identityproviderdom.ProviderEntraID)
+	rp, err := svc.resolveProvider(context.Background(), "tid", "acme", identityproviderdom.ProviderEntraID)
 	if err != nil {
 		t.Fatalf("resolveProvider: %v", err)
 	}
@@ -89,7 +92,7 @@ func TestResolveProvider_EnvFallbackWhenTenantHasNone(t *testing.T) {
 func TestResolveProvider_NoTenantNoEnv_NotFound(t *testing.T) {
 	svc := newSSOForTest(&fakeIPRepo{byProvider: map[identityproviderdom.Provider]*identityproviderdom.IdentityProvider{}}, config.EntraSSOConfig{})
 
-	_, err := svc.resolveProvider(context.Background(), "tid", identityproviderdom.ProviderEntraID)
+	_, err := svc.resolveProvider(context.Background(), "tid", "acme", identityproviderdom.ProviderEntraID)
 	if err != ErrSSOProviderNotFound {
 		t.Fatalf("expected ErrSSOProviderNotFound, got %v", err)
 	}
@@ -103,7 +106,7 @@ func TestResolveProvider_TenantConfigWinsOverEnv(t *testing.T) {
 	}}
 	svc := newSSOForTest(repo, enabledEntra())
 
-	rp, err := svc.resolveProvider(context.Background(), "tid", identityproviderdom.ProviderEntraID)
+	rp, err := svc.resolveProvider(context.Background(), "tid", "acme", identityproviderdom.ProviderEntraID)
 	if err != nil {
 		t.Fatalf("resolveProvider: %v", err)
 	}

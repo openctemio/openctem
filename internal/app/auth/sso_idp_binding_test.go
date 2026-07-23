@@ -5,10 +5,15 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/openctemio/api/internal/config"
 	identityproviderdom "github.com/openctemio/api/pkg/domain/identityprovider"
 	userdom "github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// regEnabled is the auth config used by findOrCreateUser tests that exercise the
+// create path; production defaults AUTH_ALLOW_REGISTRATION to true.
+func regEnabled() config.AuthConfig { return config.AuthConfig{AllowRegistration: true} }
 
 // ssoFakeUserRepo records Create/Update for the SSO findOrCreateUser tests.
 // (fakeUserRepo from oauth_takeover_test.go is reused where it suffices, but we
@@ -28,7 +33,7 @@ func (r *ssoFakeUserRepo) Create(_ context.Context, u *userdom.User) error { r.c
 
 func newSSOSvc(existing *userdom.User) (*SSOService, *ssoFakeUserRepo) {
 	repo := &ssoFakeUserRepo{byEmail: existing}
-	return &SSOService{userRepo: repo, logger: logger.NewNop()}, repo
+	return &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled()}, repo
 }
 
 const (
@@ -157,7 +162,7 @@ var errTestCreateConflict = fmt.Errorf("duplicate key value violates unique cons
 func TestSSOFindOrCreate_RetryPathBlocksPasswordLocalTakeover(t *testing.T) {
 	victim, _ := userdom.NewLocalUser(victimMail, "Victim", "hashed-password")
 	repo := &raceUserRepo{onRetry: victim}
-	s := &SSOService{userRepo: repo, logger: logger.NewNop()}
+	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled()}
 
 	got, err := s.findOrCreateUser(context.Background(),
 		&SSOUserInfo{Email: victimMail, Issuer: evilOkta, Subject: "evil"},
@@ -179,7 +184,7 @@ func TestSSOFindOrCreate_RetryPathAdoptsSameIssuer(t *testing.T) {
 	concurrent, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
 	concurrent.BindFederatedIdentity(corpOkta, "corp-sub")
 	repo := &raceUserRepo{onRetry: concurrent}
-	s := &SSOService{userRepo: repo, logger: logger.NewNop()}
+	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled()}
 
 	got, err := s.findOrCreateUser(context.Background(),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub"},

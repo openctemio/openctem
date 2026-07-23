@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
+	"github.com/openctemio/api/internal/config"
 	userdom "github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -77,7 +78,7 @@ func TestOAuthFindOrCreate_BlocksFederatedIdentityMismatch(t *testing.T) {
 // in with, so subsequent logins can be identity-matched.
 func TestOAuthFindOrCreate_BindsOnCreate(t *testing.T) {
 	repo := &fakeUserRepo{byEmail: nil} // no existing user → create path
-	s := &OAuthService{userRepo: repo, logger: logger.NewNop()}
+	s := &OAuthService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: true}}
 
 	if _, err := s.findOrCreateUser(context.Background(),
 		&OAuthUserInfo{Email: "new@corp.com", Name: "New", Issuer: "iss-A", Subject: "sub-A"},

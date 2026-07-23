@@ -270,6 +270,13 @@ type EntraSSOConfig struct {
 	DefaultRole    string   // SSO_ENTRA_DEFAULT_ROLE (default "member")
 	AutoProvision  bool     // SSO_ENTRA_AUTO_PROVISION (default true)
 	DisplayName    string   // SSO_ENTRA_DISPLAY_NAME (default "Microsoft Entra ID")
+
+	// AllowedTenants is the opt-in allow-list of tenant SLUGS (SSO_ENTRA_ALLOWED_TENANTS,
+	// csv) that may use this platform-wide env fallback. It is fail-closed: a tenant
+	// whose slug is NOT listed gets NO env SSO button and NO env-fallback login, so a
+	// shared multi-tenant (`/common`) app registration cannot let any Microsoft account
+	// self-join every organization. Empty ⇒ the env fallback is disabled for all tenants.
+	AllowedTenants []string // SSO_ENTRA_ALLOWED_TENANTS (csv of tenant slugs; empty = none)
 }
 
 // IsConfigured reports whether the platform-wide Entra SSO fallback is usable:
@@ -653,6 +660,7 @@ func Load() (*Config, error) {
 				DefaultRole:    getEnv("SSO_ENTRA_DEFAULT_ROLE", "member"),
 				AutoProvision:  getEnvBool("SSO_ENTRA_AUTO_PROVISION", true),
 				DisplayName:    getEnv("SSO_ENTRA_DISPLAY_NAME", "Microsoft Entra ID"),
+				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),
 			},
 		},
 		Keycloak: KeycloakConfig{
