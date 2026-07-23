@@ -61,8 +61,11 @@ type ThreatResponse struct {
 	HopIndex          int     `json:"hop_index"`
 	ChainFingerprint  string  `json:"chain_fingerprint"`
 	TechniqueID       string  `json:"technique_id"`
+	TechniqueName     string  `json:"technique_name,omitempty"`
 	Tactic            string  `json:"tactic,omitempty"`
 	MitigationID      string  `json:"mitigation_id,omitempty"`
+	MitigationName    string  `json:"mitigation_name,omitempty"`
+	MitigationSummary string  `json:"mitigation_summary,omitempty"`
 	Status            string  `json:"status"`
 	StatusReason      string  `json:"status_reason,omitempty"`
 	EvidenceFindingID string  `json:"evidence_finding_id,omitempty"`
@@ -240,15 +243,18 @@ func toModelResponse(m *tmdom.ThreatModel) ThreatModelResponse {
 
 func toThreatResponse(t *tmdom.ThreatModelThreat) ThreatResponse {
 	resp := ThreatResponse{
-		ID:               t.ID.String(),
-		HopIndex:         t.HopIndex,
-		ChainFingerprint: t.ChainFingerprint,
-		TechniqueID:      t.TechniqueID,
-		Tactic:           t.Tactic,
-		MitigationID:     t.MitigationID,
-		Status:           t.Status.String(),
-		StatusReason:     t.StatusReason,
-		Score:            t.Score,
+		ID:                t.ID.String(),
+		HopIndex:          t.HopIndex,
+		ChainFingerprint:  t.ChainFingerprint,
+		TechniqueID:       t.TechniqueID,
+		TechniqueName:     t.TechniqueName,
+		Tactic:            t.Tactic,
+		MitigationID:      t.MitigationID,
+		MitigationName:    t.MitigationName,
+		MitigationSummary: t.MitigationSummary,
+		Status:            t.Status.String(),
+		StatusReason:      t.StatusReason,
+		Score:             t.Score,
 	}
 	if t.AttackerProfileID != nil {
 		resp.AttackerProfileID = t.AttackerProfileID.String()

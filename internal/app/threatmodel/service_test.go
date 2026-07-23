@@ -119,6 +119,47 @@ func TestEnumerate_EndToEnd(t *testing.T) {
 	}
 }
 
+// TestEnrichThreatCatalog maps mitigation_id → name (and technique_name +
+// summary) from a single catalog slice, and tolerates a threat whose mitigation
+// id has no catalog row (names stay empty → UI falls back to the raw id).
+func TestEnrichThreatCatalog(t *testing.T) {
+	mits := []tmdom.TechniqueMitigation{
+		{TechniqueID: "T1190", TechniqueName: "Exploit Public-Facing Application",
+			MitigationID: "M1050", MitigationName: "Exploit Protection",
+			MitigationSummary: "Use capabilities to prevent exploitation."},
+		{TechniqueID: "T1003", TechniqueName: "OS Credential Dumping",
+			MitigationID: "M1043", MitigationName: "Credential Access Protection",
+			MitigationSummary: "Restrict credential dumping."},
+	}
+
+	seeded := &tmdom.ThreatModelThreat{TechniqueID: "T1190", MitigationID: "M1050"}
+	missing := &tmdom.ThreatModelThreat{TechniqueID: "T9999", MitigationID: "M9999"}
+	// Technique in catalog but paired with an unseeded mitigation id: technique
+	// name resolves, mitigation name/summary stay empty.
+	techOnly := &tmdom.ThreatModelThreat{TechniqueID: "T1003", MitigationID: "M0000"}
+
+	enrichThreatCatalog(mits, []*tmdom.ThreatModelThreat{seeded, missing, techOnly, nil})
+
+	if seeded.MitigationName != "Exploit Protection" {
+		t.Errorf("seeded mitigation name = %q, want %q", seeded.MitigationName, "Exploit Protection")
+	}
+	if seeded.TechniqueName != "Exploit Public-Facing Application" {
+		t.Errorf("seeded technique name = %q", seeded.TechniqueName)
+	}
+	if seeded.MitigationSummary == "" {
+		t.Error("seeded threat should carry a mitigation summary")
+	}
+	if missing.MitigationName != "" || missing.TechniqueName != "" {
+		t.Errorf("unknown ids must leave names empty, got mit=%q tech=%q", missing.MitigationName, missing.TechniqueName)
+	}
+	if techOnly.TechniqueName != "OS Credential Dumping" {
+		t.Errorf("technique name should resolve independently of mitigation, got %q", techOnly.TechniqueName)
+	}
+	if techOnly.MitigationName != "" {
+		t.Errorf("unseeded mitigation pairing must leave mitigation name empty, got %q", techOnly.MitigationName)
+	}
+}
+
 // TestEnumerate_OpenStatusFromFinding proves the status seam: when a finding on
 // the hop asset matches the technique, the emitted threat is non-theoretical.
 func TestEnumerate_OpenStatusFromFinding(t *testing.T) {

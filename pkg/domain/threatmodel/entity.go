@@ -171,6 +171,14 @@ type ThreatModelThreat struct {
 	EvidenceFindingID *shared.ID
 	Score             float64
 	CreatedAt         time.Time
+
+	// Read-time catalog enrichment — NOT persisted. Populated when assembling a
+	// read response by joining attack_technique_mitigations on
+	// (technique_id, mitigation_id, dataset_version). Empty when the catalog has
+	// no matching row (callers fall back to the raw ids).
+	TechniqueName     string
+	MitigationName    string
+	MitigationSummary string
 }
 
 // NewThreatModelThreat builds an enumerated threat under a model, validating the

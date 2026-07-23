@@ -78,7 +78,54 @@ func (s *Service) Get(ctx context.Context, tenantID, id shared.ID, filter tmdom.
 	if err != nil {
 		return nil, nil, err
 	}
+	if len(threats) > 0 {
+		version := model.TechniqueDatasetVersion
+		if version == "" {
+			version = tmdom.DefaultDatasetVersion
+		}
+		mits, merr := s.repo.ListTechniqueMitigations(ctx, version)
+		if merr != nil {
+			return nil, nil, fmt.Errorf("load mitigation catalog: %w", merr)
+		}
+		enrichThreatCatalog(mits, threats)
+	}
 	return model, threats, nil
+}
+
+// enrichThreatCatalog fills the read-time catalog fields (technique/mitigation
+// names + mitigation summary) on threats from the technique→mitigation catalog.
+// Pure and allocation-bounded: it builds one lookup map from a single catalog
+// slice (one query per request — no N+1) and never mutates persisted state. A
+// threat whose (technique_id, mitigation_id) has no catalog row keeps empty
+// names so callers fall back to the raw ids.
+func enrichThreatCatalog(mits []tmdom.TechniqueMitigation, threats []*tmdom.ThreatModelThreat) {
+	if len(threats) == 0 || len(mits) == 0 {
+		return
+	}
+	byPair := make(map[string]tmdom.TechniqueMitigation, len(mits))
+	techName := make(map[string]string, len(mits))
+	for _, m := range mits {
+		byPair[catalogPairKey(m.TechniqueID, m.MitigationID)] = m
+		if _, ok := techName[m.TechniqueID]; !ok {
+			techName[m.TechniqueID] = m.TechniqueName
+		}
+	}
+	for _, t := range threats {
+		if t == nil {
+			continue
+		}
+		if name, ok := techName[t.TechniqueID]; ok {
+			t.TechniqueName = name
+		}
+		if m, ok := byPair[catalogPairKey(t.TechniqueID, t.MitigationID)]; ok {
+			t.MitigationName = m.MitigationName
+			t.MitigationSummary = m.MitigationSummary
+		}
+	}
+}
+
+func catalogPairKey(techniqueID, mitigationID string) string {
+	return techniqueID + "|" + mitigationID
 }
 
 // GenerateForScope (re)generates the threat model for a scope and returns the
