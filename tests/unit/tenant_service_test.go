@@ -2721,3 +2721,42 @@ func TestTenantSvc_SuspendMember_SystemActor_NullSuspendedBy(t *testing.T) {
 		t.Errorf("suspended_by should be nil for a system actor, got %v", stored.SuspendedBy())
 	}
 }
+
+// TestTenantSvc_SuspendMember_RevokesSessions is the security-critical guarantee
+// behind SCIM deprovisioning: when a member is suspended (active:false / DELETE
+// from the IdP), all of that user's sessions and refresh tokens must be revoked
+// immediately, not left alive until the JWT expires. Without this assertion the
+// SCIM "loses access" promise is unverified.
+func TestTenantSvc_SuspendMember_RevokesSessions(t *testing.T) {
+	svc, repo := newTestTenantService()
+	sessionSvc, sessRepo, rtRepo := newTestSessionService()
+	svc.SetSessionService(sessionSvc)
+
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	m, err := svc.AddMember(context.Background(), tenantID.String(),
+		app.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{},
+		app.AuditContext{TenantID: tenantID.String()})
+	if err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	// Deprovision exactly as the SCIM adapter does: system actor, no ActorID.
+	if err := svc.SuspendMember(context.Background(), m.ID().String(),
+		app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}); err != nil {
+		t.Fatalf("SuspendMember: %v", err)
+	}
+
+	if repo.memberships[m.ID().String()] == nil || !repo.memberships[m.ID().String()].IsSuspended() {
+		t.Fatal("membership should be suspended")
+	}
+	// The actual "access is lost immediately" guarantee: sessions + refresh
+	// tokens revoked for the whole user (RevokeAllSessions with no exception).
+	if sessRepo.revokeAllCalls != 1 {
+		t.Errorf("expected all sessions revoked on suspend, RevokeAllByUserID calls = %d, want 1", sessRepo.revokeAllCalls)
+	}
+	if rtRepo.revokeByUserCalls != 1 {
+		t.Errorf("expected refresh tokens revoked on suspend, RevokeByUserID calls = %d, want 1", rtRepo.revokeByUserCalls)
+	}
+}

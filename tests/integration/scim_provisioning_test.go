@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -133,5 +134,73 @@ func TestSCIMProvisioning_RoundTrip_RealDB(t *testing.T) {
 	}
 	if _, e := tokenSvc.Authenticate(ctx, mint.Plaintext); e == nil {
 		t.Error("revoked token must not authenticate")
+	}
+}
+
+// TestSCIMProvisioning_CrossTenantIsolation_RealDB proves the tenant boundary
+// that the unit-level fake (single-tenant map) cannot: a user provisioned into
+// tenant B must be invisible to tenant A's SCIM surface (Get/SetActive → 404),
+// and an attempt from A must not touch B's membership. One SCIM bearer token =
+// one tenant, so this is the isolation an IdP for tenant A cannot cross.
+func TestSCIMProvisioning_CrossTenantIsolation_RealDB(t *testing.T) {
+	sqlDB := setupTestDB(t)
+	db := &postgres.DB{DB: sqlDB}
+	log := logger.NewNop()
+	ctx := context.Background()
+
+	tenantA := createTestTenant(t, sqlDB, "scim-a")
+	tenantB := createTestTenant(t, sqlDB, "scim-b")
+	email := fmt.Sprintf("scim-xt-%d@example.com", time.Now().UnixNano())
+	t.Cleanup(func() {
+		cleanupTestData(sqlDB, tenantA, tenantB)
+		_, _ = sqlDB.Exec("DELETE FROM users WHERE email = $1", email)
+	})
+
+	userRepo := postgres.NewUserRepository(db)
+	tenantRepo := postgres.NewTenantRepository(db)
+	tenantSvc := app.NewTenantService(tenantRepo, log)
+	prov := scim.NewProvisioningService(userRepo, tenantRepo, scimMemberMgr{svc: tenantSvc}, log)
+
+	// Provision the user into tenant B only.
+	res, _, err := prov.CreateOrActivate(ctx, tenantB, scim.ProvisionInput{
+		UserName: email, DisplayName: "Tenant B User", Active: true,
+	})
+	if err != nil {
+		t.Fatalf("provision into tenant B: %v", err)
+	}
+	userID, err := shared.IDFromString(res.ID)
+	if err != nil {
+		t.Fatalf("parse user id: %v", err)
+	}
+
+	// Tenant A must not be able to GET tenant B's user.
+	if _, gerr := prov.Get(ctx, tenantA, userID); !errors.Is(gerr, shared.ErrNotFound) {
+		t.Errorf("tenant A Get of tenant B user: want ErrNotFound, got %v", gerr)
+	}
+
+	// Tenant A must not be able to deprovision (SetActive) tenant B's user.
+	if _, serr := prov.SetActive(ctx, tenantA, userID, false); !errors.Is(serr, shared.ErrNotFound) {
+		t.Errorf("tenant A deprovision of tenant B user: want ErrNotFound, got %v", serr)
+	}
+
+	// Tenant A's List must not surface tenant B's user.
+	list, total, lerr := prov.List(ctx, tenantA, email, 1, 100)
+	if lerr != nil {
+		t.Fatalf("tenant A list: %v", lerr)
+	}
+	if total != 0 || len(list) != 0 {
+		t.Errorf("tenant A must not see tenant B user via filter, got total=%d list=%d", total, len(list))
+	}
+
+	// Tenant B's membership must be untouched (still active).
+	var status string
+	if qerr := sqlDB.QueryRow(
+		`SELECT status FROM tenant_members WHERE tenant_id = $1 AND user_id = $2`,
+		tenantB.String(), userID.String(),
+	).Scan(&status); qerr != nil {
+		t.Fatalf("query tenant B status: %v", qerr)
+	}
+	if status != "active" {
+		t.Errorf("tenant B membership must remain active after cross-tenant attempts, got %q", status)
 	}
 }
