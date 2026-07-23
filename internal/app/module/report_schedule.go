@@ -65,7 +65,9 @@ func (s *ReportScheduleService) CreateSchedule(ctx context.Context, input Create
 	}
 
 	if input.Timezone != "" {
-		schedule.Update(input.Name, input.ReportType, input.Format, input.CronExpression, input.Timezone)
+		if err := schedule.Update(input.Name, input.ReportType, input.Format, input.CronExpression, input.Timezone); err != nil {
+			return nil, err
+		}
 	}
 	if len(input.Recipients) > 0 {
 		schedule.SetRecipients(input.Recipients)

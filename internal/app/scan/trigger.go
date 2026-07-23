@@ -151,6 +151,12 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
 	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
+	// Propagate direct targets (e.g. from QuickScan) so the workflow step
+	// commands carry them to the agent. Without this the agent has only the
+	// (possibly empty, ephemeral) asset group and scans nothing.
+	if len(sc.Targets) > 0 {
+		runContext["targets"] = sc.Targets
+	}
 
 	// Create pipeline run
 	run, err := pipeline.NewRun(template.ID, sc.TenantID, nil, pipeline.TriggerTypeManual, triggeredBy, runContext)
@@ -282,7 +288,7 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 	}
 
 	// Create command for the step with consistent field names for pipeline progression
-	payload, _ := json.Marshal(map[string]any{
+	payloadMap := map[string]any{
 		"pipeline_run_id":       run.ID.String(),
 		"step_run_id":           stepRunID,
 		"step_id":               step.ID.String(),
@@ -292,7 +298,14 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 		"preferred_tool":        step.Tool,
 		"timeout_seconds":       step.TimeoutSeconds,
 		"context":               run.Context,
-	})
+	}
+	// Surface direct targets at the top level of the payload — agent executors
+	// read job.Payload["targets"], not the nested run context. Without this a
+	// workflow driven by ad-hoc targets (QuickScan) would receive none.
+	if targets, ok := run.Context["targets"]; ok {
+		payloadMap["targets"] = targets
+	}
+	payload, _ := json.Marshal(payloadMap)
 
 	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
 	if err != nil {

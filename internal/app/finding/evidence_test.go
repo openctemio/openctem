@@ -241,6 +241,41 @@ func TestAddFindingEvidence_EmptyDescription(t *testing.T) {
 	}
 }
 
+func TestAddFindingEvidence_NoteCapEnforced(t *testing.T) {
+	tenantID := shared.NewID()
+	f := mkFinding(t, tenantID, vulnerability.FindingSourceDAST)
+	store := newStubEvidenceStore()
+	s := newTestService(seedRepo(f), store)
+	userID := shared.NewID()
+
+	// Fill the finding to exactly the cap — each of these must succeed.
+	for i := 0; i < maxEvidenceNotes; i++ {
+		if _, err := s.AddFindingEvidence(context.Background(), AddEvidenceInput{
+			FindingID:   f.ID().String(),
+			TenantID:    tenantID.String(),
+			UserID:      userID.String(),
+			Description: "note body",
+		}); err != nil {
+			t.Fatalf("note %d/%d unexpectedly rejected: %v", i+1, maxEvidenceNotes, err)
+		}
+	}
+
+	// The (N+1)th note must be rejected as a validation error.
+	_, err := s.AddFindingEvidence(context.Background(), AddEvidenceInput{
+		FindingID:   f.ID().String(),
+		TenantID:    tenantID.String(),
+		UserID:      userID.String(),
+		Description: "one too many",
+	})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("note beyond cap: want ErrValidation, got %v", err)
+	}
+	// No extra upload should have been stored past the cap.
+	if len(store.uploads) != maxEvidenceNotes {
+		t.Fatalf("expected %d stored notes, got %d", maxEvidenceNotes, len(store.uploads))
+	}
+}
+
 func addNote(t *testing.T, s *VulnerabilityService, f *vulnerability.Finding, tenantID, userID shared.ID) *FindingEvidence {
 	t.Helper()
 	ev, err := s.AddFindingEvidence(context.Background(), AddEvidenceInput{

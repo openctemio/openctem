@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -683,6 +684,13 @@ func (m *mockToolRepo) ListByCapability(_ context.Context, _ string) ([]*tool.To
 	return nil, nil
 }
 func (m *mockToolRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string) (*tool.Tool, error) {
+	// Return the first registered active tool so workflow step tool-resolution
+	// can succeed in tests that seed a tool; unseeded tests still get nil.
+	for _, t := range m.tools {
+		if t.IsActive {
+			return t, nil
+		}
+	}
 	return nil, nil
 }
 func (m *mockToolRepo) Update(_ context.Context, _ *tool.Tool) error       { return nil }
@@ -967,6 +975,84 @@ func TestScanService_CreateScan_WorkflowType_Success(t *testing.T) {
 	}
 	if result.PipelineID == nil || *result.PipelineID != pipelineID {
 		t.Errorf("expected pipeline ID %s", pipelineID)
+	}
+}
+
+// TestScanService_QuickScan_WorkflowRejectsInternalTarget asserts the workflow
+// path now runs SSRF target validation (previously skipped entirely).
+func TestScanService_QuickScan_WorkflowRejectsInternalTarget(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+
+	pipelineID := shared.NewID()
+	deps.templateRepo.templates[pipelineID.String()] = &pipeline.Template{
+		ID: pipelineID, TenantID: tenantID, IsActive: true, Name: "wf",
+	}
+
+	_, err := svc.QuickScan(context.Background(), scanservice.QuickScanInput{
+		TenantID:   tenantID.String(),
+		Targets:    []string{"127.0.0.1"},
+		WorkflowID: pipelineID.String(),
+	})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("workflow quick-scan with internal target: want ErrValidation, got %v", err)
+	}
+}
+
+// TestScanService_QuickScan_WorkflowAppliesTargets asserts workflow-path targets
+// are applied to the run rather than silently dropped: they must be persisted on
+// the scan and surfaced in the dispatched step command payload (agents read
+// job.Payload["targets"]).
+func TestScanService_QuickScan_WorkflowAppliesTargets(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+
+	pipelineID := shared.NewID()
+	deps.templateRepo.templates[pipelineID.String()] = &pipeline.Template{
+		ID: pipelineID, TenantID: tenantID, IsActive: true, Name: "wf",
+	}
+	step, err := pipeline.NewStep(pipelineID, "scan", "Scan", 1, []string{"vulnscan"})
+	if err != nil {
+		t.Fatalf("NewStep: %v", err)
+	}
+	deps.stepRepo.steps[pipelineID.String()] = []*pipeline.Step{step}
+	deps.toolRepo.addTool("nuclei", true) // active tool matching the step capability
+
+	targets := []string{"example.com", "test.example.com"}
+	res, err := svc.QuickScan(context.Background(), scanservice.QuickScanInput{
+		TenantID:   tenantID.String(),
+		Targets:    targets,
+		WorkflowID: pipelineID.String(),
+	})
+	if err != nil {
+		t.Fatalf("workflow quick-scan: unexpected error: %v", err)
+	}
+	if res.TargetCount != len(targets) {
+		t.Fatalf("target count = %d, want %d", res.TargetCount, len(targets))
+	}
+
+	// Targets must be persisted on the scan entity.
+	sc := deps.scanRepo.scans[res.ScanID]
+	if sc == nil || len(sc.Targets) != len(targets) {
+		t.Fatalf("targets not persisted on scan: %+v", sc)
+	}
+
+	// The dispatched workflow step command must carry the targets at top level.
+	if len(deps.commandRepo.commands) == 0 {
+		t.Fatal("expected a workflow step command to be created")
+	}
+	found := false
+	for _, cmd := range deps.commandRepo.commands {
+		var p map[string]any
+		if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+			t.Fatalf("payload decode: %v", err)
+		}
+		if raw, ok := p["targets"].([]any); ok && len(raw) == len(targets) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("workflow step command payload did not carry targets — silent-drop regression")
 	}
 }
 

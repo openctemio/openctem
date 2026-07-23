@@ -27,6 +27,53 @@ var validReportTypes = map[string]bool{
 // run time.
 var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
+// maxNameLen bounds the schedule display name to keep it a label, not a blob.
+const maxNameLen = 200
+
+// minCronInterval is the shortest firing interval a report schedule may have.
+// The scan path runs cron through securityValidator.ValidateCronExpression, but
+// that only checks format/injection — it does NOT bound the interval. Reports
+// fan out to up to 50 recipients, so a sub-hourly cron (`* * * * *`) is an
+// email-amplification vector; require at least one hour between fires.
+const minCronInterval = time.Hour
+
+// validateName enforces the shared name rules for create and update.
+func validateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("%w: name is required", shared.ErrValidation)
+	}
+	if len(name) > maxNameLen {
+		return fmt.Errorf("%w: name exceeds %d characters", shared.ErrValidation, maxNameLen)
+	}
+	return nil
+}
+
+// validateCron parses the cron expression and rejects schedules that fire more
+// often than minCronInterval. Sampling several consecutive fire times (rather
+// than just the first gap) catches split schedules like `0 0,0/30 * * *`
+// regardless of the current time.
+func validateCron(expr string) error {
+	if expr == "" {
+		return fmt.Errorf("%w: cron expression is required", shared.ErrValidation)
+	}
+	if len(expr) > 200 {
+		return fmt.Errorf("%w: cron expression too long", shared.ErrValidation)
+	}
+	sched, err := cronParser.Parse(expr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid cron expression", shared.ErrValidation)
+	}
+	prev := sched.Next(time.Now())
+	for i := 0; i < 4; i++ {
+		next := sched.Next(prev)
+		if next.Sub(prev) < minCronInterval {
+			return fmt.Errorf("%w: schedule must not fire more than once per hour", shared.ErrValidation)
+		}
+		prev = next
+	}
+	return nil
+}
+
 // ReportSchedule represents a recurring report delivery configuration.
 type ReportSchedule struct {
 	id              shared.ID
@@ -58,17 +105,11 @@ type Recipient struct {
 
 // NewReportSchedule creates a new schedule.
 func NewReportSchedule(tenantID shared.ID, name, reportType, format, cron string) (*ReportSchedule, error) {
-	if name == "" {
-		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
+	if err := validateName(name); err != nil {
+		return nil, err
 	}
-	if cron == "" {
-		return nil, fmt.Errorf("%w: cron expression is required", shared.ErrValidation)
-	}
-	if len(cron) > 200 {
-		return nil, fmt.Errorf("%w: cron expression too long", shared.ErrValidation)
-	}
-	if _, err := cronParser.Parse(cron); err != nil {
-		return nil, fmt.Errorf("%w: invalid cron expression", shared.ErrValidation)
+	if err := validateCron(cron); err != nil {
+		return nil, err
 	}
 	if reportType == "" {
 		return nil, fmt.Errorf("%w: report type is required", shared.ErrValidation)
@@ -148,10 +189,17 @@ func (s *ReportSchedule) CreatedBy() *shared.ID     { return s.createdBy }
 func (s *ReportSchedule) CreatedAt() time.Time      { return s.createdAt }
 func (s *ReportSchedule) UpdatedAt() time.Time      { return s.updatedAt }
 
-// Update sets mutable fields.
-func (s *ReportSchedule) Update(name, reportType, format, cron, timezone string) {
+// Update sets mutable fields. Name (when provided) and cron are re-validated so
+// the update path enforces the same bounds as create.
+func (s *ReportSchedule) Update(name, reportType, format, cron, timezone string) error {
 	if name != "" {
+		if err := validateName(name); err != nil {
+			return err
+		}
 		s.name = name
+	}
+	if err := validateCron(cron); err != nil {
+		return err
 	}
 	s.reportType = reportType
 	s.format = format
@@ -160,6 +208,7 @@ func (s *ReportSchedule) Update(name, reportType, format, cron, timezone string)
 		s.timezone = timezone
 	}
 	s.updatedAt = time.Now()
+	return nil
 }
 
 // SetOptions sets report generation options.

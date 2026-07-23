@@ -23,6 +23,11 @@ const (
 	maxEvidenceURLLen         = 2048
 	maxRemediationStepLen     = 2000
 	maxRemediationSteps       = 100
+	// maxEvidenceNotes bounds the number of manual note-type evidence records a
+	// single finding may hold. Mirrors the maxRemediationSteps guard — without
+	// it a findings:write user could loop unbounded note uploads on one finding
+	// (row/blob growth).
+	maxEvidenceNotes = 200
 )
 
 // evidenceContextType is the attachment context_type used to link
@@ -36,6 +41,15 @@ const evidenceContextType = "finding"
 // evidenceNotePrefix marks an attachment whose content is a structured
 // JSON evidence note (as opposed to an uploaded binary file).
 const evidenceNotePrefix = "evidence-note-"
+
+// contentTypeJSON is the stored content-type for note-type evidence records.
+const contentTypeJSON = "application/json"
+
+// isEvidenceNote reports whether an attachment is a note-type evidence record
+// (JSON payload with the evidence-note filename prefix).
+func isEvidenceNote(att *attachmentdom.Attachment) bool {
+	return att.ContentType() == contentTypeJSON && strings.HasPrefix(att.Filename(), evidenceNotePrefix)
+}
 
 // EvidenceStore is the subset of the attachment service the finding-evidence
 // endpoints depend on. Implemented by *integration.AttachmentService. Declared
@@ -123,6 +137,22 @@ func (s *VulnerabilityService) AddFindingEvidence(ctx context.Context, input Add
 	f, err := s.getFindingWithTenantCheck(ctx, input.FindingID, input.TenantID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Cap manual note-type evidence per finding (analogous to maxRemediationSteps)
+	// so a findings:write user cannot loop unbounded notes on one finding.
+	existing, err := s.evidenceStore.ListByContext(ctx, f.TenantID(), evidenceContextType, f.ID().String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list existing evidence: %w", err)
+	}
+	noteCount := 0
+	for _, att := range existing {
+		if isEvidenceNote(att) {
+			noteCount++
+		}
+	}
+	if noteCount >= maxEvidenceNotes {
+		return nil, fmt.Errorf("%w: a finding may hold at most %d evidence notes", shared.ErrValidation, maxEvidenceNotes)
 	}
 
 	payload := evidenceNote{
@@ -284,8 +314,7 @@ func (s *VulnerabilityService) DeleteFindingEvidence(ctx context.Context, findin
 
 	// Refuse to delete anything that is not a note — this endpoint must never
 	// remove arbitrary uploaded files that happen to share the finding context.
-	isNote := target.ContentType() == "application/json" && strings.HasPrefix(target.Filename(), evidenceNotePrefix)
-	if !isNote {
+	if !isEvidenceNote(target) {
 		return fmt.Errorf("%w: attachment is not a deletable evidence note", shared.ErrValidation)
 	}
 
@@ -303,8 +332,7 @@ func (s *VulnerabilityService) DeleteFindingEvidence(ctx context.Context, findin
 // degrades gracefully to a metadata-only file entry rather than failing the
 // whole list.
 func (s *VulnerabilityService) attachmentToEvidence(ctx context.Context, tenantID shared.ID, att *attachmentdom.Attachment) *FindingEvidence {
-	isNote := att.ContentType() == "application/json" && strings.HasPrefix(att.Filename(), evidenceNotePrefix)
-	if isNote {
+	if isEvidenceNote(att) {
 		if note, ok := s.readEvidenceNote(ctx, tenantID, att.ID().String()); ok {
 			return &FindingEvidence{
 				ID:          att.ID().String(),

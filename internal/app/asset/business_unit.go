@@ -119,6 +119,16 @@ func (s *BusinessUnitService) applyParent(ctx context.Context, tid shared.ID, bu
 	}
 	// Cycle guard: walk the prospective parent's ancestor chain; if this unit
 	// appears, linking would create a cycle.
+	//
+	// KNOWN TOCTOU (accepted): the ancestor read + this write are not one
+	// transaction, so two concurrent Updates each setting the other as parent
+	// can both pass the check and produce a small cycle. It is bounded — every
+	// ancestor walk is capped at maxHierarchyDepth (64) hops, so a cycle only
+	// yields an inconsistent hierarchy, never an infinite loop or DoS. A clean
+	// fix needs a transaction spanning the read+check+write (or a recursive-CTE
+	// assertion in Repository.Update); the Repository interface has no tx
+	// support today, so plumbing it is disproportionate for this LOW-severity,
+	// contained race. Left as-is intentionally.
 	cursor := parent
 	for hops := 0; cursor != nil && cursor.ParentID() != nil && hops < maxHierarchyDepth; hops++ {
 		if *cursor.ParentID() == bu.ID() {
