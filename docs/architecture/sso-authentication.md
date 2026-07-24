@@ -3,6 +3,11 @@
 > How OpenCTEM authenticates users against external identity providers, and how
 > the **Microsoft Entra ID** login resolves its configuration: a tenant's own
 > config first, then a platform-wide env fallback.
+>
+> **Setting up Entra ID as an operator?** See the step-by-step how-to:
+> [`../how-to/configure-entraid.md`](../how-to/configure-entraid.md) (Azure app
+> registration, env vars, `xms_edov`, verified domains, troubleshooting). This
+> document is the design/rationale reference.
 
 ## Two distinct "Microsoft" login paths
 
