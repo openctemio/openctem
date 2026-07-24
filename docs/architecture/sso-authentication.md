@@ -153,8 +153,77 @@ email is rejected.
 > the **per-tenant Entra SSO** path to admit specific external identities under an
 > explicit domain allow-list.
 
+## Enforce SSO per-tenant (with owner break-glass)
+
+A tenant that has configured SSO can **require** its members to authenticate via
+SSO instead of a local password — without ever locking its administrators out.
+
+### Setting
+
+`Settings.Security.SSOEnforced` (bool), toggled via
+`PATCH /api/v1/tenants/{tenant}/settings/security` (`{"sso_enforced": true}`),
+same admin/owner gate as the other tenant-settings toggles.
+
+**Can't-enable guard:** enabling `sso_enforced` is refused (400, `ErrValidation`)
+unless the tenant has a *usable* SSO path — an active per-tenant identity
+provider or the opted-in env fallback (`SSOService.HasUsableSSOPath`, which reuses
+the exact `GetProvidersForTenant` resolution the login page uses). This stops an
+admin enforcing SSO with no way for anyone to sign in. If the checker is not
+wired the guard is skipped (logged) — the owner break-glass below is the real
+lock-out guarantee.
+
+### How a session's login method is recorded
+
+Each session row carries `sessions.auth_method` (migration `000192`), one of
+`password | sso | saml`:
+
+- the **password** login path keeps the `AuthMethodPassword` default;
+- the **OIDC/OAuth** callback stamps `sso`, the **SAML** ACS stamps `saml`
+  (`SSOService.createSession`, `OAuthService.createSession`) *before* the row is
+  persisted.
+
+`AuthMethod.IsFederated()` (true for `sso`/`saml`) is the discriminator. Empty /
+unknown values default to `password` — fail-closed, so a pre-migration row cannot
+silently bypass enforcement.
+
+### Enforcement point (tenant-selection / token-mint gate)
+
+Enforcement lives in **`AuthService.enforceSSOPolicy`**, called from
+`ExchangeToken` and `RefreshToken` (`internal/app/auth/service.go`) right after
+membership is resolved and **before** a tenant-scoped access token is minted.
+This is the single choke point a password session must pass to gain access to a
+tenant (the JWT carries no tenant; `Login` only returns a global refresh token +
+the list of memberships). The decision is the pure `ssoEnforcementDenied`:
+
+| Session method | Role | Tenant enforces SSO | Result |
+|----------------|------|---------------------|--------|
+| password | member/admin/viewer | yes | **denied** — `ErrSSORequired` (403) |
+| password | **owner** | yes | allowed — **break-glass** |
+| sso / saml | any | yes | allowed (SSO login is never blocked) |
+| any | any | no | allowed (unaffected) |
+
+Re-checked on every `RefreshToken`, so toggling enforcement on takes effect the
+next time a password session refreshes (an already-minted access token stays
+valid until it expires — a bounded window; see follow-ups).
+
+### Break-glass guarantee
+
+The tenant **OWNER is always exempt** and can password-login into an
+SSO-enforced tenant. Enabling SSO enforcement therefore can *never* lock every
+administrator out — the owner can always get in and turn it back off. The SSO
+login path itself is never gated (a federated session always passes), so an
+enforced tenant always admits the very login method it requires.
+
 ## Known follow-ups (not yet shipped)
 
 - **SAML / SCIM** — not supported (only OIDC/OAuth). See `docs/IDEAS.md` §3.5.
 - The env fallback currently covers `entra_id` only; Okta/Google could follow
   the same `envProvider` seam.
+- **SSO-enforcement residual window:** enforcement is applied at token *mint*
+  (ExchangeToken/RefreshToken), not per-request. A password session that already
+  holds a valid tenant-scoped access token keeps access until it expires. A
+  follow-up could add the auth method to the JWT claim and re-check in the
+  `RequireMembership` middleware to close that window.
+- **`HasUsableSSOPath` covers OIDC/env only**, not SAML-only tenants; a
+  SAML-only tenant can't yet pass the *can't-enable* guard (the owner break-glass
+  still prevents any lock-out).

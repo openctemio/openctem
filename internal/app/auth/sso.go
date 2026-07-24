@@ -153,6 +153,23 @@ type SSOProviderInfo struct {
 	DisplayName string `json:"display_name"`
 }
 
+// HasUsableSSOPath reports whether the tenant has at least one way for members
+// to sign in via SSO — an active per-tenant identity provider or the opted-in
+// platform env fallback. It reuses the exact resolution the login page uses
+// (GetProvidersForTenant), so "can enforce" matches "can actually sign in".
+// Consumed by TenantService.UpdateSecuritySettings to gate enabling sso_enforced.
+//
+// Note: this covers OIDC/OAuth identity providers + env fallback. SAML-only
+// tenants are not yet counted here (follow-up); the owner break-glass at the
+// enforcement gate still prevents any permanent lock-out.
+func (s *SSOService) HasUsableSSOPath(ctx context.Context, orgSlug string) (bool, error) {
+	providers, err := s.GetProvidersForTenant(ctx, orgSlug)
+	if err != nil {
+		return false, err
+	}
+	return len(providers) > 0, nil
+}
+
 // GetProvidersForTenant returns active SSO providers for a tenant identified by slug.
 func (s *SSOService) GetProvidersForTenant(ctx context.Context, orgSlug string) ([]SSOProviderInfo, error) {
 	t, err := s.tenantRepo.GetBySlug(ctx, orgSlug)
@@ -647,8 +664,8 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		}
 	}
 
-	// Create session
-	sessionResult, err := s.createSession(ctx, u)
+	// Create session (federated OIDC/OAuth → stamped 'sso', exempt from enforcement)
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSSO)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
@@ -1228,8 +1245,12 @@ func (s *SSOService) mapAuthProvider(provider identityproviderdom.Provider) user
 	}
 }
 
-// createSession creates a new session for the user.
-func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
+// createSession creates a new session for the user. authMethod records how the
+// identity was federated (AuthMethodSSO for OIDC/OAuth, AuthMethodSAML for a
+// SAML assertion) so the session is stamped as federated and thus exempt from
+// per-tenant SSO enforcement — an SSO-enforced tenant must always admit the very
+// login method it requires.
+func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod) (*SessionResult, error) {
 	// Bind the token to its session: generate the session id first, embed it in
 	// the JWT, then persist the session under the SAME id — so an SSO session is
 	// revocable (mirrors the password Login flow). Previously the token was
@@ -1252,6 +1273,12 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*Sessi
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
+	// Stamp the session as federated so it is exempt from password-only SSO
+	// enforcement. Default to SSO for any unspecified/invalid federated method.
+	if !authMethod.IsFederated() {
+		authMethod = sessiondom.AuthMethodSSO
+	}
+	newSession.SetAuthMethod(authMethod)
 
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("save session: %w", err)
@@ -1355,7 +1382,9 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 		}
 	}
 
-	sessionResult, err := s.createSession(ctx, u)
+	// Federated via a validated SAML assertion → stamped 'saml', exempt from
+	// enforcement (it IS an SSO login).
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}

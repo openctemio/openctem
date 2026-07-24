@@ -82,12 +82,26 @@ type TenantService struct {
 	// role_ids are silently dropped (audit finding). Wire it via
 	// WithTenantRoleService at app startup.
 	roleService *accesscontrol.RoleService
-	logger      *logger.Logger
+	// ssoPathChecker reports whether a tenant has a usable SSO login path.
+	// Used to REFUSE enabling sso_enforced when it would leave members with no
+	// way to sign in. Optional — when nil the guard is skipped (and only a
+	// warning is logged): the never-lock-out guarantee still holds because the
+	// owner is always break-glass exempt at the enforcement gate.
+	ssoPathChecker SSOPathChecker
+	logger         *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
 type UserInfoProvider interface {
 	GetUserNameByID(ctx context.Context, id shared.ID) (string, error)
+}
+
+// SSOPathChecker reports whether a tenant identified by slug has a usable SSO
+// login path — an active per-tenant identity provider or the opted-in platform
+// env fallback. Implemented by the SSO service (HasUsableSSOPath). Used by
+// UpdateSecuritySettings to refuse enabling sso_enforced with no way in.
+type SSOPathChecker interface {
+	HasUsableSSOPath(ctx context.Context, orgSlug string) (bool, error)
 }
 
 // NewTenantService creates a new TenantService.
@@ -140,6 +154,13 @@ func WithTenantRoleService(svc *accesscontrol.RoleService) TenantServiceOption {
 // RoleService — same pattern as SetMembershipCache).
 func (s *TenantService) SetRoleService(svc *accesscontrol.RoleService) {
 	s.roleService = svc
+}
+
+// SetSSOPathChecker wires the SSO-path checker after construction. TenantService
+// is built before the SSO service, so this is called at bootstrap once SSO is
+// ready (mirrors SetSessionService / SetRoleService).
+func (s *TenantService) SetSSOPathChecker(c SSOPathChecker) {
+	s.ssoPathChecker = c
 }
 
 // WithTenantPermissionCacheService sets the permission cache service for TenantService.
@@ -1417,6 +1438,7 @@ type UpdateSecuritySettingsInput struct {
 	SSOEnabled            *bool    `json:"sso_enabled"`
 	SSOProvider           *string  `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
 	SSOConfigURL          *string  `json:"sso_config_url"` // url format checked in domain Validate
+	SSOEnforced           *bool    `json:"sso_enforced"`   // require members to sign in via SSO (owner exempt)
 	MFARequired           *bool    `json:"mfa_required"`
 	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
@@ -1448,6 +1470,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	if input.SSOConfigURL != nil {
 		security.SSOConfigURL = *input.SSOConfigURL
 	}
+	if input.SSOEnforced != nil {
+		security.SSOEnforced = *input.SSOEnforced
+	}
 	if input.MFARequired != nil {
 		security.MFARequired = *input.MFARequired
 	}
@@ -1474,6 +1499,28 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if !hasSSOModule {
 			return nil, fmt.Errorf("%w: SSO is not available on your plan", shared.ErrValidation)
+		}
+	}
+
+	// Can't-enable guard: refuse to turn sso_enforced ON unless the tenant has a
+	// usable SSO path (an active identity provider or the opted-in env fallback).
+	// Without this a tenant could enforce SSO with no way for members to sign in.
+	// Only gate when this request actually asserts enforcement ON. The owner
+	// break-glass at the enforcement gate is the ultimate lock-out guarantee, so
+	// if the checker is unavailable we log and allow rather than hard-fail.
+	if input.SSOEnforced != nil && *input.SSOEnforced {
+		if s.ssoPathChecker == nil {
+			s.logger.Warn("sso_enforced enabled without an SSO-path checker wired; skipping usable-path guard",
+				"tenant_id", tenantID)
+		} else {
+			usable, perr := s.ssoPathChecker.HasUsableSSOPath(ctx, t.Slug())
+			if perr != nil {
+				s.logger.Warn("failed to verify usable SSO path", "tenant_id", tenantID, "error", perr)
+				return nil, fmt.Errorf("failed to verify SSO configuration: %w", perr)
+			}
+			if !usable {
+				return nil, fmt.Errorf("%w: cannot enforce SSO — configure an active SSO identity provider first", shared.ErrValidation)
+			}
 		}
 	}
 

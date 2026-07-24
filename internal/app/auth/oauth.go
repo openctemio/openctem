@@ -790,6 +790,9 @@ func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*Ses
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
+	// Social OAuth is a federated login — stamp 'sso' so it is exempt from
+	// password-only per-tenant SSO enforcement.
+	newSession.SetAuthMethod(sessiondom.AuthMethodSSO)
 
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("failed to save session: %w", err)

@@ -13,7 +13,7 @@ import (
 )
 
 const sessionColumns = `id, user_id, access_token_hash, ip_address, user_agent,
-	device_fingerprint, expires_at, last_activity_at, status, created_at, updated_at`
+	device_fingerprint, expires_at, last_activity_at, status, auth_method, created_at, updated_at`
 
 // SessionRepository implements session.Repository using PostgreSQL.
 type SessionRepository struct {
@@ -30,8 +30,8 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 	query := `
 		INSERT INTO sessions (
 			id, user_id, access_token_hash, ip_address, user_agent,
-			device_fingerprint, expires_at, last_activity_at, status, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+			device_fingerprint, expires_at, last_activity_at, status, auth_method, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		s.ID().String(),
@@ -43,6 +43,7 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 		s.ExpiresAt(),
 		s.LastActivityAt(),
 		s.Status().String(),
+		s.AuthMethod().String(),
 		s.CreatedAt(),
 		s.UpdatedAt(),
 	)
@@ -241,6 +242,7 @@ func (r *SessionRepository) scanSession(row *sql.Row) (*session.Session, error) 
 		&fields.expiresAt,
 		&fields.lastActivityAt,
 		&fields.status,
+		&fields.authMethod,
 		&fields.createdAt,
 		&fields.updatedAt,
 	)
@@ -267,6 +269,7 @@ func (r *SessionRepository) scanSessionFromRows(rows *sql.Rows) (*session.Sessio
 		&fields.expiresAt,
 		&fields.lastActivityAt,
 		&fields.status,
+		&fields.authMethod,
 		&fields.createdAt,
 		&fields.updatedAt,
 	)
@@ -289,6 +292,7 @@ func (r *SessionRepository) reconstructSession(f sessionScanFields) *session.Ses
 		f.expiresAt,
 		f.lastActivityAt,
 		session.StatusFromString(f.status),
+		session.AuthMethodFromString(f.authMethod),
 		f.createdAt,
 		f.updatedAt,
 	)
@@ -305,6 +309,7 @@ type sessionScanFields struct {
 	expiresAt         time.Time
 	lastActivityAt    time.Time
 	status            string
+	authMethod        string
 	createdAt         time.Time
 	updatedAt         time.Time
 }

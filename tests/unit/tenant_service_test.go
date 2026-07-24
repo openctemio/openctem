@@ -2277,6 +2277,84 @@ func TestTenantSvc_UpdateSecuritySettings_Success(t *testing.T) {
 	}
 }
 
+// mockSSOPathChecker is a test double for app.SSOPathChecker.
+type mockSSOPathChecker struct {
+	usable bool
+	err    error
+	calls  int
+}
+
+func (m *mockSSOPathChecker) HasUsableSSOPath(_ context.Context, _ string) (bool, error) {
+	m.calls++
+	return m.usable, m.err
+}
+
+// TestTenantSvc_SSOEnforced_Guard covers the can't-enable guard: enabling
+// sso_enforced requires a usable SSO path, but disabling and the owner
+// break-glass are never blocked.
+func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
+	t.Run("enable refused without a usable SSO path", func(t *testing.T) {
+		svc, repo := newTestTenantService()
+		checker := &mockSSOPathChecker{usable: false}
+		svc.SetSSOPathChecker(checker)
+		existing := seedTenant(repo, "Team", "team-slug")
+
+		_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
+			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
+		if err == nil {
+			t.Fatal("expected refusal when no usable SSO path")
+		}
+		if checker.calls == 0 {
+			t.Error("expected the SSO-path checker to be consulted")
+		}
+	})
+
+	t.Run("enable allowed with a usable SSO path", func(t *testing.T) {
+		svc, repo := newTestTenantService()
+		svc.SetSSOPathChecker(&mockSSOPathChecker{usable: true})
+		existing := seedTenant(repo, "Team", "team-slug")
+
+		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
+			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if !result.Security.SSOEnforced {
+			t.Error("sso_enforced should be true")
+		}
+	})
+
+	t.Run("enable allowed (fail-open) when no checker is wired", func(t *testing.T) {
+		svc, repo := newTestTenantService() // no SetSSOPathChecker
+		existing := seedTenant(repo, "Team", "team-slug")
+
+		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
+			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
+		if err != nil {
+			t.Fatalf("expected success (fail-open), got %v", err)
+		}
+		if !result.Security.SSOEnforced {
+			t.Error("sso_enforced should be true")
+		}
+	})
+
+	t.Run("disable never consults the checker", func(t *testing.T) {
+		svc, repo := newTestTenantService()
+		checker := &mockSSOPathChecker{usable: false}
+		svc.SetSSOPathChecker(checker)
+		existing := seedTenant(repo, "Team", "team-slug")
+
+		_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
+			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(false)}, app.AuditContext{})
+		if err != nil {
+			t.Fatalf("disabling must never be blocked, got %v", err)
+		}
+		if checker.calls != 0 {
+			t.Errorf("checker must not be called when disabling, got %d calls", checker.calls)
+		}
+	})
+}
+
 func TestTenantSvc_UpdateSecuritySettings_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 

@@ -283,6 +283,15 @@ type SecuritySettings struct {
 	SSOEnabled        bool     `json:"sso_enabled"`         // Enable SSO (SAML 2.0, OIDC)
 	SSOProvider       string   `json:"sso_provider"`        // e.g., "saml", "oidc"
 	SSOConfigURL      string   `json:"sso_config_url"`      // SSO metadata/config URL
+	// SSOEnforced requires members of this tenant to authenticate via SSO — a
+	// local password login is refused access to this tenant. The tenant OWNER is
+	// the break-glass exception and can ALWAYS password-login, so enabling this
+	// can never lock every administrator out. It may only be enabled when the
+	// tenant has a usable SSO path (an active identity provider or the opted-in
+	// env fallback); see TenantService.UpdateSecuritySettings. Enforcement itself
+	// lives in AuthService.ExchangeToken / RefreshToken (the tenant-selection /
+	// token-mint gate).
+	SSOEnforced       bool     `json:"sso_enforced"`
 	MFARequired       bool     `json:"mfa_required"`        // Require MFA for all users
 	SessionTimeoutMin int      `json:"session_timeout_min"` // Session timeout in minutes (15-480)
 	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges

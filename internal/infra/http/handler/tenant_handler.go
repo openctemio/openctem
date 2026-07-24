@@ -1150,6 +1150,7 @@ type SecuritySettingsResponse struct {
 	SSOEnabled            bool     `json:"sso_enabled"`
 	SSOProvider           string   `json:"sso_provider,omitempty"`
 	SSOConfigURL          string   `json:"sso_config_url,omitempty"`
+	SSOEnforced           bool     `json:"sso_enforced"`
 	MFARequired           bool     `json:"mfa_required"`
 	SessionTimeoutMin     int      `json:"session_timeout_min"`
 	IPWhitelist           []string `json:"ip_whitelist"`
@@ -1188,6 +1189,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			SSOEnabled:            s.Security.SSOEnabled,
 			SSOProvider:           s.Security.SSOProvider,
 			SSOConfigURL:          s.Security.SSOConfigURL,
+			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
 			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
 			IPWhitelist:           s.Security.IPWhitelist,
@@ -1301,6 +1303,7 @@ type UpdateSecuritySettingsRequest struct {
 	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
 	// SecuritySettings.Validate checks the URL when SSO is enabled.
 	SSOConfigURL          *string  `json:"sso_config_url"`
+	SSOEnforced           *bool    `json:"sso_enforced"`
 	MFARequired           *bool    `json:"mfa_required"`
 	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
@@ -1331,6 +1334,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		SSOEnabled:            req.SSOEnabled,
 		SSOProvider:           req.SSOProvider,
 		SSOConfigURL:          req.SSOConfigURL,
+		SSOEnforced:           req.SSOEnforced,
 		MFARequired:           req.MFARequired,
 		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,

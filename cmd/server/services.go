@@ -1381,6 +1381,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
 	s.SAML = app.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
+
+	// Wire the SSO-path checker so TenantService can refuse enabling sso_enforced
+	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so
+	// this is re-applied there too.
+	s.Tenant.SetSSOPathChecker(s.SSO)
 }
 
 // InitEmailServices initializes email-related services.

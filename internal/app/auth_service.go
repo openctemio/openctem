@@ -108,6 +108,7 @@ var (
 	ErrSSOUserInfoFailed        = auth.ErrSSOUserInfoFailed
 	ErrTenantAccessDenied       = auth.ErrTenantAccessDenied
 	ErrTenantRequired           = auth.ErrTenantRequired
+	ErrSSORequired              = auth.ErrSSORequired
 )
 
 // OAuth provider constants.

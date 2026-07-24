@@ -41,7 +41,37 @@ var (
 	ErrSessionLimitReached      = errors.New("maximum number of active sessions reached")
 	ErrTenantAccessDenied       = errors.New("user does not have access to this tenant")
 	ErrTenantRequired           = errors.New("tenant_id is required")
+	// ErrSSORequired is returned when an SSO-enforced tenant refuses a
+	// password-authenticated session at the tenant-selection / token-mint gate.
+	// The tenant OWNER is exempt (break-glass), and federated (SSO/SAML) sessions
+	// always pass — so the SSO login path itself is never blocked.
+	ErrSSORequired = errors.New("this organization requires SSO sign-in")
 )
+
+// ssoEnforcementDenied is the pure decision for the per-tenant SSO-enforcement
+// gate, factored out so it can be unit-tested exhaustively without any repo
+// wiring. It returns true when access MUST be denied.
+//
+// Rules (fail-closed, but break-glass-safe):
+//   - Federated sessions (SSO/OAuth/SAML) ALWAYS pass — an SSO-enforced tenant
+//     must admit the very login method it requires. → never denied.
+//   - The tenant OWNER is the break-glass exception and can always password-login
+//     so enabling enforcement can never lock every administrator out. → never
+//     denied.
+//   - Any other (non-owner) session that is NOT federated is denied IFF the
+//     tenant enforces SSO.
+func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced bool) bool {
+	if !ssoEnforced {
+		return false
+	}
+	if method.IsFederated() {
+		return false
+	}
+	if role == string(tenantdom.RoleOwner) {
+		return false // break-glass: owner always retains password access
+	}
+	return true
+}
 
 // AuthService handles authentication operations.
 type AuthService struct {
@@ -702,6 +732,37 @@ type ExchangeTokenResult struct {
 	ExpiresAt    time.Time
 }
 
+// enforceSSOPolicy is the per-tenant SSO-enforcement gate. Both ExchangeToken
+// and RefreshToken call it right after resolving the caller's membership and
+// BEFORE minting a tenant-scoped access token — the single choke point through
+// which a password session must pass to gain access to a tenant. A federated
+// (SSO/OAuth/SAML) session and the tenant OWNER always pass (break-glass); a
+// password-authenticated non-owner is refused when the tenant enforces SSO.
+func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Session, tenantID, role string) error {
+	// Cheap exits: federated sessions and owners never trip enforcement, so skip
+	// the tenant lookup entirely for them.
+	if sess.AuthMethod().IsFederated() || role == string(tenantdom.RoleOwner) {
+		return nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	t, err := s.tenantRepo.GetByID(ctx, tid)
+	if err != nil {
+		return fmt.Errorf("failed to load tenant for SSO enforcement: %w", err)
+	}
+	if ssoEnforcementDenied(sess.AuthMethod(), role, t.TypedSettings().Security.SSOEnforced) {
+		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
+		// user id; omit the raw role string to keep no user-derived value in the
+		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
+		s.logger.Warn("blocked password session from SSO-enforced tenant",
+			"tenant_id", tid.String(), "user_id", sess.UserID().String())
+		return ErrSSORequired
+	}
+	return nil
+}
+
 // ExchangeToken exchanges a global refresh token for a tenant-scoped access token.
 // This is the main method for getting access tokens after login.
 func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInput) (*ExchangeTokenResult, error) {
@@ -779,6 +840,13 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 
 	if targetMembership == nil {
 		return nil, ErrTenantAccessDenied
+	}
+
+	// Per-tenant SSO enforcement (break-glass safe): a password session cannot
+	// mint a tenant-scoped token for an SSO-enforced tenant unless it is the
+	// owner. Federated (SSO/SAML) sessions always pass.
+	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
+		return nil, err
 	}
 
 	// Determine if user is admin (owner or admin role)
@@ -1012,6 +1080,13 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 
 	if targetMembership == nil {
 		return nil, ErrTenantAccessDenied
+	}
+
+	// Per-tenant SSO enforcement (break-glass safe): re-checked on every refresh
+	// so toggling sso_enforced on takes effect the next time a password session
+	// refreshes its tenant-scoped token. Federated sessions and the owner pass.
+	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
+		return nil, err
 	}
 
 	// Generate new GLOBAL refresh token (token rotation)

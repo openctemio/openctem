@@ -1141,6 +1141,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Forbidden("Maximum number of active sessions reached").WriteJSON(w)
 	case errors.Is(err, app.ErrTenantAccessDenied):
 		apierror.Forbidden("User does not have access to this tenant").WriteJSON(w)
+	case errors.Is(err, app.ErrSSORequired):
+		apierror.Forbidden("This organization requires SSO sign-in. Please sign in through your identity provider.").WriteJSON(w)
 	case errors.Is(err, app.ErrTenantRequired):
 		apierror.BadRequest("tenant_id is required").WriteJSON(w)
 	// Session/Token errors

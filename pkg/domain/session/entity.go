@@ -20,6 +20,7 @@ type Session struct {
 	expiresAt         time.Time
 	lastActivityAt    time.Time
 	status            Status
+	authMethod        AuthMethod
 	createdAt         time.Time
 	updatedAt         time.Time
 }
@@ -49,6 +50,7 @@ func New(
 		expiresAt:       now.Add(sessionDuration),
 		lastActivityAt:  now,
 		status:          StatusActive,
+		authMethod:      AuthMethodPassword,
 		createdAt:       now,
 		updatedAt:       now,
 	}, nil
@@ -84,6 +86,7 @@ func NewWithID(
 		expiresAt:       now.Add(sessionDuration),
 		lastActivityAt:  now,
 		status:          StatusActive,
+		authMethod:      AuthMethodPassword,
 		createdAt:       now,
 		updatedAt:       now,
 	}, nil
@@ -100,9 +103,13 @@ func Reconstitute(
 	expiresAt time.Time,
 	lastActivityAt time.Time,
 	status Status,
+	authMethod AuthMethod,
 	createdAt time.Time,
 	updatedAt time.Time,
 ) *Session {
+	if authMethod == "" {
+		authMethod = AuthMethodPassword
+	}
 	return &Session{
 		id:                id,
 		userID:            userID,
@@ -113,6 +120,7 @@ func Reconstitute(
 		expiresAt:         expiresAt,
 		lastActivityAt:    lastActivityAt,
 		status:            status,
+		authMethod:        authMethod,
 		createdAt:         createdAt,
 		updatedAt:         updatedAt,
 	}
@@ -163,6 +171,25 @@ func (s *Session) LastActivityAt() time.Time {
 // Status returns the session status.
 func (s *Session) Status() Status {
 	return s.status
+}
+
+// AuthMethod returns how the session was authenticated (password vs federated
+// SSO/SAML). Used by the per-tenant SSO-enforcement gate; the zero value is
+// password (fail-safe for rows written before this field existed).
+func (s *Session) AuthMethod() AuthMethod {
+	if s.authMethod == "" {
+		return AuthMethodPassword
+	}
+	return s.authMethod
+}
+
+// SetAuthMethod records how the session was authenticated. Callers stamp the
+// federated flows (SSO/OAuth = AuthMethodSSO, SAML = AuthMethodSAML) BEFORE the
+// session is persisted; local password logins keep the AuthMethodPassword
+// default. This is the discriminator the SSO-enforcement gate reads.
+func (s *Session) SetAuthMethod(m AuthMethod) {
+	s.authMethod = m
+	s.updatedAt = time.Now()
 }
 
 // CreatedAt returns when the session was created.
