@@ -8,6 +8,38 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
+// TestSession_FederatedBinding_RoundTrip proves the IdP session binding
+// (issuer/sid/sub) survives a persistence round-trip via Reconstitute, and that
+// SetFederatedBinding populates the getters the back-channel logout relies on.
+func TestSession_FederatedBinding_RoundTrip(t *testing.T) {
+	now := time.Now()
+	const iss, sid, sub = "https://login.microsoftonline.com/dir/v2.0", "idp-sid-1", "idp-sub-1"
+
+	// Reconstitute (the DB read path) must map the three columns onto the entity.
+	s := session.Reconstitute(
+		shared.NewID(), shared.NewID(), "hash", "1.2.3.4", "ua", "",
+		now.Add(time.Hour), now, session.StatusActive, session.AuthMethodSSO,
+		iss, sid, sub, now, now,
+	)
+	if s.IDPIssuer() != iss || s.IDPSID() != sid || s.IDPSub() != sub {
+		t.Fatalf("reconstitute binding = (%q,%q,%q), want (%q,%q,%q)",
+			s.IDPIssuer(), s.IDPSID(), s.IDPSub(), iss, sid, sub)
+	}
+
+	// The create path uses SetFederatedBinding.
+	fresh, err := session.NewWithID(shared.NewID(), shared.NewID(), "tok", "", "", time.Hour)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if fresh.IDPIssuer() != "" {
+		t.Fatalf("fresh session should have empty binding, got %q", fresh.IDPIssuer())
+	}
+	fresh.SetFederatedBinding(iss, sid, sub)
+	if fresh.IDPIssuer() != iss || fresh.IDPSID() != sid || fresh.IDPSub() != sub {
+		t.Fatalf("SetFederatedBinding did not populate getters")
+	}
+}
+
 // TestAuthMethod_Semantics locks the value-object behavior the SSO-enforcement
 // gate relies on: which methods are federated, and the fail-safe defaulting.
 func TestAuthMethod_Semantics(t *testing.T) {
@@ -67,7 +99,7 @@ func TestSession_Reconstitute_RoundTrip(t *testing.T) {
 	} {
 		s := session.Reconstitute(
 			shared.NewID(), shared.NewID(), "hash", "1.2.3.4", "ua", "",
-			now.Add(time.Hour), now, session.StatusActive, m, now, now,
+			now.Add(time.Hour), now, session.StatusActive, m, "", "", "", now, now,
 		)
 		if s.AuthMethod() != m {
 			t.Errorf("round-trip %q = %q", m, s.AuthMethod())
@@ -77,7 +109,7 @@ func TestSession_Reconstitute_RoundTrip(t *testing.T) {
 	// Empty persisted method (legacy row) → password.
 	legacy := session.Reconstitute(
 		shared.NewID(), shared.NewID(), "hash", "1.2.3.4", "ua", "",
-		now.Add(time.Hour), now, session.StatusActive, session.AuthMethod(""), now, now,
+		now.Add(time.Hour), now, session.StatusActive, session.AuthMethod(""), "", "", "", now, now,
 	)
 	if legacy.AuthMethod() != session.AuthMethodPassword {
 		t.Errorf("legacy empty method = %q, want password", legacy.AuthMethod())

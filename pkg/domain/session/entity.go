@@ -21,8 +21,14 @@ type Session struct {
 	lastActivityAt    time.Time
 	status            Status
 	authMethod        AuthMethod
-	createdAt         time.Time
-	updatedAt         time.Time
+	// Federated IdP session binding (OIDC Back-Channel Logout 1.0). Populated
+	// only for OIDC/OAuth sessions whose verified id_token carried these claims;
+	// empty for local password and SAML sessions.
+	idpIssuer string // id_token iss — scopes back-channel logout per-provider
+	idpSID    string // id_token sid — IdP session id
+	idpSub    string // id_token sub — IdP subject
+	createdAt time.Time
+	updatedAt time.Time
 }
 
 // New creates a new session.
@@ -104,6 +110,9 @@ func Reconstitute(
 	lastActivityAt time.Time,
 	status Status,
 	authMethod AuthMethod,
+	idpIssuer string,
+	idpSID string,
+	idpSub string,
 	createdAt time.Time,
 	updatedAt time.Time,
 ) *Session {
@@ -121,6 +130,9 @@ func Reconstitute(
 		lastActivityAt:    lastActivityAt,
 		status:            status,
 		authMethod:        authMethod,
+		idpIssuer:         idpIssuer,
+		idpSID:            idpSID,
+		idpSub:            idpSub,
 		createdAt:         createdAt,
 		updatedAt:         updatedAt,
 	}
@@ -190,6 +202,27 @@ func (s *Session) AuthMethod() AuthMethod {
 func (s *Session) SetAuthMethod(m AuthMethod) {
 	s.authMethod = m
 	s.updatedAt = time.Now()
+}
+
+// IDPIssuer returns the verified id_token issuer bound to this session (empty
+// for local/SAML sessions). Used to scope OIDC back-channel logout per-provider.
+func (s *Session) IDPIssuer() string { return s.idpIssuer }
+
+// IDPSID returns the id_token session id (sid) bound to this session, or empty.
+func (s *Session) IDPSID() string { return s.idpSID }
+
+// IDPSub returns the id_token subject (sub) bound to this session, or empty.
+func (s *Session) IDPSub() string { return s.idpSub }
+
+// SetFederatedBinding records the IdP session binding (issuer/sid/sub) captured
+// from the verified id_token at federated login, so an OIDC Back-Channel Logout
+// can later revoke exactly the matching session(s). Callers stamp it BEFORE the
+// session is persisted. Empty values are stored as-is (a provider may omit sid
+// or sub). Identity metadata only — does not bump updatedAt.
+func (s *Session) SetFederatedBinding(issuer, sid, sub string) {
+	s.idpIssuer = issuer
+	s.idpSID = sid
+	s.idpSub = sub
 }
 
 // CreatedAt returns when the session was created.

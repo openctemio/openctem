@@ -391,13 +391,76 @@ each customer's admin add the provider under **Settings → Identity Providers**
 
 ---
 
+## 9. Back-Channel Logout (SSO fast-revoke)
+
+OpenCTEM implements [OIDC Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html).
+When a user signs out of Entra — or an admin **disables / deletes** the user in
+the directory — Entra POSTs a signed `logout_token` to OpenCTEM, which **revokes
+the matching session(s) immediately** instead of waiting for the access token to
+expire. This closes the window where a signed-out or disabled user keeps access.
+
+### One-time Azure registration
+
+In the Azure app registration (**Path A** env app, or each **Path B** per-tenant
+app), set two things:
+
+1. **Front-channel/back-channel logout URL** → the OpenCTEM API endpoint:
+
+   ```
+   https://<your-api-host>/api/v1/auth/backchannel-logout
+   ```
+
+   In the Azure portal this is **App registrations → your app → Authentication →
+   "Front-channel logout URL"** (Entra delivers the back-channel `logout_token`
+   to this URL as a form POST). Use your **API** host, not the frontend.
+
+2. **Emit the `sid` claim** so a single-session logout can target the exact
+   session. Under **Token configuration → Add optional claim → ID → `sid`**
+   (also add it for Access/SAML if prompted). Without `sid`, a `sub`-only
+   logout still works but revokes **all** of that user's OpenCTEM sessions for
+   the directory (which is the desired behaviour when the account is disabled).
+
+No secret is configured for this endpoint — it is authenticated by the
+**signature on the `logout_token`** (verified against the directory's JWKS),
+`aud` == your app's client ID, and `iss` == your directory. The endpoint is
+public and rate-limited; a forged or wrong-signature token is rejected with a
+generic `400` and revokes nothing.
+
+### What OpenCTEM validates (fail-closed)
+
+- RS256 signature against the provider's JWKS (`alg` pinned; `alg=none`/HS256 rejected)
+- `aud` equals a configured client ID for the token's issuer
+- `iss` matches a configured provider (env fallback or a per-tenant provider);
+  revocation is **issuer-scoped** — a `logout_token` from one directory can never
+  revoke another directory's sessions
+- `events` contains the `backchannel-logout` member; `iat` present and recent;
+  a `nonce`, if present, is rejected (the spec forbids it); `sid` and/or `sub`
+  required
+
+### Quick test
+
+```bash
+# Trigger from Azure by signing the user out, or disable the user in the directory.
+# A 200 (empty body) means accepted; a 400 means the token failed validation
+# (see the API logs for the server-side reason — the response stays generic).
+```
+
+> Related hardening: OpenCTEM also re-checks **enforce-SSO on every request**
+> (not only at token mint), so toggling **Settings → Security → "Require SSO"**
+> on takes effect for already-issued password tokens within ~60s, without
+> waiting for them to expire. Federated sessions and the tenant owner
+> (break-glass) are unaffected.
+
+---
+
 ## Reference
 
 - Architecture / rationale: [`architecture/sso-authentication.md`](../architecture/sso-authentication.md)
 - SAML / SCIM (enterprise, separate): [`architecture/saml-sso.md`](../architecture/saml-sso.md),
   [`architecture/scim-provisioning.md`](../architecture/scim-provisioning.md)
-- Code: `internal/app/auth/{sso.go,oauth.go,oidc_verifier.go}`,
+- Code: `internal/app/auth/{sso.go,oauth.go,oidc_verifier.go,backchannel_logout.go}`,
   `internal/app/auth/domainverify/service.go`, `internal/config/config.go`,
-  `internal/infra/http/routes/auth.go`
+  `internal/infra/http/routes/auth.go`,
+  per-request enforce-SSO: `internal/infra/http/middleware/sso_enforcement.go`
 </content>
 </invoke>

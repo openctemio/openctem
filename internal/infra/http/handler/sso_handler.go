@@ -141,6 +141,38 @@ func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// BackChannelLogout handles OIDC Back-Channel Logout 1.0 requests. It is PUBLIC:
+// the request is authenticated by the signed logout_token itself, NOT a user
+// session or CSRF token. The IdP POSTs application/x-www-form-urlencoded with a
+// single `logout_token` field. On ANY validation failure a generic 400 is
+// returned (details are logged server-side) so a caller cannot probe which
+// sids/issuers exist. On success 200 is returned even when zero sessions matched.
+func (h *SSOHandler) BackChannelLogout(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
+	if err := r.ParseForm(); err != nil {
+		apierror.BadRequest("invalid request").WriteJSON(w)
+		return
+	}
+	logoutToken := r.PostFormValue("logout_token")
+	if logoutToken == "" {
+		apierror.BadRequest("invalid request").WriteJSON(w)
+		return
+	}
+
+	revoked, err := h.ssoService.BackChannelLogout(r.Context(), logoutToken)
+	if err != nil {
+		// Generic error only — never reveal which validation step failed.
+		h.logger.Warn("back-channel logout rejected", "error", err.Error())
+		apierror.BadRequest("invalid request").WriteJSON(w)
+		return
+	}
+
+	h.logger.Info("back-channel logout accepted", "revoked_sessions", revoked)
+	// Spec: return 200 with Cache-Control: no-store. Empty body.
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+}
+
 // handlePublicError handles errors for public SSO endpoints with generic messages.
 func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
 	switch {

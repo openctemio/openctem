@@ -132,6 +132,16 @@ func (m *ssoMockIPRepo) ListActiveByTenant(_ context.Context, tenantID string) (
 	return result, nil
 }
 
+func (m *ssoMockIPRepo) ListActiveByProvider(_ context.Context, provider identityprovider.Provider) ([]*identityprovider.IdentityProvider, error) {
+	result := make([]*identityprovider.IdentityProvider, 0)
+	for _, ip := range m.providers {
+		if ip.Provider() == provider && ip.IsActive() {
+			result = append(result, ip)
+		}
+	}
+	return result, nil
+}
+
 // =============================================================================
 // Mock Tenant Repository for SSO Tests
 // =============================================================================

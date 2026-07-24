@@ -77,6 +77,10 @@ type oidcClaims struct {
 	TID   string `json:"tid"`
 	Email string `json:"email"`
 	Name  string `json:"name"`
+	// SID is the IdP session id (OIDC front/back-channel logout). Captured at
+	// login and persisted on the session so a back-channel logout_token carrying
+	// this sid can revoke exactly this session.
+	SID string `json:"sid"`
 	// XMSEdov ("email domain owner verified") is Entra's signal that the email
 	// claim belongs to a domain the token's tenant has verified. It is the
 	// documented defense against the nOAuth class where a rogue tenant sets a

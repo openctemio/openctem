@@ -868,6 +868,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 			Role:       targetMembership.Role,
 		},
 		isAdminRole,
+		sess.AuthMethod().String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1134,6 +1135,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 			Role:       targetMembership.Role,
 		},
 		isRefreshAdminRole,
+		sess.AuthMethod().String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1529,6 +1531,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 			Role:       tenantdom.RoleOwner.String(),
 		},
 		true, // Owner is always admin - bypasses permission checks, keeps JWT small
+		sess.AuthMethod().String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1754,6 +1757,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 			Role:       membership.Role().String(),
 		},
 		isAdminRole,
+		sess.AuthMethod().String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1781,6 +1785,7 @@ func (s *AuthService) generateTenantScopedAccessToken(
 	userID, email, name, sessionID string,
 	membership jwt.TenantMembership,
 	isAdmin bool,
+	authMethod string,
 ) (*jwt.TenantScopedAccessToken, error) {
 	// Current permission version, stamped into the token so the permission-sync
 	// middleware can detect a post-issuance role change (AUTHZ-3).
@@ -1834,6 +1839,7 @@ func (s *AuthService) generateTenantScopedAccessToken(
 				roleSlugs,
 				isAdmin,
 				permVersion,
+				authMethod,
 			)
 		} else {
 			s.logger.Debug("no permissions found in database, falling back to role mapping",
@@ -1855,6 +1861,7 @@ func (s *AuthService) generateTenantScopedAccessToken(
 		membership,
 		isAdmin,
 		permVersion,
+		authMethod,
 	)
 }
 

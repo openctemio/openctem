@@ -3,6 +3,7 @@
 package routes
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/openctemio/api/internal/infra/websocket"
 	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/permission"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/jwt"
 	"github.com/openctemio/api/pkg/keycloak"
@@ -308,6 +310,19 @@ func Register(
 	// until the token expires. Fails open on a Redis outage (see GetChecked).
 	if permCache != nil && permVersion != nil {
 		permissionSyncMiddleware = middleware.NewPermissionSyncMiddleware(permCache, permVersion, log).EnrichPermissions
+	}
+
+	// Per-request SSO enforcement (defense-in-depth). Re-applies the mint-time
+	// enforce-SSO decision on every authenticated request using the token's
+	// auth_method claim, so a password token minted before a tenant enabled SSO
+	// enforcement stops working immediately (bounded by the gate's TTL) instead
+	// of at token expiry. Cheap exits for federated sessions and owners avoid any
+	// tenant lookup. Appended to buildBaseMiddlewares so it covers both
+	// token-tenant and URL-path tenant chains.
+	if tenantRepo != nil {
+		ssoEnforcementMiddleware = middleware.NewSSOEnforcementGate(
+			tenantSSOEnforcedAdapter{repo: tenantRepo}, 60*time.Second, log,
+		).Enforce
 	}
 
 	// UserSync middleware syncs authenticated users to local database
@@ -781,6 +796,12 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	if userSyncMiddleware != nil {
 		middlewares = append(middlewares, userSyncMiddleware)
 	}
+	// Per-request SSO enforcement runs right after auth (needs the JWT claims)
+	// and before the per-route authz checks. No-op for federated sessions,
+	// owners, non-tenant tokens, and OIDC requests (see Enforce).
+	if ssoEnforcementMiddleware != nil {
+		middlewares = append(middlewares, ssoEnforcementMiddleware)
+	}
 	return middlewares
 }
 
@@ -811,6 +832,34 @@ var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // se
 // permissions from Redis and rejects confirmed-stale state-mutating requests.
 // Set once during Register; nil leaves the legacy embedded-JWT behaviour.
 var permissionSyncMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// ssoEnforcementMiddleware re-applies the per-tenant SSO-enforcement decision on
+// every authenticated request (defense-in-depth on top of the token-mint gate):
+// a password non-owner session whose token's tenant enforces SSO is rejected,
+// closing the window where an already-minted password token keeps access after
+// the tenant turns enforcement on. Set once during Register once tenantRepo is
+// available; nil leaves only the mint-time gate.
+var ssoEnforcementMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// tenantSSOEnforcedAdapter adapts tenant.Repository to
+// middleware.SSOEnforcedProvider, reading the tenant's sso_enforced security
+// setting. Cross-tenant by design — it answers a per-tenant-id policy question,
+// not a data query.
+type tenantSSOEnforcedAdapter struct {
+	repo tenant.Repository
+}
+
+func (a tenantSSOEnforcedAdapter) IsSSOEnforced(ctx context.Context, tenantID string) (bool, error) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, err
+	}
+	t, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	return t.TypedSettings().Security.SSOEnforced, nil
+}
 
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
 // This uses tenant ID from JWT claims instead of URL path.

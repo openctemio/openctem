@@ -305,6 +305,7 @@ func seedExpiredSession(repo *mockSessionRepo, userID shared.ID) *session.Sessio
 		now.Add(-2*time.Hour),
 		session.StatusActive,
 		session.AuthMethodPassword,
+		"", "", "",
 		now.Add(-24*time.Hour),
 		now.Add(-24*time.Hour),
 	)
@@ -911,6 +912,7 @@ func TestSessionEntity_IsExpired(t *testing.T) {
 		now.Add(-2*time.Hour),
 		session.StatusActive,
 		session.AuthMethodPassword,
+		"", "", "",
 		now.Add(-24*time.Hour),
 		now.Add(-24*time.Hour),
 	)

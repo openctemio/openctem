@@ -13,7 +13,8 @@ import (
 )
 
 const sessionColumns = `id, user_id, access_token_hash, ip_address, user_agent,
-	device_fingerprint, expires_at, last_activity_at, status, auth_method, created_at, updated_at`
+	device_fingerprint, expires_at, last_activity_at, status, auth_method,
+	idp_issuer, idp_sid, idp_sub, created_at, updated_at`
 
 // SessionRepository implements session.Repository using PostgreSQL.
 type SessionRepository struct {
@@ -30,8 +31,9 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 	query := `
 		INSERT INTO sessions (
 			id, user_id, access_token_hash, ip_address, user_agent,
-			device_fingerprint, expires_at, last_activity_at, status, auth_method, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+			device_fingerprint, expires_at, last_activity_at, status, auth_method,
+			idp_issuer, idp_sid, idp_sub, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		s.ID().String(),
@@ -44,6 +46,9 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 		s.LastActivityAt(),
 		s.Status().String(),
 		s.AuthMethod().String(),
+		nullString(s.IDPIssuer()),
+		nullString(s.IDPSID()),
+		nullString(s.IDPSub()),
 		s.CreatedAt(),
 		s.UpdatedAt(),
 	)
@@ -217,6 +222,52 @@ func (r *SessionRepository) GetOldestActiveByUserID(ctx context.Context, userID 
 	return s, nil
 }
 
+// GetActiveByIDPSID returns active sessions bound to the given IdP (issuer) and
+// session id (sid). Always issuer-scoped so a logout_token from one provider can
+// never match another provider's sessions (OIDC Back-Channel Logout 1.0).
+func (r *SessionRepository) GetActiveByIDPSID(ctx context.Context, issuer, sid string) ([]*session.Session, error) {
+	if issuer == "" || sid == "" {
+		return nil, nil
+	}
+	query := `SELECT ` + sessionColumns + ` FROM sessions
+		WHERE idp_issuer = $1 AND idp_sid = $2 AND status = 'active'`
+	return r.querySessions(ctx, query, issuer, sid)
+}
+
+// GetActiveByIDPSub returns active sessions bound to the given IdP (issuer) and
+// subject (sub). Issuer-scoped. Used when a logout_token carries only `sub`
+// (log the user out of every session for that provider).
+func (r *SessionRepository) GetActiveByIDPSub(ctx context.Context, issuer, sub string) ([]*session.Session, error) {
+	if issuer == "" || sub == "" {
+		return nil, nil
+	}
+	query := `SELECT ` + sessionColumns + ` FROM sessions
+		WHERE idp_issuer = $1 AND idp_sub = $2 AND status = 'active'`
+	return r.querySessions(ctx, query, issuer, sub)
+}
+
+// querySessions runs a session SELECT and scans all rows.
+func (r *SessionRepository) querySessions(ctx context.Context, query string, args ...any) ([]*session.Session, error) {
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []*session.Session
+	for rows.Next() {
+		s, err := r.scanSessionFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
 // DeleteExpired deletes all expired sessions.
 func (r *SessionRepository) DeleteExpired(ctx context.Context) (int64, error) {
 	query := `DELETE FROM sessions WHERE expires_at < NOW() OR status IN ('expired', 'revoked')`
@@ -243,6 +294,9 @@ func (r *SessionRepository) scanSession(row *sql.Row) (*session.Session, error) 
 		&fields.lastActivityAt,
 		&fields.status,
 		&fields.authMethod,
+		&fields.idpIssuer,
+		&fields.idpSID,
+		&fields.idpSub,
 		&fields.createdAt,
 		&fields.updatedAt,
 	)
@@ -270,6 +324,9 @@ func (r *SessionRepository) scanSessionFromRows(rows *sql.Rows) (*session.Sessio
 		&fields.lastActivityAt,
 		&fields.status,
 		&fields.authMethod,
+		&fields.idpIssuer,
+		&fields.idpSID,
+		&fields.idpSub,
 		&fields.createdAt,
 		&fields.updatedAt,
 	)
@@ -293,6 +350,9 @@ func (r *SessionRepository) reconstructSession(f sessionScanFields) *session.Ses
 		f.lastActivityAt,
 		session.StatusFromString(f.status),
 		session.AuthMethodFromString(f.authMethod),
+		nullStringValue(f.idpIssuer),
+		nullStringValue(f.idpSID),
+		nullStringValue(f.idpSub),
 		f.createdAt,
 		f.updatedAt,
 	)
@@ -310,6 +370,9 @@ type sessionScanFields struct {
 	lastActivityAt    time.Time
 	status            string
 	authMethod        string
+	idpIssuer         sql.NullString
+	idpSID            sql.NullString
+	idpSub            sql.NullString
 	createdAt         time.Time
 	updatedAt         time.Time
 }

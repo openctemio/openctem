@@ -135,6 +135,17 @@ func (r *IdentityProviderRepository) ListActiveByTenant(ctx context.Context, ten
 	return r.queryIPs(ctx, query, tenantID)
 }
 
+// ListActiveByProvider returns every active identity provider of the given type
+// across ALL tenants. This is an intentional cross-tenant lookup used only to
+// resolve which configured providers (and thus which client_ids / JWKS) could
+// have issued an inbound OIDC logout_token, whose `iss` is not tenant-scoped.
+// It returns provider configuration, never tenant data, and is only reachable
+// from the rate-limited public back-channel-logout endpoint.
+func (r *IdentityProviderRepository) ListActiveByProvider(ctx context.Context, provider identityprovider.Provider) ([]*identityprovider.IdentityProvider, error) {
+	query := fmt.Sprintf("SELECT %s FROM tenant_identity_providers WHERE provider = $1 AND is_active = true ORDER BY created_at ASC", ipSelectFields)
+	return r.queryIPs(ctx, query, string(provider))
+}
+
 func (r *IdentityProviderRepository) queryIPs(ctx context.Context, query string, args ...any) ([]*identityprovider.IdentityProvider, error) {
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {

@@ -664,8 +664,15 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		}
 	}
 
-	// Create session (federated OIDC/OAuth → stamped 'sso', exempt from enforcement)
-	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSSO)
+	// Create session (federated OIDC/OAuth → stamped 'sso', exempt from enforcement).
+	// Capture the IdP session binding from the verified id_token (when present) so
+	// an OIDC Back-Channel Logout can later revoke this exact session. issuer/sid/
+	// sub come ONLY from the signature-verified id_token, never the userinfo body.
+	var fed federatedBinding
+	if claims != nil {
+		fed = federatedBinding{issuer: claims.Issuer, sid: claims.SID, sub: claims.Subject}
+	}
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSSO, fed)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
@@ -1250,7 +1257,16 @@ func (s *SSOService) mapAuthProvider(provider identityproviderdom.Provider) user
 // SAML assertion) so the session is stamped as federated and thus exempt from
 // per-tenant SSO enforcement — an SSO-enforced tenant must always admit the very
 // login method it requires.
-func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod) (*SessionResult, error) {
+// federatedBinding carries the IdP session identifiers captured from a verified
+// id_token so createSession can persist them for OIDC Back-Channel Logout. All
+// fields may be empty (a provider may omit sid or return no id_token).
+type federatedBinding struct {
+	issuer string
+	sid    string
+	sub    string
+}
+
+func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod, fed federatedBinding) (*SessionResult, error) {
 	// Bind the token to its session: generate the session id first, embed it in
 	// the JWT, then persist the session under the SAME id — so an SSO session is
 	// revocable (mirrors the password Login flow). Previously the token was
@@ -1279,6 +1295,13 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 		authMethod = sessiondom.AuthMethodSSO
 	}
 	newSession.SetAuthMethod(authMethod)
+
+	// Persist the IdP session binding (issuer/sid/sub) so an OIDC Back-Channel
+	// Logout from this provider can revoke exactly this session. Only stamped
+	// when an issuer is present (a verified id_token was seen).
+	if fed.issuer != "" {
+		newSession.SetFederatedBinding(fed.issuer, fed.sid, fed.sub)
+	}
 
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("save session: %w", err)
@@ -1383,8 +1406,9 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 	}
 
 	// Federated via a validated SAML assertion → stamped 'saml', exempt from
-	// enforcement (it IS an SSO login).
-	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML)
+	// enforcement (it IS an SSO login). No OIDC id_token binding — SAML single
+	// logout is out of scope for the OIDC back-channel path.
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML, federatedBinding{})
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}

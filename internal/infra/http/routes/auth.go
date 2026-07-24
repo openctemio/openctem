@@ -105,6 +105,13 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			r.GET("/sso/{provider}/authorize", ssoAuthorizeHandler.ServeHTTP)
 			ssoCallbackHandler := ChainFunc(h.SSO.Callback, loginRL)
 			r.POST("/sso/{provider}/callback", ssoCallbackHandler.ServeHTTP)
+
+			// OIDC Back-Channel Logout 1.0 (public — authenticated by the signed
+			// logout_token, NOT a user session; no CSRF, rate-limited). The IdP
+			// (e.g. Azure Entra) POSTs form-encoded logout_token here when a user
+			// signs out or is disabled, and we revoke the matching session(s).
+			ssoBackchannelHandler := ChainFunc(h.SSO.BackChannelLogout, loginRL)
+			r.POST("/backchannel-logout", ssoBackchannelHandler.ServeHTTP)
 		}
 
 		// SAML 2.0 SP endpoints (public). Metadata is registered with the IdP;
