@@ -62,6 +62,14 @@ type AuditChainVerifyController struct {
 	tenants tenantdom.Repository
 	config  *AuditChainVerifyControllerConfig
 	logger  *logger.Logger
+
+	// alertedBreaks holds the identity of every break that was ERROR-alerted on
+	// the previous run, so a break that persists (e.g. benign migration-era rows
+	// awaiting an admin RebaselineChain, or a real tamper not yet remediated) is
+	// paged ON ONCE, not re-paged every interval. A break that is new or has
+	// changed identity is always alerted immediately. Reconcile runs serially per
+	// controller (the Manager calls it one at a time), so no lock is needed.
+	alertedBreaks map[string]struct{}
 }
 
 // NewAuditChainVerifyController wires the controller.
@@ -86,11 +94,19 @@ func NewAuditChainVerifyController(
 		cfg.Logger = logger.NewNop()
 	}
 	return &AuditChainVerifyController{
-		audit:   auditSvc,
-		tenants: tenantRepo,
-		config:  cfg,
-		logger:  cfg.Logger.With("controller", "audit-chain-verify"),
+		audit:         auditSvc,
+		tenants:       tenantRepo,
+		config:        cfg,
+		logger:        cfg.Logger.With("controller", "audit-chain-verify"),
+		alertedBreaks: make(map[string]struct{}),
 	}
+}
+
+// breakKey is the stable identity of a single break: same tenant + audit_log +
+// position + reason is "the same break". A change to any part (or a brand-new
+// break) yields a new key and therefore a fresh alert.
+func breakKey(tid shared.ID, b audit.ChainBreak) string {
+	return fmt.Sprintf("%s|%s|%d|%s", tid.String(), b.AuditLogID, b.ChainPosition, b.Reason)
 }
 
 // Name returns the controller name.
@@ -117,8 +133,15 @@ func (c *AuditChainVerifyController) Reconcile(ctx context.Context) (int, error)
 
 	processed := 0
 	totalBreaks := 0
+	newBreaks := 0
+	// current holds every break seen this run, so next run can tell a persisting
+	// break (already alerted) from a fresh one.
+	current := make(map[string]struct{})
 	for _, tid := range tenantIDs {
 		if ctx.Err() != nil {
+			// Partial run: keep the previous alert-dedup state intact (do NOT
+			// commit `current`, which only covers the tenants walked so far) so
+			// unwalked tenants' known breaks aren't re-alerted next run.
 			return processed, ctx.Err()
 		}
 
@@ -134,33 +157,62 @@ func (c *AuditChainVerifyController) Reconcile(ctx context.Context) (int, error)
 
 		if !res.OK {
 			totalBreaks += len(res.Breaks)
-			// Emit one structured log per break so SIEM alert rules
-			// can fire independently. We deliberately do NOT log the
-			// full payload of the broken row — that content itself
-			// may be attacker-controlled and we don't want to echo
-			// it into the SIEM verbatim.
+			// Emit one structured log per break so SIEM alert rules can fire
+			// independently. We deliberately do NOT log the full payload of the
+			// broken row — that content itself may be attacker-controlled and we
+			// don't want to echo it into the SIEM verbatim.
 			for _, b := range res.Breaks {
+				key := breakKey(tid, b)
+				current[key] = struct{}{}
+				metrics.AuditChainBreaksTotal.WithLabelValues(tid.String(), b.Reason).Inc()
+
+				if _, alreadyAlerted := c.alertedBreaks[key]; alreadyAlerted {
+					// Known, still-unremediated break — log without the `alert`
+					// keyword so the SIEM does not re-page for a condition it has
+					// already been told about (avoids drowning a genuine new
+					// tamper alert in repeats of a benign migration-era break).
+					c.logger.Warn("audit chain break still present",
+						"tenant_id", tid.String(),
+						"audit_log_id", b.AuditLogID,
+						"chain_position", b.ChainPosition,
+						"reason", b.Reason,
+					)
+					continue
+				}
+
+				newBreaks++
 				c.logger.Error("audit chain break detected",
 					"tenant_id", tid.String(),
 					"audit_log_id", b.AuditLogID,
 					"chain_position", b.ChainPosition,
 					"reason", b.Reason,
-					// Alerting hint: SIEM rules should match on this
-					// keyword + ERROR level to page on-call.
+					// Alerting hint: SIEM rules should match on this keyword +
+					// ERROR level to page on-call.
 					"alert", "audit_chain_break",
 				)
-				metrics.AuditChainBreaksTotal.WithLabelValues(tid.String(), b.Reason).Inc()
 			}
 		}
 	}
+	// Commit the dedup state only after a complete walk.
+	c.alertedBreaks = current
 
-	if totalBreaks > 0 {
+	switch {
+	case newBreaks > 0:
 		c.logger.Error("audit chain verification detected breaks this run",
 			"tenants_processed", processed,
 			"tenants_total", len(tenantIDs),
 			"total_breaks", totalBreaks,
+			"new_breaks", newBreaks,
 		)
-	} else {
+	case totalBreaks > 0:
+		// Breaks remain but all were alerted on a prior run — keep it visible
+		// (dashboards/audit) without paging.
+		c.logger.Warn("audit chain breaks still present (already alerted)",
+			"tenants_processed", processed,
+			"tenants_total", len(tenantIDs),
+			"total_breaks", totalBreaks,
+		)
+	default:
 		c.logger.Debug("audit chain verification clean",
 			"tenants_processed", processed,
 			"tenants_total", len(tenantIDs),
