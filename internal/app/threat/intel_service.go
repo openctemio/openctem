@@ -25,6 +25,13 @@ const (
 	// KEV catalog URL (JSON)
 	kevURL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
+	// KEV fallback mirror — the official CISA GitHub org (cisagov) publishes the
+	// same catalog JSON (identical schema). cisa.gov fronts the primary feed with
+	// a WAF that 403s some data-center egress IPs; when that happens we fall back
+	// to the mirror so the KEV signal — a top exploit input to prioritization —
+	// does not silently go stale.
+	kevMirrorURL = "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json"
+
 	// HTTP client timeout
 	httpTimeout = 5 * time.Minute
 
@@ -257,10 +264,22 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 	}
 	defer gzReader.Close()
 
-	// Parse CSV
-	csvReader := csv.NewReader(io.LimitReader(gzReader, maxDecompressedFeedBytes))
+	// The scores CSV is parsed by a pure helper so the format handling is
+	// unit-testable without the SSRF-guarded HTTP client (which refuses loopback).
+	return parseEPSSCSV(io.LimitReader(gzReader, maxDecompressedFeedBytes))
+}
 
-	// Read header - EPSS CSV has a comment line first, then header
+// parseEPSSCSV parses the (already-decompressed) EPSS scores CSV. The feed opens
+// with a metadata comment line (#model_version:...,score_date:...) whose comma
+// count (2) differs from the 3-column data header; encoding/csv locks
+// FieldsPerRecord to the first record it reads, so -1 disables the per-record
+// field-count check to let the comment line and data rows coexist — otherwise
+// the real header on line 2 is rejected with "wrong number of fields" and the
+// whole sync fails.
+func parseEPSSCSV(r io.Reader) ([]*threatintel.EPSSScore, error) {
+	csvReader := csv.NewReader(r)
+	csvReader.FieldsPerRecord = -1
+
 	// First line is like: #model_version:v2023.03.01,score_date:2024-01-15
 	firstLine, err := csvReader.Read()
 	if err != nil {
@@ -269,11 +288,9 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 
 	var modelVersion string
 	var scoreDate time.Time
-
-	// Parse metadata from first line
 	if len(firstLine) > 0 && strings.HasPrefix(firstLine[0], "#") {
 		metadata := strings.TrimPrefix(firstLine[0], "#")
-		for _, part := range strings.Split(metadata, ",") {
+		for part := range strings.SplitSeq(metadata, ",") {
 			kv := strings.SplitN(part, ":", 2)
 			if len(kv) == 2 {
 				switch kv[0] {
@@ -285,18 +302,15 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 			}
 		}
 	}
-
 	if scoreDate.IsZero() {
 		scoreDate = time.Now().UTC()
 	}
 
-	// Read actual header
-	_, err = csvReader.Read()
-	if err != nil {
+	// Skip the actual header row (cve,epss,percentile).
+	if _, err = csvReader.Read(); err != nil {
 		return nil, fmt.Errorf("failed to read header: %w", err)
 	}
 
-	// Parse records
 	var scores []*threatintel.EPSSScore
 	for {
 		record, err := csvReader.Read()
@@ -306,29 +320,23 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 		if err != nil {
 			return nil, fmt.Errorf("failed to read record: %w", err)
 		}
-
 		if len(record) < 3 {
 			continue
 		}
-
 		cveID := record[0]
 		if !strings.HasPrefix(cveID, "CVE-") {
 			continue
 		}
-
 		epssScore, err := strconv.ParseFloat(record[1], 64)
 		if err != nil {
 			continue
 		}
-
 		percentile, err := strconv.ParseFloat(record[2], 64)
 		if err != nil {
 			percentile = 0
 		}
-
 		// EPSS percentile is 0-1, convert to 0-100
 		percentile *= 100
-
 		scores = append(scores, threatintel.NewEPSSScore(
 			cveID,
 			epssScore,
@@ -341,9 +349,28 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 	return scores, nil
 }
 
-// fetchKEVData fetches and parses KEV data from CISA.
+// fetchKEVData fetches and parses the CISA KEV catalog. It tries the primary
+// cisa.gov feed first and falls back to the official cisagov GitHub mirror when
+// the primary is unreachable (e.g. the cisa.gov WAF 403s the egress IP) so the
+// KEV signal — a top exploit input to prioritization — stays fresh. Both
+// endpoints serve identical schema.
 func (s *IntelService) fetchKEVData(ctx context.Context) ([]*threatintel.KEVEntry, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kevURL, nil)
+	var lastErr error
+	for _, u := range []string{kevURL, kevMirrorURL} {
+		entries, err := s.fetchKEVFrom(ctx, u)
+		if err != nil {
+			lastErr = err
+			s.logger.Warn("KEV source unreachable; trying fallback", "url", u, "error", err)
+			continue
+		}
+		return entries, nil
+	}
+	return nil, lastErr
+}
+
+// fetchKEVFrom fetches and parses the KEV catalog JSON from a single URL.
+func (s *IntelService) fetchKEVFrom(ctx context.Context, url string) ([]*threatintel.KEVEntry, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
