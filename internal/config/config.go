@@ -37,6 +37,30 @@ type Config struct {
 	Storage     StorageConfig
 	Webhooks    WebhooksConfig
 	Ingest      IngestConfig
+	Metrics     MetricsConfig
+}
+
+// MetricsConfig controls exposure of the Prometheus /metrics endpoint.
+//
+// SECURITY: /metrics leaks internal cardinality (route names, error rates,
+// build info) and is a reconnaissance aid, so it is NOT public by default.
+// When Public is false (the default) the endpoint requires a bearer token
+// (Token) supplied via the Authorization header, e.g.
+//
+//	Authorization: Bearer <METRICS_TOKEN>
+//
+// Configure the scraper (Prometheus `authorization`/`bearer_token`) with the
+// same value. If Public is false and Token is empty the endpoint fails closed
+// (404) — metrics are effectively disabled until a token is set or Public is
+// explicitly enabled. Set METRICS_PUBLIC=true to restore the legacy open
+// endpoint (e.g. when it is already firewalled to an internal scrape network).
+type MetricsConfig struct {
+	// Public leaves /metrics unauthenticated when true (legacy behavior).
+	// Default false.
+	Public bool
+	// Token is the bearer token required to scrape /metrics when Public is
+	// false. Empty + non-public = endpoint disabled (fail closed).
+	Token string
 }
 
 // IngestConfig controls asynchronous ingest (RFC-005).
@@ -763,6 +787,11 @@ func Load() (*Config, error) {
 		Ingest: IngestConfig{
 			Mode:                getEnv("INGEST_MODE", "sync"),
 			MaxPendingPerTenant: getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
+		},
+		Metrics: MetricsConfig{
+			// SECURITY: default NON-public. See MetricsConfig docs.
+			Public: getEnvBool("METRICS_PUBLIC", false),
+			Token:  getEnv("METRICS_TOKEN", ""),
 		},
 		AITriage: AITriageConfig{
 			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),

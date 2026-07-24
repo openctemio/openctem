@@ -253,8 +253,9 @@ func Register(
 	}
 	authMiddleware := middleware.UnifiedAuth(unifiedAuthCfg)
 
-	// Health routes (public)
-	registerHealthRoutes(router, h.Health)
+	// Health routes: /health and /ready are public; /metrics is gated by a
+	// bearer token unless METRICS_PUBLIC=true (see MetricsConfig).
+	registerHealthRoutes(router, h.Health, middleware.MetricsAuth(cfg.Metrics.Public, cfg.Metrics.Token, log))
 
 	// API Documentation routes (public)
 	if h.Docs != nil {
