@@ -262,7 +262,7 @@ func Register(
 	}
 
 	// Auth routes - based on provider (some protected, some public)
-	registerAuthRoutes(router, h, authCfg, authMiddleware)
+	registerAuthRoutes(router, h, cfg, authCfg, authMiddleware, log)
 
 	// Initialize per-user read endpoint rate limiter to prevent enumeration and scraping.
 	// Applied to all GET requests on authenticated tenant-scoped routes via

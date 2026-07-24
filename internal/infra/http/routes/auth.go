@@ -4,10 +4,11 @@ import (
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/pkg/logger"
 )
 
 // registerAuthRoutes registers authentication endpoints based on provider.
-func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddleware Middleware) {
+func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg AuthConfig, authMiddleware Middleware, log *logger.Logger) {
 	// Create auth-specific rate limiter for brute-force protection
 	// SECURITY: These endpoints are critical attack vectors and need stricter limits
 	authRateLimiter := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
@@ -16,8 +17,19 @@ func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddl
 	passwordRL := authRateLimiter.PasswordMiddleware()
 	tokenExchangeRL := authRateLimiter.TokenExchangeMiddleware()
 
+	// Public login-capability snapshot: tells the UI which social buttons (and
+	// the Entra SSO env fallback) are actually configured, so it can hide dead
+	// affordances. Always available (unlike /oauth/providers, which only exists
+	// when the OAuth handler is wired), tenant-agnostic, and booleans only —
+	// no secrets. Rate-limited like the other public auth reads.
+	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, log)
+
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
+		// Login-provider capability snapshot (public, no auth)
+		providersHandler := ChainFunc(authProvidersHandler.GetProviders, loginRL)
+		r.GET("/providers", providersHandler.ServeHTTP)
+
 		// Provider info endpoint
 		if authCfg.Provider.SupportsLocal() && h.LocalAuth != nil {
 			r.GET("/info", h.LocalAuth.Info)
