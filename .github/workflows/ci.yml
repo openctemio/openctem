@@ -10,6 +10,33 @@ env:
   GO_VERSION: "1.26.5"
 
 jobs:
+  # ============================================
+  # Migration Safety — block deploy-breaking (non-expand-contract) migrations.
+  # Production rolls out with old pods still serving the new schema, so a
+  # destructive migration (DROP COLUMN, RENAME, incompatible TYPE change, ...)
+  # breaks them mid-deploy. See docs/deployment/safe-deploy-and-migrations.md.
+  # ============================================
+  migrations:
+    name: Migration Safety
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need base branch for the diff
+
+      - name: Fetch base branch
+        run: git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+
+      - name: Check for destructive migrations
+        env:
+          BASE_REF: "origin/${{ github.base_ref }}"
+          # 'allow-destructive-migration' label overrides the guard (e.g. an
+          # intentional expand-contract "contract" step).
+          ALLOW_DESTRUCTIVE_MIGRATION: ${{ contains(github.event.pull_request.labels.*.name, 'allow-destructive-migration') }}
+        run: bash scripts/check-migrations.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

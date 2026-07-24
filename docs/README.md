@@ -48,6 +48,7 @@
 - [CI/CD](development/ci-cd.md) - GitHub Actions workflows
 
 ### Deployment
+- [Safe Deploy & Migrations](deployment/safe-deploy-and-migrations.md) - Canonical safe-deploy sequence, expand-contract rules, schema-check semantics, dirty-migration recovery, rollback
 - [Docker](deployment/docker.md) - Docker & Docker Compose (dev/prod)
 - [Kubernetes](deployment/kubernetes.md) - K8s manifests
 

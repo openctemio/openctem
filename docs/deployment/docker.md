@@ -1,5 +1,11 @@
 # Docker Deployment
 
+> **Migrations:** auto-migration is a **development-only** convenience. In
+> production the API does **not** auto-migrate — a one-shot `migrate` service
+> applies migrations before the app starts, and the app fails fast if the schema
+> is behind. See [Safe Deploy & Migrations](safe-deploy-and-migrations.md) and
+> [Production Migrations](#production-migrations) below.
+
 ## Overview
 
 OpenCTEM uses a **single Dockerfile with multiple build targets**:
@@ -65,6 +71,46 @@ Features:
 - Resource limits (CPU/Memory)
 - Health checks
 - Auto-restart
+- **Migrations applied by a one-shot `migrate` service before the API starts**
+  (the API does NOT auto-migrate in prod — see below)
+
+---
+
+## Production Migrations
+
+Unlike the development container, the **production API binary does not run
+migrations**. On startup it runs a fail-fast schema check
+(`cmd/server/schema_check.go`): if the DB schema is behind the migrations shipped
+in the binary, it **refuses to start** rather than 500-ing every request against
+a missing column. Do **not** set `SKIP_SCHEMA_CHECK=true` in production — it is
+the last-line safety net.
+
+`docker-compose.prod.yml` therefore includes a one-shot **`migrate`** service
+(built from `Dockerfile.migrations` / published as `openctemio/migrations:<VERSION>`)
+that runs `migrate ... up` and exits. The `app` service declares
+`depends_on: migrate: { condition: service_completed_successfully }`, so the API
+only starts **after migrations succeed**:
+
+```bash
+# Keep both images at the same version.
+export API_VERSION=v1.0.0
+export MIGRATIONS_VERSION=v1.0.0   # defaults to API_VERSION if unset
+
+# `up` runs migrate → waits for it to complete → then starts the app.
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+If a migration fails midway, `golang-migrate` marks `schema_migrations.dirty` and
+the app will refuse to start. Recover with `migrate force` (see the
+[runbook](safe-deploy-and-migrations.md#dirty-migration-recovery)):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm migrate \
+  -path=/migrations -database "$DATABASE_URL" force <last-good-version>
+```
+
+For the full canonical sequence, expand-contract rules, and rollback guidance,
+see [Safe Deploy & Migrations](safe-deploy-and-migrations.md).
 
 ---
 

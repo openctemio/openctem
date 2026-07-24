@@ -2,6 +2,12 @@
 
 Deploying the OpenCTEM platform (API, UI, PostgreSQL, Redis) on Kubernetes.
 
+> **Read first:** [Safe Deploy & Migrations](safe-deploy-and-migrations.md) — the
+> API binary does **not** auto-migrate in production; it fails fast if the DB
+> schema is behind. Migrations must run (and complete) before the API pods
+> serve. This guide wires that ordering with an init container; the runbook
+> explains the full sequence, expand-contract rules, and recovery.
+
 **Prerequisites**: Kubernetes 1.27+, `kubectl` configured, container images pushed to a registry.
 
 ```bash
@@ -147,9 +153,71 @@ spec:
   ports: [{ port: 6379, targetPort: 6379 }]
 ```
 
+## Database Migrations
+
+**The production API does NOT auto-migrate.** On startup it runs a fail-fast
+schema check (`verifySchemaUpToDate`): if the DB is behind the migrations shipped
+in the binary it **refuses to start** rather than 500-ing every request against a
+missing column. So migrations must be applied — and finish — *before* the API
+pods come up. Never set `SKIP_SCHEMA_CHECK=true` in production; that check is the
+last-line safety net that turns "started too early" into a clean refusal instead
+of a silent outage.
+
+Migrations ship as a **separate, same-versioned image** — `ghcr.io/openctemio/migrations:<VERSION>`
+(built by `.github/workflows/docker-publish.yml` from `Dockerfile.migrations`, it
+bundles `golang-migrate` + the `migrations/` files). Always deploy the migrations
+image and the API image at the **same version**.
+
+Two ways to guarantee ordering — pick one:
+
+**(A) Init container (default below).** An init container on the API pod runs
+`migrate ... up` from the migrations image; Kubernetes will not start the `api`
+container until it exits 0. Ordering is guaranteed by a single `kubectl apply`
+with no manual wait step. `golang-migrate` takes a Postgres advisory lock, so
+concurrent init containers across replicas are safe (one applies, the rest see
+"no change").
+
+**(B) Pre-deploy Job (for large / lock-heavy migrations).** Run migrations as a
+one-shot `Job` that must complete *before* you roll the Deployment. Prefer this
+when a migration takes a long lock (e.g. `CREATE INDEX` / `ADD FK` on a big
+table — run it in a maintenance window). See `k8s/migrate-job.yaml` below and the
+[runbook](safe-deploy-and-migrations.md).
+
+```yaml
+# k8s/migrate-job.yaml — run to completion BEFORE rolling the API Deployment:
+#   kubectl apply -f k8s/migrate-job.yaml
+#   kubectl wait --for=condition=complete --timeout=600s job/openctem-migrate -n openctem
+apiVersion: batch/v1
+kind: Job
+metadata: { name: openctem-migrate, namespace: openctem }
+spec:
+  backoffLimit: 1
+  template:
+    metadata: { labels: { app: openctem-migrate } }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: your-registry/openctem-migrations:latest   # SAME version as the API image
+          command: ["/bin/sh", "-c"]
+          args:
+            - >
+              migrate -path=/migrations
+              -database "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
+              up
+          env:
+            - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_HOST } } }
+            - { name: DB_PORT, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_PORT } } }
+            - { name: DB_SSLMODE, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_SSLMODE } } }
+            - { name: DB_USER, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-user } } }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-password } } }
+            - { name: DB_NAME, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-name } } }
+```
+
 ## API Deployment
 
-Stateless, horizontally scalable. Migrations run automatically on startup.
+Stateless, horizontally scalable. An **init container applies migrations before
+the app container starts** (guaranteeing the schema is never behind the binary).
 
 ```yaml
 # k8s/api.yaml
@@ -162,6 +230,25 @@ spec:
   template:
     metadata: { labels: { app: openctem-api } }
     spec:
+      # Migrations run to completion before the api container starts. Uses the
+      # SAME version as the api image. Safe across replicas (advisory lock).
+      # If you use the pre-deploy Job (option B) instead, remove this block.
+      initContainers:
+        - name: migrate
+          image: your-registry/openctem-migrations:latest   # keep in lock-step with the api image tag
+          command: ["/bin/sh", "-c"]
+          args:
+            - >
+              migrate -path=/migrations
+              -database "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
+              up
+          env:
+            - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_HOST } } }
+            - { name: DB_PORT, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_PORT } } }
+            - { name: DB_SSLMODE, valueFrom: { configMapKeyRef: { name: openctem-config, key: DB_SSLMODE } } }
+            - { name: DB_USER, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-user } } }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-password } } }
+            - { name: DB_NAME, valueFrom: { secretKeyRef: { name: openctem-secrets, key: db-name } } }
       containers:
         - name: api
           image: your-registry/openctem-api:latest
@@ -325,15 +412,35 @@ spec:
 ```bash
 kubectl apply -f k8s/secrets.yaml -f k8s/configmap.yaml
 kubectl apply -f k8s/postgres.yaml && kubectl apply -f k8s/redis.yaml
+# API pod's init container applies migrations before the app starts (option A).
 kubectl apply -f k8s/api.yaml -f k8s/ui.yaml
 kubectl apply -f k8s/ingress.yaml -f k8s/hpa.yaml
 kubectl get pods -n openctem
 kubectl exec -n openctem deploy/openctem-api -- wget -qO- http://localhost:8080/health
 ```
 
+If you use the **pre-deploy Job (option B)** instead of the init container, run it
+between the datastore and the API steps, and wait for it to finish first:
+
+```bash
+kubectl apply -f k8s/migrate-job.yaml
+kubectl wait --for=condition=complete --timeout=600s job/openctem-migrate -n openctem
+kubectl apply -f k8s/api.yaml -f k8s/ui.yaml   # api.yaml with the initContainers block removed
+```
+
 **Health**: The API exposes `GET /health` (no auth) returning `200 OK`. Used by readiness, liveness, and startup probes.
 
-**Rolling update**: `kubectl set image -n openctem deployment/openctem-api api=your-registry/openctem-api:v1.2.0`
+**Rolling update / upgrade**: bump **both** the migrations and API image tags to
+the same new version. The init container applies the new migrations before the
+new API container starts (or run the pre-deploy Job first). See the
+[safe-deploy runbook](safe-deploy-and-migrations.md) for the full sequence,
+expand-contract rules, and dirty-migration recovery.
+
+```bash
+kubectl set image -n openctem deployment/openctem-api \
+  migrate=your-registry/openctem-migrations:v1.2.0 \
+  api=your-registry/openctem-api:v1.2.0
+```
 
 ## Production Considerations
 
