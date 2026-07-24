@@ -474,6 +474,24 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Threat-model refresh. Regenerates each tenant's tenant-wide threat model
+	// so it reflects the latest exposure chains and asset-graph edges (e.g.
+	// edges the graph-enrichment pass above just inferred). Without this,
+	// threat_model_threats only changes on manual API-triggered generation,
+	// starving the priority-classification threat-model oracle of fresh data.
+	// The generator has built-in no-op detection (InputHash), so a slower
+	// cadence than graph-enrichment keeps cost down without going stale.
+	if svc.ThreatModel != nil {
+		w.ControllerManager.Register(controller.NewThreatModelRefreshController(
+			svc.ThreatModel,
+			repos.Tenant,
+			&controller.ThreatModelRefreshControllerConfig{
+				Interval: 2 * time.Hour,
+				Logger:   log.With("controller", "threat-model-refresh"),
+			},
+		))
+	}
+
 	// Async-ingest worker (RFC-005). Drains the ingest_jobs queue through the
 	// normal ingest pipeline. Safe to register unconditionally: until the
 	// accept path enqueues jobs (async mode), the queue is empty and the
