@@ -28,6 +28,7 @@
 - [Asset Properties Schema](asset-properties-schema.md) - JSONB properties schema per asset type
 - [Database Notes](architecture/database-notes.md) - Important DB implementation details (finding_count, provider detection)
 - [SSO Authentication](architecture/sso-authentication.md) - Per-tenant + env-fallback Entra/OIDC design, id_token verification, nOAuth/`xms_edov`, PKCE, verified-domain JIT gate (see also the operator [how-to](how-to/configure-entraid.md))
+- [Multi-Tenant EntraID Model](architecture/multi-tenant-entraid-model.md) - "One platform, many tenants — each brings its own EntraID": per-tenant Azure apps, `?org=` login routing, and the `tid`-pin isolation wall (conceptual model)
 
 ### Architecture Decision Records (ADR)
 - [ADR-001: Use Standard net/http](architecture/decisions/001-use-stdlib-http.md)
