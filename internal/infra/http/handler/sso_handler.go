@@ -194,6 +194,11 @@ func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
 		apierror.BadRequest("Failed to retrieve user information").WriteJSON(w)
 	case errors.Is(err, app.ErrSSODomainNotAllowed):
 		apierror.Forbidden("Your email domain is not allowed for this organization").WriteJSON(w)
+	case errors.Is(err, app.ErrAccountLinkRequiresVerification):
+		// Proof-before-link: an account with this email already exists and was not
+		// proven to belong to this federated login. Tell the user to sign in with
+		// their existing credentials first, then link the identity provider.
+		apierror.Forbidden("An account with this email already exists. Sign in with your existing credentials first, then link this identity provider.").WriteJSON(w)
 	default:
 		h.logger.Error("SSO error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

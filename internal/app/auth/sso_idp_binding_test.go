@@ -7,6 +7,8 @@ import (
 
 	"github.com/openctemio/api/internal/config"
 	identityproviderdom "github.com/openctemio/api/pkg/domain/identityprovider"
+	"github.com/openctemio/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/api/pkg/domain/user"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -14,6 +16,17 @@ import (
 // regEnabled is the auth config used by findOrCreateUser tests that exercise the
 // create path; production defaults AUTH_ALLOW_REGISTRATION to true.
 func regEnabled() config.AuthConfig { return config.AuthConfig{AllowRegistration: true} }
+
+// ssoTn builds a throwaway tenant for the findOrCreateUser call signature. Same-
+// provider / create paths never read it; the Case 2 proof-before-link gate does.
+func ssoTn(t *testing.T) *tenantdom.Tenant {
+	t.Helper()
+	tn, err := tenantdom.NewTenant("Acme", "acme", shared.NewID().String())
+	if err != nil {
+		t.Fatalf("new tenant: %v", err)
+	}
+	return tn
+}
 
 // ssoFakeUserRepo records Create/Update for the SSO findOrCreateUser tests.
 // (fakeUserRepo from oauth_takeover_test.go is reused where it suffices, but we
@@ -51,7 +64,7 @@ func TestSSOFindOrCreate_BlocksCrossIdPSameEnum(t *testing.T) {
 	victim.BindFederatedIdentity(corpOkta, "corp-sub")
 	s, repo := newSSOSvc(victim)
 
-	got, err := s.findOrCreateUser(context.Background(),
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: evilOkta, Subject: "evil-sub"},
 		identityproviderdom.ProviderOkta)
 
@@ -76,7 +89,7 @@ func TestSSOFindOrCreate_SameIssuerOK(t *testing.T) {
 	u.BindFederatedIdentity(corpOkta, "corp-sub")
 	s, _ := newSSOSvc(u)
 
-	got, err := s.findOrCreateUser(context.Background(),
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub"},
 		identityproviderdom.ProviderOkta)
 	if err != nil {
@@ -96,7 +109,7 @@ func TestSSOFindOrCreate_LegacyTrustOnFirstUseBinds(t *testing.T) {
 	}
 	s, repo := newSSOSvc(legacy)
 
-	got, err := s.findOrCreateUser(context.Background(),
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub"},
 		identityproviderdom.ProviderOkta)
 	if err != nil {
@@ -121,7 +134,7 @@ func TestSSOFindOrCreate_NoIssuerNoRegression(t *testing.T) {
 	u.BindFederatedIdentity(corpOkta, "corp-sub")
 	s, _ := newSSOSvc(u)
 
-	got, err := s.findOrCreateUser(context.Background(),
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: "", Subject: ""},
 		identityproviderdom.ProviderOkta)
 	if err != nil {
@@ -164,7 +177,7 @@ func TestSSOFindOrCreate_RetryPathBlocksPasswordLocalTakeover(t *testing.T) {
 	repo := &raceUserRepo{onRetry: victim}
 	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled()}
 
-	got, err := s.findOrCreateUser(context.Background(),
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: evilOkta, Subject: "evil"},
 		identityproviderdom.ProviderOkta)
 	if err == nil {
@@ -186,7 +199,7 @@ func TestSSOFindOrCreate_RetryPathAdoptsSameIssuer(t *testing.T) {
 	repo := &raceUserRepo{onRetry: concurrent}
 	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled()}
 
-	got, err := s.findOrCreateUser(context.Background(),
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub"},
 		identityproviderdom.ProviderOkta)
 	if err != nil {
@@ -202,7 +215,7 @@ func TestSSOFindOrCreate_RetryPathAdoptsSameIssuer(t *testing.T) {
 // Okta used to fail. NewFederatedUser fixes it; the new user is OIDC + bound.
 func TestSSOFindOrCreate_NewOktaUserCreated(t *testing.T) {
 	s, repo := newSSOSvc(nil) // no existing user
-	got, err := s.findOrCreateUser(context.Background(),
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "newokta@corp.com", Name: "New Okta", Issuer: corpOkta, Subject: "okta-sub"},
 		identityproviderdom.ProviderOkta)
 	if err != nil {
@@ -225,7 +238,7 @@ func TestSSOFindOrCreate_NewUserBindsIssuer(t *testing.T) {
 	s, repo := newSSOSvc(nil) // no existing user
 	const entraIss = "https://login.microsoftonline.com/dir/v2.0"
 
-	got, err := s.findOrCreateUser(context.Background(),
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "new@corp.com", Name: "New", Issuer: entraIss, Subject: "entra-sub"},
 		identityproviderdom.ProviderEntraID)
 	if err != nil {

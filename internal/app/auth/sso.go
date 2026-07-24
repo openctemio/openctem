@@ -51,6 +51,16 @@ var (
 	// ErrSSORegistrationDisabled is returned when AUTH_ALLOW_REGISTRATION is
 	// false and an SSO/social login would create a brand-new user (FIX 4).
 	ErrSSORegistrationDisabled = errors.New("registration is disabled")
+	// ErrAccountLinkRequiresVerification is the proof-before-link refusal: a
+	// federated (SSO/OAuth) login whose email matches a PRE-EXISTING account is
+	// never silently adopted. It is returned when a real password-backed local
+	// account exists (Case 1 — the user must sign in with their existing password
+	// first, then link the IdP from an authenticated session) AND when a claimable
+	// passwordless account cannot prove ownership (Case 2 — unverified email or a
+	// tenant domain that is not DNS-verified). Fail-closed: matching an email is
+	// never, on its own, enough to bind a federated identity.
+	ErrAccountLinkRequiresVerification = errors.New(
+		"an account with this email already exists; sign in with your existing credentials first, then link this identity provider")
 )
 
 // ssoMaxRedirectURILength is the maximum length for redirect URIs.
@@ -647,8 +657,10 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		return nil, ErrSSODomainNotAllowed
 	}
 
-	// Find or create user and provision into tenant
-	u, err := s.findOrCreateUser(ctx, userInfo, rp.provider)
+	// Find or create user and provision into tenant. The tenant is passed so the
+	// proof-before-link guard can require a DNS-verified tenant domain before a
+	// federated login may CLAIM a pre-existing passwordless account (Case 2).
+	u, err := s.findOrCreateUser(ctx, t, userInfo, rp.provider)
 	if err != nil {
 		return nil, fmt.Errorf("find or create user: %w", err)
 	}
@@ -825,10 +837,11 @@ func entraUserInfoFromClaims(claims *oidcClaims) (*SSOUserInfo, error) {
 		return nil, errors.New("entra id_token has no email claim")
 	}
 	return &SSOUserInfo{
-		Email:   claims.Email,
-		Name:    claims.Name,
-		Issuer:  claims.Issuer,
-		Subject: claims.Subject,
+		Email:         claims.Email,
+		Name:          claims.Name,
+		Issuer:        claims.Issuer,
+		Subject:       claims.Subject,
+		EmailVerified: true, // gated on xms_edov==true above (domain-owner verified)
 	}, nil
 }
 
@@ -1021,6 +1034,13 @@ type SSOUserInfo struct {
 	// the provider returned no id_token to verify — binding is then skipped.
 	Issuer  string
 	Subject string
+
+	// EmailVerified records that the IdP proved ownership of Email (Entra
+	// xms_edov==true, or the OIDC email_verified claim). Producers set it true
+	// ONLY after that check passes. It gates the proof-before-link claim of a
+	// pre-existing passwordless account (Case 2); its zero value (false) is
+	// fail-closed, so any producer that forgets to set it refuses the claim.
+	EmailVerified bool
 }
 
 // getUserInfo fetches user information from the SSO provider.
@@ -1100,8 +1120,9 @@ func (s *SSOService) parseOktaUserInfo(body io.Reader) (*SSOUserInfo, error) {
 		return nil, fmt.Errorf("okta identity provider did not mark email as verified")
 	}
 	return &SSOUserInfo{
-		Email: data.Email,
-		Name:  data.Name,
+		Email:         data.Email,
+		Name:          data.Name,
+		EmailVerified: true, // gated on the OIDC email_verified claim above
 	}, nil
 }
 
@@ -1121,16 +1142,17 @@ func (s *SSOService) parseGoogleUserInfo(body io.Reader) (*SSOUserInfo, error) {
 		return nil, fmt.Errorf("google workspace identity provider did not mark email as verified")
 	}
 	return &SSOUserInfo{
-		Email:     data.Email,
-		Name:      data.Name,
-		AvatarURL: data.Picture,
+		Email:         data.Email,
+		Name:          data.Name,
+		AvatarURL:     data.Picture,
+		EmailVerified: true, // gated on the OIDC email_verified claim above
 	}, nil
 }
 
 // findOrCreateUser finds an existing user or creates a new SSO user.
 // Handles race condition: if two concurrent SSO logins create the same user,
 // the second attempt will retry the lookup after a duplicate key error.
-func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
+func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
 	if userInfo.Email == "" {
 		return nil, ErrSSONoEmail
 	}
@@ -1138,7 +1160,7 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
-		return s.adoptExistingUser(ctx, existingUser, userInfo, provider)
+		return s.adoptExistingUser(ctx, t, existingUser, userInfo, provider)
 	}
 
 	// SECURITY (FIX 4): when public registration is disabled, a federated login
@@ -1177,7 +1199,7 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 			// different-provider or password-backed local account here without
 			// any provider/issuer check (takeover via the race/error path).
 			s.logger.Debug("user created by concurrent request, using existing", "email", userInfo.Email)
-			return s.adoptExistingUser(ctx, retryUser, userInfo, provider)
+			return s.adoptExistingUser(ctx, t, retryUser, userInfo, provider)
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -1186,31 +1208,60 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 	return newUser, nil
 }
 
-// adoptExistingUser applies the account-takeover guard before returning an
-// existing account for a federated login, then records the login. It is the
-// SINGLE place adoption is authorized, so BOTH the normal lookup path and the
-// create-race retry path enforce the same checks:
+// adoptExistingUser applies the proof-before-link / account-takeover guard
+// before returning an existing account for a federated login, then records the
+// login. It is the SINGLE place adoption is authorized, so BOTH the normal
+// lookup path and the create-race retry path enforce the same checks. Matching
+// an email is NEVER, on its own, enough to bind a federated identity — the four
+// pre-existing-account cases are handled as follows (fail-closed):
 //
-//  1. Provider match — an account is bound to the auth provider that created
-//     it; the only safe cross-provider adoption is a claimable LOCAL account
-//     (invited, no password) being claimed via its IdP for the first time.
-//  2. IdP issuer binding — the provider enum is coarse (every Okta org and
-//     every generic OIDC IdP collapse to AuthProviderOIDC), so a recorded
-//     verified id_token issuer must match; a pre-tracking/claimable account is
-//     bound trust-on-first-use.
-func (s *SSOService) adoptExistingUser(ctx context.Context, existingUser *userdom.User, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
+//	Case 4 (same IdP identity already bound): the returning user — provider
+//	   matches and the recorded (issuer) matches, so the login proceeds.
+//	Case 3 (a DIFFERENT federated identity bound): a different auth provider, or
+//	   the same provider with a different verified issuer — rejected (cross-IdP
+//	   takeover). The provider enum is coarse (every Okta org / generic OIDC IdP
+//	   collapse to AuthProviderOIDC), so the issuer check below is what actually
+//	   distinguishes IdPs.
+//	Case 1 (a real password-backed local account, no federated identity): never
+//	   silently linked. Refused with ErrAccountLinkRequiresVerification so the
+//	   user signs in with their existing password first, then links the IdP from
+//	   an authenticated session (proof of ownership).
+//	Case 2 (a claimable PASSWORDLESS local account — invited / SCIM-provisioned,
+//	   the classic pre-hijack target): only claimable when ownership is provable
+//	   WITHOUT a password — the IdP verified the email AND the email domain is a
+//	   DNS-verified domain of THIS tenant (see requireClaimableOwnershipProof).
+//	   Otherwise refused, so an attacker cannot claim an invited seat.
+func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant, existingUser *userdom.User, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
 	existingProvider := existingUser.AuthProvider()
 	expectedProvider := s.mapAuthProvider(provider)
 
 	if existingProvider != expectedProvider {
-		claimableLocal := existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() == nil
-		if !claimableLocal {
+		// The federated login's provider does not match the one that created the
+		// account. A non-local existing account is bound to a DIFFERENT federated
+		// provider (Case 3) — reject outright.
+		if existingProvider != userdom.AuthProviderLocal {
 			s.logger.Warn("SSO login blocked: email registered with a different auth provider",
 				"email", userInfo.Email,
 				"existing_provider", existingProvider,
 				"sso_provider", expectedProvider,
 			)
 			return nil, fmt.Errorf("%w: this email is registered with a different login method", ErrSSODomainNotAllowed)
+		}
+
+		// The existing account is LOCAL. A password-backed local account is a real,
+		// activated account (Case 1) — proof-before-link: never adopt it on the
+		// strength of a matching federated email. The user must authenticate with
+		// their password first and link the IdP explicitly.
+		if existingUser.PasswordHash() != nil {
+			s.logger.Warn("SSO login blocked: email owns a password account; proof-before-link required",
+				"email", userInfo.Email, "sso_provider", expectedProvider)
+			return nil, ErrAccountLinkRequiresVerification
+		}
+
+		// The existing account is a claimable, passwordless local account (Case 2 —
+		// invited / SCIM-provisioned). Require provable ownership before binding.
+		if err := s.requireClaimableOwnershipProof(ctx, t, userInfo); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1236,6 +1287,62 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, existingUser *userdo
 		s.logger.Warn("failed to update last login", "error", updateErr)
 	}
 	return existingUser, nil
+}
+
+// requireClaimableOwnershipProof authorizes a federated login to CLAIM a
+// pre-existing PASSWORDLESS local account (Case 2 — an invited / SCIM seat).
+// Because such an account has no password, the only safe proof of ownership is:
+//
+//  1. the IdP verified the email (xms_edov / email_verified — captured on
+//     userInfo.EmailVerified by the producers), AND
+//  2. the email's domain is a DNS-verified domain of THIS tenant.
+//
+// Together these prove both that the IdP vouches for the address and that the
+// tenant owns the domain the seat belongs to — so the claim cannot be forged by
+// an attacker who merely presents a matching email. Fail-closed at every branch:
+// a missing tenant, missing/unverified email, unparseable domain, an unwired or
+// erroring domain verifier, or an unverified domain all refuse the claim.
+func (s *SSOService) requireClaimableOwnershipProof(ctx context.Context, t *tenantdom.Tenant, userInfo *SSOUserInfo) error {
+	if t == nil {
+		s.logger.Warn("account claim refused: no tenant context (fail-closed)", "email", userInfo.Email)
+		return ErrAccountLinkRequiresVerification
+	}
+	// (1) The IdP must have proven the email. Upstream producers already refuse an
+	// unverified email, so this is a defense-in-depth assertion local to the gate.
+	if !userInfo.EmailVerified {
+		s.logger.Warn("account claim refused: email not IdP-verified",
+			"email", userInfo.Email, "tenant_id", t.ID().String())
+		return ErrAccountLinkRequiresVerification
+	}
+	emailDomain := ""
+	if parts := strings.SplitN(userInfo.Email, "@", 2); len(parts) == 2 {
+		emailDomain = strings.ToLower(strings.TrimSpace(parts[1]))
+	}
+	if emailDomain == "" {
+		return ErrAccountLinkRequiresVerification
+	}
+	// (2) The tenant must have DNS-proven it owns the domain. Without the verifier
+	// wired we cannot establish ownership → refuse (fail-closed), rather than fall
+	// back to the weaker AllowedDomains list, which is admin-asserted not DNS-proven.
+	if s.domainVerifier == nil {
+		s.logger.Warn("account claim refused: domain verifier not wired (fail-closed)",
+			"email", userInfo.Email, "tenant_id", t.ID().String())
+		return ErrAccountLinkRequiresVerification
+	}
+	verified, err := s.domainVerifier.IsVerifiedDomain(ctx, t.ID().String(), emailDomain)
+	if err != nil {
+		s.logger.Warn("account claim refused: verified-domain check failed (fail-closed)",
+			"email", userInfo.Email, "tenant_id", t.ID().String(), "error", err)
+		return ErrAccountLinkRequiresVerification
+	}
+	if !verified {
+		s.logger.Warn("account claim refused: email domain is not DNS-verified for this tenant",
+			"email", userInfo.Email, "tenant_id", t.ID().String(), "domain", emailDomain)
+		return ErrAccountLinkRequiresVerification
+	}
+	s.logger.Info("federated login claimed a passwordless account (verified email + DNS-verified domain)",
+		"email", userInfo.Email, "tenant_id", t.ID().String(), "domain", emailDomain)
+	return nil
 }
 
 // mapAuthProvider maps identity provider to user auth provider.

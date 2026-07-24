@@ -267,7 +267,7 @@ func TestFix4_SSO_RegistrationDisabled_BlocksNewUser(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: nil} // no existing user
 	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false}}
 
-	_, err := svc.findOrCreateUser(context.Background(),
+	_, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "new@corp.com", Name: "New", Issuer: "iss", Subject: "sub"},
 		identityproviderdom.ProviderEntraID)
 	if !errors.Is(err, ErrSSORegistrationDisabled) {
@@ -278,7 +278,10 @@ func TestFix4_SSO_RegistrationDisabled_BlocksNewUser(t *testing.T) {
 	}
 }
 
-// SSO: registration disabled STILL binds a pre-invited (passwordless local) account.
+// SSO: registration disabled STILL binds a pre-invited (passwordless local)
+// account — provided proof-before-link is satisfied (IdP-verified email AND a
+// DNS-verified tenant domain). The AllowRegistration gate must not block the
+// claim of an existing seat once ownership is proven.
 func TestFix4_SSO_RegistrationDisabled_BindsExisting(t *testing.T) {
 	invited, err := userdom.New("invited@corp.com", "Invited") // local, no password
 	if err != nil {
@@ -288,10 +291,15 @@ func TestFix4_SSO_RegistrationDisabled_BindsExisting(t *testing.T) {
 		t.Skip("userdom.New unexpectedly set a password")
 	}
 	repo := &ssoFakeUserRepo{byEmail: invited}
-	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false}}
+	svc := &SSOService{
+		userRepo:       repo,
+		logger:         logger.NewNop(),
+		authConfig:     config.AuthConfig{AllowRegistration: false},
+		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}},
+	}
 
-	got, err := svc.findOrCreateUser(context.Background(),
-		&SSOUserInfo{Email: "invited@corp.com", Issuer: "iss", Subject: "sub"},
+	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: "invited@corp.com", Issuer: "iss", Subject: "sub", EmailVerified: true},
 		identityproviderdom.ProviderEntraID)
 	if err != nil {
 		t.Fatalf("binding a pre-invited account must work even with registration disabled, got %v", err)
