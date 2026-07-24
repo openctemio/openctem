@@ -457,6 +457,23 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// endpoint can call it without a duplicate instance.
 	w.AssetLifecycleWorker = lifecycleWorker
 
+	// Asset-graph enrichment. Infers high-confidence Exposes (host→service)
+	// and RunsOn (application→host) edges from data scanners already ingest,
+	// so the attack-path / exposure-chain / reachability engines have edges
+	// beyond DNS to traverse over historical assets. Idempotent (edges use
+	// ON CONFLICT DO NOTHING); ambiguous matches are filed as suggestions for
+	// operator review rather than auto-applied.
+	if svc.RelationshipSuggestion != nil {
+		w.ControllerManager.Register(controller.NewGraphEnrichmentController(
+			svc.RelationshipSuggestion,
+			repos.Tenant,
+			&controller.GraphEnrichmentControllerConfig{
+				Interval: time.Hour,
+				Logger:   log.With("controller", "graph-enrichment"),
+			},
+		))
+	}
+
 	// Async-ingest worker (RFC-005). Drains the ingest_jobs queue through the
 	// normal ingest pipeline. Safe to register unconditionally: until the
 	// accept path enqueues jobs (async mode), the queue is empty and the
