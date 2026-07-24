@@ -198,6 +198,102 @@ func TestThreatModelRepository_CatalogReads(t *testing.T) {
 	}
 }
 
+// TestThreatModelRepository_AssetsOnOpenThreatPaths validates the priority
+// oracle reader: only OPEN threats at/above the score threshold contribute
+// their entry/target/hop asset ids, and the query is tenant-scoped.
+func TestThreatModelRepository_AssetsOnOpenThreatPaths(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping DB-backed threat-path oracle test")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	tenantID := shared.NewID()
+	otherTenant := shared.NewID()
+	for _, tid := range []shared.ID{tenantID, otherTenant} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
+			tid.String(), "tmpath-test", "tmpath-"+tid.String()); err != nil {
+			t.Fatalf("seed tenant: %v", err)
+		}
+		defer func(id string) { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, id) }(tid.String())
+	}
+
+	entry := seedAsset(ctx, t, db, tenantID)
+	hop := seedAsset(ctx, t, db, tenantID)
+	target := seedAsset(ctx, t, db, tenantID)
+	lowScoreAsset := seedAsset(ctx, t, db, tenantID)
+	mitigatedAsset := seedAsset(ctx, t, db, tenantID)
+	otherTenantAsset := seedAsset(ctx, t, db, otherTenant)
+
+	repo := NewThreatModelRepository(&DB{DB: db})
+
+	scope := entry
+	model, err := threatmodel.NewThreatModel(tenantID, threatmodel.ScopeCrownJewel, &scope, "path model")
+	if err != nil {
+		t.Fatalf("new model: %v", err)
+	}
+	// Open, high-score threat wiring entry→hop→target.
+	openT := newTestThreat(t, tenantID, model.ID, threatmodel.StatusOpen, "T1190", "Initial Access", 0)
+	openT.Score = 8.0
+	openT.EntryPointAssetID = &entry
+	openT.HopAssetID = &hop
+	openT.TargetAssetID = &target
+	// Open but below threshold → excluded.
+	lowT := newTestThreat(t, tenantID, model.ID, threatmodel.StatusOpen, "T1005", "Collection", 1)
+	lowT.Score = 0.2
+	lowT.HopAssetID = &lowScoreAsset
+	// Mitigated (not open) → excluded even though high score.
+	mitT := newTestThreat(t, tenantID, model.ID, threatmodel.StatusMitigated, "T1021", "Lateral Movement", 1)
+	mitT.Score = 9.0
+	mitT.HopAssetID = &mitigatedAsset
+
+	threats := []*threatmodel.ThreatModelThreat{openT, lowT, mitT}
+	model.RecomputeRollups(threats)
+	if err := repo.Save(ctx, model, threats); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	defer func() { _ = repo.Delete(ctx, tenantID, model.ID) }()
+
+	// Other tenant has an unrelated open high-score threat — must not leak.
+	otherModel, _ := threatmodel.NewThreatModel(otherTenant, threatmodel.ScopeTenant, nil, "other")
+	otherT := newTestThreat(t, otherTenant, otherModel.ID, threatmodel.StatusOpen, "T1190", "Initial Access", 0)
+	otherT.Score = 9.0
+	otherT.HopAssetID = &otherTenantAsset
+	otherModel.RecomputeRollups([]*threatmodel.ThreatModelThreat{otherT})
+	if err := repo.Save(ctx, otherModel, []*threatmodel.ThreatModelThreat{otherT}); err != nil {
+		t.Fatalf("save other: %v", err)
+	}
+	defer func() { _ = repo.Delete(ctx, otherTenant, otherModel.ID) }()
+
+	set, err := repo.AssetsOnOpenThreatPaths(ctx, tenantID, 1.0)
+	if err != nil {
+		t.Fatalf("AssetsOnOpenThreatPaths: %v", err)
+	}
+
+	for _, want := range []shared.ID{entry, hop, target} {
+		if !set[want.String()] {
+			t.Errorf("expected asset %s on open threat path", want)
+		}
+	}
+	if set[lowScoreAsset.String()] {
+		t.Error("below-threshold-score threat asset must be excluded")
+	}
+	if set[mitigatedAsset.String()] {
+		t.Error("mitigated (non-open) threat asset must be excluded")
+	}
+	if set[otherTenantAsset.String()] {
+		t.Error("cross-tenant threat asset must not leak")
+	}
+}
+
 func newTestThreat(t *testing.T, tenantID, modelID shared.ID, status threatmodel.ThreatStatus, technique, tactic string, hop int) *threatmodel.ThreatModelThreat {
 	t.Helper()
 	th, err := threatmodel.NewThreatModelThreat(tenantID, modelID, status)

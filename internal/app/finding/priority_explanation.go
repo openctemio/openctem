@@ -37,6 +37,7 @@ type PriorityFactors struct {
 	IsReachable          bool     `json:"is_reachable"`
 	IsInternetAccessible bool     `json:"is_internet_accessible"`
 	IsNetworkAccessible  bool     `json:"is_network_accessible"`
+	OnOpenThreatPath     bool     `json:"on_open_threat_path"`
 	ReachableFromCount   int      `json:"reachable_from_count"`
 	AssetCriticality     string   `json:"asset_criticality,omitempty"`
 	AssetExposure        string   `json:"asset_exposure,omitempty"`
@@ -67,7 +68,7 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 		}
 	}
 
-	pctx := s.buildPriorityContext(f, a, s.reachableSet(ctx, tenantID))
+	pctx := s.buildPriorityContext(f, a, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID))
 
 	// Compensating-control reduction (same as the live classify path).
 	if s.controlLookup != nil && !f.AssetID().IsZero() {
@@ -98,13 +99,14 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 			IsReachable:          pctx.IsReachable,
 			IsInternetAccessible: pctx.IsInternetAccessible,
 			IsNetworkAccessible:  pctx.IsNetworkAccessible,
+			OnOpenThreatPath:     pctx.OnOpenThreatPath,
 			ReachableFromCount:   pctx.ReachableFromCount,
 			AssetCriticality:     pctx.AssetCriticality,
 			AssetExposure:        pctx.AssetExposure,
 			AssetIsCrownJewel:    pctx.AssetIsCrownJewel,
 			IsProtected:          pctx.IsProtected,
 			ControlReductionPct:  pctx.ControlReductionFactor * 100,
-			Reachable:            pctx.IsReachable || pctx.IsInternetAccessible,
+			Reachable:            pctx.IsReachable || pctx.IsInternetAccessible || pctx.OnOpenThreatPath,
 			CriticalAsset:        pctx.AssetCriticality == "critical" || pctx.AssetCriticality == "high",
 		},
 	}

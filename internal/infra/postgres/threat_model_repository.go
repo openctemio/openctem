@@ -342,6 +342,42 @@ func (r *ThreatModelRepository) ListThreats(ctx context.Context, tenantID, model
 	return threats, nil
 }
 
+// AssetsOnOpenThreatPaths returns the set of asset IDs (entry points, targets,
+// and hops) that sit on an OPEN threat with score >= minScore across the
+// tenant's current threat models. Feeds the priority classifier's
+// ThreatModelOracle. Tenant-scoped and served by idx_tmt_status(tenant_id,
+// status) — a single indexed query, no N+1. Because Save() replaces a scope's
+// threats wholesale (delete-and-insert), every row is current, so aggregating
+// across the tenant's models yields its latest picture.
+func (r *ThreatModelRepository) AssetsOnOpenThreatPaths(ctx context.Context, tenantID shared.ID, minScore float64) (map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT entry_point_asset_id, target_asset_id, hop_asset_id
+		   FROM threat_model_threats
+		  WHERE tenant_id = $1 AND status = $2 AND score >= $3`,
+		tenantID.String(), string(threatmodel.StatusOpen), minScore)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list open threat-path assets: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	set := make(map[string]bool)
+	for rows.Next() {
+		var entryID, targetID, hopID sql.NullString
+		if err := rows.Scan(&entryID, &targetID, &hopID); err != nil {
+			return nil, fmt.Errorf("failed to scan open threat-path asset: %w", err)
+		}
+		for _, v := range []sql.NullString{entryID, targetID, hopID} {
+			if v.Valid && v.String != "" {
+				set[v.String] = true
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating open threat-path assets: %w", err)
+	}
+	return set, nil
+}
+
 // Delete removes a model (and its threats via ON DELETE CASCADE), tenant-scoped.
 func (r *ThreatModelRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
 	_, err := r.db.ExecContext(ctx,

@@ -705,6 +705,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PriorityClassification.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
 	}
 
+	// Close-the-loop (Part 1): feed the threat-model engine's output into
+	// prioritization, so an asset the engine placed on an OPEN, high-score
+	// modeled attack chain is treated as reachable. Nil-safe: no threat model /
+	// no matching threat → no effect. Cached 5m/tenant.
+	if repos.ThreatModel != nil {
+		s.PriorityClassification.SetThreatModelOracle(
+			newThreatModelOracle(repos.ThreatModel, defaultThreatScoreThreshold, 5*time.Minute))
+	}
+
 	// B1/B2 reclassification pipeline wiring:
 	//   producers → ControlChangePublisher → MemoryQueue
 	//   PriorityReclassifyController (workers.go) → Reclassifier → ClassifyFinding
