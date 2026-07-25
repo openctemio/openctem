@@ -392,16 +392,24 @@ func (s *IntelService) fetchKEVFrom(ctx context.Context, url string) ([]*threati
 		return nil, fmt.Errorf("failed to parse KEV JSON: %w", err)
 	}
 
-	// Convert to domain entities
+	return kevEntriesFromCatalog(kevCatalog), nil
+}
+
+// kevEntriesFromCatalog converts a decoded KEV catalog into domain entities.
+// Pure (no I/O) so the schema handling — notably the CWEs array — is
+// unit-testable without the SSRF-guarded HTTP client (which refuses loopback).
+func kevEntriesFromCatalog(kevCatalog kevCatalogResponse) []*threatintel.KEVEntry {
 	entries := make([]*threatintel.KEVEntry, 0, len(kevCatalog.Vulnerabilities))
 	for _, v := range kevCatalog.Vulnerabilities {
 		dateAdded, _ := time.Parse("2006-01-02", v.DateAdded)
 		dueDate, _ := time.Parse("2006-01-02", v.DueDate)
 
-		// Parse CWEs if present
-		var cwes []string
-		if v.CWE != "" && v.CWE != "NVD-CWE-noinfo" {
-			cwes = []string{v.CWE}
+		// Keep the concrete CWE ids the feed lists, dropping placeholders.
+		cwes := make([]string, 0, len(v.CWEs))
+		for _, c := range v.CWEs {
+			if c != "" && c != "NVD-CWE-noinfo" {
+				cwes = append(cwes, c)
+			}
 		}
 
 		entries = append(entries, threatintel.NewKEVEntry(
@@ -417,8 +425,7 @@ func (s *IntelService) fetchKEVFrom(ctx context.Context, url string) ([]*threati
 			cwes,
 		))
 	}
-
-	return entries, nil
+	return entries
 }
 
 // GetSyncStatuses returns all sync statuses.
@@ -640,5 +647,8 @@ type kevVulnerability struct {
 	DueDate                    string `json:"dueDate"`
 	KnownRansomwareCampaignUse string `json:"knownRansomwareCampaignUse"`
 	Notes                      string `json:"notes"`
-	CWE                        string `json:"cwes,omitempty"`
+	// The KEV feed carries CWEs as a JSON array (e.g. ["CWE-79"]); an earlier
+	// `string` typing here silently worked only while the feed fetch was failing
+	// upstream, then broke the moment the fetch was repaired.
+	CWEs []string `json:"cwes,omitempty"`
 }
