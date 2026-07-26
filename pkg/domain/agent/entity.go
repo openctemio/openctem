@@ -231,13 +231,17 @@ func NewAgent(
 
 	now := time.Now()
 	return &Agent{
-		ID:              shared.NewID(),
-		TenantID:        &tenantID, // Tenant agent - has owner
-		Name:            name,
-		Type:            agentType,
-		Description:     description,
-		Capabilities:    capabilities,
-		Tools:           tools,
+		ID:          shared.NewID(),
+		TenantID:    &tenantID, // Tenant agent - has owner
+		Name:        name,
+		Type:        agentType,
+		Description: description,
+		// Default to empty (not nil): Go marshals a nil slice as JSON `null`, and
+		// these fields carry no `omitempty`, so a nil here reaches clients as
+		// `"tools": null` and crashes any consumer doing `.length`/`.map` on it.
+		// The adjacent Labels/Config/Metadata already make() for the same reason.
+		Capabilities:    defaultStrings(capabilities),
+		Tools:           defaultStrings(tools),
 		ExecutionMode:   executionMode,
 		Status:          AgentStatusActive,  // Admin-controlled: enabled by default
 		Health:          AgentHealthUnknown, // Automatic: unknown until first heartbeat
@@ -599,4 +603,12 @@ func (a *Agent) ScoreForJob(capabilities []string, tool, preferredRegion string)
 	}
 
 	return score
+}
+
+// defaultStrings returns an empty slice for nil so JSON encodes `[]`, not `null`.
+func defaultStrings(in []string) []string {
+	if in == nil {
+		return make([]string, 0)
+	}
+	return in
 }
