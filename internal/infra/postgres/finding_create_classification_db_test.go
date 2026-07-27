@@ -42,10 +42,7 @@ func TestCreate_PersistsClassificationColumns(t *testing.T) {
 	repo := NewFindingRepository(&DB{DB: db})
 
 	// Seeded org tenant (FK findings.tenant_id -> tenants.id).
-	tenantID, err := shared.IDFromString("019d9095-a3fb-75dd-bc23-a244713dcc51")
-	if err != nil {
-		t.Fatalf("parse tenant: %v", err)
-	}
+	tenantID := seedTestTenant(ctx, t, db)
 
 	// Pentest finding with no asset (asset_id NULL is allowed for pentest source),
 	// carrying a full classification.

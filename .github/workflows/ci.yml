@@ -120,6 +120,25 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      # The integration tests need a schema. Nothing created one before, because
+      # nothing ran them. Apply every migration in order, the same way
+      # scripts/check-sql-schema.sh does, so app_test matches what we ship.
+      - name: Apply migrations to the test database
+        run: |
+          set -euo pipefail
+          applied=0
+          for f in migrations/*.up.sql; do
+            psql -v ON_ERROR_STOP=1 -q -f "$f" >/dev/null
+            applied=$((applied + 1))
+          done
+          echo "applied $applied migrations to app_test"
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: openctem
+          PGPASSWORD: secret
+          PGDATABASE: app_test
+
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
         env:
@@ -128,6 +147,12 @@ jobs:
           DB_USER: openctem
           DB_PASSWORD: secret
           DB_NAME: app_test
+          # tests/integration reads DATABASE_URL, not the DB_* pair above. Without
+          # it, setupTestDB fell back to postgres://openctem@localhost/openctem —
+          # wrong database, no password — failed to ping, and called t.Skipf. Go
+          # prints SKIP where a skimmed log reads green, so 33 tests across 14
+          # files have never actually run in CI.
+          DATABASE_URL: postgres://openctem:secret@localhost:5432/app_test?sslmode=disable
           REDIS_HOST: localhost
           REDIS_PORT: 6379
 

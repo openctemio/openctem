@@ -9,7 +9,6 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/api/pkg/domain/asset"
-	"github.com/openctemio/api/pkg/domain/shared"
 )
 
 // TestUpsertBatch_PersistsOwnerRef verifies that the batch/discovery upsert path
@@ -40,10 +39,7 @@ func TestUpsertBatch_PersistsOwnerRef(t *testing.T) {
 
 	repo := NewAssetRepository(&DB{DB: db})
 
-	tenantID, err := shared.IDFromString("019d9095-a3fb-75dd-bc23-a244713dcc51")
-	if err != nil {
-		t.Fatalf("parse tenant: %v", err)
-	}
+	tenantID := seedTestTenant(ctx, t, db)
 
 	const (
 		wantName  = "owner-ref-batch__test.example.com"
