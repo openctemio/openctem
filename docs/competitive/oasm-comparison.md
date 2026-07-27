@@ -115,13 +115,37 @@ Independent of OASM; worth fixing regardless.
 Phases are ordered so each one is shippable on its own and unblocks the next.
 Nothing here is started until it has an entry in the tracking table at the end.
 
-### Phase 0 — one-line repairs *(hours)*
-Wire the cancel button to `POST /pipeline-runs/{id}/cancel` · filter run history
-by the open scan · write `step_runs.started_at` · name a run
-`"<template> — <target>"`.
+### Phase 0 — repair the run-history surface *(days — re-scoped)*
+Cancel the open run · filter run history to the open scan · write
+`step_runs.started_at` · name a run `"<template> — <target>"`.
 
-*Why first:* each is a single line against an endpoint that already exists, and
-three of them are prerequisites for anything that displays run progress.
+*Why first:* three of the four are prerequisites for anything that displays run
+progress.
+
+**This phase was mis-scoped in the first draft.** It called the first two
+"one-line" fixes, assuming the run history was already the right entity and
+needed only a filter and a URL. Verification says otherwise:
+
+- The scan-detail page lists **agent scan sessions**, a different entity.
+  `scan_sessions` has **no `scan_id` and no `pipeline_run_id`** (checked against
+  the live schema), so that list can never be narrowed to the scan you opened —
+  it shows the tenant's last 10 sessions whichever scan you are on.
+- Its Cancel button posts to `/scan-sessions/{id}/stop`. The `scan-sessions`
+  route group has no `/stop` — only GET stats/list/{id} and DELETE.
+- The right entity is **pipeline runs**: they carry `scan_id`, and
+  `POST /pipeline-runs/{id}/cancel` exists. `GET /scans/{id}/runs` already
+  returns them.
+- But that endpoint served the domain entity directly, and `pipeline.Run` has no
+  json tags — so it emitted PascalCase against a snake_case API. That is why it
+  had zero consumers despite the UI already having a URL builder for it.
+
+So items 1 and 2 are not two one-liners; they are one change — switch the page to
+pipeline runs and rebuild the table columns for that shape — gated on an API fix.
+`step_runs.started_at` is not a one-liner either: `StepRun.Start()` sets it but
+**nothing calls it**, so it needs a call site in the command lifecycle.
+
+*Status:* API contract fixed in api#366. The UI switch, the `started_at` call
+site, and the run display name remain.
 
 ### Phase 1 — surface what we already store *(days)*
 Tags + scanned-by columns on findings · worker count and unrunnable state on the
@@ -193,8 +217,9 @@ Update this table as items land. **An item is not started until it appears here.
 
 | # | Item | Phase | PR | Status |
 |---|---|---|---|---|
-| 1 | Cancel button → real endpoint | 0 | — | not started |
-| 2 | Run history filtered by scan | 0 | — | not started |
+| 0 | `GET /scans/{id}/runs` snake_case contract | 0 | api#366 | **merged?** |
+| 1 | Cancel button → real endpoint *(same change as #2)* | 0 | — | unblocked by #0 |
+| 2 | Run history filtered by scan *(switch to pipeline runs)* | 0 | — | unblocked by #0 |
 | 3 | `step_runs.started_at` | 0 | — | not started |
 | 4 | Run display name | 0 | — | not started |
 | 5 | Findings: tags + scanned-by columns | 1 | — | not started |

@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/api/internal/app/scancoverage"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/pipeline"
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/user"
@@ -940,6 +941,21 @@ func (h *ScanHandler) ListScanRuns(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+
+	// The service hands back domain entities. pipeline.Run has exported fields
+	// and no json tags, so encoding it directly emits PascalCase keys ("ID",
+	// "TriggerType") while every other endpoint emits snake_case — which is why
+	// this endpoint had no consumers: anything wired to it reads undefined.
+	// Convert through the same DTO GET /pipeline-runs/{id} already uses, and key
+	// the envelope "data" like the rest of our list endpoints.
+	if runs, ok := result["items"].([]*pipeline.Run); ok {
+		responses := make([]*RunResponse, 0, len(runs))
+		for _, run := range runs {
+			responses = append(responses, toRunResponse(run))
+		}
+		delete(result, "items")
+		result["data"] = responses
 	}
 
 	w.Header().Set("Content-Type", "application/json")
