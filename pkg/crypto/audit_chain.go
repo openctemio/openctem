@@ -42,10 +42,13 @@ func ComputeAuditChainHash(prevHash, auditLogID, payload string, ts time.Time) s
 	writeField(h, prevHash)
 	writeField(h, auditLogID)
 	writeField(h, payload)
-	// Truncate to microseconds (PostgreSQL timestamptz resolution) so the
-	// write-time in-memory timestamp and the verify-time value read back
-	// from the DB hash identically.
-	writeField(h, ts.UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano))
+	// Reduce to microseconds the way PostgreSQL does — it ROUNDS timestamptz to
+	// microsecond resolution, it does not truncate. Truncating here meant that any
+	// timestamp whose nanosecond remainder was >= 500ns hashed one value at write
+	// time and a different one (stored_ts, rounded up) at verify time, so the entry
+	// reported as tampered. That silently broke ~54% of new chain entries and
+	// buried real tamper signals in the noise.
+	writeField(h, ts.UTC().Round(time.Microsecond).Format(time.RFC3339Nano))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
