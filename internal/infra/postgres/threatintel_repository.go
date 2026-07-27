@@ -188,6 +188,9 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 	}
 
 	// Upsert from temp table
+	// sqlgate:optional — temp_epss_scores is a session-scoped TEMP table created
+	// a few lines above in this same transaction, so it is legitimately absent
+	// from a schema built purely from migrations.
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO epss_scores (cve_id, epss_score, percentile, model_version, score_date, updated_at)
 		SELECT cve_id, epss_score, percentile, model_version, score_date, NOW()

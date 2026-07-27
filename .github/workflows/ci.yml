@@ -37,6 +37,26 @@ jobs:
           ALLOW_DESTRUCTIVE_MIGRATION: ${{ contains(github.event.pull_request.labels.*.name, 'allow-destructive-migration') }}
         run: bash scripts/check-migrations.sh
 
+  # ============================================
+  # SQL schema gate — catches Go-vs-database drift that the startup schema
+  # check cannot see. It only compares the migration VERSION; it has no idea
+  # whether the columns the code references exist. That gap shipped pipeline
+  # runs stuck forever (42P08), asset stale-detection reading last_seen_at
+  # instead of last_seen, pipeline-cancel writing a commands.updated_at that
+  # does not exist, and an EPSS sync whose staging table had drifted from the
+  # real column. Postgres itself is the oracle here: apply the migrations to a
+  # throwaway database and PREPARE every extractable statement.
+  # ============================================
+  sql-schema:
+    name: SQL Schema Drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Prepare every SQL statement against a migrations-only database
+        run: bash scripts/check-sql-schema.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

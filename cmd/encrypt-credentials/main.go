@@ -278,6 +278,8 @@ func encryptSCMConnections(ctx context.Context, db *sql.DB, cipher *crypto.Ciphe
 	}
 
 	// Get all SCM connections with credentials
+	// sqlgate:optional — scm_connections is a legacy table that may not exist;
+	// the caller probes information_schema above and skips when it is absent.
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, access_token
 		FROM scm_connections
@@ -324,6 +326,8 @@ func encryptSCMConnections(ctx context.Context, db *sql.DB, cipher *crypto.Ciphe
 			return 0, fmt.Errorf("encrypt token for %s: %w", item.id, err)
 		}
 
+		// sqlgate:optional — scm_connections is a legacy table that may not exist;
+		// the caller probes information_schema above and skips when it is absent.
 		_, err = db.ExecContext(ctx, `
 			UPDATE scm_connections
 			SET access_token = $1, updated_at = NOW()
