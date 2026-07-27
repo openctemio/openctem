@@ -3,6 +3,10 @@
 > Living strategic doc: where the platform stands, where it's strong, and the
 > prioritized work to make it best-in-class. Updated 2026-07-03.
 
+> **See also:** [OASM vs OpenCTEM](competitive/oasm-comparison.md) — a
+> source-level competitive comparison with its own phased plan and tracking
+> table. Items there are tracked in that document, not here.
+
 ## 1. What OpenCTEM is
 
 A multi-tenant **CTEM** (Continuous Threat Exposure Management) platform that
