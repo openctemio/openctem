@@ -86,7 +86,7 @@ The most actionable category — no new capability required, only wiring.
 |---|---|
 | `tool_executions` | table + repository + service (`Record`/`Complete`/`Fail`/`Timeout`/`List`) + tests + FKs to `pipeline_run_id`/`step_run_id` — **zero production callers** |
 | Suppression rules | full approval workflow; `FindMatchingRules` and `RecordSuppression` have **no callers**. An approved suppression changes nothing |
-| `exposure_events` | per-tenant fingerprint dedup, first/last seen, state, history child; `certificate_expiring`/`port_open`/`service_changed` already in the CHECK constraint — **no producer** |
+| `exposure_events` | per-tenant fingerprint dedup, first/last seen, state, history child; 21 types in the CHECK constraint but **only `credential_leaked` is produced automatically** — every other type needs a client to POST it, so no scan ever emits one. (Corrected: an earlier draft of this row said "no producer", which was wrong — there are 3 INSERT paths and 16 live rows.) |
 | `useScanChannel` | typed WebSocket `scan_progress` events, fully built — **zero consumers**; we poll at a fixed 10s/30s instead |
 | Orphan settings pages | `/settings/sla-policies` (262 LOC), `/settings/access-control/permission-sets` (723), `/settings/general` (325), `/settings/notifications` (249), `/sla` (430) — **no sidebar entry** |
 | Geo/ASN | `country`, `city`, `asn`, `asn_org`, geolocation persisted at ingest — **rendered nowhere** |
@@ -114,6 +114,114 @@ Independent of OASM; worth fixing regardless.
 
 Phases are ordered so each one is shippable on its own and unblocks the next.
 Nothing here is started until it has an entry in the tracking table at the end.
+
+### The ordering was wrong, and verification is what showed it
+
+This plan originally ranked work by *"what OASM has that we don't"*. That is the
+wrong axis. The right one is **"what does the product claim that isn't true"** —
+and the top of that list is not a missing feature. It is that a scan which
+succeeds is reported to the user as a failure.
+
+Everything in Phase P0 below was proven against the live database and the source,
+not inferred. Two of this document's own earlier claims were **disproved** in the
+process and are corrected in place. Read Phase P0 before scheduling anything else:
+several later phases polish surfaces that render a falsehood until it lands.
+
+### Phase P0 — the scan loop is open *(do this first)*
+
+Four defects, one root: **the scan path creates work but never closes the loop
+over it.**
+
+**P0.1 — nothing completes a run on the scan path.**
+`run.Complete()` has exactly one caller in the whole API:
+`internal/app/workflow/executor.go:644`, which belongs to the *automation
+workflow* engine — a different subsystem. A scan creates a run, creates a
+command, the agent executes it, and then nothing marks the run complete. The run
+stays `running` until `scan_timeout` overwrites it with
+`"scan exceeded configured timeout"`.
+
+Live evidence matches exactly: **8 commands `completed`** — the work did run —
+while **all 5 scan-triggered runs ended `timeout` with `completed_steps = 0`**.
+
+**P0.2 — the timeout reaper cannot see runs that belong to no scan.**
+`PipelineRunRepository.MarkTimedOutRuns` (`pipeline_run_repository.go:456`) is
+`UPDATE pipeline_runs pr ... FROM scans s WHERE pr.scan_id = s.id` — an inner
+join. `Run.ScanID` is `*shared.ID`, so a run triggered straight from a pipeline
+has `scan_id IS NULL` and is structurally unreachable. `scan_timeout.go` is the
+only controller that touches `pipeline_runs` (`job_recovery.go` handles commands
+only), so nothing else reaps them. Live: **2 runs stuck `running` for 11 days.**
+
+**P0.3 — `step_runs` is empty by design on the single-scanner path.**
+`scan/trigger.go:243` sets `SetTotalSteps(1)` and creates a command directly,
+without creating a step run. So step progress is structurally `0/1` forever.
+
+> This **disproves item 3 of the old Phase 0** ("write `step_runs.started_at`;
+> `StepRun.Start()` has no call site"). On the scan path there is no step run to
+> start. Decide P0.3 before touching `started_at` — otherwise the fix lands in a
+> code path the scan never executes.
+
+**P0.4 — multi-step pipelines dispatch every step with no target at all.**
+`queueStepForExecutionWithSettings` (`run.go:283`) is the only pipeline-step
+command builder, and its payload has no `target`/`targets` key — just
+`step_config`, `preferred_tool`, and the frozen `run.Context`. The agent reads
+only top-level keys (`agent/internal/executor/recon.go:662-698`,
+`reconPayload{Tool, Scanner, Target, Targets, ...}`) and never looks inside
+`context`. `scan/trigger.go:305` lifts `targets` to the top level, but
+`scheduleWorkflowSteps` calls that path **only for `StepOrder == 1`**.
+
+Consequence for the shipped `Full Reconnaissance` preset
+(`migrations/000061_preset_pipeline_templates.up.sql:172`): triggered from
+`POST /pipelines/runs`, *no* step gets a target — subfinder included. Triggered
+as a workflow scan, only step 1 gets the seed; `httpx` then runs with an empty
+target list. `depends_on` is purely a scheduling edge
+(`template.GetRunnableSteps`), never a data edge.
+
+`step_runs.output` is not merely unread — it is never populated. The API expects
+`result.Output` (`command_handler.go:628`) but the wire contract has no such key
+(`sdk-go/pkg/core/command_poller.go:34`; the recon executor returns data under
+`Metadata`), so `Complete(n, nil)` leaves it `{}` on every row.
+`Service.CompleteStepRun` (`run.go:853`), the one function that could write a
+real output, has no callers and no route.
+
+*Fix direction (server-side re-query is preferred over a wire-contract change):*
+resolve targets from the DB at dispatch time in
+`queueStepForExecutionWithSettings` and lift them to `payload["targets"]`,
+filtered by the step tool's `supported_targets` (reuse `scan/filtering.go`).
+Prerequisite: ingest must link newly-discovered assets to the originating
+scan/run — `AssetGroupRepository.AddAssets` has only manual/UI callers today.
+**Two things must land with it, not after:** server-side scope/SSRF validation of
+the injected targets (`SecurityValidator.ValidateCommandPayload` does not check a
+`targets` key, so today only the agent's `targetguard` would), and a cap or
+batching, since pipelines have no equivalent of the scan path's
+`targets_per_job`.
+
+### Phase P1 — features that report success without doing the work
+
+| Thing | What is actually true | What the user sees |
+|---|---|---|
+| Suppression rules | `CheckSuppression`/`ApplySuppression` (`pkg/domain/suppression/service.go:279,284`) have zero callers, and the findings query never joins `finding_suppressions` | A rule can be authored, approved, and shown ACTIVE while every matching finding keeps its original status |
+| `asset_services` | CTIS already ships `Services []ServiceInfo` and `Ports []PortInfo`; the ingest processor reads neither. `UpsertBatch` has no callers — only the REST handler writes | Services view empty and `/services/stats` reports zeros, though every recon scan already carried the data |
+| `tool_executions` | Never written, but **is read** by `GetToolStats`/`GetTenantToolStats`, which are routed | `/tenant-tools/stats` always reports zero executions and zero success rate. Natural call site: `run.go:854 CompleteStepRun` |
+| `exposure_events` | Only `credential_leaked` is produced automatically (`integration/credential_import.go:197`); the other 20 types are reachable only if a client POSTs them | Attack-surface *change* is invisible: a newly-open port or an expiring certificate produces no event |
+
+> **Correction.** Section 2.3 previously said `exposure_events` has *no* producer.
+> That is wrong — there are three INSERT paths and 16 live rows across 8 types.
+> The accurate claim is the narrower one above.
+
+### Phase P2 — fix the silent-failure class, not the instances
+
+`scan/trigger.go:180` demotes a failed `stepRunRepo.Create` to `logger.Warn` and
+continues; `:188` does the same for `runRepo.Update`. This is the same class as
+the ~30 save-drop defects already fixed elsewhere. Worth a CI gate that flags a
+`logger.Warn` on the error branch of a repository write, the way
+`scripts/check-sql-schema.sh` closed the schema-drift class in one move.
+
+### Phase P3 — real-time instead of polling *(after P0)*
+
+`useScanChannel` is fully built with zero consumers — and the server never emits
+`scan_progress` either (zero hits across the API), so it is half-built on both
+ends. The UI polls at 10s (`scans/[id]`) and 30s (`scans`, pipeline overview).
+Cheap to finish, but pointless until P0 makes run status mean something.
 
 ### Phase 0 — repair the run-history surface *(days — re-scoped)*
 Cancel the open run · filter run history to the open scan · write
@@ -217,10 +325,19 @@ Update this table as items land. **An item is not started until it appears here.
 
 | # | Item | Phase | PR | Status |
 |---|---|---|---|---|
-| 0 | `GET /scans/{id}/runs` snake_case contract | 0 | api#366 | **merged?** |
-| 1 | Cancel button → real endpoint *(same change as #2)* | 0 | — | unblocked by #0 |
-| 2 | Run history filtered by scan *(switch to pipeline runs)* | 0 | — | unblocked by #0 |
-| 3 | `step_runs.started_at` | 0 | — | not started |
+| P0.1 | Scan runs never complete → every scan reports timeout | P0 | — | not started |
+| P0.2 | Timeout reaper blind to `scan_id IS NULL` runs | P0 | — | not started |
+| P0.3 | Decide the step-run model for the single-scanner path | P0 | — | not started |
+| P0.4 | Pipeline steps dispatched with no target (presets inert) | P0 | — | not started |
+| P1.1 | Suppression rules suppress nothing | P1 | — | not started |
+| P1.2 | Ingest drops CTIS ports/services → `asset_services` | P1 | — | not started |
+| P1.3 | `tool_executions` never written → tool stats always zero | P1 | — | not started |
+| P1.4 | Exposure events only for `credential_leaked` | P1 | — | not started |
+| P2.1 | CI gate: `logger.Warn` on a repo-write error branch | P2 | — | not started |
+| P3.1 | Emit + consume `scan_progress`, drop the 10s/30s polling | P3 | — | not started |
+| 0 | `GET /scans/{id}/runs` snake_case contract | 0 | api#366 | merged |
+| 1+2 | Run history + Cancel on the scan detail page | 0 | ui#335 | in review |
+| 3 | `step_runs.started_at` | 0 | — | **blocked on P0.3** |
 | 4 | Run display name | 0 | — | not started |
 | 5 | Findings: tags + scanned-by columns | 1 | — | not started |
 | 6 | Tools grid: worker count + unrunnable | 1 | — | not started |
