@@ -63,6 +63,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # golangci-lint --new-from-rev needs the base branch
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -78,6 +80,24 @@ jobs:
 
       - name: Run staticcheck
         run: staticcheck ./...
+
+      # CLAUDE.md calls golangci-lint mandatory and .golangci.yml configures 30+
+      # linters, but no live workflow ran it — the only invocation lived in the
+      # root monorepo's workflow, and that repository does not exist on GitHub.
+      # So errorlint, gosec, prealloc and the rest have been advisory for as long
+      # as they have been documented as required.
+      #
+      # Gated on new code only: develop carries 162 pre-existing findings, and a
+      # whole-tree gate would fail every PR until someone pays that down. Same
+      # --new-from-rev shape the migration guard already uses, so the debt is
+      # frozen rather than ignored.
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
+      - name: Run golangci-lint on new code
+        if: github.event_name == 'pull_request'
+        run: make lint-new BASE_REF="origin/${{ github.base_ref }}"
 
   test:
     name: Test
