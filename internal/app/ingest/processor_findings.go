@@ -669,8 +669,14 @@ func (p *FindingProcessor) buildFinding(
 		sev = mapSDKSeverity(parsed)
 	}
 
-	// Determine source from tool
-	source := vulnerability.FindingSourceSAST
+	// Determine source from tool.
+	//
+	// The initial value is External, not SAST. A report with no Tool block is
+	// valid — report.json requires only version and metadata, and ValidateReport
+	// checks counts — so this branch is reachable, and it used to file every
+	// such finding as static code analysis. Same defect as detectFindingSource's
+	// old default, one level up, and fixing only the inner one left it live.
+	source := vulnerability.FindingSourceExternal
 	toolName := UnknownValue
 	toolVersion := ""
 	if report.Tool != nil {

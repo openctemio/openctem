@@ -12,7 +12,11 @@ import (
 // a false one, and it is why "which findings came from our VA scanner" has no
 // answer in the existing data.
 func TestDetectFindingSource_UnknownToolIsNotClaimedToBeSAST(t *testing.T) {
-	for _, tool := range []string{"", "some-new-scanner", "acme-appsec", "burp"} {
+	// "burp" used to be here as an example of an unknown tool. It is a DAST
+	// scanner and is now in the tool table, so it belongs in the ByToolName
+	// case instead — an unknown-tool test needs names that are genuinely
+	// unknown.
+	for _, tool := range []string{"", "some-new-scanner", "acme-appsec", "internal-thing-2024"} {
 		got := detectFindingSource(tool, nil)
 		if got == vulnerability.FindingSourceSAST {
 			t.Errorf("detectFindingSource(%q, nil) = %q; an unrecognized tool must not be "+
@@ -50,6 +54,7 @@ func TestDetectFindingSource_ByToolName(t *testing.T) {
 		{"snyk", vulnerability.FindingSourceSCA},
 		{"nuclei", vulnerability.FindingSourceDAST},
 		{"gitleaks", vulnerability.FindingSourceSecret},
+		{"burp", vulnerability.FindingSourceDAST},
 		{"trivy", vulnerability.FindingSourceContainer},
 		{"checkov", vulnerability.FindingSourceIaC},
 	}
@@ -74,7 +79,10 @@ func TestDetectFindingSource_CapabilitiesOutrankToolName(t *testing.T) {
 	}{
 		{"nessus converter", "trivy", []string{"va"}, vulnerability.FindingSourceVA},
 		{"defectdojo converter", "trivy", []string{"external"}, vulnerability.FindingSourceExternal},
-		{"recon", "semgrep", []string{"recon"}, vulnerability.FindingSourceEASM},
+		// "recon" was an invented capability. The agent's discovery executor
+		// emits subdomain/dns/portscan/crawler/tech-detect, so those are what
+		// the map carries; asserting a token nobody produces tested nothing.
+		{"recon token the agent actually emits", "semgrep", []string{"portscan"}, vulnerability.FindingSourceEASM},
 		{"cloud", "semgrep", []string{"cspm"}, vulnerability.FindingSourceCSPM},
 		{"sast still works", "tenable", []string{"sast"}, vulnerability.FindingSourceSAST},
 	}

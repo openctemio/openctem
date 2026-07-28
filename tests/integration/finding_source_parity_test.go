@@ -32,14 +32,32 @@ import (
 func checkConstraintValues(t *testing.T, db *sql.DB) map[string]bool {
 	t.Helper()
 
+	// Count first. LIMIT 1 was not enough: a migration that drops the wrong
+	// constraint name leaves the original in place and adds a second one, and a
+	// row then has to satisfy both. That is exactly how migration 000196 first
+	// failed, and reading only one of the two constraints would have let it
+	// through — a test that cannot catch the bug it was written for.
+	var constraintCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM pg_constraint
+		WHERE conrelid = 'findings'::regclass
+		  AND contype = 'c'
+		  AND pg_get_constraintdef(oid) LIKE '%source%'`).Scan(&constraintCount); err != nil {
+		t.Fatalf("count findings.source CHECK constraints: %v", err)
+	}
+	if constraintCount != 1 {
+		t.Fatalf("expected exactly 1 CHECK constraint on findings.source, found %d. "+
+			"A row must satisfy all of them, so a second one silently narrows what can be stored.",
+			constraintCount)
+	}
+
 	var def string
 	err := db.QueryRow(`
 		SELECT pg_get_constraintdef(oid)
 		FROM pg_constraint
 		WHERE conrelid = 'findings'::regclass
 		  AND contype = 'c'
-		  AND pg_get_constraintdef(oid) LIKE '%source%'
-		LIMIT 1`).Scan(&def)
+		  AND pg_get_constraintdef(oid) LIKE '%source%'`).Scan(&def)
 	if err != nil {
 		t.Fatalf("read findings.source CHECK constraint: %v", err)
 	}
