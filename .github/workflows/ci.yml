@@ -57,6 +57,58 @@ jobs:
       - name: Prepare every SQL statement against a migrations-only database
         run: bash scripts/check-sql-schema.sh
 
+  # ============================================
+  # Security lint + tenant-scope analyzer. Both existed already and neither ran:
+  # they were wired into the root monorepo's workflows, and that repository has
+  # no git remote and returns 404 on GitHub. The security-lint script was not
+  # even stored in a backed-up repository — it lived only on one developer's
+  # disk. This job moves it into api/ and runs it for the first time.
+  # ============================================
+  security-gates:
+    name: Security Gates
+    runs-on: ubuntu-latest
+    steps:
+      # Rules 1, 4 and 6 read sibling repositories, so reconstruct the workspace
+      # layout the script expects: <root>/{api,agent,sdk-go}.
+      - name: Checkout api
+        uses: actions/checkout@v7
+        with:
+          path: api
+
+      - name: Checkout agent
+        uses: actions/checkout@v7
+        with:
+          repository: openctemio/agent
+          path: agent
+
+      - name: Checkout sdk-go
+        uses: actions/checkout@v7
+        with:
+          repository: openctemio/sdk-go
+          path: sdk-go
+
+      - name: Run security lint
+        env:
+          SECLINT_ROOT: ${{ github.workspace }}
+          # A rule that cannot run must not report as passed. Without this, a
+          # workspace missing a sibling runs 4 of 6 rules and still exits 0.
+          SECLINT_STRICT: "1"
+        run: bash api/scripts/security-lint.sh
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      # F-310: flags repository GetByID calls that are not tenant-scoped. The
+      # analyzer and its baseline live in api/tools/lint/getbyid and are fully
+      # tested; only the CI invocation was missing.
+      - name: Run tenant-scope analyzer
+        working-directory: api
+        run: GOWORK=off go test ./tools/lint/getbyid/... -count=1
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
