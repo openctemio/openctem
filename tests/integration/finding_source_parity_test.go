@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"regexp"
 	"sort"
 	"testing"
 	"time"
@@ -22,6 +23,39 @@ import (
 //
 // They cost one query each. The drift they guard against shipped a dropdown
 // option the database rejects.
+
+// checkConstraintValues reads the values the findings.source CHECK actually
+// accepts, straight from the catalog. An earlier version of this file restated
+// the list inline — which created a fourth definition of the thing these tests
+// exist to keep singular, and went stale the moment 'va' was added. Read the
+// truth; do not copy it.
+func checkConstraintValues(t *testing.T, db *sql.DB) map[string]bool {
+	t.Helper()
+
+	var def string
+	err := db.QueryRow(`
+		SELECT pg_get_constraintdef(oid)
+		FROM pg_constraint
+		WHERE conrelid = 'findings'::regclass
+		  AND contype = 'c'
+		  AND pg_get_constraintdef(oid) LIKE '%source%'
+		LIMIT 1`).Scan(&def)
+	if err != nil {
+		t.Fatalf("read findings.source CHECK constraint: %v", err)
+	}
+
+	// pg_get_constraintdef renders the IN list as quoted literals; every legal
+	// source code is lowercase letters and underscores.
+	re := regexp.MustCompile(`'([a-z_]+)'`)
+	values := map[string]bool{}
+	for _, m := range re.FindAllStringSubmatch(def, -1) {
+		values[m[1]] = true
+	}
+	if len(values) == 0 {
+		t.Fatalf("parsed no values out of the CHECK constraint: %s", def)
+	}
+	return values
+}
 
 func openParityDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -50,23 +84,10 @@ func openParityDB(t *testing.T) *sql.DB {
 // database refuses, and the failure surfaces as a 500 at insert time.
 func TestFindingSource_EveryGoConstantPassesTheCheckConstraint(t *testing.T) {
 	db := openParityDB(t)
-	ctx := context.Background()
+	allowed := checkConstraintValues(t, db)
 
-	// Ask Postgres directly rather than parsing the constraint text: evaluate
-	// the CHECK's own expression against each candidate. Any row shape works —
-	// only the source column is under test.
 	for _, src := range allSourcesIncludingLegacy() {
-		var ok bool
-		err := db.QueryRowContext(ctx, `
-			SELECT $1::varchar = ANY (ARRAY[
-				'sast','dast','sca','secret','iac','container','cspm','easm',
-				'rasp','waf','siem','manual','pentest','bug_bounty','red_team',
-				'external','threat_intel','vendor','sarif','sca_tool','api'
-			]::varchar[])`, string(src)).Scan(&ok)
-		if err != nil {
-			t.Fatalf("query for %q: %v", src, err)
-		}
-		if !ok {
+		if !allowed[string(src)] {
 			t.Errorf("Go constant %q is not accepted by the findings.source CHECK constraint. "+
 				"Any code path producing it will fail at insert. Add it to the CHECK in a migration.", src)
 		}
@@ -116,17 +137,9 @@ func TestFindingSource_EveryGoConstantHasACatalogRow(t *testing.T) {
 // pick an option that always failed.
 func TestFindingSource_CatalogOffersNothingUnstorable(t *testing.T) {
 	db := openParityDB(t)
-	ctx := context.Background()
+	allowed := checkConstraintValues(t, db)
 
-	rows, err := db.QueryContext(ctx, `
-		SELECT code FROM finding_sources
-		WHERE is_active
-		  AND code <> ALL (ARRAY[
-			'sast','dast','sca','secret','iac','container','cspm','easm',
-			'rasp','waf','siem','manual','pentest','bug_bounty','red_team',
-			'external','threat_intel','vendor','sarif','sca_tool','api'
-		  ])
-		ORDER BY code`)
+	rows, err := db.Query(`SELECT code FROM finding_sources WHERE is_active ORDER BY code`)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -138,7 +151,9 @@ func TestFindingSource_CatalogOffersNothingUnstorable(t *testing.T) {
 		if err := rows.Scan(&code); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
-		offenders = append(offenders, code)
+		if !allowed[code] {
+			offenders = append(offenders, code)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate: %v", err)

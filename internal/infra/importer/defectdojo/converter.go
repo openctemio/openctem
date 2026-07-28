@@ -97,6 +97,11 @@ func Convert(findings []Finding, opts ConvertOptions) *ctis.Report {
 		Tool: &ctis.Tool{
 			Name:   toolName,
 			Vendor: "DefectDojo",
+			// A DefectDojo sync is an import from another platform, not a scan
+			// we ran. Without this the ingest mapper defaulted to SAST, so a
+			// synced network or container finding arrived labeled as source
+			// code analysis.
+			Capabilities: []string{"external"},
 		},
 	}
 
