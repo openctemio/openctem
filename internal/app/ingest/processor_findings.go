@@ -711,6 +711,14 @@ func (p *FindingProcessor) buildFinding(
 	f.SetFingerprint(fp)
 	f.SetAgentID(agentID)
 	f.SetScanID(report.Metadata.ID)
+
+	// Provenance. ctis.ReportMetadata.SourceType has always carried this — the
+	// Nessus converter sets "integration", the agent's reports say "scanner" —
+	// and the processor read it and threw it away. An unrecognized value leaves
+	// the column NULL rather than guessing, so "unrecorded" stays honest.
+	if channel, ok := vulnerability.IngestChannelFromCTIS(report.Metadata.SourceType); ok {
+		f.SetIngestChannel(channel)
+	}
 	if branchID != nil {
 		f.SetBranchID(*branchID)
 	}

@@ -37,3 +37,22 @@ func seedTestTenant(ctx context.Context, t *testing.T, db *sql.DB) shared.ID {
 
 	return id
 }
+
+// seedTestAsset creates a throwaway asset in the given tenant and returns its
+// id. findings.asset_id has a foreign key, so a finding built with a random
+// shared.NewID() fails the insert — the same not-self-contained mistake that
+// kept two repository tests broken until CI started running them.
+func seedTestAsset(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.ID) shared.ID {
+	t.Helper()
+
+	id := shared.NewID()
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, $3, 'host')`,
+		id.String(), tenantID.String(), "probe-"+id.String())
+	if err != nil {
+		t.Fatalf("seed asset: %v", err)
+	}
+	// No explicit cleanup: the tenant this belongs to is deleted on cleanup and
+	// the asset goes with it through the tenant_id cascade.
+	return id
+}

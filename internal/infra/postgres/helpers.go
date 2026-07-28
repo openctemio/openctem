@@ -7,6 +7,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/openctemio/api/pkg/domain/vulnerability"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -157,3 +159,17 @@ func fromJSONB(data []byte, target any) error {
 }
 
 // unmarshalJSONBMap decodes JSONB bytes into a map.
+
+// nullIngestChannel maps an unset channel to SQL NULL.
+//
+// findings.ingest_channel is the source_type enum and ” is not one of its
+// members, so writing an empty string fails the insert and loses the whole
+// finding over a provenance label nobody asked for. NULL is also the honest
+// value: it means "not recorded", which is true of every row written before
+// migration 000197.
+func nullIngestChannel(c vulnerability.IngestChannel) interface{} {
+	if c == "" {
+		return nil
+	}
+	return string(c)
+}

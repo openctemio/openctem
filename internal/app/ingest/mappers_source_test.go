@@ -111,3 +111,37 @@ func TestDetectFindingSource_AlwaysReturnsAValidSource(t *testing.T) {
 		}
 	}
 }
+
+// The provenance channel comes from ctis.ReportMetadata.SourceType, which the
+// pipeline already carried and the processor discarded. Unrecognized values
+// must not be guessed: the column stays NULL, which reads as "unrecorded"
+// rather than as a confident wrong answer.
+func TestIngestChannelFromCTIS(t *testing.T) {
+	cases := []struct {
+		in    string
+		want  vulnerability.IngestChannel
+		valid bool
+	}{
+		{"scanner", vulnerability.IngestChannelScanner, true},
+		{"integration", vulnerability.IngestChannelIntegration, true},
+		{"collector", vulnerability.IngestChannelCollector, true},
+		{"manual", vulnerability.IngestChannelManual, true},
+		{"  Scanner  ", vulnerability.IngestChannelScanner, true},
+		{"INTEGRATION", vulnerability.IngestChannelIntegration, true},
+
+		{"", "", false},
+		{"agent", "", false},
+		{"unknown", "", false},
+		{"scanner-ish", "", false},
+	}
+
+	for _, c := range cases {
+		got, ok := vulnerability.IngestChannelFromCTIS(c.in)
+		if ok != c.valid {
+			t.Errorf("IngestChannelFromCTIS(%q) ok = %v, want %v", c.in, ok, c.valid)
+		}
+		if got != c.want {
+			t.Errorf("IngestChannelFromCTIS(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

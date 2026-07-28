@@ -143,13 +143,14 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
 			remediation, pentest_campaign_id, created_by,
-			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids
+			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
+			ingest_channel
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
-			$83, $84, $85, $86, $87)
+			$83, $84, $85, $86, $87, $88)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -248,11 +249,12 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		// freshly-created pentest/manual finding lost its CVSS score+vector and
 		// CVE/CWE/OWASP until the first edit (Update() persisted them). Sourced from
 		// the same getters Update() and the batch inserter use.
-		nullFloat64(finding.CVSSScore()), // $83
-		nullString(finding.CVSSVector()), // $84
-		nullString(finding.CVEID()),      // $85
-		pq.Array(finding.CWEIDs()),       // $86
-		pq.Array(finding.OWASPIDs()),     // $87
+		nullFloat64(finding.CVSSScore()),           // $83
+		nullString(finding.CVSSVector()),           // $84
+		nullString(finding.CVEID()),                // $85
+		pq.Array(finding.CWEIDs()),                 // $86
+		pq.Array(finding.OWASPIDs()),               // $87
+		nullIngestChannel(finding.IngestChannel()), // $88
 	)
 
 	if err != nil {
@@ -297,13 +299,14 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
 			remediation, pentest_campaign_id, created_by,
-			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids
+			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
+			ingest_channel
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
-			$83, $84, $85, $86, $87)
+			$83, $84, $85, $86, $87, $88)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -400,11 +403,12 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		nullID(finding.CreatedBy()),
 		// Classification columns — mirror Create(); persist CVSS + CVE/CWE/OWASP on
 		// insert so a manually-created finding keeps its scoring without an edit.
-		nullFloat64(finding.CVSSScore()), // $83
-		nullString(finding.CVSSVector()), // $84
-		nullString(finding.CVEID()),      // $85
-		pq.Array(finding.CWEIDs()),       // $86
-		pq.Array(finding.OWASPIDs()),     // $87
+		nullFloat64(finding.CVSSScore()),           // $83
+		nullString(finding.CVSSVector()),           // $84
+		nullString(finding.CVEID()),                // $85
+		pq.Array(finding.CWEIDs()),                 // $86
+		pq.Array(finding.OWASPIDs()),               // $87
+		nullIngestChannel(finding.IngestChannel()), // $88
 	)
 
 	if err != nil {
@@ -611,7 +615,7 @@ func findingInsertColumnsSQL() string {
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id
+			remediation, pentest_campaign_id, ingest_channel
 		)`
 }
 
@@ -624,6 +628,16 @@ func findingUpsertConflictSQL() string {
 			component_id = EXCLUDED.component_id,
 			branch_id = COALESCE(EXCLUDED.branch_id, findings.branch_id),
 			tool_id = COALESCE(EXCLUDED.tool_id, findings.tool_id),
+			-- COALESCE, not overwrite. The upsert already writes agent_id and
+			-- scan_id last-writer-wins while leaving source and tool_name at
+			-- the first writer's values, so a merged finding reports one
+			-- scan's technique beside another scan's agent. Adding a third
+			-- rule to that mix makes it worse. Keeping the first recorded
+			-- channel while still filling a NULL means the column answers one
+			-- question consistently — "which channel first told us" — until
+			-- provenance moves to the sighting table it belongs on. See
+			-- docs/architecture/decisions/004-finding-provenance.md.
+			ingest_channel = COALESCE(findings.ingest_channel, EXCLUDED.ingest_channel),
 			tool_version = EXCLUDED.tool_version,
 			snippet = COALESCE(EXCLUDED.snippet, findings.snippet),
 			context_snippet = COALESCE(EXCLUDED.context_snippet, findings.context_snippet),
@@ -698,7 +712,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 81
+const findingInsertColumnCount = 82
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -804,6 +818,8 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		remediationJSON,
 		// Pentest campaign reference
 		nullIDPtr(finding.PentestCampaignID()),
+		// Provenance channel — NULL when unrecorded.
+		nullIngestChannel(finding.IngestChannel()),
 	}, nil
 }
 
@@ -1857,7 +1873,7 @@ func (r *FindingRepository) selectQuery() string {
 			is_reachable, reachable_from_count,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
-			remediation, created_by,
+			remediation, created_by, ingest_channel,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -1986,6 +2002,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		remediation []byte
 		// Creator (pentest ownership)
 		createdBy sql.NullString
+		// Provenance channel — nullable; NULL means unrecorded.
+		ingestChannel sql.NullString
 		// Data flow flag
 		hasDataFlow bool
 	)
@@ -2014,7 +2032,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&isReachable, &reachableFromCount,
 		&remediationType, &estimatedFixTime, &fixComplexity, &remedyAvailable,
 		&dataExposureRisk, &reputationalImpact, pq.Array(&complianceImpact),
-		&remediation, &createdBy,
+		&remediation, &createdBy, &ingestChannel,
 		&hasDataFlow,
 	)
 	if err != nil {
@@ -2053,6 +2071,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		remediation,
 		// Creator (pentest ownership)
 		createdBy,
+		ingestChannel,
 		// Data flow flag
 		hasDataFlow,
 	})
@@ -2166,6 +2185,8 @@ type findingRow struct {
 	remediation []byte
 	// Creator (pentest ownership)
 	createdBy sql.NullString
+	// Provenance channel — nullable; NULL means unrecorded.
+	ingestChannel sql.NullString
 	// Data flow flag
 	hasDataFlow bool
 }
@@ -2377,6 +2398,7 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		ScanID:              nullStringValue(row.scanID),
 		Fingerprint:         row.fingerprint,
 		AgentID:             parseNullID(row.agentID),
+		IngestChannel:       vulnerability.IngestChannel(nullStringValue(row.ingestChannel)),
 		Metadata:            meta,
 		// For pentest findings, source_metadata keys live inside the same
 		// metadata JSONB column. Copy the full map so the handler's
