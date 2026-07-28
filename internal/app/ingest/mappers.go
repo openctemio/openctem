@@ -172,6 +172,14 @@ func detectFindingSource(toolName string, capabilities []string) vulnerability.F
 			return vulnerability.FindingSourceSecret
 		case strings.Contains(capLower, "iac"):
 			return vulnerability.FindingSourceIaC
+		case strings.Contains(capLower, "va"), strings.Contains(capLower, "vuln_scan"):
+			return vulnerability.FindingSourceVA
+		case strings.Contains(capLower, "easm"), strings.Contains(capLower, "recon"):
+			return vulnerability.FindingSourceEASM
+		case strings.Contains(capLower, "cspm"), strings.Contains(capLower, "cloud"):
+			return vulnerability.FindingSourceCSPM
+		case strings.Contains(capLower, "import"), strings.Contains(capLower, "external"):
+			return vulnerability.FindingSourceExternal
 		}
 	}
 
@@ -189,8 +197,23 @@ func detectFindingSource(toolName string, capabilities []string) vulnerability.F
 		return vulnerability.FindingSourceContainer
 	case strings.Contains(toolLower, "tfsec"), strings.Contains(toolLower, "checkov"):
 		return vulnerability.FindingSourceIaC
+	case strings.Contains(toolLower, "nessus"), strings.Contains(toolLower, "tenable"),
+		strings.Contains(toolLower, "qualys"), strings.Contains(toolLower, "openvas"):
+		return vulnerability.FindingSourceVA
+	case strings.Contains(toolLower, "nmap"), strings.Contains(toolLower, "naabu"),
+		strings.Contains(toolLower, "masscan"), strings.Contains(toolLower, "subfinder"),
+		strings.Contains(toolLower, "httpx"), strings.Contains(toolLower, "amass"):
+		return vulnerability.FindingSourceEASM
+	case strings.Contains(toolLower, "prowler"), strings.Contains(toolLower, "scoutsuite"),
+		strings.Contains(toolLower, "steampipe"):
+		return vulnerability.FindingSourceCSPM
 	default:
-		return vulnerability.FindingSourceSAST
+		// Not SAST. An unrecognized tool is unknown provenance, not static code
+		// analysis, and guessing a specific technique is worse than admitting
+		// ignorance: it is how every Tenable and DefectDojo import came to be
+		// filed as source code analysis. FindingSourceExternal says exactly what
+		// is true — this came from somewhere we do not recognize.
+		return vulnerability.FindingSourceExternal
 	}
 }
 

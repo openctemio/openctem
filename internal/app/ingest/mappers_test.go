@@ -188,9 +188,18 @@ func TestDetectFindingSource_CapabilitiesTakePrecedence(t *testing.T) {
 	assert.Equal(t, vulnerability.FindingSourceSCA, result)
 }
 
-func TestDetectFindingSource_UnknownToolDefaultsToSAST(t *testing.T) {
+// Was TestDetectFindingSource_UnknownToolDefaultsToSAST, which asserted that an
+// unrecognized tool is recorded as static code analysis. That default was not
+// harmless: the Nessus/Tenable and DefectDojo importers set no capabilities, so
+// every network vulnerability and every synced finding reached the database
+// labeled "sast". "Which findings came from our VA scanner" was unanswerable as
+// a direct result.
+//
+// Unknown provenance is now recorded as such. See mappers_source_test.go for
+// the full matrix.
+func TestDetectFindingSource_UnknownToolIsRecordedAsExternal(t *testing.T) {
 	result := detectFindingSource("my-custom-tool", nil)
-	assert.Equal(t, vulnerability.FindingSourceSAST, result)
+	assert.Equal(t, vulnerability.FindingSourceExternal, result)
 }
 
 // =============================================================================
