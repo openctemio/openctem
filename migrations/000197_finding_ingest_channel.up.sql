@@ -43,17 +43,14 @@ WHERE ingest_channel IS NULL
 -- NULL, and the UI shows them as unknown rather than as a confident wrong
 -- answer.
 
--- CONCURRENTLY is safe here, despite what migrations 000096 and 000099 claim.
--- Both assert that "golang-migrate runs each file in a transaction, and CREATE
--- INDEX CONCURRENTLY cannot run inside one". The second half is true; the first
--- is not, and the evidence is in the database: seven up-migrations use
--- CONCURRENTLY, 000143 among them, and idx_findings_sla_overdue exists on a
--- deployment sitting at version 194. Wrapping the files in a transaction was
--- tested locally and 000143 fails immediately, so the runner demonstrably does
--- not wrap them.
+-- The index lives in 000198, alone in its own file. golang-migrate wraps a
+-- multi-statement file in a transaction and CREATE INDEX CONCURRENTLY cannot
+-- run inside one; a single-statement file is not wrapped, which is why 000143
+-- gets away with it and this file would not have.
 --
--- It matters because findings is one of the largest tables here and a plain
--- CREATE INDEX would hold a write lock for the whole build.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_findings_tenant_ingest_channel
-    ON findings (tenant_id, ingest_channel)
-    WHERE ingest_channel IS NOT NULL;
+-- I learned that the hard way: the first version of this migration carried the
+-- index and asserted CONCURRENTLY was fine here, citing seven migrations that
+-- "use" it. Six of those only mention it in a comment explaining why they do
+-- not. It failed on the live database and left schema_migrations dirty. The
+-- transaction did its job — nothing was half-applied — but the claim in the
+-- comment was mine and it was wrong.

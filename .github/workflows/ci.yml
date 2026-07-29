@@ -193,23 +193,21 @@ jobs:
         run: go mod download
 
       # The integration tests need a schema. Nothing created one before, because
-      # nothing ran them. Apply every migration in order, the same way
-      # scripts/check-sql-schema.sh does, so app_test matches what we ship.
+      # Run them through golang-migrate, the tool production uses — not psql.
+      #
+      # psql executes a file as a plain script with no transaction wrapper;
+      # golang-migrate wraps any multi-statement file in one. That difference is
+      # not cosmetic: a migration containing CREATE INDEX CONCURRENTLY alongside
+      # anything else passes under psql and fails under the real runner, which is
+      # exactly how migration 000197 reached the live database and left
+      # schema_migrations dirty. CI has to fail the way production fails.
+      - name: Install golang-migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
       - name: Apply migrations to the test database
-        run: |
-          set -euo pipefail
-          applied=0
-          for f in migrations/*.up.sql; do
-            psql -v ON_ERROR_STOP=1 -q -f "$f" >/dev/null
-            applied=$((applied + 1))
-          done
-          echo "applied $applied migrations to app_test"
+        run: migrate -path migrations -database "$DATABASE_URL" up
         env:
-          PGHOST: localhost
-          PGPORT: 5432
-          PGUSER: openctem
-          PGPASSWORD: secret
-          PGDATABASE: app_test
+          DATABASE_URL: postgres://openctem:secret@localhost:5432/app_test?sslmode=disable
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
