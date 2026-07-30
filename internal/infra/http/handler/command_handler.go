@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	commanddom "github.com/openctemio/api/pkg/domain/command"
+	pipelinedom "github.com/openctemio/api/pkg/domain/pipeline"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -609,19 +610,23 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 		return
 	}
 
-	// Parse command payload to get pipeline info
-	var payload struct {
-		PipelineRunID string `json:"pipeline_run_id"`
-		StepRunID     string `json:"step_run_id"`
-		StepKey       string `json:"step_key"`
-	}
+	// Parse command payload to get pipeline info. The shape is shared with the
+	// dispatcher so the two cannot drift apart again — see
+	// pipeline.StepCommandPayload.
+	var payload pipelinedom.StepCommandPayload
 
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
 		return // Not a pipeline command
 	}
 
-	if payload.PipelineRunID == "" || payload.StepKey == "" {
-		return // Not a pipeline command
+	if !payload.IsRoutable() {
+		// A command that carries no run/step cannot be reported back. This is
+		// legitimate for non-pipeline commands, but it also silently swallowed
+		// every scan command for as long as the dispatcher wrote the wrong key,
+		// so say so at debug level rather than vanishing.
+		h.logger.Debug("command carries no pipeline routing keys; not progressing",
+			"command_id", cmd.ID.String())
+		return
 	}
 
 	// Parse result to get findings count and output
@@ -705,18 +710,20 @@ func (h *CommandHandler) triggerPipelineFailed(ctx context.Context, cmd *command
 		return
 	}
 
-	// Parse command payload to get pipeline info
-	var payload struct {
-		PipelineRunID string `json:"pipeline_run_id"`
-		StepKey       string `json:"step_key"`
-	}
+	// Parse command payload to get pipeline info. Same shared shape as the
+	// success path — a failure that cannot be routed loses the scanner's real
+	// error message, which is how "scanner not found: nuclei" reached users as
+	// "scan exceeded configured timeout".
+	var payload pipelinedom.StepCommandPayload
 
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
 		return // Not a pipeline command
 	}
 
-	if payload.PipelineRunID == "" || payload.StepKey == "" {
-		return // Not a pipeline command
+	if !payload.IsRoutable() {
+		h.logger.Debug("failed command carries no pipeline routing keys; error will not reach the run",
+			"command_id", cmd.ID.String(), "error", errorMessage)
+		return
 	}
 
 	// Trigger pipeline failure asynchronously with independent context
