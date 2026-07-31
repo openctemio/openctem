@@ -207,6 +207,21 @@ type Agent struct {
 	UpdatedAt time.Time
 }
 
+// DefaultMaxConcurrentJobs is the capacity a new agent gets when the caller does
+// not specify one.
+//
+// It matches the `DEFAULT 5` already on agents.max_concurrent_jobs. The column
+// default was never reached, because the repository writes this field
+// explicitly on INSERT — so a zero here overrides the schema's own sensible
+// value rather than falling back to it.
+//
+// Zero is not a harmless "unset": FindAvailableWithCapacity selects on
+// `current_jobs < max_concurrent_jobs`, so an agent at 0 fails that test forever.
+// It registers, heartbeats, reports healthy, shows online in the UI — and is
+// never given a single job, with no error anywhere. Creating an agent through
+// the API without naming this field produced exactly that.
+const DefaultMaxConcurrentJobs = 5
+
 // NewAgent creates a new tenant-owned Agent entity.
 func NewAgent(
 	tenantID shared.ID,
@@ -240,17 +255,21 @@ func NewAgent(
 		// these fields carry no `omitempty`, so a nil here reaches clients as
 		// `"tools": null` and crashes any consumer doing `.length`/`.map` on it.
 		// The adjacent Labels/Config/Metadata already make() for the same reason.
-		Capabilities:    defaultStrings(capabilities),
-		Tools:           defaultStrings(tools),
-		ExecutionMode:   executionMode,
-		Status:          AgentStatusActive,  // Admin-controlled: enabled by default
-		Health:          AgentHealthUnknown, // Automatic: unknown until first heartbeat
-		IsPlatformAgent: false,              // Tenant agent
-		Labels:          make(map[string]interface{}),
-		Config:          make(map[string]interface{}),
-		Metadata:        make(map[string]interface{}),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		Capabilities:  defaultStrings(capabilities),
+		Tools:         defaultStrings(tools),
+		ExecutionMode: executionMode,
+		Status:        AgentStatusActive,  // Admin-controlled: enabled by default
+		Health:        AgentHealthUnknown, // Automatic: unknown until first heartbeat
+		// Capacity must be non-zero or the agent can never be scheduled — see
+		// DefaultMaxConcurrentJobs. Callers that want a different number
+		// overwrite it via SetMaxConcurrentJobs.
+		MaxConcurrentJobs: DefaultMaxConcurrentJobs,
+		IsPlatformAgent:   false, // Tenant agent
+		Labels:            make(map[string]interface{}),
+		Config:            make(map[string]interface{}),
+		Metadata:          make(map[string]interface{}),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}, nil
 }
 
@@ -490,6 +509,14 @@ func (a *Agent) IsOneShot() bool {
 
 // SetMaxConcurrentJobs sets the maximum number of concurrent jobs.
 func (a *Agent) SetMaxConcurrentJobs(max int) {
+	// A non-positive capacity is silently fatal rather than merely odd:
+	// FindAvailableWithCapacity requires current_jobs < max_concurrent_jobs, so
+	// the agent stops being schedulable and nothing reports it. Refuse the value
+	// instead of storing a state the scheduler can never recover from — the API
+	// already validates min=1, this closes the same hole for direct domain use.
+	if max <= 0 {
+		return
+	}
 	a.MaxConcurrentJobs = max
 	a.UpdatedAt = time.Now()
 }
