@@ -188,3 +188,60 @@ func TestScanLoop_LegacyPayloadIsNotRoutable(t *testing.T) {
 			"dispatch an empty run id into the pipeline service")
 	}
 }
+
+// A run's total_findings must equal what the step actually reported.
+//
+// It did not. stepRun.Complete stores findingsCount on the step run, and
+// calculateRunStats then sums exactly those step runs — so adding findingsCount
+// on top counted the same findings twice. A live scan that pushed 2 findings
+// recorded total_findings = 4, and the doubled number also reached the audit log
+// and the user-facing "completed successfully with N findings" message.
+//
+// OnStepFailed never had the bug, which is part of why it went unnoticed: the
+// two paths disagreed and only the quieter one was right.
+func TestScanLoop_RunFindingsCountIsNotDoubled(t *testing.T) {
+	db := openLifecycleDB(t)
+	ctx := context.Background()
+	svc := newTriggerService(db)
+	pipeSvc := newPipelineService(db)
+
+	tenantID := seedLifecycleTenant(ctx, t, db)
+	scanID := seedLifecycleScan(ctx, t, db, tenantID)
+
+	run, err := svc.TriggerScan(ctx, scansvc.TriggerScanExecInput{
+		TenantID: tenantID.String(),
+		ScanID:   scanID.String(),
+	})
+	if err != nil {
+		t.Fatalf("TriggerScan: %v", err)
+	}
+
+	p := routingFromCommand(ctx, t, db, tenantID.String())
+
+	const reported = 2
+	if err := pipeSvc.OnStepCompleted(ctx, p.PipelineRunID, p.StepKey, reported, nil); err != nil {
+		t.Fatalf("OnStepCompleted: %v", err)
+	}
+
+	var total int
+	if err := db.QueryRowContext(ctx,
+		`SELECT total_findings FROM pipeline_runs WHERE id = $1`, run.ID.String()).Scan(&total); err != nil {
+		t.Fatalf("read total_findings: %v", err)
+	}
+	if total != reported {
+		t.Errorf("run total_findings = %d, want %d — the step's findings are being counted twice, "+
+			"so the run, the audit log and the completion message all overstate what was found",
+			total, reported)
+	}
+
+	// And the step run itself must hold the true number, since that is what the
+	// run total is derived from.
+	var stepFindings int
+	if err := db.QueryRowContext(ctx,
+		`SELECT findings_count FROM step_runs WHERE pipeline_run_id = $1`, run.ID.String()).Scan(&stepFindings); err != nil {
+		t.Fatalf("read step findings_count: %v", err)
+	}
+	if stepFindings != reported {
+		t.Errorf("step findings_count = %d, want %d", stepFindings, reported)
+	}
+}
