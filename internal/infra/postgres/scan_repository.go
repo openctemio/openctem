@@ -324,6 +324,49 @@ func (r *ScanRepository) Delete(ctx context.Context, id shared.ID) error {
 	return nil
 }
 
+// CountScheduledWithoutNextRun counts active scans that declare a schedule but
+// have no next_run_at, and returns their names.
+//
+// The pairing matters: ListDueForExecution requires `next_run_at IS NOT NULL`,
+// so a row in this state can never be selected, never runs, and never errors —
+// while the UI keeps describing it as "daily". Four such rows were found on a
+// live database, the oldest dormant since April.
+//
+// This deliberately reports rather than repairs. Recomputing next_run_at here
+// would be a one-line change and would silently activate every dormant scan at
+// once — including, on the database where this was found, a DAST scan pointed at
+// the public web. Waking that up as a side effect of a deploy is not a decision
+// a background loop should make. Editing the scan already recomputes the field
+// through SetSchedule, so the operator has a correct path once they know.
+func (r *ScanRepository) CountScheduledWithoutNextRun(ctx context.Context) (int, []string, error) {
+	const query = `
+		SELECT name
+		FROM scans
+		WHERE status = 'active'
+		  AND schedule_type != 'manual'
+		  AND next_run_at IS NULL
+		ORDER BY created_at
+	`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to count scheduled scans without next_run_at: %w", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return 0, nil, fmt.Errorf("failed to scan name: %w", err)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, nil, err
+	}
+	return len(names), names, nil
+}
+
 // ListDueForExecution lists scans that are due for scheduled execution.
 func (r *ScanRepository) ListDueForExecution(ctx context.Context, now time.Time) ([]*scan.Scan, error) {
 	query := r.selectQuery() + `

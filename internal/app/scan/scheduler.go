@@ -79,6 +79,11 @@ func (s *ScanScheduler) run() {
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 
+	// Once at startup, not every tick: this is a configuration defect, not an
+	// event. Repeating it every minute would train people to scroll past it,
+	// which is how the condition survived unnoticed in the first place.
+	s.reportInertScheduledScans()
+
 	// Run immediately on start
 	s.checkAndTrigger()
 
@@ -90,6 +95,34 @@ func (s *ScanScheduler) run() {
 			return
 		}
 	}
+}
+
+// reportInertScheduledScans logs any active scan that declares a schedule but
+// has no next_run_at.
+//
+// Such a scan is silently unreachable: ListDueForExecution requires
+// next_run_at IS NOT NULL, so it is never selected, never runs, and never
+// errors — while every screen still labels it "daily" or "weekly". Nothing in
+// the system said so until this call existed.
+//
+// Reported, not repaired — see CountScheduledWithoutNextRun for why filling the
+// field in automatically is the wrong move.
+func (s *ScanScheduler) reportInertScheduledScans() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	count, names, err := s.scanRepo.CountScheduledWithoutNextRun(ctx)
+	if err != nil {
+		s.logger.Error("failed to check for inert scheduled scans", "error", err)
+		return
+	}
+	if count == 0 {
+		return
+	}
+
+	s.logger.Warn("scans declare a schedule but have no next_run_at, so they will never run; "+
+		"re-save each one to recompute it",
+		"count", count, "scans", names)
 }
 
 func (s *ScanScheduler) checkAndTrigger() {

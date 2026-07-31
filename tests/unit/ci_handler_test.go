@@ -83,6 +83,10 @@ func (m *ciMockScanRepository) Delete(_ context.Context, id shared.ID) error {
 	return nil
 }
 
+func (m *ciMockScanRepository) CountScheduledWithoutNextRun(_ context.Context) (int, []string, error) {
+	return 0, nil, nil
+}
+
 func (m *ciMockScanRepository) ListDueForExecution(_ context.Context, _ time.Time) ([]*scan.Scan, error) {
 	return nil, nil
 }
