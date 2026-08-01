@@ -395,6 +395,7 @@ func (r *AgentRepository) FindAvailableWithTool(ctx context.Context, tenantID sh
 			WHERE tenant_id = $1
 			  AND status = 'active'
 			  AND health = 'online'
+			  AND last_seen_at IS NOT NULL
 			  AND current_jobs < max_concurrent_jobs
 			ORDER BY current_jobs ASC, total_scans ASC
 			LIMIT 1
@@ -417,6 +418,7 @@ func (r *AgentRepository) FindAvailableWithTool(ctx context.Context, tenantID sh
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
+		  AND last_seen_at IS NOT NULL
 		  AND $2 = ANY(tools)
 		  AND current_jobs < max_concurrent_jobs
 		ORDER BY current_jobs ASC, total_scans ASC
@@ -444,6 +446,7 @@ func (r *AgentRepository) FindAvailableWithCapacity(ctx context.Context, tenantI
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
+		  AND last_seen_at IS NOT NULL
 		  AND current_jobs < max_concurrent_jobs
 		  AND (execution_mode = 'daemon' OR type IN ('worker', 'collector'))
 	`
@@ -525,14 +528,19 @@ func (r *AgentRepository) ReleaseJob(ctx context.Context, id shared.ID) error {
 // Note: This updates Health (automatic), not Status (admin-controlled).
 // Agents can still authenticate if their Status is 'active', regardless of Health.
 // Returns the number of agents marked as offline.
+//
+// A NULL last_seen_at counts as stale. It means "online but never once
+// heartbeated", which the app cannot produce — UpdateLastSeen is the only writer
+// of health='online' and it always sets last_seen_at in the same statement — but
+// a fixture, a restore or a manual UPDATE can, and such a row was previously
+// unreachable by this sweep forever.
 func (r *AgentRepository) MarkStaleAsOffline(ctx context.Context, timeout time.Duration) (int64, error) {
 	query := `
 		UPDATE agents
 		SET health = 'offline',
 		    updated_at = NOW()
 		WHERE health = 'online'
-		  AND last_seen_at IS NOT NULL
-		  AND last_seen_at < NOW() - $1::interval
+		  AND (last_seen_at IS NULL OR last_seen_at < NOW() - $1::interval)
 	`
 
 	result, err := r.db.ExecContext(ctx, query, timeout.String())
@@ -975,6 +983,7 @@ func (r *AgentRepository) GetAvailableToolsForTenant(ctx context.Context, tenant
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
+		  AND last_seen_at IS NOT NULL
 		ORDER BY tool_name
 	`
 
@@ -1008,6 +1017,7 @@ func (r *AgentRepository) HasAgentForTool(ctx context.Context, tenantID shared.I
 			WHERE tenant_id = $1
 			  AND status = 'active'
 			  AND health = 'online'
+			  AND last_seen_at IS NOT NULL
 			  AND $2 = ANY(tools)
 		)
 	`
@@ -1030,6 +1040,7 @@ func (r *AgentRepository) GetAvailableCapabilitiesForTenant(ctx context.Context,
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
+		  AND last_seen_at IS NOT NULL
 		ORDER BY capability_name
 	`
 
@@ -1079,6 +1090,8 @@ func (r *AgentRepository) UpdateOfflineTimestamp(ctx context.Context, id shared.
 // MarkStaleAgentsOffline finds agents that haven't sent heartbeat within timeout and marks them offline.
 // Returns the list of agent IDs that were marked offline (for audit logging).
 // This is used by the health monitor worker.
+//
+// NULL last_seen_at counts as stale — see MarkStaleAsOffline for why.
 func (r *AgentRepository) MarkStaleAgentsOffline(ctx context.Context, timeout time.Duration) ([]shared.ID, error) {
 	query := `
 		UPDATE agents
@@ -1086,8 +1099,7 @@ func (r *AgentRepository) MarkStaleAgentsOffline(ctx context.Context, timeout ti
 		    health = 'offline',
 		    updated_at = NOW()
 		WHERE health = 'online'
-		  AND last_seen_at IS NOT NULL
-		  AND last_seen_at < NOW() - $1::interval
+		  AND (last_seen_at IS NULL OR last_seen_at < NOW() - $1::interval)
 		RETURNING id
 	`
 
@@ -1231,8 +1243,10 @@ SELECT category, key, value FROM (
   SELECT 'total'::text         AS category, ''::text       AS key, COUNT(*)::float8 AS value FROM tenant_agents
   UNION ALL
   SELECT 'online_active',        '',                                COUNT(*)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online'
+  AND last_seen_at IS NOT NULL
   UNION ALL
-  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online' AND execution_mode = 'daemon'
+  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online'
+  AND last_seen_at IS NOT NULL AND execution_mode = 'daemon'
   UNION ALL
   SELECT 'status',               status,                            COUNT(*)::float8 FROM tenant_agents GROUP BY status
   UNION ALL
@@ -1288,6 +1302,7 @@ func (r *AgentRepository) HasAgentForCapability(ctx context.Context, tenantID sh
 			WHERE tenant_id = $1
 			  AND status = 'active'
 			  AND health = 'online'
+			  AND last_seen_at IS NOT NULL
 			  AND $2 = ANY(capabilities)
 		)
 	`
