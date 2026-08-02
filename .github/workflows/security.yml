@@ -179,7 +179,15 @@ jobs:
   docker-scan:
     name: Docker Image Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Also on a PR into main — that is a release candidate, and this job builds
+    # the image itself rather than pulling a published one, so it can run before
+    # the tag exists. Scanning the image only after it is already published is
+    # the wrong order for a security product: docker-publish.yml triggers on the
+    # `v*` tag, so today the first scan happens after customers can pull it.
+    if: >-
+      github.event_name == 'schedule'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'pull_request' && github.base_ref == 'main')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
