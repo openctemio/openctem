@@ -359,31 +359,13 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		}
 	}
 	if input.AssignedTo != nil || input.AssignedTeam != nil {
-		// Each side is independently updatable: nil = keep current, "" = clear,
-		// uuid = set. Start from the current values so one doesn't wipe the other.
-		toPtr := campaign.AssignedTo()
-		teamPtr := campaign.AssignedTeam()
-		if input.AssignedTo != nil {
-			if *input.AssignedTo == "" {
-				toPtr = nil
-			} else {
-				uid, aerr := shared.IDFromString(*input.AssignedTo)
-				if aerr != nil {
-					return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
-				}
-				toPtr = &uid
-			}
+		toPtr, aerr := resolveAssignee(campaign.AssignedTo(), input.AssignedTo, "assigned_to")
+		if aerr != nil {
+			return nil, aerr
 		}
-		if input.AssignedTeam != nil {
-			if *input.AssignedTeam == "" {
-				teamPtr = nil
-			} else {
-				tid, terr := shared.IDFromString(*input.AssignedTeam)
-				if terr != nil {
-					return nil, fmt.Errorf("%w: invalid assigned_team id", shared.ErrValidation)
-				}
-				teamPtr = &tid
-			}
+		teamPtr, terr := resolveAssignee(campaign.AssignedTeam(), input.AssignedTeam, "assigned_team")
+		if terr != nil {
+			return nil, terr
 		}
 		campaign.SetAssignment(toPtr, teamPtr)
 	}
@@ -912,4 +894,28 @@ func buildEpicDescription(c *remediation.Campaign) string {
 		body += fmt.Sprintf("\nDue: %s", due.Format("2006-01-02"))
 	}
 	return body
+}
+
+// resolveAssignee applies one side of an assignment update. The two sides are
+// independently updatable and must not wipe each other, so each starts from the
+// current value:
+//
+//	nil    -> keep current
+//	""     -> clear
+//	uuid   -> set
+//
+// Extracted because AssignedTo and AssignedTeam were two copies of this ladder
+// inline, which is what pushed UpdateCampaign past the nesting limit.
+func resolveAssignee(current *shared.ID, input *string, field string) (*shared.ID, error) {
+	if input == nil {
+		return current, nil
+	}
+	if *input == "" {
+		return nil, nil
+	}
+	id, err := shared.IDFromString(*input)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid %s id", shared.ErrValidation, field)
+	}
+	return &id, nil
 }

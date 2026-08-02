@@ -1356,7 +1356,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 
 	// Security: revoke all existing sessions and refresh-token families so a
 	// password change (like a reset) invalidates any other/stolen sessions
-	// (AUTHZ-10). Mirrors ResetPassword's revocation behaviour.
+	// (AUTHZ-10). Mirrors ResetPassword's revocation behavior.
 	if err := s.sessionRepo.RevokeAllByUserID(ctx, u.ID()); err != nil {
 		s.logger.Error("failed to revoke sessions after password change", "error", err)
 	}

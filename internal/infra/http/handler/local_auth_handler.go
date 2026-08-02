@@ -798,7 +798,7 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 		token := result.Token
 		resetDuration := h.authConfig.PasswordResetDuration
 		go func() {
-			// Detach from the request context (which is cancelled once we
+			// Detach from the request context (which is canceled once we
 			// respond) but keep request-scoped values for tracing.
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 			defer cancel()

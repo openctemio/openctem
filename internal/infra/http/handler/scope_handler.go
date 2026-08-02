@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/openctemio/api/internal/app/scope"
 	"net/http"
 	"time"
+
+	"github.com/openctemio/api/internal/app/scope"
 
 	"github.com/go-chi/chi/v5"
 

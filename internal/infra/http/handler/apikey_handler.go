@@ -3,9 +3,10 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"github.com/openctemio/api/internal/app/apikey"
 	"net/http"
 	"time"
+
+	"github.com/openctemio/api/internal/app/apikey"
 
 	"github.com/go-chi/chi/v5"
 

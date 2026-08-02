@@ -59,7 +59,7 @@ func TestReconcileOnce_ReconcileTimeouterOverridesInterval(t *testing.T) {
 	m.reconcileOnce(context.Background(), c)
 
 	// The budget must track the 10s ReconcileTimeout, not the 50ms interval —
-	// otherwise a batch that takes longer than a poll interval is cancelled
+	// otherwise a batch that takes longer than a poll interval is canceled
 	// mid-flight ("context deadline exceeded").
 	if c.gotBudget < 9*time.Second {
 		t.Fatalf("override reconcile budget = %v, want ~10s (ReconcileTimeout, not the 50ms interval)", c.gotBudget)
