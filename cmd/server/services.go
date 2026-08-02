@@ -522,6 +522,10 @@ type Services struct {
 	// SSO
 	SSO *app.SSOService
 
+	// Social OAuth login (Google / GitHub / Microsoft). nil when no provider
+	// is configured, which keeps the OAuth routes unregistered.
+	OAuth *app.OAuthService
+
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
 
@@ -1393,6 +1397,20 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// domain is DNS-verified for the tenant (see SSOService.jitProvisioningAllowed).
 	s.DomainVerify = domainverify.NewService(repos.VerifiedDomain, domainverify.NewNetResolver(), log)
 	s.SSO.SetDomainVerifier(s.DomainVerify)
+
+	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
+	// provider actually has credentials, so the login surface the API advertises
+	// on /auth/providers matches the routes it registers — see registerAuthRoutes.
+	if cfg.OAuth.Enabled && cfg.OAuth.HasAnyProvider() {
+		s.OAuth = app.NewOAuthService(
+			repos.User,
+			repos.Session,
+			repos.RefreshToken,
+			cfg.OAuth,
+			cfg.Auth,
+			log,
+		)
+	}
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
 	s.SAML = app.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)

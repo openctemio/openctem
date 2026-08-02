@@ -19,25 +19,39 @@ import (
 type AuthProvidersHandler struct {
 	oauthConfig config.OAuthConfig
 	entraSSO    config.EntraSSOConfig
-	logger      *logger.Logger
+	// oauthRoutesLive reports whether /auth/oauth/{provider}/authorize and
+	// /auth/oauth/{provider}/callback are actually registered on this server.
+	// Credentials alone are not enough — if the OAuth handler is not wired into
+	// the composition root those routes 404, and advertising a provider anyway
+	// makes the login page render a button that dead-ends. Callers MUST pass
+	// the same condition the router uses to gate those routes.
+	oauthRoutesLive bool
+	logger          *logger.Logger
 }
 
 // NewAuthProvidersHandler creates a new AuthProvidersHandler.
+//
+// oauthRoutesLive must be the same condition that gates registration of the
+// /auth/oauth/* routes, so this endpoint can never advertise a provider whose
+// routes do not exist.
 func NewAuthProvidersHandler(
 	oauthConfig config.OAuthConfig,
 	entraSSO config.EntraSSOConfig,
+	oauthRoutesLive bool,
 	log *logger.Logger,
 ) *AuthProvidersHandler {
 	return &AuthProvidersHandler{
-		oauthConfig: oauthConfig,
-		entraSSO:    entraSSO,
-		logger:      log.With("handler", "auth_providers"),
+		oauthConfig:     oauthConfig,
+		entraSSO:        entraSSO,
+		oauthRoutesLive: oauthRoutesLive,
+		logger:          log.With("handler", "auth_providers"),
 	}
 }
 
 // SocialProviders reports which social OAuth buttons should be shown on the
-// login page. Each field is true only when that provider's OAUTH_<PROVIDER>_*
-// credentials (enabled + client_id + secret) are configured.
+// login page. A field is true only when that provider's OAUTH_<PROVIDER>_*
+// credentials (enabled + client_id + secret) are configured AND the
+// /auth/oauth/* routes are live on this server.
 type SocialProviders struct {
 	Microsoft bool `json:"microsoft"`
 	Google    bool `json:"google"`
@@ -62,9 +76,9 @@ type AuthProvidersResponse struct {
 func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, _ *http.Request) {
 	resp := AuthProvidersResponse{
 		Social: SocialProviders{
-			Microsoft: h.oauthConfig.Microsoft.IsConfigured(),
-			Google:    h.oauthConfig.Google.IsConfigured(),
-			GitHub:    h.oauthConfig.GitHub.IsConfigured(),
+			Microsoft: h.oauthRoutesLive && h.oauthConfig.Microsoft.IsConfigured(),
+			Google:    h.oauthRoutesLive && h.oauthConfig.Google.IsConfigured(),
+			GitHub:    h.oauthRoutesLive && h.oauthConfig.GitHub.IsConfigured(),
 		},
 		SSOEnvEntraEnabled: h.entraSSO.IsConfigured(),
 	}

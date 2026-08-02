@@ -18,11 +18,18 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 	tokenExchangeRL := authRateLimiter.TokenExchangeMiddleware()
 
 	// Public login-capability snapshot: tells the UI which social buttons (and
-	// the Entra SSO env fallback) are actually configured, so it can hide dead
+	// the Entra SSO env fallback) are actually usable, so it can hide dead
 	// affordances. Always available (unlike /oauth/providers, which only exists
 	// when the OAuth handler is wired), tenant-agnostic, and booleans only —
 	// no secrets. Rate-limited like the other public auth reads.
-	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, log)
+	//
+	// oauthRoutesLive is `h.OAuth != nil` — the exact condition that gates the
+	// /oauth/* routes below. Passing it here keeps the advertised login surface
+	// and the registered login surface identical: configuring OAUTH_* creds
+	// without wiring the handler used to make the UI render Google/GitHub
+	// buttons whose authorize call 404s.
+	oauthRoutesLive := h.OAuth != nil
+	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, oauthRoutesLive, log)
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
@@ -88,8 +95,9 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			r.POST("/token", h.Auth.GenerateToken)
 		}
 
-		// OAuth endpoints (social login) - login rate limit
-		if h.OAuth != nil {
+		// OAuth endpoints (social login) - login rate limit.
+		// Gated on the same condition reported by /auth/providers above.
+		if oauthRoutesLive {
 			r.GET("/oauth/providers", h.OAuth.ListProviders)
 			r.GET("/oauth/{provider}/authorize", h.OAuth.Authorize)
 			callbackHandler := ChainFunc(h.OAuth.Callback, loginRL)
