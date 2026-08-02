@@ -1487,13 +1487,14 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 }
 
 // NewJobWorker creates a new job worker for processing background jobs.
-// jiraSyncer (optional) handles outbound Jira status-sync tasks; pass nil to
-// disable that handler.
+//
+// Every argument except cfg and log is optional; a nil dependency only disables
+// its own handler. In particular a nil emailService must NOT stop the worker
+// from being built: the AI-triage, Jira sync and GitHub sync handlers live on
+// the same asynq server, their tasks are enqueued whether or not SMTP is on,
+// and SMTP_ENABLED defaults to false. Returning early here (as this used to)
+// left those queues with no consumer in a default deployment.
 func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
-	if emailService == nil {
-		return nil, nil
-	}
-
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	workerCfg := jobs.WorkerConfig{
 		RedisAddr:     redisAddr,

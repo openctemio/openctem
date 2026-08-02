@@ -32,6 +32,17 @@ func (a ddTenantSyncerAdapter) SyncTenant(ctx context.Context, tenantID shared.I
 	return err
 }
 
+// controllerMetrics returns the process-wide controller metrics collector.
+//
+// It is memoised because controller.NewPrometheusMetrics uses promauto, which
+// registers on the Prometheus default registerer and panics on a duplicate
+// registration. NewWorkers is called once by the server, but a test (or any
+// future second composition root) that builds Workers twice would otherwise
+// take the process down.
+var controllerMetrics = sync.OnceValue(func() controller.Metrics {
+	return controller.NewPrometheusMetrics("openctem")
+})
+
 // Workers holds all background worker instances.
 type Workers struct {
 	JobWorker                 *jobs.Worker
@@ -87,13 +98,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	w := &Workers{}
 
-	// Initialize job worker if email service is configured
-	if svc.Email != nil {
-		var err error
-		w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, svc.GitHubTicket, log)
-		if err != nil {
-			return nil, err
-		}
+	// Initialize the job worker. This is unconditional on purpose: the asynq
+	// server consumes AI-triage, Jira-sync and GitHub-sync tasks as well as
+	// email, and those are enqueued regardless of SMTP. Gating the worker on
+	// svc.Email meant a default deployment (SMTP_ENABLED=false) enqueued those
+	// tasks and never consumed them. jobs.NewWorker logs which handlers it had
+	// to skip.
+	var err error
+	w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, svc.GitHubTicket, log)
+	if err != nil {
+		return nil, err
 	}
 
 	// Initialize agent health checker if worker is enabled
@@ -162,9 +176,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Note: Template sync uses lazy sync on scan trigger, no background worker needed.
 	// Templates are synced on-demand when a scan uses custom templates.
 
-	// Initialize controller manager for background tasks
+	// Initialize controller manager for background tasks.
+	//
+	// Metrics is the single seam through which every registered controller is
+	// observed — Manager.reconcileOnce records duration/items/errors per
+	// controller name, and skips all of it when Metrics is nil. It was nil, so
+	// none of the background controllers were observable: a reaper that errors
+	// on every tick looked identical to one with nothing to do. The collectors
+	// register on the Prometheus default registerer, which is what /metrics
+	// serves.
 	w.ControllerManager = controller.NewManager(&controller.ManagerConfig{
-		Logger: log.With("component", "controller-manager"),
+		Logger:  log.With("component", "controller-manager"),
+		Metrics: controllerMetrics(),
 	})
 
 	// Register controllers

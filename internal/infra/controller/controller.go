@@ -106,6 +106,16 @@ func (m *Manager) Register(c Controller) {
 	}
 
 	m.controllers = append(m.controllers, c)
+
+	// Publish the running gauge at 0 on registration so the series exists
+	// before Start. Prometheus cannot alert on `controller_running == 0` for a
+	// series that was never emitted, so without this a controller that is
+	// registered but never started is indistinguishable from one that does not
+	// exist. runController flips it to 1.
+	if m.metrics != nil {
+		m.metrics.SetControllerRunning(c.Name(), false)
+	}
+
 	m.logger.Info("controller registered",
 		"name", c.Name(),
 		"interval", c.Interval().String(),
