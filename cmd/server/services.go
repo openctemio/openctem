@@ -861,7 +861,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Status() works for dashboards even before enforcement.
 		// Check()/Record() short-circuit when BudgetEnabled=false —
 		// the Phase 1 rollout ships the flag off so there is zero
-		// behaviour change on this deploy.
+		// behavior change on this deploy.
 		budgetSvc := app.NewAITriageBudgetService(
 			repos.AITriageBudget,
 			app.AITriageBudgetServiceConfig{
@@ -971,6 +971,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
 	s.Ingest.SetActivityService(s.FindingActivity)                   // Wire activity logging for auto-resolve/reopen
+	// Ingest audit events are tenant-scoped, so they must go through the SAME
+	// audit service instance as every other tenant-scoped event: LogEvent also
+	// extends the per-tenant tamper-evident hash chain, and its chainMu is what
+	// serializes concurrent appends. Without this, ingest.completed /
+	// ingest.partial_success rows land in audit_logs unchained.
+	s.Ingest.SetAuditService(s.Audit)
 	// Wire IP correlation for host dedup (RFC-001)
 	// System defaults; per-tenant overrides come from tenant settings at ingest time
 	s.Ingest.SetCorrelator(ingest.NewAssetCorrelator(repos.Asset, log, ingest.CorrelationConfig{
