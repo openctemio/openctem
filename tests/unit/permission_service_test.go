@@ -21,33 +21,33 @@ import (
 
 type mockPermissionSetRepo struct {
 	// Storage
-	sets   map[string]*permissionset.PermissionSet
-	items  map[string][]*permissionset.Item // key = permissionSetID
-	slugs  map[string]bool                  // key = "tenantID:slug"
+	sets  map[string]*permissionset.PermissionSet
+	items map[string][]*permissionset.Item // key = permissionSetID
+	slugs map[string]bool                  // key = "tenantID:slug"
 
 	// Error overrides
-	createErr         error
-	getByIDErr        error
-	getBySlugErr      error
-	updateErr         error
-	deleteErr         error
-	existsBySlugErr   error
-	listErr           error
-	countErr          error
-	addItemErr        error
-	removeItemErr     error
-	getWithItemsErr   error
-	getLatestVerErr   error
+	createErr          error
+	getByIDErr         error
+	getBySlugErr       error
+	updateErr          error
+	deleteErr          error
+	existsBySlugErr    error
+	listErr            error
+	countErr           error
+	addItemErr         error
+	removeItemErr      error
+	getWithItemsErr    error
+	getLatestVerErr    error
 	getInheritChainErr error
-	countGroupsErr    error
+	countGroupsErr     error
 
 	// Call tracking
-	createCalls       int
-	getByIDCalls      int
-	updateCalls       int
-	deleteCalls       int
-	addItemCalls      int
-	removeItemCalls   int
+	createCalls     int
+	getByIDCalls    int
+	updateCalls     int
+	deleteCalls     int
+	addItemCalls    int
+	removeItemCalls int
 
 	// Additional behavior
 	existsBySlugResult bool
@@ -270,10 +270,10 @@ func (m *mockPermissionSetRepo) ListGroupIDsUsing(_ context.Context, _ shared.ID
 // =============================================================================
 
 type mockGroupRepoForPermission struct {
-	groups          map[string]*group.Group
-	userGroups      map[string][]*group.GroupWithRole // key = "tenantID:userID"
-	permissionSets  map[string][]shared.ID           // key = groupID
-	getByIDErr      error
+	groups              map[string]*group.Group
+	userGroups          map[string][]*group.GroupWithRole // key = "tenantID:userID"
+	permissionSets      map[string][]shared.ID            // key = groupID
+	getByIDErr          error
 	listGroupsByUserErr error
 	listPermSetIDsErr   error
 }
@@ -1142,8 +1142,8 @@ func TestHasAnyPermission_True(t *testing.T) {
 	}
 
 	has, err := svc.HasAnyPermission(context.Background(), tenantID.String(), userID,
-		permission.SettingsWrite,   // user does NOT have this
-		permission.DashboardRead,  // user DOES have this
+		permission.SettingsWrite, // user does NOT have this
+		permission.DashboardRead, // user DOES have this
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -1173,7 +1173,7 @@ func TestHasAnyPermission_FalseWhenNoMatch(t *testing.T) {
 
 	has, err := svc.HasAnyPermission(context.Background(), tenantID.String(), userID,
 		permission.SettingsWrite, // user does NOT have this
-		permission.AuditRead,    // user does NOT have this either
+		permission.AuditRead,     // user does NOT have this either
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)

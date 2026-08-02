@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/audit"
@@ -39,6 +40,18 @@ type Service struct {
 	branchRepo  branch.Repository
 	tenantRepo  tenant.Repository
 	auditRepo   audit.Repository
+
+	// auditSvc is the SHARED application audit service. Ingest audit
+	// events are tenant-scoped, so they must go through it rather than
+	// writing audit_logs directly: LogEvent also extends the per-tenant
+	// tamper-evident hash chain (audit_log_chain). Writing via auditRepo
+	// alone persists the log but leaves it unchained, which the hourly
+	// chain verifier cannot distinguish from a deleted entry.
+	//
+	// It must be the same *AuditService instance the rest of the process
+	// uses — its chainMu is what serializes chain extension, and a second
+	// instance would have its own mutex and could interleave appends.
+	auditSvc *auditapp.AuditService
 
 	activityService *app.FindingActivityService
 
@@ -80,6 +93,17 @@ func NewService(
 
 		logger: l,
 	}
+}
+
+// SetAuditService wires the shared audit application service so ingest
+// audit events (ingest.completed / ingest.partial_success / ingest.failed)
+// are appended to the tenant's tamper-evident hash chain like every other
+// tenant-scoped event.
+//
+// Pass the SAME instance used elsewhere in the process — see the auditSvc
+// field comment for why a second instance is unsafe.
+func (s *Service) SetAuditService(svc *auditapp.AuditService) {
+	s.auditSvc = svc
 }
 
 // SetDataFlowRepository sets the data flow repository for persisting taint tracking traces.
@@ -140,9 +164,22 @@ func (s *Service) SetPriorityClassifier(classifier PriorityClassifier) {
 
 // SetSLAApplier wires the SLA-deadline calculator used after priority
 // classification (F3 wire). Nil-safe: when not wired, findings persist
-// with NULL sla_deadline, matching pre-F3 behaviour.
+// with NULL sla_deadline, matching pre-F3 behavior.
 func (s *Service) SetSLAApplier(applier SLAApplier) {
 	s.findingProcessor.SetSLAApplier(applier)
+}
+
+// SetAssignmentApplier wires the post-insert group-routing applier so
+// scanner-ingested findings are auto-routed to groups via assignment rules.
+// Nil-safe: when not wired, findings are not auto-routed (prior behavior).
+func (s *Service) SetAssignmentApplier(applier AssignmentApplier) {
+	s.findingProcessor.SetAssignmentApplier(applier)
+}
+
+// SetRemediationKeyApplier wires post-insert remediation-group key derivation
+// (RFC-015). Nil-safe: when not wired, findings are not grouped.
+func (s *Service) SetRemediationKeyApplier(applier RemediationKeyApplier) {
+	s.findingProcessor.SetRemediationKeyApplier(applier)
 }
 
 // =============================================================================
@@ -550,7 +587,7 @@ func (s *Service) updateAgentStatsAsync(agentID shared.ID, output *Output) {
 // createIngestAuditLog creates an audit log entry for the ingestion result.
 // This provides visibility for debugging when ingestion has issues.
 func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, tenantID shared.ID, report *ctis.Report, output *Output) {
-	if s.auditRepo == nil {
+	if s.auditSvc == nil && s.auditRepo == nil {
 		return
 	}
 
@@ -572,13 +609,6 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, te
 		resourceID = UnknownValue
 	}
 
-	// Create audit log entry
-	auditLog, err := audit.NewAuditLog(action, audit.ResourceTypeIngest, resourceID, result)
-	if err != nil {
-		s.logger.Warn("failed to create ingest audit log", "error", err)
-		return
-	}
-
 	// Build tool name for display
 	toolName := UnknownValue
 	if report.Tool != nil && report.Tool.Name != "" {
@@ -596,23 +626,21 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, te
 		message = fmt.Sprintf("Ingestion failed: %d errors", len(output.Errors))
 	}
 
-	// Set audit log fields
-	auditLog.WithTenantID(tenantID).
-		WithResourceName(toolName).
-		WithMessage(message).
-		WithMetadata("agent_id", agt.ID.String()).
-		WithMetadata("agent_name", agt.Name).
-		WithMetadata("report_id", output.ReportID).
-		WithMetadata("source_type", report.Metadata.SourceType).
-		WithMetadata("findings_count", len(report.Findings)).
-		WithMetadata("findings_created", output.FindingsCreated).
-		WithMetadata("findings_updated", output.FindingsUpdated).
-		WithMetadata("findings_skipped", output.FindingsSkipped).
-		WithMetadata("findings_auto_resolved", output.FindingsAutoResolved).
-		WithMetadata("findings_auto_reopened", output.FindingsAutoReopened).
-		WithMetadata("assets_created", output.AssetsCreated).
-		WithMetadata("assets_updated", output.AssetsUpdated).
-		WithMetadata("error_count", len(output.Errors))
+	metadata := map[string]any{
+		"agent_id":               agt.ID.String(),
+		"agent_name":             agt.Name,
+		"report_id":              output.ReportID,
+		"source_type":            report.Metadata.SourceType,
+		"findings_count":         len(report.Findings),
+		"findings_created":       output.FindingsCreated,
+		"findings_updated":       output.FindingsUpdated,
+		"findings_skipped":       output.FindingsSkipped,
+		"findings_auto_resolved": output.FindingsAutoResolved,
+		"findings_auto_reopened": output.FindingsAutoReopened,
+		"assets_created":         output.AssetsCreated,
+		"assets_updated":         output.AssetsUpdated,
+		"error_count":            len(output.Errors),
+	}
 
 	// Include first few errors for debugging (limit to 5 to avoid huge audit logs)
 	if len(output.Errors) > 0 {
@@ -620,7 +648,7 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, te
 		if len(errorsToInclude) > 5 {
 			errorsToInclude = errorsToInclude[:5]
 		}
-		auditLog.WithMetadata("errors", errorsToInclude)
+		metadata["errors"] = errorsToInclude
 	}
 
 	// Include detailed info about failed findings (limit to 10 for audit log size)
@@ -641,25 +669,42 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, te
 				"error":       ff.Error,
 			}
 		}
-		auditLog.WithMetadata("failed_findings", failedDetails)
-		auditLog.WithMetadata("failed_findings_total", len(output.FailedFindings))
+		metadata["failed_findings"] = failedDetails
+		metadata["failed_findings_total"] = len(output.FailedFindings)
 	}
 
 	// Include branch info if available
 	if report.Metadata.Branch != nil {
-		auditLog.WithMetadata("branch_name", report.Metadata.Branch.Name)
-		auditLog.WithMetadata("is_default_branch", report.Metadata.Branch.IsDefaultBranch)
+		metadata["branch_name"] = report.Metadata.Branch.Name
+		metadata["is_default_branch"] = report.Metadata.Branch.IsDefaultBranch
 		if report.Metadata.Branch.CommitSHA != "" {
-			auditLog.WithMetadata("commit_sha", report.Metadata.Branch.CommitSHA)
+			metadata["commit_sha"] = report.Metadata.Branch.CommitSHA
 		}
 	}
 
-	// Create audit log asynchronously to not block the response
+	actx := auditapp.AuditContext{TenantID: tenantID.String()}
+	event := auditapp.AuditEvent{
+		Action:       action,
+		ResourceType: audit.ResourceTypeIngest,
+		ResourceID:   resourceID,
+		ResourceName: toolName,
+		Result:       result,
+		Message:      message,
+		Metadata:     metadata,
+	}
+
+	// Persist asynchronously so ingest does not block on the audit write.
+	//
+	// Concurrency: LogEvent takes the shared AuditService.chainMu before
+	// reading prev_hash and appending, so concurrent ingests for the same
+	// tenant are serialized exactly like synchronous request-path audit
+	// events. Detached from the request context — the audit must outlive
+	// the request — but capped so a stalled DB cannot pin the goroutine.
 	go func() {
 		auditCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		if err := s.auditRepo.Create(auditCtx, auditLog); err != nil {
+		if err := s.writeIngestAuditLog(auditCtx, actx, event); err != nil {
 			s.logger.Warn("failed to persist ingest audit log",
 				"error", err,
 				"action", action,
@@ -667,6 +712,39 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, te
 			)
 		}
 	}()
+}
+
+// writeIngestAuditLog persists one ingest audit event.
+//
+// Preferred path is the shared audit service, which persists the log AND
+// extends the tenant's tamper-evident hash chain. The direct-repository
+// path is a degraded fallback for callers that never wired the service; it
+// leaves the row unchained, so it warns loudly rather than failing silently
+// (an unchained tenant-scoped row is indistinguishable from a deleted one
+// when the hourly verifier walks the chain).
+func (s *Service) writeIngestAuditLog(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error {
+	if s.auditSvc != nil {
+		return s.auditSvc.LogEvent(ctx, actx, event)
+	}
+
+	s.logger.Warn("ingest audit service not wired; audit log will bypass the tamper-evident hash chain",
+		"action", event.Action.String(),
+		"tenant_id", actx.TenantID,
+		"alert", "audit_chain_bypassed",
+	)
+
+	auditLog, err := audit.NewAuditLog(event.Action, event.ResourceType, event.ResourceID, event.Result)
+	if err != nil {
+		return fmt.Errorf("build ingest audit log: %w", err)
+	}
+	if tenantID, err := shared.IDFromString(actx.TenantID); err == nil {
+		auditLog.WithTenantID(tenantID)
+	}
+	auditLog.WithResourceName(event.ResourceName).WithMessage(event.Message)
+	for k, v := range event.Metadata {
+		auditLog.WithMetadata(k, v)
+	}
+	return s.auditRepo.Create(ctx, auditLog)
 }
 
 // =============================================================================

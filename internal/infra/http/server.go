@@ -82,7 +82,7 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 		middleware.CORSWithEnvironment(&cfg.CORS, cfg.App.Env),         // CORS with environment-aware config
 		middleware.BodyLimit(cfg.Server.MaxBodySize),                    // Limit request body size (10MB default)
 		rateLimitMw,                                                    // Rate limiting
-		middleware.Timeout(cfg.Server.RequestTimeout),                  // Per-request timeout
+		middleware.TimeoutWithLogger(cfg.Server.RequestTimeout, log), // Per-request timeout (+ panic recovery inside its goroutine)
 		middleware.Metrics(),                                           // Prometheus metrics
 		middleware.LoggerWithConfig(log, middleware.LoggerConfig{
 			SkipPaths:            middleware.DefaultLoggerConfig().SkipPaths,

@@ -230,7 +230,7 @@ func (w *AssetLifecycleWorker) hasRecentIngest(ctx context.Context, tenantID sha
 	const q = `SELECT EXISTS (
 		SELECT 1 FROM assets
 		WHERE tenant_id = $1
-		  AND last_seen_at > NOW() - make_interval(hours => $2)
+		  AND last_seen > NOW() - make_interval(hours => $2)
 	)`
 	hours := int(recentIngestWindow.Hours())
 	var exists bool
@@ -414,7 +414,7 @@ const maxTransitionsPerRun = 50_000
 //   - manual_status_override = false — respects operator control.
 //   - lifecycle_paused_until — NULL or past → not paused. Honor
 //     operator snooze (manual reactivation sets this to NOW+grace).
-//   - GREATEST(last_seen_at, updated_at) — manually edited assets
+//   - GREATEST(last_seen, updated_at) — manually edited assets
 //     count as "touched" even without scanner activity, so ops who
 //     fix an asset manually do not wake up to it flagged stale.
 //   - COALESCE(..., created_at) — legacy rows with NULL last_seen
@@ -431,7 +431,7 @@ const lifecycleCandidateClauses = `
 	  AND manual_status_override = FALSE
 	  AND (lifecycle_paused_until IS NULL OR lifecycle_paused_until < NOW())
 	  AND COALESCE(discovered_at, created_at) < NOW() - make_interval(days => $3)
-	  AND GREATEST(COALESCE(last_seen_at, created_at), updated_at)
+	  AND GREATEST(COALESCE(last_seen, created_at), updated_at)
 	      < NOW() - make_interval(days => $2)
 	  AND EXISTS (
 	      SELECT 1 FROM asset_sources s

@@ -97,7 +97,23 @@ func getRecommendationFromRemediation(r *vulnerability.FindingRemediation) strin
 
 // Create persists a new finding.
 func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.Finding) error {
-	metadata, err := json.Marshal(finding.Metadata())
+	// Merge sourceMetadata INTO metadata for persistence, mirroring Update().
+	// The pentest module stores its fields (steps_to_reproduce, poc_code,
+	// business_impact, owasp_category, mitre_technique_id, cvss_version, etc.)
+	// in sourceMetadata, but the DB has a single `metadata` JSONB column. Without
+	// this merge, all pentest source_metadata is silently dropped on create and
+	// only reappears after the first edit. No-op for scanner findings, which do
+	// not populate sourceMetadata.
+	mergedMeta := finding.Metadata()
+	if mergedMeta == nil {
+		mergedMeta = make(map[string]any)
+	}
+	if sm := finding.SourceMetadata(); sm != nil {
+		for k, v := range sm {
+			mergedMeta[k] = v
+		}
+	}
+	metadata, err := json.Marshal(mergedMeta)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
@@ -126,12 +142,15 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id, created_by
+			remediation, pentest_campaign_id, created_by,
+			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
+			ingest_channel
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
-			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82)
+			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
+			$83, $84, $85, $86, $87, $88)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -226,6 +245,16 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		nullID(finding.PentestCampaignID()),
 		// Creator (NULL for automated scanner findings, set for manually-authored pentest findings)
 		nullID(finding.CreatedBy()),
+		// Classification columns. Previously omitted from the single-row INSERT, so a
+		// freshly-created pentest/manual finding lost its CVSS score+vector and
+		// CVE/CWE/OWASP until the first edit (Update() persisted them). Sourced from
+		// the same getters Update() and the batch inserter use.
+		nullFloat64(finding.CVSSScore()),           // $83
+		nullString(finding.CVSSVector()),           // $84
+		nullString(finding.CVEID()),                // $85
+		pq.Array(finding.CWEIDs()),                 // $86
+		pq.Array(finding.OWASPIDs()),               // $87
+		nullIngestChannel(finding.IngestChannel()), // $88
 	)
 
 	if err != nil {
@@ -269,12 +298,15 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id, created_by
+			remediation, pentest_campaign_id, created_by,
+			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
+			ingest_channel
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
-			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82)
+			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
+			$83, $84, $85, $86, $87, $88)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -369,6 +401,14 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		nullID(finding.PentestCampaignID()),
 		// Creator user ID
 		nullID(finding.CreatedBy()),
+		// Classification columns — mirror Create(); persist CVSS + CVE/CWE/OWASP on
+		// insert so a manually-created finding keeps its scoring without an edit.
+		nullFloat64(finding.CVSSScore()),           // $83
+		nullString(finding.CVSSVector()),           // $84
+		nullString(finding.CVEID()),                // $85
+		pq.Array(finding.CWEIDs()),                 // $86
+		pq.Array(finding.OWASPIDs()),               // $87
+		nullIngestChannel(finding.IngestChannel()), // $88
 	)
 
 	if err != nil {
@@ -575,7 +615,7 @@ func findingInsertColumnsSQL() string {
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id
+			remediation, pentest_campaign_id, ingest_channel
 		)`
 }
 
@@ -588,6 +628,16 @@ func findingUpsertConflictSQL() string {
 			component_id = EXCLUDED.component_id,
 			branch_id = COALESCE(EXCLUDED.branch_id, findings.branch_id),
 			tool_id = COALESCE(EXCLUDED.tool_id, findings.tool_id),
+			-- COALESCE, not overwrite. The upsert already writes agent_id and
+			-- scan_id last-writer-wins while leaving source and tool_name at
+			-- the first writer's values, so a merged finding reports one
+			-- scan's technique beside another scan's agent. Adding a third
+			-- rule to that mix makes it worse. Keeping the first recorded
+			-- channel while still filling a NULL means the column answers one
+			-- question consistently — "which channel first told us" — until
+			-- provenance moves to the sighting table it belongs on. See
+			-- docs/architecture/decisions/004-finding-provenance.md.
+			ingest_channel = COALESCE(findings.ingest_channel, EXCLUDED.ingest_channel),
 			tool_version = EXCLUDED.tool_version,
 			snippet = COALESCE(EXCLUDED.snippet, findings.snippet),
 			context_snippet = COALESCE(EXCLUDED.context_snippet, findings.context_snippet),
@@ -662,7 +712,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 81
+const findingInsertColumnCount = 82
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -768,6 +818,8 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		remediationJSON,
 		// Pentest campaign reference
 		nullIDPtr(finding.PentestCampaignID()),
+		// Provenance channel — NULL when unrecorded.
+		nullIngestChannel(finding.IngestChannel()),
 	}, nil
 }
 
@@ -828,9 +880,9 @@ func (r *FindingRepository) GetByIDs(ctx context.Context, tenantID shared.ID, id
 func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.Finding) error {
 	// Merge sourceMetadata INTO metadata for persistence. The pentest module
 	// stores steps_to_reproduce, poc_code, business_impact, etc. in
-	// sourceMetadata, but the DB has a single `metadata` JSONB column.
-	// During Create, this merge happens in the service. During Update, we
-	// need to re-merge here to persist pentest field changes.
+	// sourceMetadata, but the DB has a single `metadata` JSONB column. Both
+	// Create() and Update() perform this same merge so pentest fields persist
+	// through the finding's whole lifecycle.
 	mergedMeta := finding.Metadata()
 	if mergedMeta == nil {
 		mergedMeta = make(map[string]any)
@@ -996,10 +1048,11 @@ func (r *FindingRepository) List(ctx context.Context, filter vulnerability.Findi
 		countQuery += " WHERE " + whereClause
 	}
 
-	// Apply sorting (default to created_at DESC)
-	orderBy := defaultSortOrder
+	// Apply sorting. Default to CTEM priority order (P0-first, then severity,
+	// then recency) so the list surfaces what to work on next — not created_at.
+	orderBy := vulnerability.DefaultFindingSort
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
-		orderBy = opts.Sort.SQLWithDefault(defaultSortOrder)
+		orderBy = opts.Sort.SQLWithDefault(vulnerability.DefaultFindingSort)
 	}
 	baseQuery += " ORDER BY " + orderBy
 	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
@@ -1820,7 +1873,7 @@ func (r *FindingRepository) selectQuery() string {
 			is_reachable, reachable_from_count,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
-			remediation, created_by,
+			remediation, created_by, ingest_channel,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -1949,6 +2002,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		remediation []byte
 		// Creator (pentest ownership)
 		createdBy sql.NullString
+		// Provenance channel — nullable; NULL means unrecorded.
+		ingestChannel sql.NullString
 		// Data flow flag
 		hasDataFlow bool
 	)
@@ -1977,7 +2032,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&isReachable, &reachableFromCount,
 		&remediationType, &estimatedFixTime, &fixComplexity, &remedyAvailable,
 		&dataExposureRisk, &reputationalImpact, pq.Array(&complianceImpact),
-		&remediation, &createdBy,
+		&remediation, &createdBy, &ingestChannel,
 		&hasDataFlow,
 	)
 	if err != nil {
@@ -2016,6 +2071,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		remediation,
 		// Creator (pentest ownership)
 		createdBy,
+		ingestChannel,
 		// Data flow flag
 		hasDataFlow,
 	})
@@ -2129,6 +2185,8 @@ type findingRow struct {
 	remediation []byte
 	// Creator (pentest ownership)
 	createdBy sql.NullString
+	// Provenance channel — nullable; NULL means unrecorded.
+	ingestChannel sql.NullString
 	// Data flow flag
 	hasDataFlow bool
 }
@@ -2340,6 +2398,7 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		ScanID:              nullStringValue(row.scanID),
 		Fingerprint:         row.fingerprint,
 		AgentID:             parseNullID(row.agentID),
+		IngestChannel:       vulnerability.IngestChannel(nullStringValue(row.ingestChannel)),
 		Metadata:            meta,
 		// For pentest findings, source_metadata keys live inside the same
 		// metadata JSONB column. Copy the full map so the handler's
@@ -2451,7 +2510,10 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 		FROM findings
 		WHERE tenant_id = $1
 			AND asset_id IS NOT NULL
-			AND status IN ('new','confirmed','in_progress')
+			-- Canonical active set (ActiveFindingStatuses): includes fix_applied,
+			-- which is "fix marked, NOT yet verified" — such a KEV/critical finding
+			-- is still a live exposure and must stay on the attack path.
+			AND status IN ('new','confirmed','in_progress','fix_applied')
 		GROUP BY asset_id
 		HAVING COUNT(*) FILTER (WHERE is_in_kev) > 0
 			OR COUNT(*) FILTER (WHERE severity = 'critical') > 0`
@@ -2481,6 +2543,96 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 		return nil, nil, fmt.Errorf("failed iterating kev/critical counts: %w", err)
 	}
 	return kev, critical, nil
+}
+
+// RecomputeFingerprintsForAsset recomputes and persists the fingerprint of every
+// finding currently pointing at assetID, using the CORRECT scheme per finding.
+//
+// Motivation: an asset merge repoints findings to the surviving asset with a raw
+// UPDATE (AssetDedupRepository.ApproveAndMerge) that does not recompute the
+// fingerprint. Every fingerprint scheme embeds the asset_id, so a repointed
+// finding keeps a stale fingerprint that never dedupes against future scans of
+// the surviving asset — accumulating duplicates.
+//
+// Two schemes coexist and must be recomputed differently (getting this wrong is
+// how a previous attempt corrupted data):
+//   - Ingested findings use the 64-char COMPOSITE sha256(asset_id + ":" + base).
+//     The base is persisted at ingest (FingerprintBaseKey) so we recompute
+//     CompositeFingerprint(keepID, base). Findings ingested before the base was
+//     persisted have no base to recompute from and are left untouched (skipped).
+//   - Manually-created findings use the 32-char Finding.GenerateFingerprint,
+//     which re-derives from the finding's fields + its (now updated) asset_id, so
+//     calling it again yields the correct value.
+//
+// On a UNIQUE(tenant_id, fingerprint) collision the repointed finding is the
+// duplicate and is deleted, keeping the pre-existing one. Idempotent.
+func (r *FindingRepository) RecomputeFingerprintsForAsset(ctx context.Context, tenantID, assetID shared.ID) (updated, deduped int, err error) {
+	// Read all findings for the asset up front so the mutations below do not
+	// shift pagination offsets mid-iteration.
+	var all []*vulnerability.Finding
+	page := pagination.Pagination{Page: 1, PerPage: 500}
+	for {
+		res, lerr := r.ListByAssetID(ctx, tenantID, assetID, vulnerability.FindingListOptions{}, page)
+		if lerr != nil {
+			return updated, deduped, fmt.Errorf("failed to list findings for fingerprint recompute: %w", lerr)
+		}
+		all = append(all, res.Data...)
+		if len(res.Data) == 0 || page.Page >= res.TotalPages {
+			break
+		}
+		page.Page++
+	}
+
+	for _, f := range all {
+		oldFP := f.Fingerprint()
+		newFP, composite := recomputeFindingFingerprint(f, assetID.String())
+		if newFP == "" || newFP == oldFP {
+			continue
+		}
+		_, uerr := r.db.ExecContext(ctx,
+			`UPDATE findings SET fingerprint = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+			newFP, f.ID().String(), tenantID.String())
+		if uerr == nil {
+			updated++
+			continue
+		}
+		if !isUniqueViolation(uerr) {
+			return updated, deduped, fmt.Errorf("failed to update finding fingerprint: %w", uerr)
+		}
+		// Collision on (tenant_id, newFP). For the COMPOSITE scheme this is
+		// unambiguous: a native finding recomputes to its unchanged value and was
+		// skipped above (newFP == oldFP), so only a moved duplicate can reach here
+		// — delete it, keep the existing. For the MANUAL scheme a native finding
+		// whose fields drifted after creation (GenerateFingerprint runs only at
+		// create) can also collide, so deleting could destroy a legitimate
+		// finding — skip it instead (the moved duplicate simply keeps its stale
+		// fingerprint, no worse than before the merge).
+		if !composite {
+			continue
+		}
+		if _, derr := r.db.ExecContext(ctx,
+			`DELETE FROM findings WHERE id = $1 AND tenant_id = $2`,
+			f.ID().String(), tenantID.String()); derr != nil {
+			return updated, deduped, fmt.Errorf("failed to delete duplicate finding after fingerprint collision: %w", derr)
+		}
+		deduped++
+	}
+	return updated, deduped, nil
+}
+
+// recomputeFindingFingerprint returns the correct fingerprint for f now that it
+// lives on keepAssetID and whether it is the composite scheme. Returns "" when
+// it cannot be safely recomputed (a composite finding whose base was not
+// persisted). `composite` is true only for the base-derived composite scheme.
+func recomputeFindingFingerprint(f *vulnerability.Finding, keepAssetID string) (newFP string, composite bool) {
+	if base, ok := f.PartialFingerprints()[vulnerability.FingerprintBaseKey]; ok && base != "" {
+		return vulnerability.CompositeFingerprint(keepAssetID, base), true
+	}
+	if len(f.Fingerprint()) == 32 {
+		// Manual scheme: re-derives from f.assetID (already updated to keepID) + fields.
+		return f.GenerateFingerprint(), false
+	}
+	return "", false
 }
 
 // CountOpenByAssetID returns the count of open findings for an asset.
@@ -2749,6 +2901,45 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			argIndex++
 		}
 		conditions = append(conditions, fmt.Sprintf("source IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	if len(filter.FindingIDs) > 0 {
+		placeholders := make([]string, len(filter.FindingIDs))
+		for i, id := range filter.FindingIDs {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, id)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("id IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// CTEM prioritization filters (RFC-017).
+	if len(filter.PriorityClasses) > 0 {
+		placeholders := make([]string, len(filter.PriorityClasses))
+		for i, pc := range filter.PriorityClasses {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, pc)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("priority_class IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	if filter.IsInKEV != nil {
+		conditions = append(conditions, fmt.Sprintf("is_in_kev = $%d", argIndex))
+		args = append(args, *filter.IsInKEV)
+		argIndex++
+	}
+
+	if filter.IsReachable != nil {
+		conditions = append(conditions, fmt.Sprintf("is_reachable = $%d", argIndex))
+		args = append(args, *filter.IsReachable)
+		argIndex++
+	}
+
+	if filter.EPSSMin != nil {
+		conditions = append(conditions, fmt.Sprintf("epss_score >= $%d", argIndex))
+		args = append(args, *filter.EPSSMin)
+		argIndex++
 	}
 
 	if filter.ToolName != nil && *filter.ToolName != "" {

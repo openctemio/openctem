@@ -72,14 +72,18 @@ type CreateAssetGroupRequest struct {
 
 // UpdateAssetGroupRequest represents the request to update an asset group.
 type UpdateAssetGroupRequest struct {
-	Name         *string  `json:"name" validate:"omitempty,min=1,max=255"`
-	Description  *string  `json:"description" validate:"omitempty,max=1000"`
-	Environment  *string  `json:"environment" validate:"omitempty,asset_group_environment"`
-	Criticality  *string  `json:"criticality" validate:"omitempty,asset_group_criticality"`
-	BusinessUnit *string  `json:"business_unit" validate:"omitempty,max=255"`
-	Owner        *string  `json:"owner" validate:"omitempty,max=255"`
-	OwnerEmail   *string  `json:"owner_email" validate:"omitempty,email,max=255"`
-	Tags         []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+	Name         *string `json:"name" validate:"omitempty,min=1,max=255"`
+	Description  *string `json:"description" validate:"omitempty,max=1000"`
+	Environment  *string `json:"environment" validate:"omitempty,asset_group_environment"`
+	Criticality  *string `json:"criticality" validate:"omitempty,asset_group_criticality"`
+	BusinessUnit *string `json:"business_unit" validate:"omitempty,max=255"`
+	Owner        *string `json:"owner" validate:"omitempty,max=255"`
+	// NOTE: no `email` rule here — `omitempty` does not skip a non-nil *string
+	// pointing at "" (it is only nil-aware), so keeping `email` rejected the
+	// legitimate "clear the owner email" case with a 422. Format is validated in
+	// the service layer, but only for non-empty values (empty = clear).
+	OwnerEmail *string  `json:"owner_email" validate:"omitempty,max=255"`
+	Tags       []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
 }
 
 // AddAssetsRequest represents the request to add assets to a group.
@@ -235,7 +239,7 @@ func (h *AssetGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 		MaxRiskScore:  parseQueryIntPtr(query.Get("max_risk_score")),
 		Sort:          query.Get("sort"),
 		Page:          parseQueryInt(query.Get("page"), 1),
-		PerPage:       parseQueryInt(query.Get("per_page"), 20),
+		PerPage:       parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -499,7 +503,7 @@ func (h *AssetGroupHandler) GetAssets(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryInt(query.Get("per_page"), 20)
+	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
 
 	result, err := h.service.GetGroupAssets(r.Context(), middleware.MustGetTenantID(r.Context()), id, page, perPage)
 	if err != nil {
@@ -560,7 +564,7 @@ func (h *AssetGroupHandler) GetFindings(w http.ResponseWriter, r *http.Request) 
 
 	query := r.URL.Query()
 	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryInt(query.Get("per_page"), 20)
+	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
 
 	result, err := h.service.GetGroupFindings(r.Context(), middleware.MustGetTenantID(r.Context()), id, page, perPage)
 	if err != nil {

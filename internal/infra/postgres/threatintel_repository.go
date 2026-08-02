@@ -148,7 +148,12 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 		CREATE TEMP TABLE temp_epss_scores (
 			cve_id VARCHAR(30),
 			epss_score DECIMAL(8,6),
-			percentile DECIMAL(8,6),
+			-- percentile is stored on a 0-100 scale (the sync scales the feed's
+			-- 0-1 value) and the top CVEs land on exactly 100.0, which does NOT fit
+			-- DECIMAL(8,6) (max 99.999999). This staging table must mirror the real
+			-- column's precision (numeric(9,6), migration 000194) or the COPY dies
+			-- with "numeric field overflow" and the whole EPSS sync is lost.
+			percentile DECIMAL(9,6),
 			model_version VARCHAR(20),
 			score_date DATE
 		) ON COMMIT DROP
@@ -183,6 +188,9 @@ func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.
 	}
 
 	// Upsert from temp table
+	// sqlgate:optional — temp_epss_scores is a session-scoped TEMP table created
+	// a few lines above in this same transaction, so it is legitimately absent
+	// from a schema built purely from migrations.
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO epss_scores (cve_id, epss_score, percentile, model_version, score_date, updated_at)
 		SELECT cve_id, epss_score, percentile, model_version, score_date, NOW()

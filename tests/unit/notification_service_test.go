@@ -26,14 +26,14 @@ type mockNotificationRepo struct {
 	allReadAt     map[string]time.Time                 // key: "tenantID:userID"
 
 	// Error overrides
-	createErr          error
-	listErr            error
-	unreadCountErr     error
-	markAsReadErr      error
-	markAllAsReadErr   error
-	deleteOlderErr     error
-	getPreferencesErr  error
-	upsertPrefsErr     error
+	createErr         error
+	listErr           error
+	unreadCountErr    error
+	markAsReadErr     error
+	markAllAsReadErr  error
+	deleteOlderErr    error
+	getPreferencesErr error
+	upsertPrefsErr    error
 
 	// Call tracking
 	createCalls        int
@@ -51,9 +51,9 @@ type mockNotificationRepo struct {
 	lastDeleteAge  time.Duration
 
 	// Return overrides
-	unreadCountResult  int
-	deleteOlderResult  int64
-	upsertPrefsResult  *notification.Preferences
+	unreadCountResult int
+	deleteOlderResult int64
+	upsertPrefsResult *notification.Preferences
 }
 
 func newMockNotificationRepo() *mockNotificationRepo {

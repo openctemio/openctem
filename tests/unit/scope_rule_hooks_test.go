@@ -1,11 +1,12 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app/scope"
 
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/shared"

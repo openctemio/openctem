@@ -1,11 +1,12 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/command"
 	"context"
 	"encoding/json"
 	"errors"
 	"testing"
+
+	"github.com/openctemio/api/internal/app/command"
 
 	commanddom "github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/shared"

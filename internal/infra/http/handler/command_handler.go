@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -12,10 +15,13 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	pipelinesvc "github.com/openctemio/api/internal/app/pipeline"
+	"github.com/openctemio/api/internal/app/template"
 	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	commanddom "github.com/openctemio/api/pkg/domain/command"
+	pipelinedom "github.com/openctemio/api/pkg/domain/pipeline"
+	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -27,11 +33,19 @@ type validationEvidenceIngester interface {
 	Ingest(ctx context.Context, tenantID, findingID shared.ID, simRunID *shared.ID, ev validation.Evidence) (validation.IngestResult, error)
 }
 
+// simulationRunFinalizer finalizes an attack-simulation run from a completed
+// safe-check command's outcome (RFC-012 Phase 1b). Implemented by
+// *compliance.SimulationService.
+type simulationRunFinalizer interface {
+	FinalizeRun(ctx context.Context, tenantID, runID shared.ID, outcome, summary string) error
+}
+
 // CommandHandler handles command-related HTTP requests.
 type CommandHandler struct {
 	service          *command.Service
 	pipelineService  *pipelinesvc.Service
 	validationIngest validationEvidenceIngester
+	simFinalizer     simulationRunFinalizer
 	validator        *validator.Validator
 	logger           *logger.Logger
 }
@@ -54,6 +68,12 @@ func (h *CommandHandler) SetPipelineService(svc *pipelinesvc.Service) {
 // completed validate command's result into finding evidence.
 func (h *CommandHandler) SetValidationIngest(svc validationEvidenceIngester) {
 	h.validationIngest = svc
+}
+
+// SetSimulationFinalizer wires the simulation-run finalizer used to complete a
+// running attack-simulation from a validate command's safe-check outcome.
+func (h *CommandHandler) SetSimulationFinalizer(svc simulationRunFinalizer) {
+	h.simFinalizer = svc
 }
 
 // CommandResponse represents a command in API responses.
@@ -138,6 +158,19 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A "scan" command may embed custom scanner-template content that the agent
+	// writes to disk and executes. The agent only validates template name/size,
+	// NOT content, so a CommandsWrite user could smuggle a malicious template
+	// (nuclei code:/javascript:/exec, ReDoS matchers) that bypasses the
+	// validator applied when templates are stored/synced. Enforce the same
+	// authoritative server-side validation on any inline template here.
+	if req.Type == "scan" {
+		if err := validateInlineScanTemplates(req.Payload); err != nil {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return
+		}
+	}
+
 	tenantID := middleware.GetTenantID(r.Context())
 
 	cmd, err := h.service.Create(r.Context(), command.CreateInput{
@@ -156,6 +189,64 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+}
+
+// validateInlineScanTemplates rejects a scan command that embeds custom scanner
+// templates with dangerous content. Inline templates travel in the command
+// payload as `custom_templates: [{name, template_type, content(base64)}]`; the
+// agent decodes and executes them but only checks name/size, so the content
+// must pass the same authoritative validator (NucleiValidator etc.) applied at
+// template store/sync time.
+func validateInlineScanTemplates(payload json.RawMessage) error {
+	if len(payload) == 0 {
+		return nil
+	}
+	var p struct {
+		CustomTemplates []struct {
+			Name         string `json:"name"`
+			TemplateType string `json:"template_type"`
+			Content      string `json:"content"` // base64-encoded
+		} `json:"custom_templates"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		// Unparseable against this shape. If the payload does not mention
+		// custom_templates at all, this validator has nothing to say and the
+		// shape is handled downstream — that is the ordinary case for every
+		// non-template command.
+		//
+		// If it DOES mention them, refusing is the only safe answer: we cannot
+		// see what we would be approving, and the agent decodes and executes
+		// whatever it can parse. Passing here on the assumption that the agent's
+		// parser is exactly as strict as this one is a parser-differential bet,
+		// and this function exists precisely to stop templates reaching an agent
+		// unvalidated.
+		if bytes.Contains(payload, []byte(`"custom_templates"`)) {
+			return fmt.Errorf("payload embeds custom_templates but could not be parsed for validation")
+		}
+		return nil //nolint:nilerr // nothing to validate; see above
+	}
+	for i, t := range p.CustomTemplates {
+		name := t.Name
+		if name == "" {
+			name = fmt.Sprintf("#%d", i)
+		}
+		// Content is base64 (matches how the server embeds and the agent decodes
+		// templates). Validate the decoded bytes; if it isn't valid base64, fall
+		// back to validating the raw bytes so nothing slips past.
+		content := []byte(t.Content)
+		if decoded, derr := base64.StdEncoding.DecodeString(t.Content); derr == nil {
+			content = decoded
+		}
+		res := template.ValidateTemplate(scannertemplate.TemplateType(t.TemplateType), content)
+		if res == nil || !res.Valid || res.HasErrors() {
+			msg := "failed server-side template validation"
+			if res != nil && res.HasErrors() {
+				msg = res.ErrorMessages()
+			}
+			return fmt.Errorf("custom template %q rejected: %s", name, msg)
+		}
+	}
+	return nil
 }
 
 // Get handles GET /api/v1/commands/{id}
@@ -212,7 +303,7 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 		Status:   r.URL.Query().Get("status"),
 		Priority: r.URL.Query().Get("priority"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	result, err := h.service.List(r.Context(), input)
@@ -400,8 +491,60 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	// Map a completed validation job's result into finding evidence.
 	h.triggerValidationEvidence(cmd)
 
+	// Finalize a running attack-simulation from a completed safe-check (RFC-012).
+	h.triggerSimulationFinalize(cmd)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+}
+
+// triggerSimulationFinalize finalizes a running attack-simulation run when the
+// completed validate command carries a simulation_run_id (RFC-012 Phase 1b).
+// The tenant is taken from the command (authoritative). Best-effort and
+// asynchronous; leaves the finding-evidence path (triggerValidationEvidence)
+// entirely untouched.
+func (h *CommandHandler) triggerSimulationFinalize(cmd *commanddom.Command) {
+	if h.simFinalizer == nil || cmd == nil || cmd.Type != commanddom.CommandTypeValidate {
+		return
+	}
+
+	var payload validation.ValidateCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || payload.SimulationRunID == "" {
+		return
+	}
+	runID, err := shared.IDFromString(payload.SimulationRunID)
+	if err != nil {
+		return
+	}
+
+	// Extract the verdict (top-level or nested under metadata — the SDK poller
+	// path), mirroring triggerValidationEvidence.
+	var result struct {
+		validation.ValidateResultPayload
+		Metadata validation.ValidateResultPayload `json:"metadata"`
+	}
+	if cmd.Result != nil {
+		_ = json.Unmarshal(cmd.Result, &result)
+	}
+	verdict := result.ValidateResultPayload
+	if verdict.Outcome == "" {
+		verdict = result.Metadata
+	}
+	if verdict.Outcome == "" {
+		h.logger.Warn("validate command for simulation completed without an outcome",
+			"command_id", cmd.ID.String(), "simulation_run_id", payload.SimulationRunID)
+		return
+	}
+
+	tenantID := cmd.TenantID
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.simFinalizer.FinalizeRun(bgCtx, tenantID, runID, verdict.Outcome, verdict.Summary); err != nil {
+			h.logger.Error("failed to finalize simulation run from safe-check",
+				"command_id", cmd.ID.String(), "simulation_run_id", payload.SimulationRunID, "error", err)
+		}
+	}()
 }
 
 // triggerValidationEvidence maps a completed CommandTypeValidate command's
@@ -481,19 +624,23 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 		return
 	}
 
-	// Parse command payload to get pipeline info
-	var payload struct {
-		PipelineRunID string `json:"pipeline_run_id"`
-		StepRunID     string `json:"step_run_id"`
-		StepKey       string `json:"step_key"`
-	}
+	// Parse command payload to get pipeline info. The shape is shared with the
+	// dispatcher so the two cannot drift apart again — see
+	// pipeline.StepCommandPayload.
+	var payload pipelinedom.StepCommandPayload
 
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
 		return // Not a pipeline command
 	}
 
-	if payload.PipelineRunID == "" || payload.StepKey == "" {
-		return // Not a pipeline command
+	if !payload.IsRoutable() {
+		// A command that carries no run/step cannot be reported back. This is
+		// legitimate for non-pipeline commands, but it also silently swallowed
+		// every scan command for as long as the dispatcher wrote the wrong key,
+		// so say so at debug level rather than vanishing.
+		h.logger.Debug("command carries no pipeline routing keys; not progressing",
+			"command_id", cmd.ID.String())
+		return
 	}
 
 	// Parse result to get findings count and output
@@ -577,18 +724,20 @@ func (h *CommandHandler) triggerPipelineFailed(ctx context.Context, cmd *command
 		return
 	}
 
-	// Parse command payload to get pipeline info
-	var payload struct {
-		PipelineRunID string `json:"pipeline_run_id"`
-		StepKey       string `json:"step_key"`
-	}
+	// Parse command payload to get pipeline info. Same shared shape as the
+	// success path — a failure that cannot be routed loses the scanner's real
+	// error message, which is how "scanner not found: nuclei" reached users as
+	// "scan exceeded configured timeout".
+	var payload pipelinedom.StepCommandPayload
 
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
 		return // Not a pipeline command
 	}
 
-	if payload.PipelineRunID == "" || payload.StepKey == "" {
-		return // Not a pipeline command
+	if !payload.IsRoutable() {
+		h.logger.Debug("failed command carries no pipeline routing keys; error will not reach the run",
+			"command_id", cmd.ID.String(), "error", errorMessage)
+		return
 	}
 
 	// Trigger pipeline failure asynchronously with independent context

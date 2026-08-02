@@ -101,6 +101,12 @@ func Convert(r io.Reader, opts ConvertOptions) (*ctis.Report, error) {
 		Tool: &ctis.Tool{
 			Name:   toolName,
 			Vendor: "Tenable",
+			// Declare what this is instead of letting the ingest mapper guess
+			// from the tool name. It guessed wrong: with no capabilities set,
+			// detectFindingSource fell through to its default and stamped every
+			// network vulnerability as SAST. toolName is caller-controlled via
+			// ?tool=, so name-based inference was never trustworthy here.
+			Capabilities: []string{"va"},
 		},
 	}
 

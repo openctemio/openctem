@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"net/url"
+	"time"
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
@@ -27,6 +28,15 @@ func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc
 		h.SetChangePublisher(svc.ControlChangePub)
 	}
 	return h
+}
+
+// newThreatModelHandler wires the continuous-threat-modeling handler, or nil
+// when the generation service was not initialized (e.g. no database).
+func newThreatModelHandler(svc *Services, log *logger.Logger) *handler.ThreatModelHandler {
+	if svc == nil || svc.ThreatModel == nil {
+		return nil
+	}
+	return handler.NewThreatModelHandler(svc.ThreatModel, log)
 }
 
 // HandlerDeps contains dependencies needed to create handlers.
@@ -77,6 +87,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetPipelineService(svc.Pipeline)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
+	commandHandler.SetSimulationFinalizer(svc.Simulation)
 
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
 	// (sync) leaves the handler processing reports in-request as before.
@@ -101,6 +112,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler := handler.NewVulnerabilityHandler(svc.Vulnerability, v, log)
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
+	vulnHandler.SetAuditService(svc.Audit)
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
@@ -110,7 +122,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
-	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, log)
+	jiraWebhookHandler := handler.NewJiraWebhookHandler(svc.JiraSync, v, log)
 	jiraWebhookHandler.SetGitHubTicketService(svc.GitHubTicket)
 
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
@@ -120,12 +132,39 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Finding actions handler with the CTEM Stage-4 validation runner wired.
 	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
 	findingActionsHandler.SetValidationRunner(svc.ValidationRun)
+	findingActionsHandler.SetSourceAnalytics(svc.SourceAnalytics)
 
 	// Validation handler + coverage KPI reader.
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
 	validationHandler.SetCoverageReader(repos.ValidationEvidence)
 
+	// Per-tenant module route gating (module-coupling plan Phase 1). Fail-open:
+	// only an explicitly-disabled non-core module is blocked. Wired back into the
+	// module service so a toggle invalidates the gate cache immediately.
+	moduleGate := middleware.NewModuleGate(svc.Module, time.Minute)
+	svc.Module.SetModuleCacheInvalidator(moduleGate)
+
+	// Read-only MCP server: exposes this tenant's CTEM data to an AI client over
+	// JSON-RPC, authenticated by a tenant-scoped `oct_` API key (not the browser
+	// JWT). Built only when the read services and the API-key service exist.
+	var mcpHandler *handler.MCPHandler
+	var mcpAuth routes.Middleware
+	if svc.APIKey != nil && svc.Vulnerability != nil && svc.PriorityClassification != nil &&
+		svc.AttackSurface != nil && svc.RemediationGroup != nil && svc.Compliance != nil &&
+		svc.Asset != nil && svc.Pentest != nil {
+		mcpHandler = handler.NewMCPHandler(
+			svc.Vulnerability, svc.PriorityClassification, svc.AttackSurface,
+			svc.RemediationGroup, svc.Compliance, svc.Asset, svc.Pentest, log,
+		)
+		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
+		mcpHandler.SetAuditService(svc.Audit)
+		mcpAuth = middleware.APIKeyAuth(svc.APIKey, log)
+	}
+
 	handlers := routes.Handlers{
+		ModuleGate: moduleGate,
+		MCP:        mcpHandler,
+		MCPAuth:    mcpAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),
@@ -161,6 +200,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Vulnerabilities & Exposures
 		Vulnerability:             vulnHandler,
+		RemediationGroup:          handler.NewRemediationGroupHandler(svc.RemediationGroup),
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:            findingActionsHandler,
 		JiraWebhook:               jiraWebhookHandler,
@@ -181,6 +221,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Integration
 		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),
+		DefectDojo:  handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Agents & Commands
 		Command:          commandHandler,
@@ -238,7 +279,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Simulation: handler.NewSimulationHandler(svc.Simulation, log),
 
 		// Threat Actor Intelligence
-		ThreatActor: handler.NewThreatActorHandler(svc.ThreatActor, log),
+		ThreatActor: handler.NewThreatActorHandler(svc.ThreatActor, v, log),
 
 		// Remediation Campaigns
 		RemediationCampaign: handler.NewRemediationCampaignHandler(svc.RemediationCampaign, log),
@@ -300,7 +341,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
 		// Asset Dedup Review (RFC-001)
-		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log),
+		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, repos.Finding, log),
 
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
@@ -308,6 +349,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, log),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          handler.NewPriorityRuleHandler(deps.DB.DB, log),
+		ThreatModel:           newThreatModelHandler(svc, log),
 
 		// Platform Stats (tenant-scoped platform agent statistics)
 		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
@@ -323,6 +365,18 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// SSO handler (always initialized - uses DB-stored provider configs)
 	if svc.SSO != nil {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
+	}
+
+	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil
+	// only when a provider is configured, so /auth/oauth/* exists exactly when
+	// /auth/providers advertises a social button for it.
+	if svc.OAuth != nil {
+		handlers.OAuth = handler.NewOAuthHandler(svc.OAuth, cfg.OAuth, cfg.Auth, log)
+	}
+
+	// Verified-domain handler (SSO P1 domain-ownership verification)
+	if svc.DomainVerify != nil {
+		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)
 	}
 
 	// SAML SP handler (RFC-009 9d+9e): metadata, config CRUD, and the

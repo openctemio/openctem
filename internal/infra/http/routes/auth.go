@@ -4,10 +4,11 @@ import (
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
+	"github.com/openctemio/api/pkg/logger"
 )
 
 // registerAuthRoutes registers authentication endpoints based on provider.
-func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddleware Middleware) {
+func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg AuthConfig, authMiddleware Middleware, log *logger.Logger) {
 	// Create auth-specific rate limiter for brute-force protection
 	// SECURITY: These endpoints are critical attack vectors and need stricter limits
 	authRateLimiter := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
@@ -16,8 +17,26 @@ func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddl
 	passwordRL := authRateLimiter.PasswordMiddleware()
 	tokenExchangeRL := authRateLimiter.TokenExchangeMiddleware()
 
+	// Public login-capability snapshot: tells the UI which social buttons (and
+	// the Entra SSO env fallback) are actually usable, so it can hide dead
+	// affordances. Always available (unlike /oauth/providers, which only exists
+	// when the OAuth handler is wired), tenant-agnostic, and booleans only —
+	// no secrets. Rate-limited like the other public auth reads.
+	//
+	// oauthRoutesLive is `h.OAuth != nil` — the exact condition that gates the
+	// /oauth/* routes below. Passing it here keeps the advertised login surface
+	// and the registered login surface identical: configuring OAUTH_* creds
+	// without wiring the handler used to make the UI render Google/GitHub
+	// buttons whose authorize call 404s.
+	oauthRoutesLive := h.OAuth != nil
+	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, oauthRoutesLive, log)
+
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
+		// Login-provider capability snapshot (public, no auth)
+		providersHandler := ChainFunc(authProvidersHandler.GetProviders, loginRL)
+		r.GET("/providers", providersHandler.ServeHTTP)
+
 		// Provider info endpoint
 		if authCfg.Provider.SupportsLocal() && h.LocalAuth != nil {
 			r.GET("/info", h.LocalAuth.Info)
@@ -76,8 +95,9 @@ func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddl
 			r.POST("/token", h.Auth.GenerateToken)
 		}
 
-		// OAuth endpoints (social login) - login rate limit
-		if h.OAuth != nil {
+		// OAuth endpoints (social login) - login rate limit.
+		// Gated on the same condition reported by /auth/providers above.
+		if oauthRoutesLive {
 			r.GET("/oauth/providers", h.OAuth.ListProviders)
 			r.GET("/oauth/{provider}/authorize", h.OAuth.Authorize)
 			callbackHandler := ChainFunc(h.OAuth.Callback, loginRL)
@@ -93,6 +113,13 @@ func registerAuthRoutes(router Router, h Handlers, authCfg AuthConfig, authMiddl
 			r.GET("/sso/{provider}/authorize", ssoAuthorizeHandler.ServeHTTP)
 			ssoCallbackHandler := ChainFunc(h.SSO.Callback, loginRL)
 			r.POST("/sso/{provider}/callback", ssoCallbackHandler.ServeHTTP)
+
+			// OIDC Back-Channel Logout 1.0 (public — authenticated by the signed
+			// logout_token, NOT a user session; no CSRF, rate-limited). The IdP
+			// (e.g. Azure Entra) POSTs form-encoded logout_token here when a user
+			// signs out or is disabled, and we revoke the matching session(s).
+			ssoBackchannelHandler := ChainFunc(h.SSO.BackChannelLogout, loginRL)
+			r.POST("/backchannel-logout", ssoBackchannelHandler.ServeHTTP)
 		}
 
 		// SAML 2.0 SP endpoints (public). Metadata is registered with the IdP;
@@ -147,6 +174,28 @@ func registerSSOAdminRoutes(
 		r.GET("/{id}", h.GetProvider, middleware.RequireAdmin())
 		r.PUT("/{id}", h.UpdateProvider, middleware.RequireAdmin())
 		r.DELETE("/{id}", h.DeleteProvider, middleware.RequireAdmin())
+	}, middlewares...)
+}
+
+// registerVerifiedDomainRoutes registers admin endpoints for managing a
+// tenant's DNS-verified domains (SSO P1). These gate SSO JIT auto-provisioning,
+// so all operations require admin+. Uses the JWT-tenant chain — RequireAdmin
+// reads the JWT IsAdmin flag (see registerSSOAdminRoutes for why not
+// RequireTeamAdmin).
+func registerVerifiedDomainRoutes(
+	router Router,
+	h *handler.VerifiedDomainHandler,
+	authMiddleware, userSyncMiddleware Middleware,
+) {
+	if h == nil {
+		return
+	}
+	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/settings/verified-domains", func(r Router) {
+		r.GET("/", h.List, middleware.RequireAdmin())
+		r.POST("/", h.AddDomain, middleware.RequireAdmin())
+		r.POST("/{id}/verify", h.Verify, middleware.RequireAdmin())
+		r.DELETE("/{id}", h.Delete, middleware.RequireAdmin())
 	}, middlewares...)
 }
 

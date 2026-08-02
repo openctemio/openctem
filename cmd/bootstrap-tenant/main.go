@@ -120,8 +120,8 @@ func main() {
 
 		now := time.Now()
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO users (id, email, name, password_hash, auth_provider, status, email_verified_at, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, 'local', 'active', $5, $5, $5)
+			INSERT INTO users (id, email, name, password_hash, auth_provider, status, email_verified, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, 'local', 'active', true, $5, $5)
 		`, userID, userEmail, userName, string(passwordHash), now)
 		if err != nil {
 			fatal("Error creating user: %v", err)
@@ -146,16 +146,16 @@ func main() {
 		// Create new tenant
 		tenantID = uuid.New().String()
 		now := time.Now()
+		// NOTE: tenants has no plan_id column and there is no plans table. The
+		// previous version inserted both and kept a "try without plan_id"
+		// fallback — but that retry ran inside the transaction Postgres had
+		// already aborted, so it was unreachable and this tool could never
+		// create a tenant.
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO tenants (id, name, slug, plan_id, created_at, updated_at)
-			VALUES ($1, $2, $3, (SELECT id FROM plans WHERE slug = 'free' LIMIT 1), $4, $4)
+			INSERT INTO tenants (id, name, slug, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $4)
 		`, tenantID, tName, tSlug, now)
-		if err != nil {
-			// Try without plan_id if plans table doesn't exist
-			_, err = tx.ExecContext(ctx, `
-				INSERT INTO tenants (id, name, slug, created_at, updated_at)
-				VALUES ($1, $2, $3, $4, $4)
-			`, tenantID, tName, tSlug, now)
+		{
 			if err != nil {
 				fatal("Error creating tenant: %v", err)
 			}
@@ -180,8 +180,8 @@ func main() {
 		membershipID := uuid.New().String()
 		now := time.Now()
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO tenant_members (id, user_id, tenant_id, role, joined_at, created_at, updated_at)
-			VALUES ($1, $2, $3, 'owner', $4, $4, $4)
+			INSERT INTO tenant_members (id, user_id, tenant_id, role, joined_at)
+			VALUES ($1, $2, $3, 'owner', $4)
 		`, membershipID, userID, tenantID, now)
 		if err != nil {
 			fatal("Error creating membership: %v", err)

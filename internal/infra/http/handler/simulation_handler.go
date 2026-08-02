@@ -33,7 +33,7 @@ func NewSimulationHandler(svc *app.SimulationService, log *logger.Logger) *Simul
 func (h *SimulationHandler) ListSimulations(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	if perPage < 1 {
 		perPage = 20
 	} else if perPage > 100 {
@@ -189,7 +189,7 @@ func (h *SimulationHandler) ListSimulationRuns(w http.ResponseWriter, r *http.Re
 
 	page := pagination.New(
 		parseQueryInt(r.URL.Query().Get("page"), 1),
-		parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	)
 
 	result, err := h.service.ListSimulationRuns(r.Context(), tenantID, simID, page)
@@ -201,13 +201,13 @@ func (h *SimulationHandler) ListSimulationRuns(w http.ResponseWriter, r *http.Re
 	data := make([]map[string]any, 0, len(result.Data))
 	for _, run := range result.Data {
 		data = append(data, map[string]any{
-			"id":          run.ID().String(),
-			"status":      string(run.Status()),
-			"result":      string(run.Result()),
-			"detection":   run.DetectionResult(),
-			"prevention":  run.PreventionResult(),
-			"duration_ms": run.DurationMs(),
-			"started_at":  run.StartedAt(),
+			"id":           run.ID().String(),
+			"status":       string(run.Status()),
+			"result":       string(run.Result()),
+			"detection":    run.DetectionResult(),
+			"prevention":   run.PreventionResult(),
+			"duration_ms":  run.DurationMs(),
+			"started_at":   run.StartedAt(),
 			"completed_at": run.CompletedAt(),
 		})
 	}
@@ -229,7 +229,7 @@ func (h *SimulationHandler) ListSimulationRuns(w http.ResponseWriter, r *http.Re
 func (h *SimulationHandler) ListControlTests(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	if perPage < 1 {
 		perPage = 20
 	} else if perPage > 100 {

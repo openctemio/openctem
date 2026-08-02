@@ -58,6 +58,11 @@ type Repository interface {
 	// Update updates an agent.
 	Update(ctx context.Context, agent *Agent) error
 
+	// UpdateKeyExpiry sets only the inline API-key expiry, guarded by
+	// status = 'active' so it cannot revive a concurrently-revoked agent.
+	// A nil expiresAt clears the expiry (never expires).
+	UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error
+
 	// Delete deletes an agent.
 	Delete(ctx context.Context, id shared.ID) error
 

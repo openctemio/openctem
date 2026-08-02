@@ -37,12 +37,16 @@ type ValidateTargetPayload struct {
 // command. It is the wire contract between the API (producer) and the agent
 // executor (consumer); the agent replies with a ValidateResultPayload.
 type ValidateCommandPayload struct {
-	JobID          string                `json:"job_id"`
-	FindingID      string                `json:"finding_id"`
-	ExecutorKind   string                `json:"executor_kind"`
-	Technique      string                `json:"technique"`
-	Target         ValidateTargetPayload `json:"target"`
-	TimeoutSeconds int                   `json:"timeout_seconds"`
+	JobID     string `json:"job_id"`
+	FindingID string `json:"finding_id"`
+	// SimulationRunID is set when the job backs an attack-simulation run
+	// (RFC-012). The agent ignores it; the server completion hook uses it to
+	// finalize the run. Empty for plain finding proof-of-fix jobs.
+	SimulationRunID string                `json:"simulation_run_id,omitempty"`
+	ExecutorKind    string                `json:"executor_kind"`
+	Technique       string                `json:"technique"`
+	Target          ValidateTargetPayload `json:"target"`
+	TimeoutSeconds  int                   `json:"timeout_seconds"`
 	// RequiredCapabilities lets the platform route the job only to agents that
 	// advertise the validation capability (mirrors the scan command payload).
 	RequiredCapabilities []string `json:"required_capabilities"`
@@ -73,15 +77,27 @@ func NewCommandDispatcher(commands CommandCreator, log *logger.Logger) *CommandD
 
 // Dispatch enqueues the job as a tenant command and returns the command ID.
 func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (shared.ID, error) {
-	if job.TenantID.IsZero() || job.FindingID.IsZero() {
-		return shared.ID{}, fmt.Errorf("%w: tenant and finding ids are required", shared.ErrValidation)
+	// A job must carry a tenant and at least one subject to reconcile against —
+	// a finding (proof-of-fix) and/or a simulation run (RFC-012 BAS).
+	if job.TenantID.IsZero() || (job.FindingID.IsZero() && job.SimulationRunID.IsZero()) {
+		return shared.ID{}, fmt.Errorf("%w: tenant and a finding or simulation run are required", shared.ErrValidation)
+	}
+
+	findingID := ""
+	if !job.FindingID.IsZero() {
+		findingID = job.FindingID.String()
+	}
+	simRunID := ""
+	if !job.SimulationRunID.IsZero() {
+		simRunID = job.SimulationRunID.String()
 	}
 
 	payload := ValidateCommandPayload{
-		JobID:        job.JobID.String(),
-		FindingID:    job.FindingID.String(),
-		ExecutorKind: string(job.ExecutorKind),
-		Technique:    string(job.Technique),
+		JobID:           job.JobID.String(),
+		FindingID:       findingID,
+		SimulationRunID: simRunID,
+		ExecutorKind:    string(job.ExecutorKind),
+		Technique:       string(job.Technique),
 		Target: ValidateTargetPayload{
 			AssetID: job.Target.AssetID.String(),
 			Type:    job.Target.Type,

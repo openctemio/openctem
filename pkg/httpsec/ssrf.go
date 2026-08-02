@@ -131,8 +131,20 @@ func IsIPBlocked(ip net.IP) bool {
 // Fail-closed on DNS resolution failure. Internal targets (RFC1918) are only
 // permitted when the operator sets the allow-private flag (same as webhooks).
 func ValidateHost(ctx context.Context, host string) error {
+	_, err := ResolveSafeHost(ctx, host)
+	return err
+}
+
+// ResolveSafeHost validates host (a bare hostname or host:port) exactly like
+// ValidateHost — every resolved A/AAAA record must be out of the blocked
+// ranges under the current policy — and additionally returns one safe resolved
+// IP. Callers that dial a non-HTTP target (e.g. SMTP) should dial this pinned
+// IP rather than re-resolve the hostname at dial time; re-resolving reopens a
+// DNS-rebinding TOCTOU window where the second lookup returns an internal IP.
+// Fail-closed on DNS resolution failure.
+func ResolveSafeHost(ctx context.Context, host string) (net.IP, error) {
 	if host == "" {
-		return fmt.Errorf("empty host")
+		return nil, fmt.Errorf("empty host")
 	}
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
@@ -140,25 +152,32 @@ func ValidateHost(ctx context.Context, host string) error {
 	lower := strings.ToLower(strings.TrimSpace(host))
 	for _, blocked := range dangerousHosts {
 		if lower == blocked {
-			return fmt.Errorf("host %q is blocked", host)
+			return nil, fmt.Errorf("host %q is blocked", host)
 		}
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		if IsIPBlocked(ip) {
-			return fmt.Errorf("host %s resolves to a blocked address", host)
+			return nil, fmt.Errorf("host %s resolves to a blocked address", host)
 		}
-		return nil
+		return ip, nil
 	}
 	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return fmt.Errorf("dns lookup failed for %q: %w", host, err)
+		return nil, fmt.Errorf("dns lookup failed for %q: %w", host, err)
 	}
+	var safe net.IP
 	for _, ip := range ips {
 		if IsIPBlocked(ip.IP) {
-			return fmt.Errorf("host %q resolves to blocked address %s", host, ip.IP)
+			return nil, fmt.Errorf("host %q resolves to blocked address %s", host, ip.IP)
+		}
+		if safe == nil {
+			safe = ip.IP
 		}
 	}
-	return nil
+	if safe == nil {
+		return nil, fmt.Errorf("no resolved addresses for %q", host)
+	}
+	return safe, nil
 }
 
 // ValidationResult carries the parsed URL + the DNS-pinned IP set so

@@ -44,8 +44,12 @@ type JobRecoveryControllerConfig struct {
 // The controller performs three main tasks:
 //  1. Recover stuck jobs: Return jobs to the queue if they've been assigned
 //     but haven't progressed (agent went offline or crashed)
-//  2. Expire old jobs: Mark jobs as expired if they've been in queue too long
+//  2. Expire old platform jobs: Mark platform jobs as expired if they've been
+//     in queue too long
 //  3. Clean up: Mark orphaned jobs as failed if they exceed retry limit
+//
+// Expiry of regular tenant commands is NOT this controller's job — see the note
+// in Reconcile; app/command.ExpirationChecker owns it.
 type JobRecoveryController struct {
 	commandRepo command.Repository
 	config      *JobRecoveryControllerConfig
@@ -159,23 +163,16 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 	}
 	totalProcessed += int(expired)
 
-	// Step 4: Expire regular commands that have passed their expiration time
-	expiredCommands, err := c.commandRepo.ExpireOldCommands(ctx)
-	if err != nil {
-		c.logger.Error("failed to expire old commands",
-			"error", err,
-		)
-		return totalProcessed, err
-	}
+	// NOTE: expiry of regular (non-platform) commands is deliberately NOT done
+	// here. app/command.ExpirationChecker owns it: it covers 'pending' AND
+	// 'acknowledged', and it calls pipeline.OnStepFailed(..., "COMMAND_EXPIRED")
+	// so the owning pipeline run learns its step died. This controller used to
+	// also run commandRepo.ExpireOldCommands() on the same 60s tick — a raw
+	// UPDATE over a strict subset of the same rows. Whenever it won that race
+	// the row flipped to 'expired' before FindExpired() saw it, and the run was
+	// never notified, so a scan hung until some other timeout caught it.
 
-	if expiredCommands > 0 {
-		c.logger.Info("expired old commands",
-			"count", expiredCommands,
-		)
-	}
-	totalProcessed += int(expiredCommands)
-
-	// Step 5: Fail commands that have exceeded max retry attempts
+	// Step 4: Fail commands that have exceeded max retry attempts
 	failedExhausted, err := c.commandRepo.FailExhaustedCommands(ctx, c.config.MaxRetries)
 	if err != nil {
 		c.logger.Error("failed to mark exhausted commands as failed",

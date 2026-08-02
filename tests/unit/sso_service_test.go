@@ -132,6 +132,16 @@ func (m *ssoMockIPRepo) ListActiveByTenant(_ context.Context, tenantID string) (
 	return result, nil
 }
 
+func (m *ssoMockIPRepo) ListActiveByProvider(_ context.Context, provider identityprovider.Provider) ([]*identityprovider.IdentityProvider, error) {
+	result := make([]*identityprovider.IdentityProvider, 0)
+	for _, ip := range m.providers {
+		if ip.Provider() == provider && ip.IsActive() {
+			result = append(result, ip)
+		}
+	}
+	return result, nil
+}
+
 // =============================================================================
 // Mock Tenant Repository for SSO Tests
 // =============================================================================
@@ -698,6 +708,13 @@ func newTestAuthConfig() config.AuthConfig {
 		AccessTokenDuration:  15 * time.Minute,
 		RefreshTokenDuration: 7 * 24 * time.Hour,
 		SessionDuration:      30 * 24 * time.Hour,
+		// Exact-match redirect_uri allow-list (origin-only entries authorize any
+		// path on that exact origin) covering the origins used across these tests.
+		AllowedRedirectURIs: []string{
+			"https://app.example.com",
+			"http://localhost:3000",
+			"http://127.0.0.1:8080",
+		},
 	}
 }
 

@@ -1,10 +1,12 @@
 package handler
 
 import (
-	"github.com/openctemio/api/internal/app/threat"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+
+	"github.com/openctemio/api/internal/app/threat"
 
 	"github.com/go-chi/chi/v5"
 
@@ -79,7 +81,13 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 
 	var req TriggerSyncRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// Empty body means sync all
+		// An empty body is allowed and means "sync all"; a malformed body is a
+		// client error and must not be silently coerced into a full external
+		// EPSS + CISA-KEV sync.
+		if !errors.Is(err, io.EOF) {
+			apierror.BadRequest("Invalid request body").WriteJSON(w)
+			return
+		}
 		req.Source = ""
 	}
 

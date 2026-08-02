@@ -189,6 +189,8 @@ func (s *FindingImportService) ImportBurpXML(ctx context.Context, tenantID, camp
 			continue
 		}
 
+		// A file someone uploaded through the UI, not a scan we ran.
+		finding.SetIngestChannel(vulnerability.IngestChannelManual)
 		finding.SetDescription(description)
 		finding.SetSourceMetadata(metaMap)
 		if campaignID != "" {
@@ -305,6 +307,8 @@ func (s *FindingImportService) ImportCSV(ctx context.Context, tenantID, campaign
 			continue
 		}
 
+		// A file someone uploaded through the UI, not a scan we ran.
+		finding.SetIngestChannel(vulnerability.IngestChannelManual)
 		if desc := getCol("description"); desc != "" {
 			finding.SetDescription(desc)
 		}

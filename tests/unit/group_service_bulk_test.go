@@ -120,8 +120,8 @@ func (m *mockACRepoForBulk) RefreshAccessForDirectOwnerRemove(_ context.Context,
 
 // mockGroupRepoForBulk is a group.Repository mock for bulk tests.
 type mockGroupRepoForBulk struct {
-	groups     map[shared.ID]*group.Group
-	members    map[shared.ID][]*group.Member // groupID -> members
+	groups          map[shared.ID]*group.Group
+	members         map[shared.ID][]*group.Member // groupID -> members
 	getMemberResult *group.Member
 	getMemberErr    error
 }
@@ -180,8 +180,8 @@ func (m *mockGroupRepoForBulk) Create(_ context.Context, _ *group.Group) error {
 func (m *mockGroupRepoForBulk) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForBulk) Update(_ context.Context, _ *group.Group) error  { return nil }
-func (m *mockGroupRepoForBulk) Delete(_ context.Context, _ shared.ID) error     { return nil }
+func (m *mockGroupRepoForBulk) Update(_ context.Context, _ *group.Group) error { return nil }
+func (m *mockGroupRepoForBulk) Delete(_ context.Context, _ shared.ID) error    { return nil }
 func (m *mockGroupRepoForBulk) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }

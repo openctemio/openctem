@@ -178,14 +178,9 @@ func (h *AdminUserHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUserHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get current admin (for created_by)
+	// Get current admin (for created_by). super_admin is guaranteed by the
+	// route-layer RequireRole(super_admin) gate on /api/v1/admin/users.
 	currentAdmin := middleware.MustGetAdminUser(ctx)
-
-	// RBAC Check: Only super_admin can create admins
-	if currentAdmin.Role() != admin.AdminRoleSuperAdmin {
-		apierror.Forbidden("only super admins can create other admins").WriteJSON(w)
-		return
-	}
 
 	var req CreateAdminRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -269,11 +264,7 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// RBAC Check: Only super_admin can update other admins
-	if id != currentAdmin.ID() && currentAdmin.Role() != admin.AdminRoleSuperAdmin {
-		apierror.Forbidden("only super admins can update other admins").WriteJSON(w)
-		return
-	}
+	// Role gating is enforced at the route layer (super_admin only).
 
 	// Prevent self-deactivation
 	if id == currentAdmin.ID() {
@@ -354,21 +345,10 @@ func (h *AdminUserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Prevent self-deletion
+	// Prevent self-deletion. Role gating (super_admin only) is enforced at
+	// the route layer.
 	if id == currentAdmin.ID() {
 		apierror.BadRequest("cannot delete yourself").WriteJSON(w)
-		return
-	}
-
-	// RBAC Check: Only super_admin can delete admins
-	if currentAdmin.Role() != admin.AdminRoleSuperAdmin {
-		apierror.Forbidden("only super admins can delete admins").WriteJSON(w)
-		return
-	}
-
-	// RBAC Check: Only super_admin can delete admins
-	if currentAdmin.Role() != admin.AdminRoleSuperAdmin {
-		apierror.Forbidden("only super admins can delete admins").WriteJSON(w)
 		return
 	}
 
@@ -413,17 +393,12 @@ func (h *AdminUserHandler) RotateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rotate the API key - generates new key internally
+	// Rotate the API key - generates new key internally. Role gating
+	// (super_admin only) is enforced at the route layer.
 	newKey, err := adminUser.RotateAPIKey()
 	if err != nil {
 		h.logger.Error("failed to rotate API key", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	// RBAC Check: Only super_admin can rotate keys for others
-	if id != currentAdmin.ID() && currentAdmin.Role() != admin.AdminRoleSuperAdmin {
-		apierror.Forbidden("only super admins can rotate other admins' keys").WriteJSON(w)
 		return
 	}
 

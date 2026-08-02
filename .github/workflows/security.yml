@@ -26,9 +26,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.26.4'
+          go-version: '1.26.5'
           cache: true
 
       - name: Initialize CodeQL
@@ -56,9 +56,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.26.4'
+          go-version: '1.26.5'
           cache: true
 
       - name: Install govulncheck
@@ -127,9 +127,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.26.4'
+          go-version: '1.26.5'
           cache: true
 
       - name: Run Snyk to check for vulnerabilities
@@ -151,9 +151,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.26.4'
+          go-version: '1.26.5'
           cache: true
 
       - name: Install go-licenses
@@ -165,12 +165,29 @@ jobs:
         continue-on-error: true
 
   # ============================================
-  # Docker Image Scan (on main branch)
+  # Docker Image Scan (main branch pushes + the weekly sweep)
   # ============================================
+  #
+  # The weekly cron is the only thing that catches a CVE disclosed against an
+  # already-shipped base image, since that needs no code change to appear. This
+  # job used to require `event_name == 'push'`, which excluded the cron — a
+  # scheduled run reported green having never built or scanned the image. Verified
+  # on run 30234329982: "Docker Image Scan: skipped".
+  #
+  # Still skipped on pull requests: building the image on every PR costs minutes
+  # and the filesystem Trivy scan already covers PR-introduced dependencies.
   docker-scan:
     name: Docker Image Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Also on a PR into main — that is a release candidate, and this job builds
+    # the image itself rather than pulling a published one, so it can run before
+    # the tag exists. Scanning the image only after it is already published is
+    # the wrong order for a security product: docker-publish.yml triggers on the
+    # `v*` tag, so today the first scan happens after customers can pull it.
+    if: >-
+      github.event_name == 'schedule'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'pull_request' && github.base_ref == 'main')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

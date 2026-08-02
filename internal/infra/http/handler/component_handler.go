@@ -185,7 +185,7 @@ func (h *ComponentHandler) List(w http.ResponseWriter, r *http.Request) {
 		HasVulnerabilities: hasVulnerabilities,
 		Licenses:           parseQueryArray(query.Get("licenses")),
 		Page:               parseQueryInt(query.Get("page"), 1),
-		PerPage:            parseQueryInt(query.Get("per_page"), 20),
+		PerPage:            parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -288,7 +288,7 @@ func (h *ComponentHandler) GetVulnerableComponents(w http.ResponseWriter, r *htt
 	query := r.URL.Query()
 	page := pagination.New(
 		parseQueryInt(query.Get("page"), 1),
-		parseQueryInt(query.Get("per_page"), 20),
+		parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	)
 
 	result, err := h.service.GetVulnerableComponents(r.Context(), tenantID, page)
@@ -785,7 +785,7 @@ func (h *ComponentHandler) ListByAsset(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryInt(query.Get("per_page"), 20)
+	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
 
 	result, err := h.service.ListAssetComponents(r.Context(), tenantID, assetID, page, perPage)
 	if err != nil {

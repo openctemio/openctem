@@ -1,11 +1,12 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/template"
 	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app/template"
 
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/shared"

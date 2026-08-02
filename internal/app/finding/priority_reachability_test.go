@@ -40,7 +40,7 @@ func newReachabilitySvc() *PriorityClassificationService {
 
 func TestBuildPriorityContext_PublicAssetIsInternetReachable(t *testing.T) {
 	svc := newReachabilitySvc()
-	ctx := svc.buildPriorityContext(newTestFinding(t), newTestAsset(t, asset.ExposurePublic))
+	ctx := svc.buildPriorityContext(newTestFinding(t), newTestAsset(t, asset.ExposurePublic), nil, nil)
 
 	if !ctx.IsInternetAccessible {
 		t.Fatal("public asset should be internet-accessible")
@@ -58,7 +58,7 @@ func TestBuildPriorityContext_PublicAssetIsInternetReachable(t *testing.T) {
 
 func TestBuildPriorityContext_PrivateAssetNotInternetReachable(t *testing.T) {
 	svc := newReachabilitySvc()
-	ctx := svc.buildPriorityContext(newTestFinding(t), newTestAsset(t, asset.ExposurePrivate))
+	ctx := svc.buildPriorityContext(newTestFinding(t), newTestAsset(t, asset.ExposurePrivate), nil, nil)
 
 	if ctx.IsInternetAccessible {
 		t.Fatal("private asset must not be internet-accessible")
@@ -76,7 +76,7 @@ func TestBuildPriorityContext_PrivateAssetNotInternetReachable(t *testing.T) {
 
 func TestBuildPriorityContext_IsolatedAssetNotReachable(t *testing.T) {
 	svc := newReachabilitySvc()
-	ctx := svc.buildPriorityContext(newTestFinding(t), newTestAsset(t, asset.ExposureIsolated))
+	ctx := svc.buildPriorityContext(newTestFinding(t), newTestAsset(t, asset.ExposureIsolated), nil, nil)
 
 	if ctx.IsInternetAccessible || ctx.IsNetworkAccessible {
 		t.Fatal("isolated asset should be neither internet- nor network-accessible")
@@ -85,8 +85,38 @@ func TestBuildPriorityContext_IsolatedAssetNotReachable(t *testing.T) {
 
 func TestBuildPriorityContext_NilAssetNoPanic(t *testing.T) {
 	svc := newReachabilitySvc()
-	ctx := svc.buildPriorityContext(newTestFinding(t), nil)
+	ctx := svc.buildPriorityContext(newTestFinding(t), nil, nil, nil)
 	if ctx.IsInternetAccessible || ctx.IsNetworkAccessible {
 		t.Fatal("nil asset should leave reachability unset")
+	}
+}
+
+// Close-the-loop: an internal (private-exposure) asset that the exposure-chain
+// engine found on a validated internet→crown-jewel path is treated as reachable,
+// so a KEV finding on it becomes P0 — even though its own exposure is private.
+func TestBuildPriorityContext_AttackPathPromotesPrivateAssetToP0(t *testing.T) {
+	svc := newReachabilitySvc()
+	a := newTestAsset(t, asset.ExposurePrivate)
+	reachable := map[string]bool{a.ID().String(): true}
+
+	ctx := svc.buildPriorityContext(newTestFinding(t), a, reachable, nil)
+
+	if !ctx.IsInternetAccessible {
+		t.Fatal("an asset on a validated attack path must be treated as reachable")
+	}
+	if got := vulnerability.ClassifyPriority(ctx); got.Class != vulnerability.PriorityP0 {
+		t.Fatalf("KEV on an attack-path-reachable asset should be P0, got %s (%s)", got.Class, got.Reason)
+	}
+}
+
+// The attack-path set only promotes assets that are actually in it.
+func TestBuildPriorityContext_AttackPathSetDoesNotLeakToOthers(t *testing.T) {
+	svc := newReachabilitySvc()
+	a := newTestAsset(t, asset.ExposurePrivate)
+	reachable := map[string]bool{"a-different-asset-id": true}
+
+	ctx := svc.buildPriorityContext(newTestFinding(t), a, reachable, nil)
+	if ctx.IsInternetAccessible {
+		t.Fatal("a private asset absent from the attack-path set must stay non-internet-reachable")
 	}
 }

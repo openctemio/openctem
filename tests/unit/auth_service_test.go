@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -623,9 +624,17 @@ func (m *mockAuthRefreshTokenRepo) GetByID(_ context.Context, id shared.ID) (*se
 	return t, nil
 }
 
-func (m *mockAuthRefreshTokenRepo) GetByTokenHash(_ context.Context, _ string) (*session.RefreshToken, error) {
+func (m *mockAuthRefreshTokenRepo) GetByTokenHash(_ context.Context, hash string) (*session.RefreshToken, error) {
 	if m.getByTokenHashErr != nil {
 		return nil, m.getByTokenHashErr
+	}
+	// Look up a stored token by its hash so full Login → ExchangeToken /
+	// RefreshToken flows work end-to-end in tests. Falls back to NotFound for
+	// tokens that were never created (preserving prior behavior).
+	for _, tok := range m.tokens {
+		if tok.TokenHash() == hash {
+			return tok, nil
+		}
 	}
 	return nil, session.ErrRefreshTokenNotFound
 }
@@ -957,6 +966,9 @@ func seedAuthLockedUser(repo *mockAuthUserRepo, email, passwordHash string) *use
 
 // Helper: create a user with email verification token.
 func seedAuthUnverifiedUser(repo *mockAuthUserRepo, email, passwordHash, verificationToken string) *user.User {
+	// Tokens are stored hashed at rest; mirror the service's write behavior so
+	// lookups (which hash the raw input) match.
+	verificationToken = crypto.HashToken(verificationToken)
 	expiresAt := time.Now().Add(24 * time.Hour)
 	u := user.Reconstitute(
 		shared.NewID(),
@@ -988,6 +1000,7 @@ func seedAuthUnverifiedUser(repo *mockAuthUserRepo, email, passwordHash, verific
 
 // Helper: create a user with password reset token.
 func seedAuthUserWithResetToken(repo *mockAuthUserRepo, email, passwordHash, resetToken string) *user.User {
+	resetToken = crypto.HashToken(resetToken) // hash-at-rest
 	expiresAt := time.Now().Add(1 * time.Hour)
 	u := user.Reconstitute(
 		shared.NewID(),
@@ -1019,6 +1032,7 @@ func seedAuthUserWithResetToken(repo *mockAuthUserRepo, email, passwordHash, res
 
 // Helper: create a user with expired reset token.
 func seedAuthUserWithExpiredResetToken(repo *mockAuthUserRepo, email, passwordHash, resetToken string) *user.User {
+	resetToken = crypto.HashToken(resetToken)   // hash-at-rest
 	expiresAt := time.Now().Add(-1 * time.Hour) // Already expired
 	u := user.Reconstitute(
 		shared.NewID(),
@@ -1050,7 +1064,8 @@ func seedAuthUserWithExpiredResetToken(repo *mockAuthUserRepo, email, passwordHa
 
 // Helper: create a user with expired email verification token.
 func seedAuthUserWithExpiredVerification(repo *mockAuthUserRepo, email, passwordHash, verificationToken string) *user.User {
-	expiresAt := time.Now().Add(-1 * time.Hour) // Already expired
+	verificationToken = crypto.HashToken(verificationToken) // hash-at-rest
+	expiresAt := time.Now().Add(-1 * time.Hour)             // Already expired
 	u := user.Reconstitute(
 		shared.NewID(),
 		nil,
@@ -2276,6 +2291,145 @@ func TestAuthService_RefreshToken(t *testing.T) {
 
 		if err == nil {
 			t.Fatal("expected error for invalid refresh token")
+		}
+	})
+}
+
+// =============================================================================
+// Per-tenant SSO enforcement (break-glass) Tests
+// =============================================================================
+
+// mustNewEnforcedTenant builds a tenant with Security.SSOEnforced = enforced and
+// stores it in the mock repo under its own ID.
+func mustNewEnforcedTenant(t *testing.T, repo *mockAuthTenantRepo, slug string, enforced bool) *tenant.Tenant {
+	t.Helper()
+	tn, err := tenant.NewTenant("Acme", slug, "creator")
+	if err != nil {
+		t.Fatalf("NewTenant: %v", err)
+	}
+	settings := tn.TypedSettings()
+	settings.Security.SSOEnforced = enforced
+	if err := tn.UpdateSettings(settings); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	repo.tenants[tn.ID().String()] = tn
+	return tn
+}
+
+// loginPassword performs a real password login and returns the raw global
+// refresh token + session id. Exercises the full session-creation path so the
+// stored session is stamped by the production code (default = password).
+func loginPassword(t *testing.T, svc *app.AuthService, deps *authTestDeps, email string) (refreshToken, sessionID string) {
+	t.Helper()
+	hasher := password.New(password.WithCost(4))
+	hash, _ := hasher.Hash("ValidPassword123")
+	seedAuthLocalUser(deps.userRepo, email, hash)
+	res, err := svc.Login(context.Background(), app.LoginInput{Email: email, Password: "ValidPassword123"})
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	return res.RefreshToken, res.SessionID
+}
+
+func TestAuthService_ExchangeToken_SSOEnforcement(t *testing.T) {
+	t.Run("password member denied on SSO-enforced tenant", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-enforced", true)
+		deps.tenantRepo.userMemberships = []tenant.UserMembership{
+			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "member"},
+		}
+		rt, sessID := loginPassword(t, svc, deps, "member@acme.com")
+
+		// Session was stamped 'password' by the login path (not federated).
+		if got := deps.sessionRepo.sessions[sessID].AuthMethod(); got != session.AuthMethodPassword {
+			t.Fatalf("login session auth method = %q, want password", got)
+		}
+
+		_, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+			RefreshToken: rt, TenantID: tn.ID().String(),
+		})
+		if !errors.Is(err, app.ErrSSORequired) {
+			t.Fatalf("expected ErrSSORequired, got %v", err)
+		}
+	})
+
+	t.Run("password OWNER allowed (break-glass)", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-owner", true)
+		deps.tenantRepo.userMemberships = []tenant.UserMembership{
+			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "owner"},
+		}
+		rt, _ := loginPassword(t, svc, deps, "owner@acme.com")
+
+		if _, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+			RefreshToken: rt, TenantID: tn.ID().String(),
+		}); err != nil {
+			t.Fatalf("owner break-glass must be allowed, got %v", err)
+		}
+	})
+
+	t.Run("SSO session allowed on SSO-enforced tenant", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-sso", true)
+		deps.tenantRepo.userMemberships = []tenant.UserMembership{
+			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "member"},
+		}
+		rt, sessID := loginPassword(t, svc, deps, "ssouser@acme.com")
+		// Simulate a federated session by flipping the stored session's method.
+		deps.sessionRepo.sessions[sessID].SetAuthMethod(session.AuthMethodSSO)
+
+		if _, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+			RefreshToken: rt, TenantID: tn.ID().String(),
+		}); err != nil {
+			t.Fatalf("SSO session must be allowed, got %v", err)
+		}
+	})
+
+	t.Run("password member unaffected on non-enforced tenant", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-open", false)
+		deps.tenantRepo.userMemberships = []tenant.UserMembership{
+			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "member"},
+		}
+		rt, _ := loginPassword(t, svc, deps, "member@open.com")
+
+		if _, err := svc.ExchangeToken(context.Background(), app.ExchangeTokenInput{
+			RefreshToken: rt, TenantID: tn.ID().String(),
+		}); err != nil {
+			t.Fatalf("non-enforced tenant must be unaffected, got %v", err)
+		}
+	})
+}
+
+func TestAuthService_RefreshToken_SSOEnforcement(t *testing.T) {
+	t.Run("password member denied on refresh for SSO-enforced tenant", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-refresh", true)
+		deps.tenantRepo.userMemberships = []tenant.UserMembership{
+			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "member"},
+		}
+		rt, _ := loginPassword(t, svc, deps, "member@refresh.com")
+
+		_, err := svc.RefreshToken(context.Background(), app.RefreshTokenInput{
+			RefreshToken: rt, TenantID: tn.ID().String(),
+		})
+		if !errors.Is(err, app.ErrSSORequired) {
+			t.Fatalf("expected ErrSSORequired on refresh, got %v", err)
+		}
+	})
+
+	t.Run("password owner allowed on refresh (break-glass)", func(t *testing.T) {
+		svc, deps := newTestAuthService()
+		tn := mustNewEnforcedTenant(t, deps.tenantRepo, "acme-refresh-owner", true)
+		deps.tenantRepo.userMemberships = []tenant.UserMembership{
+			{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "owner"},
+		}
+		rt, _ := loginPassword(t, svc, deps, "owner@refresh.com")
+
+		if _, err := svc.RefreshToken(context.Background(), app.RefreshTokenInput{
+			RefreshToken: rt, TenantID: tn.ID().String(),
+		}); err != nil {
+			t.Fatalf("owner refresh break-glass must be allowed, got %v", err)
 		}
 	})
 }

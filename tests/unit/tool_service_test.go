@@ -1,12 +1,13 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/tool"
 	"context"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -535,7 +536,10 @@ func (m *toolSvcMockAgentRepo) List(_ context.Context, _ agent.Filter, _ paginat
 	return pagination.Result[*agent.Agent]{}, nil
 }
 func (m *toolSvcMockAgentRepo) Update(_ context.Context, _ *agent.Agent) error { return nil }
-func (m *toolSvcMockAgentRepo) Delete(_ context.Context, _ shared.ID) error    { return nil }
+func (m *toolSvcMockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
+	return nil
+}
+func (m *toolSvcMockAgentRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
 func (m *toolSvcMockAgentRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
 	return nil
 }
@@ -1093,11 +1097,13 @@ func TestToolService_ListToolsByCapability_Success(t *testing.T) {
 func TestToolService_UpdateTool_Success(t *testing.T) {
 	svc, repo, _, _ := newToolSvcTestService()
 
-	existing := createPlatformTool("nuclei", tooldom.InstallGo)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
 
 	input := tool.UpdateInput{
 		ToolID:      existing.ID.String(),
+		TenantID:    tenantID.String(),
 		DisplayName: "Nuclei v3",
 		Description: "Updated description",
 		InstallCmd:  "go install nuclei@latest",
@@ -1150,12 +1156,14 @@ func TestToolService_UpdateTool_InvalidID(t *testing.T) {
 func TestToolService_UpdateTool_Capabilities(t *testing.T) {
 	svc, repo, _, _ := newToolSvcTestService()
 
-	existing := createPlatformTool("nuclei", tooldom.InstallGo)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
 	existing.Capabilities = []string{"old-cap"}
 	repo.AddTool(existing)
 
 	input := tool.UpdateInput{
 		ToolID:       existing.ID.String(),
+		TenantID:     tenantID.String(),
 		Capabilities: []string{"new-cap1", "new-cap2"},
 	}
 
@@ -1175,12 +1183,13 @@ func TestToolService_UpdateTool_Capabilities(t *testing.T) {
 func TestToolService_DeleteTool_Success(t *testing.T) {
 	svc, repo, _, _ := newToolSvcTestService()
 
-	// Create a non-builtin tool (custom tool without tenant)
-	existing := createPlatformTool("custom-scanner", tooldom.InstallBinary)
+	// A tenant's own custom tool can be deleted by that tenant.
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "custom-scanner", tooldom.InstallBinary)
 	existing.IsBuiltin = false
 	repo.AddTool(existing)
 
-	err := svc.DeleteTool(context.Background(), existing.ID.String())
+	err := svc.DeleteTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1198,7 +1207,8 @@ func TestToolService_DeleteTool_BuiltinFails(t *testing.T) {
 	builtin := createPlatformTool("nuclei", tooldom.InstallGo)
 	repo.AddTool(builtin)
 
-	err := svc.DeleteTool(context.Background(), builtin.ID.String())
+	// A tenant may not delete a platform/builtin tool (CanManage rejects it).
+	err := svc.DeleteTool(context.Background(), shared.NewID().String(), builtin.ID.String())
 	if err == nil {
 		t.Fatal("expected error when deleting builtin tool")
 	}
@@ -1207,10 +1217,26 @@ func TestToolService_DeleteTool_BuiltinFails(t *testing.T) {
 	}
 }
 
+func TestToolService_DeleteTool_CrossTenantForbidden(t *testing.T) {
+	svc, repo, _, _ := newToolSvcTestService()
+
+	ownerTenant := shared.NewID()
+	existing := createTenantTool(ownerTenant, "victim-tool", tooldom.InstallBinary)
+	existing.IsBuiltin = false
+	repo.AddTool(existing)
+
+	// A different tenant must not be able to delete another tenant's custom tool.
+	attackerTenant := shared.NewID()
+	err := svc.DeleteTool(context.Background(), attackerTenant.String(), existing.ID.String())
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for cross-tenant delete, got %v", err)
+	}
+}
+
 func TestToolService_DeleteTool_NotFound(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
 
-	err := svc.DeleteTool(context.Background(), shared.NewID().String())
+	err := svc.DeleteTool(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for non-existent tool")
 	}
@@ -1219,7 +1245,8 @@ func TestToolService_DeleteTool_NotFound(t *testing.T) {
 func TestToolService_DeleteTool_CascadeDeactivation(t *testing.T) {
 	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
 
-	existing := createPlatformTool("custom-scanner", tooldom.InstallBinary)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "custom-scanner", tooldom.InstallBinary)
 	existing.IsBuiltin = false
 	repo.AddTool(existing)
 
@@ -1227,7 +1254,7 @@ func TestToolService_DeleteTool_CascadeDeactivation(t *testing.T) {
 	deactivator.deactivatedCount = 2
 	deactivator.deactivatedIDs = []shared.ID{pipelineID, shared.NewID()}
 
-	err := svc.DeleteTool(context.Background(), existing.ID.String())
+	err := svc.DeleteTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1240,14 +1267,15 @@ func TestToolService_DeleteTool_CascadeDeactivation(t *testing.T) {
 func TestToolService_DeleteTool_CascadeDeactivationError(t *testing.T) {
 	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
 
-	existing := createPlatformTool("custom-scanner", tooldom.InstallBinary)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "custom-scanner", tooldom.InstallBinary)
 	existing.IsBuiltin = false
 	repo.AddTool(existing)
 
 	deactivator.err = fmt.Errorf("pipeline service error")
 
 	// Should still succeed - cascade errors are logged but don't fail the deletion
-	err := svc.DeleteTool(context.Background(), existing.ID.String())
+	err := svc.DeleteTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error despite cascade failure, got %v", err)
 	}

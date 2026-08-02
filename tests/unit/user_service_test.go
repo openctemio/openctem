@@ -296,8 +296,8 @@ func TestSyncFromKeycloak_EmailFallback(t *testing.T) {
 		{
 			name: "fallback to preferred_username",
 			claims: &keycloak.Claims{
-				RegisteredClaims: jwt.RegisteredClaims{Subject: "kc-2"},
-				Email:            "",
+				RegisteredClaims:  jwt.RegisteredClaims{Subject: "kc-2"},
+				Email:             "",
 				PreferredUsername: "preferred@example.com",
 			},
 			expectedEmail: "preferred@example.com",
@@ -305,8 +305,8 @@ func TestSyncFromKeycloak_EmailFallback(t *testing.T) {
 		{
 			name: "fallback to placeholder",
 			claims: &keycloak.Claims{
-				RegisteredClaims: jwt.RegisteredClaims{Subject: "kc-3"},
-				Email:            "",
+				RegisteredClaims:  jwt.RegisteredClaims{Subject: "kc-3"},
+				Email:             "",
 				PreferredUsername: "",
 			},
 			expectedEmail: "kc-3@placeholder.local",
@@ -380,11 +380,11 @@ func TestSyncFromKeycloak_NameBuilding(t *testing.T) {
 		{
 			name: "fallback to preferred_username",
 			claims: &keycloak.Claims{
-				RegisteredClaims: jwt.RegisteredClaims{Subject: "kc-n5"},
-				Email:            "n5@test.com",
-				Name:             "",
-				GivenName:        "",
-				FamilyName:       "",
+				RegisteredClaims:  jwt.RegisteredClaims{Subject: "kc-n5"},
+				Email:             "n5@test.com",
+				Name:              "",
+				GivenName:         "",
+				FamilyName:        "",
 				PreferredUsername: "johndoe",
 			},
 			expectedName: "johndoe",
@@ -1168,4 +1168,3 @@ func TestUpdatePreferences_GetByIDError(t *testing.T) {
 		t.Fatal("Expected error from GetByID")
 	}
 }
-

@@ -153,7 +153,12 @@ func TestComputeAuditChainHash_MicrosecondRoundTrip(t *testing.T) {
 	// nanos = what's in memory at write time.
 	nanos := time.Date(2026, 5, 31, 16, 4, 49, 593217845, time.UTC)
 	// micros = what PostgreSQL timestamptz stores / returns at verify time.
-	micros := nanos.Truncate(time.Microsecond)
+	// It ROUNDS to microsecond resolution — it does not truncate. This line used
+	// to say Truncate, which modeled the database incorrectly and is precisely
+	// why the chain bug passed CI for months: .593217845 truncates to .593217 but
+	// Postgres stores .593218, so the real round-trip was never exercised.
+	// (Verified: select '...49.593217845+00'::timestamptz -> ...49.593218+00)
+	micros := nanos.Round(time.Microsecond)
 	if nanos.Equal(micros) {
 		t.Fatal("test setup: expected sub-microsecond difference")
 	}

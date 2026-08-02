@@ -7,18 +7,119 @@ on:
     branches: [main, develop]
 
 env:
-  GO_VERSION: "1.26.4"
+  GO_VERSION: "1.26.5"
 
 jobs:
+  # ============================================
+  # Migration Safety — block deploy-breaking (non-expand-contract) migrations.
+  # Production rolls out with old pods still serving the new schema, so a
+  # destructive migration (DROP COLUMN, RENAME, incompatible TYPE change, ...)
+  # breaks them mid-deploy. See docs/deployment/safe-deploy-and-migrations.md.
+  # ============================================
+  migrations:
+    name: Migration Safety
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need base branch for the diff
+
+      - name: Fetch base branch
+        run: git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+
+      - name: Check for destructive migrations
+        env:
+          BASE_REF: "origin/${{ github.base_ref }}"
+          # 'allow-destructive-migration' label overrides the guard (e.g. an
+          # intentional expand-contract "contract" step).
+          ALLOW_DESTRUCTIVE_MIGRATION: ${{ contains(github.event.pull_request.labels.*.name, 'allow-destructive-migration') }}
+        run: bash scripts/check-migrations.sh
+
+  # ============================================
+  # SQL schema gate — catches Go-vs-database drift that the startup schema
+  # check cannot see. It only compares the migration VERSION; it has no idea
+  # whether the columns the code references exist. That gap shipped pipeline
+  # runs stuck forever (42P08), asset stale-detection reading last_seen_at
+  # instead of last_seen, pipeline-cancel writing a commands.updated_at that
+  # does not exist, and an EPSS sync whose staging table had drifted from the
+  # real column. Postgres itself is the oracle here: apply the migrations to a
+  # throwaway database and PREPARE every extractable statement.
+  # ============================================
+  sql-schema:
+    name: SQL Schema Drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Prepare every SQL statement against a migrations-only database
+        run: bash scripts/check-sql-schema.sh
+
+  # ============================================
+  # Security lint + tenant-scope analyzer. Both existed already and neither ran:
+  # they were wired into the root monorepo's workflows, and that repository has
+  # no git remote and returns 404 on GitHub. The security-lint script was not
+  # even stored in a backed-up repository — it lived only on one developer's
+  # disk. This job moves it into api/ and runs it for the first time.
+  # ============================================
+  security-gates:
+    name: Security Gates
+    runs-on: ubuntu-latest
+    steps:
+      # Rules 1, 4 and 6 read sibling repositories, so reconstruct the workspace
+      # layout the script expects: <root>/{api,agent,sdk-go}.
+      - name: Checkout api
+        uses: actions/checkout@v7
+        with:
+          path: api
+
+      - name: Checkout agent
+        uses: actions/checkout@v7
+        with:
+          repository: openctemio/agent
+          path: agent
+
+      - name: Checkout sdk-go
+        uses: actions/checkout@v7
+        with:
+          repository: openctemio/sdk-go
+          path: sdk-go
+
+      - name: Run security lint
+        env:
+          SECLINT_ROOT: ${{ github.workspace }}
+          # A rule that cannot run must not report as passed. Without this, a
+          # workspace missing a sibling runs 4 of 6 rules and still exits 0.
+          SECLINT_STRICT: "1"
+        run: bash api/scripts/security-lint.sh
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      # F-310: flags repository GetByID calls that are not tenant-scoped. The
+      # analyzer and its baseline live in api/tools/lint/getbyid and are fully
+      # tested; only the CI invocation was missing.
+      - name: Run tenant-scope analyzer
+        working-directory: api
+        run: GOWORK=off go test ./tools/lint/getbyid/... -count=1
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # golangci-lint --new-from-rev needs the base branch
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -31,6 +132,24 @@ jobs:
 
       - name: Run staticcheck
         run: staticcheck ./...
+
+      # CLAUDE.md calls golangci-lint mandatory and .golangci.yml configures 30+
+      # linters, but no live workflow ran it — the only invocation lived in the
+      # root monorepo's workflow, and that repository does not exist on GitHub.
+      # So errorlint, gosec, prealloc and the rest have been advisory for as long
+      # as they have been documented as required.
+      #
+      # Gated on new code only: develop carries 162 pre-existing findings, and a
+      # whole-tree gate would fail every PR until someone pays that down. Same
+      # --new-from-rev shape the migration guard already uses, so the debt is
+      # frozen rather than ignored.
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
+      - name: Run golangci-lint on new code
+        if: github.event_name == 'pull_request'
+        run: make lint-new BASE_REF="origin/${{ github.base_ref }}"
 
   test:
     name: Test
@@ -65,13 +184,30 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
       - name: Download dependencies
         run: go mod download
+
+      # The integration tests need a schema. Nothing created one before, because
+      # Run them through golang-migrate, the tool production uses — not psql.
+      #
+      # psql executes a file as a plain script with no transaction wrapper;
+      # golang-migrate wraps any multi-statement file in one. That difference is
+      # not cosmetic: a migration containing CREATE INDEX CONCURRENTLY alongside
+      # anything else passes under psql and fails under the real runner, which is
+      # exactly how migration 000197 reached the live database and left
+      # schema_migrations dirty. CI has to fail the way production fails.
+      - name: Install golang-migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Apply migrations to the test database
+        run: migrate -path migrations -database "$DATABASE_URL" up
+        env:
+          DATABASE_URL: postgres://openctem:secret@localhost:5432/app_test?sslmode=disable
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
@@ -81,6 +217,12 @@ jobs:
           DB_USER: openctem
           DB_PASSWORD: secret
           DB_NAME: app_test
+          # tests/integration reads DATABASE_URL, not the DB_* pair above. Without
+          # it, setupTestDB fell back to postgres://openctem@localhost/openctem —
+          # wrong database, no password — failed to ping, and called t.Skipf. Go
+          # prints SKIP where a skimmed log reads green, so 33 tests across 14
+          # files have never actually run in CI.
+          DATABASE_URL: postgres://openctem:secret@localhost:5432/app_test?sslmode=disable
           REDIS_HOST: localhost
           REDIS_PORT: 6379
 
@@ -99,7 +241,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true

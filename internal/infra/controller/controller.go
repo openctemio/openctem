@@ -40,6 +40,17 @@ type Controller interface {
 	Reconcile(ctx context.Context) (int, error)
 }
 
+// ReconcileTimeouter is an optional Controller extension. By default a
+// reconcile is bounded by the controller's tick Interval, which suits pollers
+// whose per-run work is trivial. A controller whose single run can legitimately
+// take much longer than the interval — e.g. the ingest worker polls every few
+// seconds but must run a claimed batch through the full ingest pipeline —
+// implements this to request a larger per-run timeout. A non-positive value
+// falls back to the interval. Controllers that don't implement it are unaffected.
+type ReconcileTimeouter interface {
+	ReconcileTimeout() time.Duration
+}
+
 // Metrics defines the interface for controller metrics collection.
 type Metrics interface {
 	// RecordReconcile records a reconciliation run.
@@ -95,6 +106,16 @@ func (m *Manager) Register(c Controller) {
 	}
 
 	m.controllers = append(m.controllers, c)
+
+	// Publish the running gauge at 0 on registration so the series exists
+	// before Start. Prometheus cannot alert on `controller_running == 0` for a
+	// series that was never emitted, so without this a controller that is
+	// registered but never started is indistinguishable from one that does not
+	// exist. runController flips it to 1.
+	if m.metrics != nil {
+		m.metrics.SetControllerRunning(c.Name(), false)
+	}
+
 	m.logger.Info("controller registered",
 		"name", c.Name(),
 		"interval", c.Interval().String(),
@@ -191,8 +212,16 @@ func (m *Manager) reconcileOnce(ctx context.Context, c Controller) {
 	name := c.Name()
 	start := time.Now()
 
-	// Create a timeout context for this reconciliation
-	reconcileCtx, cancel := context.WithTimeout(ctx, c.Interval())
+	// Create a timeout context for this reconciliation. Default is the tick
+	// interval; a controller may opt into a longer per-run budget (e.g. a queue
+	// drainer that processes a batch inline) via ReconcileTimeouter.
+	timeout := c.Interval()
+	if t, ok := c.(ReconcileTimeouter); ok {
+		if d := t.ReconcileTimeout(); d > 0 {
+			timeout = d
+		}
+	}
+	reconcileCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	count, err := c.Reconcile(reconcileCtx)

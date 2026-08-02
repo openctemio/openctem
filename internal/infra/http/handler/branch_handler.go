@@ -223,7 +223,7 @@ func (h *BranchHandler) List(w http.ResponseWriter, r *http.Request) {
 		ScanStatus:   query.Get("scan_status"),
 		Sort:         query.Get("sort"),
 		Page:         parseQueryInt(query.Get("page"), 1),
-		PerPage:      parseQueryInt(query.Get("per_page"), 20),
+		PerPage:      parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if err := h.validator.Validate(input); err != nil {

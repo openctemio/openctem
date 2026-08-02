@@ -1102,15 +1102,17 @@ func (r *TenantRepository) GetInvitationByID(ctx context.Context, id shared.ID) 
 	return r.scanInvitation(r.db.QueryRowContext(ctx, query, id.String()))
 }
 
-// UpdateInvitation updates an invitation.
+// UpdateInvitation updates an invitation's mutable fields (accepted_at and the
+// stored token hash — the latter changes when an invitation is resent, which
+// rotates the token).
 func (r *TenantRepository) UpdateInvitation(ctx context.Context, inv *tenant.Invitation) error {
 	query := `
 		UPDATE tenant_invitations
-		SET accepted_at = $2
+		SET accepted_at = $2, token = $3
 		WHERE id = $1
 	`
 
-	result, err := r.db.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt())
+	result, err := r.db.ExecContext(ctx, query, inv.ID().String(), inv.AcceptedAt(), inv.Token())
 	if err != nil {
 		return fmt.Errorf("failed to update invitation: %w", err)
 	}

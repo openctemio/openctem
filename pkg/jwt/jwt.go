@@ -65,6 +65,15 @@ type Claims struct {
 	// Frontend should refresh permissions via GET /api/v1/me/permissions
 	PermVersion int `json:"pv,omitempty"`
 
+	// AuthMethod records how the underlying session was authenticated —
+	// "password" (local login) vs "sso"/"saml" (federated). It is copied from
+	// sessions.auth_method at token-mint time so the per-request SSO-enforcement
+	// gate can re-apply the same decision the mint-time gate made, closing the
+	// window where an already-minted password token keeps access to a tenant
+	// that has since begun enforcing SSO. Empty is treated as "password"
+	// (fail-safe) by the reader.
+	AuthMethod string `json:"auth_method,omitempty"`
+
 	jwt.RegisteredClaims
 }
 
@@ -455,7 +464,7 @@ func (g *Generator) GenerateGlobalRefreshToken(userID, email, name, sessionID st
 // - Owner/Admin: ~500 bytes (no permissions)
 // - Member: ~1.5KB (~42 permissions)
 // - Viewer: ~1KB (~25 permissions)
-func (g *Generator) GenerateTenantScopedAccessToken(userID, email, name, sessionID string, tenant TenantMembership, isAdmin bool) (*TenantScopedAccessToken, error) {
+func (g *Generator) GenerateTenantScopedAccessToken(userID, email, name, sessionID string, tenant TenantMembership, isAdmin bool, permVersion int, authMethod string) (*TenantScopedAccessToken, error) {
 	if userID == "" {
 		return nil, ErrEmptyUserID
 	}
@@ -481,6 +490,12 @@ func (g *Generator) GenerateTenantScopedAccessToken(userID, email, name, session
 		// Admin: nil (bypass via IsAdmin), Non-admin: permissions from role
 		Permissions: permissions,
 		IsAdmin:     isAdmin,
+		// Current permission version so the permission-sync middleware can
+		// detect a revoked/demoted role before the token naturally expires.
+		PermVersion: permVersion,
+		// How the session authenticated (federated vs password) — read by the
+		// per-request SSO-enforcement gate.
+		AuthMethod: authMethod,
 		// Include single tenant in Tenants array for backward compatibility
 		Tenants: []TenantMembership{tenant},
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -518,7 +533,7 @@ func (g *Generator) GenerateTenantScopedAccessToken(userID, email, name, session
 //
 // Note: For custom RBAC roles with many permissions, JWT might exceed 4KB.
 // In that case, consider limiting permissions or using role-based bypass.
-func (g *Generator) GenerateTenantScopedAccessTokenWithPermissions(userID, email, name, sessionID string, tenant TenantMembership, permissions []string, roles []string, isAdmin bool) (*TenantScopedAccessToken, error) {
+func (g *Generator) GenerateTenantScopedAccessTokenWithPermissions(userID, email, name, sessionID string, tenant TenantMembership, permissions []string, roles []string, isAdmin bool, permVersion int, authMethod string) (*TenantScopedAccessToken, error) {
 	if userID == "" {
 		return nil, ErrEmptyUserID
 	}
@@ -550,7 +565,13 @@ func (g *Generator) GenerateTenantScopedAccessTokenWithPermissions(userID, email
 		// Admin: nil (bypass via IsAdmin), Non-admin: permissions from DB
 		Permissions: jwtPermissions,
 		IsAdmin:     isAdmin,
-		Tenants:     []TenantMembership{tenant},
+		// Current permission version so the permission-sync middleware can
+		// detect a revoked/demoted role before the token naturally expires.
+		PermVersion: permVersion,
+		// How the session authenticated (federated vs password) — read by the
+		// per-request SSO-enforcement gate.
+		AuthMethod: authMethod,
+		Tenants:    []TenantMembership{tenant},
 		RegisteredClaims: jwt.RegisteredClaims{
 			Audience:  g.claimAudience(),
 			Issuer:    g.config.Issuer,

@@ -4,18 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/openctemio/api/internal/app/apikey"
 	"github.com/openctemio/api/internal/app/assignment"
 	"github.com/openctemio/api/internal/app/command"
+	"github.com/openctemio/api/internal/app/defectdojo"
+	"github.com/openctemio/api/internal/app/remediation"
 	"github.com/openctemio/api/internal/app/scope"
 	"github.com/openctemio/api/internal/app/threat"
 	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/attack"
+	"github.com/openctemio/api/internal/app/auth/domainverify"
+	"github.com/openctemio/api/internal/app/exposure"
 	"github.com/openctemio/api/internal/app/ingest"
 	iocapp "github.com/openctemio/api/internal/app/ioc"
 	"github.com/openctemio/api/internal/app/jira"
@@ -26,6 +31,7 @@ import (
 	"github.com/openctemio/api/internal/app/scim"
 	"github.com/openctemio/api/internal/app/sla"
 	"github.com/openctemio/api/internal/app/template"
+	"github.com/openctemio/api/internal/app/threatmodel"
 	"github.com/openctemio/api/internal/app/ticketing"
 	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/config"
@@ -41,6 +47,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
+	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/email"
 	"github.com/openctemio/api/pkg/jwt"
@@ -59,6 +66,227 @@ func (a findingMutatorAdapter) Get(ctx context.Context, tenantID, findingID shar
 
 func (a findingMutatorAdapter) Update(ctx context.Context, f *vulnerability.Finding) error {
 	return a.repo.Update(ctx, f)
+}
+
+// assetOwnerMatcher resolves an asset's owner_ref email to a user id for
+// auto-ownership, but ONLY when that user is a member of the tenant — never
+// assigning ownership to a user outside the tenant (isolation). A no-match is
+// returned as (nil, nil), not an error, so auto-match stays best-effort.
+// Wires the previously-dead AssetService.SetUserMatcher.
+type assetOwnerMatcher struct {
+	users   *postgres.UserRepository
+	tenants *postgres.TenantRepository
+}
+
+func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID shared.ID, email string) (*shared.ID, error) {
+	u, err := m.users.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, nil //nolint:nilerr // unknown email → no match, not an error (best-effort auto-match)
+	}
+	if _, err := m.tenants.GetMembership(ctx, u.ID(), tenantID); err != nil {
+		return nil, nil //nolint:nilerr // not a member of this tenant → do not assign
+	}
+	id := u.ID()
+	return &id, nil
+}
+
+// campaignFindingResolver adapts the finding bulk-status path + abuse guard to
+// exposure.CampaignFindingResolver, so completing/resolving a remediation
+// campaign actively closes its open findings (RFC-015 Phase 3). Kept here (not
+// in exposure) so exposure needn't import the finding service or the guard.
+type campaignFindingResolver struct {
+	vuln  *app.VulnerabilityService
+	guard *app.BulkGuard
+}
+
+// maxCampaignResolve caps how many findings one campaign-resolve touches; the
+// abuse guard still enforces the tenant ceiling / hourly budget within this.
+const maxCampaignResolve = 2000
+
+func (a campaignFindingResolver) ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in exposure.CampaignResolveInput) (int, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0, err
+	}
+	filter.ExcludeStatuses = vulnerability.ClosedFindingStatuses()
+	ids, err := a.vuln.ListFindingIDs(ctx, filter, maxCampaignResolve)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if a.guard != nil {
+		if err := a.guard.CheckBulk(ctx, tid, len(ids), in.Approved); err != nil {
+			return 0, err
+		}
+	}
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = id.String()
+	}
+	status := in.Status
+	if status == "" {
+		status = string(vulnerability.FindingStatusFixApplied)
+	}
+	res, err := a.vuln.BulkUpdateFindingsStatus(ctx, tenantID, app.BulkUpdateStatusInput{
+		FindingIDs:          idStrs,
+		Status:              status,
+		Resolution:          in.Resolution,
+		ActorID:             in.ActorID,
+		HasVerifyPermission: in.HasVerifyPermission,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.Updated, nil
+}
+
+// campaignKeyResolver serves campaigns scoped to a remediation-group key (a
+// solution family): progress from the side-table rollup, resolution via the
+// same guarded group-resolve path as the standalone "resolve group" action.
+// Kept here so exposure needn't import the remediation group service or the
+// key repository.
+type campaignKeyResolver struct {
+	keys  *postgres.FindingRemediationKeyRepository
+	group *remediation.GroupService
+}
+
+func (a campaignKeyResolver) CountByKey(ctx context.Context, tenantID shared.ID, key string) (int64, int64, error) {
+	closed := vulnerability.ClosedFindingStatuses()
+	closedStrs := make([]string, len(closed))
+	for i, s := range closed {
+		closedStrs[i] = string(s)
+	}
+	return a.keys.CountByKey(ctx, tenantID, key, closedStrs)
+}
+
+func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (int, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0, err
+	}
+	res, err := a.group.ResolveGroup(ctx, tid, remediation.ResolveGroupInput{
+		Key:                 key,
+		Status:              in.Status,
+		Resolution:          in.Resolution,
+		ActorID:             in.ActorID,
+		HasVerifyPermission: in.HasVerifyPermission,
+		OperatorApproved:    in.Approved,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.Updated, nil
+}
+
+// moduleBundleStore adapts the tenant repository to module.BundleStore, storing
+// a tenant's product-bundle subscription in its settings JSON. Read on the
+// module-resolution path (cached by the gate); written on subscribe.
+type moduleBundleStore struct {
+	tenants tenant.Repository
+	db      *sql.DB
+}
+
+func (a moduleBundleStore) GetSubscribedBundles(ctx context.Context, tenantID string) ([]string, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	t, err := a.tenants.GetByID(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return t.TypedSettings().SubscribedBundles, nil
+}
+
+// SetSubscribedBundles writes ONLY the subscribed_bundles key inside the tenant
+// settings JSONB — never a read-modify-write of the whole blob. This avoids a
+// lost-update clobber: a concurrent write to any other settings field (AI
+// config, branding, risk weights, …) can't wipe the subscription, and vice
+// versa. Empty selection removes the key entirely (= no subscription = all on).
+func (a moduleBundleStore) SetSubscribedBundles(ctx context.Context, tenantID string, bundleIDs []string) error {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return err
+	}
+
+	var result sql.Result
+	if len(bundleIDs) == 0 {
+		result, err = a.db.ExecContext(ctx,
+			`UPDATE tenants
+			 SET settings = COALESCE(settings, '{}'::jsonb) - 'subscribed_bundles',
+			     updated_at = now()
+			 WHERE id = $1`,
+			tid.String())
+	} else {
+		payload, mErr := json.Marshal(bundleIDs)
+		if mErr != nil {
+			return fmt.Errorf("marshal subscribed bundles: %w", mErr)
+		}
+		result, err = a.db.ExecContext(ctx,
+			`UPDATE tenants
+			 SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{subscribed_bundles}', $2::jsonb, true),
+			     updated_at = now()
+			 WHERE id = $1`,
+			tid.String(), payload)
+	}
+	if err != nil {
+		return fmt.Errorf("update subscribed bundles: %w", err)
+	}
+	if rows, rErr := result.RowsAffected(); rErr == nil && rows == 0 {
+		return fmt.Errorf("%w: tenant %s", shared.ErrNotFound, tid.String())
+	}
+	return nil
+}
+
+// apikeyMembershipAdapter adapts the tenant repository to apikey.MembershipChecker
+// so a user-scoped API key stops authenticating the moment its owner's membership
+// is suspended or removed. Fails closed: a missing membership or lookup error is
+// reported as "not active" (the caller rejects the key).
+type apikeyMembershipAdapter struct{ tenants tenant.Repository }
+
+func (a apikeyMembershipAdapter) IsActiveMember(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	m, err := a.tenants.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		return false, err
+	}
+	return m.Status() == tenant.MemberStatusActive, nil
+}
+
+// workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
+// action's JiraTicketService (primitive params, so the workflow package needn't
+// import app/jira — that would cycle through the app shim).
+type workflowJiraTicketAdapter struct{ svc *jira.SyncService }
+
+func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (app.TicketRef, error) {
+	info, err := a.svc.CreateTicketFromFinding(ctx, jira.CreateTicketInput{
+		TenantID: tenantID, FindingID: findingID, ProjectKey: projectKey, IssueType: issueType,
+	})
+	if err != nil {
+		return app.TicketRef{}, err
+	}
+	return app.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+}
+
+func (a workflowJiraTicketAdapter) SyncFindingStatus(ctx context.Context, tenantID, findingID shared.ID) error {
+	return a.svc.SyncFindingStatus(ctx, tenantID, findingID)
+}
+
+// workflowGitHubTicketAdapter adapts *ticketing.GitHubTicketService to the
+// workflow ticket action's GitHubTicketService.
+type workflowGitHubTicketAdapter struct {
+	svc *ticketing.GitHubTicketService
+}
+
+func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (app.TicketRef, error) {
+	info, err := a.svc.CreateTicketFromFinding(ctx, ticketing.GitHubTicketInput{
+		TenantID: tenantID, FindingID: findingID, Owner: owner, Repo: repo,
+	})
+	if err != nil {
+		return app.TicketRef{}, err
+	}
+	return app.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
 }
 
 // wsHubBroadcaster adapts websocket.Hub to app.ActivityBroadcaster and app.TriageBroadcaster interfaces.
@@ -134,6 +362,7 @@ type Services struct {
 	RelationshipSuggestion *app.RelationshipSuggestionService
 	Scope                  *scope.Service
 	AttackSurface          *attack.SurfaceService
+	ThreatModel            *threatmodel.Service
 
 	// Configuration (read-only system config)
 	FindingSource      *app.FindingSourceService
@@ -143,6 +372,7 @@ type Services struct {
 	Vulnerability    *app.VulnerabilityService
 	FindingActivity  *app.FindingActivityService
 	FindingActions   *app.FindingActionsService
+	SourceAnalytics  *app.SourceAnalyticsService
 	Exposure         *app.ExposureService
 	ThreatIntel      *threat.IntelService
 	CredentialImport *app.CredentialImportService
@@ -157,9 +387,10 @@ type Services struct {
 	Dashboard *app.DashboardService
 
 	// Integrations & Notifications
-	Integration  *app.IntegrationService
-	Outbox       *outbox.Service
-	Notification *app.NotificationService
+	Integration    *app.IntegrationService
+	DefectDojoSync *defectdojo.SyncService
+	Outbox         *outbox.Service
+	Notification   *app.NotificationService
 
 	// Agents & Commands
 	Agent   *app.AgentService
@@ -255,6 +486,7 @@ type Services struct {
 
 	// Remediation Campaigns
 	RemediationCampaign *app.RemediationCampaignService
+	RemediationGroup    *remediation.GroupService
 
 	// Business Units
 	BusinessUnit *app.BusinessUnitService
@@ -289,6 +521,13 @@ type Services struct {
 
 	// SSO
 	SSO *app.SSOService
+
+	// Social OAuth login (Google / GitHub / Microsoft). nil when no provider
+	// is configured, which keeps the OAuth routes unregistered.
+	OAuth *app.OAuthService
+
+	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
+	DomainVerify *domainverify.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *app.SAMLService
@@ -366,6 +605,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize asset services
 	s.Asset = app.NewAssetService(repos.Asset, log)
 	s.Asset.SetRepositoryExtensionRepository(repos.RepoExt)
+	// Wire owner_ref→user auto-resolution (was dead: SetUserMatcher never called,
+	// so an email owner_ref never resolved to a real user_id). Membership-checked.
+	s.Asset.SetUserMatcher(assetOwnerMatcher{users: repos.User, tenants: repos.Tenant})
 	s.Asset.SetAssetGroupRepository(repos.AssetGroup)
 	s.Asset.SetAccessControlRepository(repos.AccessControl)
 	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
@@ -383,6 +625,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
+	// Continuous threat modeling: composes exposure chains + attacker profiles +
+	// ATT&CK catalog + live findings into a per-scope threat model.
+	s.ThreatModel = threatmodel.NewService(
+		repos.ThreatModel, s.AttackSurface, repos.Asset, repos.AssetRelationship,
+		repos.AttackerProfileReader, repos.Finding, log)
 	s.AssetRelationship = app.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.RelationshipSuggestion = app.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.AssetImport = app.NewAssetImportService(repos.Asset, log)
@@ -423,6 +670,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.Finding, repos.AccessControl, repos.Group, repos.Asset,
 		s.FindingActivity, deps.DB, log,
 	)
+	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
+	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
+	// SourceBreakdown query.
+	s.SourceAnalytics = app.NewSourceAnalyticsService(repos.Finding, log)
 
 	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
@@ -451,6 +702,22 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// dashboard.
 	s.PriorityClassification.SetPriorityFloodGuard(app.NewPriorityFloodGuard(app.PriorityFloodConfig{}))
 
+	// Close-the-loop: feed attack-path reachability (from the exposure-chain
+	// graph) into prioritization, so an internal asset on a validated
+	// internet→KEV/crown-jewel path is treated as reachable. Cached 5m/tenant.
+	if s.AttackSurface != nil {
+		s.PriorityClassification.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
+	}
+
+	// Close-the-loop (Part 1): feed the threat-model engine's output into
+	// prioritization, so an asset the engine placed on an OPEN, high-score
+	// modeled attack chain is treated as reachable. Nil-safe: no threat model /
+	// no matching threat → no effect. Cached 5m/tenant.
+	if repos.ThreatModel != nil {
+		s.PriorityClassification.SetThreatModelOracle(
+			newThreatModelOracle(repos.ThreatModel, defaultThreatScoreThreshold, 5*time.Minute))
+	}
+
 	// B1/B2 reclassification pipeline wiring:
 	//   producers → ControlChangePublisher → MemoryQueue
 	//   PriorityReclassifyController (workers.go) → Reclassifier → ClassifyFinding
@@ -461,6 +728,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Reclassifier = reclassify.NewReclassifier(
 		repos.Finding, repos.Asset, s.PriorityClassification, log,
 	)
+	// Recompute the SLA deadline when a sweep escalates a finding's priority
+	// (e.g. a CVE newly listed in KEV → P0), so the deadline tightens instead
+	// of staying at its laxer pre-escalation value.
+	s.Reclassifier.SetSLARecomputer(sla.NewApplier(s.SLA))
 
 	// B6 runtime loop — IOC catalogue + correlator. The correlator is
 	// attached to the runtime telemetry handler in handlers.go so every
@@ -524,9 +795,20 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			return nil, fmt.Errorf("unsupported tenant storage provider: %s", cfg.Provider)
 		}
 	})
+	// Wire the attachment store as the backing store for manual finding evidence
+	// (POST/GET /findings/{id}/evidence). Tenant-scoped; does not touch the
+	// pentest campaign gate.
+	s.Vulnerability.SetEvidenceStore(s.Attachment)
 
 	// Initialize Compliance service
 	s.Simulation = app.NewSimulationService(repos.Simulation, repos.ControlTest, log)
+	// Persist simulation runs (previously the run repo was never wired, so every
+	// run was computed and discarded — run history was always empty).
+	s.Simulation.SetRunRepo(repos.SimulationRun)
+	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
+	// (network-addressable target + safe-checkable technique) runs for real via
+	// the validation dispatcher; the command-completion hook finalizes the run.
+	s.Simulation.SetSafeCheckDispatcher(s.ValidationRun)
 
 	// Validation (CTEM Stage-4): agents POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
@@ -553,6 +835,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
 	// progress) is computed from live finding data instead of staying at zero.
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
+	// Phase 3: let a campaign actively resolve its open findings (reuses the
+	// finding bulk path + abuse guard).
+	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
 	s.BusinessUnit = app.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 
 	s.Compliance = app.NewComplianceService(
@@ -580,7 +865,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Status() works for dashboards even before enforcement.
 		// Check()/Record() short-circuit when BudgetEnabled=false —
 		// the Phase 1 rollout ships the flag off so there is zero
-		// behaviour change on this deploy.
+		// behavior change on this deploy.
 		budgetSvc := app.NewAITriageBudgetService(
 			repos.AITriageBudget,
 			app.AITriageBudgetServiceConfig{
@@ -603,6 +888,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// SHA-256. See crypto.HashTokenPeppered. Unset key → unpeppered
 	// (dev only; production startup already refuses this above).
 	s.APIKey = apikey.NewService(repos.APIKey, cfg.Encryption.Key, log)
+	// Gate user-scoped keys on active membership so member offboarding revokes
+	// them immediately (the key's own status can't reflect member lifecycle).
+	s.APIKey.SetMembershipChecker(apikeyMembershipAdapter{tenants: repos.Tenant})
 	s.Webhook = app.NewWebhookService(repos.Webhook, s.Encryptor, log)
 
 	// SCIM 2.0 provisioning (RFC-009): per-tenant bearer token + user lifecycle.
@@ -668,16 +956,31 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// AuthenticateByAPIKey falls back to the legacy plain-SHA256 lookup
 	// for rows written before the pepper was deployed.
 	s.Agent.SetPepper(cfg.Encryption.Key)
+	// Optional short-lived agent credentials (RFC-014 Phase 1b). Zero =
+	// disabled (renewed keys never expire), preserving today's behavior.
+	s.Agent.SetKeyTTL(cfg.AgentConfig.KeyTTL)
+	// Multi-key store for rotation overlap (RFC-014 Phase 3). Additive: auth
+	// still accepts the inline key; renewal under a TTL issues overlapping keys.
+	s.Agent.SetAPIKeyRepository(repos.AgentAPIKey)
 	s.Command = command.NewService(repos.Command, log)
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Agent, repos.Branch, repos.Tenant, repos.Audit, log)
+	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
+	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
+	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
 	s.Ingest.SetActivityService(s.FindingActivity)                   // Wire activity logging for auto-resolve/reopen
+	// Ingest audit events are tenant-scoped, so they must go through the SAME
+	// audit service instance as every other tenant-scoped event: LogEvent also
+	// extends the per-tenant tamper-evident hash chain, and its chainMu is what
+	// serializes concurrent appends. Without this, ingest.completed /
+	// ingest.partial_success rows land in audit_logs unchained.
+	s.Ingest.SetAuditService(s.Audit)
 	// Wire IP correlation for host dedup (RFC-001)
 	// System defaults; per-tenant overrides come from tenant settings at ingest time
 	s.Ingest.SetCorrelator(ingest.NewAssetCorrelator(repos.Asset, log, ingest.CorrelationConfig{
@@ -767,6 +1070,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// when a finding transitions to fix_applied and the user requests scan-based verification.
 	s.FindingActions.SetVerificationScanTrigger(app.NewVerificationScanTriggerAdapter(s.Scan))
 
+	// Closed-loop CTEM: auto-queue a proof-of-fix safe-check re-check when
+	// findings transition to fix_applied, so a "fixed" claim is verified rather
+	// than trusted. Bounded + best-effort; non-network findings are skipped.
+	s.FindingActions.SetAutoValidator(s.ValidationRun)
+
 	// B3 wire: when a Jira "Done" webhook arrives and the
 	// finding transitions to fix_applied, automatically trigger a
 	// verification scan via FindingActions. Per-finding 24h cooldown
@@ -817,13 +1125,29 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		app.WithExecutorAuditService(s.Audit),
 	)
 
-	// Register all action handlers for the workflow executor
-	app.RegisterAllActionHandlers(
+	// Register all action handlers for the workflow executor. Use the AI-aware
+	// variant so trigger_ai_triage is actually registered (it was coded but the
+	// non-AI register never wired it), and pass the Jira/GitHub ticket adapters
+	// so create_ticket/update_ticket file real issues instead of returning a
+	// false success. Adapters are built only when the underlying service exists
+	// so a nil service yields a nil interface (not a non-nil box over nil).
+	var wfJira app.WorkflowJiraTicketService
+	if s.JiraSync != nil {
+		wfJira = workflowJiraTicketAdapter{svc: s.JiraSync}
+	}
+	var wfGitHub app.WorkflowGitHubTicketService
+	if s.GitHubTicket != nil {
+		wfGitHub = workflowGitHubTicketAdapter{svc: s.GitHubTicket}
+	}
+	app.RegisterAllActionHandlersWithAI(
 		workflowExecutor,
 		s.Vulnerability,
 		s.Pipeline,
 		s.Scan,
 		s.Integration,
+		s.AITriage,
+		wfJira,
+		wfGitHub,
 		log,
 	)
 
@@ -893,6 +1217,25 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
 
+	// Close the auto-assign gap on bulk ingest: route scanner-created findings
+	// to groups post-insert, mirroring the single CreateFinding path. Lists
+	// rules once per batch (not per finding) and bulk-inserts the assignments.
+	s.Ingest.SetAssignmentApplier(assignment.NewBatchAssigner(assignmentEngine, repos.AccessControl, repos.Finding, log))
+
+	// Remediation groups (RFC-015): derive each ingested finding's fix-identity
+	// key so a whole "solution family" can be resolved in one action. The service
+	// reuses the finding bulk-status path + its abuse guard.
+	s.Ingest.SetRemediationKeyApplier(remediation.NewKeyApplier(repos.FindingRemediationKey, log))
+	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
+
+	// A remediation campaign can be scoped to a group key (solution family): its
+	// progress + resolve then run off the side-table / group-resolve path rather
+	// than a generic finding filter. Wired here (not at campaign construction)
+	// because it needs the group service built above.
+	if s.RemediationCampaign != nil {
+		s.RemediationCampaign.SetKeyResolver(campaignKeyResolver{keys: repos.FindingRemediationKey, group: s.RemediationGroup})
+	}
+
 	// Wire engine and finding repo to assignment rule service for TestRule
 	s.AssignmentRule.SetAssignmentEngine(assignmentEngine)
 	s.AssignmentRule.SetFindingRepository(repos.Finding)
@@ -942,6 +1285,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Module = app.NewModuleService(repos.Module, log)
 	s.Module.SetTenantModuleRepo(repos.TenantModule)
 	s.Module.SetAuditService(s.Audit)
+	// Product-bundle subscription: resolves the enabled-module baseline live from
+	// the tenant's chosen bundles (empty = every module on, backward-compatible).
+	s.Module.SetBundleStore(moduleBundleStore{tenants: repos.Tenant, db: deps.DB})
 	// Per-tenant module-config version counter (Redis-backed). Used
 	// for ETag generation on module-list endpoints and as the cache-
 	// key suffix in any future Redis payload cache. Bumped on every
@@ -1010,6 +1356,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = app.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
+	// Stamp the current permission version onto issued access tokens so the
+	// permission-sync middleware can reject stale tokens after a role change
+	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
+	s.Auth.SetPermissionVersionService(s.PermVersion)
 
 	// F-8: single-use WebSocket ticket service, Redis-backed.
 	if redisClient != nil {
@@ -1042,8 +1392,33 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 
+	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
+	// auto-provisioning gate — a non-member is auto-joined only when the email
+	// domain is DNS-verified for the tenant (see SSOService.jitProvisioningAllowed).
+	s.DomainVerify = domainverify.NewService(repos.VerifiedDomain, domainverify.NewNetResolver(), log)
+	s.SSO.SetDomainVerifier(s.DomainVerify)
+
+	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
+	// provider actually has credentials, so the login surface the API advertises
+	// on /auth/providers matches the routes it registers — see registerAuthRoutes.
+	if cfg.OAuth.Enabled && cfg.OAuth.HasAnyProvider() {
+		s.OAuth = app.NewOAuthService(
+			repos.User,
+			repos.Session,
+			repos.RefreshToken,
+			cfg.OAuth,
+			cfg.Auth,
+			log,
+		)
+	}
+
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
 	s.SAML = app.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
+
+	// Wire the SSO-path checker so TenantService can refuse enabling sso_enforced
+	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so
+	// this is re-applied there too.
+	s.Tenant.SetSSOPathChecker(s.SSO)
 }
 
 // InitEmailServices initializes email-related services.
@@ -1136,13 +1511,14 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 }
 
 // NewJobWorker creates a new job worker for processing background jobs.
-// jiraSyncer (optional) handles outbound Jira status-sync tasks; pass nil to
-// disable that handler.
+//
+// Every argument except cfg and log is optional; a nil dependency only disables
+// its own handler. In particular a nil emailService must NOT stop the worker
+// from being built: the AI-triage, Jira sync and GitHub sync handlers live on
+// the same asynq server, their tasks are enqueued whether or not SMTP is on,
+// and SMTP_ENABLED defaults to false. Returning early here (as this used to)
+// left those queues with no consumer in a default deployment.
 func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
-	if emailService == nil {
-		return nil, nil
-	}
-
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	workerCfg := jobs.WorkerConfig{
 		RedisAddr:     redisAddr,

@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -601,6 +603,51 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// RenewKeyResponse is returned by the agent self-renew endpoint. The new key is
+// shown once, exactly like creation/regeneration — the server stores only its hash.
+// ExpiresAt is when the new key stops authenticating (nil/omitted = never
+// expires); the agent uses it to schedule its next renewal.
+type RenewKeyResponse struct {
+	APIKey    string     `json:"api_key"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+// RenewKey handles POST /api/v1/agent/renew
+// @Summary      Renew agent API key (self-service)
+// @Description  Rotate the calling agent's own API key. Authenticated by the current key; returns a fresh key shown once. The building block for auto-rotating credentials (kubelet-style).
+// @Tags         Agent
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  RenewKeyResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     ApiKeyAuth
+// @Router       /agent/renew [post]
+func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
+	agt := AgentFromContext(r.Context())
+	if agt == nil {
+		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		return
+	}
+
+	newKey, expiresAt, err := h.agentService.RenewAPIKey(r.Context(), agt)
+	if err != nil {
+		if errors.Is(err, shared.ErrForbidden) {
+			// Disabled/revoked in the auth→renew window. Generic message; log specifics.
+			h.logger.Debug("agent key renewal refused", "agent_id", agt.ID.String(), "error", err)
+			apierror.Forbidden("Agent cannot renew").WriteJSON(w)
+			return
+		}
+		h.logger.Error("agent key renewal failed", "agent_id", agt.ID.String(), "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(&RenewKeyResponse{APIKey: newKey, ExpiresAt: expiresAt})
 }
 
 // =============================================================================

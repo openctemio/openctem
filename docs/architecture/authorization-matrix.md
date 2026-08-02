@@ -94,7 +94,6 @@ Handler
 |----------|-------------|
 | `GET /health` | Health check |
 | `GET /ready` | Readiness check |
-| `GET /metrics` | Prometheus metrics |
 | `POST /api/v1/auth/register` | User registration |
 | `POST /api/v1/auth/login` | User login |
 | `POST /api/v1/auth/token` | Token exchange |
@@ -209,6 +208,47 @@ These routes require the tenant ID in the URL path and use database-based member
 | `GET /api/v1/users/me/sessions` | JWT (local auth only) |
 | `DELETE /api/v1/users/me/sessions` | JWT (local auth only) |
 | `DELETE /api/v1/users/me/sessions/{id}` | JWT (local auth only) |
+
+### Platform Admin Routes (`/api/v1/admin/*`)
+
+Platform admin routes are for OpenCTEM operators, NOT tenant users. They use
+API-key auth via the `X-Admin-API-Key` header (or `Authorization: Bearer`) and
+carry a platform role: `super_admin` > `ops_admin` > `readonly`.
+
+Authorization is enforced at the **route layer** in
+`internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
+— not in the handlers.
+
+| Endpoint | Required Role |
+|----------|---------------|
+| `GET /api/v1/admin/auth/validate` | any admin |
+| `GET /api/v1/admin/users` | **super_admin** |
+| `GET /api/v1/admin/users/{id}` | **super_admin** |
+| `POST /api/v1/admin/users` | **super_admin** (audited) |
+| `PATCH /api/v1/admin/users/{id}` | **super_admin** (audited) |
+| `DELETE /api/v1/admin/users/{id}` | **super_admin** (audited) |
+| `POST /api/v1/admin/users/{id}/rotate-key` | **super_admin** (audited) |
+| `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
+| `GET /api/v1/admin/target-mappings` (+ `/stats`, `/{id}`) | any admin |
+| `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
+
+> The admin roster (`/admin/users`) is super_admin-only for reads as well as
+> writes: it exposes admin emails, key prefixes, and last-used IPs, so listing
+> it is itself a privileged operation.
+
+### Metrics Endpoint (`GET /metrics`)
+
+`/metrics` (Prometheus) is **not public by default**. It is gated by
+`MetricsConfig`:
+
+| `METRICS_PUBLIC` | `METRICS_TOKEN` | Behavior |
+|------------------|-----------------|----------|
+| `false` (default) | set | Requires `Authorization: Bearer <token>` (or `X-Metrics-Token`). Missing/wrong → 404 |
+| `false` (default) | empty | Endpoint disabled (fail closed, 404) |
+| `true` | — | Open, no auth (legacy; use only when firewalled to an internal scrape network) |
+
+`/health` and `/ready` remain public. Configure the scraper's bearer token to
+match `METRICS_TOKEN`.
 
 ## Middleware Reference
 

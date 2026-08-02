@@ -3,6 +3,9 @@ package asset
 import (
 	"context"
 	"fmt"
+	"net/mail"
+	"strings"
+
 	"github.com/openctemio/api/internal/app/scope"
 
 	assetgroupdom "github.com/openctemio/api/pkg/domain/assetgroup"
@@ -50,14 +53,16 @@ type CreateAssetGroupInput struct {
 
 // UpdateAssetGroupInput represents input for updating an asset group.
 type UpdateAssetGroupInput struct {
-	Name         *string  `validate:"omitempty,min=1,max=255"`
-	Description  *string  `validate:"omitempty,max=1000"`
-	Environment  *string  `validate:"omitempty,asset_group_environment"`
-	Criticality  *string  `validate:"omitempty,asset_group_criticality"`
-	BusinessUnit *string  `validate:"omitempty,max=255"`
-	Owner        *string  `validate:"omitempty,max=255"`
-	OwnerEmail   *string  `validate:"omitempty,email,max=255"`
-	Tags         []string `validate:"omitempty,max=20,dive,max=50"`
+	Name         *string `validate:"omitempty,min=1,max=255"`
+	Description  *string `validate:"omitempty,max=1000"`
+	Environment  *string `validate:"omitempty,asset_group_environment"`
+	Criticality  *string `validate:"omitempty,asset_group_criticality"`
+	BusinessUnit *string `validate:"omitempty,max=255"`
+	Owner        *string `validate:"omitempty,max=255"`
+	// Email format is checked in UpdateAssetGroup only when non-empty; an empty
+	// string is an explicit "clear the owner email" and must be allowed through.
+	OwnerEmail *string  `validate:"omitempty,max=255"`
+	Tags       []string `validate:"omitempty,max=20,dive,max=50"`
 }
 
 // ListAssetGroupsInput represents input for listing asset groups.
@@ -218,6 +223,15 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 			owner = *input.Owner
 		}
 		if input.OwnerEmail != nil {
+			// An explicit empty string clears the owner email. Only validate the
+			// address format when a non-empty value is supplied — the handler no
+			// longer runs the `email` struct-tag rule because `omitempty` does not
+			// skip a non-nil *string pointing at "" (it rejected legitimate clears).
+			if e := strings.TrimSpace(*input.OwnerEmail); e != "" {
+				if _, err := mail.ParseAddress(e); err != nil {
+					return nil, fmt.Errorf("%w: invalid owner email", shared.ErrValidation)
+				}
+			}
 			email = *input.OwnerEmail
 		}
 		group.UpdateOwner(owner, email)

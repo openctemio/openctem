@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -36,6 +37,30 @@ type Config struct {
 	Storage     StorageConfig
 	Webhooks    WebhooksConfig
 	Ingest      IngestConfig
+	Metrics     MetricsConfig
+}
+
+// MetricsConfig controls exposure of the Prometheus /metrics endpoint.
+//
+// SECURITY: /metrics leaks internal cardinality (route names, error rates,
+// build info) and is a reconnaissance aid, so it is NOT public by default.
+// When Public is false (the default) the endpoint requires a bearer token
+// (Token) supplied via the Authorization header, e.g.
+//
+//	Authorization: Bearer <METRICS_TOKEN>
+//
+// Configure the scraper (Prometheus `authorization`/`bearer_token`) with the
+// same value. If Public is false and Token is empty the endpoint fails closed
+// (404) — metrics are effectively disabled until a token is set or Public is
+// explicitly enabled. Set METRICS_PUBLIC=true to restore the legacy open
+// endpoint (e.g. when it is already firewalled to an internal scrape network).
+type MetricsConfig struct {
+	// Public leaves /metrics unauthenticated when true (legacy behavior).
+	// Default false.
+	Public bool
+	// Token is the bearer token required to scrape /metrics when Public is
+	// false. Empty + non-public = endpoint disabled (fail closed).
+	Token string
 }
 
 // IngestConfig controls asynchronous ingest (RFC-005).
@@ -97,6 +122,11 @@ type AgentConfigConfig struct {
 	// PublicAPIURL is the URL agents will connect to (embedded in templates).
 	// If empty, falls back to App.URL.
 	PublicAPIURL string
+	// KeyTTL is how long a self-renewed agent API key stays valid before it
+	// must be renewed again (RFC-014 Phase 1b). Zero (the default) disables
+	// expiry: renewed keys never expire. Set AGENT_KEY_TTL (e.g. "24h") to opt
+	// into short-lived, auto-rotating agent credentials.
+	KeyTTL time.Duration
 }
 
 // ServerConfig holds HTTP server configuration.
@@ -252,6 +282,18 @@ type AuthConfig struct {
 	// flow falls back to this shared config (if Enabled). A tenant's own
 	// provider always takes precedence.
 	EntraSSO EntraSSOConfig
+
+	// AllowedRedirectURIs is the exact-match allow-list for the caller-supplied
+	// redirect_uri of the per-tenant SSO OIDC flow (SSO_ALLOWED_REDIRECT_URIS,
+	// csv). It is the OAuth 2.1 / RFC 9700 open-redirect guard: the frontend
+	// callback the SSO flow returns to must match one of these entries exactly.
+	// Each entry is a trusted frontend origin (scheme+host[:port], authorizing
+	// any path on that exact origin) or an origin+path prefix (ending in "/",
+	// restricting to that path). No wildcards, no suffix matching. When left
+	// empty at load time it is derived from the configured frontend origins
+	// (CORS allowed origins + OAuth frontend callback) so the shipped UI keeps
+	// working; an empty list at request time fails closed (rejects every URI).
+	AllowedRedirectURIs []string
 }
 
 // EntraSSOConfig holds the platform-wide (env-based) Microsoft Entra ID SSO
@@ -265,6 +307,13 @@ type EntraSSOConfig struct {
 	DefaultRole    string   // SSO_ENTRA_DEFAULT_ROLE (default "member")
 	AutoProvision  bool     // SSO_ENTRA_AUTO_PROVISION (default true)
 	DisplayName    string   // SSO_ENTRA_DISPLAY_NAME (default "Microsoft Entra ID")
+
+	// AllowedTenants is the opt-in allow-list of tenant SLUGS (SSO_ENTRA_ALLOWED_TENANTS,
+	// csv) that may use this platform-wide env fallback. It is fail-closed: a tenant
+	// whose slug is NOT listed gets NO env SSO button and NO env-fallback login, so a
+	// shared multi-tenant (`/common`) app registration cannot let any Microsoft account
+	// self-join every organization. Empty ⇒ the env fallback is disabled for all tenants.
+	AllowedTenants []string // SSO_ENTRA_ALLOWED_TENANTS (csv of tenant slugs; empty = none)
 }
 
 // IsConfigured reports whether the platform-wide Entra SSO fallback is usable:
@@ -548,6 +597,7 @@ func Load() (*Config, error) {
 		AgentConfig: AgentConfigConfig{
 			TemplatesDir: getEnv("AGENT_CONFIG_TEMPLATES_DIR", "configs/agent-templates"),
 			PublicAPIURL: getEnv("AGENT_PUBLIC_API_URL", ""),
+			KeyTTL:       getEnvDuration("AGENT_KEY_TTL", 0),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),
@@ -647,7 +697,9 @@ func Load() (*Config, error) {
 				DefaultRole:    getEnv("SSO_ENTRA_DEFAULT_ROLE", "member"),
 				AutoProvision:  getEnvBool("SSO_ENTRA_AUTO_PROVISION", true),
 				DisplayName:    getEnv("SSO_ENTRA_DISPLAY_NAME", "Microsoft Entra ID"),
+				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),
 			},
+			AllowedRedirectURIs: getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),
@@ -736,6 +788,11 @@ func Load() (*Config, error) {
 			Mode:                getEnv("INGEST_MODE", "sync"),
 			MaxPendingPerTenant: getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
 		},
+		Metrics: MetricsConfig{
+			// SECURITY: default NON-public. See MetricsConfig docs.
+			Public: getEnvBool("METRICS_PUBLIC", false),
+			Token:  getEnv("METRICS_TOKEN", ""),
+		},
 		AITriage: AITriageConfig{
 			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),
 			PlatformProvider:            getEnv("AI_PLATFORM_PROVIDER", "claude"),
@@ -762,11 +819,51 @@ func Load() (*Config, error) {
 		},
 	}
 
+	// SSO redirect-URI allow-list (OAuth 2.1 / RFC 9700): pin the caller-supplied
+	// redirect_uri to trusted frontend origins. An explicit SSO_ALLOWED_REDIRECT_URIS
+	// wins; otherwise derive the origins already trusted elsewhere in config so the
+	// shipped UI callback keeps working out of the box.
+	if len(cfg.Auth.AllowedRedirectURIs) == 0 {
+		cfg.Auth.AllowedRedirectURIs = deriveSSORedirectAllowList(cfg)
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
+}
+
+// deriveSSORedirectAllowList builds the default SSO redirect_uri allow-list from
+// the frontend origins already configured elsewhere (CORS allowed origins, the
+// OAuth frontend callback, and the email base URL). Each is reduced to its exact
+// origin (scheme://host[:port]); a request-time redirect_uri on that exact origin
+// is then permitted. Operators can override/tighten via SSO_ALLOWED_REDIRECT_URIS.
+func deriveSSORedirectAllowList(cfg *Config) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(cfg.CORS.AllowedOrigins)+2)
+	add := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		u, err := url.Parse(raw)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return
+		}
+		origin := u.Scheme + "://" + u.Host
+		if _, ok := seen[origin]; ok {
+			return
+		}
+		seen[origin] = struct{}{}
+		out = append(out, origin)
+	}
+	for _, o := range cfg.CORS.AllowedOrigins {
+		add(o)
+	}
+	add(cfg.OAuth.FrontendCallbackURL)
+	add(cfg.SMTP.BaseURL)
+	return out
 }
 
 // Validate validates the configuration.

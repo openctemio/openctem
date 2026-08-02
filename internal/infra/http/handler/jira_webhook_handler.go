@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/validator"
 )
 
 // JiraWebhookHandler handles Jira bidirectional ticket sync endpoints.
@@ -23,8 +24,9 @@ import (
 //   - DELETE /api/v1/findings/{id}/link-ticket     — unlink a Jira ticket from a finding
 //   - POST /api/v1/webhooks/incoming/jira          — receive Jira status-change webhooks
 type JiraWebhookHandler struct {
-	service *jira.SyncService
-	logger  *logger.Logger
+	service   *jira.SyncService
+	validator *validator.Validator
+	logger    *logger.Logger
 
 	// github is the optional GitHub Issues ticket provider. Nil unless wired
 	// via SetGitHubTicketService — when nil, requests with provider=github are
@@ -33,8 +35,26 @@ type JiraWebhookHandler struct {
 }
 
 // NewJiraWebhookHandler creates a new JiraWebhookHandler.
-func NewJiraWebhookHandler(svc *jira.SyncService, log *logger.Logger) *JiraWebhookHandler {
-	return &JiraWebhookHandler{service: svc, logger: log}
+func NewJiraWebhookHandler(svc *jira.SyncService, v *validator.Validator, log *logger.Logger) *JiraWebhookHandler {
+	return &JiraWebhookHandler{service: svc, validator: v, logger: log}
+}
+
+// decodeAndValidate reads the JSON body into dst and runs struct validation so
+// the `validate:` tags on the request structs are actually enforced (they were
+// previously declared but never run). On failure it writes a 400 and returns
+// false, so callers do `if !h.decodeAndValidate(w, r, &req) { return }`.
+func (h *JiraWebhookHandler) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return false
+	}
+	if h.validator != nil {
+		if err := h.validator.Validate(dst); err != nil {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return false
+		}
+	}
+	return true
 }
 
 // SetGitHubTicketService wires the optional GitHub Issues ticket provider.
@@ -66,17 +86,7 @@ func (h *JiraWebhookHandler) LinkTicket(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req LinkTicketRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
-		return
-	}
-
-	if req.TicketKey == "" {
-		apierror.BadRequest("ticket_key is required").WriteJSON(w)
-		return
-	}
-	if req.TicketURL == "" {
-		apierror.BadRequest("ticket_url is required").WriteJSON(w)
+	if !h.decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -113,12 +123,7 @@ func (h *JiraWebhookHandler) UnlinkTicket(w http.ResponseWriter, r *http.Request
 	}
 
 	var req UnlinkTicketRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
-		return
-	}
-	if req.TicketURL == "" {
-		apierror.BadRequest("ticket_url is required").WriteJSON(w)
+	if !h.decodeAndValidate(w, r, &req) {
 		return
 	}
 
@@ -133,15 +138,15 @@ func (h *JiraWebhookHandler) UnlinkTicket(w http.ResponseWriter, r *http.Request
 // CreateTicketRequest is the request body for POST /api/v1/findings/{id}/create-ticket.
 type CreateTicketRequest struct {
 	// Provider selects the ticket backend: "jira" (default) or "github".
-	Provider string `json:"provider,omitempty"`
+	Provider string `json:"provider,omitempty" validate:"omitempty,oneof=jira github"`
 
 	// Jira fields.
-	ProjectKey string `json:"project_key,omitempty"`
-	IssueType  string `json:"issue_type,omitempty"`
+	ProjectKey string `json:"project_key,omitempty" validate:"omitempty,max=255"`
+	IssueType  string `json:"issue_type,omitempty" validate:"omitempty,max=255"`
 
 	// GitHub fields (required when provider=github).
-	Owner string `json:"owner,omitempty"`
-	Repo  string `json:"repo,omitempty"`
+	Owner string `json:"owner,omitempty" validate:"omitempty,max=255"`
+	Repo  string `json:"repo,omitempty" validate:"omitempty,max=255"`
 }
 
 // CreateTicket handles POST /api/v1/findings/{id}/create-ticket.
@@ -156,8 +161,7 @@ func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request
 	}
 
 	var req CreateTicketRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
+	if !h.decodeAndValidate(w, r, &req) {
 		return
 	}
 

@@ -89,9 +89,9 @@ type findingActUserRepo struct {
 	GetByIDFunc func(ctx context.Context, id shared.ID) (*user.User, error)
 }
 
-func (m *findingActUserRepo) Create(_ context.Context, _ *user.User) error   { return nil }
-func (m *findingActUserRepo) Update(_ context.Context, _ *user.User) error   { return nil }
-func (m *findingActUserRepo) Delete(_ context.Context, _ shared.ID) error    { return nil }
+func (m *findingActUserRepo) Create(_ context.Context, _ *user.User) error { return nil }
+func (m *findingActUserRepo) Update(_ context.Context, _ *user.User) error { return nil }
+func (m *findingActUserRepo) Delete(_ context.Context, _ shared.ID) error  { return nil }
 func (m *findingActUserRepo) ExistsByEmail(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }

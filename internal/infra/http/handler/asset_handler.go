@@ -548,7 +548,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
 		Sort:             query.Get("sort"),
 		Page:             parseQueryInt(query.Get("page"), 1),
-		PerPage:          parseQueryInt(query.Get("per_page"), 20),
+		PerPage:          parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 		ActingUserID:     middleware.GetUserID(r.Context()),
 		IsAdmin:          middleware.IsAdmin(r.Context()),
 	}

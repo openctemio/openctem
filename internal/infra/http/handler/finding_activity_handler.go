@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -81,15 +83,18 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Security: Pass tenantID for tenant-scoped query (IDOR prevention)
-	_, err := h.vulnerabilityService.GetFinding(r.Context(), tenantID, findingID)
+	// Security: scope the existence check to the real caller — GetFinding runs as
+	// admin (isAdmin=true, no acting user), which bypasses both the pentest
+	// campaign-membership gate and the Layer-2 data-scope check, leaking another
+	// campaign's / out-of-scope finding's activity trail to any findings:read user.
+	userID := middleware.GetUserID(r.Context())
+	_, err := h.vulnerabilityService.GetFindingWithScope(r.Context(), tenantID, findingID, userID, middleware.IsAdmin(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err, "Finding")
 		return
 	}
 
 	// Security: Log access for audit trail
-	userID := middleware.GetUserID(r.Context())
 	h.logger.Info("finding activities accessed",
 		"user_id", userID,
 		"finding_id", findingID,
@@ -162,8 +167,10 @@ func (h *FindingActivityHandler) GetActivity(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Security: Pass tenantID for tenant-scoped query (IDOR prevention)
-	_, err := h.vulnerabilityService.GetFinding(r.Context(), tenantID, findingID)
+	// Security: scope the existence check to the real caller (see ListActivities)
+	// so non-members / out-of-scope users cannot read pentest evidence trails.
+	userID := middleware.GetUserID(r.Context())
+	_, err := h.vulnerabilityService.GetFindingWithScope(r.Context(), tenantID, findingID, userID, middleware.IsAdmin(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err, "Finding")
 		return
@@ -188,13 +195,15 @@ func (h *FindingActivityHandler) GetActivity(w http.ResponseWriter, r *http.Requ
 
 // handleServiceError handles errors from service layer.
 func (h *FindingActivityHandler) handleServiceError(w http.ResponseWriter, err error, resource string) {
-	// Check for not found errors
-	if err.Error() == "activity not found" || err.Error() == "finding not found" {
+	switch {
+	// FindingNotFoundError / scope-denied wrap shared.ErrNotFound; the activity
+	// repo still returns a bare "activity not found" error (legacy) — handle both.
+	case errors.Is(err, shared.ErrNotFound), err.Error() == "activity not found":
 		apierror.NotFound(resource).WriteJSON(w)
-		return
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(cleanErrorMessage(err, "Invalid request")).WriteJSON(w)
+	default:
+		h.logger.Error("service error", "error", err, "resource", resource)
+		apierror.InternalServerError("An unexpected error occurred").WriteJSON(w)
 	}
-
-	// Log unexpected errors
-	h.logger.Error("service error", "error", err, "resource", resource)
-	apierror.InternalServerError("An unexpected error occurred").WriteJSON(w)
 }

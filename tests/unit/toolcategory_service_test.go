@@ -1,11 +1,12 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/tool"
 	"context"
 	"errors"
 	"sync"
 	"testing"
+
+	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/toolcategory"
@@ -22,26 +23,26 @@ type toolCatMockRepo struct {
 	categories map[shared.ID]*toolcategory.ToolCategory
 
 	// Error overrides
-	createErr      error
-	getByIDErr     error
-	getByNameErr   error
-	listErr        error
-	listAllErr     error
-	updateErr      error
-	deleteErr      error
+	createErr       error
+	getByIDErr      error
+	getByNameErr    error
+	listErr         error
+	listAllErr      error
+	updateErr       error
+	deleteErr       error
 	existsByNameErr error
-	countErr       error
+	countErr        error
 
 	// Call tracking
-	createCalls      int
-	getByIDCalls     int
-	getByNameCalls   int
-	listCalls        int
-	listAllCalls     int
-	updateCalls      int
-	deleteCalls      int
+	createCalls       int
+	getByIDCalls      int
+	getByNameCalls    int
+	listCalls         int
+	listAllCalls      int
+	updateCalls       int
+	deleteCalls       int
 	existsByNameCalls int
-	countCalls       int
+	countCalls        int
 
 	// Captured arguments
 	lastFilter     toolcategory.Filter

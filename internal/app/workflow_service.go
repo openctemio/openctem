@@ -5,28 +5,31 @@ package app
 import "github.com/openctemio/api/internal/app/workflow"
 
 type (
-	WorkflowService            = workflow.WorkflowService
-	WorkflowServiceOption      = workflow.WorkflowServiceOption
-	WorkflowExecutor           = workflow.WorkflowExecutor
-	WorkflowExecutorConfig     = workflow.WorkflowExecutorConfig
-	WorkflowExecutorOption     = workflow.WorkflowExecutorOption
-	WorkflowEventDispatcher    = workflow.WorkflowEventDispatcher
-	ActionHandler              = workflow.ActionHandler
-	ActionInput                = workflow.ActionInput
-	AITriageActionHandler      = workflow.AITriageActionHandler
-	AITriageEvent              = workflow.AITriageEvent
-	ConditionEvaluator         = workflow.ConditionEvaluator
-	DefaultConditionEvaluator  = workflow.DefaultConditionEvaluator
-	DefaultNotificationHandler = workflow.DefaultNotificationHandler
-	ExecutionContext           = workflow.ExecutionContext
-	FindingActionHandler       = workflow.FindingActionHandler
-	FindingEvent               = workflow.FindingEvent
-	HTTPRequestHandler         = workflow.HTTPRequestHandler
-	NotificationHandler        = workflow.NotificationHandler
-	NotificationInput          = workflow.NotificationInput
-	PipelineTriggerHandler     = workflow.PipelineTriggerHandler
-	ScriptRunnerHandler        = workflow.ScriptRunnerHandler
-	TicketActionHandler        = workflow.TicketActionHandler
+	WorkflowService             = workflow.WorkflowService
+	WorkflowServiceOption       = workflow.WorkflowServiceOption
+	WorkflowExecutor            = workflow.WorkflowExecutor
+	WorkflowExecutorConfig      = workflow.WorkflowExecutorConfig
+	WorkflowExecutorOption      = workflow.WorkflowExecutorOption
+	WorkflowEventDispatcher     = workflow.WorkflowEventDispatcher
+	ActionHandler               = workflow.ActionHandler
+	ActionInput                 = workflow.ActionInput
+	AITriageActionHandler       = workflow.AITriageActionHandler
+	AITriageEvent               = workflow.AITriageEvent
+	ConditionEvaluator          = workflow.ConditionEvaluator
+	DefaultConditionEvaluator   = workflow.DefaultConditionEvaluator
+	DefaultNotificationHandler  = workflow.DefaultNotificationHandler
+	ExecutionContext            = workflow.ExecutionContext
+	FindingActionHandler        = workflow.FindingActionHandler
+	FindingEvent                = workflow.FindingEvent
+	HTTPRequestHandler          = workflow.HTTPRequestHandler
+	NotificationHandler         = workflow.NotificationHandler
+	NotificationInput           = workflow.NotificationInput
+	PipelineTriggerHandler      = workflow.PipelineTriggerHandler
+	ScriptRunnerHandler         = workflow.ScriptRunnerHandler
+	TicketActionHandler         = workflow.TicketActionHandler
+	TicketRef                   = workflow.TicketRef
+	WorkflowJiraTicketService   = workflow.JiraTicketService
+	WorkflowGitHubTicketService = workflow.GitHubTicketService
 
 	AddEdgeInput             = workflow.AddEdgeInput
 	AddNodeInput             = workflow.AddNodeInput

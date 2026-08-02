@@ -119,7 +119,7 @@ func (h *CapabilityHandler) ListCapabilities(w http.ResponseWriter, r *http.Requ
 	tenantID := middleware.GetTenantID(r.Context())
 
 	page := parseQueryInt(r.URL.Query().Get("page"), 1)
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 50)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 50, 1, MaxPerPage)
 	search := r.URL.Query().Get("search")
 
 	var isBuiltin *bool

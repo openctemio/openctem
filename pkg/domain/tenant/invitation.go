@@ -123,8 +123,35 @@ func (i *Invitation) RoleIDs() []string {
 }
 
 // Token returns the invitation token.
+//
+// Depending on lifecycle stage this is either the raw token (freshly created
+// or freshly rotated in memory, before it is hashed for persistence) or the
+// stored hash (when reconstituted from the database). Callers that need the
+// value the user receives (email/link) must use the raw token captured before
+// SetToken hashes it for storage — see TenantService.CreateInvitation.
 func (i *Invitation) Token() string {
 	return i.token
+}
+
+// SetToken overwrites the in-memory token. The service layer uses this to
+// store a hash of the token at rest (crypto.HashToken) instead of the raw
+// value, mirroring the hash-at-rest pattern used for refresh/reset tokens.
+func (i *Invitation) SetToken(token string) {
+	i.token = token
+}
+
+// RotateToken generates a fresh raw invitation token, sets it in memory, and
+// returns the raw value. The caller is responsible for persisting the hashed
+// form (SetToken(crypto.HashToken(raw))) and delivering the raw value to the
+// invitee. Used by resend so a lost invite can be re-issued even though only
+// the hash is stored at rest.
+func (i *Invitation) RotateToken() (string, error) {
+	token, err := generateToken()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate token: %w", err)
+	}
+	i.token = token
+	return token, nil
 }
 
 // InvitedBy returns the local user ID of who sent the invitation.

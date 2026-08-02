@@ -49,10 +49,10 @@ func registerTenantRoutes(
 			middleware.RequireMembership(membershipReader))
 	}, baseMiddlewares...)
 
-	// Tenantless module-preset catalogue — used by the team-creation
+	// Tenantless module-preset catalog — used by the team-creation
 	// form so the admin can pick a preset BEFORE the tenant exists.
 	// No tenant-specific data is returned; the payload is the same
-	// product-spec catalogue served by the tenant-scoped variant.
+	// product-spec catalog served by the tenant-scoped variant.
 	router.Group("/api/v1/module-presets", func(r Router) {
 		r.GET("/", h.ListModulePresets)
 	}, baseMiddlewares...)
@@ -125,12 +125,17 @@ func registerTenantRoutes(
 		r.POST("/settings/modules/validate", h.ValidateTenantModuleToggle, middleware.RequireTeamAdmin())
 		// Module presets — curated bundles for common use cases
 		// (VM, ASM, Pentest, SBOM, Compliance, CTEM Full, …).
-		// List endpoint serves the static catalogue; preview is a
+		// List endpoint serves the static catalog; preview is a
 		// dry-run diff; apply writes the diff through the normal
 		// UpdateTenantModules pipeline (validation + audit reuse).
 		r.GET("/settings/modules/presets", h.ListModulePresets, middleware.RequireTeamAdmin())
 		r.POST("/settings/modules/presets/{presetId}/preview", h.PreviewModulePreset, middleware.RequireTeamAdmin())
 		r.POST("/settings/modules/presets/{presetId}/apply", h.ApplyModulePreset, middleware.RequireTeamAdmin())
+
+		// Product-bundle subscription: persistent, live-resolved packaging.
+		// GET returns the current subscription + catalog; POST replaces it.
+		r.GET("/settings/modules/bundles", h.GetModuleBundles, middleware.RequireTeamAdmin())
+		r.POST("/settings/modules/bundles", h.SubscribeModuleBundles, middleware.RequireTeamAdmin())
 
 		// Security & API settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner())

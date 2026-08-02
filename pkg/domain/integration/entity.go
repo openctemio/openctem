@@ -59,6 +59,9 @@ const (
 	ProviderSnyk        Provider = "snyk"
 	ProviderTenable     Provider = "tenable"
 	ProviderCrowdStrike Provider = "crowdstrike"
+	// ProviderDefectDojo is a vulnerability-aggregation front-end whose 200+
+	// scanner parsers we ingest via CTIS (RFC-013 co-existence connector).
+	ProviderDefectDojo Provider = "defectdojo"
 )
 
 // Cloud Providers
@@ -96,7 +99,7 @@ func (p Provider) IsValid() bool {
 	case ProviderGitHub, ProviderGitLab, ProviderBitbucket, ProviderAzureDevOps:
 		return true
 	// Security
-	case ProviderWiz, ProviderSnyk, ProviderTenable, ProviderCrowdStrike:
+	case ProviderWiz, ProviderSnyk, ProviderTenable, ProviderCrowdStrike, ProviderDefectDojo:
 		return true
 	// Cloud
 	case ProviderAWS, ProviderGCP, ProviderAzure:
@@ -117,7 +120,7 @@ func (p Provider) Category() Category {
 	switch p {
 	case ProviderGitHub, ProviderGitLab, ProviderBitbucket, ProviderAzureDevOps:
 		return CategorySCM
-	case ProviderWiz, ProviderSnyk, ProviderTenable, ProviderCrowdStrike:
+	case ProviderWiz, ProviderSnyk, ProviderTenable, ProviderCrowdStrike, ProviderDefectDojo:
 		return CategorySecurity
 	case ProviderAWS, ProviderGCP, ProviderAzure:
 		return CategoryCloud
@@ -404,6 +407,41 @@ func (i *Integration) SetDisconnected() {
 func (i *Integration) SetSyncInterval(minutes int) {
 	i.syncIntervalMinutes = minutes
 	i.updatedAt = time.Now()
+}
+
+// syncIntervalOrDefault returns the configured sync interval, defaulting to 60
+// minutes when unset so a scheduled integration always advances.
+func (i *Integration) syncIntervalOrDefault() time.Duration {
+	m := i.syncIntervalMinutes
+	if m <= 0 {
+		m = 60
+	}
+	return time.Duration(m) * time.Minute
+}
+
+// RecordSyncSuccess stamps a successful scheduled sync: lastSyncAt=now,
+// nextSyncAt=now+interval, and clears any prior sync error. Status is left
+// unchanged (a connected integration stays connected).
+func (i *Integration) RecordSyncSuccess() {
+	now := time.Now()
+	next := now.Add(i.syncIntervalOrDefault())
+	i.lastSyncAt = &now
+	i.nextSyncAt = &next
+	i.syncError = ""
+	i.updatedAt = now
+}
+
+// RecordSyncFailure records a failed scheduled sync but keeps the integration
+// scheduled — nextSyncAt still advances so it retries next interval rather than
+// hammering. Only the syncError message is set; the status is not flipped for a
+// transient sync error.
+func (i *Integration) RecordSyncFailure(errMsg string) {
+	now := time.Now()
+	next := now.Add(i.syncIntervalOrDefault())
+	i.lastSyncAt = &now
+	i.nextSyncAt = &next
+	i.syncError = errMsg
+	i.updatedAt = now
 }
 
 func (i *Integration) SetConfig(config map[string]any) {

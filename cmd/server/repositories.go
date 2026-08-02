@@ -25,6 +25,8 @@ type Repositories struct {
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
 	RelationshipSuggestion *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
+	ThreatModel            *postgres.ThreatModelRepository            // CTEM: Continuous threat models
+	AttackerProfileReader  *postgres.AttackerProfileReader            // CTEM: Attacker profiles (generation input)
 
 	// Vulnerabilities & Findings
 	Vulnerability    *postgres.VulnerabilityRepository
@@ -65,8 +67,9 @@ type Repositories struct {
 	ComplianceMapping    *postgres.ComplianceMappingRepository
 
 	// Attack Simulation & Control Testing
-	Simulation  *postgres.SimulationRepository
-	ControlTest *postgres.ControlTestRepository
+	Simulation    *postgres.SimulationRepository
+	SimulationRun *postgres.SimulationRunRepository
+	ControlTest   *postgres.ControlTestRepository
 
 	// Threat Actor Intelligence
 	ThreatActor *postgres.ThreatActorRepository
@@ -74,6 +77,7 @@ type Repositories struct {
 	// Remediation Campaigns
 	RemediationCampaign       *postgres.RemediationCampaignRepository
 	RemediationCampaignTicket *postgres.RemediationCampaignTicketRepository
+	FindingRemediationKey     *postgres.FindingRemediationKeyRepository
 
 	// Business Units
 	BusinessUnit *postgres.BusinessUnitRepository
@@ -88,9 +92,10 @@ type Repositories struct {
 	Notification               *postgres.NotificationRepository
 
 	// Agents & Commands
-	Agent     *postgres.AgentRepository
-	Command   *postgres.CommandRepository
-	IngestJob *postgres.IngestJobRepository
+	Agent       *postgres.AgentRepository
+	AgentAPIKey *postgres.AgentAPIKeyRepository
+	Command     *postgres.CommandRepository
+	IngestJob   *postgres.IngestJobRepository
 
 	// Scan coverage rotation (RFC-007)
 	ScanCoverage *postgres.ScanCoverageRepository
@@ -154,6 +159,9 @@ type Repositories struct {
 	// SSO Identity Providers
 	IdentityProvider *postgres.IdentityProviderRepository
 
+	// Domain-ownership verification (SSO P1, migration 000191)
+	VerifiedDomain *postgres.VerifiedDomainRepository
+
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
 
@@ -207,6 +215,8 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
 		RelationshipSuggestion: postgres.NewRelationshipSuggestionRepository(db), // CTEM: Relationship suggestions
+		ThreatModel:            postgres.NewThreatModelRepository(db),            // CTEM: Continuous threat models
+		AttackerProfileReader:  postgres.NewAttackerProfileReader(db),            // CTEM: Attacker profiles (generation input)
 
 		// Vulnerabilities & Findings
 		Vulnerability:    postgres.NewVulnerabilityRepository(db),
@@ -248,8 +258,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		ComplianceMapping:    postgres.NewComplianceMappingRepository(db),
 
 		// Attack Simulation & Control Testing
-		Simulation:  postgres.NewSimulationRepository(db),
-		ControlTest: postgres.NewControlTestRepository(db),
+		Simulation:    postgres.NewSimulationRepository(db),
+		SimulationRun: postgres.NewSimulationRunRepository(db),
+		ControlTest:   postgres.NewControlTestRepository(db),
 
 		// Threat Actor Intelligence
 		ThreatActor: postgres.NewThreatActorRepository(db),
@@ -257,6 +268,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		// Remediation Campaigns
 		RemediationCampaign:       postgres.NewRemediationCampaignRepository(db),
 		RemediationCampaignTicket: postgres.NewRemediationCampaignTicketRepository(db),
+		FindingRemediationKey:     postgres.NewFindingRemediationKeyRepository(db),
 
 		// Business Units
 		BusinessUnit: postgres.NewBusinessUnitRepository(db),
@@ -270,9 +282,10 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		Notification: postgres.NewNotificationRepository(db),
 
 		// Agents & Commands
-		Agent:     postgres.NewAgentRepository(db),
-		Command:   postgres.NewCommandRepository(db),
-		IngestJob: postgres.NewIngestJobRepository(db),
+		Agent:       postgres.NewAgentRepository(db),
+		AgentAPIKey: postgres.NewAgentAPIKeyRepository(db),
+		Command:     postgres.NewCommandRepository(db),
+		IngestJob:   postgres.NewIngestJobRepository(db),
 
 		// Scan coverage rotation (RFC-007)
 		ScanCoverage: postgres.NewScanCoverageRepository(db),
@@ -335,6 +348,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// SSO Identity Providers
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
+		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),

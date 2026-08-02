@@ -165,6 +165,20 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		return nil, fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
 	}
 
+	// SECURITY: apply SSRF target validation (blocks internal/localhost/private
+	// IPs) to BOTH the single-scanner and workflow paths. The workflow path
+	// previously skipped this entirely, which both let internal targets through
+	// AND silently dropped the targets (they were never attached to the run, so
+	// the workflow scanned an empty asset group — nothing).
+	validatedTargets, err := s.validateScanTargets(CreateScanInput{
+		TenantID: input.TenantID,
+		Targets:  input.Targets,
+	})
+	if err != nil {
+		return nil, err
+	}
+	input.Targets = validatedTargets
+
 	// Determine scan type
 	scanType := scan.ScanTypeSingle
 	var pipelineID *shared.ID
@@ -186,17 +200,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		}
 	} else {
 		// SECURITY: single-scanner QuickScan bypasses CreateScan, so apply the
-		// same SSRF target validation (blocks internal/localhost/private IPs)
-		// and scanner-config validation here before targets reach an agent.
-		validatedTargets, err := s.validateScanTargets(CreateScanInput{
-			TenantID: input.TenantID,
-			Targets:  input.Targets,
-		})
-		if err != nil {
-			return nil, err
-		}
-		input.Targets = validatedTargets
-
+		// same scanner-config validation here before targets reach an agent.
 		if err := s.validateScanSecurityInputs(ctx, tenantID, CreateScanInput{
 			TenantID:      input.TenantID,
 			Tags:          input.Tags,
@@ -233,6 +237,13 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	}
 
 	sc.Description = fmt.Sprintf("Quick scan of %d targets", len(input.Targets))
+
+	// Persist the direct targets on the scan for BOTH paths. The single-scanner
+	// path also mirrors them into scanner_config below (the agent scanner reads
+	// config), while the workflow path relies on sc.Targets being propagated
+	// into the workflow run context (see triggerWorkflow) so the step commands
+	// actually carry the targets to the agent.
+	sc.SetTargets(input.Targets)
 
 	if scanType == scan.ScanTypeWorkflow {
 		if err := sc.SetWorkflow(*pipelineID); err != nil {

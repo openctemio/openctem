@@ -12,8 +12,9 @@ func registerThreatActorRoutes(
 	h *handler.ThreatActorHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/threat-actors", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ThreatIntelRead))

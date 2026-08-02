@@ -24,6 +24,19 @@ type PriorityClassificationService struct {
 	ruleRepo      PriorityRuleRepository
 	auditRepo     PriorityAuditRepository
 	controlLookup CompensatingControlLookup // optional, may be nil
+	// reachabilityOracle feeds attack-path reachability into classification:
+	// an internal asset that sits on a validated internet→KEV/crown-jewel attack
+	// path is treated as reachable, so the "KEV+reachable→P0" / "critical+
+	// reachable→P1" gates fire for the whole chain, not just directly-public
+	// assets. Optional — nil keeps the asset-exposure-only fallback (no change).
+	reachabilityOracle ReachabilityOracle
+	// threatModelOracle feeds the threat-model engine's output into
+	// classification: an asset sitting on an OPEN, high-score threat in the
+	// tenant's latest generated threat model (attacker × chain-hop × technique)
+	// is treated as reachable, so the exploitability gates fire on the whole
+	// modeled chain. Optional — nil keeps classification unchanged (no threat
+	// model / no oracle → no effect, never a downgrade).
+	threatModelOracle ThreatModelOracle
 	// F3 / optional publisher that fires a priority-changed
 	// event whenever class transitions. Nil → no publishing (safe
 	// default; classification still runs).
@@ -39,6 +52,67 @@ type PriorityClassificationService struct {
 // SetControlLookup wires the compensating control lookup for priority calculation.
 func (s *PriorityClassificationService) SetControlLookup(lookup CompensatingControlLookup) {
 	s.controlLookup = lookup
+}
+
+// ReachabilityOracle returns, for a tenant, the set of asset IDs that sit on a
+// validated attack path from a public entry point to a KEV/crown-jewel target
+// (entry points + hops + targets of the exposure-chain graph). Implemented over
+// the attack-surface service with a short TTL cache so per-finding classification
+// stays cheap.
+type ReachabilityOracle interface {
+	ReachableFromPublic(ctx context.Context, tenantID shared.ID) (map[string]bool, error)
+}
+
+// SetReachabilityOracle wires attack-path reachability into classification.
+// Optional — nil keeps the asset-exposure-only fallback.
+func (s *PriorityClassificationService) SetReachabilityOracle(o ReachabilityOracle) {
+	s.reachabilityOracle = o
+}
+
+// reachableSet fetches the tenant's attack-path-reachable asset set; a nil oracle
+// or any error yields an empty set (classification degrades to the exposure-only
+// fallback — never blocks).
+func (s *PriorityClassificationService) reachableSet(ctx context.Context, tenantID shared.ID) map[string]bool {
+	if s.reachabilityOracle == nil {
+		return nil
+	}
+	set, err := s.reachabilityOracle.ReachableFromPublic(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("attack-path reachability lookup failed", "tenant_id", tenantID.String(), "error", err.Error())
+		return nil
+	}
+	return set
+}
+
+// ThreatModelOracle returns, for a tenant, the set of asset IDs that sit on an
+// OPEN, high-score threat in the tenant's latest generated threat model — the
+// entry points, hops, and targets of unmitigated modeled attack chains. Mirrors
+// ReachabilityOracle: implemented over the threat-model store with a short TTL
+// cache so per-finding classification stays cheap (one tenant-scoped, indexed
+// query per cache miss — no N+1).
+type ThreatModelOracle interface {
+	OnOpenThreatPath(ctx context.Context, tenantID shared.ID) (map[string]bool, error)
+}
+
+// SetThreatModelOracle wires the threat-model engine's output into
+// classification. Optional — nil keeps classification unchanged.
+func (s *PriorityClassificationService) SetThreatModelOracle(o ThreatModelOracle) {
+	s.threatModelOracle = o
+}
+
+// threatenedSet fetches the tenant's open-threat-path asset set; a nil oracle or
+// any error yields a nil set (classification is unaffected — the signal simply
+// does not fire, never a downgrade).
+func (s *PriorityClassificationService) threatenedSet(ctx context.Context, tenantID shared.ID) map[string]bool {
+	if s.threatModelOracle == nil {
+		return nil
+	}
+	set, err := s.threatModelOracle.OnOpenThreatPath(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("threat-model lookup failed", "tenant_id", tenantID.String(), "error", err.Error())
+		return nil
+	}
+	return set
 }
 
 // SetChangePublisher wires the priority-change event publisher. Safe to
@@ -182,8 +256,14 @@ func (s *PriorityClassificationService) ClassifyFinding(
 		telemetry.ObserveStageLatency(telemetry.StagePrioritization, tenantID.String(), time.Since(stageStart))
 	}()
 
-	// Build priority context
-	pctx := s.buildPriorityContext(finding, assetEntity)
+	// Build priority context (with attack-path reachability + threat-model
+	// signal, if wired). Both oracle lookups are tenant-scoped and cached.
+	reachable := s.reachableSet(ctx, tenantID)
+	pctx := s.buildPriorityContext(finding, assetEntity, reachable, s.threatenedSet(ctx, tenantID))
+
+	// Part 2: persist the derived attacker-reachability onto the finding so the
+	// is_reachable column stops lying (always-false). Fail-safe inside.
+	persistReachability(finding, pctx, reachable, assetEntity)
 
 	// Evaluate tenant override rules first
 	rules, err := s.ruleRepo.ListActiveByTenant(ctx, tenantID)
@@ -372,6 +452,12 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		}
 	}
 
+	// Attack-path reachability set + open-threat-path set, each computed once for
+	// the whole batch (one cached, tenant-scoped query apiece — no per-finding
+	// N+1).
+	reachable := s.reachableSet(ctx, tenantID)
+	threatened := s.threatenedSet(ctx, tenantID)
+
 	// Enrich + classify each finding
 	for _, f := range findings {
 		// Enrich with EPSS
@@ -398,11 +484,14 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 			continue
 		}
 
-		pctx := s.buildPriorityContext(f, a)
+		pctx := s.buildPriorityContext(f, a, reachable, threatened)
 		if reduction, ok := controlReduction[f.AssetID()]; ok && reduction > 0 {
 			pctx.IsProtected = true
 			pctx.ControlReductionFactor = reduction
 		}
+
+		// Part 2: persist derived reachability so is_reachable reflects reality.
+		persistReachability(f, pctx, reachable, a)
 
 		var classification vulnerability.PriorityClassification
 		matched := false
@@ -438,9 +527,13 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 }
 
 // buildPriorityContext constructs PriorityContext from finding + asset.
+// reachable is the tenant's attack-path-reachable asset set (may be nil).
+// threatened is the tenant's open-threat-path asset set (may be nil).
 func (s *PriorityClassificationService) buildPriorityContext(
 	f *vulnerability.Finding,
 	a *asset.Asset,
+	reachable map[string]bool,
+	threatened map[string]bool,
 ) vulnerability.PriorityContext {
 	ctx := vulnerability.PriorityContext{
 		Severity:             f.Severity(),
@@ -452,6 +545,11 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		ReachableFromCount:   f.ReachableFromCount(),
 		IsInternetAccessible: f.IsInternetAccessible(),
 		IsNetworkAccessible:  f.IsNetworkAccessible(),
+		// Business impact (from CTIS finding data) — raises findings the
+		// exploitability gates would bury (close-the-loop).
+		HighDataExposure: f.DataExposureRisk() == vulnerability.DataExposureRiskHigh ||
+			f.DataExposureRisk() == vulnerability.DataExposureRiskCritical,
+		HasComplianceImpact: len(f.ComplianceImpact()) > 0,
 	}
 
 	if a != nil {
@@ -487,7 +585,45 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		case asset.ExposureIsolated, asset.ExposureUnknown:
 			// Air-gapped/isolated or unknown -> leave conservative (not reachable).
 		}
+
+		// Attack-path reachability (close-the-loop): an asset sitting on a
+		// validated path from a public entry point to a KEV/crown-jewel target is
+		// reachable even when its own exposure is private/internal. This makes the
+		// exposure-chain engine actually feed prioritization instead of being
+		// display-only. Additive — it can only raise reachability, never lower it.
+		if reachable[a.ID().String()] {
+			ctx.IsInternetAccessible = true
+			if ctx.ReachableFromCount == 0 {
+				ctx.ReachableFromCount = 1
+			}
+		}
+
+		// Threat-model signal (close-the-loop, Part 1): an asset the threat-model
+		// engine placed on an OPEN, high-score modeled attack chain is treated as
+		// reachable, feeding the same "reachable" gate. Kept as its own field
+		// (not folded into IsInternetAccessible) so it raises priority without
+		// polluting the persisted is_reachable/attack-surface signal. Additive —
+		// only raises, never lowers.
+		if threatened[a.ID().String()] {
+			ctx.OnOpenThreatPath = true
+		}
 	}
 
 	return ctx
+}
+
+// persistReachability writes the classifier's freshly-derived attacker-
+// reachability back onto the finding so the is_reachable column (API field +
+// filter) reflects reality instead of always-false. It persists the effective
+// internet/attack-path reachability (exposure + attack-path oracle) — NOT the
+// threat-model signal, which is a distinct input. Fail-safe: called only when
+// the reachability oracle was available (reachable != nil); when it is
+// unavailable we leave the finding's flag untouched rather than force a
+// possibly-false-negative value. The actual DB write happens via the caller's
+// FindingRepository.Update / ingest upsert, both of which include is_reachable.
+func persistReachability(f *vulnerability.Finding, pctx vulnerability.PriorityContext, reachable map[string]bool, a *asset.Asset) {
+	if reachable == nil || a == nil {
+		return
+	}
+	f.SetReachability(pctx.IsInternetAccessible, pctx.ReachableFromCount)
 }

@@ -3,6 +3,7 @@ package audit
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -55,7 +56,10 @@ func NewAuditLog(
 		result:       result,
 		severity:     SeverityForAction(action),
 		metadata:     make(map[string]any),
-		timestamp:    time.Now().UTC(),
+		// Rounded to microseconds because that is the resolution PostgreSQL
+		// stores (and it rounds, not truncates). Keeping the in-memory value
+		// equal to the stored value is what makes the hash chain verifiable.
+		timestamp: time.Now().UTC().Round(time.Microsecond),
 	}, nil
 }
 
@@ -216,9 +220,20 @@ func (a *AuditLog) WithActor(actorID shared.ID, email string) *AuditLog {
 	return a
 }
 
-// WithActorIP sets the actor IP address.
+// maxActorIPLen matches the audit_logs.actor_ip column (varchar(45)). A value
+// longer than this does not truncate — the INSERT fails outright, which drops the
+// audit row AND its hash-chain entry with no error surfaced to the caller. That
+// makes the audit trail suppressible: several handlers assign the raw
+// X-Forwarded-For header, so a long (or multi-hop) header silently erases the
+// record of the request that carried it. A plain IPv6 RemoteAddr like
+// "[2001:db8:85a3::8a2e:370:7334]:54321" is already 47 characters and hits this.
+const maxActorIPLen = 45
+
+// WithActorIP sets the actor IP address. The value is reduced to a single,
+// storable address: callers routinely pass a whole X-Forwarded-For chain, of
+// which only the leftmost entry is the client.
 func (a *AuditLog) WithActorIP(ip string) *AuditLog {
-	a.actorIP = ip
+	a.actorIP = normalizeActorIP(ip)
 	return a
 }
 
@@ -326,4 +341,18 @@ func (a *AuditLog) GenerateMessage() string {
 	}
 
 	return fmt.Sprintf("%s performed %s on %s (%s)", actor, a.action, resource, a.result)
+}
+
+// normalizeActorIP keeps the leftmost X-Forwarded-For entry and bounds the result
+// to what the column can store, so an over-long or multi-hop value can never
+// suppress the audit row.
+func normalizeActorIP(ip string) string {
+	ip = strings.TrimSpace(ip)
+	if idx := strings.Index(ip, ","); idx != -1 {
+		ip = strings.TrimSpace(ip[:idx])
+	}
+	if len(ip) > maxActorIPLen {
+		ip = ip[:maxActorIPLen]
+	}
+	return ip
 }

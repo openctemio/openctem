@@ -163,7 +163,7 @@ type CreateTenantRequest struct {
 	Slug        string `json:"slug" validate:"required,min=3,max=100,slug"`
 	Description string `json:"description" validate:"max=500"`
 	// ModulePresetID optionally binds a module preset at creation time.
-	// Empty = no preset applied (every active catalogue module is on by
+	// Empty = no preset applied (every active catalog module is on by
 	// default, i.e. ctem_full-equivalent — kept for backward compat).
 	// Valid values match pkg/domain/module/presets.go (e.g.
 	// "vm_essentials", "asset_inventory", "bug_bounty").
@@ -910,7 +910,7 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 	// owner/admin role bundle, escalating beyond their own ceiling on accept.
 	if !middleware.IsAdmin(r.Context()) && h.roleService != nil {
 		for _, rid := range req.RoleIDs {
-			role, rErr := h.roleService.GetRole(r.Context(), rid)
+			role, rErr := h.roleService.GetRole(r.Context(), middleware.MustGetTenantID(r.Context()), rid)
 			if rErr != nil {
 				h.handleServiceError(w, rErr)
 				return
@@ -950,7 +950,7 @@ func (h *TenantHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.DeleteInvitation(r.Context(), invitationID); err != nil {
+	if err := h.service.DeleteInvitation(r.Context(), middleware.MustGetTenantID(r.Context()), invitationID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1113,8 +1113,9 @@ func (h *TenantHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Delete the invitation
-	if err := h.service.DeleteInvitation(r.Context(), invitation.ID().String()); err != nil {
+	// Delete the invitation (public decline: the token authorizes it; pass the
+	// invitation's own tenant so the scoping check is satisfied).
+	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String()); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1148,6 +1149,8 @@ type GeneralSettingsResponse struct {
 type SecuritySettingsResponse struct {
 	SSOEnabled            bool     `json:"sso_enabled"`
 	SSOProvider           string   `json:"sso_provider,omitempty"`
+	SSOConfigURL          string   `json:"sso_config_url,omitempty"`
+	SSOEnforced           bool     `json:"sso_enforced"`
 	MFARequired           bool     `json:"mfa_required"`
 	SessionTimeoutMin     int      `json:"session_timeout_min"`
 	IPWhitelist           []string `json:"ip_whitelist"`
@@ -1185,6 +1188,8 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 		Security: SecuritySettingsResponse{
 			SSOEnabled:            s.Security.SSOEnabled,
 			SSOProvider:           s.Security.SSOProvider,
+			SSOConfigURL:          s.Security.SSOConfigURL,
+			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
 			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
 			IPWhitelist:           s.Security.IPWhitelist,
@@ -1238,11 +1243,17 @@ func (h *TenantHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateGeneralSettingsRequest represents the request to update general settings.
+// Fields are pointers so a partial PATCH only touches the fields it sends —
+// omitted fields are left untouched (not reset to empty).
 type UpdateGeneralSettingsRequest struct {
-	Timezone string `json:"timezone"`
-	Language string `json:"language" validate:"omitempty,oneof=en vi ja ko zh"`
-	Industry string `json:"industry" validate:"max=100"`
-	Website  string `json:"website" validate:"omitempty,url,max=500"`
+	Timezone *string `json:"timezone"`
+	Language *string `json:"language" validate:"omitempty,oneof=en vi ja ko zh"`
+	Industry *string `json:"industry" validate:"omitempty,max=100"`
+	// No `url` tag: with pointer fields omitempty does not skip a non-nil
+	// pointer to "", so `url` would reject an explicit empty string (used to
+	// clear the field). GeneralSettings.Validate enforces URL format when
+	// the value is non-empty.
+	Website *string `json:"website" validate:"omitempty,max=500"`
 }
 
 // UpdateGeneralSettings handles PATCH /api/v1/tenants/{tenant}/settings/general
@@ -1284,15 +1295,20 @@ func (h *TenantHandler) UpdateGeneralSettings(w http.ResponseWriter, r *http.Req
 }
 
 // UpdateSecuritySettingsRequest represents the request to update security settings.
+// Scalar fields are pointers so a partial PATCH only touches what it sends;
+// slice fields keep their nil-vs-[] meaning (omitted => unchanged, [] => clear).
 type UpdateSecuritySettingsRequest struct {
-	SSOEnabled            bool     `json:"sso_enabled"`
-	SSOProvider           string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
-	SSOConfigURL          string   `json:"sso_config_url" validate:"omitempty,url"`
-	MFARequired           bool     `json:"mfa_required"`
-	SessionTimeoutMin     int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
+	SSOEnabled  *bool   `json:"sso_enabled"`
+	SSOProvider *string `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
+	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
+	// SecuritySettings.Validate checks the URL when SSO is enabled.
+	SSOConfigURL          *string  `json:"sso_config_url"`
+	SSOEnforced           *bool    `json:"sso_enforced"`
+	MFARequired           *bool    `json:"mfa_required"`
+	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
-	EmailVerificationMode string   `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -1318,6 +1334,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		SSOEnabled:            req.SSOEnabled,
 		SSOProvider:           req.SSOProvider,
 		SSOConfigURL:          req.SSOConfigURL,
+		SSOEnforced:           req.SSOEnforced,
 		MFARequired:           req.MFARequired,
 		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,
@@ -1338,10 +1355,14 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 }
 
 // UpdateAPISettingsRequest represents the request to update API settings.
+// Scalar fields are pointers so a partial PATCH only touches what it sends;
+// WebhookEvents keeps its nil-vs-[] meaning (omitted => unchanged, [] => clear).
 type UpdateAPISettingsRequest struct {
-	APIKeyEnabled bool     `json:"api_key_enabled"`
-	WebhookURL    string   `json:"webhook_url" validate:"omitempty,url"`
-	WebhookSecret string   `json:"webhook_secret"`
+	APIKeyEnabled *bool `json:"api_key_enabled"`
+	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
+	// APISettings.Validate checks the URL when non-empty.
+	WebhookURL    *string  `json:"webhook_url"`
+	WebhookSecret *string  `json:"webhook_secret"`
 	WebhookEvents []string `json:"webhook_events"`
 }
 
@@ -1384,10 +1405,14 @@ func (h *TenantHandler) UpdateAPISettings(w http.ResponseWriter, r *http.Request
 }
 
 // UpdateBrandingSettingsRequest represents the request to update branding settings.
+// Fields are pointers so a partial PATCH only touches what it sends — omitted
+// fields (e.g. the logo when only the color changes) are left untouched.
 type UpdateBrandingSettingsRequest struct {
-	PrimaryColor string `json:"primary_color"`
-	LogoDarkURL  string `json:"logo_dark_url" validate:"omitempty,url"`
-	LogoData     string `json:"logo_data"` // Base64 encoded logo (max 150KB)
+	PrimaryColor *string `json:"primary_color"`
+	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
+	// BrandingSettings.Validate checks the URL when non-empty.
+	LogoDarkURL *string `json:"logo_dark_url"`
+	LogoData    *string `json:"logo_data"` // Base64 encoded logo (max 150KB)
 }
 
 // UpdateBrandingSettings handles PATCH /api/v1/tenants/{tenant}/settings/branding
@@ -2102,7 +2127,7 @@ func (h *TenantHandler) ResetTenantModules(w http.ResponseWriter, r *http.Reques
 }
 
 // ListModulePresets handles GET /api/v1/tenants/{tenant}/settings/modules/presets.
-// Returns the static preset catalogue so the UI can render the picker.
+// Returns the static preset catalog so the UI can render the picker.
 // Does NOT require tenant context for reads, but gated behind
 // RequireTeamAdmin so the pricing/persona copy isn't exposed to
 // unauthenticated probes.
@@ -2114,6 +2139,62 @@ func (h *TenantHandler) ListModulePresets(w http.ResponseWriter, r *http.Request
 	presets := h.moduleService.ListModulePresets(r.Context())
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"presets": presets})
+}
+
+type subscribeBundlesRequest struct {
+	BundleIDs []string `json:"bundle_ids"`
+}
+
+// GetModuleBundles returns the tenant's current bundle subscription plus the
+// available bundle catalog. Empty subscription = the tenant runs every module.
+func (h *TenantHandler) GetModuleBundles(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"subscribed": h.moduleService.GetSubscribedBundles(r.Context(), tenantID.String()),
+		"available":  h.moduleService.ListModulePresets(r.Context()),
+	})
+}
+
+// SubscribeModuleBundles replaces the tenant's bundle subscription. An empty
+// list clears it (every module on). The enabled-module set is then resolved live
+// from the chosen bundles; per-module overrides still apply on top.
+func (h *TenantHandler) SubscribeModuleBundles(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTeamID(r.Context())
+	if tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	if h.moduleService == nil {
+		apierror.InternalServerError("Module service not configured").WriteJSON(w)
+		return
+	}
+	var req subscribeBundlesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	actx := h.buildAuditContext(r)
+	if err := h.moduleService.SubscribeBundles(r.Context(), tenantID.String(), req.BundleIDs, actx); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	// Return the fresh module config so the UI can refresh in one round trip.
+	config, err := h.moduleService.GetTenantModuleConfig(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(config)
 }
 
 // PreviewModulePreset handles POST /.../settings/modules/presets/{presetId}/preview.

@@ -30,6 +30,33 @@ const defaultTimeoutSeconds = 120
 // safe-check kind is allowed to run (see kindSupportsTechnique).
 const safeCheckTechnique TechniqueID = "T1046"
 
+// ErrNotNetworkAddressable is returned when a finding's asset has no network
+// address a safe-check reachability probe can dial (e.g. a code repository,
+// container image, or cloud-account finding). Callers that auto-dispatch
+// validation (e.g. proof-of-fix on fix_applied) treat it as an expected skip,
+// not a failure.
+var ErrNotNetworkAddressable = fmt.Errorf("%w: asset is not network-addressable for a safe-check re-check", shared.ErrValidation)
+
+// networkAddressableTypes is the set of asset types whose Name() is a host,
+// IP, or URL a safe-check probe can reach over the network. Types outside this
+// set (repository, container, cloud_account, …) cannot be reachability-probed.
+var networkAddressableTypes = map[asset.AssetType]bool{
+	asset.AssetTypeDomain:         true,
+	asset.AssetTypeSubdomain:      true,
+	asset.AssetTypeIPAddress:      true,
+	asset.AssetTypeWebsite:        true,
+	asset.AssetTypeWebApplication: true,
+	asset.AssetTypeAPI:            true,
+	asset.AssetTypeService:        true,
+	asset.AssetTypeHost:           true,
+}
+
+// isNetworkAddressable reports whether a safe-check reachability probe can
+// meaningfully target an asset of the given type.
+func isNetworkAddressable(t asset.AssetType) bool {
+	return networkAddressableTypes[t]
+}
+
 // RunService turns "validate this finding" into a dispatched validation job.
 // It resolves the finding's asset into a Target, picks an executor kind via the
 // Selector against the fleet's available kinds, and hands the job to the
@@ -85,6 +112,10 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 		return shared.ID{}, fmt.Errorf("asset lookup: %w", err)
 	}
 
+	if !isNetworkAddressable(a.Type()) {
+		return shared.ID{}, ErrNotNetworkAddressable
+	}
+
 	address := strings.TrimSpace(a.Name())
 	if address == "" {
 		return shared.ID{}, fmt.Errorf("%w: asset has no address to validate against", shared.ErrValidation)
@@ -120,6 +151,68 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 		"finding_id", findingID.String(),
 		"asset_id", assetID.String(),
 		"executor_kind", string(kind),
+		"command_id", cmdID.String(),
+	)
+	return cmdID, nil
+}
+
+// DispatchSimulationCheck dispatches a real safe-check probe for an
+// attack-simulation run (RFC-012 Phase 1b). Unlike ValidateFinding it is not
+// finding-scoped: the job carries the simulation run id, and the completion
+// hook finalizes the run from the agent's outcome. Returns
+// ErrNotNetworkAddressable when the target asset cannot be reachability-probed,
+// or a selector error when the technique is not safe-checkable — in both cases
+// the caller falls back to the (clearly-labeled) synthetic path.
+func (s *RunService) DispatchSimulationCheck(ctx context.Context, tenantID, simRunID, assetID shared.ID, technique string) (shared.ID, error) {
+	if tenantID.IsZero() || simRunID.IsZero() || assetID.IsZero() {
+		return shared.ID{}, fmt.Errorf("%w: tenant, run and asset ids are required", shared.ErrValidation)
+	}
+
+	a, err := s.assets.GetByID(ctx, tenantID, assetID)
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("asset lookup: %w", err)
+	}
+	if !isNetworkAddressable(a.Type()) {
+		return shared.ID{}, ErrNotNetworkAddressable
+	}
+	address := strings.TrimSpace(a.Name())
+	if address == "" {
+		return shared.ID{}, fmt.Errorf("%w: asset has no address to validate against", shared.ErrValidation)
+	}
+
+	// Only dispatch when the simulation's technique is one the safe-check
+	// executor genuinely supports; otherwise let the caller fall back.
+	tech := TechniqueID(technique)
+	kind, err := s.selector.Select(tech, nil, s.available)
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("no safe-check executor for technique %s: %w", technique, err)
+	}
+
+	job := ValidationJob{
+		JobID:           shared.NewID(),
+		TenantID:        tenantID,
+		SimulationRunID: simRunID,
+		ExecutorKind:    kind,
+		Technique:       tech,
+		Target: Target{
+			AssetID: assetID,
+			Type:    a.Type().String(),
+			Address: address,
+		},
+		TimeoutSeconds: defaultTimeoutSeconds,
+	}
+
+	cmdID, err := s.dispatcher.Dispatch(ctx, job)
+	if err != nil {
+		return shared.ID{}, err
+	}
+
+	s.logger.Info("simulation safe-check dispatched",
+		"tenant_id", tenantID.String(),
+		"simulation_run_id", simRunID.String(),
+		"asset_id", assetID.String(),
+		"executor_kind", string(kind),
+		"technique", technique,
 		"command_id", cmdID.String(),
 	)
 	return cmdID, nil

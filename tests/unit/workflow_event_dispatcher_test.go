@@ -1268,10 +1268,10 @@ func TestWfDispatch_MatchesAITriageTriggerFilters_SeverityFilterMatch(t *testing
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	event := app.AITriageEvent{
-		TenantID:  tenantID,
-		FindingID: shared.NewID(),
-		TriageID:  shared.NewID(),
-		EventType: workflow.TriggerTypeAITriageCompleted,
+		TenantID:   tenantID,
+		FindingID:  shared.NewID(),
+		TriageID:   shared.NewID(),
+		EventType:  workflow.TriggerTypeAITriageCompleted,
 		TriageData: map[string]any{"severity_assessment": "high"},
 	}
 
@@ -1293,10 +1293,10 @@ func TestWfDispatch_MatchesAITriageTriggerFilters_SeverityFilterMismatch(t *test
 	h.wfRepo.workflows[wf.ID.String()] = wf
 
 	event := app.AITriageEvent{
-		TenantID:  tenantID,
-		FindingID: shared.NewID(),
-		TriageID:  shared.NewID(),
-		EventType: workflow.TriggerTypeAITriageCompleted,
+		TenantID:   tenantID,
+		FindingID:  shared.NewID(),
+		TriageID:   shared.NewID(),
+		EventType:  workflow.TriggerTypeAITriageCompleted,
 		TriageData: map[string]any{"severity_assessment": "low"},
 	}
 

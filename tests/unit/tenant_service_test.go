@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
@@ -298,8 +299,11 @@ func (m *mockTenantRepo) GetInvitationByToken(_ context.Context, token string) (
 	if m.getInvitationByTokenErr != nil {
 		return nil, m.getInvitationByTokenErr
 	}
+	// Emulate hash-at-rest: the service hashes the raw token before lookup, so
+	// the incoming `token` is a hash. Seeded invitations hold the raw token, so
+	// hash it before comparing.
 	for _, inv := range m.invitations {
-		if inv.Token() == token {
+		if crypto.HashToken(inv.Token()) == token {
 			return inv, nil
 		}
 	}
@@ -1917,16 +1921,29 @@ func TestTenantSvc_DeleteInvitation_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	inv := seedPendingInvitation(repo, tenantID, "user@test.com", tenant.RoleMember, shared.NewID())
 
-	err := svc.DeleteInvitation(context.Background(), inv.ID().String())
+	err := svc.DeleteInvitation(context.Background(), tenantID.String(), inv.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestTenantSvc_DeleteInvitation_CrossTenantForbidden(t *testing.T) {
+	svc, repo := newTestTenantService()
+	ownerTenant := shared.NewID()
+	inv := seedPendingInvitation(repo, ownerTenant, "user@test.com", tenant.RoleMember, shared.NewID())
+
+	// A different tenant must not be able to delete another tenant's invitation.
+	attackerTenant := shared.NewID()
+	err := svc.DeleteInvitation(context.Background(), attackerTenant.String(), inv.ID().String())
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for cross-tenant delete, got %v", err)
 	}
 }
 
 func TestTenantSvc_DeleteInvitation_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	err := svc.DeleteInvitation(context.Background(), "bad-uuid")
+	err := svc.DeleteInvitation(context.Background(), shared.NewID().String(), "bad-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -1937,9 +1954,11 @@ func TestTenantSvc_DeleteInvitation_InvalidID(t *testing.T) {
 
 func TestTenantSvc_DeleteInvitation_RepoError(t *testing.T) {
 	svc, repo := newTestTenantService()
+	tenantID := shared.NewID()
+	inv := seedPendingInvitation(repo, tenantID, "user@test.com", tenant.RoleMember, shared.NewID())
 	repo.deleteInvitationErr = errors.New("db error")
 
-	err := svc.DeleteInvitation(context.Background(), shared.NewID().String())
+	err := svc.DeleteInvitation(context.Background(), tenantID.String(), inv.ID().String())
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -2129,9 +2148,9 @@ func TestTenantSvc_UpdateGeneralSettings_Success(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 
 	input := app.UpdateGeneralSettingsInput{
-		Timezone: "UTC",
-		Language: "en",
-		Industry: "technology",
+		Timezone: strPtr("UTC"),
+		Language: strPtr("en"),
+		Industry: strPtr("technology"),
 	}
 
 	result, err := svc.UpdateGeneralSettings(context.Background(), existing.ID().String(), input, app.AuditContext{})
@@ -2146,10 +2165,80 @@ func TestTenantSvc_UpdateGeneralSettings_Success(t *testing.T) {
 	}
 }
 
+// TestTenantSvc_UpdateGeneralSettings_PartialPatchPreservesOmitted proves the
+// partial-merge fix: setting industry+website then PATCHing only timezone must
+// NOT wipe industry/website back to empty.
+func TestTenantSvc_UpdateGeneralSettings_PartialPatchPreservesOmitted(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	id := existing.ID().String()
+
+	// Seed two fields.
+	_, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+		Industry: strPtr("finance"),
+		Website:  strPtr("https://example.com"),
+	}, app.AuditContext{})
+	if err != nil {
+		t.Fatalf("seed update failed: %v", err)
+	}
+
+	// Partial PATCH: only timezone.
+	result, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+		Timezone: strPtr("Asia/Ho_Chi_Minh"),
+	}, app.AuditContext{})
+	if err != nil {
+		t.Fatalf("partial update failed: %v", err)
+	}
+
+	if result.General.Timezone != "Asia/Ho_Chi_Minh" {
+		t.Errorf("timezone not applied: got %q", result.General.Timezone)
+	}
+	if result.General.Industry != "finance" {
+		t.Errorf("industry wiped by partial patch: got %q, want 'finance'", result.General.Industry)
+	}
+	if result.General.Website != "https://example.com" {
+		t.Errorf("website wiped by partial patch: got %q, want 'https://example.com'", result.General.Website)
+	}
+}
+
+// TestTenantSvc_UpdateGeneralSettings_ClearWebsiteWithEmptyString proves that an
+// explicit "" clears a URL field (a non-nil pointer to "" must be accepted, not
+// rejected by URL validation), while a malformed non-empty URL is still refused
+// by the domain validator.
+func TestTenantSvc_UpdateGeneralSettings_ClearWebsiteWithEmptyString(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	id := existing.ID().String()
+
+	if _, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+		Website: strPtr("https://example.com"),
+	}, app.AuditContext{}); err != nil {
+		t.Fatalf("seed website failed: %v", err)
+	}
+
+	// Explicit empty string must clear, not 422.
+	res, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+		Website: strPtr(""),
+	}, app.AuditContext{})
+	if err != nil {
+		t.Fatalf("clearing website with empty string failed: %v", err)
+	}
+	if res.General.Website != "" {
+		t.Errorf("website not cleared: got %q", res.General.Website)
+	}
+
+	// A malformed non-empty URL must still be rejected by domain validation.
+	if _, err := svc.UpdateGeneralSettings(context.Background(), id, app.UpdateGeneralSettingsInput{
+		Website: strPtr("not-a-url"),
+	}, app.AuditContext{}); err == nil {
+		t.Error("expected validation error for malformed website URL")
+	}
+}
+
 func TestTenantSvc_UpdateGeneralSettings_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateGeneralSettingsInput{Timezone: "UTC"}
+	input := app.UpdateGeneralSettingsInput{Timezone: strPtr("UTC")}
 	_, err := svc.UpdateGeneralSettings(context.Background(), "bad-uuid", input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
@@ -2159,7 +2248,7 @@ func TestTenantSvc_UpdateGeneralSettings_InvalidID(t *testing.T) {
 func TestTenantSvc_UpdateGeneralSettings_NotFound(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateGeneralSettingsInput{Timezone: "UTC"}
+	input := app.UpdateGeneralSettingsInput{Timezone: strPtr("UTC")}
 	_, err := svc.UpdateGeneralSettings(context.Background(), shared.NewID().String(), input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for not found")
@@ -2175,8 +2264,8 @@ func TestTenantSvc_UpdateSecuritySettings_Success(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 
 	input := app.UpdateSecuritySettingsInput{
-		MFARequired:       true,
-		SessionTimeoutMin: 60,
+		MFARequired:       boolPtr(true),
+		SessionTimeoutMin: intPtr(60),
 	}
 
 	result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), input, app.AuditContext{})
@@ -2188,13 +2277,131 @@ func TestTenantSvc_UpdateSecuritySettings_Success(t *testing.T) {
 	}
 }
 
+// mockSSOPathChecker is a test double for app.SSOPathChecker.
+type mockSSOPathChecker struct {
+	usable bool
+	err    error
+	calls  int
+}
+
+func (m *mockSSOPathChecker) HasUsableSSOPath(_ context.Context, _ string) (bool, error) {
+	m.calls++
+	return m.usable, m.err
+}
+
+// TestTenantSvc_SSOEnforced_Guard covers the can't-enable guard: enabling
+// sso_enforced requires a usable SSO path, but disabling and the owner
+// break-glass are never blocked.
+func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
+	t.Run("enable refused without a usable SSO path", func(t *testing.T) {
+		svc, repo := newTestTenantService()
+		checker := &mockSSOPathChecker{usable: false}
+		svc.SetSSOPathChecker(checker)
+		existing := seedTenant(repo, "Team", "team-slug")
+
+		_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
+			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
+		if err == nil {
+			t.Fatal("expected refusal when no usable SSO path")
+		}
+		if checker.calls == 0 {
+			t.Error("expected the SSO-path checker to be consulted")
+		}
+	})
+
+	t.Run("enable allowed with a usable SSO path", func(t *testing.T) {
+		svc, repo := newTestTenantService()
+		svc.SetSSOPathChecker(&mockSSOPathChecker{usable: true})
+		existing := seedTenant(repo, "Team", "team-slug")
+
+		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
+			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if !result.Security.SSOEnforced {
+			t.Error("sso_enforced should be true")
+		}
+	})
+
+	t.Run("enable allowed (fail-open) when no checker is wired", func(t *testing.T) {
+		svc, repo := newTestTenantService() // no SetSSOPathChecker
+		existing := seedTenant(repo, "Team", "team-slug")
+
+		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
+			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(true)}, app.AuditContext{})
+		if err != nil {
+			t.Fatalf("expected success (fail-open), got %v", err)
+		}
+		if !result.Security.SSOEnforced {
+			t.Error("sso_enforced should be true")
+		}
+	})
+
+	t.Run("disable never consults the checker", func(t *testing.T) {
+		svc, repo := newTestTenantService()
+		checker := &mockSSOPathChecker{usable: false}
+		svc.SetSSOPathChecker(checker)
+		existing := seedTenant(repo, "Team", "team-slug")
+
+		_, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
+			app.UpdateSecuritySettingsInput{SSOEnforced: boolPtr(false)}, app.AuditContext{})
+		if err != nil {
+			t.Fatalf("disabling must never be blocked, got %v", err)
+		}
+		if checker.calls != 0 {
+			t.Errorf("checker must not be called when disabling, got %d calls", checker.calls)
+		}
+	})
+}
+
 func TestTenantSvc_UpdateSecuritySettings_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := app.UpdateSecuritySettingsInput{SessionTimeoutMin: 60}
+	input := app.UpdateSecuritySettingsInput{SessionTimeoutMin: intPtr(60)}
 	_, err := svc.UpdateSecuritySettings(context.Background(), "bad-uuid", input, app.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
+	}
+}
+
+// TestTenantSvc_UpdateSecuritySettings_PartialPatchPreservesOmitted proves that
+// toggling a single flag does not wipe the IP whitelist / allowed domains /
+// session timeout that the request omitted.
+func TestTenantSvc_UpdateSecuritySettings_PartialPatchPreservesOmitted(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	id := existing.ID().String()
+
+	// Seed a full-ish security config.
+	_, err := svc.UpdateSecuritySettings(context.Background(), id, app.UpdateSecuritySettingsInput{
+		SessionTimeoutMin: intPtr(120),
+		IPWhitelist:       []string{"10.0.0.0/8"},
+		AllowedDomains:    []string{"example.com"},
+	}, app.AuditContext{})
+	if err != nil {
+		t.Fatalf("seed update failed: %v", err)
+	}
+
+	// Partial PATCH: only flip MFA on.
+	result, err := svc.UpdateSecuritySettings(context.Background(), id, app.UpdateSecuritySettingsInput{
+		MFARequired: boolPtr(true),
+	}, app.AuditContext{})
+	if err != nil {
+		t.Fatalf("partial update failed: %v", err)
+	}
+
+	if !result.Security.MFARequired {
+		t.Error("MFA flag not applied")
+	}
+	if result.Security.SessionTimeoutMin != 120 {
+		t.Errorf("session timeout wiped: got %d, want 120", result.Security.SessionTimeoutMin)
+	}
+	if len(result.Security.IPWhitelist) != 1 || result.Security.IPWhitelist[0] != "10.0.0.0/8" {
+		t.Errorf("ip whitelist wiped: got %v", result.Security.IPWhitelist)
+	}
+	if len(result.Security.AllowedDomains) != 1 || result.Security.AllowedDomains[0] != "example.com" {
+		t.Errorf("allowed domains wiped: got %v", result.Security.AllowedDomains)
 	}
 }
 
@@ -2207,8 +2414,8 @@ func TestTenantSvc_UpdateAPISettings_Success(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 
 	input := app.UpdateAPISettingsInput{
-		APIKeyEnabled: true,
-		WebhookURL:    "https://example.com/webhook",
+		APIKeyEnabled: boolPtr(true),
+		WebhookURL:    strPtr("https://example.com/webhook"),
 		WebhookEvents: []string{"finding.created"},
 	}
 
@@ -2218,6 +2425,45 @@ func TestTenantSvc_UpdateAPISettings_Success(t *testing.T) {
 	}
 	if !result.API.APIKeyEnabled {
 		t.Error("expected API key to be enabled")
+	}
+}
+
+// TestTenantSvc_UpdateAPISettings_PartialPatchPreservesOmitted proves that
+// toggling api_key_enabled does not wipe the webhook URL/secret/events.
+func TestTenantSvc_UpdateAPISettings_PartialPatchPreservesOmitted(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	id := existing.ID().String()
+
+	// Seed webhook config.
+	_, err := svc.UpdateAPISettings(context.Background(), id, app.UpdateAPISettingsInput{
+		WebhookURL:    strPtr("https://hooks.example.com/x"),
+		WebhookSecret: strPtr("s3cr3t"),
+		WebhookEvents: []string{"finding.created", "scan.completed"},
+	}, app.AuditContext{})
+	if err != nil {
+		t.Fatalf("seed update failed: %v", err)
+	}
+
+	// Partial PATCH: only enable API keys.
+	result, err := svc.UpdateAPISettings(context.Background(), id, app.UpdateAPISettingsInput{
+		APIKeyEnabled: boolPtr(true),
+	}, app.AuditContext{})
+	if err != nil {
+		t.Fatalf("partial update failed: %v", err)
+	}
+
+	if !result.API.APIKeyEnabled {
+		t.Error("api_key_enabled not applied")
+	}
+	if result.API.WebhookURL != "https://hooks.example.com/x" {
+		t.Errorf("webhook url wiped: got %q", result.API.WebhookURL)
+	}
+	if result.API.WebhookSecret != "s3cr3t" {
+		t.Errorf("webhook secret wiped: got %q", result.API.WebhookSecret)
+	}
+	if len(result.API.WebhookEvents) != 2 {
+		t.Errorf("webhook events wiped: got %v", result.API.WebhookEvents)
 	}
 }
 
@@ -2240,7 +2486,7 @@ func TestTenantSvc_UpdateBrandingSettings_Success(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 
 	input := app.UpdateBrandingSettingsInput{
-		PrimaryColor: "#FF5733",
+		PrimaryColor: strPtr("#FF5733"),
 	}
 
 	result, err := svc.UpdateBrandingSettings(context.Background(), existing.ID().String(), input, app.AuditContext{})
@@ -2249,6 +2495,37 @@ func TestTenantSvc_UpdateBrandingSettings_Success(t *testing.T) {
 	}
 	if result.Branding.PrimaryColor != "#FF5733" {
 		t.Errorf("expected color '#FF5733', got %q", result.Branding.PrimaryColor)
+	}
+}
+
+// TestTenantSvc_UpdateBrandingSettings_PartialPatchPreservesOmitted proves that
+// changing only the primary color does not wipe the logo.
+func TestTenantSvc_UpdateBrandingSettings_PartialPatchPreservesOmitted(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	id := existing.ID().String()
+
+	logo := "data:image/png;base64,iVBORw0KGgo="
+	_, err := svc.UpdateBrandingSettings(context.Background(), id, app.UpdateBrandingSettingsInput{
+		LogoData: strPtr(logo),
+	}, app.AuditContext{})
+	if err != nil {
+		t.Fatalf("seed update failed: %v", err)
+	}
+
+	// Partial PATCH: only the color.
+	result, err := svc.UpdateBrandingSettings(context.Background(), id, app.UpdateBrandingSettingsInput{
+		PrimaryColor: strPtr("#123456"),
+	}, app.AuditContext{})
+	if err != nil {
+		t.Fatalf("partial update failed: %v", err)
+	}
+
+	if result.Branding.PrimaryColor != "#123456" {
+		t.Errorf("color not applied: got %q", result.Branding.PrimaryColor)
+	}
+	if result.Branding.LogoData != logo {
+		t.Errorf("logo wiped by partial patch: got %q", result.Branding.LogoData)
 	}
 }
 
@@ -2418,7 +2695,7 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 			return err
 		}},
 		{"ListPendingInvitations", func() error { _, err := svc.ListPendingInvitations(context.Background(), invalidID); return err }},
-		{"DeleteInvitation", func() error { return svc.DeleteInvitation(context.Background(), invalidID) }},
+		{"DeleteInvitation", func() error { return svc.DeleteInvitation(context.Background(), invalidID, invalidID) }},
 		{"GetTenantSettings", func() error { _, err := svc.GetTenantSettings(context.Background(), invalidID); return err }},
 		{"UpdateTenantSettings", func() error {
 			_, err := svc.UpdateTenantSettings(context.Background(), invalidID, tenant.DefaultSettings(), app.AuditContext{})
@@ -2429,7 +2706,7 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 			return err
 		}},
 		{"UpdateSecuritySettings", func() error {
-			_, err := svc.UpdateSecuritySettings(context.Background(), invalidID, app.UpdateSecuritySettingsInput{SessionTimeoutMin: 60}, app.AuditContext{})
+			_, err := svc.UpdateSecuritySettings(context.Background(), invalidID, app.UpdateSecuritySettingsInput{SessionTimeoutMin: intPtr(60)}, app.AuditContext{})
 			return err
 		}},
 		{"UpdateAPISettings", func() error {
@@ -2458,6 +2735,11 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 		})
 	}
 }
+
+// boolPtr / intPtr are pointer-literal helpers for building partial-update
+// inputs in tests. strPtr lives in asset_service_test.go (same package).
+func boolPtr(b bool) *bool { return &b }
+func intPtr(i int) *int    { return &i }
 
 // TestTenantSvc_AddMember_ZeroInviter_NullInvitedBy guards the SCIM/system
 // provisioning path: AddMember called with a zero inviter must produce a
@@ -2515,5 +2797,44 @@ func TestTenantSvc_SuspendMember_SystemActor_NullSuspendedBy(t *testing.T) {
 	}
 	if stored.SuspendedBy() != nil {
 		t.Errorf("suspended_by should be nil for a system actor, got %v", stored.SuspendedBy())
+	}
+}
+
+// TestTenantSvc_SuspendMember_RevokesSessions is the security-critical guarantee
+// behind SCIM deprovisioning: when a member is suspended (active:false / DELETE
+// from the IdP), all of that user's sessions and refresh tokens must be revoked
+// immediately, not left alive until the JWT expires. Without this assertion the
+// SCIM "loses access" promise is unverified.
+func TestTenantSvc_SuspendMember_RevokesSessions(t *testing.T) {
+	svc, repo := newTestTenantService()
+	sessionSvc, sessRepo, rtRepo := newTestSessionService()
+	svc.SetSessionService(sessionSvc)
+
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	m, err := svc.AddMember(context.Background(), tenantID.String(),
+		app.AddMemberInput{UserID: userID, Role: "member"}, shared.ID{},
+		app.AuditContext{TenantID: tenantID.String()})
+	if err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	// Deprovision exactly as the SCIM adapter does: system actor, no ActorID.
+	if err := svc.SuspendMember(context.Background(), m.ID().String(),
+		app.AuditContext{TenantID: tenantID.String(), ActorEmail: "scim-provisioning"}); err != nil {
+		t.Fatalf("SuspendMember: %v", err)
+	}
+
+	if repo.memberships[m.ID().String()] == nil || !repo.memberships[m.ID().String()].IsSuspended() {
+		t.Fatal("membership should be suspended")
+	}
+	// The actual "access is lost immediately" guarantee: sessions + refresh
+	// tokens revoked for the whole user (RevokeAllSessions with no exception).
+	if sessRepo.revokeAllCalls != 1 {
+		t.Errorf("expected all sessions revoked on suspend, RevokeAllByUserID calls = %d, want 1", sessRepo.revokeAllCalls)
+	}
+	if rtRepo.revokeByUserCalls != 1 {
+		t.Errorf("expected refresh tokens revoked on suspend, RevokeByUserID calls = %d, want 1", rtRepo.revokeByUserCalls)
 	}
 }

@@ -43,6 +43,24 @@ var (
 	ErrSSOInvalidDefaultRole  = errors.New("invalid default role")
 	ErrSSONoEmail             = errors.New("SSO provider did not return an email address")
 	ErrSSOInvalidIDToken      = errors.New("SSO id_token failed validation")
+	// ErrSSONotAMember is returned when a federated login resolves to a user who
+	// is not a member of the target tenant and does not qualify for JIT
+	// auto-provisioning (FIX 2). The caller surfaces a generic "contact your
+	// admin" outcome.
+	ErrSSONotAMember = errors.New("not a member of this organization")
+	// ErrSSORegistrationDisabled is returned when AUTH_ALLOW_REGISTRATION is
+	// false and an SSO/social login would create a brand-new user (FIX 4).
+	ErrSSORegistrationDisabled = errors.New("registration is disabled")
+	// ErrAccountLinkRequiresVerification is the proof-before-link refusal: a
+	// federated (SSO/OAuth) login whose email matches a PRE-EXISTING account is
+	// never silently adopted. It is returned when a real password-backed local
+	// account exists (Case 1 — the user must sign in with their existing password
+	// first, then link the IdP from an authenticated session) AND when a claimable
+	// passwordless account cannot prove ownership (Case 2 — unverified email or a
+	// tenant domain that is not DNS-verified). Fail-closed: matching an email is
+	// never, on its own, enough to bind a federated identity.
+	ErrAccountLinkRequiresVerification = errors.New(
+		"an account with this email already exists; sign in with your existing credentials first, then link this identity provider")
 )
 
 // ssoMaxRedirectURILength is the maximum length for redirect URIs.
@@ -64,6 +82,12 @@ type SSOService struct {
 
 	// For tenant membership creation
 	tenantMemberRepo TenantMemberCreator
+
+	// domainVerifier is the SSO P1 verified-domain gate. When wired, it is the
+	// PRIMARY JIT auto-provisioning gate (a DNS-proven domain). When nil, the
+	// flow falls back to the P0 config-AllowedDomains gate so nothing breaks
+	// pre-wiring. Fail-closed: an unverified/unknown domain never JIT-provisions.
+	domainVerifier DomainVerifier
 }
 
 // TenantMemberCreator creates tenant memberships for auto-provisioned users and
@@ -71,6 +95,14 @@ type SSOService struct {
 type TenantMemberCreator interface {
 	CreateMembership(ctx context.Context, m *tenantdom.Membership) error
 	GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenantdom.Membership, error)
+}
+
+// DomainVerifier answers whether an email domain is DNS-verified for a tenant.
+// It is the trust boundary that authorizes SSO JIT auto-provisioning: an IdP
+// proves WHO a user is, a DNS-proven domain proves the tenant may CLAIM that
+// domain's users.
+type DomainVerifier interface {
+	IsVerifiedDomain(ctx context.Context, tenantID, emailDomain string) (bool, error)
 }
 
 // NewSSOService creates a new SSOService.
@@ -118,11 +150,34 @@ func (s *SSOService) SetTenantMemberRepo(repo TenantMemberCreator) {
 	s.tenantMemberRepo = repo
 }
 
+// SetDomainVerifier wires the verified-domain JIT gate (SSO P1). Nil-safe: when
+// left unset, ensureTenantMembership falls back to the P0 AllowedDomains gate.
+func (s *SSOService) SetDomainVerifier(v DomainVerifier) {
+	s.domainVerifier = v
+}
+
 // SSOProviderInfo represents a public SSO provider for a tenant.
 type SSOProviderInfo struct {
 	ID          string `json:"id"`
 	Provider    string `json:"provider"`
 	DisplayName string `json:"display_name"`
+}
+
+// HasUsableSSOPath reports whether the tenant has at least one way for members
+// to sign in via SSO — an active per-tenant identity provider or the opted-in
+// platform env fallback. It reuses the exact resolution the login page uses
+// (GetProvidersForTenant), so "can enforce" matches "can actually sign in".
+// Consumed by TenantService.UpdateSecuritySettings to gate enabling sso_enforced.
+//
+// Note: this covers OIDC/OAuth identity providers + env fallback. SAML-only
+// tenants are not yet counted here (follow-up); the owner break-glass at the
+// enforcement gate still prevents any permanent lock-out.
+func (s *SSOService) HasUsableSSOPath(ctx context.Context, orgSlug string) (bool, error) {
+	providers, err := s.GetProvidersForTenant(ctx, orgSlug)
+	if err != nil {
+		return false, err
+	}
+	return len(providers) > 0, nil
 }
 
 // GetProvidersForTenant returns active SSO providers for a tenant identified by slug.
@@ -153,12 +208,16 @@ func (s *SSOService) GetProvidersForTenant(ctx context.Context, orgSlug string) 
 	// Surface the platform-wide Entra fallback so the tenant's login page shows
 	// the button even though it has no entra_id provider of its own. A tenant's
 	// own active provider takes precedence and suppresses the fallback entry.
-	if !hasEntra && s.authConfig.EntraSSO.IsConfigured() {
-		result = append(result, SSOProviderInfo{
-			ID:          "env:entra_id",
-			Provider:    string(identityproviderdom.ProviderEntraID),
-			DisplayName: s.authConfig.EntraSSO.DisplayName,
-		})
+	// SECURITY (FIX 1): only tenants that opted in (and pass the env safety
+	// gates) see the button — envProvider returns nil otherwise.
+	if !hasEntra {
+		if rp := s.envProvider(orgSlug, identityproviderdom.ProviderEntraID); rp != nil {
+			result = append(result, SSOProviderInfo{
+				ID:          "env:entra_id",
+				Provider:    string(identityproviderdom.ProviderEntraID),
+				DisplayName: rp.displayName,
+			})
+		}
 	}
 	return result, nil
 }
@@ -176,8 +235,18 @@ type SSOAuthorizeResult struct {
 	State            string `json:"state"`
 }
 
-// validateRedirectURI validates the redirect URI for security.
-func validateRedirectURI(uri string) error {
+// validateRedirectURI pins the caller-supplied redirect_uri to the configured
+// exact-match allow-list (OAuth 2.1 / RFC 9700 open-redirect guard). Previously
+// any syntactically valid http/https URL was accepted, so the SSO flow would
+// return an authorization code to ANY host the IdP happened to have registered.
+// Now the redirect_uri's ORIGIN (scheme+host+port) must match an allow-list
+// entry exactly — no wildcard, no suffix match — and, when an entry pins a path
+// prefix, the path must fall within it. Fail-closed: an empty allow-list rejects
+// every URI.
+func (s *SSOService) validateRedirectURI(uri string) error {
+	if uri == "" {
+		return fmt.Errorf("%w: empty", ErrSSOInvalidRedirectURI)
+	}
 	if len(uri) > ssoMaxRedirectURILength {
 		return fmt.Errorf("%w: too long", ErrSSOInvalidRedirectURI)
 	}
@@ -191,7 +260,44 @@ func validateRedirectURI(uri string) error {
 	if parsed.Host == "" {
 		return fmt.Errorf("%w: missing host", ErrSSOInvalidRedirectURI)
 	}
-	return nil
+	// Embedded credentials (user:pass@host) are a classic spoofing vector — the
+	// real host can be pushed past a naive parser. Reject outright.
+	if parsed.User != nil {
+		return fmt.Errorf("%w: userinfo not allowed", ErrSSOInvalidRedirectURI)
+	}
+	for _, allowed := range s.authConfig.AllowedRedirectURIs {
+		if redirectURIMatches(parsed, allowed) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: not in allow-list", ErrSSOInvalidRedirectURI)
+}
+
+// redirectURIMatches reports whether parsed matches an allow-list entry. Scheme
+// and host (incl. port) must be exactly equal (case-insensitive host). An entry
+// with no path — or a bare "/" — authorizes any path on that exact origin; an
+// entry with a path is an exact match or a strict single-segment path-prefix
+// (entry ends in "/"), so path-traversal ("..") and extra "/segments" are
+// rejected.
+func redirectURIMatches(parsed *url.URL, allowed string) bool {
+	a, err := url.Parse(strings.TrimSpace(allowed))
+	if err != nil || a.Host == "" {
+		return false
+	}
+	if !strings.EqualFold(parsed.Scheme, a.Scheme) || !strings.EqualFold(parsed.Host, a.Host) {
+		return false
+	}
+	if a.Path == "" || a.Path == "/" {
+		return true // origin-only entry: any path on this exact origin
+	}
+	if parsed.Path == a.Path {
+		return true // exact path match
+	}
+	if strings.HasSuffix(a.Path, "/") && strings.HasPrefix(parsed.Path, a.Path) {
+		rest := parsed.Path[len(a.Path):]
+		return rest != "" && !strings.Contains(rest, "/") && !strings.Contains(rest, "..")
+	}
+	return false
 }
 
 // resolvedProvider is the effective SSO provider config for a tenant+provider,
@@ -226,11 +332,23 @@ func (r *resolvedProvider) isDomainAllowed(emailDomain string) bool {
 	return false
 }
 
+// isDomainAllowedForProvisioning is the STRICT gate for creating a NEW tenant
+// membership (JIT). Unlike isDomainAllowed (empty allow-list = allow any), an
+// empty/nil allow-list here means NO auto-provisioning at all (fail-closed) —
+// so a provider that never configured AllowedDomains cannot silently grant
+// membership to any authenticated identity.
+func (r *resolvedProvider) isDomainAllowedForProvisioning(emailDomain string) bool {
+	if len(r.allowedDomains) == 0 {
+		return false
+	}
+	return r.isDomainAllowed(emailDomain)
+}
+
 // resolveProvider returns the effective SSO config for a tenant+provider. A
 // tenant's own active provider always wins; when the tenant has none, it falls
 // back to the platform-wide env config (currently Entra ID only). Returns
 // ErrSSOProviderNotFound when neither is available.
-func (s *SSOService) resolveProvider(ctx context.Context, tenantID string, provider identityproviderdom.Provider) (*resolvedProvider, error) {
+func (s *SSOService) resolveProvider(ctx context.Context, tenantID, orgSlug string, provider identityproviderdom.Provider) (*resolvedProvider, error) {
 	ip, err := s.ipRepo.GetByTenantAndProvider(ctx, tenantID, provider)
 	if err == nil {
 		if !ip.IsActive() {
@@ -258,42 +376,97 @@ func (s *SSOService) resolveProvider(ctx context.Context, tenantID string, provi
 		return nil, fmt.Errorf("get provider: %w", err)
 	}
 
-	// Tenant has no provider of its own — fall back to the platform env config.
-	if rp := s.envProvider(provider); rp != nil {
+	// Tenant has no provider of its own — fall back to the platform env config,
+	// but ONLY if this specific tenant has opted in (see envProvider).
+	if rp := s.envProvider(orgSlug, provider); rp != nil {
 		return rp, nil
 	}
 	return nil, ErrSSOProviderNotFound
 }
 
-// envProvider builds a resolvedProvider from the platform-wide env config for
-// the given provider, or nil when no env fallback is configured/enabled.
-func (s *SSOService) envProvider(provider identityproviderdom.Provider) *resolvedProvider {
-	if provider == identityproviderdom.ProviderEntraID && s.authConfig.EntraSSO.IsConfigured() {
-		cfg := s.authConfig.EntraSSO
-		role := cfg.DefaultRole
-		if role == "" {
-			role = "member"
-		}
-		return &resolvedProvider{
-			provider:         identityproviderdom.ProviderEntraID,
-			displayName:      cfg.DisplayName,
-			clientID:         cfg.ClientID,
-			clientSecret:     cfg.ClientSecret,
-			tenantIdentifier: cfg.TenantID,
-			scopes:           []string{"openid", "email", "profile", "User.Read"},
-			allowedDomains:   cfg.AllowedDomains,
-			autoProvision:    cfg.AutoProvision,
-			defaultRole:      role,
-			source:           "env",
+// isNonSpecificEntraTenant reports whether an Entra directory id is a
+// multi-tenant / non-pinned authority ("", common, organizations, consumers).
+// Such authorities let ANY Microsoft account complete the flow, so the env
+// fallback treats them as fail-closed (no auto-provision, domains required).
+func isNonSpecificEntraTenant(tid string) bool {
+	switch strings.ToLower(strings.TrimSpace(tid)) {
+	case "", "common", "organizations", "consumers":
+		return true
+	default:
+		return false
+	}
+}
+
+// envFallbackAllowedForTenant reports whether the given tenant slug has opted
+// in to the platform-wide env SSO fallback (SSO_ENTRA_ALLOWED_TENANTS). It is
+// fail-closed: an empty allow-list, or a slug not on it, returns false so the
+// shared `/common` app registration cannot let any Microsoft account self-join
+// an arbitrary organization.
+func (s *SSOService) envFallbackAllowedForTenant(orgSlug string) bool {
+	slug := strings.ToLower(strings.TrimSpace(orgSlug))
+	if slug == "" {
+		return false
+	}
+	for _, allowed := range s.authConfig.EntraSSO.AllowedTenants {
+		if strings.EqualFold(strings.TrimSpace(allowed), slug) {
+			return true
 		}
 	}
-	return nil
+	return false
+}
+
+// envProvider builds a resolvedProvider from the platform-wide env config for
+// the given provider+tenant, or nil when the env fallback is not configured, the
+// tenant has not opted in, or the config is not safe to use for that tenant.
+//
+// SECURITY (FIX 1): two fail-closed gates guard the shared env credentials:
+//  1. The tenant slug must be on SSO_ENTRA_ALLOWED_TENANTS (opt-in). Without it,
+//     no env button and no env login for this tenant.
+//  2. A non-specific directory (common/organizations/consumers/empty) accepts any
+//     Microsoft directory, so auto-provisioning is FORCED off and a non-empty
+//     AllowedDomains allow-list is REQUIRED — otherwise the fallback is refused
+//     entirely. A pinned config (real directory GUID + AllowedDomains) may still
+//     auto-provision.
+func (s *SSOService) envProvider(orgSlug string, provider identityproviderdom.Provider) *resolvedProvider {
+	if provider != identityproviderdom.ProviderEntraID || !s.authConfig.EntraSSO.IsConfigured() {
+		return nil
+	}
+	if !s.envFallbackAllowedForTenant(orgSlug) {
+		return nil
+	}
+	cfg := s.authConfig.EntraSSO
+	role := cfg.DefaultRole
+	if role == "" {
+		role = "member"
+	}
+	autoProvision := cfg.AutoProvision
+	if isNonSpecificEntraTenant(cfg.TenantID) {
+		if len(cfg.AllowedDomains) == 0 {
+			s.logger.Warn("env Entra fallback refused: non-specific directory requires SSO_ENTRA_ALLOWED_DOMAINS",
+				"tenant_slug", orgSlug, "directory", cfg.TenantID)
+			return nil
+		}
+		autoProvision = false // never auto-provision from a multi-tenant authority
+	}
+	return &resolvedProvider{
+		provider:         identityproviderdom.ProviderEntraID,
+		displayName:      cfg.DisplayName,
+		clientID:         cfg.ClientID,
+		clientSecret:     cfg.ClientSecret,
+		tenantIdentifier: cfg.TenantID,
+		scopes:           []string{"openid", "email", "profile", "User.Read"},
+		allowedDomains:   cfg.AllowedDomains,
+		autoProvision:    autoProvision,
+		defaultRole:      role,
+		source:           "env",
+	}
 }
 
 // GenerateAuthorizeURL builds the OAuth authorization URL for a tenant's SSO provider.
 func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthorizeInput) (*SSOAuthorizeResult, error) {
-	// SECURITY: Validate redirect URI to prevent open redirect attacks
-	if err := validateRedirectURI(input.RedirectURI); err != nil {
+	// SECURITY: Validate redirect URI against the exact-match allow-list to
+	// prevent open redirect attacks (OAuth 2.1 / RFC 9700).
+	if err := s.validateRedirectURI(input.RedirectURI); err != nil {
 		return nil, err
 	}
 
@@ -303,13 +476,15 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 	}
 
 	provider := identityproviderdom.Provider(input.Provider)
-	rp, err := s.resolveProvider(ctx, t.ID().String(), provider)
+	rp, err := s.resolveProvider(ctx, t.ID().String(), input.OrgSlug, provider)
 	if err != nil {
 		return nil, err
 	}
 
-	// Generate state token with nonce for CSRF + replay protection
-	state, nonce, err := s.generateState(input.OrgSlug, input.Provider)
+	// Generate state token with nonce (CSRF + replay) and a PKCE code_challenge
+	// (RFC 7636). The verifier is carried, encrypted, inside the signed state and
+	// recovered at callback — see generateState.
+	state, nonce, codeChallenge, err := s.generateState(input.OrgSlug, input.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("generate state: %w", err)
 	}
@@ -327,6 +502,13 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 	params.Set("state", state)
 	params.Set("response_type", "code")
 	params.Set("nonce", nonce) // ID token replay prevention
+
+	// PKCE (RFC 7636, S256). All supported OIDC providers (Entra ID, Okta,
+	// Google Workspace) accept S256, so this is unconditional — it defends the
+	// authorization code against interception even beyond the confidential
+	// client_secret already used at token exchange.
+	params.Set("code_challenge", codeChallenge)
+	params.Set("code_challenge_method", "S256")
 
 	if len(rp.scopes) > 0 {
 		params.Set("scope", strings.Join(rp.scopes, " "))
@@ -372,13 +554,22 @@ type SSOCallbackResult struct {
 
 // HandleCallback handles the SSO OAuth callback.
 func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput) (*SSOCallbackResult, error) {
-	// Validate state and extract org slug + nonce
-	orgSlug, stateProvider, nonce, err := s.validateState(input.State)
+	// Validate state and extract org slug + nonce + PKCE verifier
+	orgSlug, stateProvider, nonce, codeVerifier, err := s.validateState(input.State)
 	if err != nil {
 		return nil, ErrSSOInvalidState
 	}
 
 	if stateProvider != input.Provider {
+		return nil, ErrSSOInvalidState
+	}
+
+	// PKCE: the authorize step always sent a code_challenge, so a verifier MUST
+	// be present. A missing verifier means the state was tampered with or forged
+	// (or predates PKCE) — fail closed rather than downgrade to a non-PKCE
+	// exchange.
+	if codeVerifier == "" {
+		s.logger.Warn("SSO callback refused: missing PKCE verifier in state", "provider", input.Provider)
 		return nil, ErrSSOInvalidState
 	}
 
@@ -390,14 +581,14 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 
 	// Look up provider config (tenant's own, or the platform env fallback)
 	provider := identityproviderdom.Provider(input.Provider)
-	rp, err := s.resolveProvider(ctx, t.ID().String(), provider)
+	rp, err := s.resolveProvider(ctx, t.ID().String(), orgSlug, provider)
 	if err != nil {
 		return nil, err
 	}
 
-	// Exchange code for tokens
+	// Exchange code for tokens (includes the PKCE code_verifier, RFC 7636)
 	_, tokenURL, _ := rp.provider.AuthEndpoints(rp.tenantIdentifier)
-	tokens, err := s.exchangeCode(ctx, rp.clientID, rp.clientSecret, input.Code, input.RedirectURI, tokenURL)
+	tokens, err := s.exchangeCode(ctx, rp.clientID, rp.clientSecret, input.Code, input.RedirectURI, tokenURL, codeVerifier)
 	if err != nil {
 		s.logger.Error("SSO code exchange failed", "provider", input.Provider, "error", err)
 		return nil, ErrSSOExchangeFailed
@@ -408,26 +599,52 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	// over TLS, so a missing id_token (provider configured without the
 	// "openid" scope) is not attacker-controllable — verify when present,
 	// skip otherwise to stay backward compatible with such configs.
-	verifiedIssuer, verifiedSubject, err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce)
+	claims, err := s.verifyIDToken(ctx, rp, tokens.IDToken, nonce)
 	if err != nil {
 		s.logger.Warn("SSO id_token validation failed",
 			"provider", input.Provider, "source", rp.source, "error", err)
 		return nil, ErrSSOInvalidIDToken
 	}
 
-	// Get user info
-	_, _, userInfoURL := rp.provider.AuthEndpoints(rp.tenantIdentifier)
-	userInfo, err := s.getUserInfo(ctx, rp.provider, tokens.AccessToken, userInfoURL)
-	if err != nil {
-		s.logger.Error("SSO user info failed", "provider", input.Provider, "error", err)
-		return nil, ErrSSOUserInfoFailed
+	var userInfo *SSOUserInfo
+	if rp.provider == identityproviderdom.ProviderEntraID {
+		// SECURITY (FIX 3, nOAuth): for Entra ID, identity comes ONLY from the
+		// signature-verified id_token — never the mutable Microsoft Graph /me
+		// `mail`. A rogue directory on a multi-tenant authority can set a user's
+		// `mail` to a victim's address without owning the domain, so we require
+		// `xms_edov == true` (email domain owner-verified) and take the email +
+		// immutable (issuer, subject) from the token. If the provider returned no
+		// verifiable id_token (e.g. missing "openid" scope) we fail closed rather
+		// than trusting Graph mail.
+		if claims == nil {
+			s.logger.Warn("entra_id SSO refused: no verifiable id_token (the 'openid' scope is required)",
+				"provider", input.Provider, "source", rp.source)
+			return nil, ErrSSOInvalidIDToken
+		}
+		info, cerr := entraUserInfoFromClaims(claims)
+		if cerr != nil {
+			s.logger.Warn("entra_id SSO refused", "reason", cerr.Error(),
+				"source", rp.source, "tid", claims.TID, "subject", claims.Subject)
+			return nil, ErrSSOInvalidIDToken
+		}
+		userInfo = info
+	} else {
+		// Other providers (Okta, Google) go through the OIDC userinfo endpoint,
+		// which emits the standard email_verified claim enforced in the parsers.
+		_, _, userInfoURL := rp.provider.AuthEndpoints(rp.tenantIdentifier)
+		userInfo, err = s.getUserInfo(ctx, rp.provider, tokens.AccessToken, userInfoURL)
+		if err != nil {
+			s.logger.Error("SSO user info failed", "provider", input.Provider, "error", err)
+			return nil, ErrSSOUserInfoFailed
+		}
+		// Carry the verified id_token identity into account binding when present.
+		// These come from the signature-verified, JWKS-pinned id_token (not the
+		// userinfo body), so they are authoritative for distinguishing IdPs.
+		if claims != nil {
+			userInfo.Issuer = claims.Issuer
+			userInfo.Subject = claims.Subject
+		}
 	}
-
-	// Carry the verified id_token identity into account binding. These come
-	// from the signature-verified, JWKS-pinned id_token (not the userinfo
-	// body), so they are authoritative for distinguishing IdPs.
-	userInfo.Issuer = verifiedIssuer
-	userInfo.Subject = verifiedSubject
 
 	// SECURITY: Require email from SSO provider
 	if userInfo.Email == "" {
@@ -440,26 +657,34 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		return nil, ErrSSODomainNotAllowed
 	}
 
-	// Find or create user and provision into tenant
-	u, err := s.findOrCreateUser(ctx, userInfo, rp.provider)
+	// Find or create user and provision into tenant. The tenant is passed so the
+	// proof-before-link guard can require a DNS-verified tenant domain before a
+	// federated login may CLAIM a pre-existing passwordless account (Case 2).
+	u, err := s.findOrCreateUser(ctx, t, userInfo, rp.provider)
 	if err != nil {
 		return nil, fmt.Errorf("find or create user: %w", err)
 	}
 
-	// Auto-provision into tenant if enabled
-	if rp.autoProvision && s.tenantMemberRepo != nil {
-		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), tenantdom.Role(rp.defaultRole), nil)
-		if memErr == nil {
-			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
-		}
-		if memErr != nil {
-			// Ignore "already exists" errors - user may already be a member
-			s.logger.Debug("auto-provision membership", "user_id", u.ID().String(), "tenant_id", t.ID().String(), "error", memErr)
+	// SECURITY (FIX 2): a session must be tied to a real membership in THIS
+	// tenant. Existing members are unaffected; a non-member is JIT-provisioned
+	// ONLY when the provider auto-provisions AND the verified email domain is on
+	// a NON-EMPTY AllowedDomains allow-list. Otherwise the login is refused
+	// (fail-closed — no silent member grant).
+	if s.tenantMemberRepo != nil {
+		if err := s.ensureTenantMembership(ctx, u, t, rp, userInfo.Email); err != nil {
+			return nil, err
 		}
 	}
 
-	// Create session
-	sessionResult, err := s.createSession(ctx, u)
+	// Create session (federated OIDC/OAuth → stamped 'sso', exempt from enforcement).
+	// Capture the IdP session binding from the verified id_token (when present) so
+	// an OIDC Back-Channel Logout can later revoke this exact session. issuer/sid/
+	// sub come ONLY from the signature-verified id_token, never the userinfo body.
+	var fed federatedBinding
+	if claims != nil {
+		fed = federatedBinding{issuer: claims.Issuer, sid: claims.SID, sub: claims.Subject}
+	}
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSSO, fed)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
@@ -483,24 +708,104 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	}, nil
 }
 
+// ensureTenantMembership enforces that a federated login lands on a real
+// membership in the target tenant. Existing members pass through untouched. A
+// non-member is auto-provisioned (JIT) ONLY when the provider auto-provisions
+// AND the verified email's domain is on a NON-EMPTY AllowedDomains allow-list;
+// otherwise the login is refused with ErrSSONotAMember (fail-closed). Callers
+// must have a non-nil tenantMemberRepo.
+func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User, t *tenantdom.Tenant, rp *resolvedProvider, email string) error {
+	// Already a member? Nothing to do (existing members are unaffected).
+	if m, err := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); err == nil && m != nil {
+		return nil
+	}
+
+	emailDomain := ""
+	if parts := strings.SplitN(email, "@", 2); len(parts) == 2 {
+		emailDomain = strings.ToLower(parts[1])
+	}
+
+	if !s.jitProvisioningAllowed(ctx, t.ID().String(), rp, emailDomain) {
+		s.logger.Warn("SSO login refused: not a member and JIT provisioning not permitted",
+			"user_id", u.ID().String(), "tenant_id", t.ID().String(),
+			"source", rp.source, "auto_provision", rp.autoProvision)
+		return ErrSSONotAMember
+	}
+
+	membership, err := tenantdom.NewMembership(u.ID(), t.ID(), tenantdom.Role(rp.defaultRole), nil)
+	if err != nil {
+		return fmt.Errorf("build membership: %w", err)
+	}
+	if err := s.tenantMemberRepo.CreateMembership(ctx, membership); err != nil {
+		// A concurrent login may have created the membership between our lookup
+		// and here — re-check before failing (fail-closed on genuine failure).
+		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil {
+			return nil
+		}
+		s.logger.Warn("SSO auto-provision membership failed",
+			"user_id", u.ID().String(), "tenant_id", t.ID().String(), "error", err)
+		return ErrSSONotAMember
+	}
+	s.logger.Info("SSO auto-provisioned tenant membership",
+		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", rp.defaultRole)
+	return nil
+}
+
+// jitProvisioningAllowed decides whether a non-member with emailDomain may be
+// JIT auto-provisioned into the tenant. Fail-closed at every branch.
+//
+// The provider must opt in (rp.autoProvision). Then:
+//   - SSO P1 (domainVerifier wired): the domain MUST be DNS-verified for the
+//     tenant — this is the PRIMARY gate. If the provider ALSO configured a
+//     non-empty AllowedDomains allow-list, the domain must additionally be on
+//     it (an admin may narrow further). A verifier error ⇒ refuse.
+//   - Pre-wiring fallback (domainVerifier nil): the P0 behavior — the domain
+//     must be on a NON-EMPTY AllowedDomains allow-list (empty ⇒ refuse).
+func (s *SSOService) jitProvisioningAllowed(ctx context.Context, tenantID string, rp *resolvedProvider, emailDomain string) bool {
+	if !rp.autoProvision || emailDomain == "" {
+		return false
+	}
+
+	if s.domainVerifier == nil {
+		// Fallback: P0 config-AllowedDomains gate (fail-closed on empty list).
+		return rp.isDomainAllowedForProvisioning(emailDomain)
+	}
+
+	verified, err := s.domainVerifier.IsVerifiedDomain(ctx, tenantID, emailDomain)
+	if err != nil {
+		s.logger.Warn("verified-domain check failed; refusing JIT (fail-closed)",
+			"tenant_id", tenantID, "error", err)
+		return false
+	}
+	if !verified {
+		return false
+	}
+	// Verified domain confirmed. If the provider ALSO narrows via AllowedDomains,
+	// require BOTH (verified AND on the allow-list).
+	if len(rp.allowedDomains) > 0 && !rp.isDomainAllowed(emailDomain) {
+		return false
+	}
+	return true
+}
+
 // verifyIDToken validates the provider's id_token against its JWKS, the flow
 // nonce, our client_id (audience), and a provider-specific issuer check.
 //
-// It is a no-op (returns nil) when the provider publishes no JWKS or the token
-// response carried no id_token — see the call site for why a missing id_token
-// is safe to skip. When an id_token IS present, every check is enforced.
-// Returns the verified (issuer, subject) from the id_token so the caller can
-// bind the account to the IdP identity. Both are empty when there is no
-// id_token to verify (provider without JWKS, or configured without "openid").
-func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) (issuer, subject string, err error) {
+// It is a no-op (returns nil, nil) when the provider publishes no JWKS or the
+// token response carried no id_token — see the call site for why a missing
+// id_token is safe to skip for non-Entra providers. When an id_token IS present,
+// every check is enforced. Returns the verified claims so the caller can bind
+// the account to the IdP identity (issuer/subject) and, for Entra, read the
+// domain-verified email. Returns nil claims when there is nothing to verify.
+func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, idToken, nonce string) (*oidcClaims, error) {
 	jwksURL := rp.provider.JWKSURL(rp.tenantIdentifier)
 	if jwksURL == "" {
-		return "", "", nil // provider has no id_token to verify
+		return nil, nil // provider has no id_token to verify
 	}
 	if strings.TrimSpace(idToken) == "" {
 		s.logger.Debug("SSO provider returned no id_token; skipping id_token validation",
 			"provider", rp.provider, "source", rp.source)
-		return "", "", nil
+		return nil, nil
 	}
 
 	exp := idTokenExpectations{
@@ -514,42 +819,89 @@ func (s *SSOService) verifyIDToken(ctx context.Context, rp *resolvedProvider, id
 
 	claims, err := s.oidcVerifier.verify(ctx, idToken, exp)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
-	return claims.Issuer, claims.Subject, nil
+	return claims, nil
 }
 
-// generateState generates a signed state token containing org slug, provider, and nonce.
-func (s *SSOService) generateState(orgSlug, provider string) (state string, nonce string, err error) {
+// entraUserInfoFromClaims maps a signature-verified Entra id_token to SSOUserInfo,
+// enforcing the nOAuth email-verification gate (mirrors oauth.go's Path A). The
+// email is trusted ONLY when `xms_edov == true`; identity is keyed on the
+// immutable (issuer, subject). It is a pure function to keep the security-critical
+// gate unit-testable (the signature/issuer/audience checks live in oidcVerifier).
+func entraUserInfoFromClaims(claims *oidcClaims) (*SSOUserInfo, error) {
+	if claims.XMSEdov == nil || !*claims.XMSEdov {
+		return nil, errors.New("entra id_token email not domain-owner-verified (xms_edov absent or false)")
+	}
+	if strings.TrimSpace(claims.Email) == "" {
+		return nil, errors.New("entra id_token has no email claim")
+	}
+	return &SSOUserInfo{
+		Email:         claims.Email,
+		Name:          claims.Name,
+		Issuer:        claims.Issuer,
+		Subject:       claims.Subject,
+		EmailVerified: true, // gated on xms_edov==true above (domain-owner verified)
+	}, nil
+}
+
+// generateState generates a signed state token containing org slug, provider,
+// nonce, and the PKCE verifier (stored ENCRYPTED), and returns the matching
+// S256 code_challenge for the authorize URL.
+//
+// PKCE verifier storage — the crux: unlike Path A (oauth.go), which embeds the
+// RAW verifier in the signed-but-unencrypted state, this state round-trips
+// through the browser AND is sent to the IdP as the `state` param, so anything
+// stored in the clear there is exposed to a redirect interceptor — which would
+// defeat PKCE. We instead ENCRYPT the verifier (AES-256-GCM via s.encryptor,
+// the same encryptor used for client secrets) before placing it in the state.
+// An interceptor sees only opaque ciphertext; only this server (holding
+// APP_ENCRYPTION_KEY) can recover the verifier at callback. This is stateless
+// (works across replicas, unlike an in-memory store) and needs no cookie/proxy
+// changes — the verifier rides inside the existing `state` the UI already
+// round-trips. (In dev without APP_ENCRYPTION_KEY the encryptor is a no-op, so
+// the verifier is plaintext — same posture as Path A, acceptable for dev only.)
+func (s *SSOService) generateState(orgSlug, provider string) (state, nonce, codeChallenge string, err error) {
 	randomBytes := make([]byte, 16)
 	if _, err := rand.Read(randomBytes); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	// Generate nonce for ID token replay prevention
 	nonceBytes := make([]byte, 16)
 	if _, err := rand.Read(nonceBytes); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	nonce = base64.RawURLEncoding.EncodeToString(nonceBytes)
+
+	// PKCE (RFC 7636): random verifier + S256 challenge.
+	verifier, challenge, pkceErr := generatePKCE()
+	if pkceErr != nil {
+		return "", "", "", pkceErr
+	}
+	encVerifier, encErr := s.encryptor.EncryptString(verifier)
+	if encErr != nil {
+		return "", "", "", fmt.Errorf("encrypt pkce verifier: %w", encErr)
+	}
 
 	stateData := map[string]interface{}{
 		"org":      orgSlug,
 		"provider": provider,
 		"nonce":    nonce,
+		"pkce":     encVerifier,
 		"random":   base64.URLEncoding.EncodeToString(randomBytes),
 		"exp":      time.Now().Add(10 * time.Minute).Unix(),
 	}
 
 	stateJSON, marshalErr := json.Marshal(stateData)
 	if marshalErr != nil {
-		return "", "", marshalErr
+		return "", "", "", marshalErr
 	}
 
 	stateBase64 := base64.URLEncoding.EncodeToString(stateJSON)
 	signature := s.signState(stateBase64)
 
-	return stateBase64 + "." + signature, nonce, nil
+	return stateBase64 + "." + signature, nonce, challenge, nil
 }
 
 // signState creates an HMAC signature for the state.
@@ -559,12 +911,13 @@ func (s *SSOService) signState(data string) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// validateState validates the state token and returns org slug, provider, and
-// the nonce embedded at authorize time (compared against the id_token nonce).
-func (s *SSOService) validateState(state string) (orgSlug, provider, nonce string, err error) {
+// validateState validates the state token and returns org slug, provider, the
+// nonce embedded at authorize time (compared against the id_token nonce), and
+// the decrypted PKCE code_verifier (RFC 7636) for the token exchange.
+func (s *SSOService) validateState(state string) (orgSlug, provider, nonce, codeVerifier string, err error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", "", "", errors.New("invalid state format")
+		return "", "", "", "", errors.New("invalid state format")
 	}
 
 	stateData, signature := parts[0], parts[1]
@@ -572,37 +925,48 @@ func (s *SSOService) validateState(state string) (orgSlug, provider, nonce strin
 	// Verify signature
 	expectedSig := s.signState(stateData)
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		return "", "", "", errors.New("invalid state signature")
+		return "", "", "", "", errors.New("invalid state signature")
 	}
 
 	// Decode state data
 	stateJSON, err := base64.URLEncoding.DecodeString(stateData)
 	if err != nil {
-		return "", "", "", errors.New("invalid state encoding")
+		return "", "", "", "", errors.New("invalid state encoding")
 	}
 
 	var data map[string]interface{}
 	if err := json.Unmarshal(stateJSON, &data); err != nil {
-		return "", "", "", errors.New("invalid state JSON")
+		return "", "", "", "", errors.New("invalid state JSON")
 	}
 
 	// Check expiration
 	expFloat, ok := data["exp"].(float64)
 	if !ok {
-		return "", "", "", errors.New("invalid state expiration")
+		return "", "", "", "", errors.New("invalid state expiration")
 	}
 	if time.Now().Unix() > int64(expFloat) {
-		return "", "", "", errors.New("state expired")
+		return "", "", "", "", errors.New("state expired")
 	}
 
 	orgSlug, _ = data["org"].(string)
 	provider, _ = data["provider"].(string)
 	nonce, _ = data["nonce"].(string)
 	if orgSlug == "" || provider == "" {
-		return "", "", "", errors.New("missing state fields")
+		return "", "", "", "", errors.New("missing state fields")
 	}
 
-	return orgSlug, provider, nonce, nil
+	// Recover the PKCE verifier: it was AES-GCM-encrypted at authorize time (see
+	// generateState). A decryption failure means the ciphertext was tampered with
+	// — fail closed.
+	if enc, encOK := data["pkce"].(string); encOK && enc != "" {
+		v, decErr := s.encryptor.DecryptString(enc)
+		if decErr != nil {
+			return "", "", "", "", errors.New("invalid state pkce")
+		}
+		codeVerifier = v
+	}
+
+	return orgSlug, provider, nonce, codeVerifier, nil
 }
 
 // ssoTokens represents OAuth token response.
@@ -611,14 +975,22 @@ type ssoTokens struct {
 	IDToken     string `json:"id_token"`
 }
 
-// exchangeCode exchanges authorization code for tokens.
-func (s *SSOService) exchangeCode(ctx context.Context, clientID, clientSecret, code, redirectURI, tokenURL string) (*ssoTokens, error) {
+// exchangeCode exchanges authorization code for tokens, sending the PKCE
+// code_verifier (RFC 7636) so the IdP can bind the code to the earlier
+// code_challenge.
+func (s *SSOService) exchangeCode(ctx context.Context, clientID, clientSecret, code, redirectURI, tokenURL, codeVerifier string) (*ssoTokens, error) {
 	data := url.Values{}
 	data.Set("client_id", clientID)
 	data.Set("client_secret", clientSecret)
 	data.Set("code", code)
 	data.Set("redirect_uri", redirectURI)
 	data.Set("grant_type", "authorization_code")
+
+	// PKCE: proves possession of the verifier whose S256 hash was sent as the
+	// code_challenge at authorize time.
+	if codeVerifier != "" {
+		data.Set("code_verifier", codeVerifier)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
@@ -662,6 +1034,13 @@ type SSOUserInfo struct {
 	// the provider returned no id_token to verify — binding is then skipped.
 	Issuer  string
 	Subject string
+
+	// EmailVerified records that the IdP proved ownership of Email (Entra
+	// xms_edov==true, or the OIDC email_verified claim). Producers set it true
+	// ONLY after that check passes. It gates the proof-before-link claim of a
+	// pre-existing passwordless account (Case 2); its zero value (false) is
+	// fail-closed, so any producer that forgets to set it refuses the claim.
+	EmailVerified bool
 }
 
 // getUserInfo fetches user information from the SSO provider.
@@ -741,8 +1120,9 @@ func (s *SSOService) parseOktaUserInfo(body io.Reader) (*SSOUserInfo, error) {
 		return nil, fmt.Errorf("okta identity provider did not mark email as verified")
 	}
 	return &SSOUserInfo{
-		Email: data.Email,
-		Name:  data.Name,
+		Email:         data.Email,
+		Name:          data.Name,
+		EmailVerified: true, // gated on the OIDC email_verified claim above
 	}, nil
 }
 
@@ -762,16 +1142,17 @@ func (s *SSOService) parseGoogleUserInfo(body io.Reader) (*SSOUserInfo, error) {
 		return nil, fmt.Errorf("google workspace identity provider did not mark email as verified")
 	}
 	return &SSOUserInfo{
-		Email:     data.Email,
-		Name:      data.Name,
-		AvatarURL: data.Picture,
+		Email:         data.Email,
+		Name:          data.Name,
+		AvatarURL:     data.Picture,
+		EmailVerified: true, // gated on the OIDC email_verified claim above
 	}, nil
 }
 
 // findOrCreateUser finds an existing user or creates a new SSO user.
 // Handles race condition: if two concurrent SSO logins create the same user,
 // the second attempt will retry the lookup after a duplicate key error.
-func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
+func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
 	if userInfo.Email == "" {
 		return nil, ErrSSONoEmail
 	}
@@ -779,7 +1160,17 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 	// Try to find existing user by email
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
-		return s.adoptExistingUser(ctx, existingUser, userInfo, provider)
+		return s.adoptExistingUser(ctx, t, existingUser, userInfo, provider)
+	}
+
+	// SECURITY (FIX 4): when public registration is disabled, a federated login
+	// may only bind to an existing/pre-invited account (handled above) — it must
+	// NOT create a brand-new user. Reaching here means no account exists, so
+	// refuse rather than self-provisioning an identity into the platform.
+	if !s.authConfig.AllowRegistration {
+		s.logger.Warn("SSO login refused: registration disabled and no account exists",
+			"email", userInfo.Email, "provider", provider)
+		return nil, ErrSSORegistrationDisabled
 	}
 
 	// Map identity provider to auth provider
@@ -808,7 +1199,7 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 			// different-provider or password-backed local account here without
 			// any provider/issuer check (takeover via the race/error path).
 			s.logger.Debug("user created by concurrent request, using existing", "email", userInfo.Email)
-			return s.adoptExistingUser(ctx, retryUser, userInfo, provider)
+			return s.adoptExistingUser(ctx, t, retryUser, userInfo, provider)
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -817,31 +1208,60 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, userInfo *SSOUserInfo
 	return newUser, nil
 }
 
-// adoptExistingUser applies the account-takeover guard before returning an
-// existing account for a federated login, then records the login. It is the
-// SINGLE place adoption is authorized, so BOTH the normal lookup path and the
-// create-race retry path enforce the same checks:
+// adoptExistingUser applies the proof-before-link / account-takeover guard
+// before returning an existing account for a federated login, then records the
+// login. It is the SINGLE place adoption is authorized, so BOTH the normal
+// lookup path and the create-race retry path enforce the same checks. Matching
+// an email is NEVER, on its own, enough to bind a federated identity — the four
+// pre-existing-account cases are handled as follows (fail-closed):
 //
-//  1. Provider match — an account is bound to the auth provider that created
-//     it; the only safe cross-provider adoption is a claimable LOCAL account
-//     (invited, no password) being claimed via its IdP for the first time.
-//  2. IdP issuer binding — the provider enum is coarse (every Okta org and
-//     every generic OIDC IdP collapse to AuthProviderOIDC), so a recorded
-//     verified id_token issuer must match; a pre-tracking/claimable account is
-//     bound trust-on-first-use.
-func (s *SSOService) adoptExistingUser(ctx context.Context, existingUser *userdom.User, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
+//	Case 4 (same IdP identity already bound): the returning user — provider
+//	   matches and the recorded (issuer) matches, so the login proceeds.
+//	Case 3 (a DIFFERENT federated identity bound): a different auth provider, or
+//	   the same provider with a different verified issuer — rejected (cross-IdP
+//	   takeover). The provider enum is coarse (every Okta org / generic OIDC IdP
+//	   collapse to AuthProviderOIDC), so the issuer check below is what actually
+//	   distinguishes IdPs.
+//	Case 1 (a real password-backed local account, no federated identity): never
+//	   silently linked. Refused with ErrAccountLinkRequiresVerification so the
+//	   user signs in with their existing password first, then links the IdP from
+//	   an authenticated session (proof of ownership).
+//	Case 2 (a claimable PASSWORDLESS local account — invited / SCIM-provisioned,
+//	   the classic pre-hijack target): only claimable when ownership is provable
+//	   WITHOUT a password — the IdP verified the email AND the email domain is a
+//	   DNS-verified domain of THIS tenant (see requireClaimableOwnershipProof).
+//	   Otherwise refused, so an attacker cannot claim an invited seat.
+func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant, existingUser *userdom.User, userInfo *SSOUserInfo, provider identityproviderdom.Provider) (*userdom.User, error) {
 	existingProvider := existingUser.AuthProvider()
 	expectedProvider := s.mapAuthProvider(provider)
 
 	if existingProvider != expectedProvider {
-		claimableLocal := existingProvider == userdom.AuthProviderLocal && existingUser.PasswordHash() == nil
-		if !claimableLocal {
+		// The federated login's provider does not match the one that created the
+		// account. A non-local existing account is bound to a DIFFERENT federated
+		// provider (Case 3) — reject outright.
+		if existingProvider != userdom.AuthProviderLocal {
 			s.logger.Warn("SSO login blocked: email registered with a different auth provider",
 				"email", userInfo.Email,
 				"existing_provider", existingProvider,
 				"sso_provider", expectedProvider,
 			)
 			return nil, fmt.Errorf("%w: this email is registered with a different login method", ErrSSODomainNotAllowed)
+		}
+
+		// The existing account is LOCAL. A password-backed local account is a real,
+		// activated account (Case 1) — proof-before-link: never adopt it on the
+		// strength of a matching federated email. The user must authenticate with
+		// their password first and link the IdP explicitly.
+		if existingUser.PasswordHash() != nil {
+			s.logger.Warn("SSO login blocked: email owns a password account; proof-before-link required",
+				"email", userInfo.Email, "sso_provider", expectedProvider)
+			return nil, ErrAccountLinkRequiresVerification
+		}
+
+		// The existing account is a claimable, passwordless local account (Case 2 —
+		// invited / SCIM-provisioned). Require provable ownership before binding.
+		if err := s.requireClaimableOwnershipProof(ctx, t, userInfo); err != nil {
+			return nil, err
 		}
 	}
 
@@ -869,6 +1289,62 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, existingUser *userdo
 	return existingUser, nil
 }
 
+// requireClaimableOwnershipProof authorizes a federated login to CLAIM a
+// pre-existing PASSWORDLESS local account (Case 2 — an invited / SCIM seat).
+// Because such an account has no password, the only safe proof of ownership is:
+//
+//  1. the IdP verified the email (xms_edov / email_verified — captured on
+//     userInfo.EmailVerified by the producers), AND
+//  2. the email's domain is a DNS-verified domain of THIS tenant.
+//
+// Together these prove both that the IdP vouches for the address and that the
+// tenant owns the domain the seat belongs to — so the claim cannot be forged by
+// an attacker who merely presents a matching email. Fail-closed at every branch:
+// a missing tenant, missing/unverified email, unparseable domain, an unwired or
+// erroring domain verifier, or an unverified domain all refuse the claim.
+func (s *SSOService) requireClaimableOwnershipProof(ctx context.Context, t *tenantdom.Tenant, userInfo *SSOUserInfo) error {
+	if t == nil {
+		s.logger.Warn("account claim refused: no tenant context (fail-closed)", "email", userInfo.Email)
+		return ErrAccountLinkRequiresVerification
+	}
+	// (1) The IdP must have proven the email. Upstream producers already refuse an
+	// unverified email, so this is a defense-in-depth assertion local to the gate.
+	if !userInfo.EmailVerified {
+		s.logger.Warn("account claim refused: email not IdP-verified",
+			"email", userInfo.Email, "tenant_id", t.ID().String())
+		return ErrAccountLinkRequiresVerification
+	}
+	emailDomain := ""
+	if parts := strings.SplitN(userInfo.Email, "@", 2); len(parts) == 2 {
+		emailDomain = strings.ToLower(strings.TrimSpace(parts[1]))
+	}
+	if emailDomain == "" {
+		return ErrAccountLinkRequiresVerification
+	}
+	// (2) The tenant must have DNS-proven it owns the domain. Without the verifier
+	// wired we cannot establish ownership → refuse (fail-closed), rather than fall
+	// back to the weaker AllowedDomains list, which is admin-asserted not DNS-proven.
+	if s.domainVerifier == nil {
+		s.logger.Warn("account claim refused: domain verifier not wired (fail-closed)",
+			"email", userInfo.Email, "tenant_id", t.ID().String())
+		return ErrAccountLinkRequiresVerification
+	}
+	verified, err := s.domainVerifier.IsVerifiedDomain(ctx, t.ID().String(), emailDomain)
+	if err != nil {
+		s.logger.Warn("account claim refused: verified-domain check failed (fail-closed)",
+			"email", userInfo.Email, "tenant_id", t.ID().String(), "error", err)
+		return ErrAccountLinkRequiresVerification
+	}
+	if !verified {
+		s.logger.Warn("account claim refused: email domain is not DNS-verified for this tenant",
+			"email", userInfo.Email, "tenant_id", t.ID().String(), "domain", emailDomain)
+		return ErrAccountLinkRequiresVerification
+	}
+	s.logger.Info("federated login claimed a passwordless account (verified email + DNS-verified domain)",
+		"email", userInfo.Email, "tenant_id", t.ID().String(), "domain", emailDomain)
+	return nil
+}
+
 // mapAuthProvider maps identity provider to user auth provider.
 func (s *SSOService) mapAuthProvider(provider identityproviderdom.Provider) userdom.AuthProvider {
 	switch provider {
@@ -883,8 +1359,21 @@ func (s *SSOService) mapAuthProvider(provider identityproviderdom.Provider) user
 	}
 }
 
-// createSession creates a new session for the user.
-func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*SessionResult, error) {
+// createSession creates a new session for the user. authMethod records how the
+// identity was federated (AuthMethodSSO for OIDC/OAuth, AuthMethodSAML for a
+// SAML assertion) so the session is stamped as federated and thus exempt from
+// per-tenant SSO enforcement — an SSO-enforced tenant must always admit the very
+// login method it requires.
+// federatedBinding carries the IdP session identifiers captured from a verified
+// id_token so createSession can persist them for OIDC Back-Channel Logout. All
+// fields may be empty (a provider may omit sid or return no id_token).
+type federatedBinding struct {
+	issuer string
+	sid    string
+	sub    string
+}
+
+func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMethod sessiondom.AuthMethod, fed federatedBinding) (*SessionResult, error) {
 	// Bind the token to its session: generate the session id first, embed it in
 	// the JWT, then persist the session under the SAME id — so an SSO session is
 	// revocable (mirrors the password Login flow). Previously the token was
@@ -906,6 +1395,19 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User) (*Sessi
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
+	}
+	// Stamp the session as federated so it is exempt from password-only SSO
+	// enforcement. Default to SSO for any unspecified/invalid federated method.
+	if !authMethod.IsFederated() {
+		authMethod = sessiondom.AuthMethodSSO
+	}
+	newSession.SetAuthMethod(authMethod)
+
+	// Persist the IdP session binding (issuer/sid/sub) so an OIDC Back-Channel
+	// Logout from this provider can revoke exactly this session. Only stamped
+	// when an issuer is present (a verified id_token was seen).
+	if fed.issuer != "" {
+		newSession.SetFederatedBinding(fed.issuer, fed.sid, fed.sub)
 	}
 
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
@@ -1010,7 +1512,10 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 		}
 	}
 
-	sessionResult, err := s.createSession(ctx, u)
+	// Federated via a validated SAML assertion → stamped 'saml', exempt from
+	// enforcement (it IS an SSO login). No OIDC id_token binding — SAML single
+	// logout is out of scope for the OIDC back-channel path.
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML, federatedBinding{})
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}

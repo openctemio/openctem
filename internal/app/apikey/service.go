@@ -5,13 +5,27 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/api/pkg/crypto"
 	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
+	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// keyPrefix is the required prefix of every OpenCTEM API key.
+const keyPrefix = "oct_"
+
+// errString renders an error for structured logging, tolerating nil.
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
 
 // Service provides business logic for API key management. pepper is
 // the server-side secret mixed into every new key's stored hash via
@@ -21,9 +35,18 @@ import (
 // brute-force against the leaked key_hash column (hashcat / rainbow
 // tables without the HMAC key cannot recover the raw key).
 type Service struct {
-	repo   apikeydom.Repository
-	pepper string
-	logger *logger.Logger
+	repo       apikeydom.Repository
+	pepper     string
+	membership MembershipChecker // nil → no member-lifecycle gate (tests only)
+	logger     *logger.Logger
+}
+
+// MembershipChecker reports whether a user still has an ACTIVE membership in a
+// tenant. Injected so a suspended or removed member's `oct_` key stops
+// authenticating immediately — the key's own status can't reflect
+// member-lifecycle changes, so without this a removed member keeps API access.
+type MembershipChecker interface {
+	IsActiveMember(ctx context.Context, tenantID, userID shared.ID) (bool, error)
 }
 
 // NewService creates a new Service. pepper should be APP_ENCRYPTION_KEY
@@ -35,6 +58,11 @@ func NewService(repo apikeydom.Repository, pepper string, log *logger.Logger) *S
 		logger: log.With("service", "apikey"),
 	}
 }
+
+// SetMembershipChecker wires the membership gate used by Authenticate for
+// user-scoped keys. When unset, key validity is decoupled from member lifecycle
+// (acceptable only in tests) — always wire it in production.
+func (s *Service) SetMembershipChecker(m MembershipChecker) { s.membership = m }
 
 // CreateInput represents input for creating an API key.
 type CreateInput struct {
@@ -89,6 +117,16 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 	}
 
 	if len(input.Scopes) > 0 {
+		// Reject typo'd / non-existent scopes at mint time. A scope that isn't a
+		// real permission is dead weight at best and a silent least-privilege
+		// misconfiguration at worst (the key would appear to grant access it can
+		// never actually pass HasPermission for). Validated against the single
+		// source of truth, permission.AllPermissions().
+		for _, scope := range input.Scopes {
+			if _, ok := permission.ParsePermission(scope); !ok {
+				return nil, fmt.Errorf("%w: unknown scope %q", shared.ErrValidation, scope)
+			}
+		}
 		key.SetScopes(input.Scopes)
 	}
 
@@ -130,6 +168,56 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 		Key:       key,
 		Plaintext: plaintext,
 	}, nil
+}
+
+// Authenticate resolves a raw `oct_` API key to its active key entity, or a
+// generic ErrAPIKeyNotFound. It hashes the presented key and looks it up; a
+// peppered-hash miss falls back to the legacy plain-SHA256 hash so pre-pepper
+// keys still authenticate. Every failure mode — wrong prefix, unknown key,
+// revoked, or expired — returns the SAME error so a caller can't enumerate valid
+// keys or distinguish states. On success it best-effort records last-used
+// metadata (never blocks or fails auth on it).
+func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeydom.APIKey, error) {
+	if !strings.HasPrefix(rawKey, keyPrefix) {
+		return nil, apikeydom.ErrAPIKeyNotFound
+	}
+
+	key, err := s.repo.GetByHash(ctx, crypto.HashTokenPeppered(rawKey, s.pepper))
+	if err != nil {
+		// Legacy rows (pre-pepper) stored a plain SHA-256 hash; retry with it
+		// so old keys keep working after the pepper was introduced.
+		if s.pepper != "" && errors.Is(err, shared.ErrNotFound) {
+			key, err = s.repo.GetByHash(ctx, crypto.HashToken(rawKey))
+		}
+		if err != nil {
+			return nil, apikeydom.ErrAPIKeyNotFound
+		}
+	}
+
+	// IsActive covers both status (revoked/expired) and expiry timestamp.
+	if !key.IsActive() {
+		return nil, apikeydom.ErrAPIKeyNotFound
+	}
+
+	// Member-lifecycle gate: a user-scoped key must belong to a still-active
+	// member. This makes member suspension/removal revoke the key immediately —
+	// otherwise a removed member keeps API access until the key's own expiry.
+	// Fail closed (reject) on a missing membership or any lookup error.
+	if uid := key.UserID(); uid != nil && s.membership != nil {
+		active, mErr := s.membership.IsActiveMember(ctx, key.TenantID(), *uid)
+		if mErr != nil || !active {
+			s.logger.Debug("api key rejected: member not active",
+				"key_id", key.ID().String(), "error", errString(mErr))
+			return nil, apikeydom.ErrAPIKeyNotFound
+		}
+	}
+
+	// Best-effort usage telemetry — a failure here must never fail auth.
+	if terr := s.repo.TouchLastUsed(ctx, key.ID(), ip); terr != nil {
+		s.logger.Debug("api key touch-last-used failed", "id", key.ID().String(), "error", terr.Error())
+	}
+
+	return key, nil
 }
 
 // ListInput represents input for listing API keys.

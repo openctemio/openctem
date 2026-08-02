@@ -350,7 +350,7 @@ func (h *PipelineHandler) ListTemplates(w http.ResponseWriter, r *http.Request) 
 		Tags:     parseQueryArray(r.URL.Query().Get("tags")),
 		Search:   r.URL.Query().Get("search"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	result, err := h.service.ListTemplates(r.Context(), input)
@@ -808,7 +808,7 @@ func (h *PipelineHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		AssetID:    r.URL.Query().Get("asset_id"),
 		Status:     r.URL.Query().Get("status"),
 		Page:       parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:    parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:    parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	result, err := h.service.ListRuns(r.Context(), input)

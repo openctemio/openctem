@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/openctemio/api/pkg/httpsec"
 )
 
 // TargetType represents the type of scan target.
@@ -509,11 +511,23 @@ func ValidateWebhookURL(rawURL string) error {
 		return fmt.Errorf("localhost URLs are not allowed")
 	}
 
-	// Block internal/private IPs
+	// Block internal/private IPs. Literal-IP fast-path preserves the
+	// original error message for direct-IP webhooks.
 	if ip := net.ParseIP(host); ip != nil {
 		if isInternalIP(ip) || isLocalhostIP(ip) {
 			return fmt.Errorf("internal IP addresses are not allowed")
 		}
+		return nil
+	}
+
+	// Hostname: resolve DNS and reject if it maps to a blocked range.
+	// The literal-IP check above only catches IPs typed directly into the
+	// URL; a hostname that resolves to 169.254.169.254 / 10.x / ::1 would
+	// otherwise pass. httpsec.ValidateURL re-checks scheme + dangerous
+	// aliases and resolves every A/AAAA record against the blocklist,
+	// failing closed on lookup failure.
+	if _, err := httpsec.ValidateURL(rawURL); err != nil {
+		return fmt.Errorf("URL host resolves to a blocked address")
 	}
 
 	return nil

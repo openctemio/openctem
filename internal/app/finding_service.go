@@ -9,6 +9,8 @@ import "github.com/openctemio/api/internal/app/finding"
 type (
 	VulnerabilityService            = finding.VulnerabilityService
 	FindingActionsService           = finding.FindingActionsService
+	SourceAnalyticsService          = finding.SourceAnalyticsService
+	SourceAnalytics                 = finding.SourceAnalytics
 	FindingCommentService           = finding.FindingCommentService
 	FindingImportService            = finding.FindingImportService
 	FindingLifecycleScheduler       = finding.FindingLifecycleScheduler
@@ -23,7 +25,10 @@ type (
 	BulkGuardConfig                 = finding.BulkGuardConfig
 
 	AddCommentInput               = finding.AddCommentInput
+	AddEvidenceInput              = finding.AddEvidenceInput
 	AddStatusChangeCommentInput   = finding.AddStatusChangeCommentInput
+	EvidenceStore                 = finding.EvidenceStore
+	FindingEvidence               = finding.FindingEvidence
 	ApproveStatusInput            = finding.ApproveStatusInput
 	AutoAssignToOwnersResult      = finding.AutoAssignToOwnersResult
 	BulkAssignInput               = finding.BulkAssignInput
@@ -72,6 +77,7 @@ type (
 var (
 	NewVulnerabilityService                = finding.NewVulnerabilityService
 	NewFindingActionsService               = finding.NewFindingActionsService
+	NewSourceAnalyticsService              = finding.NewSourceAnalyticsService
 	NewFindingCommentService               = finding.NewFindingCommentService
 	NewFindingImportService                = finding.NewFindingImportService
 	NewFindingLifecycleScheduler           = finding.NewFindingLifecycleScheduler

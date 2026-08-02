@@ -176,6 +176,12 @@ func (c *Campaign) SetPriority(p CampaignPriority) {
 	c.updatedAt = time.Now()
 }
 
+// SetStartDate sets campaign start date.
+func (c *Campaign) SetStartDate(d *time.Time) {
+	c.startDate = d
+	c.updatedAt = time.Now()
+}
+
 // SetDueDate sets campaign due date.
 func (c *Campaign) SetDueDate(d *time.Time) {
 	c.dueDate = d

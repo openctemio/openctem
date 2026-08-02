@@ -1,10 +1,11 @@
 package handler
 
 import (
-	"github.com/openctemio/api/internal/app/tool"
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/go-chi/chi/v5"
 
@@ -218,7 +219,7 @@ func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
 		Category: r.URL.Query().Get("category"),
 		Search:   r.URL.Query().Get("search"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if capabilities := r.URL.Query().Get("capabilities"); capabilities != "" {
@@ -417,6 +418,8 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Tags:             req.Tags,
 	}
 
+	input.TenantID = middleware.GetTenantID(r.Context())
+
 	t, err := h.service.UpdateTool(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
@@ -443,8 +446,9 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Router       /tools/{id} [delete]
 func (h *ToolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
 
-	if err := h.service.DeleteTool(r.Context(), toolID); err != nil {
+	if err := h.service.DeleteTool(r.Context(), tenantID, toolID); err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}
@@ -531,7 +535,7 @@ func (h *ToolHandler) ListPlatformTools(w http.ResponseWriter, r *http.Request) 
 		Category: r.URL.Query().Get("category"),
 		Search:   r.URL.Query().Get("search"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if capabilities := r.URL.Query().Get("capabilities"); capabilities != "" {
@@ -599,7 +603,7 @@ func (h *ToolHandler) ListCustomTools(w http.ResponseWriter, r *http.Request) {
 		Category: r.URL.Query().Get("category"),
 		Search:   r.URL.Query().Get("search"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if capabilities := r.URL.Query().Get("capabilities"); capabilities != "" {
@@ -894,7 +898,7 @@ func (h *ToolHandler) ListTenantConfigs(w http.ResponseWriter, r *http.Request) 
 		TenantID: tenantID,
 		ToolID:   r.URL.Query().Get("tool_id"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if isEnabled := r.URL.Query().Get("is_enabled"); isEnabled != "" {
@@ -1149,7 +1153,7 @@ func (h *ToolHandler) ListAllTools(w http.ResponseWriter, r *http.Request) {
 		Category: r.URL.Query().Get("category"),
 		Search:   r.URL.Query().Get("search"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if isActive := r.URL.Query().Get("is_active"); isActive != "" {

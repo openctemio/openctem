@@ -989,8 +989,8 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 
 	t.Run("CancelApproval", func(t *testing.T) {
 		_, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
-			TenantID:    shared.NewID().String(),
-			ApprovalID:  shared.NewID().String(),
+			TenantID:   shared.NewID().String(),
+			ApprovalID: shared.NewID().String(),
 			CanceledBy: shared.NewID().String(),
 		})
 		assert.Error(t, err)
@@ -1024,8 +1024,8 @@ func TestFindingApprovalService_CancelApproval_Success(t *testing.T) {
 
 	// Cancel it (as the requester)
 	approval, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
-		TenantID:    tenantID.String(),
-		ApprovalID:  created.ID.String(),
+		TenantID:   tenantID.String(),
+		ApprovalID: created.ID.String(),
 		CanceledBy: requestedBy.String(),
 	})
 
@@ -1060,8 +1060,8 @@ func TestFindingApprovalService_CancelApproval_NotRequester(t *testing.T) {
 
 	// Try to cancel as a different user
 	approval, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
-		TenantID:    tenantID.String(),
-		ApprovalID:  created.ID.String(),
+		TenantID:   tenantID.String(),
+		ApprovalID: created.ID.String(),
 		CanceledBy: otherUser.String(),
 	})
 
@@ -1100,8 +1100,8 @@ func TestFindingApprovalService_CancelApproval_NotPending(t *testing.T) {
 
 	// Try to cancel the already-approved approval
 	approval, err := svc.CancelApproval(context.Background(), app.CancelApprovalInput{
-		TenantID:    tenantID.String(),
-		ApprovalID:  created.ID.String(),
+		TenantID:   tenantID.String(),
+		ApprovalID: created.ID.String(),
 		CanceledBy: requestedBy.String(),
 	})
 

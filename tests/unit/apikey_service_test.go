@@ -1,7 +1,6 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/apikey"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app/apikey"
 
 	"github.com/openctemio/api/pkg/crypto"
 	apikeydom "github.com/openctemio/api/pkg/domain/apikey"
@@ -31,6 +32,7 @@ type mockAPIKeyRepo struct {
 	listErr    error
 	updateErr  error
 	deleteErr  error
+	touchErr   error
 
 	// Call tracking
 	createCalls  int
@@ -39,6 +41,7 @@ type mockAPIKeyRepo struct {
 	listCalls    int
 	updateCalls  int
 	deleteCalls  int
+	touchCalls   int
 
 	// Last filter passed to List
 	lastFilter apikeydom.Filter
@@ -92,6 +95,13 @@ func (m *mockAPIKeyRepo) GetByHash(_ context.Context, hash string) (*apikeydom.A
 		}
 	}
 	return nil, apikeydom.ErrAPIKeyNotFound
+}
+
+func (m *mockAPIKeyRepo) TouchLastUsed(_ context.Context, id shared.ID, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.touchCalls++
+	return m.touchErr
 }
 
 func (m *mockAPIKeyRepo) List(_ context.Context, filter apikeydom.Filter) (apikeydom.ListResult, error) {
@@ -295,7 +305,7 @@ func TestCreateAPIKey(t *testing.T) {
 				UserID:        userID.String(),
 				Name:          "Full API Key",
 				Description:   "A detailed description",
-				Scopes:        []string{"read:assets", "write:findings"},
+				Scopes:        []string{"assets:read", "findings:read"},
 				RateLimit:     500,
 				ExpiresInDays: 30,
 				CreatedBy:     createdBy.String(),
@@ -1693,5 +1703,173 @@ func TestAPIKeyService_RevokeAndDeleteWorkflow(t *testing.T) {
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("expected not found, got: %v", err)
+	}
+}
+
+// =============================================================================
+// Tests: Authenticate (the F-9 auth path)
+// =============================================================================
+
+func TestAuthenticate_Success(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	svc := newTestAPIKeyService(repo)
+	tenantID := shared.NewID()
+
+	created, err := svc.Create(context.Background(), apikey.CreateInput{
+		TenantID: tenantID.String(),
+		Name:     "MCP key",
+		Scopes:   []string{"findings:read"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	key, err := svc.Authenticate(context.Background(), created.Plaintext, "1.2.3.4")
+	if err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+	if key.TenantID() != tenantID {
+		t.Errorf("wrong tenant: got %s want %s", key.TenantID(), tenantID)
+	}
+	if repo.touchCalls != 1 {
+		t.Errorf("expected last-used to be touched once, got %d", repo.touchCalls)
+	}
+}
+
+func TestAuthenticate_WrongPrefixRejectedWithoutLookup(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	svc := newTestAPIKeyService(repo)
+
+	_, err := svc.Authenticate(context.Background(), "sk_not_an_oct_key", "")
+	if !errors.Is(err, apikeydom.ErrAPIKeyNotFound) {
+		t.Fatalf("expected ErrAPIKeyNotFound, got %v", err)
+	}
+	if repo.getHashCalls != 0 {
+		t.Errorf("wrong-prefix key must not hit the repo, got %d lookups", repo.getHashCalls)
+	}
+}
+
+func TestAuthenticate_UnknownKey(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	svc := newTestAPIKeyService(repo)
+
+	_, err := svc.Authenticate(context.Background(), "oct_deadbeefdeadbeef", "")
+	if !errors.Is(err, apikeydom.ErrAPIKeyNotFound) {
+		t.Fatalf("expected ErrAPIKeyNotFound, got %v", err)
+	}
+}
+
+func TestAuthenticate_RevokedKeyRejected(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	svc := newTestAPIKeyService(repo)
+	tenantID := shared.NewID()
+
+	created, err := svc.Create(context.Background(), apikey.CreateInput{
+		TenantID: tenantID.String(), Name: "revoke-me",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.Revoke(context.Background(), apikey.RevokeInput{
+		ID: created.Key.ID().String(), TenantID: tenantID.String(), RevokedBy: shared.NewID().String(),
+	}); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+
+	if _, err := svc.Authenticate(context.Background(), created.Plaintext, ""); !errors.Is(err, apikeydom.ErrAPIKeyNotFound) {
+		t.Fatalf("revoked key must not authenticate, got %v", err)
+	}
+}
+
+func TestAuthenticate_ExpiredKeyRejected(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	svc := newTestAPIKeyService(repo)
+	tenantID := shared.NewID()
+
+	created, err := svc.Create(context.Background(), apikey.CreateInput{
+		TenantID: tenantID.String(), Name: "expired",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// The mock stores the same *APIKey pointer, so mutating expiry is visible.
+	past := time.Now().Add(-time.Hour)
+	created.Key.SetExpiresAt(&past)
+
+	if _, err := svc.Authenticate(context.Background(), created.Plaintext, ""); !errors.Is(err, apikeydom.ErrAPIKeyNotFound) {
+		t.Fatalf("expired key must not authenticate, got %v", err)
+	}
+}
+
+type fakeMembership struct {
+	active bool
+	err    error
+	calls  int
+}
+
+func (f *fakeMembership) IsActiveMember(_ context.Context, _, _ shared.ID) (bool, error) {
+	f.calls++
+	return f.active, f.err
+}
+
+// A user-scoped key whose owner is no longer an active member must be rejected —
+// this is the offboarding kill switch (suspend/remove revokes the key at once).
+func TestAuthenticate_InactiveMemberRejected(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	svc := newTestAPIKeyService(repo)
+	mem := &fakeMembership{active: false}
+	svc.SetMembershipChecker(mem)
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	created, err := svc.Create(context.Background(), apikey.CreateInput{
+		TenantID: tenantID.String(), UserID: userID.String(), Name: "offboard-me",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.Authenticate(context.Background(), created.Plaintext, ""); !errors.Is(err, apikeydom.ErrAPIKeyNotFound) {
+		t.Fatalf("inactive member's key must be rejected, got %v", err)
+	}
+	if mem.calls != 1 {
+		t.Errorf("expected membership to be checked once, got %d", mem.calls)
+	}
+}
+
+// An active member's user-scoped key authenticates normally.
+func TestAuthenticate_ActiveMemberAllowed(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	svc := newTestAPIKeyService(repo)
+	svc.SetMembershipChecker(&fakeMembership{active: true})
+	tenantID := shared.NewID()
+	userID := shared.NewID()
+
+	created, err := svc.Create(context.Background(), apikey.CreateInput{
+		TenantID: tenantID.String(), UserID: userID.String(), Name: "active",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.Authenticate(context.Background(), created.Plaintext, ""); err != nil {
+		t.Fatalf("active member's key must authenticate, got %v", err)
+	}
+}
+
+// A touch failure must not fail authentication (best-effort telemetry).
+func TestAuthenticate_TouchFailureIsNonFatal(t *testing.T) {
+	repo := newMockAPIKeyRepo()
+	repo.touchErr = errors.New("db down")
+	svc := newTestAPIKeyService(repo)
+	tenantID := shared.NewID()
+
+	created, err := svc.Create(context.Background(), apikey.CreateInput{
+		TenantID: tenantID.String(), Name: "touch-fail",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if _, err := svc.Authenticate(context.Background(), created.Plaintext, ""); err != nil {
+		t.Fatalf("touch failure must not fail auth, got %v", err)
 	}
 }

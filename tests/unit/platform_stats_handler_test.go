@@ -52,6 +52,9 @@ func (m *mockAgentRepository) List(_ context.Context, _ agent.Filter, _ paginati
 func (m *mockAgentRepository) Update(_ context.Context, _ *agent.Agent) error {
 	return nil
 }
+func (m *mockAgentRepository) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
+	return nil
+}
 func (m *mockAgentRepository) Delete(_ context.Context, _ shared.ID) error {
 	return nil
 }

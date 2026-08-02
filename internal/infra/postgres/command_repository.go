@@ -1145,7 +1145,8 @@ func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID,
 	query := `
 		UPDATE commands c
 		SET status = 'canceled',
-		    updated_at = NOW(),
+		    -- NOTE: commands has no updated_at column (no migration adds one), so
+		    -- assigning it made every pipeline cancel fail with 42703.
 		    completed_at = NOW()
 		FROM step_runs sr
 		WHERE c.step_run_id = sr.id

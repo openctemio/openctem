@@ -224,6 +224,11 @@ func (m *AuditMiddleware) AuditAdminDelete() func(http.Handler) http.Handler {
 	return m.AuditLog(admin.AuditActionAdminDelete, admin.ResourceTypeAdmin, "id")
 }
 
+// AuditAdminRotateKey returns middleware for admin API key rotation.
+func (m *AuditMiddleware) AuditAdminRotateKey() func(http.Handler) http.Handler {
+	return m.AuditLog(admin.AuditActionAdminRotateKey, admin.ResourceTypeAdmin, "id")
+}
+
 // AuditAgentCreate returns middleware for platform agent creation.
 func (m *AuditMiddleware) AuditAgentCreate() func(http.Handler) http.Handler {
 	return m.AuditLog(admin.AuditActionAgentCreate, admin.ResourceTypeAgent, "")

@@ -1445,3 +1445,65 @@ func TestBulkDeleteAssetGroups(t *testing.T) {
 		}
 	})
 }
+
+// TestUpdateAssetGroup_OwnerEmailClear covers the backend-rooted persistence flag:
+// an explicit empty owner_email must CLEAR the owner email (not 422/400), while a
+// malformed address is still rejected with a validation error.
+func TestUpdateAssetGroup_OwnerEmailClear(t *testing.T) {
+	t.Run("empty string clears owner email", func(t *testing.T) {
+		repo := newMockAssetGroupServiceRepo()
+		svc := newTestAssetGroupService(repo)
+		tenantID := shared.NewID()
+		existing := seedAssetGroup(repo, tenantID, "Owned", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
+		if existing.OwnerEmail() == "" {
+			t.Fatal("precondition: seeded group should have an owner email")
+		}
+
+		empty := ""
+		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), app.UpdateAssetGroupInput{
+			OwnerEmail: &empty,
+		})
+		if err != nil {
+			t.Fatalf("expected clearing owner email to succeed, got %v", err)
+		}
+		if result.OwnerEmail() != "" {
+			t.Errorf("expected owner email cleared, got %q", result.OwnerEmail())
+		}
+	})
+
+	t.Run("malformed email is rejected", func(t *testing.T) {
+		repo := newMockAssetGroupServiceRepo()
+		svc := newTestAssetGroupService(repo)
+		tenantID := shared.NewID()
+		existing := seedAssetGroup(repo, tenantID, "Owned2", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
+
+		bad := "not-an-email"
+		_, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), app.UpdateAssetGroupInput{
+			OwnerEmail: &bad,
+		})
+		if err == nil {
+			t.Fatal("expected malformed owner email to be rejected")
+		}
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("expected ErrValidation, got %v", err)
+		}
+	})
+
+	t.Run("valid email is accepted", func(t *testing.T) {
+		repo := newMockAssetGroupServiceRepo()
+		svc := newTestAssetGroupService(repo)
+		tenantID := shared.NewID()
+		existing := seedAssetGroup(repo, tenantID, "Owned3", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
+
+		good := "new.owner@example.com"
+		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), app.UpdateAssetGroupInput{
+			OwnerEmail: &good,
+		})
+		if err != nil {
+			t.Fatalf("expected valid owner email to succeed, got %v", err)
+		}
+		if result.OwnerEmail() != good {
+			t.Errorf("expected owner email %q, got %q", good, result.OwnerEmail())
+		}
+	})
+}

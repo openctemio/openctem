@@ -43,7 +43,9 @@ type AssetLifecycleSettings struct {
 	// GracePeriodDays — newly-discovered assets are immune from the
 	// lifecycle worker for this many days after `discovered_at`.
 	// Protects assets the scanner has not picked up yet. Default 3.
-	GracePeriodDays int `json:"grace_period_days,omitempty"`
+	// No omitempty: 0 is a meaningful value the UI must be able to read back
+	// (omitempty would hide a saved 0 and the UI would restore the default 3).
+	GracePeriodDays int `json:"grace_period_days"`
 
 	// ManualReactivationGraceDays — when an operator manually
 	// reactivates an asset that had been flagged stale/inactive, we
@@ -63,7 +65,9 @@ type AssetLifecycleSettings struct {
 	// If any are unhealthy, the whole tenant is skipped so a
 	// temporarily-offline scanner does not generate a false
 	// deactivation storm.
-	PauseOnIntegrationFailure bool `json:"pause_on_integration_failure,omitempty"`
+	// No omitempty: false is a meaningful saved value the UI must read back
+	// (omitempty would hide a saved false and the UI would restore the default true).
+	PauseOnIntegrationFailure bool `json:"pause_on_integration_failure"`
 
 	// DryRunCompletedAt records the last time the tenant admin ran
 	// a dry-run that showed acceptable counts. Populated by the

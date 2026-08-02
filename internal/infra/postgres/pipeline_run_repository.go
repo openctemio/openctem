@@ -325,7 +325,7 @@ func (r *PipelineRunRepository) UpdateStatus(ctx context.Context, id shared.ID, 
 	query := `
 		UPDATE pipeline_runs
 		SET status = $2, error_message = $3,
-		    completed_at = CASE WHEN $2 IN ('completed', 'failed', 'canceled', 'timeout') THEN NOW() ELSE completed_at END
+		    completed_at = CASE WHEN $2::varchar IN ('completed', 'failed', 'canceled', 'timeout') THEN NOW() ELSE completed_at END
 		WHERE id = $1
 	`
 	_, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage)
@@ -443,31 +443,55 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 	return nil
 }
 
-// MarkTimedOutRuns marks pipeline_runs as timed out if they have been running
-// longer than their scan's timeout_seconds. Uses a single SQL UPDATE joining
-// pipeline_runs and scans for efficiency.
+// AbsoluteRunTimeoutSeconds is the longest any pipeline run may stay
+// non-terminal when its own scan cannot supply a timeout — 24 hours, which is
+// deliberately the same ceiling chk_scans_timeout_seconds puts on a scan. No
+// run outlives the longest timeout a scan is allowed to configure.
+//
+// It exists because the threshold used to come exclusively from a join against
+// the run's scan, so a run with scan_id IS NULL was invisible to the reaper and
+// stayed 'running' forever. That is not a hypothetical: fk_pipeline_runs_scan is
+// ON DELETE SET NULL, so deleting a scan while its run is in flight nulls the
+// link and orphans the run. Two were found stuck for 14 days that way.
+const AbsoluteRunTimeoutSeconds = 24 * 60 * 60
+
+// MarkTimedOutRuns marks non-terminal pipeline_runs as timed out.
+//
+// The threshold is the run's scan timeout when the run still has a scan, and
+// AbsoluteRunTimeoutSeconds when it does not. The scan lookup is a correlated
+// subquery rather than a join precisely so a run with scan_id IS NULL is still
+// considered. LEAST caps the result at the ceiling; given
+// chk_scans_timeout_seconds already bounds a scan at 86400 that is belt-and-
+// braces against the constraint being relaxed later, not a live behavior change.
 //
 // A run is considered timed out when:
-//   - status = 'running' OR 'pending'
+//   - status = 'pending' OR 'running'
 //   - started_at IS NOT NULL
-//   - now() - started_at > scan.timeout_seconds
+//   - now() - started_at > LEAST(scan timeout or ceiling, ceiling)
 //
 // Returns the number of runs marked as timeout.
 func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error) {
+	// The message says only what is actually known: nothing reported back. The
+	// previous wording ('scan exceeded configured timeout') asserted a cause,
+	// and was shown to users whose scanner had in fact failed immediately with
+	// a specific error.
 	query := `
 		UPDATE pipeline_runs pr
 		SET status = 'timeout',
 		    completed_at = NOW(),
-		    error_message = 'scan exceeded configured timeout'
-		FROM scans s
-		WHERE pr.scan_id = s.id
-		  AND pr.status IN ('pending', 'running')
+		    error_message = 'no result reported before timeout — the agent may be offline, or never picked up the command'
+		WHERE pr.status IN ('pending', 'running')
 		  AND pr.started_at IS NOT NULL
-		  AND s.timeout_seconds > 0
-		  AND EXTRACT(EPOCH FROM (NOW() - pr.started_at)) > s.timeout_seconds
+		  AND EXTRACT(EPOCH FROM (NOW() - pr.started_at)) > LEAST(
+		        COALESCE(
+		          (SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = pr.scan_id),
+		          $1::bigint
+		        ),
+		        $1::bigint
+		      )
 	`
 
-	result, err := r.db.ExecContext(ctx, query)
+	result, err := r.db.ExecContext(ctx, query, AbsoluteRunTimeoutSeconds)
 	if err != nil {
 		return 0, fmt.Errorf("failed to mark timed out runs: %w", err)
 	}
@@ -1116,7 +1140,7 @@ func (r *StepRunRepository) UpdateStatus(ctx context.Context, id shared.ID, stat
 	query := `
 		UPDATE step_runs
 		SET status = $2, error_message = $3, error_code = $4,
-		    completed_at = CASE WHEN $2 IN ('completed', 'failed', 'skipped', 'canceled', 'timeout') THEN NOW() ELSE completed_at END
+		    completed_at = CASE WHEN $2::varchar IN ('completed', 'failed', 'skipped', 'canceled', 'timeout') THEN NOW() ELSE completed_at END
 		WHERE id = $1
 	`
 	_, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage, errorCode)

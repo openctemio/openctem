@@ -3,10 +3,22 @@ package report
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"strings"
 	"time"
+)
+
+// Report type identifiers (mirror pkg/domain/pentest.ReportType values). Kept as
+// local string constants so this package stays free of a domain dependency.
+const (
+	TypeExecutiveSummary = "executive_summary"
+	TypeTechnical        = "technical_report"
+	TypeFinding          = "finding_report"
+	TypeCompliance       = "compliance_report"
+	TypeRemediation      = "remediation_report"
+	TypeRetest           = "retest_report"
 )
 
 // FindingData represents a finding for report rendering.
@@ -54,6 +66,15 @@ type TeamMemberData struct {
 	Role  string
 }
 
+// RetestData represents a single retest result for report rendering.
+type RetestData struct {
+	FindingTitle    string
+	FindingSeverity string
+	Status          string
+	Notes           string
+	TestedAt        string
+}
+
 // StatsData represents campaign statistics for report rendering.
 type StatsData struct {
 	Total    int64
@@ -71,6 +92,7 @@ type StatsData struct {
 type ReportInput struct {
 	Campaign        CampaignData
 	Findings        []FindingData
+	Retests         []RetestData
 	Stats           StatsData
 	GeneratedAt     time.Time
 	Classification  string
@@ -78,6 +100,46 @@ type ReportInput struct {
 	ReportType      string
 	IncludePOC      bool
 	IncludeEvidence bool
+}
+
+// TypeLabel returns a human-readable label for the report type, used in headers.
+func (in ReportInput) TypeLabel() string {
+	switch in.ReportType {
+	case TypeExecutiveSummary:
+		return "Executive Summary"
+	case TypeTechnical:
+		return "Technical Report"
+	case TypeFinding:
+		return "Findings Report"
+	case TypeCompliance:
+		return "Compliance Report"
+	case TypeRemediation:
+		return "Remediation Report"
+	case TypeRetest:
+		return "Retest Report"
+	default:
+		return "Penetration Test Report"
+	}
+}
+
+// ShowDetailedFindings reports whether per-finding detail sections should be
+// rendered. Executive summaries render a compact findings table instead.
+func (in ReportInput) ShowDetailedFindings() bool {
+	return in.ReportType != TypeExecutiveSummary
+}
+
+// ShowRetests reports whether the retest results section should be rendered.
+func (in ReportInput) ShowRetests() bool {
+	return in.ReportType == TypeRetest && len(in.Retests) > 0
+}
+
+// GenerateJSON renders a report as a structured, machine-readable JSON document.
+func GenerateJSON(input ReportInput) ([]byte, error) {
+	data, err := json.MarshalIndent(input, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal report json: %w", err)
+	}
+	return data, nil
 }
 
 // GenerateHTML renders a pentest report as an HTML document.
@@ -177,7 +239,7 @@ const reportTemplate = `<!DOCTYPE html>
   <!-- Header -->
   <div class="header">
     <h1>{{.Campaign.Name}}</h1>
-    <p class="subtitle">Penetration Test Report</p>
+    <p class="subtitle">{{.TypeLabel}}</p>
     <p class="subtitle">{{.Campaign.ClientName}}{{if .Campaign.ClientContact}} &mdash; {{.Campaign.ClientContact}}{{end}}</p>
     <p class="subtitle">Generated: {{formatDate .GeneratedAt}}</p>
     {{if .Classification}}<span class="classification">{{upper .Classification}}</span>{{end}}
@@ -229,7 +291,25 @@ const reportTemplate = `<!DOCTYPE html>
   {{end}}
 
   <!-- Findings -->
-  <h2>{{if .Campaign.Team}}4{{else}}3{{end}}. Detailed Findings</h2>
+  <h2>{{if .Campaign.Team}}4{{else}}3{{end}}. {{if .ShowDetailedFindings}}Detailed Findings{{else}}Findings Summary{{end}}</h2>
+
+  {{if not .ShowDetailedFindings}}
+  <table class="team-table">
+    <thead><tr><th>#</th><th>Finding</th><th>Severity</th><th>CVSS</th><th>Status</th></tr></thead>
+    <tbody>
+    {{range $i, $f := .Findings}}
+    <tr>
+      <td>{{if $f.Number}}{{$f.Number}}{{else}}{{add $i 1}}{{end}}</td>
+      <td>{{$f.Title}}</td>
+      <td><span class="severity-badge" style="background-color:{{severityColor $f.Severity}}">{{upper $f.Severity}}</span></td>
+      <td>{{if $f.CVSSScore}}{{printf "%.1f" $f.CVSSScore}}{{else}}-{{end}}</td>
+      <td>{{$f.Status}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{if eq (len .Findings) 0}}<p style="color:#6b7280;">No findings to display.</p>{{end}}
+  {{else}}
 
   {{range $i, $f := .Findings}}
   <div class="finding">
@@ -281,6 +361,27 @@ const reportTemplate = `<!DOCTYPE html>
 
   {{if eq (len .Findings) 0}}
   <p style="color:#6b7280;">No findings to display.</p>
+  {{end}}
+  {{end}}
+
+  <!-- Retests -->
+  {{if .ShowRetests}}
+  <h2>Retest Results</h2>
+  <p>A total of <strong>{{len .Retests}}</strong> retest(s) were performed to verify remediation.</p>
+  <table class="team-table">
+    <thead><tr><th>Finding</th><th>Severity</th><th>Result</th><th>Tested</th><th>Notes</th></tr></thead>
+    <tbody>
+    {{range .Retests}}
+    <tr>
+      <td>{{.FindingTitle}}</td>
+      <td><span class="severity-badge" style="background-color:{{severityColor .FindingSeverity}}">{{upper .FindingSeverity}}</span></td>
+      <td>{{upper .Status}}</td>
+      <td>{{.TestedAt}}</td>
+      <td>{{.Notes}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
   {{end}}
 
   <!-- Footer -->

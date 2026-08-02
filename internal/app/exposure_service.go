@@ -13,6 +13,9 @@ type (
 	ListExposuresInput             = exposure.ListExposuresInput
 	UpdateRemediationCampaignInput = exposure.UpdateRemediationCampaignInput
 	CampaignTicketLink             = exposure.CampaignTicketLink
+	CampaignResolveInput           = exposure.CampaignResolveInput
+	BulkIngestResult               = exposure.BulkIngestResult
+	IngestItemError                = exposure.IngestItemError
 )
 
 var (

@@ -18,8 +18,11 @@ func TestValidateWebhookURL(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			// ValidateWebhookURL now resolves DNS and rejects hosts that map
+			// to blocked ranges, so this case needs a host that reliably
+			// resolves to a public IP (example.org is IANA-reserved).
 			name:    "valid http URL",
-			url:     "http://api.service.com/hook",
+			url:     "http://example.org/hook",
 			wantErr: false,
 		},
 		{

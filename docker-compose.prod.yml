@@ -30,6 +30,39 @@
 
 services:
   # ---------------------------------------------------------------------------
+  # Database Migrations (one-shot, runs BEFORE the API)
+  # ---------------------------------------------------------------------------
+  # The production API does NOT auto-migrate — it fails fast if the schema is
+  # behind the binary (see cmd/server/schema_check.go). This one-shot service
+  # applies migrations first; the app waits on it via
+  # `condition: service_completed_successfully`, so the API never starts against
+  # a stale schema. Keep MIGRATIONS_VERSION in lock-step with API_VERSION.
+  # See docs/deployment/safe-deploy-and-migrations.md.
+  migrate:
+    image: openctemio/migrations:${MIGRATIONS_VERSION:-${API_VERSION:-latest}}
+    build:
+      context: .
+      dockerfile: Dockerfile.migrations
+    command:
+      - "-path=/migrations"
+      - "-database"
+      - "postgres://${DB_USER:-openctem}:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/${DB_NAME:-openctem}?sslmode=${DB_SSLMODE:-require}"
+      - "up"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
   # API Application (Production)
   # ---------------------------------------------------------------------------
   app:
@@ -124,6 +157,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - app-network
     restart: always

@@ -156,6 +156,7 @@ func registerVulnerabilityRoutes(
 	h *handler.VulnerabilityHandler,
 	findingActionsHandler *handler.FindingActionsHandler,
 	jiraHandler *handler.JiraWebhookHandler,
+	remediationGroupHandler *handler.RemediationGroupHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -213,11 +214,18 @@ func registerVulnerabilityRoutes(
 		if findingActionsHandler != nil {
 			r.GET("/groups", findingActionsHandler.ListFindingGroups, middleware.Require(permission.FindingsRead))
 			r.GET("/related-cves/{cveId}", findingActionsHandler.GetRelatedCVEs, middleware.Require(permission.FindingsRead))
+			r.GET("/analytics/sources", findingActionsHandler.SourceAnalytics, middleware.Require(permission.FindingsRead))
 		}
 
 		// Bulk operations (must be before /{id})
 		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.Require(permission.FindingsWrite))
 		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.Require(permission.FindingsWrite))
+
+		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
+		if remediationGroupHandler != nil {
+			r.GET("/remediation-groups", remediationGroupHandler.ListGroups, middleware.Require(permission.FindingsRead))
+			r.POST("/remediation-groups/{key}/resolve", remediationGroupHandler.ResolveGroup, middleware.Require(permission.FindingsWrite))
+		}
 
 		// Actions (must be before /{id})
 		if findingActionsHandler != nil {
@@ -261,6 +269,11 @@ func registerVulnerabilityRoutes(
 
 		// Data flows (attack paths / taint tracking)
 		r.GET("/{id}/dataflows", h.GetFindingDataFlows, middleware.Require(permission.FindingsRead))
+
+		// Manual remediation steps (append-preserving) on generic findings.
+		// NOTE: manual evidence lives on the /{id}/evidence mount registered by
+		// registerValidationRoutes (chi forbids a second mount on that path).
+		r.POST("/{id}/remediation/steps", h.AddRemediationStep, middleware.Require(permission.FindingsWrite))
 
 		// Jira ticket linking — store/remove Jira ticket references on findings
 		if jiraHandler != nil {

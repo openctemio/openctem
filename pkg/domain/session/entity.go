@@ -20,8 +20,15 @@ type Session struct {
 	expiresAt         time.Time
 	lastActivityAt    time.Time
 	status            Status
-	createdAt         time.Time
-	updatedAt         time.Time
+	authMethod        AuthMethod
+	// Federated IdP session binding (OIDC Back-Channel Logout 1.0). Populated
+	// only for OIDC/OAuth sessions whose verified id_token carried these claims;
+	// empty for local password and SAML sessions.
+	idpIssuer string // id_token iss — scopes back-channel logout per-provider
+	idpSID    string // id_token sid — IdP session id
+	idpSub    string // id_token sub — IdP subject
+	createdAt time.Time
+	updatedAt time.Time
 }
 
 // New creates a new session.
@@ -49,6 +56,7 @@ func New(
 		expiresAt:       now.Add(sessionDuration),
 		lastActivityAt:  now,
 		status:          StatusActive,
+		authMethod:      AuthMethodPassword,
 		createdAt:       now,
 		updatedAt:       now,
 	}, nil
@@ -84,6 +92,7 @@ func NewWithID(
 		expiresAt:       now.Add(sessionDuration),
 		lastActivityAt:  now,
 		status:          StatusActive,
+		authMethod:      AuthMethodPassword,
 		createdAt:       now,
 		updatedAt:       now,
 	}, nil
@@ -100,9 +109,16 @@ func Reconstitute(
 	expiresAt time.Time,
 	lastActivityAt time.Time,
 	status Status,
+	authMethod AuthMethod,
+	idpIssuer string,
+	idpSID string,
+	idpSub string,
 	createdAt time.Time,
 	updatedAt time.Time,
 ) *Session {
+	if authMethod == "" {
+		authMethod = AuthMethodPassword
+	}
 	return &Session{
 		id:                id,
 		userID:            userID,
@@ -113,6 +129,10 @@ func Reconstitute(
 		expiresAt:         expiresAt,
 		lastActivityAt:    lastActivityAt,
 		status:            status,
+		authMethod:        authMethod,
+		idpIssuer:         idpIssuer,
+		idpSID:            idpSID,
+		idpSub:            idpSub,
 		createdAt:         createdAt,
 		updatedAt:         updatedAt,
 	}
@@ -163,6 +183,46 @@ func (s *Session) LastActivityAt() time.Time {
 // Status returns the session status.
 func (s *Session) Status() Status {
 	return s.status
+}
+
+// AuthMethod returns how the session was authenticated (password vs federated
+// SSO/SAML). Used by the per-tenant SSO-enforcement gate; the zero value is
+// password (fail-safe for rows written before this field existed).
+func (s *Session) AuthMethod() AuthMethod {
+	if s.authMethod == "" {
+		return AuthMethodPassword
+	}
+	return s.authMethod
+}
+
+// SetAuthMethod records how the session was authenticated. Callers stamp the
+// federated flows (SSO/OAuth = AuthMethodSSO, SAML = AuthMethodSAML) BEFORE the
+// session is persisted; local password logins keep the AuthMethodPassword
+// default. This is the discriminator the SSO-enforcement gate reads.
+func (s *Session) SetAuthMethod(m AuthMethod) {
+	s.authMethod = m
+	s.updatedAt = time.Now()
+}
+
+// IDPIssuer returns the verified id_token issuer bound to this session (empty
+// for local/SAML sessions). Used to scope OIDC back-channel logout per-provider.
+func (s *Session) IDPIssuer() string { return s.idpIssuer }
+
+// IDPSID returns the id_token session id (sid) bound to this session, or empty.
+func (s *Session) IDPSID() string { return s.idpSID }
+
+// IDPSub returns the id_token subject (sub) bound to this session, or empty.
+func (s *Session) IDPSub() string { return s.idpSub }
+
+// SetFederatedBinding records the IdP session binding (issuer/sid/sub) captured
+// from the verified id_token at federated login, so an OIDC Back-Channel Logout
+// can later revoke exactly the matching session(s). Callers stamp it BEFORE the
+// session is persisted. Empty values are stored as-is (a provider may omit sid
+// or sub). Identity metadata only — does not bump updatedAt.
+func (s *Session) SetFederatedBinding(issuer, sid, sub string) {
+	s.idpIssuer = issuer
+	s.idpSID = sid
+	s.idpSub = sub
 }
 
 // CreatedAt returns when the session was created.

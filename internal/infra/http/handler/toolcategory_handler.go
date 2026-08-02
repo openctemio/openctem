@@ -1,10 +1,11 @@
 package handler
 
 import (
-	"github.com/openctemio/api/internal/app/tool"
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/go-chi/chi/v5"
 
@@ -107,7 +108,7 @@ func (h *ToolCategoryHandler) ListCategories(w http.ResponseWriter, r *http.Requ
 	tenantID := middleware.GetTenantID(r.Context())
 
 	page := parseQueryInt(r.URL.Query().Get("page"), 1)
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	search := r.URL.Query().Get("search")
 
 	var isBuiltin *bool

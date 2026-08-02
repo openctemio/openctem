@@ -43,8 +43,19 @@ type FindingProcessor struct {
 	// Nil-safe: when not wired, findings get NULL sla_deadline as before.
 	slaApplier SLAApplier
 
+	// assignmentApplier routes created findings to groups via assignment rules.
+	// Runs POST-insert (FGA records need persisted finding IDs), unlike the
+	// pre-insert priority/SLA enrichers. Nil-safe: when unwired, scanner
+	// findings are not auto-routed (prior behavior).
+	assignmentApplier AssignmentApplier
+
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
+
+	// remediationKeyApplier derives + records each created finding's remediation
+	// group key (RFC-015). Runs POST-insert (needs persisted finding IDs).
+	// Nil-safe: when unwired, findings simply aren't grouped.
+	remediationKeyApplier RemediationKeyApplier
 }
 
 // PriorityClassifier enriches findings with EPSS/KEV and assigns priority class.
@@ -59,9 +70,24 @@ type SLAApplier interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
 
+// AssignmentApplier routes persisted findings to groups by evaluating the
+// tenant's assignment rules and bulk-creating finding→group records. Runs
+// POST-insert (the FGA foreign key needs persisted finding IDs). Implemented by
+// *assignment.BatchAssigner. Returns the number of assignments created.
+type AssignmentApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) (int, error)
+}
+
 // activityRecorder is the subset of FindingActivityService needed by the processor.
 type activityRecorder interface {
 	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) error
+}
+
+// RemediationKeyApplier derives and persists each finding's remediation group
+// key. Runs POST-insert (needs persisted finding IDs). Implemented by
+// *remediation.KeyApplier. Best-effort: errors are logged, never fatal.
+type RemediationKeyApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
 
 // NewFindingProcessor creates a new finding processor.
@@ -107,6 +133,17 @@ func (p *FindingProcessor) SetSLAApplier(applier SLAApplier) {
 	p.slaApplier = applier
 }
 
+// SetAssignmentApplier wires the post-insert group-routing applier. Nil-safe:
+// when unwired, scanner findings are not auto-routed to groups.
+func (p *FindingProcessor) SetAssignmentApplier(applier AssignmentApplier) {
+	p.assignmentApplier = applier
+}
+
+// SetRemediationKeyApplier wires remediation-group key derivation (RFC-015).
+func (p *FindingProcessor) SetRemediationKeyApplier(applier RemediationKeyApplier) {
+	p.remediationKeyApplier = applier
+}
+
 // ProcessBatch processes all findings using batch operations.
 //
 //nolint:gocognit,nestif,cyclop // Batch ingestion inherently requires complex control flow
@@ -135,6 +172,7 @@ func (p *FindingProcessor) ProcessBatch(
 		assetID     shared.ID
 		branchID    *shared.ID // FK to asset_branches
 		fingerprint string
+		base        string // pre-composite base, persisted for post-merge recompute
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -206,8 +244,9 @@ func (p *FindingProcessor) ProcessBatch(
 			continue
 		}
 
-		// Generate fingerprint
-		fp := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
+		// Generate fingerprint (+ the base, persisted so the composite can be
+		// recomputed for a new asset_id after an asset merge).
+		fp, base := generateFindingFingerprint(targetAssetID, &ctisFinding, report.Tool)
 
 		// Get branch ID for this asset (if available)
 		var branchID *shared.ID
@@ -221,6 +260,7 @@ func (p *FindingProcessor) ProcessBatch(
 			assetID:     targetAssetID,
 			branchID:    branchID,
 			fingerprint: fp,
+			base:        base,
 		})
 		fingerprints = append(fingerprints, fp)
 	}
@@ -256,7 +296,7 @@ func (p *FindingProcessor) ProcessBatch(
 				existingSnippets[fm.fingerprint] = fm.finding.Location.Snippet
 			}
 			// Build Finding from scan data for enrichment
-			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, cveMap)
+			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
 				existingNewData = append(existingNewData, newData)
 			} else {
@@ -264,7 +304,7 @@ func (p *FindingProcessor) ProcessBatch(
 				unenrichedFingerprints = append(unenrichedFingerprints, fm.fingerprint)
 			}
 		} else {
-			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, cveMap)
+			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
 				output.FindingsSkipped++
@@ -359,6 +399,14 @@ func (p *FindingProcessor) ProcessBatch(
 				p.persistDataFlows(ctx, newFindings)
 			}
 
+			// Step 4b2: Derive remediation-group keys (RFC-015). Best-effort;
+			// grouping is a convenience layer, never blocks ingest.
+			if p.remediationKeyApplier != nil && result.Created > 0 {
+				if err := p.remediationKeyApplier.ApplyBatch(ctx, tenantID, newFindings); err != nil {
+					p.logger.Warn("failed to derive remediation keys", "error", err)
+				}
+			}
+
 			// Enrichment (EPSS/KEV/priority/SLA) is applied before the insert
 			// above, so the created rows already carry those fields — no
 			// post-insert UPDATE pass is needed here.
@@ -375,6 +423,25 @@ func (p *FindingProcessor) ProcessBatch(
 				}
 				if len(createdFindings) > 0 {
 					p.findingCreatedCallback(ctx, tenantID, createdFindings)
+				}
+			}
+
+			// Step 4e: Route newly-created findings to groups via assignment
+			// rules (post-insert — FGA records need persisted finding IDs).
+			// Best-effort: a failure is logged and never aborts ingestion.
+			if p.assignmentApplier != nil && result.Created > 0 {
+				createdFindings := make([]*vulnerability.Finding, 0, result.Created)
+				for i, f := range newFindings {
+					if result.Errors == nil || result.Errors[i] == "" {
+						createdFindings = append(createdFindings, f)
+					}
+				}
+				if len(createdFindings) > 0 {
+					if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, createdFindings); err != nil {
+						p.logger.Warn("failed to auto-route findings to groups", "error", err, "count", len(createdFindings))
+					} else if assigned > 0 {
+						p.logger.Info("auto-routed findings to groups", "assignments", assigned)
+					}
 				}
 			}
 		}
@@ -518,7 +585,10 @@ func (p *FindingProcessor) CheckFingerprints(
 // generateFindingFingerprint generates a fingerprint for a CTIS finding.
 // The fingerprint includes assetID to ensure findings are unique per-asset.
 // This prevents the same vulnerability on different assets from being deduplicated incorrectly.
-func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, tool *ctis.Tool) string {
+// It returns both the composite fingerprint (stored on the finding) and the
+// pre-composite base, so the base can be persisted (see FingerprintBaseKey) and
+// the composite recomputed for a new asset_id after an asset merge.
+func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, tool *ctis.Tool) (composite, base string) {
 	// Generate base fingerprint
 	var baseFingerprint string
 
@@ -576,7 +646,7 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 
 	// Create composite fingerprint including assetID
 	// This ensures the same vulnerability on different assets produces different fingerprints
-	return createCompositeFingerprint(assetID.String(), baseFingerprint)
+	return createCompositeFingerprint(assetID.String(), baseFingerprint), baseFingerprint
 }
 
 // buildFinding creates a Finding domain entity from a CTIS finding.
@@ -589,6 +659,7 @@ func (p *FindingProcessor) buildFinding(
 	report *ctis.Report,
 	ctisFinding *ctis.Finding,
 	fp string,
+	base string,
 	cveMap map[string]shared.ID,
 ) (*vulnerability.Finding, error) {
 	// Map severity
@@ -598,8 +669,14 @@ func (p *FindingProcessor) buildFinding(
 		sev = mapSDKSeverity(parsed)
 	}
 
-	// Determine source from tool
-	source := vulnerability.FindingSourceSAST
+	// Determine source from tool.
+	//
+	// The initial value is External, not SAST. A report with no Tool block is
+	// valid — report.json requires only version and metadata, and ValidateReport
+	// checks counts — so this branch is reachable, and it used to file every
+	// such finding as static code analysis. Same defect as detectFindingSource's
+	// old default, one level up, and fixing only the inner one left it live.
+	source := vulnerability.FindingSourceExternal
 	toolName := UnknownValue
 	toolVersion := ""
 	if report.Tool != nil {
@@ -634,6 +711,14 @@ func (p *FindingProcessor) buildFinding(
 	f.SetFingerprint(fp)
 	f.SetAgentID(agentID)
 	f.SetScanID(report.Metadata.ID)
+
+	// Provenance. ctis.ReportMetadata.SourceType has always carried this — the
+	// Nessus converter sets "integration", the agent's reports say "scanner" —
+	// and the processor read it and threw it away. An unrecognized value leaves
+	// the column NULL rather than guessing, so "unrecorded" stays honest.
+	if channel, ok := vulnerability.IngestChannelFromCTIS(report.Metadata.SourceType); ok {
+		f.SetIngestChannel(channel)
+	}
 	if branchID != nil {
 		f.SetBranchID(*branchID)
 	}
@@ -657,6 +742,16 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set SARIF 2.1.0 fields
 	p.setFindingSARIFFields(f, ctisFinding)
+
+	// Persist the pre-composite base so the composite fingerprint can be
+	// recomputed for a new asset_id after an asset merge (the stored fingerprint
+	// embeds the old asset_id and would otherwise never dedupe post-merge).
+	// MUST run AFTER setFindingSARIFFields — that call REPLACES the whole
+	// partial_fingerprints map (SARIF partialFingerprints), which would wipe the
+	// base if it were stored earlier.
+	if base != "" {
+		f.AddPartialFingerprint(vulnerability.FingerprintBaseKey, base)
+	}
 
 	// Set CTEM fields (exposure, remediation, business impact)
 	p.setFindingCTEMFields(f, ctisFinding)

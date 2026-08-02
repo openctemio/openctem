@@ -1,12 +1,12 @@
 package ingest
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
 // =============================================================================
@@ -146,9 +146,7 @@ func buildCompositeKey(m map[string]any, keyFields []string) string {
 // This ensures findings are unique per-asset, preventing incorrect deduplication across assets.
 // Format: sha256(assetID + ":" + baseFingerprint)
 func createCompositeFingerprint(assetID, baseFingerprint string) string {
-	data := assetID + ":" + baseFingerprint
-	hash := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(hash[:])
+	return vulnerability.CompositeFingerprint(assetID, baseFingerprint)
 }
 
 // =============================================================================
@@ -236,14 +234,30 @@ func sanitizePathForProperty(path string) string {
 		"C:\\Windows\\",
 	}
 
+	// strings.ToLower is NOT length-preserving ("Ⱥ" is 2 bytes, "ⱥ" is 3), so an offset
+	// found in the lowered string can point past the end of the original. The previous
+	// code indexed `path` with exactly that offset (`path[idx+len(prefix)-1]`) and so
+	// panicked on attacker-supplied input — any authenticated agent could kill the
+	// process with a single finding location. Use a lowered offset only when the two
+	// lengths match; otherwise fall back to an exact search, whose offsets are valid by
+	// construction. The separator now comes from the prefix, never from an index.
+	lower := strings.ToLower(path)
+	sameLength := len(lower) == len(path)
 	for _, prefix := range sensitivePrefeixes {
-		if idx := strings.Index(strings.ToLower(path), strings.ToLower(prefix)); idx >= 0 {
-			// Find the project directory (usually 2-3 levels deep from home)
-			parts := strings.Split(path[idx:], string(path[idx+len(prefix)-1]))
-			if len(parts) > 3 {
-				// Return from project dir onwards
-				return strings.Join(parts[3:], "/")
-			}
+		var idx int
+		if sameLength {
+			idx = strings.Index(lower, strings.ToLower(prefix))
+		} else {
+			idx = strings.Index(path, prefix)
+		}
+		if idx < 0 {
+			continue
+		}
+		// Find the project directory (usually 2-3 levels deep from home)
+		parts := strings.Split(path[idx:], prefix[len(prefix)-1:])
+		if len(parts) > 3 {
+			// Return from project dir onwards
+			return strings.Join(parts[3:], "/")
 		}
 	}
 

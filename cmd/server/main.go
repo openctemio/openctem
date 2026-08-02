@@ -228,6 +228,12 @@ func run() int {
 	if services.MembershipCache != nil {
 		services.Tenant.SetMembershipCache(services.MembershipCache)
 	}
+	// Re-wire the SSO-path checker after rebuilding the tenant service (the
+	// constructor above dropped the SetSSOPathChecker call from initServices).
+	// Needed so the can't-enable guard on sso_enforced works at runtime.
+	if services.SSO != nil {
+		services.Tenant.SetSSOPathChecker(services.SSO)
+	}
 
 	// Wire AI triage job enqueuer if service is enabled
 	if services.AITriage != nil {

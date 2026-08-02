@@ -75,6 +75,15 @@ type Repository interface {
 	// ListDueForExecution lists scans that are due for scheduled execution.
 	ListDueForExecution(ctx context.Context, now time.Time) ([]*Scan, error)
 
+	// CountScheduledWithoutNextRun counts active scans that carry a real
+	// schedule but no next_run_at.
+	//
+	// ListDueForExecution requires next_run_at IS NOT NULL, so such a scan is
+	// invisible to the scheduler forever while still presenting itself as
+	// "daily" or "weekly" everywhere a human looks. Counting them is what turns
+	// that from a silent state into a reportable one.
+	CountScheduledWithoutNextRun(ctx context.Context) (int, []string, error)
+
 	// UpdateNextRunAt updates the next run time for a scan.
 	UpdateNextRunAt(ctx context.Context, id shared.ID, nextRunAt *time.Time) error
 

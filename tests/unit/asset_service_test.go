@@ -1607,7 +1607,7 @@ func TestAssetService_BulkUpdateAssetStatus_PartialFailures(t *testing.T) {
 	assetIDs := []string{
 		a.ID().String(),
 		shared.NewID().String(), // non-existent
-		"not-a-uuid",           // invalid format
+		"not-a-uuid",            // invalid format
 	}
 
 	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{

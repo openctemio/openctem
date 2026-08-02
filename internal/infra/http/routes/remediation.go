@@ -12,8 +12,9 @@ func registerRemediationCampaignRoutes(
 	h *handler.RemediationCampaignHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/remediation/campaigns", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.RemediationRead))
@@ -21,6 +22,7 @@ func registerRemediationCampaignRoutes(
 		r.GET("/{id}", h.Get, middleware.Require(permission.RemediationRead))
 		r.PATCH("/{id}", h.Update, middleware.Require(permission.RemediationWrite))
 		r.PATCH("/{id}/status", h.UpdateStatus, middleware.Require(permission.RemediationWrite))
+		r.POST("/{id}/resolve", h.Resolve, middleware.Require(permission.RemediationWrite))
 		r.POST("/{id}/refresh", h.Refresh, middleware.Require(permission.RemediationWrite))
 		r.POST("/{id}/create-ticket", h.CreateTicket, middleware.Require(permission.RemediationWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.RemediationWrite))

@@ -6,15 +6,34 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/logger"
 )
 
 // Timeout adds a timeout to each request context.
 // If the handler takes longer than the timeout, the request is canceled.
+//
+// Prefer TimeoutWithLogger — this variant cannot log a recovered panic.
 func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
+	return TimeoutWithLogger(timeout, nil)
+}
+
+// TimeoutWithLogger is Timeout plus a logger for panics recovered inside the
+// handler goroutine.
+//
+// This middleware runs the handler on its OWN goroutine, so the Recovery
+// middleware — which sits further out, i.e. on the parent goroutine — cannot see
+// a panic raised here. Go terminates the whole program on an unrecovered panic in
+// ANY goroutine, and net/http's per-connection recover does not apply to a
+// goroutine we started ourselves. Without the recover below, a single panic on
+// any route killed the process and dropped every in-flight request. The recover
+// must therefore live INSIDE the goroutine; it mirrors RecoveryWithConfig's
+// behavior (log + 500) rather than re-panicking onto the parent.
+func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithTimeout(r.Context(), timeout)
@@ -30,8 +49,35 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 			}
 
 			go func() {
+				// close(done) is its own defer so the recover below can `return`
+				// after writing the 500 without skipping it (defers run LIFO).
+				defer close(done)
+				defer func() {
+					if rec := recover(); rec != nil {
+						if log != nil {
+							log.Error("panic recovered in request handler",
+								"error", rec,
+								"stack", string(debug.Stack()),
+								"request_id", GetRequestID(r.Context()),
+								// Sanitized: the path is attacker-controlled and the text
+								// handler emits plain lines, so a raw CR/LF here would let a
+								// caller forge log entries (CodeQL go/log-injection).
+								"path", logger.SanitizeValue(r.URL.Path),
+							)
+						}
+						// Report a 500 unless something was already written, or
+						// the timeout path has taken ownership of the response.
+						tw.mu.Lock()
+						handled := tw.written || tw.timedOut
+						tw.written = true
+						tw.mu.Unlock()
+						if !handled {
+							http.Error(tw.ResponseWriter, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+							return
+						}
+					}
+				}()
 				next.ServeHTTP(tw, r.WithContext(ctx))
-				close(done)
 			}()
 
 			select {

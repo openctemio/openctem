@@ -53,9 +53,9 @@ func (r *AgentRepository) Create(ctx context.Context, a *agent.Agent) error {
 			version, hostname, ip_address,
 			max_concurrent_jobs, current_jobs,
 			last_seen_at, last_error_at, total_findings, total_scans, error_count,
-			created_at, updated_at
+			created_at, updated_at, key_expires_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
 	`
 
 	var ipAddr sql.NullString
@@ -93,6 +93,7 @@ func (r *AgentRepository) Create(ctx context.Context, a *agent.Agent) error {
 		a.ErrorCount,
 		a.CreatedAt,
 		a.UpdatedAt,
+		nullTime(a.KeyExpiresAt),
 	)
 
 	if err != nil {
@@ -220,7 +221,7 @@ func (r *AgentRepository) Update(ctx context.Context, a *agent.Agent) error {
 		    disk_read_mbps = $24, disk_write_mbps = $25, network_rx_mbps = $26, network_tx_mbps = $27,
 		    load_score = $28, metrics_updated_at = $29,
 		    last_seen_at = $30, last_error_at = $31, total_findings = $32, total_scans = $33, error_count = $34,
-		    updated_at = $35
+		    updated_at = $35, key_expires_at = $36
 		WHERE id = $1
 	`
 
@@ -265,6 +266,7 @@ func (r *AgentRepository) Update(ctx context.Context, a *agent.Agent) error {
 		a.TotalScans,
 		a.ErrorCount,
 		a.UpdatedAt,
+		nullTime(a.KeyExpiresAt),
 	)
 
 	if err != nil {
@@ -306,6 +308,20 @@ func (r *AgentRepository) UpdateLastSeen(ctx context.Context, id shared.ID) erro
 		WHERE id = $1
 	`
 	_, err := r.db.ExecContext(ctx, query, id.String())
+	return err
+}
+
+// UpdateKeyExpiry sets only the inline API-key expiry. The status = 'active'
+// guard means it is a no-op for a concurrently disabled/revoked agent, so it can
+// never revive one — unlike a full-row Update that would rewrite status.
+func (r *AgentRepository) UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error {
+	query := `
+		UPDATE agents
+		SET key_expires_at = $2,
+		    updated_at = NOW()
+		WHERE id = $1 AND status = 'active'
+	`
+	_, err := r.db.ExecContext(ctx, query, id.String(), nullTime(expiresAt))
 	return err
 }
 
@@ -379,6 +395,7 @@ func (r *AgentRepository) FindAvailableWithTool(ctx context.Context, tenantID sh
 			WHERE tenant_id = $1
 			  AND status = 'active'
 			  AND health = 'online'
+			  AND last_seen_at IS NOT NULL
 			  AND current_jobs < max_concurrent_jobs
 			ORDER BY current_jobs ASC, total_scans ASC
 			LIMIT 1
@@ -401,6 +418,7 @@ func (r *AgentRepository) FindAvailableWithTool(ctx context.Context, tenantID sh
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
+		  AND last_seen_at IS NOT NULL
 		  AND $2 = ANY(tools)
 		  AND current_jobs < max_concurrent_jobs
 		ORDER BY current_jobs ASC, total_scans ASC
@@ -428,6 +446,7 @@ func (r *AgentRepository) FindAvailableWithCapacity(ctx context.Context, tenantI
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
+		  AND last_seen_at IS NOT NULL
 		  AND current_jobs < max_concurrent_jobs
 		  AND (execution_mode = 'daemon' OR type IN ('worker', 'collector'))
 	`
@@ -509,14 +528,19 @@ func (r *AgentRepository) ReleaseJob(ctx context.Context, id shared.ID) error {
 // Note: This updates Health (automatic), not Status (admin-controlled).
 // Agents can still authenticate if their Status is 'active', regardless of Health.
 // Returns the number of agents marked as offline.
+//
+// A NULL last_seen_at counts as stale. It means "online but never once
+// heartbeated", which the app cannot produce — UpdateLastSeen is the only writer
+// of health='online' and it always sets last_seen_at in the same statement — but
+// a fixture, a restore or a manual UPDATE can, and such a row was previously
+// unreachable by this sweep forever.
 func (r *AgentRepository) MarkStaleAsOffline(ctx context.Context, timeout time.Duration) (int64, error) {
 	query := `
 		UPDATE agents
 		SET health = 'offline',
 		    updated_at = NOW()
 		WHERE health = 'online'
-		  AND last_seen_at IS NOT NULL
-		  AND last_seen_at < NOW() - $1::interval
+		  AND (last_seen_at IS NULL OR last_seen_at < NOW() - $1::interval)
 	`
 
 	result, err := r.db.ExecContext(ctx, query, timeout.String())
@@ -544,7 +568,7 @@ func (r *AgentRepository) selectQuery() string {
 		       load_score, metrics_updated_at,
 		       last_seen_at, last_offline_at, last_error_at,
 		       total_findings, total_scans, error_count,
-		       created_at, updated_at
+		       created_at, updated_at, key_expires_at
 		FROM agents
 	`
 }
@@ -644,6 +668,7 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 		lastSeenAt       sql.NullTime
 		lastOfflineAt    sql.NullTime
 		lastErrorAt      sql.NullTime
+		keyExpiresAt     sql.NullTime
 	)
 
 	err := row.Scan(
@@ -687,6 +712,7 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 		&a.ErrorCount,
 		&a.CreatedAt,
 		&a.UpdatedAt,
+		&keyExpiresAt,
 	)
 
 	if err != nil {
@@ -756,6 +782,9 @@ func (r *AgentRepository) scanAgent(row *sql.Row) (*agent.Agent, error) {
 	if lastErrorAt.Valid {
 		a.LastErrorAt = &lastErrorAt.Time
 	}
+	if keyExpiresAt.Valid {
+		a.KeyExpiresAt = &keyExpiresAt.Time
+	}
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
@@ -807,6 +836,7 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 		lastSeenAt       sql.NullTime
 		lastOfflineAt    sql.NullTime
 		lastErrorAt      sql.NullTime
+		keyExpiresAt     sql.NullTime
 	)
 
 	err := rows.Scan(
@@ -850,6 +880,7 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 		&a.ErrorCount,
 		&a.CreatedAt,
 		&a.UpdatedAt,
+		&keyExpiresAt,
 	)
 
 	if err != nil {
@@ -916,6 +947,9 @@ func (r *AgentRepository) scanAgentFromRows(rows *sql.Rows) (*agent.Agent, error
 	if lastErrorAt.Valid {
 		a.LastErrorAt = &lastErrorAt.Time
 	}
+	if keyExpiresAt.Valid {
+		a.KeyExpiresAt = &keyExpiresAt.Time
+	}
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
@@ -949,6 +983,7 @@ func (r *AgentRepository) GetAvailableToolsForTenant(ctx context.Context, tenant
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
+		  AND last_seen_at IS NOT NULL
 		ORDER BY tool_name
 	`
 
@@ -982,6 +1017,7 @@ func (r *AgentRepository) HasAgentForTool(ctx context.Context, tenantID shared.I
 			WHERE tenant_id = $1
 			  AND status = 'active'
 			  AND health = 'online'
+			  AND last_seen_at IS NOT NULL
 			  AND $2 = ANY(tools)
 		)
 	`
@@ -1004,6 +1040,7 @@ func (r *AgentRepository) GetAvailableCapabilitiesForTenant(ctx context.Context,
 		WHERE tenant_id = $1
 		  AND status = 'active'
 		  AND health = 'online'
+		  AND last_seen_at IS NOT NULL
 		ORDER BY capability_name
 	`
 
@@ -1053,6 +1090,8 @@ func (r *AgentRepository) UpdateOfflineTimestamp(ctx context.Context, id shared.
 // MarkStaleAgentsOffline finds agents that haven't sent heartbeat within timeout and marks them offline.
 // Returns the list of agent IDs that were marked offline (for audit logging).
 // This is used by the health monitor worker.
+//
+// NULL last_seen_at counts as stale — see MarkStaleAsOffline for why.
 func (r *AgentRepository) MarkStaleAgentsOffline(ctx context.Context, timeout time.Duration) ([]shared.ID, error) {
 	query := `
 		UPDATE agents
@@ -1060,8 +1099,7 @@ func (r *AgentRepository) MarkStaleAgentsOffline(ctx context.Context, timeout ti
 		    health = 'offline',
 		    updated_at = NOW()
 		WHERE health = 'online'
-		  AND last_seen_at IS NOT NULL
-		  AND last_seen_at < NOW() - $1::interval
+		  AND (last_seen_at IS NULL OR last_seen_at < NOW() - $1::interval)
 		RETURNING id
 	`
 
@@ -1205,8 +1243,10 @@ SELECT category, key, value FROM (
   SELECT 'total'::text         AS category, ''::text       AS key, COUNT(*)::float8 AS value FROM tenant_agents
   UNION ALL
   SELECT 'online_active',        '',                                COUNT(*)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online'
+  AND last_seen_at IS NOT NULL
   UNION ALL
-  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online' AND execution_mode = 'daemon'
+  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_agents WHERE status = 'active' AND health = 'online'
+  AND last_seen_at IS NOT NULL AND execution_mode = 'daemon'
   UNION ALL
   SELECT 'status',               status,                            COUNT(*)::float8 FROM tenant_agents GROUP BY status
   UNION ALL
@@ -1262,6 +1302,7 @@ func (r *AgentRepository) HasAgentForCapability(ctx context.Context, tenantID sh
 			WHERE tenant_id = $1
 			  AND status = 'active'
 			  AND health = 'online'
+			  AND last_seen_at IS NOT NULL
 			  AND $2 = ANY(capabilities)
 		)
 	`

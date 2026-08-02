@@ -12,6 +12,7 @@ import (
 	auditapp "github.com/openctemio/api/internal/app/audit"
 
 	"github.com/openctemio/api/internal/config"
+	"github.com/openctemio/api/pkg/crypto"
 	sessiondom "github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
@@ -40,7 +41,37 @@ var (
 	ErrSessionLimitReached      = errors.New("maximum number of active sessions reached")
 	ErrTenantAccessDenied       = errors.New("user does not have access to this tenant")
 	ErrTenantRequired           = errors.New("tenant_id is required")
+	// ErrSSORequired is returned when an SSO-enforced tenant refuses a
+	// password-authenticated session at the tenant-selection / token-mint gate.
+	// The tenant OWNER is exempt (break-glass), and federated (SSO/SAML) sessions
+	// always pass — so the SSO login path itself is never blocked.
+	ErrSSORequired = errors.New("this organization requires SSO sign-in")
 )
+
+// ssoEnforcementDenied is the pure decision for the per-tenant SSO-enforcement
+// gate, factored out so it can be unit-tested exhaustively without any repo
+// wiring. It returns true when access MUST be denied.
+//
+// Rules (fail-closed, but break-glass-safe):
+//   - Federated sessions (SSO/OAuth/SAML) ALWAYS pass — an SSO-enforced tenant
+//     must admit the very login method it requires. → never denied.
+//   - The tenant OWNER is the break-glass exception and can always password-login
+//     so enabling enforcement can never lock every administrator out. → never
+//     denied.
+//   - Any other (non-owner) session that is NOT federated is denied IFF the
+//     tenant enforces SSO.
+func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced bool) bool {
+	if !ssoEnforced {
+		return false
+	}
+	if method.IsFederated() {
+		return false
+	}
+	if role == string(tenantdom.RoleOwner) {
+		return false // break-glass: owner always retains password access
+	}
+	return true
+}
 
 // AuthService handles authentication operations.
 type AuthService struct {
@@ -55,6 +86,10 @@ type AuthService struct {
 	auditService     *auditapp.AuditService
 	roleService      *accesscontrol.RoleService // Optional: for database-driven role permissions
 	smtpChecker      SMTPAvailabilityCheck      // Optional: enables smart email verification
+	// permVersionSvc, when set, stamps issued tenant-scoped access tokens with
+	// the user's current permission version so the permission-sync middleware
+	// can reject stale tokens after a role revocation/demotion (AUTHZ-3).
+	permVersionSvc *accesscontrol.PermissionVersionService
 }
 
 // SMTPAvailabilityCheck reports whether outbound email is available, either via
@@ -113,6 +148,25 @@ func NewAuthService(
 // instead of using hardcoded role-permission mappings.
 func (s *AuthService) SetRoleService(roleService *accesscontrol.RoleService) {
 	s.roleService = roleService
+}
+
+// SetPermissionVersionService wires the permission version service so issued
+// tenant-scoped access tokens carry the user's current permission version.
+// Without it, tokens carry version 0 and the stale-permission check in the
+// permission-sync middleware never fires (AUTHZ-3).
+func (s *AuthService) SetPermissionVersionService(svc *accesscontrol.PermissionVersionService) {
+	s.permVersionSvc = svc
+}
+
+// currentPermVersion returns the user's current permission version for the
+// tenant, initializing the Redis key to 1 if it does not yet exist so that a
+// later Increment produces a detectable mismatch. Returns 0 when no version
+// service is wired (the middleware then treats the token as never-stale).
+func (s *AuthService) currentPermVersion(ctx context.Context, tenantID, userID string) int {
+	if s.permVersionSvc == nil {
+		return 0
+	}
+	return s.permVersionSvc.EnsureVersion(ctx, tenantID, userID)
 }
 
 // SetSMTPChecker injects the SMTP availability checker used for smart email
@@ -308,6 +362,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	existingUser, err := s.userRepo.GetByEmail(ctx, email)
 	if err == nil && existingUser != nil {
 		s.logger.Info("registration attempt for existing email", "email", email)
+		// Constant-time defense: spend the same bcrypt cost the real
+		// registration path pays when hashing the new password, so account
+		// existence cannot be inferred from response latency (AUTHZ-6).
+		_ = s.passwordHasher.Verify(input.Password, dummyLoginPasswordHash)
 		// Return a fake successful result to prevent email enumeration
 		// The UI should always show "Check your email for verification"
 		return &RegisterResult{
@@ -347,7 +405,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	//      heuristic / SMTP check / global env.
 	verificationTenantID := ""
 	if input.InvitationToken != "" && s.tenantRepo != nil {
-		if inv, ierr := s.tenantRepo.GetInvitationByToken(ctx, input.InvitationToken); ierr == nil && inv != nil {
+		if inv, ierr := s.tenantRepo.GetInvitationByToken(ctx, crypto.HashToken(input.InvitationToken)); ierr == nil && inv != nil {
 			verificationTenantID = inv.TenantID().String()
 		}
 		// Failure to look up the invitation is NOT fatal here — we just
@@ -368,7 +426,8 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		}
 		verificationToken = token
 		expiresAt := time.Now().Add(s.config.EmailVerificationDuration)
-		newUser.SetEmailVerificationToken(token, expiresAt)
+		// Store only the hash at rest; the raw token is emailed to the user.
+		newUser.SetEmailVerificationToken(crypto.HashToken(token), expiresAt)
 	} else {
 		// Auto-verify email if verification not required
 		// (e.g., no SMTP configured — sending verification email is impossible)
@@ -673,6 +732,37 @@ type ExchangeTokenResult struct {
 	ExpiresAt    time.Time
 }
 
+// enforceSSOPolicy is the per-tenant SSO-enforcement gate. Both ExchangeToken
+// and RefreshToken call it right after resolving the caller's membership and
+// BEFORE minting a tenant-scoped access token — the single choke point through
+// which a password session must pass to gain access to a tenant. A federated
+// (SSO/OAuth/SAML) session and the tenant OWNER always pass (break-glass); a
+// password-authenticated non-owner is refused when the tenant enforces SSO.
+func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Session, tenantID, role string) error {
+	// Cheap exits: federated sessions and owners never trip enforcement, so skip
+	// the tenant lookup entirely for them.
+	if sess.AuthMethod().IsFederated() || role == string(tenantdom.RoleOwner) {
+		return nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	t, err := s.tenantRepo.GetByID(ctx, tid)
+	if err != nil {
+		return fmt.Errorf("failed to load tenant for SSO enforcement: %w", err)
+	}
+	if ssoEnforcementDenied(sess.AuthMethod(), role, t.TypedSettings().Security.SSOEnforced) {
+		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
+		// user id; omit the raw role string to keep no user-derived value in the
+		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
+		s.logger.Warn("blocked password session from SSO-enforced tenant",
+			"tenant_id", tid.String(), "user_id", sess.UserID().String())
+		return ErrSSORequired
+	}
+	return nil
+}
+
 // ExchangeToken exchanges a global refresh token for a tenant-scoped access token.
 // This is the main method for getting access tokens after login.
 func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInput) (*ExchangeTokenResult, error) {
@@ -752,6 +842,13 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, ErrTenantAccessDenied
 	}
 
+	// Per-tenant SSO enforcement (break-glass safe): a password session cannot
+	// mint a tenant-scoped token for an SSO-enforced tenant unless it is the
+	// owner. Federated (SSO/SAML) sessions always pass.
+	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
+		return nil, err
+	}
+
 	// Determine if user is admin (owner or admin role)
 	// Owner/Admin: isAdmin=true → bypass permission checks, no permissions in JWT
 	// Member/Viewer/Custom: isAdmin=false → permissions fetched from DB on each request
@@ -771,6 +868,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 			Role:       targetMembership.Role,
 		},
 		isAdminRole,
+		sess.AuthMethod().String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -985,6 +1083,13 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, ErrTenantAccessDenied
 	}
 
+	// Per-tenant SSO enforcement (break-glass safe): re-checked on every refresh
+	// so toggling sso_enforced on takes effect the next time a password session
+	// refreshes its tenant-scoped token. Federated sessions and the owner pass.
+	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
+		return nil, err
+	}
+
 	// Generate new GLOBAL refresh token (token rotation)
 	newRefreshTokenStr, refreshExpiresAt, err := s.tokenGenerator.GenerateGlobalRefreshToken(
 		u.ID().String(),
@@ -1030,6 +1135,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 			Role:       targetMembership.Role,
 		},
 		isRefreshAdminRole,
+		sess.AuthMethod().String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1060,7 +1166,8 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 
 // VerifyEmail verifies a user's email with the verification token.
 func (s *AuthService) VerifyEmail(ctx context.Context, token string) error {
-	u, err := s.userRepo.GetByEmailVerificationToken(ctx, token)
+	// Tokens are stored hashed at rest; look up by hash of the raw token.
+	u, err := s.userRepo.GetByEmailVerificationToken(ctx, crypto.HashToken(token))
 	if err != nil {
 		if shared.IsNotFound(err) {
 			return ErrInvalidVerificationToken
@@ -1119,7 +1226,8 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 	}
 
 	expiresAt := time.Now().Add(s.config.PasswordResetDuration)
-	u.SetPasswordResetToken(token, expiresAt)
+	// Store only the hash at rest; the raw token is emailed to the user.
+	u.SetPasswordResetToken(crypto.HashToken(token), expiresAt)
 
 	if err := s.userRepo.Update(ctx, u); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
@@ -1138,7 +1246,8 @@ type ResetPasswordInput struct {
 
 // ResetPassword resets a user's password using the reset token.
 func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInput) error {
-	u, err := s.userRepo.GetByPasswordResetToken(ctx, input.Token)
+	// Tokens are stored hashed at rest; look up by hash of the raw token.
+	u, err := s.userRepo.GetByPasswordResetToken(ctx, crypto.HashToken(input.Token))
 	if err != nil {
 		if shared.IsNotFound(err) {
 			return ErrInvalidResetToken
@@ -1243,6 +1352,16 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 
 	if err := s.userRepo.Update(ctx, u); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
+	}
+
+	// Security: revoke all existing sessions and refresh-token families so a
+	// password change (like a reset) invalidates any other/stolen sessions
+	// (AUTHZ-10). Mirrors ResetPassword's revocation behavior.
+	if err := s.sessionRepo.RevokeAllByUserID(ctx, u.ID()); err != nil {
+		s.logger.Error("failed to revoke sessions after password change", "error", err)
+	}
+	if err := s.refreshTokenRepo.RevokeByUserID(ctx, u.ID()); err != nil {
+		s.logger.Error("failed to revoke refresh tokens after password change", "error", err)
 	}
 
 	s.logger.Info("password changed", "user_id", userID)
@@ -1412,6 +1531,7 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 			Role:       tenantdom.RoleOwner.String(),
 		},
 		true, // Owner is always admin - bypasses permission checks, keeps JWT small
+		sess.AuthMethod().String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1489,8 +1609,8 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Get the invitation by token
-	invitation, err := s.tenantRepo.GetInvitationByToken(ctx, input.InvitationToken)
+	// Get the invitation by token (stored hashed at rest — hash before lookup)
+	invitation, err := s.tenantRepo.GetInvitationByToken(ctx, crypto.HashToken(input.InvitationToken))
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			return nil, fmt.Errorf("%w: invitation not found or expired", shared.ErrNotFound)
@@ -1637,6 +1757,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 			Role:       membership.Role().String(),
 		},
 		isAdminRole,
+		sess.AuthMethod().String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1664,7 +1785,12 @@ func (s *AuthService) generateTenantScopedAccessToken(
 	userID, email, name, sessionID string,
 	membership jwt.TenantMembership,
 	isAdmin bool,
+	authMethod string,
 ) (*jwt.TenantScopedAccessToken, error) {
+	// Current permission version, stamped into the token so the permission-sync
+	// middleware can detect a post-issuance role change (AUTHZ-3).
+	permVersion := s.currentPermVersion(ctx, membership.TenantID, userID)
+
 	// If roleService is available, try to get permissions from database
 	if s.roleService != nil {
 		permissions, err := s.roleService.GetUserPermissions(ctx, membership.TenantID, userID)
@@ -1712,6 +1838,8 @@ func (s *AuthService) generateTenantScopedAccessToken(
 				permissions,
 				roleSlugs,
 				isAdmin,
+				permVersion,
+				authMethod,
 			)
 		} else {
 			s.logger.Debug("no permissions found in database, falling back to role mapping",
@@ -1732,6 +1860,8 @@ func (s *AuthService) generateTenantScopedAccessToken(
 		userID, email, name, sessionID,
 		membership,
 		isAdmin,
+		permVersion,
+		authMethod,
 	)
 }
 

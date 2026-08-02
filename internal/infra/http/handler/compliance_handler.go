@@ -35,7 +35,7 @@ func NewComplianceHandler(svc *app.ComplianceService, log *logger.Logger) *Compl
 func (h *ComplianceHandler) ListFrameworks(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	if perPage > 100 {
 		perPage = 100
 	}
@@ -83,7 +83,7 @@ func (h *ComplianceHandler) ListControls(w http.ResponseWriter, r *http.Request)
 	tenantID := middleware.MustGetTenantID(r.Context())
 	frameworkID := chi.URLParam(r, "id")
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 50)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 50, 1, MaxPerPage)
 	if perPage > 100 {
 		perPage = 100
 	}
@@ -184,7 +184,7 @@ func (h *ComplianceHandler) ListAssessments(w http.ResponseWriter, r *http.Reque
 	tenantID := middleware.MustGetTenantID(r.Context())
 	frameworkID := r.URL.Query().Get("framework_id")
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 50)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 50, 1, MaxPerPage)
 	if perPage > 100 {
 		perPage = 100
 	}

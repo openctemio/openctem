@@ -19,6 +19,15 @@ type PriorityClassifier interface {
 	ClassifyFinding(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding, a *asset.Asset) error
 }
 
+// SLARecomputer recomputes a finding's SLA deadline from its (possibly just
+// escalated) priority class. Implemented by *sla.Applier. When a sweep moves a
+// finding to a higher priority — e.g. a CVE newly listed in KEV → P0 — the SLA
+// deadline must tighten to match; without this the deadline stays at the
+// laxer, pre-escalation value and escalation never fires on time.
+type SLARecomputer interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
+}
+
 // Reclassifier implements controller.Reclassifier. It turns a scope
 // (AssetIDs, CVEIDs) into concrete Finding+Asset pairs and delegates
 // to the classifier. The classifier already handles priority_changed
@@ -35,10 +44,18 @@ type Reclassifier struct {
 	findings   vulnerability.FindingRepository
 	assets     asset.Repository
 	classifier PriorityClassifier
+	sla        SLARecomputer // optional: recompute sla_deadline on escalation
 	logger     *logger.Logger
 	// Page size for ListByAssetID. 500 is enough for ~99% of assets
 	// while keeping memory bounded.
 	perPage int
+}
+
+// SetSLARecomputer wires the SLA-deadline recomputer used after a finding is
+// reclassified, so an escalation (e.g. new KEV listing → P0) tightens the
+// deadline. Optional: nil → deadlines are left unchanged by the sweep.
+func (r *Reclassifier) SetSLARecomputer(s SLARecomputer) {
+	r.sla = s
 }
 
 // NewReclassifier wires deps.
@@ -147,6 +164,17 @@ func (r *Reclassifier) reclassifyAsset(
 					"error", err,
 				)
 				continue
+			}
+			// Recompute the SLA deadline from the (possibly escalated) priority
+			// class before persisting, so a KEV/EPSS-driven bump tightens the
+			// deadline. Best-effort: a failure keeps the reclassification.
+			if r.sla != nil {
+				if err := r.sla.ApplyBatch(ctx, tenantID, []*vulnerability.Finding{f}); err != nil {
+					r.logger.Warn("sla recompute failed in sweep",
+						"finding_id", f.ID().String(),
+						"error", err,
+					)
+				}
 			}
 			if err := r.findings.Update(ctx, f); err != nil {
 				r.logger.Warn("persist reclassified finding failed",

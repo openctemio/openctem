@@ -77,30 +77,30 @@ const headerAuthorization = "authorization"
 // This list is comprehensive to prevent accidental credential leakage.
 var sensitiveKeys = map[string]bool{
 	// Authentication & Authorization
-	"password":      true,
-	"passwd":        true,
-	"pwd":           true,
-	"secret":        true,
-	"token":         true,
+	"password":          true,
+	"passwd":            true,
+	"pwd":               true,
+	"secret":            true,
+	"token":             true,
 	headerAuthorization: true,
-	"auth":          true,
-	"bearer":        true,
-	"api_key":       true,
-	"apikey":        true,
-	"api-key":       true,
-	"private_key":   true,
-	"privatekey":    true,
-	"private-key":   true,
-	"access_token":  true,
-	"refresh_token": true,
-	"id_token":      true,
-	"jwt":           true,
-	"cookie":        true,
-	"session":       true,
-	"session_id":    true,
-	"sessionid":     true,
-	"csrf":          true,
-	"xsrf":          true,
+	"auth":              true,
+	"bearer":            true,
+	"api_key":           true,
+	"apikey":            true,
+	"api-key":           true,
+	"private_key":       true,
+	"privatekey":        true,
+	"private-key":       true,
+	"access_token":      true,
+	"refresh_token":     true,
+	"id_token":          true,
+	"jwt":               true,
+	"cookie":            true,
+	"session":           true,
+	"session_id":        true,
+	"sessionid":         true,
+	"csrf":              true,
+	"xsrf":              true,
 
 	// Cloud & Service Credentials
 	"aws_access_key":        true,
@@ -353,4 +353,28 @@ func FromContext(ctx context.Context) *Logger {
 		return logger
 	}
 	return NewDefault()
+}
+
+// SanitizeValue strips CR/LF and control characters from a user-influenceable
+// value and bounds its length before it is logged, preventing log forging
+// (CodeQL go/log-injection). The text handler emits plain lines, where an
+// unescaped newline would let a caller forge log entries; several app-layer
+// services grew private copies of this — new call sites should use this one.
+func SanitizeValue(s string) string {
+	const maxLen = 128
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	// Remove the forging characters explicitly first. strings.Map alone is
+	// sufficient at runtime, but the explicit ReplaceAll pair is the form static
+	// analyzers recognize as a log-injection barrier (CodeQL go/log-injection).
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	// Then drop any remaining control characters.
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 {
+			return -1
+		}
+		return r
+	}, s)
 }

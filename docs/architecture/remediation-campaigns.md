@@ -112,6 +112,37 @@ The service depends on the finding repository only through the narrow
 `cmd/server/services.go`. When no counter is wired the service degrades to plain
 CRUD with zero progress.
 
+## Solution-family campaigns (from a remediation group)
+
+A campaign can be scoped to a **remediation-group key** (RFC-015 — a "solution
+family": every finding that one fix resolves) instead of a generic filter. Create
+it exactly like any campaign, with the key in the filter:
+
+```
+POST /api/v1/remediation/campaigns
+{ "name": "Upgrade openssl", "finding_filter": { "remediation_key": "sol:…" } }
+```
+
+This turns a derived group — which can only be bulk-resolved *now* — into a
+**tracked** effort (assignee, due date, live progress %) that dynamically follows
+the family: findings surfaced by later scans that share the key roll into the
+campaign automatically.
+
+A keyed campaign does **not** use the generic `FindingFilter` path. The key isn't
+expressible as a `FindingFilter`, so both progress and resolution run through a
+separate `CampaignKeyResolver` seam:
+
+- **Progress** — counted from the `finding_remediation_keys` side-table
+  (`KeyRepository.CountByKey` → total + resolved), not the findings filter.
+- **Resolve** — delegated to the same guarded group-resolve path as the standalone
+  "resolve group" action (`GroupService.ResolveGroup`, abuse-guarded, non-pentest).
+
+**Safety invariant:** a keyed campaign's resolve branches *before* the generic
+filter is ever built, and **fails closed** if the key resolver is unwired. This is
+deliberate — an unknown `remediation_key` would otherwise map to a tenant-only
+`FindingFilter` and resolve every finding in the tenant. The key path is the only
+path a keyed campaign can take.
+
 ## Planned (not yet shipped)
 
 - **Bidirectional Jira sync for campaigns** — push a campaign to a Jira epic and

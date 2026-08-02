@@ -20,21 +20,21 @@ type mockSessionRepo struct {
 	sessions map[string]*session.Session
 
 	// Error overrides
-	createErr            error
-	getByIDErr           error
-	getByTokenErr        error
-	getActiveErr         error
-	updateErr            error
-	deleteErr            error
-	revokeAllErr         error
-	revokeAllExceptErr   error
-	countActiveErr       error
-	getOldestErr         error
-	deleteExpiredErr     error
+	createErr          error
+	getByIDErr         error
+	getByTokenErr      error
+	getActiveErr       error
+	updateErr          error
+	deleteErr          error
+	revokeAllErr       error
+	revokeAllExceptErr error
+	countActiveErr     error
+	getOldestErr       error
+	deleteExpiredErr   error
 
 	// Result overrides
-	countActiveResult    int
-	deleteExpiredResult  int64
+	countActiveResult   int
+	deleteExpiredResult int64
 
 	// Call tracking
 	createCalls          int
@@ -160,16 +160,16 @@ type mockRefreshTokenRepo struct {
 	tokens map[string]*session.RefreshToken
 
 	// Error overrides
-	createErr         error
-	getByIDErr        error
-	getByTokenHashErr error
-	getByFamilyErr    error
-	updateErr         error
-	deleteErr         error
-	revokeByFamilyErr error
+	createErr          error
+	getByIDErr         error
+	getByTokenHashErr  error
+	getByFamilyErr     error
+	updateErr          error
+	deleteErr          error
+	revokeByFamilyErr  error
 	revokeBySessionErr error
-	revokeByUserErr   error
-	deleteExpiredErr  error
+	revokeByUserErr    error
+	deleteExpiredErr   error
 
 	// Result overrides
 	deleteExpiredResult int64
@@ -304,6 +304,8 @@ func seedExpiredSession(repo *mockSessionRepo, userID shared.ID) *session.Sessio
 		now.Add(-1*time.Hour), // expired 1 hour ago
 		now.Add(-2*time.Hour),
 		session.StatusActive,
+		session.AuthMethodPassword,
+		"", "", "",
 		now.Add(-24*time.Hour),
 		now.Add(-24*time.Hour),
 	)
@@ -909,6 +911,8 @@ func TestSessionEntity_IsExpired(t *testing.T) {
 		now.Add(-1*time.Hour), // already expired
 		now.Add(-2*time.Hour),
 		session.StatusActive,
+		session.AuthMethodPassword,
+		"", "", "",
 		now.Add(-24*time.Hour),
 		now.Add(-24*time.Hour),
 	)

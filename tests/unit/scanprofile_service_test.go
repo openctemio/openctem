@@ -879,8 +879,8 @@ func TestUpdateScanProfile_WithQualityGate(t *testing.T) {
 	profile := makeScanProfileInRepo(repo, tenantID, "Profile")
 
 	qg := &scanprofile.QualityGate{
-		Enabled:    true,
-		MaxTotal:   50,
+		Enabled:     true,
+		MaxTotal:    50,
 		MaxCritical: 0,
 	}
 
@@ -1368,11 +1368,11 @@ func TestEvaluateQualityGate_Passes(t *testing.T) {
 	tenantID := shared.NewID()
 	profile := makeScanProfileInRepo(repo, tenantID, "Profile")
 	profile.QualityGate = scanprofile.QualityGate{
-		Enabled:    true,
-		MaxTotal:   100,
+		Enabled:     true,
+		MaxTotal:    100,
 		MaxCritical: 5,
-		MaxHigh:    10,
-		MaxMedium:  -1,
+		MaxHigh:     10,
+		MaxMedium:   -1,
 	}
 
 	input := app.EvaluateQualityGateInput{
@@ -1479,12 +1479,12 @@ func TestEvaluateQualityGate_FailOnHigh(t *testing.T) {
 	tenantID := shared.NewID()
 	profile := makeScanProfileInRepo(repo, tenantID, "Profile")
 	profile.QualityGate = scanprofile.QualityGate{
-		Enabled:    true,
-		FailOnHigh: true,
+		Enabled:     true,
+		FailOnHigh:  true,
 		MaxCritical: -1,
-		MaxHigh:    -1,
-		MaxMedium:  -1,
-		MaxTotal:   -1,
+		MaxHigh:     -1,
+		MaxMedium:   -1,
+		MaxTotal:    -1,
 	}
 
 	input := app.EvaluateQualityGateInput{
@@ -1510,11 +1510,11 @@ func TestEvaluateQualityGate_MaxMediumExceeded(t *testing.T) {
 	tenantID := shared.NewID()
 	profile := makeScanProfileInRepo(repo, tenantID, "Profile")
 	profile.QualityGate = scanprofile.QualityGate{
-		Enabled:    true,
+		Enabled:     true,
 		MaxCritical: -1,
-		MaxHigh:    -1,
-		MaxMedium:  5,
-		MaxTotal:   -1,
+		MaxHigh:     -1,
+		MaxMedium:   5,
+		MaxTotal:    -1,
 	}
 
 	input := app.EvaluateQualityGateInput{
@@ -1559,11 +1559,11 @@ func TestEvaluateQualityGateByProfile_Passes(t *testing.T) {
 	tenantID := shared.NewID()
 	profile, _ := scanprofile.NewScanProfile(tenantID, "Test", "", nil, scanprofile.IntensityMedium, nil)
 	profile.QualityGate = scanprofile.QualityGate{
-		Enabled:    true,
-		MaxTotal:   100,
+		Enabled:     true,
+		MaxTotal:    100,
 		MaxCritical: -1,
-		MaxHigh:    -1,
-		MaxMedium:  -1,
+		MaxHigh:     -1,
+		MaxMedium:   -1,
 	}
 
 	counts := scanprofile.FindingCounts{

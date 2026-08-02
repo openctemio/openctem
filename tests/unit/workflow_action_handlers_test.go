@@ -151,7 +151,9 @@ func (m *wfActionMockFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.
 	return nil
 }
 
-func (m *wfActionMockFindingRepo) DeleteByAssetID(_ context.Context, _, _ shared.ID) error { return nil }
+func (m *wfActionMockFindingRepo) DeleteByAssetID(_ context.Context, _, _ shared.ID) error {
+	return nil
+}
 
 func (m *wfActionMockFindingRepo) DeleteByScanID(_ context.Context, _ shared.ID, _ string) error {
 	return nil
@@ -991,59 +993,41 @@ func TestWfActionPipeline_UnsupportedAction(t *testing.T) {
 // TicketActionHandler — createTicket
 // =============================================================================
 
-// create_ticket is not wired to the integration service; it must fail loudly
-// rather than report {"created": true} without filing anything.
-func TestWfActionTicket_CreateTicket_NotImplemented(t *testing.T) {
+// With no Jira/GitHub provider wired, create_ticket must fail loudly ("not
+// configured") rather than report {"created": true} without filing anything.
+func TestWfActionTicket_CreateTicket_NoProvider(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, log)
+	h := app.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeCreateTicket, map[string]any{
-		"integration_id": shared.NewID().String(),
-		"title":          "Fix SQL Injection",
-		"description":    "Found in login endpoint",
-		"project":        "SEC",
-		"issue_type":     "Bug",
-		"priority":       "High",
-		"labels":         []any{"security", "urgent"},
+		"finding_id":  shared.NewID().String(),
+		"project_key": "SEC",
+		"issue_type":  "Bug",
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("expected 'not implemented' error, got err=%v out=%v", err, out)
+	if err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("expected 'not configured' error, got err=%v out=%v", err, out)
 	}
 	if out != nil {
 		t.Errorf("expected nil result alongside error, got %v", out)
 	}
 }
 
-func TestWfActionTicket_CreateTicket_MissingIntegrationID(t *testing.T) {
+// The target finding must be resolvable from config or trigger data first.
+func TestWfActionTicket_CreateTicket_MissingFindingID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, log)
+	h := app.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeCreateTicket, map[string]any{
-		"title": "Fix SQL Injection",
+		"project_key": "SEC",
 	}, nil)
 
 	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for missing integration_id, got nil")
-	}
-}
-
-func TestWfActionTicket_CreateTicket_MissingTitle(t *testing.T) {
-	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, log)
-
-	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeCreateTicket, map[string]any{
-		"integration_id": shared.NewID().String(),
-	}, nil)
-
-	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for missing title, got nil")
+	if err == nil || !strings.Contains(err.Error(), "finding_id not found") {
+		t.Fatalf("expected finding_id-not-found error, got %v", err)
 	}
 }
 
@@ -1051,62 +1035,41 @@ func TestWfActionTicket_CreateTicket_MissingTitle(t *testing.T) {
 // TicketActionHandler — updateTicket
 // =============================================================================
 
-// update_ticket is not wired to the integration service; it must fail loudly.
-func TestWfActionTicket_UpdateTicket_NotImplemented(t *testing.T) {
+// With no Jira provider wired, update_ticket must fail loudly ("not configured").
+func TestWfActionTicket_UpdateTicket_NoProvider(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, log)
+	h := app.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateTicket, map[string]any{
-		"integration_id": shared.NewID().String(),
-		"ticket_id":      "SEC-123",
-		"status":         "In Progress",
-		"comment":        "Working on it",
-		"assignee":       "alice",
+		"finding_id": shared.NewID().String(),
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("expected 'not implemented' error, got err=%v out=%v", err, out)
+	if err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("expected 'not configured' error, got err=%v out=%v", err, out)
 	}
 	if out != nil {
 		t.Errorf("expected nil result alongside error, got %v", out)
 	}
 }
 
-func TestWfActionTicket_UpdateTicket_MissingIntegrationID(t *testing.T) {
+func TestWfActionTicket_UpdateTicket_MissingFindingID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, log)
+	h := app.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateTicket, map[string]any{
-		"ticket_id": "SEC-123",
-	}, nil)
+	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateTicket, map[string]any{}, nil)
 
 	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for missing integration_id, got nil")
-	}
-}
-
-func TestWfActionTicket_UpdateTicket_MissingTicketID(t *testing.T) {
-	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, log)
-
-	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateTicket, map[string]any{
-		"integration_id": shared.NewID().String(),
-	}, nil)
-
-	_, err := h.Execute(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for missing ticket_id, got nil")
+	if err == nil || !strings.Contains(err.Error(), "finding_id not found") {
+		t.Fatalf("expected finding_id-not-found error, got %v", err)
 	}
 }
 
 func TestWfActionTicket_UnsupportedAction(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, log)
+	h := app.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
 	input := newWfActionInput(tenantID, workflow.ActionTypeRunScript, nil, nil)
@@ -1279,7 +1242,7 @@ func TestWfAction_RegisterAllActionHandlersWithAI_IncludesAITriage(t *testing.T)
 	vulnSvc, _ := newWfActionVulnService()
 
 	// nil aiTriageSvc → AI triage handler must NOT be registered (no panic)
-	app.RegisterAllActionHandlersWithAI(executor, vulnSvc, nil, nil, nil, nil, log)
+	app.RegisterAllActionHandlersWithAI(executor, vulnSvc, nil, nil, nil, nil, nil, nil, log)
 }
 
 func TestWfAction_RegisterAllActionHandlersWithAI_AllNil(t *testing.T) {
@@ -1291,13 +1254,12 @@ func TestWfAction_RegisterAllActionHandlersWithAI_AllNil(t *testing.T) {
 	executor := app.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
 
 	// All nil services — only ScriptRunnerHandler should be registered (no panic)
-	app.RegisterAllActionHandlersWithAI(executor, nil, nil, nil, nil, nil, log)
+	app.RegisterAllActionHandlersWithAI(executor, nil, nil, nil, nil, nil, nil, nil, log)
 }
 
 // =============================================================================
 // Edge-case: unsupported priority (update_priority passes any string through)
 // =============================================================================
-
 
 func (m *wfActionMockFindingRepo) ListFindingGroups(_ context.Context, _ shared.ID, _ string, _ vulnerability.FindingFilter, _ pagination.Pagination) (pagination.Result[*vulnerability.FindingGroup], error) {
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil

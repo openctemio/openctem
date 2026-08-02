@@ -15,12 +15,23 @@ import (
 )
 
 // registerHealthRoutes registers health check endpoints.
-func registerHealthRoutes(router Router, h *handler.HealthHandler) {
+//
+// /health and /ready stay public (liveness/readiness probes must not require
+// credentials). /metrics is gated by metricsAuth — non-nil and constructed
+// from MetricsConfig by Register(). When metrics are non-public it requires a
+// bearer token (see middleware.MetricsAuth); /health and /ready are unaffected.
+func registerHealthRoutes(router Router, h *handler.HealthHandler, metricsAuth Middleware) {
 	router.GET("/health", h.Health)
 	router.GET("/ready", h.Ready)
-	router.GET("/metrics", func(w http.ResponseWriter, r *http.Request) {
+
+	metricsHandler := func(w http.ResponseWriter, r *http.Request) {
 		promhttp.Handler().ServeHTTP(w, r)
-	})
+	}
+	if metricsAuth != nil {
+		router.GET("/metrics", metricsHandler, metricsAuth)
+	} else {
+		router.GET("/metrics", metricsHandler)
+	}
 }
 
 // registerDocsRoutes registers API documentation endpoints (public).
@@ -145,6 +156,7 @@ func registerIntegrationRoutes(
 	router Router,
 	h *handler.IntegrationHandler,
 	jiraHandler *handler.JiraWebhookHandler,
+	defectDojoHandler *handler.DefectDojoHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
@@ -183,6 +195,12 @@ func registerIntegrationRoutes(
 		// must be before /{id} routes). nil handler = no DB → skip.
 		if jiraHandler != nil {
 			r.GET("/jira/projects", jiraHandler.ListJiraProjects, middleware.Require(permission.IntegrationsRead))
+		}
+
+		// DefectDojo co-existence sync (RFC-013): pull the tenant's DefectDojo
+		// findings and ingest them. Static path; must be before /{id} routes.
+		if defectDojoHandler != nil {
+			r.POST("/defectdojo/sync", defectDojoHandler.Sync, middleware.Require(permission.IntegrationsManage))
 		}
 
 		// Get, update, delete specific integration

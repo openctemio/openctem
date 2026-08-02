@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"net"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -1394,7 +1395,87 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	properties := p.buildPropertiesFromCTIS(ctisAsset)
 	newAsset.SetProperties(properties)
 
+	// Carry the scanner's explicit CTEM signals that were previously dropped at
+	// this seam — internet-exposure, compliance scope, data classification, and
+	// PII/PHI all feed the prioritization engine's reachability + business-
+	// context gates. Before this, only regulatory_owner was read.
+	p.applyCTEMSignals(newAsset, ctisAsset)
+
+	// Infer internet exposure when the scanner didn't provide one. Exposure is
+	// the reachability signal the prioritization engine reads, and it was
+	// previously left `unknown` for every ingested asset, so the reachability-
+	// gated P0/P1 priority rules never fired.
+	if newAsset.Exposure() == asset.ExposureUnknown {
+		if inferred := inferAssetExposure(newAsset); inferred != asset.ExposureUnknown {
+			newAsset.SetExposure(inferred)
+		}
+	}
+
 	return newAsset, nil
+}
+
+// applyCTEMSignals carries the scanner's explicit CTEM/business-context signals
+// from the CTIS asset onto the domain asset. These feed the prioritization
+// engine; before this they were silently dropped at the ingest mapping seam
+// (only regulatory_owner was consumed). Trusting an explicit
+// is_internet_accessible also beats the heuristic exposure inference.
+func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset) {
+	if ctisAsset.IsInternetAccessible {
+		a.SetInternetAccessible(true)
+		if a.Exposure() == asset.ExposureUnknown {
+			a.SetExposure(asset.ExposurePublic)
+		}
+	}
+
+	c := ctisAsset.Compliance
+	if c == nil {
+		return
+	}
+	if len(c.Frameworks) > 0 {
+		a.SetComplianceScope(c.Frameworks)
+	}
+	if c.DataClassification != "" {
+		if err := a.SetDataClassification(asset.DataClassification(c.DataClassification)); err != nil {
+			p.logger.Warn("invalid data_classification from scanner",
+				"value", c.DataClassification, "asset", a.Name(), "error", err)
+		}
+	}
+	if c.PIIExposed {
+		a.SetPIIDataExposed(true)
+	}
+	if c.PHIExposed {
+		a.SetPHIDataExposed(true)
+	}
+}
+
+// inferAssetExposure derives an internet-exposure level from the asset's type
+// and network properties. Assets that are internet-facing by nature (DNS/web)
+// or that carry a public (non-RFC1918) IP are `public`; everything else is left
+// `unknown` (conservative — internal hosts on private IPs stay non-reachable).
+func inferAssetExposure(a *asset.Asset) asset.Exposure {
+	switch a.Type() {
+	case asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeCertificate,
+		asset.AssetTypeWebsite, asset.AssetTypeAPI:
+		return asset.ExposurePublic
+	case asset.AssetTypeIPAddress:
+		if isPublicIP(a.Name()) {
+			return asset.ExposurePublic
+		}
+	}
+	if ip, ok := a.Properties()["ip"].(string); ok && isPublicIP(ip) {
+		return asset.ExposurePublic
+	}
+	return asset.ExposureUnknown
+}
+
+// isPublicIP reports whether s is a routable public IP (not private/loopback/
+// link-local/unspecified).
+func isPublicIP(s string) bool {
+	ip := net.ParseIP(strings.TrimSpace(s))
+	if ip == nil {
+		return false
+	}
+	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast()
 }
 
 // mergeCTISIntoAsset merges CTIS data into an existing asset.
@@ -1424,6 +1505,19 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	newProps := p.buildPropertiesFromCTIS(ctisAsset)
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
 	existing.SetProperties(mergedProps)
+
+	// Re-apply the scanner's explicit CTEM signals on re-scan (compliance /
+	// classification / PII-PHI / internet-exposure) so a later scan that learns
+	// them updates the inventory instead of dropping them.
+	p.applyCTEMSignals(existing, ctisAsset)
+
+	// Backfill exposure on re-scan for assets that predate exposure inference
+	// (or that had no signal before) — only when still unknown, never overriding.
+	if existing.Exposure() == asset.ExposureUnknown {
+		if inferred := inferAssetExposure(existing); inferred != asset.ExposureUnknown {
+			existing.SetExposure(inferred)
+		}
+	}
 
 	// Promote sub_type if existing asset doesn't have one
 	if existing.SubType() == "" {

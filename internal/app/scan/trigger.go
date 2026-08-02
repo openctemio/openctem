@@ -151,6 +151,12 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	runContext["asset_group_id"] = sc.AssetGroupID.String()
 	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
+	// Propagate direct targets (e.g. from QuickScan) so the workflow step
+	// commands carry them to the agent. Without this the agent has only the
+	// (possibly empty, ephemeral) asset group and scans nothing.
+	if len(sc.Targets) > 0 {
+		runContext["targets"] = sc.Targets
+	}
 
 	// Create pipeline run
 	run, err := pipeline.NewRun(template.ID, sc.TenantID, nil, pipeline.TriggerTypeManual, triggeredBy, runContext)
@@ -246,14 +252,50 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 		return nil, err // Error already includes proper domain error for limit exceeded
 	}
 
+	// A single scan still needs a step run. The completion machinery
+	// (OnStepCompleted / OnStepFailed) works by looking the step up on the run
+	// by step_key; a run with no step rows can never be advanced, so before
+	// this it could only ever end by being reaped as a timeout — including when
+	// the scanner had reported a real, specific error.
+	stepRun := s.createSingleScanStepRun(ctx, run)
+
 	// Create command for the scanner
-	if err := s.createScannerCommand(ctx, sc, run); err != nil {
+	if err := s.createScannerCommand(ctx, sc, run, stepRun); err != nil {
 		run.Fail("Failed to create command: " + err.Error())
 		_ = s.runRepo.Update(ctx, run)
 		return nil, fmt.Errorf("failed to create scanner command: %w", err)
 	}
 
 	return run, nil
+}
+
+// createSingleScanStepRun creates the one step run that tracks a single-scanner
+// execution, using the quick-scan template's seeded step.
+//
+// Returns nil when the step cannot be resolved or stored. That is not fatal —
+// the scan itself still dispatches — but the run then has no step to complete,
+// so it falls back to being reaped by MarkTimedOutRuns. The warning is the
+// signal that the seeded template is missing.
+func (s *Service) createSingleScanStepRun(ctx context.Context, run *pipeline.Run) *pipeline.StepRun {
+	steps, err := s.stepRepo.GetByPipelineID(ctx, run.PipelineID)
+	if err != nil || len(steps) == 0 {
+		s.logger.Warn("quick scan template has no steps; run cannot report completion",
+			"run_id", run.ID.String(), "pipeline_id", run.PipelineID.String(), "error", err)
+		return nil
+	}
+
+	// steps[0] is the lowest step_order: GetByPipelineID sorts ASC. A single
+	// scan dispatches one scanner command, so one step run is what completion
+	// is measured against — matching the SetTotalSteps(1) above.
+	step := steps[0]
+	stepRun := pipeline.NewStepRun(run.ID, step.ID, step.StepKey, step.StepOrder, step.MaxRetries)
+	if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
+		s.logger.Warn("failed to create step run for single scan",
+			"run_id", run.ID.String(), "error", err)
+		return nil
+	}
+	run.AddStepRun(stepRun)
+	return stepRun
 }
 
 // scheduleWorkflowSteps schedules runnable workflow steps.
@@ -282,17 +324,24 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 	}
 
 	// Create command for the step with consistent field names for pipeline progression
-	payload, _ := json.Marshal(map[string]any{
-		"pipeline_run_id":       run.ID.String(),
-		"step_run_id":           stepRunID,
-		"step_id":               step.ID.String(),
-		"step_key":              step.StepKey,
-		"step_config":           step.Config,
+	payloadMap := map[string]any{
+		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
+		pipeline.PayloadKeyStepRunID:     stepRunID,
+		pipeline.PayloadKeyStepKey:       step.StepKey,
+		"step_id":                        step.ID.String(),
+		"step_config":                    step.Config,
 		"required_capabilities": step.Capabilities,
 		"preferred_tool":        step.Tool,
 		"timeout_seconds":       step.TimeoutSeconds,
 		"context":               run.Context,
-	})
+	}
+	// Surface direct targets at the top level of the payload — agent executors
+	// read job.Payload["targets"], not the nested run context. Without this a
+	// workflow driven by ad-hoc targets (QuickScan) would receive none.
+	if targets, ok := run.Context["targets"]; ok {
+		payloadMap["targets"] = targets
+	}
+	payload, _ := json.Marshal(payloadMap)
 
 	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
 	if err != nil {
@@ -330,7 +379,12 @@ type EmbeddedTemplate struct {
 
 // createScannerCommand creates a command for a single scanner execution.
 // Uses AgentSelector to determine whether to use tenant or platform agents.
-func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *pipeline.Run) error {
+//
+// stepRun may be nil — see createSingleScanStepRun. When it is present the
+// payload carries the keys the command handler needs to report the step back
+// (`pipeline_run_id`, `step_key`, `step_run_id`); `run_id` is kept because the
+// agent SDK reads it.
+func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun) error {
 	payloadMap := map[string]any{
 		"run_id":             run.ID.String(),
 		"scan_id":            sc.ID.String(),
@@ -342,6 +396,24 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		"tenant_runner_only": sc.RunOnTenantRunner,
 		"agent_preference":   string(sc.AgentPreference),
 		"context":            run.Context,
+		// The agent SDK (ScanCommandPayload) reads `scanner`, `config` and a
+		// single `target`, not `scanner_name`/`scanner_config` — send both sets
+		// so the command dispatches correctly (contract drift previously left
+		// the agent with an empty scanner: "scanner not found").
+		"scanner": sc.ScannerName,
+		"config":  sc.ScannerConfig,
+	}
+	// The command handler reads `pipeline_run_id` + `step_key` to route a
+	// finished command back into the pipeline; a payload carrying only `run_id`
+	// is silently treated as "not a pipeline command" and the run is never
+	// advanced, completed, or failed.
+	if stepRun != nil {
+		payloadMap[pipeline.PayloadKeyPipelineRunID] = run.ID.String()
+		payloadMap[pipeline.PayloadKeyStepKey] = stepRun.StepKey
+		payloadMap[pipeline.PayloadKeyStepRunID] = stepRun.ID.String()
+	}
+	if len(sc.Targets) > 0 {
+		payloadMap["target"] = sc.Targets[0]
 	}
 
 	// Embed custom templates if configured
@@ -376,7 +448,23 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		cmd.SetPlatformJob(initialPriority)
 	}
 
-	return s.commandRepo.Create(ctx, cmd)
+	if err := s.commandRepo.Create(ctx, cmd); err != nil {
+		return err
+	}
+
+	// Link the step run to the command it is waiting on, matching the workflow
+	// path. Without the link a step stays 'pending' forever in the UI even
+	// after the command has been dispatched.
+	if stepRun != nil {
+		stepRun.CommandID = &cmd.ID
+		stepRun.Queue()
+		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+			s.logger.Warn("failed to link step run to command",
+				"run_id", run.ID.String(), "command_id", cmd.ID.String(), "error", err)
+		}
+	}
+
+	return nil
 }
 
 // resolveCustomTemplates resolves custom templates from scanner_config.

@@ -35,10 +35,43 @@ type CampaignEpicCreator interface {
 // Jira's default done state; per-tenant override is a documented follow-up.
 const epicDoneStatus = "Done"
 
+// CampaignFindingResolver bulk-resolves the OPEN findings matching a filter,
+// turning a campaign from a passive progress tracker into an active closer
+// (RFC-015 Phase 3). Nil → the resolve action is unavailable. Implemented by an
+// adapter over the finding bulk-status path + its abuse guard.
+type CampaignFindingResolver interface {
+	ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in CampaignResolveInput) (resolvedCount int, err error)
+}
+
+// CampaignKeyResolver serves campaigns scoped to a remediation-group key (a
+// "solution family" — every finding one fix resolves). Progress and resolution
+// for such a campaign are computed from the remediation side-table, NOT from a
+// generic FindingFilter (the key isn't expressible as one). Nil → keyed
+// campaigns cannot compute progress or resolve. Implemented by an adapter over
+// the remediation key repository + group resolver at the composition root.
+type CampaignKeyResolver interface {
+	// CountByKey returns (total, resolved) findings sharing the remediation key.
+	CountByKey(ctx context.Context, tenantID shared.ID, key string) (total, resolved int64, err error)
+	// ResolveGroupByKey bulk-resolves the OPEN findings under the key, reusing
+	// the same guarded bulk-status path as the standalone group resolve.
+	ResolveGroupByKey(ctx context.Context, tenantID string, key string, in CampaignResolveInput) (resolvedCount int, err error)
+}
+
+// CampaignResolveInput parameterizes a campaign resolve.
+type CampaignResolveInput struct {
+	Status              string // fix_applied (default) or resolved
+	Resolution          string
+	ActorID             string
+	HasVerifyPermission bool
+	Approved            bool
+}
+
 // RemediationCampaignService manages remediation campaigns.
 type RemediationCampaignService struct {
 	repo        remediation.CampaignRepository
 	finding     FindingCounter                       // nil → progress stays zero
+	resolver    CampaignFindingResolver              // nil → resolve action disabled
+	keyResolver CampaignKeyResolver                  // nil → keyed campaigns can't count/resolve
 	ticketRepo  remediation.CampaignTicketRepository // nil → ticketing disabled
 	epicCreator CampaignEpicCreator                  // nil → ticketing disabled
 	logger      *logger.Logger
@@ -55,6 +88,84 @@ func NewRemediationCampaignService(repo remediation.CampaignRepository, log *log
 // avoid an import cycle at the composition root.
 func (s *RemediationCampaignService) SetFindingCounter(c FindingCounter) {
 	s.finding = c
+}
+
+// SetFindingResolver wires the bulk resolver that makes ResolveCampaignFindings
+// available (RFC-015 Phase 3). When unset, the resolve action is unavailable.
+func (s *RemediationCampaignService) SetFindingResolver(r CampaignFindingResolver) {
+	s.resolver = r
+}
+
+// SetKeyResolver wires progress + resolution for campaigns scoped to a
+// remediation-group key (a solution family). When unset, such campaigns keep
+// zero progress and their resolve fails closed (never a tenant-wide resolve).
+func (s *RemediationCampaignService) SetKeyResolver(r CampaignKeyResolver) {
+	s.keyResolver = r
+}
+
+// ResolveCampaignFindings resolves every OPEN finding matching the campaign's
+// filter in one action — reusing the finding bulk-status path + abuse guard.
+// Defaults to fix_applied ("patched, pending rescan verification"). Returns the
+// number of findings transitioned.
+func (s *RemediationCampaignService) ResolveCampaignFindings(ctx context.Context, tenantID, campaignID string, in CampaignResolveInput) (int, error) {
+	campaign, err := s.GetCampaign(ctx, tenantID, campaignID)
+	if err != nil {
+		return 0, err
+	}
+
+	// A keyed campaign (solution family) MUST resolve through the key path only.
+	// Its remediation_key is not expressible as a FindingFilter, so falling
+	// through to the generic resolver would map it to a tenant-only filter and
+	// close every finding in the tenant. Fail closed if the key path is unwired.
+	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
+		if s.keyResolver == nil {
+			return 0, fmt.Errorf("%w: keyed campaign resolve is not configured", shared.ErrValidation)
+		}
+		n, kerr := s.keyResolver.ResolveGroupByKey(ctx, tenantID, key, in)
+		if kerr != nil {
+			return 0, kerr
+		}
+		s.logger.Info("resolved remediation campaign findings by key",
+			"tenant", sanitizeLogValue(tenantID), "campaign_id", sanitizeLogValue(campaignID),
+			"resolved", n, "status", sanitizeLogValue(in.Status))
+		return n, nil
+	}
+
+	if s.resolver == nil {
+		return 0, fmt.Errorf("%w: campaign resolve is not configured", shared.ErrValidation)
+	}
+	filter := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
+	// Refuse to resolve an unscoped campaign: an empty filter would map to a
+	// tenant-only filter and close every open finding in the tenant.
+	if !findingFilterHasScope(filter) {
+		return 0, fmt.Errorf("%w: campaign has no scope — refusing tenant-wide resolve", shared.ErrValidation)
+	}
+	n, err := s.resolver.ResolveOpenByFilter(ctx, tenantID, filter, in)
+	if err != nil {
+		return 0, err
+	}
+	s.logger.Info("resolved remediation campaign findings",
+		"tenant", sanitizeLogValue(tenantID), "campaign_id", sanitizeLogValue(campaignID),
+		"resolved", n, "status", sanitizeLogValue(in.Status))
+	return n, nil
+}
+
+// sanitizeLogValue strips CR/LF and control characters from a
+// user-influenceable value before it is logged, preventing log forging
+// (CodeQL go/log-injection). Mirrors the remediation group service's helper —
+// the shared logger can emit plain text, where an unescaped newline would let a
+// caller forge log lines.
+func sanitizeLogValue(s string) string {
+	const maxLen = 128
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r < 0x20 {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // SetTicketing wires the campaign→Jira-epic integration. Safe to call after
@@ -77,6 +188,7 @@ type CreateRemediationCampaignInput struct {
 	Priority      string
 	FindingFilter map[string]any
 	AssignedTo    string
+	AssignedTeam  string
 	StartDate     string
 	DueDate       string
 	Tags          []string
@@ -111,12 +223,36 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		actorID, _ := shared.IDFromString(input.ActorID)
 		campaign.SetCreatedBy(actorID)
 	}
-	if input.AssignedTo != "" {
-		assignee, aerr := shared.IDFromString(input.AssignedTo)
-		if aerr != nil {
-			return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
+	if input.AssignedTo != "" || input.AssignedTeam != "" {
+		var toPtr, teamPtr *shared.ID
+		if input.AssignedTo != "" {
+			assignee, aerr := shared.IDFromString(input.AssignedTo)
+			if aerr != nil {
+				return nil, fmt.Errorf("%w: invalid assigned_to id", shared.ErrValidation)
+			}
+			toPtr = &assignee
 		}
-		campaign.SetAssignment(&assignee, nil)
+		if input.AssignedTeam != "" {
+			team, terr := shared.IDFromString(input.AssignedTeam)
+			if terr != nil {
+				return nil, fmt.Errorf("%w: invalid assigned_team id", shared.ErrValidation)
+			}
+			teamPtr = &team
+		}
+		campaign.SetAssignment(toPtr, teamPtr)
+	}
+	// Start/due dates arrive as ISO/RFC3339 strings from the UI; parse them so
+	// "New Task" persists them (they were silently dropped). If no start date is
+	// chosen, Activate() auto-stamps it when the task first moves to in-progress.
+	if input.StartDate != "" {
+		if start, derr := time.Parse(time.RFC3339, input.StartDate); derr == nil {
+			campaign.SetStartDate(&start)
+		}
+	}
+	if input.DueDate != "" {
+		if due, derr := time.Parse(time.RFC3339, input.DueDate); derr == nil {
+			campaign.SetDueDate(&due)
+		}
 	}
 
 	if err := s.repo.Create(ctx, campaign); err != nil {
@@ -172,7 +308,17 @@ type UpdateRemediationCampaignInput struct {
 	Description *string
 	Priority    *string
 	Tags        []string
+	StartDate   *time.Time
 	DueDate     *time.Time
+	// FindingFilter re-scopes the campaign (e.g. a task's "link to finding").
+	// nil = leave the existing scope untouched; non-nil (incl. {}) = replace it.
+	FindingFilter map[string]any
+	// AssignedTo sets the owner. nil = leave unchanged; ptr to "" = unassign;
+	// ptr to a user UUID = assign that user.
+	AssignedTo *string
+	// AssignedTeam sets the validator (the "who verifies" — segregation from the
+	// fixer). Same nil/""/uuid semantics as AssignedTo.
+	AssignedTeam *string
 }
 
 // UpdateCampaign updates campaign fields (name, description, priority, tags, due_date).
@@ -197,8 +343,31 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 	if input.Tags != nil {
 		campaign.SetTags(input.Tags)
 	}
+	if input.StartDate != nil {
+		campaign.SetStartDate(input.StartDate)
+	}
 	if input.DueDate != nil {
 		campaign.SetDueDate(input.DueDate)
+	}
+	if input.FindingFilter != nil {
+		// Re-scoping the campaign (e.g. linking a finding) — apply then recompute
+		// the counts immediately so "N findings linked" reflects the new scope
+		// without waiting for the reconcile sweep.
+		campaign.SetFindingFilter(input.FindingFilter)
+		if _, rerr := s.recomputeProgress(ctx, campaign); rerr != nil {
+			s.logger.Warn("recompute after re-scope failed", "id", campaignID, "error", rerr)
+		}
+	}
+	if input.AssignedTo != nil || input.AssignedTeam != nil {
+		toPtr, aerr := resolveAssignee(campaign.AssignedTo(), input.AssignedTo, "assigned_to")
+		if aerr != nil {
+			return nil, aerr
+		}
+		teamPtr, terr := resolveAssignee(campaign.AssignedTeam(), input.AssignedTeam, "assigned_team")
+		if terr != nil {
+			return nil, terr
+		}
+		campaign.SetAssignment(toPtr, teamPtr)
 	}
 
 	if err := s.repo.Update(ctx, campaign); err != nil {
@@ -417,11 +586,36 @@ func (s *RemediationCampaignService) ReconcileProgress(ctx context.Context) (int
 // true when either count changed (so the caller knows whether to persist).
 // No-op (false, nil) when no finding counter is wired.
 func (s *RemediationCampaignService) recomputeProgress(ctx context.Context, campaign *remediation.Campaign) (bool, error) {
+	// Keyed campaigns (solution families) count from the remediation side-table:
+	// the remediation_key can't be expressed as a FindingFilter, so the generic
+	// counter would count the wrong (tenant-wide) set.
+	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
+		if s.keyResolver == nil {
+			return false, nil
+		}
+		total, resolved, err := s.keyResolver.CountByKey(ctx, campaign.TenantID(), key)
+		if err != nil {
+			return false, fmt.Errorf("count campaign findings by key: %w", err)
+		}
+		prevFindings, prevResolved := campaign.FindingCount(), campaign.ResolvedCount()
+		campaign.UpdateProgress(int(total), int(resolved))
+		return prevFindings != campaign.FindingCount() || prevResolved != campaign.ResolvedCount(), nil
+	}
+
 	if s.finding == nil {
 		return false, nil
 	}
 
 	base := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
+
+	// An unscoped campaign ({} filter) maps to a tenant-only filter that matches
+	// every finding — so all such campaigns would report the same tenant-wide
+	// count. Treat "no scope" as "tracks nothing" until it is given a filter/key.
+	if !findingFilterHasScope(base) {
+		prevFindings, prevResolved := campaign.FindingCount(), campaign.ResolvedCount()
+		campaign.UpdateProgress(0, 0)
+		return prevFindings != 0 || prevResolved != 0, nil
+	}
 
 	// The denominator must be the WHOLE campaign scope regardless of status, so
 	// it stays stable as findings resolve. If the campaign filter pinned a
@@ -460,6 +654,14 @@ func (s *RemediationCampaignService) recordRiskReduction(campaign *remediation.C
 	campaign.RecordRiskReduction(before, after)
 }
 
+// campaignRemediationKey returns the remediation-group key a campaign is scoped
+// to, or "" when the campaign is a plain filter-based campaign. A non-empty key
+// means the campaign tracks a solution family and must use the key path for
+// both progress and resolution (never the generic finding filter).
+func campaignRemediationKey(raw map[string]any) string {
+	return firstString(raw, "remediation_key")
+}
+
 // campaignFilterToFindingFilter maps a campaign's JSONB finding_filter onto a
 // vulnerability.FindingFilter. Supported keys (all optional; unknown keys are
 // ignored): severities/severity, cve_ids/cve_id, sources/source, statuses,
@@ -490,6 +692,10 @@ func campaignFilterToFindingFilter(tenantID shared.ID, raw map[string]any) vulne
 	if cves := stringValues(raw, "cve_ids", "cve_id"); len(cves) > 0 {
 		f.CVEIDs = cves
 	}
+	// Explicitly linked findings (a remediation task's "link to finding").
+	if ids := stringValues(raw, "finding_ids", "finding_id"); len(ids) > 0 {
+		f.FindingIDs = ids
+	}
 	if assetID := firstString(raw, "asset_id"); assetID != "" {
 		if id, err := shared.IDFromString(assetID); err == nil {
 			f.AssetID = &id
@@ -502,6 +708,23 @@ func campaignFilterToFindingFilter(tenantID shared.ID, raw map[string]any) vulne
 		f.Search = &search
 	}
 	return f
+}
+
+// findingFilterHasScope reports whether a campaign's converted filter narrows
+// beyond the tenant. An empty campaign filter ({}) maps to a tenant-only filter
+// that matches EVERY finding — the cause of the "every campaign shows N findings
+// linked" bug, and a resolve-all footgun. An unscoped campaign must therefore
+// own nothing (count 0) and must never resolve. Keyed campaigns are handled on a
+// separate path and always have scope.
+func findingFilterHasScope(f vulnerability.FindingFilter) bool {
+	return len(f.Severities) > 0 ||
+		len(f.Sources) > 0 ||
+		len(f.Statuses) > 0 ||
+		len(f.CVEIDs) > 0 ||
+		len(f.FindingIDs) > 0 ||
+		f.AssetID != nil ||
+		f.ToolName != nil ||
+		f.Search != nil
 }
 
 // stringValues extracts string values for the first present key, accepting
@@ -671,4 +894,28 @@ func buildEpicDescription(c *remediation.Campaign) string {
 		body += fmt.Sprintf("\nDue: %s", due.Format("2006-01-02"))
 	}
 	return body
+}
+
+// resolveAssignee applies one side of an assignment update. The two sides are
+// independently updatable and must not wipe each other, so each starts from the
+// current value:
+//
+//	nil    -> keep current
+//	""     -> clear
+//	uuid   -> set
+//
+// Extracted because AssignedTo and AssignedTeam were two copies of this ladder
+// inline, which is what pushed UpdateCampaign past the nesting limit.
+func resolveAssignee(current *shared.ID, input *string, field string) (*shared.ID, error) {
+	if input == nil {
+		return current, nil
+	}
+	if *input == "" {
+		return nil, nil
+	}
+	id, err := shared.IDFromString(*input)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid %s id", shared.ErrValidation, field)
+	}
+	return &id, nil
 }

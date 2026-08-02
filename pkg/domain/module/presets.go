@@ -34,6 +34,10 @@ type ModulePreset struct {
 	// omitted; they get implicitly included. Hard deps must all be
 	// present — enforced by TestPresetsSatisfyHardDeps at CI.
 	EnabledModules []string
+	// Tier — reserved for a future commercial edition layer (which plans
+	// may subscribe to this bundle). Empty = available in all editions
+	// (OSS). Not consulted by any gate today.
+	Tier string
 	// Icon — lucide icon name for the preset card.
 	Icon string
 	// RecommendedFor — audience tags (e.g. "SMB", "mid-market",
@@ -49,6 +53,7 @@ var ModulePresets = []ModulePreset{
 	presetAssetInventory,
 	presetVMEssentials,
 	presetASM,
+	presetASPM,
 	presetOffensive, // Merged Bug Bounty + Pentest/Red Team
 	presetSBOM,
 	presetCSPM,
@@ -373,6 +378,51 @@ var presetOffensive = ModulePreset{
 	},
 }
 
+// presetASPM — Application Security Posture Management. The umbrella AppSec
+// bundle: everything from code to build to deploy — SCA/SBOM, secrets, IaC /
+// container posture, CI/CD gating, and the full finding lifecycle (triage →
+// risk → remediate → SLA) over application findings. Broader than the SBOM
+// bundle (which is its software-composition core); narrower than CTEM (no
+// pentest / attack-simulation / compliance).
+var presetASPM = ModulePreset{
+	ID:            "aspm",
+	Name:          "Application Security Posture (ASPM)",
+	Description:   "Unified AppSec posture across code → build → deploy: SCA/SBOM, secrets, IaC & container, CI/CD gating, and app-finding lifecycle.",
+	TargetPersona: "AppSec / product-security engineer consolidating SAST/SCA/DAST/secrets into one posture view",
+	Icon:          "Boxes",
+	RecommendedFor: []string{
+		"AppSec team",
+		"product security",
+		"DevSecOps at scale",
+		"consolidating point AppSec tools",
+	},
+	KeyOutcomes: []string{
+		"One posture view over every app finding: code, dependencies, containers, IaC, secrets",
+		"Repo → branch → component → container asset map with SBOM (SPDX/CycloneDX)",
+		"Dependency + container CVE tracking with KEV/EPSS prioritization",
+		"CI/CD policy gates that block risky builds via workflow automation",
+		"Finding lifecycle: AI triage, risk scoring, SLA, remediation, exec reporting",
+	},
+	EnabledModules: []string{
+		// Scoping — apps/services map
+		"attack_surface", "scope_config", "business_services", "relationships",
+		// Discovery — the AppSec surface: components, repos, secrets
+		"components", "branches", "credentials",
+		// Prioritization — full app-finding lifecycle
+		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
+		"priority_rules", "risk_scoring", "risk_analysis", "sla",
+		// Mobilization — gate + fix
+		"remediation", "remediation_tasks", "suppressions", "workflows", "policies",
+		// Insights — SBOM + exec
+		"sbom_export", "reports", "executive_summary",
+		// Settings — SCM/CI/scanner integration heavy
+		"integrations", "integrations.scm", "integrations.pipelines",
+		"integrations.scanners", "integrations.notifications", "integrations.ticketing",
+		"scanner_templates", "template_sources", "scan_pipelines",
+		"tools", "scan_profiles", "iocs",
+	},
+}
+
 // presetSBOM — DevSecOps / AppSec focused on software composition.
 // Component-heavy, SCM-heavy, CI/CD pipeline gating. Asset surface
 // scoped to repos + containers + artifacts (assets is core, all
@@ -534,7 +584,10 @@ var presetCTEMFull = ModulePreset{
 		"ctem_cycles", "attacker_profiles", "relationships",
 		// Discovery
 		"components", "branches", "credentials",
+		// Discovery — vulnerability database is part of the CTEM discovery surface
+		"vulnerabilities",
 		// Prioritization
+		"exposures",
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
 		"ai_triage.workflow", "ai_triage.custom_prompts",
 		"priority_rules", "risk_analysis", "business_impact",

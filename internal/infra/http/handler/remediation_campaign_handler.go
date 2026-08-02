@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/domain/remediation"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
@@ -31,7 +32,7 @@ func NewRemediationCampaignHandler(svc *app.RemediationCampaignService, log *log
 func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
 	if perPage < 1 {
 		perPage = 20
 	} else if perPage > 100 {
@@ -102,6 +103,9 @@ func (h *RemediationCampaignHandler) Create(w http.ResponseWriter, r *http.Reque
 		Priority:      req.Priority,
 		FindingFilter: req.FindingFilter,
 		AssignedTo:    req.AssignedTo,
+		AssignedTeam:  req.AssignedTeam,
+		StartDate:     req.StartDate,
+		DueDate:       req.DueDate,
 		Tags:          req.Tags,
 		ActorID:       userID,
 	})
@@ -136,6 +140,42 @@ func (h *RemediationCampaignHandler) Get(w http.ResponseWriter, r *http.Request)
 }
 
 // UpdateStatus transitions campaign status.
+// Resolve handles POST /api/v1/remediation/campaigns/{id}/resolve — actively
+// resolves the campaign's open findings in one action (RFC-015 Phase 3).
+func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var req struct {
+		Status     string `json:"status"`
+		Resolution string `json:"resolution"`
+		Approved   bool   `json:"approved"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			apierror.BadRequest("invalid request body").WriteJSON(w)
+			return
+		}
+	}
+	if req.Status != "" && req.Status != "fix_applied" && req.Status != "resolved" {
+		apierror.BadRequest("status must be fix_applied or resolved").WriteJSON(w)
+		return
+	}
+
+	resolved, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, app.CampaignResolveInput{
+		Status:              req.Status,
+		Resolution:          req.Resolution,
+		ActorID:             middleware.GetUserID(r.Context()),
+		HasVerifyPermission: middleware.HasPermission(r.Context(), string(permission.FindingsVerify)),
+		Approved:            req.Approved,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"resolved": resolved})
+}
+
 func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -168,11 +208,15 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 	}
 
 	campaign, err := h.service.UpdateCampaign(r.Context(), tenantID, id, app.UpdateRemediationCampaignInput{
-		Name:        req.Name,
-		Description: req.Description,
-		Priority:    req.Priority,
-		Tags:        req.Tags,
-		DueDate:     req.DueDate,
+		Name:          req.Name,
+		Description:   req.Description,
+		Priority:      req.Priority,
+		Tags:          req.Tags,
+		StartDate:     req.StartDate,
+		DueDate:       req.DueDate,
+		FindingFilter: req.FindingFilter,
+		AssignedTo:    req.AssignedTo,
+		AssignedTeam:  req.AssignedTeam,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -252,15 +296,22 @@ type CreateRemCampaignRequest struct {
 	Priority      string         `json:"priority"`
 	FindingFilter map[string]any `json:"finding_filter"`
 	AssignedTo    string         `json:"assigned_to"`
+	AssignedTeam  string         `json:"assigned_team"`
+	StartDate     string         `json:"start_date"`
+	DueDate       string         `json:"due_date"`
 	Tags          []string       `json:"tags"`
 }
 
 type UpdateRemCampaignRequest struct {
-	Name        *string    `json:"name,omitempty"`
-	Description *string    `json:"description,omitempty"`
-	Priority    *string    `json:"priority,omitempty"`
-	Tags        []string   `json:"tags,omitempty"`
-	DueDate     *time.Time `json:"due_date,omitempty"`
+	Name          *string        `json:"name,omitempty"`
+	Description   *string        `json:"description,omitempty"`
+	Priority      *string        `json:"priority,omitempty"`
+	Tags          []string       `json:"tags,omitempty"`
+	StartDate     *time.Time     `json:"start_date,omitempty"`
+	DueDate       *time.Time     `json:"due_date,omitempty"`
+	FindingFilter map[string]any `json:"finding_filter,omitempty"`
+	AssignedTo    *string        `json:"assigned_to,omitempty"`
+	AssignedTeam  *string        `json:"assigned_team,omitempty"`
 }
 
 type RemediationCampaignResponse struct {
@@ -270,6 +321,8 @@ type RemediationCampaignResponse struct {
 	Status        string         `json:"status"`
 	Priority      string         `json:"priority"`
 	FindingFilter map[string]any `json:"finding_filter,omitempty"`
+	AssignedTo    string         `json:"assigned_to,omitempty"`
+	AssignedTeam  string         `json:"assigned_team,omitempty"`
 	FindingCount  int            `json:"finding_count"`
 	ResolvedCount int            `json:"resolved_count"`
 	Progress      float64        `json:"progress"`
@@ -297,6 +350,8 @@ func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignRespo
 		Status:        string(c.Status()),
 		Priority:      string(c.Priority()),
 		FindingFilter: c.FindingFilter(),
+		AssignedTo:    idPtrToString(c.AssignedTo()),
+		AssignedTeam:  idPtrToString(c.AssignedTeam()),
 		FindingCount:  c.FindingCount(),
 		ResolvedCount: c.ResolvedCount(),
 		Progress:      c.Progress(),
@@ -311,4 +366,13 @@ func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignRespo
 		CreatedAt:     c.CreatedAt(),
 		UpdatedAt:     c.UpdatedAt(),
 	}
+}
+
+// idPtrToString renders an optional ID as a string ("" when nil), for response
+// serialization of nullable assignment fields.
+func idPtrToString(id *shared.ID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }

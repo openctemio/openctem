@@ -3,17 +3,39 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/api/internal/app/aitriage"
 	"github.com/openctemio/api/internal/app/finding"
 	"github.com/openctemio/api/internal/app/integration"
-
 	"github.com/openctemio/api/internal/app/pipeline"
 	scansvc "github.com/openctemio/api/internal/app/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
 	workflowdom "github.com/openctemio/api/pkg/domain/workflow"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// TicketRef is the minimal created/linked-ticket info a workflow reports back.
+type TicketRef struct {
+	Key string
+	URL string
+}
+
+// JiraTicketService is the narrow behavior the ticket action needs from the
+// Jira sync service: file a ticket for a finding and push a finding's status to
+// its linked ticket. Interface (with primitive params, not jira.* types) so the
+// workflow package does not import app/jira — that would form a cycle through
+// the app shim. The concrete adapter is wired in cmd/server.
+type JiraTicketService interface {
+	CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (TicketRef, error)
+	SyncFindingStatus(ctx context.Context, tenantID, findingID shared.ID) error
+}
+
+// GitHubTicketService is the narrow behavior the ticket action needs to file a
+// GitHub issue for a finding.
+type GitHubTicketService interface {
+	CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (TicketRef, error)
+}
 
 // ----------------------------------------------------------------------------
 // Finding Action Handlers
@@ -456,16 +478,25 @@ func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionI
 // Ticket Action Handler
 // ----------------------------------------------------------------------------
 
-// TicketActionHandler handles ticket creation and update actions.
+// TicketActionHandler handles ticket creation and update actions. It routes to
+// the same per-tenant Jira / GitHub ticketing services the direct
+// POST /findings/{id}/create-ticket route uses, so a workflow files a real
+// issue instead of returning a false success.
 type TicketActionHandler struct {
 	integrationService *integration.IntegrationService
+	jira               JiraTicketService
+	github             GitHubTicketService
 	logger             *logger.Logger
 }
 
-// NewTicketActionHandler creates a new TicketActionHandler.
-func NewTicketActionHandler(intSvc *integration.IntegrationService, log *logger.Logger) *TicketActionHandler {
+// NewTicketActionHandler creates a new TicketActionHandler. jiraSvc and
+// githubSvc are optional: when a provider's service is nil, create/update for
+// that provider returns a clear "not configured" error rather than a fake OK.
+func NewTicketActionHandler(intSvc *integration.IntegrationService, jiraSvc JiraTicketService, githubSvc GitHubTicketService, log *logger.Logger) *TicketActionHandler {
 	return &TicketActionHandler{
 		integrationService: intSvc,
+		jira:               jiraSvc,
+		github:             githubSvc,
 		logger:             log,
 	}
 }
@@ -482,56 +513,104 @@ func (h *TicketActionHandler) Execute(ctx context.Context, input *ActionInput) (
 	}
 }
 
+// createTicket files a real issue for the workflow's finding via the same
+// per-tenant Jira / GitHub ticketing services the direct
+// POST /findings/{id}/create-ticket route uses. Provider defaults to jira;
+// pass config.provider="github" (with owner/repo) to file a GitHub issue.
 func (h *TicketActionHandler) createTicket(ctx context.Context, input *ActionInput) (map[string]any, error) {
 	config := input.ActionConfig
 
-	// Required fields
-	integrationID, _ := config["integration_id"].(string)
-	title, _ := config["title"].(string)
-	project, _ := config["project"].(string)
-
-	if integrationID == "" {
-		return nil, fmt.Errorf("integration_id is required for create_ticket action")
+	findingID, err := findingIDFromInput(input)
+	if err != nil {
+		return nil, fmt.Errorf("create_ticket: %w", err)
 	}
-	if title == "" {
-		return nil, fmt.Errorf("title is required for create_ticket action")
+	tenantID := input.TenantID.String()
+	provider, _ := config["provider"].(string)
+
+	if strings.EqualFold(provider, "github") {
+		if h.github == nil {
+			return nil, fmt.Errorf("create_ticket: github ticketing is not configured")
+		}
+		owner, _ := config["owner"].(string)
+		repo, _ := config["repo"].(string)
+		ref, err := h.github.CreateTicketFromFinding(ctx, tenantID, findingID, owner, repo)
+		if err != nil {
+			return nil, fmt.Errorf("create_ticket (github): %w", err)
+		}
+		return ticketResult("github", findingID, ref), nil
 	}
 
-	// create_ticket is not wired to the integration service yet, so it would
-	// previously return {"created": true} without filing anything — operators
-	// would believe Jira/GitHub issues were created when none were. Fail loudly
-	// until it is wired to the same ticket-creation path as the direct
-	// POST /findings/{id}/create-ticket route.
-	h.logger.Warn("create_ticket workflow action is not implemented",
-		"integration_id", integrationID,
-		"title", title,
-		"project", project,
-	)
-
-	return nil, fmt.Errorf("create_ticket workflow action is not implemented")
+	if h.jira == nil {
+		return nil, fmt.Errorf("create_ticket: jira ticketing is not configured")
+	}
+	projectKey, _ := config["project_key"].(string)
+	if projectKey == "" {
+		projectKey, _ = config["project"].(string) // accept either key
+	}
+	issueType, _ := config["issue_type"].(string)
+	ref, err := h.jira.CreateTicketFromFinding(ctx, tenantID, findingID, projectKey, issueType)
+	if err != nil {
+		return nil, fmt.Errorf("create_ticket (jira): %w", err)
+	}
+	return ticketResult("jira", findingID, ref), nil
 }
 
+// updateTicket pushes the finding's current status to its linked ticket
+// (severity/status sync). Jira only for now — GitHub status sync is not exposed
+// as a service method yet.
 func (h *TicketActionHandler) updateTicket(ctx context.Context, input *ActionInput) (map[string]any, error) {
-	config := input.ActionConfig
-
-	integrationID, _ := config["integration_id"].(string)
-	ticketID, _ := config["ticket_id"].(string)
-
-	if integrationID == "" {
-		return nil, fmt.Errorf("integration_id is required for update_ticket action")
+	findingIDStr, err := findingIDFromInput(input)
+	if err != nil {
+		return nil, fmt.Errorf("update_ticket: %w", err)
 	}
-	if ticketID == "" {
-		return nil, fmt.Errorf("ticket_id is required for update_ticket action")
+	if h.jira == nil {
+		return nil, fmt.Errorf("update_ticket: jira ticketing is not configured")
 	}
+	findingID, err := shared.IDFromString(findingIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("update_ticket: invalid finding id: %w", err)
+	}
+	if err := h.jira.SyncFindingStatus(ctx, input.TenantID, findingID); err != nil {
+		return nil, fmt.Errorf("update_ticket (jira): %w", err)
+	}
+	return map[string]any{
+		"finding_id": findingIDStr,
+		"synced":     true,
+		"action":     "update_ticket",
+	}, nil
+}
 
-	// update_ticket is not wired to the integration service yet — fail loudly
-	// rather than report a false {"updated": true}.
-	h.logger.Warn("update_ticket workflow action is not implemented",
-		"integration_id", integrationID,
-		"ticket_id", ticketID,
-	)
+// ticketResult builds the standard create_ticket action result payload.
+func ticketResult(provider, findingID string, ref TicketRef) map[string]any {
+	return map[string]any{
+		"finding_id": findingID,
+		"provider":   provider,
+		"ticket_key": ref.Key,
+		"ticket_url": ref.URL,
+		"created":    true,
+		"action":     "create_ticket",
+	}
+}
 
-	return nil, fmt.Errorf("update_ticket workflow action is not implemented")
+// findingIDFromInput resolves the target finding ID from an action's config or
+// the workflow trigger data. Shared by the ticket and AI-triage handlers.
+func findingIDFromInput(input *ActionInput) (string, error) {
+	if id, ok := input.ActionConfig["finding_id"].(string); ok && id != "" {
+		return id, nil
+	}
+	if trigger, ok := input.TriggerData["finding"].(map[string]any); ok {
+		if id, ok := trigger["id"].(string); ok && id != "" {
+			return id, nil
+		}
+	}
+	if c, ok := input.Context["trigger"].(map[string]any); ok {
+		if finding, ok := c["finding"].(map[string]any); ok {
+			if id, ok := finding["id"].(string); ok && id != "" {
+				return id, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("finding_id not found in config or trigger data")
 }
 
 // ----------------------------------------------------------------------------
@@ -610,28 +689,7 @@ func (h *AITriageActionHandler) triggerAITriage(ctx context.Context, input *Acti
 }
 
 func (h *AITriageActionHandler) getFindingID(input *ActionInput) (string, error) {
-	// First check action config
-	if id, ok := input.ActionConfig["finding_id"].(string); ok && id != "" {
-		return id, nil
-	}
-
-	// Then check trigger data
-	if trigger, ok := input.TriggerData["finding"].(map[string]any); ok {
-		if id, ok := trigger["id"].(string); ok && id != "" {
-			return id, nil
-		}
-	}
-
-	// Check context
-	if ctx, ok := input.Context["trigger"].(map[string]any); ok {
-		if finding, ok := ctx["finding"].(map[string]any); ok {
-			if id, ok := finding["id"].(string); ok && id != "" {
-				return id, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("finding_id not found in config or trigger data")
+	return findingIDFromInput(input)
 }
 
 // ----------------------------------------------------------------------------
@@ -687,10 +745,13 @@ func RegisterAllActionHandlers(
 	integrationSvc *integration.IntegrationService,
 	log *logger.Logger,
 ) {
-	RegisterAllActionHandlersWithAI(executor, vulnSvc, pipelineSvc, scanSvc, integrationSvc, nil, log)
+	RegisterAllActionHandlersWithAI(executor, vulnSvc, pipelineSvc, scanSvc, integrationSvc, nil, nil, nil, log)
 }
 
-// RegisterAllActionHandlersWithAI registers all built-in action handlers including AI triage.
+// RegisterAllActionHandlersWithAI registers all built-in action handlers,
+// including AI triage and the Jira/GitHub ticket actions. jiraSvc/githubSvc are
+// optional; when both are nil the ticket handler still registers (so the action
+// returns a clear "not configured" error rather than an "unsupported action").
 func RegisterAllActionHandlersWithAI(
 	executor *WorkflowExecutor,
 	vulnSvc *finding.VulnerabilityService,
@@ -698,6 +759,8 @@ func RegisterAllActionHandlersWithAI(
 	scanSvc *scansvc.Service,
 	integrationSvc *integration.IntegrationService,
 	aiTriageSvc *aitriage.AITriageService,
+	jiraSvc JiraTicketService,
+	githubSvc GitHubTicketService,
 	log *logger.Logger,
 ) {
 	// Finding actions
@@ -718,9 +781,11 @@ func RegisterAllActionHandlersWithAI(
 		executor.RegisterActionHandler(workflowdom.ActionTypeTriggerScan, pipelineHandler)
 	}
 
-	// Ticket actions
-	if integrationSvc != nil {
-		ticketHandler := NewTicketActionHandler(integrationSvc, log)
+	// Ticket actions (Jira / GitHub). Register when any ticketing dependency is
+	// present so the action fails with a clear "not configured" error rather
+	// than an "unsupported action type".
+	if integrationSvc != nil || jiraSvc != nil || githubSvc != nil {
+		ticketHandler := NewTicketActionHandler(integrationSvc, jiraSvc, githubSvc, log)
 		executor.RegisterActionHandler(workflowdom.ActionTypeCreateTicket, ticketHandler)
 		executor.RegisterActionHandler(workflowdom.ActionTypeUpdateTicket, ticketHandler)
 	}

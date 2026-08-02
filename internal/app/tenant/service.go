@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/api/internal/app/audit"
 
+	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -81,12 +82,26 @@ type TenantService struct {
 	// role_ids are silently dropped (audit finding). Wire it via
 	// WithTenantRoleService at app startup.
 	roleService *accesscontrol.RoleService
-	logger      *logger.Logger
+	// ssoPathChecker reports whether a tenant has a usable SSO login path.
+	// Used to REFUSE enabling sso_enforced when it would leave members with no
+	// way to sign in. Optional — when nil the guard is skipped (and only a
+	// warning is logged): the never-lock-out guarantee still holds because the
+	// owner is always break-glass exempt at the enforcement gate.
+	ssoPathChecker SSOPathChecker
+	logger         *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
 type UserInfoProvider interface {
 	GetUserNameByID(ctx context.Context, id shared.ID) (string, error)
+}
+
+// SSOPathChecker reports whether a tenant identified by slug has a usable SSO
+// login path — an active per-tenant identity provider or the opted-in platform
+// env fallback. Implemented by the SSO service (HasUsableSSOPath). Used by
+// UpdateSecuritySettings to refuse enabling sso_enforced with no way in.
+type SSOPathChecker interface {
+	HasUsableSSOPath(ctx context.Context, orgSlug string) (bool, error)
 }
 
 // NewTenantService creates a new TenantService.
@@ -139,6 +154,13 @@ func WithTenantRoleService(svc *accesscontrol.RoleService) TenantServiceOption {
 // RoleService — same pattern as SetMembershipCache).
 func (s *TenantService) SetRoleService(svc *accesscontrol.RoleService) {
 	s.roleService = svc
+}
+
+// SetSSOPathChecker wires the SSO-path checker after construction. TenantService
+// is built before the SSO service, so this is called at bootstrap once SSO is
+// ready (mirrors SetSessionService / SetRoleService).
+func (s *TenantService) SetSSOPathChecker(c SSOPathChecker) {
+	s.ssoPathChecker = c
 }
 
 // WithTenantPermissionCacheService sets the permission cache service for TenantService.
@@ -959,9 +981,21 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		return nil, err
 	}
 
+	// Hash-at-rest: persist only the SHA-256 hash of the token, never the raw
+	// value. The raw token is what the invitee receives (email link + the
+	// creator's API response); lookups hash the presented token before the
+	// WHERE token = $1 query. Mirrors the refresh/reset-token pattern.
+	rawToken := invitation.Token()
+	invitation.SetToken(crypto.HashToken(rawToken))
+
 	if err := s.repo.CreateInvitation(ctx, invitation); err != nil {
 		return nil, fmt.Errorf("failed to create invitation: %w", err)
 	}
+
+	// Restore the raw token on the in-memory entity so the email payload and
+	// the creator's API response carry the usable link token (the DB row keeps
+	// the hash written above).
+	invitation.SetToken(rawToken)
 
 	s.logger.Info("invitation created", "tenant_id", tenantID, "email", input.Email, "role", role, "role_ids", input.RoleIDs)
 
@@ -1019,15 +1053,17 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 }
 
 // GetInvitationByToken retrieves an invitation by its token.
+// Tokens are stored hashed at rest, so the raw token is hashed before lookup.
 func (s *TenantService) GetInvitationByToken(ctx context.Context, token string) (*tenantdom.Invitation, error) {
-	return s.repo.GetInvitationByToken(ctx, token)
+	return s.repo.GetInvitationByToken(ctx, crypto.HashToken(token))
 }
 
 // AcceptInvitation accepts an invitation and creates a membership.
 // userID is the local user ID (from users table) of the person accepting the invitation.
 // userEmail is used to verify the invitation is intended for this user.
 func (s *TenantService) AcceptInvitation(ctx context.Context, token string, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
-	invitation, err := s.repo.GetInvitationByToken(ctx, token)
+	// Tokens are stored hashed at rest; hash the presented token before lookup.
+	invitation, err := s.repo.GetInvitationByToken(ctx, crypto.HashToken(token))
 	if err != nil {
 		return nil, err
 	}
@@ -1130,10 +1166,26 @@ func (s *TenantService) ListPendingInvitations(ctx context.Context, tenantID str
 }
 
 // DeleteInvitation cancels an invitation.
-func (s *TenantService) DeleteInvitation(ctx context.Context, invitationID string) error {
+func (s *TenantService) DeleteInvitation(ctx context.Context, tenantID, invitationID string) error {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(invitationID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+
+	// Tenant scoping: only the owning tenant may delete an invitation (mirrors
+	// ResendInvitation). Without this any team-admin could cancel another
+	// tenant's pending invitations by guessing IDs. Not-found on mismatch to
+	// avoid existence disclosure.
+	inv, err := s.repo.GetInvitationByID(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+	if inv.TenantID().String() != parsedTenantID.String() {
+		return shared.ErrNotFound
 	}
 
 	if err := s.repo.DeleteInvitation(ctx, parsedID); err != nil {
@@ -1158,10 +1210,14 @@ func (s *TenantService) CleanupExpiredInvitations(ctx context.Context) (int64, e
 }
 
 // ResendInvitation re-enqueues the invitation email for a pending
-// invitation. Does NOT change the token, expiry, or any other fields
-// on the invitation row — just fires the email again. This lets admins
-// recover from lost/spam-filtered invitation emails without having to
-// delete + recreate (which invalidates the old token).
+// invitation. This lets admins recover from lost/spam-filtered invitation
+// emails without having to delete + recreate.
+//
+// Because tokens are stored hashed at rest, the original raw token can no
+// longer be recovered to re-send. Resend therefore ROTATES the token: a fresh
+// raw token is generated, its hash is persisted, and the raw value is emailed.
+// Any previously-issued link for this invitation stops working. Expiry and all
+// other fields are left unchanged.
 //
 // Returns ErrNotFound if the invitation doesn't exist, and ErrValidation
 // if the invitation has already been accepted or has expired.
@@ -1195,6 +1251,19 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 	if s.emailEnqueuer == nil {
 		return fmt.Errorf("%w: email service is not configured", shared.ErrValidation)
 	}
+
+	// Rotate the token: only the hash is stored, so the raw token cannot be
+	// recovered from the existing row. Generate a fresh one, persist its hash,
+	// and email the raw value below.
+	rawToken, rerr := inv.RotateToken()
+	if rerr != nil {
+		return fmt.Errorf("failed to rotate invitation token: %w", rerr)
+	}
+	inv.SetToken(crypto.HashToken(rawToken))
+	if err := s.repo.UpdateInvitation(ctx, inv); err != nil {
+		return fmt.Errorf("failed to persist rotated invitation token: %w", err)
+	}
+	inv.SetToken(rawToken) // raw token for the email payload below
 
 	// Look up inviter name + tenant name for the email template
 	inviterName := "A team member"
@@ -1298,11 +1367,18 @@ func (s *TenantService) UpdateTenantSettings(ctx context.Context, tenantID strin
 }
 
 // UpdateGeneralSettingsInput represents input for updating general settings.
+// UpdateGeneralSettingsInput is a partial-update payload: every field is a
+// pointer so that a nil field means "not provided — keep the existing value".
+// This prevents a client that PATCHes only {timezone,language} from silently
+// wiping industry/website to empty (the fragile full-replace it replaced).
 type UpdateGeneralSettingsInput struct {
-	Timezone string `json:"timezone" validate:"omitempty"`
-	Language string `json:"language" validate:"omitempty,oneof=en vi ja ko zh"`
-	Industry string `json:"industry" validate:"omitempty,max=100"`
-	Website  string `json:"website" validate:"omitempty,url,max=500"`
+	Timezone *string `json:"timezone" validate:"omitempty"`
+	Language *string `json:"language" validate:"omitempty,oneof=en vi ja ko zh"`
+	Industry *string `json:"industry" validate:"omitempty,max=100"`
+	// No `url` tag: a non-nil pointer to "" is not skipped by omitempty, so
+	// `url` would reject an explicit empty string used to clear the field.
+	// GeneralSettings.Validate enforces URL format when non-empty.
+	Website *string `json:"website" validate:"omitempty,max=500"`
 }
 
 // UpdateGeneralSettings updates only the general settings.
@@ -1317,11 +1393,20 @@ func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID stri
 		return nil, err
 	}
 
-	general := tenantdom.GeneralSettings{
-		Timezone: input.Timezone,
-		Language: input.Language,
-		Industry: input.Industry,
-		Website:  input.Website,
+	// Partial merge: start from the persisted section and overlay only the
+	// fields the client actually sent (non-nil). Omitted fields are preserved.
+	general := t.TypedSettings().General
+	if input.Timezone != nil {
+		general.Timezone = *input.Timezone
+	}
+	if input.Language != nil {
+		general.Language = *input.Language
+	}
+	if input.Industry != nil {
+		general.Industry = *input.Industry
+	}
+	if input.Website != nil {
+		general.Website = *input.Website
 	}
 
 	if err := t.UpdateGeneralSettings(general); err != nil {
@@ -1344,16 +1429,21 @@ func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID stri
 	return &result, nil
 }
 
-// UpdateSecuritySettingsInput represents input for updating security settings.
+// UpdateSecuritySettingsInput is a partial-update payload. Scalar fields are
+// pointers (nil == "not provided — keep existing"); slice fields rely on the
+// nil-vs-non-nil distinction JSON decoding already gives us (absent key => nil
+// slice => keep existing; explicit [] => clear). This stops a client that
+// toggles a single flag from wiping the IP whitelist / allowed domains.
 type UpdateSecuritySettingsInput struct {
-	SSOEnabled            bool     `json:"sso_enabled"`
-	SSOProvider           string   `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
-	SSOConfigURL          string   `json:"sso_config_url" validate:"omitempty,url"`
-	MFARequired           bool     `json:"mfa_required"`
-	SessionTimeoutMin     int      `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
+	SSOEnabled            *bool    `json:"sso_enabled"`
+	SSOProvider           *string  `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
+	SSOConfigURL          *string  `json:"sso_config_url"` // url format checked in domain Validate
+	SSOEnforced           *bool    `json:"sso_enforced"`   // require members to sign in via SSO (owner exempt)
+	MFARequired           *bool    `json:"mfa_required"`
+	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
-	EmailVerificationMode string   `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
 }
 
 // UpdateSecuritySettings updates only the security settings.
@@ -1368,8 +1458,41 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		return nil, err
 	}
 
-	// Check plan limits for SSO via licensing service
-	if input.SSOEnabled {
+	// Partial merge: start from the persisted section and overlay only the
+	// fields the client actually sent. Omitted fields are preserved.
+	security := t.TypedSettings().Security
+	if input.SSOEnabled != nil {
+		security.SSOEnabled = *input.SSOEnabled
+	}
+	if input.SSOProvider != nil {
+		security.SSOProvider = *input.SSOProvider
+	}
+	if input.SSOConfigURL != nil {
+		security.SSOConfigURL = *input.SSOConfigURL
+	}
+	if input.SSOEnforced != nil {
+		security.SSOEnforced = *input.SSOEnforced
+	}
+	if input.MFARequired != nil {
+		security.MFARequired = *input.MFARequired
+	}
+	if input.SessionTimeoutMin != nil {
+		security.SessionTimeoutMin = *input.SessionTimeoutMin
+	}
+	if input.IPWhitelist != nil {
+		security.IPWhitelist = input.IPWhitelist
+	}
+	if input.AllowedDomains != nil {
+		security.AllowedDomains = input.AllowedDomains
+	}
+	if input.EmailVerificationMode != nil {
+		security.EmailVerificationMode = tenantdom.EmailVerificationMode(*input.EmailVerificationMode)
+	}
+
+	// Check plan limits for SSO via licensing service. Only gate when this
+	// request explicitly asserts SSO enabled, matching the original semantics
+	// (an unrelated PATCH must not be rejected because SSO was already on).
+	if input.SSOEnabled != nil && *input.SSOEnabled {
 		hasSSOModule, err := s.hasTenantModule(ctx, tenantID, "sso")
 		if err != nil {
 			s.logger.Warn("failed to check SSO module access", "tenant_id", tenantID, "error", err)
@@ -1379,20 +1502,26 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 	}
 
-	mode := tenantdom.EmailVerificationMode(input.EmailVerificationMode)
-	if mode == "" {
-		// Preserve existing mode if caller doesn't specify (don't reset to empty/auto)
-		mode = t.TypedSettings().Security.EmailVerificationMode
-	}
-	security := tenantdom.SecuritySettings{
-		SSOEnabled:            input.SSOEnabled,
-		SSOProvider:           input.SSOProvider,
-		SSOConfigURL:          input.SSOConfigURL,
-		MFARequired:           input.MFARequired,
-		SessionTimeoutMin:     input.SessionTimeoutMin,
-		IPWhitelist:           input.IPWhitelist,
-		AllowedDomains:        input.AllowedDomains,
-		EmailVerificationMode: mode,
+	// Can't-enable guard: refuse to turn sso_enforced ON unless the tenant has a
+	// usable SSO path (an active identity provider or the opted-in env fallback).
+	// Without this a tenant could enforce SSO with no way for members to sign in.
+	// Only gate when this request actually asserts enforcement ON. The owner
+	// break-glass at the enforcement gate is the ultimate lock-out guarantee, so
+	// if the checker is unavailable we log and allow rather than hard-fail.
+	if input.SSOEnforced != nil && *input.SSOEnforced {
+		if s.ssoPathChecker == nil {
+			s.logger.Warn("sso_enforced enabled without an SSO-path checker wired; skipping usable-path guard",
+				"tenant_id", tenantID)
+		} else {
+			usable, perr := s.ssoPathChecker.HasUsableSSOPath(ctx, t.Slug())
+			if perr != nil {
+				s.logger.Warn("failed to verify usable SSO path", "tenant_id", tenantID, "error", perr)
+				return nil, fmt.Errorf("failed to verify SSO configuration: %w", perr)
+			}
+			if !usable {
+				return nil, fmt.Errorf("%w: cannot enforce SSO — configure an active SSO identity provider first", shared.ErrValidation)
+			}
+		}
 	}
 
 	if err := t.UpdateSecuritySettings(security); err != nil {
@@ -1416,11 +1545,14 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	return &result, nil
 }
 
-// UpdateAPISettingsInput represents input for updating API settings.
+// UpdateAPISettingsInput is a partial-update payload. Scalars are pointers
+// (nil == keep existing); WebhookEvents uses nil-vs-[] (absent => keep,
+// explicit [] => clear). This stops toggling api_key_enabled from wiping the
+// webhook URL/secret/events.
 type UpdateAPISettingsInput struct {
-	APIKeyEnabled bool     `json:"api_key_enabled"`
-	WebhookURL    string   `json:"webhook_url" validate:"omitempty,url"`
-	WebhookSecret string   `json:"webhook_secret"`
+	APIKeyEnabled *bool    `json:"api_key_enabled"`
+	WebhookURL    *string  `json:"webhook_url"` // url format checked in domain Validate
+	WebhookSecret *string  `json:"webhook_secret"`
 	WebhookEvents []string `json:"webhook_events"`
 }
 
@@ -1436,8 +1568,9 @@ func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, 
 		return nil, err
 	}
 
-	// Check plan limits for API via licensing service
-	if input.APIKeyEnabled {
+	// Check plan limits for API via licensing service. Only gate when this
+	// request explicitly asserts API access enabled.
+	if input.APIKeyEnabled != nil && *input.APIKeyEnabled {
 		hasAPIModule, err := s.hasTenantModule(ctx, tenantID, "api")
 		if err != nil {
 			s.logger.Warn("failed to check API module access", "tenant_id", tenantID, "error", err)
@@ -1447,17 +1580,24 @@ func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, 
 		}
 	}
 
-	// Convert webhook events
-	webhookEvents := make([]tenantdom.WebhookEvent, len(input.WebhookEvents))
-	for i, e := range input.WebhookEvents {
-		webhookEvents[i] = tenantdom.WebhookEvent(e)
+	// Partial merge: start from the persisted section and overlay only the
+	// fields the client actually sent. Omitted fields are preserved.
+	api := t.TypedSettings().API
+	if input.APIKeyEnabled != nil {
+		api.APIKeyEnabled = *input.APIKeyEnabled
 	}
-
-	api := tenantdom.APISettings{
-		APIKeyEnabled: input.APIKeyEnabled,
-		WebhookURL:    input.WebhookURL,
-		WebhookSecret: input.WebhookSecret,
-		WebhookEvents: webhookEvents,
+	if input.WebhookURL != nil {
+		api.WebhookURL = *input.WebhookURL
+	}
+	if input.WebhookSecret != nil {
+		api.WebhookSecret = *input.WebhookSecret
+	}
+	if input.WebhookEvents != nil {
+		webhookEvents := make([]tenantdom.WebhookEvent, len(input.WebhookEvents))
+		for i, e := range input.WebhookEvents {
+			webhookEvents[i] = tenantdom.WebhookEvent(e)
+		}
+		api.WebhookEvents = webhookEvents
 	}
 
 	if err := t.UpdateAPISettings(api); err != nil {
@@ -1480,11 +1620,13 @@ func (s *TenantService) UpdateAPISettings(ctx context.Context, tenantID string, 
 	return &result, nil
 }
 
-// UpdateBrandingSettingsInput represents input for updating branding settings.
+// UpdateBrandingSettingsInput is a partial-update payload: pointer fields so a
+// nil field means "not provided — keep existing". This stops updating just the
+// primary color from wiping the logo (and vice-versa).
 type UpdateBrandingSettingsInput struct {
-	PrimaryColor string `json:"primary_color" validate:"omitempty"`
-	LogoDarkURL  string `json:"logo_dark_url" validate:"omitempty,url"`
-	LogoData     string `json:"logo_data" validate:"omitempty"` // Base64 encoded logo (max 150KB)
+	PrimaryColor *string `json:"primary_color" validate:"omitempty"`
+	LogoDarkURL  *string `json:"logo_dark_url"`                  // url format checked in domain Validate
+	LogoData     *string `json:"logo_data" validate:"omitempty"` // Base64 encoded logo (max 150KB)
 }
 
 // UpdateBrandingSettings updates only the branding settings.
@@ -1499,10 +1641,17 @@ func (s *TenantService) UpdateBrandingSettings(ctx context.Context, tenantID str
 		return nil, err
 	}
 
-	branding := tenantdom.BrandingSettings{
-		PrimaryColor: input.PrimaryColor,
-		LogoDarkURL:  input.LogoDarkURL,
-		LogoData:     input.LogoData,
+	// Partial merge: start from the persisted section and overlay only the
+	// fields the client actually sent. Omitted fields are preserved.
+	branding := t.TypedSettings().Branding
+	if input.PrimaryColor != nil {
+		branding.PrimaryColor = *input.PrimaryColor
+	}
+	if input.LogoDarkURL != nil {
+		branding.LogoDarkURL = *input.LogoDarkURL
+	}
+	if input.LogoData != nil {
+		branding.LogoData = *input.LogoData
 	}
 
 	if err := t.UpdateBrandingSettings(branding); err != nil {

@@ -4,10 +4,12 @@ package finding
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
-	"github.com/openctemio/api/internal/app/activity"
 	"regexp"
 
+	"github.com/openctemio/api/internal/app/activity"
+	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/group"
@@ -26,6 +28,14 @@ type VerificationScanTrigger interface {
 	TriggerVerificationScan(ctx context.Context, tenantID, createdBy, scannerName, workflowID string, targets []string) (pipelineRunID, scanID string, err error)
 }
 
+// AutoValidator dispatches a CTEM Stage-4 safe-check re-check for a finding and
+// returns the command ID it was queued under. Implemented by
+// *validation.RunService. When wired, marking findings fix_applied auto-queues a
+// proof-of-fix re-check so a "fixed" claim is verified rather than trusted.
+type AutoValidator interface {
+	ValidateFinding(ctx context.Context, tenantID, findingID shared.ID) (shared.ID, error)
+}
+
 // FindingActionsService handles the closed-loop finding lifecycle:
 // in_progress → fix_applied → resolved (verified by scan or security).
 type FindingActionsService struct {
@@ -35,6 +45,7 @@ type FindingActionsService struct {
 	assetRepo       asset.Repository
 	activityService *activity.FindingActivityService
 	scanTrigger     VerificationScanTrigger // optional; set via SetVerificationScanTrigger
+	autoValidator   AutoValidator           // optional; set via SetAutoValidator
 	db              *sql.DB
 	logger          *logger.Logger
 }
@@ -131,6 +142,48 @@ func (s *FindingActionsService) SetVerificationScanTrigger(trigger VerificationS
 	s.scanTrigger = trigger
 }
 
+// SetAutoValidator wires the proof-of-fix auto-validator. When set, a successful
+// fix_applied transition auto-queues a safe-check re-check per finding (bounded,
+// best-effort). Optional: nil → no auto-validation (prior behavior).
+func (s *FindingActionsService) SetAutoValidator(v AutoValidator) {
+	s.autoValidator = v
+}
+
+// maxAutoValidations bounds how many proof-of-fix re-checks a single
+// fix_applied batch may auto-queue, so a large bulk remediation cannot flood
+// the platform-job queue. Findings beyond the cap are left for manual
+// validation (POST /findings/{id}/validate).
+const maxAutoValidations = 100
+
+// autoQueueValidations best-effort dispatches a safe-check re-check for each
+// freshly fix_applied finding. Non-network assets (code/cloud/container) are
+// skipped silently via ErrNotNetworkAddressable; any other error is logged and
+// never affects the caller's result. Returns the number of jobs queued.
+func (s *FindingActionsService) autoQueueValidations(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) int {
+	if s.autoValidator == nil || len(findingIDs) == 0 {
+		return 0
+	}
+	queued := 0
+	for _, fid := range findingIDs {
+		if queued >= maxAutoValidations {
+			s.logger.Info("proof-of-fix auto-validation capped",
+				"tenant_id", tenantID.String(), "cap", maxAutoValidations,
+				"remaining", len(findingIDs)-maxAutoValidations)
+			break
+		}
+		if _, err := s.autoValidator.ValidateFinding(ctx, tenantID, fid); err != nil {
+			// Non-network assets are the common, expected case — don't log noise.
+			if !errors.Is(err, validation.ErrNotNetworkAddressable) {
+				s.logger.Warn("proof-of-fix auto-validation failed",
+					"tenant_id", tenantID.String(), "finding_id", fid.String(), "error", err)
+			}
+			continue
+		}
+		queued++
+	}
+	return queued
+}
+
 // --- Group View ---
 
 // ListFindingGroups returns findings grouped by a dimension.
@@ -184,11 +237,12 @@ type BulkFixAppliedInput struct {
 
 // BulkFixAppliedResult is the result of bulk fix-applied operation.
 type BulkFixAppliedResult struct {
-	Updated        int            `json:"updated"`
-	Skipped        int            `json:"skipped"` // not permitted / invalid transition (expected)
-	Failed         int            `json:"failed"`  // persistence error — retry-worthy, distinct from Skipped
-	ByCVE          map[string]int `json:"by_cve,omitempty"`
-	AssetsAffected int            `json:"assets_affected"`
+	Updated           int            `json:"updated"`
+	Skipped           int            `json:"skipped"` // not permitted / invalid transition (expected)
+	Failed            int            `json:"failed"`  // persistence error — retry-worthy, distinct from Skipped
+	ByCVE             map[string]int `json:"by_cve,omitempty"`
+	AssetsAffected    int            `json:"assets_affected"`
+	ValidationsQueued int            `json:"validations_queued"` // proof-of-fix safe-check re-checks auto-dispatched
 }
 
 // BulkFixApplied marks findings as fix_applied.
@@ -259,6 +313,7 @@ func (s *FindingActionsService) BulkFixApplied(
 	// Fetch all findings first to preload related data
 	result := &BulkFixAppliedResult{ByCVE: make(map[string]int)}
 	assetSet := make(map[shared.ID]bool)
+	fixedIDs := make([]shared.ID, 0, int(count)) // findings that reached fix_applied → auto-validate
 
 	// Collect all findings (cap already checked at 1000)
 	allFindings := make([]*vulnerability.Finding, 0, int(count))
@@ -326,9 +381,16 @@ func (s *FindingActionsService) BulkFixApplied(
 		result.Updated++
 		result.ByCVE[f.CVEID()]++
 		assetSet[f.AssetID()] = true
+		fixedIDs = append(fixedIDs, f.ID())
 	}
 
 	result.AssetsAffected = len(assetSet)
+
+	// Closed-loop CTEM: auto-queue a proof-of-fix safe-check re-check per fixed
+	// finding so a "fix applied" claim is verified, not trusted. Bounded and
+	// best-effort — never affects the fix_applied result above.
+	result.ValidationsQueued = s.autoQueueValidations(ctx, tid, fixedIDs)
+
 	return result, nil
 }
 
@@ -602,7 +664,18 @@ func (s *FindingActionsService) AutoAssignToOwners(
 	}
 
 	filter.TenantID = &tid
+	filter.DataScopeUserID = &aid // SEC-01: enforce data scope (mirror BulkVerify/RejectByFilter)
 	result := &AutoAssignToOwnersResult{ByOwner: make(map[string]int)}
+
+	// Cache asset lookups by ID across all pages so repeated findings on the same
+	// asset don't re-query it (mirror BulkFixApplied's dedup). Many findings
+	// typically share one asset, so this collapses an N+1 into one query/asset.
+	type assetInfo struct {
+		ownerID *shared.ID
+		name    string
+		found   bool
+	}
+	assetCache := make(map[shared.ID]assetInfo)
 
 	const batchSize = 100
 	// pagination.New is (page, perPage) — page is 1-based. Iterate by page;
@@ -624,19 +697,24 @@ func (s *FindingActionsService) AutoAssignToOwners(
 				continue
 			}
 
-			// Get asset owner
-			assetEntity, err := s.assetRepo.GetByID(ctx, f.TenantID(), f.AssetID())
-			if err != nil {
+			// Get asset owner (cached — dedup repeated assets across pages)
+			info, ok := assetCache[f.AssetID()]
+			if !ok {
+				if assetEntity, err := s.assetRepo.GetByID(ctx, f.TenantID(), f.AssetID()); err == nil {
+					info = assetInfo{ownerID: assetEntity.OwnerID(), name: assetEntity.Name(), found: true}
+				}
+				assetCache[f.AssetID()] = info
+			}
+			if !info.found {
 				continue
 			}
 
-			ownerID := assetEntity.OwnerID()
-			if ownerID == nil {
+			if info.ownerID == nil {
 				result.Unassigned++
 				continue
 			}
 
-			if err := f.Assign(*ownerID, aid); err != nil {
+			if err := f.Assign(*info.ownerID, aid); err != nil {
 				continue
 			}
 
@@ -651,11 +729,10 @@ func (s *FindingActionsService) AutoAssignToOwners(
 			}
 
 			result.Assigned++
-			result.ByOwner[assetEntity.Name()]++
+			result.ByOwner[info.name]++
 		}
 	}
 
-	_ = aid // suppress unused
 	return result, nil
 }
 

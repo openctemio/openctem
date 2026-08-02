@@ -212,7 +212,7 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 		ExecutionMode: r.URL.Query().Get("execution_mode"),
 		Search:        r.URL.Query().Get("search"),
 		Page:          parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:       parseQueryInt(r.URL.Query().Get("per_page"), 20),
+		PerPage:       parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if caps := r.URL.Query().Get("capabilities"); caps != "" {
@@ -252,13 +252,13 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // AgentStatsResponse mirrors agent.TenantAgentStats with snake_case JSON.
 type AgentStatsResponse struct {
-	Total          int            `json:"total"`
-	ByStatus       map[string]int `json:"by_status"`
-	ByHealth       map[string]int `json:"by_health"`
-	ByType         map[string]int `json:"by_type"`
+	Total           int            `json:"total"`
+	ByStatus        map[string]int `json:"by_status"`
+	ByHealth        map[string]int `json:"by_health"`
+	ByType          map[string]int `json:"by_type"`
 	ByExecutionMode map[string]int `json:"by_execution_mode"`
-	ActiveJobs     int            `json:"active_jobs"`
-	OnlineActive   int            `json:"online_active"`
+	ActiveJobs      int            `json:"active_jobs"`
+	OnlineActive    int            `json:"online_active"`
 }
 
 // GetStats handles GET /api/v1/agents/stats

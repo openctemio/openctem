@@ -1,6 +1,8 @@
 // Package semgrep provides an adapter to convert Semgrep JSON output to CTIS.
 package semgrep
 
+import "encoding/json"
+
 // SemgrepOutput is the root Semgrep JSON document.
 type SemgrepOutput struct {
 	Results []SemgrepResult `json:"results"`
@@ -85,5 +87,12 @@ type SemgrepError struct {
 	Code    int    `json:"code,omitempty"`
 	Level   string `json:"level,omitempty"`
 	Message string `json:"message,omitempty"`
-	Type    string `json:"type,omitempty"`
+	// semgrep's schema (semgrep_output_v1.atd) declares core_error.type as a
+	// CONSTRUCTOR, so it serializes either as a plain string or as an array —
+	// e.g. ["PartialParsing", [{...}]] whenever a file only partially parses,
+	// which is routine on large repos. Typing it as string made json.Unmarshal
+	// fail for the WHOLE document, so Convert errored, CanConvert returned false,
+	// and every finding in that scan was silently discarded. Nothing reads this
+	// field, so keep it raw rather than modeling a union we don't consume.
+	Type json.RawMessage `json:"type,omitempty"`
 }

@@ -8,6 +8,21 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
+// Score composition modes control how the exposure multiplier is combined
+// with the weighted raw score in CalculateScore (H2 de-saturation fix).
+const (
+	// ScoreCompositionMultiply is the historical behavior: final = raw × multiplier
+	// (then clamped to [0,100]). This is the default and MUST remain byte-identical
+	// to preserve risk-trend continuity for existing tenants.
+	ScoreCompositionMultiply = "multiply"
+	// ScoreCompositionAmplifyHeadroom de-saturates the top of the range: when the
+	// multiplier ≥ 1 the boost fills the remaining headroom instead of overflowing
+	// past 100, so the most-exposed critical assets stay distinguishable.
+	//   final = raw + (multiplier − 1) × (100 − raw)   (multiplier ≥ 1)
+	//   final = raw × multiplier                        (multiplier < 1, de-boost)
+	ScoreCompositionAmplifyHeadroom = "amplify_headroom"
+)
+
 // RiskScoringConfig contains the scoring configuration.
 // This mirrors tenant.RiskScoringSettings but lives in the asset package
 // to avoid circular dependencies. The service layer maps between them.
@@ -18,6 +33,11 @@ type RiskScoringConfig struct {
 	CriticalityScores   CriticalityScoreMap
 	FindingImpact       FindingImpactConfig
 	CTEMPoints          CTEMPointsConfig
+
+	// ScoreCompositionMode selects how the exposure multiplier composes with the
+	// weighted raw score. Empty / unset resolves to ScoreCompositionMultiply for
+	// backward compatibility (existing tenants see no change).
+	ScoreCompositionMode string
 }
 
 // ComponentWeights defines the percentage weights for each risk component.
@@ -113,7 +133,8 @@ func LegacyRiskScoringConfig() RiskScoringConfig {
 				Critical: 20, High: 10, Medium: 5, Low: 2, Info: 1,
 			},
 		},
-		CTEMPoints: CTEMPointsConfig{Enabled: false},
+		CTEMPoints:           CTEMPointsConfig{Enabled: false},
+		ScoreCompositionMode: ScoreCompositionMultiply,
 	}
 }
 
@@ -142,15 +163,36 @@ func (e *RiskScoringEngine) CalculateScore(a *Asset) int {
 		float64(ctemScore)*float64(w.CTEM)/100.0
 
 	multiplier := e.exposureMultiplier(a.exposure)
-	final := int(math.Round(raw * multiplier))
+	return e.composeScore(raw, multiplier)
+}
 
+// composeScore combines the weighted raw score (0-100) with the exposure
+// multiplier according to the configured ScoreCompositionMode, then clamps
+// to [0,100]. The final clamp is a safety net; amplify_headroom never needs
+// it for the boost because it fills toward 100 rather than overflowing.
+func (e *RiskScoringEngine) composeScore(raw, multiplier float64) int {
+	var scored float64
+	switch e.config.ScoreCompositionMode {
+	case ScoreCompositionAmplifyHeadroom:
+		if multiplier >= 1.0 {
+			// Fill remaining headroom instead of overflowing past 100.
+			// raw=100 stays 100; raw=60 with ×1.5 → 60 + 0.5·40 = 80.
+			scored = raw + (multiplier-1.0)*(100.0-raw)
+		} else {
+			// De-boost (low-exposure assets) is unchanged.
+			scored = raw * multiplier
+		}
+	default: // ScoreCompositionMultiply, "", or any unrecognized value.
+		scored = raw * multiplier
+	}
+
+	final := int(math.Round(scored))
 	if final > 100 {
 		final = 100
 	}
 	if final < 0 {
 		final = 0
 	}
-
 	return final
 }
 

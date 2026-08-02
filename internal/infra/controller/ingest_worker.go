@@ -86,6 +86,15 @@ func (c *IngestWorkerController) Name() string { return "ingest-worker" }
 // Interval implements controller.Controller.
 func (c *IngestWorkerController) Interval() time.Duration { return c.cfg.Interval }
 
+// ReconcileTimeout implements controller.ReconcileTimeouter. The short poll
+// Interval is only how often we LOOK for work; a drain cycle then runs a claimed
+// batch (up to MaxPerTick jobs) through the full ingest pipeline — parsing a
+// report and persisting its findings — which routinely takes far longer than the
+// interval. Bounding the reconcile at the interval would cancel every non-trivial
+// batch mid-flight ("context deadline exceeded") and leave jobs to be reclaimed
+// as stale. Grant the batch the lease window it already holds exclusively.
+func (c *IngestWorkerController) ReconcileTimeout() time.Duration { return c.cfg.LeaseTimeout }
+
 // Reconcile reclaims stale jobs then drains pending jobs up to MaxPerTick.
 func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
 	if released, err := c.queue.ReleaseStale(ctx, c.cfg.LeaseTimeout); err != nil {

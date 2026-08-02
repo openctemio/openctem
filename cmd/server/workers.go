@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
+	"github.com/openctemio/api/internal/app/defectdojo"
 	"github.com/openctemio/api/internal/app/ingest"
 	"github.com/openctemio/api/internal/app/outbox"
 	"github.com/openctemio/api/internal/app/scancoverage"
@@ -17,8 +18,30 @@ import (
 	"github.com/openctemio/api/internal/config"
 	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/jobs"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// ddTenantSyncerAdapter adapts *defectdojo.SyncService (which returns a
+// SyncResult) to the scheduler's error-only TenantSyncer, so the controller
+// package need not import app/defectdojo.
+type ddTenantSyncerAdapter struct{ svc *defectdojo.SyncService }
+
+func (a ddTenantSyncerAdapter) SyncTenant(ctx context.Context, tenantID shared.ID) error {
+	_, err := a.svc.SyncTenant(ctx, tenantID)
+	return err
+}
+
+// controllerMetrics returns the process-wide controller metrics collector.
+//
+// It is memoised because controller.NewPrometheusMetrics uses promauto, which
+// registers on the Prometheus default registerer and panics on a duplicate
+// registration. NewWorkers is called once by the server, but a test (or any
+// future second composition root) that builds Workers twice would otherwise
+// take the process down.
+var controllerMetrics = sync.OnceValue(func() controller.Metrics {
+	return controller.NewPrometheusMetrics("openctem")
+})
 
 // Workers holds all background worker instances.
 type Workers struct {
@@ -75,13 +98,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	w := &Workers{}
 
-	// Initialize job worker if email service is configured
-	if svc.Email != nil {
-		var err error
-		w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, svc.GitHubTicket, log)
-		if err != nil {
-			return nil, err
-		}
+	// Initialize the job worker. This is unconditional on purpose: the asynq
+	// server consumes AI-triage, Jira-sync and GitHub-sync tasks as well as
+	// email, and those are enqueued regardless of SMTP. Gating the worker on
+	// svc.Email meant a default deployment (SMTP_ENABLED=false) enqueued those
+	// tasks and never consumed them. jobs.NewWorker logs which handlers it had
+	// to skip.
+	var err error
+	w.JobWorker, err = NewJobWorker(cfg, svc.Email, svc.AITriage, svc.JiraSync, svc.GitHubTicket, log)
+	if err != nil {
+		return nil, err
 	}
 
 	// Initialize agent health checker if worker is enabled
@@ -150,9 +176,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Note: Template sync uses lazy sync on scan trigger, no background worker needed.
 	// Templates are synced on-demand when a scan uses custom templates.
 
-	// Initialize controller manager for background tasks
+	// Initialize controller manager for background tasks.
+	//
+	// Metrics is the single seam through which every registered controller is
+	// observed — Manager.reconcileOnce records duration/items/errors per
+	// controller name, and skips all of it when Metrics is nil. It was nil, so
+	// none of the background controllers were observable: a reaper that errors
+	// on every tick looked identical to one with nothing to do. The collectors
+	// register on the Prometheus default registerer, which is what /metrics
+	// serves.
 	w.ControllerManager = controller.NewManager(&controller.ManagerConfig{
-		Logger: log.With("component", "controller-manager"),
+		Logger:  log.With("component", "controller-manager"),
+		Metrics: controllerMetrics(),
 	})
 
 	// Register controllers
@@ -245,6 +280,21 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Domain re-verify sweep (SSO P1): periodically re-checks verified domains;
+	// a domain whose TXT record vanished is downgraded to failed (fail-closed),
+	// so a lapsed/hijacked domain loses SSO JIT authority.
+	if svc.DomainVerify != nil {
+		w.ControllerManager.Register(controller.NewDomainReverifyController(
+			svc.DomainVerify,
+			&controller.DomainReverifyControllerConfig{
+				Interval:  12 * time.Hour,
+				Staleness: 24 * time.Hour,
+				BatchSize: 100,
+				Logger:    log.With("controller", "domain-reverify"),
+			},
+		))
+	}
+
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(
 		repos.FindingApproval,
 		repos.Finding,
@@ -263,6 +313,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Logger:   log.With("controller", "scope-reconciliation"),
 		},
 	))
+
+	// RFC-013 Phase 2c: periodically pull due DefectDojo integrations so the
+	// co-existence sync is hands-off (nil-safe when the sync service is absent).
+	if svc.DefectDojoSync != nil {
+		w.ControllerManager.Register(controller.NewDefectDojoSyncController(
+			repos.Integration,
+			ddTenantSyncerAdapter{svc: svc.DefectDojoSync},
+			log,
+		))
+	}
 
 	// Threat intel — daily EPSS + KEV refresh + auto-escalate KEV findings
 	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
@@ -419,6 +479,41 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Expose the worker to the HTTP layer so the admin dry-run
 	// endpoint can call it without a duplicate instance.
 	w.AssetLifecycleWorker = lifecycleWorker
+
+	// Asset-graph enrichment. Infers high-confidence Exposes (host→service)
+	// and RunsOn (application→host) edges from data scanners already ingest,
+	// so the attack-path / exposure-chain / reachability engines have edges
+	// beyond DNS to traverse over historical assets. Idempotent (edges use
+	// ON CONFLICT DO NOTHING); ambiguous matches are filed as suggestions for
+	// operator review rather than auto-applied.
+	if svc.RelationshipSuggestion != nil {
+		w.ControllerManager.Register(controller.NewGraphEnrichmentController(
+			svc.RelationshipSuggestion,
+			repos.Tenant,
+			&controller.GraphEnrichmentControllerConfig{
+				Interval: time.Hour,
+				Logger:   log.With("controller", "graph-enrichment"),
+			},
+		))
+	}
+
+	// Threat-model refresh. Regenerates each tenant's tenant-wide threat model
+	// so it reflects the latest exposure chains and asset-graph edges (e.g.
+	// edges the graph-enrichment pass above just inferred). Without this,
+	// threat_model_threats only changes on manual API-triggered generation,
+	// starving the priority-classification threat-model oracle of fresh data.
+	// The generator has built-in no-op detection (InputHash), so a slower
+	// cadence than graph-enrichment keeps cost down without going stale.
+	if svc.ThreatModel != nil {
+		w.ControllerManager.Register(controller.NewThreatModelRefreshController(
+			svc.ThreatModel,
+			repos.Tenant,
+			&controller.ThreatModelRefreshControllerConfig{
+				Interval: 2 * time.Hour,
+				Logger:   log.With("controller", "threat-model-refresh"),
+			},
+		))
+	}
 
 	// Async-ingest worker (RFC-005). Drains the ingest_jobs queue through the
 	// normal ingest pipeline. Safe to register unconditionally: until the

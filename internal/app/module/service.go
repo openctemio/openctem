@@ -51,10 +51,30 @@ type ModuleService struct {
 	auditService     *auditapp.AuditService
 	versionService   *VersionService
 	wsBroadcaster    WSBroadcaster
+	cacheInvalidator ModuleCacheInvalidator
+	bundleStore      BundleStore
 	logger           *logger.Logger
 
 	toggleLocks   map[string]*sync.Mutex
 	toggleLocksMu sync.Mutex
+}
+
+// BundleStore persists and reads a tenant's product-bundle subscription (the
+// set of bundle IDs the tenant runs). Optional — when nil, a tenant is treated
+// as having no subscription (every module on), which is the backward-compatible
+// default. Implemented by an adapter over the tenant repository at the
+// composition root; kept as a narrow interface so this package needn't import
+// the tenant service.
+type BundleStore interface {
+	GetSubscribedBundles(ctx context.Context, tenantID string) ([]string, error)
+	SetSubscribedBundles(ctx context.Context, tenantID string, bundleIDs []string) error
+}
+
+// ModuleCacheInvalidator drops a tenant's cached module-enablement so a toggle
+// takes effect immediately rather than after the gate's TTL. Implemented by
+// *middleware.ModuleGate. Optional — nil relies on the TTL alone.
+type ModuleCacheInvalidator interface {
+	Invalidate(tenantID string)
 }
 
 // WSBroadcaster is the minimal interface ModuleService needs to fan
@@ -115,6 +135,20 @@ func (s *ModuleService) SetWSBroadcaster(b WSBroadcaster) {
 	s.wsBroadcaster = b
 }
 
+// SetModuleCacheInvalidator wires the route-gate cache invalidator so a module
+// toggle is enforced immediately. Optional — without it, gating updates within
+// the gate's TTL.
+func (s *ModuleService) SetModuleCacheInvalidator(inv ModuleCacheInvalidator) {
+	s.cacheInvalidator = inv
+}
+
+// SetBundleStore wires the tenant bundle-subscription store. Optional — when
+// unset, no tenant has a subscription and every module stays on (the
+// backward-compatible default).
+func (s *ModuleService) SetBundleStore(b BundleStore) {
+	s.bundleStore = b
+}
+
 // GetTenantModuleVersion returns the current module-config version for
 // a tenant. Used by HTTP handlers to construct ETag headers; the
 // returned value is opaque to callers (treat as a token, not a count).
@@ -132,6 +166,10 @@ func (s *ModuleService) GetTenantModuleVersion(ctx context.Context, tenantID str
 // here. Worst case: client sees stale data until next focus / 5-min
 // SWR dedup expires.
 func (s *ModuleService) notifyModuleChange(ctx context.Context, tenantID string) {
+	// Drop the route-gate's cached enablement so the toggle enforces immediately.
+	if s.cacheInvalidator != nil {
+		s.cacheInvalidator.Invalidate(tenantID)
+	}
 	if s.versionService == nil && s.wsBroadcaster == nil {
 		return
 	}
@@ -674,6 +712,14 @@ func splitModules(allModules []*moduledom.Module) ([]*moduledom.Module, map[stri
 }
 
 // getTenantDisabledModules returns a set of module IDs disabled by the tenant.
+// TenantDisabledModules returns the set of module IDs a tenant has explicitly
+// disabled. Fail-open: an unconfigured repo, a bad tenant id, or a query error
+// yields an empty set (nothing disabled), so route gating never blocks on a
+// lookup problem. Used by the module-gating middleware.
+func (s *ModuleService) TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool {
+	return s.getTenantDisabledModules(ctx, tenantID)
+}
+
 func (s *ModuleService) getTenantDisabledModules(ctx context.Context, tenantID string) map[string]bool {
 	disabled := make(map[string]bool)
 	if s.tenantModuleRepo == nil {
@@ -691,12 +737,133 @@ func (s *ModuleService) getTenantDisabledModules(ctx context.Context, tenantID s
 		return disabled
 	}
 
+	// Split per-module admin overrides into explicit-on / explicit-off.
+	overrideOff := make(map[string]bool)
+	overrideOn := make(map[string]bool)
 	for _, o := range overrides {
-		if !o.IsEnabled {
-			disabled[o.ModuleID] = true
+		if o.IsEnabled {
+			overrideOn[o.ModuleID] = true
+		} else {
+			overrideOff[o.ModuleID] = true
 		}
 	}
+
+	// Bundle subsetting: when the tenant subscribes to one or more bundles, the
+	// enabled baseline is the union of those bundles (+core+mandatory+deps);
+	// every non-core module NOT in the baseline is disabled. When there is no
+	// subscription (or no bundle store wired), we skip this entirely and fall
+	// through to the legacy "only explicit-off overrides are disabled" behavior
+	// — so existing tenants are completely unaffected.
+	if bundles := s.subscribedBundles(ctx, tenantID); len(bundles) > 0 {
+		baseline := resolveBundleBaseline(bundles)
+		allModules, mErr := s.moduleRepo.ListActiveModules(ctx)
+		switch {
+		case len(baseline) == 0:
+			// Every subscribed bundle ID is unknown — e.g. a bundle was removed
+			// or renamed in the catalog AFTER the tenant subscribed. FAIL SAFE:
+			// treat as no subscription (all modules on) rather than disabling
+			// every feature module and locking the tenant out. A valid bundle
+			// always yields a non-empty baseline (ResolvePresetModules includes
+			// core + mandatory), so an empty baseline means no bundle resolved.
+			s.logger.Warn("subscribed bundles resolved to an empty baseline (unknown bundle ids); ignoring subscription",
+				"tenant_id", tenantID, "bundles", bundles)
+		case mErr != nil:
+			// Could not load the catalog — fail open (no subsetting) so a lookup
+			// error never blocks a tenant's modules.
+			s.logger.Warn("bundle resolution: failed to list modules", "tenant_id", tenantID, "error", mErr)
+		default:
+			applySubModuleInheritance(baseline, allModules)
+			for _, m := range allModules {
+				id := m.ID()
+				if m.IsCore() {
+					continue // core is never disabled
+				}
+				if !baseline[id] && !overrideOn[id] {
+					disabled[id] = true // outside the subscription and not admin-re-enabled
+				}
+			}
+		}
+	}
+
+	// Admin explicit-off always wins (both subscribed and legacy paths).
+	for id := range overrideOff {
+		disabled[id] = true
+	}
 	return disabled
+}
+
+// subscribedBundles reads the tenant's bundle subscription; nil store or any
+// error yields no subscription (empty), keeping resolution backward-compatible.
+func (s *ModuleService) subscribedBundles(ctx context.Context, tenantID string) []string {
+	if s.bundleStore == nil {
+		return nil
+	}
+	ids, err := s.bundleStore.GetSubscribedBundles(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("failed to read subscribed bundles", "tenant_id", tenantID, "error", err)
+		return nil
+	}
+	return ids
+}
+
+// resolveBundleBaseline returns the union of every named bundle's resolved
+// module set (core + mandatory + explicit + transitive hard deps). Unknown
+// bundle IDs are skipped.
+func resolveBundleBaseline(bundleIDs []string) map[string]bool {
+	baseline := make(map[string]bool)
+	for _, id := range bundleIDs {
+		p := moduledom.FindPreset(id)
+		if p == nil {
+			continue
+		}
+		for m := range moduledom.ResolvePresetModules(p) {
+			baseline[m] = true
+		}
+	}
+	return baseline
+}
+
+// applySubModuleInheritance enables a parent's "<parent>.<sub>" sub-modules in
+// target, but is CURATION-AWARE: if the baseline already names any sub of a
+// parent, the preset is deliberately selecting a subset of that parent's
+// sub-modules, so we respect it and do NOT blanket-enable the siblings. Only
+// when a parent is enabled and NO sub of it is named do we inherit all its
+// sub-modules.
+//
+// Why: presets curate feature sub-modules on purpose — e.g. vm_essentials lists
+// only ai_triage.auto + ai_triage.bulk, while ctem_full adds ai_triage.workflow
+// + custom_prompts. Blanket inheritance would erase that distinction and turn on
+// ai_triage.byok/agent for vm_essentials too. The un-curated case is the
+// asset-type one ("assets" core on ⇒ every assets.* type available), where no
+// preset names individual assets.* children so inheritance still applies.
+func applySubModuleInheritance(target map[string]bool, allModules []*moduledom.Module) {
+	subsByParent := make(map[string][]string)
+	for _, m := range allModules {
+		id := m.ID()
+		if !strings.Contains(id, ".") {
+			continue
+		}
+		parent := strings.SplitN(id, ".", 2)[0]
+		subsByParent[parent] = append(subsByParent[parent], id)
+	}
+	for parent, subs := range subsByParent {
+		if !target[parent] {
+			continue // parent not enabled — nothing to inherit
+		}
+		curated := false
+		for _, sub := range subs {
+			if target[sub] {
+				curated = true
+				break
+			}
+		}
+		if curated {
+			continue // preset selected a specific subset — honor it
+		}
+		for _, sub := range subs {
+			target[sub] = true
+		}
+	}
 }
 
 // ListActiveModules returns all active modules.
@@ -765,13 +932,13 @@ type ModulePresetOutput struct {
 
 // PresetDiffOutput describes what would change if a preset were applied.
 type PresetDiffOutput struct {
-	PresetID    string              `json:"preset_id"`
-	PresetName  string              `json:"preset_name"`
-	ToEnable    []ModuleRefOutput   `json:"to_enable"`
-	ToDisable   []ModuleRefOutput   `json:"to_disable"`
-	Unchanged   int                 `json:"unchanged"`
-	TotalAfter  int                 `json:"total_after"`
-	AuditNotice string              `json:"audit_notice,omitempty"`
+	PresetID    string            `json:"preset_id"`
+	PresetName  string            `json:"preset_name"`
+	ToEnable    []ModuleRefOutput `json:"to_enable"`
+	ToDisable   []ModuleRefOutput `json:"to_disable"`
+	Unchanged   int               `json:"unchanged"`
+	TotalAfter  int               `json:"total_after"`
+	AuditNotice string            `json:"audit_notice,omitempty"`
 }
 
 // ModuleRefOutput is a thin (id, name) pair used in diff listings.
@@ -878,23 +1045,9 @@ func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p 
 	}
 
 	target := moduledom.ResolvePresetModules(p) // what the preset wants
-	// Sub-module inheritance: if the parent ("assets", "ai_triage",
-	// "integrations") is enabled in the preset, every "<parent>.<sub>"
-	// sub-module of that parent is implicitly enabled too. Avoids
-	// forcing every preset to enumerate 24 `assets.*` types just to
-	// keep them on. Explicit list in the preset still wins (a future
-	// preset could opt-out specific sub-modules by listing them in a
-	// dedicated "disabled" field; not needed yet).
-	for _, m := range allModules {
-		id := m.ID()
-		if !strings.Contains(id, ".") {
-			continue
-		}
-		parent := strings.SplitN(id, ".", 2)[0]
-		if target[parent] {
-			target[id] = true
-		}
-	}
+	// Sub-module inheritance: a parent enabled in the preset implicitly enables
+	// its "<parent>.<sub>" sub-modules (shared with bundle resolution).
+	applySubModuleInheritance(target, allModules)
 	disabledNow := s.getTenantDisabledModules(ctx, tenantID)
 
 	diff := &PresetDiffOutput{
@@ -940,9 +1093,67 @@ func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.Audi
 	}
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionTenantModulesUpdated, audit.ResourceTypeTenant, tenantID).
-		WithMessage("Module preset applied: " + p.Name).
+		WithMessage("Module preset applied: "+p.Name).
 		WithSeverity(audit.SeverityMedium).
 		WithMetadata("preset_id", p.ID).
 		WithMetadata("preset_name", p.Name)
 	s.auditService.LogEvent(ctx, actx, event)
+}
+
+// SubscribeBundles replaces the tenant's product-bundle subscription. Once set,
+// the enabled module set is resolved live as the union of these bundles
+// (+core+mandatory+deps) on every read, with per-module overrides layered on
+// top. An empty slice clears the subscription (every module on). Invalidates the
+// gate cache + bumps the config version + audits, so it takes effect immediately.
+func (s *ModuleService) SubscribeBundles(ctx context.Context, tenantID string, bundleIDs []string, actx auditapp.AuditContext) error {
+	if s.bundleStore == nil {
+		return fmt.Errorf("%w: bundle subscription is not configured", shared.ErrValidation)
+	}
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	// Validate against the catalog + dedupe (order preserved).
+	seen := make(map[string]bool, len(bundleIDs))
+	clean := make([]string, 0, len(bundleIDs))
+	for _, id := range bundleIDs {
+		if moduledom.FindPreset(id) == nil {
+			return fmt.Errorf("%w: unknown bundle %q", shared.ErrValidation, id)
+		}
+		if !seen[id] {
+			seen[id] = true
+			clean = append(clean, id)
+		}
+	}
+
+	if err := s.bundleStore.SetSubscribedBundles(ctx, tenantID, clean); err != nil {
+		return fmt.Errorf("failed to persist bundle subscription: %w", err)
+	}
+	s.notifyModuleChange(ctx, tenantID)
+	s.logBundlesSubscribed(ctx, actx, tenantID, clean)
+	return nil
+}
+
+// GetSubscribedBundles returns the tenant's current bundle subscription, or an
+// empty slice when the tenant runs every module (no subscription).
+func (s *ModuleService) GetSubscribedBundles(ctx context.Context, tenantID string) []string {
+	return s.subscribedBundles(ctx, tenantID)
+}
+
+// logBundlesSubscribed records a bundle-subscription change (bundle IDs are from
+// the fixed catalog, so they are safe to log verbatim).
+func (s *ModuleService) logBundlesSubscribed(ctx context.Context, actx auditapp.AuditContext, tenantID string, bundleIDs []string) {
+	if s.auditService == nil {
+		return
+	}
+	actx.TenantID = tenantID
+	msg := "Module bundles set: " + strings.Join(bundleIDs, ", ")
+	if len(bundleIDs) == 0 {
+		msg = "Module bundle subscription cleared (all modules on)"
+	}
+	event := auditapp.NewSuccessEvent(audit.ActionTenantModulesUpdated, audit.ResourceTypeTenant, tenantID).
+		WithMessage(msg).
+		WithSeverity(audit.SeverityMedium).
+		WithMetadata("subscribed_bundles", bundleIDs)
+	_ = s.auditService.LogEvent(ctx, actx, event)
 }

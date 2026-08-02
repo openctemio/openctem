@@ -382,18 +382,22 @@ func (r *AssetRepository) selectQuery() string {
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at,
 			   a.lifecycle_paused_until, a.manual_status_override
 		FROM assets a
-		LEFT JOIN (
-			SELECT asset_id,
+		-- LATERAL correlates the finding aggregate to each selected asset (and its
+		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
+		-- instead of materializing a full-findings-table GROUP BY on every asset
+		-- read. Decisive for single GetByID and multi-tenant deployments; asset_id
+		-- is globally unique so the counts are identical to the old join.
+		LEFT JOIN LATERAL (
+			SELECT
 				COUNT(*) as finding_count,
-				SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as finding_critical,
-				SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END) as finding_high,
-				SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END) as finding_medium,
-				SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END) as finding_low,
-				SUM(CASE WHEN severity = 'info' THEN 1 ELSE 0 END) as finding_info
-			FROM findings
-			WHERE status != 'resolved'
-			GROUP BY asset_id
-		) fc ON fc.asset_id = a.id
+				COUNT(*) FILTER (WHERE f.severity = 'critical') as finding_critical,
+				COUNT(*) FILTER (WHERE f.severity = 'high') as finding_high,
+				COUNT(*) FILTER (WHERE f.severity = 'medium') as finding_medium,
+				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
+				COUNT(*) FILTER (WHERE f.severity = 'info') as finding_info
+			FROM findings f
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved'
+		) fc ON true
 	`
 }
 
@@ -1175,17 +1179,26 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 
 // assetUpsertColumnCount is the number of columns in the assets upsert. It MUST
 // stay in sync with assetUpsertColumnsSQL and assetUpsertArgs.
-const assetUpsertColumnCount = 27
+const assetUpsertColumnCount = 35
 
 // assetUpsertColumnsSQL is the INSERT INTO assets (...) column header.
+//
+// The sub_type + CTEM block (is_internet_accessible, exposure_changed_at,
+// compliance_scope, data_classification, pii/phi_data_exposed) were previously
+// omitted here, so discovery-ingested assets lost their sub-type and all
+// scanner-provided business-context/exposure signals — even though the single
+// Create/Update path persisted them. That silently starved the prioritization
+// engine and broke sub_type faceting. They are first-class here now.
 func assetUpsertColumnsSQL() string {
 	return `
 		INSERT INTO assets (
-			id, tenant_id, parent_id, owner_id, name, asset_type, criticality, status,
+			id, tenant_id, parent_id, owner_id, owner_ref, name, asset_type, sub_type, criticality, status,
 			scope, exposure, risk_score,
 			description, tags, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
 			discovery_source, discovery_tool, discovered_at,
+			is_internet_accessible, exposure_changed_at,
+			compliance_scope, data_classification, pii_data_exposed, phi_data_exposed,
 			first_seen, last_seen, created_at, updated_at
 		)`
 }
@@ -1209,7 +1222,22 @@ func assetUpsertConflictSQL() string {
 			updated_at = NOW(),
 			discovery_source = COALESCE(assets.discovery_source, EXCLUDED.discovery_source),
 			discovery_tool = COALESCE(assets.discovery_tool, EXCLUDED.discovery_tool),
-			discovered_at = COALESCE(assets.discovered_at, EXCLUDED.discovered_at)
+			discovered_at = COALESCE(assets.discovered_at, EXCLUDED.discovered_at),
+			-- owner_ref: fill gap only (never clear an operator-set owner),
+			-- mirroring the single-asset ingest update path.
+			owner_ref = COALESCE(assets.owner_ref, EXCLUDED.owner_ref),
+			-- sub_type + CTEM signals: fill gaps and let a scanner escalate
+			-- exposure/PII/PHI (sticky-true), union compliance frameworks. Never
+			-- clears an established value.
+			sub_type = COALESCE(assets.sub_type, EXCLUDED.sub_type),
+			data_classification = COALESCE(assets.data_classification, EXCLUDED.data_classification),
+			is_internet_accessible = assets.is_internet_accessible OR EXCLUDED.is_internet_accessible,
+			pii_data_exposed = assets.pii_data_exposed OR EXCLUDED.pii_data_exposed,
+			phi_data_exposed = assets.phi_data_exposed OR EXCLUDED.phi_data_exposed,
+			compliance_scope = (
+				SELECT array_agg(DISTINCT cs)
+				FROM unnest(assets.compliance_scope || EXCLUDED.compliance_scope) AS cs
+			)
 		RETURNING (xmax = 0) AS inserted`
 }
 
@@ -1249,8 +1277,10 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 		nullIDValue(a.TenantID()),
 		nullIDPtr(a.ParentID()),
 		nullIDPtr(a.OwnerID()),
+		nullString(a.OwnerRef()),
 		a.Name(),
 		a.Type().String(),
+		nullString(a.SubType()),
 		a.Criticality().String(),
 		a.Status().String(),
 		a.Scope().String(),
@@ -1268,6 +1298,12 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 		nullString(a.DiscoverySource()),
 		nullString(a.DiscoveryTool()),
 		nullTime(a.DiscoveredAt()),
+		a.IsInternetAccessible(),
+		nullTime(a.ExposureChangedAt()),
+		pq.Array(a.ComplianceScope()),
+		nullString(string(a.DataClassification())),
+		a.PIIDataExposed(),
+		a.PHIDataExposed(),
 		a.FirstSeen(),
 		a.LastSeen(),
 		a.CreatedAt(),
@@ -1916,11 +1952,13 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE),
 			COALESCE(fc.finding_count, 0)
 		FROM assets a
-		LEFT JOIN (
-			SELECT asset_id, COUNT(*) AS finding_count
-			FROM findings
-			GROUP BY asset_id
-		) fc ON fc.asset_id = a.id
+		-- Per-asset indexed count (see selectQuery) instead of a full-findings
+		-- GROUP BY. Counts all findings for the asset, matching prior behavior.
+		LEFT JOIN LATERAL (
+			SELECT COUNT(*) AS finding_count
+			FROM findings f
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id
+		) fc ON true
 		WHERE a.tenant_id = $1
 		ORDER BY a.created_at
 	`

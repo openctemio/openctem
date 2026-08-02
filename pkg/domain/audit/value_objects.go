@@ -75,6 +75,15 @@ const (
 	ActionFindingUnassigned    Action = "finding.unassigned"
 	ActionFindingCommented     Action = "finding.commented"
 	ActionFindingBulkUpdated   Action = "finding.bulk_updated"
+	// ActionFindingEvidenceAdded records a manually-attached piece of evidence
+	// (note/file) on a generic (non-pentest) finding.
+	ActionFindingEvidenceAdded Action = "finding.evidence_added"
+	// ActionFindingEvidenceDeleted records the removal of a manually-attached
+	// evidence note from a generic (non-pentest) finding.
+	ActionFindingEvidenceDeleted Action = "finding.evidence_deleted"
+	// ActionFindingRemediationStepAdded records a manually-appended remediation
+	// step on a generic finding.
+	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
 
 	// Branch actions
 	ActionBranchCreated    Action = "branch.created"
@@ -238,6 +247,14 @@ const (
 	ActionAITriageTokenLimit      Action = "ai_triage.token_limit_exceeded"
 	ActionAITriageNeedsReview     Action = "ai_triage.needs_review"     // validator flagged output
 	ActionAITriageBudgetExhausted Action = "ai_triage.budget_exhausted" // tenant hit monthly token ceiling
+
+	// MCP actions — read-only Model Context Protocol tool invocations by an
+	// `oct_` API key. Every tools/call is audited (success and error alike).
+	ActionMCPToolCalled Action = "mcp.tool_called"
+	// ActionMCPPromptGotten records a prompts/get: an AI client pulled a report
+	// section template pre-filled with campaign/finding context. Audited because
+	// it reads the same gated pentest data a tools/call does.
+	ActionMCPPromptGotten Action = "mcp.prompt_gotten"
 )
 
 // String returns the string representation of the action.
@@ -264,6 +281,7 @@ func (a Action) IsValid() bool {
 		ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted,
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
@@ -300,7 +318,8 @@ func (a Action) IsValid() bool {
 		ActionAITriageBulk, ActionAITriageRateLimit, ActionAITriageTokenLimit, ActionAITriageNeedsReview,
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
-		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
+		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionMCPToolCalled, ActionMCPPromptGotten:
 		return true
 	}
 	return false
@@ -330,7 +349,8 @@ func (a Action) Category() string {
 	case ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted:
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
-		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated:
+		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded:
 		return "finding"
 	case ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted:
 		return "sla_policy"
@@ -362,6 +382,8 @@ func (a Action) Category() string {
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
 		return "pentest_campaign"
+	case ActionMCPToolCalled, ActionMCPPromptGotten:
+		return "mcp"
 	}
 	return "unknown"
 }
@@ -402,6 +424,8 @@ const (
 	ResourceTypeRuleOverride     ResourceType = "rule_override"
 	ResourceTypeIngest           ResourceType = "ingest"
 	ResourceTypeAITriage         ResourceType = "ai_triage"
+	ResourceTypeMCPTool          ResourceType = "mcp_tool"
+	ResourceTypeMCPPrompt        ResourceType = "mcp_prompt"
 )
 
 // String returns the string representation of the resource type.
@@ -421,7 +445,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
-		ResourceTypeCampaign:
+		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt:
 		return true
 	}
 	return false

@@ -30,18 +30,29 @@ func NewBusinessUnitHandler(svc *app.BusinessUnitService, log *logger.Logger) *B
 // List lists business units.
 func (h *BusinessUnitHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-	perPage := parseQueryInt(r.URL.Query().Get("per_page"), 20)
-	if perPage < 1 { perPage = 20 } else if perPage > 100 { perPage = 100 }
+	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
+	if perPage < 1 {
+		perPage = 20
+	} else if perPage > 100 {
+		perPage = 100
+	}
 	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 
 	filter := businessunit.Filter{}
-	if q := r.URL.Query().Get("search"); q != "" { filter.Search = &q }
+	if q := r.URL.Query().Get("search"); q != "" {
+		filter.Search = &q
+	}
 
 	result, err := h.service.List(r.Context(), tenantID, filter, page)
-	if err != nil { h.handleError(w, err); return }
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
 
 	resp := make([]BUResponse, 0, len(result.Data))
-	for _, bu := range result.Data { resp = append(resp, toBUResp(bu)) }
+	for _, bu := range result.Data {
+		resp = append(resp, toBUResp(bu))
+	}
 	writeJSON(w, http.StatusOK, pagination.NewResult(resp, result.Total, page))
 }
 
@@ -50,13 +61,19 @@ func (h *BusinessUnitHandler) Create(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	var req CreateBURequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w); return
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
 	}
 	bu, err := h.service.Create(r.Context(), app.CreateBusinessUnitInput{
 		TenantID: tenantID, Name: req.Name, Description: req.Description,
-		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail, Tags: req.Tags,
+		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail,
+		Criticality: req.Criticality, RiskTolerance: req.RiskTolerance, ParentID: req.ParentID,
+		Tags: req.Tags,
 	})
-	if err != nil { h.handleError(w, err); return }
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusCreated, toBUResp(bu))
 }
 
@@ -64,7 +81,10 @@ func (h *BusinessUnitHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessUnitHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	bu, err := h.service.Get(r.Context(), tenantID, chi.URLParam(r, "id"))
-	if err != nil { h.handleError(w, err); return }
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, toBUResp(bu))
 }
 
@@ -79,7 +99,9 @@ func (h *BusinessUnitHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	bu, err := h.service.Update(r.Context(), app.UpdateBusinessUnitInput{
 		TenantID: tenantID, ID: buID, Name: req.Name, Description: req.Description,
-		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail, Tags: req.Tags,
+		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail,
+		Criticality: req.Criticality, RiskTolerance: req.RiskTolerance, ParentID: req.ParentID,
+		Tags: req.Tags,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -92,7 +114,8 @@ func (h *BusinessUnitHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessUnitHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	if err := h.service.Delete(r.Context(), tenantID, chi.URLParam(r, "id")); err != nil {
-		h.handleError(w, err); return
+		h.handleError(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -101,12 +124,16 @@ func (h *BusinessUnitHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *BusinessUnitHandler) AddAsset(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	buID := chi.URLParam(r, "id")
-	var req struct { AssetID string `json:"asset_id"` }
+	var req struct {
+		AssetID string `json:"asset_id"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w); return
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
 	}
 	if err := h.service.AddAsset(r.Context(), tenantID, buID, req.AssetID); err != nil {
-		h.handleError(w, err); return
+		h.handleError(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -117,7 +144,8 @@ func (h *BusinessUnitHandler) RemoveAsset(w http.ResponseWriter, r *http.Request
 	buID := chi.URLParam(r, "id")
 	assetID := chi.URLParam(r, "assetId")
 	if err := h.service.RemoveAsset(r.Context(), tenantID, buID, assetID); err != nil {
-		h.handleError(w, err); return
+		h.handleError(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -135,11 +163,18 @@ func (h *BusinessUnitHandler) handleError(w http.ResponseWriter, err error) {
 }
 
 type CreateBURequest struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	OwnerName   string   `json:"owner_name"`
-	OwnerEmail  string   `json:"owner_email"`
-	Tags        []string `json:"tags"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	OwnerName   string `json:"owner_name"`
+	OwnerEmail  string `json:"owner_email"`
+	// Optional. Pointer semantics: nil (omitted) leaves the field at its
+	// default/current value. Criticality: critical|high|medium|low.
+	// RiskTolerance: low|medium|high. ParentID: a same-tenant business_unit id,
+	// or "" to clear the parent.
+	Criticality   *string  `json:"criticality"`
+	RiskTolerance *string  `json:"risk_tolerance"`
+	ParentID      *string  `json:"parent_id"`
+	Tags          []string `json:"tags"`
 }
 
 type BUResponse struct {
@@ -148,6 +183,9 @@ type BUResponse struct {
 	Description          string    `json:"description"`
 	OwnerName            string    `json:"owner_name,omitempty"`
 	OwnerEmail           string    `json:"owner_email,omitempty"`
+	Criticality          string    `json:"criticality"`
+	RiskTolerance        string    `json:"risk_tolerance"`
+	ParentID             *string   `json:"parent_id"`
 	AssetCount           int       `json:"asset_count"`
 	FindingCount         int       `json:"finding_count"`
 	AvgRiskScore         float64   `json:"avg_risk_score"`
@@ -158,9 +196,16 @@ type BUResponse struct {
 }
 
 func toBUResp(bu *businessunit.BusinessUnit) BUResponse {
+	var parentID *string
+	if pid := bu.ParentID(); pid != nil {
+		s := pid.String()
+		parentID = &s
+	}
 	return BUResponse{
 		ID: bu.ID().String(), Name: bu.Name(), Description: bu.Description(),
 		OwnerName: bu.OwnerName(), OwnerEmail: bu.OwnerEmail(),
+		Criticality: bu.Criticality().String(), RiskTolerance: bu.RiskTolerance().String(),
+		ParentID:   parentID,
 		AssetCount: bu.AssetCount(), FindingCount: bu.FindingCount(),
 		AvgRiskScore: bu.AvgRiskScore(), CriticalFindingCount: bu.CriticalFindingCount(),
 		Tags: bu.Tags(), CreatedAt: bu.CreatedAt(), UpdatedAt: bu.UpdatedAt(),

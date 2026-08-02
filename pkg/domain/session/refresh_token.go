@@ -1,6 +1,7 @@
 package session
 
 import (
+	"crypto/subtle"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -177,8 +178,10 @@ func (rt *RefreshToken) IsValid() bool {
 }
 
 // VerifyToken verifies if the provided token matches this refresh token.
+// Uses a constant-time comparison as defense-in-depth (the authoritative
+// match is the SQL WHERE token_hash = $1 lookup).
 func (rt *RefreshToken) VerifyToken(token string) bool {
-	return rt.tokenHash == hashToken(token)
+	return subtle.ConstantTimeCompare([]byte(rt.tokenHash), []byte(hashToken(token))) == 1
 }
 
 // MarkUsed marks the token as used.

@@ -1,11 +1,12 @@
 package unit
 
 import (
-	"github.com/openctemio/api/internal/app/scope"
 	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/openctemio/api/internal/app/scope"
 
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/api/pkg/domain/group"
@@ -304,8 +305,8 @@ func (m *mockGroupRepoForScope) Create(_ context.Context, _ *group.Group) error 
 func (m *mockGroupRepoForScope) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForScope) Update(_ context.Context, _ *group.Group) error  { return nil }
-func (m *mockGroupRepoForScope) Delete(_ context.Context, _ shared.ID) error     { return nil }
+func (m *mockGroupRepoForScope) Update(_ context.Context, _ *group.Group) error { return nil }
+func (m *mockGroupRepoForScope) Delete(_ context.Context, _ shared.ID) error    { return nil }
 func (m *mockGroupRepoForScope) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }

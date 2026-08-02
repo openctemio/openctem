@@ -73,6 +73,12 @@ func registerAgentRoutes(
 		// Heartbeat - essential for agent health monitoring
 		r.POST("/heartbeat", ingestHandler.Heartbeat)
 
+		// Self-service credential renewal: the agent rotates its own key by
+		// presenting the current one. Authenticated by AuthenticateSource like
+		// every other endpoint in this group; the building block for
+		// auto-rotating credentials (RFC-014).
+		r.POST("/renew", ingestHandler.RenewKey)
+
 		// Ingest findings/assets
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
 		// All ingest endpoints support compressed request bodies (Content-Encoding: gzip or zstd)
@@ -171,9 +177,10 @@ func registerPipelineRoutes(
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	triggerRateLimiter *middleware.TriggerRateLimiter,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token; gate after tenant extraction.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Pipeline Template routes - tenant from JWT token
 	router.Group("/api/v1/pipelines", func(r Router) {
@@ -645,9 +652,10 @@ func registerWorkflowRoutes(
 	h *handler.WorkflowHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token; gate after tenant extraction.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Workflow routes - tenant from JWT token
 	router.Group("/api/v1/workflows", func(r Router) {

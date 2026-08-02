@@ -470,10 +470,17 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 		return err
 	}
 
-	// Update run statistics
+	// Update run statistics.
+	//
+	// findingsCount is deliberately NOT added on top: stepRun.Complete stored it
+	// on the step run a few lines above, and calculateRunStats sums exactly those
+	// step runs — so adding it again counts this step's findings twice. A live
+	// scan that produced 2 findings recorded total_findings = 4, and the same
+	// doubled number reached the audit log and the "completed successfully with N
+	// findings" message. OnStepFailed always did it this way.
 	completed, failed, skipped, findings := s.calculateRunStats(run)
 	// FIXED: Don't silently suppress errors - log them instead
-	if err := s.runRepo.UpdateStats(ctx, run.ID, completed, failed, skipped, findings+findingsCount); err != nil {
+	if err := s.runRepo.UpdateStats(ctx, run.ID, completed, failed, skipped, findings); err != nil {
 		s.logger.Error("failed to update run stats", "run_id", run.ID.String(), "error", err)
 	}
 
@@ -504,7 +511,7 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 					WithMessage(fmt.Sprintf("Pipeline run failed with %d step failures", failed)).
 					WithMetadata("completed_steps", completed).
 					WithMetadata("failed_steps", failed).
-					WithMetadata("total_findings", findings+findingsCount).
+					WithMetadata("total_findings", findings).
 					WithMetadata("quality_gate_passed", qgResult == nil || qgResult.Passed))
 		} else {
 			// FIXED: Don't silently suppress errors - log them instead
@@ -515,9 +522,9 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 			// Audit log: pipeline completed
 			s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
 				NewSuccessEvent(audit.ActionPipelineRunCompleted, audit.ResourceTypePipelineRun, run.ID.String()).
-					WithMessage(fmt.Sprintf("Pipeline run completed successfully with %d findings", findings+findingsCount)).
+					WithMessage(fmt.Sprintf("Pipeline run completed successfully with %d findings", findings)).
 					WithMetadata("completed_steps", completed).
-					WithMetadata("total_findings", findings+findingsCount).
+					WithMetadata("total_findings", findings).
 					WithMetadata("quality_gate_passed", qgResult == nil || qgResult.Passed))
 		}
 		return nil

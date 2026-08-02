@@ -88,7 +88,7 @@ func TestGenerateFindingFingerprint_WithValidProvidedFingerprint(t *testing.T) {
 		Title:       "Test Finding",
 	}
 
-	result := generateFindingFingerprint(assetID, finding, nil)
+	result, _ := generateFindingFingerprint(assetID, finding, nil)
 
 	// Should be a composite fingerprint (SHA-256 = 64 chars)
 	assert.Len(t, result, 64)
@@ -106,7 +106,7 @@ func TestGenerateFindingFingerprint_WithInvalidProvidedFingerprint(t *testing.T)
 		Title:       "Test Finding",
 	}
 
-	result := generateFindingFingerprint(assetID, finding, nil)
+	result, _ := generateFindingFingerprint(assetID, finding, nil)
 
 	// Should generate via SDK instead of using the invalid fingerprint
 	assert.Len(t, result, 64)
@@ -123,7 +123,7 @@ func TestGenerateFindingFingerprint_WithNoProvidedFingerprint(t *testing.T) {
 		Title:  "Test Finding Message",
 	}
 
-	result := generateFindingFingerprint(assetID, finding, nil)
+	result, _ := generateFindingFingerprint(assetID, finding, nil)
 
 	// Should generate via SDK using ruleID and title as message
 	assert.Len(t, result, 64)
@@ -149,8 +149,8 @@ func TestGenerateFindingFingerprint_WithLocationInfo(t *testing.T) {
 		Title:  "SQL Injection",
 	}
 
-	fpWithLoc := generateFindingFingerprint(assetID, finding, nil)
-	fpNoLoc := generateFindingFingerprint(assetID, findingNoLoc, nil)
+	fpWithLoc, _ := generateFindingFingerprint(assetID, finding, nil)
+	fpNoLoc, _ := generateFindingFingerprint(assetID, findingNoLoc, nil)
 
 	// Location should affect the fingerprint
 	assert.NotEqual(t, fpWithLoc, fpNoLoc)
@@ -178,8 +178,8 @@ func TestGenerateFindingFingerprint_WithCVEID(t *testing.T) {
 		Title:  "Vulnerable Dependency",
 	}
 
-	fpWithCVE := generateFindingFingerprint(assetID, finding, nil)
-	fpNoCVE := generateFindingFingerprint(assetID, findingNoCVE, nil)
+	fpWithCVE, _ := generateFindingFingerprint(assetID, finding, nil)
+	fpNoCVE, _ := generateFindingFingerprint(assetID, findingNoCVE, nil)
 
 	// Both should produce valid fingerprints
 	assert.Len(t, fpWithCVE, 64)
@@ -205,8 +205,8 @@ func TestGenerateFindingFingerprint_Deterministic(t *testing.T) {
 		},
 	}
 
-	fp1 := generateFindingFingerprint(assetID, finding, nil)
-	fp2 := generateFindingFingerprint(assetID, finding, nil)
+	fp1, _ := generateFindingFingerprint(assetID, finding, nil)
+	fp2, _ := generateFindingFingerprint(assetID, finding, nil)
 
 	assert.Equal(t, fp1, fp2, "same inputs must produce same fingerprint")
 }
@@ -224,8 +224,8 @@ func TestGenerateFindingFingerprint_DifferentAssetsProduceDifferentFingerprints(
 		},
 	}
 
-	fp1 := generateFindingFingerprint(assetID1, finding, nil)
-	fp2 := generateFindingFingerprint(assetID2, finding, nil)
+	fp1, _ := generateFindingFingerprint(assetID1, finding, nil)
+	fp2, _ := generateFindingFingerprint(assetID2, finding, nil)
 
 	assert.NotEqual(t, fp1, fp2, "different assets must produce different fingerprints even with same finding")
 }
@@ -238,7 +238,7 @@ func TestGenerateFindingFingerprint_CompositeFormat(t *testing.T) {
 		Title:  "Test Finding",
 	}
 
-	result := generateFindingFingerprint(assetID, finding, nil)
+	result, _ := generateFindingFingerprint(assetID, finding, nil)
 
 	// Result should be a SHA-256 hex hash (64 chars, all hex)
 	assert.Len(t, result, 64)
@@ -268,8 +268,8 @@ func TestGenerateFindingFingerprint_SCAStableAcrossLocationNoise(t *testing.T) {
 		}
 	}
 
-	fpA := generateFindingFingerprint(assetID, mk(12), nil)
-	fpB := generateFindingFingerprint(assetID, mk(987), nil)
+	fpA, _ := generateFindingFingerprint(assetID, mk(12), nil)
+	fpB, _ := generateFindingFingerprint(assetID, mk(987), nil)
 
 	assert.Equal(t, fpA, fpB,
 		"SCA fingerprint must be stable across location changes for the same package+version+CVE")
@@ -292,9 +292,9 @@ func TestGenerateFindingFingerprint_SCADistinctPackages(t *testing.T) {
 		}
 	}
 
-	fpLodash := generateFindingFingerprint(assetID, base("lodash", "4.17.20"), nil)
-	fpAxios := generateFindingFingerprint(assetID, base("axios", "0.21.0"), nil)
-	fpLodashV2 := generateFindingFingerprint(assetID, base("lodash", "4.17.21"), nil)
+	fpLodash, _ := generateFindingFingerprint(assetID, base("lodash", "4.17.20"), nil)
+	fpAxios, _ := generateFindingFingerprint(assetID, base("axios", "0.21.0"), nil)
+	fpLodashV2, _ := generateFindingFingerprint(assetID, base("lodash", "4.17.21"), nil)
 
 	assert.NotEqual(t, fpLodash, fpAxios, "different packages must not share a fingerprint")
 	assert.NotEqual(t, fpLodash, fpLodashV2, "different versions must not share a fingerprint")
@@ -322,9 +322,9 @@ func TestGenerateFindingFingerprint_SecretByMaskedValue(t *testing.T) {
 		}
 	}
 
-	same1 := generateFindingFingerprint(assetID, mk("AKIA****WXYZ", 3), nil)
-	same2 := generateFindingFingerprint(assetID, mk("AKIA****WXYZ", 3), nil)
-	otherSecret := generateFindingFingerprint(assetID, mk("AKIA****ABCD", 3), nil)
+	same1, _ := generateFindingFingerprint(assetID, mk("AKIA****WXYZ", 3), nil)
+	same2, _ := generateFindingFingerprint(assetID, mk("AKIA****WXYZ", 3), nil)
+	otherSecret, _ := generateFindingFingerprint(assetID, mk("AKIA****ABCD", 3), nil)
 
 	assert.Equal(t, same1, same2, "same masked secret at same location must dedup")
 	assert.NotEqual(t, same1, otherSecret,
@@ -341,7 +341,7 @@ func TestGenerateFindingFingerprint_ShortProvidedFingerprintFallsBackToSDK(t *te
 		Title:       "Test Finding",
 	}
 
-	result := generateFindingFingerprint(assetID, finding, nil)
+	result, _ := generateFindingFingerprint(assetID, finding, nil)
 
 	// Should not use the short fingerprint as base
 	shortComposite := createCompositeFingerprint(assetID.String(), "abcdef")
@@ -1060,7 +1060,7 @@ func TestGenerateFindingFingerprint_EmptyFinding(t *testing.T) {
 	assetID := shared.NewID()
 	finding := &ctis.Finding{}
 
-	result := generateFindingFingerprint(assetID, finding, nil)
+	result, _ := generateFindingFingerprint(assetID, finding, nil)
 
 	// Should still produce a valid fingerprint even with empty finding
 	assert.Len(t, result, 64)
@@ -1080,7 +1080,7 @@ func TestGenerateFindingFingerprint_WithToolContext(t *testing.T) {
 
 	// Tool is passed but the current implementation doesn't use it
 	// in fingerprint generation. Verify it doesn't cause panic.
-	result := generateFindingFingerprint(assetID, finding, tool)
+	result, _ := generateFindingFingerprint(assetID, finding, tool)
 	assert.Len(t, result, 64)
 }
 
@@ -1599,4 +1599,38 @@ func (s *stubFindingRepository) AutoResolveStaleBranchOccurrences(_ context.Cont
 
 func (s *stubFindingRepository) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
 	return nil, nil
+}
+
+// TestBuildFinding_PersistsBaseWithSARIFPartialFingerprints is a regression guard:
+// buildFinding must persist the composite base in partial_fingerprints EVEN when
+// the finding carries SARIF partialFingerprints. setFindingSARIFFields REPLACES
+// the whole partial_fingerprints map, which previously wiped the base (stored
+// earlier) — silently defeating the post-merge fingerprint recompute for SARIF
+// scanners (CodeQL always emits partialFingerprints).
+func TestBuildFinding_PersistsBaseWithSARIFPartialFingerprints(t *testing.T) {
+	p := NewFindingProcessor(&stubFindingRepository{}, nil, stubAssetRepoGetByID{}, logger.NewNop())
+
+	assetID := shared.NewID()
+	cf := &ctis.Finding{
+		ID:       "f1",
+		Type:     ctis.FindingTypeVulnerability,
+		Title:    "SARIF finding",
+		Severity: ctis.SeverityHigh,
+		RuleID:   "rule-1",
+		// SARIF partialFingerprints present — this is what wiped the base pre-fix.
+		PartialFingerprints: map[string]string{"primaryLocationLineHash": "deadbeef"},
+	}
+	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "scan-1"}, Tool: &ctis.Tool{Name: "codeql"}}
+
+	fp, base := generateFindingFingerprint(assetID, cf, report.Tool)
+	require.NotEmpty(t, base, "precondition: expected a non-empty base")
+
+	f, err := p.buildFinding(context.Background(), shared.NewID(), assetID, nil, shared.NewID(), report, cf, fp, base, nil)
+	require.NoError(t, err)
+
+	pf := f.PartialFingerprints()
+	assert.Equal(t, base, pf[vulnerability.FingerprintBaseKey],
+		"composite base must survive the SARIF partial_fingerprints replacement")
+	assert.Equal(t, "deadbeef", pf["primaryLocationLineHash"],
+		"SARIF partial fingerprint should also survive")
 }
