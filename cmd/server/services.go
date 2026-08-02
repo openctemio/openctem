@@ -522,6 +522,10 @@ type Services struct {
 	// SSO
 	SSO *app.SSOService
 
+	// Social OAuth login (Google / GitHub / Microsoft). nil when no provider
+	// is configured, which keeps the OAuth routes unregistered.
+	OAuth *app.OAuthService
+
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
 
@@ -861,7 +865,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Status() works for dashboards even before enforcement.
 		// Check()/Record() short-circuit when BudgetEnabled=false —
 		// the Phase 1 rollout ships the flag off so there is zero
-		// behaviour change on this deploy.
+		// behavior change on this deploy.
 		budgetSvc := app.NewAITriageBudgetService(
 			repos.AITriageBudget,
 			app.AITriageBudgetServiceConfig{
@@ -971,6 +975,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
 	s.Ingest.SetActivityService(s.FindingActivity)                   // Wire activity logging for auto-resolve/reopen
+	// Ingest audit events are tenant-scoped, so they must go through the SAME
+	// audit service instance as every other tenant-scoped event: LogEvent also
+	// extends the per-tenant tamper-evident hash chain, and its chainMu is what
+	// serializes concurrent appends. Without this, ingest.completed /
+	// ingest.partial_success rows land in audit_logs unchained.
+	s.Ingest.SetAuditService(s.Audit)
 	// Wire IP correlation for host dedup (RFC-001)
 	// System defaults; per-tenant overrides come from tenant settings at ingest time
 	s.Ingest.SetCorrelator(ingest.NewAssetCorrelator(repos.Asset, log, ingest.CorrelationConfig{
@@ -1388,6 +1398,20 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.DomainVerify = domainverify.NewService(repos.VerifiedDomain, domainverify.NewNetResolver(), log)
 	s.SSO.SetDomainVerifier(s.DomainVerify)
 
+	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
+	// provider actually has credentials, so the login surface the API advertises
+	// on /auth/providers matches the routes it registers — see registerAuthRoutes.
+	if cfg.OAuth.Enabled && cfg.OAuth.HasAnyProvider() {
+		s.OAuth = app.NewOAuthService(
+			repos.User,
+			repos.Session,
+			repos.RefreshToken,
+			cfg.OAuth,
+			cfg.Auth,
+			log,
+		)
+	}
+
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
 	s.SAML = app.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
 
@@ -1487,13 +1511,14 @@ func NewJobClient(cfg *config.Config, log *logger.Logger) (*jobs.Client, error) 
 }
 
 // NewJobWorker creates a new job worker for processing background jobs.
-// jiraSyncer (optional) handles outbound Jira status-sync tasks; pass nil to
-// disable that handler.
+//
+// Every argument except cfg and log is optional; a nil dependency only disables
+// its own handler. In particular a nil emailService must NOT stop the worker
+// from being built: the AI-triage, Jira sync and GitHub sync handlers live on
+// the same asynq server, their tasks are enqueued whether or not SMTP is on,
+// and SMTP_ENABLED defaults to false. Returning early here (as this used to)
+// left those queues with no consumer in a default deployment.
 func NewJobWorker(cfg *config.Config, emailService *app.EmailService, aiTriageService *app.AITriageService, jiraSyncer jobs.JiraStatusSyncer, githubSyncer jobs.GitHubStatusSyncer, log *logger.Logger) (*jobs.Worker, error) {
-	if emailService == nil {
-		return nil, nil
-	}
-
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	workerCfg := jobs.WorkerConfig{
 		RedisAddr:     redisAddr,

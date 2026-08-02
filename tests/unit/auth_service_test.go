@@ -966,7 +966,7 @@ func seedAuthLockedUser(repo *mockAuthUserRepo, email, passwordHash string) *use
 
 // Helper: create a user with email verification token.
 func seedAuthUnverifiedUser(repo *mockAuthUserRepo, email, passwordHash, verificationToken string) *user.User {
-	// Tokens are stored hashed at rest; mirror the service's write behaviour so
+	// Tokens are stored hashed at rest; mirror the service's write behavior so
 	// lookups (which hash the raw input) match.
 	verificationToken = crypto.HashToken(verificationToken)
 	expiresAt := time.Now().Add(24 * time.Hour)

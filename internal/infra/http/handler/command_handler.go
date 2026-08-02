@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -208,8 +209,21 @@ func validateInlineScanTemplates(payload json.RawMessage) error {
 		} `json:"custom_templates"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
-		// Not a well-formed template-bearing payload; shape is handled downstream.
-		return nil
+		// Unparseable against this shape. If the payload does not mention
+		// custom_templates at all, this validator has nothing to say and the
+		// shape is handled downstream — that is the ordinary case for every
+		// non-template command.
+		//
+		// If it DOES mention them, refusing is the only safe answer: we cannot
+		// see what we would be approving, and the agent decodes and executes
+		// whatever it can parse. Passing here on the assumption that the agent's
+		// parser is exactly as strict as this one is a parser-differential bet,
+		// and this function exists precisely to stop templates reaching an agent
+		// unvalidated.
+		if bytes.Contains(payload, []byte(`"custom_templates"`)) {
+			return fmt.Errorf("payload embeds custom_templates but could not be parsed for validation")
+		}
+		return nil //nolint:nilerr // nothing to validate; see above
 	}
 	for i, t := range p.CustomTemplates {
 		name := t.Name

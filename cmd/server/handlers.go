@@ -367,6 +367,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
 	}
 
+	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil
+	// only when a provider is configured, so /auth/oauth/* exists exactly when
+	// /auth/providers advertises a social button for it.
+	if svc.OAuth != nil {
+		handlers.OAuth = handler.NewOAuthHandler(svc.OAuth, cfg.OAuth, cfg.Auth, log)
+	}
+
 	// Verified-domain handler (SSO P1 domain-ownership verification)
 	if svc.DomainVerify != nil {
 		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)

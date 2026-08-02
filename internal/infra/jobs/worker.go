@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hibiken/asynq"
 
@@ -82,12 +83,29 @@ func NewWorker(cfg WorkerConfig, emailService *app.EmailService, log *logger.Log
 
 	mux := asynq.NewServeMux()
 
-	// Register email handlers
-	emailHandler := NewEmailTaskHandler(emailService, log)
-	mux.HandleFunc(TypeEmailTeamInvitation, emailHandler.HandleTeamInvitation)
-	mux.HandleFunc(TypeEmailWelcome, emailHandler.HandleWelcomeEmail)
-	mux.HandleFunc(TypeEmailVerification, emailHandler.HandleVerificationEmail)
-	mux.HandleFunc(TypeEmailPasswordReset, emailHandler.HandlePasswordReset)
+	// Email handlers are the only ones that need a configured SMTP sender, so
+	// they are registered conditionally. The worker itself must be built (and
+	// started) even without one: AI-triage, Jira sync and GitHub sync tasks are
+	// enqueued regardless of SMTP, and with no worker running they would pile
+	// up in Redis with nothing consuming them.
+	if emailService != nil {
+		emailHandler := NewEmailTaskHandler(emailService, log)
+		mux.HandleFunc(TypeEmailTeamInvitation, emailHandler.HandleTeamInvitation)
+		mux.HandleFunc(TypeEmailWelcome, emailHandler.HandleWelcomeEmail)
+		mux.HandleFunc(TypeEmailVerification, emailHandler.HandleVerificationEmail)
+		mux.HandleFunc(TypeEmailPasswordReset, emailHandler.HandlePasswordReset)
+		log.Info("email task handlers registered")
+	} else {
+		log.Warn("email task handlers NOT registered - SMTP is not configured; "+
+			"other job handlers still run",
+			"unregistered_task_types", strings.Join([]string{
+				TypeEmailTeamInvitation,
+				TypeEmailWelcome,
+				TypeEmailVerification,
+				TypeEmailPasswordReset,
+			}, ","),
+		)
+	}
 
 	w := &Worker{
 		server: server,

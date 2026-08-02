@@ -21,21 +21,25 @@ func configuredProvider(id string) config.OAuthProviderConfig {
 
 func TestAuthProvidersHandler_GetProviders(t *testing.T) {
 	tests := []struct {
-		name      string
-		oauth     config.OAuthConfig
-		entra     config.EntraSSOConfig
-		wantMS    bool
-		wantGoog  bool
-		wantGH    bool
-		wantEntra bool
+		name string
+		// routesLive mirrors whether the /auth/oauth/* routes are registered.
+		routesLive bool
+		oauth      config.OAuthConfig
+		entra      config.EntraSSOConfig
+		wantMS     bool
+		wantGoog   bool
+		wantGH     bool
+		wantEntra  bool
 	}{
 		{
-			name:  "all unset -> all false",
-			oauth: config.OAuthConfig{},
-			entra: config.EntraSSOConfig{},
+			name:       "all unset -> all false",
+			routesLive: true,
+			oauth:      config.OAuthConfig{},
+			entra:      config.EntraSSOConfig{},
 		},
 		{
-			name: "each provider configured -> true",
+			name:       "each provider configured -> true",
+			routesLive: true,
 			oauth: config.OAuthConfig{
 				Microsoft: configuredProvider("microsoft"),
 				Google:    configuredProvider("google"),
@@ -52,14 +56,37 @@ func TestAuthProvidersHandler_GetProviders(t *testing.T) {
 			wantEntra: true,
 		},
 		{
-			name: "only google configured",
+			name:       "only google configured",
+			routesLive: true,
 			oauth: config.OAuthConfig{
 				Google: configuredProvider("google"),
 			},
 			wantGoog: true,
 		},
 		{
-			name: "client_id set but disabled -> false",
+			// The reported bug: OAUTH_* credentials present but the OAuth
+			// handler is not wired into the composition root, so
+			// /auth/oauth/{provider}/authorize 404s. Advertising the provider
+			// here is what made the login page render dead social buttons.
+			name:       "configured but routes not wired -> all false",
+			routesLive: false,
+			oauth: config.OAuthConfig{
+				Microsoft: configuredProvider("microsoft"),
+				Google:    configuredProvider("google"),
+				GitHub:    configuredProvider("github"),
+			},
+			entra: config.EntraSSOConfig{
+				Enabled:      true,
+				ClientID:     "entra-client-id",
+				ClientSecret: "entra-secret",
+			},
+			// Entra SSO is served by the always-wired SSO handler, so it is
+			// unaffected by the OAuth handler being absent.
+			wantEntra: true,
+		},
+		{
+			name:       "client_id set but disabled -> false",
+			routesLive: true,
 			oauth: config.OAuthConfig{
 				Microsoft: config.OAuthProviderConfig{
 					Enabled:      false,
@@ -69,7 +96,8 @@ func TestAuthProvidersHandler_GetProviders(t *testing.T) {
 			},
 		},
 		{
-			name: "enabled but secret missing -> false",
+			name:       "enabled but secret missing -> false",
+			routesLive: true,
 			oauth: config.OAuthConfig{
 				GitHub: config.OAuthProviderConfig{
 					Enabled:  true,
@@ -82,7 +110,7 @@ func TestAuthProvidersHandler_GetProviders(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h := NewAuthProvidersHandler(tc.oauth, tc.entra, logger.NewNop())
+			h := NewAuthProvidersHandler(tc.oauth, tc.entra, tc.routesLive, logger.NewNop())
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers", nil)
 			rec := httptest.NewRecorder()
@@ -142,7 +170,7 @@ func TestAuthProvidersHandler_NoSecretLeak(t *testing.T) {
 		ClientSecret: "ENTRA_SECRET_SENTINEL",
 	}
 
-	h := NewAuthProvidersHandler(oauth, entra, logger.NewNop())
+	h := NewAuthProvidersHandler(oauth, entra, true, logger.NewNop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers", nil)
 	rec := httptest.NewRecorder()
 	h.GetProviders(rec, req)

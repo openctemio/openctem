@@ -3,8 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"github.com/openctemio/api/internal/app/tool"
 	"net/http"
+
+	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/go-chi/chi/v5"
 
