@@ -678,7 +678,7 @@ func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     ApiKeyAuth
-// @Router       /ingest/check [post]
+// @Router       /agent/ingest/check [post]
 func (h *IngestHandler) CheckFingerprints(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {
@@ -738,7 +738,7 @@ type BaselineDiffRequest struct {
 // @Produce      json
 // @Param        request  body      BaselineDiffRequest  true  "Repository, base branch, fingerprints"
 // @Success      200  {object}  ingest.BaselineDiffOutput
-// @Router       /agent/ingest/new-vs-base [post]
+// @Router       /agent/ingest/baseline-diff [post]
 func (h *IngestHandler) BaselineDiff(w http.ResponseWriter, r *http.Request) {
 	agt := AgentFromContext(r.Context())
 	if agt == nil {

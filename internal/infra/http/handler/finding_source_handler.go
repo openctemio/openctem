@@ -175,7 +175,7 @@ func (h *FindingSourceHandler) handleServiceError(w http.ResponseWriter, err err
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
-// @Router       /config/finding-sources/categories [get]
+// @Router       /finding-sources/categories [get]
 func (h *FindingSourceHandler) ListCategories(w http.ResponseWriter, r *http.Request) { //nolint:dupl // Similar to AssetTypeHandler.ListCategories but different types
 	query := r.URL.Query()
 	activeOnly := query.Get("active_only") == queryParamTrue
@@ -270,7 +270,7 @@ func (h *FindingSourceHandler) ListCategories(w http.ResponseWriter, r *http.Req
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
-// @Router       /config/finding-sources/categories/{categoryId} [get]
+// @Router       /finding-sources/categories/{categoryId} [get]
 func (h *FindingSourceHandler) GetCategory(w http.ResponseWriter, r *http.Request) {
 	categoryID := r.PathValue("categoryId")
 	if categoryID == "" {
@@ -312,7 +312,7 @@ func (h *FindingSourceHandler) GetCategory(w http.ResponseWriter, r *http.Reques
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
-// @Router       /config/finding-sources [get]
+// @Router       /finding-sources [get]
 func (h *FindingSourceHandler) ListFindingSources(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
@@ -516,7 +516,7 @@ func (h *FindingSourceHandler) ListFindingSources(w http.ResponseWriter, r *http
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
-// @Router       /config/finding-sources/{id} [get]
+// @Router       /finding-sources/{id} [get]
 func (h *FindingSourceHandler) GetFindingSource(w http.ResponseWriter, r *http.Request) {
 	findingSourceID := r.PathValue("id")
 	if findingSourceID == "" {
@@ -548,7 +548,7 @@ func (h *FindingSourceHandler) GetFindingSource(w http.ResponseWriter, r *http.R
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
-// @Router       /config/finding-sources/code/{code} [get]
+// @Router       /finding-sources/code/{code} [get]
 func (h *FindingSourceHandler) GetFindingSourceByCode(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	if code == "" {
