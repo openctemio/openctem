@@ -805,11 +805,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Persist simulation runs (previously the run repo was never wired, so every
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
-	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
-	// (network-addressable target + safe-checkable technique) runs for real via
-	// the validation dispatcher; the command-completion hook finalizes the run.
-	s.Simulation.SetSafeCheckDispatcher(s.ValidationRun)
-
 	// Validation (CTEM Stage-4): agents POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
@@ -830,6 +825,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		[]validation.ExecutorKind{validation.KindSafeCheck},
 		log,
 	)
+	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
+	// (network-addressable target + safe-checkable technique) runs for real via
+	// the validation dispatcher; the command-completion hook finalizes the run.
+	//
+	// This MUST come after s.ValidationRun is assigned above. It used to sit 14
+	// lines earlier, which stored a nil *validation.RunService in the
+	// SafeCheckDispatcher interface — and a nil pointer in a non-nil interface
+	// passes `s.safeCheck == nil`, so tryDispatchLive called through it and
+	// panicked on the nil receiver instead of falling back to the synthetic
+	// path.
+	s.Simulation.SetSafeCheckDispatcher(s.ValidationRun)
+
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = app.NewRemediationCampaignService(repos.RemediationCampaign, log)
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
