@@ -121,16 +121,22 @@ tidy:
 ## swagger: Regenerate api/openapi/swagger.yaml from the handler annotations.
 ## The spec is a GENERATED artifact — never hand-edit it. The UI generates its
 ## API types from the committed file, and scripts/check-openapi.sh fails CI when
-## the two disagree.
+## the annotations, the spec and the registered routes stop agreeing.
 ##
 ## Previously this target printed "swag not installed" and exited 0, so a
 ## regeneration that never happened looked exactly like one that succeeded.
 swagger: swagger-install
 	@echo "Generating Swagger documentation..."
-	@# --parseDependency walks into dependency packages. With a cold module cache
-	@# swag does not fail, it quietly emits a less-resolved schema (no
-	@# `format: int64`, no x-enum-descriptions), so the output is only
-	@# reproducible once the deps are downloaded.
+	@# --parseDependency walks into dependency packages — the asset-type enum
+	@# descriptions come from github.com/openctemio/ctis, not from this module,
+	@# and without the flag swag fails outright on json.RawMessage. Download
+	@# first so it is reading source rather than guessing.
+	@#
+	@# This does NOT make swag reproducible: a clean runner still drops
+	@# `format: int64` from some map[string]int64 fields that a developer
+	@# machine emits, with the same swag, the same Go and a warm cache. That is
+	@# why the gate compares sets of operations rather than bytes. See
+	@# tools/lint/openapicontract.
 	@GOWORK=off go mod download
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
 	@echo "Swagger docs generated in api/openapi/"
