@@ -93,6 +93,7 @@ func agentHealth(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) st
 func TestMarkStaleAsOffline_ReapsNeverHeartbeatedAgent(t *testing.T) {
 	db := openAgentDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := &AgentRepository{db: &DB{DB: db}}
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -110,6 +111,7 @@ func TestMarkStaleAsOffline_ReapsNeverHeartbeatedAgent(t *testing.T) {
 func TestMarkStaleAgentsOffline_ReapsNeverHeartbeatedAgent(t *testing.T) {
 	db := openAgentDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := &AgentRepository{db: &DB{DB: db}}
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -139,6 +141,7 @@ func TestMarkStaleAgentsOffline_ReapsNeverHeartbeatedAgent(t *testing.T) {
 func TestMarkStaleSweeps_LeaveLiveAgentAlone(t *testing.T) {
 	db := openAgentDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := &AgentRepository{db: &DB{DB: db}}
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -163,6 +166,7 @@ func TestMarkStaleSweeps_LeaveLiveAgentAlone(t *testing.T) {
 func TestFindAvailableWithTool_SkipsNeverHeartbeatedAgent(t *testing.T) {
 	db := openAgentDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := &AgentRepository{db: &DB{DB: db}}
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -190,6 +194,7 @@ func TestFindAvailableWithTool_SkipsNeverHeartbeatedAgent(t *testing.T) {
 func TestGetAvailableToolsForTenant_IgnoresNeverHeartbeatedAgent(t *testing.T) {
 	db := openAgentDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := &AgentRepository{db: &DB{DB: db}}
 
 	tenantID := seedTestTenant(ctx, t, db)
