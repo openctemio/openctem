@@ -100,6 +100,52 @@ func (s *PriorityClassificationService) SetThreatModelOracle(o ThreatModelOracle
 	s.threatModelOracle = o
 }
 
+// setControlProtection applies a single asset's effective reduction factor to a
+// priority context. A 0 factor is the compensating_controls column default and
+// means "no measured reduction", so it does NOT mark the asset as protected —
+// otherwise a control saved without a factor would silently suppress P1.
+//
+// This is the one place the "protected" rule is expressed; both the per-finding
+// and the batch classification paths go through it.
+func setControlProtection(pctx *vulnerability.PriorityContext, reduction float64) {
+	if reduction <= 0 {
+		return
+	}
+	pctx.IsProtected = true
+	pctx.ControlReductionFactor = reduction
+}
+
+// applyControlProtection marks pctx as protected when the finding's asset is
+// covered by an effective compensating control.
+//
+// This is the ONLY thing that makes a compensating control affect priority, so
+// every path that builds a PriorityContext must call it. It previously lived
+// inline in the batch and explain paths but not in ClassifyFinding — which is
+// the path the control-change fan-out itself drives (LinkAssets → reclassify
+// sweep → Reclassifier.reclassifyAsset → ClassifyFinding), so linking an asset
+// to a control enqueued a sweep through a classifier that could not see
+// controls. Keep this shared rather than re-inlining it.
+//
+// Advisory: a nil lookup, a zero asset, or any error leaves pctx untouched,
+// which can only classify upwards — never a silent downgrade.
+func (s *PriorityClassificationService) applyControlProtection(
+	ctx context.Context,
+	tenantID shared.ID,
+	assetID shared.ID,
+	pctx *vulnerability.PriorityContext,
+) {
+	if s.controlLookup == nil || assetID.IsZero() {
+		return
+	}
+	reductions, err := s.controlLookup.GetEffectiveForAssets(ctx, tenantID, []shared.ID{assetID})
+	if err != nil {
+		s.logger.Warn("compensating control lookup failed",
+			"tenant_id", tenantID.String(), "error", err.Error())
+		return
+	}
+	setControlProtection(pctx, reductions[assetID])
+}
+
 // threatenedSet fetches the tenant's open-threat-path asset set; a nil oracle or
 // any error yields a nil set (classification is unaffected — the signal simply
 // does not fire, never a downgrade).
@@ -260,6 +306,9 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	// signal, if wired). Both oracle lookups are tenant-scoped and cached.
 	reachable := s.reachableSet(ctx, tenantID)
 	pctx := s.buildPriorityContext(finding, assetEntity, reachable, s.threatenedSet(ctx, tenantID))
+
+	// Compensating controls on the finding's asset suppress P1 / force P2.
+	s.applyControlProtection(ctx, tenantID, finding.AssetID(), &pctx)
 
 	// Part 2: persist the derived attacker-reachability onto the finding so the
 	// is_reachable column stops lying (always-false). Fail-safe inside.
@@ -485,10 +534,9 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		}
 
 		pctx := s.buildPriorityContext(f, a, reachable, threatened)
-		if reduction, ok := controlReduction[f.AssetID()]; ok && reduction > 0 {
-			pctx.IsProtected = true
-			pctx.ControlReductionFactor = reduction
-		}
+		// Same rule as applyControlProtection, fed from the batch map above so
+		// the sweep stays one query for the whole batch instead of per finding.
+		setControlProtection(&pctx, controlReduction[f.AssetID()])
 
 		// Part 2: persist derived reachability so is_reachable reflects reality.
 		persistReachability(f, pctx, reachable, a)

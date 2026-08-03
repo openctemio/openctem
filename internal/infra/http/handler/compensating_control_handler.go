@@ -4,13 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/compensatingcontrol"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -106,6 +110,101 @@ func (h *CompensatingControlHandler) enqueueReclassifyForAssets(
 	h.publisher.PublishChange(ctx, tenantID, assetIDs, reason)
 }
 
+// joinValues renders an enum allowlist for an error message.
+func joinValues[T ~string](values []T) string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		out = append(out, string(v))
+	}
+	return strings.Join(out, ", ")
+}
+
+// validateCompensatingControl checks the request against the same vocabulary
+// the compensating_controls CHECK constraints enforce.
+//
+// Without this, a bad control_type/status/reduction_factor reaches Postgres as
+// a constraint violation, which the error arms below turn into a 500 — so a
+// plain client input mistake looked like a server fault and the caller got no
+// idea what was wrong. Every value checked here mirrors a CHECK in
+// migrations/000146_compensating_controls.up.sql, via the domain constants.
+func validateCompensatingControl(req *CreateCompensatingControlRequest) *apierror.Error {
+	if strings.TrimSpace(req.Name) == "" {
+		return apierror.BadRequest("name is required")
+	}
+	if !compensatingcontrol.ControlType(req.ControlType).IsValid() {
+		return apierror.BadRequest(fmt.Sprintf(
+			"control_type must be one of: %s",
+			joinValues(compensatingcontrol.AllControlTypes()),
+		))
+	}
+	// Empty status is allowed — the INSERT/UPDATE defaults it.
+	if req.Status != "" && !compensatingcontrol.ControlStatus(req.Status).IsValid() {
+		return apierror.BadRequest(fmt.Sprintf(
+			"status must be one of: %s",
+			joinValues(compensatingcontrol.AllControlStatuses()),
+		))
+	}
+	// reduction_factor is a FRACTION, not a percentage: 0.30 means "30%".
+	// Zero is rejected rather than stored because the classifier only treats an
+	// asset as protected when the factor is > 0 (see
+	// finding.applyControlProtection) — a control saved with 0 would be
+	// accepted here and then silently do nothing.
+	if req.ReductionFactor <= 0 || req.ReductionFactor > 1 {
+		return apierror.BadRequest(
+			"reduction_factor must be a fraction greater than 0 and at most 1 " +
+				"(e.g. 0.3 for a 30% risk reduction)")
+	}
+	return nil
+}
+
+// controlColumns is the column list every read of a compensating control uses,
+// in the order scanControl expects.
+const controlColumns = `id, name, description, control_type, status, reduction_factor,
+	        last_tested_at, test_result, test_evidence, expires_at,
+	        created_by, created_at, updated_at`
+
+// controlRowScanner is satisfied by both *sql.Row and *sql.Rows.
+type controlRowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanControl reads one control row.
+//
+// description, test_result, test_evidence, created_by and last_tested_at are all
+// nullable and are NULL on a freshly created row, so they must go through
+// sql.Null* wrappers. Create/Update/RecordTest previously scanned their own
+// RETURNING clause straight into plain strings, which failed with "converting
+// NULL to string is unsupported" AFTER the row had already been written — the
+// caller got a 500 while the control really had been created. Everything reads
+// through this one function so that cannot diverge again.
+func scanControl(s controlRowScanner) (CompensatingControlResponse, error) {
+	var c CompensatingControlResponse
+	var desc, testResult, testEvidence, createdBy sql.NullString
+	var reductionFactor sql.NullFloat64
+	var lastTestedAt, expiresAt sql.NullTime
+
+	if err := s.Scan(
+		&c.ID, &c.Name, &desc, &c.ControlType, &c.Status, &reductionFactor,
+		&lastTestedAt, &testResult, &testEvidence, &expiresAt,
+		&createdBy, &c.CreatedAt, &c.UpdatedAt,
+	); err != nil {
+		return CompensatingControlResponse{}, err
+	}
+
+	c.Description = desc.String
+	c.ReductionFactor = reductionFactor.Float64
+	c.TestResult = testResult.String
+	c.TestEvidence = testEvidence.String
+	c.CreatedBy = createdBy.String
+	if lastTestedAt.Valid {
+		c.LastTestedAt = &lastTestedAt.Time
+	}
+	if expiresAt.Valid {
+		c.ExpiresAt = &expiresAt.Time
+	}
+	return c, nil
+}
+
 // List lists compensating controls for the tenant.
 func (h *CompensatingControlHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -125,9 +224,7 @@ func (h *CompensatingControlHandler) List(w http.ResponseWriter, r *http.Request
 	}
 
 	rows, err := h.db.QueryContext(r.Context(),
-		`SELECT id, name, description, control_type, status, reduction_factor,
-		        last_tested_at, test_result, test_evidence, expires_at,
-		        created_by, created_at, updated_at
+		`SELECT `+controlColumns+`
 		   FROM compensating_controls
 		  WHERE tenant_id = $1
 		  ORDER BY created_at DESC
@@ -143,29 +240,11 @@ func (h *CompensatingControlHandler) List(w http.ResponseWriter, r *http.Request
 
 	items := make([]CompensatingControlResponse, 0, perPage)
 	for rows.Next() {
-		var c CompensatingControlResponse
-		var desc, testResult, testEvidence, createdBy sql.NullString
-		var reductionFactor sql.NullFloat64
-		var lastTestedAt, expiresAt sql.NullTime
-		if err := rows.Scan(
-			&c.ID, &c.Name, &desc, &c.ControlType, &c.Status, &reductionFactor,
-			&lastTestedAt, &testResult, &testEvidence, &expiresAt,
-			&createdBy, &c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
+		c, err := scanControl(rows)
+		if err != nil {
 			h.logger.Error("compensating control scan", "error", err)
 			apierror.InternalServerError("internal error").WriteJSON(w)
 			return
-		}
-		c.Description = desc.String
-		c.ReductionFactor = reductionFactor.Float64
-		c.TestResult = testResult.String
-		c.TestEvidence = testEvidence.String
-		c.CreatedBy = createdBy.String
-		if lastTestedAt.Valid {
-			c.LastTestedAt = &lastTestedAt.Time
-		}
-		if expiresAt.Valid {
-			c.ExpiresAt = &expiresAt.Time
 		}
 		items = append(items, c)
 	}
@@ -183,42 +262,20 @@ func (h *CompensatingControlHandler) Get(w http.ResponseWriter, r *http.Request)
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	var c CompensatingControlResponse
-	var desc, testResult, testEvidence, createdBy sql.NullString
-	var reductionFactor sql.NullFloat64
-	var lastTestedAt, expiresAt sql.NullTime
-
-	err := h.db.QueryRowContext(r.Context(),
-		`SELECT id, name, description, control_type, status, reduction_factor,
-		        last_tested_at, test_result, test_evidence, expires_at,
-		        created_by, created_at, updated_at
+	c, err := scanControl(h.db.QueryRowContext(r.Context(),
+		`SELECT `+controlColumns+`
 		   FROM compensating_controls
 		  WHERE tenant_id = $1 AND id = $2`,
 		tenantID, id,
-	).Scan(
-		&c.ID, &c.Name, &desc, &c.ControlType, &c.Status, &reductionFactor,
-		&lastTestedAt, &testResult, &testEvidence, &expiresAt,
-		&createdBy, &c.CreatedAt, &c.UpdatedAt,
-	)
+	))
 	if err != nil {
-		if err == sql.ErrNoRows { //nolint:errorlint // direct comparison ok for sql.ErrNoRows
+		if errors.Is(err, sql.ErrNoRows) {
 			apierror.NotFound("compensating control not found").WriteJSON(w)
 			return
 		}
 		h.logger.Error("compensating control get", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
-	}
-	c.Description = desc.String
-	c.ReductionFactor = reductionFactor.Float64
-	c.TestResult = testResult.String
-	c.TestEvidence = testEvidence.String
-	c.CreatedBy = createdBy.String
-	if lastTestedAt.Valid {
-		c.LastTestedAt = &lastTestedAt.Time
-	}
-	if expiresAt.Valid {
-		c.ExpiresAt = &expiresAt.Time
 	}
 
 	writeJSON(w, http.StatusOK, c)
@@ -234,26 +291,19 @@ func (h *CompensatingControlHandler) Create(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	if req.Name == "" {
-		apierror.BadRequest("name is required").WriteJSON(w)
+	if verr := validateCompensatingControl(&req); verr != nil {
+		verr.WriteJSON(w)
 		return
 	}
 
-	var c CompensatingControlResponse
-	err := h.db.QueryRowContext(r.Context(),
+	c, err := scanControl(h.db.QueryRowContext(r.Context(),
 		`INSERT INTO compensating_controls
 		        (tenant_id, name, description, control_type, status, reduction_factor, expires_at, created_by)
 		 VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5,''), 'active'), $6, $7, $8)
-		 RETURNING id, name, description, control_type, status, reduction_factor,
-		           last_tested_at, test_result, test_evidence, expires_at,
-		           created_by, created_at, updated_at`,
+		 RETURNING `+controlColumns,
 		tenantID, req.Name, req.Description, req.ControlType, req.Status,
 		req.ReductionFactor, nilTime(req.ExpiresAt), nilString(userID),
-	).Scan(
-		&c.ID, &c.Name, &c.Description, &c.ControlType, &c.Status, &c.ReductionFactor,
-		&c.LastTestedAt, &c.TestResult, &c.TestEvidence, &c.ExpiresAt,
-		&c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
-	)
+	))
 	if err != nil {
 		h.logger.Error("compensating control create", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
@@ -273,26 +323,23 @@ func (h *CompensatingControlHandler) Update(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
+	if verr := validateCompensatingControl(&req); verr != nil {
+		verr.WriteJSON(w)
+		return
+	}
 
-	var c CompensatingControlResponse
-	err := h.db.QueryRowContext(r.Context(),
+	c, err := scanControl(h.db.QueryRowContext(r.Context(),
 		`UPDATE compensating_controls
 		    SET name = $3, description = $4, control_type = $5,
 		        status = COALESCE(NULLIF($6,''), status),
 		        reduction_factor = $7, expires_at = $8, updated_at = NOW()
 		  WHERE tenant_id = $1 AND id = $2
-		 RETURNING id, name, description, control_type, status, reduction_factor,
-		           last_tested_at, test_result, test_evidence, expires_at,
-		           created_by, created_at, updated_at`,
+		 RETURNING `+controlColumns,
 		tenantID, id, req.Name, req.Description, req.ControlType,
 		req.Status, req.ReductionFactor, nilTime(req.ExpiresAt),
-	).Scan(
-		&c.ID, &c.Name, &c.Description, &c.ControlType, &c.Status, &c.ReductionFactor,
-		&c.LastTestedAt, &c.TestResult, &c.TestEvidence, &c.ExpiresAt,
-		&c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
-	)
+	))
 	if err != nil {
-		if err == sql.ErrNoRows { //nolint:errorlint
+		if errors.Is(err, sql.ErrNoRows) {
 			apierror.NotFound("compensating control not found").WriteJSON(w)
 			return
 		}
@@ -384,23 +431,38 @@ func (h *CompensatingControlHandler) RecordTest(w http.ResponseWriter, r *http.R
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
+	// An empty or unknown test_result violates the test_result CHECK and used
+	// to surface as a 500.
+	if !compensatingcontrol.TestResult(req.TestResult).IsValid() {
+		apierror.BadRequest(fmt.Sprintf(
+			"test_result must be one of: %s",
+			joinValues(compensatingcontrol.AllTestResults()),
+		)).WriteJSON(w)
+		return
+	}
 
-	var c CompensatingControlResponse
-	err := h.db.QueryRowContext(r.Context(),
+	// A failed test deactivates the control, matching the domain rule in
+	// compensatingcontrol.CompensatingControl.RecordTest. Previously status
+	// stayed 'active' and only the effective-control SQL (which excludes
+	// test_result='fail') kept scoring correct, so the API reported a failed
+	// control as active. Deactivation is one-way on purpose: a later passing
+	// test does not silently re-activate a control an operator may have
+	// disabled for other reasons — reactivate explicitly via update.
+	//
+	// test_result is bound twice ($3 for the assignment, $5 for the CASE) on
+	// purpose: reusing $3 in both an assignment to a varchar column and a
+	// comparison against an untyped literal makes Postgres fail the whole
+	// statement with "inconsistent types deduced for parameter $3" (42P08).
+	c, err := scanControl(h.db.QueryRowContext(r.Context(),
 		`UPDATE compensating_controls
-		    SET test_result = $3, test_evidence = $4, last_tested_at = NOW(), updated_at = NOW()
+		    SET test_result = $3, test_evidence = $4, last_tested_at = NOW(), updated_at = NOW(),
+		        status = CASE WHEN $5 = 'fail' THEN 'inactive' ELSE status END
 		  WHERE tenant_id = $1 AND id = $2
-		 RETURNING id, name, description, control_type, status, reduction_factor,
-		           last_tested_at, test_result, test_evidence, expires_at,
-		           created_by, created_at, updated_at`,
-		tenantID, id, req.TestResult, req.TestEvidence,
-	).Scan(
-		&c.ID, &c.Name, &c.Description, &c.ControlType, &c.Status, &c.ReductionFactor,
-		&c.LastTestedAt, &c.TestResult, &c.TestEvidence, &c.ExpiresAt,
-		&c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
-	)
+		 RETURNING `+controlColumns,
+		tenantID, id, req.TestResult, req.TestEvidence, req.TestResult,
+	))
 	if err != nil {
-		if err == sql.ErrNoRows { //nolint:errorlint
+		if errors.Is(err, sql.ErrNoRows) {
 			apierror.NotFound("compensating control not found").WriteJSON(w)
 			return
 		}

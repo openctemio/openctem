@@ -70,15 +70,9 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 
 	pctx := s.buildPriorityContext(f, a, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID))
 
-	// Compensating-control reduction (same as the live classify path).
-	if s.controlLookup != nil && !f.AssetID().IsZero() {
-		if reductions, lerr := s.controlLookup.GetEffectiveForAssets(ctx, tenantID, []shared.ID{f.AssetID()}); lerr == nil {
-			if r, ok := reductions[f.AssetID()]; ok && r > 0 {
-				pctx.IsProtected = true
-				pctx.ControlReductionFactor = r
-			}
-		}
-	}
+	// Compensating-control reduction (same as the live classify path — shared
+	// helper, so the explanation cannot drift from what ClassifyFinding does).
+	s.applyControlProtection(ctx, tenantID, f.AssetID(), &pctx)
 
 	// Evaluate override rules first, then fall back to the default classifier —
 	// identical precedence to ClassifyFinding, but read-only.
