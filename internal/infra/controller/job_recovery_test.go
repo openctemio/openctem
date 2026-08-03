@@ -12,11 +12,11 @@ import (
 
 // recordingCommandRepo records which recovery/expiry methods Reconcile calls.
 type recordingCommandRepo struct {
-	calledExpireOldCommands bool
+	calledExpireOldCommands            bool
+	calledFindQueueExpiredPlatformJobs bool
 
 	recoverStuckJobs           int64
 	recoverStuckTenantCommands int64
-	expireOldPlatformJobs      int64
 	failExhaustedCommands      int64
 }
 
@@ -28,8 +28,9 @@ func (r *recordingCommandRepo) RecoverStuckTenantCommands(_ context.Context, _, 
 	return r.recoverStuckTenantCommands, nil
 }
 
-func (r *recordingCommandRepo) ExpireOldPlatformJobs(_ context.Context, _ int) (int64, error) {
-	return r.expireOldPlatformJobs, nil
+func (r *recordingCommandRepo) FindQueueExpiredPlatformJobs(_ context.Context, _ int) ([]*command.Command, error) {
+	r.calledFindQueueExpiredPlatformJobs = true
+	return nil, nil
 }
 
 func (r *recordingCommandRepo) FailExhaustedCommands(_ context.Context, _ int) (int64, error) {
@@ -149,13 +150,44 @@ func TestJobRecoveryController_DoesNotExpireRegularCommands(t *testing.T) {
 	}
 }
 
+// TestJobRecoveryController_DoesNotExpirePlatformJobs pins the same removal one
+// step over, for the platform-job queue.
+//
+// This controller used to run a raw `UPDATE commands SET status='expired' ...
+// WHERE is_platform_job AND status='pending' AND queued_at < ...`. Platform jobs
+// are created by scan/pipeline dispatch carrying pipeline_run_id + step_key and
+// with expires_at NULL, so FindExpired never covered them: that raw UPDATE was
+// the only thing that ever reaped them, and it notified nobody. The step stayed
+// 'queued' until ScanTimeoutController eventually reported a generic timeout
+// instead of "expired in queue".
+//
+// Expiry now belongs to app/command.ExpirationChecker, which calls
+// pipeline.OnStepFailed(..., "PLATFORM_JOB_EXPIRED_IN_QUEUE"). Reconcile must
+// not expire platform jobs itself — not even by reading the candidates.
+func TestJobRecoveryController_DoesNotExpirePlatformJobs(t *testing.T) {
+	repo := &recordingCommandRepo{}
+	c := NewJobRecoveryController(repo, &JobRecoveryControllerConfig{
+		Logger: logger.NewNop(),
+	})
+
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	if repo.calledFindQueueExpiredPlatformJobs {
+		t.Fatal("JobRecoveryController.Reconcile expired platform jobs: expiring a platform " +
+			"job here cannot call pipeline OnStepFailed, so the owning run is left waiting on a " +
+			"step that is already dead - app/command.ExpirationChecker owns this")
+	}
+}
+
 // TestJobRecoveryController_ReportsOnlyItsOwnWork guards the item count after the
-// removal: the ExpireOldCommands result (7 above) must not be folded in.
+// removals: neither the ExpireOldCommands result (7 above) nor any platform-job
+// expiry may be folded in.
 func TestJobRecoveryController_ReportsOnlyItsOwnWork(t *testing.T) {
 	repo := &recordingCommandRepo{
 		recoverStuckJobs:           1,
 		recoverStuckTenantCommands: 2,
-		expireOldPlatformJobs:      3,
 		failExhaustedCommands:      4,
 	}
 	c := NewJobRecoveryController(repo, &JobRecoveryControllerConfig{Logger: logger.NewNop()})
@@ -164,7 +196,7 @@ func TestJobRecoveryController_ReportsOnlyItsOwnWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
-	if want := 10; got != want {
+	if want := 7; got != want {
 		t.Fatalf("processed count = %d, want %d (an inflated count means a foreign expiry path is still counted here)", got, want)
 	}
 }

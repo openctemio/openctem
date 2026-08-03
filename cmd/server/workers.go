@@ -146,6 +146,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.Pipeline,
 		command.ExpirationCheckerConfig{
 			CheckInterval: time.Minute,
+			// Owns platform-job queue expiry too, because expiring a job has to
+			// tell the owning pipeline run why. Previously JobRecoveryController's
+			// MaxQueueMinutes, where the expiry notified nobody.
+			MaxQueueMinutes: 60,
 		},
 		log,
 	)
@@ -206,7 +210,6 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Interval:              60 * time.Second,
 			StuckThresholdMinutes: 30,
 			MaxRetries:            3,
-			MaxQueueMinutes:       60,
 			Logger:                log.With("controller", "job-recovery"),
 		},
 	))

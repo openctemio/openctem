@@ -542,8 +542,8 @@ func (m *mockCommandRepo) UpdateQueuePriorities(_ context.Context) (int64, error
 func (m *mockCommandRepo) RecoverStuckJobs(_ context.Context, _, _ int) (int64, error) {
 	return 0, nil
 }
-func (m *mockCommandRepo) ExpireOldPlatformJobs(_ context.Context, _ int) (int64, error) {
-	return 0, nil
+func (m *mockCommandRepo) FindQueueExpiredPlatformJobs(_ context.Context, _ int) ([]*commanddom.Command, error) {
+	return nil, nil
 }
 func (m *mockCommandRepo) GetQueuePosition(_ context.Context, _ shared.ID) (*commanddom.QueuePosition, error) {
 	return nil, nil
