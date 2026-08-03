@@ -365,7 +365,7 @@ func (h *AssetGroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Failure      404   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /asset-groups/{id} [patch]
+// @Router       /asset-groups/{id} [put]
 func (h *AssetGroupHandler) Update(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := shared.IDFromString(idStr)
@@ -660,7 +660,7 @@ func (h *AssetGroupHandler) AddAssets(w http.ResponseWriter, r *http.Request) {
 // @Failure      404   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /asset-groups/{id}/assets/remove [post]
+// @Router       /asset-groups/{id}/assets [delete]
 func (h *AssetGroupHandler) RemoveAssets(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := shared.IDFromString(idStr)
@@ -750,7 +750,7 @@ func (h *AssetGroupHandler) BulkUpdate(w http.ResponseWriter, r *http.Request) {
 // @Failure      400   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /asset-groups/bulk/delete [post]
+// @Router       /asset-groups/bulk [delete]
 func (h *AssetGroupHandler) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	var req BulkDeleteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

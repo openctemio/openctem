@@ -118,7 +118,7 @@ type ImportMetadataRequest struct {
 // @Success 201 {object} credential.ImportResult
 // @Failure 400 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
-// @Router /api/v1/credentials/import [post]
+// @Router /credentials/import [post]
 func (h *CredentialImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
@@ -165,7 +165,7 @@ func (h *CredentialImportHandler) Import(w http.ResponseWriter, r *http.Request)
 // @Success 201 {object} credential.ImportResult
 // @Failure 400 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
-// @Router /api/v1/credentials/import/csv [post]
+// @Router /credentials/import/csv [post]
 func (h *CredentialImportHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
@@ -226,7 +226,7 @@ func (h *CredentialImportHandler) ImportCSV(w http.ResponseWriter, r *http.Reque
 // @Param sort query string false "Sort field (prefix - for desc)"
 // @Success 200 {object} app.CredentialListResult
 // @Failure 401 {object} apierror.Error
-// @Router /api/v1/credentials [get]
+// @Router /credentials [get]
 func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
@@ -281,7 +281,7 @@ func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} app.CredentialItem
 // @Failure 404 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
-// @Router /api/v1/credentials/{id} [get]
+// @Router /credentials/{id} [get]
 func (h *CredentialImportHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := r.PathValue("id")
@@ -309,7 +309,7 @@ func (h *CredentialImportHandler) GetByID(w http.ResponseWriter, r *http.Request
 // @Produce json
 // @Success 200 {object} map[string]any
 // @Failure 401 {object} apierror.Error
-// @Router /api/v1/credentials/stats [get]
+// @Router /credentials/stats [get]
 func (h *CredentialImportHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
@@ -336,7 +336,7 @@ func (h *CredentialImportHandler) GetStats(w http.ResponseWriter, r *http.Reques
 // @Param search query string false "Search in identifier"
 // @Success 200 {object} app.IdentityListResult
 // @Failure 401 {object} apierror.Error
-// @Router /api/v1/credentials/identities [get]
+// @Router /credentials/identities [get]
 func (h *CredentialImportHandler) ListByIdentity(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
@@ -384,7 +384,7 @@ func (h *CredentialImportHandler) ListByIdentity(w http.ResponseWriter, r *http.
 // @Success 200 {array} app.CredentialItem
 // @Failure 404 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
-// @Router /api/v1/credentials/{id}/related [get]
+// @Router /credentials/{id}/related [get]
 func (h *CredentialImportHandler) GetRelatedCredentials(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := r.PathValue("id")
@@ -415,7 +415,7 @@ func (h *CredentialImportHandler) GetRelatedCredentials(w http.ResponseWriter, r
 // @Param page_size query int false "Page size" default(20)
 // @Success 200 {object} app.CredentialListResult
 // @Failure 401 {object} apierror.Error
-// @Router /api/v1/credentials/identities/{identity}/exposures [get]
+// @Router /credentials/identities/{identity}/exposures [get]
 func (h *CredentialImportHandler) GetExposuresForIdentity(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	identity := r.PathValue("identity")
@@ -456,7 +456,7 @@ func (h *CredentialImportHandler) GetExposuresForIdentity(w http.ResponseWriter,
 // @Tags Credentials
 // @Produce text/csv
 // @Success 200 {file} file "CSV template"
-// @Router /api/v1/credentials/import/template [get]
+// @Router /credentials/import/template [get]
 func (h *CredentialImportHandler) GetTemplate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=credential_import_template.csv")
@@ -569,7 +569,7 @@ func (h *CredentialImportHandler) GetTemplate(w http.ResponseWriter, r *http.Req
 // @Tags Credentials
 // @Produce json
 // @Success 200 {object} map[string]any
-// @Router /api/v1/credentials/enums [get]
+// @Router /credentials/enums [get]
 func (h *CredentialImportHandler) GetEnums(w http.ResponseWriter, _ *http.Request) {
 	credentialTypes := make([]string, 0, len(credential.AllCredentialTypes()))
 	for _, t := range credential.AllCredentialTypes() {
@@ -773,7 +773,7 @@ type CredentialStateChangeRequest struct {
 // @Success 200 {object} app.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/credentials/{id}/resolve [post]
+// @Router /credentials/{id}/resolve [post]
 func (h *CredentialImportHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
@@ -813,7 +813,7 @@ func (h *CredentialImportHandler) Resolve(w http.ResponseWriter, r *http.Request
 // @Success 200 {object} app.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/credentials/{id}/accept [post]
+// @Router /credentials/{id}/accept [post]
 func (h *CredentialImportHandler) Accept(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
@@ -853,7 +853,7 @@ func (h *CredentialImportHandler) Accept(w http.ResponseWriter, r *http.Request)
 // @Success 200 {object} app.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/credentials/{id}/false-positive [post]
+// @Router /credentials/{id}/false-positive [post]
 func (h *CredentialImportHandler) MarkFalsePositive(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
@@ -891,7 +891,7 @@ func (h *CredentialImportHandler) MarkFalsePositive(w http.ResponseWriter, r *ht
 // @Success 200 {object} app.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/credentials/{id}/reactivate [post]
+// @Router /credentials/{id}/reactivate [post]
 func (h *CredentialImportHandler) Reactivate(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := r.PathValue("id")

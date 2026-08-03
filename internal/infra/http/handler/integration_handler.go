@@ -1440,22 +1440,19 @@ type SendNotificationRequest struct {
 	Fields   map[string]string `json:"fields"`
 }
 
-// SendNotification handles POST /api/v1/integrations/{id}/send
-// @Summary      Send notification
-// @Description  Sends a notification through the specified integration
-// @Tags         Integrations
-// @Accept       json
-// @Produce      json
-// @Param        id       path      string                   true  "Integration ID"  format(uuid)
-// @Param        request  body      SendNotificationRequest  true  "Notification content"
-// @Success      200      {object}  map[string]any           "Send result"
-// @Failure      400      {object}  map[string]string        "Bad request"
-// @Failure      401      {object}  map[string]string        "Unauthorized"
-// @Failure      403      {object}  map[string]string        "Forbidden"
-// @Failure      404      {object}  map[string]string        "Not found"
-// @Failure      500      {object}  map[string]string        "Internal server error"
-// @Security     BearerAuth
-// @Router       /integrations/{id}/send [post]
+// SendNotification would handle POST /api/v1/integrations/{id}/send.
+//
+// UNROUTED. This method is complete — it resolves the tenant, validates the
+// body and calls integration.Service.SendNotification — but it is registered
+// nowhere in internal/infra/http/routes, so the endpoint 404s. The @Router
+// annotation was removed rather than kept, because the spec is now a generated
+// contract the UI reads: advertising a path that does not exist is how the UI
+// came to call GET /me/event-types against a server that never had it.
+//
+// Wiring it up is a behavior change (a new authenticated write path that can
+// emit outbound traffic) and belongs in its own reviewed change, not in a spec
+// regeneration. Until then this stays dead and undocumented rather than dead
+// and documented.
 func (h *IntegrationHandler) SendNotification(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 

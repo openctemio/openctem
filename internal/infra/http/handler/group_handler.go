@@ -321,7 +321,7 @@ func (h *GroupHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Failure 400 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
 // @Failure 403 {object} apierror.Error
-// @Router /api/v1/groups [post]
+// @Router /groups [post]
 func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -377,7 +377,7 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // @Param groupId path string true "Group ID"
 // @Success 200 {object} GroupResponse
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId} [get]
+// @Router /groups/{groupId} [get]
 func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -415,7 +415,7 @@ func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 // @Param limit query int false "Limit results" default(20)
 // @Param offset query int false "Offset for pagination" default(0)
 // @Success 200 {object} GroupListResponse
-// @Router /api/v1/groups [get]
+// @Router /groups [get]
 func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -505,7 +505,7 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} GroupResponse
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId} [put]
+// @Router /groups/{groupId} [put]
 func (h *GroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -549,7 +549,7 @@ func (h *GroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 // @Param groupId path string true "Group ID"
 // @Success 204 "No Content"
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId} [delete]
+// @Router /groups/{groupId} [delete]
 func (h *GroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -576,7 +576,7 @@ func (h *GroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 // @Param groupId path string true "Group ID"
 // @Success 200 {array} GroupMemberWithUserResponse
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/members [get]
+// @Router /groups/{groupId}/members [get]
 func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
@@ -617,7 +617,7 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 // @Success 201 {object} GroupMemberResponse
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/members [post]
+// @Router /groups/{groupId}/members [post]
 func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -670,7 +670,7 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} GroupMemberResponse
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/members/{userId} [put]
+// @Router /groups/{groupId}/members/{userId} [put]
 func (h *GroupHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -720,7 +720,7 @@ func (h *GroupHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 // @Success 204 "No Content"
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/members/{userId} [delete]
+// @Router /groups/{groupId}/members/{userId} [delete]
 func (h *GroupHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -757,7 +757,7 @@ func (h *GroupHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 // @Success 204 "No Content"
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/permission-sets [post]
+// @Router /groups/{groupId}/permission-sets [post]
 func (h *GroupHandler) AssignPermissionSet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -802,7 +802,7 @@ func (h *GroupHandler) AssignPermissionSet(w http.ResponseWriter, r *http.Reques
 // @Param permissionSetId path string true "Permission Set ID"
 // @Success 204 "No Content"
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/permission-sets/{permissionSetId} [delete]
+// @Router /groups/{groupId}/permission-sets/{permissionSetId} [delete]
 func (h *GroupHandler) UnassignPermissionSet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -826,7 +826,7 @@ func (h *GroupHandler) UnassignPermissionSet(w http.ResponseWriter, r *http.Requ
 // @Param groupId path string true "Group ID"
 // @Success 200 {array} PermissionSetResponse
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/permission-sets [get]
+// @Router /groups/{groupId}/permission-sets [get]
 func (h *GroupHandler) ListAssignedPermissionSets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
@@ -876,7 +876,7 @@ func (h *GroupHandler) ListAssignedPermissionSets(w http.ResponseWriter, r *http
 // @Tags groups
 // @Produce json
 // @Success 200 {array} GroupWithRoleResponse
-// @Router /api/v1/me/groups [get]
+// @Router /me/groups [get]
 func (h *GroupHandler) ListMyGroups(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -945,7 +945,7 @@ type AssetBriefResponse struct {
 // @Success 204 "No Content"
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/assets [post]
+// @Router /groups/{groupId}/assets [post]
 func (h *GroupHandler) AssignAsset(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -1050,7 +1050,7 @@ func (h *GroupHandler) BulkAssignAssets(w http.ResponseWriter, r *http.Request) 
 // @Param assetId path string true "Asset ID"
 // @Success 204 "No Content"
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/assets/{assetId} [delete]
+// @Router /groups/{groupId}/assets/{assetId} [delete]
 func (h *GroupHandler) UnassignAsset(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -1088,7 +1088,7 @@ type UpdateAssetOwnershipRequest struct {
 // @Success 204 "No Content"
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/assets/{assetId} [put]
+// @Router /groups/{groupId}/assets/{assetId} [put]
 func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	groupID := chi.URLParam(r, "groupId")
@@ -1129,7 +1129,7 @@ func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Reque
 // @Param groupId path string true "Group ID"
 // @Success 200 {array} GroupOwnershipResponse
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/groups/{groupId}/assets [get]
+// @Router /groups/{groupId}/assets [get]
 func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
@@ -1185,7 +1185,7 @@ func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 // @Tags assets
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/me/assets [get]
+// @Router /me/assets [get]
 func (h *GroupHandler) ListMyAssets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
@@ -1228,7 +1228,7 @@ func (h *GroupHandler) ListMyAssets(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} apierror.Error
-// @Router /api/v1/groups/sync [post]
+// @Router /groups/sync [post]
 func (h *GroupHandler) TriggerSync(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

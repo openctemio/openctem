@@ -461,7 +461,7 @@ type AgentDisableRequest struct {
 // @Failure      404   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /agents/{id}/disable [post]
+// @Router       /agents/{id}/deactivate [post]
 func (h *AgentHandler) Disable(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
@@ -642,7 +642,7 @@ type AvailableCapabilitiesResponse struct {
 // @Success 200 {object} AvailableCapabilitiesResponse
 // @Failure 401 {object} apierror.Error "Unauthorized"
 // @Failure 500 {object} apierror.Error "Internal server error"
-// @Router /api/v1/agents/available-capabilities [get]
+// @Router /agents/available-capabilities [get]
 func (h *AgentHandler) GetAvailableCapabilities(w http.ResponseWriter, r *http.Request) {
 	tenantIDStr := middleware.GetTenantID(r.Context())
 

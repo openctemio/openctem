@@ -1061,7 +1061,7 @@ func (h *ToolHandler) GetEffectiveConfig(w http.ResponseWriter, r *http.Request)
 // @Failure      400   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /tenant-tools/bulk-enable [post]
+// @Router       /tenant-tools/bulk/enable [post]
 func (h *ToolHandler) BulkEnable(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
@@ -1100,7 +1100,7 @@ func (h *ToolHandler) BulkEnable(w http.ResponseWriter, r *http.Request) {
 // @Failure      400   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /tenant-tools/bulk-disable [post]
+// @Router       /tenant-tools/bulk/disable [post]
 func (h *ToolHandler) BulkDisable(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
@@ -1250,7 +1250,7 @@ func (h *ToolHandler) GetToolWithConfig(w http.ResponseWriter, r *http.Request) 
 // @Failure      400   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /tool-stats [get]
+// @Router       /tenant-tools/stats [get]
 func (h *ToolHandler) GetTenantStats(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 	days := parseQueryInt(r.URL.Query().Get("days"), 30)
@@ -1282,14 +1282,14 @@ func (h *ToolHandler) GetTenantStats(w http.ResponseWriter, r *http.Request) {
 // @Tags         Tool Stats
 // @Accept       json
 // @Produce      json
-// @Param        tool_id  path      string  true   "Tool ID"
+// @Param        toolId   path      string  true   "Tool ID"
 // @Param        days     query     int     false  "Number of days to include" default(30)
 // @Success      200      {object}  ToolStatsResponse
 // @Failure      400      {object}  apierror.Error
 // @Failure      404      {object}  apierror.Error
 // @Failure      500      {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /tool-stats/{tool_id} [get]
+// @Router       /tenant-tools/stats/{toolId} [get]
 func (h *ToolHandler) GetToolStats(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "toolId")
 	tenantID := middleware.GetTenantID(r.Context())

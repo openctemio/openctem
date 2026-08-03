@@ -219,7 +219,7 @@ func (h *PermissionSetHandler) handleServiceError(w http.ResponseWriter, err err
 // @Failure 400 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
 // @Failure 403 {object} apierror.Error
-// @Router /api/v1/permission-sets [post]
+// @Router /permission-sets [post]
 func (h *PermissionSetHandler) CreatePermissionSet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -267,7 +267,7 @@ func (h *PermissionSetHandler) CreatePermissionSet(w http.ResponseWriter, r *htt
 // @Param id path string true "Permission set ID"
 // @Success 200 {object} PermissionSetWithItemsResponse
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/permission-sets/{id} [get]
+// @Router /permission-sets/{id} [get]
 func (h *PermissionSetHandler) GetPermissionSet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -307,7 +307,7 @@ func (h *PermissionSetHandler) GetPermissionSet(w http.ResponseWriter, r *http.R
 // @Success 200 {object} PermissionSetResponse
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/permission-sets/{id} [put]
+// @Router /permission-sets/{id} [put]
 func (h *PermissionSetHandler) UpdatePermissionSet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -354,7 +354,7 @@ func (h *PermissionSetHandler) UpdatePermissionSet(w http.ResponseWriter, r *htt
 // @Success 204
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/permission-sets/{id} [delete]
+// @Router /permission-sets/{id} [delete]
 func (h *PermissionSetHandler) DeletePermissionSet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -385,7 +385,7 @@ func (h *PermissionSetHandler) DeletePermissionSet(w http.ResponseWriter, r *htt
 // @Param limit query int false "Limit results" default(20)
 // @Param offset query int false "Offset for pagination" default(0)
 // @Success 200 {object} PermissionSetListResponse
-// @Router /api/v1/permission-sets [get]
+// @Router /permission-sets [get]
 func (h *PermissionSetHandler) ListPermissionSets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -455,7 +455,7 @@ func (h *PermissionSetHandler) ListPermissionSets(w http.ResponseWriter, r *http
 // @Success 201
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/permission-sets/{id}/permissions [post]
+// @Router /permission-sets/{id}/permissions [post]
 func (h *PermissionSetHandler) AddPermission(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -501,7 +501,7 @@ func (h *PermissionSetHandler) AddPermission(w http.ResponseWriter, r *http.Requ
 // @Success 204
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /api/v1/permission-sets/{id}/permissions/{permissionId} [delete]
+// @Router /permission-sets/{id}/permissions/{permissionId} [delete]
 func (h *PermissionSetHandler) RemovePermission(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -537,7 +537,7 @@ func (h *PermissionSetHandler) RemovePermission(w http.ResponseWriter, r *http.R
 // @Tags permission-sets
 // @Produce json
 // @Success 200 {array} PermissionSetResponse
-// @Router /api/v1/permission-sets/system [get]
+// @Router /permission-sets/system [get]
 func (h *PermissionSetHandler) ListSystemPermissionSets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -586,7 +586,7 @@ type EffectivePermissionsResponse struct {
 // @Tags permissions
 // @Produce json
 // @Success 200 {object} EffectivePermissionsResponse
-// @Router /api/v1/me/permissions [get]
+// @Router /me/permissions [get]
 func (h *PermissionSetHandler) GetMyEffectivePermissions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

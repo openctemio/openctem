@@ -52,6 +52,12 @@ type HealthResponse struct {
 }
 
 // Health handles the /health endpoint (liveness probe).
+//
+// Registered on the ROOT router, not under /api/v1 — probes must not require
+// auth or a version prefix. Swagger 2.0 has no per-operation basePath, so the
+// generated spec renders this as /api/v1/health. That is the one known place
+// where the spec cannot be literally true; the real path is /health. Ready
+// below has the same caveat.
 // @Summary      Health check
 // @Description  Returns the health status of the service (liveness probe)
 // @Tags         Health

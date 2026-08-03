@@ -118,21 +118,32 @@ tidy:
 	@echo "Tidying dependencies..."
 	$(GOMOD) tidy
 
-## swagger: Generate OpenAPI documentation using swag
-swagger:
+## swagger: Regenerate api/openapi/swagger.yaml from the handler annotations.
+## The spec is a GENERATED artifact — never hand-edit it. The UI generates its
+## API types from the committed file, and scripts/check-openapi.sh fails CI when
+## the two disagree.
+##
+## Previously this target printed "swag not installed" and exited 0, so a
+## regeneration that never happened looked exactly like one that succeeded.
+swagger: swagger-install
 	@echo "Generating Swagger documentation..."
-	@if command -v swag >/dev/null 2>&1; then \
-		GOWORK=off swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency; \
-		echo "" >> api/openapi/swagger.yaml; \
-		echo "Swagger docs generated in api/openapi/"; \
-	else \
-		echo "swag not installed. Run: make swagger-install"; \
-	fi
+	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
+	@echo "Swagger docs generated in api/openapi/"
 
-## swagger-install: Install swag CLI tool
+## swagger-check: Fail if the committed spec differs from a fresh regeneration.
+swagger-check:
+	@bash scripts/check-openapi.sh
+
+## swagger-install: Install the pinned swag CLI (no-op if already present).
+## Pinned: an upstream release must not be able to change the committed contract
+## or turn every PR red. Bump here and in scripts/check-openapi.sh together.
+SWAG_VERSION ?= v1.16.4
+SWAG := $(shell command -v swag 2>/dev/null || echo "$$(go env GOPATH)/bin/swag")
 swagger-install:
-	@echo "Installing swag..."
-	go install github.com/swaggo/swag/cmd/swag@latest
+	@if ! "$(SWAG)" --version 2>/dev/null | grep -qF "$(SWAG_VERSION)"; then \
+		echo "Installing swag $(SWAG_VERSION)..."; \
+		GOWORK=off GOFLAGS=-mod=mod go install github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION); \
+	fi
 
 ## clean: Clean build artifacts
 clean:
