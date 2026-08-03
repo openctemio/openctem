@@ -89,9 +89,14 @@ type Repository interface {
 	// Returns the number of jobs recovered.
 	RecoverStuckJobs(ctx context.Context, stuckThresholdMinutes int, maxRetries int) (int64, error)
 
-	// ExpireOldPlatformJobs expires platform jobs that have been in queue too long.
-	// Returns the number of jobs expired.
-	ExpireOldPlatformJobs(ctx context.Context, maxQueueMinutes int) (int64, error)
+	// FindQueueExpiredPlatformJobs returns platform jobs that have waited in the
+	// queue longer than maxQueueMinutes.
+	//
+	// It returns the jobs rather than expiring them: the caller must expire each
+	// one *and* notify the owning pipeline run, otherwise the run waits on a
+	// step that is already dead. A raw UPDATE here is what left scans hanging
+	// until an unrelated timeout controller reported a generic failure.
+	FindQueueExpiredPlatformJobs(ctx context.Context, maxQueueMinutes int) ([]*Command, error)
 
 	// GetQueuePosition gets the queue position for a specific command.
 	GetQueuePosition(ctx context.Context, commandID shared.ID) (*QueuePosition, error)

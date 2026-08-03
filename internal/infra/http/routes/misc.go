@@ -279,6 +279,13 @@ func registerBootstrapRoutes(
 	router.Group("/api/v1/me/modules", func(r Router) {
 		r.GET("/", h.GetTenantModules)
 	}, tenantMiddlewares...)
+
+	// Notification event-type catalog for the current tenant. Served from
+	// integration.AllEventTypes(), the same registry the outbox routes on, so a
+	// client no longer has to keep a hand-written copy in sync with it.
+	router.Group("/api/v1/me/event-types", func(r Router) {
+		r.GET("/", h.GetTenantEventTypes)
+	}, tenantMiddlewares...)
 }
 
 // registerWebSocketRoutes registers WebSocket endpoints for real-time communication.

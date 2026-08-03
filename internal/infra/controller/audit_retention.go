@@ -63,7 +63,10 @@ func NewAuditRetentionController(
 	if config.Interval == 0 {
 		config.Interval = 24 * time.Hour
 	}
-	if config.RetentionDays == 0 {
+	// A non-positive retention window would put the cutoff at (or after) now
+	// and delete the whole table. Config validation rejects it, but this
+	// controller is constructible directly, so fail safe here too.
+	if config.RetentionDays <= 0 {
 		config.RetentionDays = 365 // 1 year default
 	}
 	if config.BatchSize == 0 {
@@ -115,10 +118,14 @@ func (c *AuditRetentionController) Reconcile(ctx context.Context) (int, error) {
 		"dry_run", c.config.DryRun,
 	)
 
-	// If dry run, just return the count
+	// If dry run, just return the count. WARN rather than Info: in dry-run
+	// mode nothing is reclaimed, so a non-zero count means the table is
+	// growing unbounded and an operator has to act
+	// (ADMIN_AUDIT_RETENTION_DRY_RUN=false) for retention to take effect.
 	if c.config.DryRun {
-		c.logger.Info("dry run - would delete audit logs",
+		c.logger.Warn("dry run - would delete audit logs; set ADMIN_AUDIT_RETENTION_DRY_RUN=false to enforce retention",
 			"count", count,
+			"retention_days", c.config.RetentionDays,
 		)
 		return int(count), nil
 	}

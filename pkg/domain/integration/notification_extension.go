@@ -56,7 +56,35 @@ const (
 	EventCategoryScan     EventCategory = "scan"
 	EventCategoryFinding  EventCategory = "finding"
 	EventCategoryExposure EventCategory = "exposure"
+	EventCategoryApproval EventCategory = "approval"
+	EventCategoryWorkflow EventCategory = "workflow"
 )
+
+// EventCategoryInfo pairs an event category with its display label.
+type EventCategoryInfo struct {
+	Category EventCategory
+	Label    string
+}
+
+// AllEventCategories returns every event category with its display label, in
+// the order categories should be presented.
+//
+// The labels live here rather than in the UI for the same reason AllEventTypes
+// does: a category added to the constant block above but missing from a
+// client-side label map renders as "undefined" (or crashes a lookup) with
+// nothing failing at build time. Both approval and workflow categories were
+// added without the UI's map learning about them.
+func AllEventCategories() []EventCategoryInfo {
+	return []EventCategoryInfo{
+		{Category: EventCategorySystem, Label: "System Events"},
+		{Category: EventCategoryAsset, Label: "Asset Events"},
+		{Category: EventCategoryScan, Label: "Scan Events"},
+		{Category: EventCategoryFinding, Label: "Finding Events"},
+		{Category: EventCategoryApproval, Label: "Approval Events"},
+		{Category: EventCategoryWorkflow, Label: "Workflow Events"},
+		{Category: EventCategoryExposure, Label: "Exposure Events"},
+	}
+}
 
 // Known event types for notification routing.
 // Add new event types here - no database migration required (JSONB array).
@@ -81,6 +109,31 @@ const (
 	EventTypeFindingTriaged   EventType = "finding_triaged"
 	EventTypeFindingFixed     EventType = "finding_fixed"
 	EventTypeFindingReopened  EventType = "finding_reopened"
+	// EventTypeFindingPriorityEscalated fires when an already-classified
+	// finding is re-classified UP (e.g. P3 -> P0 because its CVE was newly
+	// listed in KEV, or a compensating control was removed). Without it a
+	// priority escalation is a silent dashboard update.
+	EventTypeFindingPriorityEscalated EventType = "finding_priority_escalated"
+
+	// EventTypeFindingAssigned fires when an assignment rule routes a finding to
+	// a group AND that rule has its "notify group" option switched on. The
+	// operator has already opted in at the rule; an unregistered event type made
+	// that checkbox inert.
+	EventTypeFindingAssigned EventType = "finding_assigned"
+
+	// EventTypeSLABreach fires when the SLA escalation controller marks a
+	// finding as having missed its remediation deadline.
+	EventTypeSLABreach EventType = "sla_breach"
+
+	// Approval events (risk-acceptance / status-change approvals on findings)
+	EventTypeApprovalRequested EventType = "approval_requested"
+	EventTypeApprovalApproved  EventType = "approval_approved"
+	EventTypeApprovalRejected  EventType = "approval_rejected"
+
+	// EventTypeWorkflowNotification fires from a workflow notification action
+	// node that has no provider-specific integration bound to it, i.e. the
+	// operator authored a workflow step whose only purpose is to notify.
+	EventTypeWorkflowNotification EventType = "workflow_notification"
 
 	// Exposure events
 	EventTypeNewExposure      EventType = "new_exposure"
@@ -135,6 +188,22 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeFindingTriaged, Category: EventCategoryFinding, Label: "Need Triage Finding", Description: "Finding needs triage/review", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingFixed, Category: EventCategoryFinding, Label: "Fixed Finding", Description: "Finding has been remediated", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingReopened, Category: EventCategoryFinding, Label: "Reopened Finding", Description: "Finding reopened after fix", RequiredModule: ModuleFindings},
+		{Type: EventTypeFindingPriorityEscalated, Category: EventCategoryFinding, Label: "Priority Escalated", Description: "Finding re-classified to a higher priority (e.g. P3 to P0)", RequiredModule: ModuleFindings},
+		{Type: EventTypeFindingAssigned, Category: EventCategoryFinding, Label: "Finding Assigned", Description: "Finding routed to a group by an assignment rule with group notification enabled", RequiredModule: ModuleFindings},
+		{Type: EventTypeSLABreach, Category: EventCategoryFinding, Label: "SLA Breached", Description: "Finding missed its SLA remediation deadline", RequiredModule: ModuleFindings},
+
+		// Approval events - require 'findings' module (approvals gate finding status changes)
+		{Type: EventTypeApprovalRequested, Category: EventCategoryApproval, Label: "Approval Requested", Description: "Someone requested approval for a finding status change", RequiredModule: ModuleFindings},
+		{Type: EventTypeApprovalApproved, Category: EventCategoryApproval, Label: "Approval Approved", Description: "A requested finding status change was approved", RequiredModule: ModuleFindings},
+		{Type: EventTypeApprovalRejected, Category: EventCategoryApproval, Label: "Approval Rejected", Description: "A requested finding status change was rejected", RequiredModule: ModuleFindings},
+
+		// Workflow events - require 'findings' module ('workflows' is a child of
+		// 'findings' per migration 000162). Deliberately NOT gated on the
+		// 'workflows' module: internal/app/workflow never checks module
+		// enablement before enqueuing, so gating the notification on a module
+		// the emitter ignores would recreate the same silent drop this list
+		// exists to prevent.
+		{Type: EventTypeWorkflowNotification, Category: EventCategoryWorkflow, Label: "Workflow Notification", Description: "A workflow notification action fired without a provider-specific integration bound", RequiredModule: ModuleFindings},
 
 		// Exposure events - require 'findings' module (part of findings feature)
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
@@ -143,11 +212,44 @@ func AllEventTypes() []EventTypeInfo {
 }
 
 // DefaultEnabledEventTypes returns the default enabled event types for new integrations.
+//
+// enabled_event_types is an opt-in whitelist, so anything absent here is not
+// delivered to an integration created with the defaults. The bar for inclusion
+// is therefore not "is this interesting" but "would a reasonable operator be
+// surprised to learn this reached nobody".
 func DefaultEnabledEventTypes() []EventType {
 	return []EventType{
 		EventTypeSecurityAlert,
 		EventTypeNewFinding,
 		EventTypeNewExposure,
+
+		// A missed remediation deadline that notifies nobody defeats the point
+		// of having an SLA. Enqueued at severity "high", so it also clears the
+		// default severity filter (critical, high).
+		EventTypeSLABreach,
+
+		// Emitted only when an assignment rule has its "notify group" option
+		// switched on — the operator opted in at the rule. Leaving it off by
+		// default would keep that switch inert.
+		EventTypeFindingAssigned,
+
+		// Emitted only by a workflow notification action the operator authored,
+		// whose sole purpose is to notify. Same argument as above.
+		EventTypeWorkflowNotification,
+
+		// An approval request is addressed to a human; if it reaches nobody the
+		// finding stays blocked indefinitely. The approved/rejected outcomes are
+		// deliberately NOT default-on: they are FYI traffic for the requester,
+		// already visible in-app, and broadcasting every one of them to a shared
+		// channel is noise.
+		EventTypeApprovalRequested,
+
+		// A finding the operator already triaged as low-urgency silently
+		// becoming P0 is the escalation they cannot afford to miss, so it is
+		// on by default. Migration 000201 backfills existing rows; the
+		// per-integration severity filter still applies (P0 -> critical,
+		// P1 -> high, ...), so this is not a firehose.
+		EventTypeFindingPriorityEscalated,
 	}
 }
 

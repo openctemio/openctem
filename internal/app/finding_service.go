@@ -60,6 +60,8 @@ type (
 	PriorityAuditRepository       = finding.PriorityAuditRepository
 	PriorityChangeEvent           = finding.PriorityChangeEvent
 	PriorityChangePublisher       = finding.PriorityChangePublisher
+	OutboxPriorityChangePublisher = finding.OutboxPriorityChangePublisher
+	OutboxEnqueuer                = finding.OutboxEnqueuer
 	PriorityRuleRepository        = finding.PriorityRuleRepository
 	RejectApprovalInput           = finding.RejectApprovalInput
 	RejectByFilterInput           = finding.RejectByFilterInput
@@ -85,6 +87,7 @@ var (
 	NewFindingSourceService                = finding.NewFindingSourceService
 	NewPriorityClassificationService       = finding.NewPriorityClassificationService
 	NewPriorityFloodGuard                  = finding.NewPriorityFloodGuard
+	NewOutboxPriorityChangePublisher       = finding.NewOutboxPriorityChangePublisher
 	NewBulkGuard                           = finding.NewBulkGuard
 	DefaultFindingLifecycleSchedulerConfig = finding.DefaultFindingLifecycleSchedulerConfig
 

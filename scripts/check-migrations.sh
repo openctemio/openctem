@@ -183,5 +183,40 @@ EOF
   exit 1
 fi
 
-echo "check-migrations: all migrations are expand-contract safe."
+# ────────────────────────────────────────────────────────────────────────────
+# Duplicate version numbers.
+#
+# golang-migrate keys on the numeric prefix, so two files sharing one is not a
+# style problem — the second is unreachable and `migrate up` errors out. It is
+# invisible per-PR: two branches cut from the same develop each add 000200, each
+# is green on its own, and the collision only exists after both merge. That is
+# exactly what happened with #396 and #397, and neither CI run could have seen
+# it.
+#
+# Checked over the whole directory, not just changed files, for the same reason.
+# ────────────────────────────────────────────────────────────────────────────
+dupes="$(ls migrations/*.up.sql 2>/dev/null \
+  | sed -E 's#.*/([0-9]+)_.*#\1#' \
+  | sort | uniq -d)"
+
+if [[ -n "$dupes" ]]; then
+  echo >&2
+  echo "check-migrations: duplicate migration version(s):" >&2
+  for v in $dupes; do
+    echo "  $v" >&2
+    ls migrations/${v}_* 2>/dev/null | sed 's/^/    /' >&2
+  done
+  cat >&2 <<'EOF'
+
+golang-migrate keys on the numeric prefix. Two files sharing one means the
+second never runs and `migrate up` fails. Renumber the newer one to the next
+free version and update any comment that names it.
+
+This usually happens when two branches are cut from the same base — each is
+green alone and the collision only appears once both are merged.
+EOF
+  exit 1
+fi
+
+echo "check-migrations: all migrations are expand-contract safe, versions unique."
 exit 0

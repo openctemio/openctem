@@ -42,6 +42,7 @@ type cmdMockRepo struct {
 	updatePrioritiesErr   error
 	recoverStuckErr       error
 	expirePlatformErr     error
+	queueExpiredResult    []*commanddom.Command
 	getQueuePositionErr   error
 	listPlatformTenantErr error
 	listPlatformAdminErr  error
@@ -223,11 +224,11 @@ func (m *cmdMockRepo) RecoverStuckJobs(_ context.Context, _ int, _ int) (int64, 
 	return 0, nil
 }
 
-func (m *cmdMockRepo) ExpireOldPlatformJobs(_ context.Context, _ int) (int64, error) {
+func (m *cmdMockRepo) FindQueueExpiredPlatformJobs(_ context.Context, _ int) ([]*commanddom.Command, error) {
 	if m.expirePlatformErr != nil {
-		return 0, m.expirePlatformErr
+		return nil, m.expirePlatformErr
 	}
-	return 0, nil
+	return m.queueExpiredResult, nil
 }
 
 func (m *cmdMockRepo) GetQueuePosition(_ context.Context, _ shared.ID) (*commanddom.QueuePosition, error) {

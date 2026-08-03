@@ -3,6 +3,7 @@ package compliance
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/simulation"
@@ -41,7 +42,19 @@ func (s *SimulationService) SetRunRepo(repo simulation.RunRepository) {
 // eligible simulation (network-addressable target + safe-checkable technique)
 // runs for real and returns a "running" run finalized asynchronously; otherwise
 // it falls back to the clearly-labeled synthetic path.
+//
+// A typed-nil is rejected. Storing a nil *validation.RunService in this
+// interface makes the interface itself non-nil, so the `s.safeCheck == nil`
+// guard in tryDispatchLive passes and the call panics on the nil receiver
+// instead of falling back. That is exactly what happened: the composition root
+// called this setter 14 lines before assigning the service, and every
+// simulation carrying a target asset 500'd. Refusing nil here means a
+// mis-ordered wiring degrades to the synthetic path — the documented fallback —
+// rather than crashing.
 func (s *SimulationService) SetSafeCheckDispatcher(d SafeCheckDispatcher) {
+	if d == nil || reflect.ValueOf(d).Kind() == reflect.Ptr && reflect.ValueOf(d).IsNil() {
+		return
+	}
 	s.safeCheck = d
 }
 

@@ -859,11 +859,16 @@ func (r *CommandRepository) UpdateQueuePriorities(ctx context.Context) (int64, e
 
 // RecoverStuckJobs returns stuck platform jobs to the queue.
 // Uses a database function for atomic recovery.
+//
+// maxRetries used to be accepted and dropped on the floor: only the threshold
+// was bound and the SQL hardcoded `dispatch_attempts < 3`. See migration
+// 000200, which also fixes the WHERE clause that made the function unable to
+// match any row at all.
 func (r *CommandRepository) RecoverStuckJobs(ctx context.Context, stuckThresholdMinutes int, maxRetries int) (int64, error) {
-	query := `SELECT recover_stuck_platform_jobs($1::INTEGER)`
+	query := `SELECT recover_stuck_platform_jobs($1::INTEGER, $2::INTEGER)`
 
 	var recovered int64
-	err := r.db.QueryRowContext(ctx, query, stuckThresholdMinutes).Scan(&recovered)
+	err := r.db.QueryRowContext(ctx, query, stuckThresholdMinutes, maxRetries).Scan(&recovered)
 	if err != nil {
 		return 0, fmt.Errorf("failed to recover stuck platform jobs: %w", err)
 	}
@@ -871,24 +876,49 @@ func (r *CommandRepository) RecoverStuckJobs(ctx context.Context, stuckThreshold
 	return recovered, nil
 }
 
-// ExpireOldPlatformJobs expires platform jobs that have been in queue too long.
-func (r *CommandRepository) ExpireOldPlatformJobs(ctx context.Context, maxQueueMinutes int) (int64, error) {
-	query := `
-		UPDATE commands
-		SET status = 'expired', error_message = 'Job expired in queue'
+// FindQueueExpiredPlatformJobs returns platform jobs still waiting in the queue
+// past maxQueueMinutes, so the caller can expire them *and* tell the owning
+// pipeline run why.
+//
+// This deliberately returns rows instead of expiring them. The previous
+// ExpireOldPlatformJobs was a raw UPDATE flipping the rows to 'expired'
+// in place — the same silent-expiry mistake ExpireOldCommands made for tenant
+// commands. Platform jobs are created by scan/pipeline dispatch with a
+// pipeline_run_id + step_key payload and no expires_at, so FindExpired never
+// sees them; the raw UPDATE was the only thing that ever reaped them, and it
+// notified nobody. The step stayed 'queued' until ScanTimeoutController
+// eventually reported a generic timeout instead of "expired in queue".
+// app/command.ExpirationChecker owns the expiry now and calls
+// pipeline.OnStepFailed.
+func (r *CommandRepository) FindQueueExpiredPlatformJobs(ctx context.Context, maxQueueMinutes int) ([]*command.Command, error) {
+	query := r.selectQuery() + `
 		WHERE is_platform_job = TRUE
 		AND status = 'pending'
 		AND queued_at IS NOT NULL
 		AND queued_at < NOW() - ($1 || ' minutes')::INTERVAL
+		ORDER BY queued_at ASC
+		LIMIT 100
 	`
 
-	result, err := r.db.ExecContext(ctx, query, maxQueueMinutes)
+	rows, err := r.db.QueryContext(ctx, query, maxQueueMinutes)
 	if err != nil {
-		return 0, fmt.Errorf("failed to expire old platform jobs: %w", err)
+		return nil, fmt.Errorf("failed to find queue-expired platform jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var commands []*command.Command
+	for rows.Next() {
+		cmd, err := r.scanCommandFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, cmd)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
-	rowsAffected, _ := result.RowsAffected()
-	return rowsAffected, nil
+	return commands, nil
 }
 
 // GetQueuePosition gets the queue position for a specific command.

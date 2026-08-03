@@ -45,6 +45,10 @@ type AgentService struct {
 	// the inline hash — so a renewed key coexists with the one it supersedes. Nil
 	// (the default) keeps the single-inline-key behavior.
 	apiKeyRepo agentdom.APIKeyRepository
+	// lbWeights are the load-balancing weights used to recompute an agent's
+	// load_score on every heartbeat. Defaults to the compiled-in set;
+	// SetLoadBalancingWeights installs the operator's AGENT_LB_* values.
+	lbWeights agentdom.LoadBalancingWeights
 }
 
 // NewAgentService creates a new AgentService.
@@ -53,7 +57,19 @@ func NewAgentService(repo agentdom.Repository, auditService *auditapp.AuditServi
 		repo:         repo,
 		auditService: auditService,
 		logger:       log.With("service", "agent"),
+		lbWeights:    agentdom.DefaultLoadBalancingWeights(),
 	}
+}
+
+// SetLoadBalancingWeights configures the weights used to compute the persisted
+// load_score on each heartbeat. Call once at boot. An all-zero weight set is
+// ignored so a misconfiguration cannot flatten every agent's score to 0.
+func (s *AgentService) SetLoadBalancingWeights(w agentdom.LoadBalancingWeights) {
+	if w.IsZero() {
+		s.logger.Warn("ignoring all-zero agent load-balancing weights; keeping defaults")
+		return
+	}
+	s.lbWeights = w
 }
 
 // SetPepper configures the HMAC pepper used by the API-key hash.
@@ -291,6 +307,13 @@ type AgentHeartbeatData struct {
 	MemoryPercent float64
 	CurrentJobs   int
 	Region        string
+
+	// Disk/network throughput in MB/s. Optional — agents that do not report
+	// them leave the corresponding load-score terms at zero.
+	DiskReadMBPS  float64
+	DiskWriteMBPS float64
+	NetworkRxMBPS float64
+	NetworkTxMBPS float64
 }
 
 // UpdateHeartbeat updates agent metrics from heartbeat.
@@ -305,8 +328,19 @@ func (s *AgentService) UpdateHeartbeat(ctx context.Context, agentID shared.ID, d
 		a.UpdateRuntimeInfo(data.Version, data.Hostname, nil)
 	}
 
-	// Update metrics
-	a.UpdateMetrics(data.CPUPercent, data.MemoryPercent, data.CurrentJobs, data.Region)
+	// Update metrics and recompute the persisted load score with this
+	// deployment's configured weights. UpdateMetrics alone left load_score
+	// and metrics_updated_at untouched, so the column never reflected reality.
+	a.UpdateExtendedMetricsWithWeights(agentdom.ExtendedMetrics{
+		CPUPercent:    data.CPUPercent,
+		MemoryPercent: data.MemoryPercent,
+		DiskReadMBPS:  data.DiskReadMBPS,
+		DiskWriteMBPS: data.DiskWriteMBPS,
+		NetworkRxMBPS: data.NetworkRxMBPS,
+		NetworkTxMBPS: data.NetworkTxMBPS,
+		ActiveJobs:    data.CurrentJobs,
+		Region:        data.Region,
+	}, s.lbWeights)
 
 	// Update last seen and health
 	a.UpdateLastSeen()

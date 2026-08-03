@@ -684,6 +684,159 @@ func TestAgentSelLeastLoaded_MaxJobsOne(t *testing.T) {
 }
 
 // =============================================================================
+// Tests: load-balancing weights actually reach scheduling
+// =============================================================================
+
+// withFreshMetrics stamps resource metrics on an agent and marks them as just
+// reported, so the selector treats them as trustworthy.
+func withFreshMetrics(a *agent.Agent, cpu, mem float64) *agent.Agent {
+	now := time.Now()
+	a.CPUPercent = cpu
+	a.MemoryPercent = mem
+	a.MetricsUpdatedAt = &now
+	return a
+}
+
+// TestAgentSelLoadBalancing_CPUBreaksJobLoadTie pins that agent selection uses
+// the reported resource metrics, not just the job-count ratio.
+//
+// Both agents sit at the same 2/5 job load. The one pegged at 95% CPU must
+// lose to the idle one. Before the load-balancing weights were wired in, the
+// selector compared only CurrentJobs/MaxConcurrentJobs, so the tie was broken
+// by slice order and CPU was ignored entirely.
+func TestAgentSelLoadBalancing_CPUBreaksJobLoadTie(t *testing.T) {
+	t.Parallel()
+
+	repo := newAgentSelMockAgentRepo()
+
+	hot := withFreshMetrics(makeAgentSelAgent("hot", 2, 5), 95, 10)
+	cool := withFreshMetrics(makeAgentSelAgent("cool", 2, 5), 5, 10)
+
+	// hot is listed first: a job-ratio-only selector returns it.
+	repo.availableAgents = []*agent.Agent{hot, cool}
+
+	sel := newAgentSelSelector(repo)
+
+	result, err := sel.SelectAgent(context.Background(), app.SelectAgentRequest{
+		TenantID: shared.NewID(),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Agent == nil {
+		t.Fatal("expected an agent to be selected")
+	}
+	if result.Agent.ID != cool.ID {
+		t.Errorf("selected %q (95%% CPU) over %q (5%% CPU) at identical job load; "+
+			"CPU/memory metrics are not influencing scheduling", result.Agent.Name, cool.Name)
+	}
+}
+
+// TestAgentSelLoadBalancing_WeightsChangeSelection pins that the AGENT_LB_*
+// weights are the knob they claim to be: an operator who declares memory the
+// dominant signal must get a different placement decision than one who
+// declares CPU dominant, from identical agent state.
+func TestAgentSelLoadBalancing_WeightsChangeSelection(t *testing.T) {
+	t.Parallel()
+
+	// cpuHeavy: 90% CPU / 10% memory. memHeavy: 10% CPU / 90% memory.
+	// Same job load, so only the weights decide.
+	newPair := func() (*agent.Agent, *agent.Agent) {
+		return withFreshMetrics(makeAgentSelAgent("cpu-heavy", 1, 5), 90, 10),
+			withFreshMetrics(makeAgentSelAgent("mem-heavy", 1, 5), 10, 90)
+	}
+
+	selectWith := func(w agent.LoadBalancingWeights) string {
+		cpuHeavy, memHeavy := newPair()
+		repo := newAgentSelMockAgentRepo()
+		repo.availableAgents = []*agent.Agent{cpuHeavy, memHeavy}
+
+		sel := newAgentSelSelector(repo)
+		sel.SetLoadBalancingWeights(w)
+
+		result, err := sel.SelectAgent(context.Background(), app.SelectAgentRequest{
+			TenantID: shared.NewID(),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.Agent == nil {
+			t.Fatal("expected an agent to be selected")
+		}
+		return result.Agent.Name
+	}
+
+	// CPU dominant → avoid the CPU-heavy agent.
+	if got := selectWith(agent.LoadBalancingWeights{JobLoad: 0.1, CPU: 0.9}); got != "mem-heavy" {
+		t.Errorf("with CPU weighted 0.9 the CPU-heavy agent should lose; selected %q", got)
+	}
+
+	// Memory dominant → avoid the memory-heavy agent instead.
+	if got := selectWith(agent.LoadBalancingWeights{JobLoad: 0.1, Memory: 0.9}); got != "cpu-heavy" {
+		t.Errorf("with memory weighted 0.9 the memory-heavy agent should lose; selected %q; "+
+			"AGENT_LB_* weights do not affect scheduling", got)
+	}
+}
+
+// TestAgentSelLoadBalancing_StaleMetricsIgnored pins the safety valve: an
+// agent whose last metrics report is ancient must be ranked on queue depth
+// alone. Otherwise one bad CPU sample from a wedged agent would bias
+// scheduling forever, since nothing refreshes the row while it is stuck.
+func TestAgentSelLoadBalancing_StaleMetricsIgnored(t *testing.T) {
+	t.Parallel()
+
+	repo := newAgentSelMockAgentRepo()
+
+	stale := makeAgentSelAgent("stale-but-idle", 0, 5)
+	old := time.Now().Add(-2 * time.Hour)
+	stale.CPUPercent = 99
+	stale.MetricsUpdatedAt = &old
+
+	busy := withFreshMetrics(makeAgentSelAgent("fresh-but-busy", 4, 5), 1, 1)
+
+	repo.availableAgents = []*agent.Agent{busy, stale}
+
+	sel := newAgentSelSelector(repo)
+
+	result, err := sel.SelectAgent(context.Background(), app.SelectAgentRequest{
+		TenantID: shared.NewID(),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Agent.ID != stale.ID {
+		t.Errorf("selected %q; a two-hour-old 99%% CPU reading should not outweigh "+
+			"an 80%% job queue", result.Agent.Name)
+	}
+}
+
+// TestAgentSelLoadBalancing_ZeroWeightsRejected pins that a misconfigured
+// all-zero weight set is ignored rather than flattening every agent's score to
+// zero (which would make selection arbitrary).
+func TestAgentSelLoadBalancing_ZeroWeightsRejected(t *testing.T) {
+	t.Parallel()
+
+	repo := newAgentSelMockAgentRepo()
+	hot := withFreshMetrics(makeAgentSelAgent("hot", 2, 5), 95, 95)
+	cool := withFreshMetrics(makeAgentSelAgent("cool", 2, 5), 1, 1)
+	repo.availableAgents = []*agent.Agent{hot, cool}
+
+	sel := newAgentSelSelector(repo)
+	sel.SetLoadBalancingWeights(agent.LoadBalancingWeights{}) // all zero
+
+	result, err := sel.SelectAgent(context.Background(), app.SelectAgentRequest{
+		TenantID: shared.NewID(),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Agent.ID != cool.ID {
+		t.Errorf("all-zero weights should fall back to the defaults, but selection "+
+			"picked %q over the idle agent", result.Agent.Name)
+	}
+}
+
+// =============================================================================
 // Tests: mode constants
 // =============================================================================
 

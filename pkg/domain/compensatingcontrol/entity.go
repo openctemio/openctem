@@ -3,6 +3,7 @@ package compensatingcontrol
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -19,6 +20,28 @@ const (
 	ControlTypeOther        ControlType = "other"
 )
 
+// AllControlTypes returns every valid control type.
+//
+// This set is the single source of truth for the vocabulary and mirrors the
+// compensating_controls_control_type_check CHECK constraint exactly. Anything
+// outside it reaches Postgres as a constraint violation, which surfaces to the
+// caller as a 500 instead of a 400 — so validate against this list before
+// writing.
+func AllControlTypes() []ControlType {
+	return []ControlType{
+		ControlTypeSegmentation,
+		ControlTypeIdentity,
+		ControlTypeRuntime,
+		ControlTypeDetection,
+		ControlTypeOther,
+	}
+}
+
+// IsValid reports whether t is a control type the database will accept.
+func (t ControlType) IsValid() bool {
+	return slices.Contains(AllControlTypes(), t)
+}
+
 // ControlStatus represents the lifecycle status of a control.
 type ControlStatus string
 
@@ -29,6 +52,22 @@ const (
 	ControlStatusUntested ControlStatus = "untested"
 )
 
+// AllControlStatuses returns every valid lifecycle status. Mirrors the
+// compensating_controls_status_check CHECK constraint.
+func AllControlStatuses() []ControlStatus {
+	return []ControlStatus{
+		ControlStatusActive,
+		ControlStatusInactive,
+		ControlStatusExpired,
+		ControlStatusUntested,
+	}
+}
+
+// IsValid reports whether s is a status the database will accept.
+func (s ControlStatus) IsValid() bool {
+	return slices.Contains(AllControlStatuses(), s)
+}
+
 // TestResult represents the outcome of a control effectiveness test.
 type TestResult string
 
@@ -37,6 +76,17 @@ const (
 	TestResultFail    TestResult = "fail"
 	TestResultPartial TestResult = "partial"
 )
+
+// AllTestResults returns every valid test outcome. Mirrors the
+// compensating_controls_test_result_check CHECK constraint.
+func AllTestResults() []TestResult {
+	return []TestResult{TestResultPass, TestResultFail, TestResultPartial}
+}
+
+// IsValid reports whether r is a test result the database will accept.
+func (r TestResult) IsValid() bool {
+	return slices.Contains(AllTestResults(), r)
+}
 
 // CompensatingControl represents a security control that mitigates risk
 // without fixing the underlying vulnerability.

@@ -89,6 +89,23 @@ type WorkerDeps struct {
 	Services *Services
 }
 
+// adminAuditRetentionConfig maps the operator-facing ADMIN_AUDIT_RETENTION_*
+// settings onto the controller config.
+//
+// This used to be a literal with DryRun hardcoded to true, so admin_audit_logs
+// grew forever and no environment variable could change that. DryRun still
+// DEFAULTS to true (see config.AdminAuditRetentionConfig) — the point is that
+// an operator can now turn it off.
+func adminAuditRetentionConfig(cfg *config.Config, log *logger.Logger) *controller.AuditRetentionControllerConfig {
+	return &controller.AuditRetentionControllerConfig{
+		Interval:      cfg.AdminAuditRetention.Interval,
+		RetentionDays: cfg.AdminAuditRetention.RetentionDays,
+		BatchSize:     cfg.AdminAuditRetention.BatchSize,
+		DryRun:        cfg.AdminAuditRetention.DryRun,
+		Logger:        log.With("controller", "admin-audit-retention"),
+	}
+}
+
 // NewWorkers initializes all background workers.
 func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	cfg := deps.Config
@@ -146,6 +163,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.Pipeline,
 		command.ExpirationCheckerConfig{
 			CheckInterval: time.Minute,
+			// Owns platform-job queue expiry too, because expiring a job has to
+			// tell the owning pipeline run why. Previously JobRecoveryController's
+			// MaxQueueMinutes, where the expiry notified nobody.
+			MaxQueueMinutes: 60,
 		},
 		log,
 	)
@@ -206,7 +227,6 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Interval:              60 * time.Second,
 			StuckThresholdMinutes: 30,
 			MaxRetries:            3,
-			MaxQueueMinutes:       60,
 			Logger:                log.With("controller", "job-recovery"),
 		},
 	))
@@ -428,20 +448,23 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	// Admin-audit-log retention. Complements DataExpirationController
 	// (which handles tenant audit_logs) by pruning the platform-level
-	// admin_audit_logs table on the same 365-day window. Starts in
-	// DryRun: true so the first production rollout just logs what
-	// WOULD be deleted — an operator promotes to DryRun:false after
-	// confirming the counts look right.
-	w.ControllerManager.Register(controller.NewAuditRetentionController(
-		repos.AdminAuditLog,
-		&controller.AuditRetentionControllerConfig{
-			Interval:      24 * time.Hour,
-			RetentionDays: 365,
-			BatchSize:     10000,
-			DryRun:        true,
-			Logger:        log.With("controller", "admin-audit-retention"),
-		},
-	))
+	// admin_audit_logs table on the same 365-day window.
+	//
+	// Every knob is operator-configurable (ADMIN_AUDIT_RETENTION_*).
+	// DryRun defaults to true so an upgrade never silently starts deleting
+	// audit history: the controller reports what it WOULD delete and an
+	// operator promotes to ADMIN_AUDIT_RETENTION_DRY_RUN=false once the
+	// counts look right. Previously DryRun was hardcoded true with no way
+	// to turn it off, so admin_audit_logs grew forever.
+	if cfg.AdminAuditRetention.Enabled {
+		arCfg := adminAuditRetentionConfig(cfg, log)
+		w.ControllerManager.Register(controller.NewAuditRetentionController(repos.AdminAuditLog, arCfg))
+		log.Info("admin audit retention controller registered",
+			"retention_days", arCfg.RetentionDays,
+			"dry_run", arCfg.DryRun,
+			"interval", arCfg.Interval,
+		)
+	}
 
 	// Audit hash-chain integrity verification. The admin endpoint
 	// GET /api/v1/audit-logs/verify is pull-based; this controller

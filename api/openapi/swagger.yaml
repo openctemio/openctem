@@ -5846,38 +5846,6 @@ definitions:
       medium:
         type: integer
     type: object
-  internal_infra_http_handler.EventTypeCategoryResponse:
-    properties:
-      event_types:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.EventTypeResponse'
-        type: array
-      id:
-        type: string
-      name:
-        type: string
-    type: object
-  internal_infra_http_handler.EventTypeResponse:
-    properties:
-      category:
-        type: string
-      color:
-        type: string
-      description:
-        type: string
-      icon:
-        type: string
-      id:
-        type: string
-      is_default:
-        type: boolean
-      name:
-        type: string
-      severity_applicable:
-        type: boolean
-      slug:
-        type: string
-    type: object
   internal_infra_http_handler.ExchangeTokenRequest:
     properties:
       refresh_token:
@@ -9004,19 +8972,56 @@ definitions:
       usage:
         $ref: '#/definitions/internal_infra_http_handler.TemplateUsageData'
     type: object
+  internal_infra_http_handler.NotificationEventCategoryResponse:
+    properties:
+      category:
+        example: finding
+        type: string
+      label:
+        example: Finding Events
+        type: string
+    type: object
+  internal_infra_http_handler.NotificationEventTypeResponse:
+    properties:
+      category:
+        example: finding
+        type: string
+      default_enabled:
+        description: |-
+          DefaultEnabled reports whether a notification integration created with the
+          defaults receives this event type. enabled_event_types is an opt-in
+          whitelist, so this is the difference between "delivered" and "silently
+          dropped" for a channel the operator never customized.
+        type: boolean
+      description:
+        example: Finding missed its SLA remediation deadline
+        type: string
+      label:
+        example: SLA Breached
+        type: string
+      required_module:
+        example: findings
+        type: string
+      type:
+        example: sla_breach
+        type: string
+    type: object
   internal_infra_http_handler.TenantEventTypesResponse:
     properties:
       categories:
         items:
-          $ref: '#/definitions/internal_infra_http_handler.EventTypeCategoryResponse'
+          $ref: '#/definitions/internal_infra_http_handler.NotificationEventCategoryResponse'
         type: array
-      default_event_ids:
+      default_enabled:
+        description: |-
+          DefaultEnabled is the subset of EventTypes that is on by default, as a
+          plain list so a client can seed a new channel's form without filtering.
         items:
           type: string
         type: array
       event_types:
         items:
-          $ref: '#/definitions/internal_infra_http_handler.EventTypeResponse'
+          $ref: '#/definitions/internal_infra_http_handler.NotificationEventTypeResponse'
         type: array
       total_count:
         type: integer
@@ -9060,10 +9065,6 @@ definitions:
           type: string
         type: array
       coming_soon_module_ids:
-        items:
-          type: string
-        type: array
-      event_types:
         items:
           type: string
         type: array
@@ -16791,16 +16792,6 @@ paths:
       summary: Get global dashboard stats
       tags:
       - Dashboard
-  /event-types:
-    get:
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.TenantEventTypesResponse'
-      summary: List all event types
-      tags:
-      - Licensing
   /exposures:
     get:
       consumes:
@@ -18924,16 +18915,36 @@ paths:
       - Bootstrap
   /me/event-types:
     get:
+      description: Returns the notification event types available to the current
+        tenant, filtered by the tenant's enabled modules, with the subset enabled
+        by default.
+      parameters:
+      - description: ETag from previous response
+        in: header
+        name: If-None-Match
+        type: string
+      produces:
+      - application/json
       responses:
         "200":
           description: OK
           schema:
             $ref: '#/definitions/internal_infra_http_handler.TenantEventTypesResponse'
+        "304":
+          description: Not Modified - catalog unchanged
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Get tenant event types
+      summary: Get tenant notification event types
       tags:
-      - Licensing
+      - Modules
   /me/permissions:
     get:
       description: |-
@@ -23540,24 +23551,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Get tenant subscription
-      tags:
-      - Licensing
-  /tenants/{tenant_slug}/event-types:
-    get:
-      parameters:
-      - description: Tenant Slug
-        in: path
-        name: tenant_slug
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.TenantEventTypesResponse'
-      security:
-      - BearerAuth: []
-      summary: Get tenant event types by slug
       tags:
       - Licensing
   /tool-stats:
