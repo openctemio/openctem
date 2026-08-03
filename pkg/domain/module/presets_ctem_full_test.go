@@ -12,10 +12,16 @@ import "testing"
 //	webhooks   → integrations.webhooks
 //	secrets    → credentials
 //
-// They remain seeded as `released` (never deprecated), so they are catalog
-// cruft. They are excluded from the "CTEM Full = everything" invariant below
-// until they are marked deprecated in the seed. Tracked as a cleanup item; do
-// NOT add them to presets (that would surface a second, redundant nav entry).
+// The cleanup this comment used to describe as pending has since shipped:
+// migration 000187 set all five is_active = FALSE / release_status =
+// 'deprecated', so they no longer reach ListActiveModules or the module picker.
+// The rows are kept (reversible; stray tenant_modules overrides stay harmless)
+// and the IDs stay in ModulePermissionMapping so historic permission lookups
+// still resolve — which is exactly why they must still be excluded from the
+// "CTEM Full = everything" invariant below. Do NOT add them to presets: a
+// preset may only reference ACTIVE rows (now enforced by
+// TestModuleCatalog_PresetModulesHaveActiveRows), and it would surface a
+// second, redundant nav entry.
 var legacyDuplicateModuleIDs = map[string]bool{
 	"scope":     true,
 	"sources":   true,
