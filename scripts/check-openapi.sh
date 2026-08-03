@@ -86,18 +86,18 @@ if ! (cd "$REPO_ROOT" && GOWORK=off go mod download all) >&2; then
   exit 2
 fi
 
-# Fail loudly if a dependency swag must read is not actually extracted on disk.
-# `go mod download` succeeding is not proof: with module-graph pruning it can
-# leave a module's source unextracted, and swag then degrades in silence.
-for mod in github.com/openctemio/ctis github.com/openctemio/sdk-go; do
-  dir="$( (cd "$REPO_ROOT" && GOWORK=off go list -m -f '{{.Dir}}' "$mod") 2>/dev/null || true)"
-  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
-    echo "check-openapi: $mod source is not on disk (go list -m gave '$dir')." >&2
-    echo "               swag --parseDependency would silently emit a degraded" >&2
-    echo "               schema. Run: GOWORK=off go mod download all" >&2
-    exit 2
-  fi
-done
+# Fail loudly if the packages swag must read are not actually loadable.
+# `go mod download` returning 0 is not proof — this is the same question swag
+# asks, so if it cannot answer, swag would have degraded in silence.
+if ! (cd "$REPO_ROOT" && GOWORK=off go list -deps ./... >/dev/null) 2>"$REPO_ROOT/.check-openapi-golist.err"; then
+  echo "check-openapi: 'go list -deps ./...' failed, so swag --parseDependency" >&2
+  echo "               cannot read the dependency source and would emit a" >&2
+  echo "               degraded schema. go list said:" >&2
+  sed 's/^/               /' "$REPO_ROOT/.check-openapi-golist.err" >&2
+  rm -f "$REPO_ROOT/.check-openapi-golist.err"
+  exit 2
+fi
+rm -f "$REPO_ROOT/.check-openapi-golist.err"
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
