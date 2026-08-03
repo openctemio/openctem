@@ -1199,6 +1199,122 @@ func TestAITriage_ShouldAutoTriage_SeverityMatch(t *testing.T) {
 	}
 }
 
+// newAutoTriageDefaultsSvc builds a service whose tenant has the given AI
+// settings map and whose platform config carries the AI_AUTO_TRIAGE_DEFAULT_*
+// values.
+func newAutoTriageDefaultsSvc(
+	t *testing.T, aiSettings map[string]any, platform config.AITriageConfig,
+) (*app.AITriageService, shared.ID) {
+	t.Helper()
+
+	tenantID := shared.NewID()
+	now := time.Now().UTC()
+	settings := map[string]any{"general": map[string]any{"timezone": "UTC"}}
+	if aiSettings != nil {
+		settings["ai"] = aiSettings
+	}
+
+	tenantRepo := newMockAITriageTenantRepo()
+	tenantRepo.tenants[tenantID.String()] = tenant.Reconstitute(
+		tenantID, "test", "test", "", "", settings, "creator", now, now,
+	)
+
+	platform.Enabled = true
+	return app.NewAITriageService(
+		newMockAITriageRepo(), nil, tenantRepo, nil, nil, platform, logger.NewNop(),
+	), tenantID
+}
+
+// TestAITriage_AutoTriageDefaults_ApplyToUnconfiguredTenant pins that
+// AI_AUTO_TRIAGE_DEFAULT_ENABLED / _SEVERITIES actually govern behavior.
+//
+// They were parsed at boot and read by nothing: a tenant that had never
+// touched its AI settings fell through to Go zero values (auto-triage off, no
+// severities), so an operator who turned auto-triage on platform-wide saw
+// nothing happen.
+func TestAITriage_AutoTriageDefaults_ApplyToUnconfiguredTenant(t *testing.T) {
+	t.Parallel()
+
+	platform := config.AITriageConfig{
+		DefaultAutoTriageEnabled:    true,
+		DefaultAutoTriageSeverities: []string{"critical", "high"},
+		DefaultAutoTriageDelay:      90 * time.Second,
+	}
+
+	// Tenant has an "ai" block but has never set any auto-triage key.
+	svc, tenantID := newAutoTriageDefaultsSvc(t, map[string]any{"mode": "platform"}, platform)
+
+	got, err := svc.ShouldAutoTriage(context.Background(), tenantID, "critical")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got {
+		t.Error("AI_AUTO_TRIAGE_DEFAULT_ENABLED=true did not reach a tenant that never " +
+			"configured auto-triage; the platform default is inert")
+	}
+
+	// A severity outside the default list must still be skipped.
+	got, err = svc.ShouldAutoTriage(context.Background(), tenantID, "low")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got {
+		t.Error("severity 'low' triaged despite AI_AUTO_TRIAGE_DEFAULT_SEVERITIES=critical,high")
+	}
+}
+
+// TestAITriage_AutoTriageDefaults_TenantOptOutWins pins the precedence rule: a
+// tenant that has explicitly turned auto-triage off must stay off even when
+// the platform default says on. Opting out has to be sticky.
+func TestAITriage_AutoTriageDefaults_TenantOptOutWins(t *testing.T) {
+	t.Parallel()
+
+	platform := config.AITriageConfig{
+		DefaultAutoTriageEnabled:    true,
+		DefaultAutoTriageSeverities: []string{"critical", "high"},
+	}
+
+	svc, tenantID := newAutoTriageDefaultsSvc(t, map[string]any{
+		"mode":                "platform",
+		"auto_triage_enabled": false,
+	}, platform)
+
+	got, err := svc.ShouldAutoTriage(context.Background(), tenantID, "critical")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got {
+		t.Error("tenant explicitly disabled auto-triage but the platform default overrode it")
+	}
+}
+
+// TestAITriage_AutoTriageDefaults_TenantSeveritiesReplaceDefaults pins that a
+// tenant's severity list replaces the platform default rather than being
+// merged with it — a union would silently widen the tenant's scope.
+func TestAITriage_AutoTriageDefaults_TenantSeveritiesReplaceDefaults(t *testing.T) {
+	t.Parallel()
+
+	platform := config.AITriageConfig{
+		DefaultAutoTriageEnabled:    true,
+		DefaultAutoTriageSeverities: []string{"critical", "high"},
+	}
+
+	svc, tenantID := newAutoTriageDefaultsSvc(t, map[string]any{
+		"mode":                   "platform",
+		"auto_triage_enabled":    true,
+		"auto_triage_severities": []any{"critical"},
+	}, platform)
+
+	got, err := svc.ShouldAutoTriage(context.Background(), tenantID, "high")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got {
+		t.Error("severity 'high' triaged although the tenant narrowed its list to " +
+			"['critical']; the platform default was merged in instead of replaced")
+	}
+}
+
 func TestAITriage_ShouldAutoTriage_TenantNotFound(t *testing.T) {
 	t.Parallel()
 

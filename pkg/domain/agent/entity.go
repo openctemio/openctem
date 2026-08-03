@@ -385,7 +385,16 @@ type ExtendedMetrics struct {
 }
 
 // UpdateExtendedMetrics updates all system metrics from heartbeat including disk I/O and network.
+// LoadScore is recomputed with the default weights; use
+// UpdateExtendedMetricsWithWeights to honor operator-configured weights.
 func (a *Agent) UpdateExtendedMetrics(metrics ExtendedMetrics) {
+	a.UpdateExtendedMetricsWithWeights(metrics, DefaultLoadBalancingWeights())
+}
+
+// UpdateExtendedMetricsWithWeights is UpdateExtendedMetrics with an explicit
+// weight set, so the persisted LoadScore reflects the deployment's
+// AGENT_LB_* configuration rather than the compiled-in defaults.
+func (a *Agent) UpdateExtendedMetricsWithWeights(metrics ExtendedMetrics, weights LoadBalancingWeights) {
 	a.CPUPercent = metrics.CPUPercent
 	a.MemoryPercent = metrics.MemoryPercent
 	a.DiskReadMBPS = metrics.DiskReadMBPS
@@ -397,31 +406,87 @@ func (a *Agent) UpdateExtendedMetrics(metrics ExtendedMetrics) {
 		a.Region = metrics.Region
 	}
 	// Compute load score
-	a.LoadScore = a.ComputeLoadScore()
+	a.LoadScore = a.ComputeLoadScoreWithWeights(weights)
 	now := time.Now()
 	a.MetricsUpdatedAt = &now
 	a.UpdatedAt = now
 }
 
+// Default load-balancing weights and normalization ceilings. Kept as named
+// constants so config defaults and domain defaults cannot drift apart.
+const (
+	DefaultJobLoadWeight = 0.30
+	DefaultCPUWeight     = 0.40
+	DefaultMemoryWeight  = 0.15
+	DefaultDiskIOWeight  = 0.10
+	DefaultNetworkWeight = 0.05
+
+	// DefaultMaxDiskThroughputMBPS normalizes combined disk read+write to 0-100.
+	DefaultMaxDiskThroughputMBPS = 500.0
+	// DefaultMaxNetworkThroughputMBPS normalizes combined rx+tx to 0-100 (1 Gbps).
+	DefaultMaxNetworkThroughputMBPS = 1000.0
+)
+
 // LoadBalancingWeights defines the weights for load score computation.
-// These weights can be configured via environment variables.
+// These weights are operator-configurable via the AGENT_LB_* environment
+// variables; config.LoadBalancingConfig.Weights() converts them.
 type LoadBalancingWeights struct {
 	JobLoad float64 // Weight for job load factor (default: 0.30)
 	CPU     float64 // Weight for CPU usage (default: 0.40)
 	Memory  float64 // Weight for memory usage (default: 0.15)
 	DiskIO  float64 // Weight for disk I/O (default: 0.10)
 	Network float64 // Weight for network I/O (default: 0.05)
+
+	// MaxDiskThroughputMBPS is the combined read+write throughput that counts
+	// as 100% disk load. Zero falls back to DefaultMaxDiskThroughputMBPS.
+	MaxDiskThroughputMBPS float64
+	// MaxNetworkThroughputMBPS is the combined rx+tx throughput that counts as
+	// 100% network load. Zero falls back to DefaultMaxNetworkThroughputMBPS.
+	MaxNetworkThroughputMBPS float64
 }
 
 // DefaultLoadBalancingWeights returns the default weights for load score computation.
 func DefaultLoadBalancingWeights() LoadBalancingWeights {
 	return LoadBalancingWeights{
-		JobLoad: 0.30,
-		CPU:     0.40,
-		Memory:  0.15,
-		DiskIO:  0.10,
-		Network: 0.05,
+		JobLoad:                  DefaultJobLoadWeight,
+		CPU:                      DefaultCPUWeight,
+		Memory:                   DefaultMemoryWeight,
+		DiskIO:                   DefaultDiskIOWeight,
+		Network:                  DefaultNetworkWeight,
+		MaxDiskThroughputMBPS:    DefaultMaxDiskThroughputMBPS,
+		MaxNetworkThroughputMBPS: DefaultMaxNetworkThroughputMBPS,
 	}
+}
+
+// IsZero reports whether no weight has been set. A zero-valued weight set
+// would score every agent at 0 and make selection arbitrary, so callers
+// substitute the defaults instead of using it.
+func (w LoadBalancingWeights) IsZero() bool {
+	return w.JobLoad == 0 && w.CPU == 0 && w.Memory == 0 && w.DiskIO == 0 && w.Network == 0
+}
+
+// withDefaults fills in the normalization ceilings when unset and substitutes
+// the whole default set when every weight is zero.
+func (w LoadBalancingWeights) withDefaults() LoadBalancingWeights {
+	if w.IsZero() {
+		return DefaultLoadBalancingWeights()
+	}
+	if w.MaxDiskThroughputMBPS <= 0 {
+		w.MaxDiskThroughputMBPS = DefaultMaxDiskThroughputMBPS
+	}
+	if w.MaxNetworkThroughputMBPS <= 0 {
+		w.MaxNetworkThroughputMBPS = DefaultMaxNetworkThroughputMBPS
+	}
+	return w
+}
+
+// JobLoadPercent returns the agent's queue occupancy as 0-100. An agent with
+// no configured limit (MaxConcurrentJobs <= 0) reports 0.
+func (a *Agent) JobLoadPercent() float64 {
+	if a.MaxConcurrentJobs <= 0 {
+		return 0
+	}
+	return (float64(a.CurrentJobs) / float64(a.MaxConcurrentJobs)) * 100
 }
 
 // ComputeLoadScore calculates the weighted load score for agent selection.
@@ -433,21 +498,16 @@ func (a *Agent) ComputeLoadScore() float64 {
 
 // ComputeLoadScoreWithWeights calculates load score with custom weights.
 func (a *Agent) ComputeLoadScoreWithWeights(weights LoadBalancingWeights) float64 {
+	weights = weights.withDefaults()
+
 	// Calculate job load percentage (0-100)
-	var jobLoad float64
-	if a.MaxConcurrentJobs > 0 {
-		jobLoad = (float64(a.CurrentJobs) / float64(a.MaxConcurrentJobs)) * 100
-	}
+	jobLoad := a.JobLoadPercent()
 
 	// Calculate I/O score (0-100)
-	// Assuming max throughput of 500 MB/s combined
-	const maxDiskThroughput = 500.0
-	ioScore := min(100.0, ((a.DiskReadMBPS+a.DiskWriteMBPS)/maxDiskThroughput)*100)
+	ioScore := min(100.0, ((a.DiskReadMBPS+a.DiskWriteMBPS)/weights.MaxDiskThroughputMBPS)*100)
 
 	// Calculate network score (0-100)
-	// Assuming max throughput of 1000 MB/s (1 Gbps) combined
-	const maxNetworkThroughput = 1000.0
-	netScore := min(100.0, ((a.NetworkRxMBPS+a.NetworkTxMBPS)/maxNetworkThroughput)*100)
+	netScore := min(100.0, ((a.NetworkRxMBPS+a.NetworkTxMBPS)/weights.MaxNetworkThroughputMBPS)*100)
 
 	// Weighted score formula
 	score := (weights.JobLoad * jobLoad) +

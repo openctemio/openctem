@@ -975,6 +975,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Multi-key store for rotation overlap (RFC-014 Phase 3). Additive: auth
 	// still accepts the inline key; renewal under a TTL issues overlapping keys.
 	s.Agent.SetAPIKeyRepository(repos.AgentAPIKey)
+	// Operator-tunable load-balancing weights (AGENT_LB_*). Applied to the
+	// load_score recomputed on every heartbeat.
+	s.Agent.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 	s.Command = command.NewService(repos.Command, log)
 
 	// Initialize ingest service (unified ingestion engine)
@@ -1049,6 +1052,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize agent selector for load balancing
 	s.AgentSelector = app.NewAgentSelector(repos.Agent, repos.Command, deps.AgentStateStore, log)
+	// Same AGENT_LB_* weights drive job placement, so tuning them changes
+	// scheduling and not just the reported score.
+	s.AgentSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 
 	// Initialize security validator for pipeline/scan operations
 	securityValidator := app.NewSecurityValidator(repos.Tool, log)

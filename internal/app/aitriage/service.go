@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -423,8 +424,10 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		return s.failTriage(ctx, result, "failed to get finding: "+err.Error())
 	}
 
-	// Create LLM provider
-	provider, err := s.llmFactory.CreateProvider(aiSettings)
+	// Create LLM provider. Passing the tenant scopes the AI_RATE_LIMIT_RPM
+	// budget: platform-mode tenants share the platform key's allowance,
+	// each BYOK tenant gets its own.
+	provider, err := s.llmFactory.CreateProviderForTenant(tenantID.String(), aiSettings)
 	if err != nil {
 		// SECURITY: Log detailed error internally, return generic message to prevent info disclosure
 		s.logger.Error("failed to create LLM provider", "error", err, "result_id", resultID.String())
@@ -977,7 +980,10 @@ func (s *AITriageService) ShouldAutoTriage(ctx context.Context, tenantID shared.
 		return false, err
 	}
 
-	aiSettings := t.TypedSettings().AI
+	// Extract from the raw map (not TypedSettings) so "key absent" is
+	// distinguishable from "explicitly false" and the platform auto-triage
+	// defaults can apply to tenants that never configured it.
+	aiSettings := s.extractAISettings(t.Settings())
 	if aiSettings.Mode == tenant.AIModeDisabled {
 		return false, nil
 	}
@@ -1003,7 +1009,7 @@ func (s *AITriageService) EnqueueAutoTriage(ctx context.Context, tenantID, findi
 		return err
 	}
 
-	aiSettings := t.TypedSettings().AI
+	aiSettings := s.extractAISettings(t.Settings())
 	delay := time.Duration(aiSettings.AutoTriageDelaySeconds) * time.Second
 
 	// Create triage result
@@ -1076,9 +1082,28 @@ func (s *AITriageService) getConfidence(fpLikelihood float64) string {
 	}
 }
 
+// autoTriageDefaults seeds the platform-level auto-triage defaults
+// (AI_AUTO_TRIAGE_DEFAULT_ENABLED / AI_AUTO_TRIAGE_DEFAULT_SEVERITIES /
+// AI_AUTO_TRIAGE_DELAY). They apply only where a tenant has expressed no
+// preference; any key the tenant HAS set overrides them.
+func (s *AITriageService) autoTriageDefaults() tenant.AISettings {
+	return tenant.AISettings{
+		AutoTriageEnabled: s.platformCfg.DefaultAutoTriageEnabled,
+		// Copy: the returned value is mutated by callers and must not alias
+		// the process-wide config slice.
+		AutoTriageSeverities:   slices.Clone(s.platformCfg.DefaultAutoTriageSeverities),
+		AutoTriageDelaySeconds: int(s.platformCfg.DefaultAutoTriageDelay.Seconds()),
+	}
+}
+
 // extractAISettings extracts AISettings from raw tenant settings JSON.
+//
+// Auto-triage keys the tenant has never set fall back to the platform
+// defaults. A tenant that HAS set a key always wins — an explicit
+// "auto_triage_enabled": false is honored even when the platform default is
+// true, because opting out has to be sticky.
 func (s *AITriageService) extractAISettings(settings map[string]any) tenant.AISettings {
-	result := tenant.AISettings{}
+	result := s.autoTriageDefaults()
 
 	aiMap, ok := settings["ai"].(map[string]any)
 	if !ok {
@@ -1104,6 +1129,9 @@ func (s *AITriageService) extractAISettings(settings map[string]any) tenant.AISe
 		result.AutoTriageEnabled = enabled
 	}
 	if severities, ok := aiMap["auto_triage_severities"].([]any); ok {
+		// Replace, don't append: the tenant's list is authoritative once
+		// present, otherwise it would be unioned with the platform default.
+		result.AutoTriageSeverities = nil
 		for _, sev := range severities {
 			if s, ok := sev.(string); ok {
 				result.AutoTriageSeverities = append(result.AutoTriageSeverities, s)

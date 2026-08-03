@@ -206,6 +206,14 @@ type HeartbeatRequest struct {
 	MemoryPercent float64  `json:"memory_percent,omitempty"`
 	ActiveJobs    int      `json:"active_jobs,omitempty"`
 	Region        string   `json:"region,omitempty"`
+
+	// Disk/network throughput in MB/s. Optional — agents that omit them leave
+	// the corresponding load-balancing terms at zero. Accepted here so the
+	// AGENT_LB_DISK_IO_WEIGHT / AGENT_LB_NETWORK_WEIGHT knobs have real inputs.
+	DiskReadMBPS  float64 `json:"disk_read_mbps,omitempty"`
+	DiskWriteMBPS float64 `json:"disk_write_mbps,omitempty"`
+	NetworkRxMBPS float64 `json:"network_rx_mbps,omitempty"`
+	NetworkTxMBPS float64 `json:"network_tx_mbps,omitempty"`
 }
 
 // CheckFingerprintsRequest represents the request for checking fingerprint existence.
@@ -590,6 +598,10 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		MemoryPercent: req.MemoryPercent,
 		CurrentJobs:   req.ActiveJobs,
 		Region:        req.Region,
+		DiskReadMBPS:  req.DiskReadMBPS,
+		DiskWriteMBPS: req.DiskWriteMBPS,
+		NetworkRxMBPS: req.NetworkRxMBPS,
+		NetworkTxMBPS: req.NetworkTxMBPS,
 	}); err != nil {
 		h.logger.Error("failed to update agent heartbeat", "error", err, "agent_id", agt.ID)
 		// Don't fail the request - heartbeat should be resilient

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	agentdom "github.com/openctemio/api/pkg/domain/agent"
 )
 
 // Environment constants
@@ -38,6 +40,42 @@ type Config struct {
 	Webhooks    WebhooksConfig
 	Ingest      IngestConfig
 	Metrics     MetricsConfig
+
+	// AdminAuditRetention controls pruning of the platform-level
+	// admin_audit_logs table.
+	AdminAuditRetention AdminAuditRetentionConfig
+}
+
+// AdminAuditRetentionConfig controls the admin-audit-log retention controller.
+//
+// admin_audit_logs is append-only and every platform-admin action writes a
+// row, so without pruning the table grows forever. Deletion is irreversible
+// and compliance-relevant (SOC 2 / PCI DSS want >= 1 year), so the controller
+// ships in dry-run mode: it reports what it WOULD delete and deletes nothing
+// until an operator sets ADMIN_AUDIT_RETENTION_DRY_RUN=false. That keeps an
+// upgrade from silently destroying audit history, while making the retention
+// policy an actual switch instead of a compiled-in constant.
+type AdminAuditRetentionConfig struct {
+	// Enabled registers the controller at all. Default true — in dry-run
+	// mode it only reports, which is what makes the growth visible.
+	// ADMIN_AUDIT_RETENTION_ENABLED
+	Enabled bool
+
+	// DryRun reports the row count instead of deleting. Default TRUE.
+	// ADMIN_AUDIT_RETENTION_DRY_RUN
+	DryRun bool
+
+	// RetentionDays is the age threshold. Default 365.
+	// ADMIN_AUDIT_RETENTION_DAYS
+	RetentionDays int
+
+	// Interval is how often the sweep runs. Default 24h.
+	// ADMIN_AUDIT_RETENTION_INTERVAL
+	Interval time.Duration
+
+	// BatchSize bounds one delete transaction. Default 10000.
+	// ADMIN_AUDIT_RETENTION_BATCH_SIZE
+	BatchSize int
 }
 
 // MetricsConfig controls exposure of the Prometheus /metrics endpoint.
@@ -493,6 +531,22 @@ type LoadBalancingConfig struct {
 	MaxNetworkThroughputMBPS float64
 }
 
+// Weights converts the operator-facing AGENT_LB_* settings into the domain
+// weight set consumed by Agent.ComputeLoadScoreWithWeights and the agent
+// selector. This is the seam that makes those environment variables
+// observable in scheduling behavior.
+func (c LoadBalancingConfig) Weights() agentdom.LoadBalancingWeights {
+	return agentdom.LoadBalancingWeights{
+		JobLoad:                  c.JobWeight,
+		CPU:                      c.CPUWeight,
+		Memory:                   c.MemoryWeight,
+		DiskIO:                   c.DiskIOWeight,
+		Network:                  c.NetworkWeight,
+		MaxDiskThroughputMBPS:    c.MaxDiskThroughputMBPS,
+		MaxNetworkThroughputMBPS: c.MaxNetworkThroughputMBPS,
+	}
+}
+
 // EncryptionConfig holds encryption configuration for sensitive data.
 type EncryptionConfig struct {
 	// Key is the encryption key for AES-256-GCM encryption of sensitive data.
@@ -765,13 +819,13 @@ func Load() (*Config, error) {
 			HealthCheckInterval: getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:     getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			LoadBalancing: LoadBalancingConfig{
-				JobWeight:                getEnvFloat("AGENT_LB_JOB_WEIGHT", 0.30),
-				CPUWeight:                getEnvFloat("AGENT_LB_CPU_WEIGHT", 0.40),
-				MemoryWeight:             getEnvFloat("AGENT_LB_MEMORY_WEIGHT", 0.15),
-				DiskIOWeight:             getEnvFloat("AGENT_LB_DISK_IO_WEIGHT", 0.10),
-				NetworkWeight:            getEnvFloat("AGENT_LB_NETWORK_WEIGHT", 0.05),
-				MaxDiskThroughputMBPS:    getEnvFloat("AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", 500.0),
-				MaxNetworkThroughputMBPS: getEnvFloat("AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", 1000.0),
+				JobWeight:                getEnvFloat("AGENT_LB_JOB_WEIGHT", agentdom.DefaultJobLoadWeight),
+				CPUWeight:                getEnvFloat("AGENT_LB_CPU_WEIGHT", agentdom.DefaultCPUWeight),
+				MemoryWeight:             getEnvFloat("AGENT_LB_MEMORY_WEIGHT", agentdom.DefaultMemoryWeight),
+				DiskIOWeight:             getEnvFloat("AGENT_LB_DISK_IO_WEIGHT", agentdom.DefaultDiskIOWeight),
+				NetworkWeight:            getEnvFloat("AGENT_LB_NETWORK_WEIGHT", agentdom.DefaultNetworkWeight),
+				MaxDiskThroughputMBPS:    getEnvFloat("AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", agentdom.DefaultMaxDiskThroughputMBPS),
+				MaxNetworkThroughputMBPS: getEnvFloat("AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", agentdom.DefaultMaxNetworkThroughputMBPS),
 			},
 		},
 		Encryption: EncryptionConfig{
@@ -792,6 +846,14 @@ func Load() (*Config, error) {
 			// SECURITY: default NON-public. See MetricsConfig docs.
 			Public: getEnvBool("METRICS_PUBLIC", false),
 			Token:  getEnv("METRICS_TOKEN", ""),
+		},
+		AdminAuditRetention: AdminAuditRetentionConfig{
+			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
+			// Default TRUE: never start deleting audit history on upgrade.
+			DryRun:        getEnvBool("ADMIN_AUDIT_RETENTION_DRY_RUN", true),
+			RetentionDays: getEnvInt("ADMIN_AUDIT_RETENTION_DAYS", 365),
+			Interval:      getEnvDuration("ADMIN_AUDIT_RETENTION_INTERVAL", 24*time.Hour),
+			BatchSize:     getEnvInt("ADMIN_AUDIT_RETENTION_BATCH_SIZE", 10000),
 		},
 		AITriage: AITriageConfig{
 			Enabled:                     getEnvBool("AI_TRIAGE_ENABLED", false),
@@ -893,6 +955,38 @@ func (c *Config) validateBasic() error {
 	}
 	if err := c.validateLog(); err != nil {
 		return err
+	}
+	if err := c.validateAdminAuditRetention(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// minAdminAuditRetentionDays is the floor for admin-audit retention. SOC 2 and
+// PCI DSS both expect at least one year of audit history; anything under 30
+// days is far more likely to be a typo (or a units mistake) than a policy, and
+// the delete is irreversible. Refusing to boot beats silently shredding the
+// audit trail.
+const minAdminAuditRetentionDays = 30
+
+// validateAdminAuditRetention guards the destructive knobs. A zero or negative
+// retention window would push the cutoff to now-or-later and delete every row.
+func (c *Config) validateAdminAuditRetention() error {
+	r := c.AdminAuditRetention
+	if !r.Enabled || r.DryRun {
+		return nil
+	}
+	if r.RetentionDays < minAdminAuditRetentionDays {
+		return fmt.Errorf(
+			"ADMIN_AUDIT_RETENTION_DAYS must be >= %d when deletion is enabled (got %d); "+
+				"a smaller window deletes audit history that compliance frameworks require",
+			minAdminAuditRetentionDays, r.RetentionDays)
+	}
+	if r.Interval <= 0 {
+		return fmt.Errorf("ADMIN_AUDIT_RETENTION_INTERVAL must be positive, got %s", r.Interval)
+	}
+	if r.BatchSize < 1 {
+		return fmt.Errorf("ADMIN_AUDIT_RETENTION_BATCH_SIZE must be >= 1, got %d", r.BatchSize)
 	}
 	return nil
 }
