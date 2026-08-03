@@ -80,11 +80,24 @@ fi
 # produced a spec that differed from the committed file on a clean CI runner
 # while matching perfectly on a developer machine with a warm cache. Populate
 # the cache first so the generator is reproducible.
-if ! (cd "$REPO_ROOT" && GOWORK=off go mod download) >/dev/null 2>&1; then
+if ! (cd "$REPO_ROOT" && GOWORK=off go mod download all) >&2; then
   echo "check-openapi: go mod download failed — swag needs the dependency" >&2
   echo "               packages in the module cache to resolve types." >&2
   exit 2
 fi
+
+# Fail loudly if a dependency swag must read is not actually extracted on disk.
+# `go mod download` succeeding is not proof: with module-graph pruning it can
+# leave a module's source unextracted, and swag then degrades in silence.
+for mod in github.com/openctemio/ctis github.com/openctemio/sdk-go; do
+  dir="$( (cd "$REPO_ROOT" && GOWORK=off go list -m -f '{{.Dir}}' "$mod") 2>/dev/null || true)"
+  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
+    echo "check-openapi: $mod source is not on disk (go list -m gave '$dir')." >&2
+    echo "               swag --parseDependency would silently emit a degraded" >&2
+    echo "               schema. Run: GOWORK=off go mod download all" >&2
+    exit 2
+  fi
+done
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -128,6 +141,10 @@ fi
   echo "Fix:"
   echo "    make swagger"
   echo "    git add $SPEC"
+  echo
+  echo "swag log (tail) — a 'cannot find type definition' here means the"
+  echo "generator could not read a dependency and degraded silently:"
+  tail -n 15 "$tmpdir/swag.log"
   echo
   echo "Diff (committed → regenerated), first 200 lines:"
   echo "────────────────────────────────────────────────────────────────────────────"
