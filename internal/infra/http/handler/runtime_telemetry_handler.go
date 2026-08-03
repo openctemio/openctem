@@ -51,6 +51,14 @@ type runtimeEventIn struct {
 	Severity        string         `json:"severity,omitempty"`          // info|low|medium|high|critical, default info
 	ObservedAt      time.Time      `json:"observed_at"`                 // when the event happened on the endpoint
 	Properties      map[string]any `json:"properties,omitempty"`
+
+	// CorrelationID optionally ties this event to the validation job /
+	// command that provoked it. A producer that knows which activity it
+	// is reacting to should stamp it: the Stage-4 detection correlator
+	// then matches exactly instead of falling back to an asset+time
+	// window heuristic. Not FK-enforced — telemetry can outlive the
+	// command row.
+	CorrelationID string `json:"correlation_id,omitempty"`
 }
 
 // ingestRequest supports both single-event and batched submissions. A
@@ -104,8 +112,8 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 	// records to the originating telemetry event.
 	const q = `
 		INSERT INTO runtime_telemetry_events
-		       (tenant_id, agent_id, endpoint_asset_id, event_type, severity, observed_at, properties)
-		VALUES ($1, $2, NULLIF($3,'')::uuid, $4, COALESCE(NULLIF($5,''),'info'), $6, $7)
+		       (tenant_id, agent_id, endpoint_asset_id, event_type, severity, observed_at, properties, correlation_id)
+		VALUES ($1, $2, NULLIF($3,'')::uuid, $4, COALESCE(NULLIF($5,''),'info'), $6, $7, NULLIF($8,'')::uuid)
 		RETURNING id
 	`
 
@@ -160,6 +168,16 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 				continue
 			}
 		}
+		// Validate correlation_id in Go rather than letting the ::uuid
+		// cast blow up: a malformed value would otherwise surface as an
+		// opaque "database insert failed" for the whole event.
+		if ev.CorrelationID != "" {
+			if _, cerr := shared.IDFromString(ev.CorrelationID); cerr != nil {
+				resp.Rejected++
+				resp.Errors = append(resp.Errors, eventErr(i, "correlation_id must be a UUID"))
+				continue
+			}
+		}
 		propsJSON, err := json.Marshal(nilMapToEmpty(ev.Properties))
 		if err != nil {
 			resp.Rejected++
@@ -175,6 +193,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			ev.Severity,
 			ev.ObservedAt.UTC(),
 			propsJSON,
+			ev.CorrelationID,
 		).Scan(&eventIDStr)
 		if err != nil {
 			h.logger.Warn("runtime telemetry insert failed",

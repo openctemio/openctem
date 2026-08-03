@@ -57,6 +57,13 @@ type Evidence struct {
 	Summary      string
 	Artifacts    []string // attachment IDs (screenshots, PCAPs)
 	RawMeta      map[string]any
+
+	// CorrelationID ties this execution to runtime telemetry that a
+	// producer stamped with the same id, giving an exact,
+	// time-independent detection match. Zero when nothing stamped
+	// anything — the correlator then falls back to an asset+window
+	// heuristic. See detection.go.
+	CorrelationID shared.ID
 }
 
 // Executor is a back-compat accessor for legacy handler code that

@@ -593,6 +593,12 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 		ExecutorKind: payload.ExecutorKind,
 		Technique:    validation.TechniqueID(payload.Technique),
 		Target: validation.Target{
+			// AssetID was previously dropped here. The detection
+			// correlator needs it to scope a telemetry window to the
+			// asset that was probed, so carry it through. Parse
+			// failures leave it zero, which the correlator treats as
+			// "cannot scope" (not_evaluated) rather than guessing.
+			AssetID: parseOptionalID(payload.Target.AssetID),
 			Type:    payload.Target.Type,
 			Address: payload.Target.Address,
 		},
@@ -601,6 +607,10 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 		Outcome:   validation.Outcome(verdict.Outcome),
 		Summary:   verdict.Summary,
 		RawMeta:   verdict.Evidence,
+		// The command id IS the correlation key — it is the identifier a
+		// telemetry producer can be told to stamp on events it emits
+		// while reacting to this job. See validation/detection.go.
+		CorrelationID: cmd.ID,
 	}
 	tenantID := cmd.TenantID
 
@@ -615,6 +625,21 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 			)
 		}
 	}()
+}
+
+// parseOptionalID parses an id that is legitimately allowed to be absent
+// or malformed, returning the zero ID in those cases. Used for payload
+// fields where a missing id degrades a feature rather than failing the
+// request.
+func parseOptionalID(s string) shared.ID {
+	if s == "" {
+		return shared.ID{}
+	}
+	id, err := shared.IDFromString(s)
+	if err != nil {
+		return shared.ID{}
+	}
+	return id
 }
 
 // triggerPipelineProgression triggers pipeline progression when a command completes.
