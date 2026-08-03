@@ -135,7 +135,10 @@ swagger: swagger-install
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
 	@echo "Swagger docs generated in api/openapi/"
 
-## swagger-check: Fail if the committed spec differs from a fresh regeneration.
+## swagger-check: Fail if the annotations, the spec and the routes disagree.
+## Compares SETS of operations, not the bytes of the generated file — swag is
+## not reproducible enough across environments for a byte diff to hold. See
+## tools/lint/openapicontract for why.
 swagger-check:
 	@bash scripts/check-openapi.sh
 

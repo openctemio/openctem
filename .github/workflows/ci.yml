@@ -121,9 +121,18 @@ jobs:
   # this file, so a stale entry ships a request to an endpoint that does not
   # exist and a missing entry hides a feature from every client.
   #
+  # This compares SETS of operations (annotations vs spec vs registered routes),
+  # not the bytes of the generated file. A byte gate was tried first and failed
+  # here for a reason worth recording: swag is not hermetic. A clean runner
+  # drops `format: int64` from some map[string]int64 fields that a developer
+  # machine emits — same pinned swag, same Go, warm module cache. Both documents
+  # describe the same API, so the gate would have failed on a non-disagreement
+  # nobody could fix, and would have been deleted. See
+  # tools/lint/openapicontract.
+  #
   # Deliberately UNCONDITIONAL: no `if:` on event_name, no base-ref lookup, and
-  # the script fails (rather than skips) when swag is unavailable. Conditional
-  # gates in this repository have twice turned out never to run.
+  # the script fails (rather than skips) when its inputs are missing.
+  # Conditional gates in this repository have twice turned out never to run.
   # ============================================
   openapi:
     name: OpenAPI Contract
