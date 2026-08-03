@@ -12,7 +12,6 @@ import (
 
 // recordingCommandRepo records which recovery/expiry methods Reconcile calls.
 type recordingCommandRepo struct {
-	calledExpireOldCommands            bool
 	calledFindQueueExpiredPlatformJobs bool
 
 	recoverStuckJobs           int64
@@ -35,11 +34,6 @@ func (r *recordingCommandRepo) FindQueueExpiredPlatformJobs(_ context.Context, _
 
 func (r *recordingCommandRepo) FailExhaustedCommands(_ context.Context, _ int) (int64, error) {
 	return r.failExhaustedCommands, nil
-}
-
-func (r *recordingCommandRepo) ExpireOldCommands(_ context.Context) (int64, error) {
-	r.calledExpireOldCommands = true
-	return 7, nil
 }
 
 // --- remaining command.Repository surface: unused by JobRecoveryController ---
@@ -116,39 +110,17 @@ func (r *recordingCommandRepo) CancelByPipelineRunID(context.Context, shared.ID,
 
 var _ command.Repository = (*recordingCommandRepo)(nil)
 
-// TestJobRecoveryController_DoesNotExpireRegularCommands pins the removal of a
-// duplicate expiry path.
-//
-// app/command.ExpirationChecker is the owner of regular-command expiry: it ticks
-// every 60s, selects status IN ('pending','acknowledged') AND expires_at < now
-// via FindExpired, marks each row expired, and calls
-// pipeline.OnStepFailed(..., "COMMAND_EXPIRED") so the owning pipeline run is
-// told its step died.
-//
-// This controller ticked on the same 60s interval and additionally ran
+// NOTE: this file used to also assert that Reconcile never calls
 // CommandRepository.ExpireOldCommands — a raw `UPDATE commands SET
-// status='expired' WHERE status='pending' AND expires_at < NOW()`, a strict
-// subset of the same rows and with no pipeline notification. Whenever it won the
-// race, FindExpired no longer matched the row and the run was never notified.
+// status='expired' WHERE status='pending' AND expires_at < NOW()` that ran on
+// the same 60s tick over a strict subset of the rows FindExpired matches, with
+// no pipeline notification. Whenever it won that race, FindExpired no longer
+// matched the row and the owning run was never told its step died.
 //
-// Reconcile must therefore never touch ExpireOldCommands.
-func TestJobRecoveryController_DoesNotExpireRegularCommands(t *testing.T) {
-	repo := &recordingCommandRepo{}
-	c := NewJobRecoveryController(repo, &JobRecoveryControllerConfig{
-		Logger: logger.NewNop(),
-	})
-
-	if _, err := c.Reconcile(context.Background()); err != nil {
-		t.Fatalf("Reconcile: %v", err)
-	}
-
-	if repo.calledExpireOldCommands {
-		t.Fatal("JobRecoveryController.Reconcile called ExpireOldCommands: " +
-			"this races app/command.ExpirationChecker on the same 60s tick and, when it " +
-			"wins, expires the command without ever calling pipeline OnStepFailed - the " +
-			"pipeline run is left hanging with no COMMAND_EXPIRED step failure")
-	}
-}
+// ExpireOldCommands has since been deleted from command.Repository, its postgres
+// implementation and the command service, so the guarantee is now enforced by
+// the compiler rather than by a test. app/command.ExpirationChecker is the only
+// expiry path and it calls pipeline.OnStepFailed(..., "COMMAND_EXPIRED").
 
 // TestJobRecoveryController_DoesNotExpirePlatformJobs pins the same removal one
 // step over, for the platform-job queue.
@@ -182,8 +154,9 @@ func TestJobRecoveryController_DoesNotExpirePlatformJobs(t *testing.T) {
 }
 
 // TestJobRecoveryController_ReportsOnlyItsOwnWork guards the item count after the
-// removals: neither the ExpireOldCommands result (7 above) nor any platform-job
-// expiry may be folded in.
+// removals: no expiry result — neither the tenant-command expiry that
+// ExpireOldCommands used to return nor any platform-job expiry — may be folded
+// into this controller's count.
 func TestJobRecoveryController_ReportsOnlyItsOwnWork(t *testing.T) {
 	repo := &recordingCommandRepo{
 		recoverStuckJobs:           1,

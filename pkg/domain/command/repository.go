@@ -48,10 +48,14 @@ type Repository interface {
 	// Delete deletes a command.
 	Delete(ctx context.Context, id shared.ID) error
 
-	// ExpireOldCommands expires commands that have passed their expiration time.
-	ExpireOldCommands(ctx context.Context) (int64, error)
-
 	// FindExpired finds commands that have expired but not yet marked as expired.
+	// This is the ONLY expiry path. A second reaper (ExpireOldCommands, a raw
+	// `UPDATE commands SET status='expired'`) used to sit alongside it and won
+	// the race often enough that FindExpired no longer matched the row — so the
+	// command died and the owning pipeline run was never told. It was removed
+	// from JobRecoveryController for that reason and has been deleted outright;
+	// do not reintroduce an expiry that does not go through ExpirationChecker,
+	// which calls pipeline.OnStepFailed.
 	FindExpired(ctx context.Context) ([]*Command, error)
 
 	// ==========================================================================

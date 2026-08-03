@@ -291,25 +291,6 @@ func (r *CommandRepository) Delete(ctx context.Context, id shared.ID) error {
 	return nil
 }
 
-// ExpireOldCommands expires commands that have passed their expiration time.
-func (r *CommandRepository) ExpireOldCommands(ctx context.Context) (int64, error) {
-	query := `
-		UPDATE commands
-		SET status = 'expired'
-		WHERE status = 'pending'
-		AND expires_at IS NOT NULL
-		AND expires_at < NOW()
-	`
-
-	result, err := r.db.ExecContext(ctx, query)
-	if err != nil {
-		return 0, fmt.Errorf("failed to expire commands: %w", err)
-	}
-
-	rowsAffected, _ := result.RowsAffected()
-	return rowsAffected, nil
-}
-
 func (r *CommandRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, agent_id, type, priority, payload,
