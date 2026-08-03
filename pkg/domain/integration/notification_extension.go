@@ -81,6 +81,11 @@ const (
 	EventTypeFindingTriaged   EventType = "finding_triaged"
 	EventTypeFindingFixed     EventType = "finding_fixed"
 	EventTypeFindingReopened  EventType = "finding_reopened"
+	// EventTypeFindingPriorityEscalated fires when an already-classified
+	// finding is re-classified UP (e.g. P3 -> P0 because its CVE was newly
+	// listed in KEV, or a compensating control was removed). Without it a
+	// priority escalation is a silent dashboard update.
+	EventTypeFindingPriorityEscalated EventType = "finding_priority_escalated"
 
 	// Exposure events
 	EventTypeNewExposure      EventType = "new_exposure"
@@ -135,6 +140,7 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeFindingTriaged, Category: EventCategoryFinding, Label: "Need Triage Finding", Description: "Finding needs triage/review", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingFixed, Category: EventCategoryFinding, Label: "Fixed Finding", Description: "Finding has been remediated", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingReopened, Category: EventCategoryFinding, Label: "Reopened Finding", Description: "Finding reopened after fix", RequiredModule: ModuleFindings},
+		{Type: EventTypeFindingPriorityEscalated, Category: EventCategoryFinding, Label: "Priority Escalated", Description: "Finding re-classified to a higher priority (e.g. P3 to P0)", RequiredModule: ModuleFindings},
 
 		// Exposure events - require 'findings' module (part of findings feature)
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
@@ -148,6 +154,12 @@ func DefaultEnabledEventTypes() []EventType {
 		EventTypeSecurityAlert,
 		EventTypeNewFinding,
 		EventTypeNewExposure,
+		// A finding the operator already triaged as low-urgency silently
+		// becoming P0 is the escalation they cannot afford to miss, so it is
+		// on by default. Migration 000201 backfills existing rows; the
+		// per-integration severity filter still applies (P0 -> critical,
+		// P1 -> high, ...), so this is not a firehose.
+		EventTypeFindingPriorityEscalated,
 	}
 }
 

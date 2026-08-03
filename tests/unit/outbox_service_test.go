@@ -2382,8 +2382,37 @@ func TestDefaultEnabledSeverities(t *testing.T) {
 
 func TestDefaultEnabledEventTypes(t *testing.T) {
 	defaults := integration.DefaultEnabledEventTypes()
-	if len(defaults) != 3 {
-		t.Fatalf("expected 3 default event types, got %d", len(defaults))
+	if len(defaults) == 0 {
+		t.Fatal("expected a non-empty default event type list")
+	}
+	// Assert membership rather than a bare count: the count alone breaks on
+	// every legitimate addition while saying nothing about which events a new
+	// integration actually receives out of the box.
+	want := []integration.EventType{
+		integration.EventTypeSecurityAlert,
+		integration.EventTypeNewFinding,
+		integration.EventTypeNewExposure,
+		integration.EventTypeFindingPriorityEscalated,
+	}
+	got := make(map[integration.EventType]bool, len(defaults))
+	for _, et := range defaults {
+		got[et] = true
+	}
+	for _, et := range want {
+		if !got[et] {
+			t.Errorf("default event types missing %q", et)
+		}
+	}
+	// Every default must be a real, selectable event type, otherwise it is
+	// silently dropped at delivery time.
+	known := make(map[integration.EventType]bool)
+	for _, info := range integration.AllEventTypes() {
+		known[info.Type] = true
+	}
+	for _, et := range defaults {
+		if !known[et] {
+			t.Errorf("default event type %q is not in AllEventTypes()", et)
+		}
 	}
 }
 

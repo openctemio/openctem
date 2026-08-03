@@ -944,6 +944,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
 	s.Exposure.SetOutboxService(deps.DB, s.Outbox)
 
+	// Priority-change publisher. PriorityClassificationService emits a
+	// PriorityChangeEvent on every class transition and nil-guards the
+	// publisher, so leaving this unwired made the whole path — the event, the
+	// transition detection and the PriorityFloodGuard that protects its
+	// fan-out — inert: a finding escalating to P0 was a silent dashboard
+	// update. Wired here rather than next to the other
+	// PriorityClassification setters because s.Outbox does not exist yet at
+	// that point. The publisher itself filters to escalations only (see its
+	// doc comment) so ingest does not double-notify alongside "new_finding".
+	s.PriorityClassification.SetChangePublisher(
+		app.NewOutboxPriorityChangePublisher(s.Outbox, log),
+	)
+
 	// Note: UserNotificationService is wired later after NotificationService is initialized
 
 	// Note: NotificationService is wired later after WebSocketHub is initialized
