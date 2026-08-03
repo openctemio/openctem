@@ -2382,29 +2382,46 @@ func TestDefaultEnabledSeverities(t *testing.T) {
 
 func TestDefaultEnabledEventTypes(t *testing.T) {
 	defaults := integration.DefaultEnabledEventTypes()
-	if len(defaults) == 0 {
-		t.Fatal("expected a non-empty default event type list")
-	}
-	// Assert membership rather than a bare count: the count alone breaks on
-	// every legitimate addition while saying nothing about which events a new
-	// integration actually receives out of the box.
+
+	// Membership, not count. The original asserted len(defaults) != 3, which
+	// broke on every legitimate addition while never checking WHICH types were
+	// enabled — it would have passed just as happily with the wrong three.
+	//
+	// The want list is the union of two branches that both added defaults
+	// (#396 priority escalation, #399 the six undeliverable types). Keeping it
+	// explicit is what makes a lost entry visible at merge time.
 	want := []integration.EventType{
 		integration.EventTypeSecurityAlert,
 		integration.EventTypeNewFinding,
 		integration.EventTypeNewExposure,
 		integration.EventTypeFindingPriorityEscalated,
+		integration.EventTypeSLABreach,
+		integration.EventTypeFindingAssigned,
+		integration.EventTypeWorkflowNotification,
+		integration.EventTypeApprovalRequested,
 	}
-	got := make(map[integration.EventType]bool, len(defaults))
+
+	present := make(map[integration.EventType]int, len(defaults))
 	for _, et := range defaults {
-		got[et] = true
+		present[et]++
 	}
+
 	for _, et := range want {
-		if !got[et] {
-			t.Errorf("default event types missing %q", et)
+		if present[et] == 0 {
+			t.Errorf("event type %q is missing from DefaultEnabledEventTypes()", et)
 		}
 	}
-	// Every default must be a real, selectable event type, otherwise it is
-	// silently dropped at delivery time.
+	for et, n := range present {
+		if n > 1 {
+			t.Errorf("event type %q appears %d times in DefaultEnabledEventTypes(); "+
+				"duplicates are harmless at match time but indicate a bad merge", et, n)
+		}
+	}
+
+	// A default that is not in AllEventTypes() is silently dropped at delivery:
+	// it is whitelisted for the tenant but matches no registered type. That is
+	// the exact defect this file's sibling tests exist to prevent, so it must
+	// not be reachable through the defaults either.
 	known := make(map[integration.EventType]bool)
 	for _, info := range integration.AllEventTypes() {
 		known[info.Type] = true
