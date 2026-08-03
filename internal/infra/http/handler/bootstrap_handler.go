@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	integrationdom "github.com/openctemio/api/pkg/domain/integration"
 	"github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
@@ -49,8 +50,8 @@ func NewBootstrapHandler(
 
 // BootstrapResponse combines all initial data needed after login.
 type BootstrapResponse struct {
-	Permissions BootstrapPermissions   `json:"permissions"`
-	Modules     *TenantModulesResponse `json:"modules,omitempty"`
+	Permissions BootstrapPermissions    `json:"permissions"`
+	Modules     *TenantModulesResponse  `json:"modules,omitempty"`
 	RiskLevels  *tenant.RiskLevelConfig `json:"risk_levels,omitempty"`
 }
 
@@ -62,12 +63,16 @@ type BootstrapPermissions struct {
 
 // TenantModulesResponse represents the modules available to a tenant.
 type TenantModulesResponse struct {
-	ModuleIDs           []string                             `json:"module_ids"`
-	Modules             []LicensingModuleResponse            `json:"modules"`
-	SubModules          map[string][]LicensingModuleResponse `json:"sub_modules,omitempty"`
-	EventTypes          []string                             `json:"event_types,omitempty"`
-	ComingSoonModuleIDs []string                             `json:"coming_soon_module_ids,omitempty"`
-	BetaModuleIDs       []string                             `json:"beta_module_ids,omitempty"`
+	ModuleIDs  []string                             `json:"module_ids"`
+	Modules    []LicensingModuleResponse            `json:"modules"`
+	SubModules map[string][]LicensingModuleResponse `json:"sub_modules,omitempty"`
+	// EventTypes was declared here but never assigned by buildModulesResponse,
+	// so it never appeared on the wire. The notification event-type catalog
+	// is served by GET /me/event-types, which has the label/description/category
+	// metadata a caller actually needs. Removed rather than populated: a
+	// bare []string here would be a second, thinner copy of that catalog.
+	ComingSoonModuleIDs []string `json:"coming_soon_module_ids,omitempty"`
+	BetaModuleIDs       []string `json:"beta_module_ids,omitempty"`
 }
 
 // LicensingModuleResponse represents a module in the response.
@@ -365,5 +370,156 @@ func (h *BootstrapHandler) GetTenantModules(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		h.logger.Error("failed to encode modules response", "error", err)
+	}
+}
+
+// =============================================================================
+// Tenant Notification Event Types Endpoint
+// =============================================================================
+
+// NotificationEventTypeResponse is one entry of the notification event-type
+// catalog. It mirrors integration.EventTypeInfo so a client can render the
+// label, description and grouping without maintaining its own mapping.
+type NotificationEventTypeResponse struct {
+	Type           string `json:"type" example:"sla_breach"`
+	Category       string `json:"category" example:"finding"`
+	Label          string `json:"label" example:"SLA Breached"`
+	Description    string `json:"description" example:"Finding missed its SLA remediation deadline"`
+	RequiredModule string `json:"required_module,omitempty" example:"findings"`
+	// DefaultEnabled reports whether a notification integration created with the
+	// defaults receives this event type. enabled_event_types is an opt-in
+	// whitelist, so this is the difference between "delivered" and "silently
+	// dropped" for a channel the operator never customized.
+	DefaultEnabled bool `json:"default_enabled"`
+}
+
+// NotificationEventCategoryResponse is a category with its display label, so
+// clients group and title the catalog from the server's vocabulary.
+type NotificationEventCategoryResponse struct {
+	Category string `json:"category" example:"finding"`
+	Label    string `json:"label" example:"Finding Events"`
+}
+
+// TenantEventTypesResponse is the notification event-type catalog available
+// to the current tenant.
+type TenantEventTypesResponse struct {
+	EventTypes []NotificationEventTypeResponse     `json:"event_types"`
+	Categories []NotificationEventCategoryResponse `json:"categories"`
+	// DefaultEnabled is the subset of EventTypes that is on by default, as a
+	// plain list so a client can seed a new channel's form without filtering.
+	DefaultEnabled []string `json:"default_enabled"`
+	TotalCount     int      `json:"total_count"`
+}
+
+// GetTenantEventTypes returns the notification event types available to the
+// current tenant.
+//
+// integration.AllEventTypes() is the registry the outbox actually routes on,
+// but it had no HTTP consumer, so every client that needed the catalog kept
+// a hand-written copy that drifted from it. This is that missing consumer.
+//
+// Filtering is by the tenant's enabled modules, deliberately NOT by the
+// caller's permissions: enabled_event_types is tenant-level configuration and
+// nothing validates it on write, so hiding a type from one admin would let
+// them erase it for everyone the next time they saved the channel.
+//
+// @Summary      Get tenant notification event types
+// @Description  Returns the notification event types available to the current tenant, filtered by the tenant's enabled modules, with the subset enabled by default.
+// @Tags         Modules
+// @Produce      json
+// @Param        If-None-Match  header  string  false  "ETag from previous response"
+// @Security     BearerAuth
+// @Success      200  {object}  TenantEventTypesResponse
+// @Success      304  {string}  string  "Not Modified - catalog unchanged"
+// @Failure      401  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Router       /me/event-types [get]
+func (h *BootstrapHandler) GetTenantEventTypes(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tenantID := middleware.MustGetTenantID(ctx)
+	if tenantID == "" {
+		apierror.Unauthorized("Tenant context not found").WriteJSON(w)
+		return
+	}
+
+	// The catalog is a pure function of (registry, tenant module set), so the
+	// module version alone is a sound cache key — unlike /me/modules it does
+	// not vary with the caller's permissions.
+	modVersion := h.moduleSvc.GetTenantModuleVersion(ctx, tenantID)
+	etag := fmt.Sprintf(`"t%s-e%d"`, tenantID[:8], modVersion)
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	enabledModules, err := h.moduleSvc.GetTenantEnabledModules(ctx, tenantID)
+	if err != nil {
+		h.logger.Error("failed to get tenant modules for event types",
+			"tenant_id", tenantID,
+			"error", err,
+		)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+
+	resp := buildEventTypesResponse(enabledModules.ModuleIDs)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		h.logger.Error("failed to encode event types response", "error", err)
+	}
+}
+
+// buildEventTypesResponse projects the domain registry onto the wire shape for
+// the given set of enabled module IDs.
+func buildEventTypesResponse(enabledModuleIDs []string) *TenantEventTypesResponse {
+	available := integrationdom.GetEventTypesByModules(enabledModuleIDs)
+
+	defaultSet := make(map[integrationdom.EventType]bool)
+	for _, et := range integrationdom.DefaultEnabledEventTypes() {
+		defaultSet[et] = true
+	}
+
+	eventTypes := make([]NotificationEventTypeResponse, 0, len(available))
+	defaults := make([]string, 0, len(defaultSet))
+	presentCategories := make(map[integrationdom.EventCategory]bool, len(available))
+
+	for _, info := range available {
+		eventTypes = append(eventTypes, NotificationEventTypeResponse{
+			Type:           string(info.Type),
+			Category:       string(info.Category),
+			Label:          info.Label,
+			Description:    info.Description,
+			RequiredModule: info.RequiredModule,
+			DefaultEnabled: defaultSet[info.Type],
+		})
+		presentCategories[info.Category] = true
+		if defaultSet[info.Type] {
+			defaults = append(defaults, string(info.Type))
+		}
+	}
+
+	// Only categories that actually have an available event type, so a client
+	// does not render an empty "Scan Events" heading for a tenant without the
+	// scans module.
+	categories := make([]NotificationEventCategoryResponse, 0, len(presentCategories))
+	for _, c := range integrationdom.AllEventCategories() {
+		if presentCategories[c.Category] {
+			categories = append(categories, NotificationEventCategoryResponse{
+				Category: string(c.Category),
+				Label:    c.Label,
+			})
+		}
+	}
+
+	return &TenantEventTypesResponse{
+		EventTypes:     eventTypes,
+		Categories:     categories,
+		DefaultEnabled: defaults,
+		TotalCount:     len(eventTypes),
 	}
 }

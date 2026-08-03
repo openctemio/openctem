@@ -60,6 +60,32 @@ const (
 	EventCategoryWorkflow EventCategory = "workflow"
 )
 
+// EventCategoryInfo pairs an event category with its display label.
+type EventCategoryInfo struct {
+	Category EventCategory
+	Label    string
+}
+
+// AllEventCategories returns every event category with its display label, in
+// the order categories should be presented.
+//
+// The labels live here rather than in the UI for the same reason AllEventTypes
+// does: a category added to the constant block above but missing from a
+// client-side label map renders as "undefined" (or crashes a lookup) with
+// nothing failing at build time. Both approval and workflow categories were
+// added without the UI's map learning about them.
+func AllEventCategories() []EventCategoryInfo {
+	return []EventCategoryInfo{
+		{Category: EventCategorySystem, Label: "System Events"},
+		{Category: EventCategoryAsset, Label: "Asset Events"},
+		{Category: EventCategoryScan, Label: "Scan Events"},
+		{Category: EventCategoryFinding, Label: "Finding Events"},
+		{Category: EventCategoryApproval, Label: "Approval Events"},
+		{Category: EventCategoryWorkflow, Label: "Workflow Events"},
+		{Category: EventCategoryExposure, Label: "Exposure Events"},
+	}
+}
+
 // Known event types for notification routing.
 // Add new event types here - no database migration required (JSONB array).
 const (
