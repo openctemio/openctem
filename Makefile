@@ -108,6 +108,14 @@ lint-ci: lint-new
 	@echo "Running staticcheck..."
 	@GOWORK=off go run honnef.co/go/tools/cmd/staticcheck@latest ./...
 
+## release-branch: build a release branch that can merge into main (VERSION=v0.5.0)
+## Releases are squash-merged, so main ends up single-parent and git stops seeing
+## that develop contains it — the next release then reports conflicts that are not
+## disagreements. This carries the ancestry inside the branch instead, so it merges
+## cleanly regardless of which button is pressed. Add PUSH=--push when ready.
+release-branch:
+	@bash scripts/release-branch.sh $(VERSION) $(PUSH)
+
 ## fmt: Format code
 fmt:
 	@echo "Formatting code..."
