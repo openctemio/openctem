@@ -127,10 +127,10 @@ tidy:
 ## regeneration that never happened looked exactly like one that succeeded.
 swagger: swagger-install
 	@echo "Generating Swagger documentation..."
-	@# --parseDependency reads dependency source to resolve types. With a cold
-	@# module cache it does not fail, it silently emits a degraded schema (plain
-	@# `integer` where the real type is int64). Downloading first is what makes
-	@# this target and scripts/check-openapi.sh produce the same bytes.
+	@# --parseDependency walks into dependency packages. With a cold module cache
+	@# swag does not fail, it quietly emits a less-resolved schema (no
+	@# `format: int64`, no x-enum-descriptions), so the output is only
+	@# reproducible once the deps are downloaded.
 	@GOWORK=off go mod download
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
 	@echo "Swagger docs generated in api/openapi/"
