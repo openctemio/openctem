@@ -75,6 +75,25 @@ fi
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
+# --parseDependency makes swag read the source of dependency packages to resolve
+# types. When a package is missing from the module cache it does not fail — it
+# silently emits a degraded schema, e.g. `type: integer` where the real type is
+# int64 and the full run produces `format: int64` too.
+#
+# That is worse than a hard error for a gate like this one: a developer with a
+# warm cache commits the full spec, CI regenerates with a cold cache, and the
+# two disagree over dozens of lines that describe the same types. It happened on
+# the very first run of this gate.
+#
+# Downloading here rather than in the workflow keeps `make swagger-check` and CI
+# producing the same bytes, which is the only property that makes a
+# generated-artifact gate worth having.
+if ! (cd "$REPO_ROOT" && GOWORK=off go mod download) >/dev/null 2>&1; then
+  echo "check-openapi: go mod download failed; --parseDependency would silently" >&2
+  echo "produce a degraded spec and the comparison would be meaningless." >&2
+  exit 2
+fi
+
 if ! (cd "$REPO_ROOT" && GOWORK=off "$swag_bin" init \
         --generalInfo cmd/server/main.go \
         --output "$tmpdir" \
