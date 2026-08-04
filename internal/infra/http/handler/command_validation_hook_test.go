@@ -19,16 +19,26 @@ type captureIngester struct {
 	tenantID shared.ID
 	finding  shared.ID
 	ev       validation.Evidence
+	// simRunID was previously discarded by this mock, which is why it could not
+	// see that the handler always passed nil.
+	simRunID *shared.ID
 }
 
-func (c *captureIngester) Ingest(_ context.Context, tenantID, findingID shared.ID, _ *shared.ID, ev validation.Evidence) (validation.IngestResult, error) {
+func (c *captureIngester) Ingest(_ context.Context, tenantID, findingID shared.ID, simRunID *shared.ID, ev validation.Evidence) (validation.IngestResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls++
 	c.tenantID = tenantID
 	c.finding = findingID
+	c.simRunID = simRunID
 	c.ev = ev
 	return validation.IngestResult{StatusChanged: true}, nil
+}
+
+func (c *captureIngester) simRun() *shared.ID {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.simRunID
 }
 
 func (c *captureIngester) snapshot() (int, shared.ID, shared.ID, validation.Evidence) {

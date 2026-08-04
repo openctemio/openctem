@@ -614,10 +614,33 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 	}
 	tenantID := cmd.TenantID
 
+	// Carry the simulation link onto the evidence. It was passed as nil here,
+	// so every row this path wrote had simulation_run_id NULL — on the live
+	// database all 5, all executor_kind=safe-check, i.e. all produced BY a
+	// simulation and none traceable back to one. The API exposes the field, so
+	// "which evidence did this run produce?" answered empty.
+	//
+	// The value comes from the command payload, not from the agent: it is the
+	// same field the sibling triggerSimulationFinalize already reads to decide
+	// which run to finalize, so the two paths now agree by construction instead
+	// of by an agent remembering to echo it back.
+	var simRunID *shared.ID
+	if payload.SimulationRunID != "" {
+		if id, sErr := shared.IDFromString(payload.SimulationRunID); sErr == nil {
+			simRunID = &id
+		} else {
+			// Don't fail the evidence over it — a malformed id costs the link,
+			// not the finding update.
+			h.logger.Warn("validate command carries an unparseable simulation_run_id",
+				"command_id", cmd.ID.String(),
+				"simulation_run_id", payload.SimulationRunID)
+		}
+	}
+
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if _, err := h.validationIngest.Ingest(bgCtx, tenantID, findingID, nil, ev); err != nil {
+		if _, err := h.validationIngest.Ingest(bgCtx, tenantID, findingID, simRunID, ev); err != nil {
 			h.logger.Error("failed to record validation evidence",
 				"command_id", cmd.ID.String(),
 				"finding_id", payload.FindingID,
