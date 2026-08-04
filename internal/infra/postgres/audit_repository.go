@@ -166,6 +166,15 @@ func (r *AuditRepository) GetByTenantAndID(ctx context.Context, tenantID, id sha
 	return r.scanAuditLog(row, audit.AuditLogNotFoundError(id))
 }
 
+// GetSystemByID returns a tenant-less audit log by id — the rows on the
+// SystemChainTenantID chain. `tenant_id IS NULL` is part of the query, not a
+// caller's responsibility, so this can never return a tenant's row.
+func (r *AuditRepository) GetSystemByID(ctx context.Context, id shared.ID) (*audit.AuditLog, error) {
+	query := r.selectQuery() + " WHERE tenant_id IS NULL AND id = $1"
+	row := r.db.QueryRowContext(ctx, query, id.String())
+	return r.scanAuditLog(row, audit.AuditLogNotFoundError(id))
+}
+
 // List retrieves audit logs matching the filter with pagination.
 func (r *AuditRepository) List(ctx context.Context, filter audit.Filter, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	baseQuery := r.selectQuery()

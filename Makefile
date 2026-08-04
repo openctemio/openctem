@@ -108,6 +108,14 @@ lint-ci: lint-new
 	@echo "Running staticcheck..."
 	@GOWORK=off go run honnef.co/go/tools/cmd/staticcheck@latest ./...
 
+## release-branch: build a release branch that can merge into main (VERSION=v0.5.0)
+## Releases are squash-merged, so main ends up single-parent and git stops seeing
+## that develop contains it — the next release then reports conflicts that are not
+## disagreements. This carries the ancestry inside the branch instead, so it merges
+## cleanly regardless of which button is pressed. Add PUSH=--push when ready.
+release-branch:
+	@bash scripts/release-branch.sh $(VERSION) $(PUSH)
+
 ## fmt: Format code
 fmt:
 	@echo "Formatting code..."
@@ -118,21 +126,46 @@ tidy:
 	@echo "Tidying dependencies..."
 	$(GOMOD) tidy
 
-## swagger: Generate OpenAPI documentation using swag
-swagger:
+## swagger: Regenerate api/openapi/swagger.yaml from the handler annotations.
+## The spec is a GENERATED artifact — never hand-edit it. The UI generates its
+## API types from the committed file, and scripts/check-openapi.sh fails CI when
+## the annotations, the spec and the registered routes stop agreeing.
+##
+## Previously this target printed "swag not installed" and exited 0, so a
+## regeneration that never happened looked exactly like one that succeeded.
+swagger: swagger-install
 	@echo "Generating Swagger documentation..."
-	@if command -v swag >/dev/null 2>&1; then \
-		GOWORK=off swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency; \
-		echo "" >> api/openapi/swagger.yaml; \
-		echo "Swagger docs generated in api/openapi/"; \
-	else \
-		echo "swag not installed. Run: make swagger-install"; \
-	fi
+	@# --parseDependency walks into dependency packages — the asset-type enum
+	@# descriptions come from github.com/openctemio/ctis, not from this module,
+	@# and without the flag swag fails outright on json.RawMessage. Download
+	@# first so it is reading source rather than guessing.
+	@#
+	@# This does NOT make swag reproducible: a clean runner still drops
+	@# `format: int64` from some map[string]int64 fields that a developer
+	@# machine emits, with the same swag, the same Go and a warm cache. That is
+	@# why the gate compares sets of operations rather than bytes. See
+	@# tools/lint/openapicontract.
+	@GOWORK=off go mod download
+	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
+	@echo "Swagger docs generated in api/openapi/"
 
-## swagger-install: Install swag CLI tool
+## swagger-check: Fail if the annotations, the spec and the routes disagree.
+## Compares SETS of operations, not the bytes of the generated file — swag is
+## not reproducible enough across environments for a byte diff to hold. See
+## tools/lint/openapicontract for why.
+swagger-check:
+	@bash scripts/check-openapi.sh
+
+## swagger-install: Install the pinned swag CLI (no-op if already present).
+## Pinned: an upstream release must not be able to change the committed contract
+## or turn every PR red. Bump here and in scripts/check-openapi.sh together.
+SWAG_VERSION ?= v1.16.4
+SWAG := $(shell command -v swag 2>/dev/null || echo "$$(go env GOPATH)/bin/swag")
 swagger-install:
-	@echo "Installing swag..."
-	go install github.com/swaggo/swag/cmd/swag@latest
+	@if ! "$(SWAG)" --version 2>/dev/null | grep -qF "$(SWAG_VERSION)"; then \
+		echo "Installing swag $(SWAG_VERSION)..."; \
+		GOWORK=off GOFLAGS=-mod=mod go install github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION); \
+	fi
 
 ## clean: Clean build artifacts
 clean:

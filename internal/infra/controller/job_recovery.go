@@ -155,6 +155,10 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 	// ever reaped them. Every platform job that timed out in the queue took its
 	// pipeline run down silently, and the run hung until ScanTimeoutController
 	// reported a generic timeout instead of "expired in queue".
+	//
+	// Both raw-UPDATE reapers have since been deleted from the repository
+	// entirely, so this cannot be reintroduced by accident: expiry has exactly
+	// one implementation and it notifies the run.
 
 	// Step 3: Fail commands that have exceeded max retry attempts
 	failedExhausted, err := c.commandRepo.FailExhaustedCommands(ctx, c.config.MaxRetries)

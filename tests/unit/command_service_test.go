@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openctemio/api/internal/app/command"
 
@@ -29,8 +30,6 @@ type cmdMockRepo struct {
 	deleteErr             error
 	listErr               error
 	getPendingErr         error
-	expireErr             error
-	expireCount           int64
 	findExpiredResult     []*commanddom.Command
 	findExpiredErr        error
 	getByAuthTokenHashErr error
@@ -152,13 +151,6 @@ func (m *cmdMockRepo) Delete(_ context.Context, id shared.ID) error {
 	}
 	delete(m.commands, id.String())
 	return nil
-}
-
-func (m *cmdMockRepo) ExpireOldCommands(_ context.Context) (int64, error) {
-	if m.expireErr != nil {
-		return 0, m.expireErr
-	}
-	return m.expireCount, nil
 }
 
 func (m *cmdMockRepo) FindExpired(_ context.Context) ([]*commanddom.Command, error) {
@@ -473,8 +465,26 @@ func TestCommandService_CreateCommand_NoExpiration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if cmd.ExpiresAt != nil {
-		t.Error("expected no expiration, got one")
+	// Omitting ExpiresIn must NOT mean "never expires". This test used to assert
+	// ExpiresAt == nil, which is exactly the state that made
+	// ExpirationChecker inert: FindExpired requires `expires_at IS NOT NULL`,
+	// so a NULL here is a command no reaper can ever see.
+	assertDefaultCommandTTL(t, cmd.ExpiresAt)
+}
+
+// assertDefaultCommandTTL checks a command carries the backstop expiry.
+func assertDefaultCommandTTL(t *testing.T, expiresAt *time.Time) {
+	t.Helper()
+
+	if expiresAt == nil {
+		t.Fatal("ExpiresAt is nil: FindExpired requires `expires_at IS NOT NULL`, " +
+			"so this command can never be expired and the pipeline run waiting on it " +
+			"will never receive COMMAND_EXPIRED")
+	}
+	ttl := time.Until(*expiresAt)
+	if ttl < commanddom.DefaultCommandTTL-time.Minute || ttl > commanddom.DefaultCommandTTL+time.Minute {
+		t.Fatalf("ExpiresAt is %v away, want ~%v (DefaultCommandTTL)",
+			ttl, commanddom.DefaultCommandTTL)
 	}
 }
 
@@ -1424,49 +1434,6 @@ func TestCommandService_DeleteCommand_RepoDeleteError(t *testing.T) {
 }
 
 // =============================================================================
-// Tests: ExpireOldCommands
-// =============================================================================
-
-func TestCommandService_ExpireOldCommands_Success(t *testing.T) {
-	repo := newCmdMockRepo()
-	repo.expireCount = 5
-	svc := newCmdTestService(repo)
-
-	count, err := svc.ExpireOldCommands(context.Background())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if count != 5 {
-		t.Errorf("expected 5 expired, got %d", count)
-	}
-}
-
-func TestCommandService_ExpireOldCommands_Zero(t *testing.T) {
-	repo := newCmdMockRepo()
-	repo.expireCount = 0
-	svc := newCmdTestService(repo)
-
-	count, err := svc.ExpireOldCommands(context.Background())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if count != 0 {
-		t.Errorf("expected 0 expired, got %d", count)
-	}
-}
-
-func TestCommandService_ExpireOldCommands_RepoError(t *testing.T) {
-	repo := newCmdMockRepo()
-	repo.expireErr = errors.New("expire failed")
-	svc := newCmdTestService(repo)
-
-	_, err := svc.ExpireOldCommands(context.Background())
-	if err == nil {
-		t.Fatal("expected error from repo")
-	}
-}
-
-// =============================================================================
 // Tests: Full State Machine Transitions
 // =============================================================================
 
@@ -1821,9 +1788,9 @@ func TestCommandService_CreateCommand_ZeroExpiresIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if cmd.ExpiresAt != nil {
-		t.Error("expected no expiration for zero ExpiresIn")
-	}
+	// Zero means "no explicit deadline", which falls back to the default
+	// backstop — not to NULL.
+	assertDefaultCommandTTL(t, cmd.ExpiresAt)
 }
 
 func TestCommandService_CreateCommand_NegativeExpiresIn(t *testing.T) {
@@ -1840,10 +1807,10 @@ func TestCommandService_CreateCommand_NegativeExpiresIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	// Negative ExpiresIn is <= 0, so should not set expiration
-	if cmd.ExpiresAt != nil {
-		t.Error("expected no expiration for negative ExpiresIn")
-	}
+	// Negative ExpiresIn is <= 0, so no explicit deadline is applied and the
+	// default backstop stands. It must never leave expires_at NULL, and it must
+	// never produce an already-past deadline.
+	assertDefaultCommandTTL(t, cmd.ExpiresAt)
 }
 
 func TestCommandService_GetCommand_RepoError(t *testing.T) {

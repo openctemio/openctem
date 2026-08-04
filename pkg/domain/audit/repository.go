@@ -67,6 +67,16 @@ type Repository interface {
 	// duplicate.
 	AppendChainEntry(ctx context.Context, entry ChainEntry) error
 
+	// GetSystemByID returns a tenant-less audit log by id. It exists so the
+	// chain verifier can resolve entries on the SystemChainTenantID chain,
+	// whose audit_logs rows have tenant_id IS NULL.
+	//
+	// Deliberately a separate method rather than relaxing GetByTenantAndID:
+	// that one is a tenant-isolation boundary, and widening it so a sentinel
+	// matches NULL rows is exactly the kind of change that later leaks a real
+	// tenant's rows. This one can only ever return rows with no tenant.
+	GetSystemByID(ctx context.Context, id shared.ID) (*AuditLog, error)
+
 	// ListChainEntries returns chain rows for verification. Ordered by
 	// chain_position ASC.
 	ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]ChainEntry, error)
@@ -77,6 +87,32 @@ type Repository interface {
 	// is intentionally not part of the normal append flow.
 	UpdateChainEntryHashes(ctx context.Context, auditLogID shared.ID, prevHash, hash string) error
 }
+
+// SystemChainTenantID is the chain that tenant-less audit events are
+// appended to.
+//
+// The hash chain is keyed by tenant, and authentication events genuinely
+// have no tenant: at login a user may belong to several tenants and has
+// not chosen one yet. So they were skipped — and on the live database
+// that meant 925 of 1075 audit rows (86%), including EVERY auth.login,
+// auth.register and auth.failed, carried no tamper evidence at all. An
+// attacker with database access could delete the record of their own
+// login, or of the failed attempts that preceded it, and the chain
+// verifier would report the trail intact, because it only ever walked
+// rows that were chained.
+//
+// Nothing documented that exclusion — it was a consequence of the
+// per-tenant design, not a decision.
+//
+// A sentinel is used rather than making audit_log_chain.tenant_id
+// nullable, because that column is a tenant-isolation boundary and
+// loosening it is the more dangerous change. All-Fs is deliberate: its
+// version nibble is 'f', and uuid.NewV7 / uuid.New can only ever emit 7
+// or 4 there, so no generated ID can collide with it. The all-ZEROS
+// UUID was rejected for the opposite reason — it is the zero value of
+// shared.ID, which several call sites already test with IsZero() to mean
+// "unset".
+var SystemChainTenantID = shared.MustIDFromString("ffffffff-ffff-ffff-ffff-ffffffffffff")
 
 // ChainEntry is one row of the tamper-evident audit hash-chain.
 // Mirrors the audit_log_chain table (migration 000154).

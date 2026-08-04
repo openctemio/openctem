@@ -335,8 +335,3 @@ func (s *Service) DeleteCommand(ctx context.Context, tenantID, commandID string)
 
 	return s.repo.Delete(ctx, cid)
 }
-
-// ExpireOldCommands expires old pending commands.
-func (s *Service) ExpireOldCommands(ctx context.Context) (int64, error) {
-	return s.repo.ExpireOldCommands(ctx)
-}

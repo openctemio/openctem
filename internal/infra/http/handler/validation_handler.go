@@ -190,6 +190,23 @@ type storedEvidenceOut struct {
 	StartedAt       time.Time      `json:"started_at,omitempty"`
 	EndedAt         time.Time      `json:"ended_at,omitempty"`
 	CreatedAt       time.Time      `json:"created_at"`
+
+	// DetectionStatus answers "did any control observe this validation?" —
+	// a DIFFERENT question from Outcome ("is the exposure still
+	// reachable?"). The value sets are disjoint on purpose; see
+	// internal/app/validation/detection.go.
+	//
+	// Clients MUST NOT render anything other than "not_observed" as a
+	// control failure. "no_telemetry_source" in particular means no
+	// telemetry is reaching the platform — UNKNOWN, not a miss. Showing
+	// it as a miss reports a configuration gap as a security failure.
+	DetectionStatus string `json:"detection_status"`
+	// DetectionIsGap is the precomputed safe predicate for the above so a
+	// client cannot get the comparison wrong.
+	DetectionIsGap bool `json:"detection_is_gap"`
+	// DetectionDetail explains how the verdict was reached (match mode,
+	// window bounds, pipeline liveness).
+	DetectionDetail map[string]any `json:"detection_detail,omitempty"`
 }
 
 // ListFindingEvidence handles GET /api/v1/findings/{id}/evidence (JWT auth).
@@ -226,6 +243,10 @@ func (h *ValidationHandler) ListFindingEvidence(w http.ResponseWriter, r *http.R
 			StartedAt:    rec.Evidence.StartedAt,
 			EndedAt:      rec.Evidence.EndedAt,
 			CreatedAt:    rec.CreatedAt,
+
+			DetectionStatus: string(rec.DetectionStatus),
+			DetectionIsGap:  rec.DetectionStatus.IsDetectionGap(),
+			DetectionDetail: rec.DetectionDetail,
 		}
 		if rec.SimulationRunID != nil {
 			item.SimulationRunID = rec.SimulationRunID.String()

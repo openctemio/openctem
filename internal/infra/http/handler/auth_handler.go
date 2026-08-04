@@ -35,12 +35,13 @@ type KeycloakInfoResponse struct {
 }
 
 // Info returns Keycloak configuration info.
-// @Summary      Get Keycloak info
-// @Description  Returns Keycloak server configuration URLs and realm info
-// @Tags         Authentication
-// @Produce      json
-// @Success      200  {object}  KeycloakInfoResponse
-// @Router       /auth/keycloak/info [get]
+//
+// Served at GET /auth/info, but only in the OIDC branch of registerAuthRoutes
+// (routes/auth.go) — LocalAuthHandler.Info serves the same path in the local
+// branch and the two are mutually exclusive at runtime. Since the spec is
+// generated, both handlers cannot annotate the one path: LocalAuthHandler
+// carries the @Router and this one deliberately does not. The annotation this
+// replaces claimed /auth/keycloak/info, which no router has ever served.
 func (h *AuthHandler) Info(w http.ResponseWriter, r *http.Request) {
 	baseURL := h.keycloakCfg.BaseURL
 	realm := h.keycloakCfg.Realm
@@ -62,12 +63,11 @@ func (h *AuthHandler) Info(w http.ResponseWriter, r *http.Request) {
 }
 
 // GenerateToken is deprecated - tokens are now issued by Keycloak.
-// @Summary      Generate token (deprecated)
-// @Description  Deprecated endpoint - returns redirect instruction to Keycloak OAuth flow
-// @Tags         Authentication
-// @Produce      json
-// @Success      200  {object}  map[string]string
-// @Router       /auth/keycloak/token [post]
+//
+// Served at POST /auth/token in the OIDC branch only; LocalAuthHandler.Login
+// serves the same path in the local branch and carries the @Router. See Info
+// above. The annotation this replaces claimed /auth/keycloak/token, which no
+// router has ever served.
 func (h *AuthHandler) GenerateToken(w http.ResponseWriter, r *http.Request) {
 	baseURL := h.keycloakCfg.BaseURL
 	realm := h.keycloakCfg.Realm

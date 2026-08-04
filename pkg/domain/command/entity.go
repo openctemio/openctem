@@ -20,6 +20,33 @@ const (
 
 	// DefaultAuthTokenTTL is the default time-to-live for auth tokens (24 hours)
 	DefaultAuthTokenTTL = 24 * time.Hour
+
+	// DefaultCommandTTL is the expiry every command gets unless the caller asks
+	// for a different one. It is a BACKSTOP, not a scheduling knob: it exists so
+	// a command that nothing ever answers eventually reaches
+	// ExpirationChecker -> pipeline.OnStepFailed("COMMAND_EXPIRED") instead of
+	// leaving the owning run waiting forever.
+	//
+	// Every command used to be created with expires_at NULL, and both consumers
+	// of the column require `expires_at IS NOT NULL` — so FindExpired matched
+	// zero rows in every deployment and the checker had never expired anything.
+	//
+	// 48h is deliberately chosen to sit BEYOND every other timeout in the
+	// command path, so those fire first and this one only catches what they miss:
+	//
+	//   10m  JobRecoveryController.TenantStuckThresholdMinutes
+	//   30m  JobRecoveryController.StuckThresholdMinutes (platform jobs)
+	//   60m  ExpirationChecker.MaxQueueMinutes (platform job stuck in queue)
+	//    1h  scan.DefaultScanTimeoutSeconds -> ScanTimeoutController
+	//   24h  scan.MaxScanTimeoutSeconds (the longest a scan may legitimately run)
+	//   24h  DefaultAuthTokenTTL (past this a platform job cannot authenticate,
+	//        so it can no longer be executed even if an agent picked it up)
+	//
+	// A shorter TTL would start expiring healthy in-flight work, which is worse
+	// than the inertness this replaces. Note also that FindExpired only matches
+	// status IN ('pending','acknowledged') — a command that is actually
+	// 'running' is never expired by this path however long it runs.
+	DefaultCommandTTL = 48 * time.Hour
 )
 
 // CommandType represents the type of command.
@@ -135,6 +162,13 @@ type Command struct {
 }
 
 // NewCommand creates a new Command entity.
+//
+// The expiry default is applied here rather than at the call sites because this
+// constructor is the single seam every command creation goes through
+// (scan/trigger, scan/coverage dispatch, pipeline/run, validation/dispatcher and
+// the command service). Setting it per-site is what left expires_at NULL
+// everywhere. Callers that need a different deadline override it afterwards with
+// SetExpiration.
 func NewCommand(tenantID shared.ID, cmdType CommandType, priority CommandPriority, payload json.RawMessage) (*Command, error) {
 	if cmdType == "" {
 		return nil, shared.NewDomainError("VALIDATION", "command type is required", shared.ErrValidation)
@@ -144,6 +178,9 @@ func NewCommand(tenantID shared.ID, cmdType CommandType, priority CommandPriorit
 		priority = CommandPriorityNormal
 	}
 
+	now := time.Now()
+	expiresAt := now.Add(DefaultCommandTTL)
+
 	return &Command{
 		ID:        shared.NewID(),
 		TenantID:  tenantID,
@@ -151,7 +188,8 @@ func NewCommand(tenantID shared.ID, cmdType CommandType, priority CommandPriorit
 		Priority:  priority,
 		Payload:   payload,
 		Status:    CommandStatusPending,
-		CreatedAt: time.Now(),
+		CreatedAt: now,
+		ExpiresAt: &expiresAt,
 	}, nil
 }
 

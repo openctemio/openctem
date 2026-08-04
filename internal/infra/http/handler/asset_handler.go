@@ -1759,7 +1759,7 @@ func (h *AssetHandler) Sync(w http.ResponseWriter, r *http.Request) {
 // @Failure      400      {object}  map[string]string
 // @Failure      401      {object}  map[string]string
 // @Failure      500      {object}  map[string]string
-// @Router       /assets/bulk-sync [post]
+// @Router       /assets/bulk/sync [post]
 func (h *AssetHandler) BulkSync(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	ctx := r.Context()

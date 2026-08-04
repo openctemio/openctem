@@ -51,6 +51,14 @@ type runtimeEventIn struct {
 	Severity        string         `json:"severity,omitempty"`          // info|low|medium|high|critical, default info
 	ObservedAt      time.Time      `json:"observed_at"`                 // when the event happened on the endpoint
 	Properties      map[string]any `json:"properties,omitempty"`
+
+	// CorrelationID optionally ties this event to the validation job /
+	// command that provoked it. A producer that knows which activity it
+	// is reacting to should stamp it: the Stage-4 detection correlator
+	// then matches exactly instead of falling back to an asset+time
+	// window heuristic. Not FK-enforced — telemetry can outlive the
+	// command row.
+	CorrelationID string `json:"correlation_id,omitempty"`
 }
 
 // ingestRequest supports both single-event and batched submissions. A
@@ -61,8 +69,26 @@ type ingestRequest struct {
 }
 
 type ingestResponse struct {
-	Accepted int      `json:"accepted"`
-	Rejected int      `json:"rejected"`
+	Accepted int `json:"accepted"`
+	Rejected int `json:"rejected"`
+
+	// Unpaired counts ACCEPTED events that carried no endpoint_asset_id.
+	// They are stored and the IOC correlator still matches them, because it
+	// keys on values inside the event. They are invisible to every
+	// asset-scoped read: Stage-4 detection correlation's heuristic fallback
+	// and the per-asset Stage-6 dashboards.
+	//
+	// This is permanent, not a pending state. There is no server-side way to
+	// fill it in later — `agents` has no asset column and `assets` has no
+	// agent column, and only the producer knows which endpoint an event
+	// describes anyway (a forwarder reports on many hosts). Migration 000155
+	// once promised a nightly reconciler; it was never written and could not
+	// have been.
+	//
+	// Reported so a producer sees the degradation on the response it already
+	// reads, rather than discovering months later that half the feature never
+	// applied to its data.
+	Unpaired int      `json:"unpaired"`
 	Errors   []string `json:"errors,omitempty"`
 }
 
@@ -104,8 +130,8 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 	// records to the originating telemetry event.
 	const q = `
 		INSERT INTO runtime_telemetry_events
-		       (tenant_id, agent_id, endpoint_asset_id, event_type, severity, observed_at, properties)
-		VALUES ($1, $2, NULLIF($3,'')::uuid, $4, COALESCE(NULLIF($5,''),'info'), $6, $7)
+		       (tenant_id, agent_id, endpoint_asset_id, event_type, severity, observed_at, properties, correlation_id)
+		VALUES ($1, $2, NULLIF($3,'')::uuid, $4, COALESCE(NULLIF($5,''),'info'), $6, $7, NULLIF($8,'')::uuid)
 		RETURNING id
 	`
 
@@ -160,6 +186,16 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 				continue
 			}
 		}
+		// Validate correlation_id in Go rather than letting the ::uuid
+		// cast blow up: a malformed value would otherwise surface as an
+		// opaque "database insert failed" for the whole event.
+		if ev.CorrelationID != "" {
+			if _, cerr := shared.IDFromString(ev.CorrelationID); cerr != nil {
+				resp.Rejected++
+				resp.Errors = append(resp.Errors, eventErr(i, "correlation_id must be a UUID"))
+				continue
+			}
+		}
 		propsJSON, err := json.Marshal(nilMapToEmpty(ev.Properties))
 		if err != nil {
 			resp.Rejected++
@@ -175,6 +211,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			ev.Severity,
 			ev.ObservedAt.UTC(),
 			propsJSON,
+			ev.CorrelationID,
 		).Scan(&eventIDStr)
 		if err != nil {
 			h.logger.Warn("runtime telemetry insert failed",
@@ -188,6 +225,9 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 		resp.Accepted++
+		if ev.EndpointAssetID == "" {
+			resp.Unpaired++
+		}
 
 		if eventID, parseErr := shared.IDFromString(eventIDStr); parseErr == nil {
 			accepted = append(accepted, iocapp.TelemetryEvent{
@@ -196,6 +236,20 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 				Properties: ev.Properties,
 			})
 		}
+	}
+
+	// Surface the degradation in the logs too. A producer that never sends
+	// endpoint_asset_id gets a fully successful 200 with a healthy accepted
+	// count, and would have no reason to suspect that asset-scoped correlation
+	// silently does not apply to any of its data.
+	if resp.Unpaired > 0 {
+		h.logger.Warn("runtime telemetry accepted without an endpoint asset link",
+			"tenant_id", agt.TenantID.String(),
+			"agent_id", agt.ID.String(),
+			"unpaired", resp.Unpaired,
+			"accepted", resp.Accepted,
+			"impact", "invisible to asset-scoped detection correlation and per-asset dashboards; "+
+				"the producer must supply endpoint_asset_id, the server cannot infer it")
 	}
 
 	// B6 wire: ONE batch correlate call for the whole accepted slice.

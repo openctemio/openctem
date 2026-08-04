@@ -35,10 +35,27 @@ func (r *ValidationEvidenceRepository) Create(ctx context.Context, ev validation
 		simRunID = sql.NullString{String: ev.SimulationRunID.String(), Valid: true}
 	}
 
+	// Detection verdict. An empty status is stored as 'not_evaluated'
+	// rather than defaulted to anything that could read as a control
+	// failure — see validation.DetectionStatus.
+	detectionStatus := ev.DetectionStatus
+	if detectionStatus == "" {
+		detectionStatus = validation.DetectionNotEvaluated
+	}
+	detail := ev.DetectionDetail
+	if detail == nil {
+		detail = map[string]any{}
+	}
+	detailJSON, err := json.Marshal(detail)
+	if err != nil {
+		return fmt.Errorf("marshal detection detail: %w", err)
+	}
+
 	const q = `
 		INSERT INTO validation_evidence
-		       (id, tenant_id, finding_id, simulation_run_id, executor_kind, technique, outcome, summary, evidence, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		       (id, tenant_id, finding_id, simulation_run_id, executor_kind, technique, outcome, summary, evidence, created_at,
+		        detection_status, detection_detail)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 	_, err = r.db.ExecContext(ctx, q,
 		ev.ID.String(),
@@ -51,6 +68,8 @@ func (r *ValidationEvidenceRepository) Create(ctx context.Context, ev validation
 		ev.Evidence.Summary,
 		payload,
 		ev.CreatedAt,
+		string(detectionStatus),
+		detailJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("insert validation evidence: %w", err)
@@ -97,7 +116,8 @@ func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, t
 // to the tenant.
 func (r *ValidationEvidenceRepository) ListByFinding(ctx context.Context, tenantID, findingID shared.ID) ([]validation.StoredEvidence, error) {
 	const q = `
-		SELECT id, tenant_id, finding_id, simulation_run_id, evidence, created_at
+		SELECT id, tenant_id, finding_id, simulation_run_id, evidence, created_at,
+		       detection_status, detection_detail
 		  FROM validation_evidence
 		 WHERE tenant_id = $1 AND finding_id = $2
 		 ORDER BY created_at DESC
@@ -114,10 +134,19 @@ func (r *ValidationEvidenceRepository) ListByFinding(ctx context.Context, tenant
 			idStr, tenantStr, findingStr string
 			simRunID                     sql.NullString
 			payload                      []byte
+			detectionStatus              string
+			detailJSON                   []byte
 			stored                       validation.StoredEvidence
 		)
-		if err := rows.Scan(&idStr, &tenantStr, &findingStr, &simRunID, &payload, &stored.CreatedAt); err != nil {
+		if err := rows.Scan(&idStr, &tenantStr, &findingStr, &simRunID, &payload, &stored.CreatedAt,
+			&detectionStatus, &detailJSON); err != nil {
 			return nil, fmt.Errorf("scan validation evidence: %w", err)
+		}
+		stored.DetectionStatus = validation.DetectionStatus(detectionStatus)
+		if len(detailJSON) > 0 {
+			if err := json.Unmarshal(detailJSON, &stored.DetectionDetail); err != nil {
+				return nil, fmt.Errorf("unmarshal detection detail: %w", err)
+			}
 		}
 
 		if stored.ID, err = shared.IDFromString(idStr); err != nil {

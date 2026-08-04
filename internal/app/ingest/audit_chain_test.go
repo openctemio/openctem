@@ -95,6 +95,10 @@ func (r *chainAuditRepo) GetByTenantAndID(_ context.Context, tenantID, id shared
 	return log, nil
 }
 
+func (r *chainAuditRepo) GetSystemByID(_ context.Context, id shared.ID) (*audit.AuditLog, error) {
+	return nil, audit.AuditLogNotFoundError(id)
+}
+
 // chainEntryFor returns the chain row covering an audit log, if any.
 func (r *chainAuditRepo) chainEntryFor(id shared.ID) (audit.ChainEntry, bool) {
 	r.mu.Lock()

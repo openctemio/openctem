@@ -434,6 +434,17 @@ func (s *SimulationService) FinalizeRun(ctx context.Context, tenantID, runID sha
 		"verified":       true,
 		"outcome":        outcome,
 		"summary":        summary,
+		// A live safe-check measures REACHABILITY. It does not observe a
+		// control reacting, so this run carries no detection verdict.
+		// The Phase-0 synthetic path already flagged this; the Phase-1b
+		// live path did not, and its detection/prevention strings read
+		// as if a control had been graded. Whether anything detected the
+		// activity is answered separately by
+		// validation_evidence.detection_status.
+		"detection_validated": false,
+		"disclaimer": "Live reachability probe only. 'detected'/'bypassed' here describe whether the " +
+			"target was reachable, NOT whether a security control observed the activity. See " +
+			"validation_evidence.detection_status for the detection verdict.",
 	}
 	run.Complete(result, detection, prevention, output)
 	if err := s.runRepo.Update(ctx, run); err != nil {
@@ -453,6 +464,12 @@ func (s *SimulationService) FinalizeRun(ctx context.Context, tenantID, runID sha
 	return nil
 }
 
+// detectionNotAssessed is the detection string for every LIVE safe-check
+// result. A reachability probe never observes a control reacting, so the
+// run must not carry a detection verdict — that question is answered by
+// validation_evidence.detection_status (see app/validation/detection.go).
+const detectionNotAssessed = "Detection not assessed — live safe-check measures reachability only"
+
 // mapOutcomeToResult translates a validation safe-check outcome (reachability
 // semantics) into a simulation run result:
 //   - not_detected → prevented (target unreachable; control/segmentation held)
@@ -461,21 +478,25 @@ func (s *SimulationService) FinalizeRun(ctx context.Context, tenantID, runID sha
 //   - error/other  → error
 func mapOutcomeToResult(outcome string) (result simulation.RunResult, detection, prevention string) {
 	switch outcome {
+	// The detection string is detectionNotAssessed on every branch: a
+	// reachability probe cannot tell whether a control saw anything, and
+	// phrasing it as a detection result made the UI's detection-rate KPI
+	// read as a graded control outcome.
 	case "not_detected":
 		return simulation.RunResultPrevented,
-			"Live safe-check: target not reachable",
-			"Reachability control held — technique path closed"
+			detectionNotAssessed,
+			"Target not reachable — technique path closed (reachability control held)"
 	case "detected":
 		return simulation.RunResultBypassed,
-			"Live safe-check: target reachable",
+			detectionNotAssessed,
 			"Target reachable — technique path is open"
 	case "inconclusive":
 		return simulation.RunResultPartial,
-			"Live safe-check: inconclusive",
-			"Partial signal"
+			detectionNotAssessed,
+			"Reachability inconclusive — partial signal"
 	default:
 		return simulation.RunResultError,
-			"Live safe-check: error",
+			"Detection not assessed — probe did not complete",
 			"Probe did not complete"
 	}
 }

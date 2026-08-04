@@ -518,7 +518,6 @@ func (m *mockCommandRepo) List(_ context.Context, _ commanddom.Filter, _ paginat
 }
 func (m *mockCommandRepo) Update(_ context.Context, _ *commanddom.Command) error { return nil }
 func (m *mockCommandRepo) Delete(_ context.Context, _ shared.ID) error           { return nil }
-func (m *mockCommandRepo) ExpireOldCommands(_ context.Context) (int64, error)    { return 0, nil }
 func (m *mockCommandRepo) FindExpired(_ context.Context) ([]*commanddom.Command, error) {
 	return nil, nil
 }

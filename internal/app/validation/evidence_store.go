@@ -32,6 +32,15 @@ type StoredEvidence struct {
 	SimulationRunID *shared.ID // optional; populated when evidence is part of a scheduled simulation
 	Evidence        Evidence
 	CreatedAt       time.Time
+
+	// DetectionStatus answers "did any control observe this?" — a
+	// SEPARATE question from Evidence.Outcome ("is the exposure still
+	// reachable?"). Defaults to DetectionNotEvaluated so a record never
+	// implies a control failed just because correlation did not run.
+	DetectionStatus DetectionStatus
+	// DetectionDetail records how the verdict was reached (match mode,
+	// window, pipeline liveness) so an operator can audit it.
+	DetectionDetail map[string]any
 }
 
 // EvidenceRepository persists StoredEvidence. Implemented by a
@@ -44,12 +53,15 @@ type EvidenceRepository interface {
 // EvidenceStore is the app-layer facade. Calls redact → persist →
 // returns the stored record so callers can surface it.
 type EvidenceStore struct {
-	repo     EvidenceRepository
-	redactor *Redactor
-	now      func() time.Time
+	repo       EvidenceRepository
+	redactor   *Redactor
+	now        func() time.Time
+	detections *DetectionCorrelator // optional; nil → DetectionNotEvaluated
 }
 
-// NewEvidenceStore wires defaults.
+// NewEvidenceStore wires defaults. Detection correlation is off until
+// SetDetectionCorrelator is called — until then every record is stored
+// as DetectionNotEvaluated, never as a detection gap.
 func NewEvidenceStore(repo EvidenceRepository) *EvidenceStore {
 	return &EvidenceStore{
 		repo:     repo,
@@ -57,6 +69,12 @@ func NewEvidenceStore(repo EvidenceRepository) *EvidenceStore {
 		now:      func() time.Time { return time.Now().UTC() },
 	}
 }
+
+// SetDetectionCorrelator enables "did our controls react?" evaluation.
+// Called from services bootstrap after both the store and the telemetry
+// probe exist — mirrors RuntimeTelemetryHandler.SetCorrelator and avoids
+// a wiring-order cycle.
+func (s *EvidenceStore) SetDetectionCorrelator(c *DetectionCorrelator) { s.detections = c }
 
 // Record persists the evidence after redaction. Returns the stored
 // envelope with ID populated. Errors from the repo are propagated.
@@ -70,6 +88,19 @@ func (s *EvidenceStore) Record(
 		return StoredEvidence{}, fmt.Errorf("%w: tenant and finding ids are required", shared.ErrValidation)
 	}
 	redacted := s.redactor.Redact(ev)
+
+	// Detection verdict — the "did our controls react?" half of Stage-4.
+	// Correlation failures degrade to DetectionNotEvaluated inside
+	// Evaluate; they never block persisting the evidence, and they never
+	// produce a detection gap.
+	verdict := DetectionVerdict{
+		Status: DetectionNotEvaluated,
+		Detail: map[string]any{"reason": "detection correlation not configured"},
+	}
+	if s.detections != nil {
+		verdict = s.detections.Evaluate(ctx, tenantID, redacted, ev.CorrelationID)
+	}
+
 	stored := StoredEvidence{
 		ID:              shared.NewID(),
 		TenantID:        tenantID,
@@ -77,6 +108,8 @@ func (s *EvidenceStore) Record(
 		SimulationRunID: simulationRunID,
 		Evidence:        redacted,
 		CreatedAt:       s.now(),
+		DetectionStatus: verdict.Status,
+		DetectionDetail: verdict.Detail,
 	}
 	if err := s.repo.Create(ctx, stored); err != nil {
 		return StoredEvidence{}, fmt.Errorf("persist evidence: %w", err)

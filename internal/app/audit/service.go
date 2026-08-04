@@ -201,7 +201,17 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 		// 1. Fetch the original audit_log. If it's gone, flag it — a
 		//    deleted row is a tamper signal (FK ON DELETE RESTRICT
 		//    blocks it in production but not in every path).
-		log, err := s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
+		// System-chain entries point at audit_logs rows with tenant_id IS NULL,
+		// which the tenant-scoped getter cannot see — using it here would
+		// report every one of them as audit_log_missing, i.e. a fabricated
+		// tamper signal on the chain that exists to detect real ones.
+		var log *auditdom.AuditLog
+		var err error
+		if tenantID == auditdom.SystemChainTenantID {
+			log, err = s.auditRepo.GetSystemByID(ctx, e.AuditLogID)
+		} else {
+			log, err = s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
+		}
 		if err != nil {
 			res.Breaks = append(res.Breaks, ChainBreak{
 				AuditLogID:    e.AuditLogID.String(),
@@ -319,11 +329,15 @@ func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, 
 // (pg_advisory_xact_lock) and is not wired here because the current
 // deployment is single-replica.
 func (s *AuditService) appendChainEntry(ctx context.Context, log *auditdom.AuditLog) {
-	tenantPtr := log.TenantID()
-	if tenantPtr == nil {
-		return // system-level events bypass the per-tenant chain
+	// Tenant-less events (every auth.login / auth.register / auth.failed —
+	// 86% of the trail on the live database) used to return here, which left
+	// them with no tamper evidence at all. They now extend a dedicated system
+	// chain instead. See auditdom.SystemChainTenantID for why a sentinel
+	// rather than a nullable column.
+	tid := auditdom.SystemChainTenantID
+	if tenantPtr := log.TenantID(); tenantPtr != nil {
+		tid = *tenantPtr
 	}
-	tid := *tenantPtr
 
 	s.chainMu.Lock()
 	defer s.chainMu.Unlock()

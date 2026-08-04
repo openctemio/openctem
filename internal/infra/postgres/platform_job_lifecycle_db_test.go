@@ -162,6 +162,7 @@ func commandState(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) (
 func TestRecoverStuckJobs_RecoversJobClaimedByTenantAgent(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -196,6 +197,7 @@ func TestRecoverStuckJobs_RecoversJobClaimedByTenantAgent(t *testing.T) {
 func TestRecoverStuckJobs_RecoversJobClaimedByPlatformAgent(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -225,6 +227,7 @@ func TestRecoverStuckJobs_RecoversJobClaimedByPlatformAgent(t *testing.T) {
 func TestRecoverStuckJobs_HonoursMaxRetries(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -259,6 +262,7 @@ func TestRecoverStuckJobs_HonoursMaxRetries(t *testing.T) {
 func TestRecoverStuckJobs_IgnoresFreshlyAcknowledgedJob(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -285,6 +289,7 @@ func TestRecoverStuckJobs_IgnoresFreshlyAcknowledgedJob(t *testing.T) {
 func TestRecoverStuckJobs_IgnoresTenantCommands(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -315,6 +320,7 @@ func TestRecoverStuckJobs_IgnoresTenantCommands(t *testing.T) {
 func TestFindQueueExpiredPlatformJobs_ReturnsOverdueQueuedJob(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -349,6 +355,7 @@ func TestFindQueueExpiredPlatformJobs_ReturnsOverdueQueuedJob(t *testing.T) {
 func TestFindQueueExpiredPlatformJobs_IgnoresJobWithinBudget(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -375,6 +382,7 @@ func TestFindQueueExpiredPlatformJobs_IgnoresJobWithinBudget(t *testing.T) {
 func TestFindQueueExpiredPlatformJobs_IgnoresAcknowledgedJob(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)
@@ -402,6 +410,7 @@ func TestFindQueueExpiredPlatformJobs_IgnoresAcknowledgedJob(t *testing.T) {
 func TestFindQueueExpiredPlatformJobs_IgnoresTenantCommands(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
+	defer lockGlobalSweep(ctx, t, db)()
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)

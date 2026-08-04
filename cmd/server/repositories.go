@@ -183,6 +183,10 @@ type Repositories struct {
 	// Validation evidence (CTEM Stage-4, migration 000178)
 	ValidationEvidence *postgres.ValidationEvidenceRepository
 
+	// Runtime-telemetry reads for Stage-4 detection correlation
+	// (migration 000203)
+	TelemetryProbe *postgres.TelemetryProbeRepository
+
 	// SCIM provisioning bearer tokens (RFC-009, migration 000179)
 	ScimToken *postgres.ScimTokenRepository
 
@@ -368,6 +372,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Validation evidence (CTEM Stage-4, migration 000178).
 		ValidationEvidence: postgres.NewValidationEvidenceRepository(db),
+
+		// Runtime-telemetry reads for detection correlation (migration 000203).
+		TelemetryProbe: postgres.NewTelemetryProbeRepository(db),
 
 		// SCIM provisioning bearer tokens (RFC-009, migration 000179).
 		ScimToken: postgres.NewScimTokenRepository(db),

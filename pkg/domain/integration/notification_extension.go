@@ -253,6 +253,39 @@ func DefaultEnabledEventTypes() []EventType {
 	}
 }
 
+// SeverityFilterApplies reports whether the per-integration severity filter is
+// meaningful for this event type.
+//
+// EnqueueParams.Severity carries two different things depending on the event:
+//
+//   - For finding-shaped events (new_finding, sla_breach, ...) it IS the
+//     finding's severity. An operator who leaves the filter at its default is
+//     saying "only tell me about critical and high findings", and honoring
+//     that is the whole point of the filter.
+//
+//   - For approval lifecycle events it is a hardcoded constant chosen by the
+//     enqueue site ("medium" for requested/rejected, "low" for approved). It
+//     describes nothing about a finding, and no operator ever asked to
+//     suppress it.
+//
+// Running the second kind through a filter built for the first kind silently
+// defeats it. That is not hypothetical: DefaultEnabledEventTypes deliberately
+// includes EventTypeApprovalRequested, with the comment "if it reaches nobody
+// the finding stays blocked indefinitely" — and then the severity gate dropped
+// it anyway, because "medium" is not in the default critical+high set. The
+// event-type gate was opened on purpose and the severity gate closed it again.
+//
+// Events exempted here remain fully controllable through the event-type filter,
+// which is the switch that actually means "I do not want these".
+func SeverityFilterApplies(eventType EventType) bool {
+	switch MapLegacyEventType(eventType) {
+	case EventTypeApprovalRequested, EventTypeApprovalApproved, EventTypeApprovalRejected:
+		return false
+	default:
+		return true
+	}
+}
+
 // AllKnownEventTypes returns all known event types (for backward compatibility API).
 func AllKnownEventTypes() []EventType {
 	types := make([]EventType, 0, len(AllEventTypes()))

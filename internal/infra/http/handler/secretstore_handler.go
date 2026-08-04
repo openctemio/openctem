@@ -147,7 +147,7 @@ type ListCredentialsResponse struct {
 // @Failure      409   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /credentials [post]
+// @Router       /secret-store [post]
 func (h *SecretStoreHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateCredentialRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -224,7 +224,7 @@ func (h *SecretStoreHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /credentials/{id} [get]
+// @Router       /secret-store/{id} [get]
 func (h *SecretStoreHandler) Get(w http.ResponseWriter, r *http.Request) {
 	credentialID := chi.URLParam(r, "id")
 	if credentialID == "" {
@@ -262,7 +262,7 @@ func (h *SecretStoreHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /credentials [get]
+// @Router       /secret-store [get]
 func (h *SecretStoreHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantIDStr := middleware.GetTenantID(r.Context())
 	tenantID, err := shared.IDFromString(tenantIDStr)
@@ -328,7 +328,7 @@ func (h *SecretStoreHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Failure      404   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /credentials/{id} [put]
+// @Router       /secret-store/{id} [put]
 func (h *SecretStoreHandler) Update(w http.ResponseWriter, r *http.Request) {
 	credentialID := chi.URLParam(r, "id")
 	if credentialID == "" {
@@ -393,7 +393,7 @@ func (h *SecretStoreHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /credentials/{id} [delete]
+// @Router       /secret-store/{id} [delete]
 func (h *SecretStoreHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	credentialID := chi.URLParam(r, "id")
 	if credentialID == "" {

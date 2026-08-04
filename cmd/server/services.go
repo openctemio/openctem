@@ -808,6 +808,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Validation (CTEM Stage-4): agents POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
+	// Stage-4's second question: "did our controls react?". Correlates
+	// the tenant's runtime telemetry against each validation's execution
+	// window. Reports no_telemetry_source (an explicit UNKNOWN) when no
+	// telemetry is reaching the platform at all, so a missing EDR/XDR
+	// integration is never rendered as a failed control.
+	evidenceStore.SetDetectionCorrelator(
+		validation.NewDetectionCorrelator(repos.TelemetryProbe),
+	)
 	s.ValidationEvidence = validation.NewEvidenceIngestService(
 		evidenceStore,
 		findingMutatorAdapter{repo: repos.Finding},

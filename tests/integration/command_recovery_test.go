@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -19,6 +20,7 @@ import (
 func TestRecoverStuckTenantCommands(t *testing.T) {
 	db := setupCommandTestDB(t)
 	defer db.Close()
+	defer lockGlobalSweep(context.Background(), t, db)()
 
 	tenantID := createTestTenantForCommand(t, db)
 	agentID := createTestAgent(t, db, tenantID, "online")
@@ -159,6 +161,7 @@ func TestRecoverStuckTenantCommands(t *testing.T) {
 func TestFailExhaustedCommands(t *testing.T) {
 	db := setupCommandTestDB(t)
 	defer db.Close()
+	defer lockGlobalSweep(context.Background(), t, db)()
 
 	tenantID := createTestTenantForCommand(t, db)
 	offlineAgentID := createTestAgent(t, db, tenantID, "offline")
@@ -287,6 +290,7 @@ func TestFailExhaustedCommands(t *testing.T) {
 func TestRecoveryAndFailIntegration(t *testing.T) {
 	db := setupCommandTestDB(t)
 	defer db.Close()
+	defer lockGlobalSweep(context.Background(), t, db)()
 
 	tenantID := createTestTenantForCommand(t, db)
 	offlineAgentID := createTestAgent(t, db, tenantID, "offline")
@@ -362,9 +366,14 @@ func TestRecoveryAndFailIntegration(t *testing.T) {
 func setupCommandTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
+	// No default. These tests write rows and run cross-tenant sweeps; a default
+	// of "openctem" pointed an unconfigured `go test ./...` at whatever database
+	// that name resolves to on the machine running it - in a dev environment, the
+	// real one. Skipping is the only safe unset behavior, and it matches
+	// openPlatformJobDB in internal/infra/postgres.
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://openctem@localhost:5432/openctem?sslmode=disable"
+		t.Skip("DATABASE_URL not set; skipping command recovery tests")
 	}
 
 	db, err := sql.Open("postgres", dbURL)

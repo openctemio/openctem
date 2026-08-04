@@ -101,11 +101,13 @@ func TestAuditChainVerify_CleanChain_NoErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
-	if processed != 3 {
-		t.Errorf("processed: want 3, got %d", processed)
+	// 3 tenants + the system chain. The system chain is not a tenant, so
+	// ListActiveTenantIDs never returns it; the controller adds it.
+	if processed != 4 {
+		t.Errorf("processed: want 4 (3 tenants + system chain), got %d", processed)
 	}
-	if len(verifier.calls) != 3 {
-		t.Errorf("verifier called %d times, want 3", len(verifier.calls))
+	if len(verifier.calls) != 4 {
+		t.Errorf("verifier called %d times, want 4", len(verifier.calls))
 	}
 }
 
@@ -137,8 +139,8 @@ func TestAuditChainVerify_BreaksStillCountAsProcessed(t *testing.T) {
 	// VerifyChain. The break is emitted via the logger (tested via
 	// absence of error below — visual SIEM alerting is out of scope
 	// for unit tests).
-	if processed != 2 {
-		t.Errorf("processed: want 2 (both tenants visited), got %d", processed)
+	if processed != 3 {
+		t.Errorf("processed: want 3 (both tenants + system chain), got %d", processed)
 	}
 }
 
@@ -160,12 +162,12 @@ func TestAuditChainVerify_PerTenantErrorSkipsButContinues(t *testing.T) {
 		t.Fatalf("per-tenant error should not fail the run, got %v", err)
 	}
 	// processed counts only successful verifications; tenant[1] failed.
-	if processed != 2 {
-		t.Errorf("processed: want 2 (one failure skipped), got %d", processed)
+	if processed != 3 {
+		t.Errorf("processed: want 3 (4 chains, one failure skipped), got %d", processed)
 	}
 	// All three were attempted though.
-	if len(verifier.calls) != 3 {
-		t.Errorf("verifier should have been called for all 3 tenants even after one errored; got %d", len(verifier.calls))
+	if len(verifier.calls) != 4 {
+		t.Errorf("verifier should have been called for all 3 tenants + the system chain even after one errored; got %d", len(verifier.calls))
 	}
 }
 

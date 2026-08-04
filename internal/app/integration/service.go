@@ -2020,8 +2020,12 @@ type SendNotificationInput struct {
 	Title         string
 	Body          string
 	Severity      string // critical, high, medium, low
-	URL           string
-	Fields        map[string]string
+	// EventType decides whether Severity is filterable at all. Empty means
+	// "unknown", and SeverityFilterApplies treats unknown as filterable — the
+	// pre-existing behavior for every caller that does not set it.
+	EventType string
+	URL       string
+	Fields    map[string]string
 }
 
 // SendNotificationResult represents the result of sending a notification.
@@ -2072,8 +2076,10 @@ func (s *IntegrationService) SendNotification(ctx context.Context, input SendNot
 		notifExt, _ = s.notificationExtRepo.GetByIntegrationID(ctx, intgID)
 	}
 
-	// Check if we should notify for this severity
-	if notifExt != nil && !notifExt.ShouldNotify(input.Severity) {
+	// Check if we should notify for this severity. Skipped for event types whose
+	// Severity is not a finding severity — see integrationdom.SeverityFilterApplies.
+	if notifExt != nil && integrationdom.SeverityFilterApplies(integrationdom.EventType(input.EventType)) &&
+		!notifExt.ShouldNotify(input.Severity) {
 		return &SendNotificationResult{
 			Success: false,
 			Error:   fmt.Sprintf("notifications disabled for severity: %s", input.Severity),
@@ -2161,8 +2167,11 @@ func (s *IntegrationService) BroadcastNotification(ctx context.Context, input Br
 		}
 
 		if iwn.Notification != nil {
-			// Check if this integration should receive notifications for this severity
-			if !iwn.Notification.ShouldNotify(input.Severity) {
+			// Check if this integration should receive notifications for this
+			// severity. Not applied to event types whose Severity is a constant
+			// rather than a finding severity — see SeverityFilterApplies.
+			if integrationdom.SeverityFilterApplies(input.EventType) &&
+				!iwn.Notification.ShouldNotify(input.Severity) {
 				continue
 			}
 
@@ -2178,6 +2187,7 @@ func (s *IntegrationService) BroadcastNotification(ctx context.Context, input Br
 			Title:         input.Title,
 			Body:          input.Body,
 			Severity:      input.Severity,
+			EventType:     string(input.EventType),
 			URL:           input.URL,
 			Fields:        input.Fields,
 		})

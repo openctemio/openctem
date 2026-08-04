@@ -714,6 +714,10 @@ func (m *mockAuthAuditRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) 
 	return nil, nil
 }
 
+func (m *mockAuthAuditRepo) GetSystemByID(_ context.Context, id shared.ID) (*audit.AuditLog, error) {
+	return nil, audit.AuditLogNotFoundError(id)
+}
+
 func (m *mockAuthAuditRepo) List(_ context.Context, _ audit.Filter, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }

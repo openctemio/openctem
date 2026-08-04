@@ -7,6 +7,7 @@ import (
 
 	"github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/internal/metrics"
+	auditdom "github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
@@ -130,6 +131,14 @@ func (c *AuditChainVerifyController) Reconcile(ctx context.Context) (int, error)
 	if err != nil {
 		return 0, fmt.Errorf("list active tenants: %w", err)
 	}
+
+	// The system chain is not a tenant, so ListActiveTenantIDs will never
+	// return it — and a chain nobody walks is not tamper-evident, it is just
+	// stored hashes. It carries every authentication event, which is the part
+	// of the trail an intruder has the most reason to edit, so it is walked
+	// FIRST rather than appended at the end where a partial run (ctx deadline)
+	// could skip it.
+	tenantIDs = append([]shared.ID{auditdom.SystemChainTenantID}, tenantIDs...)
 
 	processed := 0
 	totalBreaks := 0
