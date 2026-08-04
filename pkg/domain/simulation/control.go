@@ -19,6 +19,27 @@ const (
 	ControlTestStatusNotApplicable ControlTestStatus = "not_applicable"
 )
 
+// AllControlTestStatuses is the complete accepted vocabulary.
+//
+// There is no CHECK constraint on control_tests.status, so this list is the
+// only thing standing between a client-supplied string and the column. Adding
+// a constant above without adding it here makes it unusable; adding it here
+// without the constant will not compile.
+func AllControlTestStatuses() []ControlTestStatus {
+	return []ControlTestStatus{
+		ControlTestStatusUntested,
+		ControlTestStatusPass,
+		ControlTestStatusFail,
+		ControlTestStatusPartial,
+		ControlTestStatusNotApplicable,
+	}
+}
+
+// IsValid reports whether the status is one the platform understands.
+func (s ControlTestStatus) IsValid() bool {
+	return slices.Contains(AllControlTestStatuses(), s)
+}
+
 // ControlTest represents a security control effectiveness test.
 type ControlTest struct {
 	id                  shared.ID
@@ -84,7 +105,7 @@ func ReconstituteControlTest(
 		framework: framework, controlID: controlID,
 		controlName: controlName, category: category,
 		testProcedure: testProcedure, expectedResult: expectedResult,
-		status: status,
+		status:       status,
 		lastTestedAt: lastTestedAt, lastTestedBy: lastTestedBy,
 		evidence: evidence, notes: notes, riskLevel: riskLevel,
 		linkedSimulationIDs: linkedSimulationIDs, tags: tags,
@@ -94,25 +115,25 @@ func ReconstituteControlTest(
 
 // Getters
 func (c *ControlTest) ID() shared.ID                 { return c.id }
-func (c *ControlTest) TenantID() shared.ID            { return c.tenantID }
-func (c *ControlTest) Name() string                   { return c.name }
-func (c *ControlTest) Description() string             { return c.description }
-func (c *ControlTest) Framework() string               { return c.framework }
-func (c *ControlTest) ControlID() string               { return c.controlID }
-func (c *ControlTest) ControlName() string             { return c.controlName }
-func (c *ControlTest) Category() string                { return c.category }
-func (c *ControlTest) TestProcedure() string           { return c.testProcedure }
-func (c *ControlTest) ExpectedResult() string          { return c.expectedResult }
-func (c *ControlTest) Status() ControlTestStatus       { return c.status }
-func (c *ControlTest) LastTestedAt() *time.Time        { return c.lastTestedAt }
-func (c *ControlTest) LastTestedBy() *shared.ID        { return c.lastTestedBy }
-func (c *ControlTest) Evidence() string                { return c.evidence }
-func (c *ControlTest) Notes() string                   { return c.notes }
-func (c *ControlTest) RiskLevel() string               { return c.riskLevel }
-func (c *ControlTest) LinkedSimulationIDs() []string   { return c.linkedSimulationIDs }
-func (c *ControlTest) Tags() []string                  { return c.tags }
-func (c *ControlTest) CreatedAt() time.Time            { return c.createdAt }
-func (c *ControlTest) UpdatedAt() time.Time            { return c.updatedAt }
+func (c *ControlTest) TenantID() shared.ID           { return c.tenantID }
+func (c *ControlTest) Name() string                  { return c.name }
+func (c *ControlTest) Description() string           { return c.description }
+func (c *ControlTest) Framework() string             { return c.framework }
+func (c *ControlTest) ControlID() string             { return c.controlID }
+func (c *ControlTest) ControlName() string           { return c.controlName }
+func (c *ControlTest) Category() string              { return c.category }
+func (c *ControlTest) TestProcedure() string         { return c.testProcedure }
+func (c *ControlTest) ExpectedResult() string        { return c.expectedResult }
+func (c *ControlTest) Status() ControlTestStatus     { return c.status }
+func (c *ControlTest) LastTestedAt() *time.Time      { return c.lastTestedAt }
+func (c *ControlTest) LastTestedBy() *shared.ID      { return c.lastTestedBy }
+func (c *ControlTest) Evidence() string              { return c.evidence }
+func (c *ControlTest) Notes() string                 { return c.notes }
+func (c *ControlTest) RiskLevel() string             { return c.riskLevel }
+func (c *ControlTest) LinkedSimulationIDs() []string { return c.linkedSimulationIDs }
+func (c *ControlTest) Tags() []string                { return c.tags }
+func (c *ControlTest) CreatedAt() time.Time          { return c.createdAt }
+func (c *ControlTest) UpdatedAt() time.Time          { return c.updatedAt }
 
 // Update sets mutable fields.
 func (c *ControlTest) Update(name, description, controlName, category string) {
@@ -133,7 +154,16 @@ func (c *ControlTest) SetTestDetails(procedure, expected string) {
 }
 
 // RecordResult records a test result.
-func (c *ControlTest) RecordResult(status ControlTestStatus, evidence, notes string, testedBy shared.ID) {
+// RecordResult stores a test outcome. An unknown status is rejected rather than
+// stored: nothing else validates it — RecordControlTestResult casts the request
+// string straight through and control_tests has no CHECK constraint — so an
+// arbitrary value would persist and then match none of the status filters,
+// leaving a control that reads as neither passed nor failed.
+func (c *ControlTest) RecordResult(status ControlTestStatus, evidence, notes string, testedBy shared.ID) error {
+	if !status.IsValid() {
+		return fmt.Errorf("%w: unknown control test status %q", shared.ErrValidation, status)
+	}
+
 	now := time.Now()
 	c.status = status
 	c.evidence = evidence
@@ -141,6 +171,7 @@ func (c *ControlTest) RecordResult(status ControlTestStatus, evidence, notes str
 	c.lastTestedAt = &now
 	c.lastTestedBy = &testedBy
 	c.updatedAt = now
+	return nil
 }
 
 // LinkSimulation links a simulation to this control test.

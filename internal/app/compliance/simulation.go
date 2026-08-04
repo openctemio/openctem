@@ -270,7 +270,9 @@ func (s *SimulationService) RecordControlTestResult(ctx context.Context, input R
 		return nil, err
 	}
 
-	ct.RecordResult(simulation.ControlTestStatus(input.Status), input.Evidence, input.Notes, testerID)
+	if err := ct.RecordResult(simulation.ControlTestStatus(input.Status), input.Evidence, input.Notes, testerID); err != nil {
+		return nil, err
+	}
 
 	if err := s.controlRepo.Update(ctx, ct); err != nil {
 		return nil, fmt.Errorf("failed to record control test result: %w", err)
