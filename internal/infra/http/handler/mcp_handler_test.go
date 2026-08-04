@@ -384,6 +384,10 @@ func (m *fakeAuditRepo) GetByID(_ context.Context, _ shared.ID) (*auditdom.Audit
 func (m *fakeAuditRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*auditdom.AuditLog, error) {
 	return nil, nil
 }
+
+func (m *fakeAuditRepo) GetSystemByID(_ context.Context, id shared.ID) (*auditdom.AuditLog, error) {
+	return nil, auditdom.AuditLogNotFoundError(id)
+}
 func (m *fakeAuditRepo) List(_ context.Context, _ auditdom.Filter, _ pagination.Pagination) (pagination.Result[*auditdom.AuditLog], error) {
 	return pagination.Result[*auditdom.AuditLog]{}, nil
 }

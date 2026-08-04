@@ -561,8 +561,16 @@ func (m *ruleSvcMockAuditRepo) GetByID(_ context.Context, _ shared.ID) (*audit.A
 	return nil, errors.New("not implemented")
 }
 
+func (m *ruleSvcMockSourceRepo) GetSystemByID(_ context.Context, id shared.ID) (*audit.AuditLog, error) {
+	return nil, audit.AuditLogNotFoundError(id)
+}
+
 func (m *ruleSvcMockAuditRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*audit.AuditLog, error) {
 	return nil, nil
+}
+
+func (m *ruleSvcMockAuditRepo) GetSystemByID(_ context.Context, id shared.ID) (*audit.AuditLog, error) {
+	return nil, audit.AuditLogNotFoundError(id)
 }
 
 func (m *ruleSvcMockAuditRepo) List(_ context.Context, _ audit.Filter, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {

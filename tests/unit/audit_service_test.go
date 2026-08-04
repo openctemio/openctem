@@ -126,6 +126,10 @@ func (m *mockAuditRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*a
 	return log, nil
 }
 
+func (m *mockAuditRepo) GetSystemByID(_ context.Context, id shared.ID) (*audit.AuditLog, error) {
+	return nil, audit.AuditLogNotFoundError(id)
+}
+
 func (m *mockAuditRepo) List(_ context.Context, filter audit.Filter, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
