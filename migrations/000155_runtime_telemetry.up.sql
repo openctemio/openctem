@@ -14,9 +14,27 @@
 --   - properties JSONB holds event-specific fields. Kept intentionally
 --     schemaless so agents on different OSes (Windows EDR, Linux
 --     osquery, …) can emit without a wire-format migration every time.
---   - endpoint_asset_id is nullable — during onboarding the agent may
---     not yet know its asset UUID. A nightly reconciler job pairs
---     events with assets by agent_id.
+--   - endpoint_asset_id is nullable — during onboarding the producer may
+--     not yet know its asset UUID.
+--
+--     CORRECTION (2026-08-04): an earlier version of this comment promised
+--     "a nightly reconciler job pairs events with assets by agent_id".
+--     No such job was ever written, and it cannot be: there is no join
+--     key. `agents` has no asset column, `assets` has no agent column,
+--     and there is no join table — so there is nothing to pair BY.
+--
+--     It is also the wrong idea. Only the producer knows which endpoint
+--     an event describes. An EDR/XDR forwarder reports on MANY hosts, so
+--     even the emitting agent's own hostname is not the answer. The
+--     server cannot infer this after the fact.
+--
+--     So a NULL here is permanent. Such an event is still stored and
+--     still matched by the IOC correlator (which keys on values inside
+--     the event, not on the asset), but it is invisible to every
+--     asset-scoped read: Stage-4 detection correlation's heuristic
+--     fallback and the per-asset Stage-6 dashboards. The ingest response
+--     reports these as `unpaired` so a producer sees the degradation
+--     instead of silently losing half the feature.
 --   - (tenant_id, observed_at) compound index — all downstream reads
 --     are per-tenant, time-ordered.
 

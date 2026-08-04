@@ -69,8 +69,26 @@ type ingestRequest struct {
 }
 
 type ingestResponse struct {
-	Accepted int      `json:"accepted"`
-	Rejected int      `json:"rejected"`
+	Accepted int `json:"accepted"`
+	Rejected int `json:"rejected"`
+
+	// Unpaired counts ACCEPTED events that carried no endpoint_asset_id.
+	// They are stored and the IOC correlator still matches them, because it
+	// keys on values inside the event. They are invisible to every
+	// asset-scoped read: Stage-4 detection correlation's heuristic fallback
+	// and the per-asset Stage-6 dashboards.
+	//
+	// This is permanent, not a pending state. There is no server-side way to
+	// fill it in later — `agents` has no asset column and `assets` has no
+	// agent column, and only the producer knows which endpoint an event
+	// describes anyway (a forwarder reports on many hosts). Migration 000155
+	// once promised a nightly reconciler; it was never written and could not
+	// have been.
+	//
+	// Reported so a producer sees the degradation on the response it already
+	// reads, rather than discovering months later that half the feature never
+	// applied to its data.
+	Unpaired int      `json:"unpaired"`
 	Errors   []string `json:"errors,omitempty"`
 }
 
@@ -207,6 +225,9 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 		resp.Accepted++
+		if ev.EndpointAssetID == "" {
+			resp.Unpaired++
+		}
 
 		if eventID, parseErr := shared.IDFromString(eventIDStr); parseErr == nil {
 			accepted = append(accepted, iocapp.TelemetryEvent{
@@ -215,6 +236,20 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 				Properties: ev.Properties,
 			})
 		}
+	}
+
+	// Surface the degradation in the logs too. A producer that never sends
+	// endpoint_asset_id gets a fully successful 200 with a healthy accepted
+	// count, and would have no reason to suspect that asset-scoped correlation
+	// silently does not apply to any of its data.
+	if resp.Unpaired > 0 {
+		h.logger.Warn("runtime telemetry accepted without an endpoint asset link",
+			"tenant_id", agt.TenantID.String(),
+			"agent_id", agt.ID.String(),
+			"unpaired", resp.Unpaired,
+			"accepted", resp.Accepted,
+			"impact", "invisible to asset-scoped detection correlation and per-asset dashboards; "+
+				"the producer must supply endpoint_asset_id, the server cannot infer it")
 	}
 
 	// B6 wire: ONE batch correlate call for the whole accepted slice.
