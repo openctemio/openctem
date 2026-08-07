@@ -139,12 +139,19 @@ func main() {
 
 	// Order by tenant then position: the chain is per-tenant, and prev_hash only
 	// means anything within one tenant's sequence.
+	// c.tenant_id, not l.tenant_id: the chain is keyed by the CHAIN row's
+	// tenant. Since the system chain landed (api#414), tenant-less audit rows
+	// (every auth.login/failed) are chained under the all-Fs sentinel while
+	// audit_logs.tenant_id stays NULL — scanning l.tenant_id crashes on the
+	// first system entry, which means this tool broke the moment the system
+	// chain gained its first row. l.tenant_id was only ever a proxy for the
+	// chain key anyway.
 	rows, err := db.Query(`
 		SELECT c.audit_log_id, c.chain_position, c.prev_hash, c.hash,
-		       l.tenant_id, l.action, l.resource_type, l.resource_id, l.result, l.logged_at
+		       c.tenant_id, l.action, l.resource_type, l.resource_id, l.result, l.logged_at
 		FROM audit_log_chain c
 		JOIN audit_logs l ON l.id = c.audit_log_id
-		ORDER BY l.tenant_id, c.chain_position`)
+		ORDER BY c.tenant_id, c.chain_position`)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query:", err)
 		os.Exit(1)
