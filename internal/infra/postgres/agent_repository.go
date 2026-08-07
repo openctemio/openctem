@@ -1235,7 +1235,7 @@ func (r *AgentRepository) GetTenantAgentStats(ctx context.Context, tenantID shar
 
 	query := `
 WITH tenant_agents AS (
-  SELECT id, status, health, type, execution_mode, current_jobs
+  SELECT id, status, health, type, execution_mode, current_jobs, last_seen_at
   FROM agents
   WHERE tenant_id = $1 AND is_platform_agent = FALSE
 )
