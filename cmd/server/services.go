@@ -1153,6 +1153,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		pipeline.WithToolRepo(repos.Tool),
 		pipeline.WithQualityGate(repos.ScanProfile, repos.Finding),
 		pipeline.WithScanDeactivator(s.Scan), // Cascade pause scans when pipeline is deactivated
+		pipeline.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
 	)
 
 	// Wire up pipeline deactivator to tool service for cascade deactivation
