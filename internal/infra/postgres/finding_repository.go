@@ -673,7 +673,10 @@ func findingUpsertConflictSQL() string {
 			baseline_state = EXCLUDED.baseline_state,
 			kind = EXCLUDED.kind,
 			rank = EXCLUDED.rank,
-			occurrence_count = EXCLUDED.occurrence_count,
+			-- Re-ingest of an existing fingerprint is a re-sighting: count it.
+			-- Was EXCLUDED.occurrence_count (the new insert value, always 1), so
+			-- occurrence_count never moved past 1 despite re-sightings.
+			occurrence_count = findings.occurrence_count + 1,
 			correlation_id = EXCLUDED.correlation_id,
 			partial_fingerprints = EXCLUDED.partial_fingerprints,
 			related_locations = EXCLUDED.related_locations,
