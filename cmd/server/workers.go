@@ -384,6 +384,23 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger: log.With("controller", "priority-reclassify"),
 			},
 		))
+
+		// Periodic *producer* for the same queue: on a low-frequency timer it
+		// enqueues one whole-tenant reclassify per active tenant. Without this
+		// the consumer above has nothing to drain except discrete producer
+		// events (control-change, KEV/EPSS refresh), so never-classified
+		// findings (priority_class IS NULL) and slow EPSS drift are never
+		// re-swept. Nil-safe on a missing queue/tenant repo.
+		if repos.Tenant != nil {
+			w.ControllerManager.Register(controller.NewPriorityReclassifySweepController(
+				svc.ReclassifyQueue,
+				repos.Tenant,
+				&controller.PriorityReclassifySweepConfig{
+					Interval: 12 * time.Hour,
+					Logger:   log.With("controller", "priority-reclassify-sweep"),
+				},
+			))
+		}
 	}
 
 	// SLA escalation — marks overdue findings as breached every 15 min (RFC-005 Gap 7).

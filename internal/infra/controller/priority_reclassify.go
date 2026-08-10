@@ -39,6 +39,11 @@ const (
 	ReasonControlChange ReclassifyReasonKind = "control_change"
 	ReasonAssetChange   ReclassifyReasonKind = "asset_change"
 	ReasonManual        ReclassifyReasonKind = "manual"
+	// ReasonPeriodicSweep is enqueued by PriorityReclassifySweepController on a
+	// timer — one whole-tenant request per active tenant — to backfill
+	// never-classified findings and correct slow drift (daily EPSS movement)
+	// that no discrete producer event covers.
+	ReasonPeriodicSweep ReclassifyReasonKind = "periodic_sweep"
 )
 
 // ReclassifyRequest describes one unit of sweep work.
