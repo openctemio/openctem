@@ -733,6 +733,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// of staying at its laxer pre-escalation value.
 	s.Reclassifier.SetSLARecomputer(sla.NewApplier(s.SLA))
 
+	// Manually-created findings (VulnerabilityService.CreateFinding, source=
+	// 'manual') must run through the SAME priority/SLA brain as ingested
+	// findings — otherwise they land with priority_class/sla_deadline NULL and
+	// is_reachable=false, invisible to the P0-P3 dashboards, the priority queue,
+	// and SLA. Reuse the exact classifier + SLA-service instances the ingest
+	// path uses (see SetPriorityClassifier / SetSLAApplier on s.Ingest below).
+	s.Vulnerability.SetAssetRepository(repos.Asset)
+	s.Vulnerability.SetPriorityClassifier(s.PriorityClassification)
+	if s.SLA != nil {
+		s.Vulnerability.SetSLAApplier(sla.NewApplier(s.SLA))
+	}
+
 	// B6 runtime loop — IOC catalogue + correlator. The correlator is
 	// attached to the runtime telemetry handler in handlers.go so every
 	// accepted event is matched against active IOCs. Match side effects:
