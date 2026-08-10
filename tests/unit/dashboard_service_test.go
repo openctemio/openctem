@@ -17,7 +17,6 @@ import (
 
 type mockDashboardRepo struct {
 	// Error overrides
-	getAssetStatsErr              error
 	getFindingStatsErr            error
 	getRepositoryStatsErr         error
 	getRecentActivityErr          error
@@ -33,7 +32,6 @@ type mockDashboardRepo struct {
 	getFilteredRecentActivityErr  error
 
 	// Return data overrides
-	assetStats     app.AssetStatsData
 	findingStats   app.FindingStatsData
 	repoStats      app.RepositoryStatsData
 	recentActivity []app.ActivityItem
@@ -73,13 +71,6 @@ func newMockDashboardRepo() *mockDashboardRepo {
 	return &mockDashboardRepo{}
 }
 
-func (m *mockDashboardRepo) GetAssetStats(_ context.Context, tenantID shared.ID) (app.AssetStatsData, error) {
-	m.lastTenantID = tenantID
-	if m.getAssetStatsErr != nil {
-		return app.AssetStatsData{}, m.getAssetStatsErr
-	}
-	return m.assetStats, nil
-}
 
 func (m *mockDashboardRepo) GetFindingStats(_ context.Context, tenantID shared.ID) (app.FindingStatsData, error) {
 	m.lastTenantID = tenantID

@@ -24,61 +24,6 @@ func NewDashboardRepository(db *sql.DB) *DashboardRepository {
 // Ensure DashboardRepository implements app.DashboardStatsRepository
 var _ app.DashboardStatsRepository = (*DashboardRepository)(nil)
 
-// GetAssetStats returns asset statistics for a tenant.
-func (r *DashboardRepository) GetAssetStats(ctx context.Context, tenantID shared.ID) (app.AssetStatsData, error) {
-	stats := app.AssetStatsData{
-		ByType:   make(map[string]int),
-		ByStatus: make(map[string]int),
-	}
-
-	// Single query with CTEs — replaces 3 separate queries
-	query := `
-		WITH base AS (
-			SELECT asset_type, status FROM assets WHERE tenant_id = $1
-		),
-		total AS (SELECT COUNT(*) AS cnt FROM base),
-		by_type AS (SELECT asset_type, COUNT(*) AS cnt FROM base GROUP BY asset_type),
-		by_sub_type AS (SELECT COALESCE(sub_type, asset_type) AS st, COUNT(*) AS cnt FROM base WHERE sub_type IS NOT NULL AND sub_type != '' GROUP BY st),
-		by_status AS (SELECT status, COUNT(*) AS cnt FROM base GROUP BY status)
-		SELECT 'total' AS category, '' AS key, cnt FROM total
-		UNION ALL
-		SELECT 'type', asset_type, cnt FROM by_type
-		UNION ALL
-		SELECT 'sub_type', st, cnt FROM by_sub_type
-		UNION ALL
-		SELECT 'status', status, cnt FROM by_status
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var category, key string
-		var count int
-		if err := rows.Scan(&category, &key, &count); err != nil {
-			return stats, err
-		}
-		switch category {
-		case "total":
-			stats.Total = count
-		case "type":
-			stats.ByType[key] = count
-		case "sub_type":
-			if stats.BySubType == nil {
-				stats.BySubType = make(map[string]int)
-			}
-			stats.BySubType[key] = count
-		case "status":
-			stats.ByStatus[key] = count
-		}
-	}
-
-	return stats, rows.Err()
-}
-
 // GetFindingStats returns finding statistics for a tenant.
 func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shared.ID) (app.FindingStatsData, error) {
 	stats := app.FindingStatsData{

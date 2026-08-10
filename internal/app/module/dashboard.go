@@ -71,8 +71,6 @@ type DashboardAllStats struct {
 
 // DashboardStatsRepository defines the interface for dashboard data access.
 type DashboardStatsRepository interface {
-	// GetAssetStats returns asset statistics for a tenant
-	GetAssetStats(ctx context.Context, tenantID shared.ID) (AssetStatsData, error)
 	// GetFindingStats returns finding statistics for a tenant
 	GetFindingStats(ctx context.Context, tenantID shared.ID) (FindingStatsData, error)
 	// GetRepositoryStats returns repository statistics for a tenant
