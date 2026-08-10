@@ -432,6 +432,25 @@ func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shar
 	return nil
 }
 
+// RecordTriggerFailure records a scheduled-trigger failure that happened before
+// any run was created. It sets last_run_at/last_run_status only — no last_run_id
+// (there is no run) and no counter changes (there was no run to count). Makes a
+// scan that failed to dispatch visible instead of indistinguishable from one
+// that has not run yet.
+func (r *ScanRepository) RecordTriggerFailure(ctx context.Context, id shared.ID, status string) error {
+	const query = `
+		UPDATE scans
+		SET last_run_at = NOW(),
+		    last_run_status = $2,
+		    updated_at = NOW()
+		WHERE id = $1
+	`
+	if _, err := r.db.ExecContext(ctx, query, id.String(), status); err != nil {
+		return fmt.Errorf("failed to record trigger failure: %w", err)
+	}
+	return nil
+}
+
 // GetStats returns aggregated statistics for scans.
 func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*scan.Stats, error) {
 	stats := &scan.Stats{

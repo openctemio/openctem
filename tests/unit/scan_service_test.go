@@ -147,6 +147,10 @@ func (m *mockScanRepo) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ 
 	return nil
 }
 
+func (m *mockScanRepo) RecordTriggerFailure(_ context.Context, _ shared.ID, _ string) error {
+	return nil
+}
+
 func (m *mockScanRepo) GetStats(_ context.Context, _ shared.ID) (*scan.Stats, error) {
 	if m.statsErr != nil {
 		return nil, m.statsErr

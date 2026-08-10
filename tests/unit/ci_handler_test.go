@@ -99,6 +99,10 @@ func (m *ciMockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ share
 	return nil
 }
 
+func (m *ciMockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ string) error {
+	return nil
+}
+
 func (m *ciMockScanRepository) GetStats(_ context.Context, _ shared.ID) (*scan.Stats, error) {
 	return &scan.Stats{}, nil
 }
