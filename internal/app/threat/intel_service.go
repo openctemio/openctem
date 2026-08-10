@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/threatintel"
 	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
@@ -72,11 +73,34 @@ func NewIntelService(
 	}
 }
 
+// KEVEscalationResult reports what a KEV reconciliation pass changed.
+//
+// Escalated and Flagged are independent: a non-critical finding whose CVE
+// entered KEV is BOTH escalated (severity→critical) AND flagged
+// (is_in_kev false→true); an already-critical KEV finding is only flagged.
+// Tenants is the distinct set of tenants touched by either change — the
+// caller enqueues one priority reclassify per tenant so is_in_kev/severity
+// actually drive priority_class.
+type KEVEscalationResult struct {
+	// Escalated is the number of findings whose severity was raised to
+	// critical because their CVE is in KEV.
+	Escalated int
+	// Flagged is the number of findings whose is_in_kev was reconciled
+	// from false to true (independent of severity).
+	Flagged int
+	// Tenants is the distinct set of tenant IDs with at least one finding
+	// touched by either the escalation or the is_in_kev reconciliation.
+	Tenants []shared.ID
+}
+
 // KEVEscalator auto-escalates findings whose CVEs appear in the CISA KEV catalog.
 type KEVEscalator interface {
-	// EscalateKEVFindings sets severity to 'critical' for open findings
-	// whose cve_id is in the kev_catalog. Returns the number of escalated findings.
-	EscalateKEVFindings(ctx context.Context) (int, error)
+	// EscalateKEVFindings raises severity to 'critical' for non-critical open
+	// findings whose cve_id is in the kev_catalog, AND reconciles is_in_kev to
+	// true for every non-terminal finding whose cve_id is in the catalog
+	// (independent of severity). Returns what changed, including the distinct
+	// tenants touched so the caller can trigger priority reclassification.
+	EscalateKEVFindings(ctx context.Context) (KEVEscalationResult, error)
 }
 
 // IntelSyncResult contains the result of a sync operation.

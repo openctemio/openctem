@@ -348,6 +348,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
 		svc.ThreatIntel,
 		repos.KEVEscalator,
+		svc.ReclassifyQueue,
 		log.With("controller", "threat-intel-refresh"),
 	))
 
