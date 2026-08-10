@@ -381,6 +381,37 @@ func (s *PriorityClassificationService) ClassifyFinding(
 // transitioned (or on first classification). Safe when the publisher is
 // nil. Errors are logged, not propagated — a publish failure must not
 // roll back a successful classification.
+// auditClassChange writes a priority_class_audit_log entry when the class
+// actually moved. Independent of the change publisher and the flood guard: the
+// audit trail must record the classification even when notification fan-out is
+// suppressed. No-op when no audit repo is wired.
+func (s *PriorityClassificationService) auditClassChange(
+	ctx context.Context,
+	tenantID shared.ID,
+	f *vulnerability.Finding,
+	previousClass *vulnerability.PriorityClass,
+	c vulnerability.PriorityClassification,
+) {
+	if s.auditRepo == nil {
+		return
+	}
+	if previousClass != nil && *previousClass == c.Class {
+		return // no transition — don't flood on a re-confirming sweep
+	}
+	entry := PriorityAuditEntry{
+		TenantID:      tenantID,
+		FindingID:     f.ID(),
+		PreviousClass: previousClass,
+		NewClass:      c.Class,
+		Reason:        c.Reason,
+		Source:        c.Source,
+		RuleID:        c.RuleID,
+	}
+	if err := s.auditRepo.LogChange(ctx, entry); err != nil {
+		s.logger.Warn("failed to log priority audit (batch)", "finding_id", f.ID(), "error", err)
+	}
+}
+
 func (s *PriorityClassificationService) publishIfChanged(
 	ctx context.Context,
 	tenantID, findingID shared.ID,
@@ -560,9 +591,17 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 
 		previousClass := f.PriorityClass()
 		f.SetPriorityClassification(classification.Class, classification.Reason)
+		// Record the priority change in the audit trail. The batch path is the
+		// MAIN classification path (ingest + the 12h reclassify sweep), yet it
+		// logged nothing — priority_class_audit_log was empty despite classified
+		// findings, so "why/when did this become P0" had no answer. Gated on an
+		// actual class change so a re-confirming sweep does not flood the log,
+		// and kept independent of publishIfChanged because the flood guard may
+		// suppress the fan-out event while the classification still stands.
+		s.auditClassChange(ctx, tenantID, f, previousClass, classification)
 		// batch classification also emits change events so the
-		// reclassification sweep (a future task) reuses the same path
-		// and downstream consumers see every transition.
+		// reclassification sweep reuses the same path and downstream consumers
+		// see every transition.
 		s.publishIfChanged(ctx, tenantID, f.ID(), previousClass, classification)
 	}
 
