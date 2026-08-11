@@ -29,13 +29,28 @@ func NewControlChangePublisher(q ReclassifyQueue, log *logger.Logger) *ControlCh
 	return &ControlChangePublisher{queue: q, logger: log.With("service", "control-change")}
 }
 
-// PublishChange enqueues a reclassify request. Errors are logged but
-// NOT returned — a failed enqueue must not roll back the control
-// write that triggered it.
+// PublishChange enqueues a control-change reclassify request. Errors are logged
+// but NOT returned — a failed enqueue must not roll back the control write that
+// triggered it.
 func (p *ControlChangePublisher) PublishChange(
 	ctx context.Context,
 	tenantID shared.ID,
 	assetIDs []shared.ID,
+	reason string,
+) {
+	p.PublishAssetReclassify(ctx, tenantID, assetIDs, ReasonControlChange, reason)
+}
+
+// PublishAssetReclassify enqueues an asset-scoped reclassify request under an
+// explicit reason kind. Generalizes PublishChange (which is always
+// ReasonControlChange) so other producers — e.g. AI triage completion
+// (ReasonAITriage) — drive the same asset-scoped sweep. Errors are logged, never
+// returned: a failed enqueue must not roll back the write that triggered it.
+func (p *ControlChangePublisher) PublishAssetReclassify(
+	ctx context.Context,
+	tenantID shared.ID,
+	assetIDs []shared.ID,
+	kind ReclassifyReasonKind,
 	reason string,
 ) {
 	if p.queue == nil || len(assetIDs) == 0 {
@@ -43,14 +58,15 @@ func (p *ControlChangePublisher) PublishChange(
 	}
 	req := ReclassifyRequest{
 		TenantID:  tenantID,
-		Reason:    ReasonControlChange,
+		Reason:    kind,
 		AssetIDs:  assetIDs,
 		EnqueueAt: time.Now().UTC(),
 	}
 	if err := p.queue.Enqueue(ctx, req); err != nil {
-		p.logger.Warn("enqueue reclassify after control change failed",
+		p.logger.Warn("enqueue asset-scoped reclassify failed",
 			"tenant_id", tenantID.String(),
 			"asset_count", len(assetIDs),
+			"kind", string(kind),
 			"reason", reason,
 			"error", err,
 		)

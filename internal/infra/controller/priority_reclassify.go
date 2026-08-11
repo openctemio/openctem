@@ -39,6 +39,10 @@ const (
 	ReasonControlChange ReclassifyReasonKind = "control_change"
 	ReasonAssetChange   ReclassifyReasonKind = "asset_change"
 	ReasonManual        ReclassifyReasonKind = "manual"
+	// ReasonAITriage is enqueued when an AI triage COMPLETES for a finding, so a
+	// high-confidence "likely false positive" verdict can de-escalate that
+	// finding's priority without waiting for the next periodic sweep.
+	ReasonAITriage ReclassifyReasonKind = "ai_triage"
 	// ReasonPeriodicSweep is enqueued by PriorityReclassifySweepController on a
 	// timer — one whole-tenant request per active tenant — to backfill
 	// never-classified findings and correct slow drift (daily EPSS movement)

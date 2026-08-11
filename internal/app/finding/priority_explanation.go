@@ -77,7 +77,8 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 			s.businessContextFor(ctx, tenantID, f.AssetID()))
 	}
 
-	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID))
+	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, []shared.ID{f.ID()})
+	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), aiFP)
 
 	// Compensating-control reduction (same as the live classify path — shared
 	// helper, so the explanation cannot drift from what ClassifyFinding does).

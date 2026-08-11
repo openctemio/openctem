@@ -53,7 +53,12 @@ type PriorityClassificationService struct {
 	// (legacy behaviour, unsafe on noisy tenants). Classification
 	// itself is NEVER altered by the guard — only the event emission.
 	priorityFloodGuard *PriorityFloodGuard
-	logger             *logger.Logger
+	// aiTriage feeds a high-confidence AI "likely false positive" verdict into
+	// classification so it can DE-ESCALATE a finding by one bounded level. The
+	// ONLY signal permitted to lower priority. Optional — nil keeps classification
+	// unchanged (no AI signal → never a downgrade). See priority_ai_triage.go.
+	aiTriage AITriageVerdictLookup
+	logger   *logger.Logger
 }
 
 // SetControlLookup wires the compensating control lookup for priority calculation.
@@ -346,7 +351,8 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	// Build priority context (with attack-path reachability + threat-model
 	// signal, if wired). Both oracle lookups are tenant-scoped and cached.
 	reachable := s.reachableSet(ctx, tenantID)
-	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID))
+	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, []shared.ID{finding.ID()})
+	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID), aiFP)
 
 	// Compensating controls on the finding's asset suppress P1 / force P2.
 	s.applyControlProtection(ctx, tenantID, finding.AssetID(), &pctx)
@@ -660,6 +666,14 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 	reachable := s.reachableSet(ctx, tenantID)
 	threatened := s.threatenedSet(ctx, tenantID)
 
+	// AI-triage false-positive verdicts for the whole batch — ONE tenant-scoped
+	// query for every finding id, no per-finding N+1 (mirrors the preloads above).
+	findingIDs := make([]shared.ID, 0, len(findings))
+	for _, f := range findings {
+		findingIDs = append(findingIDs, f.ID())
+	}
+	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, findingIDs)
+
 	contexts := make([]findingContext, 0, len(findings))
 	for _, f := range findings {
 		// Enrich with EPSS.
@@ -689,7 +703,7 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		// Business-aligned effective criticality from the preloaded batch map.
 		effCrit, critReason := effectiveCriticality(a.Criticality(), businessCtx[f.AssetID()])
 
-		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened)
+		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened, aiFP)
 		// Same rule as applyControlProtection, fed from the batch map above so
 		// the sweep stays one query for the whole batch instead of per finding.
 		setControlProtection(&pctx, controlReduction[f.AssetID()])
@@ -730,6 +744,7 @@ func (s *PriorityClassificationService) buildPriorityContext(
 	effCrit asset.Criticality,
 	reachable map[string]bool,
 	threatened map[string]bool,
+	aiFP map[shared.ID]AIFalsePositiveVerdict,
 ) vulnerability.PriorityContext {
 	ctx := vulnerability.PriorityContext{
 		Severity:             f.Severity(),
@@ -815,6 +830,15 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		if threatened[a.ID().String()] {
 			ctx.OnOpenThreatPath = true
 		}
+	}
+
+	// AI-triage de-escalation signal (keyed by finding, not asset): a
+	// high-confidence "likely false positive" verdict lets the classifier lower
+	// this finding by one bounded level. This is the ONLY input that can reduce
+	// priority; a missing/low-confidence verdict is the zero value → no effect.
+	if v, ok := aiFP[f.ID()]; ok && v.Likely {
+		ctx.AIFalsePositiveLikely = true
+		ctx.AIFalsePositiveLikelihood = v.Likelihood
 	}
 
 	return ctx
