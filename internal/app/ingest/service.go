@@ -182,6 +182,13 @@ func (s *Service) SetRemediationKeyApplier(applier RemediationKeyApplier) {
 	s.findingProcessor.SetRemediationKeyApplier(applier)
 }
 
+// SetExposureBridge wires the post-insert secret-scan → exposure-store bridge
+// so hardcoded secrets surface in the Credentials/Exposures view. Nil-safe:
+// when not wired, secret findings are not bridged (prior behavior).
+func (s *Service) SetExposureBridge(bridge ExposureBridge) {
+	s.findingProcessor.SetExposureBridge(bridge)
+}
+
 // =============================================================================
 // Main Ingestion Methods
 // =============================================================================

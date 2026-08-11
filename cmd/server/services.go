@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/api/internal/app/attack"
 	"github.com/openctemio/api/internal/app/auth/domainverify"
 	"github.com/openctemio/api/internal/app/exposure"
+	"github.com/openctemio/api/internal/app/exposurebridge"
 	"github.com/openctemio/api/internal/app/ingest"
 	iocapp "github.com/openctemio/api/internal/app/ioc"
 	"github.com/openctemio/api/internal/app/jira"
@@ -1159,7 +1160,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		pipeline.WithAgentSelector(pipelineAgentSelectorAdapter),
 		pipeline.WithToolRepo(repos.Tool),
 		pipeline.WithQualityGate(repos.ScanProfile, repos.Finding),
-		pipeline.WithScanDeactivator(s.Scan), // Cascade pause scans when pipeline is deactivated
+		pipeline.WithScanDeactivator(s.Scan),     // Cascade pause scans when pipeline is deactivated
 		pipeline.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
 	)
 
@@ -1280,6 +1281,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// key so a whole "solution family" can be resolved in one action. The service
 	// reuses the finding bulk-status path + its abuse guard.
 	s.Ingest.SetRemediationKeyApplier(remediation.NewKeyApplier(repos.FindingRemediationKey, log))
+
+	// Continuous leaked-credential discovery: promote secret-scan findings
+	// (gitleaks/trufflehog → FindingSourceSecret) into the exposure store so a
+	// hardcoded secret shows up in the Credentials/Exposures view without a
+	// manual import. Labeled discovery_source=secret_scan so it stays distinct
+	// from an external breach import. Reuses the same exposure repo + state
+	// history as the credential-import service.
+	s.Ingest.SetExposureBridge(exposurebridge.NewBridge(repos.Exposure, repos.ExposureStateHistory, log))
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 
 	// A remediation campaign can be scoped to a group key (solution family): its
