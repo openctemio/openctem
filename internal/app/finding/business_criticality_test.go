@@ -1,0 +1,234 @@
+package finding
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/openctemio/api/pkg/domain/asset"
+	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/vulnerability"
+)
+
+// stubBusinessContext returns a fixed business context per asset.
+type stubBusinessContext struct {
+	m     map[shared.ID]AssetBusinessContext
+	calls int
+}
+
+func (s *stubBusinessContext) GetForAssets(
+	_ context.Context, _ shared.ID, assetIDs []shared.ID,
+) (map[shared.ID]AssetBusinessContext, error) {
+	s.calls++
+	out := map[shared.ID]AssetBusinessContext{}
+	for _, id := range assetIDs {
+		if v, ok := s.m[id]; ok {
+			out[id] = v
+		}
+	}
+	return out, nil
+}
+
+// TestEffectiveCriticality covers the floor/MAX semantics in isolation.
+func TestEffectiveCriticality(t *testing.T) {
+	cases := []struct {
+		name       string
+		own        asset.Criticality
+		bctx       AssetBusinessContext
+		wantCrit   asset.Criticality
+		wantReason string // substring; "" = no raise
+	}{
+		{
+			name:     "no business context leaves own criticality",
+			own:      asset.CriticalityMedium,
+			bctx:     AssetBusinessContext{},
+			wantCrit: asset.CriticalityMedium,
+		},
+		{
+			name:       "critical BU raises a medium asset",
+			own:        asset.CriticalityMedium,
+			bctx:       AssetBusinessContext{BusinessUnitCriticality: asset.CriticalityCritical, BusinessUnitName: "Payments"},
+			wantCrit:   asset.CriticalityCritical,
+			wantReason: "criticality raised to critical by business unit 'Payments'",
+		},
+		{
+			name:       "critical service raises a medium asset",
+			own:        asset.CriticalityMedium,
+			bctx:       AssetBusinessContext{BusinessServiceCriticality: asset.CriticalityCritical, BusinessServiceName: "Checkout"},
+			wantCrit:   asset.CriticalityCritical,
+			wantReason: "criticality raised to critical by business service 'Checkout'",
+		},
+		{
+			name:     "lower BU never lowers the floor",
+			own:      asset.CriticalityHigh,
+			bctx:     AssetBusinessContext{BusinessUnitCriticality: asset.CriticalityLow, BusinessUnitName: "Lab"},
+			wantCrit: asset.CriticalityHigh,
+		},
+		{
+			name: "highest of BU and service wins",
+			own:  asset.CriticalityLow,
+			bctx: AssetBusinessContext{
+				BusinessUnitCriticality:    asset.CriticalityMedium,
+				BusinessUnitName:           "IT",
+				BusinessServiceCriticality: asset.CriticalityCritical,
+				BusinessServiceName:        "Checkout",
+			},
+			wantCrit:   asset.CriticalityCritical,
+			wantReason: "business service 'Checkout'",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, reason := effectiveCriticality(tc.own, tc.bctx)
+			if got != tc.wantCrit {
+				t.Fatalf("effectiveCriticality = %q, want %q", got, tc.wantCrit)
+			}
+			if tc.wantReason == "" {
+				if reason != "" {
+					t.Fatalf("expected no raise reason, got %q", reason)
+				}
+			} else if !strings.Contains(reason, tc.wantReason) {
+				t.Fatalf("reason %q does not contain %q", reason, tc.wantReason)
+			}
+		})
+	}
+}
+
+// mediumReachableEPSSFinding is a medium-severity, high-EPSS finding on a public
+// (reachable) asset with the given OWN criticality. With own=medium it lands P2
+// ("Medium severity, reachable"); the only thing that lifts it to the P1
+// "high EPSS + reachable + critical asset" gate is the asset being critical/high.
+func mediumReachableEPSSFinding(t *testing.T, tenantID shared.ID, own asset.Criticality) (*vulnerability.Finding, *asset.Asset) {
+	t.Helper()
+	a, err := asset.NewAssetWithTenant(tenantID, "web-01", asset.AssetTypeDomain, own)
+	if err != nil {
+		t.Fatalf("NewAssetWithTenant: %v", err)
+	}
+	if err := a.UpdateExposure(asset.ExposurePublic); err != nil {
+		t.Fatalf("UpdateExposure: %v", err)
+	}
+	f, err := vulnerability.NewFinding(
+		tenantID, a.ID(), vulnerability.FindingSourceSCA, "trivy",
+		vulnerability.SeverityMedium, "medium dep",
+	)
+	if err != nil {
+		t.Fatalf("NewFinding: %v", err)
+	}
+	f.SetEPSSScore(0.5) // >= 0.1 so the EPSS P1 gate is one criticality away
+	return f, a
+}
+
+// TestClassifyFinding_BusinessUnitRaisesPriority proves a medium asset that
+// belongs to a critical business unit is classified at the higher, business-
+// aligned priority — and that the reason string records why.
+func TestClassifyFinding_BusinessUnitRaisesPriority(t *testing.T) {
+	tenantID := shared.NewID()
+	ctx := context.Background()
+
+	// Baseline: no business context → own medium criticality → P2.
+	base, a := mediumReachableEPSSFinding(t, tenantID, asset.CriticalityMedium)
+	if err := newControlSvc().ClassifyFinding(ctx, tenantID, base, a); err != nil {
+		t.Fatalf("ClassifyFinding (baseline): %v", err)
+	}
+	if got := base.PriorityClass(); got == nil || *got != vulnerability.PriorityP2 {
+		t.Fatalf("medium asset, high EPSS, reachable should be P2, got %v (%s)", got, base.PriorityClassReason())
+	}
+
+	// Same finding, but the asset belongs to a CRITICAL business unit → P1.
+	raised, a2 := mediumReachableEPSSFinding(t, tenantID, asset.CriticalityMedium)
+	svc := newControlSvc()
+	stub := &stubBusinessContext{m: map[shared.ID]AssetBusinessContext{
+		a2.ID(): {BusinessUnitCriticality: asset.CriticalityCritical, BusinessUnitName: "Payments"},
+	}}
+	svc.SetBusinessContextLookup(stub)
+
+	if err := svc.ClassifyFinding(ctx, tenantID, raised, a2); err != nil {
+		t.Fatalf("ClassifyFinding (raised): %v", err)
+	}
+	if stub.calls == 0 {
+		t.Fatal("ClassifyFinding must consult the business context lookup")
+	}
+	got := raised.PriorityClass()
+	if got == nil || *got != vulnerability.PriorityP1 {
+		t.Fatalf("a critical BU should raise medium asset P2→P1, got %v (%s)", got, raised.PriorityClassReason())
+	}
+	if reason := raised.PriorityClassReason(); !strings.Contains(reason, "business unit 'Payments'") {
+		t.Fatalf("reason should record the BU bump, got %q", reason)
+	}
+}
+
+// TestClassifyFinding_CriticalServiceRaisesPriority proves the business-SERVICE
+// path raises priority the same way.
+func TestClassifyFinding_CriticalServiceRaisesPriority(t *testing.T) {
+	tenantID := shared.NewID()
+	f, a := mediumReachableEPSSFinding(t, tenantID, asset.CriticalityMedium)
+
+	svc := newControlSvc()
+	svc.SetBusinessContextLookup(&stubBusinessContext{m: map[shared.ID]AssetBusinessContext{
+		a.ID(): {BusinessServiceCriticality: asset.CriticalityCritical, BusinessServiceName: "Checkout"},
+	}})
+
+	if err := svc.ClassifyFinding(context.Background(), tenantID, f, a); err != nil {
+		t.Fatalf("ClassifyFinding: %v", err)
+	}
+	if got := f.PriorityClass(); got == nil || *got != vulnerability.PriorityP1 {
+		t.Fatalf("a critical business service should raise P2→P1, got %v (%s)", got, f.PriorityClassReason())
+	}
+	if reason := f.PriorityClassReason(); !strings.Contains(reason, "business service 'Checkout'") {
+		t.Fatalf("reason should record the service bump, got %q", reason)
+	}
+}
+
+// TestClassifyFinding_LowerBUIsFloorOnly proves a LOWER-criticality BU never
+// lowers an asset's own criticality (floor semantics) and adds no reason.
+func TestClassifyFinding_LowerBUIsFloorOnly(t *testing.T) {
+	tenantID := shared.NewID()
+
+	// Own criticality high → EPSS P1 gate already fires. A low BU must not change
+	// that, and must not add a "raised" reason.
+	f, a := mediumReachableEPSSFinding(t, tenantID, asset.CriticalityHigh)
+	svc := newControlSvc()
+	svc.SetBusinessContextLookup(&stubBusinessContext{m: map[shared.ID]AssetBusinessContext{
+		a.ID(): {BusinessUnitCriticality: asset.CriticalityLow, BusinessUnitName: "Lab"},
+	}})
+
+	if err := svc.ClassifyFinding(context.Background(), tenantID, f, a); err != nil {
+		t.Fatalf("ClassifyFinding: %v", err)
+	}
+	if got := f.PriorityClass(); got == nil || *got != vulnerability.PriorityP1 {
+		t.Fatalf("high asset, high EPSS, reachable should be P1 regardless of a low BU, got %v", got)
+	}
+	if reason := f.PriorityClassReason(); strings.Contains(reason, "raised") {
+		t.Fatalf("a lower BU must not add a raise reason, got %q", reason)
+	}
+}
+
+// TestEnrichAndClassifyBatch_BusinessUnitRaisesPriority proves the BATCH path
+// (the main ingest/sweep path) preloads business context and applies the same
+// business-aligned raise.
+func TestEnrichAndClassifyBatch_BusinessUnitRaisesPriority(t *testing.T) {
+	tenantID := shared.NewID()
+	f, a := mediumReachableEPSSFinding(t, tenantID, asset.CriticalityMedium)
+
+	svc := newControlSvc()
+	stub := &stubBusinessContext{m: map[shared.ID]AssetBusinessContext{
+		a.ID(): {BusinessUnitCriticality: asset.CriticalityCritical, BusinessUnitName: "Payments"},
+	}}
+	svc.SetBusinessContextLookup(stub)
+
+	assets := map[shared.ID]*asset.Asset{a.ID(): a}
+	if err := svc.EnrichAndClassifyBatch(context.Background(), tenantID,
+		[]*vulnerability.Finding{f}, assets); err != nil {
+		t.Fatalf("EnrichAndClassifyBatch: %v", err)
+	}
+	// Preload must be a single batch call, not per-finding.
+	if stub.calls != 1 {
+		t.Fatalf("batch path should call the business lookup exactly once, got %d", stub.calls)
+	}
+	if got := f.PriorityClass(); got == nil || *got != vulnerability.PriorityP1 {
+		t.Fatalf("batch: critical BU should raise medium asset P2→P1, got %v (%s)", got, f.PriorityClassReason())
+	}
+	if reason := f.PriorityClassReason(); !strings.Contains(reason, "business unit 'Payments'") {
+		t.Fatalf("batch: reason should record the BU bump, got %q", reason)
+	}
+}

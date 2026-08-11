@@ -696,6 +696,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire compensating controls into priority classification (RFC-005 Gap 6)
 	s.PriorityClassification.SetControlLookup(postgres.NewCompensatingControlLookupRepo(deps.DB))
 
+	// Business-aligned prioritization: raise an asset's effective criticality to
+	// the MAX of {own, its business unit, the business services it powers} so BU /
+	// service criticality actually drives priority. Batch-first; nil-safe.
+	s.PriorityClassification.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
+
 	// anti-flap priority flood guard. Caps per-tenant top-class
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
 	// bursts while keeping the classification itself intact on the
@@ -1110,6 +1115,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 		scan.WithAuditService(scanAuditAdapter),
 		scan.WithProfileRepo(repos.ScanProfile),
+		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
+		scan.WithScopeExclusionFilter(s.Scope),
 	)
 
 	// Wire verification scan trigger: allows FindingActionsService to launch targeted scans

@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/openctemio/api/internal/app/scope"
 	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/pipeline"
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/pagination"
 )
 
 // =============================================================================
@@ -232,6 +234,10 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggere
 		}
 	}
 
+	// Scope enforcement: drop assets that match an active scope EXCLUSION from
+	// the scan target set. Fail-open — a nil filter or any error scans everything.
+	s.applyScopeExclusions(ctx, sc, runContext)
+
 	// Use the system quick scan template for tracking
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
 
@@ -414,6 +420,11 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	}
 	if len(sc.Targets) > 0 {
 		payloadMap["target"] = sc.Targets[0]
+	}
+	// Carry the scope-excluded asset set (computed at trigger time) so the agent
+	// resolving the asset group skips them. Present only when exclusions matched.
+	if ex, ok := run.Context["excluded_asset_ids"]; ok {
+		payloadMap["excluded_asset_ids"] = ex
 	}
 
 	// Embed custom templates if configured
@@ -775,6 +786,75 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 	}
 
 	return nil
+}
+
+// applyScopeExclusions removes assets matching an active scope EXCLUSION from
+// the scan's target set. It materializes the scan's asset-group members, asks
+// the scope service which are excluded, records the excluded IDs in runContext
+// (surfaced to the agent via the command payload) and logs how many were
+// skipped.
+//
+// FAIL-OPEN throughout: a nil filter, a group with no resolvable assets, or any
+// materialization error simply leaves the target set untouched — a scope lookup
+// must never block a scan. Only exclusions are enforced here; in-scope-target
+// filtering is intentionally out of scope.
+func (s *Service) applyScopeExclusions(ctx context.Context, sc *scan.Scan, runContext map[string]any) {
+	if s.scopeExclusions == nil || sc.AssetGroupID.IsZero() {
+		return
+	}
+
+	candidates, err := s.listGroupExclusionCandidates(ctx, sc.AssetGroupID)
+	if err != nil {
+		s.logger.Warn("scope exclusion check skipped: failed to list group assets (fail-open)",
+			"scan_id", sc.ID.String(), "error", err)
+		return
+	}
+	if len(candidates) == 0 {
+		return
+	}
+
+	excluded := s.scopeExclusions.FilterExcludedTargets(ctx, sc.TenantID.String(), candidates)
+	if len(excluded) == 0 {
+		return
+	}
+
+	excludedIDs := make([]string, 0, len(excluded))
+	for id := range excluded {
+		excludedIDs = append(excludedIDs, id.String())
+	}
+	runContext["excluded_asset_ids"] = excludedIDs
+	s.logger.Info("scope exclusions applied to scan",
+		"scan_id", sc.ID.String(),
+		"asset_group_id", sc.AssetGroupID.String(),
+		"candidates", len(candidates),
+		"excluded", len(excludedIDs),
+	)
+}
+
+// listGroupExclusionCandidates materializes an asset group's members into scope
+// exclusion candidates (id + name). Paginated to keep memory bounded.
+func (s *Service) listGroupExclusionCandidates(ctx context.Context, groupID shared.ID) ([]scope.ExclusionCandidate, error) {
+	const perPage = 500
+	page := pagination.New(1, perPage)
+	candidates := make([]scope.ExclusionCandidate, 0)
+
+	for {
+		res, err := s.assetGroupRepo.GetGroupAssets(ctx, groupID, page)
+		if err != nil {
+			return nil, err
+		}
+		for _, ga := range res.Data {
+			candidates = append(candidates, scope.ExclusionCandidate{
+				ID:     ga.ID,
+				Values: []string{ga.Name},
+			})
+		}
+		if len(res.Data) == 0 || int64(page.Page*perPage) >= res.Total {
+			break
+		}
+		page.Page++
+	}
+	return candidates, nil
 }
 
 // filterAssetsForSingleScan applies smart filtering based on scanner-asset compatibility.

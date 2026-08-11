@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -17,11 +20,33 @@ import (
 type PriorityRuleHandler struct {
 	db     *sql.DB
 	logger *logger.Logger
+	// Optional. When set, a rule mutation enqueues a whole-tenant reclassify
+	// sweep so priorities reflect the changed rule set promptly instead of
+	// drifting up to 12h until the next periodic sweep. Nil = legacy
+	// no-fan-out behavior. Mirrors CompensatingControlHandler.
+	publisher *controller.ControlChangePublisher
 }
 
 // NewPriorityRuleHandler creates a new handler.
 func NewPriorityRuleHandler(db *sql.DB, log *logger.Logger) *PriorityRuleHandler {
 	return &PriorityRuleHandler{db: db, logger: log}
+}
+
+// SetChangePublisher wires the reclassify publisher. Safe after construction;
+// nil disables the fan-out.
+func (h *PriorityRuleHandler) SetChangePublisher(p *controller.ControlChangePublisher) {
+	h.publisher = p
+}
+
+// enqueueReclassifyForTenant enqueues a whole-tenant reclassify sweep after a
+// rule mutation. A rule can match any finding in the tenant, so the sweep is
+// tenant-wide (no asset scope). Advisory: a nil publisher or a failed enqueue is
+// logged inside PublishTenantChange and never fails the mutation.
+func (h *PriorityRuleHandler) enqueueReclassifyForTenant(ctx context.Context, tenantID shared.ID, reason string) {
+	if h.publisher == nil {
+		return
+	}
+	h.publisher.PublishTenantChange(ctx, tenantID, controller.ReasonRuleChanged, reason)
 }
 
 type priorityRuleResponse struct {
@@ -148,6 +173,12 @@ func (h *PriorityRuleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A new rule can re-classify existing findings — drive a sweep now instead of
+	// waiting up to 12h for the periodic one.
+	if tid, perr := shared.IDFromString(tenantID); perr == nil {
+		h.enqueueReclassifyForTenant(r.Context(), tid, "priority rule created")
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
 
@@ -194,6 +225,11 @@ func (h *PriorityRuleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A changed rule can re-classify existing findings — drive a sweep now.
+	if tid, perr := shared.IDFromString(tenantID); perr == nil {
+		h.enqueueReclassifyForTenant(r.Context(), tid, "priority rule updated")
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -215,6 +251,11 @@ func (h *PriorityRuleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if rows == 0 {
 		apierror.NotFound("rule not found").WriteJSON(w)
 		return
+	}
+
+	// A removed rule can re-classify findings it used to match — drive a sweep.
+	if tid, perr := shared.IDFromString(tenantID); perr == nil {
+		h.enqueueReclassifyForTenant(r.Context(), tid, "priority rule deleted")
 	}
 
 	w.WriteHeader(http.StatusNoContent)

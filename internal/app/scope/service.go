@@ -1139,6 +1139,49 @@ func (s *Service) isAssetExcluded(assetValues []string, exclusions []*scopedom.E
 	return false
 }
 
+// ExclusionCandidate is a minimal asset projection used to test scope
+// exclusions from the scan target-selection path without importing the full
+// asset entity. Values holds every matchable string for the asset (its name,
+// and for repositories its URLs); an empty entry is ignored.
+type ExclusionCandidate struct {
+	ID     shared.ID
+	Values []string
+}
+
+// FilterExcludedTargets returns the set of candidate asset IDs that match an
+// ACTIVE scope exclusion for the tenant — the assets a scan must skip.
+//
+// FAIL-OPEN by contract: an invalid tenant id, an exclusion-lookup error, or no
+// active exclusions all yield an EMPTY set (nothing excluded), so a scope lookup
+// can never block a scan. This is the only scope enforcement wired into
+// scanning; in-scope-target filtering is deliberately NOT applied here.
+func (s *Service) FilterExcludedTargets(ctx context.Context, tenantID string, candidates []ExclusionCandidate) map[shared.ID]bool {
+	excluded := make(map[shared.ID]bool)
+
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		s.logger.Warn("scope exclusion check skipped: invalid tenant id", "error", err)
+		return excluded
+	}
+
+	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
+	if err != nil {
+		s.logger.Warn("scope exclusion lookup failed; scanning all assets (fail-open)",
+			"tenant_id", parsedTenantID.String(), "error", err)
+		return excluded
+	}
+	if len(exclusions) == 0 {
+		return excluded
+	}
+
+	for _, c := range candidates {
+		if s.isAssetExcluded(c.Values, exclusions) {
+			excluded[c.ID] = true
+		}
+	}
+	return excluded
+}
+
 // CheckScope checks if an asset value is in scope.
 func (s *Service) CheckScope(ctx context.Context, tenantID string, assetType string, value string) (*scopedom.MatchResult, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)

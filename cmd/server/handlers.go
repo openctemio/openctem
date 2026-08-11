@@ -30,6 +30,18 @@ func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc
 	return h
 }
 
+// newPriorityRuleHandlerWithWiring constructs the priority-rule handler and
+// attaches the reclassify publisher when the services graph has one, so a rule
+// create/update/delete drives a whole-tenant reclassify sweep. Mirrors
+// newCompensatingControlHandlerWithWiring.
+func newPriorityRuleHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Services) *handler.PriorityRuleHandler {
+	h := handler.NewPriorityRuleHandler(db, log)
+	if svc != nil && svc.ControlChangePub != nil {
+		h.SetChangePublisher(svc.ControlChangePub)
+	}
+	return h
+}
+
 // newThreatModelHandler wires the continuous-threat-modeling handler, or nil
 // when the generation service was not initialized (e.g. no database).
 func newThreatModelHandler(svc *Services, log *logger.Logger) *handler.ThreatModelHandler {
@@ -348,7 +360,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
 		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, log),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
-		PriorityRule:          handler.NewPriorityRuleHandler(deps.DB.DB, log),
+		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
 
 		// Platform Stats (tenant-scoped platform agent statistics)

@@ -56,3 +56,33 @@ func (p *ControlChangePublisher) PublishChange(
 		)
 	}
 }
+
+// PublishTenantChange enqueues a WHOLE-TENANT reclassify sweep (no asset scope),
+// used when a change affects every finding in the tenant rather than a known set
+// of assets — e.g. a priority override rule was created, updated, or deleted.
+// The reclassifier treats an empty AssetIDs as "page the tenant's open findings
+// and reclassify each". Errors are logged, never returned — a failed enqueue
+// must not roll back the mutation that triggered it.
+func (p *ControlChangePublisher) PublishTenantChange(
+	ctx context.Context,
+	tenantID shared.ID,
+	kind ReclassifyReasonKind,
+	reason string,
+) {
+	if p.queue == nil {
+		return
+	}
+	req := ReclassifyRequest{
+		TenantID:  tenantID,
+		Reason:    kind,
+		EnqueueAt: time.Now().UTC(),
+	}
+	if err := p.queue.Enqueue(ctx, req); err != nil {
+		p.logger.Warn("enqueue whole-tenant reclassify failed",
+			"tenant_id", tenantID.String(),
+			"reason", reason,
+			"kind", string(kind),
+			"error", err,
+		)
+	}
+}

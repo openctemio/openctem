@@ -24,6 +24,12 @@ type PriorityClassificationService struct {
 	ruleRepo      PriorityRuleRepository
 	auditRepo     PriorityAuditRepository
 	controlLookup CompensatingControlLookup // optional, may be nil
+	// businessContext resolves per-asset business-unit / business-service
+	// criticality so an asset's EFFECTIVE criticality can be raised to the most
+	// critical of {own, its BU, the services it powers} — CTEM's business
+	// alignment. Optional — nil keeps classification on the asset's own
+	// criticality (a pure floor, never a downgrade).
+	businessContext BusinessContextLookup
 	// reachabilityOracle feeds attack-path reachability into classification:
 	// an internal asset that sits on a validated internet→KEV/crown-jewel attack
 	// path is treated as reachable, so the "KEV+reachable→P0" / "critical+
@@ -52,6 +58,29 @@ type PriorityClassificationService struct {
 // SetControlLookup wires the compensating control lookup for priority calculation.
 func (s *PriorityClassificationService) SetControlLookup(lookup CompensatingControlLookup) {
 	s.controlLookup = lookup
+}
+
+// SetBusinessContextLookup wires the business-unit / business-service criticality
+// lookup used to raise an asset's effective criticality. Safe to call after
+// construction; nil keeps classification on the asset's own criticality.
+func (s *PriorityClassificationService) SetBusinessContextLookup(lookup BusinessContextLookup) {
+	s.businessContext = lookup
+}
+
+// businessContextFor fetches a single asset's business context (single-finding
+// path). A nil lookup, a zero asset, or any error yields the zero context —
+// which can only classify upwards via effectiveCriticality, never a downgrade.
+func (s *PriorityClassificationService) businessContextFor(ctx context.Context, tenantID, assetID shared.ID) AssetBusinessContext {
+	if s.businessContext == nil || assetID.IsZero() {
+		return AssetBusinessContext{}
+	}
+	m, err := s.businessContext.GetForAssets(ctx, tenantID, []shared.ID{assetID})
+	if err != nil {
+		s.logger.Warn("business context lookup failed",
+			"tenant_id", tenantID.String(), "error", err.Error())
+		return AssetBusinessContext{}
+	}
+	return m[assetID]
 }
 
 // ReachabilityOracle returns, for a tenant, the set of asset IDs that sit on a
@@ -302,10 +331,21 @@ func (s *PriorityClassificationService) ClassifyFinding(
 		telemetry.ObserveStageLatency(telemetry.StagePrioritization, tenantID.String(), time.Since(stageStart))
 	}()
 
+	// Business-aligned criticality: raise the asset to the MAX of {own, its
+	// business unit, the services it powers}. Single-finding path → one direct
+	// lookup (the batch path preloads a map instead). critReason is appended to
+	// the classification reason below so a business-driven bump is auditable.
+	var effCrit asset.Criticality
+	var critReason string
+	if assetEntity != nil {
+		effCrit, critReason = effectiveCriticality(assetEntity.Criticality(),
+			s.businessContextFor(ctx, tenantID, assetEntity.ID()))
+	}
+
 	// Build priority context (with attack-path reachability + threat-model
 	// signal, if wired). Both oracle lookups are tenant-scoped and cached.
 	reachable := s.reachableSet(ctx, tenantID)
-	pctx := s.buildPriorityContext(finding, assetEntity, reachable, s.threatenedSet(ctx, tenantID))
+	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID))
 
 	// Compensating controls on the finding's asset suppress P1 / force P2.
 	s.applyControlProtection(ctx, tenantID, finding.AssetID(), &pctx)
@@ -341,6 +381,10 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	if !matched {
 		classification = vulnerability.ClassifyPriority(pctx)
 	}
+
+	// Explainability: record that a business unit / service raised the asset's
+	// effective criticality, so the classification reason is auditable.
+	classification.Reason = appendCriticalityReason(classification.Reason, critReason)
 
 	// Apply classification
 	previousClass := finding.PriorityClass()
@@ -532,6 +576,24 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		}
 	}
 
+	// Preload per-asset business context (BU + business-service criticality) for
+	// the whole batch — one tenant-scoped query, mirroring the compensating-
+	// control preload above, so effective-criticality never costs a per-finding
+	// query. A nil lookup or an error leaves the map empty (assets keep their own
+	// criticality; never a downgrade).
+	businessCtx := make(map[shared.ID]AssetBusinessContext)
+	if s.businessContext != nil && len(assets) > 0 {
+		assetIDList := make([]shared.ID, 0, len(assets))
+		for aid := range assets {
+			assetIDList = append(assetIDList, aid)
+		}
+		if m, err := s.businessContext.GetForAssets(ctx, tenantID, assetIDList); err == nil {
+			businessCtx = m
+		} else {
+			s.logger.Warn("failed to batch lookup business context", "error", err)
+		}
+	}
+
 	// Attack-path reachability set + open-threat-path set, each computed once for
 	// the whole batch (one cached, tenant-scoped query apiece — no per-finding
 	// N+1).
@@ -564,7 +626,10 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 			continue
 		}
 
-		pctx := s.buildPriorityContext(f, a, reachable, threatened)
+		// Business-aligned effective criticality from the preloaded batch map.
+		effCrit, critReason := effectiveCriticality(a.Criticality(), businessCtx[f.AssetID()])
+
+		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened)
 		// Same rule as applyControlProtection, fed from the batch map above so
 		// the sweep stays one query for the whole batch instead of per finding.
 		setControlProtection(&pctx, controlReduction[f.AssetID()])
@@ -588,6 +653,8 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		if !matched {
 			classification = vulnerability.ClassifyPriority(pctx)
 		}
+		// Explainability: record a BU / service criticality bump on the reason.
+		classification.Reason = appendCriticalityReason(classification.Reason, critReason)
 
 		previousClass := f.PriorityClass()
 		f.SetPriorityClassification(classification.Class, classification.Reason)
@@ -614,11 +681,15 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 }
 
 // buildPriorityContext constructs PriorityContext from finding + asset.
-// reachable is the tenant's attack-path-reachable asset set (may be nil).
-// threatened is the tenant's open-threat-path asset set (may be nil).
+// effCrit is the asset's EFFECTIVE (business-aligned) criticality — the MAX of
+// its own and any business-unit / business-service criticality; "" falls back to
+// the asset's own criticality. reachable is the tenant's attack-path-reachable
+// asset set (may be nil). threatened is the tenant's open-threat-path asset set
+// (may be nil).
 func (s *PriorityClassificationService) buildPriorityContext(
 	f *vulnerability.Finding,
 	a *asset.Asset,
+	effCrit asset.Criticality,
 	reachable map[string]bool,
 	threatened map[string]bool,
 ) vulnerability.PriorityContext {
@@ -640,14 +711,26 @@ func (s *PriorityClassificationService) buildPriorityContext(
 	}
 
 	if a != nil {
-		ctx.AssetCriticality = string(a.Criticality())
+		// Effective (business-aligned) criticality: the MAX of the asset's own
+		// criticality and its business-unit / business-service criticality. It is
+		// a floor — it only ever raises the asset above its own value — so every
+		// downstream gate (critical+reachable→P1, implicit crown jewel, …) fires
+		// on the business-aligned level. "" means the caller supplied no override,
+		// so fall back to the asset's own criticality.
+		crit := effCrit
+		if crit == "" {
+			crit = a.Criticality()
+		}
+		ctx.AssetCriticality = string(crit)
 		ctx.AssetExposure = string(a.Exposure())
 		// Crown jewel: check properties (DB column exposed via properties map)
 		if cj, ok := a.Properties()["is_crown_jewel"].(bool); ok && cj {
 			ctx.AssetIsCrownJewel = true
 		}
-		// High criticality assets treated as implicit crown jewels
-		if a.Criticality() == asset.CriticalityCritical {
+		// High criticality assets treated as implicit crown jewels — evaluated on
+		// the EFFECTIVE criticality so an asset promoted to critical by its BU /
+		// business service is treated as a crown jewel too.
+		if crit == asset.CriticalityCritical {
 			ctx.AssetIsCrownJewel = true
 		}
 

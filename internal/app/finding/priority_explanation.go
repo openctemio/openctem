@@ -68,7 +68,16 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 		}
 	}
 
-	pctx := s.buildPriorityContext(f, a, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID))
+	// Effective (business-aligned) criticality — same input as the live classify
+	// path, so the explanation cannot drift from what ClassifyFinding does.
+	var effCrit asset.Criticality
+	var critReason string
+	if a != nil {
+		effCrit, critReason = effectiveCriticality(a.Criticality(),
+			s.businessContextFor(ctx, tenantID, f.AssetID()))
+	}
+
+	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID))
 
 	// Compensating-control reduction (same as the live classify path — shared
 	// helper, so the explanation cannot drift from what ClassifyFinding does).
@@ -77,6 +86,7 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 	// Evaluate override rules first, then fall back to the default classifier —
 	// identical precedence to ClassifyFinding, but read-only.
 	classification, ruleName := s.classifyWithRules(ctx, tenantID, pctx)
+	classification.Reason = appendCriticalityReason(classification.Reason, critReason)
 
 	exp := &PriorityExplanation{
 		FindingID: findingID.String(),

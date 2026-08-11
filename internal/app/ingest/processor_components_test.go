@@ -665,17 +665,18 @@ func TestComponentProcessor_FindParentInMaps(t *testing.T) {
 	processor := NewComponentProcessor(nil, logger)
 
 	parentID := shared.NewID()
+	assetID := shared.NewID()
 
 	assetDepIDMap := map[string]shared.ID{
-		"pkg:npm/express@4.18.0": parentID,
-		"express@4.18.0":         parentID,
-		"express":                parentID,
+		assetScopedKey(assetID, "pkg:npm/express@4.18.0"): parentID,
+		assetScopedKey(assetID, "express@4.18.0"):         parentID,
+		assetScopedKey(assetID, "express"):                parentID,
 	}
 
 	assetDepDepthMap := map[string]int{
-		"pkg:npm/express@4.18.0": 1,
-		"express@4.18.0":         1,
-		"express":                1,
+		assetScopedKey(assetID, "pkg:npm/express@4.18.0"): 1,
+		assetScopedKey(assetID, "express@4.18.0"):         1,
+		assetScopedKey(assetID, "express"):                1,
 	}
 
 	tests := []struct {
@@ -724,7 +725,7 @@ func TestComponentProcessor_FindParentInMaps(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			foundID, depth, found := processor.findParentInMaps(tt.dependsOn, assetDepIDMap, assetDepDepthMap)
+			foundID, depth, found := processor.findParentInMaps(assetID, tt.dependsOn, assetDepIDMap, assetDepDepthMap)
 
 			assert.Equal(t, tt.found, found)
 			if tt.found {
@@ -934,6 +935,67 @@ func TestComponentProcessor_ProcessBatch_ParentNotFoundAnywhere(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, capturedDepth, "orphan transitive should default to depth 2")
 	assert.Nil(t, capturedParentID, "parent should be nil when not found")
+
+	mockRepo.AssertExpectations(t)
+}
+
+// TestComponentProcessor_ProcessBatch_MultiAssetAttribution proves each
+// dependency in a multi-asset report is linked to its CORRECT owning asset,
+// resolved from the dependency's file path against the report's assets — not
+// collapsed onto a single (previously random) first asset.
+func TestComponentProcessor_ProcessBatch_MultiAssetAttribution(t *testing.T) {
+	mockRepo := new(MockComponentRepository)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	processor := NewComponentProcessor(mockRepo, logger)
+
+	tenantID := shared.NewID()
+	assetA := shared.NewID() // "app-a"
+	assetB := shared.NewID() // "app-b"
+
+	// Two report assets, keyed by their in-report ctis IDs.
+	report := &ctis.Report{
+		Assets: []ctis.Asset{
+			{ID: "ra", Type: ctis.AssetTypeRepository, Value: "app-a", Name: "app-a"},
+			{ID: "rb", Type: ctis.AssetTypeRepository, Value: "app-b", Name: "app-b"},
+		},
+		Dependencies: []ctis.Dependency{
+			{
+				Name: "lodash", Version: "4.17.21", Ecosystem: "npm",
+				PURL: "pkg:npm/lodash@4.17.21", Path: "app-a/package.json",
+				Relationship: "direct",
+			},
+			{
+				Name: "axios", Version: "0.21.1", Ecosystem: "npm",
+				PURL: "pkg:npm/axios@0.21.1", Path: "app-b/package.json",
+				Relationship: "direct",
+			},
+		},
+	}
+	assetMap := map[string]shared.ID{"ra": assetA, "rb": assetB}
+
+	lodashID := shared.NewID()
+	axiosID := shared.NewID()
+	mockRepo.On("Upsert", mock.Anything, mock.MatchedBy(func(c *component.Component) bool {
+		return c.Name() == "lodash"
+	})).Return(lodashID, nil)
+	mockRepo.On("Upsert", mock.Anything, mock.MatchedBy(func(c *component.Component) bool {
+		return c.Name() == "axios"
+	})).Return(axiosID, nil)
+
+	// Capture which asset each component was linked to.
+	linked := map[shared.ID]shared.ID{} // componentID -> assetID
+	mockRepo.On("LinkAsset", mock.Anything, mock.MatchedBy(func(dep *component.AssetDependency) bool {
+		linked[dep.ComponentID()] = dep.AssetID()
+		return true
+	})).Return(nil).Times(2)
+
+	output := &Output{}
+	err := processor.ProcessBatch(context.Background(), tenantID, report, assetMap, output)
+	require.NoError(t, err)
+
+	assert.Equal(t, assetA, linked[lodashID], "lodash (app-a/package.json) must link to app-a")
+	assert.Equal(t, assetB, linked[axiosID], "axios (app-b/package.json) must link to app-b")
+	assert.NotEqual(t, linked[lodashID], linked[axiosID], "the two deps must NOT collapse onto one asset")
 
 	mockRepo.AssertExpectations(t)
 }
