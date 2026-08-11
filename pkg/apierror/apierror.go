@@ -14,9 +14,15 @@ type Code string
 
 // Standard error codes.
 const (
-	CodeBadRequest          Code = "BAD_REQUEST"
-	CodeUnauthorized        Code = "UNAUTHORIZED"
-	CodeForbidden           Code = "FORBIDDEN"
+	CodeBadRequest   Code = "BAD_REQUEST"
+	CodeUnauthorized Code = "UNAUTHORIZED"
+	CodeForbidden    Code = "FORBIDDEN"
+	// CodeModuleNotEnabled is a 403 raised specifically by the per-tenant
+	// module gate (RequireModule) when a tenant has disabled the module a route
+	// belongs to. It is distinct from CodeForbidden (an RBAC/permission denial)
+	// so the client can treat it as an expected "feature off" empty state —
+	// e.g. suppress the error toast — rather than a real access-control failure.
+	CodeModuleNotEnabled    Code = "MODULE_NOT_ENABLED"
 	CodeNotFound            Code = "NOT_FOUND"
 	CodeConflict            Code = "CONFLICT"
 	CodeUnprocessableEntity Code = "UNPROCESSABLE_ENTITY"
@@ -168,6 +174,16 @@ func Forbidden(message string) *Error {
 		message = "Access denied"
 	}
 	return New(http.StatusForbidden, CodeForbidden, message)
+}
+
+// ModuleNotEnabled creates a 403 raised by the per-tenant module gate when the
+// route's module is disabled for the tenant. Carries CodeModuleNotEnabled so
+// clients can distinguish it from an RBAC denial and degrade gracefully.
+func ModuleNotEnabled(message string) *Error {
+	if message == "" {
+		message = "This module is not enabled for your team"
+	}
+	return New(http.StatusForbidden, CodeModuleNotEnabled, message)
 }
 
 // NotFound creates a 404 Not Found error.
