@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
 )
 
 // PriorityClassificationService orchestrates finding priority classification.
@@ -530,7 +531,73 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		return nil
 	}
 
-	// Collect CVE IDs for batch enrichment
+	// Shared, batch, read-only enrichment (EPSS/KEV + compensating controls +
+	// business context + attack-path reachability + open-threat-path) → one
+	// PriorityContext per classifiable finding, no per-finding N+1.
+	contexts := s.enrichAndContextualize(ctx, tenantID, findings, assets)
+
+	// Load override rules once.
+	rules, err := s.ruleRepo.ListActiveByTenant(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("failed to load override rules", "error", err)
+	}
+
+	for _, fc := range contexts {
+		f := fc.finding
+		classification := classifyContext(rules, fc.pctx)
+		// Explainability: record a BU / service criticality bump on the reason.
+		classification.Reason = appendCriticalityReason(classification.Reason, fc.critReason)
+
+		previousClass := f.PriorityClass()
+		f.SetPriorityClassification(classification.Class, classification.Reason)
+		// Record the priority change in the audit trail. The batch path is the
+		// MAIN classification path (ingest + the 12h reclassify sweep), yet it
+		// logged nothing — priority_class_audit_log was empty despite classified
+		// findings, so "why/when did this become P0" had no answer. Gated on an
+		// actual class change so a re-confirming sweep does not flood the log,
+		// and kept independent of publishIfChanged because the flood guard may
+		// suppress the fan-out event while the classification still stands.
+		s.auditClassChange(ctx, tenantID, f, previousClass, classification)
+		// batch classification also emits change events so the
+		// reclassification sweep reuses the same path and downstream consumers
+		// see every transition.
+		s.publishIfChanged(ctx, tenantID, f.ID(), previousClass, classification)
+	}
+
+	s.logger.Info("batch enrichment and classification complete",
+		"findings", len(findings),
+	)
+
+	return nil
+}
+
+// findingContext pairs a finding with its fully-built PriorityContext and the
+// business-criticality explanation string. Produced by enrichAndContextualize and
+// consumed by both EnrichAndClassifyBatch (classify + persist) and DryRunRule
+// (read-only rule evaluation) so both share exactly one enrichment path.
+type findingContext struct {
+	finding    *vulnerability.Finding
+	pctx       vulnerability.PriorityContext
+	critReason string
+}
+
+// enrichAndContextualize is the shared, batch, read-only enrichment behind both
+// the classify-batch path and the rule dry-run. It batch-loads EPSS/KEV,
+// compensating controls, business context, attack-path reachability and the
+// open-threat-path set — each ONE tenant-scoped (cached) query, never per-finding
+// — mutates every finding IN MEMORY with its EPSS/KEV enrichment, and returns
+// each classifiable finding paired with its PriorityContext. It does NOT run
+// rules, classify, persist, or emit events; the caller owns that. Findings with
+// no loaded asset, or with a manual priority override (which bypasses rule/auto
+// classification entirely), are enriched but omitted from the returned set —
+// exactly the set of findings a rule can affect.
+func (s *PriorityClassificationService) enrichAndContextualize(
+	ctx context.Context,
+	tenantID shared.ID,
+	findings []*vulnerability.Finding,
+	assets map[shared.ID]*asset.Asset,
+) []findingContext {
+	// Collect CVE IDs for batch enrichment.
 	cveIDs := make([]string, 0)
 	for _, f := range findings {
 		if f.CVEID() != "" {
@@ -538,10 +605,9 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		}
 	}
 
-	// Batch lookup EPSS + KEV
+	// Batch lookup EPSS + KEV.
 	var epssMap map[string]EPSSData
 	var kevMap map[string]KEVData
-
 	if len(cveIDs) > 0 {
 		var err error
 		epssMap, err = s.epssRepo.GetByCVEIDs(ctx, cveIDs)
@@ -556,13 +622,7 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		}
 	}
 
-	// Load override rules once
-	rules, err := s.ruleRepo.ListActiveByTenant(ctx, tenantID)
-	if err != nil {
-		s.logger.Warn("failed to load override rules", "error", err)
-	}
-
-	// Batch lookup compensating controls for all asset IDs
+	// Batch lookup compensating controls for all asset IDs.
 	controlReduction := make(map[shared.ID]float64)
 	if s.controlLookup != nil && len(assets) > 0 {
 		assetIDList := make([]shared.ID, 0, len(assets))
@@ -600,15 +660,14 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 	reachable := s.reachableSet(ctx, tenantID)
 	threatened := s.threatenedSet(ctx, tenantID)
 
-	// Enrich + classify each finding
+	contexts := make([]findingContext, 0, len(findings))
 	for _, f := range findings {
-		// Enrich with EPSS
+		// Enrich with EPSS.
 		if epss, ok := epssMap[f.CVEID()]; ok {
 			f.SetEPSSScore(epss.Score)
 			f.SetEPSSPercentile(epss.Percentile)
 		}
-
-		// Enrich with KEV
+		// Enrich with KEV.
 		if kev, ok := kevMap[f.CVEID()]; ok {
 			f.SetIsInKEV(true)
 			if kev.DueDate != nil {
@@ -616,12 +675,13 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 			}
 		}
 
-		// Classify
 		a := assets[f.AssetID()]
 		if a == nil {
 			continue
 		}
-
+		// Manual overrides bypass rule/auto classification entirely — enrich but
+		// hand back no context, so neither the batch classifier nor a dry-run
+		// treats them as (re)classifiable.
 		if f.PriorityClassOverride() {
 			continue
 		}
@@ -633,51 +693,29 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		// Same rule as applyControlProtection, fed from the batch map above so
 		// the sweep stays one query for the whole batch instead of per finding.
 		setControlProtection(&pctx, controlReduction[f.AssetID()])
-
 		// Part 2: persist derived reachability so is_reachable reflects reality.
 		persistReachability(f, pctx, reachable, a)
 
-		var classification vulnerability.PriorityClassification
-		matched := false
-		for _, rule := range rules {
-			if rule.Matches(pctx) {
-				classification = vulnerability.PriorityClassification{
-					Class:  rule.PriorityClass(),
-					Reason: fmt.Sprintf("Rule: %s", rule.Name()),
-					Source: "rule",
-				}
-				matched = true
-				break
+		contexts = append(contexts, findingContext{finding: f, pctx: pctx, critReason: critReason})
+	}
+	return contexts
+}
+
+// classifyContext applies the tenant's active override rules (first match wins,
+// by evaluation order as loaded) and falls back to the default CTEM engine when
+// none match. Shared by the batch classifier; RuleID is intentionally left unset
+// to preserve the batch path's historical audit shape.
+func classifyContext(rules []*vulnerability.PriorityOverrideRule, pctx vulnerability.PriorityContext) vulnerability.PriorityClassification {
+	for _, rule := range rules {
+		if rule.Matches(pctx) {
+			return vulnerability.PriorityClassification{
+				Class:  rule.PriorityClass(),
+				Reason: fmt.Sprintf("Rule: %s", rule.Name()),
+				Source: "rule",
 			}
 		}
-		if !matched {
-			classification = vulnerability.ClassifyPriority(pctx)
-		}
-		// Explainability: record a BU / service criticality bump on the reason.
-		classification.Reason = appendCriticalityReason(classification.Reason, critReason)
-
-		previousClass := f.PriorityClass()
-		f.SetPriorityClassification(classification.Class, classification.Reason)
-		// Record the priority change in the audit trail. The batch path is the
-		// MAIN classification path (ingest + the 12h reclassify sweep), yet it
-		// logged nothing — priority_class_audit_log was empty despite classified
-		// findings, so "why/when did this become P0" had no answer. Gated on an
-		// actual class change so a re-confirming sweep does not flood the log,
-		// and kept independent of publishIfChanged because the flood guard may
-		// suppress the fan-out event while the classification still stands.
-		s.auditClassChange(ctx, tenantID, f, previousClass, classification)
-		// batch classification also emits change events so the
-		// reclassification sweep reuses the same path and downstream consumers
-		// see every transition.
-		s.publishIfChanged(ctx, tenantID, f.ID(), previousClass, classification)
 	}
-
-	s.logger.Info("batch enrichment and classification complete",
-		"findings", len(findings),
-		"cves_enriched", len(cveIDs),
-	)
-
-	return nil
+	return vulnerability.ClassifyPriority(pctx)
 }
 
 // buildPriorityContext constructs PriorityContext from finding + asset.
@@ -796,4 +834,141 @@ func persistReachability(f *vulnerability.Finding, pctx vulnerability.PriorityCo
 		return
 	}
 	f.SetReachability(pctx.IsInternetAccessible, pctx.ReachableFromCount)
+}
+
+// Default caps for a priority-rule dry run. Evaluation is bounded to the most
+// recent open findings so a large tenant can't turn a preview into an unbounded
+// scan; the sample returned to the UI is bounded separately.
+const (
+	DefaultDryRunCap        = 1000
+	DefaultDryRunSampleSize = 25
+)
+
+// DryRunResult is the outcome of evaluating a DRAFT priority rule against the
+// tenant's open findings with the REAL classification engine. It is purely
+// informational — nothing is mutated or persisted.
+type DryRunResult struct {
+	Evaluated    int            // findings actually evaluated (asset-backed, non-override)
+	Matched      int            // how many the draft rule matched
+	Capped       bool           // true when more open findings exist than were evaluated
+	Cap          int            // the evaluation cap applied
+	Sample       []DryRunSample // a bounded preview of matched findings
+	Distribution map[string]int // would-be priority-class histogram (P0..P3)
+}
+
+// DryRunSample previews a single matched finding in a dry-run result.
+type DryRunSample struct {
+	FindingID    string
+	Title        string
+	Severity     string
+	CurrentClass string
+	WouldBeClass string
+}
+
+// DryRunRule evaluates a DRAFT (possibly unsaved) priority override rule against
+// the tenant's OPEN findings (new/confirmed/in_progress/fix_applied) using the
+// SAME enrichment + engine the classifier uses, and returns exact match counts,
+// a would-be class distribution, and a bounded sample of matched findings.
+//
+// It is strictly READ-ONLY: findings are enriched in memory via
+// enrichAndContextualize (never persisted) and no rule is stored. Evaluation is
+// capped at the `cap` most-recent open findings (a non-positive cap falls back to
+// DefaultDryRunCap); when the tenant has more open findings than the cap, the
+// result's Capped flag is set. sampleSize (non-positive → DefaultDryRunSampleSize)
+// bounds the returned sample.
+func (s *PriorityClassificationService) DryRunRule(
+	ctx context.Context,
+	tenantID shared.ID,
+	draft *vulnerability.PriorityOverrideRule,
+	cap int,
+	sampleSize int,
+) (DryRunResult, error) {
+	if cap <= 0 {
+		cap = DefaultDryRunCap
+	}
+	if sampleSize <= 0 {
+		sampleSize = DefaultDryRunSampleSize
+	}
+
+	// Load the tenant's OPEN findings, most-recent first, capped.
+	filter := vulnerability.NewFindingFilter().WithTenantID(tenantID)
+	filter.Statuses = vulnerability.ActiveFindingStatuses()
+	sort := pagination.NewSortOption(vulnerability.FindingAllowedSortFields()).Parse("-created_at")
+	opts := vulnerability.NewFindingListOptions().WithSort(sort)
+	page := pagination.Pagination{Page: 1, PerPage: cap}
+
+	res, err := s.findingRepo.List(ctx, filter, opts, page)
+	if err != nil {
+		return DryRunResult{}, fmt.Errorf("list open findings: %w", err)
+	}
+	findings := res.Data
+
+	// Load the distinct assets for those findings (deduped; one GetByID per
+	// asset, mirroring the reclassify sweep). A missing asset is skipped — the
+	// enrichment step then drops the finding.
+	assets := make(map[shared.ID]*asset.Asset, len(findings))
+	for _, f := range findings {
+		aid := f.AssetID()
+		if aid.IsZero() {
+			continue
+		}
+		if _, ok := assets[aid]; ok {
+			continue
+		}
+		a, aerr := s.assetRepo.GetByID(ctx, tenantID, aid)
+		if aerr != nil {
+			if errors.Is(aerr, shared.ErrNotFound) {
+				continue
+			}
+			return DryRunResult{}, fmt.Errorf("load asset %s: %w", aid.String(), aerr)
+		}
+		assets[aid] = a
+	}
+
+	// Reuse the SAME batch enrichment the classifier uses — no reimplementation.
+	contexts := s.enrichAndContextualize(ctx, tenantID, findings, assets)
+
+	result := DryRunResult{
+		Cap:          cap,
+		Capped:       res.Total > int64(len(findings)),
+		Distribution: map[string]int{"P0": 0, "P1": 0, "P2": 0, "P3": 0},
+	}
+	draftClass := string(draft.PriorityClass())
+
+	for _, fc := range contexts {
+		f := fc.finding
+		result.Evaluated++
+
+		current := s.currentClass(f, fc.pctx)
+		wouldBe := current
+		matched := draft.Matches(fc.pctx)
+		if matched {
+			result.Matched++
+			wouldBe = draftClass
+		}
+		result.Distribution[wouldBe]++
+
+		if matched && len(result.Sample) < sampleSize {
+			result.Sample = append(result.Sample, DryRunSample{
+				FindingID:    f.ID().String(),
+				Title:        f.Title(),
+				Severity:     string(f.Severity()),
+				CurrentClass: current,
+				WouldBeClass: draftClass,
+			})
+		}
+	}
+
+	return result, nil
+}
+
+// currentClass reports the finding's current priority class: its persisted class
+// when already classified, otherwise the default engine's verdict for its context
+// (so a never-classified open finding still contributes a sensible bucket to the
+// dry-run distribution).
+func (s *PriorityClassificationService) currentClass(f *vulnerability.Finding, pctx vulnerability.PriorityContext) string {
+	if pc := f.PriorityClass(); pc != nil {
+		return string(*pc)
+	}
+	return string(vulnerability.ClassifyPriority(pctx).Class)
 }

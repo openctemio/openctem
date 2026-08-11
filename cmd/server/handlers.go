@@ -39,6 +39,11 @@ func newPriorityRuleHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Servi
 	if svc != nil && svc.ControlChangePub != nil {
 		h.SetChangePublisher(svc.ControlChangePub)
 	}
+	// Wire the classifier so POST /priority-rules/dry-run can evaluate a draft
+	// rule against live findings with the real engine (nil → endpoint 503s).
+	if svc != nil && svc.PriorityClassification != nil {
+		h.SetDryRunner(svc.PriorityClassification)
+	}
 	return h
 }
 

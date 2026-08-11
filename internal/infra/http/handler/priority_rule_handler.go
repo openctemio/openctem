@@ -4,14 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	appfinding "github.com/openctemio/api/internal/app/finding"
 	"github.com/openctemio/api/internal/infra/controller"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 )
 
@@ -25,6 +28,24 @@ type PriorityRuleHandler struct {
 	// drifting up to 12h until the next periodic sweep. Nil = legacy
 	// no-fan-out behavior. Mirrors CompensatingControlHandler.
 	publisher *controller.ControlChangePublisher
+	// Optional. Evaluates a DRAFT rule against the tenant's open findings with
+	// the real classification engine (POST /priority-rules/dry-run). Nil = the
+	// dry-run endpoint returns 503 (no classifier wired, e.g. no database).
+	dryRunner priorityRuleDryRunner
+}
+
+// priorityRuleDryRunner is the read-only slice of the priority-classification
+// service the dry-run endpoint needs: evaluate a draft rule against the tenant's
+// open findings using the same enrichment + engine the classifier uses, without
+// mutating or persisting anything.
+type priorityRuleDryRunner interface {
+	DryRunRule(
+		ctx context.Context,
+		tenantID shared.ID,
+		draft *vulnerability.PriorityOverrideRule,
+		cap int,
+		sampleSize int,
+	) (appfinding.DryRunResult, error)
 }
 
 // NewPriorityRuleHandler creates a new handler.
@@ -36,6 +57,13 @@ func NewPriorityRuleHandler(db *sql.DB, log *logger.Logger) *PriorityRuleHandler
 // nil disables the fan-out.
 func (h *PriorityRuleHandler) SetChangePublisher(p *controller.ControlChangePublisher) {
 	h.publisher = p
+}
+
+// SetDryRunner wires the priority-classification service used by the dry-run
+// endpoint. Safe after construction; nil makes POST /priority-rules/dry-run
+// return 503.
+func (h *PriorityRuleHandler) SetDryRunner(d priorityRuleDryRunner) {
+	h.dryRunner = d
 }
 
 // enqueueReclassifyForTenant enqueues a whole-tenant reclassify sweep after a
@@ -259,4 +287,97 @@ func (h *PriorityRuleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// dryRunConditionRequest mirrors vulnerability.RuleCondition's JSON exactly so
+// the UI can post the same {field,operator,value} shape it edits.
+type dryRunSampleResponse struct {
+	FindingID    string `json:"finding_id"`
+	Title        string `json:"title"`
+	Severity     string `json:"severity"`
+	CurrentClass string `json:"current_class"`
+	WouldBeClass string `json:"would_be_class"`
+}
+
+// DryRun evaluates a DRAFT (possibly unsaved) priority rule against the tenant's
+// OPEN findings using the real classification engine, returning an exact match
+// count, a would-be priority-class distribution, and a bounded sample. Read-only:
+// nothing is mutated or persisted. Backs the settings priority-rule "dry run"
+// dialog, replacing its client-side heuristic with real engine results.
+func (h *PriorityRuleHandler) DryRun(w http.ResponseWriter, r *http.Request) {
+	if h.dryRunner == nil {
+		apierror.ServiceUnavailable("priority classification is not available").WriteJSON(w)
+		return
+	}
+
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+
+	var req struct {
+		Conditions    []vulnerability.RuleCondition `json:"conditions"`
+		PriorityClass string                        `json:"priority_class"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	class, err := vulnerability.ParsePriorityClass(req.PriorityClass)
+	if err != nil {
+		apierror.BadRequest("priority_class must be P0, P1, P2, or P3").WriteJSON(w)
+		return
+	}
+	if len(req.Conditions) == 0 {
+		apierror.BadRequest("at least one condition is required").WriteJSON(w)
+		return
+	}
+
+	// createdBy is irrelevant to a never-persisted draft; use the caller when
+	// resolvable, else the zero ID.
+	var createdBy shared.ID
+	if uid, uerr := shared.IDFromString(middleware.GetUserID(r.Context())); uerr == nil {
+		createdBy = uid
+	}
+
+	draft, err := vulnerability.NewPriorityOverrideRule(tid, "dry-run", class, req.Conditions, createdBy)
+	if err != nil {
+		// Domain validation (unknown field/operator, nil value, …) → 400.
+		if errors.Is(err, shared.ErrValidation) {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return
+		}
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	result, err := h.dryRunner.DryRunRule(r.Context(), tid, draft, 0, 0)
+	if err != nil {
+		h.logger.Error("priority rule dry-run", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	sample := make([]dryRunSampleResponse, 0, len(result.Sample))
+	for _, s := range result.Sample {
+		sample = append(sample, dryRunSampleResponse{
+			FindingID:    s.FindingID,
+			Title:        s.Title,
+			Severity:     s.Severity,
+			CurrentClass: s.CurrentClass,
+			WouldBeClass: s.WouldBeClass,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"evaluated":             result.Evaluated,
+		"matched":               result.Matched,
+		"capped":                result.Capped,
+		"cap":                   result.Cap,
+		"sample":                sample,
+		"would_be_distribution": result.Distribution,
+	})
 }

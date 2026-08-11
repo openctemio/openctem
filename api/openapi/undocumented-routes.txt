@@ -378,6 +378,7 @@ POST /api/v1/pipelines/{}/deactivate
 POST /api/v1/pipelines/{}/runs
 POST /api/v1/pipelines/{}/steps
 POST /api/v1/priority-rules
+POST /api/v1/priority-rules/dry-run
 POST /api/v1/relationships/suggestions/approve-all
 POST /api/v1/relationships/suggestions/approve-batch
 POST /api/v1/relationships/suggestions/generate
