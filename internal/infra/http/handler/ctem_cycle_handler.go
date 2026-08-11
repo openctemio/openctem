@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/ctemcycle"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )
@@ -20,13 +21,16 @@ import (
 // CTEMCycleHandler handles CTEM cycle CRUD and state transition endpoints.
 // Uses direct SQL queries for pragmatic speed (no DDD repo layer yet).
 type CTEMCycleHandler struct {
-	db     *sql.DB
-	logger *logger.Logger
+	db      *sql.DB
+	metrics ctemcycle.MetricsRepository
+	logger  *logger.Logger
 }
 
-// NewCTEMCycleHandler creates a new handler.
-func NewCTEMCycleHandler(db *sql.DB, log *logger.Logger) *CTEMCycleHandler {
-	return &CTEMCycleHandler{db: db, logger: log}
+// NewCTEMCycleHandler creates a new handler. metrics may be nil (metric
+// computation/serving is then disabled but the cycle lifecycle still
+// works); cmd/server wires the postgres implementation.
+func NewCTEMCycleHandler(db *sql.DB, metrics ctemcycle.MetricsRepository, log *logger.Logger) *CTEMCycleHandler {
+	return &CTEMCycleHandler{db: db, metrics: metrics, logger: log}
 }
 
 // List lists CTEM cycles for the tenant.
@@ -248,6 +252,16 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		return // error already written
 	}
 
+	// Stamp the activation moment (first activation only) so per-cycle
+	// metrics have a true window start [activated_at, closed_at].
+	if _, aerr := h.db.ExecContext(r.Context(),
+		`UPDATE ctem_cycles SET activated_at = NOW()
+		  WHERE id = $1 AND tenant_id = $2 AND activated_at IS NULL`,
+		id, tenantID,
+	); aerr != nil {
+		h.logger.Warn("cycle activated_at stamp failed", "cycle_id", sanitizeLogField(id), "error", aerr)
+	}
+
 	// Pull the Charter so we can read in_scope_services. The charter is
 	// stored as JSONB on ctem_cycles.
 	var charterRaw []byte
@@ -438,6 +452,11 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	if c.Charter == nil {
 		c.Charter = map[string]any{}
 	}
+
+	// Best-effort: compute & persist the cycle metrics now that the
+	// window [activated_at, closed_at] is final. Never block the close
+	// on a metrics error — the lazy compute-on-read path backfills.
+	h.persistMetrics(r.Context(), tenantID, id)
 
 	writeJSON(w, http.StatusOK, c)
 }
@@ -693,7 +712,6 @@ func (h *CTEMCycleHandler) scanCycle(scanner ctemRowScanner) (CTEMCycleResponse,
 
 	return c, nil
 }
-
 
 // ─── Request/Response Types ───
 

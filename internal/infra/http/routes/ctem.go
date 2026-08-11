@@ -130,6 +130,10 @@ func registerCTEMCycleRoutes(
 	router.Group("/api/v1/ctem-cycles", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.CTEMCyclesRead))
 		r.POST("/", h.Create, middleware.Require(permission.CTEMCyclesWrite))
+		// Static /metrics/trend is registered before /{id}/... so it is
+		// never shadowed by the {id} param route.
+		r.GET("/metrics/trend", h.MetricsTrend, middleware.Require(permission.CTEMCyclesRead))
+		r.GET("/{id}/metrics", h.GetMetrics, middleware.Require(permission.CTEMCyclesRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.CTEMCyclesRead))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.CTEMCyclesWrite))
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.CTEMCyclesWrite))
