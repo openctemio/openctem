@@ -12,8 +12,10 @@ func registerCompensatingControlRoutes(
 	h *handler.CompensatingControlHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/compensating-controls", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.CompensatingControlsRead))
@@ -33,8 +35,10 @@ func registerAttackerProfileRoutes(
 	h *handler.AttackerProfileHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/attacker-profiles", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AttackerProfilesRead))
@@ -75,8 +79,10 @@ func registerBusinessServiceRoutes(
 	h *handler.BusinessServiceHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/business-services", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.BusinessServicesRead))
@@ -96,8 +102,10 @@ func registerPriorityRuleRoutes(
 	h *handler.PriorityRuleHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/priority-rules", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.PriorityRulesRead))
@@ -114,8 +122,10 @@ func registerCTEMCycleRoutes(
 	h *handler.CTEMCycleHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/ctem-cycles", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.CTEMCyclesRead))

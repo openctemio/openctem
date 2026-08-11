@@ -275,7 +275,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			repos.ReportSchedule,
 			repos.Finding,
 			svc.Email,
-			nil, // TenantNamer optional; report header falls back to tenant id
+			nil,        // TenantNamer optional; report header falls back to tenant id
+			svc.Module, // ModuleGuard: skip tenants without the reports module
 			controller.ReportSchedulerConfig{Interval: time.Minute},
 			log,
 		))
@@ -435,10 +436,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewControlTestSchedulerController(
 		repos.ControlTest,
 		&controller.ControlTestSchedulerConfig{
-			Interval:  24 * time.Hour,
-			StaleDays: 30,
-			BatchSize: 500,
-			Logger:    log.With("controller", "control-test-scheduler"),
+			Interval:    24 * time.Hour,
+			StaleDays:   30,
+			BatchSize:   500,
+			Logger:      log.With("controller", "control-test-scheduler"),
+			ModuleGuard: svc.Module, // skip tenants without the control-testing module
 		},
 	))
 

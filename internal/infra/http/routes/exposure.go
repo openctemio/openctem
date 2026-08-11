@@ -13,9 +13,11 @@ func registerExposureRoutes(
 	h *handler.ExposureHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token.
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Exposure routes - tenant from JWT token
 	router.Group("/api/v1/exposures", func(r Router) {
@@ -99,9 +101,12 @@ func registerCredentialRoutes(
 	ingestHandler *handler.IngestHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token. The module gate applies only
+	// to the JWT admin group below; the agent ingest group keeps its own
+	// API-key chain so data ingestion is never blocked by a bundle subset.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Credential routes - tenant from JWT token (admin interface)
 	router.Group("/api/v1/credentials", func(r Router) {
