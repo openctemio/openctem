@@ -109,6 +109,31 @@ func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string
 		}
 		clauses = append(clauses, fmt.Sprintf("f.finding_type = ANY($%d)", argOffset))
 		args = append(args, pq.Array(types))
+		argOffset++
+	}
+
+	// "Assigned to me" / related-to-user filter. Mirrors the canMarkFixApplied
+	// 3-way definition of relatedness so "mine" is consistent across the app:
+	// (1) direct assignee, (2) member of a group the finding is assigned to,
+	// (3) owner of the finding's asset. Written as a single WHERE predicate so
+	// it applies before GROUP BY across every group_by dimension. Tenant scope
+	// is inherited from the caller's f.tenant_id predicate; the correlated
+	// subqueries key off the outer finding row.
+	if filter.RelatedToUserID != nil {
+		clauses = append(clauses, fmt.Sprintf(`(
+			f.assigned_to = $%[1]d
+			OR f.asset_id IN (
+				SELECT id FROM assets WHERE tenant_id = f.tenant_id AND owner_id = $%[1]d
+			)
+			OR f.id IN (
+				SELECT fga.finding_id
+				FROM finding_group_assignments fga
+				JOIN group_members gm ON gm.group_id = fga.group_id
+				JOIN groups g ON g.id = fga.group_id
+				WHERE fga.tenant_id = f.tenant_id AND gm.user_id = $%[1]d AND g.is_active = true
+			)
+		)`, argOffset))
+		args = append(args, filter.RelatedToUserID.String())
 	}
 
 	return strings.Join(clauses, " AND "), args
