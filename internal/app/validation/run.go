@@ -37,6 +37,31 @@ const safeCheckTechnique TechniqueID = "T1046"
 // not a failure.
 var ErrNotNetworkAddressable = fmt.Errorf("%w: asset is not network-addressable for a safe-check re-check", shared.ErrValidation)
 
+// ErrNoValidationAgent is returned when a validation job would be dispatched but
+// no validation-capable agent is currently online for the tenant. This makes
+// the dispatch capability-gated exactly like scan dispatch
+// (agent.AgentSelector.CheckAgentAvailability): the platform must never enqueue
+// a validate command that no agent can consume, which would sit in the queue
+// forever (the "silently inert" defect) and, for a live simulation, strand its
+// run in "running". Callers treat it as an expected skip: the auto-proof-of-fix
+// path logs once and moves on, the live-simulation path falls back to its
+// clearly-labeled synthetic result, and the manual endpoint tells the operator
+// to deploy a validation agent. It wraps ErrValidation so the HTTP layer
+// surfaces a 400 with the message rather than a 500. The gate is self-arming:
+// the moment a tenant registers an agent advertising the "validate" capability,
+// dispatch begins — no code change or redeploy.
+var ErrNoValidationAgent = fmt.Errorf("%w: no validation-capable agent is online for this tenant; deploy a validation agent to run this check", shared.ErrValidation)
+
+// AgentAvailability reports whether a validation-capable agent is currently
+// online for a tenant. It is the validation-side mirror of the scan dispatch
+// pre-flight capability check: a real implementation asks the agent registry
+// for online, in-capacity agents advertising the "validate" capability
+// (AgentCapabilityValidate); the test stub returns a fixed answer. Optional on
+// RunService — a nil gate preserves the pre-gate behavior (always dispatch).
+type AgentAvailability interface {
+	HasValidationAgent(ctx context.Context, tenantID shared.ID) (bool, error)
+}
+
 // networkAddressableTypes is the set of asset types whose Name() is a host,
 // IP, or URL a safe-check probe can reach over the network. Types outside this
 // set (repository, container, cloud_account, …) cannot be reachability-probed.
@@ -67,7 +92,11 @@ type RunService struct {
 	dispatcher JobDispatcher
 	selector   Selector
 	available  []ExecutorKind
-	logger     *logger.Logger
+	// availability, when set, capability-gates every dispatch on a live
+	// per-tenant check for an online validation agent. Nil disables the gate
+	// (pre-gate behavior). Installed via SetAgentAvailability at wiring time.
+	availability AgentAvailability
+	logger       *logger.Logger
 }
 
 // NewRunService wires the run service. available is the set of executor kinds
@@ -88,6 +117,35 @@ func NewRunService(
 		available:  available,
 		logger:     log.With("service", "validation-run"),
 	}
+}
+
+// SetAgentAvailability installs the per-tenant capability gate. When set, a
+// dispatch is skipped with ErrNoValidationAgent whenever no validation-capable
+// agent is online for the tenant, so a validate command is only ever queued for
+// an agent that can execute it. Optional: leaving it unset keeps every dispatch
+// unconditional (the pre-gate behavior), which is what the unit tests exercise.
+func (s *RunService) SetAgentAvailability(a AgentAvailability) {
+	s.availability = a
+}
+
+// ensureAgentAvailable enforces the capability gate. It returns nil when the
+// gate is disabled (unwired) or a validation-capable agent is online, and
+// ErrNoValidationAgent when the gate is armed but no such agent exists. It does
+// not log: each caller decides how to surface the skip (the manual endpoint
+// returns 400, the auto and live paths log once) so a batch of findings cannot
+// produce one log line per finding.
+func (s *RunService) ensureAgentAvailable(ctx context.Context, tenantID shared.ID) error {
+	if s.availability == nil {
+		return nil
+	}
+	ok, err := s.availability.HasValidationAgent(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("validation agent availability check: %w", err)
+	}
+	if !ok {
+		return ErrNoValidationAgent
+	}
+	return nil
 }
 
 // ValidateFinding dispatches a validation job for the given finding and returns
@@ -119,6 +177,11 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 	address := strings.TrimSpace(a.Name())
 	if address == "" {
 		return shared.ID{}, fmt.Errorf("%w: asset has no address to validate against", shared.ErrValidation)
+	}
+
+	// Capability gate: never queue a validate command no agent can consume.
+	if err := s.ensureAgentAvailable(ctx, tenantID); err != nil {
+		return shared.ID{}, err
 	}
 
 	technique := safeCheckTechnique
@@ -178,6 +241,14 @@ func (s *RunService) DispatchSimulationCheck(ctx context.Context, tenantID, simR
 	address := strings.TrimSpace(a.Name())
 	if address == "" {
 		return shared.ID{}, fmt.Errorf("%w: asset has no address to validate against", shared.ErrValidation)
+	}
+
+	// Capability gate: only dispatch a live safe-check when a validation agent
+	// is online for the tenant. Otherwise the caller (tryDispatchLive) falls
+	// back to the synthetic path and finalizes the run, rather than stranding it
+	// in "running" behind a command nothing will ever execute.
+	if err := s.ensureAgentAvailable(ctx, tenantID); err != nil {
+		return shared.ID{}, err
 	}
 
 	// Only dispatch when the simulation's technique is one the safe-check

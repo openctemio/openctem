@@ -10,6 +10,13 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// AgentCapabilityValidate is the capability string a validate-capable agent
+// advertises and the one a validate command requires for routing. It is the
+// single source of truth shared by the dispatch payload (RequiredCapabilities)
+// and the pre-flight availability gate (RunService.ensureAgentAvailable) so the
+// two never drift: the gate opens exactly when a queued command can be routed.
+const AgentCapabilityValidate = "validate"
+
 // CommandCreator is the narrow seam over the command repository used to enqueue
 // a validation job. Implemented by *postgres.CommandRepository.
 type CommandCreator interface {
@@ -104,7 +111,7 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 			Address: job.Target.Address,
 		},
 		TimeoutSeconds:       job.TimeoutSeconds,
-		RequiredCapabilities: []string{"validate"},
+		RequiredCapabilities: []string{AgentCapabilityValidate},
 	}
 
 	raw, err := json.Marshal(payload)

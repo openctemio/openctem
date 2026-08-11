@@ -172,6 +172,15 @@ func (s *FindingActionsService) autoQueueValidations(ctx context.Context, tenant
 			break
 		}
 		if _, err := s.autoValidator.ValidateFinding(ctx, tenantID, fid); err != nil {
+			// No validation agent is a tenant-wide condition: the rest of the
+			// batch would answer identically, so log once and stop rather than
+			// re-querying per finding. Observable (not silent) — and self-heals
+			// the moment a validation agent comes online.
+			if errors.Is(err, validation.ErrNoValidationAgent) {
+				s.logger.Info("proof-of-fix auto-validation skipped: no validation-capable agent online",
+					"tenant_id", tenantID.String(), "pending", len(findingIDs)-queued)
+				break
+			}
 			// Non-network assets are the common, expected case — don't log noise.
 			if !errors.Is(err, validation.ErrNotNetworkAddressable) {
 				s.logger.Warn("proof-of-fix auto-validation failed",

@@ -69,6 +69,25 @@ func (a findingMutatorAdapter) Update(ctx context.Context, f *vulnerability.Find
 	return a.repo.Update(ctx, f)
 }
 
+// validationAgentAvailability answers "is a validation-capable agent online for
+// this tenant?" by reusing the exact capability query scan dispatch uses
+// (AgentRepository.FindAvailableWithCapacity). It gates validation.RunService so
+// a validate command is only ever queued when a real agent can consume it —
+// otherwise the command would sit in the queue forever and a live simulation run
+// would be stranded in "running". The gate is self-arming: it opens the moment a
+// tenant registers an agent advertising the "validate" capability.
+type validationAgentAvailability struct {
+	agents *postgres.AgentRepository
+}
+
+func (v validationAgentAvailability) HasValidationAgent(ctx context.Context, tenantID shared.ID) (bool, error) {
+	agents, err := v.agents.FindAvailableWithCapacity(ctx, tenantID, []string{validation.AgentCapabilityValidate}, "")
+	if err != nil {
+		return false, err
+	}
+	return len(agents) > 0, nil
+}
+
 // assetOwnerMatcher resolves an asset's owner_ref email to a user id for
 // auto-ownership, but ONLY when that user is a member of the tenant — never
 // assigning ownership to a user outside the tenant (isolation). A no-match is
@@ -851,6 +870,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		[]validation.ExecutorKind{validation.KindSafeCheck},
 		log,
 	)
+	// Capability-gate the dispatch on a live per-tenant check for an online
+	// validation-capable agent, mirroring scan dispatch. Without this the API
+	// would enqueue validate commands (on fix_applied auto-retest and live
+	// simulation runs) even when no agent can execute them — the command would
+	// sit unconsumed and the simulation run would strand in "running". With it,
+	// dispatch is observably skipped until a validation agent is deployed, then
+	// self-activates. See validation.ErrNoValidationAgent.
+	s.ValidationRun.SetAgentAvailability(validationAgentAvailability{agents: repos.Agent})
 	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
 	// (network-addressable target + safe-checkable technique) runs for real via
 	// the validation dispatcher; the command-completion hook finalizes the run.
