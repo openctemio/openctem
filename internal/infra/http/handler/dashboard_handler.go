@@ -406,7 +406,8 @@ func (h *DashboardHandler) GetMTTR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mttr, err := h.dashboardService.GetMTTRMetrics(r.Context(), tid)
+	days := parseQueryInt(r.URL.Query().Get("days"), 90)
+	mttr, err := h.dashboardService.GetMTTRMetrics(r.Context(), tid, days)
 	if err != nil {
 		h.logger.Error("failed to get MTTR metrics", "error", err)
 		apierror.InternalServerError("failed to get metrics").WriteJSON(w)

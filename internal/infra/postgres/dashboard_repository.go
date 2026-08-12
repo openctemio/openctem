@@ -354,18 +354,25 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 }
 
 // GetMTTRMetrics returns Mean Time To Remediate metrics by severity.
-// MTTR = average time between finding creation and resolution.
-func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID) (map[string]float64, error) {
+// MTTR = average time between first detection and resolution, over the last
+// `days` days. Only genuinely-remediated findings (resolved/verified) count;
+// false_positive/accepted_risk are excluded as they are not remediations.
+func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error) {
+	if days <= 0 || days > 365 {
+		days = 90
+	}
 	query := `SELECT
 		severity,
-		COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 3600), 0) as avg_hours
+		COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) as avg_hours
 		FROM findings
 		WHERE tenant_id = $1
-		AND status IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
-		AND updated_at > created_at
+		AND status IN ('resolved', 'verified')
+		AND resolved_at IS NOT NULL AND first_detected_at IS NOT NULL
+		AND resolved_at >= first_detected_at
+		AND resolved_at >= NOW() - ($2::int || ' days')::interval
 		GROUP BY severity`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), days)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get MTTR metrics: %w", err)
 	}
@@ -1011,7 +1018,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			SELECT id, severity, priority_class, epss_score, is_in_kev,
 				title, asset_id, created_at, resolved_at, sla_status, first_detected_at
 			FROM findings
-			WHERE tenant_id = $1 AND status NOT IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
+			WHERE tenant_id = $1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
 		),
 		resolved_in_period AS (
 			SELECT severity, priority_class, resolved_at, first_detected_at
@@ -1036,11 +1043,21 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		risk_score AS (
 			SELECT COALESCE(AVG(risk_score), 0) AS current_score FROM assets WHERE tenant_id = $1
 		),
+		prev_risk AS (
+			-- Oldest risk_snapshots row within the window; used to compute
+			-- risk_score_change (current asset-avg risk vs start-of-period snapshot).
+			SELECT risk_score_avg AS prev_score
+			FROM risk_snapshots
+			WHERE tenant_id = $1
+				AND snapshot_date >= (CURRENT_DATE - ($2::int || ' days')::interval)::date
+			ORDER BY snapshot_date ASC
+			LIMIT 1
+		),
 		crown_jewels AS (
 			SELECT COUNT(DISTINCT a.id) AS cnt
 			FROM assets a
 			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1
-				AND f.status NOT IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
+				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
 			WHERE a.tenant_id = $1 AND COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE) = TRUE
 		),
 		mttr_critical AS (
@@ -1053,6 +1070,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		)
 		SELECT
 			rs.current_score,
+			rs.current_score - COALESCE(pr.prev_score, rs.current_score),
 			(SELECT COUNT(*) FROM open_findings),
 			(SELECT COUNT(*) FROM resolved_in_period),
 			(SELECT COUNT(*) FROM new_in_period),
@@ -1061,9 +1079,9 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			(SELECT COUNT(*) FROM open_findings WHERE priority_class = 'P1'),
 			(SELECT COUNT(*) FROM resolved_in_period WHERE priority_class = 'P1'),
 			CASE WHEN (SELECT COUNT(*) FROM open_findings) > 0
-				THEN (SELECT COUNT(*) FROM open_findings WHERE sla_status != 'breached') * 100.0 / (SELECT COUNT(*) FROM open_findings)
+				THEN ((SELECT COUNT(*) FROM open_findings) - (SELECT COUNT(*) FROM open_findings WHERE sla_status IN ('exceeded','overdue'))) * 100.0 / (SELECT COUNT(*) FROM open_findings)
 				ELSE 100.0 END,
-			(SELECT COUNT(*) FROM open_findings WHERE sla_status = 'breached'),
+			(SELECT COUNT(*) FROM open_findings WHERE sla_status IN ('exceeded','overdue')),
 			mc.hrs,
 			mh.hrs,
 			cj.cnt,
@@ -1071,6 +1089,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			tr.cnt
 		FROM risk_score rs, mttr_critical mc, mttr_high mh, crown_jewels cj,
 		     regressions reg, total_resolved tr
+		LEFT JOIN prev_risk pr ON TRUE
 	`
 
 	summary := &app.ExecutiveSummary{
@@ -1080,6 +1099,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	var totalResolved int
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
 		&summary.RiskScoreCurrent,
+		&summary.RiskScoreChange,
 		&summary.FindingsTotal,
 		&summary.FindingsResolved,
 		&summary.FindingsNew,
@@ -1110,7 +1130,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
-		WHERE f.tenant_id = $1 AND f.status NOT IN ('resolved', 'verified', 'false_positive', 'accepted_risk')
+		WHERE f.tenant_id = $1 AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
 		ORDER BY f.priority_class ASC NULLS LAST, f.epss_score DESC NULLS LAST
 		LIMIT 5
 	`
@@ -1230,7 +1250,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 		),
 		assign_stats AS (
 			SELECT
-				COUNT(*) FILTER(WHERE assigned_to IS NULL AND status NOT IN ('closed','resolved','false_positive','verified')) AS unassigned,
+				COUNT(*) FILTER(WHERE assigned_to IS NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS unassigned,
 				COALESCE(AVG(EXTRACT(epoch FROM assigned_at - created_at) / 3600) FILTER(WHERE assigned_at IS NOT NULL), 0) AS avg_assign_hours
 			FROM findings WHERE tenant_id = $1
 			AND created_at >= NOW() - ($2 || ' days')::interval
