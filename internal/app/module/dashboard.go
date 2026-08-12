@@ -304,9 +304,11 @@ type ExecutiveSummary struct {
 
 // TopRisk represents a high-priority open finding for executive view.
 type TopRisk struct {
+	FindingID     string   `json:"finding_id"`
 	FindingTitle  string   `json:"title"`
 	Severity      string   `json:"severity"`
 	PriorityClass string   `json:"priority_class"`
+	AssetID       string   `json:"asset_id,omitempty"`
 	AssetName     string   `json:"asset_name"`
 	EPSSScore     *float64 `json:"epss_score"`
 	IsInKEV       bool     `json:"is_in_kev"`

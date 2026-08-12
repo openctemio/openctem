@@ -1130,7 +1130,8 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 
 	// Top 5 risks: open findings ordered by priority class, EPSS score
 	topQuery := `
-		SELECT f.title, f.severity, COALESCE(f.priority_class, 'P3') AS priority_class,
+		SELECT f.id::text, f.title, f.severity, COALESCE(f.priority_class, 'P3') AS priority_class,
+			COALESCE(f.asset_id::text, '') AS asset_id,
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
@@ -1148,8 +1149,8 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	topRisks := make([]app.TopRisk, 0, 5)
 	for rows.Next() {
 		var tr app.TopRisk
-		if err := rows.Scan(&tr.FindingTitle, &tr.Severity, &tr.PriorityClass,
-			&tr.AssetName, &tr.EPSSScore, &tr.IsInKEV); err != nil {
+		if err := rows.Scan(&tr.FindingID, &tr.FindingTitle, &tr.Severity, &tr.PriorityClass,
+			&tr.AssetID, &tr.AssetName, &tr.EPSSScore, &tr.IsInKEV); err != nil {
 			return nil, fmt.Errorf("scan top risk: %w", err)
 		}
 		topRisks = append(topRisks, tr)
