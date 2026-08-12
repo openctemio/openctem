@@ -42,6 +42,9 @@ type mockAttackSurfaceRepo struct {
 	// Call tracking
 	countFilters []asset.Filter
 	listFilters  []asset.Filter
+
+	// ListAllNodes response (attack-path scoring)
+	allNodes []asset.AssetNode
 }
 
 func newMockAttackSurfaceRepo() *mockAttackSurfaceRepo {
@@ -188,14 +191,16 @@ func (m *mockAttackSurfaceRepo) GetPropertyFacets(_ context.Context, _ shared.ID
 }
 
 func (m *mockAttackSurfaceRepo) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
-	return nil, nil
+	return m.allNodes, nil
 }
 
 // =============================================================================
 // Mock Relationship Repository for Attack Surface Service
 // =============================================================================
 
-type mockAttackSurfaceRelRepo struct{}
+type mockAttackSurfaceRelRepo struct {
+	allEdges []asset.RelationshipEdge
+}
 
 func (m *mockAttackSurfaceRelRepo) Create(_ context.Context, _ *asset.Relationship) error {
 	return nil
@@ -234,7 +239,7 @@ func (m *mockAttackSurfaceRelRepo) CountByType(_ context.Context, _ shared.ID) (
 }
 
 func (m *mockAttackSurfaceRelRepo) ListAllEdges(_ context.Context, _ shared.ID) ([]asset.RelationshipEdge, error) {
-	return nil, nil
+	return m.allEdges, nil
 }
 
 // =============================================================================
@@ -922,5 +927,45 @@ func TestAttackSurfaceService_GetStats_ExposedServiceConversion(t *testing.T) {
 	}
 	if !es.LastSeen.Equal(lastSeen) {
 		t.Errorf("expected lastSeen=%v, got %v", lastSeen, es.LastSeen)
+	}
+}
+
+// TestComputeAttackPathScores_DirectlyExposedCrownJewelAtRisk pins the fix: a
+// crown jewel that is ITSELF a public entry point (rc=0, because a node is
+// never its own neighbor and only non-public reached nodes get an rc) must
+// still be counted in crown_jewels_at_risk — a directly internet-exposed crown
+// jewel is the most at-risk case.
+func TestComputeAttackPathScores_DirectlyExposedCrownJewelAtRisk(t *testing.T) {
+	cjID := shared.NewID().String()      // crown jewel that is itself public
+	reachedCJ := shared.NewID().String() // crown jewel reached from an entry point
+	entryID := shared.NewID().String()   // plain public entry point
+
+	repo := newMockAttackSurfaceRepo()
+	repo.allNodes = []asset.AssetNode{
+		{ID: cjID, Name: "public-db", AssetType: "database",
+			Exposure: string(asset.ExposurePublic), Criticality: "critical", IsCrownJewel: true},
+		{ID: entryID, Name: "edge-lb", AssetType: "load_balancer",
+			Exposure: string(asset.ExposurePublic), Criticality: "high"},
+		{ID: reachedCJ, Name: "internal-crown", AssetType: "database",
+			Exposure: "internal", Criticality: "critical", IsCrownJewel: true},
+	}
+	relRepo := &mockAttackSurfaceRelRepo{
+		allEdges: []asset.RelationshipEdge{
+			// entry point can reach the internal crown jewel
+			{SourceAssetID: entryID, TargetAssetID: reachedCJ, Type: asset.RelTypeDependsOn},
+		},
+	}
+	svc := attack.NewSurfaceService(repo, relRepo, logger.NewNop())
+
+	res, err := svc.ComputeAttackPathScores(context.Background(), shared.NewID(), relRepo)
+	if err != nil {
+		t.Fatalf("ComputeAttackPathScores: %v", err)
+	}
+
+	// Both crown jewels are at risk: the internal one via reachability, and the
+	// directly-exposed one because it is itself a public entry point. Counted
+	// once each — no double-count.
+	if res.Summary.CrownJewelsAtRisk != 2 {
+		t.Fatalf("CrownJewelsAtRisk = %d, want 2 (directly-exposed + reached)", res.Summary.CrownJewelsAtRisk)
 	}
 }

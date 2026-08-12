@@ -1041,7 +1041,11 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			WHERE tenant_id = $1 AND created_at >= NOW() - ($2::int || ' days')::interval
 		),
 		risk_score AS (
-			SELECT COALESCE(AVG(risk_score), 0) AS current_score FROM assets WHERE tenant_id = $1
+			-- Average over SCORED assets only (risk_score > 0), matching the
+			-- risk-trend risk_score_avg (risk_snapshots) so the executive hero
+			-- number equals the trend's latest point. prev_risk below reads that
+			-- same filtered snapshot average, keeping risk_score_change consistent.
+			SELECT COALESCE(AVG(risk_score) FILTER (WHERE risk_score > 0), 0) AS current_score FROM assets WHERE tenant_id = $1
 		),
 		prev_risk AS (
 			-- Oldest risk_snapshots row within the window; used to compute
@@ -1062,11 +1066,11 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		),
 		mttr_critical AS (
 			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
-			FROM resolved_in_period WHERE severity = 'critical' AND first_detected_at IS NOT NULL
+			FROM resolved_in_period WHERE severity = 'critical' AND first_detected_at IS NOT NULL AND resolved_at >= first_detected_at
 		),
 		mttr_high AS (
 			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
-			FROM resolved_in_period WHERE severity = 'high' AND first_detected_at IS NOT NULL
+			FROM resolved_in_period WHERE severity = 'high' AND first_detected_at IS NOT NULL AND resolved_at >= first_detected_at
 		)
 		SELECT
 			rs.current_score,
@@ -1190,6 +1194,8 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 			AND status IN ('resolved', 'verified')
 			AND resolved_at >= NOW() - ($2::int || ' days')::interval
 			AND resolved_at IS NOT NULL
+			AND first_detected_at IS NOT NULL
+			AND resolved_at >= first_detected_at
 	`
 
 	var (
