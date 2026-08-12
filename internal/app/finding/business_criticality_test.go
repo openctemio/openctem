@@ -94,10 +94,17 @@ func TestEffectiveCriticality(t *testing.T) {
 	}
 }
 
-// mediumReachableEPSSFinding is a medium-severity, high-EPSS finding on a public
-// (reachable) asset with the given OWN criticality. With own=medium it lands P2
-// ("Medium severity, reachable"); the only thing that lifts it to the P1
-// "high EPSS + reachable + critical asset" gate is the asset being critical/high.
+// mediumReachableEPSSFinding is a medium-severity, MODERATE-EPSS finding on a
+// public (reachable) asset with the given OWN criticality. With own=medium it
+// lands P2 (moderate-EPSS reachable safety net); the only thing that lifts it to
+// the P1 "high EPSS (>=0.1) + reachable + critical asset" gate is the asset being
+// critical/high.
+//
+// EPSS is 0.2, deliberately BELOW the 0.5 standalone-high-EPSS P1 threshold: at
+// >=0.5 the finding would be P1 on its own (reachable + high exploitation prob),
+// which would defeat this test's purpose of proving the BU bump does the lifting.
+// (This value was 0.5 before the reachability/EPSS escalation fix, when EPSS only
+// mattered on critical/high assets.)
 func mediumReachableEPSSFinding(t *testing.T, tenantID shared.ID, own asset.Criticality) (*vulnerability.Finding, *asset.Asset) {
 	t.Helper()
 	a, err := asset.NewAssetWithTenant(tenantID, "web-01", asset.AssetTypeDomain, own)
@@ -114,7 +121,7 @@ func mediumReachableEPSSFinding(t *testing.T, tenantID shared.ID, own asset.Crit
 	if err != nil {
 		t.Fatalf("NewFinding: %v", err)
 	}
-	f.SetEPSSScore(0.5) // >= 0.1 so the EPSS P1 gate is one criticality away
+	f.SetEPSSScore(0.2) // >= 0.1 (so the critical-asset EPSS P1 gate is one criticality away) but < 0.5 (below the standalone-high-EPSS P1 threshold)
 	return f, a
 }
 
