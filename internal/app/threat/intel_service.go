@@ -45,6 +45,21 @@ const (
 	// gzip (decompression bomb) cannot exhaust memory. The real EPSS feed is
 	// well under this; the bound is defence-in-depth.
 	maxDecompressedFeedBytes = 1 << 30 // 1 GiB
+
+	// epssHighThreshold is the EPSS probability at or above which a CVE is
+	// treated as "high" exploitation risk (10% chance of exploitation in the
+	// next 30 days). Long-standing "elevated attention" line.
+	epssHighThreshold = 0.1
+
+	// epssCriticalThreshold is the EPSS probability at or above which a CVE is
+	// treated as "critical" exploitation risk on the tenant dashboard. FIRST
+	// publishes no fixed EPSS severity bands, so we pick a defensible line:
+	// 0.5 means the model estimates the vulnerability is more likely than not
+	// (>50%) to be exploited in the next 30 days. The previous 0.3 threshold
+	// was undocumented and weak — a ~30% probability is common for many recent
+	// CVEs, which over-counted the "critical" bucket. 0.5 keeps it small and
+	// actionable.
+	epssCriticalThreshold = 0.5
 )
 
 // IntelService handles threat intelligence operations.
@@ -561,13 +576,78 @@ func (s *IntelService) GetEPSSStats(ctx context.Context) (*EPSSStats, error) {
 	}, nil
 }
 
-// GetThreatIntelStats returns unified threat intelligence statistics.
-// This combines EPSS stats, KEV stats, and sync statuses in a single call.
-func (s *IntelService) GetThreatIntelStats(ctx context.Context) (*ThreatIntelStats, error) {
+// GetKEVStatsForTenant returns KEV statistics scoped to a single tenant's
+// exposure. Unlike GetKEVStats (which reports global catalog figures identical
+// for every tenant and saturates its LIMIT-bounded counts), the "past due"
+// figure here counts the tenant's OPEN findings that reference an overdue KEV
+// CVE, and the ransomware / recently-added figures are real de-saturated COUNTs
+// of the global KEV feed (legitimately global context, but true totals).
+func (s *IntelService) GetKEVStatsForTenant(ctx context.Context, tenantID shared.ID) (*KEVStats, error) {
+	total, err := s.repo.KEV().Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	pastDue, err := s.repo.KEV().CountTenantOpenPastDue(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	recentlyAdded, err := s.repo.KEV().CountRecentlyAdded(ctx, 30)
+	if err != nil {
+		return nil, err
+	}
+
+	ransomwareRelated, err := s.repo.KEV().CountRansomwareRelated(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &KEVStats{
+		TotalEntries:            int(total),
+		PastDueCount:            int(pastDue),
+		RecentlyAddedLast30Days: int(recentlyAdded),
+		RansomwareRelatedCount:  int(ransomwareRelated),
+	}, nil
+}
+
+// GetEPSSStatsForTenant returns EPSS statistics scoped to a single tenant's
+// exposure. Unlike GetEPSSStats (which reports global catalog figures identical
+// for every tenant and saturates its LIMIT-bounded counts), the high/critical
+// figures here count the tenant's OPEN findings whose CVE meets the EPSS
+// threshold — the tenant's real exploitation-probability exposure.
+func (s *IntelService) GetEPSSStatsForTenant(ctx context.Context, tenantID shared.ID) (*EPSSStats, error) {
+	total, err := s.repo.EPSS().Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	highRisk, err := s.repo.EPSS().CountTenantOpenAboveScore(ctx, tenantID, epssHighThreshold)
+	if err != nil {
+		return nil, err
+	}
+
+	criticalRisk, err := s.repo.EPSS().CountTenantOpenAboveScore(ctx, tenantID, epssCriticalThreshold)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EPSSStats{
+		TotalScores:       int(total),
+		HighRiskCount:     int(highRisk),
+		CriticalRiskCount: int(criticalRisk),
+	}, nil
+}
+
+// GetThreatIntelStats returns unified threat intelligence statistics for a
+// tenant. This combines tenant-scoped EPSS stats, tenant-scoped KEV stats, and
+// (global) sync statuses in a single call. The KEV/EPSS figures reflect the
+// tenant's exposure, not the global CISA/EPSS catalog.
+func (s *IntelService) GetThreatIntelStats(ctx context.Context, tenantID shared.ID) (*ThreatIntelStats, error) {
 	stats := &ThreatIntelStats{}
 
 	// Get EPSS stats (continue even if error - partial data is OK)
-	epssStats, err := s.GetEPSSStats(ctx)
+	epssStats, err := s.GetEPSSStatsForTenant(ctx, tenantID)
 	if err != nil {
 		s.logger.Warn("failed to get EPSS stats", "error", err)
 	} else {
@@ -575,7 +655,7 @@ func (s *IntelService) GetThreatIntelStats(ctx context.Context) (*ThreatIntelSta
 	}
 
 	// Get KEV stats
-	kevStats, err := s.GetKEVStats(ctx)
+	kevStats, err := s.GetKEVStatsForTenant(ctx, tenantID)
 	if err != nil {
 		s.logger.Warn("failed to get KEV stats", "error", err)
 	} else {
@@ -627,11 +707,14 @@ type KEVStats struct {
 	RansomwareRelatedCount  int `json:"ransomware_related_count"`
 }
 
-// EPSSStats contains EPSS statistics.
+// EPSSStats contains EPSS statistics. When produced by GetEPSSStatsForTenant
+// (the /threat-intel/stats dashboard path), the counts are tenant-scoped:
+// HighRiskCount / CriticalRiskCount are the tenant's OPEN findings whose CVE
+// has an EPSS score >= epssHighThreshold / epssCriticalThreshold.
 type EPSSStats struct {
 	TotalScores       int `json:"total_scores"`
-	HighRiskCount     int `json:"high_risk_count"`     // EPSS > 0.1 (10%)
-	CriticalRiskCount int `json:"critical_risk_count"` // EPSS > 0.3 (30%)
+	HighRiskCount     int `json:"high_risk_count"`     // EPSS >= epssHighThreshold (0.1)
+	CriticalRiskCount int `json:"critical_risk_count"` // EPSS >= epssCriticalThreshold (0.5)
 }
 
 // ThreatIntelStats contains unified threat intelligence statistics.
