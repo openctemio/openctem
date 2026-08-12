@@ -120,6 +120,7 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 	// In future, this could be from an audit log table
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT 'finding' as type,
+		        f.id::text as ref_id,
 		        COALESCE(f.rule_id, f.tool_name) as title,
 		        f.message as description,
 		        f.created_at
@@ -137,7 +138,7 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 	var activity []app.ActivityItem
 	for rows.Next() {
 		var item app.ActivityItem
-		if err := rows.Scan(&item.Type, &item.Title, &item.Description, &item.Timestamp); err != nil {
+		if err := rows.Scan(&item.Type, &item.RefID, &item.Title, &item.Description, &item.Timestamp); err != nil {
 			return nil, err
 		}
 		activity = append(activity, item)
@@ -270,6 +271,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 	// Query 2: Recent activity (separate query - different result shape)
 	activityRows, err := r.db.QueryContext(ctx,
 		`SELECT 'finding' as type,
+		        f.id::text as ref_id,
 		        COALESCE(f.rule_id, f.tool_name) as title,
 		        f.message as description,
 		        f.created_at
@@ -286,7 +288,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 
 	for activityRows.Next() {
 		var item app.ActivityItem
-		if err := activityRows.Scan(&item.Type, &item.Title, &item.Description, &item.Timestamp); err != nil {
+		if err := activityRows.Scan(&item.Type, &item.RefID, &item.Title, &item.Description, &item.Timestamp); err != nil {
 			return result, nil
 		}
 		result.Activity = append(result.Activity, item)

@@ -81,6 +81,7 @@ type RepositoryStats struct {
 // ActivityItem represents a recent activity item.
 type ActivityItem struct {
 	Type        string `json:"type"`
+	RefID       string `json:"ref_id,omitempty"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Timestamp   string `json:"timestamp"`
@@ -387,6 +388,7 @@ func convertActivityItems(items []app.ActivityItem) []ActivityItem {
 	for i, item := range items {
 		result[i] = ActivityItem{
 			Type:        item.Type,
+			RefID:       item.RefID,
 			Title:       item.Title,
 			Description: item.Description,
 			Timestamp:   item.Timestamp.Format("2006-01-02T15:04:05Z"),

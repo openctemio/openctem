@@ -56,6 +56,7 @@ type RiskVelocityPoint struct {
 // ActivityItem represents a recent activity item.
 type ActivityItem struct {
 	Type        string
+	RefID       string // referenced entity id — the finding UUID when Type=='finding'; empty for aggregate/global activity
 	Title       string
 	Description string
 	Timestamp   time.Time
