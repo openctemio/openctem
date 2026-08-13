@@ -661,6 +661,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// through the full load-modify-save path.
 	s.Asset.SetLifecycleRepository(repos.Asset)
 	s.Asset.SetStateHistoryRepository(repos.AssetStateHistory)
+	// Business-aligned risk scoring: score an asset's EFFECTIVE criticality —
+	// MAX(own, its business unit, the business services it powers) — the SAME
+	// floor rule (and the SAME lookup adapter) that finding-priority uses, so
+	// risk_score and finding priority stop disagreeing. Batch-first; nil-safe
+	// (falls back to own criticality). Raises scores for BU-critical assets only.
+	s.Asset.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
 
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
