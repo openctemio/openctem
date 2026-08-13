@@ -983,8 +983,9 @@ func TestToolService_ListTools_Success(t *testing.T) {
 	repo.AddTool(createPlatformTool("trivy", tooldom.InstallBinary))
 
 	input := tool.ListInput{
-		Page:    1,
-		PerPage: 10,
+		TenantID: shared.NewID().String(),
+		Page:     1,
+		PerPage:  10,
 	}
 
 	result, err := svc.ListTools(context.Background(), input)
@@ -1008,6 +1009,7 @@ func TestToolService_ListTools_FilterByActive(t *testing.T) {
 
 	isActive := true
 	input := tool.ListInput{
+		TenantID: shared.NewID().String(),
 		IsActive: &isActive,
 		Page:     1,
 		PerPage:  10,
@@ -1288,7 +1290,8 @@ func TestToolService_DeleteTool_CascadeDeactivationError(t *testing.T) {
 func TestToolService_ActivateTool_Success(t *testing.T) {
 	svc, repo, _, _ := newToolSvcTestService()
 
-	existing := createPlatformTool("nuclei", tooldom.InstallGo)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
 	existing.Deactivate()
 	repo.AddTool(existing)
 
@@ -1296,7 +1299,7 @@ func TestToolService_ActivateTool_Success(t *testing.T) {
 		t.Fatal("precondition: tool should be inactive")
 	}
 
-	result, err := svc.ActivateTool(context.Background(), existing.ID.String())
+	result, err := svc.ActivateTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1308,7 +1311,7 @@ func TestToolService_ActivateTool_Success(t *testing.T) {
 func TestToolService_ActivateTool_NotFound(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
 
-	_, err := svc.ActivateTool(context.Background(), shared.NewID().String())
+	_, err := svc.ActivateTool(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for non-existent tool")
 	}
@@ -1317,10 +1320,11 @@ func TestToolService_ActivateTool_NotFound(t *testing.T) {
 func TestToolService_ActivateTool_AlreadyActive(t *testing.T) {
 	svc, repo, _, _ := newToolSvcTestService()
 
-	existing := createPlatformTool("nuclei", tooldom.InstallGo)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
 	repo.AddTool(existing) // already active
 
-	result, err := svc.ActivateTool(context.Background(), existing.ID.String())
+	result, err := svc.ActivateTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1336,10 +1340,11 @@ func TestToolService_ActivateTool_AlreadyActive(t *testing.T) {
 func TestToolService_DeactivateTool_Success(t *testing.T) {
 	svc, repo, _, _ := newToolSvcTestService()
 
-	existing := createPlatformTool("nuclei", tooldom.InstallGo)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
 
-	result, err := svc.DeactivateTool(context.Background(), existing.ID.String())
+	result, err := svc.DeactivateTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1351,7 +1356,7 @@ func TestToolService_DeactivateTool_Success(t *testing.T) {
 func TestToolService_DeactivateTool_NotFound(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
 
-	_, err := svc.DeactivateTool(context.Background(), shared.NewID().String())
+	_, err := svc.DeactivateTool(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for non-existent tool")
 	}
@@ -1360,13 +1365,14 @@ func TestToolService_DeactivateTool_NotFound(t *testing.T) {
 func TestToolService_DeactivateTool_CascadeDeactivation(t *testing.T) {
 	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
 
-	existing := createPlatformTool("nuclei", tooldom.InstallGo)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
 
 	deactivator.deactivatedCount = 3
 	deactivator.deactivatedIDs = []shared.ID{shared.NewID(), shared.NewID(), shared.NewID()}
 
-	result, err := svc.DeactivateTool(context.Background(), existing.ID.String())
+	result, err := svc.DeactivateTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1381,13 +1387,14 @@ func TestToolService_DeactivateTool_CascadeDeactivation(t *testing.T) {
 func TestToolService_DeactivateTool_CascadeError(t *testing.T) {
 	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
 
-	existing := createPlatformTool("nuclei", tooldom.InstallGo)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
 
 	deactivator.err = fmt.Errorf("pipeline error")
 
 	// Should still deactivate the tool - cascade errors don't block
-	result, err := svc.DeactivateTool(context.Background(), existing.ID.String())
+	result, err := svc.DeactivateTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error despite cascade failure, got %v", err)
 	}
@@ -1400,10 +1407,11 @@ func TestToolService_DeactivateTool_NoPipelineDeactivator(t *testing.T) {
 	svc, repo, _, _ := newToolSvcTestService()
 	// No pipeline deactivator set
 
-	existing := createPlatformTool("nuclei", tooldom.InstallGo)
+	tenantID := shared.NewID()
+	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
 
-	result, err := svc.DeactivateTool(context.Background(), existing.ID.String())
+	result, err := svc.DeactivateTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error without deactivator, got %v", err)
 	}

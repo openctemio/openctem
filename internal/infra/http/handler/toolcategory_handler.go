@@ -181,6 +181,18 @@ func (h *ToolCategoryHandler) GetCategory(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// GetCategory resolves by id alone; a custom category is private to its
+	// tenant. Platform categories stay visible to all; hide a foreign tenant's
+	// custom category behind a 404.
+	if !tc.IsPlatformCategory() {
+		tid, terr := shared.IDFromString(middleware.GetTenantID(r.Context()))
+		// CanBeModifiedByTenant is the tenant-ownership predicate (tenant_id == caller).
+		if terr != nil || !tc.CanBeModifiedByTenant(tid) {
+			apierror.NotFound("Tool category").WriteJSON(w)
+			return
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toToolCategoryResponse(tc))
 }

@@ -184,6 +184,16 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The principal (user_id / group_id) comes from the request body and is
+	// otherwise unscoped — asset_owners has no tenant_id column and
+	// CreateAssetOwner is a plain INSERT. Without this check a caller could
+	// assign a foreign tenant's user or group as an owner of their own asset.
+	parsedTenantID, terr := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if terr != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+
 	var req AddAssetOwnerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
@@ -225,6 +235,17 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 			apierror.BadRequest("Invalid user_id").WriteJSON(w)
 			return
 		}
+		// Reject a user that is not a member of the caller's tenant.
+		inTenant, cerr := h.repo.IsUserInTenant(r.Context(), parsedTenantID, userID)
+		if cerr != nil {
+			h.logger.Error("failed to verify user tenant membership", "error", cerr)
+			apierror.InternalError(cerr).WriteJSON(w)
+			return
+		}
+		if !inTenant {
+			apierror.Forbidden("user_id does not belong to this tenant").WriteJSON(w)
+			return
+		}
 		ao, err = accesscontrol.NewAssetOwnerForUser(parsedAssetID, userID, ownershipType, assignedBy)
 		if err != nil {
 			apierror.BadRequest(err.Error()).WriteJSON(w)
@@ -234,6 +255,17 @@ func (h *AssetOwnerHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 		groupID, err := shared.IDFromString(*req.GroupID)
 		if err != nil {
 			apierror.BadRequest("Invalid group_id").WriteJSON(w)
+			return
+		}
+		// Reject a group that belongs to a different tenant.
+		inTenant, cerr := h.repo.IsGroupInTenant(r.Context(), parsedTenantID, groupID)
+		if cerr != nil {
+			h.logger.Error("failed to verify group tenant membership", "error", cerr)
+			apierror.InternalError(cerr).WriteJSON(w)
+			return
+		}
+		if !inTenant {
+			apierror.Forbidden("group_id does not belong to this tenant").WriteJSON(w)
 			return
 		}
 		ao, err = accesscontrol.NewAssetOwnerForGroup(parsedAssetID, groupID, ownershipType, assignedBy)

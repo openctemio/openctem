@@ -397,6 +397,14 @@ func newMockAccessControlRepoForPermission() *mockAccessControlRepoForPermission
 func (m *mockAccessControlRepoForPermission) CreateAssetOwner(_ context.Context, _ *accesscontrol.AssetOwner) error {
 	return nil
 }
+
+func (m *mockAccessControlRepoForPermission) IsGroupInTenant(_ context.Context, _, _ shared.ID) (bool, error) {
+	return true, nil
+}
+
+func (m *mockAccessControlRepoForPermission) IsUserInTenant(_ context.Context, _, _ shared.ID) (bool, error) {
+	return true, nil
+}
 func (m *mockAccessControlRepoForPermission) GetAssetOwner(_ context.Context, _, _ shared.ID) (*accesscontrol.AssetOwner, error) {
 	return nil, nil
 }

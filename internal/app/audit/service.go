@@ -589,15 +589,17 @@ func (s *AuditService) GetResourceHistory(ctx context.Context, tenantID shared.I
 	return s.auditRepo.ListByResource(ctx, tenantID, auditdom.ResourceType(resourceType), resourceID, p)
 }
 
-// GetUserActivity retrieves audit logs for a specific user.
-func (s *AuditService) GetUserActivity(ctx context.Context, userID string, page, perPage int) (pagination.Result[*auditdom.AuditLog], error) {
+// GetUserActivity retrieves audit logs for a specific user within a tenant.
+// tenantID MUST be the caller's tenant — the underlying ListByActor query is
+// scoped to it so one tenant cannot read another tenant's user activity.
+func (s *AuditService) GetUserActivity(ctx context.Context, tenantID shared.ID, userID string, page, perPage int) (pagination.Result[*auditdom.AuditLog], error) {
 	actorID, err := shared.IDFromString(userID)
 	if err != nil {
 		return pagination.Result[*auditdom.AuditLog]{}, fmt.Errorf("%w: invalid user id format", shared.ErrValidation)
 	}
 
 	p := pagination.New(page, perPage)
-	return s.auditRepo.ListByActor(ctx, actorID, p)
+	return s.auditRepo.ListByActor(ctx, tenantID, actorID, p)
 }
 
 // ============================================

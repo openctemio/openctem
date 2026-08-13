@@ -193,7 +193,7 @@ func (m *mockAuditRepo) GetLatestByResource(_ context.Context, _ shared.ID, reso
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockAuditRepo) ListByActor(_ context.Context, actorID shared.ID, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (m *mockAuditRepo) ListByActor(_ context.Context, _ shared.ID, actorID shared.ID, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.listByActorCalls++
@@ -721,7 +721,7 @@ func TestAuditService_GetUserActivity_Success(t *testing.T) {
 	log.WithActor(actorID, "actor@example.com")
 	repo.logs[log.ID()] = log
 
-	result, err := svc.GetUserActivity(ctx, actorID.String(), 1, 20)
+	result, err := svc.GetUserActivity(ctx, shared.NewID(), actorID.String(), 1, 20)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -739,7 +739,7 @@ func TestAuditService_GetUserActivity_InvalidUserID(t *testing.T) {
 	svc, _ := newTestAuditService()
 	ctx := context.Background()
 
-	_, err := svc.GetUserActivity(ctx, "not-a-uuid", 1, 20)
+	_, err := svc.GetUserActivity(ctx, shared.NewID(), "not-a-uuid", 1, 20)
 	if err == nil {
 		t.Fatal("expected error for invalid user id, got nil")
 	}

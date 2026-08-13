@@ -509,6 +509,16 @@ func (s *Service) DeleteStep(ctx context.Context, tenantID, stepID string) error
 		return err
 	}
 
+	// Security: the step is loaded by raw ID. The handler only checks that the
+	// template named in the PATH belongs to the tenant — not that this step
+	// actually lives under it. Without binding the step to a template the
+	// caller's tenant owns, a caller could pass an owned template plus a step ID
+	// from another tenant's template and delete it (cross-tenant IDOR). Mirrors
+	// the guard in UpdateStep.
+	if _, err := s.GetTemplate(ctx, tenantID, step.PipelineID.String()); err != nil {
+		return err
+	}
+
 	stepName := step.Name
 	stepKey := step.StepKey
 

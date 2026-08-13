@@ -593,7 +593,7 @@ func (m *ruleSvcMockAuditRepo) GetLatestByResource(_ context.Context, _ shared.I
 	return nil, errors.New("not implemented")
 }
 
-func (m *ruleSvcMockAuditRepo) ListByActor(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (m *ruleSvcMockAuditRepo) ListByActor(_ context.Context, _ shared.ID, _ shared.ID, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 

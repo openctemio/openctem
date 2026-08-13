@@ -147,7 +147,7 @@ func (r *chainAuditRepo) GetLatestByResource(context.Context, shared.ID, audit.R
 	return nil, shared.ErrNotFound
 }
 
-func (r *chainAuditRepo) ListByActor(context.Context, shared.ID, pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (r *chainAuditRepo) ListByActor(context.Context, shared.ID, shared.ID, pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 

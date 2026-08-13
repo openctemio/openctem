@@ -216,6 +216,7 @@ type TenantToolStatsResponse struct {
 // @Router       /tools [get]
 func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
 	input := tool.ListInput{
+		TenantID: middleware.GetTenantID(r.Context()),
 		Category: r.URL.Query().Get("category"),
 		Search:   r.URL.Query().Get("search"),
 		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
@@ -284,8 +285,29 @@ func (h *ToolHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A tool fetched by id alone could be another tenant's custom tool. Hide it
+	// behind a 404 (same as not-found) rather than leaking its existence.
+	if !h.toolVisibleToTenant(r, t) {
+		apierror.NotFound("Tool").WriteJSON(w)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toToolResponse(t))
+}
+
+// toolVisibleToTenant reports whether the caller may see this tool. Platform
+// tools (tenant_id IS NULL) are visible to every tenant; a custom tool is
+// visible only to its owning tenant. Fails closed on a missing/invalid tenant.
+func (h *ToolHandler) toolVisibleToTenant(r *http.Request, t *tooldom.Tool) bool {
+	if t.IsPlatformTool() {
+		return true
+	}
+	tid, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		return false
+	}
+	return t.BelongsToTenant(tid)
 }
 
 // GetByName handles GET /api/v1/tools/name/{name}
@@ -307,6 +329,12 @@ func (h *ToolHandler) GetByName(w http.ResponseWriter, r *http.Request) {
 	t, err := h.service.GetToolByName(r.Context(), name)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
+		return
+	}
+
+	// Same cross-tenant guard as Get: never expose another tenant's custom tool.
+	if !h.toolVisibleToTenant(r, t) {
+		apierror.NotFound("Tool").WriteJSON(w)
 		return
 	}
 
@@ -339,7 +367,14 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := tool.CreateInput{
+	// SECURITY: this tenant-facing endpoint must NOT create a global platform
+	// (is_builtin, tenant_id IS NULL) tool — that would let one tenant inject a
+	// tool visible to and runnable by every tenant. Stamp the caller's tenant so
+	// the created tool is a private custom tool. Platform tools are provisioned
+	// only via the operator/seed path, never from this route.
+	input := tool.CreateCustomToolInput{
+		TenantID:         middleware.GetTenantID(r.Context()),
+		CreatedBy:        middleware.GetUserID(r.Context()),
 		Name:             req.Name,
 		DisplayName:      req.DisplayName,
 		Description:      req.Description,
@@ -360,7 +395,7 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Tags:             req.Tags,
 	}
 
-	t, err := h.service.CreateTool(r.Context(), input)
+	t, err := h.service.CreateCustomTool(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
@@ -472,7 +507,7 @@ func (h *ToolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *ToolHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 
-	t, err := h.service.ActivateTool(r.Context(), toolID)
+	t, err := h.service.ActivateTool(r.Context(), middleware.GetTenantID(r.Context()), toolID)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
@@ -498,7 +533,7 @@ func (h *ToolHandler) Activate(w http.ResponseWriter, r *http.Request) {
 func (h *ToolHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 
-	t, err := h.service.DeactivateTool(r.Context(), toolID)
+	t, err := h.service.DeactivateTool(r.Context(), middleware.GetTenantID(r.Context()), toolID)
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
