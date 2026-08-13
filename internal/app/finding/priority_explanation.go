@@ -73,7 +73,7 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 	var effCrit asset.Criticality
 	var critReason string
 	if a != nil {
-		effCrit, critReason = effectiveCriticality(a.Criticality(),
+		effCrit, critReason = asset.EffectiveCriticality(a.Criticality(),
 			s.businessContextFor(ctx, tenantID, f.AssetID()))
 	}
 

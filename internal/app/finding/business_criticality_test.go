@@ -29,70 +29,10 @@ func (s *stubBusinessContext) GetForAssets(
 	return out, nil
 }
 
-// TestEffectiveCriticality covers the floor/MAX semantics in isolation.
-func TestEffectiveCriticality(t *testing.T) {
-	cases := []struct {
-		name       string
-		own        asset.Criticality
-		bctx       AssetBusinessContext
-		wantCrit   asset.Criticality
-		wantReason string // substring; "" = no raise
-	}{
-		{
-			name:     "no business context leaves own criticality",
-			own:      asset.CriticalityMedium,
-			bctx:     AssetBusinessContext{},
-			wantCrit: asset.CriticalityMedium,
-		},
-		{
-			name:       "critical BU raises a medium asset",
-			own:        asset.CriticalityMedium,
-			bctx:       AssetBusinessContext{BusinessUnitCriticality: asset.CriticalityCritical, BusinessUnitName: "Payments"},
-			wantCrit:   asset.CriticalityCritical,
-			wantReason: "criticality raised to critical by business unit 'Payments'",
-		},
-		{
-			name:       "critical service raises a medium asset",
-			own:        asset.CriticalityMedium,
-			bctx:       AssetBusinessContext{BusinessServiceCriticality: asset.CriticalityCritical, BusinessServiceName: "Checkout"},
-			wantCrit:   asset.CriticalityCritical,
-			wantReason: "criticality raised to critical by business service 'Checkout'",
-		},
-		{
-			name:     "lower BU never lowers the floor",
-			own:      asset.CriticalityHigh,
-			bctx:     AssetBusinessContext{BusinessUnitCriticality: asset.CriticalityLow, BusinessUnitName: "Lab"},
-			wantCrit: asset.CriticalityHigh,
-		},
-		{
-			name: "highest of BU and service wins",
-			own:  asset.CriticalityLow,
-			bctx: AssetBusinessContext{
-				BusinessUnitCriticality:    asset.CriticalityMedium,
-				BusinessUnitName:           "IT",
-				BusinessServiceCriticality: asset.CriticalityCritical,
-				BusinessServiceName:        "Checkout",
-			},
-			wantCrit:   asset.CriticalityCritical,
-			wantReason: "business service 'Checkout'",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, reason := effectiveCriticality(tc.own, tc.bctx)
-			if got != tc.wantCrit {
-				t.Fatalf("effectiveCriticality = %q, want %q", got, tc.wantCrit)
-			}
-			if tc.wantReason == "" {
-				if reason != "" {
-					t.Fatalf("expected no raise reason, got %q", reason)
-				}
-			} else if !strings.Contains(reason, tc.wantReason) {
-				t.Fatalf("reason %q does not contain %q", reason, tc.wantReason)
-			}
-		})
-	}
-}
+// The pure floor/MAX semantics now live in the shared resolver and are covered
+// by TestEffectiveCriticality in pkg/domain/asset. The tests below prove the
+// finding-priority path still applies that rule end-to-end (behavior unchanged
+// after the extraction).
 
 // mediumReachableEPSSFinding is a medium-severity, MODERATE-EPSS finding on a
 // public (reachable) asset with the given OWN criticality. With own=medium it

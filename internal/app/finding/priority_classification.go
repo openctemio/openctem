@@ -344,7 +344,7 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	var effCrit asset.Criticality
 	var critReason string
 	if assetEntity != nil {
-		effCrit, critReason = effectiveCriticality(assetEntity.Criticality(),
+		effCrit, critReason = asset.EffectiveCriticality(assetEntity.Criticality(),
 			s.businessContextFor(ctx, tenantID, assetEntity.ID()))
 	}
 
@@ -701,7 +701,7 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		}
 
 		// Business-aligned effective criticality from the preloaded batch map.
-		effCrit, critReason := effectiveCriticality(a.Criticality(), businessCtx[f.AssetID()])
+		effCrit, critReason := asset.EffectiveCriticality(a.Criticality(), businessCtx[f.AssetID()])
 
 		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened, aiFP)
 		// Same rule as applyControlProtection, fed from the batch map above so
