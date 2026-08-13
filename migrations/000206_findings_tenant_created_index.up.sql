@@ -1,0 +1,11 @@
+-- Composite index for the dashboard recent-activity query, which filters by
+-- tenant_id and orders by created_at DESC:
+--   SELECT ... FROM findings f WHERE f.tenant_id = $1 ORDER BY f.created_at DESC
+-- The separate idx_findings_tenant_id / idx_findings_created_at indexes each
+-- cover only one leg, forcing a filter-then-sort. A single (tenant_id,
+-- created_at DESC) index serves the WHERE + ORDER BY in one range scan.
+--
+-- CONCURRENTLY so the build does not lock writes on the (large) findings table.
+-- golang-migrate applies each file outside an explicit transaction, so this is
+-- allowed here (matches migration 000198).
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_findings_tenant_created ON findings (tenant_id, created_at DESC);
