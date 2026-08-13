@@ -331,9 +331,13 @@ type ListExposuresInput struct {
 func (s *ExposureService) ListExposures(ctx context.Context, input ListExposuresInput) (pagination.Result[*exposuredom.ExposureEvent], error) {
 	filter := exposuredom.NewFilter()
 
-	if input.TenantID != "" {
-		filter = filter.WithTenantID(input.TenantID)
+	// Tenant is REQUIRED. buildWhereClause only adds the tenant predicate when a
+	// tenant is set, so a blank tenant here would drop the filter and return
+	// every tenant's exposures (fail-open). Reject it (fail closed).
+	if input.TenantID == "" {
+		return pagination.Result[*exposuredom.ExposureEvent]{}, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
+	filter = filter.WithTenantID(input.TenantID)
 
 	if input.AssetID != "" {
 		filter = filter.WithAssetID(input.AssetID)

@@ -654,6 +654,30 @@ func TestUpdateComponent_IDORCheck_WrongTenant(t *testing.T) {
 	}
 }
 
+// TestUpdateComponent_BlankTenantRejected proves the ownership check fails
+// closed: a blank tenant must be rejected, never skip the IDOR check.
+func TestUpdateComponent_BlankTenantRejected(t *testing.T) {
+	repo := newMockComponentRepo()
+	svc := newComponentService(repo)
+
+	realTenantID := shared.NewID()
+	dep, _ := component.NewAssetDependency(realTenantID, shared.NewID(), shared.NewID(), "/app", component.DependencyTypeDirect)
+	comp, _ := component.NewComponent("lodash", "4.17.21", component.EcosystemNPM)
+	dep.SetComponent(comp)
+	repo.getDependencyResult = dep
+
+	_, err := svc.UpdateComponent(context.Background(), dep.ID().String(), "", app.UpdateComponentInput{})
+	if err == nil {
+		t.Fatal("expected error for blank tenant")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation for blank tenant, got %v", err)
+	}
+	if repo.updateDependCalls != 0 {
+		t.Errorf("update must not run for a blank tenant, got %d calls", repo.updateDependCalls)
+	}
+}
+
 func TestUpdateComponent_RepoError(t *testing.T) {
 	repo := newMockComponentRepo()
 	svc := newComponentService(repo)
@@ -743,6 +767,27 @@ func TestDeleteComponent_IDORCheck_WrongTenant(t *testing.T) {
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
 		t.Errorf("expected ErrNotFound for IDOR check, got %v", err)
+	}
+}
+
+// TestDeleteComponent_BlankTenantRejected proves the ownership check fails
+// closed: a blank tenant must be rejected, never delete without a tenant check.
+func TestDeleteComponent_BlankTenantRejected(t *testing.T) {
+	repo := newMockComponentRepo()
+	svc := newComponentService(repo)
+
+	dep, _ := component.NewAssetDependency(shared.NewID(), shared.NewID(), shared.NewID(), "/app", component.DependencyTypeDirect)
+	repo.getDependencyResult = dep
+
+	err := svc.DeleteComponent(context.Background(), dep.ID().String(), "")
+	if err == nil {
+		t.Fatal("expected error for blank tenant")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation for blank tenant, got %v", err)
+	}
+	if repo.deleteDependCalls != 0 {
+		t.Errorf("delete must not run for a blank tenant, got %d calls", repo.deleteDependCalls)
 	}
 }
 

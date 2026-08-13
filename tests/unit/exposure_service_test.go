@@ -706,6 +706,28 @@ func TestExposureService_ListExposures_InvalidFilterValues(t *testing.T) {
 	}
 }
 
+// TestExposureService_ListExposures_BlankTenantRejected proves the list fails
+// closed: a blank tenant would drop the tenant predicate and return every
+// tenant's exposures, so it must be rejected outright.
+func TestExposureService_ListExposures_BlankTenantRejected(t *testing.T) {
+	svc, repo, _ := newExposureTestService()
+
+	_, err := svc.ListExposures(context.Background(), app.ListExposuresInput{
+		TenantID: "",
+		Page:     1,
+		PerPage:  20,
+	})
+	if err == nil {
+		t.Fatal("expected error for blank tenant")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation for blank tenant, got %v", err)
+	}
+	if repo.listCalls != 0 {
+		t.Errorf("repo.List must not run for a blank tenant, got %d calls", repo.listCalls)
+	}
+}
+
 func TestExposureService_ListExposures_RepoError(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 
