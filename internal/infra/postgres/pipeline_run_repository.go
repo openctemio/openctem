@@ -514,8 +514,11 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 //
 // It uses FOR UPDATE SKIP LOCKED + atomic UPDATE to set retry_dispatched_at = NOW(),
 // ensuring each failed run is claimed at most once even with concurrent controllers
-// or repeated polling cycles. The claim marker is permanent (we never reset it),
-// since each retry creates a NEW pipeline_run that becomes the new "latest".
+// or repeated polling cycles. On the SUCCESS path the claim marker stays set
+// forever, since the retry creates a NEW pipeline_run that becomes the new
+// "latest". If dispatch fails without creating a new run, the caller MUST call
+// ResetRetryClaim to release the claim so this run becomes eligible again next
+// tick — otherwise a single transient failure permanently stalls auto-retry.
 func (r *PipelineRunRepository) ListPendingRetries(ctx context.Context, limit int) ([]pipeline.RetryCandidate, error) {
 	if limit <= 0 {
 		limit = 100
@@ -581,6 +584,20 @@ func (r *PipelineRunRepository) ListPendingRetries(ctx context.Context, limit in
 		return nil, fmt.Errorf("failed to iterate retry candidates: %w", err)
 	}
 	return candidates, nil
+}
+
+// ResetRetryClaim clears the retry_dispatched_at marker on a failed run so it is
+// eligible for ListPendingRetries again. It is the compensating action for a
+// claim that ListPendingRetries set but whose dispatch failed WITHOUT creating a
+// new pipeline_run (a transient failure). The retry budget is tracked by
+// retry_attempt on runs, not by this marker, so releasing the claim does not
+// double-count the budget — no new run was created, so retry_attempt is unchanged.
+func (r *PipelineRunRepository) ResetRetryClaim(ctx context.Context, runID shared.ID) error {
+	const query = `UPDATE pipeline_runs SET retry_dispatched_at = NULL WHERE id = $1`
+	if _, err := r.db.ExecContext(ctx, query, runID.String()); err != nil {
+		return fmt.Errorf("failed to reset retry claim: %w", err)
+	}
+	return nil
 }
 
 // ListByScanID lists runs for a specific scan with pagination.
