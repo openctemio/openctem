@@ -274,6 +274,11 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		s.logger.Warn("CVE upsert failed; findings will not be linked to vulnerability catalog",
 			"error", cveErr)
 		cveMap = map[string]shared.ID{}
+		// Record the failure so the audit log reflects partial/failed rather than
+		// completed: every finding here persists with a nil VulnerabilityID, and
+		// createIngestAuditLog derives run status from len(output.Errors). Without
+		// this the degraded run was silently audited as a success.
+		addError(output, fmt.Sprintf("cve upsert failed: %v", cveErr))
 	}
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)

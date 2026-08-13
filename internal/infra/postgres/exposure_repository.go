@@ -320,7 +320,19 @@ func (r *ExposureRepository) Upsert(ctx context.Context, event *exposure.Exposur
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET
 			last_seen_at = EXCLUDED.last_seen_at,
-			updated_at = EXCLUDED.updated_at
+			updated_at = EXCLUDED.updated_at,
+			-- Refresh the descriptive/severity fields on re-sighting: a re-scan
+			-- can re-escalate an exposure (info -> critical) or reword it, and
+			-- previously only the timestamps moved so the stored severity froze
+			-- at its first-seen value.
+			severity = EXCLUDED.severity,
+			title = EXCLUDED.title,
+			description = EXCLUDED.description,
+			details = EXCLUDED.details
+			-- state is deliberately NOT refreshed: preserve the existing
+			-- (possibly user-resolved) state so a re-scan can't silently reopen
+			-- a resolved exposure. Mirrors the findings upsert, which refreshes
+			-- severity/scores but keeps the user-set status.
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -419,7 +431,19 @@ func (r *ExposureRepository) BulkUpsert(ctx context.Context, events []*exposure.
 		VALUES %s
 		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET
 			last_seen_at = EXCLUDED.last_seen_at,
-			updated_at = EXCLUDED.updated_at
+			updated_at = EXCLUDED.updated_at,
+			-- Refresh the descriptive/severity fields on re-sighting: a re-scan
+			-- can re-escalate an exposure (info -> critical) or reword it, and
+			-- previously only the timestamps moved so the stored severity froze
+			-- at its first-seen value.
+			severity = EXCLUDED.severity,
+			title = EXCLUDED.title,
+			description = EXCLUDED.description,
+			details = EXCLUDED.details
+			-- state is deliberately NOT refreshed: preserve the existing
+			-- (possibly user-resolved) state so a re-scan can't silently reopen
+			-- a resolved exposure. Mirrors the findings upsert, which refreshes
+			-- severity/scores but keeps the user-set status.
 	`, strings.Join(valueStrings, ", "))
 
 	_, err := r.db.ExecContext(ctx, query, valueArgs...)

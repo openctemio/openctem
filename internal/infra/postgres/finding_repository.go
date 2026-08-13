@@ -627,7 +627,9 @@ func findingInsertColumnsSQL() string {
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id, ingest_channel,
+			remediation, pentest_campaign_id,
+			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
+			ingest_channel,
 			sla_deadline, sla_status
 		)`
 }
@@ -711,6 +713,15 @@ func findingUpsertConflictSQL() string {
 			asvs_control_url = COALESCE(EXCLUDED.asvs_control_url, findings.asvs_control_url),
 			asvs_level = COALESCE(EXCLUDED.asvs_level, findings.asvs_level),
 			remediation = COALESCE(EXCLUDED.remediation, findings.remediation),
+			-- Denormalized classification columns: refresh on re-ingest, mirroring
+			-- severity/epss/kev above. This is what backfills the NULLs a first
+			-- sighting left, and lets a re-classified CVE/CVSS overwrite the stale
+			-- first-seen value so groupByCVE / the CVE filter see current data.
+			cvss_score = EXCLUDED.cvss_score,
+			cvss_vector = EXCLUDED.cvss_vector,
+			cve_id = EXCLUDED.cve_id,
+			cwe_ids = EXCLUDED.cwe_ids,
+			owasp_ids = EXCLUDED.owasp_ids,
 			-- SLA: the incoming row's deadline was recomputed at ingest by the
 			-- applier from its (possibly re-classified) priority. Take it when
 			-- present, but never wipe an existing deadline if the new computation
@@ -735,7 +746,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 84
+const findingInsertColumnCount = 89
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -841,6 +852,16 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		remediationJSON,
 		// Pentest campaign reference
 		nullIDPtr(finding.PentestCampaignID()),
+		// Denormalized classification columns. Previously omitted from the batch
+		// (and single-row upsert) header, so scanner findings — which ingest via
+		// this path — persisted with NULL cve_id/cvss/cwe/owasp on first sight and
+		// were under-reported by groupByCVE / the CVE filter / FindRelatedCVEs
+		// until a later re-ingest backfilled them. Same serialization Create uses.
+		nullFloat64(finding.CVSSScore()),
+		nullString(finding.CVSSVector()),
+		nullString(finding.CVEID()),
+		pq.Array(finding.CWEIDs()),
+		pq.Array(finding.OWASPIDs()),
 		// Provenance channel — NULL when unrecorded.
 		nullIngestChannel(finding.IngestChannel()),
 		// SLA — deadline computed at ingest by the applier (F3); status is
