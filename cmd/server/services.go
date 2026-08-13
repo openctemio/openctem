@@ -274,6 +274,29 @@ func (a apikeyMembershipAdapter) IsActiveMember(ctx context.Context, tenantID, u
 	return m.Status() == tenant.MemberStatusActive, nil
 }
 
+// pentestTenantMemberAdapter adapts the tenant repository to
+// compliance.TenantMemberChecker so PentestService can reject adding a campaign
+// member who does not belong to the tenant (the DB FK only checks users.id, not
+// tenant membership — a cross-tenant IDOR without this guard). Fails closed:
+// unparseable IDs, a missing membership, or a lookup error all report "not a member".
+type pentestTenantMemberAdapter struct{ tenants tenant.Repository }
+
+func (a pentestTenantMemberAdapter) IsTenantMember(ctx context.Context, tenantID, userID string) bool {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false
+	}
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return false
+	}
+	m, err := a.tenants.GetMembership(ctx, uid, tid)
+	if err != nil || m == nil {
+		return false
+	}
+	return true
+}
+
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
 // action's JiraTicketService (primitive params, so the workflow package needn't
 // import app/jira — that would cycle through the app shim).
@@ -801,6 +824,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
 	s.Pentest.SetAuditService(s.Audit)                     // audit logging for team changes + status changes
 	s.Pentest.SetFindingActivityService(s.FindingActivity) // finding activity trail
+	// Cross-tenant guard: reject adding a campaign member from another tenant.
+	// The SetTenantMemberChecker seam was never wired, so the check was dead.
+	s.Pentest.SetTenantMemberChecker(pentestTenantMemberAdapter{tenants: repos.Tenant})
 	// Note: Pentest notification wiring happens later after NotificationService is initialized
 
 	// Initialize Attachment service (file upload/download).
@@ -1268,6 +1294,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire workflow dispatcher to ingest service for automatic workflow triggering
 	// when new findings are created during ingestion
 	s.Ingest.SetFindingCreatedCallback(s.WorkflowDispatcher.DispatchFindingsCreated)
+
+	// Wire AI-triage completion/failure into the same workflow dispatcher so
+	// automation rules can trigger on triage verdicts. The SetWorkflowDispatcher
+	// seam was never called, so AITriage silently emitted no workflow events.
+	// s.WorkflowDispatcher is built just above (after the AITriage init block),
+	// so the wire lives here rather than where AITriage is constructed.
+	if s.AITriage != nil {
+		s.AITriage.SetWorkflowDispatcher(s.WorkflowDispatcher)
+	}
 
 	// Wire priority classification into ingest (RFC-004)
 	s.Ingest.SetPriorityClassifier(s.PriorityClassification)

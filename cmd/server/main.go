@@ -177,6 +177,14 @@ func run() int {
 		services.Auth.SetSMTPChecker(services.Email)
 	}
 
+	// Wire the per-tenant SMTP resolver so a tenant that configured an email
+	// notification integration sends from its own SMTP server instead of the
+	// system default. The SetTenantSMTPResolver seam was never called, so
+	// per-tenant SMTP was silently dead and every tenant fell back to system SMTP.
+	if services.Email != nil {
+		services.Email.SetTenantSMTPResolver(app.NewIntegrationSMTPResolver(repos.Integration, log))
+	}
+
 	// ==========================================================================
 	// Job Queue
 	// ==========================================================================
@@ -233,6 +241,14 @@ func run() int {
 	// Needed so the can't-enable guard on sso_enforced works at runtime.
 	if services.SSO != nil {
 		services.Tenant.SetSSOPathChecker(services.SSO)
+	}
+	// Wire the member-status email notifier so SuspendMember / ReactivateMember
+	// send their transactional email. SetMemberStatusEmailNotifier was never
+	// called, so those emails silently never went out. Applied here (not in
+	// initServices) because the constructor above rebuilt services.Tenant and
+	// would otherwise drop the wire.
+	if services.Email != nil {
+		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
 	}
 
 	// Wire AI triage job enqueuer if service is enabled
