@@ -1079,6 +1079,33 @@ func (r *FindingRepository) UpdateWorkItemURIs(ctx context.Context, tenantID, id
 	return nil
 }
 
+// StampValidationVerdict durably records the RFC-011.2 confirm-or-downgrade
+// verdict on a finding: validation_outcome always, and downgraded_at only when
+// downgradedAt is non-nil. A nil downgradedAt PRESERVES any existing timestamp
+// (a later reproducible verdict must not erase the downgrade the metric counts).
+// The finding-status transition itself rides the normal Update; this is the
+// narrow side-write for the two columns the entity round-trip does not carry.
+func (r *FindingRepository) StampValidationVerdict(ctx context.Context, tenantID, findingID shared.ID, verdict string, downgradedAt *time.Time) error {
+	const query = `
+		UPDATE findings
+		   SET validation_outcome = $3,
+		       downgraded_at = CASE WHEN $4::timestamptz IS NOT NULL THEN $4::timestamptz ELSE downgraded_at END,
+		       updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2`
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), findingID.String(), verdict, nullTime(downgradedAt))
+	if err != nil {
+		return fmt.Errorf("failed to stamp validation verdict: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return vulnerability.FindingNotFoundError(findingID)
+	}
+	return nil
+}
+
 // GetByWorkItemURI retrieves a finding that contains the given work item URI.
 // Used by the Jira webhook receiver to route inbound status updates back to findings.
 func (r *FindingRepository) GetByWorkItemURI(ctx context.Context, tenantID shared.ID, uri string) (*vulnerability.Finding, error) {

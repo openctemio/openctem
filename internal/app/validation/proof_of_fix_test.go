@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
@@ -48,6 +49,25 @@ func (c *captureNotifier) NotifyFixRejected(_ context.Context, _, _ shared.ID, r
 	defer c.mu.Unlock()
 	c.calls++
 	c.last = reason
+	return nil
+}
+
+// captureRecorder is a fake VerdictRecorder that records the last stamped
+// verdict + downgrade timestamp so tests can assert the durable side-write.
+type captureRecorder struct {
+	calls        int
+	lastVerdict  Verdict
+	downgradedAt *time.Time
+	err          error
+}
+
+func (c *captureRecorder) RecordVerdict(_ context.Context, _, _ shared.ID, verdict Verdict, downgradedAt *time.Time) error {
+	if c.err != nil {
+		return c.err
+	}
+	c.calls++
+	c.lastVerdict = verdict
+	c.downgradedAt = downgradedAt
 	return nil
 }
 
@@ -121,11 +141,12 @@ func atConfirmed(t *testing.T) *vulnerability.Finding {
 	return f
 }
 
-// Regression: a not_detected outcome must NOT auto-resolve a CONFIRMED finding.
-// A non-intrusive reachability probe is not proof the vulnerability is fixed, and
-// the confirmed→resolved edge requires findings:verify — which this automated
-// path would otherwise bypass. Evidence is still recorded; only the status stays.
-func TestRetest_NotDetected_DoesNotResolveConfirmed(t *testing.T) {
+// RFC-011.2 §3: a not_reproducible verdict on a still-open CONFIRMED finding
+// DOWNGRADES it to validated_fixed — de-prioritized but NOT auto-closed. The
+// finding must never jump straight to resolved: that edge requires
+// findings:verify and this automated path must not bypass it. A human still
+// closes validated_fixed. `stood` (proof-of-fix stood → resolved) stays false.
+func TestRetest_NotDetected_DowngradesConfirmed(t *testing.T) {
 	disp := &fakeDispatcher{ev: Evidence{Outcome: OutcomeNotDetected, ExecutorKind: "safe-check"}}
 	cap := staticCapability{kinds: []ExecutorKind{KindSafeCheck}}
 	svc, repo, _ := newProofSvc(disp, cap)
@@ -136,10 +157,13 @@ func TestRetest_NotDetected_DoesNotResolveConfirmed(t *testing.T) {
 		t.Fatalf("retest: %v", err)
 	}
 	if stood {
-		t.Fatal("a confirmed finding must not report as resolved from a reachability probe")
+		t.Fatal("a downgrade is not a proof-of-fix resolve; stood must be false")
 	}
-	if repo.current.Status() != vulnerability.FindingStatusConfirmed {
-		t.Fatalf("confirmed finding must stay confirmed, got %s", repo.current.Status())
+	if repo.current.Status() == vulnerability.FindingStatusResolved {
+		t.Fatal("a confirmed finding must not be auto-resolved (bypasses findings:verify)")
+	}
+	if repo.current.Status() != vulnerability.FindingStatusValidatedFixed {
+		t.Fatalf("confirmed finding should downgrade to validated_fixed, got %s", repo.current.Status())
 	}
 }
 

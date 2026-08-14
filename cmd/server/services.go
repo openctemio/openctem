@@ -70,6 +70,13 @@ func (a findingMutatorAdapter) Update(ctx context.Context, f *vulnerability.Find
 	return a.repo.Update(ctx, f)
 }
 
+// RecordVerdict implements validation.VerdictRecorder: the durable side-write of
+// the confirm-or-downgrade verdict (validation_outcome / downgraded_at) that
+// feeds the downgrade % metric.
+func (a findingMutatorAdapter) RecordVerdict(ctx context.Context, tenantID, findingID shared.ID, verdict validation.Verdict, downgradedAt *time.Time) error {
+	return a.repo.StampValidationVerdict(ctx, tenantID, findingID, string(verdict), downgradedAt)
+}
+
 // validationAgentAvailability answers "is a validation-capable agent online for
 // this tenant?" by reusing the exact capability query scan dispatch uses
 // (AgentRepository.FindAvailableWithCapacity). It gates validation.RunService so
@@ -906,6 +913,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		evidenceStore,
 		findingMutatorAdapter{repo: repos.Finding},
 		nil, // retest notifier: optional; status revert still happens without it
+		findingMutatorAdapter{repo: repos.Finding}, // verdict recorder (validation_outcome / downgraded_at)
 		log,
 	)
 	// Producer side: dispatch a safe-check validation job for a finding. The
