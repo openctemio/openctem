@@ -23,6 +23,13 @@ type PriorityExplanation struct {
 
 	// Factors that fed the decision (so an operator can audit/tune).
 	Factors PriorityFactors `json:"factors"`
+
+	// ScoreBreakdown is the transparent CTEM composite score (ctem.org
+	// prioritization model) computed from the same factors: the four 0–5
+	// sub-scores and the final PriorityScore = (Impact + Likelihood + Exposure) ×
+	// (1 − ControlReduction). It EXPLAINS the class above without changing it —
+	// the P0–P3 cascade stays authoritative.
+	ScoreBreakdown vulnerability.PriorityScoreBreakdown `json:"score_breakdown"`
 }
 
 // PriorityFactors are the inputs to the classifier, plus the two derived
@@ -122,6 +129,9 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 			Reachable:            pctx.IsReachable || pctx.IsInternetAccessible || pctx.OnOpenThreatPath,
 			CriticalAsset:        pctx.AssetCriticality == "critical" || pctx.AssetCriticality == "high",
 		},
+		// Transparent composite score derived from the SAME context — additive
+		// explanation only, never changes the class above.
+		ScoreBreakdown: vulnerability.ComputePriorityScore(pctx),
 	}
 	return exp, nil
 }
