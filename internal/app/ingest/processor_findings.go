@@ -64,6 +64,14 @@ type FindingProcessor struct {
 	// persisted finding IDs to link back). Best-effort: errors are logged, never
 	// fatal. Nil-safe: when unwired, secret findings are not bridged.
 	exposureBridge ExposureBridge
+
+	// suppressionChecker enforces approved suppression rules at ingest: a NEW
+	// finding matching an active (approved, non-expired) rule lands
+	// resolved+suppressed (out of the open backlog) rather than appearing and
+	// being closed on a later pass. Active rules are loaded ONCE per batch
+	// (tenant-scoped). Nil-safe: when unwired, findings are never suppressed at
+	// ingest (prior behavior).
+	suppressionChecker SuppressionChecker
 }
 
 // PriorityClassifier enriches findings with EPSS/KEV and assigns priority class.
@@ -365,6 +373,14 @@ func (p *FindingProcessor) ProcessBatch(
 		}
 	}
 
+	// Step 3c: Enforce approved suppression rules. A NEW finding matching an
+	// active (approved, non-expired) rule is stamped resolved+suppressed BEFORE
+	// persist, so it lands out of the open backlog rather than appearing then
+	// being closed on a later pass. Rules are loaded ONCE per batch
+	// (tenant-scoped). The returned map (index → rule id) is recorded for audit
+	// AFTER insert, once the findings have persisted IDs. Nil-safe.
+	suppressionDecisions := p.applySuppressions(ctx, tenantID, newFindings)
+
 	// Step 4: Batch create new findings with partial success support
 	if len(newFindings) > 0 {
 		// Enrich BEFORE inserting so EPSS/KEV/priority/SLA are written by the
@@ -421,6 +437,18 @@ func (p *FindingProcessor) ProcessBatch(
 			// Step 4b: Persist data flows for newly created findings
 			if p.dataFlowRepo != nil && result.Created > 0 {
 				p.persistDataFlows(ctx, newFindings)
+			}
+
+			// Step 4b1: Record which approved rule suppressed each newly-created
+			// finding (finding_suppressions) so the ingest suppression is
+			// traceable and can be un-suppressed if the rule is later removed.
+			// The disposition (resolved+suppressed) was already applied pre-insert
+			// above; this only records the audit link. Best-effort.
+			if len(suppressionDecisions) > 0 && result.Created > 0 {
+				if n := p.recordSuppressions(ctx, newFindings, suppressionDecisions, result.Errors); n > 0 {
+					output.FindingsSuppressed += n
+					p.logger.Info("suppressed findings at ingest via approved rules", "count", n)
+				}
 			}
 
 			// Step 4b2: Derive remediation-group keys (RFC-015). Best-effort;

@@ -1331,6 +1331,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize suppression service (platform-controlled false positive management)
 	s.Suppression = suppression.NewService(repos.Suppression, log)
 
+	// Enforce approved suppression rules during ingest: a new finding matching an
+	// active (approved, non-expired) rule lands resolved+suppressed (out of the
+	// open backlog) and records which rule suppressed it. Loads rules once per
+	// batch (tenant-scoped). Without this wire the suppression engine + CRUD +
+	// approve/reject UI exist but suppress nothing on the ingest path. Nil-safe.
+	s.Ingest.SetSuppressionChecker(s.Suppression)
+
 	// Initialize access control services
 	s.Group = app.NewGroupService(repos.Group, log,
 		app.WithGroupAuditService(s.Audit),

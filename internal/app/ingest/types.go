@@ -122,6 +122,7 @@ type Output struct {
 	FindingsSkipped      int      `json:"findings_skipped"`
 	FindingsAutoResolved int      `json:"findings_auto_resolved,omitempty"`
 	FindingsAutoReopened int      `json:"findings_auto_reopened,omitempty"`
+	FindingsSuppressed   int      `json:"findings_suppressed,omitempty"`
 	ComponentsCreated    int      `json:"components_created,omitempty"`
 	ComponentsUpdated    int      `json:"components_updated,omitempty"`
 	DependenciesLinked   int      `json:"dependencies_linked,omitempty"`

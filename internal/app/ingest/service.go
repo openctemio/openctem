@@ -189,6 +189,14 @@ func (s *Service) SetExposureBridge(bridge ExposureBridge) {
 	s.findingProcessor.SetExposureBridge(bridge)
 }
 
+// SetSuppressionChecker wires approved suppression-rule enforcement into the
+// ingest finding path: a new finding matching an active (approved, non-expired)
+// rule lands resolved+suppressed. Nil-safe: when not wired, findings are never
+// suppressed at ingest (prior behavior).
+func (s *Service) SetSuppressionChecker(checker SuppressionChecker) {
+	s.findingProcessor.SetSuppressionChecker(checker)
+}
+
 // =============================================================================
 // Main Ingestion Methods
 // =============================================================================
