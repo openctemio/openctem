@@ -50,6 +50,7 @@ type RelationshipResponse struct {
 	Confidence      string     `json:"confidence"`
 	DiscoveryMethod string     `json:"discovery_method"`
 	ImpactWeight    int        `json:"impact_weight"`
+	IsControlPlane  bool       `json:"is_control_plane"`
 	Tags            []string   `json:"tags,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
@@ -65,6 +66,7 @@ type CreateRelationshipRequest struct {
 	Confidence      string   `json:"confidence" validate:"omitempty"`
 	DiscoveryMethod string   `json:"discovery_method" validate:"omitempty"`
 	ImpactWeight    *int     `json:"impact_weight" validate:"omitempty,min=1,max=10"`
+	IsControlPlane  *bool    `json:"is_control_plane" validate:"omitempty"`
 	Tags            []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
 }
 
@@ -98,10 +100,11 @@ type BatchCreateRelationshipRequest struct {
 // UpdateRelationshipRequest represents the request to update a relationship.
 type UpdateRelationshipRequest struct {
 	Description  *string  `json:"description" validate:"omitempty,max=1000"`
-	Confidence   *string  `json:"confidence" validate:"omitempty"`
-	ImpactWeight *int     `json:"impact_weight" validate:"omitempty,min=1,max=10"`
-	Tags         []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
-	MarkVerified bool     `json:"mark_verified"`
+	Confidence     *string  `json:"confidence" validate:"omitempty"`
+	ImpactWeight   *int     `json:"impact_weight" validate:"omitempty,min=1,max=10"`
+	IsControlPlane *bool    `json:"is_control_plane" validate:"omitempty"`
+	Tags           []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+	MarkVerified   bool     `json:"mark_verified"`
 }
 
 // =============================================================================
@@ -214,6 +217,7 @@ func (h *AssetRelationshipHandler) Create(w http.ResponseWriter, r *http.Request
 		Confidence:      req.Confidence,
 		DiscoveryMethod: req.DiscoveryMethod,
 		ImpactWeight:    req.ImpactWeight,
+		IsControlPlane:  req.IsControlPlane,
 		Tags:            req.Tags,
 	}
 
@@ -262,10 +266,11 @@ func (h *AssetRelationshipHandler) Update(w http.ResponseWriter, r *http.Request
 
 	input := app.UpdateRelationshipInput{
 		Description:  req.Description,
-		Confidence:   req.Confidence,
-		ImpactWeight: req.ImpactWeight,
-		Tags:         req.Tags,
-		MarkVerified: req.MarkVerified,
+		Confidence:     req.Confidence,
+		ImpactWeight:   req.ImpactWeight,
+		IsControlPlane: req.IsControlPlane,
+		Tags:           req.Tags,
+		MarkVerified:   req.MarkVerified,
 	}
 
 	result, err := h.service.UpdateRelationship(r.Context(), tenantID, relationshipID, input)
@@ -390,6 +395,7 @@ func toRelationshipResponse(rwa *asset.RelationshipWithAssets) RelationshipRespo
 		Confidence:      rel.Confidence().String(),
 		DiscoveryMethod: rel.DiscoveryMethod().String(),
 		ImpactWeight:    rel.ImpactWeight(),
+		IsControlPlane:  rel.IsControlPlane(),
 		Tags:            rel.Tags(),
 		CreatedAt:       rel.CreatedAt(),
 		UpdatedAt:       rel.UpdatedAt(),

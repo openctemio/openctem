@@ -59,6 +59,13 @@ type Asset struct {
 	phiDataExposed     bool               // Contains Protected Health Information
 	regulatoryOwnerID  *shared.ID         // Compliance officer responsible
 
+	// CTEM: CIA impact rating (Scoping critical-asset register).
+	// Business impact if the asset is compromised, per CIA leg.
+	// Each is low | moderate | high; empty means "not yet rated".
+	impactConfidentiality ImpactRating
+	impactIntegrity       ImpactRating
+	impactAvailability    ImpactRating
+
 	// CTEM: Enhanced Exposure Tracking
 	isInternetAccessible bool       // Directly reachable from internet
 	exposureChangedAt    *time.Time // When exposure level last changed
@@ -164,6 +171,10 @@ func Reconstitute(
 	isInternetAccessible bool,
 	exposureChangedAt *time.Time,
 	lastExposureLevel Exposure,
+	// CIA impact rating (Scoping critical-asset register)
+	impactConfidentiality ImpactRating,
+	impactIntegrity ImpactRating,
+	impactAvailability ImpactRating,
 	// Timestamps
 	firstSeen, lastSeen time.Time,
 	createdAt, updatedAt time.Time,
@@ -211,6 +222,10 @@ func Reconstitute(
 		isInternetAccessible: isInternetAccessible,
 		exposureChangedAt:    exposureChangedAt,
 		lastExposureLevel:    lastExposureLevel,
+		// CIA impact rating (Scoping critical-asset register)
+		impactConfidentiality: impactConfidentiality,
+		impactIntegrity:       impactIntegrity,
+		impactAvailability:    impactAvailability,
 		// Timestamps
 		firstSeen: firstSeen,
 		lastSeen:  lastSeen,
@@ -940,6 +955,58 @@ func (a *Asset) RegulatoryOwnerID() *shared.ID {
 func (a *Asset) SetRegulatoryOwnerID(ownerID *shared.ID) {
 	a.regulatoryOwnerID = ownerID
 	a.updatedAt = time.Now().UTC()
+}
+
+// =============================================================================
+// CTEM: CIA Impact Rating Methods (Scoping critical-asset register)
+// =============================================================================
+
+// ImpactConfidentiality returns the confidentiality impact rating.
+func (a *Asset) ImpactConfidentiality() ImpactRating {
+	return a.impactConfidentiality
+}
+
+// SetImpactConfidentiality sets the confidentiality impact rating.
+// An empty rating clears the value; any non-empty value must be valid.
+func (a *Asset) SetImpactConfidentiality(rating ImpactRating) error {
+	if rating != "" && !rating.IsValid() {
+		return fmt.Errorf("%w: invalid confidentiality impact rating", shared.ErrValidation)
+	}
+	a.impactConfidentiality = rating
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// ImpactIntegrity returns the integrity impact rating.
+func (a *Asset) ImpactIntegrity() ImpactRating {
+	return a.impactIntegrity
+}
+
+// SetImpactIntegrity sets the integrity impact rating.
+// An empty rating clears the value; any non-empty value must be valid.
+func (a *Asset) SetImpactIntegrity(rating ImpactRating) error {
+	if rating != "" && !rating.IsValid() {
+		return fmt.Errorf("%w: invalid integrity impact rating", shared.ErrValidation)
+	}
+	a.impactIntegrity = rating
+	a.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// ImpactAvailability returns the availability impact rating.
+func (a *Asset) ImpactAvailability() ImpactRating {
+	return a.impactAvailability
+}
+
+// SetImpactAvailability sets the availability impact rating.
+// An empty rating clears the value; any non-empty value must be valid.
+func (a *Asset) SetImpactAvailability(rating ImpactRating) error {
+	if rating != "" && !rating.IsValid() {
+		return fmt.Errorf("%w: invalid availability impact rating", shared.ErrValidation)
+	}
+	a.impactAvailability = rating
+	a.updatedAt = time.Now().UTC()
+	return nil
 }
 
 // =============================================================================

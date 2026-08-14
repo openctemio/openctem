@@ -917,6 +917,12 @@ type UpdateAssetInput struct {
 	// Properties patches per-type metadata. Merged (not replaced) into the
 	// asset's existing properties so keys like is_crown_jewel are preserved.
 	Properties map[string]any
+	// CIA impact rating (CTEM Scoping critical-asset register). Each is
+	// low | moderate | high; an empty string clears the rating. Nil = leave
+	// unchanged.
+	ImpactConfidentiality *string `validate:"omitempty,impact_rating"`
+	ImpactIntegrity       *string `validate:"omitempty,impact_rating"`
+	ImpactAvailability    *string `validate:"omitempty,impact_rating"`
 }
 
 // UpdateAsset updates an existing asset.
@@ -980,6 +986,35 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 
 	if input.OwnerRef != nil {
 		a.SetOwnerRef(*input.OwnerRef)
+	}
+
+	// CIA impact rating (CTEM Scoping critical-asset register).
+	if input.ImpactConfidentiality != nil {
+		rating, err := assetdom.ParseImpactRating(*input.ImpactConfidentiality)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		}
+		if err := a.SetImpactConfidentiality(rating); err != nil {
+			return nil, err
+		}
+	}
+	if input.ImpactIntegrity != nil {
+		rating, err := assetdom.ParseImpactRating(*input.ImpactIntegrity)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		}
+		if err := a.SetImpactIntegrity(rating); err != nil {
+			return nil, err
+		}
+	}
+	if input.ImpactAvailability != nil {
+		rating, err := assetdom.ParseImpactRating(*input.ImpactAvailability)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		}
+		if err := a.SetImpactAvailability(rating); err != nil {
+			return nil, err
+		}
 	}
 
 	// Capture old tags before replacement (for scope rule evaluation)

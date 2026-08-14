@@ -29,9 +29,10 @@ func (r *AssetRelationshipRepository) Create(ctx context.Context, rel *asset.Rel
 		INSERT INTO asset_relationships (
 			id, tenant_id, source_asset_id, target_asset_id,
 			relationship_type, description, confidence, discovery_method,
-			impact_weight, tags, last_verified, created_at, updated_at
+			impact_weight, tags, last_verified, created_at, updated_at,
+			is_control_plane
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -48,6 +49,7 @@ func (r *AssetRelationshipRepository) Create(ctx context.Context, rel *asset.Rel
 		rel.LastVerified(),
 		rel.CreatedAt(),
 		rel.UpdatedAt(),
+		rel.IsControlPlane(),
 	)
 
 	if err != nil {
@@ -91,7 +93,8 @@ func (r *AssetRelationshipRepository) Update(ctx context.Context, rel *asset.Rel
 			impact_weight = $6,
 			tags = $7,
 			last_verified = $8,
-			updated_at = $9
+			updated_at = $9,
+			is_control_plane = $10
 		WHERE tenant_id = $1 AND id = $2
 	`
 
@@ -105,6 +108,7 @@ func (r *AssetRelationshipRepository) Update(ctx context.Context, rel *asset.Rel
 		pq.Array(rel.Tags()),
 		rel.LastVerified(),
 		rel.UpdatedAt(),
+		rel.IsControlPlane(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update relationship: %w", err)
@@ -193,6 +197,7 @@ func (r *AssetRelationshipRepository) ListByAsset(
 		SELECT ar.id, ar.tenant_id, ar.source_asset_id, ar.target_asset_id,
 			   ar.relationship_type, ar.description, ar.confidence, ar.discovery_method,
 			   ar.impact_weight, ar.tags, ar.last_verified, ar.created_at, ar.updated_at,
+			   ar.is_control_plane,
 			   sa.name, sa.asset_type, ta.name, ta.asset_type
 		FROM (
 			SELECT ar2.id FROM asset_relationships ar2
@@ -283,9 +288,10 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 		INSERT INTO asset_relationships (
 			id, tenant_id, source_asset_id, target_asset_id,
 			relationship_type, description, confidence, discovery_method,
-			impact_weight, tags, last_verified, created_at, updated_at
+			impact_weight, tags, last_verified, created_at, updated_at,
+			is_control_plane
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT (tenant_id, source_asset_id, target_asset_id, relationship_type) DO NOTHING
 	`
 
@@ -317,6 +323,7 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 			rel.LastVerified(),
 			rel.CreatedAt(),
 			rel.UpdatedAt(),
+			rel.IsControlPlane(),
 		)
 		if err != nil {
 			return created, fmt.Errorf("failed to insert relationship: %w", err)
@@ -376,6 +383,7 @@ func (r *AssetRelationshipRepository) selectWithAssetsQuery() string {
 		SELECT ar.id, ar.tenant_id, ar.source_asset_id, ar.target_asset_id,
 			   ar.relationship_type, ar.description, ar.confidence, ar.discovery_method,
 			   ar.impact_weight, ar.tags, ar.last_verified, ar.created_at, ar.updated_at,
+			   ar.is_control_plane,
 			   sa.name, sa.asset_type, ta.name, ta.asset_type
 		FROM asset_relationships ar
 		INNER JOIN assets sa ON ar.source_asset_id = sa.id
@@ -401,6 +409,7 @@ func (r *AssetRelationshipRepository) scanRelationshipWithAssets(row relationshi
 		discoveryMethod string
 		impactWeight    int
 		tags            []string
+		isControlPlane  bool
 		lastVerified    *time.Time
 		createdAt       time.Time
 		updatedAt       time.Time
@@ -414,6 +423,7 @@ func (r *AssetRelationshipRepository) scanRelationshipWithAssets(row relationshi
 		&id, &tenantID, &sourceAssetID, &targetAssetID,
 		&relType, &description, &confidence, &discoveryMethod,
 		&impactWeight, pq.Array(&tags), &lastVerified, &createdAt, &updatedAt,
+		&isControlPlane,
 		&sourceAssetName, &sourceAssetType, &targetAssetName, &targetAssetType,
 	)
 	if err != nil {
@@ -431,6 +441,7 @@ func (r *AssetRelationshipRepository) scanRelationshipWithAssets(row relationshi
 		asset.RelationshipDiscoveryMethod(discoveryMethod),
 		impactWeight,
 		tags,
+		isControlPlane,
 		lastVerified,
 		createdAt,
 		updatedAt,

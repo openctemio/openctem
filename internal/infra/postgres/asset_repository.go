@@ -48,9 +48,10 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 			compliance_scope, data_classification, pii_data_exposed, phi_data_exposed, regulatory_owner_id,
 			is_internet_accessible, exposure_changed_at, last_exposure_level,
 			first_seen, last_seen, created_at, updated_at,
-			lifecycle_paused_until, manual_status_override
+			lifecycle_paused_until, manual_status_override,
+			impact_confidentiality, impact_integrity, impact_availability
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42)
 	`
 
 	ownerRefVal := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -94,6 +95,9 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 		a.UpdatedAt(),
 		nullTime(a.LifecyclePausedUntil()),
 		a.ManualStatusOverride(),
+		nullString(string(a.ImpactConfidentiality())),
+		nullString(string(a.ImpactIntegrity())),
+		nullString(string(a.ImpactAvailability())),
 	)
 
 	if err != nil {
@@ -380,7 +384,8 @@ func (r *AssetRepository) selectQuery() string {
 			   a.compliance_scope, a.data_classification, a.pii_data_exposed, a.phi_data_exposed, a.regulatory_owner_id,
 			   a.is_internet_accessible, a.exposure_changed_at, a.last_exposure_level,
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at,
-			   a.lifecycle_paused_until, a.manual_status_override
+			   a.lifecycle_paused_until, a.manual_status_override,
+			   a.impact_confidentiality, a.impact_integrity, a.impact_availability
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -418,7 +423,8 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		    compliance_scope = $25, data_classification = $26, pii_data_exposed = $27, phi_data_exposed = $28, regulatory_owner_id = $29,
 		    is_internet_accessible = $30, exposure_changed_at = $31, last_exposure_level = $32,
 		    last_seen = $33, updated_at = $34,
-		    lifecycle_paused_until = $36, manual_status_override = $37
+		    lifecycle_paused_until = $36, manual_status_override = $37,
+		    impact_confidentiality = $38, impact_integrity = $39, impact_availability = $40
 		WHERE id = $1 AND tenant_id = $35
 	`
 
@@ -461,6 +467,9 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		a.TenantID().String(),
 		nullTime(a.LifecyclePausedUntil()),
 		a.ManualStatusOverride(),
+		nullString(string(a.ImpactConfidentiality())),
+		nullString(string(a.ImpactIntegrity())),
+		nullString(string(a.ImpactAvailability())),
 	)
 
 	if err != nil {
@@ -712,6 +721,11 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		// is the common case — most assets have never been snoozed.
 		lifecyclePausedUntil sql.NullTime
 		manualStatusOverride bool
+		// CIA impact rating (Scoping critical-asset register). Nullable —
+		// most assets have not been rated yet.
+		impactConfidentiality sql.NullString
+		impactIntegrity       sql.NullString
+		impactAvailability    sql.NullString
 	)
 
 	err := scan(
@@ -725,6 +739,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		&isInternetAccessible, &exposureChangedAt, &lastExposureLevel,
 		&firstSeen, &lastSeen, &createdAt, &updatedAt,
 		&lifecyclePausedUntil, &manualStatusOverride,
+		&impactConfidentiality, &impactIntegrity, &impactAvailability,
 	)
 	if err != nil {
 		return nil, err
@@ -740,6 +755,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		isInternetAccessible, exposureChangedAt, lastExposureLevel,
 		firstSeen, lastSeen, createdAt, updatedAt,
 		lifecyclePausedUntil, manualStatusOverride,
+		impactConfidentiality, impactIntegrity, impactAvailability,
 	)
 	if err != nil {
 		return nil, err
@@ -785,6 +801,8 @@ func (r *AssetRepository) reconstructAsset(
 	// Lifecycle (migration 000165)
 	lifecyclePausedUntil sql.NullTime,
 	manualStatusOverride bool,
+	// CIA impact rating (Scoping critical-asset register)
+	impactConfidentiality, impactIntegrity, impactAvailability sql.NullString,
 ) (*asset.Asset, error) {
 	parsedID, err := shared.IDFromString(idStr)
 	if err != nil {
@@ -854,6 +872,10 @@ func (r *AssetRepository) reconstructAsset(
 
 	lastExpLevel, _ := asset.ParseExposure(nullStringValue(lastExposureLevelStr))
 
+	parsedImpactConfidentiality, _ := asset.ParseImpactRating(nullStringValue(impactConfidentiality))
+	parsedImpactIntegrity, _ := asset.ParseImpactRating(nullStringValue(impactIntegrity))
+	parsedImpactAvailability, _ := asset.ParseImpactRating(nullStringValue(impactAvailability))
+
 	result := asset.Reconstitute(
 		parsedID,
 		tenantID,
@@ -888,6 +910,10 @@ func (r *AssetRepository) reconstructAsset(
 		isInternetAccessible,
 		expChanged,
 		lastExpLevel,
+		// CIA impact rating (Scoping critical-asset register)
+		parsedImpactConfidentiality,
+		parsedImpactIntegrity,
+		parsedImpactAvailability,
 		// Timestamps
 		firstSeen,
 		lastSeen,
@@ -1179,7 +1205,7 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 
 // assetUpsertColumnCount is the number of columns in the assets upsert. It MUST
 // stay in sync with assetUpsertColumnsSQL and assetUpsertArgs.
-const assetUpsertColumnCount = 35
+const assetUpsertColumnCount = 38
 
 // assetUpsertColumnsSQL is the INSERT INTO assets (...) column header.
 //
@@ -1199,6 +1225,7 @@ func assetUpsertColumnsSQL() string {
 			discovery_source, discovery_tool, discovered_at,
 			is_internet_accessible, exposure_changed_at,
 			compliance_scope, data_classification, pii_data_exposed, phi_data_exposed,
+			impact_confidentiality, impact_integrity, impact_availability,
 			first_seen, last_seen, created_at, updated_at
 		)`
 }
@@ -1231,6 +1258,10 @@ func assetUpsertConflictSQL() string {
 			-- clears an established value.
 			sub_type = COALESCE(assets.sub_type, EXCLUDED.sub_type),
 			data_classification = COALESCE(assets.data_classification, EXCLUDED.data_classification),
+			-- CIA impact rating: fill gap only, never clear an operator-set rating.
+			impact_confidentiality = COALESCE(assets.impact_confidentiality, EXCLUDED.impact_confidentiality),
+			impact_integrity = COALESCE(assets.impact_integrity, EXCLUDED.impact_integrity),
+			impact_availability = COALESCE(assets.impact_availability, EXCLUDED.impact_availability),
 			is_internet_accessible = assets.is_internet_accessible OR EXCLUDED.is_internet_accessible,
 			pii_data_exposed = assets.pii_data_exposed OR EXCLUDED.pii_data_exposed,
 			phi_data_exposed = assets.phi_data_exposed OR EXCLUDED.phi_data_exposed,
@@ -1304,6 +1335,9 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 		nullString(string(a.DataClassification())),
 		a.PIIDataExposed(),
 		a.PHIDataExposed(),
+		nullString(string(a.ImpactConfidentiality())),
+		nullString(string(a.ImpactIntegrity())),
+		nullString(string(a.ImpactAvailability())),
 		a.FirstSeen(),
 		a.LastSeen(),
 		a.CreatedAt(),

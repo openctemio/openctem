@@ -41,6 +41,9 @@ type CreateRelationshipInput struct {
 	DiscoveryMethod string   `validate:"omitempty"`
 	ImpactWeight    *int     `validate:"omitempty,min=1,max=10"`
 	Tags            []string `validate:"omitempty,max=20,dive,max=50"`
+	// IsControlPlane marks the edge as a control-plane dependency
+	// (IdP/SSO, secrets store, CI/CD, monitoring/SIEM). Optional.
+	IsControlPlane *bool
 }
 
 // UpdateRelationshipInput represents the input for updating a relationship.
@@ -50,6 +53,8 @@ type UpdateRelationshipInput struct {
 	ImpactWeight *int     `json:"impact_weight" validate:"omitempty,min=1,max=10"`
 	Tags         []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
 	MarkVerified bool     `json:"mark_verified"`
+	// IsControlPlane toggles the control-plane dependency flag. Optional.
+	IsControlPlane *bool `json:"is_control_plane"`
 }
 
 // =============================================================================
@@ -347,6 +352,9 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 	if input.Tags != nil {
 		rel.SetTags(input.Tags)
 	}
+	if input.IsControlPlane != nil {
+		rel.SetControlPlane(*input.IsControlPlane)
+	}
 
 	// Persist
 	if err := s.relRepo.Create(ctx, rel); err != nil {
@@ -415,6 +423,9 @@ func (s *AssetRelationshipService) UpdateRelationship(ctx context.Context, tenan
 	}
 	if input.Tags != nil {
 		rel.SetTags(input.Tags)
+	}
+	if input.IsControlPlane != nil {
+		rel.SetControlPlane(*input.IsControlPlane)
 	}
 	if input.MarkVerified {
 		rel.Verify()

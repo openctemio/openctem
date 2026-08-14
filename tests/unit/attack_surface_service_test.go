@@ -294,6 +294,9 @@ func makeAttackSurfaceAsset(
 		false,                  // isInternetAccessible
 		nil,                    // exposureChangedAt
 		asset.ExposureUnknown,  // lastExposureLevel
+		"",                     // impactConfidentiality
+		"",                     // impactIntegrity
+		"",                     // impactAvailability
 		createdAt,              // firstSeen
 		lastSeen,               // lastSeen
 		createdAt,              // createdAt
