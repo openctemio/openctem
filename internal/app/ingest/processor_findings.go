@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -636,6 +638,16 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 	if ctisFinding.Fingerprint != "" && isValidFingerprint(ctisFinding.Fingerprint) {
 		// Use provided fingerprint as base (only if valid hash-like string)
 		baseFingerprint = ctisFinding.Fingerprint
+	} else if cve, port, ok := networkVACVEKey(ctisFinding); ok {
+		// Network/host vulnerability (Nessus/Qualys/Tenable): a CVE observed on a
+		// host with no package and no code location. Left to fingerprint.DetectType
+		// this falls to TypeGeneric (rule id + file + message) — or, if TargetHost
+		// were set, to TypeDAST (rule id + host + path) — both of which key on the
+		// scanner's plugin id/message. The SAME CVE on the SAME host reported by two
+		// scanners then produced two findings. Key the base on CVE(+port) alone; the
+		// host/asset is already bound via the composite asset id below, so this dedups
+		// the finding across scanners independent of rule id and message.
+		baseFingerprint = fingerprint.Hash("netva:" + port + ":" + cve)
 	} else {
 		// Generate using SDK fingerprint package
 		input := fingerprint.Input{
@@ -688,6 +700,49 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 	// Create composite fingerprint including assetID
 	// This ensures the same vulnerability on different assets produces different fingerprints
 	return createCompositeFingerprint(assetID.String(), baseFingerprint), baseFingerprint
+}
+
+// networkVACVEKey reports whether a CTIS finding is a network/host vulnerability
+// (a CVE observed on a host by a scanner like Nessus/Qualys/Tenable) and, if so,
+// returns its scanner-independent dedup key parts: the CVE id and the port.
+//
+// It deliberately excludes findings that already dedup correctly under a
+// type-aware algorithm: SCA/container (have a package), SAST/secret (have a code
+// file location). Only a CVE-bearing finding with neither is treated as a network
+// VA. port is "" for a host-level finding (no specific port). When multiple CVEs
+// are grouped on one plugin, the lexically smallest id is used so two scanners
+// reporting the same CVE agree regardless of field placement (CVEID vs CVEIDs).
+func networkVACVEKey(f *ctis.Finding) (cve, port string, ok bool) {
+	v := f.Vulnerability
+	if v == nil {
+		return "", "", false
+	}
+	if strings.TrimSpace(v.Package) != "" {
+		return "", "", false // SCA / container — keyed by package elsewhere
+	}
+	if f.Location != nil && strings.TrimSpace(f.Location.Path) != "" {
+		return "", "", false // SAST / secret — keyed by file location elsewhere
+	}
+
+	cves := make([]string, 0, len(v.CVEIDs)+1)
+	if c := strings.ToLower(strings.TrimSpace(v.CVEID)); c != "" {
+		cves = append(cves, c)
+	}
+	for _, c := range v.CVEIDs {
+		if c := strings.ToLower(strings.TrimSpace(c)); c != "" {
+			cves = append(cves, c)
+		}
+	}
+	if len(cves) == 0 {
+		return "", "", false // no CVE — not a network VA finding
+	}
+	sort.Strings(cves)
+	cve = cves[0]
+
+	if f.Network != nil && f.Network.Port > 0 {
+		port = strconv.Itoa(f.Network.Port)
+	}
+	return cve, port, true
 }
 
 // buildFinding creates a Finding domain entity from a CTIS finding.

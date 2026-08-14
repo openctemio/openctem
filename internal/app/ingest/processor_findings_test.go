@@ -159,12 +159,11 @@ func TestGenerateFindingFingerprint_WithLocationInfo(t *testing.T) {
 func TestGenerateFindingFingerprint_WithCVEID(t *testing.T) {
 	assetID := shared.NewID()
 
-	// When CVE is present, the base fingerprint uses it in the Input
-	// However, since the fingerprint.Input.Type is not explicitly set,
-	// the SDK uses the "generic" type which only uses RuleID, FilePath,
-	// StartLine, EndLine, and Message. VulnerabilityID is only used
-	// when Type is "sca". So the composite fingerprints will be equal
-	// in the generic case.
+	// A CVE-bearing finding with no package and no code location is a
+	// network/host vulnerability (Nessus/Qualys/Tenable). It now keys on the CVE
+	// (network-VA branch) so the same CVE dedups across scanners. Previously it
+	// fell to the generic algorithm which ignores VulnerabilityID entirely — the
+	// defect this fix closes.
 	finding := &ctis.Finding{
 		RuleID: "sca-check",
 		Title:  "Vulnerable Dependency",
@@ -173,6 +172,7 @@ func TestGenerateFindingFingerprint_WithCVEID(t *testing.T) {
 		},
 	}
 
+	// No CVE, no package, no location → not a network VA; stays generic.
 	findingNoCVE := &ctis.Finding{
 		RuleID: "sca-check",
 		Title:  "Vulnerable Dependency",
@@ -181,15 +181,14 @@ func TestGenerateFindingFingerprint_WithCVEID(t *testing.T) {
 	fpWithCVE, _ := generateFindingFingerprint(assetID, finding, nil)
 	fpNoCVE, _ := generateFindingFingerprint(assetID, findingNoCVE, nil)
 
-	// Both should produce valid fingerprints
+	// Both should produce valid fingerprints.
 	assert.Len(t, fpWithCVE, 64)
 	assert.Len(t, fpNoCVE, 64)
 
-	// In the generic fingerprint type, CVE is not used as an input field,
-	// so the fingerprints are the same. This is expected behavior because
-	// the generic fingerprint deduplicates by rule+location+message.
-	assert.Equal(t, fpWithCVE, fpNoCVE,
-		"generic fingerprint type does not use VulnerabilityID")
+	// The CVE-bearing network finding now incorporates the CVE, so it differs
+	// from the generic (no-CVE) finding with the same rule/message.
+	assert.NotEqual(t, fpWithCVE, fpNoCVE,
+		"network-VA finding must key on the CVE, not fall back to the generic rule+message algorithm")
 }
 
 func TestGenerateFindingFingerprint_Deterministic(t *testing.T) {

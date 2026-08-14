@@ -156,8 +156,8 @@ func (m *mockAttackSurfaceRepo) GetByNames(_ context.Context, _ shared.ID, _ []s
 	return make(map[string]*asset.Asset), nil
 }
 
-func (m *mockAttackSurfaceRepo) UpsertBatch(_ context.Context, _ []*asset.Asset) (int, int, error) {
-	return 0, 0, nil
+func (m *mockAttackSurfaceRepo) UpsertBatch(_ context.Context, _ []*asset.Asset) (int, int, map[string]shared.ID, error) {
+	return 0, 0, nil, nil
 }
 
 func (m *mockAttackSurfaceRepo) UpdateFindingCounts(_ context.Context, _ shared.ID, _ []shared.ID) error {

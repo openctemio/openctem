@@ -58,7 +58,7 @@ func TestUpsertBatch_PersistsOwnerRef(t *testing.T) {
 		_, _ = db.ExecContext(ctx, "DELETE FROM assets WHERE tenant_id = $1 AND name = $2", tenantID.String(), wantName)
 	}()
 
-	created, _, err := repo.UpsertBatch(ctx, []*asset.Asset{a})
+	created, _, _, err := repo.UpsertBatch(ctx, []*asset.Asset{a})
 	if err != nil {
 		t.Fatalf("upsert batch: %v", err)
 	}

@@ -158,7 +158,8 @@ func (m *HandlerMockRepository) GetByNames(ctx context.Context, tenantID shared.
 	return result, nil
 }
 
-func (m *HandlerMockRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset) (created int, updated int, err error) {
+func (m *HandlerMockRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error) {
+	persistedIDs = make(map[string]shared.ID, len(assets))
 	for _, a := range assets {
 		if _, exists := m.assets[a.ID().String()]; exists {
 			updated++
@@ -166,8 +167,9 @@ func (m *HandlerMockRepository) UpsertBatch(ctx context.Context, assets []*asset
 			created++
 		}
 		m.assets[a.ID().String()] = a
+		persistedIDs[a.Name()] = a.ID()
 	}
-	return created, updated, nil
+	return created, updated, persistedIDs, nil
 }
 
 func (m *HandlerMockRepository) UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error {

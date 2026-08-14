@@ -3306,13 +3306,17 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 	return resolvedIDs, nil
 }
 
-// AutoReopenByFingerprint reopens a previously auto-resolved finding if it reappears.
-// Only reopens findings with resolution = 'auto_fixed'.
-// Protected resolutions (false_positive, accepted_risk) are never reopened.
+// AutoReopenByFingerprint reopens a previously CLOSED-AS-FIXED finding if it reappears.
+// Reopens any re-detected finding closed as fixed (status resolved or verified),
+// whether the fix was confirmed automatically (resolution = 'auto_fixed') or by a
+// person. Deliberate dispositions (false_positive, accepted_risk, duplicate,
+// suppressed) are NEVER reopened — a rescan seeing them again is not a regression.
 // Returns the finding ID if reopened, nil if not found or protected.
 func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantID shared.ID, fingerprint string) (*shared.ID, error) {
-	// Only reopen findings that were auto-resolved (resolution = 'auto_fixed')
-	// Do NOT reopen manually resolved, false_positive, or accepted findings
+	// Reopen findings closed as fixed (resolved/verified) regardless of who fixed
+	// them; a human-resolved finding that a later scan re-detects was previously
+	// stuck resolved and invisible. Deliberate dispositions stay closed. resolution
+	// is a free-text note and may be NULL, so NULL must survive NOT IN.
 	query := `
 		UPDATE findings
 		SET status = 'confirmed',
@@ -3323,8 +3327,8 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 			updated_at = NOW()
 		WHERE tenant_id = $1
 			AND fingerprint = $2
-			AND status = 'resolved'
-			AND resolution = 'auto_fixed'
+			AND status IN ('resolved', 'verified')
+			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
 		RETURNING id
 	`
 
@@ -3346,10 +3350,12 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 	return &id, nil
 }
 
-// AutoReopenByFingerprintsBatch reopens multiple previously auto-resolved findings in a single query.
+// AutoReopenByFingerprintsBatch reopens multiple previously CLOSED-AS-FIXED findings in a single query.
 // This is the batch version of AutoReopenByFingerprint for better performance.
-// Only reopens findings with resolution = 'auto_fixed'.
-// Protected resolutions (false_positive, accepted_risk) are never reopened.
+// Reopens any re-detected finding closed as fixed (status resolved or verified),
+// whether auto-confirmed (resolution = 'auto_fixed') or resolved by a person.
+// Deliberate dispositions (false_positive, accepted_risk, duplicate, suppressed)
+// are NEVER reopened.
 // Returns a map of fingerprint -> reopened finding ID.
 func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]shared.ID, error) {
 	result := make(map[string]shared.ID)
@@ -3358,9 +3364,11 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 		return result, nil
 	}
 
-	// Only reopen findings that were auto-resolved (resolution = 'auto_fixed')
-	// Do NOT reopen manually resolved, false_positive, or accepted findings
-	// Use ANY($2) for batch lookup efficiency
+	// Reopen findings closed as fixed (resolved/verified) regardless of who fixed
+	// them — a human-resolved finding a later scan re-detects was previously stuck
+	// resolved and invisible. Deliberate dispositions stay closed. resolution is a
+	// free-text note and may be NULL, so NULL must survive NOT IN.
+	// Use ANY($2) for batch lookup efficiency.
 	query := `
 		UPDATE findings
 		SET status = 'confirmed',
@@ -3371,8 +3379,8 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 			updated_at = NOW()
 		WHERE tenant_id = $1
 			AND fingerprint = ANY($2)
-			AND status = 'resolved'
-			AND resolution = 'auto_fixed'
+			AND status IN ('resolved', 'verified')
+			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
 		RETURNING id, fingerprint
 	`
 

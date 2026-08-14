@@ -1159,9 +1159,9 @@ func (r *AssetRepository) GetByNames(ctx context.Context, tenantID shared.ID, na
 // UpsertBatch creates or updates multiple assets in a single operation.
 // Uses PostgreSQL ON CONFLICT for atomic upsert behavior.
 // Conflict is detected on (tenant_id, name) unique constraint.
-func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset) (created int, updated int, err error) {
+func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error) {
 	if len(assets) == 0 {
-		return 0, 0, nil
+		return 0, 0, map[string]shared.ID{}, nil
 	}
 
 	// Fast path: one multi-row INSERT for the whole batch (one round-trip
@@ -1170,11 +1170,11 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	// covers the case where the batch contains two assets with the same
 	// (tenant_id, name) — ON CONFLICT cannot update a row twice in one
 	// statement.
-	created, updated, err = r.upsertBatchMultiRow(ctx, assets)
+	created, updated, persistedIDs, err = r.upsertBatchMultiRow(ctx, assets)
 	if err != nil {
 		return r.upsertBatchPerRow(ctx, assets)
 	}
-	return created, updated, nil
+	return created, updated, persistedIDs, nil
 }
 
 // assetUpsertColumnCount is the number of columns in the assets upsert. It MUST
@@ -1238,7 +1238,7 @@ func assetUpsertConflictSQL() string {
 				SELECT array_agg(DISTINCT cs)
 				FROM unnest(assets.compliance_scope || EXCLUDED.compliance_scope) AS cs
 			)
-		RETURNING (xmax = 0) AS inserted`
+		RETURNING id, name, (xmax = 0) AS inserted`
 }
 
 // assetValuesPlaceholders builds the VALUES tuples for rowCount rows with
@@ -1332,10 +1332,10 @@ func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sq
 }
 
 // upsertBatchMultiRow upserts the whole batch in a single multi-row INSERT.
-func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*asset.Asset) (created int, updated int, err error) {
+func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*asset.Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to begin transaction: %w", err)
+		return 0, 0, nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() {
 		if err != nil {
@@ -1347,24 +1347,29 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 	for _, a := range assets {
 		rowArgs, argErr := assetUpsertArgs(a)
 		if argErr != nil {
-			return 0, 0, argErr
+			return 0, 0, nil, argErr
 		}
 		args = append(args, rowArgs...)
 	}
 
 	query := assetUpsertColumnsSQL() + "\nVALUES " + assetValuesPlaceholders(len(assets)) + "\n" + assetUpsertConflictSQL()
 
+	persistedIDs = make(map[string]shared.ID, len(assets))
 	rows, qErr := tx.QueryContext(ctx, query, args...)
 	if qErr != nil {
 		err = fmt.Errorf("failed to batch upsert assets: %w", qErr)
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 	for rows.Next() {
+		var idStr, name string
 		var inserted bool
-		if scanErr := rows.Scan(&inserted); scanErr != nil {
+		if scanErr := rows.Scan(&idStr, &name, &inserted); scanErr != nil {
 			_ = rows.Close()
 			err = fmt.Errorf("failed to scan upsert result: %w", scanErr)
-			return 0, 0, err
+			return 0, 0, nil, err
+		}
+		if id, idErr := shared.IDFromString(idStr); idErr == nil {
+			persistedIDs[name] = id
 		}
 		if inserted {
 			created++
@@ -1375,27 +1380,27 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 	if rowsErr := rows.Err(); rowsErr != nil {
 		_ = rows.Close()
 		err = fmt.Errorf("error iterating upsert results: %w", rowsErr)
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 	_ = rows.Close()
 
 	if err = r.ensureRepositoryExtensions(ctx, tx, assets); err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 
 	if err = tx.Commit(); err != nil {
-		return 0, 0, fmt.Errorf("failed to commit transaction: %w", err)
+		return 0, 0, nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
-	return created, updated, nil
+	return created, updated, persistedIDs, nil
 }
 
 // upsertBatchPerRow is the fallback: upsert each asset individually so a chunk
 // with intra-batch duplicate names (or one bad row) still makes progress and
 // surfaces a precise error.
-func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset.Asset) (created int, updated int, err error) {
+func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset.Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to begin transaction: %w", err)
+		return 0, 0, nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() {
 		if err != nil {
@@ -1405,19 +1410,24 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 
 	stmt, err := tx.PrepareContext(ctx, assetUpsertColumnsSQL()+"\nVALUES "+assetValuesPlaceholders(1)+"\n"+assetUpsertConflictSQL())
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to prepare statement: %w", err)
+		return 0, 0, nil, fmt.Errorf("failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
 
+	persistedIDs = make(map[string]shared.ID, len(assets))
 	for _, a := range assets {
 		rowArgs, argErr := assetUpsertArgs(a)
 		if argErr != nil {
-			return created, updated, argErr
+			return created, updated, nil, argErr
 		}
 
+		var idStr, name string
 		var inserted bool
-		if err = stmt.QueryRowContext(ctx, rowArgs...).Scan(&inserted); err != nil {
-			return created, updated, fmt.Errorf("failed to upsert asset %s: %w", a.Name(), err)
+		if err = stmt.QueryRowContext(ctx, rowArgs...).Scan(&idStr, &name, &inserted); err != nil {
+			return created, updated, nil, fmt.Errorf("failed to upsert asset %s: %w", a.Name(), err)
+		}
+		if id, idErr := shared.IDFromString(idStr); idErr == nil {
+			persistedIDs[name] = id
 		}
 		if inserted {
 			created++
@@ -1427,14 +1437,14 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 	}
 
 	if err = r.ensureRepositoryExtensions(ctx, tx, assets); err != nil {
-		return created, updated, err
+		return created, updated, nil, err
 	}
 
 	if err = tx.Commit(); err != nil {
-		return created, updated, fmt.Errorf("failed to commit transaction: %w", err)
+		return created, updated, nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	return created, updated, nil
+	return created, updated, persistedIDs, nil
 }
 
 // ListDistinctTags returns distinct tags across all assets for a tenant.
