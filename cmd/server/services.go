@@ -1302,6 +1302,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// when new findings are created during ingestion
 	s.Ingest.SetFindingCreatedCallback(s.WorkflowDispatcher.DispatchFindingsCreated)
 
+	// Wire workflow dispatcher to the vulnerability service so a status change
+	// (e.g. a resolve) auto-dispatches a `finding_status_changed` workflow event
+	// — closes the resolve→verification automation loop the old inline TODO left
+	// open. Best-effort/async inside the dispatcher.
+	s.Vulnerability.SetWorkflowStatusDispatch(s.WorkflowDispatcher.DispatchFindingStatusChanged)
+
 	// Wire AI-triage completion/failure into the same workflow dispatcher so
 	// automation rules can trigger on triage verdicts. The SetWorkflowDispatcher
 	// seam was never called, so AITriage silently emitted no workflow events.

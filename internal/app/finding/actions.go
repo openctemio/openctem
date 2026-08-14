@@ -85,6 +85,18 @@ func (s *FindingActionsService) loadVerificationChecklist(
 	ctx context.Context,
 	tenantID, findingID shared.ID,
 ) (*vulnerability.VerificationChecklist, error) {
+	return loadVerificationChecklist(ctx, s.db, tenantID, findingID)
+}
+
+// loadVerificationChecklist is the package-level, dependency-free loader used by
+// both FindingActionsService.BulkVerify and VulnerabilityService.UpdateFindingStatus
+// so the F4 verification-checklist gate is enforced identically on the bulk and
+// single-finding resolve paths. Returns (nil, nil) when the row is absent.
+func loadVerificationChecklist(
+	ctx context.Context,
+	db *sql.DB,
+	tenantID, findingID shared.ID,
+) (*vulnerability.VerificationChecklist, error) {
 	const q = `
 		SELECT id, tenant_id, finding_id, exposure_cleared, evidence_attached,
 		       register_updated, monitoring_added, regression_scheduled,
@@ -101,7 +113,7 @@ func (s *FindingActionsService) loadVerificationChecklist(
 		completedAt           sql.NullTime
 		idStr, tidStr, fidStr string
 	)
-	err := s.db.QueryRowContext(ctx, q, tenantID.String(), findingID.String()).Scan(
+	err := db.QueryRowContext(ctx, q, tenantID.String(), findingID.String()).Scan(
 		&idStr, &tidStr, &fidStr,
 		&data.ExposureCleared, &data.EvidenceAttached, &data.RegisterUpdated,
 		&monitoringAdded, &regressionScheduled,

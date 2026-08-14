@@ -393,6 +393,53 @@ func (d *WorkflowEventDispatcher) DispatchFindingsCreated(ctx context.Context, t
 	}()
 }
 
+// DispatchFindingStatusChanged dispatches a `finding_status_changed` event for a
+// single finding whose status just changed. It is wired into
+// VulnerabilityService.UpdateFindingStatus so automation (e.g. a
+// verification-scan workflow on resolve) fires without a manual trigger. Runs
+// asynchronously with panic recovery so it never blocks or crashes the status
+// update, mirroring DispatchFindingsCreated.
+func (d *WorkflowEventDispatcher) DispatchFindingStatusChanged(
+	ctx context.Context,
+	tenantID shared.ID,
+	finding *vulnerability.Finding,
+	oldStatus, newStatus string,
+) {
+	if finding == nil {
+		return
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				d.logger.Error("panic recovered in finding_status_changed dispatch",
+					"tenant_id", tenantID,
+					"panic", r,
+				)
+			}
+		}()
+
+		dispatchCtx, cancel := context.WithTimeout(context.Background(), dispatchTimeout)
+		defer cancel()
+
+		if err := d.DispatchFindingEvent(dispatchCtx, FindingEvent{
+			TenantID:  tenantID,
+			Finding:   finding,
+			EventType: workflowdom.TriggerTypeFindingStatusChanged,
+			Changes: map[string]any{
+				"old_status": oldStatus,
+				"new_status": newStatus,
+			},
+		}); err != nil {
+			d.logger.Error("failed to dispatch finding_status_changed event",
+				"tenant_id", tenantID,
+				"finding_id", finding.ID(),
+				"error", err,
+			)
+		}
+	}()
+}
+
 // =============================================================================
 // AI Triage Events
 // =============================================================================
