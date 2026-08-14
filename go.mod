@@ -2,7 +2,7 @@ module github.com/openctemio/api
 
 go 1.26
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require (
 	github.com/go-chi/chi/v5 v5.3.1
