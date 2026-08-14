@@ -2968,6 +2968,19 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		conditions = append(conditions, fmt.Sprintf("source IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
+	// SLA status filter (multi-value). Backs the SLA breach board, which asks for
+	// sla_status IN ('overdue','exceeded') server-side instead of scoring one
+	// capped page in the client. Uses = ANY($n) so the whole set is a single arg.
+	if len(filter.SLAStatuses) > 0 {
+		slaValues := make([]string, len(filter.SLAStatuses))
+		for i, s := range filter.SLAStatuses {
+			slaValues[i] = s.String()
+		}
+		conditions = append(conditions, fmt.Sprintf("sla_status = ANY($%d)", argIndex))
+		args = append(args, pq.Array(slaValues))
+		argIndex++
+	}
+
 	if len(filter.FindingIDs) > 0 {
 		placeholders := make([]string, len(filter.FindingIDs))
 		for i, id := range filter.FindingIDs {
