@@ -52,6 +52,12 @@ type Charter struct {
 	Roles CharterRoles `json:"roles,omitempty"`
 	// Timeline is an optional free-text schedule/cadence for the cycle.
 	Timeline string `json:"timeline,omitempty"`
+	// ScopeRefinementNotes captures the feedback-to-scope loop that closes a
+	// CTEM cycle: what the review learned about scope — gaps to add, items to
+	// exclude next cycle, lessons for the next charter. Unlike the rest of the
+	// charter (fixed at planning) this is written at cycle review/close, so it
+	// is edited via SetScopeRefinementNotes rather than SetCharter.
+	ScopeRefinementNotes string `json:"scope_refinement_notes,omitempty"`
 }
 
 // CharterExclusion is an item deliberately left out of a cycle's scope,
@@ -168,6 +174,20 @@ func (c *Cycle) SetCharter(charter Charter) error {
 		return fmt.Errorf("%w: can only update charter in planning status", shared.ErrValidation)
 	}
 	c.charter = charter
+	c.updatedAt = time.Now()
+	return nil
+}
+
+// SetScopeRefinementNotes records the feedback-to-scope notes captured during
+// cycle review or close. This is the one charter field deliberately editable
+// after planning: it is only meaningful once the cycle has run, so it is
+// allowed in review and closed status (and rejected in planning/active, where
+// the charter proper is edited via SetCharter).
+func (c *Cycle) SetScopeRefinementNotes(notes string) error {
+	if c.status != CycleStatusReview && c.status != CycleStatusClosed {
+		return fmt.Errorf("%w: scope refinement notes can only be set at cycle review or close", shared.ErrValidation)
+	}
+	c.charter.ScopeRefinementNotes = notes
 	c.updatedAt = time.Now()
 	return nil
 }

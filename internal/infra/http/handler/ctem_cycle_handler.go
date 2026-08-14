@@ -469,6 +469,49 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, c)
 }
 
+// UpdateScopeRefinement records the feedback-to-scope notes for a cycle — the
+// lessons a review/close produces about scope (gaps to add, items to exclude
+// next cycle). This closes the CTEM Mobilization → Scoping loop.
+//
+// Unlike Update (planning-only), this is allowed while the cycle is in review
+// OR closed status, because the notes only become meaningful once the cycle has
+// run. The value rides the charter JSONB (no schema change) under the
+// `scope_refinement_notes` key, set via jsonb_set so the rest of the charter is
+// untouched.
+func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var req UpdateScopeRefinementRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	row := h.db.QueryRowContext(r.Context(),
+		`UPDATE ctem_cycles
+		    SET charter = jsonb_set(COALESCE(charter, '{}'::jsonb),
+		                            '{scope_refinement_notes}', to_jsonb($3::text), true),
+		        updated_at = NOW()
+		  WHERE tenant_id = $1 AND id = $2 AND status IN ('review', 'closed')
+		 RETURNING id, name, status, start_date, end_date, charter,
+		           closed_by, closed_at, created_by, created_at, updated_at`,
+		tenantID, id, req.ScopeRefinementNotes,
+	)
+	c, err := h.scanCycle(row)
+	if err != nil {
+		if err == sql.ErrNoRows { //nolint:errorlint
+			apierror.BadRequest("cycle not found or not in review/closed status").WriteJSON(w)
+			return
+		}
+		h.logger.Error("ctem cycle scope refinement", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, c)
+}
+
 // computeValidationCoverage counts, for findings that reached a
 // terminal state (resolved | verified | accepted | false_positive)
 // within the cycle window, how many have a validation evidence
@@ -729,6 +772,12 @@ type CreateCTEMCycleRequest struct {
 	StartDate string         `json:"start_date"`
 	EndDate   string         `json:"end_date"`
 	Charter   map[string]any `json:"charter"`
+}
+
+// UpdateScopeRefinementRequest is the body for recording a cycle's
+// feedback-to-scope notes at review/close.
+type UpdateScopeRefinementRequest struct {
+	ScopeRefinementNotes string `json:"scope_refinement_notes"`
 }
 
 // CTEMCycleResponse is the JSON response for a CTEM cycle.

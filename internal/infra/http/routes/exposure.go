@@ -280,6 +280,9 @@ func registerVulnerabilityRoutes(
 		// registerValidationRoutes (chi forbids a second mount on that path).
 		r.POST("/{id}/remediation/steps", h.AddRemediationStep, middleware.Require(permission.FindingsWrite))
 
+		// CTEM Mobilization guidance: definition of done + acceptable fixes.
+		r.PATCH("/{id}/remediation", h.UpdateRemediation, middleware.Require(permission.FindingsWrite))
+
 		// Jira ticket linking — store/remove Jira ticket references on findings
 		if jiraHandler != nil {
 			r.POST("/{id}/link-ticket", jiraHandler.LinkTicket, middleware.Require(permission.FindingsWrite))

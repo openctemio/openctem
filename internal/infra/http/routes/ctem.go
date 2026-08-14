@@ -143,6 +143,8 @@ func registerCTEMCycleRoutes(
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.CTEMCyclesWrite))
 		r.POST("/{id}/start-review", h.StartReview, middleware.Require(permission.CTEMCyclesWrite))
 		r.POST("/{id}/close", h.Close, middleware.Require(permission.CTEMCyclesWrite))
+		// Feedback-to-scope: record scope-refinement notes at review/close.
+		r.POST("/{id}/scope-refinement", h.UpdateScopeRefinement, middleware.Require(permission.CTEMCyclesWrite))
 		r.GET("/{id}/scope", h.GetScope, middleware.Require(permission.CTEMCyclesRead))
 		r.POST("/{id}/profiles", h.LinkProfile, middleware.Require(permission.CTEMCyclesWrite))
 	}, tenantMiddlewares...)
