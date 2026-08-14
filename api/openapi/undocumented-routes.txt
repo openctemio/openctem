@@ -131,6 +131,7 @@ GET /api/v1/ctem-cycles/metrics/trend
 GET /api/v1/ctem-cycles/{}
 GET /api/v1/ctem-cycles/{}/metrics
 GET /api/v1/ctem-cycles/{}/scope
+GET /api/v1/ctem-ids
 GET /api/v1/dashboard/data-quality
 GET /api/v1/dashboard/executive-summary
 GET /api/v1/dashboard/executive-summary/export
@@ -443,6 +444,7 @@ PUT /api/v1/compensating-controls/{}
 PUT /api/v1/ctem-cycles/{}
 PUT /api/v1/custom-capabilities/{}
 PUT /api/v1/custom-tool-categories/{}
+PUT /api/v1/exposures/{}/ctem-id
 PUT /api/v1/findings/{}/comments/{}
 PUT /api/v1/groups/{}/scope-rules/{}
 PUT /api/v1/pentest/campaigns/{}

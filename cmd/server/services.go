@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/attack"
 	"github.com/openctemio/api/internal/app/auth/domainverify"
+	ctemidapp "github.com/openctemio/api/internal/app/ctemid"
 	"github.com/openctemio/api/internal/app/exposure"
 	"github.com/openctemio/api/internal/app/exposurebridge"
 	"github.com/openctemio/api/internal/app/ingest"
@@ -418,6 +419,7 @@ type Services struct {
 	SourceAnalytics  *app.SourceAnalyticsService
 	Exposure         *app.ExposureService
 	ThreatIntel      *threat.IntelService
+	CTEMID           *ctemidapp.Service
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
@@ -726,6 +728,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
+	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 
 	// Initialize dashboard service

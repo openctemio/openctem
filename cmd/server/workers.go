@@ -353,6 +353,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "threat-intel-refresh"),
 	))
 
+	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
+	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
+	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
+		svc.CTEMID,
+		log.With("controller", "ctem-id-refresh"),
+	))
+
 	// Owner resolution — resolve owner_ref (email) to owner_id for assets
 	w.ControllerManager.Register(controller.NewOwnerResolutionController(
 		deps.DB,

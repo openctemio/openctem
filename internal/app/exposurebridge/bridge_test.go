@@ -131,6 +131,30 @@ func newSecretFinding(t *testing.T, tenantID, assetID shared.ID) *vulnerability.
 	return f
 }
 
+func newMisconfigFinding(t *testing.T, tenantID, assetID shared.ID) *vulnerability.Finding {
+	t.Helper()
+	f, err := vulnerability.NewFinding(
+		tenantID,
+		assetID,
+		vulnerability.FindingSourceIaC,
+		"checkov",
+		vulnerability.SeverityHigh,
+		"S3 bucket is public",
+	)
+	if err != nil {
+		t.Fatalf("NewFinding: %v", err)
+	}
+	f.SetFindingType(vulnerability.FindingTypeMisconfiguration)
+	f.SetTitle("S3 bucket is public")
+	f.SetFingerprint("fp-misconfig-1")
+	f.SetMisconfigPolicyID("CKV_AWS_20")
+	f.SetMisconfigPolicyName("S3 Bucket should not be public")
+	f.SetMisconfigResourceType("aws_s3_bucket")
+	f.SetMisconfigResourceName("data-lake")
+	f.SetMisconfigResourcePath("terraform/s3.tf")
+	return f
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -263,6 +287,76 @@ func TestBridge_NonSecretFindingIgnored(t *testing.T) {
 
 	if repo.createCalls != 0 || len(repo.byID) != 0 {
 		t.Errorf("non-secret finding must not create an exposure event (creates=%d, events=%d)", repo.createCalls, len(repo.byID))
+	}
+}
+
+func TestBridge_CreatesMisconfigurationExposure(t *testing.T) {
+	repo := newFakeExposureRepo()
+	bridge := exposurebridge.NewBridge(repo, nil, testLogger())
+
+	tenantID := shared.NewID()
+	assetID := shared.NewID()
+	f := newMisconfigFinding(t, tenantID, assetID)
+
+	if err := bridge.ApplyBatch(context.Background(), tenantID, []*vulnerability.Finding{f}); err != nil {
+		t.Fatalf("ApplyBatch: %v", err)
+	}
+
+	if repo.createCalls != 1 || len(repo.byID) != 1 {
+		t.Fatalf("expected 1 exposure event (creates=%d, events=%d)", repo.createCalls, len(repo.byID))
+	}
+
+	var event *exposure.ExposureEvent
+	for _, e := range repo.byID {
+		event = e
+	}
+	if event.EventType() != exposure.EventTypeMisconfiguration {
+		t.Errorf("event_type = %q, want misconfiguration", event.EventType())
+	}
+	if event.Source() != exposurebridge.SourceMisconfigScan {
+		t.Errorf("source = %q, want %q", event.Source(), exposurebridge.SourceMisconfigScan)
+	}
+	details := event.Details()
+	if got := details["policy_id"]; got != "CKV_AWS_20" {
+		t.Errorf("policy_id = %v, want CKV_AWS_20", got)
+	}
+	if got := details["discovery_source"]; got != exposurebridge.SourceMisconfigScan {
+		t.Errorf("discovery_source = %v, want %q", got, exposurebridge.SourceMisconfigScan)
+	}
+	if event.AssetID() == nil || event.AssetID().String() != assetID.String() {
+		t.Errorf("asset link = %v, want %s", event.AssetID(), assetID.String())
+	}
+	if event.Severity() != exposure.SeverityHigh {
+		t.Errorf("severity = %q, want high", event.Severity())
+	}
+}
+
+func TestBridge_MisconfigReIngestDedupes(t *testing.T) {
+	repo := newFakeExposureRepo()
+	bridge := exposurebridge.NewBridge(repo, nil, testLogger())
+
+	tenantID := shared.NewID()
+	assetID := shared.NewID()
+
+	f1 := newMisconfigFinding(t, tenantID, assetID)
+	if err := bridge.ApplyBatch(context.Background(), tenantID, []*vulnerability.Finding{f1}); err != nil {
+		t.Fatalf("ApplyBatch #1: %v", err)
+	}
+	// Re-scan: same misconfigured resource (same title/source/asset/path) but a
+	// new finding row — must fold onto the one Exposure Register entry.
+	f2 := newMisconfigFinding(t, tenantID, assetID)
+	if err := bridge.ApplyBatch(context.Background(), tenantID, []*vulnerability.Finding{f2}); err != nil {
+		t.Fatalf("ApplyBatch #2: %v", err)
+	}
+
+	if repo.createCalls != 1 {
+		t.Errorf("expected exactly 1 create across re-ingest, got %d", repo.createCalls)
+	}
+	if repo.updateCalls != 1 {
+		t.Errorf("expected 1 update (mark-seen) on re-ingest, got %d", repo.updateCalls)
+	}
+	if len(repo.byID) != 1 {
+		t.Errorf("expected 1 exposure event after re-ingest, got %d", len(repo.byID))
 	}
 }
 

@@ -225,6 +225,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		GitHubWebhook:             githubWebhookHandler,
 		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:               handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
+		CTEMID:                    handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport:          handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch

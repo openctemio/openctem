@@ -372,3 +372,34 @@ func (e *ExposureEvent) GetDetail(key string) (any, bool) {
 	v, ok := e.details[key]
 	return v, ok
 }
+
+// ctemIDDetailKey is the details map key under which a CTEM-ID catalog tag is
+// stored. CTEM-IDs are standardized exposure-catalog identifiers (like CVE, but
+// for exposure classes: brand impersonation, credential dumps, lookalike
+// domains, ransomware, source-code/system exposure, ...). Tagging reuses the
+// existing details JSONB so no schema change is needed. It is deliberately NOT
+// part of generateFingerprint's whitelist, so tagging never changes the dedupe
+// identity of an exposure.
+const ctemIDDetailKey = "ctem_id"
+
+// CTEMID returns the CTEM-ID catalog tag on this exposure, or "" if untagged.
+func (e *ExposureEvent) CTEMID() string {
+	if v, ok := e.details[ctemIDDetailKey]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// SetCTEMID tags the exposure with a CTEM-ID catalog identifier (empty clears
+// the tag). ctem_id is not in the fingerprint whitelist, so the dedupe identity
+// is unchanged.
+func (e *ExposureEvent) SetCTEMID(ctemID string) {
+	if ctemID == "" {
+		delete(e.details, ctemIDDetailKey)
+	} else {
+		e.details[ctemIDDetailKey] = ctemID
+	}
+	e.updatedAt = time.Now().UTC()
+}

@@ -40,6 +40,10 @@ func registerExposureRoutes(
 		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.Require(permission.FindingsWrite))
 		r.POST("/{id}/reactivate", h.Reactivate, middleware.Require(permission.FindingsWrite))
 
+		// CTEM-ID tag: associate a standardized exposure-catalog id with this
+		// exposure (stored on the exposure's details; no schema change).
+		r.PUT("/{id}/ctem-id", h.SetCTEMID, middleware.Require(permission.FindingsWrite))
+
 		// History
 		r.GET("/{id}/history", h.GetHistory, middleware.Require(permission.FindingsRead))
 

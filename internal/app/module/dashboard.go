@@ -120,6 +120,15 @@ type DataQualityScorecard struct {
 	DeduplicationRate  float64 `json:"deduplication_rate"`
 	TotalAssets        int     `json:"total_assets"`
 	TotalFindings      int     `json:"total_findings"`
+
+	// Freshness (CTEM Discovery data-quality). MedianLastSeenAgeHours is the
+	// median age, in hours, of the most recent observation across ALL assets
+	// with a last_seen timestamp (how current the inventory is). StaleAssetPct
+	// is the percentage of assets not re-observed in the last 30 days — a
+	// coverage-decay signal distinct from MedianLastSeenDays (which is scoped to
+	// internet-exposed assets only).
+	MedianLastSeenAgeHours float64 `json:"median_last_seen_age_hours"`
+	StaleAssetPct          float64 `json:"stale_asset_pct"`
 }
 
 // AssetStatsData holds raw asset statistics from repository.

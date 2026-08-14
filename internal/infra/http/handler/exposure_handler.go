@@ -47,6 +47,7 @@ type ExposureResponse struct {
 	Title           string         `json:"title"`
 	Description     string         `json:"description,omitempty"`
 	Details         map[string]any `json:"details,omitempty"`
+	CTEMID          string         `json:"ctem_id,omitempty"`
 	Fingerprint     string         `json:"fingerprint"`
 	Source          string         `json:"source"`
 	FirstSeenAt     time.Time      `json:"first_seen_at"`
@@ -72,6 +73,11 @@ type CreateExposureRequest struct {
 // ChangeStateRequest represents the request to change exposure state.
 type ChangeStateRequest struct {
 	Reason string `json:"reason" validate:"max=500"`
+}
+
+// SetCTEMIDRequest represents the request to tag an exposure with a CTEM-ID.
+type SetCTEMIDRequest struct {
+	CTEMID string `json:"ctem_id" validate:"max=100"`
 }
 
 // BulkIngestRequest represents the request to bulk ingest exposures.
@@ -125,6 +131,7 @@ func toExposureResponse(e *exposure.ExposureEvent) ExposureResponse {
 		Title:           e.Title(),
 		Description:     e.Description(),
 		Details:         e.Details(),
+		CTEMID:          e.CTEMID(),
 		Fingerprint:     e.Fingerprint(),
 		Source:          e.Source(),
 		FirstSeenAt:     e.FirstSeenAt(),
@@ -475,6 +482,34 @@ func (h *ExposureHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event, err := h.service.ResolveExposure(r.Context(), tenantID, exposureID, userID, req.Reason)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toExposureResponse(event))
+}
+
+// SetCTEMID handles PUT /api/v1/exposures/{id}/ctem-id — it associates a
+// standardized CTEM-ID catalog identifier with an exposure (empty clears it).
+// Baselined in api/openapi/undocumented-routes.txt.
+func (h *ExposureHandler) SetCTEMID(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	exposureID := chi.URLParam(r, "id")
+
+	var req SetCTEMIDRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	event, err := h.service.TagCTEMID(r.Context(), tenantID, exposureID, req.CTEMID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

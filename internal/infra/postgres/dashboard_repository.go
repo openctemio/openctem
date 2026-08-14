@@ -965,7 +965,11 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 				COUNT(*) FILTER(WHERE owner_id IS NOT NULL) AS with_owner,
 				COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP(
 					ORDER BY EXTRACT(epoch FROM NOW() - last_seen) / 86400.0
-				) FILTER(WHERE exposure = 'internet' AND last_seen IS NOT NULL), 0) AS median_last_seen_days
+				) FILTER(WHERE exposure = 'internet' AND last_seen IS NOT NULL), 0) AS median_last_seen_days,
+				COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP(
+					ORDER BY EXTRACT(epoch FROM NOW() - last_seen) / 3600.0
+				) FILTER(WHERE last_seen IS NOT NULL), 0) AS median_last_seen_age_hours,
+				COUNT(*) FILTER(WHERE last_seen IS NOT NULL AND last_seen < NOW() - INTERVAL '30 days') AS stale_count
 			FROM assets WHERE tenant_id = $1
 		),
 		finding_stats AS (
@@ -984,7 +988,9 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 			a.median_last_seen_days,
 			CASE WHEN a.total > 0 THEN d.merge_count * 100.0 / a.total ELSE 0 END,
 			a.total,
-			f.total
+			f.total,
+			a.median_last_seen_age_hours,
+			CASE WHEN a.total > 0 THEN a.stale_count * 100.0 / a.total ELSE 0 END
 		FROM asset_stats a, finding_stats f, dedup_stats d
 	`
 
@@ -997,6 +1003,8 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 		&sc.DeduplicationRate,
 		&assetTotal,
 		&findingTotal,
+		&sc.MedianLastSeenAgeHours,
+		&sc.StaleAssetPct,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("data quality scorecard: %w", err)
