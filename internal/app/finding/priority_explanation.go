@@ -42,6 +42,7 @@ type PriorityFactors struct {
 	AssetCriticality     string   `json:"asset_criticality,omitempty"`
 	AssetExposure        string   `json:"asset_exposure,omitempty"`
 	AssetIsCrownJewel    bool     `json:"asset_is_crown_jewel"`
+	AssetUnowned         bool     `json:"asset_unowned"`
 	IsProtected          bool     `json:"is_protected"`
 	ControlReductionPct  float64  `json:"control_reduction_pct"`
 
@@ -78,7 +79,13 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 	}
 
 	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, []shared.ID{f.ID()})
-	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), aiFP)
+	// Owner presence only feeds the explanation when the tenant enabled the floor
+	// (matches the live classify path — the reason must not appear when off).
+	var hasOwner map[shared.ID]bool
+	if s.ownershipFloorEnabled(ctx, tenantID) {
+		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(a))
+	}
+	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), aiFP, hasOwner)
 
 	// Compensating-control reduction (same as the live classify path — shared
 	// helper, so the explanation cannot drift from what ClassifyFinding does).
@@ -109,6 +116,7 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 			AssetCriticality:     pctx.AssetCriticality,
 			AssetExposure:        pctx.AssetExposure,
 			AssetIsCrownJewel:    pctx.AssetIsCrownJewel,
+			AssetUnowned:         pctx.AssetUnowned,
 			IsProtected:          pctx.IsProtected,
 			ControlReductionPct:  pctx.ControlReductionFactor * 100,
 			Reachable:            pctx.IsReachable || pctx.IsInternetAccessible || pctx.OnOpenThreatPath,

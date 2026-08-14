@@ -750,6 +750,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// service criticality actually drives priority. Batch-first; nil-safe.
 	s.PriorityClassification.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
 
+	// CTEM ownership rule: a finding on an asset with NO assigned owner cannot be
+	// safely deprioritized, so it is floored at P2. Opt-in per tenant via
+	// RiskScoring.FloorUnownedAtP2 (default OFF — no silent change for existing
+	// tenants). The owner-presence lookup is batch + tenant-scoped and only runs
+	// for tenants that enabled the floor.
+	s.PriorityClassification.SetAssetOwnerLookup(postgres.NewAssetOwnershipLookupRepo(deps.DB))
+	s.PriorityClassification.SetOwnershipFloorPolicy(app.NewTenantOwnershipFloorPolicy(repos.Tenant))
+
 	// anti-flap priority flood guard. Caps per-tenant top-class
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
 	// bursts while keeping the classification itself intact on the

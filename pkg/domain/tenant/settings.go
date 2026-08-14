@@ -484,6 +484,18 @@ type RiskScoringSettings struct {
 	// weighted raw score: "multiply" (default) or "amplify_headroom". Empty / unset
 	// resolves to "multiply" so pre-existing tenant settings are unchanged.
 	ScoreCompositionMode string `json:"score_composition_mode,omitempty"`
+
+	// FloorUnownedAtP2 opts the tenant into the CTEM "ownership unknown defaults to
+	// P2 minimum" rule for finding priority: a finding on an asset with NO assigned
+	// owner is never classified below P2 (an unowned finding cannot be safely
+	// deprioritized). It is a strict FLOOR — it only ever raises a P3 to P2, never
+	// lowers anything and never touches P0/P1/P2.
+	//
+	// Default false (opt-in): existing tenants see NO change, and tenants with poor
+	// ownership hygiene early on aren't flooded with an inflated P2 backlog. Toggle
+	// it via PATCH /settings/risk-scoring. When false the classifier does not even
+	// look up owner presence, so there is zero behavior or cost change.
+	FloorUnownedAtP2 bool `json:"floor_unowned_at_p2,omitempty"`
 }
 
 type ComponentWeights struct {

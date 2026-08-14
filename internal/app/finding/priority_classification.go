@@ -58,7 +58,16 @@ type PriorityClassificationService struct {
 	// ONLY signal permitted to lower priority. Optional — nil keeps classification
 	// unchanged (no AI signal → never a downgrade). See priority_ai_triage.go.
 	aiTriage AITriageVerdictLookup
-	logger   *logger.Logger
+	// assetOwner reports, per asset, whether an owner is assigned (batch,
+	// tenant-scoped). It backs the CTEM "ownership unknown defaults to P2
+	// minimum" floor: a finding on an unowned asset is never below P2. Optional —
+	// nil keeps classification unchanged (no floor). See asset_ownership.go.
+	assetOwner AssetOwnerLookup
+	// ownershipFloor is the per-tenant toggle for that floor. The floor (and the
+	// owner-presence lookup) runs ONLY for tenants that enabled it, so it is
+	// opt-in and never a blanket forced change. Nil → off for every tenant.
+	ownershipFloor OwnershipFloorPolicy
+	logger         *logger.Logger
 }
 
 // SetControlLookup wires the compensating control lookup for priority calculation.
@@ -352,7 +361,13 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	// signal, if wired). Both oracle lookups are tenant-scoped and cached.
 	reachable := s.reachableSet(ctx, tenantID)
 	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, []shared.ID{finding.ID()})
-	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID), aiFP)
+	// Owner presence feeds the CTEM ownership floor, but only when the tenant
+	// opted in — otherwise we skip the lookup entirely (no floor, no query).
+	var hasOwner map[shared.ID]bool
+	if s.ownershipFloorEnabled(ctx, tenantID) {
+		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(assetEntity))
+	}
+	pctx := s.buildPriorityContext(finding, assetEntity, effCrit, reachable, s.threatenedSet(ctx, tenantID), aiFP, hasOwner)
 
 	// Compensating controls on the finding's asset suppress P1 / force P2.
 	s.applyControlProtection(ctx, tenantID, finding.AssetID(), &pctx)
@@ -666,6 +681,21 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 	reachable := s.reachableSet(ctx, tenantID)
 	threatened := s.threatenedSet(ctx, tenantID)
 
+	// Owner presence for the whole batch — ONE tenant-scoped query over every
+	// asset id (mirrors the compensating-control / business-context preloads
+	// above), so the CTEM ownership floor never costs a per-finding query. Only
+	// run when the tenant opted into the floor; otherwise leave hasOwner nil so
+	// classification is unchanged (no floor, no query). A nil lookup or an error
+	// also yields nil -> no floor (fail-safe).
+	var hasOwner map[shared.ID]bool
+	if s.ownershipFloorEnabled(ctx, tenantID) {
+		ownerAssetIDs := make([]shared.ID, 0, len(assets))
+		for aid := range assets {
+			ownerAssetIDs = append(ownerAssetIDs, aid)
+		}
+		hasOwner = s.ownerPresence(ctx, tenantID, ownerAssetIDs)
+	}
+
 	// AI-triage false-positive verdicts for the whole batch — ONE tenant-scoped
 	// query for every finding id, no per-finding N+1 (mirrors the preloads above).
 	findingIDs := make([]shared.ID, 0, len(findings))
@@ -703,7 +733,7 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		// Business-aligned effective criticality from the preloaded batch map.
 		effCrit, critReason := asset.EffectiveCriticality(a.Criticality(), businessCtx[f.AssetID()])
 
-		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened, aiFP)
+		pctx := s.buildPriorityContext(f, a, effCrit, reachable, threatened, aiFP, hasOwner)
 		// Same rule as applyControlProtection, fed from the batch map above so
 		// the sweep stays one query for the whole batch instead of per finding.
 		setControlProtection(&pctx, controlReduction[f.AssetID()])
@@ -737,7 +767,10 @@ func classifyContext(rules []*vulnerability.PriorityOverrideRule, pctx vulnerabi
 // its own and any business-unit / business-service criticality; "" falls back to
 // the asset's own criticality. reachable is the tenant's attack-path-reachable
 // asset set (may be nil). threatened is the tenant's open-threat-path asset set
-// (may be nil).
+// (may be nil). hasOwner reports which assets have an assigned owner; a NON-NIL
+// map means owner presence was looked up (so the ownership floor may apply),
+// while a nil map means owner data was unavailable (floor never applies —
+// fail-safe).
 func (s *PriorityClassificationService) buildPriorityContext(
 	f *vulnerability.Finding,
 	a *asset.Asset,
@@ -745,6 +778,7 @@ func (s *PriorityClassificationService) buildPriorityContext(
 	reachable map[string]bool,
 	threatened map[string]bool,
 	aiFP map[shared.ID]AIFalsePositiveVerdict,
+	hasOwner map[shared.ID]bool,
 ) vulnerability.PriorityContext {
 	ctx := vulnerability.PriorityContext{
 		Severity:             f.Severity(),
@@ -829,6 +863,16 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		// only raises, never lowers.
 		if threatened[a.ID().String()] {
 			ctx.OnOpenThreatPath = true
+		}
+
+		// CTEM ownership rule (close-the-loop): a finding on an asset with no
+		// assigned owner cannot be safely deprioritized, so it is floored at P2
+		// (see vulnerability.applyOwnershipFloor). Only ever set when owner
+		// presence was actually looked up (hasOwner != nil) — a nil map means the
+		// signal was unavailable, and we leave AssetUnowned false so classification
+		// is unchanged rather than mislabelling an owned asset as unowned.
+		if hasOwner != nil && !hasOwner[a.ID()] {
+			ctx.AssetUnowned = true
 		}
 	}
 

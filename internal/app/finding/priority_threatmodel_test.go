@@ -21,7 +21,7 @@ func TestBuildPriorityContext_OpenThreatPathPromotesToP0(t *testing.T) {
 	a := newTestAsset(t, asset.ExposurePrivate)
 	threatened := map[string]bool{a.ID().String(): true}
 
-	ctx := svc.buildPriorityContext(newTestFinding(t), a, "", nil, threatened, nil)
+	ctx := svc.buildPriorityContext(newTestFinding(t), a, "", nil, threatened, nil, nil)
 
 	if !ctx.OnOpenThreatPath {
 		t.Fatal("asset in the threatened set must have OnOpenThreatPath=true")
@@ -44,8 +44,8 @@ func TestBuildPriorityContext_ThreatPathRaisesRelativeToOffPath(t *testing.T) {
 	offPath := newTestAsset(t, asset.ExposurePrivate)
 	threatened := map[string]bool{onPath.ID().String(): true}
 
-	onCtx := svc.buildPriorityContext(newTestFinding(t), onPath, "", nil, threatened, nil)
-	offCtx := svc.buildPriorityContext(newTestFinding(t), offPath, "", nil, threatened, nil)
+	onCtx := svc.buildPriorityContext(newTestFinding(t), onPath, "", nil, threatened, nil, nil)
+	offCtx := svc.buildPriorityContext(newTestFinding(t), offPath, "", nil, threatened, nil, nil)
 
 	on := vulnerability.ClassifyPriority(onCtx)
 	off := vulnerability.ClassifyPriority(offCtx)
@@ -72,8 +72,8 @@ func TestBuildPriorityContext_ThreatPathRaisesMediumFinding(t *testing.T) {
 	}
 
 	a := newTestAsset(t, asset.ExposurePrivate)
-	off := vulnerability.ClassifyPriority(svc.buildPriorityContext(mkMedium(), a, "", nil, nil, nil))
-	on := vulnerability.ClassifyPriority(svc.buildPriorityContext(mkMedium(), a, "", nil, map[string]bool{a.ID().String(): true}, nil))
+	off := vulnerability.ClassifyPriority(svc.buildPriorityContext(mkMedium(), a, "", nil, nil, nil, nil))
+	on := vulnerability.ClassifyPriority(svc.buildPriorityContext(mkMedium(), a, "", nil, map[string]bool{a.ID().String(): true}, nil, nil))
 
 	if off.Class != vulnerability.PriorityP3 {
 		t.Fatalf("off-path medium on private asset should be P3, got %s", off.Class)
@@ -88,8 +88,8 @@ func TestBuildPriorityContext_NoThreatModelNoChange(t *testing.T) {
 	svc := newReachabilitySvc()
 	a := newTestAsset(t, asset.ExposurePrivate)
 
-	base := vulnerability.ClassifyPriority(svc.buildPriorityContext(newTestFinding(t), a, "", nil, nil, nil))
-	empty := vulnerability.ClassifyPriority(svc.buildPriorityContext(newTestFinding(t), a, "", nil, map[string]bool{}, nil))
+	base := vulnerability.ClassifyPriority(svc.buildPriorityContext(newTestFinding(t), a, "", nil, nil, nil, nil))
+	empty := vulnerability.ClassifyPriority(svc.buildPriorityContext(newTestFinding(t), a, "", nil, map[string]bool{}, nil, nil))
 
 	if base.Class != empty.Class {
 		t.Fatalf("nil vs empty threat set must classify identically: %s vs %s", base.Class, empty.Class)
@@ -103,7 +103,7 @@ func TestBuildPriorityContext_NoThreatModelNoChange(t *testing.T) {
 func TestBuildPriorityContext_ThreatSetDoesNotLeak(t *testing.T) {
 	svc := newReachabilitySvc()
 	a := newTestAsset(t, asset.ExposurePrivate)
-	ctx := svc.buildPriorityContext(newTestFinding(t), a, "", nil, map[string]bool{"some-other-asset": true}, nil)
+	ctx := svc.buildPriorityContext(newTestFinding(t), a, "", nil, map[string]bool{"some-other-asset": true}, nil, nil)
 	if ctx.OnOpenThreatPath {
 		t.Fatal("an asset absent from the threatened set must have OnOpenThreatPath=false")
 	}

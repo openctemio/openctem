@@ -44,7 +44,7 @@ func TestBuildPriorityContext_AIFalsePositiveDeescalates(t *testing.T) {
 	}
 
 	svc := newReachabilitySvc()
-	ctx := svc.buildPriorityContext(f, a, "", nil, nil, verdict)
+	ctx := svc.buildPriorityContext(f, a, "", nil, nil, verdict, nil)
 	if !ctx.AIFalsePositiveLikely || ctx.AIFalsePositiveLikelihood != 0.9 {
 		t.Fatalf("expected AI FP signal set on context, got likely=%v likelihood=%v",
 			ctx.AIFalsePositiveLikely, ctx.AIFalsePositiveLikelihood)
@@ -54,7 +54,7 @@ func TestBuildPriorityContext_AIFalsePositiveDeescalates(t *testing.T) {
 	}
 
 	// Without a verdict the same finding stays P1.
-	noVerdict := svc.buildPriorityContext(f, a, "", nil, nil, nil)
+	noVerdict := svc.buildPriorityContext(f, a, "", nil, nil, nil, nil)
 	if noVerdict.AIFalsePositiveLikely {
 		t.Fatal("no verdict must leave AIFalsePositiveLikely false")
 	}

@@ -86,6 +86,7 @@ var (
 	NewFindingSourceCacheService           = finding.NewFindingSourceCacheService
 	NewFindingSourceService                = finding.NewFindingSourceService
 	NewPriorityClassificationService       = finding.NewPriorityClassificationService
+	NewTenantOwnershipFloorPolicy          = finding.NewTenantOwnershipFloorPolicy
 	NewPriorityFloodGuard                  = finding.NewPriorityFloodGuard
 	NewOutboxPriorityChangePublisher       = finding.NewOutboxPriorityChangePublisher
 	NewBulkGuard                           = finding.NewBulkGuard
