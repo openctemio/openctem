@@ -456,6 +456,14 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: compute & persist the cycle metrics now that the
 	// window [activated_at, closed_at] is final. Never block the close
 	// on a metrics error — the lazy compute-on-read path backfills.
+	//
+	// FUTURE HOOK (charter success criteria): the Charter now carries
+	// SuccessCriteria (name/metric/target). Once the persisted metrics
+	// above are available here, this is the natural place to evaluate
+	// each criterion against its real close-loop metric and record a
+	// met/unmet verdict on the cycle. That evaluation engine is out of
+	// scope for this change — the criteria are persisted on the charter
+	// only; nothing consumes them yet.
 	h.persistMetrics(r.Context(), tenantID, id)
 
 	writeJSON(w, http.StatusOK, c)

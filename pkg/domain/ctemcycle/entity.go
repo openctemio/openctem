@@ -19,11 +19,61 @@ const (
 )
 
 // Charter holds the business context for a CTEM cycle.
+//
+// Beyond the original asset/service scope (BusinessPriorities, RiskAppetite,
+// InScopeServices, Objectives), the charter captures the ctem.org scope-charter
+// playbook elements so a cycle's scope is defined by what it defends against,
+// how success is measured, what is deliberately excluded (and why), and who
+// owns escalation — not just an asset list. All playbook fields are optional
+// and additive: the struct is (de)serialized to the ctem_cycles.charter JSONB
+// column, so charters written before these fields existed still load with the
+// new fields left at their zero value.
 type Charter struct {
 	BusinessPriorities []string `json:"business_priorities"`
 	RiskAppetite       string   `json:"risk_appetite"`
 	InScopeServices    []string `json:"in_scope_services"`
 	Objectives         []string `json:"objectives"`
+
+	// ThreatScenarios names what the cycle is defending against
+	// (e.g. "ransomware via exposed RDP", "supply-chain compromise"),
+	// framing scope by adversary behavior rather than assets alone.
+	ThreatScenarios []string `json:"threat_scenarios,omitempty"`
+	// Exclusions lists what is explicitly out of scope, each with a
+	// reason, so a deferral is a reasoned decision rather than a silent gap.
+	Exclusions []CharterExclusion `json:"exclusions,omitempty"`
+	// SuccessCriteria are the measurable/verifiable conditions that define
+	// a successful cycle. They are persisted here; evaluating them against
+	// real close-loop metrics is a future hook (see the CTEMCycleHandler
+	// Close path where cycle metrics are computed).
+	SuccessCriteria []CharterSuccessCriterion `json:"success_criteria,omitempty"`
+	// EscalationPath records who blockers escalate to (person, role or channel).
+	EscalationPath string `json:"escalation_path,omitempty"`
+	// Roles records the accountable owners for the cycle.
+	Roles CharterRoles `json:"roles,omitempty"`
+	// Timeline is an optional free-text schedule/cadence for the cycle.
+	Timeline string `json:"timeline,omitempty"`
+}
+
+// CharterExclusion is an item deliberately left out of a cycle's scope,
+// paired with the reason it was excluded.
+type CharterExclusion struct {
+	Item   string `json:"item"`
+	Reason string `json:"reason"`
+}
+
+// CharterSuccessCriterion is a measurable/verifiable condition that defines
+// cycle success — a named target expressed as a metric and its goal value.
+type CharterSuccessCriterion struct {
+	Name   string `json:"name"`
+	Metric string `json:"metric"`
+	Target string `json:"target"`
+}
+
+// CharterRoles records the accountable owners for a cycle's execution.
+type CharterRoles struct {
+	Sponsor            string `json:"sponsor,omitempty"`
+	Operator           string `json:"operator,omitempty"`
+	EngineeringPartner string `json:"engineering_partner,omitempty"`
 }
 
 // CycleMetric holds a computed metric for a cycle.
