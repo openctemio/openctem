@@ -30,6 +30,11 @@ func (m *MockSuppressionRepository) Save(_ context.Context, rule *suppression.Ru
 	return nil
 }
 
+func (m *MockSuppressionRepository) SaveWithAudit(_ context.Context, rule *suppression.Rule, _ string, _ *shared.ID, _ map[string]any) error {
+	m.rules[rule.ID()] = rule
+	return nil
+}
+
 func (m *MockSuppressionRepository) FindByID(_ context.Context, tenantID, ruleID shared.ID) (*suppression.Rule, error) {
 	rule, ok := m.rules[ruleID]
 	if !ok || rule.TenantID() != tenantID {

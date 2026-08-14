@@ -31,6 +31,15 @@ var _ integration.NotificationExtensionRepository = (*IntegrationNotificationExt
 
 // Create creates a new notification extension.
 func (r *IntegrationNotificationExtensionRepository) Create(ctx context.Context, ext *integration.NotificationExtension) error {
+	return r.createWithExecutor(ctx, r.db, ext)
+}
+
+// CreateInTx creates a new notification extension within an existing transaction.
+func (r *IntegrationNotificationExtensionRepository) CreateInTx(ctx context.Context, tx *sql.Tx, ext *integration.NotificationExtension) error {
+	return r.createWithExecutor(ctx, tx, ext)
+}
+
+func (r *IntegrationNotificationExtensionRepository) createWithExecutor(ctx context.Context, exec executor, ext *integration.NotificationExtension) error {
 	// Convert severities to JSON
 	severitiesJSON, err := json.Marshal(ext.EnabledSeverities())
 	if err != nil {
@@ -54,7 +63,7 @@ func (r *IntegrationNotificationExtensionRepository) Create(ctx context.Context,
 		)
 	`
 
-	_, err = r.db.ExecContext(ctx, query,
+	_, err = exec.ExecContext(ctx, query,
 		ext.IntegrationID().String(),
 		severitiesJSON,
 		eventTypesJSON,

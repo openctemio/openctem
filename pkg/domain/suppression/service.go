@@ -67,19 +67,16 @@ func (s *Service) CreateRule(ctx context.Context, input CreateRuleInput) (*Rule,
 		rule.SetExpiresAt(&expiresAt)
 	}
 
-	// Save
-	if err := s.repo.Save(ctx, rule); err != nil {
-		return nil, err
-	}
-
-	// Record audit
-	_ = s.repo.RecordAudit(ctx, rule.ID(), "created", &input.RequestedBy, map[string]any{
+	// Save the rule and its audit entry atomically.
+	if err := s.repo.SaveWithAudit(ctx, rule, "created", &input.RequestedBy, map[string]any{
 		"name":             input.Name,
 		"suppression_type": string(input.SuppressionType),
 		"rule_id":          input.RuleID,
 		"tool_name":        input.ToolName,
 		"path_pattern":     input.PathPattern,
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	return rule, nil
 }
@@ -105,12 +102,10 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*Rul
 		return nil, err
 	}
 
-	if err := s.repo.Save(ctx, rule); err != nil {
+	// Save the rule and its audit entry atomically.
+	if err := s.repo.SaveWithAudit(ctx, rule, "approved", &input.ApprovedBy, nil); err != nil {
 		return nil, err
 	}
-
-	// Record audit
-	_ = s.repo.RecordAudit(ctx, rule.ID(), "approved", &input.ApprovedBy, nil)
 
 	return rule, nil
 }
@@ -137,14 +132,12 @@ func (s *Service) RejectRule(ctx context.Context, input RejectRuleInput) (*Rule,
 		return nil, err
 	}
 
-	if err := s.repo.Save(ctx, rule); err != nil {
+	// Save the rule and its audit entry atomically.
+	if err := s.repo.SaveWithAudit(ctx, rule, "rejected", &input.RejectedBy, map[string]any{
+		"reason": input.Reason,
+	}); err != nil {
 		return nil, err
 	}
-
-	// Record audit
-	_ = s.repo.RecordAudit(ctx, rule.ID(), "rejected", &input.RejectedBy, map[string]any{
-		"reason": input.Reason,
-	})
 
 	return rule, nil
 }
@@ -219,12 +212,10 @@ func (s *Service) UpdateRule(ctx context.Context, input UpdateRuleInput) (*Rule,
 		return nil, err
 	}
 
-	if err := s.repo.Save(ctx, rule); err != nil {
+	// Save the rule and its audit entry atomically.
+	if err := s.repo.SaveWithAudit(ctx, rule, "updated", &input.UpdatedBy, changes); err != nil {
 		return nil, err
 	}
-
-	// Record audit
-	_ = s.repo.RecordAudit(ctx, rule.ID(), "updated", &input.UpdatedBy, changes)
 
 	return rule, nil
 }

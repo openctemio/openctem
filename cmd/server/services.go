@@ -1032,6 +1032,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
+	s.Integration.SetTransactionDB(deps.DB)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
 	s.Integration.SetRepoImportRepos(repos.Asset, repos.RepoExt, repos.Branch)

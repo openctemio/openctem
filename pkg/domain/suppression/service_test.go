@@ -38,6 +38,18 @@ func (m *mockRepository) Save(_ context.Context, rule *Rule) error {
 	return nil
 }
 
+// SaveWithAudit mirrors the atomic repository method: the rule save and the
+// audit record either both take effect or neither does. A save error aborts
+// before the audit is recorded.
+func (m *mockRepository) SaveWithAudit(_ context.Context, rule *Rule, action string, userID *shared.ID, details map[string]any) error {
+	if m.saveErr != nil {
+		return m.saveErr
+	}
+	m.rules[rule.ID()] = rule
+	m.auditCalls = append(m.auditCalls, auditCall{rule.ID(), action, userID, details})
+	return nil
+}
+
 func (m *mockRepository) FindByID(_ context.Context, tenantID, ruleID shared.ID) (*Rule, error) {
 	if m.findErr != nil {
 		return nil, m.findErr

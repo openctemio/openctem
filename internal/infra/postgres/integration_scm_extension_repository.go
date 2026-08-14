@@ -32,6 +32,15 @@ var _ integration.SCMExtensionRepository = (*IntegrationSCMExtensionRepository)(
 
 // Create creates a new SCM extension.
 func (r *IntegrationSCMExtensionRepository) Create(ctx context.Context, ext *integration.SCMExtension) error {
+	return r.createWithExecutor(ctx, r.db, ext)
+}
+
+// CreateInTx creates a new SCM extension within an existing transaction.
+func (r *IntegrationSCMExtensionRepository) CreateInTx(ctx context.Context, tx *sql.Tx, ext *integration.SCMExtension) error {
+	return r.createWithExecutor(ctx, tx, ext)
+}
+
+func (r *IntegrationSCMExtensionRepository) createWithExecutor(ctx context.Context, exec executor, ext *integration.SCMExtension) error {
 	query := `
 		INSERT INTO integration_scm_extensions (
 			integration_id, scm_organization, repository_count,
@@ -44,7 +53,7 @@ func (r *IntegrationSCMExtensionRepository) Create(ctx context.Context, ext *int
 		)
 	`
 
-	_, err := r.db.ExecContext(ctx, query,
+	_, err := exec.ExecContext(ctx, query,
 		ext.IntegrationID().String(),
 		ext.SCMOrganization(),
 		ext.RepositoryCount(),
