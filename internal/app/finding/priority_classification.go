@@ -810,6 +810,11 @@ func (s *PriorityClassificationService) buildPriorityContext(
 		}
 		ctx.AssetCriticality = string(crit)
 		ctx.AssetExposure = string(a.Exposure())
+
+		// CIA business-impact rating (Scoping critical-asset register) → impact
+		// signal. Only-raise: unset ratings (every existing asset) yield a zero
+		// score and no bump, so classification is byte-identical to before.
+		ctx.CIAImpactScore, ctx.CIAImpactHigh, ctx.CIAImpactDetail = ciaImpact(a)
 		// Crown jewel: check properties (DB column exposed via properties map)
 		if cj, ok := a.Properties()["is_crown_jewel"].(bool); ok && cj {
 			ctx.AssetIsCrownJewel = true

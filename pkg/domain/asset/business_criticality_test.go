@@ -70,6 +70,25 @@ func TestEffectiveCriticality(t *testing.T) {
 			wantCrit:   CriticalityLow,
 			wantReason: "business unit 'Lab'",
 		},
+		{
+			name: "control plane of a critical asset is raised to critical",
+			own:  CriticalityMedium,
+			bctx: BusinessContext{
+				ControlPlaneServesCriticality: CriticalityCritical,
+				ControlPlaneServesName:        "Checkout",
+			},
+			wantCrit:   CriticalityCritical,
+			wantReason: "control plane of 'Checkout'",
+		},
+		{
+			name: "lower control-plane target never lowers the floor",
+			own:  CriticalityHigh,
+			bctx: BusinessContext{
+				ControlPlaneServesCriticality: CriticalityLow,
+				ControlPlaneServesName:        "Sandbox",
+			},
+			wantCrit: CriticalityHigh,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

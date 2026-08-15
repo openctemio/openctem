@@ -53,6 +53,12 @@ type PriorityFactors struct {
 	IsProtected          bool     `json:"is_protected"`
 	ControlReductionPct  float64  `json:"control_reduction_pct"`
 
+	// CIA business-impact rating from the asset's critical-asset register. Score
+	// is the 0–5 impact contribution (MAX leg); Detail names the highest leg
+	// (e.g. "confidentiality=high"). Both zero/empty when no rating is set.
+	CIAImpactScore  float64 `json:"cia_impact_score"`
+	CIAImpactDetail string  `json:"cia_impact_detail,omitempty"`
+
 	// Derived gates (computed exactly as ClassifyPriority does).
 	Reachable     bool `json:"reachable"`
 	CriticalAsset bool `json:"critical_asset"`
@@ -126,6 +132,8 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 			AssetUnowned:         pctx.AssetUnowned,
 			IsProtected:          pctx.IsProtected,
 			ControlReductionPct:  pctx.ControlReductionFactor * 100,
+			CIAImpactScore:       pctx.CIAImpactScore,
+			CIAImpactDetail:      pctx.CIAImpactDetail,
 			Reachable:            pctx.IsReachable || pctx.IsInternetAccessible || pctx.OnOpenThreatPath,
 			CriticalAsset:        pctx.AssetCriticality == "critical" || pctx.AssetCriticality == "high",
 		},

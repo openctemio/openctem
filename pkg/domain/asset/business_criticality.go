@@ -22,6 +22,18 @@ type BusinessContext struct {
 	// BusinessServiceName names the service that supplied
 	// BusinessServiceCriticality, for the audit reason string.
 	BusinessServiceName string
+
+	// ControlPlaneServesCriticality is the MAX criticality across every asset
+	// this asset is a CONTROL PLANE for — i.e. the assets that depend on it via
+	// an is_control_plane relationship edge (an IdP/SSO, secrets store, CI/CD or
+	// SIEM that a business asset relies on). A control plane of a critical asset
+	// is itself critical: compromising it pulls in everything it serves, so its
+	// criticality is floored at the MAX criticality of what it serves. "" when
+	// the asset is no edge's control plane. Only ever RAISES (floor semantics).
+	ControlPlaneServesCriticality Criticality
+	// ControlPlaneServesName names one served asset that supplied
+	// ControlPlaneServesCriticality, for the audit reason string.
+	ControlPlaneServesName string
 }
 
 // criticalityRank orders the criticality enum for MAX comparison — higher is
@@ -32,12 +44,12 @@ type BusinessContext struct {
 func criticalityRank(c Criticality) int { return c.Score() }
 
 // EffectiveCriticality returns the business-aligned criticality — the MAX of the
-// asset's OWN criticality and any business-unit / business-service criticality —
-// together with an audit reason when a business signal RAISED it above the
-// asset's own. Floor semantics: the result is never below the asset's own
-// criticality, and a lower-criticality BU/service leaves it unchanged (empty
-// reason). When both a BU and a service raise it, the higher wins and the reason
-// names that source.
+// asset's OWN criticality, any business-unit / business-service criticality, and
+// the criticality of any asset this one is a CONTROL PLANE for — together with an
+// audit reason when a signal RAISED it above the asset's own. Floor semantics:
+// the result is never below the asset's own criticality, and a lower-criticality
+// signal leaves it unchanged (empty reason). When several signals raise it, the
+// higher wins and the reason names that source.
 func EffectiveCriticality(own Criticality, bctx BusinessContext) (Criticality, string) {
 	eff := own
 	reason := ""
@@ -49,6 +61,10 @@ func EffectiveCriticality(own Criticality, bctx BusinessContext) (Criticality, s
 	if bctx.BusinessServiceCriticality != "" && criticalityRank(bctx.BusinessServiceCriticality) > criticalityRank(eff) {
 		eff = bctx.BusinessServiceCriticality
 		reason = fmt.Sprintf("criticality raised to %s by business service '%s'", eff, bctx.BusinessServiceName)
+	}
+	if bctx.ControlPlaneServesCriticality != "" && criticalityRank(bctx.ControlPlaneServesCriticality) > criticalityRank(eff) {
+		eff = bctx.ControlPlaneServesCriticality
+		reason = fmt.Sprintf("criticality raised to %s: control plane of '%s'", eff, bctx.ControlPlaneServesName)
 	}
 
 	return eff, reason

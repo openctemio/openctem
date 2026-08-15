@@ -13,9 +13,10 @@ import (
 
 // BusinessContextLookupRepo resolves per-asset business-unit and
 // business-service criticality for business-aligned prioritization. It
-// implements finding.BusinessContextLookup with two batch, tenant-scoped
-// queries (one for BU membership, one for business-service membership) and
-// reduces each to the MAX criticality per asset in Go — no per-asset query.
+// implements finding.BusinessContextLookup with three batch, tenant-scoped
+// queries (BU membership, business-service membership, and control-plane
+// propagation) and reduces each to the MAX criticality per asset in Go — no
+// per-asset query.
 type BusinessContextLookupRepo struct {
 	db *sql.DB
 }
@@ -56,7 +57,7 @@ func (r *BusinessContextLookupRepo) GetForAssets(
 		WHERE bua.tenant_id = $1
 		  AND bua.asset_id = ANY($2)
 	`
-	if err := r.reduceMaxCriticality(ctx, buQuery, tenantID, idStrings, result, true); err != nil {
+	if err := r.reduceMaxCriticality(ctx, buQuery, tenantID, idStrings, result, applyBU); err != nil {
 		return nil, fmt.Errorf("business unit criticality lookup: %w", err)
 	}
 
@@ -70,23 +71,74 @@ func (r *BusinessContextLookupRepo) GetForAssets(
 		WHERE bsa.tenant_id = $1
 		  AND bsa.asset_id = ANY($2)
 	`
-	if err := r.reduceMaxCriticality(ctx, svcQuery, tenantID, idStrings, result, false); err != nil {
+	if err := r.reduceMaxCriticality(ctx, svcQuery, tenantID, idStrings, result, applyService); err != nil {
 		return nil, fmt.Errorf("business service criticality lookup: %w", err)
+	}
+
+	// Pass 3: control-plane propagation. An asset marked as the control plane of
+	// another (is_control_plane edge) is itself as critical as what it serves —
+	// compromising it pulls in the served asset. Per the #467 data model the
+	// control-plane asset is the TARGET of the edge and the served asset is the
+	// SOURCE (e.g. service --depends_on--> IdP, is_control_plane=true: the IdP is
+	// the control plane). So for each asset in the set, find the inbound
+	// is_control_plane edges and fold in the MAX criticality of the SOURCE
+	// (served) assets. Only ever raises (floor). Direction note: per-relationship-
+	// type normalization (manages/monitors put the control plane on the source)
+	// is a follow-up; today we key off the depends_on-style target endpoint.
+	cpQuery := `
+		SELECT ar.target_asset_id, sa.criticality, sa.name
+		FROM asset_relationships ar
+		JOIN assets sa
+		  ON sa.id = ar.source_asset_id AND sa.tenant_id = ar.tenant_id
+		WHERE ar.tenant_id = $1
+		  AND ar.is_control_plane = TRUE
+		  AND ar.target_asset_id = ANY($2)
+	`
+	if err := r.reduceMaxCriticality(ctx, cpQuery, tenantID, idStrings, result, applyControlPlane); err != nil {
+		return nil, fmt.Errorf("control-plane criticality lookup: %w", err)
 	}
 
 	return result, nil
 }
 
+// criticalityApplier folds one (criticality, name) membership row into an asset's
+// business context, updating the relevant leg when the row is more critical than
+// what is already recorded. Each pass (BU, service, control-plane) supplies its
+// own applier so reduceMaxCriticality stays generic.
+type criticalityApplier func(bctx *finding.AssetBusinessContext, crit asset.Criticality, name string)
+
+func applyBU(bctx *finding.AssetBusinessContext, crit asset.Criticality, name string) {
+	if crit.Score() > bctx.BusinessUnitCriticality.Score() {
+		bctx.BusinessUnitCriticality = crit
+		bctx.BusinessUnitName = name
+	}
+}
+
+func applyService(bctx *finding.AssetBusinessContext, crit asset.Criticality, name string) {
+	if crit.Score() > bctx.BusinessServiceCriticality.Score() {
+		bctx.BusinessServiceCriticality = crit
+		bctx.BusinessServiceName = name
+	}
+}
+
+func applyControlPlane(bctx *finding.AssetBusinessContext, crit asset.Criticality, name string) {
+	if crit.Score() > bctx.ControlPlaneServesCriticality.Score() {
+		bctx.ControlPlaneServesCriticality = crit
+		bctx.ControlPlaneServesName = name
+	}
+}
+
 // reduceMaxCriticality runs a membership query returning (asset_id, criticality,
-// name) rows and folds the MAX criticality per asset into result. When isBU is
-// true it fills the BusinessUnit* fields, otherwise the BusinessService* fields.
+// name) rows and folds the MAX criticality per asset into result via the supplied
+// applier (which decides WHICH leg — BU, service, or control-plane — the row
+// contributes to).
 func (r *BusinessContextLookupRepo) reduceMaxCriticality(
 	ctx context.Context,
 	query string,
 	tenantID shared.ID,
 	idStrings []string,
 	result map[shared.ID]finding.AssetBusinessContext,
-	isBU bool,
+	apply criticalityApplier,
 ) error {
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(idStrings))
 	if err != nil {
@@ -106,17 +158,7 @@ func (r *BusinessContextLookupRepo) reduceMaxCriticality(
 		crit := asset.Criticality(critStr)
 
 		bctx := result[aid]
-		if isBU {
-			if crit.Score() > bctx.BusinessUnitCriticality.Score() {
-				bctx.BusinessUnitCriticality = crit
-				bctx.BusinessUnitName = name
-			}
-		} else {
-			if crit.Score() > bctx.BusinessServiceCriticality.Score() {
-				bctx.BusinessServiceCriticality = crit
-				bctx.BusinessServiceName = name
-			}
-		}
+		apply(&bctx, crit, name)
 		result[aid] = bctx
 	}
 	return rows.Err()
