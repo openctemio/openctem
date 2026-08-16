@@ -96,7 +96,12 @@ type RunService struct {
 	// per-tenant check for an online validation agent. Nil disables the gate
 	// (pre-gate behavior). Installed via SetAgentAvailability at wiring time.
 	availability AgentAvailability
-	logger       *logger.Logger
+	// nucleiAvailability, when set, gates the deeper KindNuclei rung on a live
+	// per-tenant check for an online `validate:nuclei`-capable agent (RFC-011.2
+	// Phase 2b). Nil means the fleet advertises no nuclei executor, so routing
+	// stays safe-check-only — 2b is inert-safe until a nuclei agent is deployed.
+	nucleiAvailability NucleiAvailability
+	logger             *logger.Logger
 }
 
 // NewRunService wires the run service. available is the set of executor kinds
@@ -126,6 +131,34 @@ func NewRunService(
 // unconditional (the pre-gate behavior), which is what the unit tests exercise.
 func (s *RunService) SetAgentAvailability(a AgentAvailability) {
 	s.availability = a
+}
+
+// SetNucleiAvailability installs the deeper-rung nuclei capability gate. When
+// set, ValidateFinding upgrades a re-verify from safe-check to KindNuclei only
+// when a `validate:nuclei`-capable agent is online for the tenant AND the
+// finding carries a usable, non-destructive detection signature. Leaving it
+// unset keeps routing safe-check-only (Phase 2a behavior) — the inert-safe
+// default: no nuclei agent, no behavior change.
+func (s *RunService) SetNucleiAvailability(a NucleiAvailability) {
+	s.nucleiAvailability = a
+}
+
+// nucleiAgentOnline reports whether a nuclei-capable agent is online for the
+// tenant. A nil gate (no nuclei fleet) or a lookup error both resolve to "not
+// online" so the caller safely falls back to safe-check rather than failing the
+// whole validation — a nuclei outage must never break the base reachability
+// re-check that already worked in Phase 1.
+func (s *RunService) nucleiAgentOnline(ctx context.Context, tenantID shared.ID) bool {
+	if s.nucleiAvailability == nil {
+		return false
+	}
+	ok, err := s.nucleiAvailability.HasNucleiValidationAgent(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("nuclei validation availability check failed; falling back to safe-check",
+			"tenant_id", tenantID.String(), "error", err)
+		return false
+	}
+	return ok
 }
 
 // ensureAgentAvailable enforces the capability gate. It returns nil when the
@@ -184,10 +217,33 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 		return shared.ID{}, err
 	}
 
+	// Rung selection (RFC-011.2 Phase 2b): re-run the finding's OWN detection
+	// template (KindNuclei, "controlled non-destructive proof") when the finding
+	// carries a usable signature AND a nuclei-capable agent is online; otherwise
+	// stay on safe-check ("reachability only"). This is capability-gated exactly
+	// like safe-check, so a nuclei job is never enqueued for a fleet that can't
+	// run it, and the fallback is honest — the recorded executor_kind/technique
+	// makes clear whether the re-verify proved exploitability or only reachability.
 	technique := safeCheckTechnique
-	kind, err := s.selector.Select(technique, nil, s.available)
+	available := s.available
+	templateID, cveID := "", ""
+	if tmpl, cve, ok := nucleiSignature(f); ok && s.nucleiAgentOnline(ctx, tenantID) {
+		technique = nucleiTechnique
+		templateID, cveID = tmpl, cve
+		// Offer both kinds to the selector; under nucleiTechnique it deterministically
+		// returns KindNuclei (safe-check does not support T1190), while leaving the
+		// base kind present means a future policy change can still degrade rather
+		// than error.
+		available = []ExecutorKind{KindSafeCheck, KindNuclei}
+	}
+
+	kind, err := s.selector.Select(technique, nil, available)
 	if err != nil {
 		return shared.ID{}, fmt.Errorf("no validation executor available for finding: %w", err)
+	}
+	// A safe-check-only fleet (or no signature) must not carry a nuclei signature.
+	if kind != KindNuclei {
+		templateID, cveID = "", ""
 	}
 
 	job := ValidationJob{
@@ -202,6 +258,8 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 			Address: address,
 		},
 		TimeoutSeconds: defaultTimeoutSeconds,
+		TemplateID:     templateID,
+		CVEID:          cveID,
 	}
 
 	cmdID, err := s.dispatcher.Dispatch(ctx, job)

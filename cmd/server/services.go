@@ -96,6 +96,20 @@ func (v validationAgentAvailability) HasValidationAgent(ctx context.Context, ten
 	return len(agents) > 0, nil
 }
 
+// HasNucleiValidationAgent gates the deeper KindNuclei re-verify rung (RFC-011.2
+// Phase 2b) on a live per-tenant check for an agent advertising the
+// `validate:nuclei` capability. Self-arming exactly like the base gate: routing
+// upgrades from safe-check to a real single-template re-run the moment a tenant
+// deploys a nuclei-capable validation agent, and degrades back with no code
+// change if it goes offline.
+func (v validationAgentAvailability) HasNucleiValidationAgent(ctx context.Context, tenantID shared.ID) (bool, error) {
+	agents, err := v.agents.FindAvailableWithCapacity(ctx, tenantID, []string{validation.AgentCapabilityValidateNuclei}, "")
+	if err != nil {
+		return false, err
+	}
+	return len(agents) > 0, nil
+}
+
 // assetOwnerMatcher resolves an asset's owner_ref email to a user id for
 // auto-ownership, but ONLY when that user is a member of the tenant — never
 // assigning ownership to a user outside the tenant (isolation). A no-match is
@@ -935,6 +949,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// dispatch is observably skipped until a validation agent is deployed, then
 	// self-activates. See validation.ErrNoValidationAgent.
 	s.ValidationRun.SetAgentAvailability(validationAgentAvailability{agents: repos.Agent})
+	// RFC-011.2 Phase 2b: route the deeper `nuclei` re-verify rung when — and only
+	// when — a `validate:nuclei`-capable agent is online. Inert-safe: with no such
+	// agent this gate returns false and routing is byte-for-byte Phase 2a
+	// (safe-check only). Reuses the same agent-registry capability query.
+	s.ValidationRun.SetNucleiAvailability(validationAgentAvailability{agents: repos.Agent})
 	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
 	// (network-addressable target + safe-checkable technique) runs for real via
 	// the validation dispatcher; the command-completion hook finalizes the run.
