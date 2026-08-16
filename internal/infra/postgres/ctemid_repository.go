@@ -23,11 +23,40 @@ func NewCTEMIDRepository(db *DB) *CTEMIDRepository {
 	return &CTEMIDRepository{db: db}
 }
 
+// dedupeCTEMID collapses entries sharing a ctem_id to a single element, keeping
+// the LAST occurrence (upsert = last wins), so a single multi-row upsert never
+// proposes the same conflict key twice. Order of first appearance is preserved.
+func dedupeCTEMID(entries []*ctemid.CTEMID) []*ctemid.CTEMID {
+	seen := make(map[string]int, len(entries))
+	deduped := make([]*ctemid.CTEMID, 0, len(entries))
+	for _, e := range entries {
+		if e == nil {
+			continue
+		}
+		if idx, ok := seen[e.CTEMID()]; ok {
+			deduped[idx] = e
+			continue
+		}
+		seen[e.CTEMID()] = len(deduped)
+		deduped = append(deduped, e)
+	}
+	return deduped
+}
+
 // UpsertBatch inserts or updates catalog entries keyed by ctem_id. Idempotent.
 func (r *CTEMIDRepository) UpsertBatch(ctx context.Context, entries []*ctemid.CTEMID) error {
 	if len(entries) == 0 {
 		return nil
 	}
+
+	// Dedup by ctem_id before building the batch. A single INSERT ... ON CONFLICT
+	// (ctem_id) DO UPDATE cannot touch the same conflict row twice — a feed that
+	// carries a ctem_id more than once (a malformed/duplicated upstream entry, or
+	// two spellings that coalesce to the same id) would otherwise abort the WHOLE
+	// sync with "ON CONFLICT DO UPDATE command cannot affect row a second time",
+	// so the catalog never populates. Keep the last occurrence (upsert = last
+	// wins), mirroring the KEV/EPSS refresh this sync is modeled on.
+	entries = dedupeCTEMID(entries)
 
 	const cols = 9 // id, ctem_id, category, title, description, severity, source_url, published_at, raw
 	valueStrings := make([]string, 0, len(entries))
