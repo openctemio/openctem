@@ -30,7 +30,18 @@ const (
 	EventTypeDNSChange           EventType = "dns_change"
 	EventTypeSSLIssue            EventType = "ssl_issue"
 	EventTypeHeaderMissing       EventType = "header_missing"
-	EventTypeCustom              EventType = "custom"
+
+	// Identity exposures (CTEM Discovery "exposure ≠ vulnerability" — the
+	// identity attack surface). Emitted by the EntraID/IdP identity-exposure
+	// discovery source (see docs/rfcs/RFC-018). These are posture weaknesses on
+	// directory principals, NOT CVEs: a human account without MFA, an account
+	// that stopped signing in but still exists, or a principal holding a
+	// privileged directory role it does not need.
+	EventTypeIdentityMFAGap         EventType = "identity_mfa_gap"
+	EventTypeIdentityStalePrincipal EventType = "identity_stale_principal"
+	EventTypeIdentityOverprivileged EventType = "identity_overprivileged"
+
+	EventTypeCustom EventType = "custom"
 )
 
 // AllEventTypes returns all valid event types.
@@ -56,6 +67,9 @@ func AllEventTypes() []EventType {
 		EventTypeDNSChange,
 		EventTypeSSLIssue,
 		EventTypeHeaderMissing,
+		EventTypeIdentityMFAGap,
+		EventTypeIdentityStalePrincipal,
+		EventTypeIdentityOverprivileged,
 		EventTypeCustom,
 	}
 }
@@ -86,7 +100,9 @@ func (t EventType) IsPositiveExposure() bool {
 		EventTypeBucketPublic, EventTypeRepoPublic, EventTypeAPIExposed,
 		EventTypeCredentialLeaked, EventTypeSensitiveData, EventTypeMisconfiguration,
 		EventTypeSSLIssue, EventTypeHeaderMissing, EventTypeCertificateExpiring,
-		EventTypeCertificateExpired:
+		EventTypeCertificateExpired,
+		EventTypeIdentityMFAGap, EventTypeIdentityStalePrincipal,
+		EventTypeIdentityOverprivileged:
 		return true
 	default:
 		return false

@@ -494,7 +494,9 @@ func TestExposureService_CreateExposure_AllEventTypes(t *testing.T) {
 		"certificate_expired", "bucket_public", "bucket_private",
 		"repo_public", "repo_private", "api_exposed", "api_removed",
 		"credential_leaked", "sensitive_data_exposed", "misconfiguration",
-		"dns_change", "ssl_issue", "header_missing", "custom",
+		"dns_change", "ssl_issue", "header_missing",
+		"identity_mfa_gap", "identity_stale_principal", "identity_overprivileged",
+		"custom",
 	}
 
 	for _, et := range eventTypes {
