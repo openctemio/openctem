@@ -1131,6 +1131,88 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
+	// Business unit membership filter (business_unit_assets join).
+	if len(filter.BusinessUnitIDs) > 0 {
+		placeholders := make([]string, len(filter.BusinessUnitIDs))
+		for i, id := range filter.BusinessUnitIDs {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, id)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM business_unit_assets ba WHERE ba.asset_id = a.id AND ba.business_unit_id IN (%s))",
+			strings.Join(placeholders, ", ")))
+	}
+
+	// Owner-presence filter (asset_owners). Tenant-scoped through the principal,
+	// mirroring AssetOwnershipLookupRepo — asset_owners has no tenant_id column.
+	// Requires a tenant filter; skipped otherwise so it can never span tenants.
+	if filter.HasOwner != nil && filter.TenantID != nil {
+		tenantIdx := argIndex
+		args = append(args, *filter.TenantID)
+		argIndex++
+		existsExpr := fmt.Sprintf(`EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = a.id
+			AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $%d))
+			AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $%d)))`,
+			tenantIdx, tenantIdx)
+		if *filter.HasOwner {
+			conditions = append(conditions, existsExpr)
+		} else {
+			conditions = append(conditions, "NOT "+existsExpr)
+		}
+	}
+
+	// Data classification filter.
+	if len(filter.DataClassifications) > 0 {
+		placeholders := make([]string, len(filter.DataClassifications))
+		for i, c := range filter.DataClassifications {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, c)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("a.data_classification IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// Control-plane dependency filter: the asset is the target of a control-plane edge.
+	if filter.IsControlPlane != nil {
+		existsExpr := "EXISTS (SELECT 1 FROM asset_relationships ar WHERE ar.target_asset_id = a.id AND ar.is_control_plane = true AND ar.tenant_id = a.tenant_id)"
+		if *filter.IsControlPlane {
+			conditions = append(conditions, existsExpr)
+		} else {
+			conditions = append(conditions, "NOT "+existsExpr)
+		}
+	}
+
+	// Internet reachability filter.
+	if filter.IsInternetAccessible != nil {
+		conditions = append(conditions, fmt.Sprintf("a.is_internet_accessible = $%d", argIndex))
+		args = append(args, *filter.IsInternetAccessible)
+		argIndex++
+	}
+
+	// Environment filter.
+	if len(filter.Environments) > 0 {
+		placeholders := make([]string, len(filter.Environments))
+		for i, e := range filter.Environments {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, e)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("a.environment IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// Freshness (last_seen) range filters.
+	if filter.LastSeenAfter != nil {
+		conditions = append(conditions, fmt.Sprintf("a.last_seen >= $%d", argIndex))
+		args = append(args, *filter.LastSeenAfter)
+		argIndex++
+	}
+	if filter.LastSeenBefore != nil {
+		conditions = append(conditions, fmt.Sprintf("a.last_seen <= $%d", argIndex))
+		args = append(args, *filter.LastSeenBefore)
+		argIndex++
+	}
+
 	// Layer 2: Data Scope - filter by user's group membership
 	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
 	if filter.DataScopeUserID != nil && filter.TenantID != nil {
@@ -1663,13 +1745,20 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 // PostgreSQL plans a single scan of the filtered CTE for all aggregates.
 func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
 	stats := &asset.AggregateStats{
-		ByType:         make(map[string]int),
-		BySubType:      make(map[string]int),
-		ByStatus:       make(map[string]int),
-		ByCriticality:  make(map[string]int),
-		ByScope:        make(map[string]int),
-		ByExposure:     make(map[string]int),
-		MetadataCounts: make(map[string]map[string]int),
+		ByType:               make(map[string]int),
+		BySubType:            make(map[string]int),
+		ByStatus:             make(map[string]int),
+		ByCriticality:        make(map[string]int),
+		ByScope:              make(map[string]int),
+		ByExposure:           make(map[string]int),
+		MetadataCounts:       make(map[string]map[string]int),
+		ByDataClassification: make(map[string]int),
+		ByEnvironment:        make(map[string]int),
+		ByProvider:           make(map[string]int),
+		ByInternetAccessible: make(map[string]int),
+		ByHasOwner:           make(map[string]int),
+		ByControlPlane:       make(map[string]int),
+		ByBusinessUnit:       make(map[string]int),
 	}
 
 	// Build the WHERE clause once.
@@ -1702,7 +1791,8 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	// asset id set so we never touch findings rows for assets we filtered out.
 	query := fmt.Sprintf(`
 WITH filtered AS (
-  SELECT a.id, a.asset_type, a.sub_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score, a.properties
+  SELECT a.id, a.asset_type, a.sub_type, a.status, a.criticality, a.scope, a.exposure, a.risk_score, a.properties,
+         a.is_internet_accessible, a.data_classification, a.environment, a.provider, a.tenant_id
   FROM assets a
   %s
 ),
@@ -1734,6 +1824,36 @@ SELECT category, key, value FROM (
   SELECT 'scope',                 scope,                               COUNT(*)::float8 FROM filtered GROUP BY scope
   UNION ALL
   SELECT 'exposure',              exposure,                            COUNT(*)::float8 FROM filtered GROUP BY exposure
+  UNION ALL
+  SELECT 'internet_accessible',   CASE WHEN is_internet_accessible THEN 'true' ELSE 'false' END, COUNT(*)::float8 FROM filtered GROUP BY 2
+  UNION ALL
+  SELECT 'data_classification',   COALESCE(data_classification, 'unset'), COUNT(*)::float8 FROM filtered GROUP BY 2
+  UNION ALL
+  SELECT 'environment',           COALESCE(environment, 'unset'),         COUNT(*)::float8 FROM filtered GROUP BY 2
+  UNION ALL
+  SELECT 'provider',              COALESCE(provider, 'unset'),            COUNT(*)::float8 FROM filtered GROUP BY 2
+  UNION ALL
+  SELECT 'has_owner',
+    CASE WHEN EXISTS (
+      SELECT 1 FROM asset_owners ao
+      WHERE ao.asset_id = f.id
+        AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $1))
+        AND (ao.user_id  IS NULL OR ao.user_id  IN (SELECT user_id FROM tenant_members WHERE tenant_id = $1))
+    ) THEN 'true' ELSE 'false' END,
+    COUNT(*)::float8
+  FROM filtered f GROUP BY 2
+  UNION ALL
+  SELECT 'control_plane',
+    CASE WHEN EXISTS (
+      SELECT 1 FROM asset_relationships ar
+      WHERE ar.target_asset_id = f.id AND ar.is_control_plane = true AND ar.tenant_id = f.tenant_id
+    ) THEN 'true' ELSE 'false' END,
+    COUNT(*)::float8
+  FROM filtered f GROUP BY 2
+  UNION ALL
+  SELECT 'business_unit', ba.business_unit_id::text, COUNT(*)::float8
+  FROM filtered f JOIN business_unit_assets ba ON ba.asset_id = f.id
+  GROUP BY ba.business_unit_id
 ) sub
 `, filterClause)
 
@@ -1805,6 +1925,20 @@ SELECT category, key, value FROM (
 			stats.ByScope[key] = int(value)
 		case "exposure":
 			stats.ByExposure[key] = int(value)
+		case "internet_accessible":
+			stats.ByInternetAccessible[key] = int(value)
+		case "data_classification":
+			stats.ByDataClassification[key] = int(value)
+		case "environment":
+			stats.ByEnvironment[key] = int(value)
+		case "provider":
+			stats.ByProvider[key] = int(value)
+		case "has_owner":
+			stats.ByHasOwner[key] = int(value)
+		case "control_plane":
+			stats.ByControlPlane[key] = int(value)
+		case "business_unit":
+			stats.ByBusinessUnit[key] = int(value)
 		default:
 			// Handle dynamic metadata counts: "meta:field_name"
 			if strings.HasPrefix(category, "meta:") {

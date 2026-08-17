@@ -531,6 +531,17 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        min_risk_score  query   int     false  "Minimum risk score (0-100)"
 // @Param        max_risk_score  query   int     false  "Maximum risk score (0-100)"
 // @Param        has_findings  query     bool    false  "Filter by whether asset has findings"
+// @Param        is_crown_jewel query    bool    false  "Filter crown-jewel assets"
+// @Param        sub_type      query     string  false  "Filter by sub_type"
+// @Param        business_unit_ids     query string false "Filter by business unit membership (comma-separated UUIDs)"
+// @Param        has_owner             query bool   false "Filter assets with (true) / without (false) an assigned owner"
+// @Param        data_classifications  query string false "Filter by data classification (comma-separated: public,internal,confidential,restricted,secret)"
+// @Param        is_control_plane      query bool   false "Filter assets that are a control-plane dependency"
+// @Param        is_internet_accessible query bool  false "Filter internet-reachable assets"
+// @Param        environments          query string false "Filter by environment (comma-separated: production,staging,development,testing,dr)"
+// @Param        providers             query string false "Filter by provider/source (comma-separated)"
+// @Param        last_seen_after       query string false "Filter assets last seen at/after this time (RFC3339 or YYYY-MM-DD)"
+// @Param        last_seen_before      query string false "Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD)"
 // @Param        sort          query     string  false  "Sort field (e.g., -created_at, name, -risk_score)"
 // @Param        page          query     int     false  "Page number"  default(1)
 // @Param        per_page      query     int     false  "Items per page"  default(20)  maximum(100)
@@ -561,11 +572,21 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		IsCrownJewel:     parseQueryBoolPtr(query.Get("is_crown_jewel")),
 		SubType:          nilIfEmpty(query.Get("sub_type")),
 		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
-		Sort:             query.Get("sort"),
-		Page:             parseQueryInt(query.Get("page"), 1),
-		PerPage:          parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
-		ActingUserID:     middleware.GetUserID(r.Context()),
-		IsAdmin:          middleware.IsAdmin(r.Context()),
+		// CTEM inventory dimensions
+		BusinessUnitIDs:      parseQueryArray(query.Get("business_unit_ids")),
+		HasOwner:             parseQueryBoolPtr(query.Get("has_owner")),
+		DataClassifications:  parseQueryArray(query.Get("data_classifications")),
+		IsControlPlane:       parseQueryBoolPtr(query.Get("is_control_plane")),
+		IsInternetAccessible: parseQueryBoolPtr(query.Get("is_internet_accessible")),
+		Environments:         parseQueryArray(query.Get("environments")),
+		Providers:            parseQueryArray(query.Get("providers")),
+		LastSeenAfter:        parseQueryTimePtr(query.Get("last_seen_after")),
+		LastSeenBefore:       parseQueryTimePtr(query.Get("last_seen_before")),
+		Sort:                 query.Get("sort"),
+		Page:                 parseQueryInt(query.Get("page"), 1),
+		PerPage:              parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		ActingUserID:         middleware.GetUserID(r.Context()),
+		IsAdmin:              middleware.IsAdmin(r.Context()),
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -1403,6 +1424,14 @@ type AssetStatsResponse struct {
 	FindingsTotal  int                       `json:"findings_total"`
 	HighRiskCount  int                       `json:"high_risk_count"`
 	MetadataCounts map[string]map[string]int `json:"metadata_counts,omitempty"`
+	// CTEM inventory facet counts.
+	ByDataClassification map[string]int `json:"by_data_classification,omitempty"`
+	ByEnvironment        map[string]int `json:"by_environment,omitempty"`
+	ByProvider           map[string]int `json:"by_provider,omitempty"`
+	ByInternetAccessible map[string]int `json:"by_internet_accessible,omitempty"`
+	ByHasOwner           map[string]int `json:"by_has_owner,omitempty"`
+	ByControlPlane       map[string]int `json:"by_control_plane,omitempty"`
+	ByBusinessUnit       map[string]int `json:"by_business_unit,omitempty"`
 }
 
 // GetStats handles GET /api/v1/assets/stats
@@ -1436,18 +1465,25 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stats := AssetStatsResponse{
-		Total:          aggStats.Total,
-		ByType:         aggStats.ByType,
-		BySubType:      aggStats.BySubType,
-		ByStatus:       aggStats.ByStatus,
-		ByCriticality:  aggStats.ByCriticality,
-		ByScope:        aggStats.ByScope,
-		ByExposure:     aggStats.ByExposure,
-		WithFindings:   aggStats.WithFindings,
-		FindingsTotal:  aggStats.FindingsTotal,
-		HighRiskCount:  aggStats.HighRiskCount,
-		RiskScoreAvg:   aggStats.RiskScoreAvg,
-		MetadataCounts: aggStats.MetadataCounts,
+		Total:                aggStats.Total,
+		ByType:               aggStats.ByType,
+		BySubType:            aggStats.BySubType,
+		ByStatus:             aggStats.ByStatus,
+		ByCriticality:        aggStats.ByCriticality,
+		ByScope:              aggStats.ByScope,
+		ByExposure:           aggStats.ByExposure,
+		WithFindings:         aggStats.WithFindings,
+		FindingsTotal:        aggStats.FindingsTotal,
+		HighRiskCount:        aggStats.HighRiskCount,
+		RiskScoreAvg:         aggStats.RiskScoreAvg,
+		MetadataCounts:       aggStats.MetadataCounts,
+		ByDataClassification: aggStats.ByDataClassification,
+		ByEnvironment:        aggStats.ByEnvironment,
+		ByProvider:           aggStats.ByProvider,
+		ByInternetAccessible: aggStats.ByInternetAccessible,
+		ByHasOwner:           aggStats.ByHasOwner,
+		ByControlPlane:       aggStats.ByControlPlane,
+		ByBusinessUnit:       aggStats.ByBusinessUnit,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

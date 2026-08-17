@@ -1163,9 +1163,21 @@ type ListAssetsInput struct {
 	IsCrownJewel     *bool               // Filter crown jewel assets
 	SubType          *string             // Filter by sub_type
 	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
-	Sort             string              `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
-	Page             int                 `validate:"min=0"`
-	PerPage          int                 `validate:"min=0,max=100"`
+
+	// CTEM inventory dimensions (all optional; back-compat when unset).
+	BusinessUnitIDs      []string `validate:"max=50,dive,uuid"`
+	HasOwner             *bool    // Assets with/without an assigned owner
+	DataClassifications  []string `validate:"max=5,dive,oneof=public internal confidential restricted secret"`
+	IsControlPlane       *bool    // Asset is a control-plane dependency
+	IsInternetAccessible *bool    // Asset is internet-reachable
+	Environments         []string `validate:"max=5,dive,oneof=production staging development testing dr"`
+	Providers            []string `validate:"max=20,dive,max=50"`
+	LastSeenAfter        *time.Time
+	LastSeenBefore       *time.Time
+
+	Sort    string `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
+	Page    int    `validate:"min=0"`
+	PerPage int    `validate:"min=0,max=100"`
 
 	// Layer 2: Data Scope
 	ActingUserID string // From JWT context
@@ -1277,6 +1289,43 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	// Properties filter (JSONB containment)
 	if len(input.PropertiesFilter) > 0 {
 		filter = filter.WithPropertiesFilter(input.PropertiesFilter)
+	}
+
+	// CTEM inventory dimensions.
+	if len(input.BusinessUnitIDs) > 0 {
+		filter = filter.WithBusinessUnitIDs(input.BusinessUnitIDs...)
+	}
+	if input.HasOwner != nil {
+		filter = filter.WithHasOwner(*input.HasOwner)
+	}
+	if len(input.DataClassifications) > 0 {
+		filter = filter.WithDataClassifications(input.DataClassifications...)
+	}
+	if input.IsControlPlane != nil {
+		filter = filter.WithIsControlPlane(*input.IsControlPlane)
+	}
+	if input.IsInternetAccessible != nil {
+		filter = filter.WithIsInternetAccessible(*input.IsInternetAccessible)
+	}
+	if len(input.Environments) > 0 {
+		filter = filter.WithEnvironments(input.Environments...)
+	}
+	if len(input.Providers) > 0 {
+		// Preserve exact stored provider values (provider is a free VARCHAR;
+		// don't collapse unknowns to "other" the way ParseProvider would).
+		providers := make([]assetdom.Provider, 0, len(input.Providers))
+		for _, p := range input.Providers {
+			if p != "" {
+				providers = append(providers, assetdom.Provider(p))
+			}
+		}
+		filter = filter.WithProviders(providers...)
+	}
+	if input.LastSeenAfter != nil {
+		filter = filter.WithLastSeenAfter(*input.LastSeenAfter)
+	}
+	if input.LastSeenBefore != nil {
+		filter = filter.WithLastSeenBefore(*input.LastSeenBefore)
 	}
 
 	// Layer 2: Data Scope - non-admin users only see assets in their groups
