@@ -301,6 +301,7 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 			fmt.Fprintf(&b, "**Masked value:** `%s`\n\n", masked)
 		}
 		b.WriteString("Open the finding in the OpenCTEM platform for full details.\n")
+		appendMobilizationBrief(&b, finding)
 		return b.String()
 	}
 
@@ -309,7 +310,21 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 		b.WriteString("\n")
 	}
 
+	appendMobilizationBrief(&b, finding)
 	return b.String()
+}
+
+// appendMobilizationBrief appends the CTEM Mobilization brief (definition of
+// done + acceptable fixes) to the issue body when the finding carries one. The
+// brief holds only operator-entered guidance — never a finding-embedded secret.
+func appendMobilizationBrief(b *strings.Builder, finding *vulnerability.Finding) {
+	brief := finding.Remediation().MobilizationBrief()
+	if brief == "" {
+		return
+	}
+	b.WriteString("\n")
+	b.WriteString(brief)
+	b.WriteString("\n")
 }
 
 // isSecretFinding reports whether a finding represents an exposed secret.

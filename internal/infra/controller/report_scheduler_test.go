@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/reportschedule"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
@@ -73,7 +74,63 @@ func newSchedule(t *testing.T, reportType, cron string, recipients ...string) *r
 }
 
 func newTestScheduler(store ReportScheduleStore, em ReportEmailer) *ReportScheduler {
-	return NewReportScheduler(store, fakeStats{}, em, nil, ReportSchedulerConfig{}, logger.NewNop())
+	return NewReportScheduler(store, fakeStats{}, em, nil, nil, ReportSchedulerConfig{}, logger.NewNop())
+}
+
+// newTestSchedulerWithGuard is like newTestScheduler but wires a ModuleGuard so
+// the reports-module compute guard can be exercised.
+func newTestSchedulerWithGuard(store ReportScheduleStore, em ReportEmailer, guard ModuleGuard) *ReportScheduler {
+	return NewReportScheduler(store, fakeStats{}, em, nil, guard, ReportSchedulerConfig{}, logger.NewNop())
+}
+
+// TestReportScheduler_SkipsUnsubscribedTenant proves the compute guard: a due
+// schedule whose tenant has NOT subscribed to the reports module is skipped —
+// no render, no delivery, no persistence.
+func TestReportScheduler_SkipsUnsubscribedTenant(t *testing.T) {
+	s := newSchedule(t, "executive_summary", "0 9 * * 1", "ciso@acme.com")
+	tenantID := s.TenantID().String()
+	store := &fakeStore{due: []*reportschedule.ReportSchedule{s}}
+	em := &fakeEmailer{configured: true}
+
+	guard := &fakeModuleGuard{disabledByTenant: map[string]map[string]bool{
+		tenantID: {moduledom.ModuleReports: true},
+	}}
+
+	n, err := newTestSchedulerWithGuard(store, em, guard).Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("processed = %d, want 0 (tenant unsubscribed from reports)", n)
+	}
+	if len(em.sentTo) != 0 {
+		t.Fatalf("expected no report delivered, got %d", len(em.sentTo))
+	}
+	if len(store.updated) != 0 {
+		t.Fatalf("a skipped schedule must not be updated, got %d", len(store.updated))
+	}
+}
+
+// TestReportScheduler_RunsForSubscribedTenant proves the guard is a no-op when
+// the tenant's disabled set does not contain the reports module.
+func TestReportScheduler_RunsForSubscribedTenant(t *testing.T) {
+	s := newSchedule(t, "executive_summary", "0 9 * * 1", "ciso@acme.com")
+	store := &fakeStore{due: []*reportschedule.ReportSchedule{s}}
+	em := &fakeEmailer{configured: true}
+
+	// Empty per-tenant disabled sets → nothing skipped (all-on subscription).
+	guard := &fakeModuleGuard{disabledByTenant: map[string]map[string]bool{}}
+
+	n, err := newTestSchedulerWithGuard(store, em, guard).Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("processed = %d, want 1", n)
+	}
+	if len(em.sentTo) != 1 {
+		t.Fatalf("expected 1 report delivered, got %d", len(em.sentTo))
+	}
 }
 
 func TestReportScheduler_RendersDeliversAndAdvances(t *testing.T) {

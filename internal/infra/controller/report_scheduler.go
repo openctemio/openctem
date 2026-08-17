@@ -8,6 +8,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/reportschedule"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
@@ -59,19 +60,24 @@ type ReportScheduler struct {
 	config   ReportSchedulerConfig
 	cronspec cron.Parser
 	logger   *logger.Logger
+	// moduleGuard skips schedules whose tenant has not subscribed to the reports
+	// module. Optional — nil means "never skip" (fully backward compatible).
+	moduleGuard ModuleGuard
 }
 
-// NewReportScheduler builds the controller.
-func NewReportScheduler(store ReportScheduleStore, stats ReportStatsSource, emailer ReportEmailer, tenants TenantNamer, cfg ReportSchedulerConfig, log *logger.Logger) *ReportScheduler {
+// NewReportScheduler builds the controller. moduleGuard is optional (nil = never
+// skip); when set, schedules for tenants without the reports module are skipped.
+func NewReportScheduler(store ReportScheduleStore, stats ReportStatsSource, emailer ReportEmailer, tenants TenantNamer, moduleGuard ModuleGuard, cfg ReportSchedulerConfig, log *logger.Logger) *ReportScheduler {
 	if cfg.Interval <= 0 {
 		cfg.Interval = time.Minute
 	}
 	return &ReportScheduler{
-		store:   store,
-		stats:   stats,
-		emailer: emailer,
-		tenants: tenants,
-		config:  cfg,
+		store:       store,
+		stats:       stats,
+		emailer:     emailer,
+		tenants:     tenants,
+		moduleGuard: moduleGuard,
+		config:      cfg,
 		// Standard 5-field cron (minute hour dom month dow), matching what the
 		// schedule UI collects.
 		cronspec: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
@@ -93,8 +99,20 @@ func (c *ReportScheduler) Reconcile(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("list due schedules: %w", err)
 	}
 
+	modules := newTenantModuleCache(c.moduleGuard)
 	processed := 0
 	for _, s := range due {
+		// Compute-level independence: skip schedules whose tenant has not
+		// subscribed to the reports module. The next-run time is still advanced
+		// below-guard by RecordRun only for tenants we process; a skipped
+		// tenant's schedule is left untouched (it will simply be re-evaluated
+		// next tick and skipped again while unsubscribed — cheap, cached).
+		if modules.disabled(ctx, s.TenantID().String(), moduledom.ModuleReports) {
+			c.logger.Debug("skipping report schedule: reports module not subscribed",
+				"schedule_id", s.ID().String(), "tenant_id", s.TenantID().String())
+			continue
+		}
+
 		// Compute the next fire time first; even if delivery fails we must
 		// advance next_run_at, otherwise the schedule busy-loops every tick.
 		next := c.nextRun(s, now)

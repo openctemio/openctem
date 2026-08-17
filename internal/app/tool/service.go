@@ -176,6 +176,8 @@ func (s *Service) GetToolByName(ctx context.Context, name string) (*tooldom.Tool
 
 // ListInput represents the input for listing tools.
 type ListInput struct {
+	// TenantID is the caller's tenant, set from JWT context — scopes custom-tool visibility.
+	TenantID     string   `json:"-"`
 	Category     string   `json:"category" validate:"omitempty,max=50"` // Category name (dynamic from tool_categories)
 	Capabilities []string `json:"capabilities"`
 	IsActive     *bool    `json:"is_active"`
@@ -186,14 +188,26 @@ type ListInput struct {
 	PerPage      int      `json:"per_page"`
 }
 
-// ListTools lists tools with filters.
+// ListTools lists tools with filters, scoped to the caller's tenant.
+//
+// The tools table holds both platform tools (tenant_id IS NULL) and every
+// tenant's private custom tools. Without a tenant scope this endpoint returned
+// ALL tenants' custom tools. It is now restricted to platform tools + the
+// caller's own custom tools; a zero tenant fails closed.
 func (s *Service) ListTools(ctx context.Context, input ListInput) (pagination.Result[*tooldom.Tool], error) {
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return pagination.Result[*tooldom.Tool]{}, fmt.Errorf("%w: tenant id required", shared.ErrValidation)
+	}
+
 	filter := tooldom.ToolFilter{
-		Capabilities: input.Capabilities,
-		IsActive:     input.IsActive,
-		IsBuiltin:    input.IsBuiltin,
-		Search:       input.Search,
-		Tags:         input.Tags,
+		Capabilities:    input.Capabilities,
+		IsActive:        input.IsActive,
+		IsBuiltin:       input.IsBuiltin,
+		Search:          input.Search,
+		Tags:            input.Tags,
+		TenantID:        &tenantID,
+		IncludePlatform: true, // (tenant_id IS NULL OR tenant_id = caller)
 	}
 
 	if input.Category != "" {
@@ -343,12 +357,22 @@ func (s *Service) DeleteTool(ctx context.Context, tenantID, toolID string) error
 	return s.toolRepo.Delete(ctx, t.ID)
 }
 
-// ActivateTool activates a tool.
-func (s *Service) ActivateTool(ctx context.Context, toolID string) (*tooldom.Tool, error) {
+// ActivateTool activates a tool. tenantID scopes the mutation: like UpdateTool
+// and DeleteTool it enforces CanManage, so a tenant can only (de)activate its
+// own custom tools and never a platform tool or another tenant's tool.
+func (s *Service) ActivateTool(ctx context.Context, tenantID, toolID string) (*tooldom.Tool, error) {
 	s.logger.Info("activating tool", "tool_id", toolID)
 
 	t, err := s.GetTool(ctx, toolID)
 	if err != nil {
+		return nil, err
+	}
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	if err := t.CanManage(tid); err != nil {
 		return nil, err
 	}
 
@@ -363,11 +387,19 @@ func (s *Service) ActivateTool(ctx context.Context, toolID string) (*tooldom.Too
 
 // DeactivateTool deactivates a tool.
 // Also cascade deactivates any active pipelines that use this tool.
-func (s *Service) DeactivateTool(ctx context.Context, toolID string) (*tooldom.Tool, error) {
+func (s *Service) DeactivateTool(ctx context.Context, tenantID, toolID string) (*tooldom.Tool, error) {
 	s.logger.Info("deactivating tool", "tool_id", toolID)
 
 	t, err := s.GetTool(ctx, toolID)
 	if err != nil {
+		return nil, err
+	}
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	if err := t.CanManage(tid); err != nil {
 		return nil, err
 	}
 

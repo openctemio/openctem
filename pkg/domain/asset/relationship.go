@@ -131,9 +131,14 @@ type Relationship struct {
 	discoveryMethod  RelationshipDiscoveryMethod
 	impactWeight     int
 	tags             []string
-	lastVerified     *time.Time
-	createdAt        time.Time
-	updatedAt        time.Time
+	// isControlPlane marks this dependency edge as a control plane
+	// (IdP/SSO, secrets store, CI/CD, monitoring/SIEM) so that scoping a
+	// service in CTEM pulls its control planes into scope. Part of the
+	// Scoping critical-asset register.
+	isControlPlane bool
+	lastVerified   *time.Time
+	createdAt      time.Time
+	updatedAt      time.Time
 }
 
 // NewRelationship creates a new Relationship entity with validation.
@@ -182,6 +187,7 @@ func ReconstituteRelationship(
 	discoveryMethod RelationshipDiscoveryMethod,
 	impactWeight int,
 	tags []string,
+	isControlPlane bool,
 	lastVerified *time.Time,
 	createdAt, updatedAt time.Time,
 ) *Relationship {
@@ -199,6 +205,7 @@ func ReconstituteRelationship(
 		discoveryMethod:  discoveryMethod,
 		impactWeight:     impactWeight,
 		tags:             tags,
+		isControlPlane:   isControlPlane,
 		lastVerified:     lastVerified,
 		createdAt:        createdAt,
 		updatedAt:        updatedAt,
@@ -235,6 +242,10 @@ func (r *Relationship) DiscoveryMethod() RelationshipDiscoveryMethod { return r.
 
 // ImpactWeight returns the impact weight.
 func (r *Relationship) ImpactWeight() int { return r.impactWeight }
+
+// IsControlPlane reports whether this dependency edge is a control plane
+// (IdP/SSO, secrets store, CI/CD, monitoring/SIEM).
+func (r *Relationship) IsControlPlane() bool { return r.isControlPlane }
 
 // Tags returns a copy of the tags.
 func (r *Relationship) Tags() []string {
@@ -290,6 +301,12 @@ func (r *Relationship) SetImpactWeight(weight int) error {
 	r.impactWeight = weight
 	r.updatedAt = time.Now().UTC()
 	return nil
+}
+
+// SetControlPlane marks (or unmarks) this edge as a control-plane dependency.
+func (r *Relationship) SetControlPlane(isControlPlane bool) {
+	r.isControlPlane = isControlPlane
+	r.updatedAt = time.Now().UTC()
 }
 
 // SetTags replaces all tags.

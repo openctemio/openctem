@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/openctemio/api/internal/app/threat"
+	"github.com/openctemio/api/internal/infra/http/middleware"
 
 	"github.com/go-chi/chi/v5"
 
@@ -290,7 +291,13 @@ func (h *ThreatIntelHandler) GetEPSSStats(w http.ResponseWriter, r *http.Request
 func (h *ThreatIntelHandler) GetThreatIntelStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	stats, err := h.service.GetThreatIntelStats(ctx)
+	tenantID, ok := middleware.GetTenantIDFromContext(ctx)
+	if !ok {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return
+	}
+
+	stats, err := h.service.GetThreatIntelStats(ctx, tenantID)
 	if err != nil {
 		apierror.InternalError(err).WriteJSON(w)
 		return

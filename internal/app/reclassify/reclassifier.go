@@ -35,11 +35,13 @@ type SLARecomputer interface {
 // re-confirms the same class is silent, and a sweep that moves a
 // class fans out correctly.
 //
-// The current impl handles the most-common sweep scope: AssetIDs
-// (produced by control-change and asset-change publishers). A CVEIDs
-// branch (produced by EPSS/KEV refreshes) is a follow-up — the threat
-// intel flow already enqueues with CVEIDs, so this branch will be
-// added alongside the next wire of that producer.
+// Two scopes are handled:
+//   - AssetIDs non-empty → reclassify exactly those assets (control-change
+//     and asset-change publishers).
+//   - AssetIDs empty → whole-tenant sweep: list the tenant's open findings,
+//     collect their distinct assets, and reclassify each. This is what the
+//     KEV/EPSS-refresh producers (which enqueue per-tenant with no AssetIDs)
+//     and the periodic sweep producer rely on.
 type Reclassifier struct {
 	findings   vulnerability.FindingRepository
 	assets     asset.Repository
@@ -82,9 +84,9 @@ func NewReclassifier(
 // Strategy:
 //  1. If req.AssetIDs is non-empty → iterate each asset, page findings,
 //     classify. This is the control-change / asset-change path.
-//  2. Otherwise → no-op with a warn (we only drain scoped requests for
-//     now; unscoped "reclassify everything" would be a footgun without
-//     a rate limiter).
+//  2. Otherwise → treat as a whole-tenant sweep: page the tenant's open
+//     findings, collect their distinct asset IDs, and reclassify each.
+//     This is the KEV/EPSS-refresh and periodic-sweep path.
 func (r *Reclassifier) ReclassifyForRequest(
 	ctx context.Context,
 	req controller.ReclassifyRequest,
@@ -94,15 +96,11 @@ func (r *Reclassifier) ReclassifyForRequest(
 	}
 
 	if len(req.AssetIDs) == 0 {
-		// CVE-scoped / rule-scoped sweeps are not handled yet — the
-		// producers for those paths (EPSS/KEV refresh) haven't been
-		// rewired to enqueue. Log once so we notice if someone starts
-		// emitting unscoped requests.
-		r.logger.Debug("reclassify request has no AssetIDs; skipping",
-			"tenant_id", req.TenantID.String(),
-			"reason", string(req.Reason),
-		)
-		return 0, nil
+		// Whole-tenant sweep: no explicit asset scope, so derive it from the
+		// tenant's currently-open findings. Producers that can't cheaply name
+		// the affected assets (KEV/EPSS refresh, periodic backfill) enqueue
+		// this shape.
+		return r.reclassifyTenant(ctx, req.TenantID)
 	}
 
 	reexamined := 0
@@ -121,6 +119,85 @@ func (r *Reclassifier) ReclassifyForRequest(
 				firstErr = fmt.Errorf("asset %s: %w", assetID.String(), err)
 			}
 			continue
+		}
+	}
+	return reexamined, firstErr
+}
+
+// reclassifyTenant handles a whole-tenant request (empty AssetIDs). It pages
+// the tenant's open findings, accumulates their distinct asset IDs into a set,
+// then reclassifies each asset via the same reclassifyAsset path the scoped
+// branch uses. Findings with no asset (NULL asset_id — a known separate gap)
+// cannot be reclassified through the asset-enrichment path and are counted +
+// logged, not classified.
+func (r *Reclassifier) reclassifyTenant(
+	ctx context.Context,
+	tenantID shared.ID,
+) (int, error) {
+	filter := vulnerability.FindingFilter{
+		TenantID: &tenantID,
+		// Non-terminal only: mirror FindingStatus.IsClosed so resolved /
+		// false_positive / accepted / duplicate / verified / accepted_risk
+		// rows are not re-classified.
+		ExcludeStatuses: vulnerability.ClosedFindingStatuses(),
+	}
+	opts := vulnerability.FindingListOptions{}
+	page := pagination.Pagination{Page: 1, PerPage: r.perPage}
+
+	seen := make(map[shared.ID]struct{})
+	assetIDs := make([]shared.ID, 0)
+	skippedNoAsset := 0
+
+	// Phase 1: page findings, collect distinct asset IDs. Bounded memory —
+	// only the distinct asset-ID set is retained, not the findings.
+	for {
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
+		res, err := r.findings.List(ctx, filter, opts, page)
+		if err != nil {
+			return 0, fmt.Errorf("list tenant findings: %w", err)
+		}
+		if len(res.Data) == 0 {
+			break
+		}
+		for _, f := range res.Data {
+			aid := f.AssetID()
+			if aid.IsZero() {
+				skippedNoAsset++
+				continue
+			}
+			if _, ok := seen[aid]; ok {
+				continue
+			}
+			seen[aid] = struct{}{}
+			assetIDs = append(assetIDs, aid)
+		}
+		if int64(len(res.Data)) < int64(page.PerPage) {
+			break
+		}
+		page.Page++
+	}
+
+	if skippedNoAsset > 0 {
+		r.logger.Debug("whole-tenant sweep skipped findings with no asset",
+			"tenant_id", tenantID.String(),
+			"skipped", skippedNoAsset,
+		)
+	}
+
+	// Phase 2: reclassify each distinct asset. Respect cancellation between
+	// assets so a tick deadline stops the sweep cleanly.
+	reexamined := 0
+	var firstErr error
+	for _, assetID := range assetIDs {
+		if ctx.Err() != nil {
+			return reexamined, ctx.Err()
+		}
+		n, err := r.reclassifyAsset(ctx, tenantID, assetID)
+		reexamined += n
+		if err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("asset %s: %w", assetID.String(), err)
 		}
 	}
 	return reexamined, firstErr

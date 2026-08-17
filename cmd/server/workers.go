@@ -275,7 +275,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			repos.ReportSchedule,
 			repos.Finding,
 			svc.Email,
-			nil, // TenantNamer optional; report header falls back to tenant id
+			nil,        // TenantNamer optional; report header falls back to tenant id
+			svc.Module, // ModuleGuard: skip tenants without the reports module
 			controller.ReportSchedulerConfig{Interval: time.Minute},
 			log,
 		))
@@ -348,7 +349,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewThreatIntelRefreshController(
 		svc.ThreatIntel,
 		repos.KEVEscalator,
+		svc.ReclassifyQueue,
 		log.With("controller", "threat-intel-refresh"),
+	))
+
+	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
+	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
+	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
+		svc.CTEMID,
+		log.With("controller", "ctem-id-refresh"),
 	))
 
 	// Owner resolution — resolve owner_ref (email) to owner_id for assets
@@ -383,6 +392,23 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger: log.With("controller", "priority-reclassify"),
 			},
 		))
+
+		// Periodic *producer* for the same queue: on a low-frequency timer it
+		// enqueues one whole-tenant reclassify per active tenant. Without this
+		// the consumer above has nothing to drain except discrete producer
+		// events (control-change, KEV/EPSS refresh), so never-classified
+		// findings (priority_class IS NULL) and slow EPSS drift are never
+		// re-swept. Nil-safe on a missing queue/tenant repo.
+		if repos.Tenant != nil {
+			w.ControllerManager.Register(controller.NewPriorityReclassifySweepController(
+				svc.ReclassifyQueue,
+				repos.Tenant,
+				&controller.PriorityReclassifySweepConfig{
+					Interval: 12 * time.Hour,
+					Logger:   log.With("controller", "priority-reclassify-sweep"),
+				},
+			))
+		}
 	}
 
 	// SLA escalation — marks overdue findings as breached every 15 min (RFC-005 Gap 7).
@@ -417,10 +443,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewControlTestSchedulerController(
 		repos.ControlTest,
 		&controller.ControlTestSchedulerConfig{
-			Interval:  24 * time.Hour,
-			StaleDays: 30,
-			BatchSize: 500,
-			Logger:    log.With("controller", "control-test-scheduler"),
+			Interval:    24 * time.Hour,
+			StaleDays:   30,
+			BatchSize:   500,
+			Logger:      log.With("controller", "control-test-scheduler"),
+			ModuleGuard: svc.Module, // skip tenants without the control-testing module
 		},
 	))
 

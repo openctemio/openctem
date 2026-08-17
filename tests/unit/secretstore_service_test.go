@@ -234,7 +234,7 @@ func (m *secretMockAuditRepo) GetLatestByResource(_ context.Context, _ shared.ID
 	return nil, errors.New("not implemented")
 }
 
-func (m *secretMockAuditRepo) ListByActor(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (m *secretMockAuditRepo) ListByActor(_ context.Context, _ shared.ID, _ shared.ID, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 

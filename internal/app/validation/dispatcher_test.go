@@ -86,6 +86,58 @@ func TestCommandDispatcher_Dispatch_BuildsValidateCommand(t *testing.T) {
 	}
 }
 
+// RFC-011.2 Phase 2b: a KindNuclei job carries the finding's detection signature
+// and requires the deeper `validate:nuclei` capability, so it is only ever
+// routed to an agent that can run a single template.
+func TestCommandDispatcher_Dispatch_NucleiJobRequiresNucleiCapability(t *testing.T) {
+	cc := &fakeCommandCreator{}
+	d := NewCommandDispatcher(cc, logger.NewNop())
+
+	job := ValidationJob{
+		JobID:          shared.NewID(),
+		TenantID:       shared.NewID(),
+		FindingID:      shared.NewID(),
+		ExecutorKind:   KindNuclei,
+		Technique:      nucleiTechnique,
+		Target:         Target{AssetID: shared.NewID(), Type: "website", Address: "https://example.com"},
+		TimeoutSeconds: 120,
+		TemplateID:     "apache-struts-rce",
+		CVEID:          "CVE-2021-44228",
+	}
+
+	if _, err := d.Dispatch(context.Background(), job); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	var p ValidateCommandPayload
+	if err := json.Unmarshal(cc.created.Payload, &p); err != nil {
+		t.Fatalf("payload not valid JSON: %v", err)
+	}
+	if p.ExecutorKind != "nuclei" {
+		t.Errorf("payload executor_kind = %q, want nuclei", p.ExecutorKind)
+	}
+	if p.TemplateID != "apache-struts-rce" {
+		t.Errorf("payload template_id = %q, want apache-struts-rce", p.TemplateID)
+	}
+	if p.CVEID != "CVE-2021-44228" {
+		t.Errorf("payload cve_id = %q, want CVE-2021-44228", p.CVEID)
+	}
+	hasNuclei, hasBase := false, false
+	for _, c := range p.RequiredCapabilities {
+		switch c {
+		case AgentCapabilityValidateNuclei:
+			hasNuclei = true
+		case AgentCapabilityValidate:
+			hasBase = true
+		}
+	}
+	if !hasNuclei {
+		t.Errorf("required_capabilities %v missing %q", p.RequiredCapabilities, AgentCapabilityValidateNuclei)
+	}
+	if hasBase {
+		t.Errorf("nuclei job must not require the base %q capability (would route to safe-check-only agents)", AgentCapabilityValidate)
+	}
+}
+
 func TestCommandDispatcher_Dispatch_RejectsZeroIDs(t *testing.T) {
 	d := NewCommandDispatcher(&fakeCommandCreator{}, logger.NewNop())
 	if _, err := d.Dispatch(context.Background(), ValidationJob{}); err == nil {

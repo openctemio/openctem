@@ -26,6 +26,11 @@ type threatIntelMockEPSSRepo struct {
 	getByIDErr  error
 	getByIDsErr error
 	highRiskErr error
+
+	// tenantAboveScoreVals maps an EPSS threshold to the tenant-scoped OPEN
+	// finding count returned by CountTenantOpenAboveScore.
+	tenantAboveScoreVals map[float64]int64
+	tenantAboveScoreErr  error
 }
 
 func newThreatIntelMockEPSSRepo() *threatIntelMockEPSSRepo {
@@ -99,6 +104,16 @@ func (m *threatIntelMockEPSSRepo) GetTopPercentile(_ context.Context, _ float64,
 	return nil, nil
 }
 
+func (m *threatIntelMockEPSSRepo) CountTenantOpenAboveScore(_ context.Context, _ shared.ID, threshold float64) (int64, error) {
+	if m.tenantAboveScoreErr != nil {
+		return 0, m.tenantAboveScoreErr
+	}
+	if m.tenantAboveScoreVals != nil {
+		return m.tenantAboveScoreVals[threshold], nil
+	}
+	return 0, nil
+}
+
 func (m *threatIntelMockEPSSRepo) Count(_ context.Context) (int64, error) {
 	if m.countErr != nil {
 		return 0, m.countErr
@@ -130,6 +145,14 @@ type threatIntelMockKEVRepo struct {
 	recentErr      error
 	ransomEntries  []*threatintel.KEVEntry
 	ransomErr      error
+
+	// Tenant-scoped / de-saturated count fields.
+	tenantPastDueVal int64
+	tenantPastDueErr error
+	recentCountVal   int64
+	recentCountErr   error
+	ransomCountVal   int64
+	ransomCountErr   error
 }
 
 func newThreatIntelMockKEVRepo() *threatIntelMockKEVRepo {
@@ -216,6 +239,27 @@ func (m *threatIntelMockKEVRepo) GetRansomwareRelated(_ context.Context, _ int) 
 		return nil, m.ransomErr
 	}
 	return m.ransomEntries, nil
+}
+
+func (m *threatIntelMockKEVRepo) CountTenantOpenPastDue(_ context.Context, _ shared.ID) (int64, error) {
+	if m.tenantPastDueErr != nil {
+		return 0, m.tenantPastDueErr
+	}
+	return m.tenantPastDueVal, nil
+}
+
+func (m *threatIntelMockKEVRepo) CountRecentlyAdded(_ context.Context, _ int) (int64, error) {
+	if m.recentCountErr != nil {
+		return 0, m.recentCountErr
+	}
+	return m.recentCountVal, nil
+}
+
+func (m *threatIntelMockKEVRepo) CountRansomwareRelated(_ context.Context) (int64, error) {
+	if m.ransomCountErr != nil {
+		return 0, m.ransomCountErr
+	}
+	return m.ransomCountVal, nil
 }
 
 func (m *threatIntelMockKEVRepo) Count(_ context.Context) (int64, error) {
@@ -959,7 +1003,7 @@ func TestThreatIntelService_GetThreatIntelStats_Success(t *testing.T) {
 	threatIntelAddSyncStatus(repo, "epss", true)
 	threatIntelAddSyncStatus(repo, "kev", true)
 
-	stats, err := svc.GetThreatIntelStats(ctx)
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -974,6 +1018,59 @@ func TestThreatIntelService_GetThreatIntelStats_Success(t *testing.T) {
 	}
 }
 
+// TestThreatIntelService_GetThreatIntelStats_TenantScoped verifies that the
+// unified stats report the tenant-scoped / de-saturated counts (not the global
+// LIMIT-bounded len() figures): past-due comes from CountTenantOpenPastDue, the
+// EPSS high/critical buckets come from CountTenantOpenAboveScore at the 0.1/0.5
+// thresholds, and ransomware/recently-added come from real COUNTs.
+func TestThreatIntelService_GetThreatIntelStats_TenantScoped(t *testing.T) {
+	repo := newThreatIntelMockRepo()
+
+	// Tenant-scoped KEV: 7 open past-due findings; de-saturated globals.
+	repo.kev.tenantPastDueVal = 7
+	repo.kev.recentCountVal = 42
+	repo.kev.ransomCountVal = 123
+	repo.kev.countVal = 1500
+
+	// Tenant-scoped EPSS: distinct high (>=0.1) vs critical (>=0.5) buckets.
+	repo.epss.countVal = 9000
+	repo.epss.tenantAboveScoreVals = map[float64]int64{
+		0.1: 25, // high
+		0.5: 4,  // critical
+	}
+
+	svc := newThreatIntelService(repo)
+	stats, err := svc.GetThreatIntelStats(context.Background(), shared.ID{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if stats.KEV == nil || stats.EPSS == nil {
+		t.Fatal("expected both KEV and EPSS stats to be present")
+	}
+	if stats.KEV.PastDueCount != 7 {
+		t.Errorf("PastDueCount: want 7 (tenant-scoped), got %d", stats.KEV.PastDueCount)
+	}
+	if stats.KEV.RecentlyAddedLast30Days != 42 {
+		t.Errorf("RecentlyAddedLast30Days: want 42 (de-saturated COUNT), got %d", stats.KEV.RecentlyAddedLast30Days)
+	}
+	if stats.KEV.RansomwareRelatedCount != 123 {
+		t.Errorf("RansomwareRelatedCount: want 123 (de-saturated COUNT), got %d", stats.KEV.RansomwareRelatedCount)
+	}
+	if stats.KEV.TotalEntries != 1500 {
+		t.Errorf("TotalEntries: want 1500, got %d", stats.KEV.TotalEntries)
+	}
+	if stats.EPSS.HighRiskCount != 25 {
+		t.Errorf("HighRiskCount: want 25 (tenant EPSS>=0.1), got %d", stats.EPSS.HighRiskCount)
+	}
+	if stats.EPSS.CriticalRiskCount != 4 {
+		t.Errorf("CriticalRiskCount: want 4 (tenant EPSS>=0.5), got %d", stats.EPSS.CriticalRiskCount)
+	}
+	if stats.EPSS.TotalScores != 9000 {
+		t.Errorf("TotalScores: want 9000, got %d", stats.EPSS.TotalScores)
+	}
+}
+
 func TestThreatIntelService_GetThreatIntelStats_EPSSFailsGracefully(t *testing.T) {
 	repo := newThreatIntelMockRepo()
 	repo.epss.countErr = errors.New("epss db error")
@@ -984,7 +1081,7 @@ func TestThreatIntelService_GetThreatIntelStats_EPSSFailsGracefully(t *testing.T
 	threatIntelAddKEVEntry(repo, "CVE-2024-0001")
 	threatIntelAddSyncStatus(repo, "kev", true)
 
-	stats, err := svc.GetThreatIntelStats(ctx)
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
 	if err != nil {
 		t.Fatalf("expected no error (graceful degradation), got %v", err)
 	}
@@ -1009,7 +1106,7 @@ func TestThreatIntelService_GetThreatIntelStats_KEVFailsGracefully(t *testing.T)
 	}
 	threatIntelAddSyncStatus(repo, "epss", true)
 
-	stats, err := svc.GetThreatIntelStats(ctx)
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
 	if err != nil {
 		t.Fatalf("expected no error (graceful degradation), got %v", err)
 	}
@@ -1033,7 +1130,7 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusFailsGracefully(t *tes
 		return nil, nil
 	}
 
-	stats, err := svc.GetThreatIntelStats(ctx)
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
 	if err != nil {
 		t.Fatalf("expected no error (graceful degradation), got %v", err)
 	}
@@ -1060,7 +1157,7 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusDTOFields(t *testing.T
 		return nil, nil
 	}
 
-	stats, err := svc.GetThreatIntelStats(ctx)
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1104,7 +1201,7 @@ func TestThreatIntelService_GetThreatIntelStats_SyncStatusWithError(t *testing.T
 		return nil, nil
 	}
 
-	stats, err := svc.GetThreatIntelStats(ctx)
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

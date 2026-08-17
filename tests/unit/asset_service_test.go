@@ -205,7 +205,8 @@ func (m *MockAssetRepository) GetByNames(_ context.Context, tenantID shared.ID, 
 	return result, nil
 }
 
-func (m *MockAssetRepository) UpsertBatch(_ context.Context, assets []*asset.Asset) (created int, updated int, err error) {
+func (m *MockAssetRepository) UpsertBatch(_ context.Context, assets []*asset.Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error) {
+	persistedIDs = make(map[string]shared.ID, len(assets))
 	for _, a := range assets {
 		if _, exists := m.assets[a.ID().String()]; exists {
 			updated++
@@ -213,8 +214,9 @@ func (m *MockAssetRepository) UpsertBatch(_ context.Context, assets []*asset.Ass
 			created++
 		}
 		m.assets[a.ID().String()] = a
+		persistedIDs[a.Name()] = a.ID()
 	}
-	return created, updated, nil
+	return created, updated, persistedIDs, nil
 }
 
 func (m *MockAssetRepository) UpdateFindingCounts(_ context.Context, _ shared.ID, _ []shared.ID) error {

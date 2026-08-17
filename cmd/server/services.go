@@ -20,7 +20,9 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/app/attack"
 	"github.com/openctemio/api/internal/app/auth/domainverify"
+	ctemidapp "github.com/openctemio/api/internal/app/ctemid"
 	"github.com/openctemio/api/internal/app/exposure"
+	"github.com/openctemio/api/internal/app/exposurebridge"
 	"github.com/openctemio/api/internal/app/ingest"
 	iocapp "github.com/openctemio/api/internal/app/ioc"
 	"github.com/openctemio/api/internal/app/jira"
@@ -66,6 +68,46 @@ func (a findingMutatorAdapter) Get(ctx context.Context, tenantID, findingID shar
 
 func (a findingMutatorAdapter) Update(ctx context.Context, f *vulnerability.Finding) error {
 	return a.repo.Update(ctx, f)
+}
+
+// RecordVerdict implements validation.VerdictRecorder: the durable side-write of
+// the confirm-or-downgrade verdict (validation_outcome / downgraded_at) that
+// feeds the downgrade % metric.
+func (a findingMutatorAdapter) RecordVerdict(ctx context.Context, tenantID, findingID shared.ID, verdict validation.Verdict, downgradedAt *time.Time) error {
+	return a.repo.StampValidationVerdict(ctx, tenantID, findingID, string(verdict), downgradedAt)
+}
+
+// validationAgentAvailability answers "is a validation-capable agent online for
+// this tenant?" by reusing the exact capability query scan dispatch uses
+// (AgentRepository.FindAvailableWithCapacity). It gates validation.RunService so
+// a validate command is only ever queued when a real agent can consume it —
+// otherwise the command would sit in the queue forever and a live simulation run
+// would be stranded in "running". The gate is self-arming: it opens the moment a
+// tenant registers an agent advertising the "validate" capability.
+type validationAgentAvailability struct {
+	agents *postgres.AgentRepository
+}
+
+func (v validationAgentAvailability) HasValidationAgent(ctx context.Context, tenantID shared.ID) (bool, error) {
+	agents, err := v.agents.FindAvailableWithCapacity(ctx, tenantID, []string{validation.AgentCapabilityValidate}, "")
+	if err != nil {
+		return false, err
+	}
+	return len(agents) > 0, nil
+}
+
+// HasNucleiValidationAgent gates the deeper KindNuclei re-verify rung (RFC-011.2
+// Phase 2b) on a live per-tenant check for an agent advertising the
+// `validate:nuclei` capability. Self-arming exactly like the base gate: routing
+// upgrades from safe-check to a real single-template re-run the moment a tenant
+// deploys a nuclei-capable validation agent, and degrades back with no code
+// change if it goes offline.
+func (v validationAgentAvailability) HasNucleiValidationAgent(ctx context.Context, tenantID shared.ID) (bool, error) {
+	agents, err := v.agents.FindAvailableWithCapacity(ctx, tenantID, []string{validation.AgentCapabilityValidateNuclei}, "")
+	if err != nil {
+		return false, err
+	}
+	return len(agents) > 0, nil
 }
 
 // assetOwnerMatcher resolves an asset's owner_ref email to a user id for
@@ -254,6 +296,29 @@ func (a apikeyMembershipAdapter) IsActiveMember(ctx context.Context, tenantID, u
 	return m.Status() == tenant.MemberStatusActive, nil
 }
 
+// pentestTenantMemberAdapter adapts the tenant repository to
+// compliance.TenantMemberChecker so PentestService can reject adding a campaign
+// member who does not belong to the tenant (the DB FK only checks users.id, not
+// tenant membership — a cross-tenant IDOR without this guard). Fails closed:
+// unparseable IDs, a missing membership, or a lookup error all report "not a member".
+type pentestTenantMemberAdapter struct{ tenants tenant.Repository }
+
+func (a pentestTenantMemberAdapter) IsTenantMember(ctx context.Context, tenantID, userID string) bool {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false
+	}
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return false
+	}
+	m, err := a.tenants.GetMembership(ctx, uid, tid)
+	if err != nil || m == nil {
+		return false
+	}
+	return true
+}
+
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
 // action's JiraTicketService (primitive params, so the workflow package needn't
 // import app/jira — that would cycle through the app shim).
@@ -375,6 +440,7 @@ type Services struct {
 	SourceAnalytics  *app.SourceAnalyticsService
 	Exposure         *app.ExposureService
 	ThreatIntel      *threat.IntelService
+	CTEMID           *ctemidapp.Service
 	CredentialImport *app.CredentialImportService
 
 	// Components & Branches
@@ -618,6 +684,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// through the full load-modify-save path.
 	s.Asset.SetLifecycleRepository(repos.Asset)
 	s.Asset.SetStateHistoryRepository(repos.AssetStateHistory)
+	// Business-aligned risk scoring: score an asset's EFFECTIVE criticality —
+	// MAX(own, its business unit, the business services it powers) — the SAME
+	// floor rule (and the SAME lookup adapter) that finding-priority uses, so
+	// risk_score and finding priority stop disagreeing. Batch-first; nil-safe
+	// (falls back to own criticality). Raises scores for BU-critical assets only.
+	s.Asset.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
 
 	s.AssetGroup = app.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetType = app.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
@@ -677,6 +749,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.Exposure = app.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
+	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.CredentialImport = app.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 
 	// Initialize dashboard service
@@ -695,6 +768,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	// Wire compensating controls into priority classification (RFC-005 Gap 6)
 	s.PriorityClassification.SetControlLookup(postgres.NewCompensatingControlLookupRepo(deps.DB))
+
+	// Business-aligned prioritization: raise an asset's effective criticality to
+	// the MAX of {own, its business unit, the business services it powers} so BU /
+	// service criticality actually drives priority. Batch-first; nil-safe.
+	s.PriorityClassification.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
+
+	// CTEM ownership rule: a finding on an asset with NO assigned owner cannot be
+	// safely deprioritized, so it is floored at P2. Opt-in per tenant via
+	// RiskScoring.FloorUnownedAtP2 (default OFF — no silent change for existing
+	// tenants). The owner-presence lookup is batch + tenant-scoped and only runs
+	// for tenants that enabled the floor.
+	s.PriorityClassification.SetAssetOwnerLookup(postgres.NewAssetOwnershipLookupRepo(deps.DB))
+	s.PriorityClassification.SetOwnershipFloorPolicy(app.NewTenantOwnershipFloorPolicy(repos.Tenant))
 
 	// anti-flap priority flood guard. Caps per-tenant top-class
 	// fan-out at 50/hour — protects Jira/outbox from scanner-induced
@@ -718,6 +804,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			newThreatModelOracle(repos.ThreatModel, defaultThreatScoreThreshold, 5*time.Minute))
 	}
 
+	// AI-triage de-escalation: feed a high-confidence "likely false positive"
+	// verdict into prioritization so it can LOWER a finding by one bounded level
+	// (the only signal that reduces priority). Batch-first, tenant-scoped, nil-safe
+	// — no verdict / low confidence → no effect, never an escalation.
+	s.PriorityClassification.SetAITriageVerdictLookup(postgres.NewAITriagePriorityLookupRepo(deps.DB))
+
 	// B1/B2 reclassification pipeline wiring:
 	//   producers → ControlChangePublisher → MemoryQueue
 	//   PriorityReclassifyController (workers.go) → Reclassifier → ClassifyFinding
@@ -732,6 +824,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (e.g. a CVE newly listed in KEV → P0), so the deadline tightens instead
 	// of staying at its laxer pre-escalation value.
 	s.Reclassifier.SetSLARecomputer(sla.NewApplier(s.SLA))
+
+	// Manually-created findings (VulnerabilityService.CreateFinding, source=
+	// 'manual') must run through the SAME priority/SLA brain as ingested
+	// findings — otherwise they land with priority_class/sla_deadline NULL and
+	// is_reachable=false, invisible to the P0-P3 dashboards, the priority queue,
+	// and SLA. Reuse the exact classifier + SLA-service instances the ingest
+	// path uses (see SetPriorityClassifier / SetSLAApplier on s.Ingest below).
+	s.Vulnerability.SetAssetRepository(repos.Asset)
+	s.Vulnerability.SetPriorityClassifier(s.PriorityClassification)
+	if s.SLA != nil {
+		s.Vulnerability.SetSLAApplier(sla.NewApplier(s.SLA))
+	}
 
 	// B6 runtime loop — IOC catalogue + correlator. The correlator is
 	// attached to the runtime telemetry handler in handlers.go so every
@@ -758,6 +862,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
 	s.Pentest.SetAuditService(s.Audit)                     // audit logging for team changes + status changes
 	s.Pentest.SetFindingActivityService(s.FindingActivity) // finding activity trail
+	// Cross-tenant guard: reject adding a campaign member from another tenant.
+	// The SetTenantMemberChecker seam was never wired, so the check was dead.
+	s.Pentest.SetTenantMemberChecker(pentestTenantMemberAdapter{tenants: repos.Tenant})
 	// Note: Pentest notification wiring happens later after NotificationService is initialized
 
 	// Initialize Attachment service (file upload/download).
@@ -820,6 +927,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		evidenceStore,
 		findingMutatorAdapter{repo: repos.Finding},
 		nil, // retest notifier: optional; status revert still happens without it
+		findingMutatorAdapter{repo: repos.Finding}, // verdict recorder (validation_outcome / downgraded_at)
 		log,
 	)
 	// Producer side: dispatch a safe-check validation job for a finding. The
@@ -833,6 +941,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		[]validation.ExecutorKind{validation.KindSafeCheck},
 		log,
 	)
+	// Capability-gate the dispatch on a live per-tenant check for an online
+	// validation-capable agent, mirroring scan dispatch. Without this the API
+	// would enqueue validate commands (on fix_applied auto-retest and live
+	// simulation runs) even when no agent can execute them — the command would
+	// sit unconsumed and the simulation run would strand in "running". With it,
+	// dispatch is observably skipped until a validation agent is deployed, then
+	// self-activates. See validation.ErrNoValidationAgent.
+	s.ValidationRun.SetAgentAvailability(validationAgentAvailability{agents: repos.Agent})
+	// RFC-011.2 Phase 2b: route the deeper `nuclei` re-verify rung when — and only
+	// when — a `validate:nuclei`-capable agent is online. Inert-safe: with no such
+	// agent this gate returns false and routing is byte-for-byte Phase 2a
+	// (safe-check only). Reuses the same agent-registry capability query.
+	s.ValidationRun.SetNucleiAvailability(validationAgentAvailability{agents: repos.Agent})
 	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
 	// (network-addressable target + safe-checkable technique) runs for real via
 	// the validation dispatcher; the command-completion hook finalizes the run.
@@ -875,6 +996,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		)
 		s.AITriage.SetAuditService(s.Audit)
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
+
+		// On triage completion, enqueue an asset-scoped reclassify so a
+		// high-confidence false-positive verdict de-escalates the finding's
+		// priority. Reuses the same MemoryQueue → Reclassifier → ClassifyFinding
+		// pipeline the control/rule producers use (wired above).
+		s.AITriage.SetReclassifyEnqueuer(aiTriageReclassifyEnqueuer{pub: s.ControlChangePub})
 
 		// RFC-008: per-tenant LLM token budget. Always constructed so
 		// Status() works for dashboards even before enforcement.
@@ -943,6 +1070,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize integration & notification services
 	s.Integration = app.NewIntegrationService(repos.Integration, repos.IntegrationSCMExt, s.Encryptor, log)
+	s.Integration.SetTransactionDB(deps.DB)
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
 	s.Integration.SetRepoImportRepos(repos.Asset, repos.RepoExt, repos.Branch)
@@ -1098,6 +1226,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 		scan.WithAuditService(scanAuditAdapter),
 		scan.WithProfileRepo(repos.ScanProfile),
+		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
+		scan.WithScopeExclusionFilter(s.Scope),
 	)
 
 	// Wire verification scan trigger: allows FindingActionsService to launch targeted scans
@@ -1140,7 +1270,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		pipeline.WithAgentSelector(pipelineAgentSelectorAdapter),
 		pipeline.WithToolRepo(repos.Tool),
 		pipeline.WithQualityGate(repos.ScanProfile, repos.Finding),
-		pipeline.WithScanDeactivator(s.Scan), // Cascade pause scans when pipeline is deactivated
+		pipeline.WithScanDeactivator(s.Scan),     // Cascade pause scans when pipeline is deactivated
+		pipeline.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
 	)
 
 	// Wire up pipeline deactivator to tool service for cascade deactivation
@@ -1209,6 +1340,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// when new findings are created during ingestion
 	s.Ingest.SetFindingCreatedCallback(s.WorkflowDispatcher.DispatchFindingsCreated)
 
+	// Wire workflow dispatcher to the vulnerability service so a status change
+	// (e.g. a resolve) auto-dispatches a `finding_status_changed` workflow event
+	// — closes the resolve→verification automation loop the old inline TODO left
+	// open. Best-effort/async inside the dispatcher.
+	s.Vulnerability.SetWorkflowStatusDispatch(s.WorkflowDispatcher.DispatchFindingStatusChanged)
+
+	// Wire AI-triage completion/failure into the same workflow dispatcher so
+	// automation rules can trigger on triage verdicts. The SetWorkflowDispatcher
+	// seam was never called, so AITriage silently emitted no workflow events.
+	// s.WorkflowDispatcher is built just above (after the AITriage init block),
+	// so the wire lives here rather than where AITriage is constructed.
+	if s.AITriage != nil {
+		s.AITriage.SetWorkflowDispatcher(s.WorkflowDispatcher)
+	}
+
 	// Wire priority classification into ingest (RFC-004)
 	s.Ingest.SetPriorityClassifier(s.PriorityClassification)
 
@@ -1222,6 +1368,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize suppression service (platform-controlled false positive management)
 	s.Suppression = suppression.NewService(repos.Suppression, log)
+
+	// Enforce approved suppression rules during ingest: a new finding matching an
+	// active (approved, non-expired) rule lands resolved+suppressed (out of the
+	// open backlog) and records which rule suppressed it. Loads rules once per
+	// batch (tenant-scoped). Without this wire the suppression engine + CRUD +
+	// approve/reject UI exist but suppress nothing on the ingest path. Nil-safe.
+	s.Ingest.SetSuppressionChecker(s.Suppression)
 
 	// Initialize access control services
 	s.Group = app.NewGroupService(repos.Group, log,
@@ -1260,6 +1413,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// key so a whole "solution family" can be resolved in one action. The service
 	// reuses the finding bulk-status path + its abuse guard.
 	s.Ingest.SetRemediationKeyApplier(remediation.NewKeyApplier(repos.FindingRemediationKey, log))
+
+	// Continuous leaked-credential discovery: promote secret-scan findings
+	// (gitleaks/trufflehog → FindingSourceSecret) into the exposure store so a
+	// hardcoded secret shows up in the Credentials/Exposures view without a
+	// manual import. Labeled discovery_source=secret_scan so it stays distinct
+	// from an external breach import. Reuses the same exposure repo + state
+	// history as the credential-import service.
+	s.Ingest.SetExposureBridge(exposurebridge.NewBridge(repos.Exposure, repos.ExposureStateHistory, log))
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 
 	// A remediation campaign can be scoped to a group key (solution family): its

@@ -78,7 +78,7 @@ func (a *reopenAdapter) ReopenForIOCMatch(
 		ev := app.NewSuccessEvent(audit.ActionFindingStatusChanged, audit.ResourceTypeFinding, findingID.String()).
 			WithMessage(reason).
 			WithMetadata("previous_status", string(prev)).
-			WithMetadata("new_status", string(vulnerability.FindingStatusInProgress)).
+			WithMetadata("new_status", string(vulnerability.FindingStatusConfirmed)).
 			WithMetadata("source", "ioc_correlator").
 			WithSeverity(audit.SeverityHigh)
 		_ = a.auditor.LogEvent(ctx, app.AuditContext{TenantID: tenantID.String()}, ev)

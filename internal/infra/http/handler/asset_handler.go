@@ -295,6 +295,11 @@ type AssetResponse struct {
 	PHIDataExposed       bool     `json:"phi_data_exposed"`
 	IsInternetAccessible bool     `json:"is_internet_accessible"`
 
+	// CTEM Scoping: CIA impact rating (low | moderate | high; empty = not rated)
+	ImpactConfidentiality string `json:"impact_confidentiality,omitempty"`
+	ImpactIntegrity       string `json:"impact_integrity,omitempty"`
+	ImpactAvailability    string `json:"impact_availability,omitempty"`
+
 	// Sync
 	SyncStatus   string     `json:"sync_status,omitempty"`
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
@@ -355,6 +360,11 @@ type UpdateAssetRequest struct {
 	OwnerRef    *string        `json:"owner_ref" validate:"omitempty,max=500"`
 	Tags        []string       `json:"tags" validate:"omitempty,max=20,dive,max=50"`
 	Properties  map[string]any `json:"properties,omitempty"`
+
+	// CTEM Scoping: CIA impact rating (low | moderate | high). Empty string clears.
+	ImpactConfidentiality *string `json:"impact_confidentiality" validate:"omitempty,impact_rating"`
+	ImpactIntegrity       *string `json:"impact_integrity" validate:"omitempty,impact_rating"`
+	ImpactAvailability    *string `json:"impact_availability" validate:"omitempty,impact_rating"`
 }
 
 // toAssetResponse converts a domain asset to API response.
@@ -401,6 +411,11 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		PIIDataExposed:       a.PIIDataExposed(),
 		PHIDataExposed:       a.PHIDataExposed(),
 		IsInternetAccessible: a.IsInternetAccessible(),
+
+		// CTEM Scoping: CIA impact rating
+		ImpactConfidentiality: a.ImpactConfidentiality().String(),
+		ImpactIntegrity:       a.ImpactIntegrity().String(),
+		ImpactAvailability:    a.ImpactAvailability().String(),
 
 		// Sync
 		SyncStatus:   a.SyncStatus().String(),
@@ -767,14 +782,17 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := app.UpdateAssetInput{
-		Name:        req.Name,
-		Criticality: req.Criticality,
-		Scope:       req.Scope,
-		Exposure:    req.Exposure,
-		Description: req.Description,
-		OwnerRef:    req.OwnerRef,
-		Tags:        req.Tags,
-		Properties:  req.Properties,
+		Name:                  req.Name,
+		Criticality:           req.Criticality,
+		Scope:                 req.Scope,
+		Exposure:              req.Exposure,
+		Description:           req.Description,
+		OwnerRef:              req.OwnerRef,
+		Tags:                  req.Tags,
+		Properties:            req.Properties,
+		ImpactConfidentiality: req.ImpactConfidentiality,
+		ImpactIntegrity:       req.ImpactIntegrity,
+		ImpactAvailability:    req.ImpactAvailability,
 	}
 
 	a, err := h.service.UpdateAsset(r.Context(), id, tenantID, input)

@@ -221,6 +221,11 @@ func (s *RelationshipSuggestionService) Approve(ctx context.Context, tenantID, s
 		return fmt.Errorf("failed to create relationship from suggestion: %w", relErr)
 	}
 	rel.SetDescription(suggestion.Reason())
+	// An approved suggestion is an INFERRED edge a human confirmed — not one drawn
+	// by hand. NewRelationship defaults to manual/medium, laundering the inference
+	// away. Stamp the real provenance (mirrors graph_enrichment).
+	_ = rel.SetDiscoveryMethod(assetdom.DiscoveryInferred)
+	_ = rel.SetConfidence(confidenceFromScore(suggestion.Confidence()))
 
 	if createErr := s.relRepo.Create(ctx, rel); createErr != nil {
 		// If relationship already exists, still mark suggestion as approved
@@ -276,6 +281,12 @@ func (s *RelationshipSuggestionService) ApproveAll(ctx context.Context, tenantID
 			continue
 		}
 		rel.SetDescription(suggestion.Reason())
+		// An approved suggestion is an INFERRED edge a human confirmed — not one
+		// drawn by hand. NewRelationship defaults to manual/medium, which laundered
+		// the inference away and made reviewed edges indistinguishable from
+		// hand-drawn ones. Stamp the real provenance (mirrors graph_enrichment).
+		_ = rel.SetDiscoveryMethod(assetdom.DiscoveryInferred)
+		_ = rel.SetConfidence(confidenceFromScore(suggestion.Confidence()))
 
 		if createErr := s.relRepo.Create(ctx, rel); createErr != nil {
 			if !isAlreadyExists(createErr) {
@@ -438,4 +449,19 @@ func (s *RelationshipSuggestionService) fetchAllAssets(ctx context.Context, tena
 // isAlreadyExists checks if an error is an "already exists" error.
 func isAlreadyExists(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "already exists")
+}
+
+// confidenceFromScore maps a suggestion's numeric confidence (0..1) to the
+// relationship confidence enum. Live suggestions sit at 0.90-0.95; the
+// thresholds keep those "high" rather than laundering them to the medium
+// default.
+func confidenceFromScore(score float64) assetdom.RelationshipConfidence {
+	switch {
+	case score >= 0.8:
+		return assetdom.ConfidenceHigh
+	case score >= 0.5:
+		return assetdom.ConfidenceMedium
+	default:
+		return assetdom.ConfidenceLow
+	}
 }

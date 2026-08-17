@@ -11,13 +11,14 @@ import (
 )
 
 // SLABreachEvent is emitted once per finding on the transition into
-// the `breached` SLA state. Downstream consumers (notification outbox,
-// Jira commenter, PagerDuty router) subscribe via the publisher.
+// the `overdue` SLA state (a breach of its deadline). Downstream consumers
+// (notification outbox, Jira commenter, PagerDuty router) subscribe via the
+// publisher.
 //
 // B4: closes the feedback edge where SLA status was
-// previously computed but never acted on. Dedup via the SLA breach
+// previously computed but never acted on. Dedup via the SLA state
 // transition itself — a second controller run won't re-emit because
-// rows already in `breached` state don't match the UPDATE WHERE clause.
+// rows already in `overdue` state don't match the UPDATE WHERE clause.
 type SLABreachEvent struct {
 	TenantID        shared.ID
 	FindingID       shared.ID
@@ -43,16 +44,29 @@ type SLABreachTxPublisher interface {
 	PublishTx(ctx context.Context, tx *sql.Tx, event SLABreachEvent) error
 }
 
-// breachSelectUpdateQuery transitions overdue findings to `breached` and
-// RETURNs the fields the publisher needs. Shared by the tx and legacy paths.
+// breachSelectUpdateQuery transitions open, past-deadline findings to the
+// `overdue` SLA status and RETURNs the fields the publisher needs. Shared by
+// the tx and legacy paths.
+//
+// Vocabulary: this writes 'overdue', NOT 'breached'. 'breached' is not a member
+// of the SLAStatus enum (pkg/domain/vulnerability: on_track/warning/overdue/
+// exceeded/not_applicable), is rejected by the findings.sla_status CHECK
+// constraint (migration 000012), and is NOT counted by the dashboard breach
+// query (sla_status IN ('exceeded','overdue')). 'overdue' is the enum value for
+// an OPEN finding past its deadline (the domain reserves 'exceeded' for a finding
+// that was closed after its deadline), it satisfies the CHECK constraint, and it
+// is what both the dashboard counter and the worst_sla_status rank agree on.
+//
+// Status exclusion mirrors the dashboard's closed-category set so an
+// accepted-risk / accepted / duplicate finding is never marked overdue.
 const breachSelectUpdateQuery = `
 	UPDATE findings SET
-		sla_status = 'breached',
+		sla_status = 'overdue',
 		updated_at = NOW()
 	WHERE sla_deadline < NOW()
 	  AND sla_deadline IS NOT NULL
-	  AND (sla_status IS NULL OR sla_status NOT IN ('breached', 'not_applicable'))
-	  AND status NOT IN ('closed', 'resolved', 'false_positive', 'verified')
+	  AND (sla_status IS NULL OR sla_status NOT IN ('overdue', 'exceeded', 'not_applicable'))
+	  AND status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 	RETURNING tenant_id, id, sla_deadline
 `
 
@@ -63,7 +77,7 @@ type breachRow struct {
 }
 
 // SLAEscalationController periodically checks for overdue findings
-// and updates their sla_status to 'breached'. Runs every 15 minutes.
+// and updates their sla_status to 'overdue'. Runs every 15 minutes.
 //
 // Note: This operates across all tenants intentionally — it's a system-level
 // background job that marks overdue findings within their own rows.
@@ -252,7 +266,7 @@ func (c *SLAEscalationController) markWarning(ctx context.Context) {
 		  AND sla_deadline > NOW()
 		  AND sla_deadline < NOW() + INTERVAL '3 days'
 		  AND (sla_status IS NULL OR sla_status = 'on_track')
-		  AND status NOT IN ('closed', 'resolved', 'false_positive', 'verified')
+		  AND status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 	`
 
 	warningResult, err := c.db.ExecContext(ctx, warningQuery)

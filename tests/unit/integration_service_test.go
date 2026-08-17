@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -51,6 +52,13 @@ func (m *mockIntegrationRepo) Create(_ context.Context, i *integration.Integrati
 	}
 	m.integrations[i.ID()] = i
 	return nil
+}
+
+// CreateInTx satisfies the Repository interface. These mock-based tests never
+// wire a transactional DB (a real *sql.Tx cannot be faked), so the service
+// takes its non-transactional path and this is unused; it mirrors Create.
+func (m *mockIntegrationRepo) CreateInTx(ctx context.Context, _ *sql.Tx, i *integration.Integration) error {
+	return m.Create(ctx, i)
 }
 
 func (m *mockIntegrationRepo) GetByID(_ context.Context, id integration.ID) (*integration.Integration, error) {
@@ -239,6 +247,11 @@ func (m *mockSCMExtRepo) Create(_ context.Context, ext *integration.SCMExtension
 	return nil
 }
 
+// CreateInTx satisfies the SCMExtensionRepository interface (see mockIntegrationRepo.CreateInTx).
+func (m *mockSCMExtRepo) CreateInTx(ctx context.Context, _ *sql.Tx, ext *integration.SCMExtension) error {
+	return m.Create(ctx, ext)
+}
+
 func (m *mockSCMExtRepo) GetByIntegrationID(_ context.Context, integrationID integration.ID) (*integration.SCMExtension, error) {
 	if m.getErr != nil {
 		return nil, m.getErr
@@ -309,6 +322,11 @@ func (m *mockNotificationExtRepo) Create(_ context.Context, ext *integration.Not
 	}
 	m.extensions[ext.IntegrationID()] = ext
 	return nil
+}
+
+// CreateInTx satisfies the NotificationExtensionRepository interface (see mockIntegrationRepo.CreateInTx).
+func (m *mockNotificationExtRepo) CreateInTx(ctx context.Context, _ *sql.Tx, ext *integration.NotificationExtension) error {
+	return m.Create(ctx, ext)
 }
 
 func (m *mockNotificationExtRepo) GetByIntegrationID(_ context.Context, integrationID integration.ID) (*integration.NotificationExtension, error) {

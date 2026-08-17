@@ -80,7 +80,7 @@ func fixAppliedFinding(t *testing.T) *vulnerability.Finding {
 
 func newValidationHandler(repo *fakeEvidenceRepo, fm *fakeFindingMutator) *ValidationHandler {
 	store := validation.NewEvidenceStore(repo)
-	svc := validation.NewEvidenceIngestService(store, fm, nil, logger.NewNop())
+	svc := validation.NewEvidenceIngestService(store, fm, nil, nil, logger.NewNop())
 	return NewValidationHandler(svc, logger.NewNop())
 }
 

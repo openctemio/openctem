@@ -356,18 +356,23 @@ func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify tenant access
+	// Verify tenant access. This is the tenant-facing getter, so it must
+	// never expose a system row (tenant_id IS NULL) or another tenant's row —
+	// GetAuditLog resolves by id alone (WHERE id = $1), so the tenant check
+	// here is the only guard. Fail closed on a nil or mismatched tenant.
 	tenantID := middleware.GetTenantID(r.Context())
-	if tenantID != "" {
-		tid, err := shared.IDFromString(tenantID)
-		if err != nil {
-			apierror.Unauthorized("Invalid tenant token").WriteJSON(w)
-			return
-		}
-		if log.TenantID() != nil && *log.TenantID() != tid {
-			apierror.Forbidden("Access denied to this audit log").WriteJSON(w)
-			return
-		}
+	if tenantID == "" {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant token").WriteJSON(w)
+		return
+	}
+	if log.TenantID() == nil || *log.TenantID() != tid {
+		apierror.Forbidden("Access denied to this audit log").WriteJSON(w)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -472,6 +477,14 @@ func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Tenant scope is mandatory: without it ListByActor would return the
+	// actor's activity across every tenant (cross-tenant audit-log read).
+	tenantID, ok := middleware.GetTenantIDFromContext(r.Context())
+	if !ok {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return
+	}
+
 	// Parse pagination
 	query := r.URL.Query()
 	page := 0
@@ -491,7 +504,7 @@ func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
 		perPage = 20 // guard: ?per_page=0 → int(Total)/perPage divide-by-zero panic below
 	}
 
-	result, err := h.service.GetUserActivity(r.Context(), userID, page, perPage)
+	result, err := h.service.GetUserActivity(r.Context(), tenantID, userID, page, perPage)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

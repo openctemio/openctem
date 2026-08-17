@@ -46,8 +46,10 @@ type Repository interface {
 	// tenantID MUST be provided to prevent cross-tenant reads.
 	GetLatestByResource(ctx context.Context, tenantID shared.ID, resourceType ResourceType, resourceID string) (*AuditLog, error)
 
-	// ListByActor retrieves audit logs for a specific actor.
-	ListByActor(ctx context.Context, actorID shared.ID, page pagination.Pagination) (pagination.Result[*AuditLog], error)
+	// ListByActor retrieves audit logs for a specific actor within a tenant.
+	// tenantID MUST be provided to prevent cross-tenant reads — an actor's
+	// activity is otherwise visible to any tenant that knows the actor id.
+	ListByActor(ctx context.Context, tenantID, actorID shared.ID, page pagination.Pagination) (pagination.Result[*AuditLog], error)
 
 	// ListByResource retrieves audit logs for a specific resource within a tenant.
 	// tenantID MUST be provided to prevent cross-tenant reads.

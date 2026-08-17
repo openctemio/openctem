@@ -92,6 +92,93 @@ func prioritySeamsWiredInCmdServer(t *testing.T) map[string]bool {
 	return wired
 }
 
+// selectorCall is one method-call selector found in the sources: the printed
+// receiver expression (e.g. "services.Email", "s.AITriage") and the method name.
+type selectorCall struct {
+	recv   string
+	method string
+}
+
+// allSelectorCallsInCmdServer parses this package's non-test sources and returns
+// every method-call selector, so callers can assert that a specific
+// receiver-field.method pair is present. Same AST approach (and same local-alias
+// limitation) as prioritySeamsWiredInCmdServer.
+func allSelectorCallsInCmdServer(t *testing.T) []selectorCall {
+	t.Helper()
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read cmd/server: %v", err)
+	}
+
+	fset := token.NewFileSet()
+	var calls []selectorCall
+	parsed := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		parsed++
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			var buf bytes.Buffer
+			if err := printer.Fprint(&buf, fset, sel.X); err != nil {
+				return true
+			}
+			calls = append(calls, selectorCall{recv: buf.String(), method: sel.Sel.Name})
+			return true
+		})
+	}
+	if parsed == 0 {
+		t.Fatal("parsed no cmd/server sources; the guard is not guarding anything")
+	}
+	return calls
+}
+
+// guardedInertSeams are Set* collaborators that were built but never injected at
+// the composition root, so the feature they feed silently never ran. Each was
+// fixed; this list keeps them from regressing. The field is the trailing
+// selector on the Services value (works for both `s.X` and `services.X`).
+var guardedInertSeams = []struct {
+	field   string // e.g. ".Email"
+	setter  string
+	feature string
+}{
+	{".Email", "SetTenantSMTPResolver", "per-tenant SMTP"},
+	{".AITriage", "SetWorkflowDispatcher", "AI-triage workflow events"},
+	{".Pentest", "SetTenantMemberChecker", "pentest cross-tenant member check"},
+	{".Tenant", "SetMemberStatusEmailNotifier", "member suspend/reactivate emails"},
+}
+
+// TestInertWiringSeams_StayWired asserts each previously-dead Set* seam is
+// invoked on its Services field in cmd/server. Because these are nil-guarded,
+// dropping the wire produces no build or vet error — only this test catches it.
+func TestInertWiringSeams_StayWired(t *testing.T) {
+	calls := allSelectorCallsInCmdServer(t)
+	for _, seam := range guardedInertSeams {
+		found := false
+		for _, c := range calls {
+			if c.method == seam.setter && strings.HasSuffix(c.recv, seam.field) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Services%s.%s (%s) is never called in cmd/server.\n"+
+				"The service nil-guards this collaborator, so leaving it unwired silently disables the feature.\n"+
+				"Re-wire it in cmd/server (services.go or main.go).", seam.field, seam.setter, seam.feature)
+		}
+	}
+}
+
 func TestPriorityClassificationSeams_AreWiredOrExplicitlyOptional(t *testing.T) {
 	seams := make([]string, 0, 8)
 	typ := reflect.TypeOf(&app.PriorityClassificationService{})

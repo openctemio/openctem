@@ -69,6 +69,29 @@ func (r *AccessControlRepository) CreateAssetOwner(ctx context.Context, ao *acce
 	return nil
 }
 
+// IsGroupInTenant reports whether the group belongs to the tenant. Used to
+// reject a cross-tenant principal before CreateAssetOwner writes it — asset_owners
+// carries no tenant_id, so this is the only tenant guard on the principal.
+func (r *AccessControlRepository) IsGroupInTenant(ctx context.Context, tenantID, groupID shared.ID) (bool, error) {
+	const query = `SELECT EXISTS (SELECT 1 FROM groups WHERE id = $1 AND tenant_id = $2)`
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, query, groupID.String(), tenantID.String()).Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to check group tenant membership: %w", err)
+	}
+	return exists, nil
+}
+
+// IsUserInTenant reports whether the user is a member of the tenant. Mirrors the
+// `tenant_members WHERE tenant_id` screen the read-side owner queries use.
+func (r *AccessControlRepository) IsUserInTenant(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	const query = `SELECT EXISTS (SELECT 1 FROM tenant_members WHERE user_id = $1 AND tenant_id = $2)`
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, query, userID.String(), tenantID.String()).Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to check user tenant membership: %w", err)
+	}
+	return exists, nil
+}
+
 // GetAssetOwner retrieves an asset ownership by asset and group ID.
 func (r *AccessControlRepository) GetAssetOwner(ctx context.Context, assetID, groupID shared.ID) (*accesscontrol.AssetOwner, error) {
 	query := `

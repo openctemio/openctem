@@ -127,8 +127,11 @@ GET /api/v1/components/export
 GET /api/v1/control-tests
 GET /api/v1/control-tests/stats
 GET /api/v1/ctem-cycles
+GET /api/v1/ctem-cycles/metrics/trend
 GET /api/v1/ctem-cycles/{}
+GET /api/v1/ctem-cycles/{}/metrics
 GET /api/v1/ctem-cycles/{}/scope
+GET /api/v1/ctem-ids
 GET /api/v1/dashboard/data-quality
 GET /api/v1/dashboard/executive-summary
 GET /api/v1/dashboard/executive-summary/export
@@ -262,6 +265,7 @@ PATCH /api/v1/admin/users/{}
 PATCH /api/v1/assets/{}/crown-jewel
 PATCH /api/v1/attachments/storage-config
 PATCH /api/v1/control-tests/{}/result
+PATCH /api/v1/findings/{}/remediation
 PATCH /api/v1/pentest/campaigns/{}/members/{}
 PATCH /api/v1/pentest/campaigns/{}/status
 PATCH /api/v1/pentest/findings/{}/status
@@ -331,6 +335,7 @@ POST /api/v1/ctem-cycles
 POST /api/v1/ctem-cycles/{}/activate
 POST /api/v1/ctem-cycles/{}/close
 POST /api/v1/ctem-cycles/{}/profiles
+POST /api/v1/ctem-cycles/{}/scope-refinement
 POST /api/v1/ctem-cycles/{}/start-review
 POST /api/v1/custom-capabilities
 POST /api/v1/custom-tool-categories
@@ -376,6 +381,7 @@ POST /api/v1/pipelines/{}/deactivate
 POST /api/v1/pipelines/{}/runs
 POST /api/v1/pipelines/{}/steps
 POST /api/v1/priority-rules
+POST /api/v1/priority-rules/dry-run
 POST /api/v1/relationships/suggestions/approve-all
 POST /api/v1/relationships/suggestions/approve-batch
 POST /api/v1/relationships/suggestions/generate
@@ -438,6 +444,7 @@ PUT /api/v1/compensating-controls/{}
 PUT /api/v1/ctem-cycles/{}
 PUT /api/v1/custom-capabilities/{}
 PUT /api/v1/custom-tool-categories/{}
+PUT /api/v1/exposures/{}/ctem-id
 PUT /api/v1/findings/{}/comments/{}
 PUT /api/v1/groups/{}/scope-rules/{}
 PUT /api/v1/pentest/campaigns/{}

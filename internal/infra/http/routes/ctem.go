@@ -12,8 +12,10 @@ func registerCompensatingControlRoutes(
 	h *handler.CompensatingControlHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/compensating-controls", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.CompensatingControlsRead))
@@ -33,8 +35,10 @@ func registerAttackerProfileRoutes(
 	h *handler.AttackerProfileHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/attacker-profiles", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AttackerProfilesRead))
@@ -75,8 +79,10 @@ func registerBusinessServiceRoutes(
 	h *handler.BusinessServiceHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/business-services", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.BusinessServicesRead))
@@ -96,12 +102,18 @@ func registerPriorityRuleRoutes(
 	h *handler.PriorityRuleHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/priority-rules", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.PriorityRulesRead))
 		r.POST("/", h.Create, middleware.Require(permission.PriorityRulesWrite))
+		// Dry-run a DRAFT rule against live findings — read-only evaluation, so it
+		// takes the READ permission. Registered before "/{id}" (distinct static
+		// path, no capture conflict).
+		r.POST("/dry-run", h.DryRun, middleware.Require(permission.PriorityRulesRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.PriorityRulesRead))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.PriorityRulesWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.PriorityRulesWrite))
@@ -114,17 +126,25 @@ func registerCTEMCycleRoutes(
 	h *handler.CTEMCycleHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/ctem-cycles", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.CTEMCyclesRead))
 		r.POST("/", h.Create, middleware.Require(permission.CTEMCyclesWrite))
+		// Static /metrics/trend is registered before /{id}/... so it is
+		// never shadowed by the {id} param route.
+		r.GET("/metrics/trend", h.MetricsTrend, middleware.Require(permission.CTEMCyclesRead))
+		r.GET("/{id}/metrics", h.GetMetrics, middleware.Require(permission.CTEMCyclesRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.CTEMCyclesRead))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.CTEMCyclesWrite))
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.CTEMCyclesWrite))
 		r.POST("/{id}/start-review", h.StartReview, middleware.Require(permission.CTEMCyclesWrite))
 		r.POST("/{id}/close", h.Close, middleware.Require(permission.CTEMCyclesWrite))
+		// Feedback-to-scope: record scope-refinement notes at review/close.
+		r.POST("/{id}/scope-refinement", h.UpdateScopeRefinement, middleware.Require(permission.CTEMCyclesWrite))
 		r.GET("/{id}/scope", h.GetScope, middleware.Require(permission.CTEMCyclesRead))
 		r.POST("/{id}/profiles", h.LinkProfile, middleware.Require(permission.CTEMCyclesWrite))
 	}, tenantMiddlewares...)

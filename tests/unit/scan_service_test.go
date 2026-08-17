@@ -147,6 +147,10 @@ func (m *mockScanRepo) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ 
 	return nil
 }
 
+func (m *mockScanRepo) RecordTriggerFailure(_ context.Context, _ shared.ID, _ string) error {
+	return nil
+}
+
 func (m *mockScanRepo) GetStats(_ context.Context, _ shared.ID) (*scan.Stats, error) {
 	if m.statsErr != nil {
 		return nil, m.statsErr
@@ -407,6 +411,9 @@ func (m *mockRunRepo) MarkTimedOutRuns(_ context.Context) (int64, error) {
 }
 func (m *mockRunRepo) ListPendingRetries(_ context.Context, _ int) ([]pipeline.RetryCandidate, error) {
 	return nil, nil
+}
+func (m *mockRunRepo) ResetRetryClaim(_ context.Context, _ shared.ID) error {
+	return nil
 }
 
 // =============================================================================

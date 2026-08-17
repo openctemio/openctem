@@ -232,7 +232,7 @@ func (m *moduleAuditMockRepo) GetLatestByResource(_ context.Context, _ shared.ID
 	return nil, nil
 }
 
-func (m *moduleAuditMockRepo) ListByActor(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+func (m *moduleAuditMockRepo) ListByActor(_ context.Context, _ shared.ID, _ shared.ID, _ pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
 	return pagination.Result[*audit.AuditLog]{}, nil
 }
 

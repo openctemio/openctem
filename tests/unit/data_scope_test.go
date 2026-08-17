@@ -52,6 +52,14 @@ func (m *mockAccessControlRepo) CanAccessAsset(_ context.Context, userID, assetI
 func (m *mockAccessControlRepo) CreateAssetOwner(_ context.Context, _ *accesscontrol.AssetOwner) error {
 	return nil
 }
+
+func (m *mockAccessControlRepo) IsGroupInTenant(_ context.Context, _, _ shared.ID) (bool, error) {
+	return true, nil
+}
+
+func (m *mockAccessControlRepo) IsUserInTenant(_ context.Context, _, _ shared.ID) (bool, error) {
+	return true, nil
+}
 func (m *mockAccessControlRepo) GetAssetOwner(_ context.Context, _, _ shared.ID) (*accesscontrol.AssetOwner, error) {
 	return nil, nil
 }

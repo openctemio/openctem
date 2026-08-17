@@ -15,6 +15,15 @@ type RetryDispatcher interface {
 	RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, retryAttempt int) error
 }
 
+// retryRunRepository is the narrow slice of pipeline.RunRepository the
+// ScanRetryController needs: claim eligible runs, and release a claim whose
+// dispatch failed so the run is retried again next tick. pipeline.RunRepository
+// satisfies it, so wiring passes the concrete repo unchanged.
+type retryRunRepository interface {
+	ListPendingRetries(ctx context.Context, limit int) ([]pipeline.RetryCandidate, error)
+	ResetRetryClaim(ctx context.Context, runID shared.ID) error
+}
+
 // ScanRetryControllerConfig configures the ScanRetryController.
 type ScanRetryControllerConfig struct {
 	// Interval is how often to check for retry candidates.
@@ -33,7 +42,7 @@ type ScanRetryControllerConfig struct {
 // retry_backoff_seconds with exponential backoff) and dispatches retries
 // through the RetryDispatcher.
 type ScanRetryController struct {
-	runRepo    pipeline.RunRepository
+	runRepo    retryRunRepository
 	dispatcher RetryDispatcher
 	config     *ScanRetryControllerConfig
 	logger     *logger.Logger
@@ -41,7 +50,7 @@ type ScanRetryController struct {
 
 // NewScanRetryController creates a new ScanRetryController.
 func NewScanRetryController(
-	runRepo pipeline.RunRepository,
+	runRepo retryRunRepository,
 	dispatcher RetryDispatcher,
 	config *ScanRetryControllerConfig,
 ) *ScanRetryController {
@@ -66,7 +75,7 @@ func NewScanRetryController(
 	}
 }
 
-func (c *ScanRetryController) Name() string         { return "scan-retry" }
+func (c *ScanRetryController) Name() string            { return "scan-retry" }
 func (c *ScanRetryController) Interval() time.Duration { return c.config.Interval }
 
 func (c *ScanRetryController) Reconcile(ctx context.Context) (int, error) {
@@ -95,6 +104,17 @@ func (c *ScanRetryController) Reconcile(ctx context.Context) (int, error) {
 				"failed_run_id", cand.RunID.String(),
 				"next_attempt", nextAttempt,
 				"error", err)
+			// The dispatch was claimed at LIST time (retry_dispatched_at = NOW)
+			// but created no new run, so the claim is now stale. Release it so
+			// this run is eligible again next tick; otherwise a single transient
+			// failure would permanently stall auto-retry. Budget is not
+			// double-counted: no new run was created, so retry_attempt is unchanged.
+			if resetErr := c.runRepo.ResetRetryClaim(ctx, cand.RunID); resetErr != nil {
+				c.logger.Error("failed to reset retry claim after dispatch failure",
+					"scan_id", cand.ScanID.String(),
+					"failed_run_id", cand.RunID.String(),
+					"error", resetErr)
+			}
 			continue
 		}
 		c.logger.Info("dispatched scan retry",

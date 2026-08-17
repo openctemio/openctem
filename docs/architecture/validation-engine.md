@@ -116,6 +116,37 @@ HTTP reachability re-check, technique `T1046`). `Selector`/`DefaultSelector`
 already prefer it and gate the riskier kinds behind an attacker profile; the
 routing is built so `nuclei` re-check slots in next without rework.
 
+## Confirm-or-downgrade verdict + downgrade % (RFC-011.2 Phase 2a)
+
+When a validation result is ingested, the status-reconciliation step
+(`applyOutcomeToFinding`, shared by the evidence-ingest and proof-of-fix paths)
+turns the execution `Outcome` into a finding-level **verdict** and moves the
+finding:
+
+| Verdict (outcome) | Finding before | Transition |
+|-------------------|----------------|------------|
+| `not_reproducible` (`not_detected`) | new / confirmed / in_progress | → `validated_fixed` (**downgrade**, `downgraded_at` stamped) |
+| `not_reproducible` | `fix_applied` | → `resolved` (verified proof-of-fix, *not* a downgrade) |
+| `reproducible` (`detected`) | `fix_applied` | → `in_progress` (fix did not hold) + notify |
+| `reproducible` | `validated_fixed` | → `confirmed` (prior downgrade refuted) |
+| `reproducible` | other open | hold, stamp "still exploitable" |
+| inconclusive / error / skipped | any | no change |
+
+`validated_fixed` is a new **in_progress-category** state: de-prioritized but
+**not closed** — the conservative default is that a human still closes it
+(`validated_fixed → resolved` requires `findings:verify`). A non-intrusive
+re-check never auto-closes a live finding.
+
+The verdict is persisted on the finding by a `VerdictRecorder`
+(`findings.validation_outcome` + `downgraded_at`, migration `000209`), a narrow
+side-write next to the status transition. This makes the CTEM **downgrade %**
+outcome metric real: `GET /api/v1/validation/coverage` now returns `downgraded`,
+`downgrade_validated`, and `downgrade_pct` (`validation.DowngradePct`), so the
+Program-Health board's "not measured" blank can go live (ui = Phase 2c).
+
+The rule works with the existing `safe-check` result — no agent/nuclei work is
+required for the loop to close; Phase 2b only deepens the *depth* of the result.
+
 ## Not yet shipped (deferred)
 
 - **Agent-side executor** — the API enqueues `validate` commands, but the agent

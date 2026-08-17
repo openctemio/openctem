@@ -7,6 +7,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/openctemio/api/internal/app/scope"
 	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/assetgroup"
 	"github.com/openctemio/api/pkg/domain/audit"
@@ -190,7 +191,16 @@ type Service struct {
 	agentSelector       AgentSelector
 	securityValidator   SecurityValidator
 	auditService        AuditService
+	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusion enforcement (fail-open)
 	logger              *logger.Logger
+}
+
+// ScopeExclusionFilter reports which of the given candidate assets match an
+// active scope EXCLUSION for the tenant and must therefore be skipped by a scan.
+// Implemented by *scope.Service. FAIL-OPEN by contract: on any error it returns
+// an empty set so scanning is never blocked by a scope lookup.
+type ScopeExclusionFilter interface {
+	FilterExcludedTargets(ctx context.Context, tenantID string, candidates []scope.ExclusionCandidate) map[shared.ID]bool
 }
 
 // ServiceOption is a functional option for Service.
@@ -214,6 +224,15 @@ func WithTargetMappingRepo(repo tool.TargetMappingRepository) ServiceOption {
 func WithProfileRepo(repo scanprofile.Repository) ServiceOption {
 	return func(s *Service) {
 		s.profileRepo = repo
+	}
+}
+
+// WithScopeExclusionFilter wires scope-exclusion enforcement into scan target
+// selection. Optional — nil keeps the legacy behavior (exclusions advisory,
+// everything scanned). Fail-open regardless.
+func WithScopeExclusionFilter(f ScopeExclusionFilter) ServiceOption {
+	return func(s *Service) {
+		s.scopeExclusions = f
 	}
 }
 

@@ -10,6 +10,22 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
+// AgentCapabilityValidate is the capability string a validate-capable agent
+// advertises and the one a validate command requires for routing. It is the
+// single source of truth shared by the dispatch payload (RequiredCapabilities)
+// and the pre-flight availability gate (RunService.ensureAgentAvailable) so the
+// two never drift: the gate opens exactly when a queued command can be routed.
+const AgentCapabilityValidate = "validate"
+
+// AgentCapabilityValidateNuclei is the capability a nuclei-re-verify-capable
+// agent advertises (RFC-011.2 Phase 2b). It is strictly deeper than
+// AgentCapabilityValidate: an agent that can run a single detection template
+// advertises BOTH, and a KindNuclei command requires this one so it is only ever
+// routed to an agent that can execute it — never a safe-check-only agent. The
+// gate that decides whether to route KindNuclei (NucleiAvailability) queries for
+// exactly this capability, so the two never drift.
+const AgentCapabilityValidateNuclei = "validate:nuclei"
+
 // CommandCreator is the narrow seam over the command repository used to enqueue
 // a validation job. Implemented by *postgres.CommandRepository.
 type CommandCreator interface {
@@ -47,6 +63,12 @@ type ValidateCommandPayload struct {
 	Technique       string                `json:"technique"`
 	Target          ValidateTargetPayload `json:"target"`
 	TimeoutSeconds  int                   `json:"timeout_seconds"`
+	// TemplateID / CVEID carry the finding's own detection signature for a
+	// KindNuclei job (RFC-011.2 Phase 2b): the agent re-runs this single template
+	// (`nuclei -id <template_id|cve_id>`), never a full scan. Both empty for a
+	// safe-check job, which the agent then handles as today.
+	TemplateID string `json:"template_id,omitempty"`
+	CVEID      string `json:"cve_id,omitempty"`
 	// RequiredCapabilities lets the platform route the job only to agents that
 	// advertise the validation capability (mirrors the scan command payload).
 	RequiredCapabilities []string `json:"required_capabilities"`
@@ -92,6 +114,16 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 		simRunID = job.SimulationRunID.String()
 	}
 
+	// Route a KindNuclei job only to agents advertising the deeper
+	// `validate:nuclei` capability; everything else rides the base `validate`
+	// capability. The kind is already capability-gated upstream (RunService only
+	// selects KindNuclei when a nuclei agent is online), so this required
+	// capability can never enqueue a command no agent can consume.
+	requiredCap := AgentCapabilityValidate
+	if job.ExecutorKind == KindNuclei {
+		requiredCap = AgentCapabilityValidateNuclei
+	}
+
 	payload := ValidateCommandPayload{
 		JobID:           job.JobID.String(),
 		FindingID:       findingID,
@@ -104,7 +136,9 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 			Address: job.Target.Address,
 		},
 		TimeoutSeconds:       job.TimeoutSeconds,
-		RequiredCapabilities: []string{"validate"},
+		TemplateID:           job.TemplateID,
+		CVEID:                job.CVEID,
+		RequiredCapabilities: []string{requiredCap},
 	}
 
 	raw, err := json.Marshal(payload)

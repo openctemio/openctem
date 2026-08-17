@@ -307,6 +307,21 @@ func (s *ExposureService) GetExposureSecure(ctx context.Context, tenantID, event
 	return s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 }
 
+// TagCTEMID associates a CTEM-ID catalog identifier with an exposure (empty
+// clears the tag). Tenant-scoped. The tag is stored on the exposure's details
+// (no schema change) and does not affect the dedupe fingerprint.
+func (s *ExposureService) TagCTEMID(ctx context.Context, tenantID, eventID, ctemID string) (*exposuredom.ExposureEvent, error) {
+	event, err := s.GetExposureSecure(ctx, tenantID, eventID)
+	if err != nil {
+		return nil, err
+	}
+	event.SetCTEMID(ctemID)
+	if err := s.repo.Update(ctx, event); err != nil {
+		return nil, fmt.Errorf("failed to update exposure ctem-id tag: %w", err)
+	}
+	return event, nil
+}
+
 // ListExposuresInput represents the input for listing exposure events.
 type ListExposuresInput struct {
 	TenantID string
@@ -331,9 +346,13 @@ type ListExposuresInput struct {
 func (s *ExposureService) ListExposures(ctx context.Context, input ListExposuresInput) (pagination.Result[*exposuredom.ExposureEvent], error) {
 	filter := exposuredom.NewFilter()
 
-	if input.TenantID != "" {
-		filter = filter.WithTenantID(input.TenantID)
+	// Tenant is REQUIRED. buildWhereClause only adds the tenant predicate when a
+	// tenant is set, so a blank tenant here would drop the filter and return
+	// every tenant's exposures (fail-open). Reject it (fail closed).
+	if input.TenantID == "" {
+		return pagination.Result[*exposuredom.ExposureEvent]{}, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
 	}
+	filter = filter.WithTenantID(input.TenantID)
 
 	if input.AssetID != "" {
 		filter = filter.WithAssetID(input.AssetID)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/infra/postgres"
@@ -13,7 +14,8 @@ import (
 )
 
 // findingMutator adapts the postgres FindingRepository (GetByID) to the
-// validation.FindingMutator interface (Get), mirroring cmd/server's adapter.
+// validation.FindingMutator + VerdictRecorder interfaces, mirroring cmd/server's
+// adapter.
 type findingMutator struct{ repo *postgres.FindingRepository }
 
 func (a findingMutator) Get(ctx context.Context, tenantID, findingID shared.ID) (*vulnerability.Finding, error) {
@@ -21,6 +23,9 @@ func (a findingMutator) Get(ctx context.Context, tenantID, findingID shared.ID) 
 }
 func (a findingMutator) Update(ctx context.Context, f *vulnerability.Finding) error {
 	return a.repo.Update(ctx, f)
+}
+func (a findingMutator) RecordVerdict(ctx context.Context, tenantID, findingID shared.ID, verdict validation.Verdict, downgradedAt *time.Time) error {
+	return a.repo.StampValidationVerdict(ctx, tenantID, findingID, string(verdict), downgradedAt)
 }
 
 // TestValidationEvidence_Repository_RoundTrip exercises the postgres
@@ -118,7 +123,7 @@ func TestValidationEvidence_Ingest_TenantGuard(t *testing.T) {
 	repo := postgres.NewValidationEvidenceRepository(db)
 	findingRepo := postgres.NewFindingRepository(db)
 	ingest := validation.NewEvidenceIngestService(
-		validation.NewEvidenceStore(repo), findingMutator{repo: findingRepo}, nil, log,
+		validation.NewEvidenceStore(repo), findingMutator{repo: findingRepo}, nil, findingMutator{repo: findingRepo}, log,
 	)
 
 	// Tenant B tries to record evidence against tenant A's finding.
@@ -175,7 +180,7 @@ func TestValidationEvidence_Ingest_TransitionsFinding(t *testing.T) {
 
 	ingest := validation.NewEvidenceIngestService(
 		validation.NewEvidenceStore(postgres.NewValidationEvidenceRepository(db)),
-		findingMutator{repo: findingRepo}, nil, log,
+		findingMutator{repo: findingRepo}, nil, findingMutator{repo: findingRepo}, log,
 	)
 
 	res, err := ingest.Ingest(ctx, tenantID, findingID, nil, validation.Evidence{

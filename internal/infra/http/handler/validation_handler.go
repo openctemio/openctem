@@ -16,10 +16,13 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// CoverageReader returns per-severity validation coverage for a tenant.
-// Implemented by *postgres.ValidationEvidenceRepository.
+// CoverageReader returns per-severity validation coverage for a tenant plus the
+// confirm-or-downgrade outcome counts. Implemented by
+// *postgres.ValidationEvidenceRepository.
 type CoverageReader interface {
 	CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error)
+	// DowngradeStats returns (downgraded, validated) for the downgrade % metric.
+	DowngradeStats(ctx context.Context, tenantID shared.ID) (downgraded, validated int, err error)
 }
 
 // ValidationHandler exposes CTEM Stage-4 validation evidence:
@@ -76,6 +79,9 @@ type evidenceResponse struct {
 	FindingID     string `json:"finding_id"`
 	Outcome       string `json:"outcome"`
 	StatusChanged bool   `json:"status_changed"`
+	// Downgraded is true when a not_reproducible verdict downgraded a still-open
+	// finding to validated_fixed (RFC-011.2 confirm-or-downgrade).
+	Downgraded bool `json:"downgraded"`
 }
 
 // IngestEvidence handles POST /api/v1/validation/evidence (agent API-key auth).
@@ -161,6 +167,7 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 		FindingID:     findingID.String(),
 		Outcome:       req.Outcome,
 		StatusChanged: result.StatusChanged,
+		Downgraded:    result.Downgraded,
 	})
 }
 
@@ -305,6 +312,16 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 		overall = float64(validated) / float64(total) * 100
 	}
 
+	// Confirm-or-downgrade outcome metric (RFC-011.2 Phase 2a). This is what
+	// flips the Program-Health board's downgrade % from "not measured" to live.
+	// A DowngradeStats failure degrades to zeros rather than failing the whole
+	// coverage KPI — the by-severity view is the primary payload here.
+	downgraded, dgValidated, derr := h.coverage.DowngradeStats(r.Context(), tenantID)
+	if derr != nil {
+		h.logger.Error("validation downgrade stats query failed", "error", derr)
+		downgraded, dgValidated = 0, 0
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -312,5 +329,11 @@ func (h *ValidationHandler) Coverage(w http.ResponseWriter, r *http.Request) {
 		"total":       total,
 		"validated":   validated,
 		"overall_pct": overall,
+		// Downgrade outcome metric: of the findings validated, the share a
+		// re-check downgraded (validated_fixed). downgrade_validated is the
+		// metric's own denominator (distinct findings with any evidence).
+		"downgraded":          downgraded,
+		"downgrade_validated": dgValidated,
+		"downgrade_pct":       validation.DowngradePct(downgraded, dgValidated),
 	})
 }

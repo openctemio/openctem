@@ -10,6 +10,9 @@ import (
 type Repository interface {
 	// Rule operations
 	Save(ctx context.Context, rule *Rule) error
+	// SaveWithAudit persists the rule and records its audit entry atomically
+	// (both commit or neither), so rule state and audit trail cannot diverge.
+	SaveWithAudit(ctx context.Context, rule *Rule, action string, actorID *shared.ID, details map[string]any) error
 	FindByID(ctx context.Context, tenantID, id shared.ID) (*Rule, error)
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 

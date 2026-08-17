@@ -3,6 +3,7 @@ package integration
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,6 +45,13 @@ func validateNotificationWebhookURL(provider integrationdom.Provider, credential
 // testNotificationRateLimit defines the minimum interval between test notifications per integration.
 const testNotificationRateLimit = 30 * time.Second
 
+// TransactionDB is the subset of *sql.DB the service needs to open a
+// transaction, so an integration and its category extension (SCM /
+// notification) can be inserted atomically.
+type TransactionDB interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
 // IntegrationService provides integration operations.
 type IntegrationService struct {
 	repo                  integrationdom.Repository
@@ -54,6 +62,11 @@ type IntegrationService struct {
 	notificationFactory   *notifier.ClientFactory
 	encryptor             crypto.Encryptor
 	logger                *logger.Logger
+
+	// db enables atomic multi-row create (integration + extension). When nil
+	// (e.g. unit tests with in-memory mock repos, where a real *sql.Tx cannot
+	// be produced), the create paths fall back to non-transactional inserts.
+	db TransactionDB
 
 	// Optional stores for SCM repository import / branch sync (wired via
 	// SetRepoImportRepos). nil when import is not configured.
@@ -92,6 +105,13 @@ func NewIntegrationService(
 // SetNotificationExtensionRepository sets the notification extension repository.
 func (s *IntegrationService) SetNotificationExtensionRepository(repo integrationdom.NotificationExtensionRepository) {
 	s.notificationExtRepo = repo
+}
+
+// SetTransactionDB wires the database handle used to insert an integration and
+// its category extension atomically. Without it the create paths degrade to
+// non-transactional inserts (used by mock-based unit tests).
+func (s *IntegrationService) SetTransactionDB(db TransactionDB) {
+	s.db = db
 }
 
 // SetOutboxEventRepository sets the notification event repository.
@@ -238,23 +258,18 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 		intg.SetCredentials(encrypted)
 	}
 
-	// Save integration to repository
-	if err := s.repo.Create(ctx, intg); err != nil {
-		return nil, fmt.Errorf("create integration: %w", err)
-	}
-
-	// Create SCM extension if this is an SCM integration
+	// Build the SCM extension (if any) up front so the integration row and its
+	// extension can be inserted in a single transaction.
 	var scmExt *integrationdom.SCMExtension
 	if category == integrationdom.CategorySCM {
 		scmExt = integrationdom.NewSCMExtension(id)
 		if input.SCMOrganization != "" {
 			scmExt.SetSCMOrganization(input.SCMOrganization)
 		}
-		if err := s.scmExtRepo.Create(ctx, scmExt); err != nil {
-			// Rollback integration creation
-			_ = s.repo.Delete(ctx, id)
-			return nil, fmt.Errorf("create scm extension: %w", err)
-		}
+	}
+
+	if err := s.createIntegrationWithSCM(ctx, intg, scmExt); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("integration created",
@@ -277,6 +292,85 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	}
 
 	return result, nil
+}
+
+// createIntegrationWithSCM persists the integration and, when present, its SCM
+// extension. When a transactional DB is wired both rows commit or roll back
+// together — a failed extension insert no longer leaves an orphan integration.
+// Without a DB (mock-based unit tests) it falls back to sequential inserts with
+// a best-effort compensating delete.
+func (s *IntegrationService) createIntegrationWithSCM(ctx context.Context, intg *integrationdom.Integration, scmExt *integrationdom.SCMExtension) error {
+	if s.db == nil {
+		if err := s.repo.Create(ctx, intg); err != nil {
+			return fmt.Errorf("create integration: %w", err)
+		}
+		if scmExt != nil {
+			if err := s.scmExtRepo.Create(ctx, scmExt); err != nil {
+				_ = s.repo.Delete(ctx, intg.ID())
+				return fmt.Errorf("create scm extension: %w", err)
+			}
+		}
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := s.repo.CreateInTx(ctx, tx, intg); err != nil {
+		return fmt.Errorf("create integration: %w", err)
+	}
+	if scmExt != nil {
+		if err := s.scmExtRepo.CreateInTx(ctx, tx, scmExt); err != nil {
+			return fmt.Errorf("create scm extension: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
+}
+
+// createIntegrationWithNotification persists the integration and, when present,
+// its notification extension atomically (see createIntegrationWithSCM). A nil
+// extension means no notification-extension repo is wired; only the integration
+// is inserted.
+func (s *IntegrationService) createIntegrationWithNotification(ctx context.Context, intg *integrationdom.Integration, notifExt *integrationdom.NotificationExtension) error {
+	if s.db == nil {
+		if err := s.repo.Create(ctx, intg); err != nil {
+			return fmt.Errorf("create integration: %w", err)
+		}
+		if notifExt != nil {
+			if err := s.notificationExtRepo.Create(ctx, notifExt); err != nil {
+				_ = s.repo.Delete(ctx, intg.ID())
+				return fmt.Errorf("create notification extension: %w", err)
+			}
+		}
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := s.repo.CreateInTx(ctx, tx, intg); err != nil {
+		return fmt.Errorf("create integration: %w", err)
+	}
+	if notifExt != nil {
+		if err := s.notificationExtRepo.CreateInTx(ctx, tx, notifExt); err != nil {
+			return fmt.Errorf("create notification extension: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
 }
 
 // GetIntegration retrieves an integration by ID.
@@ -1696,12 +1790,8 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 		}
 	}
 
-	// Save integration
-	if err := s.repo.Create(ctx, intg); err != nil {
-		return nil, fmt.Errorf("create integration: %w", err)
-	}
-
-	// Create notification extension
+	// Build the notification extension (if a repo is wired) up front so the
+	// integration row and its extension can be inserted in a single transaction.
 	var notifExt *integrationdom.NotificationExtension
 	if s.notificationExtRepo != nil {
 		notifExt = integrationdom.NewNotificationExtension(id)
@@ -1729,12 +1819,10 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 		if input.MinIntervalMinutes > 0 {
 			notifExt.SetMinIntervalMinutes(input.MinIntervalMinutes)
 		}
+	}
 
-		if err := s.notificationExtRepo.Create(ctx, notifExt); err != nil {
-			// Rollback integration creation
-			_ = s.repo.Delete(ctx, id)
-			return nil, fmt.Errorf("create notification extension: %w", err)
-		}
+	if err := s.createIntegrationWithNotification(ctx, intg, notifExt); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("notification integration created",

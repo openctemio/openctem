@@ -314,9 +314,16 @@ func (r *AuditRepository) GetLatestByResource(ctx context.Context, tenantID shar
 	return log, nil
 }
 
-// ListByActor retrieves audit logs for a specific actor.
-func (r *AuditRepository) ListByActor(ctx context.Context, actorID shared.ID, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
-	filter := audit.NewFilter().WithActorID(actorID)
+// ListByActor retrieves audit logs for a specific actor within a tenant.
+// tenantID is required to prevent cross-tenant reads. Fails closed: a zero
+// tenantID returns an error rather than an unscoped query, so a future caller
+// cannot reintroduce the cross-tenant read this method previously allowed (its
+// filter carried only actor_id, so buildWhereClause applied no tenant predicate).
+func (r *AuditRepository) ListByActor(ctx context.Context, tenantID, actorID shared.ID, page pagination.Pagination) (pagination.Result[*audit.AuditLog], error) {
+	if tenantID.IsZero() {
+		return pagination.Result[*audit.AuditLog]{}, fmt.Errorf("%w: tenant id required for audit actor lookup", shared.ErrValidation)
+	}
+	filter := audit.NewFilter().WithTenantID(tenantID).WithActorID(actorID)
 	return r.List(ctx, filter, page)
 }
 

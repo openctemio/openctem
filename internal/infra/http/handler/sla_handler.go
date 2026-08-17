@@ -252,15 +252,11 @@ func (h *SLAHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := h.service.GetSLAPolicy(r.Context(), policyID)
+	// Tenant scoping is enforced inside the service (GetByTenantAndID); a policy
+	// belonging to another tenant returns ErrNotFound → 404.
+	p, err := h.service.GetSLAPolicy(r.Context(), tenantID, policyID)
 	if err != nil {
 		h.handleServiceError(w, err)
-		return
-	}
-
-	// IDOR prevention
-	if p.TenantID().String() != tenantID {
-		apierror.NotFound("SLA Policy").WriteJSON(w)
 		return
 	}
 

@@ -488,6 +488,12 @@ type AgentConfig struct {
 	// to enable periodic auto-import + branch sync + expired-token detection.
 	SCMSyncInterval time.Duration
 
+	// CTEMIDFeedURL is the CTEM-ID catalog feed the daily ctem-id-refresh
+	// controller mirrors into local reference storage. Behind the same
+	// feed-refresh machinery as the EPSS/KEV threat-intel refresh. Set
+	// CTEM_ID_FEED_URL to override; defaults to https://ctem.org/source.json.
+	CTEMIDFeedURL string
+
 	// LoadBalancing holds configuration for agent load balancing weights.
 	LoadBalancing LoadBalancingConfig
 }
@@ -818,6 +824,7 @@ func Load() (*Config, error) {
 			HeartbeatTimeout:    getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			HealthCheckInterval: getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
 			SCMSyncInterval:     getEnvDuration("SCM_SYNC_INTERVAL", 0),
+			CTEMIDFeedURL:       getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("AGENT_LB_JOB_WEIGHT", agentdom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("AGENT_LB_CPU_WEIGHT", agentdom.DefaultCPUWeight),

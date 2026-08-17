@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"database/sql"
 )
 
 // Filter represents filters for listing integrations.
@@ -40,6 +41,10 @@ type ListResult struct {
 type Repository interface {
 	// CRUD operations
 	Create(ctx context.Context, i *Integration) error
+	// CreateInTx inserts an integration within an existing transaction, so the
+	// integration row and any category extension (SCM/notification) commit or
+	// roll back together.
+	CreateInTx(ctx context.Context, tx *sql.Tx, i *Integration) error
 	GetByID(ctx context.Context, id ID) (*Integration, error)
 	// GetByTenantAndID fetches an integration scoped to a tenant, returning
 	// ErrIntegrationNotFound if it does not exist OR belongs to another tenant.
@@ -64,6 +69,9 @@ type Repository interface {
 type SCMExtensionRepository interface {
 	// CRUD operations
 	Create(ctx context.Context, ext *SCMExtension) error
+	// CreateInTx inserts an SCM extension within an existing transaction (see
+	// Repository.CreateInTx).
+	CreateInTx(ctx context.Context, tx *sql.Tx, ext *SCMExtension) error
 	GetByIntegrationID(ctx context.Context, integrationID ID) (*SCMExtension, error)
 	Update(ctx context.Context, ext *SCMExtension) error
 	Delete(ctx context.Context, integrationID ID) error
@@ -77,6 +85,9 @@ type SCMExtensionRepository interface {
 type NotificationExtensionRepository interface {
 	// CRUD operations
 	Create(ctx context.Context, ext *NotificationExtension) error
+	// CreateInTx inserts a notification extension within an existing transaction
+	// (see Repository.CreateInTx).
+	CreateInTx(ctx context.Context, tx *sql.Tx, ext *NotificationExtension) error
 	GetByIntegrationID(ctx context.Context, integrationID ID) (*NotificationExtension, error)
 	Update(ctx context.Context, ext *NotificationExtension) error
 	Delete(ctx context.Context, integrationID ID) error

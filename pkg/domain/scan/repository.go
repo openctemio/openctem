@@ -90,6 +90,15 @@ type Repository interface {
 	// RecordRun records a run result for a scan.
 	RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error
 
+	// RecordTriggerFailure records that a scheduled trigger failed BEFORE any
+	// run was created (e.g. no agent available). It sets last_run_at/last_run_status
+	// so the failure is visible in the scan's own state — the scheduler advances
+	// next_run_at regardless (to avoid re-trigger storms), which otherwise makes a
+	// scan that can never start look identical to one that simply hasn't run yet.
+	// Deliberately does NOT touch the run counters: no run existed, so inflating
+	// total_runs would be a second lie on top of the one this fixes.
+	RecordTriggerFailure(ctx context.Context, id shared.ID, status string) error
+
 	// Statistics
 
 	// GetStats returns aggregated statistics for scans.

@@ -54,8 +54,14 @@ func (m *mockSLARepo) GetByID(_ context.Context, id shared.ID) (*sladom.Policy, 
 	return nil, sladom.ErrNotFound
 }
 
-func (m *mockSLARepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*sladom.Policy, error) {
-	return nil, nil
+func (m *mockSLARepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*sladom.Policy, error) {
+	if m.getByIDErr != nil {
+		return nil, m.getByIDErr
+	}
+	if p, ok := m.policies[id.String()]; ok && p.TenantID() == tenantID {
+		return p, nil
+	}
+	return nil, sladom.ErrNotFound
 }
 
 func (m *mockSLARepo) GetByAsset(_ context.Context, tenantID, assetID shared.ID) (*sladom.Policy, error) {
@@ -401,7 +407,7 @@ func TestGetSLAPolicy_Success(t *testing.T) {
 	existing := makeTestPolicy(tenantID, "Existing Policy", false)
 	repo.policies[existing.ID().String()] = existing
 
-	policy, err := svc.GetSLAPolicy(context.Background(), existing.ID().String())
+	policy, err := svc.GetSLAPolicy(context.Background(), tenantID.String(), existing.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -414,7 +420,7 @@ func TestGetSLAPolicy_InvalidID(t *testing.T) {
 	repo := newMockSLARepo()
 	svc := newTestSLAService(repo)
 
-	_, err := svc.GetSLAPolicy(context.Background(), "not-a-uuid")
+	_, err := svc.GetSLAPolicy(context.Background(), shared.NewID().String(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -427,7 +433,7 @@ func TestGetSLAPolicy_NotFound(t *testing.T) {
 	repo := newMockSLARepo()
 	svc := newTestSLAService(repo)
 
-	_, err := svc.GetSLAPolicy(context.Background(), shared.NewID().String())
+	_, err := svc.GetSLAPolicy(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
@@ -593,6 +599,59 @@ func TestUpdateSLAPolicy_NotFound(t *testing.T) {
 	}
 	if !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// TestUpdateSLAPolicy_BlankTenantRejected proves the ownership check fails
+// closed: a blank tenant must be rejected, never skip the IDOR check.
+func TestUpdateSLAPolicy_BlankTenantRejected(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+
+	tenantID := shared.NewID()
+	existing := makeTestPolicy(tenantID, "My Policy", false)
+	repo.policies[existing.ID().String()] = existing
+
+	_, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), "", sla.UpdatePolicyInput{})
+	if err == nil {
+		t.Fatal("expected error for blank tenant")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation for blank tenant, got %v", err)
+	}
+}
+
+// TestGetSLAPolicy_ForeignTenant proves a policy owned by another tenant is not
+// returned (tenant scoping enforced in the query via GetByTenantAndID).
+func TestGetSLAPolicy_ForeignTenant(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+
+	ownerTenantID := shared.NewID()
+	attackerTenantID := shared.NewID()
+	existing := makeTestPolicy(ownerTenantID, "Owner Policy", false)
+	repo.policies[existing.ID().String()] = existing
+
+	_, err := svc.GetSLAPolicy(context.Background(), attackerTenantID.String(), existing.ID().String())
+	if err == nil {
+		t.Fatal("expected error for foreign tenant")
+	}
+	if !errors.Is(err, sladom.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for foreign tenant, got %v", err)
+	}
+}
+
+// TestGetSLAPolicy_BlankTenantRejected proves a blank tenant is rejected.
+func TestGetSLAPolicy_BlankTenantRejected(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+
+	_, err := svc.GetSLAPolicy(context.Background(), "", shared.NewID().String())
+	if err == nil {
+		t.Fatal("expected error for blank tenant")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation for blank tenant, got %v", err)
 	}
 }
 

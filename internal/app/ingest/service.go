@@ -182,6 +182,21 @@ func (s *Service) SetRemediationKeyApplier(applier RemediationKeyApplier) {
 	s.findingProcessor.SetRemediationKeyApplier(applier)
 }
 
+// SetExposureBridge wires the post-insert secret-scan → exposure-store bridge
+// so hardcoded secrets surface in the Credentials/Exposures view. Nil-safe:
+// when not wired, secret findings are not bridged (prior behavior).
+func (s *Service) SetExposureBridge(bridge ExposureBridge) {
+	s.findingProcessor.SetExposureBridge(bridge)
+}
+
+// SetSuppressionChecker wires approved suppression-rule enforcement into the
+// ingest finding path: a new finding matching an active (approved, non-expired)
+// rule lands resolved+suppressed. Nil-safe: when not wired, findings are never
+// suppressed at ingest (prior behavior).
+func (s *Service) SetSuppressionChecker(checker SuppressionChecker) {
+	s.findingProcessor.SetSuppressionChecker(checker)
+}
+
 // =============================================================================
 // Main Ingestion Methods
 // =============================================================================
@@ -267,6 +282,11 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		s.logger.Warn("CVE upsert failed; findings will not be linked to vulnerability catalog",
 			"error", cveErr)
 		cveMap = map[string]shared.ID{}
+		// Record the failure so the audit log reflects partial/failed rather than
+		// completed: every finding here persists with a nil VulnerabilityID, and
+		// createIngestAuditLog derives run status from len(output.Errors). Without
+		// this the degraded run was silently audited as a success.
+		addError(output, fmt.Sprintf("cve upsert failed: %v", cveErr))
 	}
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)

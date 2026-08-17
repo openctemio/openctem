@@ -519,6 +519,17 @@ func (h *FindingActionsHandler) buildFilter(r *http.Request) vulnerability.Findi
 		filter.AssetTags = tagList
 	}
 
+	// "Show only mine": restrict groups to findings related to the current user
+	// (direct assignee, member of an assigned group, or asset owner). Resolve the
+	// authenticated local user from context; skip silently if unresolved so an
+	// unauthenticated/absent user never widens the result set.
+	if mine := parseQueryBoolPtr(q.Get("assigned_to_me")); mine != nil && *mine {
+		if uid := middleware.GetLocalUserID(r.Context()); !uid.IsZero() {
+			userID := uid
+			filter.RelatedToUserID = &userID
+		}
+	}
+
 	return filter
 }
 

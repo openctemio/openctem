@@ -30,6 +30,23 @@ func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc
 	return h
 }
 
+// newPriorityRuleHandlerWithWiring constructs the priority-rule handler and
+// attaches the reclassify publisher when the services graph has one, so a rule
+// create/update/delete drives a whole-tenant reclassify sweep. Mirrors
+// newCompensatingControlHandlerWithWiring.
+func newPriorityRuleHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Services) *handler.PriorityRuleHandler {
+	h := handler.NewPriorityRuleHandler(db, log)
+	if svc != nil && svc.ControlChangePub != nil {
+		h.SetChangePublisher(svc.ControlChangePub)
+	}
+	// Wire the classifier so POST /priority-rules/dry-run can evaluate a draft
+	// rule against live findings with the real engine (nil → endpoint 503s).
+	if svc != nil && svc.PriorityClassification != nil {
+		h.SetDryRunner(svc.PriorityClassification)
+	}
+	return h
+}
+
 // newThreatModelHandler wires the continuous-threat-modeling handler, or nil
 // when the generation service was not initialized (e.g. no database).
 func newThreatModelHandler(svc *Services, log *logger.Logger) *handler.ThreatModelHandler {
@@ -208,6 +225,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		GitHubWebhook:             githubWebhookHandler,
 		Exposure:                  handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:               handler.NewThreatIntelHandler(svc.ThreatIntel, v, log),
+		CTEMID:                    handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport:          handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
@@ -346,9 +364,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, log),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
-		PriorityRule:          handler.NewPriorityRuleHandler(deps.DB.DB, log),
+		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
 
 		// Platform Stats (tenant-scoped platform agent statistics)

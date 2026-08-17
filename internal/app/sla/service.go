@@ -124,14 +124,22 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 	return policy, nil
 }
 
-// GetSLAPolicy retrieves an SLA policy by ID.
-func (s *Service) GetSLAPolicy(ctx context.Context, policyID string) (*sladom.Policy, error) {
+// GetSLAPolicy retrieves an SLA policy by ID, scoped to the caller's tenant.
+//
+// Tenant is REQUIRED and pushed into the query (GetByTenantAndID) so isolation
+// is enforced at the data layer rather than depending on the handler to compare
+// tenant IDs after an unscoped fetch.
+func (s *Service) GetSLAPolicy(ctx context.Context, tenantID, policyID string) (*sladom.Policy, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
+	}
 	parsedID, err := shared.IDFromString(policyID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
-	return s.repo.GetByID(ctx, parsedID)
+	return s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
 }
 
 // GetAssetSLAPolicy retrieves the effective SLA policy for an asset.
@@ -220,13 +228,18 @@ func (s *Service) UpdateSLAPolicy(ctx context.Context, policyID, tenantID string
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
+	// IDOR prevention: tenant is REQUIRED; never skip the ownership check on a
+	// blank tenant (fail closed). Previously a blank tenant skipped the check.
+	if tenantID == "" {
+		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
+	}
+
 	policy, err := s.repo.GetByID(ctx, parsedID)
 	if err != nil {
 		return nil, err
 	}
 
-	// IDOR prevention: verify policy belongs to the tenant
-	if tenantID != "" && policy.TenantID().String() != tenantID {
+	if policy.TenantID().String() != tenantID {
 		return nil, shared.ErrNotFound
 	}
 

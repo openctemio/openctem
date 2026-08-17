@@ -30,6 +30,15 @@ type Repository interface {
 	GetPrimaryOwnerBrief(ctx context.Context, tenantID, assetID shared.ID) (*OwnerBrief, error)
 	GetPrimaryOwnersByAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[string]*OwnerBrief, error)
 
+	// IsGroupInTenant reports whether the group belongs to the tenant. Used to
+	// reject a cross-tenant principal before it is written as an asset owner
+	// (asset_owners has no tenant_id column, so the principal is otherwise
+	// unscoped). Mirrors the `groups WHERE tenant_id` screen used on reads.
+	IsGroupInTenant(ctx context.Context, tenantID, groupID shared.ID) (bool, error)
+	// IsUserInTenant reports whether the user is a member of the tenant.
+	// Mirrors the `tenant_members WHERE tenant_id` screen used on reads.
+	IsUserInTenant(ctx context.Context, tenantID, userID shared.ID) (bool, error)
+
 	// Incremental access refresh for direct user ownership
 	RefreshAccessForDirectOwnerAdd(ctx context.Context, assetID, userID shared.ID, ownershipType string) error
 	RefreshAccessForDirectOwnerRemove(ctx context.Context, assetID, userID shared.ID) error

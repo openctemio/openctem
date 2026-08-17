@@ -379,37 +379,53 @@ func (r *RoleRepository) Update(ctx context.Context, ro *role.Role) error {
 }
 
 // Delete deletes a role.
+//
+// The guard (non-system, no user assignments) is enforced inside the DELETE
+// itself rather than as separate SELECT checks. A prior implementation did
+// SELECT is_system → CountUsersWithRole → DELETE as three statements, which
+// left a TOCTOU window: a role could gain a user (INSERT into user_roles)
+// between the count check and the delete, and it would still be deleted while
+// a live user_roles row referenced it. The conditional DELETE closes that
+// window — the row is only removed if it is non-system AND unreferenced,
+// evaluated atomically as the DELETE locates its target. When nothing is
+// deleted a single diagnostic SELECT determines which precondition failed so
+// the caller still gets the same ErrRoleNotFound / ErrCannotDeleteSystemRole /
+// ErrRoleInUse semantics as before.
 func (r *RoleRepository) Delete(ctx context.Context, id role.ID) error {
-	// Check if it's a system role
+	// Delete only when non-system and unreferenced (cascade handles role_permissions).
+	const deleteQuery = `
+		DELETE FROM roles
+		WHERE id = $1
+		  AND is_system = false
+		  AND NOT EXISTS (SELECT 1 FROM user_roles WHERE role_id = $1)`
+
+	res, err := r.db.ExecContext(ctx, deleteQuery, id.String())
+	if err != nil {
+		return fmt.Errorf("failed to delete role: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows > 0 {
+		return nil
+	}
+
+	// Nothing was deleted — establish why to preserve the original error semantics.
 	var isSystem bool
-	err := r.db.QueryRowContext(ctx, "SELECT is_system FROM roles WHERE id = $1", id.String()).Scan(&isSystem)
+	err = r.db.QueryRowContext(ctx, "SELECT is_system FROM roles WHERE id = $1", id.String()).Scan(&isSystem)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return role.ErrRoleNotFound
 		}
 		return fmt.Errorf("failed to check role: %w", err)
 	}
-
 	if isSystem {
 		return role.ErrCannotDeleteSystemRole
 	}
-
-	// Check if role is in use
-	count, err := r.CountUsersWithRole(ctx, id)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return role.ErrRoleInUse
-	}
-
-	// Delete (cascade will handle role_permissions)
-	_, err = r.db.ExecContext(ctx, "DELETE FROM roles WHERE id = $1", id.String())
-	if err != nil {
-		return fmt.Errorf("failed to delete role: %w", err)
-	}
-
-	return nil
+	// Non-system role still present ⇒ it must have at least one user assignment.
+	return role.ErrRoleInUse
 }
 
 // GetUserRoles returns all roles for a user in a tenant.

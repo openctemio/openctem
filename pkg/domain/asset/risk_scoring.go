@@ -148,12 +148,31 @@ func NewRiskScoringEngine(config RiskScoringConfig) *RiskScoringEngine {
 	return &RiskScoringEngine{config: config}
 }
 
-// CalculateScore computes the risk score for an asset (0-100).
+// CalculateScore computes the risk score for an asset (0-100), scoring the
+// criticality component from the asset's OWN criticality.
 func (e *RiskScoringEngine) CalculateScore(a *Asset) int {
+	return e.CalculateScoreWithCriticality(a, "")
+}
+
+// CalculateScoreWithCriticality computes the risk score for an asset (0-100) but
+// scores the criticality component from effectiveCriticality — the shared,
+// business-aligned MAX/floor of {own, its business unit, the services it powers}
+// resolved by EffectiveCriticality at the app layer — instead of the asset's own
+// criticality. Floor semantics: because effectiveCriticality is only ever RAISED
+// above own, the resulting score can only rise. An empty effectiveCriticality
+// falls back to a.criticality, making the result byte-identical to the pre-
+// business-alignment behavior (nothing else in the formula changes). The asset's
+// own criticality column is never mutated — only the score reflects the floor.
+func (e *RiskScoringEngine) CalculateScoreWithCriticality(a *Asset, effectiveCriticality Criticality) int {
+	crit := effectiveCriticality
+	if crit == "" {
+		crit = a.criticality
+	}
+
 	w := e.effectiveWeights()
 
 	exposureScore := e.exposureScore(a.exposure)
-	criticalityScore := e.criticalityScore(a.criticality)
+	criticalityScore := e.criticalityScore(crit)
 	findingScore := e.findingScore(a)
 	ctemScore := e.ctemScore(a)
 
@@ -313,8 +332,19 @@ func (e *RiskScoringEngine) exposureMultiplier(exp Exposure) float64 {
 	}
 }
 
-// CalculateRiskScoreWithConfig calculates risk using the provided scoring config.
+// CalculateRiskScoreWithConfig calculates risk using the provided scoring config
+// and the asset's OWN criticality.
 func (a *Asset) CalculateRiskScoreWithConfig(config *RiskScoringConfig) {
+	a.CalculateRiskScoreWithConfigAndCriticality(config, "")
+}
+
+// CalculateRiskScoreWithConfigAndCriticality calculates risk using the provided
+// scoring config, scoring the criticality component from effectiveCriticality
+// (the business-aligned MAX/floor resolved at the app layer) rather than the
+// asset's own criticality. An empty effectiveCriticality falls back to the
+// asset's own criticality — byte-identical to CalculateRiskScoreWithConfig. Only
+// the score changes; the asset's criticality column is never overwritten.
+func (a *Asset) CalculateRiskScoreWithConfigAndCriticality(config *RiskScoringConfig, effectiveCriticality Criticality) {
 	if config == nil {
 		// Backward compatible: use legacy config
 		legacy := LegacyRiskScoringConfig()
@@ -322,6 +352,6 @@ func (a *Asset) CalculateRiskScoreWithConfig(config *RiskScoringConfig) {
 	}
 
 	engine := NewRiskScoringEngine(*config)
-	a.riskScore = engine.CalculateScore(a)
+	a.riskScore = engine.CalculateScoreWithCriticality(a, effectiveCriticality)
 	a.updatedAt = time.Now().UTC()
 }

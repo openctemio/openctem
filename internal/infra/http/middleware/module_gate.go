@@ -90,7 +90,7 @@ func (g *ModuleGate) RequireModule(moduleID string) func(http.Handler) http.Hand
 				next.ServeHTTP(w, r)
 				return
 			}
-			apierror.Forbidden("This module is not enabled for your team").WriteJSON(w)
+			apierror.ModuleNotEnabled("This module is not enabled for your team").WriteJSON(w)
 		})
 	}
 }

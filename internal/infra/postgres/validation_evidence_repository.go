@@ -77,9 +77,13 @@ func (r *ValidationEvidenceRepository) Create(ctx context.Context, ev validation
 	return nil
 }
 
-// CoverageBySeverity returns, per severity band, the total findings and how
+// CoverageBySeverity returns, per severity band, the total OPEN findings and how
 // many have at least one validation evidence record (tenant-scoped). Drives the
-// validation coverage KPI. Findings with no severity are grouped under "".
+// validation coverage KPI — "how much of live exposure is validated" — so the
+// denominator excludes closed findings (resolved/false_positive/accepted/
+// duplicate/verified/accepted_risk); otherwise a tenant with a large closed
+// history would show a permanently low coverage. Findings with no severity are
+// grouped under "".
 func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, tenantID shared.ID) ([]validation.SeverityCoverage, error) {
 	const q = `
 		SELECT f.severity,
@@ -89,6 +93,7 @@ func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, t
 		  LEFT JOIN validation_evidence ve
 		         ON ve.tenant_id = f.tenant_id AND ve.finding_id = f.id
 		 WHERE f.tenant_id = $1
+		   AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
 		 GROUP BY f.severity
 		 ORDER BY f.severity
 	`
@@ -110,6 +115,30 @@ func (r *ValidationEvidenceRepository) CoverageBySeverity(ctx context.Context, t
 		return nil, fmt.Errorf("iterate validation coverage: %w", err)
 	}
 	return out, nil
+}
+
+// DowngradeStats returns the two counts behind the CTEM "downgrade %" outcome
+// metric for a tenant (RFC-011.2 Phase 2a):
+//
+//   - downgraded: findings a validation re-check downgraded (downgraded_at set).
+//   - validated:  distinct findings with at least one validation evidence record
+//     (the denominator — "of what we validated, how much got downgraded").
+//
+// Every downgraded finding necessarily has evidence, so downgraded ≤ validated
+// and the resulting percentage is in [0,100].
+func (r *ValidationEvidenceRepository) DowngradeStats(ctx context.Context, tenantID shared.ID) (downgraded, validated int, err error) {
+	const q = `
+		SELECT
+		    (SELECT COUNT(*) FROM findings f
+		      WHERE f.tenant_id = $1 AND f.downgraded_at IS NOT NULL)                        AS downgraded,
+		    (SELECT COUNT(DISTINCT ve.finding_id) FROM validation_evidence ve
+		      WHERE ve.tenant_id = $1)                                                        AS validated
+	`
+	row := r.db.QueryRowContext(ctx, q, tenantID.String())
+	if err := row.Scan(&downgraded, &validated); err != nil {
+		return 0, 0, fmt.Errorf("query downgrade stats: %w", err)
+	}
+	return downgraded, validated, nil
 }
 
 // ListByFinding returns every evidence row for a finding, newest first, scoped

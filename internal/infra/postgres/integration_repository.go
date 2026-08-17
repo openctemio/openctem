@@ -28,6 +28,15 @@ var _ integration.Repository = (*IntegrationRepository)(nil)
 
 // Create creates a new integration.
 func (r *IntegrationRepository) Create(ctx context.Context, i *integration.Integration) error {
+	return r.createWithExecutor(ctx, r.db, i)
+}
+
+// CreateInTx creates a new integration within an existing transaction.
+func (r *IntegrationRepository) CreateInTx(ctx context.Context, tx *sql.Tx, i *integration.Integration) error {
+	return r.createWithExecutor(ctx, tx, i)
+}
+
+func (r *IntegrationRepository) createWithExecutor(ctx context.Context, exec executor, i *integration.Integration) error {
 	config, err := json.Marshal(i.Config())
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
@@ -60,7 +69,7 @@ func (r *IntegrationRepository) Create(ctx context.Context, i *integration.Integ
 		createdBy = &s
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
+	_, err = exec.ExecContext(ctx, query,
 		i.ID().String(),
 		i.TenantID().String(),
 		i.Name(),

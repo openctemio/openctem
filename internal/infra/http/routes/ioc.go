@@ -14,8 +14,10 @@ func registerIOCRoutes(
 	h *handler.IOCHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/iocs", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ThreatIntelRead))

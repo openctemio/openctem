@@ -62,12 +62,25 @@ func ticketDescription(f *vulnerability.Finding) string {
 		if mv := f.SecretMaskedValue(); mv != "" {
 			fmt.Fprintf(&b, "\n**Masked value:** %s", mv)
 		}
-		return b.String()
+		return withMobilizationBrief(b.String(), f)
 	}
 
 	b.WriteString("\n")
 	b.WriteString(f.Description())
-	return redactSecrets(b.String())
+	return withMobilizationBrief(redactSecrets(b.String()), f)
+}
+
+// withMobilizationBrief appends the CTEM Mobilization brief (definition of done
+// + acceptable fixes) to a ticket body when the finding carries one. The brief
+// contains only operator-entered guidance — never a finding-embedded secret —
+// so it is safe to append after the (redacted) body, including for secret
+// findings.
+func withMobilizationBrief(body string, f *vulnerability.Finding) string {
+	brief := f.Remediation().MobilizationBrief()
+	if brief == "" {
+		return body
+	}
+	return body + "\n\n" + brief
 }
 
 // Client defines the interface for Jira REST API operations.

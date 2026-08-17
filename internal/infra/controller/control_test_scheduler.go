@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/simulation"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -20,6 +21,9 @@ type ControlTestSchedulerController struct {
 	repo   simulation.ControlTestRepository
 	config *ControlTestSchedulerConfig
 	logger *logger.Logger
+	// moduleGuard skips tenants that have not subscribed to the control-testing
+	// module. Optional — nil means "never skip" (fully backward compatible).
+	moduleGuard ModuleGuard
 }
 
 // ControlTestSchedulerConfig configures the controller.
@@ -36,6 +40,10 @@ type ControlTestSchedulerConfig struct {
 
 	// Logger is passed by the controller manager.
 	Logger *logger.Logger
+
+	// ModuleGuard, when set, lets the sweep skip tenants that have not
+	// subscribed to the control-testing module. Optional.
+	ModuleGuard ModuleGuard
 }
 
 // NewControlTestSchedulerController creates a new controller.
@@ -53,9 +61,10 @@ func NewControlTestSchedulerController(
 		cfg.BatchSize = 500
 	}
 	return &ControlTestSchedulerController{
-		repo:   repo,
-		config: cfg,
-		logger: cfg.Logger,
+		repo:        repo,
+		config:      cfg,
+		logger:      cfg.Logger,
+		moduleGuard: cfg.ModuleGuard,
 	}
 }
 
@@ -77,8 +86,21 @@ func (c *ControlTestSchedulerController) Reconcile(ctx context.Context) (int, er
 		return 0, nil
 	}
 
+	modules := newTenantModuleCache(c.moduleGuard)
 	marked := 0
+	skipped := 0
 	for _, ct := range overdueTests {
+		// Compute-level independence: a tenant that has not subscribed to the
+		// control-testing module should not have its control tests swept.
+		if modules.disabled(ctx, ct.TenantID.String(), moduledom.ModuleControlTesting) {
+			skipped++
+			c.logger.Debug("skipping overdue control test: control-testing module not subscribed",
+				"tenant_id", ct.TenantID.String(),
+				"control_test_id", ct.ControlTestID.String(),
+			)
+			continue
+		}
+
 		if err := c.repo.MarkOverdue(ctx, ct.TenantID, ct.ControlTestID); err != nil {
 			c.logger.Warn("failed to mark control test overdue",
 				"tenant_id", ct.TenantID.String(),
@@ -99,10 +121,11 @@ func (c *ControlTestSchedulerController) Reconcile(ctx context.Context) (int, er
 		marked++
 	}
 
-	if marked > 0 {
+	if marked > 0 || skipped > 0 {
 		c.logger.Info("control test scheduler cycle completed",
 			"overdue_found", len(overdueTests),
 			"marked_untested", marked,
+			"skipped_module_disabled", skipped,
 			"stale_days", c.config.StaleDays,
 		)
 	}

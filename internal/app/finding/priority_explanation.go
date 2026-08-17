@@ -23,6 +23,13 @@ type PriorityExplanation struct {
 
 	// Factors that fed the decision (so an operator can audit/tune).
 	Factors PriorityFactors `json:"factors"`
+
+	// ScoreBreakdown is the transparent CTEM composite score (ctem.org
+	// prioritization model) computed from the same factors: the four 0–5
+	// sub-scores and the final PriorityScore = (Impact + Likelihood + Exposure) ×
+	// (1 − ControlReduction). It EXPLAINS the class above without changing it —
+	// the P0–P3 cascade stays authoritative.
+	ScoreBreakdown vulnerability.PriorityScoreBreakdown `json:"score_breakdown"`
 }
 
 // PriorityFactors are the inputs to the classifier, plus the two derived
@@ -42,8 +49,15 @@ type PriorityFactors struct {
 	AssetCriticality     string   `json:"asset_criticality,omitempty"`
 	AssetExposure        string   `json:"asset_exposure,omitempty"`
 	AssetIsCrownJewel    bool     `json:"asset_is_crown_jewel"`
+	AssetUnowned         bool     `json:"asset_unowned"`
 	IsProtected          bool     `json:"is_protected"`
 	ControlReductionPct  float64  `json:"control_reduction_pct"`
+
+	// CIA business-impact rating from the asset's critical-asset register. Score
+	// is the 0–5 impact contribution (MAX leg); Detail names the highest leg
+	// (e.g. "confidentiality=high"). Both zero/empty when no rating is set.
+	CIAImpactScore  float64 `json:"cia_impact_score"`
+	CIAImpactDetail string  `json:"cia_impact_detail,omitempty"`
 
 	// Derived gates (computed exactly as ClassifyPriority does).
 	Reachable     bool `json:"reachable"`
@@ -68,7 +82,23 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 		}
 	}
 
-	pctx := s.buildPriorityContext(f, a, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID))
+	// Effective (business-aligned) criticality — same input as the live classify
+	// path, so the explanation cannot drift from what ClassifyFinding does.
+	var effCrit asset.Criticality
+	var critReason string
+	if a != nil {
+		effCrit, critReason = asset.EffectiveCriticality(a.Criticality(),
+			s.businessContextFor(ctx, tenantID, f.AssetID()))
+	}
+
+	aiFP := s.aiFalsePositiveVerdicts(ctx, tenantID, []shared.ID{f.ID()})
+	// Owner presence only feeds the explanation when the tenant enabled the floor
+	// (matches the live classify path — the reason must not appear when off).
+	var hasOwner map[shared.ID]bool
+	if s.ownershipFloorEnabled(ctx, tenantID) {
+		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(a))
+	}
+	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), aiFP, hasOwner)
 
 	// Compensating-control reduction (same as the live classify path — shared
 	// helper, so the explanation cannot drift from what ClassifyFinding does).
@@ -77,6 +107,7 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 	// Evaluate override rules first, then fall back to the default classifier —
 	// identical precedence to ClassifyFinding, but read-only.
 	classification, ruleName := s.classifyWithRules(ctx, tenantID, pctx)
+	classification.Reason = appendCriticalityReason(classification.Reason, critReason)
 
 	exp := &PriorityExplanation{
 		FindingID: findingID.String(),
@@ -98,11 +129,17 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 			AssetCriticality:     pctx.AssetCriticality,
 			AssetExposure:        pctx.AssetExposure,
 			AssetIsCrownJewel:    pctx.AssetIsCrownJewel,
+			AssetUnowned:         pctx.AssetUnowned,
 			IsProtected:          pctx.IsProtected,
 			ControlReductionPct:  pctx.ControlReductionFactor * 100,
+			CIAImpactScore:       pctx.CIAImpactScore,
+			CIAImpactDetail:      pctx.CIAImpactDetail,
 			Reachable:            pctx.IsReachable || pctx.IsInternetAccessible || pctx.OnOpenThreatPath,
 			CriticalAsset:        pctx.AssetCriticality == "critical" || pctx.AssetCriticality == "high",
 		},
+		// Transparent composite score derived from the SAME context — additive
+		// explanation only, never changes the class above.
+		ScoreBreakdown: vulnerability.ComputePriorityScore(pctx),
 	}
 	return exp, nil
 }

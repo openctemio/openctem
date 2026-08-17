@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/internal/app"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/ctemcycle"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )
@@ -20,13 +21,16 @@ import (
 // CTEMCycleHandler handles CTEM cycle CRUD and state transition endpoints.
 // Uses direct SQL queries for pragmatic speed (no DDD repo layer yet).
 type CTEMCycleHandler struct {
-	db     *sql.DB
-	logger *logger.Logger
+	db      *sql.DB
+	metrics ctemcycle.MetricsRepository
+	logger  *logger.Logger
 }
 
-// NewCTEMCycleHandler creates a new handler.
-func NewCTEMCycleHandler(db *sql.DB, log *logger.Logger) *CTEMCycleHandler {
-	return &CTEMCycleHandler{db: db, logger: log}
+// NewCTEMCycleHandler creates a new handler. metrics may be nil (metric
+// computation/serving is then disabled but the cycle lifecycle still
+// works); cmd/server wires the postgres implementation.
+func NewCTEMCycleHandler(db *sql.DB, metrics ctemcycle.MetricsRepository, log *logger.Logger) *CTEMCycleHandler {
+	return &CTEMCycleHandler{db: db, metrics: metrics, logger: log}
 }
 
 // List lists CTEM cycles for the tenant.
@@ -248,6 +252,16 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		return // error already written
 	}
 
+	// Stamp the activation moment (first activation only) so per-cycle
+	// metrics have a true window start [activated_at, closed_at].
+	if _, aerr := h.db.ExecContext(r.Context(),
+		`UPDATE ctem_cycles SET activated_at = NOW()
+		  WHERE id = $1 AND tenant_id = $2 AND activated_at IS NULL`,
+		id, tenantID,
+	); aerr != nil {
+		h.logger.Warn("cycle activated_at stamp failed", "cycle_id", sanitizeLogField(id), "error", aerr)
+	}
+
 	// Pull the Charter so we can read in_scope_services. The charter is
 	// stored as JSONB on ctem_cycles.
 	var charterRaw []byte
@@ -437,6 +451,62 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Charter == nil {
 		c.Charter = map[string]any{}
+	}
+
+	// Best-effort: compute & persist the cycle metrics now that the
+	// window [activated_at, closed_at] is final. Never block the close
+	// on a metrics error — the lazy compute-on-read path backfills.
+	//
+	// FUTURE HOOK (charter success criteria): the Charter now carries
+	// SuccessCriteria (name/metric/target). Once the persisted metrics
+	// above are available here, this is the natural place to evaluate
+	// each criterion against its real close-loop metric and record a
+	// met/unmet verdict on the cycle. That evaluation engine is out of
+	// scope for this change — the criteria are persisted on the charter
+	// only; nothing consumes them yet.
+	h.persistMetrics(r.Context(), tenantID, id)
+
+	writeJSON(w, http.StatusOK, c)
+}
+
+// UpdateScopeRefinement records the feedback-to-scope notes for a cycle — the
+// lessons a review/close produces about scope (gaps to add, items to exclude
+// next cycle). This closes the CTEM Mobilization → Scoping loop.
+//
+// Unlike Update (planning-only), this is allowed while the cycle is in review
+// OR closed status, because the notes only become meaningful once the cycle has
+// run. The value rides the charter JSONB (no schema change) under the
+// `scope_refinement_notes` key, set via jsonb_set so the rest of the charter is
+// untouched.
+func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var req UpdateScopeRefinementRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	row := h.db.QueryRowContext(r.Context(),
+		`UPDATE ctem_cycles
+		    SET charter = jsonb_set(COALESCE(charter, '{}'::jsonb),
+		                            '{scope_refinement_notes}', to_jsonb($3::text), true),
+		        updated_at = NOW()
+		  WHERE tenant_id = $1 AND id = $2 AND status IN ('review', 'closed')
+		 RETURNING id, name, status, start_date, end_date, charter,
+		           closed_by, closed_at, created_by, created_at, updated_at`,
+		tenantID, id, req.ScopeRefinementNotes,
+	)
+	c, err := h.scanCycle(row)
+	if err != nil {
+		if err == sql.ErrNoRows { //nolint:errorlint
+			apierror.BadRequest("cycle not found or not in review/closed status").WriteJSON(w)
+			return
+		}
+		h.logger.Error("ctem cycle scope refinement", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, c)
@@ -694,7 +764,6 @@ func (h *CTEMCycleHandler) scanCycle(scanner ctemRowScanner) (CTEMCycleResponse,
 	return c, nil
 }
 
-
 // ─── Request/Response Types ───
 
 // CreateCTEMCycleRequest is the request body for creating/updating a CTEM cycle.
@@ -703,6 +772,12 @@ type CreateCTEMCycleRequest struct {
 	StartDate string         `json:"start_date"`
 	EndDate   string         `json:"end_date"`
 	Charter   map[string]any `json:"charter"`
+}
+
+// UpdateScopeRefinementRequest is the body for recording a cycle's
+// feedback-to-scope notes at review/close.
+type UpdateScopeRefinementRequest struct {
+	ScopeRefinementNotes string `json:"scope_refinement_notes"`
 }
 
 // CTEMCycleResponse is the JSON response for a CTEM cycle.

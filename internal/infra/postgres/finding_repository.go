@@ -144,13 +144,15 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
 			remediation, pentest_campaign_id, created_by,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
-			ingest_channel
+			ingest_channel,
+			sla_deadline, sla_status
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
-			$83, $84, $85, $86, $87, $88)
+			$83, $84, $85, $86, $87, $88,
+			$89, $90)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -255,6 +257,10 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		pq.Array(finding.CWEIDs()),                 // $86
 		pq.Array(finding.OWASPIDs()),               // $87
 		nullIngestChannel(finding.IngestChannel()), // $88
+		// SLA — persisted on single-row insert too, mirroring the batch path,
+		// so a manually-created finding with a deadline keeps it.
+		nullTime(finding.SLADeadline()), // $89
+		finding.SLAStatus().String(),    // $90
 	)
 
 	if err != nil {
@@ -300,13 +306,15 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
 			remediation, pentest_campaign_id, created_by,
 			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
-			ingest_channel
+			ingest_channel,
+			sla_deadline, sla_status
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
 			$51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71,
 			$72, $73, $74, $75, $76, $77, $78, $79, $80, $81, $82,
-			$83, $84, $85, $86, $87, $88)
+			$83, $84, $85, $86, $87, $88,
+			$89, $90)
 	`
 
 	remediationJSON := marshalRemediation(finding.Remediation())
@@ -409,6 +417,10 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		pq.Array(finding.CWEIDs()),                 // $86
 		pq.Array(finding.OWASPIDs()),               // $87
 		nullIngestChannel(finding.IngestChannel()), // $88
+		// SLA — persisted on single-row insert too, mirroring the batch path,
+		// so a manually-created finding with a deadline keeps it.
+		nullTime(finding.SLADeadline()), // $89
+		finding.SLAStatus().String(),    // $90
 	)
 
 	if err != nil {
@@ -615,7 +627,10 @@ func findingInsertColumnsSQL() string {
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
 			asvs_section, asvs_control_id, asvs_control_url, asvs_level,
-			remediation, pentest_campaign_id, ingest_channel
+			remediation, pentest_campaign_id,
+			cvss_score, cvss_vector, cve_id, cwe_ids, owasp_ids,
+			ingest_channel,
+			sla_deadline, sla_status
 		)`
 }
 
@@ -660,7 +675,10 @@ func findingUpsertConflictSQL() string {
 			baseline_state = EXCLUDED.baseline_state,
 			kind = EXCLUDED.kind,
 			rank = EXCLUDED.rank,
-			occurrence_count = EXCLUDED.occurrence_count,
+			-- Re-ingest of an existing fingerprint is a re-sighting: count it.
+			-- Was EXCLUDED.occurrence_count (the new insert value, always 1), so
+			-- occurrence_count never moved past 1 despite re-sightings.
+			occurrence_count = findings.occurrence_count + 1,
 			correlation_id = EXCLUDED.correlation_id,
 			partial_fingerprints = EXCLUDED.partial_fingerprints,
 			related_locations = EXCLUDED.related_locations,
@@ -694,7 +712,23 @@ func findingUpsertConflictSQL() string {
 			asvs_control_id = COALESCE(EXCLUDED.asvs_control_id, findings.asvs_control_id),
 			asvs_control_url = COALESCE(EXCLUDED.asvs_control_url, findings.asvs_control_url),
 			asvs_level = COALESCE(EXCLUDED.asvs_level, findings.asvs_level),
-			remediation = COALESCE(EXCLUDED.remediation, findings.remediation)
+			remediation = COALESCE(EXCLUDED.remediation, findings.remediation),
+			-- Denormalized classification columns: refresh on re-ingest, mirroring
+			-- severity/epss/kev above. This is what backfills the NULLs a first
+			-- sighting left, and lets a re-classified CVE/CVSS overwrite the stale
+			-- first-seen value so groupByCVE / the CVE filter see current data.
+			cvss_score = EXCLUDED.cvss_score,
+			cvss_vector = EXCLUDED.cvss_vector,
+			cve_id = EXCLUDED.cve_id,
+			cwe_ids = EXCLUDED.cwe_ids,
+			owasp_ids = EXCLUDED.owasp_ids,
+			-- SLA: the incoming row's deadline was recomputed at ingest by the
+			-- applier from its (possibly re-classified) priority. Take it when
+			-- present, but never wipe an existing deadline if the new computation
+			-- was absent (applier failure → NULL). Move sla_status in lockstep
+			-- with the deadline so the two never disagree.
+			sla_deadline = COALESCE(EXCLUDED.sla_deadline, findings.sla_deadline),
+			sla_status = CASE WHEN EXCLUDED.sla_deadline IS NOT NULL THEN EXCLUDED.sla_status ELSE findings.sla_status END
 	`
 }
 
@@ -712,7 +746,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 82
+const findingInsertColumnCount = 89
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -818,8 +852,24 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		remediationJSON,
 		// Pentest campaign reference
 		nullIDPtr(finding.PentestCampaignID()),
+		// Denormalized classification columns. Previously omitted from the batch
+		// (and single-row upsert) header, so scanner findings — which ingest via
+		// this path — persisted with NULL cve_id/cvss/cwe/owasp on first sight and
+		// were under-reported by groupByCVE / the CVE filter / FindRelatedCVEs
+		// until a later re-ingest backfilled them. Same serialization Create uses.
+		nullFloat64(finding.CVSSScore()),
+		nullString(finding.CVSSVector()),
+		nullString(finding.CVEID()),
+		pq.Array(finding.CWEIDs()),
+		pq.Array(finding.OWASPIDs()),
 		// Provenance channel — NULL when unrecorded.
 		nullIngestChannel(finding.IngestChannel()),
+		// SLA — deadline computed at ingest by the applier (F3); status is
+		// always a valid enum value (defaults to not_applicable). Persisting
+		// these is what makes SLA escalation + the dashboard breach counter
+		// work; previously they were computed in memory and never written.
+		nullTime(finding.SLADeadline()),
+		finding.SLAStatus().String(),
 	}, nil
 }
 
@@ -915,7 +965,8 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 			epss_score = $30, epss_percentile = $31, is_in_kev = $32, kev_due_date = $33,
 			priority_class = $34, priority_class_reason = $35,
 			priority_class_override = $36, priority_class_overridden_by = $37, priority_class_overridden_at = $38,
-			is_reachable = $39, reachable_from_count = $40
+			is_reachable = $39, reachable_from_count = $40,
+			sla_deadline = $41, sla_status = $42
 		WHERE id = $1 AND tenant_id = $20
 	`
 
@@ -961,6 +1012,10 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 		nullTime(finding.PriorityClassOverriddenAt()), // $38
 		finding.IsReachable(),                         // $39
 		finding.ReachableFromCount(),                  // $40
+		// SLA — recomputed by the reclassifier on priority escalation and
+		// persisted here so the tightened deadline actually takes effect.
+		nullTime(finding.SLADeadline()), // $41
+		finding.SLAStatus().String(),    // $42
 	)
 
 	if err != nil {
@@ -1020,6 +1075,33 @@ func (r *FindingRepository) UpdateWorkItemURIs(ctx context.Context, tenantID, id
 	}
 	if rowsAffected == 0 {
 		return vulnerability.FindingNotFoundError(id)
+	}
+	return nil
+}
+
+// StampValidationVerdict durably records the RFC-011.2 confirm-or-downgrade
+// verdict on a finding: validation_outcome always, and downgraded_at only when
+// downgradedAt is non-nil. A nil downgradedAt PRESERVES any existing timestamp
+// (a later reproducible verdict must not erase the downgrade the metric counts).
+// The finding-status transition itself rides the normal Update; this is the
+// narrow side-write for the two columns the entity round-trip does not carry.
+func (r *FindingRepository) StampValidationVerdict(ctx context.Context, tenantID, findingID shared.ID, verdict string, downgradedAt *time.Time) error {
+	const query = `
+		UPDATE findings
+		   SET validation_outcome = $3,
+		       downgraded_at = CASE WHEN $4::timestamptz IS NOT NULL THEN $4::timestamptz ELSE downgraded_at END,
+		       updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2`
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), findingID.String(), verdict, nullTime(downgradedAt))
+	if err != nil {
+		return fmt.Errorf("failed to stamp validation verdict: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return vulnerability.FindingNotFoundError(findingID)
 	}
 	return nil
 }
@@ -2329,6 +2411,16 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		reachableFromCount = int(row.reachableFromCount.Int64)
 	}
 
+	// SLA fields are read from the DB (selectQuery / selectQueryForEnrichment
+	// both SELECT them). Previously reconstruct hard-coded nil / not_applicable,
+	// which discarded the persisted deadline on every read.
+	slaStatus := vulnerability.SLAStatusNotApplicable
+	if row.slaStatus.Valid {
+		if parsed, parseErr := vulnerability.ParseSLAStatus(row.slaStatus.String); parseErr == nil {
+			slaStatus = parsed
+		}
+	}
+
 	// Parse remediation JSONB
 	var remediation *vulnerability.FindingRemediation
 	if len(row.remediation) > 0 {
@@ -2381,8 +2473,8 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		AssignedBy:          parseNullID(row.assignedBy),
 		VerifiedAt:          nullTimeValue(row.verifiedAt),
 		VerifiedBy:          parseNullID(row.verifiedBy),
-		SLADeadline:         nil,
-		SLAStatus:           vulnerability.SLAStatusNotApplicable,
+		SLADeadline:         nullTimeValue(row.slaDeadline),
+		SLAStatus:           slaStatus,
 		FirstDetectedAt:     row.firstDetectedAt,
 		LastSeenAt:          row.lastSeenAt,
 		FirstDetectedBranch: nullStringValue(row.firstBranch),
@@ -2903,6 +2995,19 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		conditions = append(conditions, fmt.Sprintf("source IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
+	// SLA status filter (multi-value). Backs the SLA breach board, which asks for
+	// sla_status IN ('overdue','exceeded') server-side instead of scoring one
+	// capped page in the client. Uses = ANY($n) so the whole set is a single arg.
+	if len(filter.SLAStatuses) > 0 {
+		slaValues := make([]string, len(filter.SLAStatuses))
+		for i, s := range filter.SLAStatuses {
+			slaValues[i] = s.String()
+		}
+		conditions = append(conditions, fmt.Sprintf("sla_status = ANY($%d)", argIndex))
+		args = append(args, pq.Array(slaValues))
+		argIndex++
+	}
+
 	if len(filter.FindingIDs) > 0 {
 		placeholders := make([]string, len(filter.FindingIDs))
 		for i, id := range filter.FindingIDs {
@@ -3228,13 +3333,17 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 	return resolvedIDs, nil
 }
 
-// AutoReopenByFingerprint reopens a previously auto-resolved finding if it reappears.
-// Only reopens findings with resolution = 'auto_fixed'.
-// Protected resolutions (false_positive, accepted_risk) are never reopened.
+// AutoReopenByFingerprint reopens a previously CLOSED-AS-FIXED finding if it reappears.
+// Reopens any re-detected finding closed as fixed (status resolved or verified),
+// whether the fix was confirmed automatically (resolution = 'auto_fixed') or by a
+// person. Deliberate dispositions (false_positive, accepted_risk, duplicate,
+// suppressed) are NEVER reopened — a rescan seeing them again is not a regression.
 // Returns the finding ID if reopened, nil if not found or protected.
 func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantID shared.ID, fingerprint string) (*shared.ID, error) {
-	// Only reopen findings that were auto-resolved (resolution = 'auto_fixed')
-	// Do NOT reopen manually resolved, false_positive, or accepted findings
+	// Reopen findings closed as fixed (resolved/verified) regardless of who fixed
+	// them; a human-resolved finding that a later scan re-detects was previously
+	// stuck resolved and invisible. Deliberate dispositions stay closed. resolution
+	// is a free-text note and may be NULL, so NULL must survive NOT IN.
 	query := `
 		UPDATE findings
 		SET status = 'confirmed',
@@ -3245,8 +3354,8 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 			updated_at = NOW()
 		WHERE tenant_id = $1
 			AND fingerprint = $2
-			AND status = 'resolved'
-			AND resolution = 'auto_fixed'
+			AND status IN ('resolved', 'verified')
+			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
 		RETURNING id
 	`
 
@@ -3268,10 +3377,12 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 	return &id, nil
 }
 
-// AutoReopenByFingerprintsBatch reopens multiple previously auto-resolved findings in a single query.
+// AutoReopenByFingerprintsBatch reopens multiple previously CLOSED-AS-FIXED findings in a single query.
 // This is the batch version of AutoReopenByFingerprint for better performance.
-// Only reopens findings with resolution = 'auto_fixed'.
-// Protected resolutions (false_positive, accepted_risk) are never reopened.
+// Reopens any re-detected finding closed as fixed (status resolved or verified),
+// whether auto-confirmed (resolution = 'auto_fixed') or resolved by a person.
+// Deliberate dispositions (false_positive, accepted_risk, duplicate, suppressed)
+// are NEVER reopened.
 // Returns a map of fingerprint -> reopened finding ID.
 func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]shared.ID, error) {
 	result := make(map[string]shared.ID)
@@ -3280,9 +3391,11 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 		return result, nil
 	}
 
-	// Only reopen findings that were auto-resolved (resolution = 'auto_fixed')
-	// Do NOT reopen manually resolved, false_positive, or accepted findings
-	// Use ANY($2) for batch lookup efficiency
+	// Reopen findings closed as fixed (resolved/verified) regardless of who fixed
+	// them — a human-resolved finding a later scan re-detects was previously stuck
+	// resolved and invisible. Deliberate dispositions stay closed. resolution is a
+	// free-text note and may be NULL, so NULL must survive NOT IN.
+	// Use ANY($2) for batch lookup efficiency.
 	query := `
 		UPDATE findings
 		SET status = 'confirmed',
@@ -3293,8 +3406,8 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 			updated_at = NOW()
 		WHERE tenant_id = $1
 			AND fingerprint = ANY($2)
-			AND status = 'resolved'
-			AND resolution = 'auto_fixed'
+			AND status IN ('resolved', 'verified')
+			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
 		RETURNING id, fingerprint
 	`
 
@@ -3507,14 +3620,14 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			is_reachable, reachable_from_count,
 			remediation_type, estimated_fix_time, fix_complexity, remedy_available,
 			data_exposure_risk, reputational_impact, compliance_impact,
-			remediation, created_by,
+			remediation, created_by, ingest_channel,
 			FALSE AS has_data_flow
 		FROM findings
 	`
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 61
+const enrichColumnsPerRow = 63
 
 // enrichBatchChunkSize limits rows per batch UPDATE to stay under PostgreSQL's 65535 parameter limit.
 // 1000 rows × 50 columns = 50,000 params (safely under limit).
@@ -3592,6 +3705,8 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"end_line", "int"},
 	{"start_column", "int"},
 	{"end_column", "int"},
+	{"sla_deadline", "timestamptz"},
+	{"sla_status", "text"},
 }
 
 // EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
@@ -3687,7 +3802,8 @@ func (r *FindingRepository) EnrichBatchByFingerprints(ctx context.Context, tenan
 }
 
 // collectEnrichArgs marshals a single finding into the ordered parameter slice
-// matching enrichColumnDefs (50 values: id, tenant_id, then 48 SET columns).
+// matching enrichColumnDefs (id, tenant_id, then the SET columns). The count
+// MUST equal enrichColumnsPerRow.
 func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 	metadata, err := json.Marshal(f.Metadata())
 	if err != nil {
@@ -3768,6 +3884,12 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		f.EndLine(),
 		f.StartColumn(),
 		f.EndColumn(),
+		// SLA — carried through re-ingest enrichment so the deadline persists
+		// (EnrichFrom preserves it; without these columns the batch UPDATE
+		// would leave the row untouched, which is fine, but keeping them here
+		// means the enrich path is the single write surface for all findings).
+		nullTime(f.SLADeadline()),
+		f.SLAStatus().String(),
 	}, nil
 }
 

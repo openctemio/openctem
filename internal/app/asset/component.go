@@ -179,14 +179,20 @@ func (s *ComponentService) UpdateComponent(ctx context.Context, dependencyID str
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
+	// IDOR check — tenant is REQUIRED; never skip the ownership check on a blank
+	// tenant (fail closed). A blank tenant previously skipped the check entirely,
+	// leaving isolation dependent on callers always passing a real tenant.
+	if tenantID == "" {
+		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
+	}
+
 	// 1. Get the existing dependency link
 	dep, err := s.repo.GetDependency(ctx, parsedID)
 	if err != nil {
 		return nil, err
 	}
 
-	// IDOR Check
-	if tenantID != "" && !dep.TenantID().IsZero() && dep.TenantID().String() != tenantID {
+	if dep.TenantID().String() != tenantID {
 		return nil, shared.ErrNotFound
 	}
 
@@ -229,16 +235,17 @@ func (s *ComponentService) DeleteComponent(ctx context.Context, dependencyID str
 		return fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
-	// We really should check ownership (GetDependency) first but for speed relying on repo to be safe or
-	// we assume the ID is a dependency ID.
-	if tenantID != "" {
-		dep, err := s.repo.GetDependency(ctx, parsedID)
-		if err != nil {
-			return err
-		}
-		if dep.TenantID().String() != tenantID {
-			return shared.ErrNotFound
-		}
+	// IDOR check — tenant is REQUIRED; never skip the ownership check on a blank
+	// tenant (fail closed). Previously a blank tenant skipped the check entirely.
+	if tenantID == "" {
+		return fmt.Errorf("%w: tenant is required", shared.ErrValidation)
+	}
+	dep, err := s.repo.GetDependency(ctx, parsedID)
+	if err != nil {
+		return err
+	}
+	if dep.TenantID().String() != tenantID {
+		return shared.ErrNotFound
 	}
 
 	if err := s.repo.DeleteDependency(ctx, parsedID); err != nil {

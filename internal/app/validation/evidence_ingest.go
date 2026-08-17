@@ -20,15 +20,18 @@ type EvidenceIngestService struct {
 	store    *EvidenceStore
 	finding  FindingMutator
 	notifier RetestNotifier
+	recorder VerdictRecorder
 	logger   *logger.Logger
 }
 
-// NewEvidenceIngestService wires the ingest service. notifier may be nil.
-func NewEvidenceIngestService(store *EvidenceStore, finding FindingMutator, notifier RetestNotifier, log *logger.Logger) *EvidenceIngestService {
+// NewEvidenceIngestService wires the ingest service. notifier and recorder may
+// be nil (recorder-nil skips the durable verdict stamp that feeds downgrade %).
+func NewEvidenceIngestService(store *EvidenceStore, finding FindingMutator, notifier RetestNotifier, recorder VerdictRecorder, log *logger.Logger) *EvidenceIngestService {
 	return &EvidenceIngestService{
 		store:    store,
 		finding:  finding,
 		notifier: notifier,
+		recorder: recorder,
 		logger:   log.With("service", "validation-ingest"),
 	}
 }
@@ -40,6 +43,9 @@ var ErrInvalidOutcome = fmt.Errorf("%w: invalid evidence outcome", shared.ErrVal
 type IngestResult struct {
 	Stored        StoredEvidence
 	StatusChanged bool // the finding moved to resolved (the fix stood)
+	// Downgraded is true when a not_reproducible verdict downgraded a
+	// still-open finding to validated_fixed (feeds the downgrade % metric).
+	Downgraded bool
 }
 
 func validOutcome(o Outcome) bool {
@@ -79,14 +85,14 @@ func (s *EvidenceIngestService) Ingest(
 		return IngestResult{}, err
 	}
 
-	stood, aerr := applyOutcomeToFinding(ctx, s.finding, s.notifier, tenantID, findingID, ev)
+	res, aerr := applyOutcomeToFinding(ctx, s.finding, s.notifier, s.recorder, tenantID, findingID, ev)
 	if aerr != nil {
 		s.logger.Warn("validation evidence recorded but finding status unchanged",
 			"tenant_id", tenantID.String(), "finding_id", findingID.String(),
 			"outcome", string(ev.Outcome), "error", aerr)
 		return IngestResult{Stored: stored, StatusChanged: false}, nil
 	}
-	return IngestResult{Stored: stored, StatusChanged: stood}, nil
+	return IngestResult{Stored: stored, StatusChanged: res.Stood, Downgraded: res.Downgraded}, nil
 }
 
 // ListForFinding returns the evidence recorded for a finding (UI detail page).

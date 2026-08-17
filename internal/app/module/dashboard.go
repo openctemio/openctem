@@ -56,6 +56,7 @@ type RiskVelocityPoint struct {
 // ActivityItem represents a recent activity item.
 type ActivityItem struct {
 	Type        string
+	RefID       string // referenced entity id — the finding UUID when Type=='finding'; empty for aggregate/global activity
 	Title       string
 	Description string
 	Timestamp   time.Time
@@ -71,8 +72,6 @@ type DashboardAllStats struct {
 
 // DashboardStatsRepository defines the interface for dashboard data access.
 type DashboardStatsRepository interface {
-	// GetAssetStats returns asset statistics for a tenant
-	GetAssetStats(ctx context.Context, tenantID shared.ID) (AssetStatsData, error)
 	// GetFindingStats returns finding statistics for a tenant
 	GetFindingStats(ctx context.Context, tenantID shared.ID) (FindingStatsData, error)
 	// GetRepositoryStats returns repository statistics for a tenant
@@ -91,7 +90,7 @@ type DashboardStatsRepository interface {
 	GetGlobalRecentActivity(ctx context.Context, limit int) ([]ActivityItem, error)
 
 	// MTTR & Trending
-	GetMTTRMetrics(ctx context.Context, tenantID shared.ID) (map[string]float64, error)
+	GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error)
 	GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error)
 
 	// Filtered stats (by accessible tenant IDs) - for multi-tenant authorization
@@ -121,6 +120,15 @@ type DataQualityScorecard struct {
 	DeduplicationRate  float64 `json:"deduplication_rate"`
 	TotalAssets        int     `json:"total_assets"`
 	TotalFindings      int     `json:"total_findings"`
+
+	// Freshness (CTEM Discovery data-quality). MedianLastSeenAgeHours is the
+	// median age, in hours, of the most recent observation across ALL assets
+	// with a last_seen timestamp (how current the inventory is). StaleAssetPct
+	// is the percentage of assets not re-observed in the last 30 days — a
+	// coverage-decay signal distinct from MedianLastSeenDays (which is scoped to
+	// internet-exposed assets only).
+	MedianLastSeenAgeHours float64 `json:"median_last_seen_age_hours"`
+	StaleAssetPct          float64 `json:"stale_asset_pct"`
 }
 
 // AssetStatsData holds raw asset statistics from repository.
@@ -202,8 +210,8 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 }
 
 // GetMTTRMetrics returns MTTR (Mean Time To Remediate) in hours by severity.
-func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.ID) (map[string]float64, error) {
-	return s.repo.GetMTTRMetrics(ctx, tenantID)
+func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error) {
+	return s.repo.GetMTTRMetrics(ctx, tenantID, days)
 }
 
 // GetRiskVelocity returns weekly new vs resolved finding counts.
@@ -305,9 +313,11 @@ type ExecutiveSummary struct {
 
 // TopRisk represents a high-priority open finding for executive view.
 type TopRisk struct {
+	FindingID     string   `json:"finding_id"`
 	FindingTitle  string   `json:"title"`
 	Severity      string   `json:"severity"`
 	PriorityClass string   `json:"priority_class"`
+	AssetID       string   `json:"asset_id,omitempty"`
 	AssetName     string   `json:"asset_name"`
 	EPSSScore     *float64 `json:"epss_score"`
 	IsInKEV       bool     `json:"is_in_kev"`

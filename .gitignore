@@ -67,6 +67,18 @@ load.test
 # Compiled binaries
 cmd/server/server
 
+# Root-level binaries left by `go build ./cmd/<name>/` — the build drops the
+# binary in the working dir, and a stray `git add -A` then commits an 8MB ELF
+# (chainaudit reached develop this way in #418). Anchored to root so cmd/<name>/
+# source dirs are untouched.
+/bootstrap-admin
+/bootstrap-tenant
+/chainaudit
+/encrypt-credentials
+/gen-relationships
+/openctem-admin
+/seed
+
 vendor
 go.work
 go.work.sum

@@ -238,7 +238,7 @@ func buildRelationshipWithAssets(
 		shared.NewID(), tenantID, sourceID, targetID,
 		relType, "test description",
 		asset.ConfidenceMedium, asset.DiscoveryManual,
-		5, []string{"test"}, nil, now, now,
+		5, []string{"test"}, false, nil, now, now,
 	)
 	return &asset.RelationshipWithAssets{
 		Relationship:    rel,

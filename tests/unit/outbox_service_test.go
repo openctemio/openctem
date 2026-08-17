@@ -253,6 +253,10 @@ func (m *mockNotifExtRepoForService) Create(_ context.Context, _ *integration.No
 	return m.createErr
 }
 
+func (m *mockNotifExtRepoForService) CreateInTx(_ context.Context, _ *sql.Tx, _ *integration.NotificationExtension) error {
+	return m.createErr
+}
+
 func (m *mockNotifExtRepoForService) GetByIntegrationID(_ context.Context, _ integration.ID) (*integration.NotificationExtension, error) {
 	return m.getByIntResult, m.getByIntErr
 }

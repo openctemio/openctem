@@ -75,6 +75,53 @@ func TestModuleGate_Caches(t *testing.T) {
 	}
 }
 
+// TestRequireModule_NewlyGatedGroups asserts the Phase-3 enforcement contract
+// for the route groups that gained a RequireModule gate: with no bundle
+// subscription (empty disabled set) every gate ALLOWS, and when a tenant has
+// subsetted its modules so the group's module is not subscribed the gate BLOCKS.
+func TestRequireModule_NewlyGatedGroups(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	req := httptest.NewRequest(http.MethodGet, "/x", nil).
+		WithContext(context.WithValue(context.Background(), TenantIDKey, "t1"))
+
+	gated := []string{
+		moduledom.ModuleComponents,
+		moduledom.ModuleBranches,
+		moduledom.ModuleCredentials,
+		moduledom.ModuleExposures,
+		moduledom.ModuleSuppressions,
+		moduledom.ModuleReports,
+		moduledom.ModuleIntegrations,
+		moduledom.ModuleIOCs,
+		moduledom.ModuleCompensatingControls,
+		moduledom.ModuleAttackerProfiles,
+		moduledom.ModuleCTEMCycles,
+		moduledom.ModulePriorityRules,
+		moduledom.ModuleBusinessServices,
+		moduledom.ModuleAttackSurface,
+	}
+
+	// No subscription → empty disabled set → every gate ALLOWS (backward compatible).
+	allow := NewModuleGate(&fakeDisabledProvider{disabled: map[string]bool{}}, time.Minute)
+	for _, id := range gated {
+		rec := httptest.NewRecorder()
+		allow.RequireModule(id)(next).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("module %q with no subscription should ALLOW, got %d", id, rec.Code)
+		}
+	}
+
+	// Module not in the subscribed subset → gate BLOCKS with 403.
+	for _, id := range gated {
+		block := NewModuleGate(&fakeDisabledProvider{disabled: map[string]bool{id: true}}, time.Minute)
+		rec := httptest.NewRecorder()
+		block.RequireModule(id)(next).ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("module %q outside the subscription should BLOCK (403), got %d", id, rec.Code)
+		}
+	}
+}
+
 func TestRequireModule_BlocksDisabled(t *testing.T) {
 	g := NewModuleGate(&fakeDisabledProvider{disabled: map[string]bool{"pentest": true}}, time.Minute)
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })

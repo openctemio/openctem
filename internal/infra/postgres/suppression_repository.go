@@ -24,6 +24,43 @@ func NewSuppressionRepository(db *DB) *SuppressionRepository {
 
 // Save persists a suppression rule.
 func (r *SuppressionRepository) Save(ctx context.Context, rule *suppression.Rule) error {
+	return r.saveInTx(ctx, r.db, rule)
+}
+
+// SaveWithAudit persists a suppression rule and records its audit entry in a
+// single transaction, so the rule's state and its audit trail can never
+// diverge on a mid-operation failure. Previously the two were separate,
+// autocommitted Execs (the audit write being best-effort), which allowed a
+// rule to change state with no matching audit row — or, on a partial failure,
+// an audit row describing a state that was never persisted.
+func (r *SuppressionRepository) SaveWithAudit(
+	ctx context.Context,
+	rule *suppression.Rule,
+	action string,
+	actorID *shared.ID,
+	details map[string]any,
+) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := r.saveInTx(ctx, tx, rule); err != nil {
+		return err
+	}
+	if err := r.recordAuditInTx(ctx, tx, rule.ID(), action, actorID, details); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
+}
+
+// saveInTx persists a suppression rule using the given executor (a *DB or a *sql.Tx).
+func (r *SuppressionRepository) saveInTx(ctx context.Context, exec executor, rule *suppression.Rule) error {
 	query := `
 		INSERT INTO suppression_rules (
 			id, tenant_id, rule_id, tool_name, path_pattern, asset_id,
@@ -51,7 +88,7 @@ func (r *SuppressionRepository) Save(ctx context.Context, rule *suppression.Rule
 			updated_at = EXCLUDED.updated_at
 	`
 
-	_, err := r.db.ExecContext(ctx, query,
+	_, err := exec.ExecContext(ctx, query,
 		rule.ID().String(),
 		rule.TenantID().String(),
 		nullString(rule.RuleID()),
@@ -308,6 +345,11 @@ func (r *SuppressionRepository) RemoveSuppression(ctx context.Context, findingID
 
 // RecordAudit records an audit log entry for a suppression rule.
 func (r *SuppressionRepository) RecordAudit(ctx context.Context, ruleID shared.ID, action string, actorID *shared.ID, details map[string]any) error {
+	return r.recordAuditInTx(ctx, r.db, ruleID, action, actorID, details)
+}
+
+// recordAuditInTx records an audit log entry using the given executor (a *DB or a *sql.Tx).
+func (r *SuppressionRepository) recordAuditInTx(ctx context.Context, exec executor, ruleID shared.ID, action string, actorID *shared.ID, details map[string]any) error {
 	detailsJSON, err := json.Marshal(details)
 	if err != nil {
 		return fmt.Errorf("failed to marshal audit details: %w", err)
@@ -318,7 +360,7 @@ func (r *SuppressionRepository) RecordAudit(ctx context.Context, ruleID shared.I
 		VALUES ($1, $2, $3, $4)
 	`
 
-	_, err = r.db.ExecContext(ctx, query, ruleID.String(), action, nullIDPtr(actorID), detailsJSON)
+	_, err = exec.ExecContext(ctx, query, ruleID.String(), action, nullIDPtr(actorID), detailsJSON)
 	if err != nil {
 		return fmt.Errorf("failed to record audit: %w", err)
 	}

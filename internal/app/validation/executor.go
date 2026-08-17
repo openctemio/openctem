@@ -121,6 +121,12 @@ type ValidationJob struct {
 	Target          Target
 	ProfileID       shared.ID
 	TimeoutSeconds  int
+	// TemplateID / CVEID carry the finding's own detection signature for the
+	// KindNuclei executor (RFC-011.2 Phase 2b). TemplateID is a nuclei template
+	// id (nuclei-native findings); CVEID is a CVE→template candidate for
+	// cross-scanner findings. Both empty for safe-check jobs.
+	TemplateID string
+	CVEID      string
 }
 
 // ValidationDispatcher submits a job for an agent and returns the

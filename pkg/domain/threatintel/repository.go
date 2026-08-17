@@ -2,6 +2,8 @@ package threatintel
 
 import (
 	"context"
+
+	"github.com/openctemio/api/pkg/domain/shared"
 )
 
 // EPSSRepository defines the interface for EPSS score persistence.
@@ -23,6 +25,10 @@ type EPSSRepository interface {
 
 	// GetTopPercentile retrieves scores in top N percentile.
 	GetTopPercentile(ctx context.Context, percentile float64, limit int) ([]*EPSSScore, error)
+
+	// CountTenantOpenAboveScore counts the tenant's OPEN findings whose CVE has
+	// an EPSS score at or above the threshold (tenant-scoped, no LIMIT).
+	CountTenantOpenAboveScore(ctx context.Context, tenantID shared.ID, threshold float64) (int64, error)
 
 	// Count returns the total number of EPSS scores.
 	Count(ctx context.Context) (int64, error)
@@ -59,6 +65,18 @@ type KEVRepository interface {
 
 	// GetRansomwareRelated retrieves KEV entries with known ransomware use.
 	GetRansomwareRelated(ctx context.Context, limit int) ([]*KEVEntry, error)
+
+	// CountTenantOpenPastDue counts the tenant's OPEN findings referencing a KEV
+	// CVE whose KEV due_date has passed (tenant-scoped, no LIMIT).
+	CountTenantOpenPastDue(ctx context.Context, tenantID shared.ID) (int64, error)
+
+	// CountRecentlyAdded returns the true count of KEV entries added in the last
+	// N days (global, de-saturated COUNT).
+	CountRecentlyAdded(ctx context.Context, days int) (int64, error)
+
+	// CountRansomwareRelated returns the true count of KEV entries with known
+	// ransomware campaign use (global, de-saturated COUNT).
+	CountRansomwareRelated(ctx context.Context) (int64, error)
 
 	// Count returns the total number of KEV entries.
 	Count(ctx context.Context) (int64, error)

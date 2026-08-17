@@ -215,6 +215,16 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 			"scan_name", sc.Name,
 			"error", err,
 		)
+		// Record the failure in the scan's own state. next_run_at was already
+		// advanced above (to avoid re-trigger storms), so without this a scan
+		// that can never start — e.g. NO_AGENT_AVAILABLE, which recurred silently
+		// for three nights on the demo deployment — looks identical to one that
+		// simply has not run yet: next run scheduled, last run blank. Best-effort;
+		// a failure to record must not mask the original trigger error.
+		if recErr := s.scanRepo.RecordTriggerFailure(ctx, sc.ID, "failed"); recErr != nil {
+			s.logger.Error("failed to record scan trigger failure",
+				"scan_id", sc.ID.String(), "error", recErr)
+		}
 		return
 	}
 

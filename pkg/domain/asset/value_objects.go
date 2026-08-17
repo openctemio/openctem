@@ -603,6 +603,53 @@ func (d DataClassification) RequiresEncryption() bool {
 }
 
 // =============================================================================
+// CTEM: CIA Impact Rating (Scoping critical-asset register)
+// =============================================================================
+
+// ImpactRating represents the business impact rating for one leg of the CIA
+// triad (confidentiality, integrity, availability) if an asset is
+// compromised. Part of the CTEM Scoping stage's critical-asset register.
+type ImpactRating string
+
+const (
+	ImpactRatingLow      ImpactRating = "low"      // Limited adverse effect
+	ImpactRatingModerate ImpactRating = "moderate" // Serious adverse effect
+	ImpactRatingHigh     ImpactRating = "high"     // Severe or catastrophic effect
+)
+
+// AllImpactRatings returns all valid impact ratings.
+func AllImpactRatings() []ImpactRating {
+	return []ImpactRating{
+		ImpactRatingLow,
+		ImpactRatingModerate,
+		ImpactRatingHigh,
+	}
+}
+
+// IsValid checks if the impact rating is valid.
+func (i ImpactRating) IsValid() bool {
+	return slices.Contains(AllImpactRatings(), i)
+}
+
+// String returns the string representation.
+func (i ImpactRating) String() string {
+	return string(i)
+}
+
+// ParseImpactRating parses a string into an ImpactRating.
+// An empty string is allowed (the rating is an optional register attribute).
+func ParseImpactRating(str string) (ImpactRating, error) {
+	if str == "" {
+		return "", nil // Empty is allowed (optional field)
+	}
+	i := ImpactRating(strings.ToLower(strings.TrimSpace(str)))
+	if !i.IsValid() {
+		return "", fmt.Errorf("invalid impact rating: %s", str)
+	}
+	return i, nil
+}
+
+// =============================================================================
 // CTEM: Common Compliance Frameworks
 // =============================================================================
 

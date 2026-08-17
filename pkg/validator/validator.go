@@ -62,6 +62,7 @@ func New() *Validator {
 	_ = v.RegisterValidation("status", validateStatus)
 	_ = v.RegisterValidation("scope", validateScope)
 	_ = v.RegisterValidation("exposure", validateExposure)
+	_ = v.RegisterValidation("impact_rating", validateImpactRating)
 
 	// Register custom validators for repository/SCM (now part of asset domain)
 	_ = v.RegisterValidation("scm_provider", validateSCMProvider)
@@ -165,6 +166,16 @@ func validateExposure(fl validator.FieldLevel) bool {
 		return true // Let 'required' handle empty values
 	}
 	_, err := asset.ParseExposure(value)
+	return err == nil
+}
+
+// validateImpactRating validates that a string is a valid CIA ImpactRating.
+func validateImpactRating(fl validator.FieldLevel) bool {
+	value := fl.Field().String()
+	if value == "" {
+		return true // Empty clears the rating; not an error
+	}
+	_, err := asset.ParseImpactRating(value)
 	return err == nil
 }
 

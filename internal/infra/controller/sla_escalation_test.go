@@ -3,12 +3,51 @@ package controller
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
+
+// The escalation query must write a value that is (a) a member of the SLAStatus
+// enum, (b) permitted by the findings.sla_status CHECK constraint, and (c)
+// counted by the dashboard breach query (sla_status IN ('exceeded','overdue')).
+// It previously wrote 'breached', which satisfied none of those — the CHECK
+// constraint would have rejected it and the dashboard never counted it. The
+// reconciliation writes 'overdue' (the enum value for an open, past-deadline
+// finding). This test locks that decision in.
+func TestBreachQuery_WritesValidEnumStatus(t *testing.T) {
+	if strings.Contains(breachSelectUpdateQuery, "'breached'") {
+		t.Error("escalation query still writes 'breached' — not an SLAStatus enum member, rejected by the sla_status CHECK constraint, and not counted by the dashboard")
+	}
+	if !strings.Contains(breachSelectUpdateQuery, "sla_status = 'overdue'") {
+		t.Error("escalation query must set sla_status = 'overdue'")
+	}
+	// The written value must be a real enum member the dashboard counts.
+	if !vulnerability.SLAStatusOverdue.IsValid() || !vulnerability.SLAStatusOverdue.IsOverdue() {
+		t.Error("SLAStatusOverdue must be a valid, overdue enum value")
+	}
+}
+
+// An accepted-risk (or accepted / duplicate) finding must never be marked
+// overdue — the risk was consciously accepted. The escalation query must
+// exclude the whole closed-category status set, matching the dashboard breach
+// counter.
+func TestBreachQuery_ExcludesAcceptedRisk(t *testing.T) {
+	for _, closed := range []vulnerability.FindingStatus{
+		vulnerability.FindingStatusAcceptedRisk,
+		vulnerability.FindingStatusAccepted,
+		vulnerability.FindingStatusDuplicate,
+	} {
+		token := "'" + string(closed) + "'"
+		if !strings.Contains(breachSelectUpdateQuery, token) {
+			t.Errorf("breach query should exclude status %s so it is never marked overdue", closed)
+		}
+	}
+}
 
 // B4: unit-level assertions for the breach-publisher contract.
 // The DB → UPDATE → RETURNING path is covered by integration tests

@@ -15,6 +15,12 @@ import (
 	"github.com/openctemio/api/pkg/domain/threatintel"
 )
 
+// openFindingStatusClause is the canonical set of CLOSED finding statuses.
+// A finding is considered OPEN (a live exposure) when its status is NOT in
+// this set. Matches the closed-category set used by the dashboard finding
+// stats (see FindingRepository stats query). Applied with the "f" table alias.
+const openFindingStatusClause = `f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')`
+
 // ThreatIntelRepository implements threatintel.ThreatIntelRepository using PostgreSQL.
 type ThreatIntelRepository struct {
 	db         *DB
@@ -273,6 +279,26 @@ func (r *EPSSRepository) GetTopPercentile(ctx context.Context, percentile float6
 	defer rows.Close()
 
 	return r.scanEPSSScores(rows)
+}
+
+// CountTenantOpenAboveScore returns the number of the tenant's OPEN findings
+// whose CVE has an EPSS score at or above the given threshold. This is a real
+// tenant-scoped COUNT (no LIMIT, no saturation): it joins the tenant's findings
+// to the EPSS catalog on the CVE id, so it reflects the tenant's actual
+// exposure rather than the size of the global EPSS catalog.
+func (r *EPSSRepository) CountTenantOpenAboveScore(ctx context.Context, tenantID shared.ID, threshold float64) (int64, error) {
+	query := `
+		SELECT COUNT(DISTINCT f.id)
+		FROM findings f
+		JOIN epss_scores es ON es.cve_id = f.cve_id
+		WHERE f.tenant_id = $1
+			AND es.epss_score >= $2
+			AND ` + openFindingStatusClause
+	var count int64
+	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), threshold).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count tenant open findings above EPSS score: %w", err)
+	}
+	return count, nil
 }
 
 // Count returns the total number of EPSS scores.
@@ -611,6 +637,60 @@ func (r *KEVRepository) GetRansomwareRelated(ctx context.Context, limit int) ([]
 	defer rows.Close()
 
 	return r.scanKEVEntries(rows)
+}
+
+// CountTenantOpenPastDue returns the number of the tenant's OPEN findings that
+// reference a CISA-KEV CVE whose KEV remediation due date has passed. This is a
+// real tenant-scoped COUNT (no LIMIT, no saturation): it joins the tenant's
+// findings to the KEV catalog on the CVE id and uses the authoritative KEV
+// due_date, so it reflects the tenant's actual overdue KEV exposure rather than
+// the global count of past-due catalog entries.
+func (r *KEVRepository) CountTenantOpenPastDue(ctx context.Context, tenantID shared.ID) (int64, error) {
+	query := `
+		SELECT COUNT(DISTINCT f.id)
+		FROM findings f
+		JOIN kev_catalog kc ON kc.cve_id = f.cve_id
+		WHERE f.tenant_id = $1
+			AND kc.due_date IS NOT NULL AND kc.due_date < NOW()
+			AND ` + openFindingStatusClause
+	var count int64
+	if err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count tenant open past-due KEV findings: %w", err)
+	}
+	return count, nil
+}
+
+// CountRecentlyAdded returns the true number of KEV catalog entries added within
+// the last N days. Unlike GetRecentlyAdded (which is LIMIT-bounded and whose
+// len() saturates), this is a plain COUNT and reports the real figure. This is
+// global KEV-feed context, not tenant-scoped.
+func (r *KEVRepository) CountRecentlyAdded(ctx context.Context, days int) (int64, error) {
+	var count int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM kev_catalog WHERE date_added >= NOW() - INTERVAL '1 day' * $1`,
+		days,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count recently added KEV entries: %w", err)
+	}
+	return count, nil
+}
+
+// CountRansomwareRelated returns the true number of KEV catalog entries with
+// known ransomware campaign use. Unlike GetRansomwareRelated (which is
+// LIMIT-bounded and whose len() saturates), this is a plain COUNT and reports
+// the real figure. This is global KEV-feed context, not tenant-scoped.
+func (r *KEVRepository) CountRansomwareRelated(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM kev_catalog
+			WHERE known_ransomware_campaign_use IS NOT NULL
+				AND known_ransomware_campaign_use != 'Unknown'`,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count ransomware-related KEV entries: %w", err)
+	}
+	return count, nil
 }
 
 // Count returns the total number of KEV entries.

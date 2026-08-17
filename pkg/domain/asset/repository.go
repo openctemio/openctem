@@ -91,8 +91,13 @@ type Repository interface {
 
 	// UpsertBatch creates or updates multiple assets in a single operation.
 	// Uses PostgreSQL ON CONFLICT for atomic upsert behavior.
-	// Returns the number of created and updated assets.
-	UpsertBatch(ctx context.Context, assets []*Asset) (created int, updated int, err error)
+	// Returns the number of created and updated assets, and persistedIDs: a
+	// map of asset name -> the AUTHORITATIVE id the row actually holds after the
+	// upsert. ON CONFLICT (tenant_id, name) keeps the pre-existing row's id, so a
+	// locally-generated id can lose a concurrent create race and never be
+	// persisted; callers MUST reconcile any id they hold against persistedIDs
+	// before linking child rows (e.g. findings) to it.
+	UpsertBatch(ctx context.Context, assets []*Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error)
 
 	// UpdateFindingCounts updates finding counts for multiple assets in batch.
 	// This is used after bulk finding ingestion to refresh asset statistics.

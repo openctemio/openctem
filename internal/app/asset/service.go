@@ -76,6 +76,17 @@ type AssetService struct {
 	// failures never abort the originating operation. Kept off the main
 	// Repository so test mocks don't need to implement it.
 	stateHistoryRepo assetdom.StateHistoryRepository
+
+	// businessContext resolves, per asset, the business-unit / business-service
+	// criticality so risk scoring can score an asset's EFFECTIVE criticality —
+	// MAX(own, its BU, the services it powers) — the SAME business-aligned rule
+	// (assetdom.EffectiveCriticality) that finding-priority already applies.
+	// Optional and nil-safe: when nil (or a lookup error, or an asset with no
+	// BU/service membership) scoring falls back to the asset's own criticality,
+	// byte-identical to the pre-business-alignment behavior. Floor only — the
+	// effective value can raise a score, never lower it, and the asset's own
+	// criticality column is never mutated.
+	businessContext BusinessContextLookup
 }
 
 // UserMatcher resolves external references (email, username) to user IDs.
@@ -375,7 +386,10 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		}
 	}
 
-	// Calculate initial risk score using tenant-specific config
+	// Calculate initial risk score using tenant-specific config. A brand-new
+	// asset has no BU / business-service membership yet (memberships are linked
+	// after creation), so effective criticality == own criticality here — the
+	// business floor is applied on the next persist (update/patch/recalc).
 	a.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, tenantID))
 
 	if err := s.repo.Create(ctx, a); err != nil {
@@ -820,8 +834,10 @@ func (s *AssetService) mergeAndUpdateExisting(
 	// Mark as seen (updates last_seen)
 	existing.MarkSeen()
 
-	// Recalculate risk score
-	existing.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, tenantID))
+	// Recalculate risk score using the asset's effective (BU/service-aligned)
+	// criticality — MAX(own, its BU, the services it powers). Nil-safe: falls
+	// back to own criticality when no business context is wired/present.
+	s.scoreAsset(ctx, tenantID, existing)
 
 	if err := s.repo.Update(ctx, existing); err != nil {
 		return nil, fmt.Errorf("failed to update existing asset: %w", err)
@@ -901,6 +917,12 @@ type UpdateAssetInput struct {
 	// Properties patches per-type metadata. Merged (not replaced) into the
 	// asset's existing properties so keys like is_crown_jewel are preserved.
 	Properties map[string]any
+	// CIA impact rating (CTEM Scoping critical-asset register). Each is
+	// low | moderate | high; an empty string clears the rating. Nil = leave
+	// unchanged.
+	ImpactConfidentiality *string `validate:"omitempty,impact_rating"`
+	ImpactIntegrity       *string `validate:"omitempty,impact_rating"`
+	ImpactAvailability    *string `validate:"omitempty,impact_rating"`
 }
 
 // UpdateAsset updates an existing asset.
@@ -966,6 +988,35 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		a.SetOwnerRef(*input.OwnerRef)
 	}
 
+	// CIA impact rating (CTEM Scoping critical-asset register).
+	if input.ImpactConfidentiality != nil {
+		rating, err := assetdom.ParseImpactRating(*input.ImpactConfidentiality)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		}
+		if err := a.SetImpactConfidentiality(rating); err != nil {
+			return nil, err
+		}
+	}
+	if input.ImpactIntegrity != nil {
+		rating, err := assetdom.ParseImpactRating(*input.ImpactIntegrity)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		}
+		if err := a.SetImpactIntegrity(rating); err != nil {
+			return nil, err
+		}
+	}
+	if input.ImpactAvailability != nil {
+		rating, err := assetdom.ParseImpactRating(*input.ImpactAvailability)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		}
+		if err := a.SetImpactAvailability(rating); err != nil {
+			return nil, err
+		}
+	}
+
 	// Capture old tags before replacement (for scope rule evaluation)
 	var oldTags []string
 	if input.Tags != nil {
@@ -993,8 +1044,9 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		a.SetProperties(merged)
 	}
 
-	// Recalculate risk score after updates using tenant-specific config
-	a.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, parsedTenantID))
+	// Recalculate risk score after updates using the asset's effective
+	// (BU/service-aligned) criticality. Nil-safe fallback to own criticality.
+	s.scoreAsset(ctx, parsedTenantID, a)
 
 	if err := s.repo.Update(ctx, a); err != nil {
 		return nil, fmt.Errorf("failed to update asset: %w", err)
@@ -1580,7 +1632,10 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 		a.SetClassification(classification)
 	}
 
-	// Calculate initial risk score using tenant-specific config
+	// Calculate initial risk score using tenant-specific config. A brand-new
+	// repository asset has no BU / business-service membership yet, so effective
+	// criticality == own criticality here; the business floor is applied on the
+	// next persist (update/patch/recalc).
 	a.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, tenantID))
 
 	// Create the asset first
@@ -2055,8 +2110,9 @@ func (s *AssetService) updateExistingRepositoryAsset(
 		existingAsset.AddTag(tag)
 	}
 
-	// Recalculate risk score using tenant-specific config
-	existingAsset.CalculateRiskScoreWithConfig(s.getScoringConfig(ctx, existingAsset.TenantID()))
+	// Recalculate risk score using the asset's effective (BU/service-aligned)
+	// criticality. Nil-safe fallback to own criticality.
+	s.scoreAsset(ctx, existingAsset.TenantID(), existingAsset)
 
 	// Mark as synced
 	existingAsset.MarkSynced()
@@ -2113,6 +2169,14 @@ func (s *AssetService) updateExistingRepositoryAsset(
 
 // RecalculateAllRiskScores recalculates risk scores for all assets in a tenant
 // using the current scoring configuration. Processes assets in batches.
+//
+// It scores each asset on its EFFECTIVE (business-aligned) criticality —
+// MAX(own, its BU, the services it powers) — so this is the mechanism that heals
+// scores gone stale after a business-unit / business-service criticality change
+// (member assets are not otherwise re-scored until their next individual
+// persist). Trigger it from the scoring-settings-changed path or an admin
+// action. Nil-safe: with no business-context lookup wired it scores on own
+// criticality, unchanged.
 func (s *AssetService) RecalculateAllRiskScores(ctx context.Context, tenantID shared.ID) (int, error) {
 	tid := tenantID.String()
 
@@ -2165,13 +2229,19 @@ func (s *AssetService) RecalculateAllRiskScores(ctx context.Context, tenantID sh
 			break
 		}
 
-		// Recalculate scores in memory
+		// Batch-resolve each asset's effective (BU/service-aligned) criticality in
+		// ONE lookup per page, then recalc scores in memory. This is also the path
+		// that heals stale scores after a BU/service criticality change (see
+		// RecalculateAllRiskScores doc). Nil-safe: with no lookup wired every asset
+		// maps to its own criticality and scores are unchanged.
+		effByID := s.effectiveCriticalityMap(ctx, tenantID, result.Data)
 		changed := make([]*assetdom.Asset, 0, len(result.Data))
 		for _, a := range result.Data {
+			eff := effByID[a.ID()]
 			oldScore := a.RiskScore()
-			newScore := engine.CalculateScore(a)
+			newScore := engine.CalculateScoreWithCriticality(a, eff)
 			if oldScore != newScore {
-				a.CalculateRiskScoreWithConfig(config)
+				a.CalculateRiskScoreWithConfigAndCriticality(config, eff)
 				changed = append(changed, a)
 			}
 		}

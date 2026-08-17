@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +58,20 @@ type FindingProcessor struct {
 	// group key (RFC-015). Runs POST-insert (needs persisted finding IDs).
 	// Nil-safe: when unwired, findings simply aren't grouped.
 	remediationKeyApplier RemediationKeyApplier
+
+	// exposureBridge promotes secret-scan findings into the exposure/credential
+	// store (labeled discovery_source=secret_scan). Runs POST-insert (needs the
+	// persisted finding IDs to link back). Best-effort: errors are logged, never
+	// fatal. Nil-safe: when unwired, secret findings are not bridged.
+	exposureBridge ExposureBridge
+
+	// suppressionChecker enforces approved suppression rules at ingest: a NEW
+	// finding matching an active (approved, non-expired) rule lands
+	// resolved+suppressed (out of the open backlog) rather than appearing and
+	// being closed on a later pass. Active rules are loaded ONCE per batch
+	// (tenant-scoped). Nil-safe: when unwired, findings are never suppressed at
+	// ingest (prior behavior).
+	suppressionChecker SuppressionChecker
 }
 
 // PriorityClassifier enriches findings with EPSS/KEV and assigns priority class.
@@ -87,6 +103,15 @@ type activityRecorder interface {
 // key. Runs POST-insert (needs persisted finding IDs). Implemented by
 // *remediation.KeyApplier. Best-effort: errors are logged, never fatal.
 type RemediationKeyApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
+}
+
+// ExposureBridge promotes secret-scan findings into the exposure/credential
+// store, labeled as an internal secret-scan discovery (distinct from an
+// external breach import). Runs POST-insert (needs persisted finding IDs to
+// link back). Implemented by *exposurebridge.Bridge. Best-effort: a failure is
+// logged and never aborts ingest.
+type ExposureBridge interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
 
@@ -142,6 +167,13 @@ func (p *FindingProcessor) SetAssignmentApplier(applier AssignmentApplier) {
 // SetRemediationKeyApplier wires remediation-group key derivation (RFC-015).
 func (p *FindingProcessor) SetRemediationKeyApplier(applier RemediationKeyApplier) {
 	p.remediationKeyApplier = applier
+}
+
+// SetExposureBridge wires the secret-scan → exposure-store bridge. Nil-safe:
+// when unwired, secret findings are not promoted into the Credentials/Exposures
+// view (prior behavior).
+func (p *FindingProcessor) SetExposureBridge(bridge ExposureBridge) {
+	p.exposureBridge = bridge
 }
 
 // ProcessBatch processes all findings using batch operations.
@@ -341,6 +373,14 @@ func (p *FindingProcessor) ProcessBatch(
 		}
 	}
 
+	// Step 3c: Enforce approved suppression rules. A NEW finding matching an
+	// active (approved, non-expired) rule is stamped resolved+suppressed BEFORE
+	// persist, so it lands out of the open backlog rather than appearing then
+	// being closed on a later pass. Rules are loaded ONCE per batch
+	// (tenant-scoped). The returned map (index → rule id) is recorded for audit
+	// AFTER insert, once the findings have persisted IDs. Nil-safe.
+	suppressionDecisions := p.applySuppressions(ctx, tenantID, newFindings)
+
 	// Step 4: Batch create new findings with partial success support
 	if len(newFindings) > 0 {
 		// Enrich BEFORE inserting so EPSS/KEV/priority/SLA are written by the
@@ -399,6 +439,18 @@ func (p *FindingProcessor) ProcessBatch(
 				p.persistDataFlows(ctx, newFindings)
 			}
 
+			// Step 4b1: Record which approved rule suppressed each newly-created
+			// finding (finding_suppressions) so the ingest suppression is
+			// traceable and can be un-suppressed if the rule is later removed.
+			// The disposition (resolved+suppressed) was already applied pre-insert
+			// above; this only records the audit link. Best-effort.
+			if len(suppressionDecisions) > 0 && result.Created > 0 {
+				if n := p.recordSuppressions(ctx, newFindings, suppressionDecisions, result.Errors); n > 0 {
+					output.FindingsSuppressed += n
+					p.logger.Info("suppressed findings at ingest via approved rules", "count", n)
+				}
+			}
+
 			// Step 4b2: Derive remediation-group keys (RFC-015). Best-effort;
 			// grouping is a convenience layer, never blocks ingest.
 			if p.remediationKeyApplier != nil && result.Created > 0 {
@@ -441,6 +493,25 @@ func (p *FindingProcessor) ProcessBatch(
 						p.logger.Warn("failed to auto-route findings to groups", "error", err, "count", len(createdFindings))
 					} else if assigned > 0 {
 						p.logger.Info("auto-routed findings to groups", "assignments", assigned)
+					}
+				}
+			}
+
+			// Step 4f: Promote secret-scan findings into the exposure/credential
+			// store so hardcoded secrets show up in the Credentials/Exposures
+			// view continuously (labeled discovery_source=secret_scan, distinct
+			// from an external breach import). Best-effort: a failure is logged
+			// and never aborts ingestion.
+			if p.exposureBridge != nil && result.Created > 0 {
+				createdFindings := make([]*vulnerability.Finding, 0, result.Created)
+				for i, f := range newFindings {
+					if result.Errors == nil || result.Errors[i] == "" {
+						createdFindings = append(createdFindings, f)
+					}
+				}
+				if len(createdFindings) > 0 {
+					if err := p.exposureBridge.ApplyBatch(ctx, tenantID, createdFindings); err != nil {
+						p.logger.Warn("failed to bridge secret findings into exposure store", "error", err, "count", len(createdFindings))
 					}
 				}
 			}
@@ -595,6 +666,16 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 	if ctisFinding.Fingerprint != "" && isValidFingerprint(ctisFinding.Fingerprint) {
 		// Use provided fingerprint as base (only if valid hash-like string)
 		baseFingerprint = ctisFinding.Fingerprint
+	} else if cve, port, ok := networkVACVEKey(ctisFinding); ok {
+		// Network/host vulnerability (Nessus/Qualys/Tenable): a CVE observed on a
+		// host with no package and no code location. Left to fingerprint.DetectType
+		// this falls to TypeGeneric (rule id + file + message) — or, if TargetHost
+		// were set, to TypeDAST (rule id + host + path) — both of which key on the
+		// scanner's plugin id/message. The SAME CVE on the SAME host reported by two
+		// scanners then produced two findings. Key the base on CVE(+port) alone; the
+		// host/asset is already bound via the composite asset id below, so this dedups
+		// the finding across scanners independent of rule id and message.
+		baseFingerprint = fingerprint.Hash("netva:" + port + ":" + cve)
 	} else {
 		// Generate using SDK fingerprint package
 		input := fingerprint.Input{
@@ -647,6 +728,49 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 	// Create composite fingerprint including assetID
 	// This ensures the same vulnerability on different assets produces different fingerprints
 	return createCompositeFingerprint(assetID.String(), baseFingerprint), baseFingerprint
+}
+
+// networkVACVEKey reports whether a CTIS finding is a network/host vulnerability
+// (a CVE observed on a host by a scanner like Nessus/Qualys/Tenable) and, if so,
+// returns its scanner-independent dedup key parts: the CVE id and the port.
+//
+// It deliberately excludes findings that already dedup correctly under a
+// type-aware algorithm: SCA/container (have a package), SAST/secret (have a code
+// file location). Only a CVE-bearing finding with neither is treated as a network
+// VA. port is "" for a host-level finding (no specific port). When multiple CVEs
+// are grouped on one plugin, the lexically smallest id is used so two scanners
+// reporting the same CVE agree regardless of field placement (CVEID vs CVEIDs).
+func networkVACVEKey(f *ctis.Finding) (cve, port string, ok bool) {
+	v := f.Vulnerability
+	if v == nil {
+		return "", "", false
+	}
+	if strings.TrimSpace(v.Package) != "" {
+		return "", "", false // SCA / container — keyed by package elsewhere
+	}
+	if f.Location != nil && strings.TrimSpace(f.Location.Path) != "" {
+		return "", "", false // SAST / secret — keyed by file location elsewhere
+	}
+
+	cves := make([]string, 0, len(v.CVEIDs)+1)
+	if c := strings.ToLower(strings.TrimSpace(v.CVEID)); c != "" {
+		cves = append(cves, c)
+	}
+	for _, c := range v.CVEIDs {
+		if c := strings.ToLower(strings.TrimSpace(c)); c != "" {
+			cves = append(cves, c)
+		}
+	}
+	if len(cves) == 0 {
+		return "", "", false // no CVE — not a network VA finding
+	}
+	sort.Strings(cves)
+	cve = cves[0]
+
+	if f.Network != nil && f.Network.Port > 0 {
+		port = strconv.Itoa(f.Network.Port)
+	}
+	return cve, port, true
 }
 
 // buildFinding creates a Finding domain entity from a CTIS finding.

@@ -174,6 +174,13 @@ type RunRepository interface {
 	//   - The exponential backoff window has elapsed since completed_at
 	// Returns RetryCandidate records (run + retry config) for the controller to process.
 	ListPendingRetries(ctx context.Context, limit int) ([]RetryCandidate, error)
+
+	// ResetRetryClaim clears the retry_dispatched_at marker on a failed run so it
+	// becomes eligible for ListPendingRetries again. It is the compensating action
+	// for a dispatch that was claimed but did NOT create a new run (a transient
+	// failure). Without it, a single transient dispatch failure would leave the
+	// claim set forever and the scan would never auto-retry.
+	ResetRetryClaim(ctx context.Context, runID shared.ID) error
 }
 
 // RetryCandidate represents a failed pipeline run eligible for retry.

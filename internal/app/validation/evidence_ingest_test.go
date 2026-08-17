@@ -13,7 +13,7 @@ import (
 func newIngestSvc(repo *fakeFindingRepo, evRepo *memEvidenceRepo) (*EvidenceIngestService, *captureNotifier) {
 	notif := &captureNotifier{}
 	store := NewEvidenceStore(evRepo)
-	return NewEvidenceIngestService(store, repo, notif, logger.NewNop()), notif
+	return NewEvidenceIngestService(store, repo, notif, &captureRecorder{}, logger.NewNop()), notif
 }
 
 func TestIngest_NotDetected_RecordsAndResolves(t *testing.T) {

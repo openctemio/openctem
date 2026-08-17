@@ -436,6 +436,21 @@ func (s *Service) calculatePipelineInitialPriority(cmdPriority command.CommandPr
 	}
 }
 
+// recordScanRun writes a pipeline run's terminal outcome back onto the scan that
+// spawned it, so the scan's own last_run_at/last_run_status/counters stop
+// reading "never run" after a run that just finished. No-op for workflow runs
+// with no ScanID or when no recorder is wired; best-effort, since the run itself
+// is already recorded and a scan-summary write must not fail the completion.
+func (s *Service) recordScanRun(ctx context.Context, run *pipeline.Run, status string) {
+	if s.scanRunRecorder == nil || run == nil || run.ScanID == nil {
+		return
+	}
+	if err := s.scanRunRecorder.RecordRun(ctx, *run.ScanID, run.ID, status); err != nil {
+		s.logger.Warn("failed to record run outcome on scan",
+			"scan_id", run.ScanID.String(), "run_id", run.ID.String(), "status", status, "error", err)
+	}
+}
+
 // OnStepCompleted is called when an agent reports step completion.
 // This triggers scheduling of dependent steps.
 func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any) error {
@@ -504,6 +519,7 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 				s.logger.Error("failed to update run status to failed", "run_id", run.ID.String(), "error", err)
 			}
 			metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), "failed").Inc()
+			s.recordScanRun(ctx, run, "failed")
 			// Audit log: pipeline failed
 			s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
 				NewFailureEvent(audit.ActionPipelineRunFailed, audit.ResourceTypePipelineRun, run.ID.String(),
@@ -519,6 +535,7 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 				s.logger.Error("failed to update run status to completed", "run_id", run.ID.String(), "error", err)
 			}
 			metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), "completed").Inc()
+			s.recordScanRun(ctx, run, "completed")
 			// Audit log: pipeline completed
 			s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
 				NewSuccessEvent(audit.ActionPipelineRunCompleted, audit.ResourceTypePipelineRun, run.ID.String()).

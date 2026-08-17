@@ -41,6 +41,18 @@ type ScanDeactivator interface {
 	DeactivateScansByPipeline(ctx context.Context, pipelineID shared.ID) (int, error)
 }
 
+// ScanRunRecorder records a run's terminal outcome back onto the scan that
+// spawned it, so a scan's own last_run_at/last_run_status/counters reflect
+// reality. Optional: a workflow run with no ScanID (or no recorder wired)
+// simply skips it. Satisfied by *postgres.ScanRepository.RecordRun.
+//
+// Without this a pipeline_run reaching `completed` updated only the run row —
+// the scan it belongs to still read last_run_status NULL, i.e. "never run",
+// after a scan that had just finished and produced findings.
+type ScanRunRecorder interface {
+	RecordRun(ctx context.Context, scanID shared.ID, runID shared.ID, status string) error
+}
+
 // SecurityValidator interface for security validation.
 type SecurityValidator interface {
 	ValidateIdentifier(value string, maxLen int, fieldName string) *ValidationResult
@@ -171,6 +183,7 @@ type Service struct {
 	agentSelector     AgentSelector // Optional: for platform agent support
 	auditService      AuditService
 	scanDeactivator   ScanDeactivator // Optional: for cascade scan deactivation
+	scanRunRecorder   ScanRunRecorder // Optional: records run outcome back onto the scan
 	db                TransactionDB   // Optional: for transaction support
 	logger            *logger.Logger
 
@@ -222,6 +235,14 @@ func WithQualityGate(profileRepo scanprofile.Repository, findingRepo vulnerabili
 func WithScanDeactivator(deactivator ScanDeactivator) Option {
 	return func(s *Service) {
 		s.scanDeactivator = deactivator
+	}
+}
+
+// WithScanRunRecorder sets the recorder that writes a pipeline run's terminal
+// outcome back onto its scan.
+func WithScanRunRecorder(recorder ScanRunRecorder) Option {
+	return func(s *Service) {
+		s.scanRunRecorder = recorder
 	}
 }
 

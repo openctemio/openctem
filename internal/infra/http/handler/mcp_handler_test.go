@@ -401,7 +401,7 @@ func (m *fakeAuditRepo) DeleteOlderThanForTenant(_ context.Context, _ shared.ID,
 func (m *fakeAuditRepo) GetLatestByResource(_ context.Context, _ shared.ID, _ auditdom.ResourceType, _ string) (*auditdom.AuditLog, error) {
 	return nil, nil
 }
-func (m *fakeAuditRepo) ListByActor(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*auditdom.AuditLog], error) {
+func (m *fakeAuditRepo) ListByActor(_ context.Context, _ shared.ID, _ shared.ID, _ pagination.Pagination) (pagination.Result[*auditdom.AuditLog], error) {
 	return pagination.Result[*auditdom.AuditLog]{}, nil
 }
 func (m *fakeAuditRepo) ListByResource(_ context.Context, _ shared.ID, _ auditdom.ResourceType, _ string, _ pagination.Pagination) (pagination.Result[*auditdom.AuditLog], error) {

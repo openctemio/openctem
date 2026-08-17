@@ -220,9 +220,16 @@ func (s *SurfaceService) ComputeAttackPathScores(
 			if n.Criticality == "critical" || n.Criticality == "high" {
 				criticalReachable++
 			}
-			if n.IsCrownJewel {
-				crownJewelsAtRisk++
-			}
+		}
+		// A crown jewel is at risk when something can reach it (rc > 0) OR when
+		// it is ITSELF a public entry point — a directly internet-exposed crown
+		// jewel is the most at-risk case, yet BFS gives it rc=0 (a node is never
+		// its own neighbor and only non-public reached nodes get an rc). Using
+		// the same "public" predicate as entry-point detection keeps this in
+		// agreement with the exposure-chain builder, which counts length-0
+		// targets. The single per-node check means no double-counting.
+		if n.IsCrownJewel && (rc > 0 || isEntry) {
+			crownJewelsAtRisk++
 		}
 
 		riskScore := n.RiskScore

@@ -363,3 +363,50 @@ func TestSyncFindingStatus_NoGitHubLinkNoop(t *testing.T) {
 		t.Fatalf("no github link → must not touch any issue, got %d", ic.stateCalls)
 	}
 }
+
+// TestBuildIssueBody_IncludesMobilizationBrief asserts the CTEM Mobilization
+// brief (definition of done + acceptable fixes) is carried into the GitHub
+// issue body when the finding's remediation supplies it.
+func TestBuildIssueBody_IncludesMobilizationBrief(t *testing.T) {
+	f := newTestFinding(t, vulnerability.FindingSourceSAST)
+	f.SetRemediation(&vulnerability.FindingRemediation{
+		SuccessCriteria:    "scanner reports 0 instances on main for 2 scans",
+		VerificationMethod: "re-run the SAST scan on main",
+		PreferredFix:       "parameterize the SQL query",
+		AlternativeFixes:   []string{"use an ORM", "add an allow-list validator"},
+	})
+
+	body := buildIssueBody(f)
+
+	for _, want := range []string{
+		"Definition of done:", "scanner reports 0 instances on main for 2 scans",
+		"Verification:", "re-run the SAST scan on main",
+		"Acceptable fixes:", "Preferred: parameterize the SQL query",
+		"Alternative: use an ORM", "Alternative: add an allow-list validator",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("issue body missing %q\nbody:\n%s", want, body)
+		}
+	}
+}
+
+// TestBuildIssueBody_SecretFindingKeepsBriefButNotSecret asserts that even for
+// secret findings (where the raw description is omitted) the operator-entered
+// Mobilization brief is still included — it carries no secret material.
+func TestBuildIssueBody_SecretFindingKeepsBriefButNotSecret(t *testing.T) {
+	f := newTestFinding(t, vulnerability.FindingSourceSecret)
+	f.SetDescription("raw secret value should NEVER appear: AKIAIOSFODNN7EXAMPLE")
+	f.SetSecretMaskedValue("AKIA****EXAMPLE")
+	f.SetRemediation(&vulnerability.FindingRemediation{
+		SuccessCriteria: "credential rotated and revoked",
+	})
+
+	body := buildIssueBody(f)
+
+	if strings.Contains(body, "AKIAIOSFODNN7EXAMPLE") {
+		t.Errorf("secret leaked into body: %q", body)
+	}
+	if !strings.Contains(body, "Definition of done:") || !strings.Contains(body, "credential rotated and revoked") {
+		t.Errorf("secret finding body should still carry the mobilization brief, got: %q", body)
+	}
+}

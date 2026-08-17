@@ -82,6 +82,7 @@ type Handlers struct {
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
+	CTEMID           *handler.CTEMIDHandler           // nil if not initialized (no database)
 	CredentialImport *handler.CredentialImportHandler // nil if not initialized (no database)
 	Workflow         *handler.WorkflowHandler         // nil if not initialized (no database)
 	Suppression      *handler.SuppressionHandler      // nil if not initialized (no database)
@@ -357,7 +358,7 @@ func Register(
 
 	// Component routes (tenant from JWT token)
 	if h.Component != nil {
-		registerComponentRoutes(router, h.Component, authMiddleware, userSync)
+		registerComponentRoutes(router, h.Component, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleComponents))
 	}
 
 	// Asset Service routes (CTEM Discovery - network services on assets)
@@ -443,7 +444,7 @@ func Register(
 
 	// Branch routes (asset-scoped, tenant from JWT token)
 	if h.Branch != nil {
-		registerBranchRoutes(router, h.Branch, authMiddleware, userSync)
+		registerBranchRoutes(router, h.Branch, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleBranches))
 	}
 
 	// SLA Policy routes (tenant from JWT token)
@@ -478,7 +479,7 @@ func Register(
 
 	// Indicators of Compromise (IOC catalogue, feeds B6 correlator)
 	if h.IOC != nil {
-		registerIOCRoutes(router, h.IOC, authMiddleware, userSync)
+		registerIOCRoutes(router, h.IOC, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleIOCs))
 	}
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
@@ -492,7 +493,7 @@ func Register(
 		registerRemediationCampaignRoutes(router, h.RemediationCampaign, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRemediation))
 	}
 	if h.ReportSchedule != nil {
-		registerReportScheduleRoutes(router, h.ReportSchedule, authMiddleware, userSync)
+		registerReportScheduleRoutes(router, h.ReportSchedule, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleReports))
 	}
 
 	// Business Unit routes
@@ -502,27 +503,27 @@ func Register(
 
 	// Business Service routes (Phase 3 — business capability management)
 	if h.BusinessService != nil {
-		registerBusinessServiceRoutes(router, h.BusinessService, authMiddleware, userSync)
+		registerBusinessServiceRoutes(router, h.BusinessService, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleBusinessServices))
 	}
 
 	// Compensating Control routes (RFC-005)
 	if h.CompensatingControl != nil {
-		registerCompensatingControlRoutes(router, h.CompensatingControl, authMiddleware, userSync)
+		registerCompensatingControlRoutes(router, h.CompensatingControl, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCompensatingControls))
 	}
 
 	// Attacker Profile routes (RFC-005)
 	if h.AttackerProfile != nil {
-		registerAttackerProfileRoutes(router, h.AttackerProfile, authMiddleware, userSync)
+		registerAttackerProfileRoutes(router, h.AttackerProfile, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackerProfiles))
 	}
 
 	// CTEM Cycle routes (RFC-005)
 	if h.CTEMCycle != nil {
-		registerCTEMCycleRoutes(router, h.CTEMCycle, authMiddleware, userSync)
+		registerCTEMCycleRoutes(router, h.CTEMCycle, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCTEMCycles))
 	}
 
 	// Priority Rule routes (RFC-004)
 	if h.PriorityRule != nil {
-		registerPriorityRuleRoutes(router, h.PriorityRule, authMiddleware, userSync)
+		registerPriorityRuleRoutes(router, h.PriorityRule, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModulePriorityRules))
 	}
 
 	// Threat Model routes (continuous threat modeling)
@@ -542,7 +543,7 @@ func Register(
 
 	// Integration routes (tenant from JWT token)
 	if h.Integration != nil {
-		registerIntegrationRoutes(router, h.Integration, h.JiraWebhook, h.DefectDojo, authMiddleware, userSync)
+		registerIntegrationRoutes(router, h.Integration, h.JiraWebhook, h.DefectDojo, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleIntegrations))
 	}
 
 	// Asset Group routes (tenant from JWT token)
@@ -567,7 +568,7 @@ func Register(
 
 	// Attack Surface routes (tenant from JWT token)
 	if h.AttackSurface != nil {
-		registerAttackSurfaceRoutes(router, h.AttackSurface, authMiddleware, userSync)
+		registerAttackSurfaceRoutes(router, h.AttackSurface, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Command routes (tenant from JWT token)
@@ -673,12 +674,12 @@ func Register(
 
 	// Suppression routes (tenant from JWT token)
 	if h.Suppression != nil {
-		registerSuppressionRoutes(router, h.Suppression, authMiddleware, userSync)
+		registerSuppressionRoutes(router, h.Suppression, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleSuppressions))
 	}
 
 	// Exposure routes (tenant from JWT token)
 	if h.Exposure != nil {
-		registerExposureRoutes(router, h.Exposure, authMiddleware, userSync)
+		registerExposureRoutes(router, h.Exposure, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleExposures))
 	}
 
 	// Threat Intelligence routes (global threat intel data)
@@ -686,9 +687,14 @@ func Register(
 		registerThreatIntelRoutes(router, h.ThreatIntel, authMiddleware, userSync)
 	}
 
+	// CTEM-ID catalog routes (global reference data)
+	if h.CTEMID != nil {
+		registerCTEMIDRoutes(router, h.CTEMID, authMiddleware, userSync)
+	}
+
 	// Credential Import routes (tenant from JWT token)
 	if h.CredentialImport != nil {
-		registerCredentialRoutes(router, h.CredentialImport, h.Ingest, authMiddleware, userSync)
+		registerCredentialRoutes(router, h.CredentialImport, h.Ingest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCredentials))
 	}
 
 	// Group routes (Access Control - tenant from JWT token)

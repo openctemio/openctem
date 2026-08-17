@@ -89,6 +89,16 @@ func categorizeError(err error) string {
 	return "AI analysis failed. Please try again later."
 }
 
+// aitriageFPReclassifyThreshold is the false-positive-likelihood at or above
+// which a completed triage triggers an immediate priority reclassify (so the
+// de-escalation can take effect). It intentionally mirrors
+// finding.AITriageFPThreshold — the value the classifier itself uses to decide a
+// high-confidence false positive — but is duplicated here to avoid an import
+// cycle (internal/app/finding already imports this package). Keep the two in
+// sync: below the threshold the classifier would not de-escalate, so sweeping the
+// asset would be wasted work.
+const aitriageFPReclassifyThreshold = 0.8
+
 // AITriageJobEnqueuer defines the interface for enqueueing AI triage jobs.
 type AITriageJobEnqueuer interface {
 	EnqueueAITriage(ctx context.Context, resultID, tenantID, findingID string, delay time.Duration) error
@@ -99,6 +109,17 @@ type AITriageJobEnqueuer interface {
 type WorkflowEventDispatcherInterface interface {
 	DispatchAITriageCompleted(ctx context.Context, tenantID, findingID, triageID shared.ID, triageData map[string]any)
 	DispatchAITriageFailed(ctx context.Context, tenantID, findingID, triageID shared.ID, errorMessage string)
+}
+
+// PriorityReclassifyEnqueuer enqueues a priority reclassification for a finding's
+// asset after AI triage completes. This is what lets a high-confidence "likely
+// false positive" verdict take effect: the reclassify re-derives the finding's
+// priority_class, and the classifier de-escalates it by one bounded level. Errors
+// are swallowed by the implementation — a failed enqueue must not fail the triage
+// (the verdict still applies on the next scheduled sweep). Optional — nil means
+// no immediate reclassify.
+type PriorityReclassifyEnqueuer interface {
+	EnqueueForAsset(ctx context.Context, tenantID, assetID shared.ID)
 }
 
 // TriageBroadcaster broadcasts triage events for real-time WebSocket updates.
@@ -120,7 +141,8 @@ type AITriageService struct {
 	llmFactory         *llm.Factory
 	jobEnqueuer        AITriageJobEnqueuer
 	workflowDispatcher WorkflowEventDispatcherInterface
-	triageBroadcaster  TriageBroadcaster // For real-time WebSocket updates
+	triageBroadcaster  TriageBroadcaster          // For real-time WebSocket updates
+	reclassifyEnqueuer PriorityReclassifyEnqueuer // enqueues priority reclassify on triage completion
 	platformCfg        config.AITriageConfig
 	logger             *logger.Logger
 	outputValidator    *TriageOutputValidator
@@ -180,6 +202,15 @@ func (s *AITriageService) SetBudgetService(b *BudgetService) {
 // SetTriageBroadcaster sets the broadcaster for real-time WebSocket updates.
 func (s *AITriageService) SetTriageBroadcaster(broadcaster TriageBroadcaster) {
 	s.triageBroadcaster = broadcaster
+}
+
+// SetReclassifyEnqueuer wires the enqueuer that triggers a priority
+// reclassification for a finding's asset when its triage completes, so a
+// high-confidence false-positive verdict can de-escalate the finding's priority.
+// Optional — nil means no immediate reclassify (the verdict still applies on the
+// next scheduled sweep).
+func (s *AITriageService) SetReclassifyEnqueuer(e PriorityReclassifyEnqueuer) {
+	s.reclassifyEnqueuer = e
 }
 
 // =============================================================================
@@ -628,6 +659,19 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		if actErr != nil {
 			s.logger.Error("failed to record AI triage activity", "error", actErr)
 		}
+	}
+
+	// Trigger a priority reclassification for the finding's asset so a
+	// high-confidence "likely false positive" verdict can DE-ESCALATE this
+	// finding's priority_class (the classifier reads the persisted triage result
+	// and lowers it one bounded level). Enqueued only for completed results whose
+	// likelihood clears the de-escalation threshold — a low-confidence verdict
+	// changes nothing, so there is no point sweeping the asset. Fire-and-forget:
+	// the enqueuer swallows errors; the verdict also applies on the next sweep.
+	if s.reclassifyEnqueuer != nil &&
+		analysis.FalsePositiveLikelihood >= aitriageFPReclassifyThreshold &&
+		!finding.AssetID().IsZero() {
+		s.reclassifyEnqueuer.EnqueueForAsset(ctx, tenantID, finding.AssetID())
 	}
 
 	s.logger.Info("triage completed",

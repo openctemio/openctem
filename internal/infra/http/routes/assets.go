@@ -100,9 +100,11 @@ func registerComponentRoutes(
 	h *handler.ComponentHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build middleware chain with tenant validation from JWT
-	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build middleware chain with tenant validation from JWT.
+	// Append the module gate after tenant extraction so it can read the tenant.
+	middlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// SBOM import accepts a 50MB body and parses an arbitrary dependency tree —
 	// rate-limit it like the other bulk-import endpoints.
@@ -322,9 +324,11 @@ func registerAttackSurfaceRoutes(
 	h *handler.AttackSurfaceHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token.
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Attack Surface routes
 	router.Group("/api/v1/attack-surface", func(r Router) {
@@ -345,9 +349,11 @@ func registerBranchRoutes(
 	h *handler.BranchHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token.
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Branch routes - tenant from JWT token, scoped to repository
 	router.Group("/api/v1/repositories/{repositoryId}/branches", func(r Router) {

@@ -366,12 +366,34 @@ func (p *AssetProcessor) ProcessBatch(
 		allAssets := make([]*asset.Asset, 0, len(newAssets)+len(updateAssets))
 		allAssets = append(allAssets, newAssets...)
 		allAssets = append(allAssets, updateAssets...)
-		created, updated, err := p.repo.UpsertBatch(ctx, allAssets)
+		created, updated, persistedIDs, err := p.repo.UpsertBatch(ctx, allAssets)
 		if err != nil {
 			return assetMap, fmt.Errorf("failed to batch upsert assets: %w", err)
 		}
 		output.AssetsCreated = created
 		output.AssetsUpdated = updated
+
+		// Reconcile assetMap to the ids the DB actually persisted. ON CONFLICT
+		// (tenant_id, name) keeps the pre-existing row's id, so an asset we created
+		// locally may have lost a concurrent create race — its local UUID was never
+		// written. Findings are linked (after this function returns) via assetMap, so
+		// any entry still pointing at a non-persisted id would orphan them / break the
+		// asset FK. Remap by name to the authoritative id before that linkage happens.
+		if len(persistedIDs) > 0 {
+			localToName := make(map[string]string, len(allAssets))
+			for _, a := range allAssets {
+				localToName[a.ID().String()] = a.Name()
+			}
+			for ctisID, localID := range assetMap {
+				name, ok := localToName[localID.String()]
+				if !ok {
+					continue
+				}
+				if pid, ok := persistedIDs[name]; ok && !pid.Equals(localID) {
+					assetMap[ctisID] = pid
+				}
+			}
+		}
 
 		// Record discovery state history (appeared for new assets, recovered
 		// for reactivated ones). Best-effort — never fails ingestion.
@@ -560,7 +582,7 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		return
 	}
 
-	created, _, err := p.repo.UpsertBatch(ctx, newDomains)
+	created, _, _, err := p.repo.UpsertBatch(ctx, newDomains)
 	if err != nil {
 		p.logger.Warn("failed to batch create root domain assets",
 			"count", len(newDomains),
@@ -765,7 +787,7 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 	}
 
 	if len(newIPs) > 0 {
-		created, _, err := p.repo.UpsertBatch(ctx, newIPs)
+		created, _, _, err := p.repo.UpsertBatch(ctx, newIPs)
 		if err != nil {
 			p.logger.Warn("failed to create IP assets from DNS resolution", "error", err)
 			for _, a := range newIPs {
