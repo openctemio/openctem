@@ -16,6 +16,12 @@ type (
 	CampaignResolveInput           = exposure.CampaignResolveInput
 	BulkIngestResult               = exposure.BulkIngestResult
 	IngestItemError                = exposure.IngestItemError
+	ExposureEnricher               = exposure.ExposureEnricher
+	ExposureEnrichment             = exposure.Enrichment
+)
+
+var (
+	NewExposureEnricher = exposure.NewExposureEnricher
 )
 
 var (

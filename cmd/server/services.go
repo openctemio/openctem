@@ -798,6 +798,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PriorityClassification.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
 	}
 
+	// CTEM Discovery: enrich EXPOSURE events on the read path with the SAME
+	// machinery findings use — effective (business-aligned) criticality, asset
+	// reachability / internet-exposure, and EPSS/KEV for any exposure carrying a
+	// CVE id. Additive and best-effort: nil-safe deps degrade gracefully, and no
+	// exposure row is mutated or migrated.
+	if s.Exposure != nil {
+		exposureEnricher := app.NewExposureEnricher(repos.Asset, log)
+		exposureEnricher.SetBusinessContextLookup(postgres.NewBusinessContextLookupRepo(deps.DB))
+		if s.AttackSurface != nil {
+			exposureEnricher.SetReachabilityOracle(newReachabilityOracle(s.AttackSurface, 5*time.Minute))
+		}
+		exposureEnricher.SetThreatIntel(exposureEPSSShim{epssAdapter}, exposureKEVShim{kevAdapter})
+		s.Exposure.SetEnricher(exposureEnricher)
+	}
+
 	// Close-the-loop (Part 1): feed the threat-model engine's output into
 	// prioritization, so an asset the engine placed on an OPEN, high-score
 	// modeled attack chain is treated as reachable. Nil-safe: no threat model /
@@ -1424,6 +1439,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// from an external breach import. Reuses the same exposure repo + state
 	// history as the credential-import service.
 	s.Ingest.SetExposureBridge(exposurebridge.NewBridge(repos.Exposure, repos.ExposureStateHistory, log))
+
+	// Continuous attack-surface discovery: project recon-discovered assets (open
+	// ports, exposed services, weak/expiring TLS certificates) into the Exposure
+	// Register so they surface continuously — filling the port_open /
+	// service_detected / certificate_* / ssl_issue event types that had no
+	// producer. Post-asset-insert, best-effort; reuses the same exposure repo +
+	// state history + dedupe/reactivate as the secret/misconfig bridge.
+	s.Ingest.SetAssetExposureProjector(exposurebridge.NewAssetBridge(repos.Exposure, repos.ExposureStateHistory, log))
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 
 	// A remediation campaign can be scoped to a group key (solution family): its

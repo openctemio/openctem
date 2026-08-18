@@ -57,6 +57,30 @@ type ExposureResponse struct {
 	ResolutionNotes string         `json:"resolution_notes,omitempty"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
+
+	// CTEM enrichment (read-time, additive). Present only when an enricher is
+	// wired and the exposure has a linked asset (criticality/reachability) or a
+	// CVE in its details (EPSS/KEV).
+	EffectiveCriticality string     `json:"effective_criticality,omitempty"`
+	IsInternetAccessible *bool      `json:"is_internet_accessible,omitempty"`
+	OnAttackPath         *bool      `json:"on_attack_path,omitempty"`
+	CVEID                string     `json:"cve_id,omitempty"`
+	EPSSScore            *float64   `json:"epss_score,omitempty"`
+	EPSSPercentile       *float64   `json:"epss_percentile,omitempty"`
+	IsInKEV              *bool      `json:"is_in_kev,omitempty"`
+	KEVDueDate           *time.Time `json:"kev_due_date,omitempty"`
+}
+
+// applyEnrichment copies read-time CTEM enrichment onto an exposure response.
+func applyEnrichment(resp *ExposureResponse, enr app.ExposureEnrichment) {
+	resp.EffectiveCriticality = enr.EffectiveCriticality
+	resp.IsInternetAccessible = enr.IsInternetAccessible
+	resp.OnAttackPath = enr.OnAttackPath
+	resp.CVEID = enr.CVEID
+	resp.EPSSScore = enr.EPSSScore
+	resp.EPSSPercentile = enr.EPSSPercentile
+	resp.IsInKEV = enr.IsInKEV
+	resp.KEVDueDate = enr.KEVDueDate
 }
 
 // CreateExposureRequest represents the request to create an exposure event.
@@ -280,9 +304,15 @@ func (h *ExposureHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := toExposureResponse(event)
+	enrichMap := h.service.EnrichEvents(r.Context(), tenantID, []*exposure.ExposureEvent{event})
+	if enr, ok := enrichMap[event.ID()]; ok {
+		applyEnrichment(&resp, enr)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toExposureResponse(event))
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Delete handles DELETE /api/v1/exposures/{id}
@@ -366,9 +396,14 @@ func (h *ExposureHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	enrichMap := h.service.EnrichEvents(r.Context(), tenantID, result.Data)
 	items := make([]ExposureResponse, 0, len(result.Data))
 	for _, e := range result.Data {
-		items = append(items, toExposureResponse(e))
+		resp := toExposureResponse(e)
+		if enr, ok := enrichMap[e.ID()]; ok {
+			applyEnrichment(&resp, enr)
+		}
+		items = append(items, resp)
 	}
 
 	response := ListResponse[ExposureResponse]{

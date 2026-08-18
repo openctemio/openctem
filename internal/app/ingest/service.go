@@ -55,10 +55,23 @@ type Service struct {
 
 	activityService *app.FindingActivityService
 
+	// assetExposureProjector promotes recon-discovered assets (open ports,
+	// exposed services, TLS certificates) into the Exposure Register. Runs
+	// post-asset-insert, best-effort. Nil-safe: when unwired, recon assets are
+	// not projected (prior behavior).
+	assetExposureProjector AssetExposureProjector
+
 	logger *logger.Logger
 
 	// statsUpdateMu protects concurrent stats updates
 	statsUpdateMu sync.Mutex
+}
+
+// AssetExposureProjector projects recon-discovered assets into the exposure
+// store. Implemented by *exposurebridge.AssetBridge. Best-effort: a failure is
+// logged and never aborts ingest.
+type AssetExposureProjector interface {
+	ProjectAssets(ctx context.Context, tenantID shared.ID, assets []*asset.Asset) error
 }
 
 // NewService creates a new unified ingest service.
@@ -197,6 +210,14 @@ func (s *Service) SetSuppressionChecker(checker SuppressionChecker) {
 	s.findingProcessor.SetSuppressionChecker(checker)
 }
 
+// SetAssetExposureProjector wires the post-insert recon-asset → exposure-store
+// projector so open ports, exposed services and weak/expiring TLS certificates
+// surface continuously in the Exposure Register (CTEM Discovery). Nil-safe:
+// when not wired, recon assets are not projected into exposures (prior behavior).
+func (s *Service) SetAssetExposureProjector(p AssetExposureProjector) {
+	s.assetExposureProjector = p
+}
+
 // =============================================================================
 // Main Ingestion Methods
 // =============================================================================
@@ -267,6 +288,15 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		"assets_updated", output.AssetsUpdated,
 		"asset_map_size", len(assetMap),
 	)
+
+	// Step 1b: Project recon-discovered assets (open ports, exposed services,
+	// TLS certificates) into the Exposure Register. Best-effort — a failure here
+	// must never abort ingest. Only the relevant CTIS asset types are re-loaded
+	// (by their AUTHORITATIVE persisted id, so the exposure→asset FK is valid),
+	// keeping non-recon scans (which create no such assets) free of extra work.
+	if s.assetExposureProjector != nil {
+		s.projectAssetExposures(ctx, tenantID, report, assetMap)
+	}
 
 	// Step 2: Process dependencies/components (SBOM)
 	if s.compRepo != nil && s.componentProcessor != nil && len(report.Dependencies) > 0 {
@@ -436,6 +466,54 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 	s.createIngestAuditLog(ctx, agt, tenantID, report, output)
 
 	return output, nil
+}
+
+// projectAssetExposures re-loads the recon-discovered assets (open ports,
+// exposed services, TLS certificates) by their AUTHORITATIVE persisted ids and
+// hands them to the exposure projector. Loading by persisted id (from assetMap,
+// already reconciled to the ids the DB actually wrote) keeps the exposure→asset
+// FK valid. Best-effort: any error is logged and never aborts ingest.
+func (s *Service) projectAssetExposures(ctx context.Context, tenantID shared.ID, report *ctis.Report, assetMap map[string]shared.ID) {
+	if s.assetRepo == nil || len(assetMap) == 0 {
+		return
+	}
+
+	// Select the persisted ids of the exposure-relevant asset types only, so a
+	// non-recon scan (which produces none) does no extra work.
+	seen := make(map[shared.ID]bool)
+	ids := make([]shared.ID, 0)
+	for i := range report.Assets {
+		switch report.Assets[i].Type {
+		case ctis.AssetTypeOpenPort, ctis.AssetTypeService, ctis.AssetTypeHTTPService, ctis.AssetTypeCertificate:
+			id, ok := assetMap[report.Assets[i].ID]
+			if !ok || id.IsZero() || seen[id] {
+				continue
+			}
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	assets := make([]*asset.Asset, 0, len(ids))
+	for _, id := range ids {
+		a, err := s.assetRepo.GetByID(ctx, tenantID, id)
+		if err != nil {
+			s.logger.Warn("failed to load asset for exposure projection",
+				"asset_id", id.String(), "error", err)
+			continue
+		}
+		assets = append(assets, a)
+	}
+	if len(assets) == 0 {
+		return
+	}
+
+	if err := s.assetExposureProjector.ProjectAssets(ctx, tenantID, assets); err != nil {
+		s.logger.Warn("asset exposure projection failed", "error", err)
+	}
 }
 
 // IngestSARIF processes a SARIF log and ingests it as findings.

@@ -21,7 +21,30 @@ type ExposureService struct {
 	historyRepo         exposuredom.StateHistoryRepository
 	notificationService *outbox.Service
 	db                  *sql.DB
-	logger              *logger.Logger
+	// enricher attaches CTEM signals (effective criticality, reachability,
+	// EPSS/KEV) to exposures on the read path. Optional — nil means exposures
+	// are returned without enrichment (prior behavior).
+	enricher *ExposureEnricher
+	logger   *logger.Logger
+}
+
+// SetEnricher wires read-time exposure enrichment. Safe to call after
+// construction; nil disables enrichment.
+func (s *ExposureService) SetEnricher(e *ExposureEnricher) { s.enricher = e }
+
+// EnrichEvents computes CTEM enrichment (effective criticality, reachability,
+// EPSS/KEV) for a batch of exposure events, keyed by event id. Nil-safe: when no
+// enricher is wired it returns an empty map, so callers can always range over
+// the result. Tenant-scoped: asset/threat lookups run under tenantID.
+func (s *ExposureService) EnrichEvents(ctx context.Context, tenantID string, events []*exposuredom.ExposureEvent) map[shared.ID]Enrichment {
+	if s.enricher == nil || len(events) == 0 {
+		return map[shared.ID]Enrichment{}
+	}
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return map[shared.ID]Enrichment{}
+	}
+	return s.enricher.EnrichBatch(ctx, parsedTenantID, events)
 }
 
 // NewExposureService creates a new ExposureService.
