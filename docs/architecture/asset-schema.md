@@ -2,7 +2,47 @@
 
 > **Version**: 1.0
 > **Last Updated**: 2024-01-16
-> **Status**: Draft
+> **Status**: Draft / **NOT the shipped ingest contract**
+
+> **⚠️ The CTAS JSON contract below (`application/vnd.openctem.asset+json`,
+> `POST /api/v1/ingest`) is NOT implemented.** There is no CTAS media-type
+> handler, JSON Schema, or `/api/v1/ingest` CTAS route in the codebase. The
+> real, shipped ingest path is **CTIS** (the CTEM Ingest Schema shared with the
+> agent/SDK — see `api-ctis-decoupling.md`). Treat this document as a historical
+> design sketch for the JSON shape only; for the attributes the platform actually
+> stores and scores today, see **"CTEM Scoping attributes (shipped)"** immediately
+> below.
+
+## CTEM Scoping attributes (shipped)
+
+These asset attributes are implemented and drive prioritization today — they are
+**not** part of the unimplemented CTAS contract above.
+
+- **CIA impact rating** — `impact_confidentiality` / `impact_integrity` /
+  `impact_availability`, each `low | moderate | high` (nullable = not yet rated).
+  Migration `000207`; domain accessors `ImpactConfidentiality()` etc. on
+  `pkg/domain/asset/entity.go` (`ImpactRating`). This is the CTEM Scoping
+  critical-asset register's business-impact signal; it folds into finding
+  priority as an only-raise MAX (see `priority-explainability.md`).
+- **Control-plane dependency edge** — `asset_relationships.is_control_plane`
+  (migration `000207`) marks a dependency edge as a control plane (IdP/SSO,
+  secrets store, CI/CD, monitoring/SIEM), so scoping a service pulls its control
+  planes into scope.
+- **Effective (business-aligned) criticality** —
+  `EffectiveCriticality = MAX(own, business-unit, business-service, control-plane-served)`
+  with floor/only-raise semantics (`pkg/domain/asset/business_criticality.go`,
+  `EffectiveCriticality`). A control plane inherits the criticality of the most
+  critical asset it serves. Both `risk_score` and finding priority consume this
+  one shared value.
+- **Multi-hop criticality propagation** (api #481) — the control-plane MAX walks
+  bounded, cycle-guarded, multi-hop `is_control_plane` edges, and business-unit
+  criticality is inherited up the `business_units.parent_id` chain. Pure,
+  DB-free, unit-tested graph walks in
+  `internal/infra/postgres/criticality_propagation.go` (`walkControlPlane`,
+  `resolveBUCriticality`). See `criticality-propagation.md`.
+- **Business-unit hierarchy** — `business_units.parent_id` self-referential
+  FK (migration `000188`, `ON DELETE SET NULL`, no-self-parent CHECK) provides
+  the ancestor chain the BU-criticality inheritance walks.
 
 ## Overview
 
@@ -299,6 +339,10 @@ ajv validate -s ctas-v1.0.schema.json -d assets.json
 ```
 
 ## Content Types
+
+> **Not implemented.** No `application/vnd.openctem.asset+json` handler or CTAS
+> `/api/v1/ingest` route exists; real ingest uses CTIS. The media types below are
+> illustrative of the proposed contract only.
 
 ### Request
 

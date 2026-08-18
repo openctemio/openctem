@@ -1,5 +1,23 @@
 # Agent Heartbeat Performance Optimization
 
+> **⚠️ STATUS: LARGELY A DESIGN/PLAN — the "✅ COMPLETED" checkboxes and the
+> "Analytics API Reference" below DO NOT reflect the current codebase.** The
+> following do **not** exist in the tree:
+> - `app/platform_agent_service.go` (the `RecordHeartbeat` flow referenced
+>   throughout) — there is no such file.
+> - The `agent_sessions` and `agent_daily_stats` tables (no migration), and no
+>   `AgentSession` / `AgentDailyStats` domain entities or repositories.
+> - The session/daily-stats analytics handlers and endpoints
+>   (`agent_analytics_handler.go`, `tenant_agent_analytics_handler.go`,
+>   `agent_stats_aggregator.go`, and the `.../sessions`, `.../stats`,
+>   `.../analytics/*` routes) — none are wired.
+>
+> **What actually ships:** an ephemeral, Redis-backed heartbeat
+> (`internal/infra/redis/agent_state.go`) plus a health-monitor controller that
+> marks stale agents offline (`internal/infra/controller/agent_health.go`).
+> There is no persistent session history or analytics API. Treat the phase tables
+> and Analytics API Reference sections as an **unimplemented proposal**.
+
 ## Overview
 
 This document describes the optimized heartbeat architecture for Platform Agents. The goal is to achieve real-time agent monitoring with minimal database load while maintaining data integrity for operational decisions.

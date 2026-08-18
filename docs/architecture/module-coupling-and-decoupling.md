@@ -16,13 +16,18 @@
 - The **composition root is monolithic**: `NewRepositories` builds ~110 repos
   and `NewServices` ~89 services **unconditionally**. There are env/config
   toggles (AI-triage, OAuth, ingest mode…) but **no per-module on/off**.
-- The **`Module`/`TenantModule` system is UI metadata only** — it drives the
-  sidebar and a notification-event filter; **no middleware gates any route**.
-  Disabling a module in `tenant_modules` hides it from the sidebar but every
-  endpoint stays live.
-- So today a module can be **disabled at the route layer only by leaving its
-  handler nil** (deployment-wide, all-or-nothing), not per-tenant at runtime and
-  not by config.
+- The **`Module`/`TenantModule` system now gates routes at runtime** (Phase 1
+  shipped). Beyond driving the sidebar and a notification-event filter, the
+  `middleware.ModuleGate.RequireModule(moduleID)` middleware wraps **26 route
+  groups** in `internal/infra/http/routes/routes.go` and returns
+  `403 MODULE_NOT_ENABLED` for a tenant's explicitly-disabled module. It is
+  **fail-open** (nil gate / missing tenant / core module / lookup miss → allowed)
+  — a feature gate, not a security boundary. Disabling a module in
+  `tenant_modules` now hides it from the sidebar **and** 403s its gated
+  endpoints, per tenant, at runtime.
+- A module can also still be **disabled deployment-wide by leaving its handler
+  nil** (all-or-nothing). What remains unbuilt is per-*deployment* optional
+  *construction* by config (Phase 2) and un-weaving pentest from core (Phase 3).
 - **Pentest is the one hard-to-remove feature** — it was deliberately merged into
   the shared `findings` table, so ~12 hooks live in core (`vulnerability.Finding`
   fields/methods, `FindingRepository` branches, `guardNotPentestManaged` on
@@ -36,7 +41,7 @@
 | **Build-time (imports)** | Domain clean; one app-layer wrinkle: core `internal/app/finding` imports features `aitriage` + `validation`, but only via **optional nil-guarded setters** (`SetAITriageService`, `autoValidator == nil` bail) — compiles-against, runs-without. `workflow` is the orchestration hub (imports finding/aitriage/pipeline/scan). No cycles. | `finding/vulnerability_service.go:45`, `actions.go:163` |
 | **Wiring (composition root)** | Monolithic + unconditional. ~110 repo fields, ~89 service fields, all built in one pass. Conditionals are **env-driven, not module-driven**. No build tags. | `cmd/server/repositories.go`, `services.go` |
 | **Data (DB FKs)** | **One** core→feature FK: `findings.pentest_campaign_id`. All other 45+ links feature→core. | `migrations/000095`, `000171` |
-| **Runtime (module gating)** | None. `tenant_modules.is_enabled` read only by the bootstrap/sidebar handler + a notification filter. No `RequireModule` middleware exists. | `bootstrap_handler.go:243`, `migrations/000004` (`'Feature registry for UI navigation'`) |
+| **Runtime (module gating)** | **Shipped (Phase 1).** `middleware.ModuleGate.RequireModule(moduleID)` gates **26 route groups**, returning `403 MODULE_NOT_ENABLED` for a tenant's explicitly-disabled module; fail-open, 60s-TTL cache invalidated on toggle. `tenant_modules.is_enabled` now drives both the sidebar and route enforcement. | `middleware/module_gate.go`, `routes/routes.go` (26 `RequireModule(...)` sites), `bootstrap_handler.go:243` |
 
 ## What already helps (don't rebuild)
 
@@ -78,19 +83,21 @@
 Goal: **turn a module off via config, and the system keeps running.** Phased,
 each additive and independently shippable.
 
-### Phase 1 — make the module system actually gate (low risk, high value) — **STARTED**
+### Phase 1 — make the module system actually gate (low risk, high value) — **LARGELY SHIPPED**
 A `RequireModule(moduleID)` middleware (`middleware.ModuleGate`) reads a tenant's
 explicitly-disabled modules (via `ModuleService.TenantDisabledModules`), caches
-them per-tenant (60s TTL), and **403s a disabled module's route group**. It is
-**fail-open**: nil gate, missing tenant, core module, or any lookup miss →
-allowed, so it can never block legitimate traffic. Wired to the **pentest, compliance, attack-simulation, threat-intel,
-remediation, pipelines, and workflows** groups (appended after tenant
-extraction). Bundled register functions that register several unrelated feature
-groups (e.g. `registerExposureRoutes` also mounts threat-intel + credentials)
-need per-*group* gating rather than per-function and are deferred; groups with
-no module-ID mapping (validation) are not gateable. Turns the
-existing UI-only toggle into real per-tenant enforcement **without touching any
-service logic or schema**. Core modules (`CoreModuleIDs`) are never gateable. A module toggle now
+them per-tenant (60s TTL), and **403s (`MODULE_NOT_ENABLED`) a disabled module's
+route group**. It is **fail-open**: nil gate, missing tenant, core module, or any
+lookup miss → allowed, so it can never block legitimate traffic. It is now wired
+to **26 route groups** in `routes/routes.go` — including pentest, compliance,
+attack-simulation, threat-intel, remediation, scan-pipelines, workflows,
+attack-surface, exposures, suppressions, components, relationships, credentials,
+scanner-templates, template-sources, IOCs, control-testing, reports, and the CTEM
+groups (ctem-cycles, attacker-profiles, business-services, compensating-controls,
+priority-rules, scope-config). Groups with no module-ID mapping (e.g. validation)
+remain un-gateable. This turns the existing UI-only toggle into real per-tenant
+enforcement **without touching any service logic or schema**. Core modules
+(`module.IsCoreModule`) are never gateable. A module toggle now
 **invalidates the gate cache immediately** (`ModuleService.notifyModuleChange`
 → `ModuleGate.Invalidate`), so enforcement is instant, not TTL-bounded.
 Follow-up: wrap the remaining optional feature groups.
@@ -123,7 +130,9 @@ feature-service imports (aitriage/validation, removed in Phase 3) are gone.
 ## Verdict
 
 The system **does not die** without a feature at the wiring level — routes are
-nil-guarded and services are optional. The gap between "nil the handler at deploy"
-and "toggle per-tenant via config" is **Phase 1** (a middleware). The gap between
-"disable" and "cleanly remove" is real only for **pentest** (Phase 3). Everything
-else is already close to a clean bolt-on.
+nil-guarded and services are optional. Per-tenant runtime **toggling** is now
+solved: **Phase 1 (the `RequireModule` middleware) has shipped** across 26 route
+groups. What remains is per-deployment optional *construction* by config
+(**Phase 2**) and the gap between "disable" and "cleanly remove", which is real
+only for **pentest** (**Phase 3**). Everything else is already close to a clean
+bolt-on.

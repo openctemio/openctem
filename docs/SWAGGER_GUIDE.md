@@ -57,16 +57,14 @@ type Response struct {
 
 ```
 api/openapi/
-├── openapi.yaml          # OLD: Manual docs (can be deleted)
-└── swagger/
-    └── swagger.yaml      # NEW: Auto-generated from code
+└── swagger.yaml          # Auto-generated from code annotations (make swagger)
 ```
 
 ## Workflow
 
 1. **Add/edit annotations** in handlers (`internal/infra/http/handler/*.go`)
 2. **Generate docs**: `make swagger`
-3. **Verify**: View `api/openapi/swagger/swagger.yaml`
+3. **Verify**: View `api/openapi/swagger.yaml`
 
 ## Tips
 

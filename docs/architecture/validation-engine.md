@@ -111,10 +111,25 @@ the result through the command-completion hook lets the tenant come from the
 poll/ack/start/complete queue instead of the not-yet-wired platform-job
 transport.
 
-**Round-1 scope:** only the `safe-check` executor kind (non-intrusive TCP/TLS/
-HTTP reachability re-check, technique `T1046`). `Selector`/`DefaultSelector`
-already prefer it and gate the riskier kinds behind an attacker profile; the
-routing is built so `nuclei` re-check slots in next without rework.
+**Executor kinds:** the original round-1 scope was only the `safe-check` kind
+(non-intrusive TCP/TLS/HTTP reachability re-check, technique `T1046`).
+**RFC-011.2 Phase 2b has since shipped the API side of the `nuclei` re-verify
+kind** (`KindNuclei`, `internal/app/validation/executor.go`): the selector routes
+a finding to a nuclei re-check when its detection signature can be safely re-run,
+builds the detection signature the agent needs, and **refuses signatures that map
+to a destructive/non-detection template class** (`nuclei_routing.go` mirrors the
+agent-side `-exclude-tags dos,fuzz,intrusive` allowlist so the two ends can't
+drift; technique `T1190`). The API remains a pure orchestrator — it never runs
+nuclei. `Selector`/`DefaultSelector` prefer safe-check and gate the riskier kinds
+behind an attacker profile.
+
+**Capability gate:** dispatch routes a job to an agent by matching the job's
+required capability against the agent's flat capability list. A `safe-check`
+job requires `validate`; a `KindNuclei` job requires the deeper `validate:nuclei`
+capability, so a nuclei re-check is only ever dispatched to an agent that
+advertises it. Both strings are the single source of truth in
+`internal/app/validation/dispatcher.go` (`AgentCapabilityValidate` /
+`AgentCapabilityValidateNuclei`).
 
 ## Confirm-or-downgrade verdict + downgrade % (RFC-011.2 Phase 2a)
 
@@ -145,7 +160,10 @@ outcome metric real: `GET /api/v1/validation/coverage` now returns `downgraded`,
 Program-Health board's "not measured" blank can go live (ui = Phase 2c).
 
 The rule works with the existing `safe-check` result — no agent/nuclei work is
-required for the loop to close; Phase 2b only deepens the *depth* of the result.
+required for the loop to *close*. Phase 2b (now shipped API-side) deepens the
+*depth* of the result by adding the capability-gated `nuclei` re-verify kind
+described above; the only remaining Phase 2b gap is the **agent-side executor**
+(see "Not yet shipped" below).
 
 ## Not yet shipped (deferred)
 

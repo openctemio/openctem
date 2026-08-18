@@ -33,7 +33,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 
 ### Access Control
 - 2-layer RBAC: Permissions (what you can DO) + Groups (what you can SEE)
-- 126 granular permissions across all modules
+- 164 granular permissions across all modules
 - Real-time permission sync via Redis
 - OAuth2 (Google, GitHub, Microsoft) + OIDC (Keycloak)
 

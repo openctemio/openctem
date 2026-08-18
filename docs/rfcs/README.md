@@ -16,7 +16,7 @@ and the code. Start here to remember "what was decided, why, and where it lives"
 | [RFC-009](RFC-009-enterprise-sso-saml-scim.md) | Enterprise SSO: SAML 2.0 + SCIM 2.0 provisioning | SCIM (9a–9c) done; SAML 9d+9e done (login+ACS) | — | SCIM Users/token/Groups; SAML config+metadata+login/ACS |
 | [RFC-010](RFC-010-jira-assets-cmdb.md) | Jira Assets / JSM CMDB integration (enrich + reconcile) | Proposed | — | — |
 | [RFC-011](RFC-011-validation-engine-dispatch.md) | Validation engine: dispatch (make the "V" executable) | Phase 1 (safe-check) shipped; [**Phase 2**](RFC-011.2-validation-executor-downgrade-loop.md) proposed | — | validate command + dispatcher + producer endpoint + completion hook |
-| [RFC-011.2](RFC-011.2-validation-executor-downgrade-loop.md) | Validation executor + confirm-or-downgrade loop (`nuclei` re-verify → finding-state verdict → `downgrade %` metric) | Proposed | — | 2a = api verdict rule + metric; 2b = sdk-go/agent nuclei executor; 2c = ui |
+| [RFC-011.2](RFC-011.2-validation-executor-downgrade-loop.md) | Validation executor + confirm-or-downgrade loop (`nuclei` re-verify → finding-state verdict → `downgrade %` metric) | Phase 2a+2b (api) shipped; agent executor + UI pending | — | 2a = api verdict rule + metric (shipped); 2b = api `KindNuclei` executor + `validate:nuclei` capability gate + template-safety routing (**shipped**); agent-side nuclei executor (sdk-go/agent) = deferred; 2c = ui pending |
 | [RFC-012](RFC-012-real-bas-execution.md) | Real BAS / attack-simulation execution (de-synthesize the "V") | Phase 0–1 shipped | — | honesty (#270); persist runs (#271); real safe-check dispatch (#272) |
 | [RFC-013](RFC-013-defectdojo-coexistence.md) | DefectDojo co-existence connector (buy breadth, build brain; phase DD out) | Phases 1–2c shipped | — | converter (#273); live sync (#274); dependency metric (#275); auto-scheduler (#280) |
 | [RFC-014](RFC-014-agent-identity.md) | k8s-style agent identity (short-lived, auto-rotating credentials) | Phases 1a–3 shipped; agent auto-renew shipped (sdk-go v0.5.0) | #281 | self-renew (#282); key expiry (#283); rotation overlap (#285/#286); agent auto-renew (sdk-go #45 / agent #35); 4 = scopes TODO |
@@ -120,7 +120,7 @@ docs/rfcs/                  RFC design documents (this folder) + this index
 internal/app/<cluster>/     application services (jira, ingest, scan, …)
 internal/infra/             infra: postgres, http, jira, scanner/nessus, controller
 pkg/domain/<X>/             domain entities (asset, scan, integration, vulnerability)
-migrations/                 golang-migrate SQL (latest: 000175)
+migrations/                 golang-migrate SQL (latest: 000210)
 ```
 
 Conventions: PRs/merges target `develop` (never `main`). RFCs are reviewed as a
