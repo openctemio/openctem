@@ -360,6 +360,22 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "ctem-id-refresh"),
 	))
 
+	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data
+	// external-exposure connector. Per tenant it queries crt.sh for the tenant's
+	// domain assets (SSRF-guarded, rate-limited, body-bounded) and emits
+	// subdomain_discovered + certificate_expiring ExposureEvents. Inert until a
+	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
+	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor != nil {
+		w.ControllerManager.Register(controller.NewCertMonitorController(
+			svc.CertMonitor,
+			repos.Tenant,
+			&controller.CertMonitorControllerConfig{
+				Interval: cfg.Worker.CertMonitorInterval,
+				Logger:   log.With("controller", "cert-monitor"),
+			},
+		))
+	}
+
 	// Owner resolution — resolve owner_ref (email) to owner_id for assets
 	w.ControllerManager.Register(controller.NewOwnerResolutionController(
 		deps.DB,
