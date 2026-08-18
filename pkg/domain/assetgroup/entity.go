@@ -18,9 +18,14 @@ type AssetGroup struct {
 	environment  Environment
 	criticality  Criticality
 	businessUnit string
-	owner        string
-	ownerEmail   string
-	tags         []string
+	// businessUnitID is the reconciled FK to the first-class business_units
+	// entity (migration 000211). Nil when the free-text businessUnit doesn't
+	// match any BU record. Populated by the persistence layer, which resolves
+	// it from the businessUnit string, so it stays in sync automatically.
+	businessUnitID *shared.ID
+	owner          string
+	ownerEmail     string
+	tags           []string
 
 	// Computed counts
 	assetCount      int
@@ -134,19 +139,28 @@ func (g *AssetGroup) Description() string      { return g.description }
 func (g *AssetGroup) Environment() Environment { return g.environment }
 func (g *AssetGroup) Criticality() Criticality { return g.criticality }
 func (g *AssetGroup) BusinessUnit() string     { return g.businessUnit }
-func (g *AssetGroup) Owner() string            { return g.owner }
-func (g *AssetGroup) OwnerEmail() string       { return g.ownerEmail }
-func (g *AssetGroup) AssetCount() int          { return g.assetCount }
-func (g *AssetGroup) DomainCount() int         { return g.domainCount }
-func (g *AssetGroup) WebsiteCount() int        { return g.websiteCount }
-func (g *AssetGroup) ServiceCount() int        { return g.serviceCount }
-func (g *AssetGroup) RepositoryCount() int     { return g.repositoryCount }
-func (g *AssetGroup) CloudCount() int          { return g.cloudCount }
-func (g *AssetGroup) CredentialCount() int     { return g.credentialCount }
-func (g *AssetGroup) RiskScore() int           { return g.riskScore }
-func (g *AssetGroup) FindingCount() int        { return g.findingCount }
-func (g *AssetGroup) CreatedAt() time.Time     { return g.createdAt }
-func (g *AssetGroup) UpdatedAt() time.Time     { return g.updatedAt }
+
+// BusinessUnitID returns the reconciled FK to the business_units entity, or nil
+// when the free-text business unit doesn't match any BU record.
+func (g *AssetGroup) BusinessUnitID() *shared.ID { return g.businessUnitID }
+
+// SetBusinessUnitID sets the reconciled BU FK. Used by the persistence layer
+// after it resolves the FK from the free-text business_unit string.
+func (g *AssetGroup) SetBusinessUnitID(id *shared.ID) { g.businessUnitID = id }
+
+func (g *AssetGroup) Owner() string        { return g.owner }
+func (g *AssetGroup) OwnerEmail() string   { return g.ownerEmail }
+func (g *AssetGroup) AssetCount() int      { return g.assetCount }
+func (g *AssetGroup) DomainCount() int     { return g.domainCount }
+func (g *AssetGroup) WebsiteCount() int    { return g.websiteCount }
+func (g *AssetGroup) ServiceCount() int    { return g.serviceCount }
+func (g *AssetGroup) RepositoryCount() int { return g.repositoryCount }
+func (g *AssetGroup) CloudCount() int      { return g.cloudCount }
+func (g *AssetGroup) CredentialCount() int { return g.credentialCount }
+func (g *AssetGroup) RiskScore() int       { return g.riskScore }
+func (g *AssetGroup) FindingCount() int    { return g.findingCount }
+func (g *AssetGroup) CreatedAt() time.Time { return g.createdAt }
+func (g *AssetGroup) UpdatedAt() time.Time { return g.updatedAt }
 
 func (g *AssetGroup) Tags() []string {
 	result := make([]string, len(g.tags))

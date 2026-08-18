@@ -78,11 +78,15 @@ type Filter struct {
 	Environments  []Environment
 	Criticalities []Criticality
 	BusinessUnit  *string
-	Owner         *string
-	Tags          []string
-	HasFindings   *bool
-	MinRiskScore  *int
-	MaxRiskScore  *int
+	// BusinessUnitID filters by the reconciled business_units FK (migration
+	// 000211). Additive to BusinessUnit: callers may filter by the exact BU
+	// record instead of the free-text label.
+	BusinessUnitID *string
+	Owner          *string
+	Tags           []string
+	HasFindings    *bool
+	MinRiskScore   *int
+	MaxRiskScore   *int
 }
 
 // ListOptions contains options for listing asset groups.
@@ -148,6 +152,12 @@ func (f Filter) WithCriticalities(crits ...Criticality) Filter {
 // WithBusinessUnit adds a business unit filter.
 func (f Filter) WithBusinessUnit(bu string) Filter {
 	f.BusinessUnit = &bu
+	return f
+}
+
+// WithBusinessUnitID adds a reconciled business-unit FK filter.
+func (f Filter) WithBusinessUnitID(id string) Filter {
+	f.BusinessUnitID = &id
 	return f
 }
 
