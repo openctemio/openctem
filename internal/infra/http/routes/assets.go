@@ -193,9 +193,10 @@ func registerScopeRoutes(
 	h *handler.ScopeHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token, gated by the scope_config module.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Scope routes - tenant from JWT token
 	router.Group("/api/v1/scope", func(r Router) {
@@ -419,9 +420,10 @@ func registerAssetRelationshipRoutes(
 	h *handler.AssetRelationshipHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token, gated by the relationships module.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Asset-scoped relationship routes
 	router.Group("/api/v1/assets/{id}/relationships", func(r Router) {

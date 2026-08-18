@@ -373,7 +373,7 @@ func Register(
 
 	// Asset Relationship routes (CTEM Discovery - attack surface topology graph)
 	if h.AssetRelationship != nil {
-		registerAssetRelationshipRoutes(router, h.AssetRelationship, authMiddleware, userSync)
+		registerAssetRelationshipRoutes(router, h.AssetRelationship, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleRelationships))
 	}
 
 	// Asset Dedup Review routes (RFC-001: merge duplicate assets)
@@ -469,7 +469,7 @@ func Register(
 
 	// Attack Simulation & Control Testing routes
 	if h.Simulation != nil {
-		registerSimulationRoutes(router, h.Simulation, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSimulation))
+		registerSimulationRoutes(router, h.Simulation, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSimulation), h.ModuleGate.RequireModule(moduledom.ModuleControlTesting))
 	}
 
 	// Threat Actor Intelligence routes
@@ -553,7 +553,7 @@ func Register(
 
 	// Scope Configuration routes (tenant from JWT token)
 	if h.Scope != nil {
-		registerScopeRoutes(router, h.Scope, authMiddleware, userSync)
+		registerScopeRoutes(router, h.Scope, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
 	}
 
 	// Asset Type routes (tenant from JWT token)
@@ -654,12 +654,12 @@ func Register(
 
 	// Scanner Template routes (tenant from JWT token)
 	if h.ScannerTemplate != nil {
-		registerScannerTemplateRoutes(router, h.ScannerTemplate, authMiddleware, userSync)
+		registerScannerTemplateRoutes(router, h.ScannerTemplate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
 	}
 
 	// Template Source routes (tenant from JWT token)
 	if h.TemplateSource != nil {
-		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync)
+		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleTemplateSources))
 	}
 
 	// Secret Store routes (tenant from JWT token)
