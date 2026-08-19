@@ -356,7 +356,11 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 	commands, err := h.service.Poll(r.Context(), command.PollInput{
 		TenantID: agt.TenantID.String(),
 		AgentID:  agt.ID.String(),
-		Limit:    limit,
+		// Pass the agent's advertised capabilities so the poll only returns
+		// capability-scoped commands (e.g. a validate:nuclei job) to an agent
+		// that can actually execute them.
+		Capabilities: agt.Capabilities,
+		Limit:        limit,
 	})
 	if err != nil {
 		h.handleServiceError(w, err)

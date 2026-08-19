@@ -145,7 +145,11 @@ func (s *Service) List(ctx context.Context, input ListInput) (pagination.Result[
 type PollInput struct {
 	TenantID string `json:"tenant_id" validate:"required,uuid"`
 	AgentID  string `json:"agent_id,omitempty" validate:"omitempty,uuid"`
-	Limit    int    `json:"limit" validate:"min=1,max=100"`
+	// Capabilities is the polling agent's advertised capability set. It gates
+	// which capability-scoped commands the agent may claim (see
+	// command.Repository.GetPendingForAgent). Empty = only unscoped commands.
+	Capabilities []string `json:"capabilities,omitempty"`
+	Limit        int      `json:"limit" validate:"min=1,max=100"`
 }
 
 // Poll retrieves pending commands for an agent.
@@ -172,7 +176,7 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 		limit = 100
 	}
 
-	return s.repo.GetPendingForAgent(ctx, tenantID, agentID, limit)
+	return s.repo.GetPendingForAgent(ctx, tenantID, agentID, input.Capabilities, limit)
 }
 
 // Acknowledge marks a command as acknowledged.
