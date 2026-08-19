@@ -4,9 +4,16 @@ import (
 	"context"
 	"time"
 
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/pkg/domain/agent"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
+
+// agentAuditSystemActor is the actor recorded on agent lifecycle audit events
+// emitted by this background controller (no user request behind them). LogEvent
+// treats an empty ActorID + non-empty email as a system action.
+const agentAuditSystemActor = "system"
 
 // AgentHealthControllerConfig configures the AgentHealthController.
 type AgentHealthControllerConfig struct {
@@ -26,14 +33,20 @@ type AgentHealthControllerConfig struct {
 // This is a K8s-style controller that reconciles the desired state (agents with recent
 // heartbeats are online, agents without recent heartbeats are offline) with the actual state.
 type AgentHealthController struct {
-	agentRepo agent.Repository
-	config    *AgentHealthControllerConfig
-	logger    *logger.Logger
+	agentRepo    agent.Repository
+	auditService *auditapp.AuditService
+	config       *AgentHealthControllerConfig
+	logger       *logger.Logger
 }
 
 // NewAgentHealthController creates a new AgentHealthController.
+//
+// auditService is optional (nil-safe): when provided, each agent that
+// transitions to offline is recorded as an agent.disconnected event in the
+// tamper-evident audit_logs so the Agent detail UI can show lifecycle history.
 func NewAgentHealthController(
 	agentRepo agent.Repository,
+	auditService *auditapp.AuditService,
 	config *AgentHealthControllerConfig,
 ) *AgentHealthController {
 	if config == nil {
@@ -50,9 +63,10 @@ func NewAgentHealthController(
 	}
 
 	return &AgentHealthController{
-		agentRepo: agentRepo,
-		config:    config,
-		logger:    config.Logger,
+		agentRepo:    agentRepo,
+		auditService: auditService,
+		config:       config,
+		logger:       config.Logger,
 	}
 }
 
@@ -92,8 +106,41 @@ func (c *AgentHealthController) Reconcile(ctx context.Context) (int, error) {
 				"agent_id", agentID,
 				"stale_timeout", c.config.StaleTimeout,
 			)
+			c.auditDisconnect(ctx, agentID)
 		}
 	}
 
 	return len(offlineAgentIDs), nil
+}
+
+// auditDisconnect records an agent.disconnected event for a single agent that
+// this tick transitioned to offline. MarkStaleAgentsOffline only returns agents
+// whose health WAS online (its WHERE clause), so this is a genuine online->offline
+// transition — repeated reconciles never re-emit for an already-offline agent.
+//
+// Tenant agents only: platform agents (TenantID == nil) are shared infrastructure
+// with no owning tenant to scope the audit log to. Best-effort — a failure to
+// resolve or log must not abort the reconcile.
+func (c *AgentHealthController) auditDisconnect(ctx context.Context, agentID shared.ID) {
+	if c.auditService == nil {
+		return
+	}
+
+	a, err := c.agentRepo.GetByID(ctx, agentID)
+	if err != nil {
+		c.logger.Warn("could not load agent for disconnect audit",
+			"controller", "agent-health",
+			"agent_id", agentID,
+			"error", err,
+		)
+		return
+	}
+	if a.TenantID == nil {
+		return // platform agent — no tenant to scope the audit event to
+	}
+
+	_ = c.auditService.LogAgentDisconnected(ctx, auditapp.AuditContext{
+		TenantID:   a.TenantID.String(),
+		ActorEmail: agentAuditSystemActor,
+	}, a.ID.String(), a.Name)
 }

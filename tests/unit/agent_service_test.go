@@ -50,6 +50,7 @@ type agentSvcMockRepo struct {
 	capabilities       []string
 	hasCapability      bool
 	platformStats      *agent.PlatformAgentStatsResult
+	staleOfflineIDs    []shared.ID // returned by MarkStaleAgentsOffline
 
 	// Call tracking
 	createCalls           int
@@ -286,7 +287,9 @@ func (m *agentSvcMockRepo) UpdateOfflineTimestamp(_ context.Context, _ shared.ID
 }
 
 func (m *agentSvcMockRepo) MarkStaleAgentsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.staleOfflineIDs, nil
 }
 
 func (m *agentSvcMockRepo) GetAgentsOfflineSince(_ context.Context, _ time.Time) ([]*agent.Agent, error) {

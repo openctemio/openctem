@@ -19,6 +19,12 @@ import (
 	"github.com/openctemio/api/pkg/pagination"
 )
 
+// agentAuditSystemActor is the actor recorded on agent lifecycle audit events
+// (connect/disconnect) that originate from background reconciliation rather than
+// a user request. LogEvent treats an empty ActorID with a non-empty email as a
+// system action.
+const agentAuditSystemActor = "system"
+
 // AgentService handles agent-related business operations.
 type AgentService struct {
 	repo         agentdom.Repository
@@ -323,6 +329,11 @@ func (s *AgentService) UpdateHeartbeat(ctx context.Context, agentID shared.ID, d
 		return err
 	}
 
+	// Capture health BEFORE UpdateLastSeen() flips it to online, so we can
+	// detect an offline/unknown/error -> online TRANSITION (a connect event)
+	// and audit it once, instead of logging on every steady-state heartbeat.
+	prevHealth := a.Health
+
 	// Update runtime info
 	if data.Version != "" || data.Hostname != "" {
 		a.UpdateRuntimeInfo(data.Version, data.Hostname, nil)
@@ -345,7 +356,25 @@ func (s *AgentService) UpdateHeartbeat(ctx context.Context, agentID shared.ID, d
 	// Update last seen and health
 	a.UpdateLastSeen()
 
-	return s.repo.Update(ctx, a)
+	if err := s.repo.Update(ctx, a); err != nil {
+		return err
+	}
+
+	// Record a connect event only on an offline/unknown/error -> online
+	// transition. Tenant agents only: platform agents (TenantID == nil) are
+	// shared infrastructure with no owning tenant to scope the audit log to.
+	if s.auditService != nil && prevHealth != agentdom.AgentHealthOnline && a.TenantID != nil {
+		ip := ""
+		if a.IPAddress != nil {
+			ip = a.IPAddress.String()
+		}
+		_ = s.auditService.LogAgentConnected(ctx, auditapp.AuditContext{
+			TenantID:   a.TenantID.String(),
+			ActorEmail: agentAuditSystemActor,
+		}, a.ID.String(), a.Name, ip)
+	}
+
+	return nil
 }
 
 // DeleteAgent deletes an agent.

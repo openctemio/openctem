@@ -214,6 +214,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Register controllers
 	w.ControllerManager.Register(controller.NewAgentHealthController(
 		repos.Agent,
+		svc.Audit,
 		&controller.AgentHealthControllerConfig{
 			Interval:     30 * time.Second,
 			StaleTimeout: 90 * time.Second,
