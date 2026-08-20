@@ -494,6 +494,21 @@ type AgentConfig struct {
 	// CTEM_ID_FEED_URL to override; defaults to https://ctem.org/source.json.
 	CTEMIDFeedURL string
 
+	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
+	// (the cert-monitor controller). Default true — it is a passive, public-data,
+	// no-credentials external-exposure source. Set CERT_MONITOR_ENABLED=false to
+	// disable outbound crt.sh polling entirely.
+	CertMonitorEnabled bool
+
+	// CertMonitorFeedBaseURL is the CT-log aggregator the cert-monitor controller
+	// queries per tenant domain. Set CERT_MONITOR_FEED_URL to override; defaults
+	// to https://crt.sh. Queried via the SSRF-guarded SafeHTTPClient.
+	CertMonitorFeedBaseURL string
+
+	// CertMonitorInterval is how often the CT sweep runs across all tenants.
+	// Defaults to 24h (daily), matching the threat-intel / CTEM-ID refreshes.
+	CertMonitorInterval time.Duration
+
 	// LoadBalancing holds configuration for agent load balancing weights.
 	LoadBalancing LoadBalancingConfig
 }
@@ -820,11 +835,14 @@ func Load() (*Config, error) {
 			},
 		},
 		Worker: WorkerConfig{
-			Enabled:             getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
-			HeartbeatTimeout:    getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval: getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
-			SCMSyncInterval:     getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			CTEMIDFeedURL:       getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			Enabled:                getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
+			HeartbeatTimeout:       getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
+			HealthCheckInterval:    getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
+			SCMSyncInterval:        getEnvDuration("SCM_SYNC_INTERVAL", 0),
+			CTEMIDFeedURL:          getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			CertMonitorEnabled:     getEnvBool("CERT_MONITOR_ENABLED", true),
+			CertMonitorFeedBaseURL: getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
+			CertMonitorInterval:    getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("AGENT_LB_JOB_WEIGHT", agentdom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("AGENT_LB_CPU_WEIGHT", agentdom.DefaultCPUWeight),

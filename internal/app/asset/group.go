@@ -67,19 +67,20 @@ type UpdateAssetGroupInput struct {
 
 // ListAssetGroupsInput represents input for listing asset groups.
 type ListAssetGroupsInput struct {
-	TenantID      string
-	Search        string
-	Environments  []string
-	Criticalities []string
-	BusinessUnit  string
-	Owner         string
-	Tags          []string
-	HasFindings   *bool
-	MinRiskScore  *int
-	MaxRiskScore  *int
-	Sort          string
-	Page          int `validate:"min=1"`
-	PerPage       int `validate:"min=1,max=100"`
+	TenantID       string
+	Search         string
+	Environments   []string
+	Criticalities  []string
+	BusinessUnit   string
+	BusinessUnitID string
+	Owner          string
+	Tags           []string
+	HasFindings    *bool
+	MinRiskScore   *int
+	MaxRiskScore   *int
+	Sort           string
+	Page           int `validate:"min=1"`
+	PerPage        int `validate:"min=1,max=100"`
 }
 
 // ListAssetGroupsOutput represents output from listing asset groups.
@@ -297,6 +298,10 @@ func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAsset
 
 	if input.BusinessUnit != "" {
 		filter = filter.WithBusinessUnit(input.BusinessUnit)
+	}
+
+	if input.BusinessUnitID != "" {
+		filter = filter.WithBusinessUnitID(input.BusinessUnitID)
 	}
 
 	if len(input.Tags) > 0 {

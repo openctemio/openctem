@@ -147,29 +147,12 @@ func isMisconfigFinding(f *vulnerability.Finding) bool {
 		f.Source() == vulnerability.FindingSourceCSPM
 }
 
-// applyEvent upserts a single prebuilt exposure event into the store, mirroring
-// the credential-import dedupe/reactivate semantics: a re-scan finding the same
-// exposure updates last_seen (reactivating a resolved one) instead of creating
-// a duplicate.
+// applyEvent upserts a single prebuilt exposure event into the store via the
+// shared dedupe/reactivate helper, recording the source finding on any
+// reactivation so the discovery channel is auditable.
 func (b *Bridge) applyEvent(ctx context.Context, event *exposure.ExposureEvent, f *vulnerability.Finding) error {
-	existing, err := b.exposureRepo.GetByFingerprint(ctx, event.TenantID(), event.Fingerprint())
-	if err != nil && !exposure.IsExposureEventNotFound(err) {
-		return fmt.Errorf("failed to check existing exposure: %w", err)
-	}
-
-	if existing == nil {
-		if err := b.exposureRepo.Create(ctx, event); err != nil {
-			// A concurrent bridge for the same exposure may have won the race.
-			// Treat an existing fingerprint as success (idempotent).
-			if exposure.IsExposureEventExists(err) {
-				return nil
-			}
-			return fmt.Errorf("failed to create exposure event: %w", err)
-		}
-		return nil
-	}
-
-	return b.reconcileExisting(ctx, existing, f)
+	return upsertExposureEvent(ctx, b.exposureRepo, b.historyRepo, b.logger, event,
+		fmt.Sprintf("finding: %s", f.ID().String()))
 }
 
 // buildEvent constructs the exposure event for a secret finding. The dedupe
@@ -329,45 +312,4 @@ func misconfigTitle(f *vulnerability.Finding) string {
 		return "Misconfiguration: " + pid
 	}
 	return "Misconfiguration"
-}
-
-// reconcileExisting mirrors the credential-import handling of an already-known
-// exposure: skip if the user marked it a false positive, reactivate + mark seen
-// if it was resolved (the secret is back), otherwise just bump last_seen.
-func (b *Bridge) reconcileExisting(ctx context.Context, existing *exposure.ExposureEvent, f *vulnerability.Finding) error {
-	switch existing.State() {
-	case exposure.StateFalsePositive:
-		// Respect the user's decision — do not resurrect.
-		return nil
-
-	case exposure.StateResolved:
-		previousState := existing.State()
-		if err := existing.Reactivate(); err != nil {
-			return fmt.Errorf("failed to reactivate exposure: %w", err)
-		}
-		existing.MarkSeen()
-		if err := b.exposureRepo.Update(ctx, existing); err != nil {
-			return fmt.Errorf("failed to update exposure: %w", err)
-		}
-		if b.historyRepo != nil {
-			history, herr := exposure.NewStateHistory(
-				existing.ID(),
-				previousState,
-				exposure.StateActive,
-				nil,
-				fmt.Sprintf("Reactivated by re-scan (finding: %s)", f.ID().String()),
-			)
-			if herr == nil {
-				_ = b.historyRepo.Create(ctx, history)
-			}
-		}
-		return nil
-
-	default: // active, accepted
-		existing.MarkSeen()
-		if err := b.exposureRepo.Update(ctx, existing); err != nil {
-			return fmt.Errorf("failed to update exposure: %w", err)
-		}
-		return nil
-	}
 }

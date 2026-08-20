@@ -29,14 +29,25 @@ now**, without mutating it or emitting events. Response:
     "is_reachable": false,
     "is_internet_accessible": true,
     "is_network_accessible": false,
+    "on_open_threat_path": true,
     "reachable_from_count": 1,
     "asset_criticality": "high",
     "asset_exposure": "public",
     "asset_is_crown_jewel": true,
+    "asset_unowned": false,
     "is_protected": false,
     "control_reduction_pct": 0,
-    "reachable": true,           // derived: is_reachable || is_internet_accessible
-    "critical_asset": true       // derived: criticality in {critical, high}
+    "cia_impact_score": 5,          // 0–5 MAX leg from the asset's CIA register
+    "cia_impact_detail": "confidentiality=high",
+    "reachable": true,              // derived: is_reachable || is_internet_accessible || on_open_threat_path
+    "critical_asset": true          // derived: criticality in {critical, high}
+  },
+  "score_breakdown": {              // transparent CTEM composite (explains, does not decide)
+    "impact": 5,                    // 0–5
+    "likelihood": 5,                // 0–5 (KEV + EPSS)
+    "exposure": 4,                  // 0–5 (internet/threat-path reachability)
+    "control_reduction": 0,         // 0–0.5 (validated compensating controls)
+    "score": 14                     // (impact + likelihood + exposure) × (1 − control_reduction), 0–15
   }
 }
 ```
@@ -57,9 +68,40 @@ The two **derived** booleans (`reachable`, `critical_asset`) are surfaced
 because they are what the P0/P1 gates actually test — exposing them makes the
 "reason" line auditable rather than opaque.
 
-> Reachability inputs are populated from the asset's exposure level (see the
-> reachability fix in the priority classifier). `reachable` follows the engine
-> formula `is_reachable || is_internet_accessible`.
+## Transparent composite score (`score_breakdown`)
+
+Alongside the class, the endpoint returns `score_breakdown` — the ctem.org
+prioritization composite computed from the **same** `PriorityContext`
+(`vulnerability.ComputePriorityScore`, `pkg/domain/vulnerability/priority.go`):
+
+```
+PriorityScore = (Impact + Likelihood + Exposure) × (1 − ControlReduction)
+```
+
+Impact, Likelihood and Exposure are each 0–5; ControlReduction is 0–0.5 (never
+more than halves the score), so the composite lands in 0–15. It is **additive
+transparency** layered on top of the authoritative `classifyBase → P0–P3`
+cascade — computing the score never changes the bucket a finding lands in, and
+because it is derived from the same context the number cannot drift from the
+decision it explains.
+
+## Newer factors
+
+Beyond the classic inputs, the explanation now also surfaces:
+
+- `cia_impact_score` / `cia_impact_detail` — the 0–5 CIA business-impact leg
+  (MAX) from the asset's Scoping critical-asset register, folded into `impact`
+  as an only-raise MAX.
+- `on_open_threat_path` — the finding sits on an open attack/threat path.
+- `is_network_accessible` — network-reachability input distinct from
+  internet-facing exposure.
+- `asset_unowned` — surfaced when the tenant's ownership floor is enabled.
+
+> Reachability inputs are populated from the asset's exposure level and
+> attack-path membership. `reachable` follows the engine formula
+> `is_reachable || is_internet_accessible || on_open_threat_path` (the
+> threat-path term was added so a finding on an open path counts as reachable
+> even when the asset is not directly internet-facing).
 
 ## Layering
 

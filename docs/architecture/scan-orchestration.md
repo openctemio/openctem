@@ -101,20 +101,31 @@ func (s *ScanService) TriggerScan(ctx, input) (*TriggerScanExecOutput, error) {
 ### 3. Agent-Tool Matching
 
 ```go
-// FindAvailableWithTool finds agent with specific tool capability
+// FindAvailableWithTool finds the least-loaded ONLINE agent that has the tool
+// AND has spare job capacity (internal/infra/postgres/agent_repository.go).
 func (r *AgentRepository) FindAvailableWithTool(ctx, tenantID, tool string) (*Agent, error) {
     query := `
         SELECT * FROM agents
         WHERE tenant_id = $1
           AND status = 'active'
-          AND health IN ('online', 'unknown')
+          AND health = 'online'                    -- must have heartbeat recently
+          AND last_seen_at IS NOT NULL             -- never selects a never-seen agent
           AND $2 = ANY(tools)
-        ORDER BY total_scans ASC  -- Least loaded agent first
+          AND current_jobs < max_concurrent_jobs   -- must have spare capacity
+        ORDER BY current_jobs ASC, total_scans ASC -- least-loaded first
         LIMIT 1
     `
     return r.db.QueryRow(ctx, query, tenantID, tool)
 }
 ```
+
+> **The dispatch predicate changed (undead-agent fix).** The old query matched
+> `health IN ('online','unknown')` and ordered by `total_scans` only. That let an
+> **undead** agent (one that registered but never sent a heartbeat, `health =
+> 'unknown'`, or one already at capacity) win dispatch, so commands were handed to
+> an agent that never picked them up. The current predicate requires
+> `health = 'online' AND last_seen_at IS NOT NULL AND current_jobs <
+> max_concurrent_jobs` and load-balances by `current_jobs ASC, total_scans ASC`.
 
 ### 4. Command Execution
 
@@ -253,10 +264,11 @@ CREATE TABLE commands (
 ### Critical Indexes
 
 ```sql
--- Agent-tool matching (for FindAvailableWithTool)
-CREATE INDEX idx_agents_tenant_active_healthy
-ON agents(tenant_id, total_scans ASC)
-WHERE status = 'active' AND health IN ('online', 'unknown');
+-- Agent-tool matching (for FindAvailableWithTool). Supports the current
+-- dispatch predicate: online-only, has-heartbeat, capacity-gated, load-ordered.
+CREATE INDEX idx_agents_tenant_active_online
+ON agents(tenant_id, current_jobs ASC, total_scans ASC)
+WHERE status = 'active' AND health = 'online' AND last_seen_at IS NOT NULL;
 
 -- Scan scheduler (for ListDueForExecution)
 CREATE INDEX idx_scans_due_for_execution

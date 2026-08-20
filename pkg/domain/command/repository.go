@@ -30,7 +30,15 @@ type Repository interface {
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Command, error)
 
 	// GetPendingForAgent retrieves pending commands for an agent.
-	GetPendingForAgent(ctx context.Context, tenantID shared.ID, agentID *shared.ID, limit int) ([]*Command, error)
+	//
+	// capabilities is the polling agent's advertised capability set. A command
+	// whose payload carries a non-empty required_capabilities array is only
+	// returned when every required capability is present in capabilities, so a
+	// capability-scoped command (e.g. a "validate:nuclei" validate job) is never
+	// handed to an agent that cannot execute it. A command with no
+	// required_capabilities is returned to any agent (unchanged behavior). Pass
+	// nil/empty capabilities to only receive unscoped commands.
+	GetPendingForAgent(ctx context.Context, tenantID shared.ID, agentID *shared.ID, capabilities []string, limit int) ([]*Command, error)
 
 	// ClaimForAgent atomically transitions a still-pending command to
 	// acknowledged for the given agent, only if it is still pending and

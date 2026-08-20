@@ -1,5 +1,19 @@
 # Agent Audit Logging Architecture
 
+> **⚠️ STATUS: NOT WIRED — this is a design proposal, not shipped behavior.**
+> The agent-lifecycle audit integration described below is **not implemented**:
+> - `AuditService.LogAgentConnected` / `LogAgentDisconnected` still exist but
+>   **have no callers** (defined in `internal/app/audit/service.go` — note the
+>   real path/line, not the `audit_service.go:665` cited below — and referenced
+>   nowhere else in `internal/`).
+> - The integration code in this doc calls `platform_agent_service.go`, which
+>   **does not exist** in the tree (see the banner in
+>   `agent-heartbeat-optimization.md`).
+>
+> The audit *infrastructure* (domain model, repository, service, `agent.*`
+> action constants) is real and production-ready; the **agent lifecycle events
+> are simply not emitted yet**. Treat the integration sections as planned work.
+
 ## Overview
 
 This document describes the comprehensive audit logging architecture for Platform Agents. The goal is to provide complete visibility into all agent lifecycle events, security-sensitive operations, and operational activities for compliance, debugging, and security monitoring.

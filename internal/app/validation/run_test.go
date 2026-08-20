@@ -205,6 +205,64 @@ func TestRunService_DispatchSimulationCheck_RejectsUnsupportedTechnique(t *testi
 	}
 }
 
+// TestIsNetworkAddressable_ReachableURLAndAppTypes pins the fix for the live
+// deploy defect where a nuclei/DAST re-verify on a URL/app asset was rejected
+// "asset is not network-addressable". Application is the consolidated core type
+// ingest normalizes website/web_application/api/mobile_app INTO, and
+// http_service/discovered_url are the recon URL types from httpx/katana — all
+// normalize to a reachable URL or host:port (see asset.NormalizeName).
+func TestIsNetworkAddressable_ReachableURLAndAppTypes(t *testing.T) {
+	for _, tc := range []struct {
+		typ  asset.AssetType
+		want bool
+	}{
+		{asset.AssetTypeApplication, true},
+		{asset.AssetTypeHTTPService, true},
+		{asset.AssetTypeDiscoveredURL, true},
+		// Regression guards for the already-addressable and non-addressable sets.
+		{asset.AssetTypeDomain, true},
+		{asset.AssetTypeRepository, false},
+		{asset.AssetTypeCloudAccount, false},
+	} {
+		if got := isNetworkAddressable(tc.typ); got != tc.want {
+			t.Errorf("isNetworkAddressable(%q) = %v, want %v", tc.typ, got, tc.want)
+		}
+	}
+}
+
+// TestRunService_ValidateFinding_ApplicationAssetDispatches proves an
+// application asset (the primary DAST/nuclei re-verify case) is accepted and
+// dispatched with its URL as the target address, rather than rejected as
+// non-network-addressable.
+func TestRunService_ValidateFinding_ApplicationAssetDispatches(t *testing.T) {
+	assetID := shared.NewID()
+	f := newTestFinding(t, assetID)
+	appAsset, err := asset.NewAsset("https://app.example.com/login", asset.AssetTypeApplication, asset.CriticalityHigh)
+	if err != nil {
+		t.Fatalf("new application asset: %v", err)
+	}
+	disp := &fakeJobDispatcher{id: shared.NewID()}
+
+	svc := NewRunService(
+		fakeFindingLookup{f: f},
+		fakeAssetLookup{a: appAsset},
+		disp,
+		DefaultSelector{},
+		[]ExecutorKind{KindSafeCheck},
+		logger.NewNop(),
+	)
+
+	if _, err := svc.ValidateFinding(context.Background(), shared.NewID(), f.ID()); err != nil {
+		t.Fatalf("ValidateFinding on application asset: %v", err)
+	}
+	if disp.got.FindingID != f.ID() {
+		t.Fatal("dispatcher should have been called for an application asset")
+	}
+	if disp.got.Target.Address != "https://app.example.com/login" {
+		t.Errorf("target address = %q, want the application URL", disp.got.Target.Address)
+	}
+}
+
 func TestRunService_ValidateFinding_PropagatesFindingLookupError(t *testing.T) {
 	disp := &fakeJobDispatcher{}
 	svc := NewRunService(

@@ -13,8 +13,13 @@ func registerSimulationRoutes(
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	moduleGate Middleware,
+	controlTestGate Middleware,
 ) {
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	// Control tests are a separate per-tenant toggle from attack simulations, so
+	// they get their own module gate (control_testing) rather than sharing the
+	// attack_simulation gate.
+	controlTestMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), controlTestGate)
 
 	// Attack Simulations
 	router.Group("/api/v1/simulations", func(r Router) {
@@ -34,5 +39,5 @@ func registerSimulationRoutes(
 		r.POST("/", h.CreateControlTest, middleware.Require(permission.PentestWrite))
 		r.PATCH("/{id}/result", h.RecordControlTestResult, middleware.Require(permission.PentestWrite))
 		r.DELETE("/{id}", h.DeleteControlTest, middleware.Require(permission.PentestWrite))
-	}, tenantMiddlewares...)
+	}, controlTestMiddlewares...)
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lib/pq"
 	"github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
@@ -104,7 +105,16 @@ func (r *CommandRepository) GetByTenantAndID(ctx context.Context, tenantID, id s
 }
 
 // GetPendingForAgent retrieves pending commands for an agent.
-func (r *CommandRepository) GetPendingForAgent(ctx context.Context, tenantID shared.ID, agentID *shared.ID, limit int) ([]*command.Command, error) {
+//
+// A command whose payload carries a non-empty required_capabilities array is
+// only returned when every one of those capabilities is present in the polling
+// agent's capabilities. This is the claim-time mirror of the dispatch-time
+// capability the validation dispatcher stamps onto a validate command
+// (payload.required_capabilities = ["validate"] or ["validate:nuclei"]): it
+// stops a non-nuclei agent race-claiming a nuclei validate job it cannot run.
+// A command with no (or an empty) required_capabilities is returned to any
+// agent, preserving the pre-existing behavior for every scan/collect command.
+func (r *CommandRepository) GetPendingForAgent(ctx context.Context, tenantID shared.ID, agentID *shared.ID, capabilities []string, limit int) ([]*command.Command, error) {
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
 		AND status = 'pending'
@@ -122,6 +132,21 @@ func (r *CommandRepository) GetPendingForAgent(ctx context.Context, tenantID sha
 	} else {
 		query += " AND agent_id IS NULL"
 	}
+
+	// Capability gate: keep a command only if it declares no required
+	// capabilities, or every required capability is one this agent advertises.
+	// jsonb_typeof(...) IS DISTINCT FROM 'array' covers a missing key (SQL NULL)
+	// and any malformed value, so those always pass through as unscoped.
+	query += fmt.Sprintf(`
+		AND (
+			jsonb_typeof(payload->'required_capabilities') IS DISTINCT FROM 'array'
+			OR NOT EXISTS (
+				SELECT 1
+				FROM jsonb_array_elements_text(payload->'required_capabilities') AS rc(cap)
+				WHERE rc.cap <> ALL(COALESCE($%d::text[], ARRAY[]::text[]))
+			)
+		)`, argIndex)
+	args = append(args, pq.Array(capabilities))
 
 	query += fmt.Sprintf(`
 		ORDER BY

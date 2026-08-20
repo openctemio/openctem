@@ -1,5 +1,30 @@
 # Agent Capability Verification Architecture
 
+> **⚠️ STATUS: UNIMPLEMENTED DESIGN PROPOSAL — NOT SHIPPED.**
+>
+> The declared/reported/effective three-state capability model, capability
+> intersection, drift detection, and capability-based finding-filtering described
+> below **do not exist in the codebase**. There are no `DeclaredCapabilities`,
+> `ReportedCapabilities`, or `EffectiveCapabilities` fields anywhere in
+> `pkg/domain/agent` or `internal/`. This document is retained as a design
+> proposal only; do not treat any of it as current behavior.
+>
+> **What actually ships today** is a single **flat capability list**: the agent
+> reports `Capabilities []string` at registration (`pkg/domain/agent/entity.go`),
+> stored as-is; there is no verification, intersection, or drift model.
+> Dispatch matches a command's required capability against that flat list via
+> `Agent.HasCapability(cap)`. The known scanner capabilities are the
+> `Capability` constants (`sast`, `sca`, `secrets`, `iac`, `dast`, `infra`,
+> `container`, `web3`, `collector`, `api`).
+>
+> **Validation dispatch (RFC-011.2)** adds two more capability strings routed the
+> same flat way: `validate` (base validate-capable agent) and `validate:nuclei`
+> (agent that can re-run a single Nuclei detection template). Both are defined in
+> `internal/app/validation/dispatcher.go` as `AgentCapabilityValidate` /
+> `AgentCapabilityValidateNuclei`; a `KindNuclei` job requires `validate:nuclei`,
+> everything else requires `validate`. This is a routing filter over the flat
+> list — still not the zero-trust verification model this document proposes.
+
 ## Overview
 
 This document describes the **Platform-Controlled with Agent Verification** architecture for managing agent capabilities. This design ensures zero-trust security while maintaining accuracy and admin control.

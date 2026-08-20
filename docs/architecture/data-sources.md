@@ -555,6 +555,32 @@ Official JSON schemas are available at:
 
 Repository: [github.com/openctemio/schemas](https://github.com/openctemio/schemas)
 
+## External Exposure Discovery (server-side, no agent)
+
+Beyond agent-pushed scans, OpenCTEM runs server-side discovery connectors that
+emit first-class `ExposureEvent`s (CTEM Discovery breadth — "exposure ≠
+vulnerability"). These need no agent and, for public feeds, no credentials.
+
+### Certificate-Transparency monitoring — SHIPPED (RFC-019)
+
+A per-tenant, scheduled crt.sh poller emits `subdomain_discovered` and
+`certificate_expiring` exposures (source tag `cert_transparency`), SSRF-guarded
+and rate-limited, tenant taken from the queried asset. See
+[Certificate-Transparency Monitoring](./certificate-transparency-monitoring.md).
+
+### Identity-exposure vocabulary — Phase 0 shipped, EMITTER NOT BUILT (RFC-018)
+
+The exposure **vocabulary** for the identity attack surface has shipped: three
+`exposure_events.event_type` values — `identity_mfa_gap`,
+`identity_stale_principal`, `identity_overprivileged` — added to the type CHECK
+constraint (migration `000210`, `pkg/domain/exposure/value_objects.go`).
+
+> **The emitter is not implemented.** No code constructs these event types today.
+> The EntraID/IdP Graph app-only reader that would produce them (RFC-018 Phase 1)
+> requires new admin-consented Microsoft Graph scopes and is **not built**. The
+> types exist so the Exposure Register is ready for them; treat identity-exposure
+> discovery as planned, not shipped.
+
 ## Future Enhancements
 
 1. **Source SDK** - Go/Python SDKs for building collectors/scanners

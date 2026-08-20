@@ -173,6 +173,16 @@ type AggregateStats struct {
 	RiskScoreAvg  float64
 	// MetadataCounts: JSONB property value counts. Key=field, Value=map[value]count.
 	MetadataCounts map[string]map[string]int
+	// CTEM inventory facet counts. Boolean facets use keys "true"/"false";
+	// business unit keys are BU ids; classification/environment/provider use
+	// the stored value (or "unset" when NULL).
+	ByDataClassification map[string]int
+	ByEnvironment        map[string]int
+	ByProvider           map[string]int
+	ByInternetAccessible map[string]int
+	ByHasOwner           map[string]int
+	ByControlPlane       map[string]int
+	ByBusinessUnit       map[string]int
 }
 
 // AssetTypeStats holds per-type aggregate counts.
@@ -208,24 +218,34 @@ type RepositoryExtensionRepository interface {
 
 // Filter defines the filtering options for listing assets.
 type Filter struct {
-	TenantID      *string       // Filter by tenant ID
-	Name          *string       // Filter by name (partial match)
-	Types         []AssetType   // Filter by asset types
-	Criticalities []Criticality // Filter by criticality levels
-	Statuses      []Status      // Filter by statuses
-	Scopes        []Scope       // Filter by scopes
-	Exposures     []Exposure    // Filter by exposure levels
-	Providers     []Provider    // Filter by providers
-	SyncStatuses  []SyncStatus  // Filter by sync statuses
-	Tags          []string      // Filter by tags
-	Search        *string       // Full-text search across name and description
-	MinRiskScore  *int          // Filter by minimum risk score
-	MaxRiskScore  *int          // Filter by maximum risk score
-	HasFindings   *bool         // Filter by whether asset has findings
-	ParentID      *string       // Filter by parent asset ID
-	IsCrownJewel       *bool             // Filter crown jewel assets
-	SubType            *string           // Filter by sub_type
-	PropertiesFilter   map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
+	TenantID         *string             // Filter by tenant ID
+	Name             *string             // Filter by name (partial match)
+	Types            []AssetType         // Filter by asset types
+	Criticalities    []Criticality       // Filter by criticality levels
+	Statuses         []Status            // Filter by statuses
+	Scopes           []Scope             // Filter by scopes
+	Exposures        []Exposure          // Filter by exposure levels
+	Providers        []Provider          // Filter by providers
+	SyncStatuses     []SyncStatus        // Filter by sync statuses
+	Tags             []string            // Filter by tags
+	Search           *string             // Full-text search across name and description
+	MinRiskScore     *int                // Filter by minimum risk score
+	MaxRiskScore     *int                // Filter by maximum risk score
+	HasFindings      *bool               // Filter by whether asset has findings
+	ParentID         *string             // Filter by parent asset ID
+	IsCrownJewel     *bool               // Filter crown jewel assets
+	SubType          *string             // Filter by sub_type
+	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
+
+	// CTEM inventory dimensions (all optional; back-compat when unset).
+	BusinessUnitIDs      []string   // Filter by business_units membership (business_unit_assets)
+	HasOwner             *bool      // Filter assets with/without an assigned owner (asset_owners)
+	DataClassifications  []string   // Filter by data_classification (public|internal|confidential|restricted|secret)
+	IsControlPlane       *bool      // Filter assets that are a control-plane dependency (asset_relationships edge)
+	IsInternetAccessible *bool      // Filter by the is_internet_accessible column
+	Environments         []string   // Filter by environment (production|staging|development|testing|dr)
+	LastSeenAfter        *time.Time // Filter assets last seen at/after this time (freshness)
+	LastSeenBefore       *time.Time // Filter assets last seen at/before this time (freshness)
 
 	// Layer 2: Data Scope - filter assets by user's group membership
 	// When set, only assets accessible to this user are returned.
@@ -377,6 +397,54 @@ func (f Filter) WithPropertiesFilter(kv map[string][]string) Filter {
 	return f
 }
 
+// WithBusinessUnitIDs filters by business_units membership.
+func (f Filter) WithBusinessUnitIDs(ids ...string) Filter {
+	f.BusinessUnitIDs = ids
+	return f
+}
+
+// WithHasOwner filters assets with (true) or without (false) an assigned owner.
+func (f Filter) WithHasOwner(hasOwner bool) Filter {
+	f.HasOwner = &hasOwner
+	return f
+}
+
+// WithDataClassifications filters by data classification level.
+func (f Filter) WithDataClassifications(classifications ...string) Filter {
+	f.DataClassifications = classifications
+	return f
+}
+
+// WithIsControlPlane filters assets that are (true) or are not (false) a control-plane dependency.
+func (f Filter) WithIsControlPlane(isControlPlane bool) Filter {
+	f.IsControlPlane = &isControlPlane
+	return f
+}
+
+// WithIsInternetAccessible filters by internet reachability.
+func (f Filter) WithIsInternetAccessible(v bool) Filter {
+	f.IsInternetAccessible = &v
+	return f
+}
+
+// WithEnvironments filters by environment.
+func (f Filter) WithEnvironments(environments ...string) Filter {
+	f.Environments = environments
+	return f
+}
+
+// WithLastSeenAfter filters assets last seen at/after t.
+func (f Filter) WithLastSeenAfter(t time.Time) Filter {
+	f.LastSeenAfter = &t
+	return f
+}
+
+// WithLastSeenBefore filters assets last seen at/before t.
+func (f Filter) WithLastSeenBefore(t time.Time) Filter {
+	f.LastSeenBefore = &t
+	return f
+}
+
 // IsEmpty returns true if no filters are set.
 func (f Filter) IsEmpty() bool {
 	return f.TenantID == nil &&
@@ -395,5 +463,13 @@ func (f Filter) IsEmpty() bool {
 		f.HasFindings == nil &&
 		f.ParentID == nil &&
 		f.DataScopeUserID == nil &&
-		len(f.PropertiesFilter) == 0
+		len(f.PropertiesFilter) == 0 &&
+		len(f.BusinessUnitIDs) == 0 &&
+		f.HasOwner == nil &&
+		len(f.DataClassifications) == 0 &&
+		f.IsControlPlane == nil &&
+		f.IsInternetAccessible == nil &&
+		len(f.Environments) == 0 &&
+		f.LastSeenAfter == nil &&
+		f.LastSeenBefore == nil
 }

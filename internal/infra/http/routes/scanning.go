@@ -522,9 +522,10 @@ func registerScannerTemplateRoutes(
 	h *handler.ScannerTemplateHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token, gated by the scanner_templates module.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Scanner Template routes - tenant from JWT token
 	router.Group("/api/v1/scanner-templates", func(r Router) {
@@ -554,9 +555,10 @@ func registerTemplateSourceRoutes(
 	h *handler.TemplateSourceHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token, gated by the template_sources module.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Template Source routes - tenant from JWT token
 	router.Group("/api/v1/template-sources", func(r Router) {

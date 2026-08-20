@@ -49,10 +49,9 @@ is thin:
   export shipped (`pkg/report/pdf.go`); remaining gap is technical/compliance
   report generators + KEV/EPSS/SLA breakdown in the digest.
   *(Core scheduler + PDF done — see Tier 1.)*
-- **Remediation workflow**: findings can become Jira tickets, but there's no
-  first-class *remediation campaign* (group findings → owner → deadline →
-  progress) — the core Mobilization narrative. **This is the main open Tier-1
-  item.**
+- **Remediation workflow**: ✅ shipped — first-class *remediation campaigns*
+  (group findings → owner → deadline → progress) now exist (RFC-015; see Tier 1).
+  Remaining gap is deeper bidirectional Jira sync of campaign progress.
 - **Ticketing breadth**: Jira only (provider abstraction exists, unused).
 - **Enterprise table-stakes**: SSO/SAML/SCIM now shipped (RFC-009); the remaining
   gap is i18n — framing exists (en/vi/ar direction) but no translation layer wired.
@@ -74,11 +73,14 @@ infrastructure, no product unknowns).
    `robfig/cron` (#177), plus PDF export (`pkg/report/pdf.go`). *Remaining polish:*
    technical/compliance report generators, KEV/EPSS/SLA breakdown in the digest
    (needs extra queries — `FindingStats` has no KEV/EPSS fields today).
-2. **Remediation Campaigns (`remediation_task`)** ⟵ **next** — group N findings
-   into a task with owner / deadline / progress, **bidirectional Jira sync via the
-   `WorkItem` seam already designed in RFC-006 Phase 3e**. Completes the
-   Mobilization pillar and is literally the "create a task that syncs to Jira" ask.
-   This is the remaining open Tier-1 item.
+2. **Remediation Campaigns** ✅ *(shipped, RFC-015)* — group N findings into a
+   campaign with owner / deadline / progress. Delivered: `remediation_campaigns`
+   (migration 000125) + ticket linkage (000177), the app service
+   (`internal/app/exposure/remediation_campaign.go`), handler
+   (`remediation_campaign_handler.go`), campaign RBAC middleware
+   (`middleware/campaign_rbac.go`), and the Postgres repository. Completes the
+   Mobilization pillar. *Remaining polish:* deeper bidirectional Jira sync via the
+   `WorkItem` seam designed in RFC-006 Phase 3e.
 3. **Risk-posture trending** ✅ *(already shipped)* — `risk_snapshots` table
    (migration 000145), `RiskSnapshotController` (registered in `workers.go`, 6h
    interval), `GET /dashboard/risk-trend` + `/velocity` endpoints, and UI trend
@@ -106,10 +108,10 @@ infrastructure, no product unknowns).
 
 ## 5. Recommendation
 
-With Tier-1 #1 (report scheduler) and #3 (risk trending) shipped, the remaining
-highest-ROI item is **#2 Remediation Campaigns** — the one piece that turns
-"findings → tickets" into a managed Mobilization workflow. Build it next, then
-move to Tier 2 (GitHub Issues provider, agent auto-fix PRs).
+All three Tier-1 items — #1 (report scheduler), #2 (remediation campaigns), and
+#3 (risk trending) — have now shipped, so the Mobilization pillar is complete.
+The next highest-ROI work is **Tier 2**: GitHub Issues as a 2nd ticket provider
+and agent auto-fix PRs.
 
 ## 6. Cross-references
 

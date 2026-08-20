@@ -514,7 +514,7 @@ func (m *mockCommandRepo) GetByID(_ context.Context, _ shared.ID) (*commanddom.C
 func (m *mockCommandRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, _ int) ([]*commanddom.Command, error) {
+func (m *mockCommandRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, _ []string, _ int) ([]*commanddom.Command, error) {
 	return nil, nil
 }
 func (m *mockCommandRepo) ClaimForAgent(_ context.Context, _, _ shared.ID, _ string) (bool, error) {

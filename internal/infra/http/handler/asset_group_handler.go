@@ -41,6 +41,7 @@ type AssetGroupResponse struct {
 	Environment     string    `json:"environment"`
 	Criticality     string    `json:"criticality"`
 	BusinessUnit    string    `json:"business_unit,omitempty"`
+	BusinessUnitID  string    `json:"business_unit_id,omitempty"`
 	Owner           string    `json:"owner,omitempty"`
 	OwnerEmail      string    `json:"owner_email,omitempty"`
 	Tags            []string  `json:"tags,omitempty"`
@@ -131,6 +132,15 @@ type GroupAssetResponse struct {
 	LastSeen     string `json:"last_seen"`
 }
 
+// businessUnitIDString renders the optional reconciled BU FK as a string,
+// returning "" (omitted from JSON) when the group isn't linked to a BU.
+func businessUnitIDString(id *shared.ID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
+}
+
 func toAssetGroupResponse(g *assetgroup.AssetGroup) AssetGroupResponse {
 	return AssetGroupResponse{
 		ID:              g.ID().String(),
@@ -139,6 +149,7 @@ func toAssetGroupResponse(g *assetgroup.AssetGroup) AssetGroupResponse {
 		Environment:     g.Environment().String(),
 		Criticality:     g.Criticality().String(),
 		BusinessUnit:    g.BusinessUnit(),
+		BusinessUnitID:  businessUnitIDString(g.BusinessUnitID()),
 		Owner:           g.Owner(),
 		OwnerEmail:      g.OwnerEmail(),
 		Tags:            g.Tags(),
@@ -227,19 +238,20 @@ func (h *AssetGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
 	input := app.ListAssetGroupsInput{
-		TenantID:      tenantID,
-		Search:        query.Get("search"),
-		Environments:  parseQueryArray(query.Get("environments")),
-		Criticalities: parseQueryArray(query.Get("criticalities")),
-		BusinessUnit:  query.Get("business_unit"),
-		Owner:         query.Get("owner"),
-		Tags:          parseQueryArray(query.Get("tags")),
-		HasFindings:   parseQueryBoolPtr(query.Get("has_findings")),
-		MinRiskScore:  parseQueryIntPtr(query.Get("min_risk_score")),
-		MaxRiskScore:  parseQueryIntPtr(query.Get("max_risk_score")),
-		Sort:          query.Get("sort"),
-		Page:          parseQueryInt(query.Get("page"), 1),
-		PerPage:       parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		TenantID:       tenantID,
+		Search:         query.Get("search"),
+		Environments:   parseQueryArray(query.Get("environments")),
+		Criticalities:  parseQueryArray(query.Get("criticalities")),
+		BusinessUnit:   query.Get("business_unit"),
+		BusinessUnitID: query.Get("business_unit_id"),
+		Owner:          query.Get("owner"),
+		Tags:           parseQueryArray(query.Get("tags")),
+		HasFindings:    parseQueryBoolPtr(query.Get("has_findings")),
+		MinRiskScore:   parseQueryIntPtr(query.Get("min_risk_score")),
+		MaxRiskScore:   parseQueryIntPtr(query.Get("max_risk_score")),
+		Sort:           query.Get("sort"),
+		Page:           parseQueryInt(query.Get("page"), 1),
+		PerPage:        parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
 	}
 
 	if err := h.validator.Validate(input); err != nil {

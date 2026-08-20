@@ -85,7 +85,7 @@ func (m *cmdMockRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID
 	return c, nil
 }
 
-func (m *cmdMockRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, limit int) ([]*commanddom.Command, error) {
+func (m *cmdMockRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, _ []string, limit int) ([]*commanddom.Command, error) {
 	if m.getPendingErr != nil {
 		return nil, m.getPendingErr
 	}

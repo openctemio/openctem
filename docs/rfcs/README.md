@@ -16,7 +16,7 @@ and the code. Start here to remember "what was decided, why, and where it lives"
 | [RFC-009](RFC-009-enterprise-sso-saml-scim.md) | Enterprise SSO: SAML 2.0 + SCIM 2.0 provisioning | SCIM (9a–9c) done; SAML 9d+9e done (login+ACS) | — | SCIM Users/token/Groups; SAML config+metadata+login/ACS |
 | [RFC-010](RFC-010-jira-assets-cmdb.md) | Jira Assets / JSM CMDB integration (enrich + reconcile) | Proposed | — | — |
 | [RFC-011](RFC-011-validation-engine-dispatch.md) | Validation engine: dispatch (make the "V" executable) | Phase 1 (safe-check) shipped; [**Phase 2**](RFC-011.2-validation-executor-downgrade-loop.md) proposed | — | validate command + dispatcher + producer endpoint + completion hook |
-| [RFC-011.2](RFC-011.2-validation-executor-downgrade-loop.md) | Validation executor + confirm-or-downgrade loop (`nuclei` re-verify → finding-state verdict → `downgrade %` metric) | Proposed | — | 2a = api verdict rule + metric; 2b = sdk-go/agent nuclei executor; 2c = ui |
+| [RFC-011.2](RFC-011.2-validation-executor-downgrade-loop.md) | Validation executor + confirm-or-downgrade loop (`nuclei` re-verify → finding-state verdict → `downgrade %` metric) | Phase 2a+2b (api) shipped; agent executor + UI pending | — | 2a = api verdict rule + metric (shipped); 2b = api `KindNuclei` executor + `validate:nuclei` capability gate + template-safety routing (**shipped**); agent-side nuclei executor (sdk-go/agent) = deferred; 2c = ui pending |
 | [RFC-012](RFC-012-real-bas-execution.md) | Real BAS / attack-simulation execution (de-synthesize the "V") | Phase 0–1 shipped | — | honesty (#270); persist runs (#271); real safe-check dispatch (#272) |
 | [RFC-013](RFC-013-defectdojo-coexistence.md) | DefectDojo co-existence connector (buy breadth, build brain; phase DD out) | Phases 1–2c shipped | — | converter (#273); live sync (#274); dependency metric (#275); auto-scheduler (#280) |
 | [RFC-014](RFC-014-agent-identity.md) | k8s-style agent identity (short-lived, auto-rotating credentials) | Phases 1a–3 shipped; agent auto-renew shipped (sdk-go v0.5.0) | #281 | self-renew (#282); key expiry (#283); rotation overlap (#285/#286); agent auto-renew (sdk-go #45 / agent #35); 4 = scopes TODO |
@@ -24,6 +24,7 @@ and the code. Start here to remember "what was decided, why, and where it lives"
 | [RFC-016](RFC-016-mcp-server.md) | Read-only MCP server — AI-native access to CTEM data (learned from OASM) | Phase 1 shipped | #298 (auth) + #299 (MCP) | tenant-scoped `oct_` API-key auth + `POST /api/v1/mcp` JSON-RPC with 9 read tools; 2 = UI connect page; 3 = per-key rate-limit + scopes + resources |
 | [RFC-017](RFC-017-ctem-prioritization-surfacing.md) | CTEM prioritization surfacing & loop closure — make the P0–P3 engine the sortable/filterable, explainable organizing principle; close the Attacker-Profile + Business-Service seams; unify the 4 competing scores | Proposed | — | P1 = sort/filter/default P0-first; P2 = explainability + persist reachability; P3 = seam closure; P4 = score rationalisation; P5 = validation-gated closure + assignment sync + cut synthetic |
 | [RFC-018](RFC-018-identity-exposure-discovery.md) | Identity exposure discovery from EntraID (MFA / privilege / stale) — the CTEM Discovery identity attack surface as first-class ExposureEvents | Phase 0 shipped (exposure vocabulary); Phase 1 (Graph app-only emitter) needs admin-consented scopes | — | Phase 0 = 3 identity `event_type`s + migration 000210 + tests (this PR); Phase 1 = per-tenant `client_credentials` Graph reader + scheduled controller + projection; Phase 2 = sign-in risk + identity CTEM-ID category + UI |
+| [RFC-019](RFC-019-certificate-transparency-discovery.md) | Certificate-Transparency exposure discovery — the first fully-built external-exposure connector: public crt.sh monitoring of tenant domains → `subdomain_discovered` + `certificate_expiring` ExposureEvents (no credentials/consent) | Phase 1 shipped (crt.sh client + parser + per-tenant controller + 2 exposure types) | — | Phase 1 = SSRF-guarded/rate-limited crt.sh poller, no migration (event types pre-exist), tests (this PR); Phase 2 = lookalike/typosquat + asset promotion |
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
 
@@ -119,7 +120,7 @@ docs/rfcs/                  RFC design documents (this folder) + this index
 internal/app/<cluster>/     application services (jira, ingest, scan, …)
 internal/infra/             infra: postgres, http, jira, scanner/nessus, controller
 pkg/domain/<X>/             domain entities (asset, scan, integration, vulnerability)
-migrations/                 golang-migrate SQL (latest: 000175)
+migrations/                 golang-migrate SQL (latest: 000210)
 ```
 
 Conventions: PRs/merges target `develop` (never `main`). RFCs are reviewed as a

@@ -30,7 +30,7 @@ func NewAssetGroupRepository(db *DB) *AssetGroupRepository {
 const assetGroupSelectQuery = `
 	SELECT
 		ag.id, ag.tenant_id, ag.name, ag.description, ag.environment, ag.criticality,
-		ag.business_unit, ag.owner, ag.owner_email, ag.tags,
+		ag.business_unit, ag.business_unit_id, ag.owner, ag.owner_email, ag.tags,
 		ag.asset_count, ag.domain_count, ag.website_count, ag.service_count,
 		ag.repository_count, ag.cloud_count, ag.credential_count,
 		ag.risk_score,
@@ -54,6 +54,7 @@ func (r *AssetGroupRepository) scanAssetGroup(row interface{ Scan(...any) error 
 		environment     string
 		criticality     string
 		businessUnit    sql.NullString
+		businessUnitID  sql.NullString
 		owner           sql.NullString
 		ownerEmail      sql.NullString
 		tags            pq.StringArray
@@ -72,7 +73,7 @@ func (r *AssetGroupRepository) scanAssetGroup(row interface{ Scan(...any) error 
 
 	err := row.Scan(
 		&id, &tenantID, &name, &description, &environment, &criticality,
-		&businessUnit, &owner, &ownerEmail, &tags,
+		&businessUnit, &businessUnitID, &owner, &ownerEmail, &tags,
 		&assetCount, &domainCount, &websiteCount, &serviceCount,
 		&repositoryCount, &cloudCount, &credentialCount,
 		&riskScore, &findingCount, &createdAt, &updatedAt,
@@ -86,7 +87,7 @@ func (r *AssetGroupRepository) scanAssetGroup(row interface{ Scan(...any) error 
 	env, _ := assetgroup.ParseEnvironment(environment)
 	crit, _ := assetgroup.ParseCriticality(criticality)
 
-	return assetgroup.Reconstitute(
+	g := assetgroup.Reconstitute(
 		gid, tid, name, description.String, env, crit,
 		businessUnit.String, owner.String, ownerEmail.String,
 		[]string(tags),
@@ -94,19 +95,33 @@ func (r *AssetGroupRepository) scanAssetGroup(row interface{ Scan(...any) error 
 		repositoryCount, cloudCount, credentialCount,
 		riskScore, findingCount,
 		createdAt.Time, updatedAt.Time,
-	), nil
+	)
+	if businessUnitID.Valid {
+		if buID, err := shared.IDFromString(businessUnitID.String); err == nil {
+			g.SetBusinessUnitID(&buID)
+		}
+	}
+	return g, nil
 }
 
 // Create creates a new asset group.
 func (r *AssetGroupRepository) Create(ctx context.Context, g *assetgroup.AssetGroup) error {
+	// business_unit_id is resolved in-SQL from the free-text business_unit so
+	// the reconciled FK stays in sync with the string without a separate
+	// service round-trip. It resolves to NULL when the label matches no BU.
 	query := `
 		INSERT INTO asset_groups (
 			id, tenant_id, name, description, environment, criticality,
-			business_unit, owner, owner_email, tags,
+			business_unit, business_unit_id, owner, owner_email, tags,
 			asset_count, domain_count, website_count, service_count,
 			repository_count, cloud_count, credential_count,
 			risk_score, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7,
+			(SELECT bu.id FROM business_units bu
+			 WHERE bu.tenant_id = $2::uuid AND $7 <> '' AND lower(bu.name) = lower($7)
+			 LIMIT 1),
+			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -184,6 +199,11 @@ func (r *AssetGroupRepository) Update(ctx context.Context, tenantID shared.ID, g
 			environment = $5,
 			criticality = $6,
 			business_unit = $7,
+			business_unit_id = (
+				SELECT bu.id FROM business_units bu
+				WHERE bu.tenant_id = $2::uuid AND $7 <> '' AND lower(bu.name) = lower($7)
+				LIMIT 1
+			),
 			owner = $8,
 			owner_email = $9,
 			tags = $10,
@@ -285,6 +305,12 @@ func (r *AssetGroupRepository) List(
 	if filter.BusinessUnit != nil && *filter.BusinessUnit != "" {
 		conditions = append(conditions, fmt.Sprintf("ag.business_unit ILIKE $%d", argNum))
 		args = append(args, wrapLikePattern(*filter.BusinessUnit))
+		argNum++
+	}
+
+	if filter.BusinessUnitID != nil && *filter.BusinessUnitID != "" {
+		conditions = append(conditions, fmt.Sprintf("ag.business_unit_id = $%d", argNum))
+		args = append(args, *filter.BusinessUnitID)
 		argNum++
 	}
 

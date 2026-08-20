@@ -47,7 +47,7 @@ func (r *recordingCommandRepo) GetByTenantAndID(context.Context, shared.ID, shar
 	return nil, nil
 }
 
-func (r *recordingCommandRepo) GetPendingForAgent(context.Context, shared.ID, *shared.ID, int) ([]*command.Command, error) {
+func (r *recordingCommandRepo) GetPendingForAgent(context.Context, shared.ID, *shared.ID, []string, int) ([]*command.Command, error) {
 	return nil, nil
 }
 

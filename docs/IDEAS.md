@@ -58,6 +58,14 @@ existing rule honest. Builds on: asset exposure data, `SetReachability`,
 priority engine.
 
 ### 2.2 Validation engine (the "V" in CTEM) — CRUD without execution (L)
+> **✅ Largely SHIPPED (RFC-011 / RFC-011.2, API side).** The dispatch engine
+> now exists: async `validate`-command dispatcher, producer endpoint
+> `POST /findings/{id}/validate`, evidence-ingest via the command-completion
+> hook, the confirm-or-downgrade verdict + `downgrade %` metric, and the
+> capability-gated `nuclei` re-verify kind (`validate` / `validate:nuclei`). The
+> **only remaining gap is the agent-side executor** (sdk-go/agent), which stays
+> deferred. The "CRUD without execution" framing below is now historical.
+
 `/api/v1/simulations` and `/api/v1/control-tests` have full CRUD + a `/run`
 endpoint, schema (`control_tests`, `attack_simulation_runs`), and a designed
 `internal/app/validation/executor.go` (types + selector + attacker-profile
@@ -188,11 +196,10 @@ existing seam.
     false positives on fake keys. Builds on: gitleaks integration + gate rules.
 
 ### 3.5 Platform / Enterprise
-31. **SAML 2.0** (M) — alongside OIDC for legacy IdPs / air-gapped orgs. Builds
-    on: the existing IdP-provider abstraction in `sso.go`.
-32. **SCIM 2.0 provisioning** (L) — auto provision/deprovision from Azure AD /
-    Okta / Google; revoke on termination. Builds on: user CRUD + invitation
-    role-assignment.
+31. **SAML 2.0** ✅ *(shipped, RFC-009)* — SAML SP-initiated login + ACS
+    (signature/condition/replay validated) alongside OIDC for legacy IdPs.
+32. **SCIM 2.0 provisioning** ✅ *(shipped, RFC-009)* — auto provision/deprovision
+    (Users + Groups + token) from Azure AD / Okta / Google.
 33. **Usage analytics / metering** (M) — per-tenant API calls, storage, scan
     minutes, agent utilization — ROI + chargeback. Builds on: `PlatformStats`
     pattern + async logging.
@@ -220,9 +227,14 @@ existing seam.
 
 Balancing ROI, narrative completeness, and reuse of existing infra:
 
+> Note (update): several of these have since shipped — **#2 Remediation
+> Campaigns** (RFC-015), **#8 Validation engine** (RFC-011/011.2, API side), and
+> **#10 SAML/SCIM** (RFC-009). Marked inline below.
+
 1. **Reachability population** (§2.1) — fixes a dead prioritization input; small,
    high-integrity.
-2. **Remediation campaign → Jira epic** (§3, #16) — finishes Tier-1 #2.
+2. **Remediation campaign → Jira epic** (§3, #16) ✅ *(campaigns shipped, RFC-015;
+   deeper Jira-epic sync is the remaining polish)*.
 3. **Risk-score explainability** (§3, #9) — competitive table-stakes; the data
    already exists.
 4. **GitHub Issues provider** (§3, #17) — validates the ticket abstraction; large
@@ -230,10 +242,11 @@ Balancing ROI, narrative completeness, and reuse of existing infra:
 5. **PDF report output** (§2.5) — unblocks compliance reporting.
 6. **Scheduled digest notifications** (§3, #18) — daily value, cuts alert fatigue.
 7. **Backend-only admin UIs** (§2.3) — cheap wins; stops "curl-only" features.
-8. **Validation engine MVP** (§2.2) — start the dispatcher + evidence ingest;
-   the biggest narrative gap.
+8. **Validation engine MVP** (§2.2) ✅ *(API side shipped — dispatcher + evidence
+   ingest + downgrade loop + nuclei gate; agent-side executor deferred)*.
 9. **Auto-fix PRs for SCA** (§3, #24) — the shift-left differentiator.
-10. **SAML + custom-role UI** (§3, #31/#35) — enterprise procurement unblockers.
+10. **SAML + custom-role UI** (§3, #31/#35) — SAML/SCIM ✅ *(shipped, RFC-009)*;
+    custom-role UI (#35) still open.
 
 > Update this doc as ideas graduate into `ROADMAP.md` or ship.
 </content>

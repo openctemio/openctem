@@ -120,7 +120,9 @@ REDIS_PORT=6379
 LOG_LEVEL=debug              # debug | info | warn | error
 LOG_FORMAT=text              # text | json
 
-# Keycloak Authentication
+# Keycloak Authentication — only needed when AUTH_PROVIDER is "oidc" or "hybrid".
+# The default AUTH_PROVIDER=local uses built-in JWT auth and ignores these
+# (see .env.example). Leave unset for a local-auth quickstart.
 KEYCLOAK_BASE_URL=http://localhost:8080
 KEYCLOAK_REALM=openctem
 KEYCLOAK_CLIENT_ID=api
