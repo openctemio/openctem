@@ -101,6 +101,12 @@ func TestAsset_CTEMInventoryFilters(t *testing.T) {
 	assertOnly("data_classification=secret", list(asset.NewFilter().WithDataClassifications("secret")), assetA)
 	assertOnly("environment=production", list(asset.NewFilter().WithEnvironments("production")), assetA)
 	assertOnly("provider=aws", list(asset.NewFilter().WithProviders(asset.Provider("aws"))), assetA)
+	// The "unset" sentinel (facet value for NULL providers) must resolve to
+	// provider IS NULL, so it returns the NULL-provider asset (assetC), not zero.
+	assertOnly("provider=unset", list(asset.NewFilter().WithProviders(asset.Provider("unset"))), assetC)
+	// Mixed selection: a real provider OR the unset sentinel returns both.
+	assertOnly("provider=aws+unset",
+		list(asset.NewFilter().WithProviders(asset.Provider("aws"), asset.Provider("unset"))), assetA, assetC)
 	assertOnly("business_unit", list(asset.NewFilter().WithBusinessUnitIDs(bu1)), assetA)
 	assertOnly("has_owner=true", list(asset.NewFilter().WithHasOwner(true)), assetA)
 	assertOnly("has_owner=false", list(asset.NewFilter().WithHasOwner(false)), assetB, assetC)
@@ -119,6 +125,9 @@ func TestAsset_CTEMInventoryFilters(t *testing.T) {
 	checkCount(t, "by_data_classification[unset]", stats.ByDataClassification["unset"], 1)
 	checkCount(t, "by_environment[production]", stats.ByEnvironment["production"], 1)
 	checkCount(t, "by_provider[aws]", stats.ByProvider["aws"], 1)
+	// The facet count for the NULL-provider sentinel must match the number of
+	// rows the "provider=unset" filter returns above (assetC only).
+	checkCount(t, "by_provider[unset]", stats.ByProvider["unset"], 1)
 	checkCount(t, "by_has_owner[true]", stats.ByHasOwner["true"], 1)
 	checkCount(t, "by_has_owner[false]", stats.ByHasOwner["false"], 2)
 	checkCount(t, "by_control_plane[true]", stats.ByControlPlane["true"], 1)

@@ -21,6 +21,12 @@ import (
 // Default sort order for assets
 const defaultSortOrder = "created_at DESC"
 
+// providerUnsetSentinel is the value the /assets/stats facet emits for
+// assets whose provider column is NULL (via COALESCE(provider, 'unset')).
+// The provider filter maps it back to `provider IS NULL` so clicking the
+// "unset (N)" facet row returns exactly those N assets.
+const providerUnsetSentinel = "unset"
+
 // AssetRepository implements asset.Repository using PostgreSQL.
 type AssetRepository struct {
 	db *DB
@@ -1074,15 +1080,36 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Providers filter
+	// Providers filter.
+	// The stats facet exposes NULL providers under the sentinel value
+	// "unset" (via COALESCE(provider, 'unset')), so a selectable
+	// "unset (N)" row can be clicked. Real rows store provider = NULL,
+	// not the literal "unset", so we translate that sentinel (and an
+	// empty string) back into `provider IS NULL` — otherwise clicking
+	// the facet would send `provider IN ('unset')` and match zero rows.
 	if len(filter.Providers) > 0 {
-		placeholders := make([]string, len(filter.Providers))
-		for i, p := range filter.Providers {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
-			args = append(args, p.String())
+		placeholders := make([]string, 0, len(filter.Providers))
+		includeNull := false
+		for _, p := range filter.Providers {
+			v := p.String()
+			if v == providerUnsetSentinel || v == "" {
+				includeNull = true
+				continue
+			}
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argIndex))
+			args = append(args, v)
 			argIndex++
 		}
-		conditions = append(conditions, fmt.Sprintf("a.provider IN (%s)", strings.Join(placeholders, ", ")))
+		parts := make([]string, 0, 2)
+		if len(placeholders) > 0 {
+			parts = append(parts, fmt.Sprintf("a.provider IN (%s)", strings.Join(placeholders, ", ")))
+		}
+		if includeNull {
+			parts = append(parts, "a.provider IS NULL")
+		}
+		if len(parts) > 0 {
+			conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+		}
 	}
 
 	// Sync statuses filter
