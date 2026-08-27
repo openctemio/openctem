@@ -213,6 +213,9 @@ var presetAssetInventory = ModulePreset{
 		"Attack surface view + ownership — no CVE/finding workflow yet",
 	},
 	EnabledModules: []string{
+		// Scoping split-outs (own toggleable modules, migration 000214;
+		// default-on so prior scope_config / attack_surface visibility is kept).
+		"business_units", "crown_jewels", "threat_model",
 		// Scoping — map assets to business context
 		"attack_surface", "scope_config", "business_services", "relationships",
 		// Discovery
@@ -250,6 +253,9 @@ var presetVMEssentials = ModulePreset{
 		"Executive-ready reports + SBOM export",
 	},
 	EnabledModules: []string{
+		// Scoping split-outs (own toggleable modules, migration 000214;
+		// default-on so prior scope_config / attack_surface visibility is kept).
+		"business_units", "crown_jewels", "threat_model",
 		// Scoping — even a basic VM team needs an asset surface view
 		// to know "what's in scope this scan cycle". Skip business
 		// services + attacker profiles (those are CTEM-level concerns).
@@ -294,6 +300,9 @@ var presetASM = ModulePreset{
 		"Executive-level attack surface dashboard",
 	},
 	EnabledModules: []string{
+		// Scoping split-outs (own toggleable modules, migration 000214;
+		// default-on so prior scope_config / attack_surface visibility is kept).
+		"business_units", "crown_jewels", "threat_model",
 		// Scoping (full — ASM is all about scoping)
 		"attack_surface", "scope_config", "business_services",
 		"relationships", "attacker_profiles",
@@ -351,6 +360,9 @@ var presetOffensive = ModulePreset{
 		"Professional reports + executive summaries; webhook submissions for bounty platforms",
 	},
 	EnabledModules: []string{
+		// Scoping split-outs (own toggleable modules, migration 000214;
+		// default-on so prior scope_config / attack_surface visibility is kept).
+		"business_units", "crown_jewels", "threat_model",
 		// Scoping (full — every offensive engagement needs scope)
 		"attack_surface", "scope_config", "business_services",
 		"ctem_cycles", "attacker_profiles", "relationships",
@@ -404,6 +416,9 @@ var presetASPM = ModulePreset{
 		"Finding lifecycle: AI triage, risk scoring, SLA, remediation, exec reporting",
 	},
 	EnabledModules: []string{
+		// Scoping split-outs (own toggleable modules, migration 000214;
+		// default-on so prior scope_config / attack_surface visibility is kept).
+		"business_units", "crown_jewels", "threat_model",
 		// Scoping — apps/services map
 		"attack_surface", "scope_config", "business_services", "relationships",
 		// Discovery — the AppSec surface: components, repos, secrets
@@ -447,6 +462,9 @@ var presetSBOM = ModulePreset{
 		"CI/CD pipeline policy gates with workflow automation",
 	},
 	EnabledModules: []string{
+		// Scoping split-outs (own toggleable modules, migration 000214;
+		// default-on so prior scope_config / attack_surface visibility is kept).
+		"business_units", "crown_jewels", "threat_model",
 		// Scoping — repos belong to apps/services, need that map
 		"attack_surface", "scope_config", "business_services", "relationships",
 		// Discovery — component-heavy
@@ -490,6 +508,9 @@ var presetCSPM = ModulePreset{
 		"Compliance mapping to CIS / NIST benchmarks",
 	},
 	EnabledModules: []string{
+		// Scoping split-outs (own toggleable modules, migration 000214;
+		// default-on so prior scope_config / attack_surface visibility is kept).
+		"business_units", "crown_jewels", "threat_model",
 		// Scoping
 		"attack_surface", "scope_config", "business_services", "relationships",
 		// Discovery — cloud-native asset types
@@ -538,6 +559,9 @@ var presetCompliance = ModulePreset{
 		"CTEM maturity scoring for board reporting",
 	},
 	EnabledModules: []string{
+		// Scoping split-outs (own toggleable modules, migration 000214;
+		// default-on so prior scope_config / attack_surface visibility is kept).
+		"business_units", "crown_jewels", "threat_model",
 		// Scoping — controls audit specific assets
 		"attack_surface", "scope_config", "business_services",
 		// Compliance
@@ -579,6 +603,9 @@ var presetCTEMFull = ModulePreset{
 		"Cross-phase executive dashboard",
 	},
 	EnabledModules: []string{
+		// Scoping split-outs (own toggleable modules, migration 000214;
+		// default-on so prior scope_config / attack_surface visibility is kept).
+		"business_units", "crown_jewels", "threat_model",
 		// Scoping
 		"attack_surface", "scope_config", "business_services",
 		"ctem_cycles", "attacker_profiles", "relationships",
