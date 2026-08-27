@@ -65,6 +65,16 @@ var ModuleDependencies = map[string][]Dependency{
 	"business_services": {
 		{ModuleID: "assets", Type: DependencyHard, Reason: "services map to underlying assets"},
 	},
+	"business_units": {
+		{ModuleID: "assets", Type: DependencyHard, Reason: "business units group underlying assets"},
+	},
+	"crown_jewels": {
+		{ModuleID: "assets", Type: DependencyHard, Reason: "crown jewels are assets flagged as business-critical"},
+	},
+	"threat_model": {
+		{ModuleID: "assets", Type: DependencyHard, Reason: "threat models are derived from the asset graph"},
+		{ModuleID: "findings", Type: DependencySoft, Reason: "threat-model coverage reflects findings on in-scope assets"},
+	},
 	"ctem_cycles": {
 		{ModuleID: "scope_config", Type: DependencyHard, Reason: "cycles operate on a defined scope"},
 		{ModuleID: "findings", Type: DependencySoft, Reason: "cycle phases reference findings progress"},

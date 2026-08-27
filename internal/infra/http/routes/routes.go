@@ -498,7 +498,7 @@ func Register(
 
 	// Business Unit routes
 	if h.BusinessUnit != nil {
-		registerBusinessUnitRoutes(router, h.BusinessUnit, authMiddleware, userSync)
+		registerBusinessUnitRoutes(router, h.BusinessUnit, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleBusinessUnits))
 	}
 
 	// Business Service routes (Phase 3 — business capability management)
@@ -528,7 +528,7 @@ func Register(
 
 	// Threat Model routes (continuous threat modeling)
 	if h.ThreatModel != nil {
-		registerThreatModelRoutes(router, h.ThreatModel, authMiddleware, userSync)
+		registerThreatModelRoutes(router, h.ThreatModel, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatModel))
 	}
 
 	// Verification Checklist routes (RFC-005) — added to findings group

@@ -222,6 +222,14 @@ const (
 	ModuleAttackerProfiles = "attacker_profiles"
 	ModuleRelationships    = "relationships"
 
+	// Scoping (CTEM) — split into their own toggleable modules by
+	// migration 000214 so each can be enabled/disabled independently of
+	// scope_config (business units, crown jewels) and attack_surface
+	// (threat model). Default-on, so existing tenants keep every feature.
+	ModuleBusinessUnits = "business_units"
+	ModuleCrownJewels   = "crown_jewels"
+	ModuleThreatModel   = "threat_model"
+
 	// Prioritisation (CTEM) — seeded by migration 000161.
 	ModulePriorityRules  = "priority_rules"
 	ModuleRiskAnalysis   = "risk_analysis"
@@ -327,6 +335,11 @@ var UserFacingModuleIDs = map[string]bool{
 	ModuleAttackerProfiles: true,
 	ModuleRelationships:    true,
 
+	// CTEM scoping split-outs (seeded by 000214).
+	ModuleBusinessUnits: true,
+	ModuleCrownJewels:   true,
+	ModuleThreatModel:   true,
+
 	// Prioritisation cluster (seeded by 000161).
 	ModulePriorityRules:  true,
 	ModuleRiskAnalysis:   true,
@@ -425,6 +438,14 @@ var ModulePermissionMapping = map[string]string{
 	ModuleCTEMCycles:       "attack_surface:cycles:read",
 	ModuleAttackerProfiles: "threat_intel:read",
 	ModuleRelationships:    "assets:read",
+
+	// CTEM scoping split-outs (seeded by 000214). Their routes are gated
+	// by assets:* today (business units + crown jewels are asset-scoped;
+	// threat models are read-derived from the asset graph + findings), so
+	// the sidebar filter must key off the same permission it gates on.
+	ModuleBusinessUnits: "assets:read",
+	ModuleCrownJewels:   "assets:read",
+	ModuleThreatModel:   "assets:read",
 
 	// Prioritisation extensions.
 	ModulePriorityRules:  "findings:read",
