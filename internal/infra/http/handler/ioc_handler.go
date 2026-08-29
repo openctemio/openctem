@@ -29,6 +29,16 @@ type FindingTenantChecker interface {
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error)
 }
 
+// IOCMatchLister is the narrow read surface for the IOC match log.
+// *postgres.IOCRepository satisfies it. Kept separate from
+// ioc.Repository because MatchDetail is a read-only projection (finding
+// title joined in) that the correlator's Repository contract has no
+// reason to carry. A nil lister makes GET /iocs/{id}/matches return an
+// empty page rather than panic (tests / not-yet-wired deployments).
+type IOCMatchLister interface {
+	ListMatchesByIOC(ctx context.Context, tenantID, iocID shared.ID, limit, offset int) ([]ioc.MatchDetail, error)
+}
+
 // IOCHandler exposes CRUD for the tenant's indicator-of-compromise
 // catalogue. The read/write permissions are reused from threat_intel
 // because an IOC is, semantically, a piece of threat intel the
@@ -36,6 +46,7 @@ type FindingTenantChecker interface {
 type IOCHandler struct {
 	repo     ioc.Repository
 	findings FindingTenantChecker // optional — skip cross-tenant verify in unit tests
+	matches  IOCMatchLister       // optional — nil serves an empty match page
 	logger   *logger.Logger
 }
 
@@ -55,6 +66,13 @@ func NewIOCHandler(repo ioc.Repository, log *logger.Logger) *IOCHandler {
 // the attacker's runtime event (cross-tenant write).
 func (h *IOCHandler) SetFindingChecker(c FindingTenantChecker) {
 	h.findings = c
+}
+
+// SetMatchLister wires the read-only IOC match log lister that backs
+// GET /iocs/{id}/matches. Optional — a nil lister makes that endpoint
+// return an empty page instead of panicking.
+func (h *IOCHandler) SetMatchLister(l IOCMatchLister) {
+	h.matches = l
 }
 
 // iocCreateRequest is the wire format for POST /iocs.
@@ -225,6 +243,98 @@ func (h *IOCHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeIOCResponse(w, http.StatusOK, ind)
+}
+
+// iocMatchResponse is one row of the IOC match log — the audit trail of
+// runtime telemetry hits that reopened (or would have reopened) a
+// finding. This is the runtime-reopen signal the UI surfaces per IOC.
+type iocMatchResponse struct {
+	ID               string  `json:"id"`
+	IOCID            string  `json:"ioc_id"`
+	TelemetryEventID *string `json:"telemetry_event_id,omitempty"`
+	FindingID        *string `json:"finding_id,omitempty"`
+	FindingTitle     string  `json:"finding_title,omitempty"`
+	Reopened         bool    `json:"reopened"`
+	MatchedAt        string  `json:"matched_at"`
+}
+
+// Matches handles GET /iocs/{id}/matches. Returns the tenant-scoped
+// match log for one indicator, newest first. Verifies the IOC belongs
+// to the caller first (404 otherwise) so this endpoint can't be used to
+// probe another tenant's indicator ids.
+func (h *IOCHandler) Matches(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := tenantFromContext(w, r)
+	if !ok {
+		return
+	}
+	id, err := shared.IDFromString(chi.URLParam(r, "id"))
+	if err != nil {
+		apierror.BadRequest("invalid id").WriteJSON(w)
+		return
+	}
+
+	// Ownership check — reuse the tenant-scoped GetByID so a caller can
+	// only read matches for an indicator in their own tenant.
+	if _, err := h.repo.GetByID(r.Context(), tenantID, id); err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			apierror.NotFound("indicator not found").WriteJSON(w)
+			return
+		}
+		h.logger.Error("ioc matches: load indicator failed",
+			"tenant_id", tenantID.String(),
+			"id", id.String(),
+			"error", err,
+		)
+		apierror.InternalServerError("failed to load indicator").WriteJSON(w)
+		return
+	}
+
+	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50, 200)
+	offset := parseNonNegativeInt(r.URL.Query().Get("offset"), 0)
+
+	out := make([]iocMatchResponse, 0)
+	if h.matches != nil {
+		rows, err := h.matches.ListMatchesByIOC(r.Context(), tenantID, id, limit, offset)
+		if err != nil {
+			h.logger.Error("list ioc matches failed",
+				"tenant_id", tenantID.String(),
+				"id", id.String(),
+				"error", err,
+			)
+			apierror.InternalServerError("failed to list matches").WriteJSON(w)
+			return
+		}
+		for _, m := range rows {
+			out = append(out, toIOCMatchResponse(m))
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"items":  out,
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
+func toIOCMatchResponse(m ioc.MatchDetail) iocMatchResponse {
+	resp := iocMatchResponse{
+		ID:           m.ID.String(),
+		IOCID:        m.IOCID.String(),
+		FindingTitle: m.FindingTitle,
+		Reopened:     m.Reopened,
+		MatchedAt:    m.MatchedAt.Format(timeRFC3339),
+	}
+	if m.TelemetryEventID != nil {
+		s := m.TelemetryEventID.String()
+		resp.TelemetryEventID = &s
+	}
+	if m.FindingID != nil {
+		s := m.FindingID.String()
+		resp.FindingID = &s
+	}
+	return resp
 }
 
 // Delete handles DELETE /iocs/{id}. Soft-deactivates the indicator —
