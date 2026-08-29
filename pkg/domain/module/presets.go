@@ -266,7 +266,7 @@ var presetVMEssentials = ModulePreset{
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
 		"priority_rules", "risk_scoring", "risk_analysis", "sla",
 		// Mobilization
-		"remediation", "remediation_tasks", "suppressions", "workflows", "policies",
+		"remediation", "remediation_tasks", "suppressions", "workflows",
 		// Insights
 		"reports", "executive_summary", "sbom_export",
 		// Settings / ops
@@ -427,7 +427,7 @@ var presetASPM = ModulePreset{
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
 		"priority_rules", "risk_scoring", "risk_analysis", "sla",
 		// Mobilization — gate + fix
-		"remediation", "remediation_tasks", "suppressions", "workflows", "policies",
+		"remediation", "remediation_tasks", "suppressions", "workflows",
 		// Insights — SBOM + exec
 		"sbom_export", "reports", "executive_summary",
 		// Settings — SCM/CI/scanner integration heavy
@@ -474,7 +474,6 @@ var presetSBOM = ModulePreset{
 		"priority_rules", "risk_scoring", "risk_analysis", "sla",
 		// Mobilization
 		"remediation", "remediation_tasks", "suppressions", "workflows",
-		"policies",
 		// Insights — SBOM is the key deliverable
 		"sbom_export", "reports", "executive_summary",
 		// Settings — SCM/CI integration heavy
@@ -521,7 +520,7 @@ var presetCSPM = ModulePreset{
 		// Validation
 		"compensating_controls", "control_testing",
 		// Mobilization
-		"remediation", "remediation_tasks", "suppressions", "workflows", "policies",
+		"remediation", "remediation_tasks", "suppressions", "workflows",
 		// Insights
 		"reports", "executive_summary", "mitre_coverage", "ctem_maturity",
 		// Settings — cloud integrations heavy
@@ -565,7 +564,7 @@ var presetCompliance = ModulePreset{
 		// Scoping — controls audit specific assets
 		"attack_surface", "scope_config", "business_services",
 		// Compliance
-		"compliance", "policies",
+		"compliance",
 		// Validation
 		"compensating_controls", "control_testing",
 		// Discovery — light, just enough for asset mapping
@@ -624,7 +623,7 @@ var presetCTEMFull = ModulePreset{
 		"compensating_controls",
 		// Mobilization
 		"remediation", "remediation_tasks", "workflows",
-		"suppressions", "policies",
+		"suppressions",
 		// Insights
 		"reports", "executive_summary", "ctem_maturity",
 		"mitre_coverage", "sbom_export",

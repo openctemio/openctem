@@ -319,6 +319,7 @@ var UserFacingModuleIDs = map[string]bool{
 	ModuleComponents:       true, // Discovery > Components (SBOM)
 	ModuleExposures:        true, // Discovery > Exposures (Non-CVE security issues)
 	ModuleThreatIntel:      true, // Prioritization > Threat Intel
+	ModuleSLA:              true, // Prioritization > SLA Compliance / SLA Policies
 	ModulePentest:          true, // Validation > Penetration Testing
 	ModuleAttackSimulation: true, // Validation > Attack Simulation (BAS)
 	ModuleControlTesting:   true, // Validation > Control Testing

@@ -159,9 +159,6 @@ var ModuleDependencies = map[string][]Dependency{
 	"sla": {
 		{ModuleID: "findings", Type: DependencyHard, Reason: "SLA tracks time-to-remediate per finding"},
 	},
-	"policies": {
-		{ModuleID: "findings", Type: DependencySoft, Reason: "most policy checks classify findings"},
-	},
 	"compliance": {
 		{ModuleID: "findings", Type: DependencySoft, Reason: "compliance reports aggregate findings against frameworks"},
 	},
