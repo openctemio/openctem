@@ -163,6 +163,7 @@ GET /api/v1/invitations/{}
 GET /api/v1/invitations/{}/preview
 GET /api/v1/iocs
 GET /api/v1/iocs/{}
+GET /api/v1/iocs/{}/matches
 GET /api/v1/me/permissions/sync
 GET /api/v1/me/roles
 GET /api/v1/module-presets
