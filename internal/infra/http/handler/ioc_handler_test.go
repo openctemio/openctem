@@ -404,6 +404,127 @@ func TestIOCHandler_Create_OwnTenantSourceFinding_Returns201(t *testing.T) {
 	}
 }
 
+// fakeMatchLister satisfies IOCMatchLister for the Matches handler tests.
+type fakeMatchLister struct {
+	byIOC map[string][]ioc.MatchDetail
+}
+
+func (f *fakeMatchLister) ListMatchesByIOC(_ context.Context, _ shared.ID, iocID shared.ID, _, _ int) ([]ioc.MatchDetail, error) {
+	return f.byIOC[iocID.String()], nil
+}
+
+func getWithID(tenantID shared.ID, id string) *http.Request {
+	r := requestWithTenant("GET", "/iocs/"+id+"/matches", "", tenantID)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", id)
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+}
+
+func TestIOCHandler_Matches_ReturnsPagedShape(t *testing.T) {
+	h, repo := newTestIOCHandler(t)
+	tenantID := shared.NewID()
+
+	ind, err := ioc.NewIndicator(tenantID, ioc.TypeIP, "5.5.5.5", ioc.SourceManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Create(context.Background(), ind); err != nil {
+		t.Fatal(err)
+	}
+
+	findingID := shared.NewID()
+	h.SetMatchLister(&fakeMatchLister{byIOC: map[string][]ioc.MatchDetail{
+		ind.ID.String(): {
+			{
+				Match: ioc.Match{
+					ID:        shared.NewID(),
+					TenantID:  tenantID,
+					IOCID:     ind.ID,
+					FindingID: &findingID,
+					Reopened:  true,
+				},
+				FindingTitle: "Reopened finding",
+			},
+		},
+	}})
+
+	w := httptest.NewRecorder()
+	h.Matches(w, getWithID(tenantID, ind.ID.String()))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200. body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Items []struct {
+			IOCID        string `json:"ioc_id"`
+			FindingID    string `json:"finding_id"`
+			FindingTitle string `json:"finding_title"`
+			Reopened     bool   `json:"reopened"`
+		} `json:"items"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].FindingTitle != "Reopened finding" || !resp.Items[0].Reopened {
+		t.Fatalf("unexpected match row: %+v", resp.Items[0])
+	}
+	if resp.Items[0].FindingID != findingID.String() {
+		t.Fatalf("finding_id mismatch")
+	}
+}
+
+func TestIOCHandler_Matches_NilLister_ReturnsEmpty(t *testing.T) {
+	h, repo := newTestIOCHandler(t)
+	tenantID := shared.NewID()
+
+	ind, err := ioc.NewIndicator(tenantID, ioc.TypeIP, "6.6.6.6", ioc.SourceManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Create(context.Background(), ind); err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	h.Matches(w, getWithID(tenantID, ind.ID.String()))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 with nil lister", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"items":[]`) {
+		t.Fatalf("nil lister should yield empty items, got %s", w.Body.String())
+	}
+}
+
+func TestIOCHandler_Matches_CrossTenant_Returns404(t *testing.T) {
+	h, repo := newTestIOCHandler(t)
+	tenantA := shared.NewID()
+	tenantB := shared.NewID()
+
+	ind, err := ioc.NewIndicator(tenantA, ioc.TypeIP, "7.7.7.7", ioc.SourceManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Create(context.Background(), ind); err != nil {
+		t.Fatal(err)
+	}
+	h.SetMatchLister(&fakeMatchLister{byIOC: map[string][]ioc.MatchDetail{}})
+
+	// B asks for A's indicator's matches — must 404 on the ownership check
+	// before the lister is ever consulted.
+	w := httptest.NewRecorder()
+	h.Matches(w, getWithID(tenantB, ind.ID.String()))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for cross-tenant matches read", w.Code)
+	}
+}
+
 func TestIOCHandler_Delete_CrossTenantIsolated(t *testing.T) {
 	h, repo := newTestIOCHandler(t)
 	tenantA := shared.NewID()

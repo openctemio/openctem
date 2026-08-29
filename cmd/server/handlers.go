@@ -506,5 +506,6 @@ func newRuntimeTelemetryHandlerWithCorrelator(deps *HandlerDeps, svc *Services, 
 func newIOCHandlerWithFindingCheck(deps *HandlerDeps, log *logger.Logger) *handler.IOCHandler {
 	h := handler.NewIOCHandler(deps.Repos.IOC, log)
 	h.SetFindingChecker(deps.Repos.Finding)
+	h.SetMatchLister(deps.Repos.IOC)
 	return h
 }

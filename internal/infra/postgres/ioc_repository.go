@@ -184,6 +184,94 @@ func (r *IOCRepository) ListByTenant(ctx context.Context, tenantID shared.ID, li
 	return out, rows.Err()
 }
 
+// ListMatchesByIOC returns the match log for one indicator, newest
+// first, enriched with the reopened finding's title via a tenant-scoped
+// LEFT JOIN. Tenant-scoped on both sides of the join so a match row can
+// never surface another tenant's finding title. This is a read-only
+// projection for the "why was this reopened?" UI — not part of the
+// ioc.Repository contract.
+func (r *IOCRepository) ListMatchesByIOC(ctx context.Context, tenantID, iocID shared.ID, limit, offset int) ([]ioc.MatchDetail, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	const q = `
+		SELECT m.id, m.tenant_id, m.ioc_id, m.telemetry_event_id,
+		       m.finding_id, m.reopened, m.matched_at,
+		       COALESCE(f.title, '')
+		FROM ioc_matches m
+		LEFT JOIN findings f
+		       ON f.id = m.finding_id AND f.tenant_id = m.tenant_id
+		WHERE m.tenant_id = $1 AND m.ioc_id = $2
+		ORDER BY m.matched_at DESC
+		LIMIT $3 OFFSET $4`
+	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), iocID.String(), limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list ioc matches: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]ioc.MatchDetail, 0)
+	for rows.Next() {
+		md, err := scanMatchDetail(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, md)
+	}
+	return out, rows.Err()
+}
+
+func scanMatchDetail(sc iocRowScanner) (ioc.MatchDetail, error) {
+	var (
+		md        ioc.MatchDetail
+		id        string
+		tenantID  string
+		iocID     string
+		eventID   sql.NullString
+		findingID sql.NullString
+	)
+	if err := sc.Scan(
+		&id,
+		&tenantID,
+		&iocID,
+		&eventID,
+		&findingID,
+		&md.Reopened,
+		&md.MatchedAt,
+		&md.FindingTitle,
+	); err != nil {
+		return ioc.MatchDetail{}, fmt.Errorf("scan ioc match: %w", err)
+	}
+	var err error
+	if md.ID, err = shared.IDFromString(id); err != nil {
+		return ioc.MatchDetail{}, fmt.Errorf("parse match id: %w", err)
+	}
+	if md.TenantID, err = shared.IDFromString(tenantID); err != nil {
+		return ioc.MatchDetail{}, fmt.Errorf("parse match tenant_id: %w", err)
+	}
+	if md.IOCID, err = shared.IDFromString(iocID); err != nil {
+		return ioc.MatchDetail{}, fmt.Errorf("parse match ioc_id: %w", err)
+	}
+	if eventID.Valid {
+		eid, err := shared.IDFromString(eventID.String)
+		if err != nil {
+			return ioc.MatchDetail{}, fmt.Errorf("parse telemetry_event_id: %w", err)
+		}
+		md.TelemetryEventID = &eid
+	}
+	if findingID.Valid {
+		fid, err := shared.IDFromString(findingID.String)
+		if err != nil {
+			return ioc.MatchDetail{}, fmt.Errorf("parse finding_id: %w", err)
+		}
+		md.FindingID = &fid
+	}
+	return md, nil
+}
+
 // Deactivate flips active=false. Soft-delete preserves history.
 func (r *IOCRepository) Deactivate(ctx context.Context, tenantID, id shared.ID) error {
 	const q = `UPDATE iocs SET active = FALSE, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`

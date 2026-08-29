@@ -23,6 +23,7 @@ func registerIOCRoutes(
 		r.GET("/", h.List, middleware.Require(permission.ThreatIntelRead))
 		r.POST("/", h.Create, middleware.Require(permission.ThreatIntelWrite))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ThreatIntelRead))
+		r.GET("/{id}/matches", h.Matches, middleware.Require(permission.ThreatIntelRead))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ThreatIntelWrite))
 	}, tenantMiddlewares...)
 }
