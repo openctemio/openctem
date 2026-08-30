@@ -1210,7 +1210,7 @@ func (h *IntegrationHandler) ListNotifications(w http.ResponseWriter, r *http.Re
 type CreateNotificationIntegrationRequest struct {
 	Name        string `json:"name" validate:"required,min=1,max=255"`
 	Description string `json:"description" validate:"max=1000"`
-	Provider    string `json:"provider" validate:"required,oneof=slack teams telegram webhook email"`
+	Provider    string `json:"provider" validate:"required,oneof=slack teams telegram webhook email splunk"`
 	AuthType    string `json:"auth_type" validate:"required,oneof=token api_key"`
 	Credentials string `json:"credentials" validate:"required"` // Webhook URL or Bot Token
 
@@ -1222,6 +1222,11 @@ type CreateNotificationIntegrationRequest struct {
 	MessageTemplate    string   `json:"message_template"`
 	IncludeDetails     *bool    `json:"include_details"`
 	MinIntervalMinutes *int     `json:"min_interval_minutes"`
+
+	// Metadata holds non-sensitive provider-specific config (e.g. Splunk HEC
+	// hec_url / index / sourcetype). The credential (token/URL) still goes in
+	// Credentials; only non-secret routing config belongs here.
+	Metadata map[string]any `json:"metadata"`
 }
 
 // CreateNotification handles POST /api/v1/integrations/notifications
@@ -1277,6 +1282,7 @@ func (h *IntegrationHandler) CreateNotification(w http.ResponseWriter, r *http.R
 		MessageTemplate:    req.MessageTemplate,
 		IncludeDetails:     includeDetails,
 		MinIntervalMinutes: minInterval,
+		Metadata:           req.Metadata,
 	}
 
 	intg, err := h.service.CreateNotificationIntegration(r.Context(), input)
@@ -1304,6 +1310,10 @@ type UpdateNotificationIntegrationRequest struct {
 	MessageTemplate    *string  `json:"message_template"`
 	IncludeDetails     *bool    `json:"include_details"`
 	MinIntervalMinutes *int     `json:"min_interval_minutes"`
+
+	// Metadata, when non-nil, replaces the integration's non-sensitive
+	// provider config (e.g. Splunk HEC hec_url / index / sourcetype).
+	Metadata map[string]any `json:"metadata"`
 }
 
 // UpdateNotification handles PUT /api/v1/integrations/{id}/notification
@@ -1353,6 +1363,7 @@ func (h *IntegrationHandler) UpdateNotification(w http.ResponseWriter, r *http.R
 		MessageTemplate:    req.MessageTemplate,
 		IncludeDetails:     req.IncludeDetails,
 		MinIntervalMinutes: req.MinIntervalMinutes,
+		Metadata:           req.Metadata,
 	}
 
 	intg, err := h.service.UpdateNotificationIntegration(r.Context(), id, tenantID, input)
