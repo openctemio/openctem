@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app/asset"
+	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
@@ -21,6 +22,13 @@ type GraphEnrichmentControllerConfig struct {
 
 	// Logger for structured output. Defaults to NewNop when nil.
 	Logger *logger.Logger
+
+	// ModuleGuard, when set, skips tenants that have disabled the
+	// attack-surface module — graph enrichment feeds the exposure-chain /
+	// attack-path engines, so a tenant that turned attack-surface off need not
+	// pay for edge inference. Existing edges are untouched (idempotent inserts);
+	// only NEW inference is skipped. Optional; nil means "never skip".
+	ModuleGuard ModuleGuard
 }
 
 // graphEnricher is the app-layer surface the controller drives per tenant.
@@ -40,10 +48,11 @@ type graphEnricher interface {
 // is idempotent and each tenant is handled serially; a failure on one tenant
 // never halts the others.
 type GraphEnrichmentController struct {
-	enricher   graphEnricher
-	tenantRepo tenant.Repository
-	config     *GraphEnrichmentControllerConfig
-	logger     *logger.Logger
+	enricher    graphEnricher
+	tenantRepo  tenant.Repository
+	config      *GraphEnrichmentControllerConfig
+	logger      *logger.Logger
+	moduleGuard ModuleGuard
 }
 
 // NewGraphEnrichmentController constructs the controller.
@@ -62,10 +71,11 @@ func NewGraphEnrichmentController(
 		config.Logger = logger.NewNop()
 	}
 	return &GraphEnrichmentController{
-		enricher:   enricher,
-		tenantRepo: tenantRepo,
-		config:     config,
-		logger:     config.Logger.With("controller", "graph-enrichment"),
+		enricher:    enricher,
+		tenantRepo:  tenantRepo,
+		config:      config,
+		logger:      config.Logger.With("controller", "graph-enrichment"),
+		moduleGuard: config.ModuleGuard,
 	}
 }
 
@@ -85,8 +95,14 @@ func (c *GraphEnrichmentController) Reconcile(ctx context.Context) (int, error) 
 		return 0, err
 	}
 
+	modules := newTenantModuleCache(c.moduleGuard)
 	totalEdges := 0
 	for _, tenantID := range tenantIDs {
+		// Skip a tenant that has turned the attack-surface module off
+		// (nil guard / no override → never skips).
+		if modules.disabled(ctx, tenantID.String(), moduledom.ModuleAttackSurface) {
+			continue
+		}
 		res, err := c.enrichTenant(ctx, tenantID)
 		if err != nil {
 			c.logger.Warn("graph enrichment failed; continuing with next tenant",
