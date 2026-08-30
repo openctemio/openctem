@@ -1064,6 +1064,20 @@ func (s *IntegrationService) buildNotificationConfig(intg *integrationdom.Integr
 			return config, err
 		}
 		config.Email = emailConfig
+	case integrationdom.ProviderSplunk:
+		// Splunk HEC: the secret is the HEC token (credentials); the collector
+		// endpoint and optional index/sourcetype are non-sensitive metadata.
+		config.Token = credentials
+		metadata := intg.Metadata()
+		if hecURL, ok := metadata["hec_url"].(string); ok && hecURL != "" {
+			config.WebhookURL = hecURL
+		}
+		if index, ok := metadata["index"].(string); ok {
+			config.Index = index
+		}
+		if sourcetype, ok := metadata["sourcetype"].(string); ok {
+			config.Sourcetype = sourcetype
+		}
 	}
 
 	return config, nil

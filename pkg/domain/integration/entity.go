@@ -85,6 +85,13 @@ const (
 	ProviderTelegram Provider = "telegram"
 	ProviderEmail    Provider = "email"
 	ProviderWebhook  Provider = "webhook"
+	// ProviderSplunk delivers events to a Splunk HTTP Event Collector (HEC).
+	// It is a notification-category provider on purpose: outbound SIEM delivery
+	// rides the same notification fan-out (outbox + event/severity filters) as
+	// Slack/Teams/webhook. The UI groups it under "SIEM", but the domain
+	// category must stay Notification or the notification dispatch — which
+	// filters on CategoryNotification — would never route events to it.
+	ProviderSplunk Provider = "splunk"
 )
 
 // String returns the string representation of the provider.
@@ -108,7 +115,7 @@ func (p Provider) IsValid() bool {
 	case ProviderJira, ProviderLinear, ProviderAsana:
 		return true
 	// Notification
-	case ProviderSlack, ProviderTeams, ProviderTelegram, ProviderEmail, ProviderWebhook:
+	case ProviderSlack, ProviderTeams, ProviderTelegram, ProviderEmail, ProviderWebhook, ProviderSplunk:
 		return true
 	default:
 		return false
@@ -126,7 +133,7 @@ func (p Provider) Category() Category {
 		return CategoryCloud
 	case ProviderJira, ProviderLinear, ProviderAsana:
 		return CategoryTicketing
-	case ProviderSlack, ProviderTeams, ProviderTelegram, ProviderEmail, ProviderWebhook:
+	case ProviderSlack, ProviderTeams, ProviderTelegram, ProviderEmail, ProviderWebhook, ProviderSplunk:
 		return CategoryNotification
 	default:
 		return CategoryCustom
