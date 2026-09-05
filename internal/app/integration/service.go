@@ -1712,6 +1712,10 @@ type CreateNotificationIntegrationInput struct {
 	MessageTemplate    string
 	IncludeDetails     bool
 	MinIntervalMinutes int
+
+	// Metadata holds non-sensitive provider config (e.g. Splunk HEC
+	// hec_url/index/sourcetype). Merged onto any provider-set metadata.
+	Metadata map[string]any
 }
 
 // CreateNotificationIntegration creates a new notification integration.
@@ -1804,6 +1808,20 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 		}
 	}
 
+	// Merge caller-supplied non-sensitive metadata (e.g. Splunk HEC
+	// hec_url/index/sourcetype) without clobbering keys a provider already set
+	// above (Slack channel_name, Telegram chat_id).
+	if len(input.Metadata) > 0 {
+		merged := intg.Metadata()
+		if merged == nil {
+			merged = make(map[string]any, len(input.Metadata))
+		}
+		for k, v := range input.Metadata {
+			merged[k] = v
+		}
+		intg.SetMetadata(merged)
+	}
+
 	// Build the notification extension (if a repo is wired) up front so the
 	// integration row and its extension can be inserted in a single transaction.
 	var notifExt *integrationdom.NotificationExtension
@@ -1870,6 +1888,10 @@ type UpdateNotificationIntegrationInput struct {
 	MessageTemplate    *string
 	IncludeDetails     *bool
 	MinIntervalMinutes *int
+
+	// Metadata, when non-nil, is merged onto the integration's non-sensitive
+	// provider config (e.g. Splunk HEC hec_url/index/sourcetype).
+	Metadata map[string]any
 }
 
 // applyNotificationExtensionUpdates applies updates to a notification extension.
@@ -1987,6 +2009,19 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 			}
 			intg.SetCredentials(encrypted)
 		}
+	}
+
+	// Merge caller-supplied non-sensitive metadata (e.g. Splunk HEC
+	// hec_url/index/sourcetype) onto whatever the provider branch set above.
+	if input.Metadata != nil {
+		merged := intg.Metadata()
+		if merged == nil {
+			merged = make(map[string]any, len(input.Metadata))
+		}
+		for k, v := range input.Metadata {
+			merged[k] = v
+		}
+		intg.SetMetadata(merged)
 	}
 
 	if err := s.repo.Update(ctx, intg); err != nil {
