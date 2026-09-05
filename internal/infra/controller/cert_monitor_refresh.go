@@ -5,6 +5,7 @@ import (
 	"time"
 
 	certmonitorapp "github.com/openctemio/api/internal/app/certmonitor"
+	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -19,6 +20,12 @@ type CertMonitorControllerConfig struct {
 
 	// Logger for structured output. Defaults to NewNop when nil.
 	Logger *logger.Logger
+
+	// ModuleGuard, when set, skips tenants that have disabled the
+	// attack-surface module — cert-monitor is an external-discovery connector,
+	// so a tenant that turned attack-surface off should not have crt.sh queried
+	// on its behalf. Optional; nil means "never skip" (fully backward compatible).
+	ModuleGuard ModuleGuard
 }
 
 // CertMonitorController periodically runs the CT discovery sweep for every
@@ -31,10 +38,11 @@ type CertMonitorControllerConfig struct {
 // skipped (fail-open) so it never halts the others. Only an unrecoverable
 // tenant-list failure is returned so the runner retries next tick.
 type CertMonitorController struct {
-	service    *certmonitorapp.Service
-	tenantRepo tenant.Repository
-	config     *CertMonitorControllerConfig
-	logger     *logger.Logger
+	service     *certmonitorapp.Service
+	tenantRepo  tenant.Repository
+	config      *CertMonitorControllerConfig
+	logger      *logger.Logger
+	moduleGuard ModuleGuard
 }
 
 // NewCertMonitorController constructs the controller.
@@ -53,10 +61,11 @@ func NewCertMonitorController(
 		config.Logger = logger.NewNop()
 	}
 	return &CertMonitorController{
-		service:    service,
-		tenantRepo: tenantRepo,
-		config:     config,
-		logger:     config.Logger.With("controller", "cert-monitor"),
+		service:     service,
+		tenantRepo:  tenantRepo,
+		config:      config,
+		logger:      config.Logger.With("controller", "cert-monitor"),
+		moduleGuard: config.ModuleGuard,
 	}
 }
 
@@ -79,10 +88,16 @@ func (c *CertMonitorController) Reconcile(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
+	modules := newTenantModuleCache(c.moduleGuard)
 	swept := 0
 	for _, tenantID := range tenantIDs {
 		if err := ctx.Err(); err != nil {
 			return swept, err
+		}
+		// Compute-level independence: skip a tenant that has turned the
+		// attack-surface module off (nil guard / no override → never skips).
+		if modules.disabled(ctx, tenantID.String(), moduledom.ModuleAttackSurface) {
+			continue
 		}
 		n, err := c.service.MonitorTenant(ctx, tenantID)
 		if err != nil {
