@@ -354,7 +354,6 @@ func registerFindingActivityRoutes(
 	// Finding activity routes - tenant from JWT token
 	router.Group("/api/v1/findings/{id}/activities", func(r Router) {
 		r.GET("/", h.ListActivities, middleware.Require(permission.FindingsRead))
-		r.GET("/{activityId}", h.GetActivity, middleware.Require(permission.FindingsRead))
 		// Note: Activities are created automatically via service hooks, not via direct API
 		// Real-time updates are delivered via WebSocket channel: finding:{id}
 	}, tenantMiddlewares...)
