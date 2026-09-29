@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -60,13 +61,45 @@ const (
 	// CVEs, which over-counted the "critical" bucket. 0.5 keeps it small and
 	// actionable.
 	epssCriticalThreshold = 0.5
+
+	// catalogCountsTTL bounds how long the global EPSS/KEV catalog counts
+	// shown on /threat-intel/stats are reused. The catalogs change only when
+	// a sync runs (daily), and a successful sync on this replica drops the
+	// cache immediately, so the TTL only matters for syncs that ran on
+	// another replica.
+	catalogCountsTTL = 5 * time.Minute
 )
+
+// epssCatalogCounts / kevCatalogCounts are the tenant-independent figures of
+// the EPSS and KEV catalogs shown on /threat-intel/stats. COUNT(*) over the
+// ~380k-row epss_scores table alone costs ~24ms on every request, which the
+// dashboard polls; the values only change when a sync runs, so they are
+// cached. EPSS and KEV are cached separately so a failure reading one catalog
+// still degrades gracefully to partial stats, exactly as before.
+type epssCatalogCounts struct {
+	total     int64
+	fetchedAt time.Time
+}
+
+type kevCatalogCounts struct {
+	total      int64
+	recent30d  int64
+	ransomware int64
+	fetchedAt  time.Time
+}
 
 // IntelService handles threat intelligence operations.
 type IntelService struct {
 	repo       threatintel.ThreatIntelRepository
 	httpClient *http.Client
 	logger     *logger.Logger
+
+	// countsMu guards counts. Only global catalog figures are cached here;
+	// tenant-scoped counts are always read fresh.
+	countsMu   sync.Mutex
+	epssCounts *epssCatalogCounts
+	kevCounts  *kevCatalogCounts
+	now        func() time.Time
 }
 
 // NewIntelService creates a new IntelService.
@@ -85,7 +118,70 @@ func NewIntelService(
 		// metadata service.
 		httpClient: httpsec.SafeHTTPClient(httpTimeout),
 		logger:     log.With("service", "threat_intel"),
+		now:        time.Now,
 	}
+}
+
+// invalidateCatalogCounts drops the cached catalog counts so the next stats
+// request re-reads them. Called after a successful EPSS/KEV sync.
+func (s *IntelService) invalidateCatalogCounts() {
+	s.countsMu.Lock()
+	s.epssCounts = nil
+	s.kevCounts = nil
+	s.countsMu.Unlock()
+}
+
+// getEPSSCatalogCounts returns the global EPSS catalog size from a
+// short-lived in-process cache. Errors are never cached.
+func (s *IntelService) getEPSSCatalogCounts(ctx context.Context) (epssCatalogCounts, error) {
+	s.countsMu.Lock()
+	if c := s.epssCounts; c != nil && s.now().Sub(c.fetchedAt) < catalogCountsTTL {
+		s.countsMu.Unlock()
+		return *c, nil
+	}
+	s.countsMu.Unlock()
+
+	total, err := s.repo.EPSS().Count(ctx)
+	if err != nil {
+		return epssCatalogCounts{}, err
+	}
+	c := epssCatalogCounts{total: total, fetchedAt: s.now()}
+
+	s.countsMu.Lock()
+	s.epssCounts = &c
+	s.countsMu.Unlock()
+	return c, nil
+}
+
+// getKEVCatalogCounts returns the global KEV catalog figures from a
+// short-lived in-process cache. Errors are never cached.
+func (s *IntelService) getKEVCatalogCounts(ctx context.Context) (kevCatalogCounts, error) {
+	s.countsMu.Lock()
+	if c := s.kevCounts; c != nil && s.now().Sub(c.fetchedAt) < catalogCountsTTL {
+		s.countsMu.Unlock()
+		return *c, nil
+	}
+	s.countsMu.Unlock()
+
+	var (
+		c   kevCatalogCounts
+		err error
+	)
+	if c.total, err = s.repo.KEV().Count(ctx); err != nil {
+		return kevCatalogCounts{}, err
+	}
+	if c.recent30d, err = s.repo.KEV().CountRecentlyAdded(ctx, 30); err != nil {
+		return kevCatalogCounts{}, err
+	}
+	if c.ransomware, err = s.repo.KEV().CountRansomwareRelated(ctx); err != nil {
+		return kevCatalogCounts{}, err
+	}
+	c.fetchedAt = s.now()
+
+	s.countsMu.Lock()
+	s.kevCounts = &c
+	s.countsMu.Unlock()
+	return c, nil
 }
 
 // KEVEscalationResult reports what a KEV reconciliation pass changed.
@@ -197,6 +293,8 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 		s.logger.Error("failed to update sync status", "error", err)
 	}
 
+	s.invalidateCatalogCounts()
+
 	s.logger.Info("EPSS sync completed",
 		"records", len(scores),
 		"duration_ms", duration.Milliseconds(),
@@ -268,6 +366,8 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
 		s.logger.Error("failed to update sync status", "error", err)
 	}
+
+	s.invalidateCatalogCounts()
 
 	s.logger.Info("KEV sync completed",
 		"records", len(entries),
@@ -583,31 +683,22 @@ func (s *IntelService) GetEPSSStats(ctx context.Context) (*EPSSStats, error) {
 // CVE, and the ransomware / recently-added figures are real de-saturated COUNTs
 // of the global KEV feed (legitimately global context, but true totals).
 func (s *IntelService) GetKEVStatsForTenant(ctx context.Context, tenantID shared.ID) (*KEVStats, error) {
-	total, err := s.repo.KEV().Count(ctx)
+	catalog, err := s.getKEVCatalogCounts(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	// Tenant-scoped: never cached.
 	pastDue, err := s.repo.KEV().CountTenantOpenPastDue(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	recentlyAdded, err := s.repo.KEV().CountRecentlyAdded(ctx, 30)
-	if err != nil {
-		return nil, err
-	}
-
-	ransomwareRelated, err := s.repo.KEV().CountRansomwareRelated(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	return &KEVStats{
-		TotalEntries:            int(total),
+		TotalEntries:            int(catalog.total),
 		PastDueCount:            int(pastDue),
-		RecentlyAddedLast30Days: int(recentlyAdded),
-		RansomwareRelatedCount:  int(ransomwareRelated),
+		RecentlyAddedLast30Days: int(catalog.recent30d),
+		RansomwareRelatedCount:  int(catalog.ransomware),
 	}, nil
 }
 
@@ -617,10 +708,11 @@ func (s *IntelService) GetKEVStatsForTenant(ctx context.Context, tenantID shared
 // figures here count the tenant's OPEN findings whose CVE meets the EPSS
 // threshold — the tenant's real exploitation-probability exposure.
 func (s *IntelService) GetEPSSStatsForTenant(ctx context.Context, tenantID shared.ID) (*EPSSStats, error) {
-	total, err := s.repo.EPSS().Count(ctx)
+	catalog, err := s.getEPSSCatalogCounts(ctx)
 	if err != nil {
 		return nil, err
 	}
+	total := catalog.total
 
 	highRisk, err := s.repo.EPSS().CountTenantOpenAboveScore(ctx, tenantID, epssHighThreshold)
 	if err != nil {
