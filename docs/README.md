@@ -30,6 +30,12 @@
 - [SSO Authentication](architecture/sso-authentication.md) - Per-tenant + env-fallback Entra/OIDC design, id_token verification, nOAuth/`xms_edov`, PKCE, verified-domain JIT gate (see also the operator [how-to](how-to/configure-entraid.md))
 - [Multi-Tenant EntraID Model](architecture/multi-tenant-entraid-model.md) - "One platform, many tenants — each brings its own EntraID": per-tenant Azure apps, `?org=` login routing, and the `tid`-pin isolation wall (conceptual model)
 
+### Authorization & Access Control
+- [Authorization Matrix](architecture/authorization-matrix.md) - **Canonical "how we do authz"**: the layered model (permission / team-role / module-gate / data-scope / RLS), routes-by-auth-type, the settled rules we lock going forward (allow-only, no deny-gate, no expiring grants), the two CI invariants that stop drift, and how-to recipes (add a permission, gate a route, object-level authz)
+- [Access Control Rules](architecture/access-control-rules.md) - Scope rules + assignment rules (who sees which data, how roles are assigned)
+- [Permission Real-time Sync](architecture/permission-realtime-sync.md) - Effective-permission cache, per-user version bump, 0-second revocation, 409-on-stale-write
+- [Authorization Audit (2026-09)](authz-audit.md) - End-to-end review that produced the standardization: AUTHZ-01..17 findings, endpoint inventory, and the deferred/behavior-changing items awaiting signoff
+
 ### Architecture Decision Records (ADR)
 - [ADR-001: Use Standard net/http](architecture/decisions/001-use-stdlib-http.md)
 - [ADR-002: Multi-Protocol API](architecture/decisions/002-multi-protocol.md)

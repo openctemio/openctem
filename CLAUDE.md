@@ -362,6 +362,32 @@ permVersionService.Increment(ctx, tenantID, userID)
 
 See `docs/architecture/permission-realtime-sync.md` for complete guide.
 
+### Working with authorization — rules & recipes
+
+The settled model, the how-to recipes, and the CI invariants live in
+**`docs/architecture/authorization-matrix.md`** (canonical) — read it before
+touching any gate. In short:
+
+- **Gate every new route** with the least-privilege `middleware.Require(permission.X)`
+  (or `RequireTeamAdmin/Owner` for `/tenants/{tenant}/*`). Genuinely public/self
+  routes must be added to `allowlistPrefixes` in `route_authz_coverage_test.go` **with
+  a reason** — that test fails the build on any ungated, un-allowlisted route.
+- **Add a permission** in three synced places: `permission.go` (`AllPermissions()`) +
+  a numbered DB seed migration (additive, with a `.down.sql`) + the UI TS constants.
+  `permission_catalog_sync_test.go` fails if Go and DB disagree.
+- **Object-level authz is separate from route gating:** every mutating query must
+  carry `AND tenant_id = $n`; derive the principal's tenant from the authenticated
+  context (agents: from the agent key), never from the request body.
+- **Gate granularly** — use the precise permission for an action (`findings:status`,
+  not `findings:write`) so the role matrix is honest.
+
+**Prohibitions:**
+- Never treat the frontend perm check as the boundary — backend is the only authority.
+- Never rely on the module gate for security — it is fail-open by design.
+- Never widen a route's gate to "make a role work" — adjust the role's grant via seed/migration.
+- No `expires_at`/time-boxed grants and no permission-set deny-gate (deliberate — see the doc).
+- Don't flip data-scope or admin/owner unification without signoff — both are deferred behavior changes.
+
 ---
 
 ## Audit Logging
