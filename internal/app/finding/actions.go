@@ -722,7 +722,21 @@ func (s *FindingActionsService) AutoAssignToOwners(
 			info, ok := assetCache[f.AssetID()]
 			if !ok {
 				if assetEntity, err := s.assetRepo.GetByID(ctx, f.TenantID(), f.AssetID()); err == nil {
-					info = assetInfo{ownerID: assetEntity.OwnerID(), name: assetEntity.Name(), found: true}
+					ownerID := assetEntity.OwnerID()
+					// Unify the two ownership models: assets.owner_id is only ever
+					// set by email auto-match of owner_ref, whereas the asset_owners
+					// RACI table (what data-scope uses) is set explicitly in the UI.
+					// When owner_id is empty, fall back to the primary RACI owner so a
+					// user designated as primary owner also receives auto-assigned
+					// findings. Only a user (not a group) primary can be an assignee.
+					if ownerID == nil && s.accessCtrlRepo != nil {
+						if brief, oErr := s.accessCtrlRepo.GetPrimaryOwnerBrief(ctx, f.TenantID(), f.AssetID()); oErr == nil && brief != nil && brief.Type == "user" {
+							if uid, pErr := shared.IDFromString(brief.ID); pErr == nil {
+								ownerID = &uid
+							}
+						}
+					}
+					info = assetInfo{ownerID: ownerID, name: assetEntity.Name(), found: true}
 				}
 				assetCache[f.AssetID()] = info
 			}
