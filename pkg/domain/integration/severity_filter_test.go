@@ -118,6 +118,7 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		EventTypeFindingPriorityEscalated: true,
 		EventTypeFindingAssigned:          true,
 		EventTypeSLABreach:                true,
+		EventTypeSLAWarning:               true,
 		EventTypeWorkflowNotification:     true,
 		EventTypeNewExposure:              true,
 		EventTypeExposureResolved:         true,
