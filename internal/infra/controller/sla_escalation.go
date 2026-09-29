@@ -44,6 +44,31 @@ type SLABreachTxPublisher interface {
 	PublishTx(ctx context.Context, tx *sql.Tx, event SLABreachEvent) error
 }
 
+// SLAWarningPublisher delivers "approaching deadline" events. Optional — nil
+// means log-only. Unlike breach, warnings are advisory (fire-and-forget); they
+// don't need a transactional publisher because a lost warning is re-derivable
+// (the finding is still in `warning` until it breaches, and re-notifying on the
+// next tick would only duplicate — which the transition guard already prevents,
+// since a row leaves `on_track` exactly once).
+type SLAWarningPublisher interface {
+	PublishWarning(ctx context.Context, event SLAWarningEvent) error
+}
+
+// SLAWarningEvent describes a finding that just entered the warning window.
+type SLAWarningEvent struct {
+	TenantID      shared.ID
+	FindingID     shared.ID
+	SLADeadline   time.Time
+	TimeRemaining time.Duration
+	At            time.Time
+}
+
+// SetWarningPublisher wires the warning-event publisher. Safe after construction
+// and before the controller starts; nil-safe.
+func (c *SLAEscalationController) SetWarningPublisher(p SLAWarningPublisher) {
+	c.warningPublisher = p
+}
+
 // breachSelectUpdateQuery transitions open, past-deadline findings to the
 // `overdue` SLA status and RETURNs the fields the publisher needs. Shared by
 // the tx and legacy paths.
@@ -90,6 +115,10 @@ type SLAEscalationController struct {
 	// B4: optional publisher that fires one event per newly-breached
 	// finding. Nil → legacy log-only behaviour.
 	publisher SLABreachPublisher
+	// Optional publisher that fires one event per finding newly transitioned
+	// into the `warning` (approaching-deadline) state. Nil → log-only, which was
+	// the only behaviour before: warnings updated the row but told no one.
+	warningPublisher SLAWarningPublisher
 }
 
 // NewSLAEscalationController creates a new SLA escalation controller.
@@ -257,7 +286,11 @@ func breachEvent(br breachRow, now time.Time) (SLABreachEvent, bool) {
 // markWarning flags findings approaching their deadline (within 3 days). It is
 // idempotent and advisory — errors are logged, never returned.
 func (c *SLAEscalationController) markWarning(ctx context.Context) {
-	// Mark findings approaching deadline (within 3 days) as warning
+	// Mark findings approaching deadline (within 3 days) as warning, RETURNING
+	// the rows that actually transitioned so we can notify once per finding. The
+	// `sla_status IS NULL OR = 'on_track'` guard makes the transition happen
+	// exactly once (a row already in `warning` isn't re-selected), so publishing
+	// per returned row can't duplicate on the next tick.
 	warningQuery := `
 		UPDATE findings SET
 			sla_status = 'warning',
@@ -267,15 +300,55 @@ func (c *SLAEscalationController) markWarning(ctx context.Context) {
 		  AND sla_deadline < NOW() + INTERVAL '3 days'
 		  AND (sla_status IS NULL OR sla_status = 'on_track')
 		  AND status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+		RETURNING tenant_id, id, sla_deadline
 	`
 
-	warningResult, err := c.db.ExecContext(ctx, warningQuery)
+	rows, err := c.db.QueryContext(ctx, warningQuery)
 	if err != nil {
 		c.logger.Warn("sla warning update failed", "error", err)
-	} else {
-		warned, _ := warningResult.RowsAffected()
-		if warned > 0 {
-			c.logger.Info("SLA warning findings updated", "count", warned)
+		return
+	}
+	warned, err := c.scanBreaches(rows) // same (tenant_id, id, sla_deadline) shape
+	if err != nil {
+		c.logger.Warn("sla warning scan failed", "error", err)
+		return
+	}
+	if len(warned) == 0 {
+		return
+	}
+	c.logger.Info("SLA warning findings updated", "count", len(warned))
+
+	// Notify once per newly-warned finding (advisory — errors never block).
+	if c.warningPublisher == nil {
+		return
+	}
+	now := time.Now()
+	for _, w := range warned {
+		ev, ok := warningEvent(w, now)
+		if !ok {
+			continue
+		}
+		if err := c.warningPublisher.PublishWarning(ctx, ev); err != nil {
+			c.logger.Warn("sla warning publish failed", "finding_id", w.findingID, "error", err)
 		}
 	}
+}
+
+// warningEvent builds the event for a row; ok=false when an ID can't be parsed.
+func warningEvent(w breachRow, now time.Time) (SLAWarningEvent, bool) {
+	tid, err := shared.IDFromString(w.tenantID)
+	if err != nil {
+		return SLAWarningEvent{}, false
+	}
+	fid, err := shared.IDFromString(w.findingID)
+	if err != nil {
+		return SLAWarningEvent{}, false
+	}
+	return SLAWarningEvent{
+		TenantID:      tid,
+		FindingID:     fid,
+		SLADeadline:   w.slaDeadline,
+		TimeRemaining: w.slaDeadline.Sub(now),
+		At:            now,
+	}, true
 }

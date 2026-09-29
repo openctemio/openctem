@@ -438,6 +438,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	)
 	if svc != nil && svc.Outbox != nil {
 		slaEscalation.SetBreachPublisher(sla.NewBreachOutboxAdapter(svc.Outbox))
+		// Also fan out "approaching deadline" warnings (previously the warning
+		// pass updated sla_status but notified no one).
+		slaEscalation.SetWarningPublisher(sla.NewWarningOutboxAdapter(svc.Outbox))
 	}
 	w.ControllerManager.Register(slaEscalation)
 
