@@ -24,7 +24,7 @@ now**, without mutating it or emitting events. Response:
     "severity": "critical",
     "cve_id": "CVE-2021-44228",
     "epss_score": 0.97,
-    "epss_percentile": 0.99,
+    "epss_percentile": 99.9,        // 0–100 rank (canonical scale everywhere); epss_score is the 0–1 probability
     "is_in_kev": true,
     "is_reachable": false,
     "is_internet_accessible": true,

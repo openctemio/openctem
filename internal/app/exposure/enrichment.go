@@ -40,8 +40,8 @@ type Enrichment struct {
 // same threat-intel adapters can back both, without coupling this package to the
 // finding package.
 type EPSSData struct {
-	Score      float64
-	Percentile float64
+	Score      float64 // probability, 0-1
+	Percentile float64 // rank, canonical 0-100 (epss_scores.percentile)
 }
 
 // KEVData holds CISA KEV catalog info for a CVE.

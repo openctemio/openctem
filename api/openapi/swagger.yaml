@@ -5852,7 +5852,8 @@ definitions:
         maxLength: 10000
         type: string
       epss_percentile:
-        maximum: 1
+        description: 0-100 percentile; a 0-1 fraction is rescaled
+        maximum: 100
         minimum: 0
         type: number
       epss_score:
@@ -10511,7 +10512,8 @@ definitions:
         maxLength: 10000
         type: string
       epss_percentile:
-        maximum: 1
+        description: 0-100 percentile; a 0-1 fraction is rescaled
+        maximum: 100
         minimum: 0
         type: number
       epss_score:
@@ -10639,6 +10641,7 @@ definitions:
       description:
         type: string
       epss_percentile:
+        description: 0-100 percentile rank
         type: number
       epss_score:
         type: number
