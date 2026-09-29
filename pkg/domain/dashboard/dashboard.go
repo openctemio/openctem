@@ -16,6 +16,8 @@ import (
 const (
 	// maxNameLen bounds a dashboard name.
 	maxNameLen = 100
+	// maxDescriptionLen bounds a dashboard's free-text description.
+	maxDescriptionLen = 500
 	// maxWidgets bounds how many tiles one dashboard may hold (DoS-safe).
 	maxWidgets = 50
 	// maxWidgetTypeLen bounds a widget type identifier.
@@ -23,6 +25,11 @@ const (
 	// maxCoord bounds each grid coordinate/size (DoS-safe: prevents an
 	// absurd layout from being persisted).
 	maxCoord = 1000
+	// minColumns / maxColumns bound the column-count layout structure.
+	minColumns = 1
+	maxColumns = 4
+	// defaultColumns is the column count applied when none is given.
+	defaultColumns = 2
 )
 
 // Widget is one placed tile on a dashboard grid. Coordinates and sizes are
@@ -38,20 +45,26 @@ type Widget struct {
 
 // Dashboard is a user's saved dashboard layout.
 type Dashboard struct {
-	id        shared.ID
-	tenantID  shared.ID
-	userID    shared.ID
-	name      string
-	isDefault bool
-	widgets   []Widget
-	createdAt time.Time
-	updatedAt time.Time
+	id          shared.ID
+	tenantID    shared.ID
+	userID      shared.ID
+	name        string
+	description string
+	columns     int
+	isDefault   bool
+	widgets     []Widget
+	createdAt   time.Time
+	updatedAt   time.Time
 }
 
 // NewDashboard creates a validated Dashboard for the given (tenant, user).
-func NewDashboard(tenantID, userID shared.ID, name string, widgets []Widget) (*Dashboard, error) {
+func NewDashboard(tenantID, userID shared.ID, name, description string, columns int, widgets []Widget) (*Dashboard, error) {
 	name = strings.TrimSpace(name)
-	if err := validate(name, widgets); err != nil {
+	description = strings.TrimSpace(description)
+	if columns == 0 {
+		columns = defaultColumns
+	}
+	if err := validate(name, description, columns, widgets); err != nil {
 		return nil, err
 	}
 	if widgets == nil {
@@ -59,21 +72,24 @@ func NewDashboard(tenantID, userID shared.ID, name string, widgets []Widget) (*D
 	}
 	now := time.Now().UTC()
 	return &Dashboard{
-		id:        shared.NewID(),
-		tenantID:  tenantID,
-		userID:    userID,
-		name:      name,
-		isDefault: false,
-		widgets:   widgets,
-		createdAt: now,
-		updatedAt: now,
+		id:          shared.NewID(),
+		tenantID:    tenantID,
+		userID:      userID,
+		name:        name,
+		description: description,
+		columns:     columns,
+		isDefault:   false,
+		widgets:     widgets,
+		createdAt:   now,
+		updatedAt:   now,
 	}, nil
 }
 
 // Reconstruct rebuilds a Dashboard from persistence without re-validating.
 func Reconstruct(
 	id, tenantID, userID shared.ID,
-	name string,
+	name, description string,
+	columns int,
 	isDefault bool,
 	widgets []Widget,
 	createdAt, updatedAt time.Time,
@@ -81,40 +97,58 @@ func Reconstruct(
 	if widgets == nil {
 		widgets = make([]Widget, 0)
 	}
+	if columns == 0 {
+		columns = defaultColumns
+	}
 	return &Dashboard{
-		id:        id,
-		tenantID:  tenantID,
-		userID:    userID,
-		name:      name,
-		isDefault: isDefault,
-		widgets:   widgets,
-		createdAt: createdAt,
-		updatedAt: updatedAt,
+		id:          id,
+		tenantID:    tenantID,
+		userID:      userID,
+		name:        name,
+		description: description,
+		columns:     columns,
+		isDefault:   isDefault,
+		widgets:     widgets,
+		createdAt:   createdAt,
+		updatedAt:   updatedAt,
 	}
 }
 
-// Update replaces the name and widget layout after validation.
-func (d *Dashboard) Update(name string, widgets []Widget) error {
+// Update replaces the name, description, columns and widget layout after
+// validation.
+func (d *Dashboard) Update(name, description string, columns int, widgets []Widget) error {
 	name = strings.TrimSpace(name)
-	if err := validate(name, widgets); err != nil {
+	description = strings.TrimSpace(description)
+	if columns == 0 {
+		columns = defaultColumns
+	}
+	if err := validate(name, description, columns, widgets); err != nil {
 		return err
 	}
 	if widgets == nil {
 		widgets = make([]Widget, 0)
 	}
 	d.name = name
+	d.description = description
+	d.columns = columns
 	d.widgets = widgets
 	d.updatedAt = time.Now().UTC()
 	return nil
 }
 
 // validate enforces the invariants shared by NewDashboard and Update.
-func validate(name string, widgets []Widget) error {
+func validate(name, description string, columns int, widgets []Widget) error {
 	if len(name) < 1 {
 		return fmt.Errorf("%w: name is required", shared.ErrValidation)
 	}
 	if len(name) > maxNameLen {
 		return fmt.Errorf("%w: name must be at most %d characters", shared.ErrValidation, maxNameLen)
+	}
+	if len(description) > maxDescriptionLen {
+		return fmt.Errorf("%w: description must be at most %d characters", shared.ErrValidation, maxDescriptionLen)
+	}
+	if columns < minColumns || columns > maxColumns {
+		return fmt.Errorf("%w: columns must be within %d..%d", shared.ErrValidation, minColumns, maxColumns)
 	}
 	if len(widgets) > maxWidgets {
 		return fmt.Errorf("%w: at most %d widgets allowed", shared.ErrValidation, maxWidgets)
@@ -142,6 +176,8 @@ func (d *Dashboard) ID() shared.ID        { return d.id }
 func (d *Dashboard) TenantID() shared.ID  { return d.tenantID }
 func (d *Dashboard) UserID() shared.ID    { return d.userID }
 func (d *Dashboard) Name() string         { return d.name }
+func (d *Dashboard) Description() string  { return d.description }
+func (d *Dashboard) Columns() int         { return d.columns }
 func (d *Dashboard) IsDefault() bool      { return d.isDefault }
 func (d *Dashboard) Widgets() []Widget    { return d.widgets }
 func (d *Dashboard) CreatedAt() time.Time { return d.createdAt }

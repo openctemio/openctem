@@ -27,8 +27,10 @@ func NewService(repo domain.Repository, log *logger.Logger) *Service {
 
 // CreateInput carries the fields for creating or replacing a dashboard.
 type CreateInput struct {
-	Name    string
-	Widgets []domain.Widget
+	Name        string
+	Description string
+	Columns     int
+	Widgets     []domain.Widget
 }
 
 // List returns every dashboard owned by the caller.
@@ -59,7 +61,7 @@ func (s *Service) Create(ctx context.Context, tenantID, userID string, in Create
 	if err != nil {
 		return nil, err
 	}
-	d, err := domain.NewDashboard(tID, uID, in.Name, in.Widgets)
+	d, err := domain.NewDashboard(tID, uID, in.Name, in.Description, in.Columns, in.Widgets)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +85,7 @@ func (s *Service) Update(ctx context.Context, tenantID, userID, id string, in Cr
 	if err != nil {
 		return nil, err
 	}
-	if err := d.Update(in.Name, in.Widgets); err != nil {
+	if err := d.Update(in.Name, in.Description, in.Columns, in.Widgets); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, d); err != nil {
