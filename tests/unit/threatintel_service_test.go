@@ -107,15 +107,18 @@ func (m *threatIntelMockEPSSRepo) GetTopPercentile(_ context.Context, _ float64,
 	return nil, nil
 }
 
-func (m *threatIntelMockEPSSRepo) CountTenantOpenAboveScore(_ context.Context, _ shared.ID, threshold float64) (int64, error) {
+func (m *threatIntelMockEPSSRepo) CountTenantOpenAboveScores(_ context.Context, _ shared.ID, thresholds []float64) ([]int64, error) {
 	m.tenantAboveScoreCalls++
 	if m.tenantAboveScoreErr != nil {
-		return 0, m.tenantAboveScoreErr
+		return nil, m.tenantAboveScoreErr
 	}
-	if m.tenantAboveScoreVals != nil {
-		return m.tenantAboveScoreVals[threshold], nil
+	out := make([]int64, len(thresholds))
+	for i, th := range thresholds {
+		if m.tenantAboveScoreVals != nil {
+			out[i] = m.tenantAboveScoreVals[th]
+		}
 	}
-	return 0, nil
+	return out, nil
 }
 
 func (m *threatIntelMockEPSSRepo) Count(_ context.Context) (int64, error) {
@@ -1369,8 +1372,8 @@ func TestThreatIntelService_GetThreatIntelStats_CachesOnlyGlobalCatalogCounts(t 
 	if repo.kev.tenantPastDueCalls != 2 {
 		t.Errorf("tenant KEV past-due must run per request, ran %d", repo.kev.tenantPastDueCalls)
 	}
-	if repo.epss.tenantAboveScoreCalls != 4 {
-		t.Errorf("tenant EPSS counts must run per request (2 thresholds x 2), ran %d", repo.epss.tenantAboveScoreCalls)
+	if repo.epss.tenantAboveScoreCalls != 2 {
+		t.Errorf("tenant EPSS counts must run once per request (both thresholds in one query), ran %d", repo.epss.tenantAboveScoreCalls)
 	}
 }
 

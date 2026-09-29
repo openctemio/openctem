@@ -714,20 +714,21 @@ func (s *IntelService) GetEPSSStatsForTenant(ctx context.Context, tenantID share
 	}
 	total := catalog.total
 
-	highRisk, err := s.repo.EPSS().CountTenantOpenAboveScore(ctx, tenantID, epssHighThreshold)
+	// Both buckets in ONE join of the tenant's findings to epss_scores
+	// (previously two identical joins differing only in the threshold).
+	counts, err := s.repo.EPSS().CountTenantOpenAboveScores(ctx, tenantID,
+		[]float64{epssHighThreshold, epssCriticalThreshold})
 	if err != nil {
 		return nil, err
 	}
-
-	criticalRisk, err := s.repo.EPSS().CountTenantOpenAboveScore(ctx, tenantID, epssCriticalThreshold)
-	if err != nil {
-		return nil, err
+	if len(counts) != 2 {
+		return nil, fmt.Errorf("epss tenant counts: want 2 buckets, got %d", len(counts))
 	}
 
 	return &EPSSStats{
 		TotalScores:       int(total),
-		HighRiskCount:     int(highRisk),
-		CriticalRiskCount: int(criticalRisk),
+		HighRiskCount:     int(counts[0]),
+		CriticalRiskCount: int(counts[1]),
 	}, nil
 }
 
