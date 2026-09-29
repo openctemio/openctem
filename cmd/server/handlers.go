@@ -214,6 +214,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log),
 		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
+		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:             vulnHandler,
