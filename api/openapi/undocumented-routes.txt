@@ -470,3 +470,9 @@ PUT /api/v1/webhooks/{}
 PUT /api/v1/workflows/{}
 PUT /api/v1/workflows/{}/graph
 PUT /api/v1/workflows/{}/nodes/{}
+GET /api/v1/me/dashboards
+POST /api/v1/me/dashboards
+GET /api/v1/me/dashboards/{}
+PUT /api/v1/me/dashboards/{}
+DELETE /api/v1/me/dashboards/{}
+POST /api/v1/me/dashboards/{}/default

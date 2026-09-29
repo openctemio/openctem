@@ -48,6 +48,7 @@ type Handlers struct {
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
 	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
 	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
+	UserDashboard    *handler.UserDashboardHandler    // nil if not initialized - per-user customizable dashboards (RFC-021)
 	Audit            *handler.AuditHandler            // nil if not initialized (no database)
 	Branch           *handler.BranchHandler           // nil if not initialized (no database)
 	SLA              *handler.SLAHandler              // nil if not initialized (no database)
@@ -700,6 +701,11 @@ func Register(
 	// Group routes (Access Control - tenant from JWT token)
 	if h.Group != nil {
 		registerGroupRoutes(router, h.Group, authMiddleware, userSync)
+	}
+
+	// Per-user customizable dashboards (RFC-021) - self-scoped under /me/*.
+	if h.UserDashboard != nil {
+		registerUserDashboardRoutes(router, h.UserDashboard, authMiddleware, userSync)
 	}
 
 	// Permission Set routes (Access Control - tenant from JWT token)

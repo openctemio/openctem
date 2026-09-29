@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/internal/app/apikey"
 	"github.com/openctemio/api/internal/app/assignment"
 	"github.com/openctemio/api/internal/app/command"
+	dashboardapp "github.com/openctemio/api/internal/app/dashboard"
 	"github.com/openctemio/api/internal/app/defectdojo"
 	"github.com/openctemio/api/internal/app/remediation"
 	"github.com/openctemio/api/internal/app/scope"
@@ -507,6 +508,9 @@ type Services struct {
 	// Dashboard
 	Dashboard *app.DashboardService
 
+	// Per-user customizable dashboards (RFC-021)
+	UserDashboard *dashboardapp.Service
+
 	// Integrations & Notifications
 	Integration    *app.IntegrationService
 	DefectDojoSync *defectdojo.SyncService
@@ -778,6 +782,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Component = app.NewComponentService(repos.Component, repos.Asset, log)
 	s.SBOMImport = app.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
+	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
 	s.Branch = app.NewBranchService(repos.Branch, log)
 
 	// Initialize vulnerability & exposure services
