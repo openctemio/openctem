@@ -47,6 +47,9 @@
 - [Endpoints](api/endpoints.md) - REST API details
 
 ### How-To (Operator Guides)
+- [Configure Jira ticketing](how-to/configure-jira-ticketing.md) - Connect Jira Cloud, severity/status mapping, bidirectional sync, the inbound-HMAC gotcha
+- [Configure SCIM provisioning](how-to/configure-scim-provisioning.md) - IdP user provisioning/deprovisioning, tokens, group→role mapping (API-only)
+- [Configure SIEM (outbound & inbound)](how-to/configure-siem.md) - Splunk HEC forwarding + SIEM-detection ingest → IOC correlation / auto-reopen
 - [Configure Microsoft Entra ID (Azure AD) SSO](how-to/configure-entraid.md) - Both Microsoft login paths, Azure app registration, env vars/admin UI, `xms_edov` claim, verified domains, redirect allow-list, troubleshooting (incl. the login-button 404)
 
 ### Development
