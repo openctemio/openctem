@@ -1,0 +1,65 @@
+# Mobilization
+
+**CTEM Stage 5.** Turning prioritized, validated exposures into fixed problems —
+the part that actually reduces risk. This is where you assign work, push tickets
+to your engineering trackers, enforce SLAs, and handle exceptions. These pages
+live under the **Mobilization** sidebar section.
+
+## Remediation campaigns
+
+**Mobilization → Remediation** (`/remediation`) is the hub. A **campaign** groups
+related findings into a coordinated fix effort with tasks.
+
+- **Create a campaign**, then work its tasks.
+- On a task, **Create Jira Epic** to push it to Jira (once linked, the button
+  becomes **View Jira Epic ({key})**). Ticketing must be configured first — see
+  [Settings & Integrations](09-settings-and-integrations.md#ticketing).
+- **Export CSV** / **Export JSON** for reporting or hand-off.
+- Filter by priority/status, use the **bulk actions** dropdown to move several
+  tasks to In Progress / Review / Completed at once, and open a task drawer to
+  edit fields inline.
+
+### Solution Families
+
+**Mobilization → Remediation → Solution Families** (`/remediations`) groups
+findings that share a single fix (e.g. "upgrade library X"). For a group you can
+**Track as campaign** or **Resolve all** at once — fixing the root cause instead
+of closing findings one by one.
+
+## Workflows
+
+**Mobilization → Workflows** (`/workflows`) automates repetitive response steps.
+Build a workflow visually (e.g. "Critical Finding Response") from action nodes —
+including a **Create Jira Ticket** node — then **Run** it or edit it in the
+builder. You can duplicate and delete workflows too.
+
+## Scan Pipelines
+
+**Mobilization → Scan Pipelines** (`/pipelines`) chains scanning and processing
+steps into a repeatable pipeline. **Create** a pipeline, **trigger a run**, clone
+or edit it, and open a run to see its detail. (There's also a visual pipeline
+builder.)
+
+## SLA compliance
+
+Two related places:
+
+- **Settings → SLA Policies** (`/settings/sla-policies`) is where you **define**
+  SLAs — remediation deadlines per severity, plus a "warning at" threshold.
+  **Create Policy**, edit, or delete.
+- **Mobilization → SLA Compliance** (`/sla`) is where you **monitor** them — a
+  live view of breaches and aging open findings by severity. (This page reports
+  status; it doesn't configure SLAs.)
+
+## Exceptions
+
+**Mobilization → Exceptions** (`/exceptions`) handles findings you've decided not
+to fix right now (accepted risk, false positive, compensating control in place).
+Create an exception/suppression rule, then it moves through an approval flow:
+**approve** or **reject** (with a reason). You can also edit or delete rules.
+
+## Progress
+
+**Mobilization → Progress** (`/progress`) is a read-only rollup of resolution
+rate, status mix, and trend, with generated action items — a quick answer to
+"how are we doing at actually closing things out?"
