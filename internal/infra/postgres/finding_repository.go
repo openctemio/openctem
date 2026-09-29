@@ -3135,6 +3135,31 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			))`, userIdx, tenantIdx))
 	}
 
+	// RelatedToUserID: "assigned to / owned by me" — a finding is the user's when
+	// they are the direct assignee, OR they own its asset (assets.owner_id), OR
+	// they are a member of a group the finding is assigned to. Same relatedness
+	// predicate the finding-groups endpoint uses (finding_group_repository), now
+	// available on the flat list so a scoped user can pull up "my work". Tenant
+	// is passed explicitly (the outer query is a bare `findings` scan, no alias),
+	// so the subqueries don't rely on an outer correlation.
+	if filter.RelatedToUserID != nil && filter.TenantID != nil {
+		uIdx := argIndex
+		tIdx := argIndex + 1
+		args = append(args, filter.RelatedToUserID.String(), filter.TenantID.String())
+		argIndex += 2
+		conditions = append(conditions, fmt.Sprintf(`(
+			assigned_to = $%[1]d
+			OR asset_id IN (SELECT id FROM assets WHERE tenant_id = $%[2]d AND owner_id = $%[1]d)
+			OR id IN (
+				SELECT fga.finding_id
+				FROM finding_group_assignments fga
+				JOIN group_members gm ON gm.group_id = fga.group_id
+				JOIN groups g ON g.id = fga.group_id
+				WHERE fga.tenant_id = $%[2]d AND gm.user_id = $%[1]d AND g.is_active = true
+			)
+		)`, uIdx, tIdx))
+	}
+
 	// Layer 2: Data Scope - filter findings by user's group membership on assets
 	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
 	if filter.DataScopeUserID != nil && filter.TenantID != nil {
