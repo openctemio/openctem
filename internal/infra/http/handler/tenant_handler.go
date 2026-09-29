@@ -1156,6 +1156,7 @@ type SecuritySettingsResponse struct {
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode string   `json:"email_verification_mode"`
+	RestrictedDataScope   bool     `json:"restricted_data_scope"`
 }
 
 // APISettingsResponse represents API settings.
@@ -1195,6 +1196,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
 			EmailVerificationMode: string(s.Security.EmailVerificationMode),
+			RestrictedDataScope:   s.Security.RestrictedDataScope,
 		},
 		API: APISettingsResponse{
 			APIKeyEnabled: s.API.APIKeyEnabled,
@@ -1309,6 +1311,7 @@ type UpdateSecuritySettingsRequest struct {
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	RestrictedDataScope   *bool    `json:"restricted_data_scope"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -1340,6 +1343,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		IPWhitelist:           req.IPWhitelist,
 		AllowedDomains:        req.AllowedDomains,
 		EmailVerificationMode: req.EmailVerificationMode,
+		RestrictedDataScope:   req.RestrictedDataScope,
 	}
 
 	actx := h.buildAuditContext(r)

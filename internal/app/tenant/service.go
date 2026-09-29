@@ -1444,6 +1444,7 @@ type UpdateSecuritySettingsInput struct {
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
+	RestrictedDataScope   *bool    `json:"restricted_data_scope"`
 }
 
 // UpdateSecuritySettings updates only the security settings.
@@ -1487,6 +1488,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	}
 	if input.EmailVerificationMode != nil {
 		security.EmailVerificationMode = tenantdom.EmailVerificationMode(*input.EmailVerificationMode)
+	}
+	if input.RestrictedDataScope != nil {
+		security.RestrictedDataScope = *input.RestrictedDataScope
 	}
 
 	// Check plan limits for SSO via licensing service. Only gate when this
