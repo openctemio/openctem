@@ -405,5 +405,6 @@ func registerAITriageRoutes(
 		append(postMiddlewares, middleware.Require(permission.FindingsWrite))...)
 
 	// AI triage config endpoint - returns current AI mode, provider, model
-	router.GET("/api/v1/findings/ai-triage/config", h.GetConfig, tenantMiddlewares...)
+	router.GET("/api/v1/findings/ai-triage/config", h.GetConfig,
+		append(tenantMiddlewares, middleware.Require(permission.FindingsRead))...)
 }

@@ -306,7 +306,7 @@ Integration credentials (access tokens, API keys) are encrypted using AES-256-GC
 └──────────────────────────────────────────────┘
 ```
 
-> **Note:** `Module` entity exists as UI metadata only. No module-based route gating in OSS.
+> **Note:** Module route gating IS live: `RequireModule` (`internal/infra/http/middleware/module_gate.go`) gates ~26 route groups. It is a **fail-open feature flag, NOT a security boundary** (nil/error/unknown → allow) and has **no admin bypass** (unlike permission checks). A request must pass BOTH the module gate (feature on for tenant) AND the permission check.
 
 ### Permission Middleware
 
@@ -337,7 +337,7 @@ r.Route("/assets", func(r chi.Router) {
 
 ### Permission Real-time Sync
 
-JWT contains only `perm_version` (not full permissions array). Permissions cached in Redis.
+JWT currently carries both `perm_version` AND the full permissions array (the "slim token" migration is incomplete — `GenerateSlimAccessToken` is unused). Do NOT treat the JWT array as authoritative: the permission-sync middleware (`EnrichPermissions`) re-resolves fresh permissions from Redis/DB on every tenant-scoped request and returns 409 on a stale write, so revocation takes effect on the next request. Permissions are cached in Redis with a per-user version.
 
 ```go
 // Redis keys
