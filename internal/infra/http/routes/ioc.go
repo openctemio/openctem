@@ -22,6 +22,9 @@ func registerIOCRoutes(
 	router.Group("/api/v1/iocs", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ThreatIntelRead))
 		r.POST("/", h.Create, middleware.Require(permission.ThreatIntelWrite))
+		// Static /matches is registered before /{id} so the tenant-wide
+		// Detect/Respond feed is not shadowed by the {id} param route.
+		r.GET("/matches", h.RecentMatches, middleware.Require(permission.ThreatIntelRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ThreatIntelRead))
 		r.GET("/{id}/matches", h.Matches, middleware.Require(permission.ThreatIntelRead))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ThreatIntelWrite))
