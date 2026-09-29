@@ -51,6 +51,7 @@ type AssetService struct {
 	repoExtRepo       assetdom.RepositoryExtensionRepository
 	assetGroupRepo    assetgroupdom.Repository // For recalculating group stats
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
+	dataScopePolicy   DataScopePolicy          // Layer 2: fail-open vs fail-closed per tenant (nil = fail-open)
 	scoringProvider   assetdom.ScoringConfigProvider
 	redisClient       *redis.Client
 	logger            *logger.Logger
@@ -120,6 +121,21 @@ func (s *AssetService) SetAssetGroupRepository(repo assetgroupdom.Repository) {
 // SetAccessControlRepository sets the access control repository for Layer 2 data scope checks.
 func (s *AssetService) SetAccessControlRepository(repo accesscontrol.Repository) {
 	s.accessControlRepo = repo
+}
+
+// DataScopePolicy reports whether a tenant enforces restricted (fail-closed)
+// data scope. Nil (or false) preserves the default fail-open behaviour.
+type DataScopePolicy interface {
+	RestrictedDataScope(ctx context.Context, tenantID string) bool
+}
+
+// SetDataScopePolicy wires the per-tenant fail-open/closed policy. Nil-safe.
+func (s *AssetService) SetDataScopePolicy(p DataScopePolicy) {
+	s.dataScopePolicy = p
+}
+
+func (s *AssetService) dataScopeStrict(ctx context.Context, tenantID string) bool {
+	return s.dataScopePolicy != nil && s.dataScopePolicy.RestrictedDataScope(ctx, tenantID)
 }
 
 // SetScoringConfigProvider sets the scoring config provider for configurable risk scoring.
@@ -898,8 +914,12 @@ func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID,
 			if !canAccess {
 				return nil, shared.ErrNotFound // don't leak asset existence
 			}
+		} else if s.dataScopeStrict(ctx, tenantID) {
+			// Fail-CLOSED (tenant RestrictedDataScope): no scope assignment ⇒ no
+			// access. Don't leak the asset's existence.
+			return nil, shared.ErrNotFound
 		}
-		// If !hasScope, user has no scope assignments → show all (backward compat)
+		// Else (fail-OPEN default): no scope assignments → show all (backward compat)
 	}
 
 	return a, nil
@@ -1333,6 +1353,7 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		userID, err := shared.IDFromString(input.ActingUserID)
 		if err == nil {
 			filter = filter.WithDataScopeUserID(userID)
+			filter.DataScopeStrict = s.dataScopeStrict(ctx, input.TenantID)
 		}
 	}
 

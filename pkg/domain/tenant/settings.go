@@ -280,9 +280,9 @@ type GeneralSettings struct {
 
 // SecuritySettings contains security-related configuration.
 type SecuritySettings struct {
-	SSOEnabled        bool     `json:"sso_enabled"`         // Enable SSO (SAML 2.0, OIDC)
-	SSOProvider       string   `json:"sso_provider"`        // e.g., "saml", "oidc"
-	SSOConfigURL      string   `json:"sso_config_url"`      // SSO metadata/config URL
+	SSOEnabled   bool   `json:"sso_enabled"`    // Enable SSO (SAML 2.0, OIDC)
+	SSOProvider  string `json:"sso_provider"`   // e.g., "saml", "oidc"
+	SSOConfigURL string `json:"sso_config_url"` // SSO metadata/config URL
 	// SSOEnforced requires members of this tenant to authenticate via SSO — a
 	// local password login is refused access to this tenant. The tenant OWNER is
 	// the break-glass exception and can ALWAYS password-login, so enabling this
@@ -296,6 +296,15 @@ type SecuritySettings struct {
 	SessionTimeoutMin int      `json:"session_timeout_min"` // Session timeout in minutes (15-480)
 	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
 	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
+
+	// RestrictedDataScope switches the per-user data scope from fail-OPEN to
+	// fail-CLOSED. Default false = today's behaviour: a non-admin with no asset
+	// assignment sees ALL of the tenant's assets/findings. When true, a non-admin
+	// sees ONLY the assets they're assigned (directly or via a group) and their
+	// findings — no assignment ⇒ no data (Tenable's "No Access" default).
+	// Admins/owners always bypass. ENABLE ONLY AFTER assigning members to groups
+	// with the assets they need, or they will see nothing. See the operator guide.
+	RestrictedDataScope bool `json:"restricted_data_scope"`
 
 	// EmailVerificationMode controls whether new users must verify their email.
 	//   "auto"   = (default) require verification IFF SMTP is configured (smart)

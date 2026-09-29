@@ -251,6 +251,12 @@ type Filter struct {
 	// When set, only assets accessible to this user are returned.
 	// Backward compat: if user has no group assignments, all assets are visible.
 	DataScopeUserID *shared.ID
+
+	// DataScopeStrict makes the DataScopeUserID filter fail-CLOSED: a user with
+	// no accessible assets sees none (instead of the default fail-open "see all").
+	// Set by the service from the tenant's RestrictedDataScope policy. No-op
+	// unless DataScopeUserID is also set.
+	DataScopeStrict bool
 }
 
 // ListOptions contains options for listing assets (sorting).

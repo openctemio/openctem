@@ -1241,15 +1241,24 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	}
 
 	// Layer 2: Data Scope - filter by user's group membership
-	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
+	// Default (fail-OPEN): no rows in user_accessible_assets ⇒ NOT EXISTS bypasses
+	// and the user sees all (backward compatible). When the tenant enables
+	// RestrictedDataScope (filter.DataScopeStrict), the bypass is dropped: no
+	// assignment ⇒ no assets (fail-CLOSED, Tenable "No Access" default).
 	if filter.DataScopeUserID != nil && filter.TenantID != nil {
 		userIDIdx := argIndex
 		tenantIDIdx := argIndex + 1
 		args = append(args, filter.DataScopeUserID.String(), *filter.TenantID)
-		conditions = append(conditions, fmt.Sprintf(`(
-			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-		)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+		if filter.DataScopeStrict {
+			conditions = append(conditions, fmt.Sprintf(
+				`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
+				userIDIdx, tenantIDIdx))
+		} else {
+			conditions = append(conditions, fmt.Sprintf(`(
+				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+				OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+		}
 	}
 
 	return strings.Join(conditions, " AND "), args

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/openctemio/api/internal/app/apikey"
@@ -221,6 +222,58 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 		return 0, err
 	}
 	return res.Updated, nil
+}
+
+// dataScopePolicyAdapter reports a tenant's fail-open/closed data-scope policy
+// (tenant Settings → Security.RestrictedDataScope) to the asset & finding
+// services. It's read on the non-admin data-scope path, so it caches per tenant
+// with a short TTL to avoid a tenant GetByID on every scoped list/stats request
+// (mirrors the module gate's cache). Default (missing/false) = fail-open.
+type dataScopePolicyAdapter struct {
+	tenants tenant.Repository
+	mu      sync.RWMutex
+	cache   map[string]dataScopeCacheEntry
+	ttl     time.Duration
+}
+
+type dataScopeCacheEntry struct {
+	restricted bool
+	exp        time.Time
+}
+
+func newDataScopePolicyAdapter(tenants tenant.Repository) *dataScopePolicyAdapter {
+	return &dataScopePolicyAdapter{
+		tenants: tenants,
+		cache:   make(map[string]dataScopeCacheEntry),
+		ttl:     60 * time.Second,
+	}
+}
+
+// RestrictedDataScope returns whether the tenant enforces fail-closed data scope.
+// On any lookup error it returns false (fail-open) — a policy-read failure must
+// never silently hide a user's data.
+func (a *dataScopePolicyAdapter) RestrictedDataScope(ctx context.Context, tenantID string) bool {
+	now := time.Now()
+	a.mu.RLock()
+	if e, ok := a.cache[tenantID]; ok && now.Before(e.exp) {
+		a.mu.RUnlock()
+		return e.restricted
+	}
+	a.mu.RUnlock()
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false
+	}
+	t, err := a.tenants.GetByID(ctx, tid)
+	if err != nil || t == nil {
+		return false
+	}
+	restricted := t.TypedSettings().Security.RestrictedDataScope
+	a.mu.Lock()
+	a.cache[tenantID] = dataScopeCacheEntry{restricted: restricted, exp: now.Add(a.ttl)}
+	a.mu.Unlock()
+	return restricted
 }
 
 // moduleBundleStore adapts the tenant repository to module.BundleStore, storing
@@ -678,6 +731,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetUserMatcher(assetOwnerMatcher{users: repos.User, tenants: repos.Tenant})
 	s.Asset.SetAssetGroupRepository(repos.AssetGroup)
 	s.Asset.SetAccessControlRepository(repos.AccessControl)
+	// Per-tenant fail-open/closed data-scope policy (default fail-open). Shared
+	// instance so asset + finding services read one cache.
+	dataScopePolicy := newDataScopePolicyAdapter(repos.Tenant)
+	s.Asset.SetDataScopePolicy(dataScopePolicy)
 	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
 	s.Asset.SetRedisClient(deps.RedisClient)
 	// The Postgres asset repository also implements the narrow
@@ -729,6 +786,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
+	s.Vulnerability.SetDataScopePolicy(dataScopePolicy)
 	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
