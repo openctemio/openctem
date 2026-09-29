@@ -1120,13 +1120,11 @@ func (r *FindingRepository) GetByWorkItemURI(ctx context.Context, tenantID share
 
 // List retrieves findings matching the filter with pagination.
 func (r *FindingRepository) List(ctx context.Context, filter vulnerability.FindingFilter, opts vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	baseQuery := r.selectQuery()
 	countQuery := `SELECT COUNT(*) FROM findings`
 
 	whereClause, args := r.buildWhereClause(filter)
 
 	if whereClause != "" {
-		baseQuery += " WHERE " + whereClause
 		countQuery += " WHERE " + whereClause
 	}
 
@@ -1136,8 +1134,7 @@ func (r *FindingRepository) List(ctx context.Context, filter vulnerability.Findi
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
 		orderBy = opts.Sort.SQLWithDefault(vulnerability.DefaultFindingSort)
 	}
-	baseQuery += " ORDER BY " + orderBy
-	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
+	baseQuery := buildFindingPageQuery(r.selectQuery(), whereClause, orderBy, page.Limit(), page.Offset())
 
 	var total int64
 	err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
@@ -1165,6 +1162,32 @@ func (r *FindingRepository) List(ctx context.Context, filter vulnerability.Findi
 	}
 
 	return pagination.NewResult(findings, total, page), nil
+}
+
+// buildFindingPageQuery builds the page query for the findings list as a
+// deferred join: the filter, sort and LIMIT/OFFSET run over narrow rows in a
+// subquery that yields only the page's ids, and the wide select list (≈100
+// columns incl. snippet/metadata/stacks JSONB and the per-row has_data_flow
+// EXISTS) is evaluated for those ids only.
+//
+// Selecting the wide list directly made Postgres materialise and evaluate the
+// EXISTS for EVERY matching row before the top-N sort: 612ms for one page of a
+// 200k-finding tenant vs 128ms deferred (no index), 0.3ms with the priority
+// sort index (migration 000220).
+//
+// The WHERE clause is applied, unchanged, inside the subquery — tenant
+// isolation and data-scope predicates filter exactly the same rows as before;
+// the outer query can only return ids the subquery produced. The outer ORDER
+// BY re-applies the same sort to the (≤ limit) page rows.
+func buildFindingPageQuery(selectList, whereClause, orderBy string, limit, offset int) string {
+	inner := "SELECT id FROM findings"
+	if whereClause != "" {
+		inner += " WHERE " + whereClause
+	}
+	inner += " ORDER BY " + orderBy
+	inner += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+
+	return selectList + " WHERE findings.id IN (" + inner + ") ORDER BY " + orderBy
 }
 
 // ListByVulnerabilityID retrieves findings for a vulnerability.
