@@ -1022,9 +1022,16 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	}
 
 	query := `
-		WITH open_findings AS (
-			SELECT id, severity, priority_class, epss_score, is_in_kev,
-				title, asset_id, created_at, resolved_at, sla_status, first_detected_at
+		WITH open_agg AS (
+			-- One pass over the tenant's open findings. This used to be a
+			-- materialised open_findings CTE (incl. the wide title column)
+			-- scanned by 8 separate sub-selects: 144ms seq scan + ~50ms of
+			-- CTE re-scans on a 200k-finding tenant.
+			SELECT
+				COUNT(*) AS total,
+				COUNT(*) FILTER (WHERE priority_class = 'P0') AS p0,
+				COUNT(*) FILTER (WHERE priority_class = 'P1') AS p1,
+				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached
 			FROM findings
 			WHERE tenant_id = $1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
 		),
@@ -1083,24 +1090,24 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		SELECT
 			rs.current_score,
 			rs.current_score - COALESCE(pr.prev_score, rs.current_score),
-			(SELECT COUNT(*) FROM open_findings),
+			oa.total,
 			(SELECT COUNT(*) FROM resolved_in_period),
 			(SELECT COUNT(*) FROM new_in_period),
-			(SELECT COUNT(*) FROM open_findings WHERE priority_class = 'P0'),
+			oa.p0,
 			(SELECT COUNT(*) FROM resolved_in_period WHERE priority_class = 'P0'),
-			(SELECT COUNT(*) FROM open_findings WHERE priority_class = 'P1'),
+			oa.p1,
 			(SELECT COUNT(*) FROM resolved_in_period WHERE priority_class = 'P1'),
-			CASE WHEN (SELECT COUNT(*) FROM open_findings) > 0
-				THEN ((SELECT COUNT(*) FROM open_findings) - (SELECT COUNT(*) FROM open_findings WHERE sla_status IN ('exceeded','overdue'))) * 100.0 / (SELECT COUNT(*) FROM open_findings)
+			CASE WHEN oa.total > 0
+				THEN (oa.total - oa.sla_breached) * 100.0 / oa.total
 				ELSE 100.0 END,
-			(SELECT COUNT(*) FROM open_findings WHERE sla_status IN ('exceeded','overdue')),
+			oa.sla_breached,
 			mc.hrs,
 			mh.hrs,
 			cj.cnt,
 			reg.cnt,
 			tr.cnt
 		FROM risk_score rs, mttr_critical mc, mttr_high mh, crown_jewels cj,
-		     regressions reg, total_resolved tr
+		     regressions reg, total_resolved tr, open_agg oa
 		LEFT JOIN prev_risk pr ON TRUE
 	`
 
@@ -1136,9 +1143,11 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		summary.RegressionRatePct = float64(summary.RegressionCount) * 100.0 / float64(totalResolved)
 	}
 
-	// Top 5 risks: open findings ordered by priority class, EPSS score
+	// Top 5 risks: open findings ordered by priority class, EPSS score.
+	// title is nullable (most scanner findings only carry a message); scanning
+	// a NULL into a string failed the whole summary with a 500.
 	topQuery := `
-		SELECT f.id::text, f.title, f.severity, COALESCE(f.priority_class, 'P3') AS priority_class,
+		SELECT f.id::text, COALESCE(f.title, '') AS title, f.severity, COALESCE(f.priority_class, 'P3') AS priority_class,
 			COALESCE(f.asset_id::text, '') AS asset_id,
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
