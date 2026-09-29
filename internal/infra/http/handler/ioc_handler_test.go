@@ -406,11 +406,16 @@ func TestIOCHandler_Create_OwnTenantSourceFinding_Returns201(t *testing.T) {
 
 // fakeMatchLister satisfies IOCMatchLister for the Matches handler tests.
 type fakeMatchLister struct {
-	byIOC map[string][]ioc.MatchDetail
+	byIOC    map[string][]ioc.MatchDetail
+	byTenant []ioc.MatchDetail
 }
 
 func (f *fakeMatchLister) ListMatchesByIOC(_ context.Context, _ shared.ID, iocID shared.ID, _, _ int) ([]ioc.MatchDetail, error) {
 	return f.byIOC[iocID.String()], nil
+}
+
+func (f *fakeMatchLister) ListMatchesByTenant(_ context.Context, _ shared.ID, _, _ int) ([]ioc.MatchDetail, error) {
+	return f.byTenant, nil
 }
 
 func getWithID(tenantID shared.ID, id string) *http.Request {
@@ -475,6 +480,69 @@ func TestIOCHandler_Matches_ReturnsPagedShape(t *testing.T) {
 	}
 	if resp.Items[0].FindingID != findingID.String() {
 		t.Fatalf("finding_id mismatch")
+	}
+}
+
+func TestIOCHandler_RecentMatches_TenantWideFeed(t *testing.T) {
+	h, _ := newTestIOCHandler(t)
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+
+	h.SetMatchLister(&fakeMatchLister{byTenant: []ioc.MatchDetail{
+		{
+			Match: ioc.Match{
+				ID:        shared.NewID(),
+				TenantID:  tenantID,
+				IOCID:     shared.NewID(),
+				FindingID: &findingID,
+				Reopened:  true,
+			},
+			FindingTitle: "C2 beacon reopened",
+			IOCType:      ioc.TypeIP,
+			IOCValue:     "203.0.113.10",
+		},
+	}})
+
+	w := httptest.NewRecorder()
+	h.RecentMatches(w, requestWithTenant("GET", "/iocs/matches", "", tenantID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200. body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Items []struct {
+			IOCType      string `json:"ioc_type"`
+			IOCValue     string `json:"ioc_value"`
+			FindingTitle string `json:"finding_title"`
+			Reopened     bool   `json:"reopened"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(resp.Items))
+	}
+	got := resp.Items[0]
+	// The tenant-wide feed must enrich each match with the indicator so the
+	// UI can show "IP 203.0.113.10 → reopened" without a second lookup.
+	if got.IOCType != "ip" || got.IOCValue != "203.0.113.10" {
+		t.Fatalf("indicator not enriched: %+v", got)
+	}
+	if !got.Reopened || got.FindingTitle != "C2 beacon reopened" {
+		t.Fatalf("unexpected row: %+v", got)
+	}
+}
+
+func TestIOCHandler_RecentMatches_NilLister_ReturnsEmpty(t *testing.T) {
+	h, _ := newTestIOCHandler(t)
+	w := httptest.NewRecorder()
+	h.RecentMatches(w, requestWithTenant("GET", "/iocs/matches", "", shared.NewID()))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"items":[]`) {
+		t.Fatalf("want empty items, got %s", w.Body.String())
 	}
 }
 

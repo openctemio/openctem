@@ -37,6 +37,7 @@ type FindingTenantChecker interface {
 // empty page rather than panic (tests / not-yet-wired deployments).
 type IOCMatchLister interface {
 	ListMatchesByIOC(ctx context.Context, tenantID, iocID shared.ID, limit, offset int) ([]ioc.MatchDetail, error)
+	ListMatchesByTenant(ctx context.Context, tenantID shared.ID, limit, offset int) ([]ioc.MatchDetail, error)
 }
 
 // IOCHandler exposes CRUD for the tenant's indicator-of-compromise
@@ -251,6 +252,8 @@ func (h *IOCHandler) Get(w http.ResponseWriter, r *http.Request) {
 type iocMatchResponse struct {
 	ID               string  `json:"id"`
 	IOCID            string  `json:"ioc_id"`
+	IOCType          string  `json:"ioc_type,omitempty"`  // populated by the tenant-wide feed
+	IOCValue         string  `json:"ioc_value,omitempty"` // populated by the tenant-wide feed
 	TelemetryEventID *string `json:"telemetry_event_id,omitempty"`
 	FindingID        *string `json:"finding_id,omitempty"`
 	FindingTitle     string  `json:"finding_title,omitempty"`
@@ -322,6 +325,8 @@ func toIOCMatchResponse(m ioc.MatchDetail) iocMatchResponse {
 	resp := iocMatchResponse{
 		ID:           m.ID.String(),
 		IOCID:        m.IOCID.String(),
+		IOCType:      string(m.IOCType),
+		IOCValue:     m.IOCValue,
 		FindingTitle: m.FindingTitle,
 		Reopened:     m.Reopened,
 		MatchedAt:    m.MatchedAt.Format(timeRFC3339),
@@ -335,6 +340,44 @@ func toIOCMatchResponse(m ioc.MatchDetail) iocMatchResponse {
 		resp.FindingID = &s
 	}
 	return resp
+}
+
+// RecentMatches handles GET /iocs/matches. Returns the tenant-wide IOC match
+// log, newest first — the Detect/Respond feed showing which runtime detections
+// fired across all indicators and which findings they auto-reopened. Distinct
+// from GET /iocs/{id}/matches, which is scoped to one indicator.
+func (h *IOCHandler) RecentMatches(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := tenantFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50, 200)
+	offset := parseNonNegativeInt(r.URL.Query().Get("offset"), 0)
+
+	out := make([]iocMatchResponse, 0)
+	if h.matches != nil {
+		rows, err := h.matches.ListMatchesByTenant(r.Context(), tenantID, limit, offset)
+		if err != nil {
+			h.logger.Error("list tenant ioc matches failed",
+				"tenant_id", tenantID.String(),
+				"error", err,
+			)
+			apierror.InternalServerError("failed to list matches").WriteJSON(w)
+			return
+		}
+		for _, m := range rows {
+			out = append(out, toIOCMatchResponse(m))
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"items":  out,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 // Delete handles DELETE /iocs/{id}. Soft-deactivates the indicator —

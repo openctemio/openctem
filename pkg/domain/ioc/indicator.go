@@ -226,6 +226,13 @@ type MatchDetail struct {
 	// match carries no finding (or the finding was deleted — the FK is
 	// ON DELETE SET NULL).
 	FindingTitle string
+
+	// IOCType and IOCValue identify which indicator fired. They are populated
+	// only by the tenant-wide feed (ListMatchesByTenant), where the caller does
+	// not already know the indicator; the per-IOC match log leaves them empty
+	// because the IOC is implied by the request path.
+	IOCType  Type
+	IOCValue string
 }
 
 // Repository is the persistence contract.
