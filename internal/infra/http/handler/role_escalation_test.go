@@ -31,4 +31,18 @@ func TestAssertCanGrantPermissions(t *testing.T) {
 	if e := assertCanGrantPermissions(withPerms(nil, false), []string{"assets:read"}); e == nil {
 		t.Error("a caller with no permissions must not grant any")
 	}
+
+	// Bulk-assign escalation: a `roles:assign` holder must not assign a role
+	// whose permission BUNDLE exceeds their own (e.g. the system admin role).
+	// The bulk-members handler now runs this guard on the target role's
+	// Permissions(), same as AssignRole / SetUserRoles. Here the caller holds
+	// only findings:read but the target role bundles a broader set.
+	adminBundle := []string{"findings:read", "team:roles:write", "settings:billing:write"}
+	if e := assertCanGrantPermissions(withPerms([]string{"findings:read"}, false), adminBundle); e == nil {
+		t.Error("bulk-assigning a role whose bundle exceeds the caller's must be blocked")
+	}
+	// Same bundle is fine for an admin (bypass).
+	if e := assertCanGrantPermissions(withPerms(nil, true), adminBundle); e != nil {
+		t.Errorf("admin bulk-assigning any role bundle should be allowed, got %v", e)
+	}
 }
