@@ -273,7 +273,8 @@ func Register(
 	// Applied to all GET requests on authenticated tenant-scoped routes via
 	// buildTokenTenantMiddlewares (package-level variable).
 	if cfg.RateLimit.Enabled {
-		rl := middleware.NewReadEndpointRateLimiter(middleware.DefaultReadEndpointRateLimitConfig(), log)
+		rl := middleware.NewReadEndpointRateLimiter(
+			middleware.ReadEndpointRateLimitConfigFrom(cfg.RateLimit), log)
 		readRateLimitMiddleware = rl.Middleware()
 	}
 
