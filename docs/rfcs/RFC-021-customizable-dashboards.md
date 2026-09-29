@@ -68,20 +68,71 @@ localStorage). Minimal surface, mirroring existing per-user features:
 
 ## 5. UX
 
-- The dashboard page gets a **dashboard switcher** (My CTEM · Classic · + the
-  user's saved dashboards) + **New dashboard** / **Edit**.
+- The dashboard page gets a **dashboard switcher** (built-in views · template
+  gallery · the user's saved dashboards) + **New dashboard** / **Edit**.
 - **Edit mode**: an "Add widget" catalog drawer; drag to reorder, resize handles,
   remove (×). **Save** persists the layout; **Cancel** reverts.
 - A user with no custom dashboard sees today's default (CTEM view) unchanged —
   **fully backward compatible**; customization is opt-in.
 - Empty custom dashboard → a helpful "Add your first widget" state.
 
-## 6. Phases
+## 6. Templates-first: a starter gallery to copy from
 
-- **Phase 1 (MVP)** — widget registry over existing cards; `user_dashboards`
-  table + `/me/dashboards` CRUD; grid render + add/remove/reorder/resize; switcher;
-  permission/module-aware catalog. No per-widget config yet. Delivers a real
-  customizable dashboard.
+**The entry point is a gallery of curated template dashboards, not a blank grid.**
+Most users don't want to build a dashboard from scratch — they want a good one for
+their job that they can then tweak. So:
+
+- Built-in **templates** are code-defined, read-only layouts (a name + a widget
+  list with positions). They always exist, can't be edited or deleted, and render
+  live data like any dashboard.
+- **"Use this template" / Copy** clones a template into a new **personal**
+  dashboard the user then edits freely (add/remove/reorder/resize, rename).
+- **New blank** creates an empty personal dashboard for power users.
+- **Duplicate** clones any personal dashboard; **Set default** picks the landing one.
+
+This makes templates immediately valuable AND the fastest path to a custom one —
+so the built-in gallery ships in **Phase 1**, not later.
+
+### 6.1 The starter gallery (sample dashboards — think broad)
+
+Each is a curated layout over the Phase-1 widget catalog (§2), sized for its
+audience. All are permission/module-filtered per viewer, so a widget the user
+can't see is dropped from the copy.
+
+| Template | Audience / job-to-be-done | Widgets |
+|----------|---------------------------|---------|
+| **Executive / CISO** | risk posture at a glance | risk-score trend · open criticals · MTTR · SLA compliance % · CTEM maturity · program health · top business units by risk |
+| **SOC / Triage** | work the incoming queue | new findings · by severity · assigned-to-me · detections (IOC matches) · threat-intel KEV/EPSS movers · overdue SLA |
+| **Vulnerability Management** | run the VM program | findings by severity+status · scan coverage · remediation-campaign progress · SLA breach board · aging buckets · reopened/recurring |
+| **AppSec / Developer** | code-side exposure | my assigned findings · findings by repo/component · SAST/SCA/secrets exposures · SBOM vulnerabilities · CI-gate status |
+| **My Work** (asset owner / dev) | just my responsibilities | assigned-to-me summary · my overdue SLA · my assets at risk · my top findings queue |
+| **Compliance** | control & audit posture | framework coverage · control-testing results · exceptions/suppressions · evidence freshness |
+| **Pentest / Offensive** | validation & attack paths | pentest campaigns · findings by MITRE technique · attack paths · exposure chains · validation results |
+| **CTEM Program** | drive the 5-stage loop | CTEM cycle status · per-stage coverage (scoping→mobilization) · maturity trend · data-quality scorecard |
+| **Attack Surface** | what's exposed externally | internet-facing assets · newly-discovered subdomains/certs · crown jewels at risk · exposure by type |
+
+New personas are just new entries in the template registry — no schema change.
+
+### 6.2 Flexibility axes (every dashboard, any template or custom)
+
+- **Scope** (per dashboard, P2 config): tenant-wide · *assigned to me* · a chosen
+  **business unit** · a chosen **asset group**. One layout, re-pointable — a lead
+  and a developer can use the same template scoped differently.
+- **Time range** per dashboard (7 / 30 / 90d / custom).
+- **Compose freely**: copy a template → add/remove any catalog widget → rename →
+  set default. Keep several dashboards and switch.
+- **Share up (P3)**: a tenant admin promotes a personal dashboard to a **tenant
+  template** so it joins everyone's gallery (org-standard SOC/Exec views).
+- **Deep-link**: a dashboard/widget links into the pre-filtered list it summarizes
+  (numbers ⇔ drill-down always agree, like `/my-work` already does).
+
+## 7. Phases
+
+- **Phase 1 (MVP)** — widget registry over existing cards; the **built-in template
+  gallery (§6.1) + "copy to personal"**; `user_dashboards` table + `/me/dashboards`
+  CRUD; grid render + add/remove/reorder/resize; switcher; permission/module-aware
+  catalog. Templates + copy are the headline of P1 (no per-widget config yet).
+  Delivers a real customizable dashboard people can start from.
 - **Phase 2** — per-widget `config` (time range, severity/status filter, tenant vs
   "assigned to me" scope), widget-level refresh, duplicate-dashboard, set-default.
 - **Phase 3** — shareable/tenant **template** dashboards an admin can publish; a
@@ -91,7 +142,7 @@ localStorage). Minimal surface, mirroring existing per-user features:
   AND/OR). This is where the Tenable-style **custom field query** lands, reusing
   `FindingFilter`/`asset.Filter` + the existing CTEM facet filters.
 
-## 7. Why a grid lib, and which
+## 8. Why a grid lib, and which
 
 Use a small, dependency-light React grid (e.g. a self-contained CSS-grid + a
 lightweight drag/resize) rather than a heavy external one, to respect the
@@ -99,7 +150,7 @@ Artifact-style no-bloat house rule and keep bundle size down. Evaluate in Phase 
 fall back to a simple reorder-only (no free resize) if drag-resize proves heavy —
 reorder + fixed sizes still delivers the core value.
 
-## 8. Guardrails (avoid the facade trap)
+## 9. Guardrails (avoid the facade trap)
 
 - Every widget in the catalog must render **real** data on day one — no "coming
   soon" tiles. A widget with no backing data doesn't ship.
@@ -108,7 +159,7 @@ reorder + fixed sizes still delivers the core value.
 - Layout payload is validated + size-bounded server-side (unknown widget types
   rejected) to keep the JSONB honest and DoS-safe.
 
-## 9. Open questions
+## 10. Open questions
 
 1. One default dashboard per user, or per-role starter templates seeded on first login?
 2. Do we replace the CTEM/Classic toggle with "saved dashboards" outright, or keep them as built-in, non-deletable entries in the switcher? (Proposed: keep as built-ins.)
