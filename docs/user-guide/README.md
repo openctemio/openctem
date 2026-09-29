@@ -29,6 +29,12 @@ charter — so every round is measurable and each one learns from the last. That
 the single most important workflow in the product; it's covered first, in
 [Scoping](03-scoping.md#the-ctem-cycle-start-here).
 
+## Start here
+
+**[Quick Start: from zero to your first remediated finding](00-quickstart.md)** —
+one path through the whole loop (scope → scan → triage → fix → verify), each step
+linking to the chapter with the detail. Do this first.
+
 ## Chapters
 
 1. **[Getting Started](01-getting-started.md)** — sign up / log in (password &
