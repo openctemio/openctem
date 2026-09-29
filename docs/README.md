@@ -50,6 +50,7 @@
 - [Configure Microsoft Entra ID (Azure AD) SSO](how-to/configure-entraid.md) - Both Microsoft login paths, Azure app registration, env vars/admin UI, `xms_edov` claim, verified domains, redirect allow-list, troubleshooting (incl. the login-button 404)
 
 ### Development
+- [**Repositories & how the platform fits together**](development/repositories.md) — **new devs start here**: the six `openctemio` repos (api/ui/agent/sdk-go/ctis/helm-charts), how they talk, where to do what, and cross-repo gotchas
 - [Development Setup](development/setup.md) - Full environment setup
 - [Coding Style](development/coding-style.md) - Conventions
 - [Migrations](development/migrations.md) - Database migrations guide
