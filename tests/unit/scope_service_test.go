@@ -270,6 +270,18 @@ func newMockAssetRepo() *mockAssetRepo {
 }
 
 func (m *mockAssetRepo) Create(_ context.Context, _ *asset.Asset) error { return nil }
+func (m *mockAssetRepo) GetDisplayInfoByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]asset.DisplayInfo, error) {
+	out := make(map[shared.ID]asset.DisplayInfo, len(ids))
+	for _, id := range ids {
+		a, err := m.GetByID(ctx, tenantID, id)
+		if err != nil || a == nil {
+			continue
+		}
+		out[id] = asset.DisplayInfo{ID: a.ID(), Name: a.Name(), Type: a.Type()}
+	}
+	return out, nil
+}
+
 func (m *mockAssetRepo) GetByID(_ context.Context, _, _ shared.ID) (*asset.Asset, error) {
 	return nil, shared.ErrNotFound
 }

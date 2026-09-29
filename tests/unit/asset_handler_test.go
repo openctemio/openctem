@@ -43,6 +43,18 @@ func (m *HandlerMockRepository) Create(ctx context.Context, a *asset.Asset) erro
 	return nil
 }
 
+func (m *HandlerMockRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]asset.DisplayInfo, error) {
+	out := make(map[shared.ID]asset.DisplayInfo, len(ids))
+	for _, id := range ids {
+		a, err := m.GetByID(ctx, tenantID, id)
+		if err != nil || a == nil {
+			continue
+		}
+		out[id] = asset.DisplayInfo{ID: a.ID(), Name: a.Name(), Type: a.Type()}
+	}
+	return out, nil
+}
+
 func (m *HandlerMockRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*asset.Asset, error) {
 	a, ok := m.assets[id.String()]
 	if !ok {
