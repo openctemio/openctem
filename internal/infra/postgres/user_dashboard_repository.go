@@ -27,7 +27,7 @@ func NewUserDashboardRepository(db *DB) *UserDashboardRepository {
 // ListByUser returns all dashboards owned by (tenantID, userID).
 func (r *UserDashboardRepository) ListByUser(ctx context.Context, tenantID, userID shared.ID) ([]*dashboard.Dashboard, error) {
 	const q = `
-		SELECT id, tenant_id, user_id, name, is_default, layout, created_at, updated_at
+		SELECT id, tenant_id, user_id, name, description, column_count, is_default, layout, created_at, updated_at
 		  FROM user_dashboards
 		 WHERE tenant_id = $1 AND user_id = $2
 		 ORDER BY is_default DESC, created_at ASC
@@ -55,7 +55,7 @@ func (r *UserDashboardRepository) ListByUser(ctx context.Context, tenantID, user
 // GetByID returns one dashboard scoped to (tenantID, userID).
 func (r *UserDashboardRepository) GetByID(ctx context.Context, tenantID, userID, id shared.ID) (*dashboard.Dashboard, error) {
 	const q = `
-		SELECT id, tenant_id, user_id, name, is_default, layout, created_at, updated_at
+		SELECT id, tenant_id, user_id, name, description, column_count, is_default, layout, created_at, updated_at
 		  FROM user_dashboards
 		 WHERE tenant_id = $1 AND user_id = $2 AND id = $3
 	`
@@ -69,12 +69,12 @@ func (r *UserDashboardRepository) Create(ctx context.Context, d *dashboard.Dashb
 		return fmt.Errorf("marshal layout: %w", err)
 	}
 	const q = `
-		INSERT INTO user_dashboards (id, tenant_id, user_id, name, is_default, layout, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO user_dashboards (id, tenant_id, user_id, name, description, column_count, is_default, layout, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 	_, err = r.db.ExecContext(ctx, q,
 		d.ID().String(), d.TenantID().String(), d.UserID().String(),
-		d.Name(), d.IsDefault(), layout, d.CreatedAt(), d.UpdatedAt(),
+		d.Name(), d.Description(), d.Columns(), d.IsDefault(), layout, d.CreatedAt(), d.UpdatedAt(),
 	)
 	if err != nil {
 		return fmt.Errorf("create user dashboard: %w", err)
@@ -92,12 +92,12 @@ func (r *UserDashboardRepository) Update(ctx context.Context, d *dashboard.Dashb
 	}
 	const q = `
 		UPDATE user_dashboards
-		   SET name = $4, layout = $5, updated_at = $6
+		   SET name = $4, description = $5, column_count = $6, layout = $7, updated_at = $8
 		 WHERE tenant_id = $1 AND user_id = $2 AND id = $3
 	`
 	res, err := r.db.ExecContext(ctx, q,
 		d.TenantID().String(), d.UserID().String(), d.ID().String(),
-		d.Name(), layout, d.UpdatedAt(),
+		d.Name(), d.Description(), d.Columns(), layout, d.UpdatedAt(),
 	)
 	if err != nil {
 		return fmt.Errorf("update user dashboard: %w", err)
@@ -159,11 +159,13 @@ func scanUserDashboard(row interface{ Scan(dest ...any) error }) (*dashboard.Das
 	var (
 		id, tenantID, userID string
 		name                 string
+		description          string
+		columnCount          int
 		isDefault            bool
 		layoutJSON           []byte
 		createdAt, updatedAt time.Time
 	)
-	err := row.Scan(&id, &tenantID, &userID, &name, &isDefault, &layoutJSON, &createdAt, &updatedAt)
+	err := row.Scan(&id, &tenantID, &userID, &name, &description, &columnCount, &isDefault, &layoutJSON, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -183,7 +185,7 @@ func scanUserDashboard(row interface{ Scan(dest ...any) error }) (*dashboard.Das
 		shared.MustIDFromString(id),
 		shared.MustIDFromString(tenantID),
 		shared.MustIDFromString(userID),
-		name, isDefault, widgets,
+		name, description, columnCount, isDefault, widgets,
 		createdAt, updatedAt,
 	), nil
 }

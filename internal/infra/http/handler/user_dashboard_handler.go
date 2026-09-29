@@ -28,17 +28,21 @@ func NewUserDashboardHandler(svc *dashboardapp.Service, log *logger.Logger) *Use
 }
 
 type userDashboardResponse struct {
-	ID        string             `json:"id"`
-	Name      string             `json:"name"`
-	IsDefault bool               `json:"is_default"`
-	Layout    []dashboard.Widget `json:"layout"`
-	CreatedAt time.Time          `json:"created_at"`
-	UpdatedAt time.Time          `json:"updated_at"`
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Columns     int                `json:"columns"`
+	IsDefault   bool               `json:"is_default"`
+	Layout      []dashboard.Widget `json:"layout"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
 }
 
 type userDashboardRequest struct {
-	Name   string             `json:"name"`
-	Layout []dashboard.Widget `json:"layout"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Columns     int                `json:"columns"`
+	Layout      []dashboard.Widget `json:"layout"`
 }
 
 func toUserDashboardResponse(d *dashboard.Dashboard) userDashboardResponse {
@@ -47,12 +51,14 @@ func toUserDashboardResponse(d *dashboard.Dashboard) userDashboardResponse {
 		layout = make([]dashboard.Widget, 0)
 	}
 	return userDashboardResponse{
-		ID:        d.ID().String(),
-		Name:      d.Name(),
-		IsDefault: d.IsDefault(),
-		Layout:    layout,
-		CreatedAt: d.CreatedAt(),
-		UpdatedAt: d.UpdatedAt(),
+		ID:          d.ID().String(),
+		Name:        d.Name(),
+		Description: d.Description(),
+		Columns:     d.Columns(),
+		IsDefault:   d.IsDefault(),
+		Layout:      layout,
+		CreatedAt:   d.CreatedAt(),
+		UpdatedAt:   d.UpdatedAt(),
 	}
 }
 
@@ -95,8 +101,10 @@ func (h *UserDashboardHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d, err := h.service.Create(r.Context(), tenantID, userID, dashboardapp.CreateInput{
-		Name:    req.Name,
-		Widgets: req.Layout,
+		Name:        req.Name,
+		Description: req.Description,
+		Columns:     req.Columns,
+		Widgets:     req.Layout,
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -140,8 +148,10 @@ func (h *UserDashboardHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d, err := h.service.Update(r.Context(), tenantID, userID, r.PathValue("id"), dashboardapp.CreateInput{
-		Name:    req.Name,
-		Widgets: req.Layout,
+		Name:        req.Name,
+		Description: req.Description,
+		Columns:     req.Columns,
+		Widgets:     req.Layout,
 	})
 	if err != nil {
 		h.handleError(w, err)
