@@ -227,8 +227,8 @@ func registerVulnerabilityRoutes(
 		}
 
 		// Bulk operations (must be before /{id})
-		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.Require(permission.FindingsWrite))
-		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.Require(permission.FindingsWrite))
+		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.Require(permission.FindingsBulkUpdate))
+		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.Require(permission.FindingsBulkUpdate))
 
 		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
 		if remediationGroupHandler != nil {
@@ -241,7 +241,7 @@ func registerVulnerabilityRoutes(
 			r.POST("/actions/fix-applied", findingActionsHandler.FixApplied, middleware.Require(permission.FindingsFixApply))
 			r.POST("/actions/verify", findingActionsHandler.Verify, middleware.Require(permission.FindingsVerify))
 			r.POST("/actions/reject-fix", findingActionsHandler.RejectFix, middleware.Require(permission.FindingsVerify))
-			r.POST("/actions/assign-to-owners", findingActionsHandler.AssignToOwners, middleware.Require(permission.FindingsWrite))
+			r.POST("/actions/assign-to-owners", findingActionsHandler.AssignToOwners, middleware.Require(permission.FindingsAssign))
 		}
 
 		// Single finding operations
@@ -251,18 +251,18 @@ func registerVulnerabilityRoutes(
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
-		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsWrite))
+		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsStatus))
 
 		// Assignment operations
-		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsWrite))
-		r.POST("/{id}/unassign", h.UnassignFinding, middleware.Require(permission.FindingsWrite))
+		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsAssign))
+		r.POST("/{id}/unassign", h.UnassignFinding, middleware.Require(permission.FindingsAssign))
 
 		// Classification and severity
 		r.PATCH("/{id}/classify", h.ClassifyFinding, middleware.Require(permission.FindingsWrite))
 		r.PATCH("/{id}/severity", h.UpdateFindingSeverity, middleware.Require(permission.FindingsWrite))
 
 		// Triage and verification
-		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsWrite))
+		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsTriage))
 		// Verification is a segregation-of-duties control: moving a finding to
 		// resolved must require FindingsVerify (security/scanner), NOT the
 		// broader FindingsWrite that a developer role holds — otherwise a member
