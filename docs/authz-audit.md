@@ -224,3 +224,21 @@
 ---
 
 > **DỪNG Ở GIAI ĐOẠN 1.** Chờ bạn duyệt danh sách phát hiện + trả lời câu hỏi nghiệp vụ (mục 5) trước khi tôi lập kế hoạch sửa (Giai đoạn 2). Ghi chú: bug SoD `/findings/{id}/verify` đã fix ở PR api#505 (phát hiện ở đợt review trước, cùng lớp AUTHZ-05).
+
+---
+
+## 7. Trạng thái thực hiện — Giai đoạn 3 (đợt 1: hạng mục không phụ thuộc chính sách)
+
+> Làm theo yêu cầu "làm được gì thì làm cho xong trước". Tất cả commit **local, CHƯA push** (rule 6). Mỗi hạng mục: verify-first → sửa → build/test → local commit.
+
+| Mã | Trạng thái | Ghi chú |
+|---|---|---|
+| **AUTHZ-01** | ✅ **Đã sửa** | Verify-first phát hiện handler đã có `assertCanGrantPermissions` cho Create/Update/Assign/SetUserRoles + có sẵn `role_escalation_test.go`. Path DUY NHẤT còn hở: `BulkAssignRoleMembers` — đã thêm guard + mở rộng test. (commit local `887aa07`) |
+| **AUTHZ-06** | ✅ **Đã sửa** | Thêm `Require(FindingsRead)` cho `GET /findings/ai-triage/config`. (commit local `b3b6823`) |
+| **AUTHZ-15** | ✅ **Đã sửa (phần doc)** | Sửa 2 câu sai trong `api/CLAUDE.md` (module gating IS live; JWT mang cả mảng perm). Xóa dead middleware code (RequirePlatformAdmin…) để Phase 3 (cleanup, không phải security). (commit local `b3b6823`) |
+| **AUTHZ-12** | ✅ **Đã sửa (phần dead-code)** | Xóa `ui/src/lib/cache.ts` (footgun cross-user cache, 0 import) + `setCsrfToken/generateCsrfToken` (0 caller). `import 'server-only'` **defer** (package chưa cài — cần thêm dependency). (commit local `159016e`) |
+| **AUTHZ-02** | ⏳ **Defer (có lý do)** | Cần harness walk-router dựng full route tree (mọi handler-dep) — task riêng, không half-do fragile. AUTHZ-06 đã xóa offender duy nhất nó sẽ bắt. |
+| **AUTHZ-08** | ⏳ **Defer (có lý do)** | Chạm hot auth-query `GetUserPermissions` + không có repo-test-DB harness → không đổi query enforce khi chưa test được (rule 4). An toàn hôm nay (mọi perm `is_active=true`). |
+| AUTHZ-03,04,05,07,10,11,13,14,16,17 | ⏸ **Chờ duyệt** | Phụ thuộc quyết định chính sách (Q1–Q7) — thuộc Giai đoạn 2/3 sau khi bạn duyệt. |
+
+**Đợt 1 kết quả:** 1 lỗ hổng escalation thật (bulk-assign) đã đóng + test; 1 route hở đã gate; footgun frontend + doc sai đã dọn. Đều verify build/test/lint, commit local, **chưa push** — chờ bạn ra lệnh push.
