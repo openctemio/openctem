@@ -36,6 +36,37 @@ two hardcoded layouts. The catalog is those cards, wrapped as **widgets**:
 So the catalog is **not new visualizations** — it's a registry over components
 that already exist and already fetch their own data.
 
+### 2.1 Terminology — "widget" ≡ "component"
+
+The tile a user places on a dashboard is a **widget** (this RFC's term). Tenable.sc
+calls the same building block a **"component"** (its "Add Component"); Tenable.io
+calls it a "widget" — same concept, and we treat the words as synonyms in the UI.
+(In code it's a React component that renders the widget — distinct meaning; we say
+"widget" for the dashboard tile to avoid the collision.)
+
+A widget is three things:
+
+```
+Widget (= component) = Data source (query/filter)  +  Visualization  +  Config
+```
+
+- **Data source / query** — what data it pulls (e.g. `findings: severity=critical,
+  assigned_to_me, last 30d`). "Customizing a tile by applying a query" = editing
+  this.
+- **Visualization** — how it shows: single stat, bar/pie, table, trend line, or a
+  Tenable-style matrix.
+- **Config** — title, time range, scope (tenant / assigned-to-me / BU / asset group).
+
+That yields **two kinds of widget**, both first-class:
+
+1. **Catalog widget** (prebuilt) — a curated card (severity, SLA, MTTR, …) with a
+   fixed query + viz. Drop-in, zero config. **Phase 1.**
+2. **Query-driven / custom component** — the user *picks a data source, applies a
+   query/filter, and chooses the visualization* — the Tenable "component" model.
+   This is where the **custom-field query** idea lands (a saved advanced query over
+   finding/asset fields becomes a widget's data source). **Phase 2 config →
+   Phase 4 full query builder** (§7).
+
 ## 3. Model
 
 ```
