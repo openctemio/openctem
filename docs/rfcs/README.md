@@ -27,6 +27,8 @@ and the code. Start here to remember "what was decided, why, and where it lives"
 | [RFC-019](RFC-019-certificate-transparency-discovery.md) | Certificate-Transparency exposure discovery — the first fully-built external-exposure connector: public crt.sh monitoring of tenant domains → `subdomain_discovered` + `certificate_expiring` ExposureEvents (no credentials/consent) | Phase 1 shipped (crt.sh client + parser + per-tenant controller + 2 exposure types) | — | Phase 1 = SSRF-guarded/rate-limited crt.sh poller, no migration (event types pre-exist), tests (this PR); Phase 2 = lookalike/typosquat + asset promotion |
 | [RFC-020](RFC-020-api-ui-monorepo.md) | Consolidate `api` + `ui` into one repo (`openctemio/platform`) with a generated `contract/` (permission consts + OpenAPI types from the Go source) — kills the contract-drift + non-atomic-full-stack classes; keeps agent/sdk-go/ctis/helm-charts separate | Proposed (decision required) | — | P1 migrate w/ history-preserving `filter-repo` + path-filtered CI; P2 contract codegen replaces the AUTHZ-17 sync test; P3 archive old repos |
 
+| [RFC-021](RFC-021-customizable-dashboards.md) | Customizable dashboards (Tenable-style widgets) — per-user composable dashboards from a curated widget catalog (reusing existing cards), grid layout, persisted server-side under `/me/dashboards`; phased, with a Phase-4 seam for custom-query widgets | Proposed | — | P1 widget registry + `user_dashboards` + CRUD + grid add/remove/reorder; P2 per-widget config; P3 tenant templates; P4 custom-query widget |
+
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
 
 ---
