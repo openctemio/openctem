@@ -2762,8 +2762,8 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 
 // GetStats returns aggregated statistics for findings of a tenant.
 // dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
-// assetID: if non-nil, only count findings for that specific asset.
-func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, assetID *shared.ID) (*vulnerability.FindingStats, error) {
+// filter: optional asset / source narrowing, applied to every number returned.
+func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, filter vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
 	stats := vulnerability.NewFindingStats()
 
 	// Query for total and counts by severity, status, source in one go
@@ -2824,9 +2824,22 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	// Asset filter — used when the page is `/findings?assetId=…` so
 	// the severity cards reflect the same filtered table the user is
 	// looking at, not the global tenant counts.
-	if assetID != nil {
-		args = append(args, assetID.String())
+	if filter.AssetID != nil {
+		args = append(args, filter.AssetID.String())
 		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
+	}
+
+	// Source filter — used by the Exposures type pages (vulnerabilities,
+	// secrets, code, misconfigurations) so their counts come from one
+	// aggregate instead of walking the whole findings list. Same `source IN`
+	// shape as the list endpoint's filter; values are bound, never inlined.
+	if len(filter.Sources) > 0 {
+		placeholders := make([]string, len(filter.Sources))
+		for i, src := range filter.Sources {
+			args = append(args, src.String())
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
+		}
+		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
 	}
 
 	var (

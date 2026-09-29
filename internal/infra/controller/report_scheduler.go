@@ -24,7 +24,7 @@ type ReportScheduleStore interface {
 
 // ReportStatsSource provides the finding aggregates a summary report renders.
 type ReportStatsSource interface {
-	GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, assetID *shared.ID) (*vulnerability.FindingStats, error)
+	GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, filter vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error)
 	// CountWindow returns new (created) vs resolved finding counts over the
 	// trailing `days` window — the digest's trend line.
 	CountWindow(ctx context.Context, tenantID shared.ID, days int) (newCount, resolvedCount int64, err error)
@@ -183,7 +183,7 @@ func (c *ReportScheduler) runOne(ctx context.Context, s *reportschedule.ReportSc
 
 // render builds the executive-summary HTML from the tenant's finding stats.
 func (c *ReportScheduler) render(ctx context.Context, s *reportschedule.ReportSchedule) (string, error) {
-	stats, err := c.stats.GetStats(ctx, s.TenantID(), nil, nil)
+	stats, err := c.stats.GetStats(ctx, s.TenantID(), nil, vulnerability.FindingStatsFilter{})
 	if err != nil {
 		return "", fmt.Errorf("get finding stats: %w", err)
 	}

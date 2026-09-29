@@ -159,7 +159,7 @@ func (m *wfActionMockFindingRepo) DeleteByScanID(_ context.Context, _ shared.ID,
 	return nil
 }
 
-func (m *wfActionMockFindingRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.ID, _ *shared.ID) (*vulnerability.FindingStats, error) {
+func (m *wfActionMockFindingRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.ID, _ vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
 	return vulnerability.NewFindingStats(), nil
 }
 
