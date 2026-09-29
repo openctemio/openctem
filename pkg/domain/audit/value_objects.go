@@ -399,6 +399,7 @@ const (
 	ResourceTypeRepository       ResourceType = "repository"
 	ResourceTypeBranch           ResourceType = "branch"
 	ResourceTypeComponent        ResourceType = "component"
+	ResourceTypeCredential       ResourceType = "credential"
 	ResourceTypeVulnerability    ResourceType = "vulnerability"
 	ResourceTypeFinding          ResourceType = "finding"
 	ResourceTypeFindingComment   ResourceType = "finding_comment"

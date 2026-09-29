@@ -408,6 +408,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 	}
 
+	// AUTHZ-07: record an audit event whenever plaintext leaked-secret values
+	// are read (list / by-id / related / by-identity).
+	if handlers.CredentialImport != nil {
+		handlers.CredentialImport.SetAuditService(svc.Audit)
+	}
+
 	return handlers
 }
 
