@@ -263,7 +263,12 @@ func registerVulnerabilityRoutes(
 
 		// Triage and verification
 		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsWrite))
-		r.POST("/{id}/verify", h.VerifyFinding, middleware.Require(permission.FindingsWrite))
+		// Verification is a segregation-of-duties control: moving a finding to
+		// resolved must require FindingsVerify (security/scanner), NOT the
+		// broader FindingsWrite that a developer role holds — otherwise a member
+		// could self-verify here what the sibling /actions/verify correctly
+		// gates on FindingsVerify.
+		r.POST("/{id}/verify", h.VerifyFinding, middleware.Require(permission.FindingsVerify))
 
 		// Verification scan automation: trigger a targeted scan on the finding's asset
 		// (only available when finding actions handler is wired)
