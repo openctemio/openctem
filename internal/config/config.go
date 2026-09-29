@@ -203,6 +203,14 @@ type DatabaseConfig struct {
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
+	// JITEnabled controls PostgreSQL's JIT compiler for the API's sessions
+	// (env DB_JIT_ENABLED, default false). JIT pays off for long analytical
+	// queries, but for this API's request-path queries the compile step is
+	// pure overhead that kicks in as soon as row estimates cross
+	// jit_above_cost: measured 351ms of JIT in a 533ms dashboard trend query
+	// on a 200k-finding tenant. Disabled by default, per session, via the
+	// connection startup parameter; the server-wide setting is untouched.
+	JITEnabled bool
 }
 
 // RedisConfig holds Redis configuration.
@@ -714,6 +722,7 @@ func Load() (*Config, error) {
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
 			ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
+			JITEnabled:      getEnvBool("DB_JIT_ENABLED", false),
 		},
 		Redis: RedisConfig{
 			Host:          getEnv("REDIS_HOST", "localhost"),
@@ -1342,10 +1351,15 @@ func (c *Config) validateProductionRedis() error {
 
 // DSN returns the database connection string.
 func (c *DatabaseConfig) DSN() string {
-	return fmt.Sprintf(
+	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode,
 	)
+	if !c.JITEnabled {
+		// lib/pq forwards unknown keys as session startup parameters.
+		dsn += " jit=off"
+	}
+	return dsn
 }
 
 // Addr returns the Redis address.
