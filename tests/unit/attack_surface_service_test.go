@@ -112,6 +112,18 @@ func (m *mockAttackSurfaceRepo) Create(_ context.Context, _ *asset.Asset) error 
 	return nil
 }
 
+func (m *mockAttackSurfaceRepo) GetDisplayInfoByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]asset.DisplayInfo, error) {
+	out := make(map[shared.ID]asset.DisplayInfo, len(ids))
+	for _, id := range ids {
+		a, err := m.GetByID(ctx, tenantID, id)
+		if err != nil || a == nil {
+			continue
+		}
+		out[id] = asset.DisplayInfo{ID: a.ID(), Name: a.Name(), Type: a.Type()}
+	}
+	return out, nil
+}
+
 func (m *mockAttackSurfaceRepo) GetByID(_ context.Context, _, _ shared.ID) (*asset.Asset, error) {
 	return nil, shared.ErrNotFound
 }

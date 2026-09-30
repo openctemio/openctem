@@ -125,6 +125,48 @@ func (r *AssetRepository) GetByID(ctx context.Context, tenantID, assetID shared.
 	return r.scanAsset(row, assetID)
 }
 
+// GetDisplayInfoByIDs returns id/name/type for the given assets of one tenant
+// in a single query. Unlike GetByID it skips the per-asset LATERAL finding
+// aggregate and the wide column list, which a caller that only labels rows
+// (the findings list) never reads.
+func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]asset.DisplayInfo, error) {
+	result := make(map[shared.ID]asset.DisplayInfo, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = id.String()
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, name, asset_type FROM assets WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+		tenantID.String(), pq.Array(idStrs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch get asset display info: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			idStr, name, assetType string
+		)
+		if err := rows.Scan(&idStr, &name, &assetType); err != nil {
+			return nil, fmt.Errorf("failed to scan asset display info: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset id %q: %w", idStr, err)
+		}
+		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType)}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate asset display info: %w", err)
+	}
+	return result, nil
+}
+
 // GetByExternalID retrieves an asset by external ID and provider.
 func (r *AssetRepository) GetByExternalID(ctx context.Context, tenantID shared.ID, provider asset.Provider, externalID string) (*asset.Asset, error) {
 	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.provider = $2 AND a.external_id = $3"

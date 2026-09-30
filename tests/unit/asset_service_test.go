@@ -60,6 +60,18 @@ func (m *MockAssetRepository) Create(_ context.Context, a *asset.Asset) error {
 	return nil
 }
 
+func (m *MockAssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]asset.DisplayInfo, error) {
+	out := make(map[shared.ID]asset.DisplayInfo, len(ids))
+	for _, id := range ids {
+		a, err := m.GetByID(ctx, tenantID, id)
+		if err != nil || a == nil {
+			continue
+		}
+		out[id] = asset.DisplayInfo{ID: a.ID(), Name: a.Name(), Type: a.Type()}
+	}
+	return out, nil
+}
+
 func (m *MockAssetRepository) GetByID(_ context.Context, tenantID, id shared.ID) (*asset.Asset, error) {
 	m.getCalls++
 	if m.getErr != nil {
@@ -2203,5 +2215,83 @@ func TestAssetService_CreateAsset_DefaultValues(t *testing.T) {
 	}
 	if a.FindingCount() != 0 {
 		t.Errorf("expected default finding count 0, got %d", a.FindingCount())
+	}
+}
+
+// =============================================================================
+// GetAssetDisplayInfo Tests (batched findings-list labeling)
+// =============================================================================
+
+func TestAssetService_GetAssetDisplayInfo_BatchesAndIsTenantScoped(t *testing.T) {
+	svc, repo, repoExtRepo := newTestServiceWithRepoExt()
+	tenantID := serviceTenantID
+
+	repoAsset, err := asset.NewAssetWithTenant(tenantID, "my-repo", asset.AssetTypeRepository, asset.CriticalityHigh)
+	if err != nil {
+		t.Fatalf("new asset: %v", err)
+	}
+	repo.assets[repoAsset.ID().String()] = repoAsset
+	ext, _ := asset.NewRepositoryExtension(repoAsset.ID(), "org/my-repo", asset.VisibilityPublic)
+	ext.SetWebURL("https://github.com/org/my-repo")
+	repoExtRepo.extensions[repoAsset.ID().String()] = ext
+
+	host := createAssetForTest(t, svc, tenantID.String(), "Host Asset")
+
+	// An asset of ANOTHER tenant must never be labeled, even when its id is
+	// passed in (e.g. a stale/forged asset_id on a finding).
+	otherTenant := shared.NewID()
+	foreign, _ := asset.NewAssetWithTenant(otherTenant, "foreign", asset.AssetTypeRepository, asset.CriticalityLow)
+	repo.assets[foreign.ID().String()] = foreign
+	foreignExt, _ := asset.NewRepositoryExtension(foreign.ID(), "evil/foreign", asset.VisibilityPublic)
+	repoExtRepo.extensions[foreign.ID().String()] = foreignExt
+
+	ids := []string{
+		repoAsset.ID().String(), host.ID().String(), repoAsset.ID().String(), // duplicate
+		foreign.ID().String(), shared.NewID().String(), "not-a-uuid",
+	}
+	got, err := svc.GetAssetDisplayInfo(context.Background(), tenantID.String(), ids)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("want exactly the 2 same-tenant assets, got %d: %+v", len(got), got)
+	}
+	if _, ok := got[foreign.ID().String()]; ok {
+		t.Fatal("cross-tenant asset must not be returned")
+	}
+	r := got[repoAsset.ID().String()]
+	if r.Name != "my-repo" || r.Type != string(asset.AssetTypeRepository) || r.WebURL != "https://github.com/org/my-repo" {
+		t.Errorf("repo asset label wrong: %+v", r)
+	}
+	h := got[host.ID().String()]
+	if h.Name != host.Name() || h.Type != host.Type().String() || h.WebURL != "" {
+		t.Errorf("host asset label wrong: %+v", h)
+	}
+	if repoExtRepo.getBatchCalls != 1 {
+		t.Errorf("repository extensions must be fetched in one batch, got %d calls", repoExtRepo.getBatchCalls)
+	}
+}
+
+func TestAssetService_GetAssetDisplayInfo_ExtensionErrorKeepsLabels(t *testing.T) {
+	svc, repo, repoExtRepo := newTestServiceWithRepoExt()
+	repoExtRepo.getByAssetIDsErr = errors.New("batch query failed")
+
+	a, _ := asset.NewAssetWithTenant(serviceTenantID, "my-repo", asset.AssetTypeRepository, asset.CriticalityHigh)
+	repo.assets[a.ID().String()] = a
+
+	got, err := svc.GetAssetDisplayInfo(context.Background(), serviceTenantID.String(), []string{a.ID().String()})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d, ok := got[a.ID().String()]; !ok || d.Name != "my-repo" || d.WebURL != "" {
+		t.Fatalf("expected label without web url, got %+v (present=%v)", d, ok)
+	}
+}
+
+func TestAssetService_GetAssetDisplayInfo_InvalidTenant(t *testing.T) {
+	svc, _, _ := newTestServiceWithRepoExt()
+	if _, err := svc.GetAssetDisplayInfo(context.Background(), "bad", []string{shared.NewID().String()}); err == nil {
+		t.Fatal("expected validation error for bad tenant id")
 	}
 }

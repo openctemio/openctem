@@ -31,6 +31,9 @@ type threatIntelMockEPSSRepo struct {
 	// finding count returned by CountTenantOpenAboveScore.
 	tenantAboveScoreVals map[float64]int64
 	tenantAboveScoreErr  error
+
+	countCalls            int
+	tenantAboveScoreCalls int
 }
 
 func newThreatIntelMockEPSSRepo() *threatIntelMockEPSSRepo {
@@ -104,17 +107,22 @@ func (m *threatIntelMockEPSSRepo) GetTopPercentile(_ context.Context, _ float64,
 	return nil, nil
 }
 
-func (m *threatIntelMockEPSSRepo) CountTenantOpenAboveScore(_ context.Context, _ shared.ID, threshold float64) (int64, error) {
+func (m *threatIntelMockEPSSRepo) CountTenantOpenAboveScores(_ context.Context, _ shared.ID, thresholds []float64) ([]int64, error) {
+	m.tenantAboveScoreCalls++
 	if m.tenantAboveScoreErr != nil {
-		return 0, m.tenantAboveScoreErr
+		return nil, m.tenantAboveScoreErr
 	}
-	if m.tenantAboveScoreVals != nil {
-		return m.tenantAboveScoreVals[threshold], nil
+	out := make([]int64, len(thresholds))
+	for i, th := range thresholds {
+		if m.tenantAboveScoreVals != nil {
+			out[i] = m.tenantAboveScoreVals[th]
+		}
 	}
-	return 0, nil
+	return out, nil
 }
 
 func (m *threatIntelMockEPSSRepo) Count(_ context.Context) (int64, error) {
+	m.countCalls++
 	if m.countErr != nil {
 		return 0, m.countErr
 	}
@@ -153,6 +161,9 @@ type threatIntelMockKEVRepo struct {
 	recentCountErr   error
 	ransomCountVal   int64
 	ransomCountErr   error
+
+	countCalls         int
+	tenantPastDueCalls int
 }
 
 func newThreatIntelMockKEVRepo() *threatIntelMockKEVRepo {
@@ -242,6 +253,7 @@ func (m *threatIntelMockKEVRepo) GetRansomwareRelated(_ context.Context, _ int) 
 }
 
 func (m *threatIntelMockKEVRepo) CountTenantOpenPastDue(_ context.Context, _ shared.ID) (int64, error) {
+	m.tenantPastDueCalls++
 	if m.tenantPastDueErr != nil {
 		return 0, m.tenantPastDueErr
 	}
@@ -263,6 +275,7 @@ func (m *threatIntelMockKEVRepo) CountRansomwareRelated(_ context.Context) (int6
 }
 
 func (m *threatIntelMockKEVRepo) Count(_ context.Context) (int64, error) {
+	m.countCalls++
 	if m.countErr != nil {
 		return 0, m.countErr
 	}
@@ -1307,5 +1320,88 @@ func TestThreatIntelService_SyncKEV_Disabled(t *testing.T) {
 	}
 	if result.Source != "kev" {
 		t.Errorf("expected source 'kev', got %q", result.Source)
+	}
+}
+
+// The global catalog counts (EPSS/KEV totals, KEV recent/ransomware) are
+// tenant-independent and cached between requests, while every tenant-scoped
+// count is re-read on each request so one tenant never sees another's (or a
+// stale) exposure figure.
+func TestThreatIntelService_GetThreatIntelStats_CachesOnlyGlobalCatalogCounts(t *testing.T) {
+	repo := newThreatIntelMockRepo()
+	repo.epss.countVal = 9000
+	repo.kev.countVal = 1500
+	repo.kev.tenantPastDueVal = 7
+	repo.epss.tenantAboveScoreVals = map[float64]int64{0.1: 25, 0.5: 4}
+	svc := newThreatIntelService(repo)
+	ctx := context.Background()
+
+	tenantA := shared.NewID()
+	tenantB := shared.NewID()
+
+	first, err := svc.GetThreatIntelStats(ctx, tenantA)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if first.KEV.PastDueCount != 7 || first.EPSS.HighRiskCount != 25 {
+		t.Fatalf("unexpected first stats: %+v %+v", first.KEV, first.EPSS)
+	}
+
+	// Tenant-scoped figures change; the next request (another tenant) must
+	// see the new values, not a cached copy.
+	repo.kev.tenantPastDueVal = 3
+	repo.epss.tenantAboveScoreVals = map[float64]int64{0.1: 11, 0.5: 2}
+
+	second, err := svc.GetThreatIntelStats(ctx, tenantB)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if second.KEV.PastDueCount != 3 || second.EPSS.HighRiskCount != 11 || second.EPSS.CriticalRiskCount != 2 {
+		t.Errorf("tenant-scoped counts must be fresh, got %+v %+v", second.KEV, second.EPSS)
+	}
+	if second.EPSS.TotalScores != 9000 || second.KEV.TotalEntries != 1500 {
+		t.Errorf("catalog totals wrong: %+v %+v", second.KEV, second.EPSS)
+	}
+
+	if repo.epss.countCalls != 1 {
+		t.Errorf("EPSS catalog COUNT should run once across two requests, ran %d", repo.epss.countCalls)
+	}
+	if repo.kev.countCalls != 1 {
+		t.Errorf("KEV catalog COUNT should run once across two requests, ran %d", repo.kev.countCalls)
+	}
+	if repo.kev.tenantPastDueCalls != 2 {
+		t.Errorf("tenant KEV past-due must run per request, ran %d", repo.kev.tenantPastDueCalls)
+	}
+	if repo.epss.tenantAboveScoreCalls != 2 {
+		t.Errorf("tenant EPSS counts must run once per request (both thresholds in one query), ran %d", repo.epss.tenantAboveScoreCalls)
+	}
+}
+
+// A failed catalog read is not cached: the next request retries it.
+func TestThreatIntelService_GetThreatIntelStats_CatalogErrorNotCached(t *testing.T) {
+	repo := newThreatIntelMockRepo()
+	repo.epss.countErr = errors.New("transient")
+	repo.epss.countVal = 9000
+	svc := newThreatIntelService(repo)
+	ctx := context.Background()
+
+	stats, err := svc.GetThreatIntelStats(ctx, shared.ID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.EPSS != nil {
+		t.Fatal("expected EPSS stats nil while the catalog read fails")
+	}
+
+	repo.epss.countErr = nil
+	stats, err = svc.GetThreatIntelStats(ctx, shared.ID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats.EPSS == nil || stats.EPSS.TotalScores != 9000 {
+		t.Fatalf("expected EPSS stats after recovery, got %+v", stats.EPSS)
+	}
+	if repo.epss.countCalls != 2 {
+		t.Errorf("failed read must not be cached; want 2 COUNT calls, got %d", repo.epss.countCalls)
 	}
 }

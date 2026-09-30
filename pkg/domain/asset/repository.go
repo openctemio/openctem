@@ -28,6 +28,15 @@ type LifecycleRepository interface {
 	SnoozeLifecycle(ctx context.Context, tenantID, assetID shared.ID, pausedUntil *time.Time, reactivate bool) error
 }
 
+// DisplayInfo is the minimal projection of an asset used to label other
+// resources (e.g. the asset column of a findings list) without loading the
+// full aggregate and its per-asset finding counts.
+type DisplayInfo struct {
+	ID   shared.ID
+	Name string
+	Type AssetType
+}
+
 // Repository defines the interface for asset persistence.
 // Alias: Store (preferred for new code)
 // Security: All methods that access tenant-scoped data require tenantID parameter.
@@ -38,6 +47,12 @@ type Repository interface {
 	// GetByID retrieves an asset by its ID within a tenant.
 	// Security: Requires tenantID to prevent cross-tenant data access.
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*Asset, error)
+
+	// GetDisplayInfoByIDs returns the display fields (name, type) of the
+	// given assets in ONE query, keyed by asset id. Ids that do not exist in
+	// the tenant are simply absent from the map.
+	// Security: Requires tenantID; assets of other tenants are never returned.
+	GetDisplayInfoByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]DisplayInfo, error)
 
 	// Update updates an existing asset.
 	// Security: Asset's TenantID is validated internally.
