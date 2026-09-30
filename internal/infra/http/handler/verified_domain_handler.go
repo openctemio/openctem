@@ -46,6 +46,13 @@ type VerifiedDomainResponse struct {
 
 // AddDomain adds a domain and returns the DNS TXT record to publish.
 // POST /api/v1/settings/verified-domains
+// @Summary Add a domain to verify for an organization
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/verified-domains [post]
 func (h *VerifiedDomainHandler) AddDomain(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenantID(w, r)
 	if !ok {
@@ -76,6 +83,13 @@ func (h *VerifiedDomainHandler) AddDomain(w http.ResponseWriter, r *http.Request
 
 // List lists the tenant's verified domains.
 // GET /api/v1/settings/verified-domains
+// @Summary List an organization's verified domains
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/verified-domains [get]
 func (h *VerifiedDomainHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenantID(w, r)
 	if !ok {
@@ -100,6 +114,14 @@ func (h *VerifiedDomainHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Verify runs verification for a domain now.
 // POST /api/v1/settings/verified-domains/{id}/verify
+// @Summary Verify an organization's domain via DNS
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Domain ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/verified-domains/{id}/verify [post]
 func (h *VerifiedDomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenantID(w, r)
 	if !ok {
@@ -123,6 +145,14 @@ func (h *VerifiedDomainHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 // Delete removes a verified domain.
 // DELETE /api/v1/settings/verified-domains/{id}
+// @Summary Delete an organization's verified domain
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Domain ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/verified-domains/{id} [delete]
 func (h *VerifiedDomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenantID(w, r)
 	if !ok {

@@ -285,6 +285,32 @@ still resolves against the caller's tenant.
 > `/api/v1/auth/saml/{org}/*`) is unaffected — it stays public. See
 > `docs/architecture/sso-authentication.md`.
 
+### Organizations — platform admin cross-tenant (RFC-022 Phase 2)
+
+Under the admin realm (API key or console session), never tenant-permission
+gated. Organization-scoped SSO routes reuse the tenant SSO handlers through
+`AdminTenantScope`, which checks the organization exists, sets it as the request
+tenant, and **clears the user id** (an admin is not a `users` row, and those
+handlers write `created_by` columns that reference `users(id)`). Writes are
+recorded in `admin_audit_logs`, and in the organization's own audit log with
+`actor_email = platform-admin:<email>` and `actor_id` NULL.
+
+| Endpoint | Required Role |
+|----------|---------------|
+| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin |
+| `POST /api/v1/admin/tenants` | **ops_admin+** (audited) |
+| `GET /api/v1/admin/tenants/{tenantId}/sso/{saml,identity-providers,verified-domains,enforcement}` | any admin |
+| `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited) |
+
+**Tenant-side counterparts:**
+- `PATCH /tenants/{t}/settings/security` refuses `sso_enforced` with 403.
+  Enforcement is set only through `PUT /admin/tenants/{tenantId}/sso/enforcement`,
+  which keeps the "usable SSO path required" guard.
+- With `TENANT_CREATION_MODE=admin_only`, both self-service creation paths
+  (`POST /api/v1/tenants` and `POST /api/v1/auth/create-first-team`) return
+  403. Only `POST /admin/tenants` creates organizations. The mode is published
+  as `tenant_creation_mode` on the public `GET /api/v1/auth/providers`.
+
 ### Metrics Endpoint (`GET /metrics`)
 
 `/metrics` (Prometheus) is **not public by default**. It is gated by

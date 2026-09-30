@@ -1435,10 +1435,10 @@ func (s *TenantService) UpdateGeneralSettings(ctx context.Context, tenantID stri
 // slice => keep existing; explicit [] => clear). This stops a client that
 // toggles a single flag from wiping the IP whitelist / allowed domains.
 type UpdateSecuritySettingsInput struct {
-	SSOEnabled            *bool    `json:"sso_enabled"`
-	SSOProvider           *string  `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
-	SSOConfigURL          *string  `json:"sso_config_url"` // url format checked in domain Validate
-	SSOEnforced           *bool    `json:"sso_enforced"`   // require members to sign in via SSO (owner exempt)
+	// SSOEnforced requires members to sign in via SSO (owner exempt). Set only
+	// by the platform administrator (RFC-022); the tenant-facing handler refuses
+	// it, so an organization cannot turn enforcement on or off for itself.
+	SSOEnforced           *bool    `json:"sso_enforced"`
 	MFARequired           *bool    `json:"mfa_required"`
 	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
@@ -1461,15 +1461,6 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	// Partial merge: start from the persisted section and overlay only the
 	// fields the client actually sent. Omitted fields are preserved.
 	security := t.TypedSettings().Security
-	if input.SSOEnabled != nil {
-		security.SSOEnabled = *input.SSOEnabled
-	}
-	if input.SSOProvider != nil {
-		security.SSOProvider = *input.SSOProvider
-	}
-	if input.SSOConfigURL != nil {
-		security.SSOConfigURL = *input.SSOConfigURL
-	}
 	if input.SSOEnforced != nil {
 		security.SSOEnforced = *input.SSOEnforced
 	}
@@ -1487,19 +1478,6 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	}
 	if input.EmailVerificationMode != nil {
 		security.EmailVerificationMode = tenantdom.EmailVerificationMode(*input.EmailVerificationMode)
-	}
-
-	// Check plan limits for SSO via licensing service. Only gate when this
-	// request explicitly asserts SSO enabled, matching the original semantics
-	// (an unrelated PATCH must not be rejected because SSO was already on).
-	if input.SSOEnabled != nil && *input.SSOEnabled {
-		hasSSOModule, err := s.hasTenantModule(ctx, tenantID, "sso")
-		if err != nil {
-			s.logger.Warn("failed to check SSO module access", "tenant_id", tenantID, "error", err)
-		}
-		if !hasSSOModule {
-			return nil, fmt.Errorf("%w: SSO is not available on your plan", shared.ErrValidation)
-		}
 	}
 
 	// Can't-enable guard: refuse to turn sso_enforced ON unless the tenant has a

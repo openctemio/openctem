@@ -77,6 +77,62 @@ func registerAdminRoutes(
 		})
 	}
 
+	// Organizations (RFC-022 Phase 2): the platform admin's cross-tenant view,
+	// organization creation, and per-organization SSO. Reads are open to any
+	// admin; creating an organization needs ops_admin+; SSO changes (the
+	// organization's login trust) need super_admin. SAML, identity-provider and
+	// verified-domain setup reuse the tenant handlers under AdminTenantScope,
+	// which sets the path organization as the request tenant.
+	if h.AdminOrganization != nil {
+		opsWrite := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
+		superWrite := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		scope := middleware.AdminTenantScope(h.AdminOrganization.TenantExists)
+		audit := func(action string) []Middleware {
+			if h.AdminAuditMiddleware == nil {
+				return nil
+			}
+			return []Middleware{h.AdminAuditMiddleware.AuditLog(action, "tenant", middleware.AdminTenantParam)}
+		}
+		with := func(mws ...[]Middleware) []Middleware {
+			out := []Middleware{}
+			for _, m := range mws {
+				out = append(out, m...)
+			}
+			return out
+		}
+		read := []Middleware{scope}
+		write := func(action string) []Middleware { return with([]Middleware{superWrite, scope}, audit(action)) }
+
+		router.Group("/api/v1/admin/tenants", func(r Router) {
+			r.GET("/", h.AdminOrganization.List)
+			r.POST("/", h.AdminOrganization.Create, with([]Middleware{opsWrite}, audit("organization.create"))...)
+			r.GET("/{tenantId}", h.AdminOrganization.Get)
+
+			r.GET("/{tenantId}/sso/enforcement", h.AdminOrganization.GetSSOEnforcement)
+			r.PUT("/{tenantId}/sso/enforcement", h.AdminOrganization.SetSSOEnforcement,
+				with([]Middleware{superWrite}, audit("organization.sso_enforcement"))...)
+
+			if h.SAML != nil {
+				r.GET("/{tenantId}/sso/saml", h.SAML.GetConfig, read...)
+				r.PUT("/{tenantId}/sso/saml", h.SAML.SetConfig, write("organization.saml_update")...)
+				r.DELETE("/{tenantId}/sso/saml", h.SAML.DeleteConfig, write("organization.saml_delete")...)
+			}
+			if h.SSO != nil {
+				r.GET("/{tenantId}/sso/identity-providers", h.SSO.ListProviders, read...)
+				r.POST("/{tenantId}/sso/identity-providers", h.SSO.CreateProvider, write("organization.idp_create")...)
+				r.GET("/{tenantId}/sso/identity-providers/{id}", h.SSO.GetProvider, read...)
+				r.PUT("/{tenantId}/sso/identity-providers/{id}", h.SSO.UpdateProvider, write("organization.idp_update")...)
+				r.DELETE("/{tenantId}/sso/identity-providers/{id}", h.SSO.DeleteProvider, write("organization.idp_delete")...)
+			}
+			if h.VerifiedDomain != nil {
+				r.GET("/{tenantId}/sso/verified-domains", h.VerifiedDomain.List, read...)
+				r.POST("/{tenantId}/sso/verified-domains", h.VerifiedDomain.AddDomain, write("organization.domain_add")...)
+				r.POST("/{tenantId}/sso/verified-domains/{id}/verify", h.VerifiedDomain.Verify, write("organization.domain_verify")...)
+				r.DELETE("/{tenantId}/sso/verified-domains/{id}", h.VerifiedDomain.Delete, write("organization.domain_delete")...)
+			}
+		}, adminAPIKeyMiddlewares...)
+	}
+
 	// Admin user management — the platform admin roster (emails, key prefixes,
 	// last-used IPs). Restricted to super_admin for BOTH reads and writes:
 	// only super_admin CanManageAdmins, and the roster itself is sensitive

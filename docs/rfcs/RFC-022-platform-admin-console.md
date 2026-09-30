@@ -1,6 +1,6 @@
 # RFC-022 — Platform administration console (Tenable-style system admin)
 
-> Status: **Accepted** (2026-09-30) — Phase 1 implemented
+> Status: **Accepted** (2026-09-30) — Phase 1 (api#547) and Phase 2 (api#548) implemented; Phase 3 UI in ui#505
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*, modeled on Tenable Security Center,
 > where the system administrator has a different login and a different menu
@@ -90,7 +90,7 @@ A `super_admin` can reset another admin's password/MFA
 
 ## Later phases
 
-- **Phase 2 (api) — Organizations.** `GET/POST /admin/tenants`, suspend/
+- **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/
   reactivate; per-organization SSO under `/admin/tenants/{id}/sso/*` (SAML,
   identity providers, verified domains, **SSO enforcement**, moved out of the
   tenant owner's `settings/security`); `TENANT_CREATION_MODE`; delete the dead

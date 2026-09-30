@@ -26,7 +26,16 @@ type AuthProvidersHandler struct {
 	// makes the login page render a button that dead-ends. Callers MUST pass
 	// the same condition the router uses to gate those routes.
 	oauthRoutesLive bool
-	logger          *logger.Logger
+	// tenantCreationMode tells onboarding whether a new user may create an
+	// organization or must wait for the platform administrator.
+	tenantCreationMode string
+	logger             *logger.Logger
+}
+
+// WithTenantCreationMode sets the value reported as tenant_creation_mode.
+func (h *AuthProvidersHandler) WithTenantCreationMode(mode string) *AuthProvidersHandler {
+	h.tenantCreationMode = mode
+	return h
 }
 
 // NewAuthProvidersHandler creates a new AuthProvidersHandler.
@@ -64,6 +73,8 @@ type AuthProvidersResponse struct {
 	// SSOEnvEntraEnabled reports whether the platform-wide (env-based)
 	// Microsoft Entra ID SSO fallback is usable (SSO_ENTRA_* configured).
 	SSOEnvEntraEnabled bool `json:"sso_env_entra_enabled"`
+	// TenantCreationMode is "self_service" or "admin_only" (TENANT_CREATION_MODE).
+	TenantCreationMode string `json:"tenant_creation_mode"`
 }
 
 // GetProviders returns which login providers are configured on this server.
@@ -81,6 +92,10 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, _ *http.Reque
 			GitHub:    h.oauthRoutesLive && h.oauthConfig.GitHub.IsConfigured(),
 		},
 		SSOEnvEntraEnabled: h.entraSSO.IsConfigured(),
+		TenantCreationMode: h.tenantCreationMode,
+	}
+	if resp.TenantCreationMode == "" {
+		resp.TenantCreationMode = config.TenantCreationSelfService
 	}
 
 	w.Header().Set("Content-Type", "application/json")

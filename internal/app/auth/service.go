@@ -29,11 +29,14 @@ import (
 const dummyLoginPasswordHash = "$2a$12$odsIwJ3GzB7hgHr/gUWeiOYuDSW0mzDtq.CWaifNmuy7t9vmuKaoW"
 
 var (
-	ErrInvalidCredentials       = errors.New("invalid email or password")
-	ErrAccountLocked            = errors.New("account is locked due to too many failed attempts")
-	ErrAccountSuspended         = errors.New("account is suspended")
-	ErrEmailNotVerified         = errors.New("email is not verified")
-	ErrRegistrationDisabled     = errors.New("registration is disabled")
+	ErrInvalidCredentials   = errors.New("invalid email or password")
+	ErrAccountLocked        = errors.New("account is locked due to too many failed attempts")
+	ErrAccountSuspended     = errors.New("account is suspended")
+	ErrEmailNotVerified     = errors.New("email is not verified")
+	ErrRegistrationDisabled = errors.New("registration is disabled")
+	// ErrTenantCreationDisabled: TENANT_CREATION_MODE=admin_only, so only the
+	// platform administrator creates organizations (RFC-022).
+	ErrTenantCreationDisabled   = errors.New("organization creation is reserved for the application administrator")
 	ErrEmailAlreadyExists       = errors.New("email already exists")
 	ErrInvalidResetToken        = errors.New("invalid or expired reset token")
 	ErrInvalidVerificationToken = errors.New("invalid or expired verification token")
@@ -1391,6 +1394,10 @@ type CreateFirstTeamResult struct {
 // CreateFirstTeam creates the first team for a user who has no tenants.
 // This endpoint uses refresh_token for authentication since user has no access_token yet.
 func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeamInput) (*CreateFirstTeamResult, error) {
+	if s.config.TenantCreationMode == config.TenantCreationAdminOnly {
+		return nil, ErrTenantCreationDisabled
+	}
+
 	// Validate the refresh token JWT
 	claims, err := s.tokenGenerator.ValidateRefreshToken(input.RefreshToken)
 	if err != nil {

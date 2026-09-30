@@ -145,3 +145,22 @@ func minimalValidConfig() *Config {
 		Encryption: EncryptionConfig{Key: "", KeyFormat: ""},
 	}
 }
+
+func TestValidate_TenantCreationMode(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Auth.TenantCreationMode = ""
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("empty mode must default, got %v", err)
+	}
+	if cfg.Auth.TenantCreationMode != TenantCreationSelfService {
+		t.Fatalf("empty mode defaulted to %q", cfg.Auth.TenantCreationMode)
+	}
+	cfg.Auth.TenantCreationMode = TenantCreationAdminOnly
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("admin_only must be valid, got %v", err)
+	}
+	cfg.Auth.TenantCreationMode = "adminonly"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("a typo must fail validation, not silently allow self-service")
+	}
+}

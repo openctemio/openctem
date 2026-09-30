@@ -282,8 +282,22 @@ func (p AuthProvider) SupportsOIDC() bool {
 	return p == AuthProviderOIDC || p == AuthProviderHybrid
 }
 
+// Organization (tenant) creation modes, TENANT_CREATION_MODE (RFC-022 D8).
+const (
+	// TenantCreationSelfService lets any signed-in user create an organization
+	// (SaaS / trial installs). The default.
+	TenantCreationSelfService = "self_service"
+	// TenantCreationAdminOnly reserves organization creation for the platform
+	// administrator (on-prem / enterprise installs, Tenable-style).
+	TenantCreationAdminOnly = "admin_only"
+)
+
 // AuthConfig holds authentication configuration.
 type AuthConfig struct {
+	// TenantCreationMode is TenantCreationSelfService or TenantCreationAdminOnly.
+	// The platform administrator can create organizations in either mode.
+	TenantCreationMode string
+
 	// Provider determines which authentication methods are available.
 	// Values: "local", "oidc", "hybrid"
 	Provider AuthProvider
@@ -798,6 +812,7 @@ func Load() (*Config, error) {
 				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),
 			},
 			AllowedRedirectURIs: getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
+			TenantCreationMode:  getEnv("TENANT_CREATION_MODE", TenantCreationSelfService),
 			PlatformAdminEmails: getEnvSlice("PLATFORM_ADMIN_EMAILS", nil),
 		},
 		Keycloak: KeycloakConfig{
@@ -1143,6 +1158,15 @@ func (c *Config) validateEncryption() error {
 
 // validateAuth validates authentication configuration.
 func (c *Config) validateAuth() error {
+	switch c.Auth.TenantCreationMode {
+	case "":
+		// Unset (e.g. a Config built in code): the default.
+		c.Auth.TenantCreationMode = TenantCreationSelfService
+	case TenantCreationSelfService, TenantCreationAdminOnly:
+	default:
+		return fmt.Errorf("invalid TENANT_CREATION_MODE: %s (must be '%s' or '%s')",
+			c.Auth.TenantCreationMode, TenantCreationSelfService, TenantCreationAdminOnly)
+	}
 	if !c.Auth.Provider.IsValid() {
 		return fmt.Errorf("invalid AUTH_PROVIDER: %s (must be 'local', 'oidc', or 'hybrid')", c.Auth.Provider)
 	}
