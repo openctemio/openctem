@@ -25,6 +25,11 @@ const (
 	LocalClaimsKey       logger.ContextKey = "local_claims"
 	TenantMembershipsKey logger.ContextKey = "tenant_memberships"
 	AccessibleTenantsKey logger.ContextKey = "accessible_tenants"
+	// IsPlatformAdminKey marks the authenticated principal as an application
+	// (platform) administrator. It is stamped by UnifiedAuth when the caller's
+	// email is in the PLATFORM_ADMIN_EMAILS allow-list, independent of the
+	// tenant-level role. See IsPlatformAdmin.
+	IsPlatformAdminKey logger.ContextKey = "is_platform_admin"
 )
 
 // AuthProvider values for context.
@@ -49,6 +54,16 @@ type UnifiedAuthConfig struct {
 	OIDCValidator         *keycloak.Validator
 	Logger                *logger.Logger
 	SessionTimeoutMinutes int // Session timeout in minutes (0 = disabled)
+
+	// PlatformAdminEmails is the set of email addresses (lower-cased) that are
+	// application (platform) administrators — the operators allowed to manage
+	// tenant SSO/SAML/identity-provider/verified-domain configuration, modeled
+	// on Tenable Security Center's system-level administrator. Designated
+	// out-of-band via the PLATFORM_ADMIN_EMAILS env var (not settable through
+	// any tenant API), so there is no self-escalation path. Empty = nobody is a
+	// platform admin (SSO config is then reachable only via a Keycloak
+	// platform_admin realm role, if OIDC is in use).
+	PlatformAdminEmails map[string]bool
 }
 
 // DefaultAccessTokenCookieName is the default cookie name for access tokens.
@@ -137,6 +152,17 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 				if isSessionExpired(ctx, cfg.SessionTimeoutMinutes) {
 					apierror.Unauthorized("Session has expired").WriteJSON(w)
 					return
+				}
+			}
+
+			// Mark application (platform) administrators. Designated out-of-band
+			// via PLATFORM_ADMIN_EMAILS, so it applies to both local and OIDC
+			// auth and cannot be granted through any tenant API. This is the
+			// tier allowed to manage tenant SSO/SAML/identity-provider config.
+			if len(cfg.PlatformAdminEmails) > 0 {
+				email := strings.ToLower(strings.TrimSpace(GetEmail(ctx)))
+				if email != "" && cfg.PlatformAdminEmails[email] {
+					ctx = context.WithValue(ctx, IsPlatformAdminKey, true)
 				}
 			}
 
@@ -505,6 +531,12 @@ func RequireOwner() func(http.Handler) http.Handler {
 // 1. Having "platform_admin" role in RealmAccess (for OIDC/Keycloak)
 // 2. Being the system admin (for local auth - checks specific user IDs or emails)
 func IsPlatformAdmin(ctx context.Context) bool {
+	// Stamped by UnifiedAuth from the PLATFORM_ADMIN_EMAILS allow-list. This is
+	// the path that works for local auth (and OIDC), independent of realm roles.
+	if isAdmin, ok := ctx.Value(IsPlatformAdminKey).(bool); ok && isAdmin {
+		return true
+	}
+
 	claims := GetClaims(ctx)
 	if claims == nil {
 		return false

@@ -250,6 +250,32 @@ Authorization is enforced at the **route layer** in
 > writes: it exposes admin emails, key prefixes, and last-used IPs, so listing
 > it is itself a privileged operation.
 
+### SSO / identity-federation setup (application administrator)
+
+SSO **setup** for a tenant is an application-administrator operation (modeled on
+Tenable Security Center's system-level Configuration), distinct from both the
+tenant `RequireAdmin` tier and the `/api/v1/admin/*` API-key console above.
+
+The application administrator is designated out-of-band via the
+`PLATFORM_ADMIN_EMAILS` env allow-list; `UnifiedAuth` stamps an
+`is_platform_admin` context flag for those emails (local **and** OIDC), and a
+Keycloak `platform_admin`/`system_admin` realm role also satisfies it. It is
+never grantable through a tenant API — no self-escalation path. Guarded by
+`middleware.RequirePlatformAdmin` on the normal JWT-tenant chain, so each route
+still resolves against the caller's tenant.
+
+| Endpoint | Required tier |
+|----------|---------------|
+| `GET/PUT/DELETE /api/v1/settings/saml` | **platform admin** |
+| `CRUD /api/v1/settings/identity-providers` | **platform admin** |
+| `CRUD + verify /api/v1/settings/verified-domains` | **platform admin** |
+| `/api/v1/scim-tokens` (+ `/group-mappings`) | **platform admin** |
+
+> **Fail-closed:** with `PLATFORM_ADMIN_EMAILS` unset, these routes 403 for every
+> local-auth user. The SSO **login** flow (`/api/v1/auth/sso/*`,
+> `/api/v1/auth/saml/{org}/*`) is unaffected — it stays public. See
+> `docs/architecture/sso-authentication.md`.
+
 ### Metrics Endpoint (`GET /metrics`)
 
 `/metrics` (Prometheus) is **not public by default**. It is gated by

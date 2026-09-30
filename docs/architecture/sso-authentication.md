@@ -42,6 +42,44 @@ Security: outbound calls use `httpsec.SafeHTTPClient` (refuses loopback/RFC1918/
 link-local), Entra/Graph hosts are fixed strings, an email is required, and the
 email domain is checked against the provider's allow-list.
 
+## Who may configure SSO (application administrator only)
+
+Configuring a tenant's SSO is an **application-administrator** operation, not a
+tenant one — modeled on Tenable Security Center, where SAML lives under
+system-level *Configuration*, not in an organization user's settings. A tenant
+owner/admin can **no longer** set up SSO for their own tenant.
+
+The application administrator is designated **out-of-band** via the
+`PLATFORM_ADMIN_EMAILS` env var (comma-separated email allow-list). `UnifiedAuth`
+stamps an `is_platform_admin` flag onto the request context when the
+authenticated caller's email is in that list, for both local and OIDC auth
+(`middleware.IsPlatformAdmin`). Because the list is only read from the
+environment and never from any tenant API, there is **no self-escalation path** —
+no tenant admin can grant themselves this tier. (Under OIDC, a Keycloak
+`platform_admin`/`system_admin` realm role also satisfies the check.)
+
+All of the following config routes are guarded by `RequirePlatformAdmin` (they
+stay on the JWT-tenant chain, so each resolves against the caller's tenant):
+
+| Routes | Purpose |
+|--------|---------|
+| `/api/v1/settings/saml` (GET/PUT/DELETE) | Per-tenant SAML config |
+| `/api/v1/settings/identity-providers` (CRUD) | OIDC identity providers (Entra/Okta/Google) |
+| `/api/v1/settings/verified-domains` (CRUD + verify) | DNS-verified domains gating JIT provisioning |
+| `/api/v1/scim-tokens` (+ `group-mappings`) | SCIM provisioning tokens & group→role mappings |
+
+The **login** flow (`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*`) is
+unchanged and remains public — this restriction is about *setup*, not sign-in.
+
+> ⚠️ **Fail-closed / deploy note.** If `PLATFORM_ADMIN_EMAILS` is empty, **no
+> local-auth user can configure SSO for any tenant** — every setup route returns
+> 403. Set it to at least one operator email (e.g. `PLATFORM_ADMIN_EMAILS=ops@yourco.com`)
+> before enabling SSO, or you will lock yourself out of setup. Existing SSO
+> *logins* keep working regardless.
+
+The UI reads `is_platform_admin` from `GET /api/v1/users/me` and hides the SSO
+setup surface from everyone else.
+
 ## Configuration resolution (tenant → env fallback)
 
 `SSOService.resolveProvider(tenantID, provider)` returns the **effective**
