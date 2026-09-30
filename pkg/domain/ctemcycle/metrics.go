@@ -63,4 +63,10 @@ type MetricsRepository interface {
 	// metrics in a single query, ordered by closed_at ascending, for
 	// the trend/maturity endpoint. No N+1.
 	ListClosedForTenant(ctx context.Context, tenantID shared.ID) ([]CycleMetrics, error)
+	// GetSuccessCriteria returns the success criteria on the cycle's
+	// charter. Returns shared.ErrNotFound for a foreign cycle.
+	GetSuccessCriteria(ctx context.Context, tenantID, cycleID shared.ID) ([]CharterSuccessCriterion, error)
+	// SaveCharterEvaluation stores the close-time verdicts on the cycle.
+	// Returns shared.ErrNotFound (and writes nothing) for a foreign cycle.
+	SaveCharterEvaluation(ctx context.Context, tenantID, cycleID shared.ID, ev CharterEvaluation) error
 }

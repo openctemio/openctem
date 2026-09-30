@@ -31,6 +31,39 @@ quarterly scope refresh) anchored to the active cycle.
 > Cycle status flows **planning → active → review → closed**, and each transition
 > is guarded by a confirmation. Only closed cycles show a "Completed" badge.
 
+### Success criteria are checked at close
+
+Each charter success criterion is a **name**, a **metric** and a **target**. When
+the cycle closes, the platform checks every criterion against the metrics it
+measured over the cycle (activation → close) and records one of:
+
+- **Met** / **Unmet** — the metric was recognized and the target is a number the
+  platform could compare. The measured value is stored next to the verdict.
+- **Not measurable** — the metric is not one the platform measures, the target is
+  not a numeric comparison, the unit does not fit, or there was no data (for
+  example, no risk snapshot before the cycle started). The reason is shown so you
+  can reword the criterion next cycle. Free-text criteria are never guessed at.
+
+The cycle's **completion rate** is met ÷ (met + unmet); not-measurable criteria
+are left out. It is stored with the cycle metrics as `charter_completion_rate`.
+
+Metrics a criterion can name (case and spacing don't matter):
+
+| Metric | Measures | Default comparison |
+|---|---|---|
+| `mttr` / `mttr_hours` / `mttr_days` | mean time from finding creation to resolution | at most |
+| `p0_resolved`, `p1_resolved` | P0 / P1 findings resolved during the cycle | at least |
+| `p0_open`, `p1_open` | P0 / P1 findings open at close (daily risk snapshot) | at most |
+| `findings_resolved`, `findings_opened` | findings resolved / created during the cycle | at least / at most |
+| `validation_coverage` | % of resolved findings with validation evidence | at least |
+| `risk_reduction` | % drop in average asset risk from start to close | at least |
+| `risk_after` | average asset risk at close | at most |
+| `p_class_churn` | priority-class changes during the cycle | at most |
+
+Targets read like `0`, `< 48h`, `<= 14 days`, `>= 90%`, `at least 5` or
+`under 2 weeks`. A bare number uses the default comparison above, so
+`MTTR: 7 days` means "at most 7 days" and `P0 resolved: 10` means "at least 10".
+
 ## Define your scope
 
 **Scoping → Scope Config** (`/scope-config`) is where you draw the boundary of

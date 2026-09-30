@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -146,7 +147,152 @@ func (r *CTEMCycleMetricsRepository) Compute(
 	// metric exists and the series is complete.
 	out[ctemcycle.MetricScopeDriftSize] = 0
 
+	// p0_resolved / p1_resolved — findings of that priority class resolved
+	// within the window. Priority class is read as it is now; a finding
+	// re-classified after it was resolved counts under its current class.
+	var p0Resolved, p1Resolved int64
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FILTER (WHERE priority_class = 'P0'),
+		       COUNT(*) FILTER (WHERE priority_class = 'P1')
+		  FROM findings
+		 WHERE tenant_id = $1
+		   AND resolved_at IS NOT NULL
+		   AND resolved_at >= $2 AND resolved_at < $3
+	`, tid, start, end).Scan(&p0Resolved, &p1Resolved); err != nil {
+		return nil, fmt.Errorf("compute p0/p1_resolved: %w", err)
+	}
+	out[ctemcycle.MetricP0Resolved] = float64(p0Resolved)
+	out[ctemcycle.MetricP1Resolved] = float64(p1Resolved)
+
+	if err := r.computeRiskSnapshotMetrics(ctx, tid, start, end, out); err != nil {
+		return nil, err
+	}
+
 	return out, nil
+}
+
+// computeRiskSnapshotMetrics reads the tenant's daily risk_snapshots to
+// derive the point-in-time metrics a window query cannot: risk at the start
+// and end of the cycle, and the open P0/P1 backlog at close.
+//
+//   - risk_before: risk_score_avg of the latest snapshot on or before the
+//     window-start date
+//   - risk_after / p0_open_at_close / p1_open_at_close: the latest snapshot on
+//     or before the window-end date
+//   - risk_reduction_pct: (before − after) / before × 100
+//
+// Reading snapshots (not live tables) keeps the values reproducible: a lazy
+// recompute months after close yields the same numbers as the close itself.
+// Metrics are only emitted when the snapshot exists — a missing value makes
+// a criterion "not measurable" rather than silently passing on a 0. Risk
+// before/after/reduction are also skipped when both ends resolve to the same
+// snapshot day, which would report a meaningless 0% change.
+func (r *CTEMCycleMetricsRepository) computeRiskSnapshotMetrics(
+	ctx context.Context, tid string, start, end time.Time, out ctemcycle.CycleMetricSet,
+) error {
+	const q = `
+		SELECT snapshot_date, risk_score_avg::double precision, p0_open, p1_open
+		  FROM risk_snapshots
+		 WHERE tenant_id = $1 AND snapshot_date <= $2::date
+		 ORDER BY snapshot_date DESC
+		 LIMIT 1
+	`
+	type snap struct {
+		day            time.Time
+		risk           float64
+		p0Open, p1Open int64
+	}
+	load := func(at time.Time) (*snap, error) {
+		var s snap
+		var p0, p1 sql.NullInt64
+		var risk sql.NullFloat64
+		err := r.db.QueryRowContext(ctx, q, tid, at.UTC().Format("2006-01-02")).
+			Scan(&s.day, &risk, &p0, &p1)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		s.risk, s.p0Open, s.p1Open = risk.Float64, p0.Int64, p1.Int64
+		return &s, nil
+	}
+
+	after, err := load(end)
+	if err != nil {
+		return fmt.Errorf("compute risk snapshot at close: %w", err)
+	}
+	if after == nil {
+		return nil
+	}
+	out[ctemcycle.MetricP0OpenAtClose] = float64(after.p0Open)
+	out[ctemcycle.MetricP1OpenAtClose] = float64(after.p1Open)
+
+	before, err := load(start)
+	if err != nil {
+		return fmt.Errorf("compute risk snapshot at start: %w", err)
+	}
+	if before == nil || !before.day.Before(after.day) {
+		return nil
+	}
+	out[ctemcycle.MetricRiskBefore] = before.risk
+	out[ctemcycle.MetricRiskAfter] = after.risk
+	if before.risk > 0 {
+		out[ctemcycle.MetricRiskReductionPct] = 100 * (before.risk - after.risk) / before.risk
+	}
+	return nil
+}
+
+// GetSuccessCriteria returns the success criteria on the cycle's charter,
+// tenant-scoped.
+func (r *CTEMCycleMetricsRepository) GetSuccessCriteria(
+	ctx context.Context, tenantID, cycleID shared.ID,
+) ([]ctemcycle.CharterSuccessCriterion, error) {
+	var raw []byte
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(charter, '{}'::jsonb) FROM ctem_cycles WHERE id = $1 AND tenant_id = $2`,
+		cycleID.String(), tenantID.String(),
+	).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load cycle charter: %w", err)
+	}
+	var charter struct {
+		SuccessCriteria []ctemcycle.CharterSuccessCriterion `json:"success_criteria"`
+	}
+	if err := json.Unmarshal(raw, &charter); err != nil {
+		return nil, fmt.Errorf("decode cycle charter: %w", err)
+	}
+	return charter.SuccessCriteria, nil
+}
+
+// SaveCharterEvaluation stores the close-time verdicts on the cycle row,
+// tenant-scoped: a foreign cycle matches no row and yields ErrNotFound.
+func (r *CTEMCycleMetricsRepository) SaveCharterEvaluation(
+	ctx context.Context, tenantID, cycleID shared.ID, ev ctemcycle.CharterEvaluation,
+) error {
+	raw, err := json.Marshal(ev)
+	if err != nil {
+		return fmt.Errorf("encode charter evaluation: %w", err)
+	}
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE ctem_cycles SET charter_evaluation = $3::jsonb
+		  WHERE id = $1 AND tenant_id = $2`,
+		cycleID.String(), tenantID.String(), raw,
+	)
+	if err != nil {
+		return fmt.Errorf("save charter evaluation: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("save charter evaluation rows: %w", err)
+	}
+	if n == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
 }
 
 // UpsertBatch replaces the stored metric rows for one cycle with the
