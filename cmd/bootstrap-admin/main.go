@@ -192,6 +192,12 @@ func main() {
 	fmt.Println()
 	fmt.Println("Test the connection:")
 	fmt.Println("  openctem-admin cluster-info")
+	fmt.Println()
+	fmt.Println("Admin console login (browser, RFC-022): set a password with this key,")
+	fmt.Println("then sign in at <ui-url>/admin/login and enroll an authenticator app:")
+	fmt.Println("  curl -X POST https://your-api-url/api/v1/admin/auth/password \\")
+	fmt.Println("    -H 'X-Admin-API-Key: " + "<key above>" + "' -H 'Content-Type: application/json' \\")
+	fmt.Println("    -d '{\"new_password\":\"<at least 12 characters>\"}'")
 }
 
 // extractPrefix extracts the lookup prefix from an API key.

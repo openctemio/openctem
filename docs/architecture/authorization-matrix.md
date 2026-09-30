@@ -225,9 +225,15 @@ These routes require the tenant ID in the URL path and use database-based member
 
 ### Platform Admin Routes (`/api/v1/admin/*`)
 
-Platform admin routes are for OpenCTEM operators, NOT tenant users. They use
-API-key auth via the `X-Admin-API-Key` header (or `Authorization: Bearer`) and
-carry a platform role: `super_admin` > `ops_admin` > `readonly`.
+Platform admin routes are for OpenCTEM operators, NOT tenant users. They
+authenticate with either an **API key** (`X-Admin-API-Key` header or
+`Authorization: Bearer`, for CLI/automation) or a **console session** (RFC-022:
+password + mandatory TOTP, server-side session in the `admin_session` cookie,
+scoped to `/api/v1/admin`; cookie-authenticated writes must pass the
+`admin_csrf` double-submit check). Both resolve to the same `admin_users` row
+and carry a platform role: `super_admin` > `ops_admin` > `readonly`. The tenant
+JWT never authenticates these routes, and the admin session never reaches tenant
+routes.
 
 Authorization is enforced at the **route layer** in
 `internal/infra/http/routes/admin.go` via `AdminAuthMiddleware.RequireRole(...)`
@@ -236,6 +242,10 @@ Authorization is enforced at the **route layer** in
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
+| `POST /api/v1/admin/auth/login`, `/mfa` | public (rate-limited console login steps) |
+| `POST /api/v1/admin/auth/logout` | public (ends the caller's own session) |
+| `POST /api/v1/admin/auth/password` | any admin, own password (API key: no current password needed) |
+| `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** (audited; not self) |
 | `GET /api/v1/admin/users` | **super_admin** |
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
 | `POST /api/v1/admin/users` | **super_admin** (audited) |
