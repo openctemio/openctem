@@ -5,7 +5,7 @@
 # -----------------------------------------------------------------------------
 # Development stage - Standalone, no deps copy needed (uses volumes)
 # -----------------------------------------------------------------------------
-FROM public.ecr.aws/docker/library/golang:1.26.5-alpine AS development
+FROM golang:1.26.5-alpine AS development
 
 WORKDIR /app
 
@@ -35,7 +35,7 @@ CMD ["/usr/local/bin/dev-entrypoint.sh"]
 # SDK is fetched from GitHub as a released module (not local)
 # Build context: api/ folder (not parent)
 # -----------------------------------------------------------------------------
-FROM public.ecr.aws/docker/library/golang:1.26.5-alpine AS base
+FROM golang:1.26.5-alpine AS base
 
 WORKDIR /app
 
@@ -86,7 +86,7 @@ RUN CGO_ENABLED=0 \
 # -----------------------------------------------------------------------------
 # Production stage
 # -----------------------------------------------------------------------------
-FROM public.ecr.aws/docker/library/alpine:3.20 AS production
+FROM alpine:3.20 AS production
 
 # Set working directory
 WORKDIR /app
