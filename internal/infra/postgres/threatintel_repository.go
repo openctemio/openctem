@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -281,24 +282,47 @@ func (r *EPSSRepository) GetTopPercentile(ctx context.Context, percentile float6
 	return r.scanEPSSScores(rows)
 }
 
-// CountTenantOpenAboveScore returns the number of the tenant's OPEN findings
-// whose CVE has an EPSS score at or above the given threshold. This is a real
-// tenant-scoped COUNT (no LIMIT, no saturation): it joins the tenant's findings
-// to the EPSS catalog on the CVE id, so it reflects the tenant's actual
-// exposure rather than the size of the global EPSS catalog.
-func (r *EPSSRepository) CountTenantOpenAboveScore(ctx context.Context, tenantID shared.ID, threshold float64) (int64, error) {
+// CountTenantOpenAboveScores returns, for each threshold, the number of the
+// tenant's OPEN findings whose CVE has an EPSS score at or above it. These are
+// real tenant-scoped COUNTs (no LIMIT, no saturation) computed in ONE join of
+// the tenant's findings to the EPSS catalog (one FILTER per threshold) instead
+// of one full join per threshold.
+//
+// COUNT(*) equals the former COUNT(DISTINCT f.id): epss_scores.cve_id is the
+// primary key, so each finding joins at most one EPSS row.
+func (r *EPSSRepository) CountTenantOpenAboveScores(ctx context.Context, tenantID shared.ID, thresholds []float64) ([]int64, error) {
+	if len(thresholds) == 0 {
+		return []int64{}, nil
+	}
+	args := make([]any, 0, len(thresholds)+1)
+	args = append(args, tenantID.String())
+	cols := make([]string, len(thresholds))
+	minThreshold := thresholds[0]
+	for i, th := range thresholds {
+		args = append(args, th)
+		cols[i] = fmt.Sprintf("COUNT(*) FILTER (WHERE es.epss_score >= $%d)", i+2)
+		if th < minThreshold {
+			minThreshold = th
+		}
+	}
+	args = append(args, minThreshold)
 	query := `
-		SELECT COUNT(DISTINCT f.id)
+		SELECT ` + strings.Join(cols, ", ") + `
 		FROM findings f
 		JOIN epss_scores es ON es.cve_id = f.cve_id
 		WHERE f.tenant_id = $1
-			AND es.epss_score >= $2
+			AND es.epss_score >= $` + strconv.Itoa(len(args)) + `
 			AND ` + openFindingStatusClause
-	var count int64
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), threshold).Scan(&count); err != nil {
-		return 0, fmt.Errorf("failed to count tenant open findings above EPSS score: %w", err)
+
+	counts := make([]int64, len(thresholds))
+	dest := make([]any, len(counts))
+	for i := range counts {
+		dest[i] = &counts[i]
 	}
-	return count, nil
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(dest...); err != nil {
+		return nil, fmt.Errorf("failed to count tenant open findings above EPSS scores: %w", err)
+	}
+	return counts, nil
 }
 
 // Count returns the total number of EPSS scores.

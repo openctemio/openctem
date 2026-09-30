@@ -125,6 +125,14 @@ const (
 	// finding as having missed its remediation deadline.
 	EventTypeSLABreach EventType = "sla_breach"
 
+	// EventTypeSLAWarning fires when the SLA escalation controller flags a
+	// finding as approaching its remediation deadline (the pre-breach warning).
+	// Emitted at severity "medium", which is below the default severity filter
+	// (critical, high), so it is registered as a selectable/opt-in type but NOT
+	// added to DefaultEnabledEventTypes — an operator enables it and widens the
+	// severity filter to receive it.
+	EventTypeSLAWarning EventType = "sla_warning"
+
 	// Approval events (risk-acceptance / status-change approvals on findings)
 	EventTypeApprovalRequested EventType = "approval_requested"
 	EventTypeApprovalApproved  EventType = "approval_approved"
@@ -191,6 +199,7 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeFindingPriorityEscalated, Category: EventCategoryFinding, Label: "Priority Escalated", Description: "Finding re-classified to a higher priority (e.g. P3 to P0)", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingAssigned, Category: EventCategoryFinding, Label: "Finding Assigned", Description: "Finding routed to a group by an assignment rule with group notification enabled", RequiredModule: ModuleFindings},
 		{Type: EventTypeSLABreach, Category: EventCategoryFinding, Label: "SLA Breached", Description: "Finding missed its SLA remediation deadline", RequiredModule: ModuleFindings},
+		{Type: EventTypeSLAWarning, Category: EventCategoryFinding, Label: "SLA Approaching", Description: "Finding is approaching its SLA remediation deadline (pre-breach warning)", RequiredModule: ModuleFindings},
 
 		// Approval events - require 'findings' module (approvals gate finding status changes)
 		{Type: EventTypeApprovalRequested, Category: EventCategoryApproval, Label: "Approval Requested", Description: "Someone requested approval for a finding status change", RequiredModule: ModuleFindings},
@@ -280,6 +289,12 @@ func DefaultEnabledEventTypes() []EventType {
 func SeverityFilterApplies(eventType EventType) bool {
 	switch MapLegacyEventType(eventType) {
 	case EventTypeApprovalRequested, EventTypeApprovalApproved, EventTypeApprovalRejected:
+		return false
+	// new_asset announces attack-surface growth (a newly discovered
+	// internet-facing asset). Its severity is a fixed label set by the
+	// discovery notifier, not a finding severity, so the default
+	// critical+high filter would silently drop every one of them.
+	case EventTypeNewAsset:
 		return false
 	default:
 		return true

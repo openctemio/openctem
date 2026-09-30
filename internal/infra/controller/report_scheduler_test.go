@@ -27,7 +27,7 @@ func (f *fakeStore) Update(_ context.Context, s *reportschedule.ReportSchedule) 
 
 type fakeStats struct{}
 
-func (fakeStats) GetStats(_ context.Context, _ shared.ID, _, _ *shared.ID) (*vulnerability.FindingStats, error) {
+func (fakeStats) GetStats(_ context.Context, _ shared.ID, _ *shared.ID, _ vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
 	st := vulnerability.NewFindingStats()
 	st.Total, st.OpenCount, st.ResolvedCount = 10, 7, 3
 	st.BySeverity[vulnerability.SeverityHigh] = 4

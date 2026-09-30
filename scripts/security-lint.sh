@@ -97,6 +97,10 @@ check_http_client() {
         # Webhook fallback: SafeHTTPClient is attempted first; the
         # fallback path only fires when the helper returns nil (tests).
         'api/internal/infra/notifier/webhook.go'
+        # Splunk HEC fallback: identical pattern to webhook.go —
+        # SafeHTTPClient is used in production; the plain &http.Client
+        # fires only on the AllowLoopback test path (httptest 127.0.0.1).
+        'api/internal/infra/notifier/splunk.go'
         # Workflow HTTPRequestHandler implements its own SSRF guard
         # inline (validateURL + safeDialer + CheckRedirect). Functionally
         # equivalent to SafeHTTPClient; consolidation is a follow-up.

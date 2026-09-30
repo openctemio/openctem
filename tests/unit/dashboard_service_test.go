@@ -214,6 +214,10 @@ func (m *mockDashboardRepo) GetProcessMetrics(_ context.Context, _ shared.ID, _ 
 	return &app.ProcessMetrics{}, nil
 }
 
+func (m *mockDashboardRepo) GetProgramMetrics(_ context.Context, _ shared.ID, days int) (*app.ProgramMetrics, error) {
+	return &app.ProgramMetrics{PeriodDays: days}, nil
+}
+
 // =============================================================================
 // Helper functions
 // =============================================================================

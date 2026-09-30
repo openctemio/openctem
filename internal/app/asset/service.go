@@ -51,6 +51,7 @@ type AssetService struct {
 	repoExtRepo       assetdom.RepositoryExtensionRepository
 	assetGroupRepo    assetgroupdom.Repository // For recalculating group stats
 	accessControlRepo accesscontrol.Repository // For Layer 2 data scope checks
+	dataScopePolicy   DataScopePolicy          // Layer 2: fail-open vs fail-closed per tenant (nil = fail-open)
 	scoringProvider   assetdom.ScoringConfigProvider
 	redisClient       *redis.Client
 	logger            *logger.Logger
@@ -120,6 +121,21 @@ func (s *AssetService) SetAssetGroupRepository(repo assetgroupdom.Repository) {
 // SetAccessControlRepository sets the access control repository for Layer 2 data scope checks.
 func (s *AssetService) SetAccessControlRepository(repo accesscontrol.Repository) {
 	s.accessControlRepo = repo
+}
+
+// DataScopePolicy reports whether a tenant enforces restricted (fail-closed)
+// data scope. Nil (or false) preserves the default fail-open behavior.
+type DataScopePolicy interface {
+	RestrictedDataScope(ctx context.Context, tenantID string) bool
+}
+
+// SetDataScopePolicy wires the per-tenant fail-open/closed policy. Nil-safe.
+func (s *AssetService) SetDataScopePolicy(p DataScopePolicy) {
+	s.dataScopePolicy = p
+}
+
+func (s *AssetService) dataScopeStrict(ctx context.Context, tenantID string) bool {
+	return s.dataScopePolicy != nil && s.dataScopePolicy.RestrictedDataScope(ctx, tenantID)
 }
 
 // SetScoringConfigProvider sets the scoring config provider for configurable risk scoring.
@@ -898,8 +914,12 @@ func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID,
 			if !canAccess {
 				return nil, shared.ErrNotFound // don't leak asset existence
 			}
+		} else if s.dataScopeStrict(ctx, tenantID) {
+			// Fail-CLOSED (tenant RestrictedDataScope): no scope assignment ⇒ no
+			// access. Don't leak the asset's existence.
+			return nil, shared.ErrNotFound
 		}
-		// If !hasScope, user has no scope assignments → show all (backward compat)
+		// Else (fail-OPEN default): no scope assignments → show all (backward compat)
 	}
 
 	return a, nil
@@ -970,6 +990,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		}
 	}
 
+	oldExposure := a.Exposure()
 	if input.Exposure != nil {
 		exposure, err := assetdom.ParseExposure(*input.Exposure)
 		if err != nil {
@@ -1054,6 +1075,14 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 
 	// Recalculate affected group stats (risk_score, finding_count, etc.)
 	s.recalculateAffectedGroups(ctx, parsedID)
+
+	// A manual exposure change (e.g. an operator marking an asset public) is
+	// part of "what changed" in the attack surface, same as a scan-driven one.
+	if a.Exposure() != oldExposure {
+		s.recordStateChange(ctx, assetdom.RecordFieldChange(parsedTenantID, parsedID,
+			assetdom.StateChangeExposureChanged, "exposure",
+			oldExposure.String(), a.Exposure().String(), assetdom.ChangeSourceManual, nil))
+	}
 
 	// Evaluate scope rules if tags changed (async — don't block response)
 	if s.scopeRuleEvaluator != nil && input.Tags != nil && !tagsEqual(oldTags, a.Tags()) {
@@ -1333,6 +1362,7 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		userID, err := shared.IDFromString(input.ActingUserID)
 		if err == nil {
 			filter = filter.WithDataScopeUserID(userID)
+			filter.DataScopeStrict = s.dataScopeStrict(ctx, input.TenantID)
 		}
 	}
 
@@ -1822,6 +1852,79 @@ func (s *AssetService) GetRepositoryExtensionsByAssetIDs(ctx context.Context, as
 	}
 
 	return s.repoExtRepo.GetByAssetIDs(ctx, assetIDs)
+}
+
+// AssetDisplay is the label data other resources show for an asset.
+type AssetDisplay struct {
+	ID     string
+	Name   string
+	Type   string
+	WebURL string // repository assets only; empty otherwise
+}
+
+// GetAssetDisplayInfo resolves the display label of many assets with two
+// queries in total (assets by id, then repository extensions for the
+// repository-typed ones), replacing one GetAssetWithRepository call — a full
+// asset load with a per-asset finding aggregate, plus an extension lookup —
+// per distinct asset on a findings page.
+//
+// Security: only assets of tenantID are returned (the tenant predicate is in
+// the query); extensions are looked up only for ids that query returned.
+// Malformed or unknown ids are absent from the result, matching the per-id
+// path where a failed lookup leaves the asset unlabeled.
+func (s *AssetService) GetAssetDisplayInfo(ctx context.Context, tenantID string, assetIDs []string) (map[string]AssetDisplay, error) {
+	result := make(map[string]AssetDisplay, len(assetIDs))
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
+	seen := make(map[shared.ID]struct{}, len(assetIDs))
+	ids := make([]shared.ID, 0, len(assetIDs))
+	for _, raw := range assetIDs {
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	infos, err := s.repo.GetDisplayInfoByIDs(ctx, parsedTenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	var repoIDs []shared.ID
+	for id, info := range infos {
+		result[id.String()] = AssetDisplay{ID: id.String(), Name: info.Name, Type: info.Type.String()}
+		if info.Type == assetdom.AssetTypeRepository {
+			repoIDs = append(repoIDs, id)
+		}
+	}
+
+	if len(repoIDs) > 0 && s.repoExtRepo != nil {
+		exts, err := s.repoExtRepo.GetByAssetIDs(ctx, repoIDs)
+		if err != nil {
+			// The label is still useful without the link; don't drop it.
+			s.logger.Warn("failed to batch load repository extensions", "count", len(repoIDs), "error", err)
+		} else {
+			for id, ext := range exts {
+				if d, ok := result[id.String()]; ok && ext != nil {
+					d.WebURL = ext.WebURL()
+					result[id.String()] = d
+				}
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // GetAssetWithRepository retrieves an asset with its repository extension.

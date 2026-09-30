@@ -22,12 +22,19 @@ import "testing"
 // preset may only reference ACTIVE rows (now enforced by
 // TestModuleCatalog_PresetModulesHaveActiveRows), and it would surface a
 // second, redundant nav entry.
+//
+// `policies` joins the same club: it had a catalog row + a permission
+// mapping but zero routes and no real nav — a dead module. Migration 000215
+// deprecates it (is_active = FALSE / 'deprecated') and it was dropped from
+// every preset; the constant + ModulePermissionMapping entry stay only so
+// historic permission lookups resolve, so it too must be excluded here.
 var legacyDuplicateModuleIDs = map[string]bool{
 	"scope":     true,
 	"sources":   true,
 	"pipelines": true,
 	"webhooks":  true,
 	"secrets":   true,
+	"policies":  true,
 }
 
 // TestCTEMFullEnablesEveryRealModule is the drift-guard that would have caught

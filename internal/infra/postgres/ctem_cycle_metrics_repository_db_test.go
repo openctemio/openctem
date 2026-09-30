@@ -132,16 +132,16 @@ func TestCTEMCycleMetricsRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if len(stored) != 6 {
-		t.Fatalf("want 6 stored metrics, got %d", len(stored))
+	if len(stored) != 8 {
+		t.Fatalf("want 8 stored metrics, got %d", len(stored))
 	}
 	// Upsert is delete-then-insert: a second upsert must not duplicate.
 	if err := repo.UpsertBatch(ctx, tenantID, tcid, set); err != nil {
 		t.Fatalf("re-upsert: %v", err)
 	}
 	stored, _ = repo.Get(ctx, tenantID, tcid)
-	if len(stored) != 6 {
-		t.Fatalf("after re-upsert want 6, got %d (upsert not idempotent)", len(stored))
+	if len(stored) != 8 {
+		t.Fatalf("after re-upsert want 8, got %d (upsert not idempotent)", len(stored))
 	}
 
 	// --- Tenant isolation: a foreign tenant sees nothing ---

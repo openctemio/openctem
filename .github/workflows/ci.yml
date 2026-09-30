@@ -169,7 +169,8 @@ jobs:
         run: go vet ./...
 
       - name: Install staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+        # pinned: @latest drifted to a version whose SA4023 analyzer segfaults (see 2026-08-24)
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
 
       - name: Run staticcheck
         run: staticcheck ./...

@@ -31,7 +31,7 @@ func newWorkerWithHistory(repo assetdom.StateHistoryRepository) *AssetLifecycleW
 	return w
 }
 
-func TestRecordStaleHistory_WritesStatusChangedPerAsset(t *testing.T) {
+func TestRecordStaleHistory_WritesDisappearedPerAsset(t *testing.T) {
 	fake := &fakeStateHistory{}
 	w := newWorkerWithHistory(fake)
 	tenantID := shared.NewID()
@@ -47,8 +47,8 @@ func TestRecordStaleHistory_WritesStatusChangedPerAsset(t *testing.T) {
 		t.Fatalf("expected 2 state-change records, got %d", len(changes))
 	}
 	for _, c := range changes {
-		if c.ChangeType() != assetdom.StateChangeStatusChanged {
-			t.Errorf("change type = %q, want status_changed", c.ChangeType())
+		if c.ChangeType() != assetdom.StateChangeDisappeared {
+			t.Errorf("change type = %q, want disappeared", c.ChangeType())
 		}
 		if c.Field() != "status" || c.OldValue() != "active" || c.NewValue() != "stale" {
 			t.Errorf("unexpected field/old/new: %q/%q/%q", c.Field(), c.OldValue(), c.NewValue())

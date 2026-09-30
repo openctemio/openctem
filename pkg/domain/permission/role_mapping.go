@@ -176,9 +176,14 @@ var RolePermissions = map[tenant.Role][]Permission{
 		AssetsRead, AssetsWrite,
 		AssetGroupsRead, AssetGroupsWrite,
 		ComponentsRead, ComponentsWrite,
-		// Findings (read + write, no delete; fix_apply yes, verify no)
+		// Findings (read + write, no delete; fix_apply yes, verify no).
+		// Assign + bulk_update are the granular action perms the member
+		// effectively already held via findings:write before AUTHZ-05 split the
+		// routes onto precise permissions — listed explicitly here so the role
+		// matrix reflects real capability (behavior unchanged). Tightening the
+		// member's assign/bulk grant is a separate product decision.
 		FindingsRead, FindingsWrite,
-		FindingsTriage, FindingsStatus, FindingsFixApply,
+		FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsFixApply,
 		ExposuresRead, ExposuresWrite,
 		SuppressionsRead,
 		VulnerabilitiesRead,

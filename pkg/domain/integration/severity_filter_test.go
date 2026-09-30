@@ -98,13 +98,15 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		EventTypeApprovalRequested: true,
 		EventTypeApprovalApproved:  true,
 		EventTypeApprovalRejected:  true,
+		// Fixed label set by the asset-discovery notifier (attack-surface
+		// growth, not a finding).
+		EventTypeNewAsset: true,
 	}
 
 	// Severity describes a finding/exposure, so the operator's filter is real.
 	filterable := map[EventType]bool{
 		EventTypeSecurityAlert:            true,
 		EventTypeSystemError:              true,
-		EventTypeNewAsset:                 true,
 		EventTypeAssetChanged:             true,
 		EventTypeAssetDeleted:             true,
 		EventTypeScanStarted:              true,
@@ -118,6 +120,7 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		EventTypeFindingPriorityEscalated: true,
 		EventTypeFindingAssigned:          true,
 		EventTypeSLABreach:                true,
+		EventTypeSLAWarning:               true,
 		EventTypeWorkflowNotification:     true,
 		EventTypeNewExposure:              true,
 		EventTypeExposureResolved:         true,

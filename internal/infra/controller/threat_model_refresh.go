@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	moduledom "github.com/openctemio/api/pkg/domain/module"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	tmdom "github.com/openctemio/api/pkg/domain/threatmodel"
@@ -23,6 +24,11 @@ type ThreatModelRefreshControllerConfig struct {
 
 	// Logger for structured output. Defaults to NewNop when nil.
 	Logger *logger.Logger
+
+	// ModuleGuard, when set, skips tenants that have disabled the threat-model
+	// module — no point regenerating a threat model a tenant turned off.
+	// Optional; nil means "never skip" (fully backward compatible).
+	ModuleGuard ModuleGuard
 }
 
 // threatModelGenerator is the app-layer surface the controller drives per
@@ -43,10 +49,11 @@ type threatModelGenerator interface {
 // The generator is idempotent (InputHash no-op detection) and each tenant is
 // handled serially; a failure on one tenant never halts the others.
 type ThreatModelRefreshController struct {
-	generator  threatModelGenerator
-	tenantRepo tenant.Repository
-	config     *ThreatModelRefreshControllerConfig
-	logger     *logger.Logger
+	generator   threatModelGenerator
+	tenantRepo  tenant.Repository
+	config      *ThreatModelRefreshControllerConfig
+	logger      *logger.Logger
+	moduleGuard ModuleGuard
 }
 
 // NewThreatModelRefreshController constructs the controller.
@@ -65,10 +72,11 @@ func NewThreatModelRefreshController(
 		config.Logger = logger.NewNop()
 	}
 	return &ThreatModelRefreshController{
-		generator:  generator,
-		tenantRepo: tenantRepo,
-		config:     config,
-		logger:     config.Logger.With("controller", "threat-model-refresh"),
+		generator:   generator,
+		tenantRepo:  tenantRepo,
+		config:      config,
+		logger:      config.Logger.With("controller", "threat-model-refresh"),
+		moduleGuard: config.ModuleGuard,
 	}
 }
 
@@ -88,8 +96,14 @@ func (c *ThreatModelRefreshController) Reconcile(ctx context.Context) (int, erro
 		return 0, err
 	}
 
+	modules := newTenantModuleCache(c.moduleGuard)
 	regenerated := 0
 	for _, tenantID := range tenantIDs {
+		// Skip a tenant that has turned the threat-model module off
+		// (nil guard / no override → never skips).
+		if modules.disabled(ctx, tenantID.String(), moduledom.ModuleThreatModel) {
+			continue
+		}
 		if _, err := c.generator.GenerateForScope(ctx, tenantID, tmdom.ScopeTenant, nil); err != nil {
 			c.logger.Warn("threat model refresh failed; continuing with next tenant",
 				"tenant_id", tenantID.String(), "error", err)

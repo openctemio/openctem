@@ -1120,13 +1120,11 @@ func (r *FindingRepository) GetByWorkItemURI(ctx context.Context, tenantID share
 
 // List retrieves findings matching the filter with pagination.
 func (r *FindingRepository) List(ctx context.Context, filter vulnerability.FindingFilter, opts vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
-	baseQuery := r.selectQuery()
 	countQuery := `SELECT COUNT(*) FROM findings`
 
 	whereClause, args := r.buildWhereClause(filter)
 
 	if whereClause != "" {
-		baseQuery += " WHERE " + whereClause
 		countQuery += " WHERE " + whereClause
 	}
 
@@ -1136,8 +1134,7 @@ func (r *FindingRepository) List(ctx context.Context, filter vulnerability.Findi
 	if opts.Sort != nil && !opts.Sort.IsEmpty() {
 		orderBy = opts.Sort.SQLWithDefault(vulnerability.DefaultFindingSort)
 	}
-	baseQuery += " ORDER BY " + orderBy
-	baseQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", page.Limit(), page.Offset())
+	baseQuery := buildFindingPageQuery(r.selectQuery(), whereClause, orderBy, page.Limit(), page.Offset())
 
 	var total int64
 	err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
@@ -1165,6 +1162,32 @@ func (r *FindingRepository) List(ctx context.Context, filter vulnerability.Findi
 	}
 
 	return pagination.NewResult(findings, total, page), nil
+}
+
+// buildFindingPageQuery builds the page query for the findings list as a
+// deferred join: the filter, sort and LIMIT/OFFSET run over narrow rows in a
+// subquery that yields only the page's ids, and the wide select list (≈100
+// columns incl. snippet/metadata/stacks JSONB and the per-row has_data_flow
+// EXISTS) is evaluated for those ids only.
+//
+// Selecting the wide list directly made Postgres materialize and evaluate the
+// EXISTS for EVERY matching row before the top-N sort: 612ms for one page of a
+// 200k-finding tenant vs 128ms deferred (no index), 0.3ms with the priority
+// sort index (migration 000220).
+//
+// The WHERE clause is applied, unchanged, inside the subquery — tenant
+// isolation and data-scope predicates filter exactly the same rows as before;
+// the outer query can only return ids the subquery produced. The outer ORDER
+// BY re-applies the same sort to the (≤ limit) page rows.
+func buildFindingPageQuery(selectList, whereClause, orderBy string, limit, offset int) string {
+	inner := "SELECT id FROM findings"
+	if whereClause != "" {
+		inner += " WHERE " + whereClause
+	}
+	inner += " ORDER BY " + orderBy
+	inner += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+
+	return selectList + " WHERE findings.id IN (" + inner + ") ORDER BY " + orderBy
 }
 
 // ListByVulnerabilityID retrieves findings for a vulnerability.
@@ -2762,8 +2785,8 @@ func (r *FindingRepository) DeleteByAssetID(ctx context.Context, tenantID, asset
 
 // GetStats returns aggregated statistics for findings of a tenant.
 // dataScopeUserID: if non-nil, only count findings for assets accessible to this user.
-// assetID: if non-nil, only count findings for that specific asset.
-func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, assetID *shared.ID) (*vulnerability.FindingStats, error) {
+// filter: optional asset / source narrowing, applied to every number returned.
+func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, dataScopeUserID *shared.ID, filter vulnerability.FindingStatsFilter) (*vulnerability.FindingStats, error) {
 	stats := vulnerability.NewFindingStats()
 
 	// Query for total and counts by severity, status, source in one go
@@ -2808,7 +2831,11 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 
 	args := []any{tenantID.String()}
 
-	// Layer 2: Data Scope - filter stats by user's group membership
+	// Layer 2: Data Scope - filter stats by user's group membership. Fail-OPEN:
+	// no assignment ⇒ NOT EXISTS bypasses ⇒ all (backward compat). Fail-CLOSED is
+	// handled one level up in the service (it returns empty stats when the tenant
+	// enforces RestrictedDataScope and the user has no assignment), so this query
+	// stays unchanged and its interface signature stable.
 	if dataScopeUserID != nil {
 		query += ` AND (
 			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $2 AND tenant_id = $1)
@@ -2820,9 +2847,22 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 	// Asset filter — used when the page is `/findings?assetId=…` so
 	// the severity cards reflect the same filtered table the user is
 	// looking at, not the global tenant counts.
-	if assetID != nil {
-		args = append(args, assetID.String())
+	if filter.AssetID != nil {
+		args = append(args, filter.AssetID.String())
 		query += fmt.Sprintf(" AND asset_id = $%d", len(args))
+	}
+
+	// Source filter — used by the Exposures type pages (vulnerabilities,
+	// secrets, code, misconfigurations) so their counts come from one
+	// aggregate instead of walking the whole findings list. Same `source IN`
+	// shape as the list endpoint's filter; values are bound, never inlined.
+	if len(filter.Sources) > 0 {
+		placeholders := make([]string, len(filter.Sources))
+		for i, src := range filter.Sources {
+			args = append(args, src.String())
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
+		}
+		query += fmt.Sprintf(" AND source IN (%s)", strings.Join(placeholders, ", "))
 	}
 
 	var (
@@ -3135,17 +3175,51 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 			))`, userIdx, tenantIdx))
 	}
 
-	// Layer 2: Data Scope - filter findings by user's group membership on assets
-	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
+	// RelatedToUserID: "assigned to / owned by me" — a finding is the user's when
+	// they are the direct assignee, OR they own its asset (assets.owner_id), OR
+	// they are a member of a group the finding is assigned to. Same relatedness
+	// predicate the finding-groups endpoint uses (finding_group_repository), now
+	// available on the flat list so a scoped user can pull up "my work". Tenant
+	// is passed explicitly (the outer query is a bare `findings` scan, no alias),
+	// so the subqueries don't rely on an outer correlation.
+	if filter.RelatedToUserID != nil && filter.TenantID != nil {
+		uIdx := argIndex
+		tIdx := argIndex + 1
+		args = append(args, filter.RelatedToUserID.String(), filter.TenantID.String())
+		argIndex += 2
+		conditions = append(conditions, fmt.Sprintf(`(
+			assigned_to = $%[1]d
+			OR asset_id IN (SELECT id FROM assets WHERE tenant_id = $%[2]d AND owner_id = $%[1]d)
+			OR id IN (
+				SELECT fga.finding_id
+				FROM finding_group_assignments fga
+				JOIN group_members gm ON gm.group_id = fga.group_id
+				JOIN groups g ON g.id = fga.group_id
+				WHERE fga.tenant_id = $%[2]d AND gm.user_id = $%[1]d AND g.is_active = true
+			)
+		)`, uIdx, tIdx))
+	}
+
+	// Layer 2: Data Scope - filter findings by user's group membership on assets.
+	// Default (fail-OPEN): if the user has no rows in user_accessible_assets the
+	// NOT EXISTS bypasses and they see all — backward compatible. When the tenant
+	// enables RestrictedDataScope (filter.DataScopeStrict), the bypass is dropped:
+	// no assignment ⇒ no findings (fail-CLOSED, Tenable "No Access" default).
 	if filter.DataScopeUserID != nil && filter.TenantID != nil {
 		userIDIdx := argIndex
 		tenantIDIdx := argIndex + 1
 		args = append(args, filter.DataScopeUserID.String(), filter.TenantID.String())
 		// argIndex not incremented — this is the last block that consumes it.
-		conditions = append(conditions, fmt.Sprintf(`(
-			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-		)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+		if filter.DataScopeStrict {
+			conditions = append(conditions, fmt.Sprintf(
+				`asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
+				userIDIdx, tenantIDIdx))
+		} else {
+			conditions = append(conditions, fmt.Sprintf(`(
+				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+				OR asset_id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+		}
 	}
 
 	return strings.Join(conditions, " AND "), args

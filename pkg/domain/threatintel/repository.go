@@ -26,9 +26,10 @@ type EPSSRepository interface {
 	// GetTopPercentile retrieves scores in top N percentile.
 	GetTopPercentile(ctx context.Context, percentile float64, limit int) ([]*EPSSScore, error)
 
-	// CountTenantOpenAboveScore counts the tenant's OPEN findings whose CVE has
-	// an EPSS score at or above the threshold (tenant-scoped, no LIMIT).
-	CountTenantOpenAboveScore(ctx context.Context, tenantID shared.ID, threshold float64) (int64, error)
+	// CountTenantOpenAboveScores counts the tenant's OPEN findings whose CVE
+	// has an EPSS score at or above each threshold (tenant-scoped, no LIMIT),
+	// in one pass. The result has one count per threshold, in input order.
+	CountTenantOpenAboveScores(ctx context.Context, tenantID shared.ID, thresholds []float64) ([]int64, error)
 
 	// Count returns the total number of EPSS scores.
 	Count(ctx context.Context) (int64, error)

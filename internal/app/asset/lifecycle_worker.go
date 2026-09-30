@@ -59,9 +59,13 @@ func (w *AssetLifecycleWorker) SetStateHistoryRepository(repo assetdom.StateHist
 	w.stateHistory = repo
 }
 
-// recordStaleHistory appends one status_changed (active→stale) state-history
-// row per transitioned asset. Best-effort: a failure is logged but never blocks
-// the transition (the assets are already stale) or the rest of the run.
+// recordStaleHistory appends one `disappeared` state-history row per asset the
+// worker demoted active→stale (field status, old/new values kept). An asset
+// going stale means "no scan has seen it for N days": the counterpart of the
+// `recovered` row ingest writes when a scan re-observes it. Recording it as a
+// generic status_changed left the disappearances view permanently empty.
+// Best-effort: a failure is logged but never blocks the transition (the assets
+// are already stale) or the rest of the run.
 func (w *AssetLifecycleWorker) recordStaleHistory(ctx context.Context, tenantID shared.ID, ids []string) {
 	if w.stateHistory == nil || len(ids) == 0 {
 		return
@@ -72,11 +76,13 @@ func (w *AssetLifecycleWorker) recordStaleHistory(ctx context.Context, tenantID 
 		if err != nil {
 			continue
 		}
-		changes = append(changes, assetdom.RecordFieldChange(
-			tenantID, assetID, assetdom.StateChangeStatusChanged,
+		change := assetdom.RecordFieldChange(
+			tenantID, assetID, assetdom.StateChangeDisappeared,
 			"status", string(assetdom.StatusActive), string(assetdom.StatusStale),
 			assetdom.ChangeSourceSystem, nil,
-		))
+		)
+		change.SetReason("not seen by any scan within the stale threshold")
+		changes = append(changes, change)
 	}
 	if len(changes) == 0 {
 		return

@@ -144,8 +144,20 @@ These routes use the tenant ID embedded in the JWT access token.
 | `GET /api/v1/findings` | `findings:read` |
 | `GET /api/v1/findings/{id}` | `findings:read` |
 | `POST /api/v1/findings` | `findings:write` |
-| `PATCH /api/v1/findings/{id}/status` | `findings:write` |
 | `DELETE /api/v1/findings/{id}` | `findings:delete` |
+| `PATCH /api/v1/findings/{id}/status` | `findings:status` |
+| `POST /api/v1/findings/{id}/triage` | `findings:triage` |
+| `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
+| `POST /api/v1/findings/bulk/status` · `/bulk/assign` | `findings:bulk_update` |
+| `POST /api/v1/findings/{id}/verify` | `findings:verify` |
+
+> The finding **action** routes (status, triage, assign, bulk, verify) are gated on
+> **precise granular permissions**, not the coarse `findings:write` (AUTHZ-05).
+> `verify` is a separate permission from `status`/`triage` to keep
+> **separation of duties** — the person who triages a finding should not be able to
+> self-verify their own fix (AUTHZ B1, api#505). Migration `000217` backfilled the
+> four granular perms onto every role that already held `findings:write`, so the
+> tightening is honest-not-breaking: nobody lost an action they could perform before.
 
 #### Vulnerabilities (`/api/v1/vulnerabilities`) - Global
 
@@ -367,7 +379,15 @@ viewer (1) ┴─ Can only view resources
 
 1. **Tenant Isolation**: Access tokens are scoped to a specific tenant. Users must exchange their refresh token for a tenant-scoped access token.
 
-2. **Permission Validation**: Permissions are validated from JWT claims on every request. No database lookup needed.
+2. **Permission Validation**: The access token carries the user's full permission
+   array, so the hot path checks permissions in-token with no per-request DB read.
+   To close the stale-token window, a per-user **permission version** (Redis `INCR`)
+   is bumped on any grant/revoke; a version mismatch makes `EnrichPermissions`
+   re-resolve the effective permission set **from the database** and overwrite the
+   request context, and a stale-version **write** is rejected with `409` rather than
+   run on old permissions. `RevokeAllSessions` forces immediate re-auth. So the
+   token is the fast path, but the database is the source of truth — see
+   [permission-realtime-sync.md](./permission-realtime-sync.md).
 
 3. **IDOR Prevention**: JWT-based tenant routes eliminate IDOR by design - users can only access their current tenant's data.
 
@@ -407,3 +427,110 @@ Invitations:
 ```
 
 Legend: (R) = Read, (W) = Write, (U) = Update, (D) = Delete
+
+## Settled model — the rules we lock going forward
+
+The authorization model was reviewed end-to-end (2026-09, `docs/authz-audit.md`)
+and standardized. The following are **decisions**, not accidents — each was made
+deliberately and, where a design choice was involved, benchmarked against
+Tenable.sc's RBAC.
+
+1. **Allow-only, default-deny.** A user's effective permission set is the *union*
+   of what their roles grant. There is **no deny-override**: a permission-set can
+   only *add* capability, never subtract it at the enforcement layer. A "deny" that
+   appears in the UI/permission-set model is advisory (Layer-2), it does **not**
+   gate the API. This mirrors Tenable.sc, which is purely additive with no
+   deny-override. → we will **not** build a permission-set deny-gate.
+
+2. **Backend is the only authority.** The frontend hides controls the user lacks
+   perms for as a UX nicety; it is never the boundary. Every mutation is
+   independently gated server-side. UI perm checks that duplicate a server gate are
+   convenience, not security.
+
+3. **Effective permissions come from the database, not blindly from the token.**
+   The token is the fast path; the per-user permission version + `EnrichPermissions`
+   re-resolution + `409` on stale writes make the DB the source of truth (see
+   Security Consideration #2 and `permission-realtime-sync.md`).
+
+4. **Granular over coarse.** Action routes are gated on the most precise permission
+   that describes the action (e.g. `findings:status`, not `findings:write`), so the
+   role matrix tells the truth about who can do what. Tightening a role's grant is a
+   *product* decision made via seed/migration, never by silently widening a route's
+   gate.
+
+5. **No time-limited grants.** There is no `expires_at` on role assignments.
+   Tenable.sc has no expiring grants either; revocation is immediate via
+   `RevokeAllSessions` + version bump. → we will **not** build expiring grants (YAGNI).
+
+6. **The module gate is a feature flag, not a security boundary.** It is fail-open
+   by design (see "Module-Gate Layer"). Never rely on it to protect data — that is
+   the job of the permission gate + tenant isolation.
+
+### Known, deliberate gaps (do not "fix" without a decision)
+
+- **Two admin oracles.** Permission-based `IsAdmin` (from the token) and live-DB
+  team-role (`RequireTeamAdmin/Owner`) are separate mechanisms and can, in edge
+  cases, disagree. Unifying them onto live membership (which would also fix
+  `IsOwner` under OIDC) is a phased refactor — **deferred** because a missing
+  membership middleware on any chain would 403 a whole route group.
+- **Data-scope is fail-open.** `user_accessible_assets` narrows assets/findings for
+  non-admins, but an *empty* assignment means "see all", and `GetByID` is unscoped.
+  Flipping to fail-closed (Tenable's default "No Access") is behavior-changing —
+  **deferred**, needs signoff.
+- **RLS is shadow-mode.** ~99 policies exist, 0 tables have RLS enabled. This is
+  intentional (staged rollout), not a dead control. Tenant isolation is enforced by
+  convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.
+
+## CI invariants that keep this from drifting
+
+Two tests fail the build if the model erodes. Treat them as executable spec:
+
+| Invariant | Test | What it guarantees |
+|-----------|------|--------------------|
+| **Every route is gated or explicitly allowlisted** | `tests/unit/route_authz_coverage_test.go` (AUTHZ-02) | A go/ast walk of `routes/*.go` resolves chi `.Group` nesting + inherited gates; any route with no `Require*`/`RequireTeam*`/`RequireRole` and not in `allowlistPrefixes` fails the build, naming the route. Removing one `Require(...)` → red. |
+| **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
+
+The permission strings themselves are also mirrored in the UI (TS constants); the
+sync test covers Go↔DB, and code review covers UI drift until the monorepo contract
+codegen (RFC-020) subsumes both.
+
+## How to … (recipes that stay inside the invariants)
+
+### Add a new permission
+
+1. Add the constant to `pkg/domain/permission/permission.go` **and** include it in
+   `AllPermissions()`.
+2. Add the same string to the DB seed (a new numbered migration under
+   `migrations/` — additive `INSERT ... ON CONFLICT DO NOTHING`, with a matching
+   `.down.sql`).
+3. Add the string to the UI permission constants so the frontend can gate on it.
+4. Map it into the default roles that should hold it (`role_mapping.go` + seed).
+5. `go test ./tests/unit/...` — the catalog-sync test proves 1↔2 agree.
+
+### Gate a new route
+
+- Attach the least-privilege permission at registration:
+  `r.POST("/", h.Create, middleware.Require(permission.FooWrite))`.
+- For team-management routes under `/tenants/{tenant}`, use `RequireTeamAdmin()` /
+  `RequireTeamOwner()` (live membership) instead of a permission.
+- If the whole route group belongs to a product module, wrap it with
+  `ModuleGate.RequireModule(moduleID)` **in addition to** (never instead of) the
+  permission gate.
+- If the route is legitimately unauthenticated or self-scoped (auth, `/users/me`,
+  agent-key, SCIM, webhook, admin-realm, health), add it to `allowlistPrefixes` in
+  `route_authz_coverage_test.go` **with a reason comment** — that is the only way to
+  pass the coverage gate without a gate, and it forces the decision to be explicit.
+
+### Enforce object-level (row) authorization
+
+Permission gates answer "may this user do this *kind* of thing"; they do **not**
+answer "may they touch *this* row". For that:
+
+- Always scope repository reads/writes by `tenant_id` (every mutating query must
+  carry `AND tenant_id = $n` — see `ScanRepository.Update`, AUTHZ-10). Do not trust
+  an id from the URL to already be tenant-scoped.
+- For non-admin data-scope narrowing on assets/findings, go through
+  `user_accessible_assets` (note its fail-open caveat above).
+- Never authorize a mutation off the request body's tenant/owner fields — derive the
+  principal's tenant from the authenticated context (or, for agents, from the agent
+  key), never from client-supplied data.

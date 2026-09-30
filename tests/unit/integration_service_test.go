@@ -449,13 +449,13 @@ func newTestIntegrationServiceWithNotification(
 func validCreateInput(tenantID string) app.CreateIntegrationInput {
 	return app.CreateIntegrationInput{
 		TenantID:    tenantID,
-		Name:        "My Snyk Integration",
-		Description: "Snyk scanning integration",
+		Name:        "My DefectDojo Integration",
+		Description: "DefectDojo findings sync",
 		Category:    "security",
-		Provider:    "snyk",
+		Provider:    "defectdojo",
 		AuthType:    "api_key",
-		BaseURL:     "https://api.snyk.io",
-		Credentials: "snyk-api-key-12345",
+		BaseURL:     "https://defectdojo.example.com",
+		Credentials: "dd-api-key-12345",
 	}
 }
 
@@ -488,8 +488,8 @@ func TestCreateIntegration_Success(t *testing.T) {
 	if result.Category() != integration.CategorySecurity {
 		t.Errorf("expected category %q, got %q", integration.CategorySecurity, result.Category())
 	}
-	if result.Provider() != integration.ProviderSnyk {
-		t.Errorf("expected provider %q, got %q", integration.ProviderSnyk, result.Provider())
+	if result.Provider() != integration.ProviderDefectDojo {
+		t.Errorf("expected provider %q, got %q", integration.ProviderDefectDojo, result.Provider())
 	}
 	if result.Status() != integration.StatusPending {
 		t.Errorf("expected status %q, got %q", integration.StatusPending, result.Status())
@@ -1232,11 +1232,11 @@ func TestListIntegrations_Pagination(t *testing.T) {
 		name     string
 		provider string
 	}{
-		{"Snyk-1", "snyk"},
-		{"Wiz-1", "wiz"},
+		{"DefectDojo-1", "defectdojo"},
+		{"DefectDojo-2", "defectdojo"},
 		{"Tenable-1", "tenable"},
-		{"CrowdStrike-1", "crowdstrike"},
-		{"Snyk-2", "snyk"},
+		{"DefectDojo-3", "defectdojo"},
+		{"Tenable-2", "tenable"},
 	}
 	for _, p := range providers {
 		input := validCreateInput(tenantID)
@@ -1280,12 +1280,9 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 
 	tenantID := shared.NewID().String()
 
-	for _, name := range []string{"Production Snyk", "Staging Wiz", "Production Tenable"} {
+	for _, name := range []string{"Production DefectDojo", "Staging DefectDojo", "Production Tenable"} {
 		input := validCreateInput(tenantID)
 		input.Name = name
-		if strings.Contains(name, "Wiz") {
-			input.Provider = "wiz"
-		}
 		if strings.Contains(name, "Tenable") {
 			input.Provider = "tenable"
 			input.Config = map[string]any{"execution_mode": "direct"} // creds present → direct mode
@@ -2701,5 +2698,177 @@ func TestJiraWebhookSecret_ListIsTenantScoped(t *testing.T) {
 		if s == "" {
 			t.Error("unexpected empty secret")
 		}
+	}
+}
+
+// =============================================================================
+// Providers without a client
+// =============================================================================
+
+// TestCreateIntegration_ProviderWithoutClient_Rejected: a provider that is
+// declared but has no client must be refused with a 400-class error rather
+// than stored as an integration that never does anything.
+func TestCreateIntegration_ProviderWithoutClient_Rejected(t *testing.T) {
+	cases := []struct {
+		provider string
+		category string
+	}{
+		{"linear", "ticketing"},
+		{"asana", "ticketing"},
+		{"wiz", "security"},
+		{"snyk", "security"},
+		{"crowdstrike", "security"},
+		{"aws", "cloud"},
+		{"gcp", "cloud"},
+		{"azure", "cloud"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.provider, func(t *testing.T) {
+			repo := newMockIntegrationRepo()
+			svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
+
+			input := validCreateInput(shared.NewID().String())
+			input.Provider = tc.provider
+			input.Category = tc.category
+
+			_, err := svc.CreateIntegration(context.Background(), input)
+			if !errors.Is(err, integration.ErrProviderNotSupported) {
+				t.Fatalf("expected ErrProviderNotSupported, got %v", err)
+			}
+			if !errors.Is(err, shared.ErrValidation) {
+				t.Errorf("must wrap ErrValidation so the handler answers 400, got %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.provider) {
+				t.Errorf("message should name the provider, got %q", err.Error())
+			}
+			if repo.createCalls != 0 {
+				t.Errorf("nothing may be persisted, got %d create calls", repo.createCalls)
+			}
+		})
+	}
+}
+
+// TestTestIntegration_ExistingRowWithoutClient: a row that predates the
+// create-time check reports "not supported" instead of a generic error.
+func TestTestIntegration_ExistingRowWithoutClient(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
+
+	tenantID := shared.NewID()
+	id := shared.NewID()
+	repo.integrations[id] = integration.NewIntegration(id, tenantID, "Linear", integration.CategoryTicketing, integration.ProviderLinear, integration.AuthTypeToken)
+
+	_, err := svc.TestIntegration(context.Background(), id.String(), tenantID.String())
+	if !errors.Is(err, integration.ErrProviderNotSupported) {
+		t.Fatalf("expected ErrProviderNotSupported, got %v", err)
+	}
+}
+
+// =============================================================================
+// Ticketing connection test
+// =============================================================================
+
+type fakeTicketingTester struct {
+	err   error
+	calls int
+	seen  *integration.Integration
+}
+
+func (f *fakeTicketingTester) TestTicketingConnection(_ context.Context, intg *integration.Integration) error {
+	f.calls++
+	f.seen = intg
+	return f.err
+}
+
+func jiraCreateInput(tenantID string) app.CreateIntegrationInput {
+	return app.CreateIntegrationInput{
+		TenantID:    tenantID,
+		Name:        "Jira Cloud",
+		Category:    "ticketing",
+		Provider:    "jira",
+		AuthType:    "token",
+		BaseURL:     "https://acme.atlassian.net",
+		Credentials: `{"email":"sec@acme.com","api_token":"tok"}`,
+	}
+}
+
+// Before this, nothing ever moved a Jira integration out of "pending", and the
+// Jira client resolver only uses connected integrations — so a Jira connection
+// made from the UI was stored and then skipped by every ticket operation.
+func TestCreateIntegration_Jira_AutoTestMarksConnected(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
+	tester := &fakeTicketingTester{}
+	svc.SetTicketingConnectionTester(tester)
+
+	result, err := svc.CreateIntegration(context.Background(), jiraCreateInput(shared.NewID().String()))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if tester.calls != 1 {
+		t.Fatalf("expected one connection test after create, got %d", tester.calls)
+	}
+	if tester.seen.ID() != result.ID() {
+		t.Error("tester must receive the integration that was just created")
+	}
+	if result.Status() != integration.StatusConnected {
+		t.Errorf("expected connected, got %q", result.Status())
+	}
+	if stored := repo.integrations[result.ID()]; stored.Status() != integration.StatusConnected {
+		t.Errorf("connected status must be persisted, got %q", stored.Status())
+	}
+}
+
+func TestCreateIntegration_Jira_FailedTestShowsError(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
+	svc.SetTicketingConnectionTester(&fakeTicketingTester{err: errors.New("jira authentication failed (status 401)")})
+
+	result, err := svc.CreateIntegration(context.Background(), jiraCreateInput(shared.NewID().String()))
+	if err != nil {
+		t.Fatalf("create must still succeed (the row is kept so the user can fix it): %v", err)
+	}
+	if result.Status() != integration.StatusError {
+		t.Fatalf("expected error status, got %q", result.Status())
+	}
+	if !strings.Contains(result.StatusMessage(), "401") {
+		t.Errorf("status message should carry the reason, got %q", result.StatusMessage())
+	}
+}
+
+func TestTestIntegration_Jira_UsesTicketingTester(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
+	tester := &fakeTicketingTester{}
+	svc.SetTicketingConnectionTester(tester)
+
+	tenantID := shared.NewID()
+	id := shared.NewID()
+	repo.integrations[id] = integration.NewIntegration(id, tenantID, "Jira", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+
+	result, err := svc.TestIntegration(context.Background(), id.String(), tenantID.String())
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if tester.calls != 1 || result.Status() != integration.StatusConnected {
+		t.Fatalf("expected one tester call and connected, got calls=%d status=%q", tester.calls, result.Status())
+	}
+}
+
+func TestTestIntegration_Jira_OtherTenantNotFound(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
+	tester := &fakeTicketingTester{}
+	svc.SetTicketingConnectionTester(tester)
+
+	id := shared.NewID()
+	repo.integrations[id] = integration.NewIntegration(id, shared.NewID(), "Jira", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+
+	_, err := svc.TestIntegration(context.Background(), id.String(), shared.NewID().String())
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("expected not found for another tenant's integration, got %v", err)
+	}
+	if tester.calls != 0 {
+		t.Fatal("another tenant's credentials must never be tested")
 	}
 }

@@ -391,6 +391,12 @@ func run() int {
 	// Stop workers
 	workers.Stop(log)
 
+	// Flush any buffered new-internet-facing-asset summary so a graceful
+	// restart does not drop it (the DB is still open here).
+	if services.AssetDiscoveryNotifier != nil {
+		services.AssetDiscoveryNotifier.Stop()
+	}
+
 	// Then stop server
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error("shutdown error", "error", err)

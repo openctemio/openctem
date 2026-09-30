@@ -117,3 +117,35 @@ func TestBuildClient_RejectsNonHTTPSBaseURL(t *testing.T) {
 		t.Fatal("expected non-https base URL to be rejected")
 	}
 }
+
+func TestTestTicketingConnection_RejectsNonJiraProvider(t *testing.T) {
+	r := newResolver(&stubIntegrationRepo{})
+	intg := integration.Reconstruct(
+		shared.NewID(), shared.NewID(), "Linear", "", integration.CategoryTicketing, integration.ProviderLinear,
+		integration.StatusPending, "", integration.AuthTypeToken, "", "tok",
+		nil, nil, 60, "", nil, nil, integration.Stats{},
+		time.Now(), time.Now(), nil,
+	)
+	err := r.TestTicketingConnection(context.Background(), intg)
+	if !errors.Is(err, integration.ErrProviderNotSupported) {
+		t.Fatalf("want ErrProviderNotSupported for a non-Jira provider, got %v", err)
+	}
+}
+
+func TestTestTicketingConnection_MissingEmailFails(t *testing.T) {
+	r := newResolver(&stubIntegrationRepo{})
+	intg := newJiraIntegration(t, integration.StatusPending,
+		"https://acme.atlassian.net", "rawtoken", nil)
+	if err := r.TestTicketingConnection(context.Background(), intg); err == nil {
+		t.Fatal("an integration without an account email must not test as connected")
+	}
+}
+
+func TestTestTicketingConnection_NoBaseURLFails(t *testing.T) {
+	r := newResolver(&stubIntegrationRepo{})
+	intg := newJiraIntegration(t, integration.StatusPending,
+		"", `{"email":"a@b.com","api_token":"t"}`, nil)
+	if err := r.TestTicketingConnection(context.Background(), intg); err == nil {
+		t.Fatal("an integration without a base URL must not test as connected")
+	}
+}

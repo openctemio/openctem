@@ -156,43 +156,6 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-// GetActivity handles GET /api/v1/findings/{id}/activities/{activity_id}
-func (h *FindingActivityHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	findingID := r.PathValue("id")
-	activityID := r.PathValue("activityId")
-	if findingID == "" || activityID == "" {
-		apierror.BadRequest("Finding ID and Activity ID are required").WriteJSON(w)
-		return
-	}
-
-	// Security: scope the existence check to the real caller (see ListActivities)
-	// so non-members / out-of-scope users cannot read pentest evidence trails.
-	userID := middleware.GetUserID(r.Context())
-	_, err := h.vulnerabilityService.GetFindingWithScope(r.Context(), tenantID, findingID, userID, middleware.IsAdmin(r.Context()))
-	if err != nil {
-		h.handleServiceError(w, err, "Finding")
-		return
-	}
-
-	activity, err := h.activityService.GetActivity(r.Context(), activityID)
-	if err != nil {
-		h.handleServiceError(w, err, "Activity")
-		return
-	}
-
-	// Verify activity belongs to the finding
-	if activity.FindingID().String() != findingID {
-		apierror.NotFound("Activity").WriteJSON(w)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toFindingActivityResponse(activity))
-}
-
 // handleServiceError handles errors from service layer.
 func (h *FindingActivityHandler) handleServiceError(w http.ResponseWriter, err error, resource string) {
 	switch {

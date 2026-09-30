@@ -227,8 +227,8 @@ func registerVulnerabilityRoutes(
 		}
 
 		// Bulk operations (must be before /{id})
-		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.Require(permission.FindingsWrite))
-		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.Require(permission.FindingsWrite))
+		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.Require(permission.FindingsBulkUpdate))
+		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.Require(permission.FindingsBulkUpdate))
 
 		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
 		if remediationGroupHandler != nil {
@@ -241,7 +241,7 @@ func registerVulnerabilityRoutes(
 			r.POST("/actions/fix-applied", findingActionsHandler.FixApplied, middleware.Require(permission.FindingsFixApply))
 			r.POST("/actions/verify", findingActionsHandler.Verify, middleware.Require(permission.FindingsVerify))
 			r.POST("/actions/reject-fix", findingActionsHandler.RejectFix, middleware.Require(permission.FindingsVerify))
-			r.POST("/actions/assign-to-owners", findingActionsHandler.AssignToOwners, middleware.Require(permission.FindingsWrite))
+			r.POST("/actions/assign-to-owners", findingActionsHandler.AssignToOwners, middleware.Require(permission.FindingsAssign))
 		}
 
 		// Single finding operations
@@ -251,19 +251,24 @@ func registerVulnerabilityRoutes(
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
-		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsWrite))
+		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsStatus))
 
 		// Assignment operations
-		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsWrite))
-		r.POST("/{id}/unassign", h.UnassignFinding, middleware.Require(permission.FindingsWrite))
+		r.POST("/{id}/assign", h.AssignFinding, middleware.Require(permission.FindingsAssign))
+		r.POST("/{id}/unassign", h.UnassignFinding, middleware.Require(permission.FindingsAssign))
 
 		// Classification and severity
 		r.PATCH("/{id}/classify", h.ClassifyFinding, middleware.Require(permission.FindingsWrite))
 		r.PATCH("/{id}/severity", h.UpdateFindingSeverity, middleware.Require(permission.FindingsWrite))
 
 		// Triage and verification
-		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsWrite))
-		r.POST("/{id}/verify", h.VerifyFinding, middleware.Require(permission.FindingsWrite))
+		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsTriage))
+		// Verification is a segregation-of-duties control: moving a finding to
+		// resolved must require FindingsVerify (security/scanner), NOT the
+		// broader FindingsWrite that a developer role holds — otherwise a member
+		// could self-verify here what the sibling /actions/verify correctly
+		// gates on FindingsVerify.
+		r.POST("/{id}/verify", h.VerifyFinding, middleware.Require(permission.FindingsVerify))
 
 		// Verification scan automation: trigger a targeted scan on the finding's asset
 		// (only available when finding actions handler is wired)
@@ -349,7 +354,6 @@ func registerFindingActivityRoutes(
 	// Finding activity routes - tenant from JWT token
 	router.Group("/api/v1/findings/{id}/activities", func(r Router) {
 		r.GET("/", h.ListActivities, middleware.Require(permission.FindingsRead))
-		r.GET("/{activityId}", h.GetActivity, middleware.Require(permission.FindingsRead))
 		// Note: Activities are created automatically via service hooks, not via direct API
 		// Real-time updates are delivered via WebSocket channel: finding:{id}
 	}, tenantMiddlewares...)
@@ -405,5 +409,6 @@ func registerAITriageRoutes(
 		append(postMiddlewares, middleware.Require(permission.FindingsWrite))...)
 
 	// AI triage config endpoint - returns current AI mode, provider, model
-	router.GET("/api/v1/findings/ai-triage/config", h.GetConfig, tenantMiddlewares...)
+	router.GET("/api/v1/findings/ai-triage/config", h.GetConfig,
+		append(tenantMiddlewares, middleware.Require(permission.FindingsRead))...)
 }

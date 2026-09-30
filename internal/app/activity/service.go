@@ -563,16 +563,6 @@ func (s *FindingActivityService) ListActivities(ctx context.Context, input ListA
 	return s.activityRepo.ListByFinding(ctx, findingID, tenantID, filter, page)
 }
 
-// GetActivity retrieves a single activity by ID.
-func (s *FindingActivityService) GetActivity(ctx context.Context, activityID string) (*vulnerability.FindingActivity, error) {
-	id, err := shared.IDFromString(activityID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid activity id format", shared.ErrValidation)
-	}
-
-	return s.activityRepo.GetByID(ctx, id)
-}
-
 // CountActivities counts activities for a finding.
 // Security: tenantID is required to ensure tenant isolation.
 func (s *FindingActivityService) CountActivities(ctx context.Context, tenantID, findingID string, filter vulnerability.FindingActivityFilter) (int64, error) {

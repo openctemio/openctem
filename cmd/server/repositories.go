@@ -169,6 +169,9 @@ type Repositories struct {
 	// Report Schedules
 	ReportSchedule *postgres.ReportScheduleRepository
 
+	// Per-user customizable dashboards (RFC-021, migration 000218)
+	UserDashboard *postgres.UserDashboardRepository
+
 	// Asset Dedup (RFC-001)
 	AssetDedup *postgres.AssetDedupRepository
 
@@ -361,6 +364,9 @@ func NewRepositories(db *postgres.DB) *Repositories {
 
 		// Report Schedules
 		ReportSchedule: postgres.NewReportScheduleRepository(db),
+
+		// Per-user customizable dashboards (RFC-021)
+		UserDashboard: postgres.NewUserDashboardRepository(db),
 
 		// Asset Dedup (RFC-001)
 		AssetDedup: postgres.NewAssetDedupRepository(db),

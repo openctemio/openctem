@@ -128,7 +128,6 @@ GET /api/v1/control-tests
 GET /api/v1/control-tests/stats
 GET /api/v1/ctem-cycles
 GET /api/v1/ctem-cycles/metrics/trend
-GET /api/v1/ctem-cycles/{}
 GET /api/v1/ctem-cycles/{}/metrics
 GET /api/v1/ctem-cycles/{}/scope
 GET /api/v1/ctem-ids
@@ -145,7 +144,6 @@ GET /api/v1/findings/analytics/sources
 GET /api/v1/findings/groups
 GET /api/v1/findings/related-cves/{}
 GET /api/v1/findings/{}/activities
-GET /api/v1/findings/{}/activities/{}
 GET /api/v1/findings/{}/ai-triage
 GET /api/v1/findings/{}/ai-triage/history
 GET /api/v1/findings/{}/ai-triage/{}
@@ -162,7 +160,9 @@ GET /api/v1/integrations/jira/webhook-secret
 GET /api/v1/invitations/{}
 GET /api/v1/invitations/{}/preview
 GET /api/v1/iocs
+GET /api/v1/iocs/matches
 GET /api/v1/iocs/{}
+GET /api/v1/iocs/{}/matches
 GET /api/v1/me/permissions/sync
 GET /api/v1/me/roles
 GET /api/v1/module-presets
@@ -333,7 +333,6 @@ POST /api/v1/components/import
 POST /api/v1/control-tests
 POST /api/v1/ctem-cycles
 POST /api/v1/ctem-cycles/{}/activate
-POST /api/v1/ctem-cycles/{}/close
 POST /api/v1/ctem-cycles/{}/profiles
 POST /api/v1/ctem-cycles/{}/scope-refinement
 POST /api/v1/ctem-cycles/{}/start-review
@@ -468,3 +467,9 @@ PUT /api/v1/webhooks/{}
 PUT /api/v1/workflows/{}
 PUT /api/v1/workflows/{}/graph
 PUT /api/v1/workflows/{}/nodes/{}
+GET /api/v1/me/dashboards
+POST /api/v1/me/dashboards
+GET /api/v1/me/dashboards/{}
+PUT /api/v1/me/dashboards/{}
+DELETE /api/v1/me/dashboards/{}
+POST /api/v1/me/dashboards/{}/default

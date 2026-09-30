@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/openctemio/api/internal/app/apikey"
 	"github.com/openctemio/api/internal/app/assignment"
 	"github.com/openctemio/api/internal/app/command"
+	dashboardapp "github.com/openctemio/api/internal/app/dashboard"
 	"github.com/openctemio/api/internal/app/defectdojo"
 	"github.com/openctemio/api/internal/app/remediation"
 	"github.com/openctemio/api/internal/app/scope"
@@ -18,6 +20,7 @@ import (
 	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/assetdiscovery"
 	"github.com/openctemio/api/internal/app/attack"
 	"github.com/openctemio/api/internal/app/auth/domainverify"
 	certmonitorapp "github.com/openctemio/api/internal/app/certmonitor"
@@ -47,6 +50,7 @@ import (
 	"github.com/openctemio/api/internal/infra/storage"
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
@@ -221,6 +225,58 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 		return 0, err
 	}
 	return res.Updated, nil
+}
+
+// dataScopePolicyAdapter reports a tenant's fail-open/closed data-scope policy
+// (tenant Settings → Security.RestrictedDataScope) to the asset & finding
+// services. It's read on the non-admin data-scope path, so it caches per tenant
+// with a short TTL to avoid a tenant GetByID on every scoped list/stats request
+// (mirrors the module gate's cache). Default (missing/false) = fail-open.
+type dataScopePolicyAdapter struct {
+	tenants tenant.Repository
+	mu      sync.RWMutex
+	cache   map[string]dataScopeCacheEntry
+	ttl     time.Duration
+}
+
+type dataScopeCacheEntry struct {
+	restricted bool
+	exp        time.Time
+}
+
+func newDataScopePolicyAdapter(tenants tenant.Repository) *dataScopePolicyAdapter {
+	return &dataScopePolicyAdapter{
+		tenants: tenants,
+		cache:   make(map[string]dataScopeCacheEntry),
+		ttl:     60 * time.Second,
+	}
+}
+
+// RestrictedDataScope returns whether the tenant enforces fail-closed data scope.
+// On any lookup error it returns false (fail-open) — a policy-read failure must
+// never silently hide a user's data.
+func (a *dataScopePolicyAdapter) RestrictedDataScope(ctx context.Context, tenantID string) bool {
+	now := time.Now()
+	a.mu.RLock()
+	if e, ok := a.cache[tenantID]; ok && now.Before(e.exp) {
+		a.mu.RUnlock()
+		return e.restricted
+	}
+	a.mu.RUnlock()
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false
+	}
+	t, err := a.tenants.GetByID(ctx, tid)
+	if err != nil || t == nil {
+		return false
+	}
+	restricted := t.TypedSettings().Security.RestrictedDataScope
+	a.mu.Lock()
+	a.cache[tenantID] = dataScopeCacheEntry{restricted: restricted, exp: now.Add(a.ttl)}
+	a.mu.Unlock()
+	return restricted
 }
 
 // moduleBundleStore adapts the tenant repository to module.BundleStore, storing
@@ -454,6 +510,9 @@ type Services struct {
 	// Dashboard
 	Dashboard *app.DashboardService
 
+	// Per-user customizable dashboards (RFC-021)
+	UserDashboard *dashboardapp.Service
+
 	// Integrations & Notifications
 	Integration    *app.IntegrationService
 	DefectDojoSync *defectdojo.SyncService
@@ -481,6 +540,10 @@ type Services struct {
 	// Workflows
 	Workflow           *app.WorkflowService
 	WorkflowDispatcher *app.WorkflowEventDispatcher
+
+	// AssetDiscoveryNotifier turns newly discovered internet-facing assets into
+	// throttled tenant notifications (in-app + new_asset outbox event).
+	AssetDiscoveryNotifier *assetdiscovery.Notifier
 
 	// Suppressions
 	Suppression *suppression.Service
@@ -678,6 +741,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetUserMatcher(assetOwnerMatcher{users: repos.User, tenants: repos.Tenant})
 	s.Asset.SetAssetGroupRepository(repos.AssetGroup)
 	s.Asset.SetAccessControlRepository(repos.AccessControl)
+	// Per-tenant fail-open/closed data-scope policy (default fail-open). Shared
+	// instance so asset + finding services read one cache.
+	dataScopePolicy := newDataScopePolicyAdapter(repos.Tenant)
+	s.Asset.SetDataScopePolicy(dataScopePolicy)
 	s.Asset.SetScoringConfigProvider(app.NewTenantScoringConfigProvider(repos.Tenant))
 	s.Asset.SetRedisClient(deps.RedisClient)
 	// The Postgres asset repository also implements the narrow
@@ -721,6 +788,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Component = app.NewComponentService(repos.Component, repos.Asset, log)
 	s.SBOMImport = app.NewSBOMImportService(repos.Component, repos.Asset, log)
 	s.ReportSchedule = app.NewReportScheduleService(repos.ReportSchedule, log)
+	s.UserDashboard = dashboardapp.NewService(repos.UserDashboard, log)
 	s.Branch = app.NewBranchService(repos.Branch, log)
 
 	// Initialize vulnerability & exposure services
@@ -729,6 +797,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
+	s.Vulnerability.SetDataScopePolicy(dataScopePolicy)
 	s.FindingActivity = app.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
@@ -1092,6 +1161,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
 	s.Integration.SetRepoImportRepos(repos.Asset, repos.RepoExt, repos.Branch)
+	// Test/sync of a ticketing integration checks its credentials against Jira.
+	// Without it a Jira integration never leaves "pending", and jiraResolver
+	// only uses connected integrations — ticket creation would stay inert.
+	s.Integration.SetTicketingConnectionTester(jiraResolver)
 
 	s.Outbox = outbox.NewService(
 		repos.Outbox,
@@ -1556,6 +1629,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Wire in-app notification service to pentest service
 	s.Pentest.SetUserNotificationService(s.Notification)
+
+	// Change detection: an asset an ingest newly created (not a re-scan merge,
+	// not a manual create) fires the `asset_discovered` workflow trigger and,
+	// when it is internet-facing, a throttled tenant notification. Wired here
+	// because it needs both the workflow dispatcher and the in-app
+	// notification service, which is only built above.
+	s.AssetDiscoveryNotifier = assetdiscovery.NewNotifier(s.Outbox, s.Notification, assetdiscovery.DefaultWindow, log)
+	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
+		s.WorkflowDispatcher.DispatchAssetsDiscovered(ctx, tenantID, assets)
+		s.AssetDiscoveryNotifier.AssetsDiscovered(ctx, tenantID, assets)
+	})
+	// An existing asset a re-scan turned internet-facing is newly exposed
+	// attack surface too: same throttled notification, no asset_discovered.
+	s.Ingest.SetAssetsExposedCallback(s.AssetDiscoveryNotifier.AssetsExposed)
+
+	// A successful pipeline run fires the `scan_completed` workflow trigger.
+	s.Pipeline.SetRunCompletedCallback(s.WorkflowDispatcher.DispatchScanCompleted)
 
 	return s, nil
 }

@@ -64,6 +64,13 @@ type Config struct {
 	APIEndpoint string       // Custom API endpoint
 	Email       *EmailConfig // For Email (SMTP)
 
+	// Splunk HEC. Token is the secret (HEC token); WebhookURL holds the
+	// collector endpoint (e.g. https://splunk:8088). Index/Sourcetype are
+	// optional routing hints written into the HEC envelope.
+	Token      string // For Splunk HEC (HTTP Event Collector token)
+	Index      string // For Splunk HEC (optional target index)
+	Sourcetype string // For Splunk HEC (optional sourcetype; defaults to openctem:notification)
+
 	// AllowLoopback disables the SSRF guard's private-IP block. Only
 	// set true in unit tests that target httptest.NewServer (binds to
 	// 127.0.0.1). Production tenants MUST NOT set this — WebhookURL
@@ -81,6 +88,7 @@ const (
 	ProviderTelegram Provider = "telegram"
 	ProviderWebhook  Provider = "webhook"
 	ProviderEmail    Provider = "email"
+	ProviderSplunk   Provider = "splunk"
 )
 
 // Severity constants.
@@ -117,6 +125,8 @@ func (f *ClientFactory) CreateClient(config Config) (Client, error) {
 		return NewWebhookClient(config)
 	case ProviderEmail:
 		return NewEmailClient(config)
+	case ProviderSplunk:
+		return NewSplunkClient(config)
 	default:
 		return nil, fmt.Errorf("unsupported notification provider: %s", config.Provider)
 	}

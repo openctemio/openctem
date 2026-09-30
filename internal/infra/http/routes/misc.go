@@ -67,6 +67,7 @@ func registerDashboardRoutes(
 		r.GET("/executive-summary/export", h.ExportExecutiveSummary, middleware.Require(permission.DashboardRead))
 		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead))
 		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead))
+		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead))
 	}, tenantMiddlewares...)
 }
 
@@ -121,9 +122,11 @@ func registerSLARoutes(
 	h *handler.SLAHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Build tenant middleware chain from JWT token.
+	// Append the module gate after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// SLA Policy routes - tenant from JWT token
 	router.Group("/api/v1/sla-policies", func(r Router) {

@@ -261,7 +261,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    tags = $18, run_on_tenant_runner = $19, agent_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
 		    updated_at = $26
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $27
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -291,6 +291,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		retryBackoff,
 		string(s.Status),
 		s.UpdatedAt,
+		s.TenantID.String(), // $27 — tenant scope: never update another tenant's scan
 	)
 
 	if err != nil {

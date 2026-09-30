@@ -21,6 +21,12 @@ import (
 // Default sort order for assets
 const defaultSortOrder = "created_at DESC"
 
+// providerUnsetSentinel is the value the /assets/stats facet emits for
+// assets whose provider column is NULL (via COALESCE(provider, 'unset')).
+// The provider filter maps it back to `provider IS NULL` so clicking the
+// "unset (N)" facet row returns exactly those N assets.
+const providerUnsetSentinel = "unset"
+
 // AssetRepository implements asset.Repository using PostgreSQL.
 type AssetRepository struct {
 	db *DB
@@ -117,6 +123,48 @@ func (r *AssetRepository) GetByID(ctx context.Context, tenantID, assetID shared.
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), assetID.String())
 	return r.scanAsset(row, assetID)
+}
+
+// GetDisplayInfoByIDs returns id/name/type for the given assets of one tenant
+// in a single query. Unlike GetByID it skips the per-asset LATERAL finding
+// aggregate and the wide column list, which a caller that only labels rows
+// (the findings list) never reads.
+func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]asset.DisplayInfo, error) {
+	result := make(map[shared.ID]asset.DisplayInfo, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = id.String()
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, name, asset_type FROM assets WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+		tenantID.String(), pq.Array(idStrs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch get asset display info: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			idStr, name, assetType string
+		)
+		if err := rows.Scan(&idStr, &name, &assetType); err != nil {
+			return nil, fmt.Errorf("failed to scan asset display info: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset id %q: %w", idStr, err)
+		}
+		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType)}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate asset display info: %w", err)
+	}
+	return result, nil
 }
 
 // GetByExternalID retrieves an asset by external ID and provider.
@@ -1074,15 +1122,36 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
-	// Providers filter
+	// Providers filter.
+	// The stats facet exposes NULL providers under the sentinel value
+	// "unset" (via COALESCE(provider, 'unset')), so a selectable
+	// "unset (N)" row can be clicked. Real rows store provider = NULL,
+	// not the literal "unset", so we translate that sentinel (and an
+	// empty string) back into `provider IS NULL` — otherwise clicking
+	// the facet would send `provider IN ('unset')` and match zero rows.
 	if len(filter.Providers) > 0 {
-		placeholders := make([]string, len(filter.Providers))
-		for i, p := range filter.Providers {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
-			args = append(args, p.String())
+		placeholders := make([]string, 0, len(filter.Providers))
+		includeNull := false
+		for _, p := range filter.Providers {
+			v := p.String()
+			if v == providerUnsetSentinel || v == "" {
+				includeNull = true
+				continue
+			}
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argIndex))
+			args = append(args, v)
 			argIndex++
 		}
-		conditions = append(conditions, fmt.Sprintf("a.provider IN (%s)", strings.Join(placeholders, ", ")))
+		parts := make([]string, 0, 2)
+		if len(placeholders) > 0 {
+			parts = append(parts, fmt.Sprintf("a.provider IN (%s)", strings.Join(placeholders, ", ")))
+		}
+		if includeNull {
+			parts = append(parts, "a.provider IS NULL")
+		}
+		if len(parts) > 0 {
+			conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+		}
 	}
 
 	// Sync statuses filter
@@ -1214,15 +1283,24 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	}
 
 	// Layer 2: Data Scope - filter by user's group membership
-	// Backward compat: if user has no rows in user_accessible_assets, show all (NOT EXISTS bypasses)
+	// Default (fail-OPEN): no rows in user_accessible_assets ⇒ NOT EXISTS bypasses
+	// and the user sees all (backward compatible). When the tenant enables
+	// RestrictedDataScope (filter.DataScopeStrict), the bypass is dropped: no
+	// assignment ⇒ no assets (fail-CLOSED, Tenable "No Access" default).
 	if filter.DataScopeUserID != nil && filter.TenantID != nil {
 		userIDIdx := argIndex
 		tenantIDIdx := argIndex + 1
 		args = append(args, filter.DataScopeUserID.String(), *filter.TenantID)
-		conditions = append(conditions, fmt.Sprintf(`(
-			NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-		)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+		if filter.DataScopeStrict {
+			conditions = append(conditions, fmt.Sprintf(
+				`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
+				userIDIdx, tenantIDIdx))
+		} else {
+			conditions = append(conditions, fmt.Sprintf(`(
+				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+				OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
+			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
+		}
 	}
 
 	return strings.Join(conditions, " AND "), args
@@ -1345,6 +1423,12 @@ func assetUpsertConflictSQL() string {
 			impact_integrity = COALESCE(assets.impact_integrity, EXCLUDED.impact_integrity),
 			impact_availability = COALESCE(assets.impact_availability, EXCLUDED.impact_availability),
 			is_internet_accessible = assets.is_internet_accessible OR EXCLUDED.is_internet_accessible,
+			-- exposure: fill the gap only. Ingest infers/receives an exposure
+			-- for a re-scanned asset still at 'unknown' (and records the
+			-- transition in asset_state_history); without this the inference
+			-- was computed and then dropped here. A known exposure (e.g. one an
+			-- operator set) is never overridden by a scan.
+			exposure = CASE WHEN assets.exposure = 'unknown' THEN EXCLUDED.exposure ELSE assets.exposure END,
 			pii_data_exposed = assets.pii_data_exposed OR EXCLUDED.pii_data_exposed,
 			phi_data_exposed = assets.phi_data_exposed OR EXCLUDED.phi_data_exposed,
 			compliance_scope = (

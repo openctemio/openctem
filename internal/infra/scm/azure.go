@@ -110,14 +110,17 @@ func (c *AzureClient) GetUser(ctx context.Context) (*User, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+	// Azure DevOps answers a rejected PAT with 203 and its HTML sign-in page
+	// rather than 401, so treat 203 as an auth failure too.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden ||
+		resp.StatusCode == http.StatusNonAuthoritativeInfo {
 		return nil, ErrAuthFailed.Wrap(fmt.Errorf("invalid or expired token"))
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, azureBodySnippet(body))
 	}
 
 	var connData struct {
@@ -185,7 +188,7 @@ func (c *AzureClient) listProjects(ctx context.Context, org string, opts ListOpt
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, azureBodySnippet(body))
 	}
 
 	var result struct {
@@ -493,4 +496,16 @@ func convertAzureRepos(azRepos []azureRepo, baseURL, org string) []Repository {
 // ListBranches is not yet implemented for this provider.
 func (c *AzureClient) ListBranches(_ context.Context, _ string, _ ListOptions) ([]Branch, error) {
 	return nil, ErrBranchListingUnsupported
+}
+
+// azureBodySnippet shortens an error response body for an error message. The
+// message ends up in the integration's status_message, which the UI shows; a
+// full HTML page there is unreadable.
+func azureBodySnippet(body []byte) string {
+	const maxLen = 200
+	s := strings.Join(strings.Fields(string(body)), " ")
+	if len(s) > maxLen {
+		return s[:maxLen] + "…"
+	}
+	return s
 }

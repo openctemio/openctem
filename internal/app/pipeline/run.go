@@ -536,6 +536,11 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 			}
 			metrics.PipelineRunsTotal.WithLabelValues(run.TenantID.String(), "completed").Inc()
 			s.recordScanRun(ctx, run, "completed")
+			if s.runCompleted != nil {
+				run.Status = pipeline.RunStatusCompleted
+				run.TotalFindings = findings
+				s.runCompleted(ctx, run)
+			}
 			// Audit log: pipeline completed
 			s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
 				NewSuccessEvent(audit.ActionPipelineRunCompleted, audit.ResourceTypePipelineRun, run.ID.String()).

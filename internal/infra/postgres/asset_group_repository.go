@@ -117,9 +117,9 @@ func (r *AssetGroupRepository) Create(ctx context.Context, g *assetgroup.AssetGr
 			repository_count, cloud_count, credential_count,
 			risk_score, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
+			$1, $2, $3, $4, $5, $6, $7::text,
 			(SELECT bu.id FROM business_units bu
-			 WHERE bu.tenant_id = $2::uuid AND $7 <> '' AND lower(bu.name) = lower($7)
+			 WHERE bu.tenant_id = $2::uuid AND $7::text <> '' AND lower(bu.name) = lower($7::text)
 			 LIMIT 1),
 			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 	`
@@ -198,10 +198,10 @@ func (r *AssetGroupRepository) Update(ctx context.Context, tenantID shared.ID, g
 			description = $4,
 			environment = $5,
 			criticality = $6,
-			business_unit = $7,
+			business_unit = $7::text,
 			business_unit_id = (
 				SELECT bu.id FROM business_units bu
-				WHERE bu.tenant_id = $2::uuid AND $7 <> '' AND lower(bu.name) = lower($7)
+				WHERE bu.tenant_id = $2::uuid AND $7::text <> '' AND lower(bu.name) = lower($7::text)
 				LIMIT 1
 			),
 			owner = $8,

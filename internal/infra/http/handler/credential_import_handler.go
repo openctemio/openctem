@@ -4,12 +4,15 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/openctemio/api/internal/app"
+	auditapp "github.com/openctemio/api/internal/app/audit"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	auditdom "github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/credential"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/validator"
@@ -23,6 +26,49 @@ type CredentialImportHandler struct {
 	service   *app.CredentialImportService
 	validator *validator.Validator
 	logger    *logger.Logger
+	// audit, when set, records a non-repudiable event each time plaintext
+	// leaked-secret values are returned to a caller. Nil-safe: the handler
+	// behaves identically minus the audit when unset (tests/stub builds).
+	audit *auditapp.AuditService
+}
+
+// SetAuditService wires the audit logger so plaintext credential reads leave
+// an access trail (AUTHZ-07). Optional; nil disables the audit only.
+func (h *CredentialImportHandler) SetAuditService(svc *auditapp.AuditService) {
+	h.audit = svc
+}
+
+// buildAuditContext extracts the actor identity for an audit event.
+func (h *CredentialImportHandler) buildAuditContext(r *http.Request) auditapp.AuditContext {
+	clientIP := r.RemoteAddr
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		clientIP = xff
+	} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		clientIP = xri
+	}
+	return auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: middleware.GetUsername(r.Context()),
+		ActorIP:    clientIP,
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+}
+
+// auditPlaintextAccess records that an endpoint which returns plaintext
+// leaked-secret values was read. scope describes the read (e.g. "list", a
+// credential id, or an identity). Nil-safe: no-op when the audit service is
+// not wired.
+func (h *CredentialImportHandler) auditPlaintextAccess(r *http.Request, scope string) {
+	if h.audit == nil {
+		return
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionCredentialAccessed, auditdom.ResourceTypeCredential, scope).
+		WithMessage(fmt.Sprintf("Leaked-credential plaintext endpoint accessed: %s", scope)).
+		WithMetadata("scope", scope).
+		WithSeverity(auditdom.SeverityMedium)
+	_ = h.audit.LogEvent(r.Context(), h.buildAuditContext(r), event)
 }
 
 // NewCredentialImportHandler creates a new credential import handler.
@@ -267,6 +313,7 @@ func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.auditPlaintextAccess(r, "list")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
@@ -297,6 +344,7 @@ func (h *CredentialImportHandler) GetByID(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	h.auditPlaintextAccess(r, "credential:"+id)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(item)
@@ -400,6 +448,7 @@ func (h *CredentialImportHandler) GetRelatedCredentials(w http.ResponseWriter, r
 		return
 	}
 
+	h.auditPlaintextAccess(r, "related:"+id)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(items)
@@ -445,6 +494,7 @@ func (h *CredentialImportHandler) GetExposuresForIdentity(w http.ResponseWriter,
 		return
 	}
 
+	h.auditPlaintextAccess(r, "identity:"+identity)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)

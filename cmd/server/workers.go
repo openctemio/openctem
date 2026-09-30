@@ -371,8 +371,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.CertMonitor,
 			repos.Tenant,
 			&controller.CertMonitorControllerConfig{
-				Interval: cfg.Worker.CertMonitorInterval,
-				Logger:   log.With("controller", "cert-monitor"),
+				Interval:    cfg.Worker.CertMonitorInterval,
+				Logger:      log.With("controller", "cert-monitor"),
+				ModuleGuard: svc.Module, // skip tenants without the attack-surface module
 			},
 		))
 	}
@@ -437,6 +438,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	)
 	if svc != nil && svc.Outbox != nil {
 		slaEscalation.SetBreachPublisher(sla.NewBreachOutboxAdapter(svc.Outbox))
+		// Also fan out "approaching deadline" warnings (previously the warning
+		// pass updated sla_status but notified no one).
+		slaEscalation.SetWarningPublisher(sla.NewWarningOutboxAdapter(svc.Outbox))
 	}
 	w.ControllerManager.Register(slaEscalation)
 
@@ -558,8 +562,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.RelationshipSuggestion,
 			repos.Tenant,
 			&controller.GraphEnrichmentControllerConfig{
-				Interval: time.Hour,
-				Logger:   log.With("controller", "graph-enrichment"),
+				Interval:    time.Hour,
+				Logger:      log.With("controller", "graph-enrichment"),
+				ModuleGuard: svc.Module, // skip tenants without the attack-surface module
 			},
 		))
 	}
@@ -576,8 +581,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.ThreatModel,
 			repos.Tenant,
 			&controller.ThreatModelRefreshControllerConfig{
-				Interval: 2 * time.Hour,
-				Logger:   log.With("controller", "threat-model-refresh"),
+				Interval:    2 * time.Hour,
+				Logger:      log.With("controller", "threat-model-refresh"),
+				ModuleGuard: svc.Module, // skip tenants without the threat-model module
 			},
 		))
 	}

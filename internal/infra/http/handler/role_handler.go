@@ -663,6 +663,23 @@ func (h *RoleHandler) BulkAssignRoleMembers(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Anti-escalation: a non-admin cannot bulk-assign a role carrying
+	// permissions they don't hold (e.g. the system admin role's bundle).
+	// Mirrors the same guard on AssignRole / SetUserRoles — the bulk path
+	// previously lacked it, which let a `roles:assign` holder self-grant the
+	// admin role's full permission set via /roles/{adminRoleId}/members/bulk.
+	if !middleware.IsAdmin(ctx) {
+		targetRole, rErr := h.service.GetRole(ctx, tenantID, roleID)
+		if rErr != nil {
+			h.handleServiceError(w, rErr)
+			return
+		}
+		if e := assertCanGrantPermissions(ctx, targetRole.Permissions()); e != nil {
+			apierror.Forbidden("cannot assign a role with permissions you do not hold").WriteJSON(w)
+			return
+		}
+	}
+
 	input := app.BulkAssignRoleToUsersInput{
 		TenantID: tenantID,
 		RoleID:   roleID,

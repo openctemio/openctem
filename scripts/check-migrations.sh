@@ -39,6 +39,22 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MARKER='expand-contract-ok'
 
+# --- every migration version must be unique ---------------------------------
+# Two PRs written in parallel can each pick the next free number and both merge
+# (each is unique on its own branch). golang-migrate then refuses to run, and an
+# api that migrates on deploy does not start. This checks the whole directory,
+# not just changed files, so develop's own CI goes red the moment it happens.
+dupes="$(find "$REPO_ROOT/migrations" -maxdepth 1 -name '*.up.sql' -printf '%f\n' \
+  | sed -E 's/^([0-9]+)_.*/\1/' | sort | uniq -d)"
+if [ -n "$dupes" ]; then
+  echo "check-migrations: duplicate migration version(s):" >&2
+  for v in $dupes; do
+    find "$REPO_ROOT/migrations" -maxdepth 1 -name "${v}_*.up.sql" -printf '  %f\n' >&2
+  done
+  echo "Renumber the later one to the next free version." >&2
+  exit 1
+fi
+
 # --- discover which .up.sql files to scan -----------------------------------
 
 discover_from_git() {

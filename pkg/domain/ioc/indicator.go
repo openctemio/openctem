@@ -85,6 +85,7 @@ const maxValueBytes = 2048
 //   - SHA-1  : 40 hex chars
 //   - SHA-256: 64 hex chars
 //   - SHA-512: 128 hex chars
+//
 // Case is not enforced here because Normalize lowercases.
 var fileHashRegex = regexp.MustCompile(`^[0-9a-fA-F]{32}$|^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$|^[0-9a-fA-F]{128}$`)
 
@@ -212,6 +213,26 @@ type Match struct {
 	FindingID        *shared.ID
 	Reopened         bool
 	MatchedAt        time.Time
+}
+
+// MatchDetail is one ioc_matches row enriched with the reopened
+// finding's title, for the "why was this finding reopened?" read view.
+// It is a read-only projection — not persisted — so it lives outside the
+// Repository interface and is served by a narrow lister on the concrete
+// postgres repo.
+type MatchDetail struct {
+	Match
+	// FindingTitle is the title of the linked finding, or "" when the
+	// match carries no finding (or the finding was deleted — the FK is
+	// ON DELETE SET NULL).
+	FindingTitle string
+
+	// IOCType and IOCValue identify which indicator fired. They are populated
+	// only by the tenant-wide feed (ListMatchesByTenant), where the caller does
+	// not already know the indicator; the per-IOC match log leaves them empty
+	// because the IOC is implied by the request path.
+	IOCType  Type
+	IOCValue string
 }
 
 // Repository is the persistence contract.

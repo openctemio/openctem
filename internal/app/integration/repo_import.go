@@ -261,7 +261,7 @@ func (s *IntegrationService) scmClientForIntegration(ctx context.Context, intgID
 		baseURL = s.getDefaultBaseURL(intg.Provider())
 	}
 	return s.scmFactory.CreateClient(scm.Config{
-		Provider:     scm.Provider(intg.Provider()),
+		Provider:     toSCMProvider(intg.Provider()),
 		BaseURL:      baseURL,
 		AccessToken:  s.decryptCredentials(intg),
 		Organization: scmOrg,

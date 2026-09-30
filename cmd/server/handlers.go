@@ -214,6 +214,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log),
 		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
+		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:             vulnHandler,
@@ -408,6 +409,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 	}
 
+	// AUTHZ-07: record an audit event whenever plaintext leaked-secret values
+	// are read (list / by-id / related / by-identity).
+	if handlers.CredentialImport != nil {
+		handlers.CredentialImport.SetAuditService(svc.Audit)
+	}
+
 	return handlers
 }
 
@@ -506,5 +513,6 @@ func newRuntimeTelemetryHandlerWithCorrelator(deps *HandlerDeps, svc *Services, 
 func newIOCHandlerWithFindingCheck(deps *HandlerDeps, log *logger.Logger) *handler.IOCHandler {
 	h := handler.NewIOCHandler(deps.Repos.IOC, log)
 	h.SetFindingChecker(deps.Repos.Finding)
+	h.SetMatchLister(deps.Repos.IOC)
 	return h
 }

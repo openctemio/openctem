@@ -170,6 +170,19 @@ func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	s.findingProcessor.SetFindingCreatedCallback(callback)
 }
 
+// SetAssetsDiscoveredCallback sets the callback for assets an ingest newly
+// created (not merged, not manually created). It drives the asset_discovered
+// workflow trigger and the new-internet-facing-asset notification.
+func (s *Service) SetAssetsDiscoveredCallback(callback AssetsDiscoveredCallback) {
+	s.assetProcessor.SetAssetsDiscoveredCallback(callback)
+}
+
+// SetAssetsExposedCallback sets the callback for existing assets a re-scan
+// turned internet-facing. It drives the newly-exposed notification.
+func (s *Service) SetAssetsExposedCallback(callback AssetsDiscoveredCallback) {
+	s.assetProcessor.SetAssetsExposedCallback(callback)
+}
+
 // SetPriorityClassifier sets the priority classification service (RFC-004).
 func (s *Service) SetPriorityClassifier(classifier PriorityClassifier) {
 	s.findingProcessor.SetPriorityClassifier(classifier)

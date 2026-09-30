@@ -1354,9 +1354,25 @@ func DefaultReadEndpointRateLimitConfig() ReadEndpointRateLimitConfig {
 	}
 }
 
+// ReadEndpointRateLimitConfigFrom derives the read-endpoint limiter config
+// from the global rate-limit config (RATE_LIMIT_READ_PER_MIN,
+// RATE_LIMIT_CLEANUP). A non-positive value keeps the secure default rather
+// than disabling the limiter; turning rate limiting off is only possible via
+// RATE_LIMIT_ENABLED, which production config validation rejects.
+func ReadEndpointRateLimitConfigFrom(rl config.RateLimitConfig) ReadEndpointRateLimitConfig {
+	cfg := DefaultReadEndpointRateLimitConfig()
+	if rl.ReadRequestsPerMin > 0 {
+		cfg.ReadRequestsPerMin = rl.ReadRequestsPerMin
+	}
+	if rl.CleanupInterval > 0 {
+		cfg.CleanupInterval = rl.CleanupInterval
+	}
+	return cfg
+}
+
 // NewReadEndpointRateLimiter creates a rate limiter for read/list endpoints.
 func NewReadEndpointRateLimiter(cfg ReadEndpointRateLimitConfig, log *logger.Logger) *ReadEndpointRateLimiter {
-	if cfg.ReadRequestsPerMin == 0 {
+	if cfg.ReadRequestsPerMin <= 0 {
 		cfg.ReadRequestsPerMin = 120
 	}
 	if cfg.CleanupInterval == 0 {
