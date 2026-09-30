@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/pkg/apierror"
 	"github.com/openctemio/api/pkg/domain/session"
 	"github.com/openctemio/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/httpsec"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/password"
@@ -1141,6 +1142,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Forbidden("Registration is disabled").WriteJSON(w)
 	case errors.Is(err, app.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
+	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):
+		apierror.Conflict("Platform administrators cannot belong to an organization. Use the admin console, or a separate account.").WriteJSON(w)
 	case errors.Is(err, app.ErrEmailAlreadyExists):
 		apierror.Conflict("Email already exists").WriteJSON(w)
 	case errors.Is(err, app.ErrInvalidResetToken):
