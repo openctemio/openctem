@@ -93,7 +93,9 @@ func (r *AdminOrganizationRepository) ListOrganizations(ctx context.Context, f a
 	}
 	defer rows.Close()
 
-	out := make([]*admin.Organization, 0, limit)
+	// Fixed capacity: limit is bounded above, but sizing an allocation from a
+	// request value is exactly what static analysis (rightly) distrusts.
+	out := make([]*admin.Organization, 0, 64)
 	for rows.Next() {
 		o, err := scanOrganization(rows)
 		if err != nil {

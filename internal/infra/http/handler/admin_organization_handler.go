@@ -142,7 +142,7 @@ func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) 
 		Search: q.Get("search"), Limit: perPage, Offset: (page - 1) * perPage,
 	})
 	if err != nil {
-		h.logger.Error("list organizations", "error", err)
+		h.logger.Error("list organizations", "error", sanitizeLogField(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
@@ -224,7 +224,7 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 			apierror.BadRequest(err.Error()).WriteJSON(w)
 			return
 		}
-		h.logger.Error("create organization", "error", err)
+		h.logger.Error("create organization", "error", sanitizeLogField(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
@@ -297,7 +297,7 @@ func (h *AdminOrganizationHandler) SetSSOEnforcement(w http.ResponseWriter, r *h
 		case shared.IsValidation(err):
 			apierror.BadRequest(err.Error()).WriteJSON(w)
 		default:
-			h.logger.Error("set sso enforcement", "error", err)
+			h.logger.Error("set sso enforcement", "error", sanitizeLogField(err.Error()))
 			apierror.InternalError(err).WriteJSON(w)
 		}
 		return
