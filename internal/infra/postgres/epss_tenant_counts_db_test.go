@@ -49,8 +49,8 @@ func TestEPSSRepository_CountTenantOpenAboveScores(t *testing.T) {
 	seedEPSS(ctx, t, db, "CVE-2099-90003", 0.70)
 	seedEPSS(ctx, t, db, "CVE-2099-90004", 0.95)
 
-	seedCVEFinding(ctx, t, db, tenantA, assetA, "CVE-2099-90001", "new")      // below both
-	seedCVEFinding(ctx, t, db, tenantA, assetA, "CVE-2099-90002", "new")      // high only
+	seedCVEFinding(ctx, t, db, tenantA, assetA, "CVE-2099-90001", "new")       // below both
+	seedCVEFinding(ctx, t, db, tenantA, assetA, "CVE-2099-90002", "new")       // high only
 	seedCVEFinding(ctx, t, db, tenantA, assetA, "CVE-2099-90003", "confirmed") // high + critical
 	seedCVEFinding(ctx, t, db, tenantA, assetA, "CVE-2099-90003", "new")       // same CVE, 2nd finding
 	seedCVEFinding(ctx, t, db, tenantA, assetA, "CVE-2099-90004", "resolved")  // closed: excluded

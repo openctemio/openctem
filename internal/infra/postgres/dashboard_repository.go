@@ -1033,7 +1033,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	query := `
 		WITH open_agg AS (
 			-- One pass over the tenant's open findings. This used to be a
-			-- materialised open_findings CTE (incl. the wide title column)
+			-- materialized open_findings CTE (incl. the wide title column)
 			-- scanned by 8 separate sub-selects: 144ms seq scan + ~50ms of
 			-- CTE re-scans on a 200k-finding tenant.
 			SELECT

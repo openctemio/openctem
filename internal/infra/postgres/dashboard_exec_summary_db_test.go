@@ -24,7 +24,7 @@ func seedExecFinding(ctx context.Context, t *testing.T, db *sql.DB, tenantID, as
 }
 
 // The executive summary's open-finding figures come from one aggregate pass
-// (open_agg) instead of 8 sub-selects over a materialised CTE. Pin the
+// (open_agg) instead of 8 sub-selects over a materialized CTE. Pin the
 // numbers: open total, P0/P1 open, SLA breached and SLA compliance, all
 // tenant-scoped and excluding closed statuses.
 func TestExecutiveSummary_OpenAggregates(t *testing.T) {

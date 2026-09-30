@@ -1862,7 +1862,7 @@ type AssetDisplay struct {
 // Security: only assets of tenantID are returned (the tenant predicate is in
 // the query); extensions are looked up only for ids that query returned.
 // Malformed or unknown ids are absent from the result, matching the per-id
-// path where a failed lookup leaves the asset unlabelled.
+// path where a failed lookup leaves the asset unlabeled.
 func (s *AssetService) GetAssetDisplayInfo(ctx context.Context, tenantID string, assetIDs []string) (map[string]AssetDisplay, error) {
 	result := make(map[string]AssetDisplay, len(assetIDs))
 	parsedTenantID, err := shared.IDFromString(tenantID)

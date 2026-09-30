@@ -2219,7 +2219,7 @@ func TestAssetService_CreateAsset_DefaultValues(t *testing.T) {
 }
 
 // =============================================================================
-// GetAssetDisplayInfo Tests (batched findings-list labelling)
+// GetAssetDisplayInfo Tests (batched findings-list labeling)
 // =============================================================================
 
 func TestAssetService_GetAssetDisplayInfo_BatchesAndIsTenantScoped(t *testing.T) {
@@ -2237,7 +2237,7 @@ func TestAssetService_GetAssetDisplayInfo_BatchesAndIsTenantScoped(t *testing.T)
 
 	host := createAssetForTest(t, svc, tenantID.String(), "Host Asset")
 
-	// An asset of ANOTHER tenant must never be labelled, even when its id is
+	// An asset of ANOTHER tenant must never be labeled, even when its id is
 	// passed in (e.g. a stale/forged asset_id on a finding).
 	otherTenant := shared.NewID()
 	foreign, _ := asset.NewAssetWithTenant(otherTenant, "foreign", asset.AssetTypeRepository, asset.CriticalityLow)

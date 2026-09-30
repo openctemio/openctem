@@ -59,7 +59,9 @@ func TestDashboardGetAllStats_OnePass(t *testing.T) {
 		vulnID.String(), "CVE-2099-"+vulnID.String()[:8]); err != nil {
 		t.Fatalf("seed vulnerability: %v", err)
 	}
-	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DELETE FROM vulnerabilities WHERE id = $1`, vulnID.String()) })
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM vulnerabilities WHERE id = $1`, vulnID.String())
+	})
 
 	seedDashFinding(ctx, t, db, tenant, repoWith, "critical", "new", &vulnID)
 	seedDashFinding(ctx, t, db, tenant, repoWith, "high", "confirmed", nil)

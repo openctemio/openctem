@@ -1170,7 +1170,7 @@ func (r *FindingRepository) List(ctx context.Context, filter vulnerability.Findi
 // columns incl. snippet/metadata/stacks JSONB and the per-row has_data_flow
 // EXISTS) is evaluated for those ids only.
 //
-// Selecting the wide list directly made Postgres materialise and evaluate the
+// Selecting the wide list directly made Postgres materialize and evaluate the
 // EXISTS for EVERY matching row before the top-N sort: 612ms for one page of a
 // 200k-finding tenant vs 128ms deferred (no index), 0.3ms with the priority
 // sort index (migration 000220).
