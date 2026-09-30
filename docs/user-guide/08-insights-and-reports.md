@@ -13,7 +13,7 @@ the only in-page control is usually a time-period toggle.
 | Dashboard | Route | What it answers |
 |-----------|-------|-----------------|
 | **Executive Summary** | `/insights/executive` | Risk score, findings resolved, MTTR and other headline numbers for leadership. Toggle the period (7/30/… days). |
-| **Program Health** | `/insights/program-health` | Whether the CTEM program itself is healthy — coverage, MTTR, data quality, risk trend, validation coverage. |
+| **Program Health** | `/insights/program-health` | Whether the CTEM program itself is healthy — coverage, MTTR, data quality, risk trend, validation coverage, plus the CTEM program metrics (time to detect new internet-facing assets, time to remediate validated exposures, owner acceptance rate; see [definitions](../architecture/program-metrics.md)). A "—" means there is not enough data to measure it yet. |
 | **CTEM Maturity** | `/insights/ctem-maturity` | A weighted maturity score with per-stage coverage and trend. |
 | **Data Quality** | `/insights/data-quality` | How complete and trustworthy your asset/finding data is. |
 

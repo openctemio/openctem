@@ -22,6 +22,9 @@ type (
 	ModuleRepository              = module.ModuleRepository
 	MTTRAnalytics                 = module.MTTRAnalytics
 	ProcessMetrics                = module.ProcessMetrics
+	ProgramMetrics                = module.ProgramMetrics
+	DurationMetric                = module.DurationMetric
+	OwnerAcceptanceMetric         = module.OwnerAcceptanceMetric
 	RepositoryStatsData           = module.RepositoryStatsData
 	RiskTrendPoint                = module.RiskTrendPoint
 	RiskVelocityPoint             = module.RiskVelocityPoint

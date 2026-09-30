@@ -383,6 +383,40 @@ func (h *DashboardHandler) GetProcessMetrics(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, metrics)
 }
 
+// GetProgramMetrics returns the CTEM program metrics for the current tenant.
+// @Summary      Get CTEM program metrics
+// @Description  Returns the ctem.org program KPIs computed from stored data, tenant-scoped and windowed to the last `days` days (1-365, default 90): mean/median time to detect new internet-facing assets, mean/median time to remediate validated (reproduced) exposures, and the owner acceptance rate within the SLA window. A null value means "not measurable" (no qualifying sample) and must be shown as "—", never 0 or 100%. Time-to-break attack paths is intentionally absent: attack paths are computed on demand and no path history is stored.
+// @Tags         Dashboard
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days  query     int  false  "Window in days (1-365, default 90)"
+// @Success      200   {object}  app.ProgramMetrics
+// @Failure      400   {object}  apierror.Error
+// @Failure      401   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Router       /dashboard/program-metrics [get]
+func (h *DashboardHandler) GetProgramMetrics(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.BadRequest("invalid tenant").WriteJSON(w)
+		return
+	}
+
+	days := parseQueryInt(r.URL.Query().Get("days"), 90)
+	if days < 1 || days > 365 {
+		days = 90
+	}
+
+	metrics, err := h.dashboardService.GetProgramMetrics(r.Context(), tid, days)
+	if err != nil {
+		h.logger.Error("failed to get program metrics", "error", err)
+		apierror.InternalServerError("failed to get program metrics").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, metrics)
+}
+
 func convertActivityItems(items []app.ActivityItem) []ActivityItem {
 	result := make([]ActivityItem, len(items))
 	for i, item := range items {

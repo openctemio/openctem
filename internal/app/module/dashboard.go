@@ -110,6 +110,8 @@ type DashboardStatsRepository interface {
 	GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*MTTRAnalytics, error)
 	// Process Metrics (Phase 2)
 	GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProcessMetrics, error)
+	// CTEM program metrics (MTTD internet-facing, MTTR validated, owner acceptance)
+	GetProgramMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProgramMetrics, error)
 }
 
 // DataQualityScorecard holds data quality metrics (RFC-005 Gap 5).
@@ -341,6 +343,115 @@ type ProcessMetrics struct {
 	StaleAssetsPct       float64 `json:"stale_assets_pct"`
 	FindingsWithoutOwner int     `json:"findings_without_owner"`
 	AvgTimeToAssignHours float64 `json:"avg_time_to_assign_hours"`
+}
+
+// ProgramMetrics holds the CTEM program metrics ctem.org asks a program to
+// report that can be computed honestly from data the platform already stores.
+// Every figure is tenant-scoped and windowed to the last PeriodDays days.
+//
+// A nil pointer means "not measurable" (no qualifying sample in the window) —
+// never 0 and never 100%. Clients must render nil as "—".
+//
+// Deliberately NOT here: time-to-break attack paths. Attack paths / exposure
+// chains are computed on demand from the current asset graph
+// (internal/app/attack/exposure_chains.go) and never persisted; the
+// attack_paths table is written only by the demo seeder, and neither asset
+// exposure nor asset relationships keep a change history. There is therefore
+// no record of when a path opened or when one of its links was broken, and any
+// "time to break" figure would be invented.
+type ProgramMetrics struct {
+	PeriodDays int `json:"period_days"`
+
+	// MTTDInternetFacing — mean time to detect new internet-facing assets.
+	//
+	// Population: non-archived assets whose first_seen falls in the window and
+	// that are internet-facing now (exposure = 'public' OR
+	// is_internet_accessible).
+	//
+	// Clock start: assets.first_seen (the asset entered the inventory).
+	// Clock stop: the EARLIEST of these per-asset signals that it was known to
+	// be internet-facing or exposed —
+	//   - assets.exposure_changed_at, when the current exposure is 'public'
+	//     (stamped when the exposure level was classified);
+	//   - asset_state_history rows of change_type exposure_changed /
+	//     internet_exposure_changed whose new_value is 'public' / 'true';
+	//   - the asset's first exposure event (exposure_events.first_seen_at);
+	//   - the asset's first finding (findings.first_detected_at).
+	// A stop before first_seen counts as 0 h (known at discovery). Assets with
+	// no stop signal at all are not averaged; they are counted in Unmeasured.
+	//
+	// Caveat: exposure_changed_at holds the LAST exposure change, so an asset
+	// that flapped public → private → public is measured to the later flip
+	// unless an earlier history row / exposure / finding exists.
+	MTTDInternetFacing DurationMetric `json:"mttd_internet_facing"`
+
+	// MTTRValidated — mean time to remediate VALIDATED exposures only.
+	//
+	// Population: findings with at least one validation_evidence row of
+	// outcome 'detected' (the validation re-check reproduced the exposure —
+	// "still exploitable", RFC-011.2 VerdictReproducible), now in status
+	// resolved / verified, with resolved_at in the window.
+	//
+	// Clock start: the first 'detected' validation_evidence.created_at.
+	// Clock stop: findings.resolved_at. Findings resolved before they were
+	// validated are excluded (the fix did not follow the validation).
+	// false_positive / accepted / validated_fixed are not remediation and are
+	// excluded.
+	MTTRValidated DurationMetric `json:"mttr_validated"`
+
+	// OwnerAcceptance — share of assignments the assignee acted on within the
+	// SLA window. See OwnerAcceptanceMetric.
+	OwnerAcceptance OwnerAcceptanceMetric `json:"owner_acceptance"`
+}
+
+// DurationMetric is a mean/median duration over a sample, in hours.
+// MeanHours / MedianHours are nil when SampleSize is 0.
+type DurationMetric struct {
+	MeanHours   *float64 `json:"mean_hours"`
+	MedianHours *float64 `json:"median_hours"`
+	SampleSize  int      `json:"sample_size"`
+	// Unmeasured counts population members that had no stop signal and so
+	// could not be timed (MTTD only; always 0 for MTTR).
+	Unmeasured int `json:"unmeasured"`
+}
+
+// OwnerAcceptanceMetric — owner acceptance rate.
+//
+// Unit: one 'assigned' finding_activities event made in the window that names
+// an assignee (changes->>'assignee_id').
+//
+// Response window: from the assignment until the EARLIEST of the finding's
+// SLA deadline (findings.sla_deadline), the next assign/unassign on that
+// finding, or the finding being resolved.
+//
+// Acted: the assignee themself (actor_type 'user', actor_id = assignee)
+// recorded one of status_changed, triage_updated, severity_changed,
+// comment_added, remediation_updated, resolved, verified,
+// false_positive_marked, duplicate_marked, approval_requested within the
+// response window.
+//
+// Outcome of each assignment:
+//   - Accepted: acted within the window.
+//   - Missed: not acted and the SLA deadline has passed with the assignee
+//     still responsible.
+//   - Pending: not acted, SLA deadline still in the future — undecided, so not
+//     in the rate.
+//   - Excluded: no SLA deadline, assigned after the deadline had already
+//     passed, or the assignee was relieved before the deadline without acting
+//     (reassigned / unassigned / someone else resolved the finding).
+//
+// RatePct = Accepted / (Accepted + Missed) × 100, nil when that is 0.
+type OwnerAcceptanceMetric struct {
+	RatePct  *float64 `json:"rate_pct"`
+	Accepted int      `json:"accepted"`
+	Missed   int      `json:"missed"`
+	Pending  int      `json:"pending"`
+	Excluded int      `json:"excluded"`
+}
+
+// GetProgramMetrics returns the CTEM program metrics for a tenant.
+func (s *DashboardService) GetProgramMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProgramMetrics, error) {
+	return s.repo.GetProgramMetrics(ctx, tenantID, days)
 }
 
 // GetProcessMetrics returns process efficiency metrics.

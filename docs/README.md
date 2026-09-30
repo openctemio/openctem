@@ -20,6 +20,7 @@
 - [Project Structure](architecture/project-structure.md) - Complete file structure
 - [Notification System](architecture/notification-system.md) - Real-time alerts, providers, async patterns
 - [Scan Orchestration](architecture/scan-orchestration.md) - Pipeline execution, agent coordination
+- [CTEM Program Metrics](architecture/program-metrics.md) - MTTD for new internet-facing assets, MTTR for validated exposures, owner acceptance rate: exact definitions, tenant scoping, "—" for not measurable, and why time-to-break attack paths is not computed
 - [Scan Coverage (Tenable)](architecture/scan-coverage.md) - License-aware rolling coverage, Nessus Pro + Tenable.sc, .nessus→CTIS converter
 - [Shift-Left CI Scanning](architecture/shift-left-ci-scanning.md) - Agent-first SAST/SCA/secrets in CI: structure + dataflow diagrams, branch-aware findings, risk-aware gate, PR decoration (RFC-008)
 - [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
