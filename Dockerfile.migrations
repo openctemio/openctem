@@ -25,7 +25,7 @@
 # =============================================================================
 
 # trivy:ignore:AVD-DS-0002 - One-time migration container, exits after running
-FROM public.ecr.aws/docker/library/alpine:3.20
+FROM alpine:3.20
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates
