@@ -44,6 +44,11 @@ type UserResponse struct {
 	LastLoginAt *time.Time     `json:"last_login_at,omitempty"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
+	// IsPlatformAdmin marks the caller as an application (platform) administrator
+	// (PLATFORM_ADMIN_EMAILS allow-list). The UI uses it to show/hide the SSO
+	// setup surface, which only platform admins may configure. Set on the
+	// /users/me response only (context-derived), not in every toUserResponse.
+	IsPlatformAdmin bool `json:"is_platform_admin"`
 }
 
 // PreferencesDTO represents user preferences in API responses.
@@ -104,6 +109,7 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := toUserResponse(localUser)
+	response.IsPlatformAdmin = middleware.IsPlatformAdmin(r.Context())
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

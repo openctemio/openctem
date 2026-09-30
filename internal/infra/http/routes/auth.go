@@ -138,7 +138,14 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 	})
 }
 
-// registerSAMLAdminRoutes registers admin endpoints for a tenant's SAML config.
+// registerSAMLAdminRoutes registers endpoints for a tenant's SAML config.
+//
+// SSO setup is an APPLICATION-administrator operation, not a tenant one
+// (modeled on Tenable Security Center, where SAML lives under system-level
+// Configuration). Guarded by RequirePlatformAdmin — the platform-admin flag is
+// stamped from PLATFORM_ADMIN_EMAILS (see middleware.IsPlatformAdmin), so a
+// tenant owner/admin can no longer configure SSO for their own tenant. Still on
+// the JWT-tenant chain so the config resolves against the caller's tenant.
 func registerSAMLAdminRoutes(
 	router Router,
 	h *handler.SAMLHandler,
@@ -149,9 +156,9 @@ func registerSAMLAdminRoutes(
 	}
 	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/settings/saml", func(r Router) {
-		r.GET("/", h.GetConfig, middleware.RequireAdmin())
-		r.PUT("/", h.SetConfig, middleware.RequireAdmin())
-		r.DELETE("/", h.DeleteConfig, middleware.RequireAdmin())
+		r.GET("/", h.GetConfig, middleware.RequirePlatformAdmin())
+		r.PUT("/", h.SetConfig, middleware.RequirePlatformAdmin())
+		r.DELETE("/", h.DeleteConfig, middleware.RequirePlatformAdmin())
 	}, middlewares...)
 }
 
@@ -164,24 +171,26 @@ func registerSSOAdminRoutes(
 	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	router.Group("/api/v1/settings/identity-providers", func(r Router) {
-		// All SSO admin operations require admin+ (configs contain sensitive client IDs).
-		// These routes use the JWT-tenant chain (buildTokenTenantMiddlewares), which
-		// populates the JWT-derived role/IsAdmin context — NOT the URL-path "team_role"
-		// that RequireTeamAdmin reads. Using RequireTeamAdmin here 403'd every caller
-		// (incl. owners/admins); RequireAdmin reads the JWT IsAdmin flag.
-		r.GET("/", h.ListProviders, middleware.RequireAdmin())
-		r.POST("/", h.CreateProvider, middleware.RequireAdmin())
-		r.GET("/{id}", h.GetProvider, middleware.RequireAdmin())
-		r.PUT("/{id}", h.UpdateProvider, middleware.RequireAdmin())
-		r.DELETE("/{id}", h.DeleteProvider, middleware.RequireAdmin())
+		// SSO identity-provider setup is an application-administrator operation
+		// (see registerSAMLAdminRoutes): configs hold sensitive client IDs/secrets
+		// and control the tenant's whole login trust. Guarded by
+		// RequirePlatformAdmin — the platform-admin flag comes from
+		// PLATFORM_ADMIN_EMAILS, not the tenant-level JWT IsAdmin flag, so tenant
+		// owners/admins can no longer self-serve SSO. Stays on the JWT-tenant chain
+		// so the provider resolves against the caller's tenant.
+		r.GET("/", h.ListProviders, middleware.RequirePlatformAdmin())
+		r.POST("/", h.CreateProvider, middleware.RequirePlatformAdmin())
+		r.GET("/{id}", h.GetProvider, middleware.RequirePlatformAdmin())
+		r.PUT("/{id}", h.UpdateProvider, middleware.RequirePlatformAdmin())
+		r.DELETE("/{id}", h.DeleteProvider, middleware.RequirePlatformAdmin())
 	}, middlewares...)
 }
 
-// registerVerifiedDomainRoutes registers admin endpoints for managing a
-// tenant's DNS-verified domains (SSO P1). These gate SSO JIT auto-provisioning,
-// so all operations require admin+. Uses the JWT-tenant chain — RequireAdmin
-// reads the JWT IsAdmin flag (see registerSSOAdminRoutes for why not
-// RequireTeamAdmin).
+// registerVerifiedDomainRoutes registers endpoints for managing a tenant's
+// DNS-verified domains (SSO P1). These gate SSO JIT auto-provisioning and are
+// therefore part of SSO setup, so — like the SAML and identity-provider routes
+// — they are an application-administrator operation guarded by
+// RequirePlatformAdmin (flag from PLATFORM_ADMIN_EMAILS), not tenant admin.
 func registerVerifiedDomainRoutes(
 	router Router,
 	h *handler.VerifiedDomainHandler,
@@ -192,10 +201,10 @@ func registerVerifiedDomainRoutes(
 	}
 	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/settings/verified-domains", func(r Router) {
-		r.GET("/", h.List, middleware.RequireAdmin())
-		r.POST("/", h.AddDomain, middleware.RequireAdmin())
-		r.POST("/{id}/verify", h.Verify, middleware.RequireAdmin())
-		r.DELETE("/{id}", h.Delete, middleware.RequireAdmin())
+		r.GET("/", h.List, middleware.RequirePlatformAdmin())
+		r.POST("/", h.AddDomain, middleware.RequirePlatformAdmin())
+		r.POST("/{id}/verify", h.Verify, middleware.RequirePlatformAdmin())
+		r.DELETE("/{id}", h.Delete, middleware.RequirePlatformAdmin())
 	}, middlewares...)
 }
 

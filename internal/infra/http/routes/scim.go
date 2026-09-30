@@ -43,12 +43,18 @@ func registerSCIMRoutes(
 	if tokenHandler != nil {
 		tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 		router.Group("/api/v1/scim-tokens", func(r Router) {
-			r.GET("/", tokenHandler.List, middleware.RequireAdmin())
-			r.POST("/", tokenHandler.Create, middleware.RequireAdmin())
+			// SCIM tokens let an external IdP provision users into the tenant, and
+			// the group→role mappings decide what roles those provisioned users
+			// get — this is identity-federation setup, so it is an application-
+			// administrator operation (RequirePlatformAdmin, flag from
+			// PLATFORM_ADMIN_EMAILS), consistent with the SAML/identity-provider
+			// routes in auth.go. Not settable by tenant admins.
+			r.GET("/", tokenHandler.List, middleware.RequirePlatformAdmin())
+			r.POST("/", tokenHandler.Create, middleware.RequirePlatformAdmin())
 			// Group → role mappings (register before /{id} so the literal wins).
-			r.GET("/group-mappings", tokenHandler.GetGroupMappings, middleware.RequireAdmin())
-			r.PUT("/group-mappings", tokenHandler.SetGroupMappings, middleware.RequireAdmin())
-			r.DELETE("/{id}", tokenHandler.Revoke, middleware.RequireAdmin())
+			r.GET("/group-mappings", tokenHandler.GetGroupMappings, middleware.RequirePlatformAdmin())
+			r.PUT("/group-mappings", tokenHandler.SetGroupMappings, middleware.RequirePlatformAdmin())
+			r.DELETE("/{id}", tokenHandler.Revoke, middleware.RequirePlatformAdmin())
 		}, tenantMiddlewares...)
 	}
 }
