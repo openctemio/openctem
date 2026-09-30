@@ -13,6 +13,12 @@ var (
 	// Admin User Errors
 	// ==========================================================================
 
+	// ErrUserHasMemberships: a platform administrator belongs to no organization.
+	ErrUserHasMemberships = fmt.Errorf("%w: this account belongs to an organization; platform administrators cannot", shared.ErrConflict)
+
+	// ErrUserAlreadyAdmin: the user account is already an administrator.
+	ErrUserAlreadyAdmin = fmt.Errorf("%w: this account is already a platform administrator", shared.ErrConflict)
+
 	// ErrAdminNotFound is returned when an admin user is not found.
 	ErrAdminNotFound = fmt.Errorf("%w: admin user not found", shared.ErrNotFound)
 

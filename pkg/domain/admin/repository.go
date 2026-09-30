@@ -65,6 +65,21 @@ type Repository interface {
 	RecordUsage(ctx context.Context, id shared.ID, ip string) error
 
 	// ==========================================================================
+	// Human administrators (RFC-022 rev. 2)
+	// ==========================================================================
+
+	// GetByUserID returns the administrator linked to a users row, or
+	// ErrAdminNotFound. A linked administrator signs in on the normal /login
+	// page with that user account; unlinked rows are API-key identities.
+	GetByUserID(ctx context.Context, userID shared.ID) (*AdminUser, error)
+
+	// LinkUser links an administrator to a users row. Returns
+	// ErrUserHasMemberships when the user belongs to an organization (a
+	// platform administrator belongs to none) and ErrUserAlreadyAdmin when the
+	// user is already linked to another administrator.
+	LinkUser(ctx context.Context, adminID, userID shared.ID) error
+
+	// ==========================================================================
 	// Statistics
 	// ==========================================================================
 

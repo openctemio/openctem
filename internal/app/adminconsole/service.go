@@ -1,6 +1,12 @@
-// Package adminconsole implements human login to the platform admin console
-// (RFC-022, docs/rfcs/RFC-022-platform-admin-console.md): password plus a
-// mandatory TOTP second factor, backed by server-side sessions.
+// Package adminconsole implements the platform admin console session
+// (RFC-022, docs/rfcs/RFC-022-platform-admin-console.md).
+//
+// Following Tenable Security Center, a platform administrator is a normal user
+// account with a system-level role: it signs in on the same /login page as
+// everyone else, then this service opens a console session after a mandatory
+// TOTP code. admin_users holds the role, the TOTP secret and the audit trail,
+// linked to the users row. Only a password sign-in can open the console: no
+// organization's SSO/SAML identity provider can authenticate an administrator.
 //
 // API-key authentication for admins (CLI, automation) is separate and
 // unchanged; a session and an API key both resolve to the same AdminUser, so
@@ -17,8 +23,6 @@ import (
 	"fmt"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/admin"
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -33,7 +37,7 @@ const (
 	ActionMFAEnrolled      = "console.mfa_enrolled"
 	ActionMFAFailed        = "console.mfa_failed"
 	ActionLogout           = "console.logout"
-	ActionPasswordSet      = "console.password_set"
+	ActionAdminProvisioned = "console.admin_provisioned"
 	ActionCredentialsReset = "console.credentials_reset"
 )
 
@@ -76,10 +80,31 @@ type Service struct {
 	audit     admin.AuditLogRepository
 	encryptor crypto.Encryptor
 	log       *logger.Logger
+	accounts  AccountDirectory
 	now       func() time.Time
-	// dummyHash keeps the password step's timing similar when the email is
-	// unknown or has no password, so response time does not reveal either.
-	dummyHash []byte
+}
+
+// SignedInUser is the user behind a normal (/login) sign-in session.
+type SignedInUser struct {
+	UserID shared.ID
+	Email  string
+	Name   string
+	// Active is false for suspended or deactivated user accounts.
+	Active bool
+	// PasswordSignIn is true when the session came from the local email and
+	// password form, not from SSO, SAML or a social provider.
+	PasswordSignIn bool
+}
+
+// AccountDirectory is the tenant-user side the console needs: who is signed in
+// behind a refresh token, and creating an account for a new administrator.
+// Implemented over the auth service in the composition root.
+type AccountDirectory interface {
+	// SignedInUser validates a refresh token (without rotating it).
+	SignedInUser(ctx context.Context, refreshToken string) (*SignedInUser, error)
+	// ProvisionAccount returns the user with this email, creating a local account
+	// with a temporary password when none exists (temporaryPassword is then set).
+	ProvisionAccount(ctx context.Context, email, name string) (userID shared.ID, temporaryPassword string, err error)
 }
 
 // NewService creates the console authentication service.
@@ -88,9 +113,9 @@ func NewService(
 	console admin.ConsoleRepository,
 	audit admin.AuditLogRepository,
 	encryptor crypto.Encryptor,
+	accounts AccountDirectory,
 	log *logger.Logger,
 ) *Service {
-	dummy, _ := bcrypt.GenerateFromPassword([]byte("timing-equalizer-not-a-password"), admin.BcryptCost)
 	if _, noop := encryptor.(*crypto.NoOpEncryptor); noop {
 		log.Warn("APP_ENCRYPTION_KEY is not set: admin console TOTP secrets will be stored unencrypted (development only)")
 	}
@@ -99,9 +124,9 @@ func NewService(
 		console:   console,
 		audit:     audit,
 		encryptor: encryptor,
+		accounts:  accounts,
 		log:       log.With("service", "admin_console"),
 		now:       time.Now,
-		dummyHash: dummy,
 	}
 }
 
@@ -119,44 +144,52 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Login performs the password step. Every failure returns
-// admin.ErrInvalidCredentials, whether the email is unknown, the account is
-// inactive or locked, no password is set, or the password is wrong, so the
-// response never tells an attacker which one it was. A locked account is not
-// password-checked at all, so lockout cannot be used to confirm a guess.
-func (s *Service) Login(ctx context.Context, email, password string, client ClientInfo) (*LoginResult, error) {
+// Start opens the TOTP step of a console session for the user signed in behind
+// refreshToken (their normal /login session). It succeeds only when that
+// session came from the password form and the user is linked to an active,
+// unlocked administrator. On first use it issues a fresh TOTP secret to
+// enroll; the secret becomes active only once a code from it is verified.
+func (s *Service) Start(ctx context.Context, refreshToken string, client ClientInfo) (*LoginResult, error) {
 	// Sessions carry an absolute expiry; sweep dead rows here (an indexed delete)
 	// instead of running a dedicated background job for a low-volume table.
 	if _, err := s.console.DeleteExpiredSessions(ctx, s.now()); err != nil {
 		s.log.Warn("purge expired admin sessions", "error", err)
 	}
 
-	a, err := s.admins.GetByEmail(ctx, email)
+	if refreshToken == "" {
+		return nil, admin.ErrNotSignedIn
+	}
+	u, err := s.accounts.SignedInUser(ctx, refreshToken)
+	if err != nil {
+		return nil, admin.ErrNotSignedIn
+	}
+	if !u.Active {
+		return nil, admin.ErrNotSignedIn
+	}
+	a, err := s.admins.GetByUserID(ctx, u.UserID)
 	if err != nil {
 		if admin.IsAdminNotFound(err) {
-			_ = bcrypt.CompareHashAndPassword(s.dummyHash, []byte(password))
-			return nil, admin.ErrInvalidCredentials
+			return nil, admin.ErrNotPlatformAdmin
 		}
-		return nil, fmt.Errorf("login: %w", err)
+		return nil, fmt.Errorf("start console session: %w", err)
+	}
+	if !u.PasswordSignIn {
+		// An organization's IdP must never be able to authenticate a platform
+		// administrator.
+		s.record(ctx, a, ActionLoginFailed, client, "not a password sign-in")
+		return nil, admin.ErrPasswordSignInRequired
 	}
 	if !a.IsActive() || a.IsLocked() {
-		_ = bcrypt.CompareHashAndPassword(s.dummyHash, []byte(password))
 		s.record(ctx, a, ActionLoginFailed, client, "inactive or locked")
-		return nil, admin.ErrInvalidCredentials
+		return nil, admin.ErrNotPlatformAdmin
 	}
 
 	creds, err := s.console.GetCredentials(ctx, a.ID())
 	if err != nil && !errors.Is(err, admin.ErrCredentialsNotFound) {
-		return nil, fmt.Errorf("login: %w", err)
+		return nil, fmt.Errorf("start console session: %w", err)
 	}
-	if creds == nil || creds.PasswordHash == "" {
-		_ = bcrypt.CompareHashAndPassword(s.dummyHash, []byte(password))
-		s.record(ctx, a, ActionLoginFailed, client, "no console password set")
-		return nil, admin.ErrInvalidCredentials
-	}
-	if bcrypt.CompareHashAndPassword([]byte(creds.PasswordHash), []byte(password)) != nil {
-		s.recordFailure(ctx, a, client, ActionLoginFailed, "wrong password")
-		return nil, admin.ErrInvalidCredentials
+	if creds == nil {
+		creds = &admin.Credentials{AdminID: a.ID()}
 	}
 
 	pending, err := s.newSession(ctx, a.ID(), false, admin.PendingMFATTL, client)
@@ -167,8 +200,6 @@ func (s *Service) Login(ctx context.Context, email, password string, client Clie
 		return &LoginResult{Status: StatusMFARequired, PendingToken: pending}, nil
 	}
 
-	// First login: issue a fresh secret. It only becomes active once a code
-	// from it is verified, so abandoning enrollment leaves MFA disabled.
 	secret, err := totp.GenerateSecret()
 	if err != nil {
 		return nil, err
@@ -315,47 +346,56 @@ func (s *Service) Logout(ctx context.Context, token string, client ClientInfo) e
 	return nil
 }
 
-// SetPassword sets or changes an admin's own console password. When a password
-// already exists the current one is required, unless the caller authenticated
-// with the admin's API key (requireCurrent=false): the key already grants full
-// admin access, and it is the bootstrap path for the first password. Every
-// existing session of the admin is ended.
-func (s *Service) SetPassword(ctx context.Context, a *admin.AdminUser, current, next string, requireCurrent bool, client ClientInfo) error {
-	if len(next) < admin.MinPasswordLength || len(next) > admin.MaxPasswordLength {
-		return admin.ErrWeakPassword
+// ProvisionAdmin makes the person with this email a platform administrator
+// (super admin action). An existing user account is linked (refused if it
+// belongs to an organization); otherwise a local account is created and its
+// temporary password returned once. The administrator then signs in on the
+// normal /login page and enrolls TOTP when opening the console.
+func (s *Service) ProvisionAdmin(ctx context.Context, actor *admin.AdminUser, email, name string, role admin.AdminRole, client ClientInfo) (*admin.AdminUser, string, error) {
+	if _, err := s.admins.GetByEmail(ctx, email); err == nil {
+		return nil, "", admin.ErrAdminAlreadyExists
 	}
-	creds, err := s.console.GetCredentials(ctx, a.ID())
-	if err != nil && !errors.Is(err, admin.ErrCredentialsNotFound) {
-		return err
+	var creatorID *shared.ID
+	if actor != nil {
+		id := actor.ID()
+		creatorID = &id
 	}
-	if creds == nil {
-		creds = &admin.Credentials{AdminID: a.ID()}
-	}
-	if requireCurrent && creds.PasswordHash != "" &&
-		bcrypt.CompareHashAndPassword([]byte(creds.PasswordHash), []byte(current)) != nil {
-		s.recordFailure(ctx, a, client, ActionPasswordSet, "wrong current password")
-		return admin.ErrCurrentPassword
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(next), admin.BcryptCost)
+	// The API key is not returned: human administrators sign in with their user
+	// account. Rows need a key hash, so one is generated and discarded.
+	a, _, err := admin.NewAdminUser(email, name, role, creatorID)
 	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
+		return nil, "", err
 	}
-	now := s.now()
-	creds.PasswordHash = string(hash)
-	creds.PasswordChangedAt = &now
-	if err := s.console.SaveCredentials(ctx, creds); err != nil {
-		return err
+	userID, temp, err := s.accounts.ProvisionAccount(ctx, a.Email(), a.Name())
+	if err != nil {
+		return nil, "", fmt.Errorf("provision user account: %w", err)
 	}
-	if err := s.console.DeleteSessionsForAdmin(ctx, a.ID()); err != nil {
-		return err
+	if err := s.admins.Create(ctx, a); err != nil {
+		return nil, "", err
 	}
-	s.record(ctx, a, ActionPasswordSet, client, "")
-	return nil
+	if err := s.admins.LinkUser(ctx, a.ID(), userID); err != nil {
+		// Compensate: do not leave an unlinked administrator behind.
+		if derr := s.admins.Delete(ctx, a.ID()); derr != nil {
+			s.log.Error("remove unlinked administrator", "error", derr)
+		}
+		return nil, "", err
+	}
+	if s.audit != nil && actor != nil {
+		entry := admin.NewAuditLogBuilder(actor, ActionAdminProvisioned).
+			Resource("admin_user", ptr(a.ID()), a.Email()).
+			Context(client.IP, client.UserAgent).
+			Build()
+		if err := s.audit.Create(ctx, entry); err != nil {
+			s.log.Warn("audit admin provisioning", "error", err)
+		}
+	}
+	return a, temp, nil
 }
 
-// ResetCredentials removes another admin's password and MFA and ends their
-// sessions (for a lost authenticator). They set a new password with their API
-// key and re-enroll MFA on next login. actor is the super admin doing it.
+// ResetCredentials removes another administrator's second factor and ends
+// their console sessions (for a lost authenticator); they enroll a new one the
+// next time they open the console. Their password is their user account's and
+// is reset through the normal forgot-password flow. actor is the super admin.
 func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, targetID shared.ID, client ClientInfo) error {
 	target, err := s.admins.GetByID(ctx, targetID)
 	if err != nil {

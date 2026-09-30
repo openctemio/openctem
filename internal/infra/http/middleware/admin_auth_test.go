@@ -57,7 +57,11 @@ func (f *fakeAdminRepo) List(context.Context, admin.Filter, pagination.Paginatio
 	panic("unused")
 }
 func (f *fakeAdminRepo) Update(context.Context, *admin.AdminUser) error { panic("unused") }
-func (f *fakeAdminRepo) Delete(context.Context, shared.ID) error        { panic("unused") }
+func (f *fakeAdminRepo) GetByUserID(context.Context, shared.ID) (*admin.AdminUser, error) {
+	panic("unused")
+}
+func (f *fakeAdminRepo) LinkUser(context.Context, shared.ID, shared.ID) error { panic("unused") }
+func (f *fakeAdminRepo) Delete(context.Context, shared.ID) error              { panic("unused") }
 func (f *fakeAdminRepo) Count(context.Context, admin.Filter) (int, error) {
 	panic("unused")
 }

@@ -260,38 +260,46 @@ Authorization is enforced at the **route layer** in
 > writes: it exposes admin emails, key prefixes, and last-used IPs, so listing
 > it is itself a privileged operation.
 
-### SSO / identity-federation setup (application administrator)
+### SSO / identity-federation setup (platform administrator)
 
-SSO **setup** for a tenant is an application-administrator operation (modeled on
-Tenable Security Center's system-level Configuration), distinct from both the
-tenant `RequireAdmin` tier and the `/api/v1/admin/*` API-key console above.
+SSO **setup** for an organization (SAML, OIDC identity providers, verified
+domains, SSO enforcement) is a platform-administrator operation, modeled on
+Tenable Security Center's system-level Configuration. It lives only under the
+admin realm, `/api/v1/admin/tenants/{tenantId}/sso/*` (next section). The former
+tenant-context routes `/api/v1/settings/{saml,identity-providers,verified-domains}`
+and the `PLATFORM_ADMIN_EMAILS` flag that guarded them were removed; no tenant
+role, however high, can reach SSO setup. The SSO **login** flow
+(`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*`) is public and unchanged.
 
-The application administrator is designated out-of-band via the
-`PLATFORM_ADMIN_EMAILS` env allow-list; `UnifiedAuth` stamps an
-`is_platform_admin` context flag for those emails (local **and** OIDC), and a
-Keycloak `platform_admin`/`system_admin` realm role also satisfies it. It is
-never grantable through a tenant API — no self-escalation path. Guarded by
-`middleware.RequirePlatformAdmin` on the normal JWT-tenant chain, so each route
-still resolves against the caller's tenant.
+### Platform administrator identity (RFC-022)
 
-| Endpoint | Required tier |
-|----------|---------------|
-| `GET/PUT/DELETE /api/v1/settings/saml` | **platform admin** |
-| `CRUD /api/v1/settings/identity-providers` | **platform admin** |
-| `CRUD + verify /api/v1/settings/verified-domains` | **platform admin** |
+A platform administrator is a `users` account linked to an `admin_users` row
+(`admin_users.user_id`) that holds the role (`super_admin` > `ops_admin` >
+`readonly`), the TOTP second factor and the admin audit trail. It signs in on the
+normal `/login`, then `POST /api/v1/admin/auth/session` (refresh-token cookie)
+and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
 
-> **Fail-closed:** with `PLATFORM_ADMIN_EMAILS` unset, these routes 403 for every
-> local-auth user. The SSO **login** flow (`/api/v1/auth/sso/*`,
-> `/api/v1/auth/saml/{org}/*`) is unaffected — it stays public. See
-> `docs/architecture/sso-authentication.md`.
+- **Belongs to no organization.** A trigger on `tenant_members` rejects a
+  membership for a linked account (SQLSTATE 23514, surfaced as 409), and an
+  account with memberships cannot be linked. This is what keeps a tenant
+  role and the platform role from ever meeting in one principal.
+- **Password sign-in only.** A session created by SSO, SAML or a social provider
+  cannot open the console, so no organization's IdP can authenticate an
+  administrator.
+- **TOTP always.** The `/login` session alone reaches nothing under
+  `/api/v1/admin/*`; only a verified console session (or an admin API key) does.
+- Provisioning is `POST /api/v1/admin/administrators` (super admin), or
+  `bootstrap-admin` for the first one. `admin_users` rows without a `user_id`
+  are API-key identities for the CLI and automation.
 
 ### Organizations — platform admin cross-tenant (RFC-022 Phase 2)
 
 Under the admin realm (API key or console session), never tenant-permission
 gated. Organization-scoped SSO routes reuse the tenant SSO handlers through
 `AdminTenantScope`, which checks the organization exists, sets it as the request
-tenant, and **clears the user id** (an admin is not a `users` row, and those
-handlers write `created_by` columns that reference `users(id)`). Writes are
+tenant, and **clears the user id** (the principal is the admin identity, which
+for API-key admins has no `users` row, and those handlers write `created_by`
+columns that reference `users(id)`). Writes are
 recorded in `admin_audit_logs`, and in the organization's own audit log with
 `actor_email = platform-admin:<email>` and `actor_id` NULL.
 

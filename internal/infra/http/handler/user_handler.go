@@ -18,15 +18,17 @@ import (
 type UserHandler struct {
 	service       *app.UserService
 	tenantService *app.TenantService
+	platformAdmin PlatformAdminChecker
 	validator     *validator.Validator
 	logger        *logger.Logger
 }
 
 // NewUserHandler creates a new user handler.
-func NewUserHandler(svc *app.UserService, tenantSvc *app.TenantService, v *validator.Validator, log *logger.Logger) *UserHandler {
+func NewUserHandler(svc *app.UserService, tenantSvc *app.TenantService, platformAdmin PlatformAdminChecker, v *validator.Validator, log *logger.Logger) *UserHandler {
 	return &UserHandler{
 		service:       svc,
 		tenantService: tenantSvc,
+		platformAdmin: platformAdmin,
 		validator:     v,
 		logger:        log,
 	}
@@ -44,10 +46,9 @@ type UserResponse struct {
 	LastLoginAt *time.Time     `json:"last_login_at,omitempty"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
-	// IsPlatformAdmin marks the caller as an application (platform) administrator
-	// (PLATFORM_ADMIN_EMAILS allow-list). The UI uses it to show/hide the SSO
-	// setup surface, which only platform admins may configure. Set on the
-	// /users/me response only (context-derived), not in every toUserResponse.
+	// IsPlatformAdmin marks an account linked to an active platform
+	// administrator (RFC-022). The UI uses it to offer the admin console. Set
+	// on the /users/me response only, not in every toUserResponse.
 	IsPlatformAdmin bool `json:"is_platform_admin"`
 }
 
@@ -109,7 +110,9 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := toUserResponse(localUser)
-	response.IsPlatformAdmin = middleware.IsPlatformAdmin(r.Context())
+	if h.platformAdmin != nil {
+		response.IsPlatformAdmin = h.platformAdmin.IsPlatformAdmin(r.Context(), localUser.ID())
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

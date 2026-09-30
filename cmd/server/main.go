@@ -279,7 +279,7 @@ func run() int {
 
 	// Initialize local auth handler if supported
 	if cfg.Auth.Provider.SupportsLocal() {
-		InitLocalAuthHandler(&handlers, services, cfg, log)
+		InitLocalAuthHandler(&handlers, services, repos, cfg, log)
 	}
 
 	// ==========================================================================

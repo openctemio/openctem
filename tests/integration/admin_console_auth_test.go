@@ -1,15 +1,19 @@
 package integration
 
-// End-to-end check of platform admin console login (RFC-022) over HTTP against
-// a real Postgres: handler -> admin auth middleware -> service -> repository.
-// Exercises the cookies, CSRF and session lifecycle a browser would.
+// End-to-end check of opening the platform admin console (RFC-022) over HTTP
+// against a real Postgres: handler -> admin auth middleware -> service ->
+// repository. The administrator's normal /login session is stubbed (a refresh
+// token naming a real users row); everything after it, including the users
+// link, cookies, CSRF and session lifecycle, is real.
 //
-// Requires DATABASE_URL pointing at a database migrated through 000225.
+// Requires DATABASE_URL pointing at a database migrated through 000226.
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -20,7 +24,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/openctemio/api/internal/app/adminconsole"
 	"github.com/openctemio/api/internal/infra/http/handler"
@@ -28,6 +32,7 @@ import (
 	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/pkg/crypto"
 	"github.com/openctemio/api/pkg/domain/admin"
+	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/totp"
 )
@@ -46,8 +51,9 @@ func openConsoleDB(t *testing.T) *postgres.DB {
 		t.Skipf("database not available: %v", err)
 	}
 	var exists bool
-	if err := sqlDB.QueryRow(`SELECT to_regclass('public.admin_sessions') IS NOT NULL`).Scan(&exists); err != nil || !exists {
-		t.Skip("admin_sessions missing: run migration 000225")
+	if err := sqlDB.QueryRow(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		WHERE table_name = 'admin_users' AND column_name = 'user_id')`).Scan(&exists); err != nil || !exists {
+		t.Skip("admin_users.user_id missing: run migration 000226")
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	return &postgres.DB{DB: sqlDB}
@@ -87,6 +93,37 @@ func (c *consoleClient) do(method, path string, body any, apiKey string) (*http.
 	return resp, out.Bytes()
 }
 
+// stubSignIn resolves one refresh token to one user, standing in for the
+// normal /login session.
+type stubSignIn struct {
+	token string
+	user  adminconsole.SignedInUser
+}
+
+func (s stubSignIn) SignedInUser(_ context.Context, token string) (*adminconsole.SignedInUser, error) {
+	if token != s.token {
+		return nil, errors.New("invalid refresh token")
+	}
+	u := s.user
+	return &u, nil
+}
+
+func (s stubSignIn) ProvisionAccount(context.Context, string, string) (shared.ID, string, error) {
+	return shared.ID{}, "", errors.New("not used")
+}
+
+// createUser inserts a bare users row and removes it (and anything cascading
+// from it) after the test.
+func createUser(t *testing.T, db *postgres.DB, email string) shared.ID {
+	t.Helper()
+	id := shared.NewID()
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO users (id, email, name) VALUES ($1, $2, 'IT')`, id.String(), email); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, id.String()) })
+	return id
+}
+
 func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	db := openConsoleDB(t)
 	log := logger.NewNop()
@@ -98,61 +135,69 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A fresh super admin, as bootstrap-admin would create it.
-	email := "console-it-" + time.Now().Format("150405.000000") + "@example.test"
-	a, apiKey, err := admin.NewAdminUser(email, "Console IT", admin.AdminRoleSuperAdmin, nil)
+	// A super admin linked to a users-table account.
+	stamp := time.Now().Format("150405.000000")
+	email := "console-it-" + stamp + "@example.test"
+	a, _, err := admin.NewAdminUser(email, "Console IT", admin.AdminRoleSuperAdmin, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := admins.Create(t.Context(), a); err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
-	t.Cleanup(func() { _ = admins.Delete(t.Context(), a.ID()) })
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), a.ID()) })
+	userID := createUser(t, db, email)
+	if err := admins.LinkUser(t.Context(), a.ID(), userID); err != nil {
+		t.Fatalf("link user: %v", err)
+	}
+	if got, err := admins.GetByUserID(t.Context(), userID); err != nil || got.ID() != a.ID() {
+		t.Fatalf("GetByUserID: %v", err)
+	}
 
-	svc := adminconsole.NewService(admins, consoleRepo, auditRepo, cipher, log)
-	h := handler.NewAdminConsoleHandler(svc, false, log)
+	const refresh = "it-refresh-token"
+	signIn := stubSignIn{token: refresh, user: adminconsole.SignedInUser{UserID: userID, Email: email, Active: true, PasswordSignIn: true}}
+	svc := adminconsole.NewService(admins, consoleRepo, auditRepo, cipher, signIn, log)
+	h := handler.NewAdminConsoleHandler(svc, false, "refresh_token", log)
 	validate := handler.NewAdminAuthHandler(log)
 	authMW := middleware.NewAdminAuthMiddleware(admins, log).WithSessions(svc)
 
-	// Same guards as routes/admin.go for the auth group.
+	// Same guards as routes/admin.go for the auth group, plus a probe write
+	// route to check the console CSRF guard.
 	r := chi.NewRouter()
 	r.Route("/api/v1/admin/auth", func(r chi.Router) {
 		r.With(authMW.Authenticate).Get("/validate", validate.Validate)
-		r.Post("/login", h.Login)
+		r.Post("/session", h.StartSession)
 		r.Post("/mfa", h.VerifyMFA)
 		r.Post("/logout", h.Logout)
-		r.With(authMW.Authenticate).Post("/password", h.SetPassword)
+		r.With(authMW.Authenticate).Post("/probe", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	})
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
 	jar, _ := cookiejar.New(nil)
 	c := &consoleClient{t: t, base: srv.URL, http: &http.Client{Jar: jar}}
-	const pw = "integration pass phrase"
+	base, _ := url.Parse(srv.URL + "/")
 
-	// 1. No password yet: login fails generically.
-	if resp, _ := c.do("POST", "/api/v1/admin/auth/login", map[string]string{"email": email, "password": pw}, ""); resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("login before password: %d", resp.StatusCode)
+	// 1. Not signed in on /login: refused.
+	if resp, _ := c.do("POST", "/api/v1/admin/auth/session", nil, ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("session without sign-in: %d", resp.StatusCode)
 	}
-	// 2. Bootstrap path: set the password with the API key.
-	if resp, body := c.do("POST", "/api/v1/admin/auth/password", map[string]string{"new_password": pw}, apiKey); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("set password with api key: %d %s", resp.StatusCode, body)
-	}
-	// 3. Password step: first login demands MFA enrollment.
-	resp, body := c.do("POST", "/api/v1/admin/auth/login", map[string]string{"email": email, "password": pw}, "")
+	// 2. Signed in (refresh cookie from /login): first time demands enrollment.
+	jar.SetCookies(base, []*http.Cookie{{Name: "refresh_token", Value: refresh, Path: "/"}})
+	resp, body := c.do("POST", "/api/v1/admin/auth/session", nil, "")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("login: %d %s", resp.StatusCode, body)
+		t.Fatalf("session: %d %s", resp.StatusCode, body)
 	}
 	var login handler.AdminLoginResponse
 	_ = json.Unmarshal(body, &login)
 	if login.Status != string(adminconsole.StatusMFAEnrollment) || login.Secret == "" {
 		t.Fatalf("expected enrollment, got %+v", login)
 	}
-	// A password-only (pending) login must not reach authenticated routes.
+	// A pending (pre-TOTP) session must not reach authenticated routes.
 	if resp, _ := c.do("GET", "/api/v1/admin/auth/validate", nil, ""); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("validate before mfa: %d", resp.StatusCode)
 	}
-	// 4. Wrong code, then the right one.
+	// 3. Wrong code, then the right one.
 	if resp, _ := c.do("POST", "/api/v1/admin/auth/mfa", map[string]string{"code": "000000"}, ""); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("wrong code: %d", resp.StatusCode)
 	}
@@ -160,32 +205,23 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	if resp, body := c.do("POST", "/api/v1/admin/auth/mfa", map[string]string{"code": code}, ""); resp.StatusCode != http.StatusOK {
 		t.Fatalf("mfa: %d %s", resp.StatusCode, body)
 	}
-	// 5. The session cookie now authenticates, as the right admin.
+	// 4. The session cookie now authenticates, as the right admin.
 	resp, body = c.do("GET", "/api/v1/admin/auth/validate", nil, "")
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), email) {
 		t.Fatalf("validate with session: %d %s", resp.StatusCode, body)
 	}
-	// 6. A write without the CSRF header is refused.
-	u, _ := url.Parse(srv.URL + "/")
+	// 5. A write without the CSRF header is refused; with it, allowed.
 	var sessionCookie *http.Cookie
-	for _, ck := range jar.Cookies(u) {
+	au, _ := url.Parse(srv.URL + "/api/v1/admin/")
+	for _, ck := range jar.Cookies(au) {
 		if ck.Name == middleware.AdminSessionCookie {
 			sessionCookie = ck
 		}
 	}
 	if sessionCookie == nil {
-		// The session cookie is path-scoped to /api/v1/admin.
-		au, _ := url.Parse(srv.URL + "/api/v1/admin/")
-		for _, ck := range jar.Cookies(au) {
-			if ck.Name == middleware.AdminSessionCookie {
-				sessionCookie = ck
-			}
-		}
-	}
-	if sessionCookie == nil {
 		t.Fatal("no admin_session cookie issued")
 	}
-	req, _ := http.NewRequestWithContext(t.Context(), "POST", srv.URL+"/api/v1/admin/auth/password", strings.NewReader(`{"current_password":"x","new_password":"yyyyyyyyyyyyyyyy"}`))
+	req, _ := http.NewRequestWithContext(t.Context(), "POST", srv.URL+"/api/v1/admin/auth/probe", nil)
 	req.AddCookie(sessionCookie)
 	noCSRF, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -195,7 +231,10 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	if noCSRF.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("write without csrf: %d, want 401", noCSRF.StatusCode)
 	}
-	// 7. Logout ends the session.
+	if resp, _ := c.do("POST", "/api/v1/admin/auth/probe", nil, ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("write with csrf: %d", resp.StatusCode)
+	}
+	// 6. Logout ends the session.
 	if resp, _ := c.do("POST", "/api/v1/admin/auth/logout", nil, ""); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("logout: %d", resp.StatusCode)
 	}
@@ -209,12 +248,70 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 	if after.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("old session after logout: %d, want 401", after.StatusCode)
 	}
-	// 8. Audit trail recorded the console events.
+	// 7. Audit trail recorded the console events.
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM admin_audit_logs WHERE admin_id = $1 AND action LIKE 'console.%'`, a.ID().String()).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n < 4 { // password_set, mfa_failed, mfa_enrolled, login, logout
+	if n < 4 { // mfa_failed, mfa_enrolled, login, logout
 		t.Fatalf("console audit entries: %d", n)
+	}
+}
+
+// TestPlatformAdminCannotJoinOrganization checks the database guarantee
+// behind the Tenable model: an administrator's account belongs to no
+// organization, and an organization member cannot be made an administrator.
+func TestPlatformAdminCannotJoinOrganization(t *testing.T) {
+	db := openConsoleDB(t)
+	admins := postgres.NewAdminRepository(db)
+	stamp := time.Now().Format("150405.000000")
+
+	tenantID := shared.NewID()
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO tenants (id, name, slug) VALUES ($1, 'IT org', $2)`, tenantID.String(), "it-org-"+strings.ReplaceAll(stamp, ".", "")); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantID.String())
+	})
+
+	newAdmin := func(email string) *admin.AdminUser {
+		a, _, err := admin.NewAdminUser(email, "IT", admin.AdminRoleReadonly, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := admins.Create(t.Context(), a); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = admins.Delete(context.Background(), a.ID()) })
+		return a
+	}
+
+	// An administrator's account cannot be added to an organization.
+	adminEmail := "admin-it-" + stamp + "@example.test"
+	a := newAdmin(adminEmail)
+	adminUser := createUser(t, db, adminEmail)
+	if err := admins.LinkUser(t.Context(), a.ID(), adminUser); err != nil {
+		t.Fatal(err)
+	}
+	_, err := db.ExecContext(t.Context(), `INSERT INTO tenant_members (user_id, tenant_id) VALUES ($1, $2)`, adminUser.String(), tenantID.String())
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || pqErr.Code != "23514" {
+		t.Fatalf("membership insert for an administrator: got %v, want check_violation", err)
+	}
+
+	// An organization member cannot be linked as an administrator.
+	memberEmail := "member-it-" + stamp + "@example.test"
+	b := newAdmin(memberEmail)
+	member := createUser(t, db, memberEmail)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO tenant_members (user_id, tenant_id) VALUES ($1, $2)`, member.String(), tenantID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if err := admins.LinkUser(t.Context(), b.ID(), member); !errors.Is(err, admin.ErrUserHasMemberships) {
+		t.Fatalf("link a member: got %v, want ErrUserHasMemberships", err)
+	}
+
+	// One account backs at most one administrator.
+	if err := admins.LinkUser(t.Context(), b.ID(), adminUser); !errors.Is(err, admin.ErrUserAlreadyAdmin) {
+		t.Fatalf("link an already-linked account: got %v, want ErrUserAlreadyAdmin", err)
 	}
 }

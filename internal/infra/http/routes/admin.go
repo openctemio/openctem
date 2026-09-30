@@ -55,13 +55,13 @@ func registerAdminRoutes(
 		h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin))
 
 	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
-	// per route. /validate and /password need an authenticated admin (API key or
-	// console session). The console login steps (RFC-022) are public by nature
-	// and share the tenant login's rate limits.
+	// per route. /validate needs an authenticated admin (API key or console
+	// session). The console steps (RFC-022) run after the normal /login: the
+	// refresh-token cookie names the user, /session opens a pending console
+	// session and /mfa completes it. They share the tenant login's rate limits.
 	if h.AdminAuth != nil || h.AdminConsole != nil {
 		consoleRL := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
 		loginRL := consoleRL.LoginMiddleware()
-		passwordRL := consoleRL.PasswordMiddleware()
 		authed := h.AdminAuthMiddleware.Authenticate
 
 		router.Group("/api/v1/admin/auth", func(r Router) {
@@ -69,12 +69,20 @@ func registerAdminRoutes(
 				r.GET("/validate", h.AdminAuth.Validate, authed)
 			}
 			if h.AdminConsole != nil {
-				r.POST("/login", h.AdminConsole.Login, loginRL)
+				r.POST("/session", h.AdminConsole.StartSession, loginRL)
 				r.POST("/mfa", h.AdminConsole.VerifyMFA, loginRL)
 				r.POST("/logout", h.AdminConsole.Logout)
-				r.POST("/password", h.AdminConsole.SetPassword, passwordRL, authed)
 			}
 		})
+	}
+
+	// Provisioning a platform administrator (links or creates the users-table
+	// account they sign in with). Super admin only; the service writes the
+	// audit row (console.admin_provisioned).
+	if h.AdminConsole != nil {
+		router.Group("/api/v1/admin/administrators", func(r Router) {
+			r.POST("/", h.AdminConsole.Provision)
+		}, superAdminOnly...)
 	}
 
 	// Organizations (RFC-022 Phase 2): the platform admin's cross-tenant view,

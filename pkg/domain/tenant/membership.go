@@ -7,6 +7,11 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
+// ErrPlatformAdminMembership is returned when a platform administrator's
+// account would join an organization. Administrators belong to no organization
+// (RFC-022); the database enforces it with a trigger on tenant_members.
+var ErrPlatformAdminMembership = fmt.Errorf("%w: platform administrators cannot be members of an organization; use a separate account", shared.ErrConflict)
+
 // MemberStatus represents the lifecycle state of a membership.
 type MemberStatus string
 

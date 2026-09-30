@@ -8,32 +8,27 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// Console authentication (RFC-022): human login to the platform admin console
-// with a password and a mandatory TOTP second factor, backed by server-side
-// sessions. API-key authentication on AdminUser is separate and unchanged.
+// Console authentication (RFC-022): an administrator signs in on the normal
+// /login page with their users-table account, then opens the console with a
+// mandatory TOTP second factor, backed by server-side sessions. API-key
+// authentication on AdminUser is separate and unchanged.
 
 const (
 	// SessionTTL is the absolute lifetime of a verified console session.
 	SessionTTL = 8 * time.Hour
 	// SessionIdleTimeout ends a verified session that has not been used.
 	SessionIdleTimeout = 30 * time.Minute
-	// PendingMFATTL is how long a password-verified login may wait for its TOTP.
+	// PendingMFATTL is how long a started console session may wait for its TOTP.
 	PendingMFATTL = 5 * time.Minute
-	// MinPasswordLength for console passwords.
-	MinPasswordLength = 12
-	// MaxPasswordLength keeps passwords within bcrypt's 72-byte input limit.
-	MaxPasswordLength = 72
 )
 
-// Credentials are an admin's console login secrets. Absent (nil) until the
-// admin first sets a password.
+// Credentials are an admin's console second factor. Absent (nil) until the
+// admin first opens the console and is issued a secret to enroll.
 type Credentials struct {
 	AdminID            shared.ID
-	PasswordHash       string
 	MFASecretEncrypted string
 	MFAEnabled         bool
 	MFALastStep        int64
-	PasswordChangedAt  *time.Time
 }
 
 // Session is a server-side console session. Pending sessions (MFAVerified
@@ -61,7 +56,7 @@ type ConsoleRepository interface {
 	GetCredentials(ctx context.Context, adminID shared.ID) (*Credentials, error)
 	// SaveCredentials upserts the credentials row.
 	SaveCredentials(ctx context.Context, c *Credentials) error
-	// DeleteCredentials removes password and MFA (credential reset).
+	// DeleteCredentials removes the second factor (reset for a lost authenticator).
 	DeleteCredentials(ctx context.Context, adminID shared.ID) error
 	// AdvanceMFAStep atomically records step as used, returning false when step
 	// is not newer than the last accepted one (a replayed code).
@@ -78,15 +73,18 @@ type ConsoleRepository interface {
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 }
 
-// Console authentication errors. Login failures are deliberately collapsed
-// into ErrInvalidCredentials at the HTTP layer so callers cannot tell which
-// factor failed or whether the email exists.
+// Console authentication errors.
 var (
 	ErrCredentialsNotFound = fmt.Errorf("%w: admin console credentials not set", shared.ErrNotFound)
 	ErrSessionNotFound     = fmt.Errorf("%w: admin session not found", shared.ErrNotFound)
 	ErrInvalidCredentials  = fmt.Errorf("%w: invalid credentials", shared.ErrUnauthorized)
 	ErrInvalidMFACode      = fmt.Errorf("%w: invalid verification code", shared.ErrUnauthorized)
 	ErrAccountLocked       = fmt.Errorf("%w: account temporarily locked", shared.ErrForbidden)
-	ErrWeakPassword        = fmt.Errorf("%w: password must be %d-%d characters", shared.ErrValidation, MinPasswordLength, MaxPasswordLength)
-	ErrCurrentPassword     = fmt.Errorf("%w: current password is incorrect", shared.ErrUnauthorized)
+	// ErrNotSignedIn: no valid /login session behind the request.
+	ErrNotSignedIn = fmt.Errorf("%w: sign in first", shared.ErrUnauthorized)
+	// ErrNotPlatformAdmin: the signed-in account is not an active administrator.
+	ErrNotPlatformAdmin = fmt.Errorf("%w: this account is not a platform administrator", shared.ErrForbidden)
+	// ErrPasswordSignInRequired: the console opens only from a password sign-in,
+	// so an organization's SSO/SAML provider can never authenticate an admin.
+	ErrPasswordSignInRequired = fmt.Errorf("%w: platform administrators sign in with their password", shared.ErrForbidden)
 )
