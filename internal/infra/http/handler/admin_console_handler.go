@@ -228,15 +228,20 @@ func (h *AdminConsoleHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) 
 
 // Logout handles POST /api/v1/admin/auth/logout.
 // @Summary Admin console logout
-// @Description Ends the caller's console session and clears the admin cookies.
+// @Description Ends the caller's console session and the /login session it was opened from (refresh-token cookie), and clears the admin cookies.
 // @Tags Admin Auth
 // @Success 204 "No Content"
 // @Router /admin/auth/logout [post]
 func (h *AdminConsoleHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	session, refresh := "", ""
 	if c, err := r.Cookie(middleware.AdminSessionCookie); err == nil {
-		if err := h.svc.Logout(r.Context(), c.Value, clientInfo(r)); err != nil {
-			h.logger.Warn("admin console logout", "error", err)
-		}
+		session = c.Value
+	}
+	if c, err := r.Cookie(h.refreshTokenCookie); err == nil {
+		refresh = c.Value
+	}
+	if err := h.svc.Logout(r.Context(), session, refresh, clientInfo(r)); err != nil {
+		h.logger.Warn("admin console logout", "error", err)
 	}
 	h.clearCookie(w, middleware.AdminSessionCookie, adminAPIPath, true)
 	h.clearCookie(w, middleware.AdminCSRFCookie, "/", false)

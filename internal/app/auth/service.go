@@ -833,6 +833,7 @@ func temporaryPassword() (string, error) {
 type RefreshSessionIdentity struct {
 	User       *userdom.User
 	AuthMethod sessiondom.AuthMethod
+	SessionID  shared.ID
 }
 
 // IdentifyRefreshSession validates a refresh token the same way ExchangeToken
@@ -877,7 +878,7 @@ func (s *AuthService) IdentifyRefreshSession(ctx context.Context, refreshToken s
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
-	return &RefreshSessionIdentity{User: u, AuthMethod: sess.AuthMethod()}, nil
+	return &RefreshSessionIdentity{User: u, AuthMethod: sess.AuthMethod(), SessionID: sess.ID()}, nil
 }
 
 // ExchangeToken exchanges a global refresh token for a tenant-scoped access token.

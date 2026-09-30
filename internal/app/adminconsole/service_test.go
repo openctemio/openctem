@@ -247,6 +247,13 @@ func (f *fakeAccounts) SignedInUser(_ context.Context, token string) (*SignedInU
 	return nil, errors.New("invalid refresh token")
 }
 
+func (f *fakeAccounts) EndSignIn(_ context.Context, token string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.sessions, token)
+	return nil
+}
+
 func (f *fakeAccounts) ProvisionAccount(_ context.Context, email, _ string) (shared.ID, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -501,8 +508,12 @@ func TestLogoutEndsSession(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	_, token := h.enroll(t)
-	if err := h.svc.Logout(ctx, token, client); err != nil {
+	if err := h.svc.Logout(ctx, token, refresh, client); err != nil {
 		t.Fatal(err)
+	}
+	// The /login session it was opened from ends too.
+	if _, err := h.svc.Start(ctx, refresh, client); !errors.Is(err, admin.ErrNotSignedIn) {
+		t.Fatalf("start after logout: got %v, want ErrNotSignedIn", err)
 	}
 	if _, err := h.svc.Authenticate(ctx, token); err == nil {
 		t.Fatal("logged-out session must not authenticate")

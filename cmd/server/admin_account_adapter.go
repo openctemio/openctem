@@ -37,6 +37,14 @@ func (d adminAccountDirectory) SignedInUser(ctx context.Context, refreshToken st
 	}, nil
 }
 
+func (d adminAccountDirectory) EndSignIn(ctx context.Context, refreshToken string) error {
+	id, err := d.auth.IdentifyRefreshSession(ctx, refreshToken)
+	if err != nil {
+		return err
+	}
+	return d.auth.Logout(ctx, id.SessionID.String())
+}
+
 func (d adminAccountDirectory) ProvisionAccount(ctx context.Context, email, name string) (shared.ID, string, error) {
 	acc, err := d.auth.ProvisionLocalAccount(ctx, email, name)
 	if err != nil {

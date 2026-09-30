@@ -11204,7 +11204,8 @@ paths:
       - Admin Audit Logs
   /admin/auth/logout:
     post:
-      description: Ends the caller's console session and clears the admin cookies.
+      description: Ends the caller's console session and the /login session it was
+        opened from (refresh-token cookie), and clears the admin cookies.
       responses:
         "204":
           description: No Content

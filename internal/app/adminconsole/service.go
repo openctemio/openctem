@@ -105,6 +105,8 @@ type AccountDirectory interface {
 	// ProvisionAccount returns the user with this email, creating a local account
 	// with a temporary password when none exists (temporaryPassword is then set).
 	ProvisionAccount(ctx context.Context, email, name string) (userID shared.ID, temporaryPassword string, err error)
+	// EndSignIn revokes the /login session behind a refresh token.
+	EndSignIn(ctx context.Context, refreshToken string) error
 }
 
 // NewService creates the console authentication service.
@@ -325,8 +327,15 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*admin.AdminU
 	return a, nil
 }
 
-// Logout ends the session behind token. Unknown tokens are ignored.
-func (s *Service) Logout(ctx context.Context, token string, client ClientInfo) error {
+// Logout ends the console session behind token and, when refreshToken is set,
+// the /login session it was opened from, so signing out of the console signs
+// the administrator out completely. Unknown tokens are ignored.
+func (s *Service) Logout(ctx context.Context, token, refreshToken string, client ClientInfo) error {
+	if refreshToken != "" {
+		if err := s.accounts.EndSignIn(ctx, refreshToken); err != nil {
+			s.log.Debug("end sign-in on console logout", "error", err)
+		}
+	}
 	if token == "" {
 		return nil
 	}

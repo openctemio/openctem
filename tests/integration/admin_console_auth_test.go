@@ -108,6 +108,8 @@ func (s stubSignIn) SignedInUser(_ context.Context, token string) (*adminconsole
 	return &u, nil
 }
 
+func (s stubSignIn) EndSignIn(context.Context, string) error { return nil }
+
 func (s stubSignIn) ProvisionAccount(context.Context, string, string) (shared.ID, string, error) {
 	return shared.ID{}, "", errors.New("not used")
 }
