@@ -124,7 +124,7 @@ func (s *AssetService) SetAccessControlRepository(repo accesscontrol.Repository)
 }
 
 // DataScopePolicy reports whether a tenant enforces restricted (fail-closed)
-// data scope. Nil (or false) preserves the default fail-open behaviour.
+// data scope. Nil (or false) preserves the default fail-open behavior.
 type DataScopePolicy interface {
 	RestrictedDataScope(ctx context.Context, tenantID string) bool
 }

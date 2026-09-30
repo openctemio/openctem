@@ -610,7 +610,7 @@ func (r *RoleRepository) GetUsersRoles(
 // GetUserPermissions returns all permissions for a user (UNION of all roles).
 func (r *RoleRepository) GetUserPermissions(ctx context.Context, tenantID, userID role.ID) ([]string, error) {
 	// Join permissions and require is_active so a permission deactivated in the
-	// catalogue stops granting access even though old role_permissions rows
+	// catalog stops granting access even though old role_permissions rows
 	// still reference it (AUTHZ-08). Behavior-preserving today (every seeded
 	// permission is active); closes the latent gap where deactivation would
 	// silently keep granting via the enforcement path.
