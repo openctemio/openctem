@@ -120,6 +120,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// constructed. The handler returns 503 from the dry-run
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
+	tenantHandler.SetAdminOnlyTenantCreation(cfg.Auth.TenantCreationMode == config.TenantCreationAdminOnly)
 	tenantHandler.SetRoleService(svc.Role)
 	tenantHandler.SetAssetService(svc.Asset)
 	tenantHandler.SetModuleService(svc.Module)
@@ -346,6 +347,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Admin Auth (API Key authentication for Admin UI)
 		AdminAuth:           handler.NewAdminAuthHandler(log),
+		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(repos.Admin, log),
 
 		// Admin Audit middleware (audit logging for admin operations)

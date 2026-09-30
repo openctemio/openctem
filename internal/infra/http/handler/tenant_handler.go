@@ -41,6 +41,15 @@ type TenantHandler struct {
 	lifecycleWorker *assetapp.AssetLifecycleWorker
 	validator       *validator.Validator
 	logger          *logger.Logger
+	// adminOnlyCreation refuses POST /tenants: organizations are created by the
+	// platform administrator (TENANT_CREATION_MODE=admin_only).
+	adminOnlyCreation bool
+}
+
+// SetAdminOnlyTenantCreation reserves organization creation for the platform
+// administrator (TENANT_CREATION_MODE=admin_only).
+func (h *TenantHandler) SetAdminOnlyTenantCreation(adminOnly bool) {
+	h.adminOnlyCreation = adminOnly
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -360,6 +369,10 @@ func writeToggleErrorJSON(w http.ResponseWriter, e *module.ToggleError) {
 
 // Create handles POST /api/v1/tenants
 func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
+	if h.adminOnlyCreation {
+		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
+		return
+	}
 	userID := middleware.GetLocalUserID(r.Context())
 	if userID.IsZero() {
 		apierror.Unauthorized("Authentication required").WriteJSON(w)
@@ -1147,9 +1160,7 @@ type GeneralSettingsResponse struct {
 
 // SecuritySettingsResponse represents security settings.
 type SecuritySettingsResponse struct {
-	SSOEnabled            bool     `json:"sso_enabled"`
-	SSOProvider           string   `json:"sso_provider,omitempty"`
-	SSOConfigURL          string   `json:"sso_config_url,omitempty"`
+	// SSOEnforced is read-only here: set by the platform administrator.
 	SSOEnforced           bool     `json:"sso_enforced"`
 	MFARequired           bool     `json:"mfa_required"`
 	SessionTimeoutMin     int      `json:"session_timeout_min"`
@@ -1186,9 +1197,6 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			Website:  s.General.Website,
 		},
 		Security: SecuritySettingsResponse{
-			SSOEnabled:            s.Security.SSOEnabled,
-			SSOProvider:           s.Security.SSOProvider,
-			SSOConfigURL:          s.Security.SSOConfigURL,
 			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
 			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
@@ -1298,11 +1306,9 @@ func (h *TenantHandler) UpdateGeneralSettings(w http.ResponseWriter, r *http.Req
 // Scalar fields are pointers so a partial PATCH only touches what it sends;
 // slice fields keep their nil-vs-[] meaning (omitted => unchanged, [] => clear).
 type UpdateSecuritySettingsRequest struct {
-	SSOEnabled  *bool   `json:"sso_enabled"`
-	SSOProvider *string `json:"sso_provider" validate:"omitempty,oneof=saml oidc"`
-	// No `url` tag — see note on UpdateGeneralSettingsRequest.Website.
-	// SecuritySettings.Validate checks the URL when SSO is enabled.
-	SSOConfigURL          *string  `json:"sso_config_url"`
+	// SSOEnforced is accepted only to refuse it explicitly: SSO enforcement is
+	// set by the platform administrator per organization (RFC-022), and a
+	// silently ignored field would look like it saved.
 	SSOEnforced           *bool    `json:"sso_enforced"`
 	MFARequired           *bool    `json:"mfa_required"`
 	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
@@ -1329,12 +1335,12 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		h.handleValidationError(w, err)
 		return
 	}
+	if req.SSOEnforced != nil {
+		apierror.Forbidden("SSO enforcement is managed by the application administrator").WriteJSON(w)
+		return
+	}
 
 	input := app.UpdateSecuritySettingsInput{
-		SSOEnabled:            req.SSOEnabled,
-		SSOProvider:           req.SSOProvider,
-		SSOConfigURL:          req.SSOConfigURL,
-		SSOEnforced:           req.SSOEnforced,
 		MFARequired:           req.MFARequired,
 		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,

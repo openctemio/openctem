@@ -91,6 +91,7 @@ var (
 	ErrPasswordMismatch                = auth.ErrPasswordMismatch
 	ErrProviderDisabled                = auth.ErrProviderDisabled
 	ErrRegistrationDisabled            = auth.ErrRegistrationDisabled
+	ErrTenantCreationDisabled          = auth.ErrTenantCreationDisabled
 	ErrSessionLimitReached             = auth.ErrSessionLimitReached
 	ErrSSODecryptionFailed             = auth.ErrSSODecryptionFailed
 	ErrSSODomainNotAllowed             = auth.ErrSSODomainNotAllowed

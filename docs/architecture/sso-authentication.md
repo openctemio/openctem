@@ -79,6 +79,22 @@ unchanged and remains public — this restriction is about *setup*, not sign-in.
 The UI reads `is_platform_admin` from `GET /api/v1/users/me` and hides the SSO
 setup surface from everyone else.
 
+### Per-organization SSO in the admin console (RFC-022 Phase 2)
+
+The platform admin console configures SSO **per organization** under
+`/api/v1/admin/tenants/{tenantId}/sso/*` (SAML, identity providers, verified
+domains, enforcement). It uses the admin identity (API key or console session),
+not a tenant user carrying the `PLATFORM_ADMIN_EMAILS` flag. Once the console
+UI ships (Phase 3), the tenant-context `/api/v1/settings/{saml,identity-providers,verified-domains}`
+routes and the flag are retired.
+
+**SSO enforcement** (`sso_enforced`) moved with it. The organization owner can
+still see it in `GET /tenants/{t}/settings` but can no longer change it: the
+tenant PATCH returns 403, and the admin endpoint keeps the "a usable SSO path is
+required" guard. The owner break-glass at login is unchanged. The
+`sso_enabled` / `sso_provider` / `sso_config_url` security fields were removed:
+they were written but never read by the login path.
+
 ## Configuration resolution (tenant → env fallback)
 
 `SSOService.resolveProvider(tenantID, provider)` returns the **effective**

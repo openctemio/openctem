@@ -223,6 +223,13 @@ type CreateProviderRequest struct {
 
 // CreateProvider creates a new identity provider configuration.
 // POST /api/v1/settings/identity-providers
+// @Summary Create an identity provider for an organization
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers [post]
 func (h *SSOHandler) CreateProvider(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
@@ -265,6 +272,13 @@ func (h *SSOHandler) CreateProvider(w http.ResponseWriter, r *http.Request) {
 
 // ListProviders lists all identity provider configurations for the tenant.
 // GET /api/v1/settings/identity-providers
+// @Summary List an organization's identity providers
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers [get]
 func (h *SSOHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
@@ -287,6 +301,14 @@ func (h *SSOHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 
 // GetProvider retrieves a single identity provider configuration.
 // GET /api/v1/settings/identity-providers/{id}
+// @Summary Get an organization's identity provider
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Identity provider ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers/{id} [get]
 func (h *SSOHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
@@ -322,6 +344,14 @@ type UpdateProviderRequest struct {
 
 // UpdateProvider updates an identity provider configuration.
 // PUT /api/v1/settings/identity-providers/{id}
+// @Summary Update an organization's identity provider
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Identity provider ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers/{id} [put]
 func (h *SSOHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
@@ -363,6 +393,14 @@ func (h *SSOHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 
 // DeleteProvider deletes an identity provider configuration.
 // DELETE /api/v1/settings/identity-providers/{id}
+// @Summary Delete an organization's identity provider
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Identity provider ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers/{id} [delete]
 func (h *SSOHandler) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 

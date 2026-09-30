@@ -280,9 +280,10 @@ type GeneralSettings struct {
 
 // SecuritySettings contains security-related configuration.
 type SecuritySettings struct {
-	SSOEnabled   bool   `json:"sso_enabled"`    // Enable SSO (SAML 2.0, OIDC)
-	SSOProvider  string `json:"sso_provider"`   // e.g., "saml", "oidc"
-	SSOConfigURL string `json:"sso_config_url"` // SSO metadata/config URL
+	// SSO itself is configured per organization by the platform administrator
+	// (SAML / identity providers, RFC-022). The old sso_enabled / sso_provider /
+	// sso_config_url flags were written here but never read by the login path,
+	// so they were removed; stale keys in stored JSON are ignored.
 	// SSOEnforced requires members of this tenant to authenticate via SSO — a
 	// local password login is refused access to this tenant. The tenant OWNER is
 	// the break-glass exception and can ALWAYS password-login, so enabling this
@@ -804,9 +805,6 @@ func DefaultSettings() Settings {
 			Website:  "",
 		},
 		Security: SecuritySettings{
-			SSOEnabled:            false,
-			SSOProvider:           "",
-			SSOConfigURL:          "",
 			MFARequired:           false,
 			SessionTimeoutMin:     60, // 1 hour default
 			IPWhitelist:           []string{},
@@ -936,12 +934,6 @@ func (s *SecuritySettings) Validate() error {
 	for _, ip := range s.IPWhitelist {
 		if !isValidIPOrCIDR(ip) {
 			return fmt.Errorf("%w: invalid IP address or CIDR: %s", shared.ErrValidation, ip)
-		}
-	}
-	// Validate SSO config URL
-	if s.SSOEnabled && s.SSOConfigURL != "" {
-		if _, err := url.ParseRequestURI(s.SSOConfigURL); err != nil {
-			return fmt.Errorf("%w: invalid SSO config URL", shared.ErrValidation)
 		}
 	}
 	// Validate allowed domains

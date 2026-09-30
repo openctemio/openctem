@@ -1129,6 +1129,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Forbidden("Email is not verified").WriteJSON(w)
 	case errors.Is(err, app.ErrRegistrationDisabled):
 		apierror.Forbidden("Registration is disabled").WriteJSON(w)
+	case errors.Is(err, app.ErrTenantCreationDisabled):
+		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 	case errors.Is(err, app.ErrEmailAlreadyExists):
 		apierror.Conflict("Email already exists").WriteJSON(w)
 	case errors.Is(err, app.ErrInvalidResetToken):

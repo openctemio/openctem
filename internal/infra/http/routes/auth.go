@@ -29,7 +29,8 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 	// without wiring the handler used to make the UI render Google/GitHub
 	// buttons whose authorize call 404s.
 	oauthRoutesLive := h.OAuth != nil
-	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, oauthRoutesLive, log)
+	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, oauthRoutesLive, log).
+		WithTenantCreationMode(cfg.Auth.TenantCreationMode)
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {

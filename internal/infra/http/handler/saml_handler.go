@@ -151,6 +151,13 @@ func toSAMLConfigView(p *samldom.SAMLProvider) samlConfigView {
 }
 
 // GetConfig handles GET /api/v1/settings/saml (JWT admin).
+// @Summary Get an organization's SAML config
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/saml [get]
 func (h *SAMLHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
@@ -171,6 +178,13 @@ func (h *SAMLHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // SetConfig handles PUT /api/v1/settings/saml (JWT admin).
+// @Summary Set an organization's SAML config
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/saml [put]
 func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
@@ -204,6 +218,13 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteConfig handles DELETE /api/v1/settings/saml (JWT admin).
+// @Summary Delete an organization's SAML config
+// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/saml [delete]
 func (h *SAMLHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
