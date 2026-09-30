@@ -128,7 +128,6 @@ GET /api/v1/control-tests
 GET /api/v1/control-tests/stats
 GET /api/v1/ctem-cycles
 GET /api/v1/ctem-cycles/metrics/trend
-GET /api/v1/ctem-cycles/{}
 GET /api/v1/ctem-cycles/{}/metrics
 GET /api/v1/ctem-cycles/{}/scope
 GET /api/v1/ctem-ids
@@ -334,7 +333,6 @@ POST /api/v1/components/import
 POST /api/v1/control-tests
 POST /api/v1/ctem-cycles
 POST /api/v1/ctem-cycles/{}/activate
-POST /api/v1/ctem-cycles/{}/close
 POST /api/v1/ctem-cycles/{}/profiles
 POST /api/v1/ctem-cycles/{}/scope-refinement
 POST /api/v1/ctem-cycles/{}/start-review

@@ -51,8 +51,7 @@ func (h *CTEMCycleHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.db.QueryContext(r.Context(),
-		`SELECT id, name, status, start_date, end_date, charter,
-		        closed_by, closed_at, created_by, created_at, updated_at
+		`SELECT `+ctemCycleColumns+`
 		   FROM ctem_cycles
 		  WHERE tenant_id = $1
 		  ORDER BY created_at DESC
@@ -86,13 +85,22 @@ func (h *CTEMCycleHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get retrieves a single CTEM cycle.
+// @Summary      Get CTEM cycle
+// @Description  Returns one CTEM cycle with its charter and, once closed, the evaluation of each charter success criterion.
+// @Tags         CTEM Cycles
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Cycle ID"  format(uuid)
+// @Success      200  {object}  CTEMCycleResponse
+// @Failure      404  {object}  map[string]string
+// @Failure      500  {object}  map[string]string
+// @Router       /ctem-cycles/{id} [get]
 func (h *CTEMCycleHandler) Get(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
 	row := h.db.QueryRowContext(r.Context(),
-		`SELECT id, name, status, start_date, end_date, charter,
-		        closed_by, closed_at, created_by, created_at, updated_at
+		`SELECT `+ctemCycleColumns+`
 		   FROM ctem_cycles
 		  WHERE tenant_id = $1 AND id = $2`,
 		tenantID, id,
@@ -132,42 +140,20 @@ func (h *CTEMCycleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var c CTEMCycleResponse
-	var startDate, endDate sql.NullString
-	var closedBy sql.NullString
-	var closedAt sql.NullTime
-	var charter []byte
-
-	err = h.db.QueryRowContext(r.Context(),
+	row := h.db.QueryRowContext(r.Context(),
 		`INSERT INTO ctem_cycles
 		        (tenant_id, name, start_date, end_date, charter, created_by)
 		 VALUES ($1, $2, $3, $4, $5, $6)
-		 RETURNING id, name, status, start_date, end_date, charter,
-		           closed_by, closed_at, created_by, created_at, updated_at`,
+		 RETURNING `+ctemCycleColumns,
 		tenantID, req.Name, nilString(req.StartDate), nilString(req.EndDate),
 		charterJSON, userID,
-	).Scan(
-		&c.ID, &c.Name, &c.Status, &startDate, &endDate, &charter,
-		&closedBy, &closedAt, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
 	)
+	c, err := h.scanCycle(row)
 	if err != nil {
 		h.logger.Error("ctem cycle create", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
-	c.StartDate = startDate.String
-	c.EndDate = endDate.String
-	c.ClosedBy = closedBy.String
-	if closedAt.Valid {
-		c.ClosedAt = &closedAt.Time
-	}
-	if charter != nil {
-		_ = json.Unmarshal(charter, &c.Charter)
-	}
-	if c.Charter == nil {
-		c.Charter = map[string]any{}
-	}
-
 	writeJSON(w, http.StatusCreated, c)
 }
 
@@ -188,23 +174,14 @@ func (h *CTEMCycleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var c CTEMCycleResponse
-	var startDate, endDate sql.NullString
-	var closedBy sql.NullString
-	var closedAt sql.NullTime
-	var charter []byte
-
-	err = h.db.QueryRowContext(r.Context(),
+	row := h.db.QueryRowContext(r.Context(),
 		`UPDATE ctem_cycles
 		    SET name = $3, start_date = $4, end_date = $5, charter = $6, updated_at = NOW()
 		  WHERE tenant_id = $1 AND id = $2 AND status = 'planning'
-		 RETURNING id, name, status, start_date, end_date, charter,
-		           closed_by, closed_at, created_by, created_at, updated_at`,
+		 RETURNING `+ctemCycleColumns,
 		tenantID, id, req.Name, nilString(req.StartDate), nilString(req.EndDate), charterJSON,
-	).Scan(
-		&c.ID, &c.Name, &c.Status, &startDate, &endDate, &charter,
-		&closedBy, &closedAt, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
 	)
+	c, err := h.scanCycle(row)
 	if err != nil {
 		if err == sql.ErrNoRows { //nolint:errorlint
 			apierror.BadRequest("cycle not found or not in planning status").WriteJSON(w)
@@ -214,19 +191,6 @@ func (h *CTEMCycleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
-	c.StartDate = startDate.String
-	c.EndDate = endDate.String
-	c.ClosedBy = closedBy.String
-	if closedAt.Valid {
-		c.ClosedAt = &closedAt.Time
-	}
-	if charter != nil {
-		_ = json.Unmarshal(charter, &c.Charter)
-	}
-	if c.Charter == nil {
-		c.Charter = map[string]any{}
-	}
-
 	writeJSON(w, http.StatusOK, c)
 }
 
@@ -365,6 +329,10 @@ func (h *CTEMCycleHandler) StartReview(w http.ResponseWriter, r *http.Request) {
 
 // Close transitions a cycle from review to closed.
 //
+// On close the cycle metrics are computed over [activated_at, closed_at] and
+// each charter success criterion is judged against them (met / unmet /
+// not_measurable); the verdicts are returned as charter_evaluation.
+//
 // gate: before closing, compute validation-evidence coverage
 // for findings that reached a terminal state within the cycle window.
 // If any enforced priority class is under its SLO threshold, the
@@ -375,6 +343,17 @@ func (h *CTEMCycleHandler) StartReview(w http.ResponseWriter, r *http.Request) {
 // (default: false → advisory). This preserves compatibility while
 // the evidence-store rollout is in progress; flip to true once every
 // tenant has the simulation_evidence table populated.
+//
+// @Summary      Close CTEM cycle
+// @Description  Closes a cycle in review, computes its metrics and evaluates each charter success criterion.
+// @Tags         CTEM Cycles
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Cycle ID"  format(uuid)
+// @Success      200  {object}  CTEMCycleResponse
+// @Failure      400  {object}  map[string]string
+// @Failure      500  {object}  map[string]string
+// @Router       /ctem-cycles/{id}/close [post]
 func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	userID := middleware.GetUserID(r.Context())
@@ -414,23 +393,14 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 			"cycle_id", id, "tenant_id", tenantID, "breach", sloErr.Error())
 	}
 
-	var c CTEMCycleResponse
-	var startDate, endDate sql.NullString
-	var closedBy sql.NullString
-	var closedAt sql.NullTime
-	var charter []byte
-
-	err := h.db.QueryRowContext(r.Context(),
+	row := h.db.QueryRowContext(r.Context(),
 		`UPDATE ctem_cycles
 		    SET status = 'closed', closed_by = $3, closed_at = NOW(), updated_at = NOW()
 		  WHERE tenant_id = $1 AND id = $2 AND status = 'review'
-		 RETURNING id, name, status, start_date, end_date, charter,
-		           closed_by, closed_at, created_by, created_at, updated_at`,
+		 RETURNING `+ctemCycleColumns,
 		tenantID, id, userID,
-	).Scan(
-		&c.ID, &c.Name, &c.Status, &startDate, &endDate, &charter,
-		&closedBy, &closedAt, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
 	)
+	c, err := h.scanCycle(row)
 	if err != nil {
 		if err == sql.ErrNoRows { //nolint:errorlint
 			apierror.BadRequest("cycle not found or not in review status").WriteJSON(w)
@@ -440,31 +410,13 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
-	c.StartDate = startDate.String
-	c.EndDate = endDate.String
-	c.ClosedBy = closedBy.String
-	if closedAt.Valid {
-		c.ClosedAt = &closedAt.Time
-	}
-	if charter != nil {
-		_ = json.Unmarshal(charter, &c.Charter)
-	}
-	if c.Charter == nil {
-		c.Charter = map[string]any{}
-	}
-
 	// Best-effort: compute & persist the cycle metrics now that the
-	// window [activated_at, closed_at] is final. Never block the close
-	// on a metrics error — the lazy compute-on-read path backfills.
-	//
-	// FUTURE HOOK (charter success criteria): the Charter now carries
-	// SuccessCriteria (name/metric/target). Once the persisted metrics
-	// above are available here, this is the natural place to evaluate
-	// each criterion against its real close-loop metric and record a
-	// met/unmet verdict on the cycle. That evaluation engine is out of
-	// scope for this change — the criteria are persisted on the charter
-	// only; nothing consumes them yet.
-	h.persistMetrics(r.Context(), tenantID, id)
+	// window [activated_at, closed_at] is final, and judge each charter
+	// success criterion against them. Never block the close on a metrics
+	// error — the lazy compute-on-read path (GetMetrics) backfills both.
+	if ev := h.persistMetrics(r.Context(), tenantID, id); ev != nil {
+		c.CharterEvaluation = ev
+	}
 
 	writeJSON(w, http.StatusOK, c)
 }
@@ -494,8 +446,7 @@ func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.
 		                            '{scope_refinement_notes}', to_jsonb($3::text), true),
 		        updated_at = NOW()
 		  WHERE tenant_id = $1 AND id = $2 AND status IN ('review', 'closed')
-		 RETURNING id, name, status, start_date, end_date, charter,
-		           closed_by, closed_at, created_by, created_at, updated_at`,
+		 RETURNING `+ctemCycleColumns,
 		tenantID, id, req.ScopeRefinementNotes,
 	)
 	c, err := h.scanCycle(row)
@@ -709,8 +660,7 @@ func (h *CTEMCycleHandler) transitionStatus(
 		`UPDATE ctem_cycles
 		    SET status = $4, updated_at = NOW()
 		  WHERE tenant_id = $1 AND id = $2 AND status = $3
-		 RETURNING id, name, status, start_date, end_date, charter,
-		           closed_by, closed_at, created_by, created_at, updated_at`,
+		 RETURNING `+ctemCycleColumns,
 		tenantID, id, fromStatus, toStatus,
 	)
 
@@ -728,6 +678,11 @@ func (h *CTEMCycleHandler) transitionStatus(
 	return c, nil
 }
 
+// ctemCycleColumns is the column list every cycle read/RETURNING uses; it
+// must stay in step with the Scan order in scanCycle.
+const ctemCycleColumns = `id, name, status, start_date, end_date, charter,
+	closed_by, closed_at, created_by, created_at, updated_at, charter_evaluation`
+
 // rowScanner abstracts *sql.Row and *sql.Rows for shared scan logic.
 type ctemRowScanner interface {
 	Scan(dest ...any) error
@@ -739,14 +694,23 @@ func (h *CTEMCycleHandler) scanCycle(scanner ctemRowScanner) (CTEMCycleResponse,
 	var startDate, endDate sql.NullString
 	var closedBy sql.NullString
 	var closedAt sql.NullTime
-	var charter []byte
+	var charter, evaluation []byte
 
 	err := scanner.Scan(
 		&c.ID, &c.Name, &c.Status, &startDate, &endDate, &charter,
 		&closedBy, &closedAt, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
+		&evaluation,
 	)
 	if err != nil {
 		return c, err
+	}
+	if len(evaluation) > 0 {
+		var ev ctemcycle.CharterEvaluation
+		if jerr := json.Unmarshal(evaluation, &ev); jerr == nil {
+			c.CharterEvaluation = &ev
+		} else {
+			h.logger.Warn("ctem cycle: undecodable charter_evaluation", "cycle_id", sanitizeLogField(c.ID), "error", jerr)
+		}
 	}
 	c.StartDate = startDate.String
 	c.EndDate = endDate.String
@@ -793,6 +757,10 @@ type CTEMCycleResponse struct {
 	CreatedBy string         `json:"created_by"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
+	// CharterEvaluation is the close-time verdict on each charter success
+	// criterion (met / unmet / not_measurable, with the measured value).
+	// Absent until the cycle is closed with at least one criterion.
+	CharterEvaluation *ctemcycle.CharterEvaluation `json:"charter_evaluation,omitempty"`
 }
 
 // CTEMScopeSnapshotResponse is the JSON response for a scope snapshot entry.

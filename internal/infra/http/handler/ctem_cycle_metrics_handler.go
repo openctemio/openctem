@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openctemio/api/internal/infra/http/middleware"
@@ -41,12 +42,19 @@ func (h *CTEMCycleHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Confirm the cycle belongs to the tenant and learn its status.
+	// Confirm the cycle belongs to the tenant and learn its status, and
+	// whether it has success criteria that were never evaluated (a cycle
+	// closed before charter evaluation existed).
 	var status string
+	var needsEvaluation bool
 	err := h.db.QueryRowContext(r.Context(),
-		`SELECT status FROM ctem_cycles WHERE id = $1 AND tenant_id = $2`,
+		`SELECT status,
+		        COALESCE(charter_evaluation IS NULL
+		                 AND jsonb_typeof(charter->'success_criteria') = 'array'
+		                 AND jsonb_array_length(charter->'success_criteria') > 0, FALSE)
+		   FROM ctem_cycles WHERE id = $1 AND tenant_id = $2`,
 		id, tenantID,
-	).Scan(&status)
+	).Scan(&status, &needsEvaluation)
 	if errors.Is(err, sql.ErrNoRows) {
 		apierror.NotFound("cycle not found").WriteJSON(w)
 		return
@@ -66,7 +74,7 @@ func (h *CTEMCycleHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 
 	// Lazy compute-on-read for closed cycles with no metrics yet.
 	computed := false
-	if len(stored) == 0 && status == "closed" {
+	if status == "closed" && (len(stored) == 0 || needsEvaluation) {
 		h.persistMetrics(r.Context(), tenantID, id)
 		stored, err = h.metrics.Get(r.Context(), tid, cid)
 		if err != nil {
@@ -160,28 +168,59 @@ func (h *CTEMCycleHandler) MetricsTrend(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// persistMetrics computes and persists a cycle's metrics best-effort.
-// Errors are logged, never surfaced — callers must not depend on it
-// succeeding (Close must still close; GetMetrics still returns what is
-// stored).
-func (h *CTEMCycleHandler) persistMetrics(ctx context.Context, tenantID, cycleID string) {
+// persistMetrics computes and persists a cycle's metrics best-effort, then
+// evaluates the charter's success criteria against them. The evaluation's
+// completion rate is stored as the charter_completion_rate metric and the
+// per-criterion verdicts on ctem_cycles.charter_evaluation.
+//
+// Returns the evaluation, or nil when there was nothing to evaluate (no
+// criteria) or a step failed. Errors are logged, never surfaced — callers
+// must not depend on it succeeding (Close must still close; GetMetrics
+// still returns what is stored).
+func (h *CTEMCycleHandler) persistMetrics(ctx context.Context, tenantID, cycleID string) *ctemcycle.CharterEvaluation {
 	if h.metrics == nil {
-		return
+		return nil
 	}
 	tid, cid, ok := h.parseIDs(tenantID, cycleID)
 	if !ok {
 		h.logger.Warn("ctem cycle metrics: bad ids; skipping compute",
 			"tenant_id", sanitizeLogField(tenantID), "cycle_id", sanitizeLogField(cycleID))
-		return
+		return nil
 	}
 	set, err := h.metrics.Compute(ctx, tid, cid)
 	if err != nil {
 		h.logger.Warn("ctem cycle metrics: compute failed", "cycle_id", sanitizeLogField(cycleID), "error", err)
-		return
+		return nil
 	}
+
+	criteria, err := h.metrics.GetSuccessCriteria(ctx, tid, cid)
+	if err != nil {
+		// Still persist the metrics; only the evaluation is skipped.
+		h.logger.Warn("ctem cycle metrics: load success criteria failed", "cycle_id", sanitizeLogField(cycleID), "error", err)
+		criteria = nil
+	}
+	var ev *ctemcycle.CharterEvaluation
+	if len(criteria) > 0 {
+		// Stored even when every row was blank, so the lazy path in
+		// GetMetrics does not re-evaluate the same empty charter forever.
+		e := ctemcycle.EvaluateCharter(criteria, set, time.Now())
+		ev = &e
+		if e.CompletionRate != nil {
+			set[ctemcycle.MetricCharterCompletionRate] = *e.CompletionRate
+		}
+	}
+
 	if err := h.metrics.UpsertBatch(ctx, tid, cid, set); err != nil {
 		h.logger.Warn("ctem cycle metrics: persist failed", "cycle_id", sanitizeLogField(cycleID), "error", err)
 	}
+	if ev == nil {
+		return nil
+	}
+	if err := h.metrics.SaveCharterEvaluation(ctx, tid, cid, *ev); err != nil {
+		h.logger.Warn("ctem cycle metrics: persist charter evaluation failed", "cycle_id", sanitizeLogField(cycleID), "error", err)
+		return nil
+	}
+	return ev
 }
 
 // parseTenantCycle parses both ids, writing a 500 and returning ok=false

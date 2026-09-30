@@ -42,9 +42,9 @@ type Charter struct {
 	// reason, so a deferral is a reasoned decision rather than a silent gap.
 	Exclusions []CharterExclusion `json:"exclusions,omitempty"`
 	// SuccessCriteria are the measurable/verifiable conditions that define
-	// a successful cycle. They are persisted here; evaluating them against
-	// real close-loop metrics is a future hook (see the CTEMCycleHandler
-	// Close path where cycle metrics are computed).
+	// a successful cycle. At close each one is checked against the cycle's
+	// computed metrics (EvaluateCharter in criteria.go) and the verdicts are
+	// stored on ctem_cycles.charter_evaluation.
 	SuccessCriteria []CharterSuccessCriterion `json:"success_criteria,omitempty"`
 	// EscalationPath records who blockers escalate to (person, role or channel).
 	EscalationPath string `json:"escalation_path,omitempty"`

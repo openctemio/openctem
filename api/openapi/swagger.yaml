@@ -2916,6 +2916,68 @@ definitions:
       total_processed:
         type: integer
     type: object
+  github_com_openctemio_api_pkg_domain_ctemcycle.CharterEvaluation:
+    properties:
+      completion_rate:
+        description: |-
+          CompletionRate is met / (met + unmet) × 100, rounded to 2 decimals.
+          Nil when no criterion was measurable.
+        type: number
+      criteria:
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_ctemcycle.CriterionEvaluation'
+        type: array
+      evaluated_at:
+        type: string
+      met:
+        type: integer
+      not_measurable:
+        type: integer
+      unmet:
+        type: integer
+    type: object
+  github_com_openctemio_api_pkg_domain_ctemcycle.CriterionEvaluation:
+    properties:
+      actual:
+        description: Actual is the measured value in Unit (nil when there was no data).
+        type: number
+      comparator:
+        description: |-
+          Comparator is one of <=, <, >=, >, = (empty when the target did not
+          parse).
+        type: string
+      metric:
+        type: string
+      metric_key:
+        description: |-
+          MetricKey is the cycle metric the criterion resolved to (empty when
+          the metric name was not recognized).
+        type: string
+      name:
+        type: string
+      outcome:
+        $ref: '#/definitions/github_com_openctemio_api_pkg_domain_ctemcycle.CriterionOutcome'
+      reason:
+        description: Reason explains a not_measurable outcome.
+        type: string
+      target:
+        type: string
+      threshold:
+        description: Threshold is the target converted to Unit.
+        type: number
+      unit:
+        type: string
+    type: object
+  github_com_openctemio_api_pkg_domain_ctemcycle.CriterionOutcome:
+    enum:
+    - met
+    - unmet
+    - not_measurable
+    type: string
+    x-enum-varnames:
+    - CriterionMet
+    - CriterionUnmet
+    - CriterionNotMeasurable
   github_com_openctemio_api_pkg_domain_group.GroupSettings:
     properties:
       allow_self_join:
@@ -4579,6 +4641,39 @@ definitions:
       notes:
         type: string
       ransomware_use:
+        type: string
+    type: object
+  internal_infra_http_handler.CTEMCycleResponse:
+    properties:
+      charter:
+        additionalProperties: {}
+        type: object
+      charter_evaluation:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_api_pkg_domain_ctemcycle.CharterEvaluation'
+        description: |-
+          CharterEvaluation is the close-time verdict on each charter success
+          criterion (met / unmet / not_measurable, with the measured value).
+          Absent until the cycle is closed with at least one criterion.
+      closed_at:
+        type: string
+      closed_by:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      end_date:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      start_date:
+        type: string
+      status:
+        type: string
+      updated_at:
         type: string
     type: object
   internal_infra_http_handler.CTISIngestRequest:
@@ -15493,6 +15588,76 @@ paths:
       summary: Get credential leak statistics
       tags:
       - Credentials
+  /ctem-cycles/{id}:
+    get:
+      description: Returns one CTEM cycle with its charter and, once closed, the evaluation
+        of each charter success criterion.
+      parameters:
+      - description: Cycle ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CTEMCycleResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get CTEM cycle
+      tags:
+      - CTEM Cycles
+  /ctem-cycles/{id}/close:
+    post:
+      description: Closes a cycle in review, computes its metrics and evaluates each
+        charter success criterion.
+      parameters:
+      - description: Cycle ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.CTEMCycleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Close CTEM cycle
+      tags:
+      - CTEM Cycles
   /custom-tools:
     get:
       consumes:

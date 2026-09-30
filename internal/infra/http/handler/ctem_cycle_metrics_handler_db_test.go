@@ -104,8 +104,8 @@ func TestCTEMCycleMetricsHandler_LazyAndTrend(t *testing.T) {
 	if !metricsResp.ComputedLazily {
 		t.Errorf("expected computed_lazily=true on first read of a closed cycle")
 	}
-	if len(metricsResp.Metrics) != 6 {
-		t.Errorf("want 6 metric rows, got %d", len(metricsResp.Metrics))
+	if len(metricsResp.Metrics) != 8 {
+		t.Errorf("want 8 metric rows, got %d", len(metricsResp.Metrics))
 	}
 	if metricsResp.Values["findings_opened"] != 1 || metricsResp.Values["findings_resolved"] != 1 {
 		t.Errorf("unexpected values: %#v", metricsResp.Values)
