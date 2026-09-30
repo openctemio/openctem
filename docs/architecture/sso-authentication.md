@@ -66,7 +66,6 @@ stay on the JWT-tenant chain, so each resolves against the caller's tenant):
 | `/api/v1/settings/saml` (GET/PUT/DELETE) | Per-tenant SAML config |
 | `/api/v1/settings/identity-providers` (CRUD) | OIDC identity providers (Entra/Okta/Google) |
 | `/api/v1/settings/verified-domains` (CRUD + verify) | DNS-verified domains gating JIT provisioning |
-| `/api/v1/scim-tokens` (+ `group-mappings`) | SCIM provisioning tokens & group→role mappings |
 
 The **login** flow (`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*`) is
 unchanged and remains public — this restriction is about *setup*, not sign-in.

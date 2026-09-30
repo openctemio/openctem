@@ -269,7 +269,6 @@ still resolves against the caller's tenant.
 | `GET/PUT/DELETE /api/v1/settings/saml` | **platform admin** |
 | `CRUD /api/v1/settings/identity-providers` | **platform admin** |
 | `CRUD + verify /api/v1/settings/verified-domains` | **platform admin** |
-| `/api/v1/scim-tokens` (+ `/group-mappings`) | **platform admin** |
 
 > **Fail-closed:** with `PLATFORM_ADMIN_EMAILS` unset, these routes 403 for every
 > local-auth user. The SSO **login** flow (`/api/v1/auth/sso/*`,
