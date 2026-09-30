@@ -274,8 +274,8 @@ type CompensatingControlLookup interface {
 
 // EPSSData holds EPSS score for a CVE.
 type EPSSData struct {
-	Score      float64
-	Percentile float64
+	Score      float64 // probability, 0-1
+	Percentile float64 // rank, canonical 0-100 (epss_scores.percentile)
 }
 
 // KEVData holds KEV catalog info for a CVE.
