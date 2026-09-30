@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/openctemio/api/internal/app/adminconsole"
+
 	"github.com/openctemio/api/internal/app"
 	assetapp "github.com/openctemio/api/internal/app/asset"
 	"github.com/openctemio/api/internal/config"
@@ -92,6 +94,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	v := deps.Validator
 	repos := deps.Repos
 	svc := deps.Services
+
+	// Platform admin console login (RFC-022): password + TOTP sessions, accepted
+	// by the admin auth middleware alongside API keys.
+	adminConsoleSvc := adminconsole.NewService(repos.Admin, repos.AdminConsole, repos.AdminAuditLog, svc.Encryptor, log)
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
@@ -348,7 +354,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Admin Auth (API Key authentication for Admin UI)
 		AdminAuth:           handler.NewAdminAuthHandler(log),
 		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log),
-		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(repos.Admin, log),
+		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log),
+		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(repos.Admin, log).WithSessions(adminConsoleSvc),
 
 		// Admin Audit middleware (audit logging for admin operations)
 		AdminAuditMiddleware: middleware.NewAuditMiddleware(repos.AdminAuditLog, log),

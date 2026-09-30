@@ -172,6 +172,7 @@ type Handlers struct {
 	// Admin Auth handler (API key authentication for Admin UI)
 	AdminAuth           *handler.AdminAuthHandler
 	AdminOrganization   *handler.AdminOrganizationHandler
+	AdminConsole        *handler.AdminConsoleHandler
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
 
 	// Admin Audit middleware (audit logging for admin operations)

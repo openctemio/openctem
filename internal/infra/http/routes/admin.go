@@ -54,11 +54,27 @@ func registerAdminRoutes(
 	superAdminOnly := append(append([]Middleware{}, adminAPIKeyMiddlewares...),
 		h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin))
 
-	// Auth validation — any authenticated admin may validate its own key.
-	if h.AdminAuth != nil {
+	// Auth: one group (chi cannot mount the same prefix twice), so the guard is
+	// per route. /validate and /password need an authenticated admin (API key or
+	// console session). The console login steps (RFC-022) are public by nature
+	// and share the tenant login's rate limits.
+	if h.AdminAuth != nil || h.AdminConsole != nil {
+		consoleRL := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
+		loginRL := consoleRL.LoginMiddleware()
+		passwordRL := consoleRL.PasswordMiddleware()
+		authed := h.AdminAuthMiddleware.Authenticate
+
 		router.Group("/api/v1/admin/auth", func(r Router) {
-			r.GET("/validate", h.AdminAuth.Validate)
-		}, adminAPIKeyMiddlewares...)
+			if h.AdminAuth != nil {
+				r.GET("/validate", h.AdminAuth.Validate, authed)
+			}
+			if h.AdminConsole != nil {
+				r.POST("/login", h.AdminConsole.Login, loginRL)
+				r.POST("/mfa", h.AdminConsole.VerifyMFA, loginRL)
+				r.POST("/logout", h.AdminConsole.Logout)
+				r.POST("/password", h.AdminConsole.SetPassword, passwordRL, authed)
+			}
+		})
 	}
 
 	// Organizations (RFC-022 Phase 2): the platform admin's cross-tenant view,
@@ -132,11 +148,17 @@ func registerAdminRoutes(
 				r.PATCH("/{id}", h.AdminUser.Update, h.AdminAuditMiddleware.AuditAdminUpdate())
 				r.DELETE("/{id}", h.AdminUser.Delete, h.AdminAuditMiddleware.AuditAdminDelete())
 				r.POST("/{id}/rotate-key", h.AdminUser.RotateKey, h.AdminAuditMiddleware.AuditAdminRotateKey())
+				if h.AdminConsole != nil {
+					r.POST("/{id}/reset-credentials", h.AdminConsole.ResetCredentials)
+				}
 			} else {
 				r.POST("/", h.AdminUser.Create)
 				r.PATCH("/{id}", h.AdminUser.Update)
 				r.DELETE("/{id}", h.AdminUser.Delete)
 				r.POST("/{id}/rotate-key", h.AdminUser.RotateKey)
+				if h.AdminConsole != nil {
+					r.POST("/{id}/reset-credentials", h.AdminConsole.ResetCredentials)
+				}
 			}
 		}, superAdminOnly...)
 	}

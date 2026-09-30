@@ -3433,6 +3433,27 @@ definitions:
     - owner_email
     - slug
     type: object
+  internal_infra_http_handler.AdminLoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  internal_infra_http_handler.AdminLoginResponse:
+    properties:
+      otpauth_uri:
+        type: string
+      secret:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_infra_http_handler.AdminMFARequest:
+    properties:
+      code:
+        type: string
+    type: object
   internal_infra_http_handler.AdminOrganizationListResponse:
     properties:
       data:
@@ -3474,6 +3495,13 @@ definitions:
         type: boolean
       verified_domains:
         type: integer
+    type: object
+  internal_infra_http_handler.AdminPasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
     type: object
   internal_infra_http_handler.AdminSSOEnforcementRequest:
     properties:
@@ -10861,6 +10889,17 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.ValidateResponse:
+    properties:
+      email:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      role:
+        type: string
+    type: object
   internal_infra_http_handler.ValidateScannerTemplateRequest:
     properties:
       content:
@@ -11122,6 +11161,109 @@ paths:
       summary: Get audit log statistics
       tags:
       - Admin Audit Logs
+  /admin/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: First step of platform admin console login (RFC-022). Sets a short-lived
+        admin_mfa cookie; the response says whether to enter a TOTP code or enroll
+        an authenticator first. Every failure is the same generic 401.
+      parameters:
+      - description: Credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AdminLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.AdminLoginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "401":
+          description: Invalid email or password
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Admin console login (password step)
+      tags:
+      - Admin Auth
+  /admin/auth/logout:
+    post:
+      description: Ends the caller's console session and clears the admin cookies.
+      responses:
+        "204":
+          description: No Content
+      summary: Admin console logout
+      tags:
+      - Admin Auth
+  /admin/auth/mfa:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the TOTP code for the pending login (admin_mfa cookie)
+        and issues the admin_session and admin_csrf cookies. On first login this also
+        completes authenticator enrollment.
+      parameters:
+      - description: TOTP code
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AdminMFARequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ValidateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "401":
+          description: Invalid or expired verification code
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Admin console login (TOTP step)
+      tags:
+      - Admin Auth
+  /admin/auth/password:
+    post:
+      consumes:
+      - application/json
+      description: Sets or changes the caller's console password. With an API key
+        the current password is not required (bootstrap path); with a console session
+        it is, and every session of the admin is ended.
+      parameters:
+      - description: Passwords
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.AdminPasswordRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Set own admin console password
+      tags:
+      - Admin Auth
   /admin/tenants:
     get:
       description: Cross-tenant list of organizations with size and SSO posture. Newest
@@ -11495,6 +11637,37 @@ paths:
       summary: Verify an organization's domain via DNS
       tags:
       - Admin Organization SSO
+  /admin/users/{id}/reset-credentials:
+    post:
+      description: Super admin only. Removes the target admin's password and MFA and
+        ends their sessions (lost authenticator). The target sets a new password with
+        their API key and re-enrolls on next login.
+      parameters:
+      - description: Admin user ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reset another admin's console credentials
+      tags:
+      - Admin Users
   /agent/commands:
     get:
       consumes:
