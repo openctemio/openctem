@@ -53,6 +53,29 @@ No connected, usable integration → `ErrNoTicketingIntegration` (wraps
 `ErrValidation` → HTTP 400, not 500). Misconfigured integrations are skipped
 (logged), not fatal.
 
+### How an integration becomes connected
+
+The resolver only uses integrations in status `connected`. A new integration
+starts as `pending`; the create call then runs a connection test
+(`IntegrationService.TestIntegration` → `IntegrationClientResolver.TestTicketingConnection`,
+a `GET /rest/api/2/serverInfo` with the integration's own credentials) and
+records `connected`, or `error` with the reason. The same test runs on
+**Test connection** / **Sync now** (`POST /integrations/{id}/test`, `/sync`).
+Before this existed nothing moved a Jira integration out of `pending`, so a
+connection made from the UI was stored and then skipped by every ticket
+operation.
+
+### Supported providers
+
+Only **Jira** has a ticketing client. `linear` and `asana` are declared in
+`pkg/domain/integration` but have no client, so creating one is refused with
+HTTP 400 (`ErrProviderNotSupported`) instead of being stored as an integration
+that never runs. The rule is general — `Provider.HasClient()` gates every
+category (Wiz, Snyk, CrowdStrike, AWS, GCP and Azure are refused the same way),
+and the integration response carries `supported: false` for any older row of
+such a provider so the UI can show it honestly. GitHub Issues ticketing rides
+the GitHub **SCM** integration (see `github-issue-ticketing.md`).
+
 ### Credential format
 
 Jira Cloud REST uses basic auth = **account email + API token**. The connect

@@ -74,6 +74,12 @@ type IntegrationService struct {
 	repoExtRepo assetdom.RepositoryExtensionRepository
 	branchRepo  branchdom.Repository
 
+	// ticketingTester verifies a ticketing integration's credentials against
+	// the provider (Jira today). Without it a ticketing integration can never
+	// leave "pending", and the per-tenant client resolver only uses connected
+	// integrations — so it would be stored but never used.
+	ticketingTester TicketingConnectionTester
+
 	// Rate limiting for test notifications
 	testRateLimitMu  sync.RWMutex
 	testRateLimitMap map[string]time.Time // integration ID -> last test time
@@ -105,6 +111,36 @@ func NewIntegrationService(
 // SetNotificationExtensionRepository sets the notification extension repository.
 func (s *IntegrationService) SetNotificationExtensionRepository(repo integrationdom.NotificationExtensionRepository) {
 	s.notificationExtRepo = repo
+}
+
+// TicketingConnectionTester checks a ticketing integration's stored
+// credentials against its provider. It is implemented in the infra layer (the
+// Jira client resolver) so this package does not depend on a provider client.
+// The integration passed in is always one the caller loaded tenant-scoped, and
+// the tester builds its client from that integration's own credentials only.
+type TicketingConnectionTester interface {
+	TestTicketingConnection(ctx context.Context, intg *integrationdom.Integration) error
+}
+
+// SetTicketingConnectionTester wires the ticketing connection tester.
+func (s *IntegrationService) SetTicketingConnectionTester(t TicketingConnectionTester) {
+	s.ticketingTester = t
+}
+
+// toSCMProvider maps an integration provider to the SCM client factory's
+// provider name. The two vocabularies differ for Azure DevOps ("azure_devops"
+// on the integration, "azure" in the factory); a plain conversion made every
+// Azure DevOps integration fail with "unsupported SCM provider".
+func toSCMProvider(p integrationdom.Provider) scm.Provider {
+	if p == integrationdom.ProviderAzureDevOps {
+		return scm.ProviderAzure
+	}
+	return scm.Provider(p)
+}
+
+// unsupportedProviderError explains why an integration of provider p is refused.
+func unsupportedProviderError(p integrationdom.Provider) error {
+	return fmt.Errorf("%w: %s has no client in this version, so an integration for it would never run. Supported providers are listed in the integration settings", integrationdom.ErrProviderNotSupported, p)
 }
 
 // SetTransactionDB wires the database handle used to insert an integration and
@@ -181,6 +217,12 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	// Validate provider matches category
 	if provider.Category() != category {
 		return nil, integrationdom.ErrProviderCategoryMismatch
+	}
+
+	// Refuse providers that are declared but have no client: the row would be
+	// accepted, shown as an integration, and then never do anything.
+	if !provider.HasClient() {
+		return nil, unsupportedProviderError(provider)
 	}
 
 	// Validate auth type
@@ -281,8 +323,11 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 
 	result := integrationdom.NewIntegrationWithSCM(intg, scmExt)
 
-	// Auto-test the connection after creation for SCM integrations
-	if category == integrationdom.CategorySCM {
+	// Auto-test the connection after creation for SCM and ticketing
+	// integrations, so a working one is marked connected (the ticketing client
+	// resolver only uses connected integrations) and a broken one shows why.
+	if category == integrationdom.CategorySCM ||
+		(category == integrationdom.CategoryTicketing && s.ticketingTester != nil) {
 		testedResult, testErr := s.TestIntegration(ctx, intg.ID().String(), input.TenantID)
 		if testErr != nil {
 			s.logger.Warn("auto-test after creation failed", "error", testErr)
@@ -602,9 +647,19 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 		return nil, err
 	}
 
-	// Only SCM integrations support testing for now
+	// An integration row can predate the create-time HasClient check. Say so
+	// plainly rather than pretending it can be tested.
+	if !intg.Provider().HasClient() {
+		return nil, unsupportedProviderError(intg.Provider())
+	}
+
+	if intg.Category() == integrationdom.CategoryTicketing && s.ticketingTester != nil {
+		return s.testTicketingIntegration(ctx, intg)
+	}
+
+	// Only SCM and ticketing integrations support testing for now
 	if !intg.IsSCM() {
-		return nil, fmt.Errorf("%w: only SCM integrations support connection testing", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: only SCM and ticketing integrations support connection testing", shared.ErrValidation)
 	}
 
 	// Get SCM extension
@@ -627,7 +682,7 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 
 	// Create SCM client and test connection
 	client, err := s.scmFactory.CreateClient(scm.Config{
-		Provider:     scm.Provider(intg.Provider()),
+		Provider:     toSCMProvider(intg.Provider()),
 		BaseURL:      baseURL,
 		AccessToken:  credentials,
 		Organization: scmOrg,
@@ -725,7 +780,7 @@ func (s *IntegrationService) TestIntegrationCredentials(ctx context.Context, inp
 
 	// Create SCM client
 	client, err := s.scmFactory.CreateClient(scm.Config{
-		Provider:     scm.Provider(provider),
+		Provider:     toSCMProvider(provider),
 		BaseURL:      baseURL,
 		AccessToken:  input.Credentials,
 		Organization: input.SCMOrganization,
@@ -823,7 +878,7 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 
 	// Create SCM client
 	client, err := s.scmFactory.CreateClient(scm.Config{
-		Provider:     scm.Provider(intg.Provider()),
+		Provider:     toSCMProvider(intg.Provider()),
 		BaseURL:      baseURL,
 		AccessToken:  credentials,
 		Organization: scmOrg,
@@ -1460,6 +1515,20 @@ func (s *IntegrationService) getDefaultBaseURL(provider integrationdom.Provider)
 	}
 }
 
+// testTicketingIntegration checks a ticketing integration's credentials and
+// records the outcome as connected or error, with the reason.
+func (s *IntegrationService) testTicketingIntegration(ctx context.Context, intg *integrationdom.Integration) (*integrationdom.IntegrationWithSCM, error) {
+	if err := s.ticketingTester.TestTicketingConnection(ctx, intg); err != nil {
+		intg.SetError(fmt.Sprintf("Connection test failed: %v", err))
+	} else {
+		intg.SetConnected()
+	}
+	if err := s.repo.Update(ctx, intg); err != nil {
+		return nil, fmt.Errorf("update integration: %w", err)
+	}
+	return integrationdom.NewIntegrationWithSCM(intg, nil), nil
+}
+
 // SyncIntegration triggers a sync for an integration (updates stats, repo count, etc.)
 func (s *IntegrationService) SyncIntegration(ctx context.Context, id string, tenantID string) (*integrationdom.IntegrationWithSCM, error) {
 	// For now, sync is the same as test - it verifies connection and updates stats
@@ -1569,7 +1638,7 @@ func (s *IntegrationService) GetSCMRepository(ctx context.Context, input GetSCMR
 
 	// Create SCM client
 	client, err := s.scmFactory.CreateClient(scm.Config{
-		Provider:     scm.Provider(intg.Provider()),
+		Provider:     toSCMProvider(intg.Provider()),
 		BaseURL:      baseURL,
 		AccessToken:  credentials,
 		Organization: scmOrg,

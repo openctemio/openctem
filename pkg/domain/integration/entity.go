@@ -122,6 +122,38 @@ func (p Provider) IsValid() bool {
 	}
 }
 
+// HasClient reports whether the platform has a working client for this
+// provider — i.e. whether an integration of this provider can actually do
+// something once connected.
+//
+// IsValid is deliberately wider: it also accepts providers that are declared
+// (so rows created before this check keep loading) but have no client code
+// yet. Creating a new integration requires HasClient, so nothing is accepted
+// that would then silently do nothing.
+//
+// Keep this list in step with the code that consumes each provider:
+//   - SCM: internal/infra/scm (GitHub, GitLab, Bitbucket, Azure DevOps)
+//   - Security: Tenable coverage scheduler, DefectDojo sync
+//   - Ticketing: Jira (internal/infra/jira)
+//   - Notification: internal/infra/notifier (incl. the Splunk HEC sink)
+//
+// Declared without a client: Wiz, Snyk, CrowdStrike, AWS, GCP, Azure,
+// Linear, Asana.
+func (p Provider) HasClient() bool {
+	switch p {
+	case ProviderGitHub, ProviderGitLab, ProviderBitbucket, ProviderAzureDevOps:
+		return true
+	case ProviderTenable, ProviderDefectDojo:
+		return true
+	case ProviderJira:
+		return true
+	case ProviderSlack, ProviderTeams, ProviderTelegram, ProviderEmail, ProviderWebhook, ProviderSplunk:
+		return true
+	default:
+		return false
+	}
+}
+
 // Category returns the category for this provider.
 func (p Provider) Category() Category {
 	switch p {
