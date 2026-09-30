@@ -28,7 +28,7 @@ type SLABreachEvent struct {
 }
 
 // SLABreachPublisher delivers breach events to downstream consumers.
-// Optional — nil publisher means "log only" (legacy behaviour).
+// Optional — nil publisher means "log only" (legacy behavior).
 type SLABreachPublisher interface {
 	Publish(ctx context.Context, event SLABreachEvent) error
 }
@@ -113,11 +113,11 @@ type SLAEscalationController struct {
 	db     *sql.DB
 	logger *logger.Logger
 	// B4: optional publisher that fires one event per newly-breached
-	// finding. Nil → legacy log-only behaviour.
+	// finding. Nil → legacy log-only behavior.
 	publisher SLABreachPublisher
 	// Optional publisher that fires one event per finding newly transitioned
 	// into the `warning` (approaching-deadline) state. Nil → log-only, which was
-	// the only behaviour before: warnings updated the row but told no one.
+	// the only behavior before: warnings updated the row but told no one.
 	warningPublisher SLAWarningPublisher
 }
 
@@ -209,7 +209,7 @@ func (c *SLAEscalationController) markBreachedTx(ctx context.Context, txPub SLAB
 	return len(breaches), nil
 }
 
-// markBreachedLegacy is the pre-existing behaviour for a nil / non-transactional
+// markBreachedLegacy is the pre-existing behavior for a nil / non-transactional
 // publisher: autocommit the UPDATE, then best-effort publish (errors logged).
 func (c *SLAEscalationController) markBreachedLegacy(ctx context.Context) (int, error) {
 	rows, err := c.db.QueryContext(ctx, breachSelectUpdateQuery)

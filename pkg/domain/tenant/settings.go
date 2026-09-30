@@ -298,7 +298,7 @@ type SecuritySettings struct {
 	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
 
 	// RestrictedDataScope switches the per-user data scope from fail-OPEN to
-	// fail-CLOSED. Default false = today's behaviour: a non-admin with no asset
+	// fail-CLOSED. Default false = today's behavior: a non-admin with no asset
 	// assignment sees ALL of the tenant's assets/findings. When true, a non-admin
 	// sees ONLY the assets they're assigned (directly or via a group) and their
 	// findings — no assignment ⇒ no data (Tenable's "No Access" default).
