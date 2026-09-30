@@ -182,9 +182,10 @@ type Service struct {
 	securityValidator SecurityValidator
 	agentSelector     AgentSelector // Optional: for platform agent support
 	auditService      AuditService
-	scanDeactivator   ScanDeactivator // Optional: for cascade scan deactivation
-	scanRunRecorder   ScanRunRecorder // Optional: records run outcome back onto the scan
-	db                TransactionDB   // Optional: for transaction support
+	scanDeactivator   ScanDeactivator      // Optional: for cascade scan deactivation
+	scanRunRecorder   ScanRunRecorder      // Optional: records run outcome back onto the scan
+	runCompleted      RunCompletedCallback // Optional: fires scan_completed automation
+	db                TransactionDB        // Optional: for transaction support
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)
@@ -244,6 +245,17 @@ func WithScanRunRecorder(recorder ScanRunRecorder) Option {
 	return func(s *Service) {
 		s.scanRunRecorder = recorder
 	}
+}
+
+// RunCompletedCallback is notified when a pipeline run completes successfully.
+// Implementations must not block (the workflow dispatcher runs async).
+type RunCompletedCallback func(ctx context.Context, run *pipeline.Run)
+
+// SetRunCompletedCallback wires the consumer of successful run completions
+// (the `scan_completed` workflow trigger). A setter rather than an Option
+// because the workflow dispatcher is built after the pipeline service.
+func (s *Service) SetRunCompletedCallback(cb RunCompletedCallback) {
+	s.runCompleted = cb
 }
 
 // NewService creates a new Service.

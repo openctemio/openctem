@@ -53,6 +53,15 @@ type StateChangeResponse struct {
 	ChangedAt  time.Time `json:"changed_at"`
 	Metadata   string    `json:"metadata,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
+
+	// Current state of the asset the change refers to (absent when the asset
+	// no longer exists), so a change list can show what changed without one
+	// asset lookup per row.
+	AssetName               string `json:"asset_name,omitempty"`
+	AssetType               string `json:"asset_type,omitempty"`
+	AssetExposure           string `json:"asset_exposure,omitempty"`
+	AssetScope              string `json:"asset_scope,omitempty"`
+	AssetInternetAccessible *bool  `json:"asset_internet_accessible,omitempty"`
 }
 
 // DailyActivityResponse represents daily activity counts.
@@ -133,17 +142,53 @@ func (h *AssetStateHistoryHandler) ListByAsset(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	h.writeChangePage(w, r, tenantID, changes, total, opts.Limit, opts.Offset)
+}
+
+// writeChangePage enriches a page of changes with the current state of their
+// assets (one tenant-scoped query per page) and writes the list envelope.
+func (h *AssetStateHistoryHandler) writeChangePage(
+	w http.ResponseWriter,
+	r *http.Request,
+	tenantID shared.ID,
+	changes []*asset.AssetStateChange,
+	total, limit, offset int,
+) {
 	response := make([]StateChangeResponse, len(changes))
+	ids := make([]shared.ID, 0, len(changes))
+	seen := make(map[shared.ID]bool, len(changes))
 	for i, change := range changes {
 		response[i] = toStateChangeResponse(change)
+		if !seen[change.AssetID()] {
+			seen[change.AssetID()] = true
+			ids = append(ids, change.AssetID())
+		}
+	}
+
+	// Best-effort: the change list is still correct without asset names.
+	refs, err := h.repo.GetAssetRefs(r.Context(), tenantID, ids)
+	if err != nil {
+		h.logger.Warn("failed to load asset refs for state history", "error", err)
+	}
+	for i, change := range changes {
+		ref, ok := refs[change.AssetID()]
+		if !ok {
+			continue
+		}
+		internet := ref.InternetAccessible
+		response[i].AssetName = ref.Name
+		response[i].AssetType = ref.Type
+		response[i].AssetExposure = ref.Exposure
+		response[i].AssetScope = ref.Scope
+		response[i].AssetInternetAccessible = &internet
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":   response,
 		"total":  total,
-		"limit":  opts.Limit,
-		"offset": opts.Offset,
+		"limit":  limit,
+		"offset": offset,
 	})
 }
 
@@ -161,6 +206,7 @@ func (h *AssetStateHistoryHandler) ListByAsset(w http.ResponseWriter, r *http.Re
 // @Param        source query string false "Filter by source"
 // @Param        from query string false "Start time (RFC3339)"
 // @Param        to query string false "End time (RFC3339)"
+// @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
 // @Param        limit query int false "Maximum results (max 1000)" default(50)
 // @Param        offset query int false "Pagination offset" default(0)
 // @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
@@ -185,18 +231,7 @@ func (h *AssetStateHistoryHandler) List(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	response := make([]StateChangeResponse, len(changes))
-	for i, change := range changes {
-		response[i] = toStateChangeResponse(change)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":   response,
-		"total":  total,
-		"limit":  opts.Limit,
-		"offset": opts.Offset,
-	})
+	h.writeChangePage(w, r, tenantID, changes, total, opts.Limit, opts.Offset)
 }
 
 // Get handles GET /api/v1/state-history/{id}
@@ -244,132 +279,137 @@ func (h *AssetStateHistoryHandler) Get(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(toStateChangeResponse(change))
 }
 
+// The change-list endpoints below share one parameter set:
+//   - since (legacy, default 7 days ago) is used only when from is absent;
+//   - from / to bound changed_at; limit / offset paginate; total is the full
+//     count, so they can back a server-paginated table;
+//   - internet_facing=true|false keeps changes of assets that are (not)
+//     currently internet-facing (is_internet_accessible or exposure=public).
+
 // RecentAppearances handles GET /api/v1/state-history/appearances
-// @Summary      Get recent asset appearances (deprecated)
-// @Description  Deprecated: use GET /state-history?event_type=appeared instead.
-// @Description  Retrieves recently discovered assets (new assets appearing in scans).
+// @Summary      Get recent asset appearances
+// @Description  Assets that appeared (newly discovered by a scan or created) in the window.
+// @Description  Equivalent to GET /state-history?event_type=appeared.
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
+// @Param        since query string false "Start time (RFC3339, default: 7 days ago; ignored when from is set)"
+// @Param        from query string false "Start time (RFC3339)"
+// @Param        to query string false "End time (RFC3339)"
+// @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
+// @Param        offset query int false "Pagination offset" default(0)
 // @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/appearances [get]
 func (h *AssetStateHistoryHandler) RecentAppearances(w http.ResponseWriter, r *http.Request) {
-	// Deprecated: delegates to List with event_type=appeared pre-set.
-	// Use GET /state-history?event_type=appeared instead.
-	h.listWithPresetEventTypes(w, r, asset.StateChangeAppeared)
+	h.listWithPresetEventTypes(w, r, listPreset{types: []asset.StateChangeType{asset.StateChangeAppeared}})
 }
 
 // RecentDisappearances handles GET /api/v1/state-history/disappearances
-// @Summary      Get recent asset disappearances (deprecated)
-// @Description  Deprecated: use GET /state-history?event_type=disappeared instead.
-// @Description  Retrieves assets that have disappeared (no longer seen in scans).
+// @Summary      Get recent asset disappearances
+// @Description  Assets that disappeared (no scan has seen them within the stale threshold) in the window.
+// @Description  Equivalent to GET /state-history?event_type=disappeared.
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
+// @Param        since query string false "Start time (RFC3339, default: 7 days ago; ignored when from is set)"
+// @Param        from query string false "Start time (RFC3339)"
+// @Param        to query string false "End time (RFC3339)"
+// @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
+// @Param        offset query int false "Pagination offset" default(0)
 // @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/disappearances [get]
 func (h *AssetStateHistoryHandler) RecentDisappearances(w http.ResponseWriter, r *http.Request) {
-	// Deprecated: delegates to List with event_type=disappeared pre-set.
-	// Use GET /state-history?event_type=disappeared instead.
-	h.listWithPresetEventTypes(w, r, asset.StateChangeDisappeared)
+	h.listWithPresetEventTypes(w, r, listPreset{types: []asset.StateChangeType{asset.StateChangeDisappeared}})
 }
 
 // ShadowITCandidates handles GET /api/v1/state-history/shadow-it
-// @Summary      Get Shadow IT candidates (deprecated)
-// @Description  Deprecated: use GET /state-history?event_type=appeared with scope filtering instead.
-// @Description  Retrieves assets identified as potential Shadow IT (appeared with shadow scope).
+// @Summary      Get Shadow IT candidates
+// @Description  Appearances of assets currently in the `shadow` scope (potential shadow IT).
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
+// @Param        since query string false "Start time (RFC3339, default: 7 days ago; ignored when from is set)"
+// @Param        from query string false "Start time (RFC3339)"
+// @Param        to query string false "End time (RFC3339)"
+// @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
+// @Param        offset query int false "Pagination offset" default(0)
 // @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/shadow-it [get]
 func (h *AssetStateHistoryHandler) ShadowITCandidates(w http.ResponseWriter, r *http.Request) {
-	// Deprecated: shadow-it uses a specialized JOIN query (scope='shadow').
-	// Keep delegating to the dedicated repo method for correctness.
-	ctx := r.Context()
-	tenantIDStr := middleware.MustGetTenantID(ctx)
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
-		return
-	}
-
-	since, limit := h.parseSinceAndLimit(r)
-
-	changes, err := h.repo.GetShadowITCandidates(ctx, tenantID, since, limit)
-	if err != nil {
-		h.logger.Error("failed to get shadow IT candidates", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	response := make([]StateChangeResponse, len(changes))
-	for i, change := range changes {
-		response[i] = toStateChangeResponse(change)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":   response,
-		"total":  len(response),
-		"limit":  limit,
-		"offset": 0,
+	// Goes through the paginated List (tenant-scoped EXISTS on assets) so
+	// `total` is the real count — it used to be len(page) — and offset/from/to
+	// work like the other change lists.
+	shadow := asset.ScopeShadow
+	h.listWithPresetEventTypes(w, r, listPreset{
+		types:      []asset.StateChangeType{asset.StateChangeAppeared},
+		assetScope: &shadow,
+		forced:     true,
 	})
 }
 
 // ExposureChanges handles GET /api/v1/state-history/exposure-changes
-// @Summary      Get exposure changes (deprecated)
-// @Description  Deprecated: use GET /state-history?event_type=exposure_changed,internet_exposure_changed instead.
-// @Description  Retrieves assets that have changed exposure status (public/private/restricted).
+// @Summary      Get exposure changes
+// @Description  Every exposure transition (exposure level or internet reachability, either direction) in the window.
+// @Description  Equivalent to GET /state-history?event_type=exposure_changed,internet_exposure_changed.
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
+// @Param        since query string false "Start time (RFC3339, default: 7 days ago; ignored when from is set)"
+// @Param        from query string false "Start time (RFC3339)"
+// @Param        to query string false "End time (RFC3339)"
+// @Param        internet_facing query bool false "Only assets that are (true) or are not (false) internet-facing now"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
+// @Param        offset query int false "Pagination offset" default(0)
 // @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/exposure-changes [get]
 func (h *AssetStateHistoryHandler) ExposureChanges(w http.ResponseWriter, r *http.Request) {
-	// Deprecated: delegates to List with event_type=exposure_changed,internet_exposure_changed pre-set.
-	// Use GET /state-history?event_type=exposure_changed,internet_exposure_changed instead.
-	h.listWithPresetEventTypes(w, r, asset.StateChangeExposureChanged, asset.StateChangeInternetExposureChanged)
+	h.listWithPresetEventTypes(w, r, listPreset{types: []asset.StateChangeType{
+		asset.StateChangeExposureChanged, asset.StateChangeInternetExposureChanged,
+	}})
 }
 
 // NewlyExposed handles GET /api/v1/state-history/newly-exposed
-// @Summary      Get newly exposed assets (deprecated)
-// @Description  Deprecated: use GET /state-history?event_type=internet_exposure_changed instead.
-// @Description  Retrieves assets that have recently become publicly exposed.
+// @Summary      Get newly exposed assets
+// @Description  Assets that BECAME internet-facing in the window: exposure changed to public, or
+// @Description  internet reachability changed to true. Transitions away from public are excluded.
 // @Tags         Asset State History
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        since query string false "Start time (RFC3339, default: 7 days ago)"
+// @Param        since query string false "Start time (RFC3339, default: 7 days ago; ignored when from is set)"
+// @Param        from query string false "Start time (RFC3339)"
+// @Param        to query string false "End time (RFC3339)"
 // @Param        limit query int false "Maximum results (max 1000)" default(100)
+// @Param        offset query int false "Pagination offset" default(0)
 // @Success      200  {object}  object{data=[]StateChangeResponse,total=int,limit=int,offset=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /state-history/newly-exposed [get]
 func (h *AssetStateHistoryHandler) NewlyExposed(w http.ResponseWriter, r *http.Request) {
-	// Deprecated: delegates to List with event_type=internet_exposure_changed pre-set.
-	// Use GET /state-history?event_type=internet_exposure_changed instead.
-	h.listWithPresetEventTypes(w, r, asset.StateChangeInternetExposureChanged)
+	// It used to return every internet_exposure_changed row, including
+	// true -> false, i.e. assets that stopped being exposed.
+	h.listWithPresetEventTypes(w, r, listPreset{
+		types: []asset.StateChangeType{
+			asset.StateChangeExposureChanged, asset.StateChangeInternetExposureChanged,
+		},
+		newValues: []string{string(asset.ExposurePublic), "true"},
+		forced:    true,
+	})
 }
 
 // ComplianceChanges handles GET /api/v1/state-history/compliance
@@ -389,17 +429,28 @@ func (h *AssetStateHistoryHandler) NewlyExposed(w http.ResponseWriter, r *http.R
 func (h *AssetStateHistoryHandler) ComplianceChanges(w http.ResponseWriter, r *http.Request) {
 	// Deprecated: delegates to List with compliance event types pre-set.
 	// Use GET /state-history?event_type=compliance_changed,classification_changed,owner_changed instead.
-	h.listWithPresetEventTypes(w, r,
+	h.listWithPresetEventTypes(w, r, listPreset{types: []asset.StateChangeType{
 		asset.StateChangeComplianceChanged,
 		asset.StateChangeClassificationChanged,
 		asset.StateChangeOwnerChanged,
-	)
+	}})
 }
 
-// listWithPresetEventTypes is a shared helper that serves the deprecated specialized endpoints.
-// It sets the given event types as defaults and then falls through to the normal List handler,
-// allowing callers to still override via query params if needed.
-func (h *AssetStateHistoryHandler) listWithPresetEventTypes(w http.ResponseWriter, r *http.Request, defaultTypes ...asset.StateChangeType) {
+// listPreset is what a specialised change-list endpoint fixes on top of the
+// generic List query.
+type listPreset struct {
+	types      []asset.StateChangeType
+	newValues  []string
+	assetScope *asset.Scope
+	// forced: the preset defines the endpoint (shadow-it, newly-exposed), so a
+	// caller's ?event_type= cannot widen it. Otherwise the preset types are
+	// only defaults the caller may override.
+	forced bool
+}
+
+// listWithPresetEventTypes serves the specialised change-list endpoints on top
+// of the generic, paginated List query.
+func (h *AssetStateHistoryHandler) listWithPresetEventTypes(w http.ResponseWriter, r *http.Request, preset listPreset) {
 	ctx := r.Context()
 	tenantIDStr := middleware.MustGetTenantID(ctx)
 	tenantID, err := shared.IDFromString(tenantIDStr)
@@ -408,16 +459,17 @@ func (h *AssetStateHistoryHandler) listWithPresetEventTypes(w http.ResponseWrite
 		return
 	}
 
-	// Parse options normally — the caller may still pass ?event_type= to override.
 	opts := h.parseListOptions(r)
 
-	// Apply pre-set defaults only when no explicit event_type / change_type filter was provided.
-	if opts.ChangeType == nil && len(opts.ChangeTypes) == 0 {
-		if len(defaultTypes) == 1 {
-			opts.ChangeType = &defaultTypes[0]
-		} else {
-			opts.ChangeTypes = defaultTypes
-		}
+	if preset.forced || (opts.ChangeType == nil && len(opts.ChangeTypes) == 0) {
+		opts.ChangeType = nil
+		opts.ChangeTypes = preset.types
+	}
+	if len(preset.newValues) > 0 {
+		opts.NewValues = preset.newValues
+	}
+	if preset.assetScope != nil {
+		opts.AssetScope = preset.assetScope
 	}
 
 	// Apply ?since= as a From bound when no explicit ?from= was given (backward compat).
@@ -436,18 +488,7 @@ func (h *AssetStateHistoryHandler) listWithPresetEventTypes(w http.ResponseWrite
 		return
 	}
 
-	response := make([]StateChangeResponse, len(changes))
-	for i, change := range changes {
-		response[i] = toStateChangeResponse(change)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":   response,
-		"total":  total,
-		"limit":  opts.Limit,
-		"offset": opts.Offset,
-	})
+	h.writeChangePage(w, r, tenantID, changes, total, opts.Limit, opts.Offset)
 }
 
 // Timeline handles GET /api/v1/state-history/timeline
@@ -605,6 +646,11 @@ func (h *AssetStateHistoryHandler) parseListOptions(r *http.Request) asset.ListS
 	if v := r.URL.Query().Get("source"); v != "" {
 		s := asset.ChangeSource(v)
 		opts.Source = &s
+	}
+	if v := r.URL.Query().Get("internet_facing"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			opts.AssetInternetFacing = &b
+		}
 	}
 	if v := r.URL.Query().Get("from"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {

@@ -31,6 +31,9 @@ type WorkflowEventDispatcher struct {
 	nodeRepo     workflowdom.NodeRepository
 	service      *WorkflowService
 	logger       *logger.Logger
+
+	// triggerFn replaces service.TriggerWorkflow in tests (nil in production).
+	triggerFn func(ctx context.Context, input TriggerWorkflowInput) error
 }
 
 // NewWorkflowEventDispatcher creates a new workflow event dispatcher.

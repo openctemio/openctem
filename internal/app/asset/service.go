@@ -990,6 +990,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		}
 	}
 
+	oldExposure := a.Exposure()
 	if input.Exposure != nil {
 		exposure, err := assetdom.ParseExposure(*input.Exposure)
 		if err != nil {
@@ -1074,6 +1075,14 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 
 	// Recalculate affected group stats (risk_score, finding_count, etc.)
 	s.recalculateAffectedGroups(ctx, parsedID)
+
+	// A manual exposure change (e.g. an operator marking an asset public) is
+	// part of "what changed" in the attack surface, same as a scan-driven one.
+	if a.Exposure() != oldExposure {
+		s.recordStateChange(ctx, assetdom.RecordFieldChange(parsedTenantID, parsedID,
+			assetdom.StateChangeExposureChanged, "exposure",
+			oldExposure.String(), a.Exposure().String(), assetdom.ChangeSourceManual, nil))
+	}
 
 	// Evaluate scope rules if tags changed (async — don't block response)
 	if s.scopeRuleEvaluator != nil && input.Tags != nil && !tagsEqual(oldTags, a.Tags()) {

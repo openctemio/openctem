@@ -88,6 +88,21 @@ type StateHistoryRepository interface {
 	// GetActivityTimeline returns daily counts of changes over a time period.
 	// Used for activity trend visualization.
 	GetActivityTimeline(ctx context.Context, tenantID shared.ID, from, to time.Time) ([]DailyActivityCount, error)
+
+	// GetAssetRefs returns a display snapshot (name, type, exposure, scope) of
+	// the given assets, tenant-scoped. Assets not found (deleted, or of another
+	// tenant) are absent from the map.
+	GetAssetRefs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]StateChangeAssetRef, error)
+}
+
+// StateChangeAssetRef is the current state of the asset a change refers to,
+// so a change list can show "what" without one lookup per row.
+type StateChangeAssetRef struct {
+	Name               string
+	Type               string
+	Exposure           string
+	Scope              string
+	InternetAccessible bool
 }
 
 // DailyActivityCount represents activity count for a single day.

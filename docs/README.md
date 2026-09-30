@@ -19,6 +19,7 @@
 - [Clean Architecture](architecture/clean-arch.md) - Layer details & dependencies
 - [Project Structure](architecture/project-structure.md) - Complete file structure
 - [Notification System](architecture/notification-system.md) - Real-time alerts, providers, async patterns
+- [Change Detection](architecture/change-detection.md) - What changed in the attack surface: state history views, `asset_discovered` / `scan_completed` triggers, throttled new-internet-facing-asset notification
 - [Scan Orchestration](architecture/scan-orchestration.md) - Pipeline execution, agent coordination
 - [Scan Coverage (Tenable)](architecture/scan-coverage.md) - License-aware rolling coverage, Nessus Pro + Tenable.sc, .nessus→CTIS converter
 - [Shift-Left CI Scanning](architecture/shift-left-ci-scanning.md) - Agent-first SAST/SCA/secrets in CI: structure + dataflow diagrams, branch-aware findings, risk-aware gate, PR decoration (RFC-008)
