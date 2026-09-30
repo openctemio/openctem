@@ -365,12 +365,48 @@ type ListStateHistoryOptions struct {
 	From        *time.Time
 	To          *time.Time
 
+	// NewValues keeps only changes whose new_value is one of these (e.g.
+	// "true"/"public" for "became internet-facing").
+	NewValues []string
+	// AssetScope keeps only changes of assets currently in this scope
+	// (e.g. "shadow" for shadow-IT candidates).
+	AssetScope *Scope
+	// AssetInternetFacing keeps only changes of assets that are currently
+	// internet-facing (true) or not (false).
+	AssetInternetFacing *bool
+
 	// Pagination
 	Limit  int
 	Offset int
 
 	// Sorting (default: changed_at DESC)
 	SortOrder string // asc, desc
+}
+
+// EffectiveChangeTypes merges the single ChangeType filter into ChangeTypes.
+func (o ListStateHistoryOptions) EffectiveChangeTypes() []StateChangeType {
+	if o.ChangeType == nil {
+		return o.ChangeTypes
+	}
+	for _, t := range o.ChangeTypes {
+		if t == *o.ChangeType {
+			return o.ChangeTypes
+		}
+	}
+	return append(append([]StateChangeType{}, o.ChangeTypes...), *o.ChangeType)
+}
+
+// EffectiveSources merges the single Source filter into Sources.
+func (o ListStateHistoryOptions) EffectiveSources() []ChangeSource {
+	if o.Source == nil {
+		return o.Sources
+	}
+	for _, src := range o.Sources {
+		if src == *o.Source {
+			return o.Sources
+		}
+	}
+	return append(append([]ChangeSource{}, o.Sources...), *o.Source)
 }
 
 // DefaultListStateHistoryOptions returns default options.

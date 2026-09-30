@@ -1423,6 +1423,12 @@ func assetUpsertConflictSQL() string {
 			impact_integrity = COALESCE(assets.impact_integrity, EXCLUDED.impact_integrity),
 			impact_availability = COALESCE(assets.impact_availability, EXCLUDED.impact_availability),
 			is_internet_accessible = assets.is_internet_accessible OR EXCLUDED.is_internet_accessible,
+			-- exposure: fill the gap only. Ingest infers/receives an exposure
+			-- for a re-scanned asset still at 'unknown' (and records the
+			-- transition in asset_state_history); without this the inference
+			-- was computed and then dropped here. A known exposure (e.g. one an
+			-- operator set) is never overridden by a scan.
+			exposure = CASE WHEN assets.exposure = 'unknown' THEN EXCLUDED.exposure ELSE assets.exposure END,
 			pii_data_exposed = assets.pii_data_exposed OR EXCLUDED.pii_data_exposed,
 			phi_data_exposed = assets.phi_data_exposed OR EXCLUDED.phi_data_exposed,
 			compliance_scope = (

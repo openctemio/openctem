@@ -290,6 +290,12 @@ func SeverityFilterApplies(eventType EventType) bool {
 	switch MapLegacyEventType(eventType) {
 	case EventTypeApprovalRequested, EventTypeApprovalApproved, EventTypeApprovalRejected:
 		return false
+	// new_asset announces attack-surface growth (a newly discovered
+	// internet-facing asset). Its severity is a fixed label set by the
+	// discovery notifier, not a finding severity, so the default
+	// critical+high filter would silently drop every one of them.
+	case EventTypeNewAsset:
+		return false
 	default:
 		return true
 	}

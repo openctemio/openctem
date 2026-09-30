@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/api/internal/app/tool"
 
 	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/internal/app/assetdiscovery"
 	"github.com/openctemio/api/internal/app/attack"
 	"github.com/openctemio/api/internal/app/auth/domainverify"
 	certmonitorapp "github.com/openctemio/api/internal/app/certmonitor"
@@ -49,6 +50,7 @@ import (
 	"github.com/openctemio/api/internal/infra/storage"
 	"github.com/openctemio/api/internal/infra/websocket"
 	"github.com/openctemio/api/pkg/crypto"
+	assetdom "github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/attachment"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
@@ -538,6 +540,10 @@ type Services struct {
 	// Workflows
 	Workflow           *app.WorkflowService
 	WorkflowDispatcher *app.WorkflowEventDispatcher
+
+	// AssetDiscoveryNotifier turns newly discovered internet-facing assets into
+	// throttled tenant notifications (in-app + new_asset outbox event).
+	AssetDiscoveryNotifier *assetdiscovery.Notifier
 
 	// Suppressions
 	Suppression *suppression.Service
@@ -1623,6 +1629,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Wire in-app notification service to pentest service
 	s.Pentest.SetUserNotificationService(s.Notification)
+
+	// Change detection: an asset an ingest newly created (not a re-scan merge,
+	// not a manual create) fires the `asset_discovered` workflow trigger and,
+	// when it is internet-facing, a throttled tenant notification. Wired here
+	// because it needs both the workflow dispatcher and the in-app
+	// notification service, which is only built above.
+	s.AssetDiscoveryNotifier = assetdiscovery.NewNotifier(s.Outbox, s.Notification, assetdiscovery.DefaultWindow, log)
+	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
+		s.WorkflowDispatcher.DispatchAssetsDiscovered(ctx, tenantID, assets)
+		s.AssetDiscoveryNotifier.AssetsDiscovered(ctx, tenantID, assets)
+	})
+	// An existing asset a re-scan turned internet-facing is newly exposed
+	// attack surface too: same throttled notification, no asset_discovered.
+	s.Ingest.SetAssetsExposedCallback(s.AssetDiscoveryNotifier.AssetsExposed)
+
+	// A successful pipeline run fires the `scan_completed` workflow trigger.
+	s.Pipeline.SetRunCompletedCallback(s.WorkflowDispatcher.DispatchScanCompleted)
 
 	return s, nil
 }

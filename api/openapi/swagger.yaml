@@ -9257,7 +9257,21 @@ definitions:
     type: object
   internal_infra_http_handler.StateChangeResponse:
     properties:
+      asset_exposure:
+        type: string
       asset_id:
+        type: string
+      asset_internet_accessible:
+        type: boolean
+      asset_name:
+        description: |-
+          Current state of the asset the change refers to (absent when the asset
+          no longer exists), so a change list can show what changed without one
+          asset lookup per row.
+        type: string
+      asset_scope:
+        type: string
+      asset_type:
         type: string
       change_type:
         type: string
@@ -23108,6 +23122,11 @@ paths:
         in: query
         name: to
         type: string
+      - description: Only assets that are (true) or are not (false) internet-facing
+          now
+        in: query
+        name: internet_facing
+        type: boolean
       - default: 50
         description: Maximum results (max 1000)
         in: query
@@ -23193,17 +23212,36 @@ paths:
       consumes:
       - application/json
       description: |-
-        Deprecated: use GET /state-history?event_type=appeared instead.
-        Retrieves recently discovered assets (new assets appearing in scans).
+        Assets that appeared (newly discovered by a scan or created) in the window.
+        Equivalent to GET /state-history?event_type=appeared.
       parameters:
-      - description: 'Start time (RFC3339, default: 7 days ago)'
+      - description: 'Start time (RFC3339, default: 7 days ago; ignored when from
+          is set)'
         in: query
         name: since
         type: string
+      - description: Start time (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: End time (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Only assets that are (true) or are not (false) internet-facing
+          now
+        in: query
+        name: internet_facing
+        type: boolean
       - default: 100
         description: Maximum results (max 1000)
         in: query
         name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
@@ -23233,7 +23271,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Get recent asset appearances (deprecated)
+      summary: Get recent asset appearances
       tags:
       - Asset State History
   /state-history/compliance:
@@ -23289,17 +23327,36 @@ paths:
       consumes:
       - application/json
       description: |-
-        Deprecated: use GET /state-history?event_type=disappeared instead.
-        Retrieves assets that have disappeared (no longer seen in scans).
+        Assets that disappeared (no scan has seen them within the stale threshold) in the window.
+        Equivalent to GET /state-history?event_type=disappeared.
       parameters:
-      - description: 'Start time (RFC3339, default: 7 days ago)'
+      - description: 'Start time (RFC3339, default: 7 days ago; ignored when from
+          is set)'
         in: query
         name: since
         type: string
+      - description: Start time (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: End time (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Only assets that are (true) or are not (false) internet-facing
+          now
+        in: query
+        name: internet_facing
+        type: boolean
       - default: 100
         description: Maximum results (max 1000)
         in: query
         name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
@@ -23329,7 +23386,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Get recent asset disappearances (deprecated)
+      summary: Get recent asset disappearances
       tags:
       - Asset State History
   /state-history/exposure-changes:
@@ -23337,17 +23394,36 @@ paths:
       consumes:
       - application/json
       description: |-
-        Deprecated: use GET /state-history?event_type=exposure_changed,internet_exposure_changed instead.
-        Retrieves assets that have changed exposure status (public/private/restricted).
+        Every exposure transition (exposure level or internet reachability, either direction) in the window.
+        Equivalent to GET /state-history?event_type=exposure_changed,internet_exposure_changed.
       parameters:
-      - description: 'Start time (RFC3339, default: 7 days ago)'
+      - description: 'Start time (RFC3339, default: 7 days ago; ignored when from
+          is set)'
         in: query
         name: since
         type: string
+      - description: Start time (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: End time (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Only assets that are (true) or are not (false) internet-facing
+          now
+        in: query
+        name: internet_facing
+        type: boolean
       - default: 100
         description: Maximum results (max 1000)
         in: query
         name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
@@ -23377,7 +23453,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Get exposure changes (deprecated)
+      summary: Get exposure changes
       tags:
       - Asset State History
   /state-history/newly-exposed:
@@ -23385,17 +23461,31 @@ paths:
       consumes:
       - application/json
       description: |-
-        Deprecated: use GET /state-history?event_type=internet_exposure_changed instead.
-        Retrieves assets that have recently become publicly exposed.
+        Assets that BECAME internet-facing in the window: exposure changed to public, or
+        internet reachability changed to true. Transitions away from public are excluded.
       parameters:
-      - description: 'Start time (RFC3339, default: 7 days ago)'
+      - description: 'Start time (RFC3339, default: 7 days ago; ignored when from
+          is set)'
         in: query
         name: since
+        type: string
+      - description: Start time (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: End time (RFC3339)
+        in: query
+        name: to
         type: string
       - default: 100
         description: Maximum results (max 1000)
         in: query
         name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
@@ -23425,25 +23515,43 @@ paths:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Get newly exposed assets (deprecated)
+      summary: Get newly exposed assets
       tags:
       - Asset State History
   /state-history/shadow-it:
     get:
       consumes:
       - application/json
-      description: |-
-        Deprecated: use GET /state-history?event_type=appeared with scope filtering instead.
-        Retrieves assets identified as potential Shadow IT (appeared with shadow scope).
+      description: Appearances of assets currently in the `shadow` scope (potential
+        shadow IT).
       parameters:
-      - description: 'Start time (RFC3339, default: 7 days ago)'
+      - description: 'Start time (RFC3339, default: 7 days ago; ignored when from
+          is set)'
         in: query
         name: since
         type: string
+      - description: Start time (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: End time (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Only assets that are (true) or are not (false) internet-facing
+          now
+        in: query
+        name: internet_facing
+        type: boolean
       - default: 100
         description: Maximum results (max 1000)
         in: query
         name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
@@ -23473,7 +23581,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Get Shadow IT candidates (deprecated)
+      summary: Get Shadow IT candidates
       tags:
       - Asset State History
   /state-history/stats:

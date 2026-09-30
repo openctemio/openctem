@@ -6,6 +6,7 @@ import (
 	"net"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,34 @@ type AssetProcessor struct {
 	dedupEnqueuer  DedupReviewEnqueuer          // RFC-001: enqueue multi-match dupes for review (nil = disabled)
 	propsValidator *validator.PropertiesValidator
 	logger         *logger.Logger
+
+	// assetsDiscoveredCallback receives the assets THIS ingest actually
+	// inserted (nil = disabled). It drives the `asset_discovered` workflow
+	// trigger and the new-internet-facing-asset notification.
+	assetsDiscoveredCallback AssetsDiscoveredCallback
+
+	// assetsExposedCallback receives EXISTING assets a re-scan turned
+	// internet-facing (nil = disabled). Drives the newly-exposed notification.
+	assetsExposedCallback AssetsDiscoveredCallback
+}
+
+// AssetsDiscoveredCallback is invoked once per ingest batch with the assets the
+// batch newly created. It never sees an asset that already existed (a re-scan
+// merge) or one whose insert lost a concurrent-create race, so each asset is
+// announced exactly once. Implementations must not block: ingest calls it
+// inline.
+type AssetsDiscoveredCallback func(ctx context.Context, tenantID shared.ID, assets []*asset.Asset)
+
+// SetAssetsDiscoveredCallback wires the consumer of newly-created assets.
+func (p *AssetProcessor) SetAssetsDiscoveredCallback(cb AssetsDiscoveredCallback) {
+	p.assetsDiscoveredCallback = cb
+}
+
+// SetAssetsExposedCallback wires the consumer of existing assets that a re-scan
+// turned internet-facing (they were not before). Same batching and
+// non-blocking contract as the discovered callback.
+func (p *AssetProcessor) SetAssetsExposedCallback(cb AssetsDiscoveredCallback) {
+	p.assetsExposedCallback = cb
 }
 
 // NewAssetProcessor creates a new asset processor.
@@ -117,6 +146,83 @@ func (p *AssetProcessor) recordDiscoveryHistory(ctx context.Context, tenantID sh
 	}
 	if err := p.stateHistory.CreateBatch(ctx, changes); err != nil {
 		p.logger.Warn("failed to record asset discovery state-history",
+			"tenant_id", tenantID.String(), "count", len(changes), "error", err)
+	}
+}
+
+// insertedAssets keeps the locally-created assets whose id is the one the
+// database persisted for their name. persistedIDs maps name -> authoritative id;
+// when it is nil (older repository implementations) every candidate is kept.
+func insertedAssets(candidates []*asset.Asset, persistedIDs map[string]shared.ID) []*asset.Asset {
+	if len(candidates) == 0 {
+		return nil
+	}
+	out := make([]*asset.Asset, 0, len(candidates))
+	for _, a := range candidates {
+		if persistedIDs != nil {
+			if pid, ok := persistedIDs[a.Name()]; ok && !pid.Equals(a.ID()) {
+				continue // lost a concurrent-create race: the row already existed
+			}
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// mergeTrackingExposure merges a re-observed CTIS asset into the existing one
+// and returns the state-history rows for any exposure transition the merge
+// caused (scanner signal or inferred exposure). Without these rows the
+// exposure-change and newly-exposed views had nothing to show: the only writer
+// of internet_exposure_changed was a finding/asset inconsistency trigger.
+// An asset that was not internet-facing before the merge and is after it is
+// appended to becameExposed (when non-nil).
+func (p *AssetProcessor) mergeTrackingExposure(
+	tenantID shared.ID,
+	existing *asset.Asset,
+	ctisAsset *ctis.Asset,
+	tool *ctis.Tool,
+	recovered *[]shared.ID,
+	becameExposed *[]*asset.Asset,
+) []*asset.AssetStateChange {
+	oldExposure := existing.Exposure()
+	oldInternet := existing.IsInternetAccessible()
+	wasFacing := oldInternet || oldExposure == asset.ExposurePublic
+
+	p.mergeCTISIntoAsset(existing, ctisAsset, tool, recovered)
+
+	if becameExposed != nil && !wasFacing &&
+		(existing.IsInternetAccessible() || existing.Exposure() == asset.ExposurePublic) {
+		*becameExposed = append(*becameExposed, existing)
+	}
+	return exposureTransitions(tenantID, existing, oldExposure, oldInternet)
+}
+
+// exposureTransitions builds the scan-sourced state-history rows describing
+// how an asset's exposure moved from (oldExposure, oldInternet) to its current
+// values.
+func exposureTransitions(tenantID shared.ID, a *asset.Asset, oldExposure asset.Exposure, oldInternet bool) []*asset.AssetStateChange {
+	var changes []*asset.AssetStateChange
+	if a.Exposure() != oldExposure {
+		changes = append(changes, asset.RecordFieldChange(tenantID, a.ID(),
+			asset.StateChangeExposureChanged, "exposure",
+			string(oldExposure), string(a.Exposure()), asset.ChangeSourceScan, nil))
+	}
+	if a.IsInternetAccessible() != oldInternet {
+		changes = append(changes, asset.RecordFieldChange(tenantID, a.ID(),
+			asset.StateChangeInternetExposureChanged, "is_internet_accessible",
+			strconv.FormatBool(oldInternet), strconv.FormatBool(a.IsInternetAccessible()), asset.ChangeSourceScan, nil))
+	}
+	return changes
+}
+
+// recordExposureHistory persists exposure transitions caused by a re-scan.
+// Best-effort: a failure is logged and never aborts ingestion.
+func (p *AssetProcessor) recordExposureHistory(ctx context.Context, tenantID shared.ID, changes []*asset.AssetStateChange) {
+	if p.stateHistory == nil || len(changes) == 0 {
+		return
+	}
+	if err := p.stateHistory.CreateBatch(ctx, changes); err != nil {
+		p.logger.Warn("failed to record asset exposure state-history",
 			"tenant_id", tenantID.String(), "count", len(changes), "error", err)
 	}
 }
@@ -232,6 +338,16 @@ func (p *AssetProcessor) ProcessBatch(
 	// Assets a scan re-observed after they had gone stale/inactive (reactivated
 	// by MarkSeen) — recorded as `recovered` state history after the upsert.
 	var recoveredIDs []shared.ID
+	// Exposure transitions a re-scan caused on existing assets — recorded as
+	// exposure_changed / internet_exposure_changed state history.
+	var exposureChanges []*asset.AssetStateChange
+	// Every asset this ingest actually inserted, announced once at the end.
+	var discovered []*asset.Asset
+	// Existing assets this re-scan turned internet-facing.
+	var becameExposed []*asset.Asset
+	// Set once the upsert persisted the merges, so a failed upsert never
+	// announces an exposure that was not saved.
+	var exposedPersisted []*asset.Asset
 
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
@@ -250,7 +366,7 @@ func (p *AssetProcessor) ProcessBatch(
 
 		if existing, ok := existingMap[normalizedName]; ok {
 			// Name match → merge (existing behavior)
-			p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool, &recoveredIDs)
+			exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
 			updateAssets = append(updateAssets, existing)
 			assetMap[ctisAsset.ID] = existing.ID()
 		} else if p.correlator != nil && (coreType == asset.AssetTypeHost || coreType == asset.AssetTypeIPAddress) {
@@ -269,7 +385,7 @@ func (p *AssetProcessor) ProcessBatch(
 			if result != nil && result.Matched != nil {
 				// IP match found → merge into existing
 				existing := result.Matched
-				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool, &recoveredIDs)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
 				updateAssets = append(updateAssets, existing)
 				assetMap[ctisAsset.ID] = existing.ID()
 
@@ -334,7 +450,7 @@ func (p *AssetProcessor) ProcessBatch(
 
 			if result != nil && result.Matched != nil {
 				existing := result.Matched
-				p.mergeCTISIntoAsset(existing, ctisAsset, report.Tool, &recoveredIDs)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
 				updateAssets = append(updateAssets, existing)
 				assetMap[ctisAsset.ID] = existing.ID()
 				existingMap[normalizedName] = existing
@@ -395,9 +511,18 @@ func (p *AssetProcessor) ProcessBatch(
 			}
 		}
 
+		// Only the assets this batch actually inserted are "new". A local asset
+		// whose (tenant_id, name) was inserted concurrently by another ingest
+		// kept the other row's id, so it is an update here, not a discovery.
+		inserted := insertedAssets(newAssets, persistedIDs)
+
 		// Record discovery state history (appeared for new assets, recovered
-		// for reactivated ones). Best-effort — never fails ingestion.
-		p.recordDiscoveryHistory(ctx, tenantID, newAssets, recoveredIDs)
+		// for reactivated ones, exposure transitions on re-scan). Best-effort —
+		// never fails ingestion.
+		p.recordDiscoveryHistory(ctx, tenantID, inserted, recoveredIDs)
+		p.recordExposureHistory(ctx, tenantID, exposureChanges)
+		discovered = append(discovered, inserted...)
+		exposedPersisted = becameExposed
 	}
 
 	// Step 5: Create/update repository extensions for repository assets
@@ -430,7 +555,7 @@ func (p *AssetProcessor) ProcessBatch(
 	}
 
 	// Step 5.5: Auto-create root domain assets for orphaned subdomains
-	p.ensureRootDomainAssets(ctx, tenantID, report, existingMap, output)
+	p.ensureRootDomainAssets(ctx, tenantID, report, existingMap, output, &discovered)
 
 	// Step 6: Create subdomain-to-domain relationships
 	if p.relRepo != nil {
@@ -439,7 +564,17 @@ func (p *AssetProcessor) ProcessBatch(
 
 	// Step 7: Create resolves_to relationships for DNS records (domain/subdomain → IP)
 	if p.relRepo != nil {
-		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output)
+		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered)
+	}
+
+	// Announce every asset this ingest created (report assets plus the root
+	// domains and resolved IPs derived from them) in ONE callback, so the
+	// workflow trigger and the notifier see the batch as a whole.
+	if p.assetsDiscoveredCallback != nil && len(discovered) > 0 {
+		p.assetsDiscoveredCallback(ctx, tenantID, discovered)
+	}
+	if p.assetsExposedCallback != nil && len(exposedPersisted) > 0 {
+		p.assetsExposedCallback(ctx, tenantID, exposedPersisted)
 	}
 
 	return assetMap, nil
@@ -501,6 +636,7 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 	report *ctis.Report,
 	existingMap map[string]*asset.Asset,
 	output *Output,
+	discovered *[]*asset.Asset,
 ) {
 	// Collect unique root domains that need to be created
 	needed := make(map[string]bool)
@@ -573,6 +709,10 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 
 		metadata := asset.BuildDomainMetadata(domainName, asset.DiscoverySourceDNS)
 		domainAsset.SetProperties(metadata)
+		// Same exposure inference as scanner-reported domains (public by nature).
+		if inferred := inferAssetExposure(domainAsset); inferred != asset.ExposureUnknown {
+			domainAsset.SetExposure(inferred)
+		}
 
 		newDomains = append(newDomains, domainAsset)
 		existingMap[domainName] = domainAsset
@@ -582,7 +722,7 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		return
 	}
 
-	created, _, _, err := p.repo.UpsertBatch(ctx, newDomains)
+	created, _, persistedIDs, err := p.repo.UpsertBatch(ctx, newDomains)
 	if err != nil {
 		p.logger.Warn("failed to batch create root domain assets",
 			"count", len(newDomains),
@@ -596,6 +736,9 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 	}
 
 	output.AssetsCreated += created
+	inserted := insertedAssets(newDomains, persistedIDs)
+	p.recordDiscoveryHistory(ctx, tenantID, inserted, nil)
+	*discovered = append(*discovered, inserted...)
 	p.logger.Info("auto-created root domain assets for orphaned subdomains",
 		"created", created,
 		"domains", domainNames,
@@ -698,6 +841,7 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 	report *ctis.Report,
 	existingMap map[string]*asset.Asset,
 	output *Output,
+	discovered *[]*asset.Asset,
 ) {
 	// Collect domain→IP mappings from report assets
 	type dnsMapping struct {
@@ -781,13 +925,18 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 
 		now := time.Now()
 		ipAsset.SetDiscoveryInfo(asset.DiscoverySourceDNS, "dns_resolution", &now)
+		// Same exposure inference as scanner-reported IPs: a public address a
+		// DNS name resolves to is internet-reachable.
+		if inferred := inferAssetExposure(ipAsset); inferred != asset.ExposureUnknown {
+			ipAsset.SetExposure(inferred)
+		}
 
 		newIPs = append(newIPs, ipAsset)
 		existingMap[ip] = ipAsset
 	}
 
 	if len(newIPs) > 0 {
-		created, _, _, err := p.repo.UpsertBatch(ctx, newIPs)
+		created, _, persistedIDs, err := p.repo.UpsertBatch(ctx, newIPs)
 		if err != nil {
 			p.logger.Warn("failed to create IP assets from DNS resolution", "error", err)
 			for _, a := range newIPs {
@@ -796,6 +945,9 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 			return
 		}
 		output.AssetsCreated += created
+		inserted := insertedAssets(newIPs, persistedIDs)
+		p.recordDiscoveryHistory(ctx, tenantID, inserted, nil)
+		*discovered = append(*discovered, inserted...)
 	}
 
 	// Create resolves_to relationships

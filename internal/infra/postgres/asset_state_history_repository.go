@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
@@ -163,9 +165,12 @@ func (r *AssetStateHistoryRepository) List(ctx context.Context, tenantID shared.
 		argIdx++
 	}
 
-	if len(opts.ChangeTypes) > 0 {
-		placeholders := make([]string, len(opts.ChangeTypes))
-		for i, ct := range opts.ChangeTypes {
+	// The single ChangeType / Source filters used to be ignored here, so e.g.
+	// /state-history/appearances returned every change type. Merge them.
+	changeTypes := opts.EffectiveChangeTypes()
+	if len(changeTypes) > 0 {
+		placeholders := make([]string, len(changeTypes))
+		for i, ct := range changeTypes {
 			placeholders[i] = fmt.Sprintf("$%d", argIdx)
 			args = append(args, ct.String())
 			argIdx++
@@ -173,9 +178,10 @@ func (r *AssetStateHistoryRepository) List(ctx context.Context, tenantID shared.
 		conditions = append(conditions, fmt.Sprintf("h.change_type IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
-	if len(opts.Sources) > 0 {
-		placeholders := make([]string, len(opts.Sources))
-		for i, s := range opts.Sources {
+	sources := opts.EffectiveSources()
+	if len(sources) > 0 {
+		placeholders := make([]string, len(sources))
+		for i, s := range sources {
 			placeholders[i] = fmt.Sprintf("$%d", argIdx)
 			args = append(args, s.String())
 			argIdx++
@@ -187,6 +193,32 @@ func (r *AssetStateHistoryRepository) List(ctx context.Context, tenantID shared.
 		conditions = append(conditions, fmt.Sprintf("h.changed_by = $%d", argIdx))
 		args = append(args, opts.ChangedBy.String())
 		argIdx++
+	}
+
+	if len(opts.NewValues) > 0 {
+		placeholders := make([]string, len(opts.NewValues))
+		for i, v := range opts.NewValues {
+			placeholders[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, v)
+			argIdx++
+		}
+		conditions = append(conditions, fmt.Sprintf("h.new_value IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// Asset-state filters join the asset through a tenant-scoped EXISTS so the
+	// count query and the page query share one WHERE clause.
+	if opts.AssetScope != nil {
+		conditions = append(conditions, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM assets a WHERE a.id = h.asset_id AND a.tenant_id = h.tenant_id AND a.scope = $%d)", argIdx))
+		args = append(args, opts.AssetScope.String())
+		argIdx++
+	}
+	if opts.AssetInternetFacing != nil {
+		facing := "EXISTS (SELECT 1 FROM assets a WHERE a.id = h.asset_id AND a.tenant_id = h.tenant_id AND (a.is_internet_accessible OR a.exposure = 'public'))"
+		if !*opts.AssetInternetFacing {
+			facing = "NOT " + facing
+		}
+		conditions = append(conditions, facing)
 	}
 
 	if opts.From != nil {
@@ -538,6 +570,41 @@ func (r *AssetStateHistoryRepository) GetActivityTimeline(ctx context.Context, t
 // =============================================================================
 // Helper Methods
 // =============================================================================
+
+// GetAssetRefs returns the current name/type/exposure/scope of the given
+// assets, restricted to the tenant.
+func (r *AssetStateHistoryRepository) GetAssetRefs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]asset.StateChangeAssetRef, error) {
+	result := make(map[shared.ID]asset.StateChangeAssetRef, len(assetIDs))
+	if len(assetIDs) == 0 {
+		return result, nil
+	}
+	ids := make([]string, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		ids = append(ids, id.String())
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, name, asset_type, exposure, scope, COALESCE(is_internet_accessible, false)
+		FROM assets
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+	`, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query asset refs: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var idStr string
+		var ref asset.StateChangeAssetRef
+		if err := rows.Scan(&idStr, &ref.Name, &ref.Type, &ref.Exposure, &ref.Scope, &ref.InternetAccessible); err != nil {
+			return nil, fmt.Errorf("failed to scan asset ref: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			continue
+		}
+		result[id] = ref
+	}
+	return result, rows.Err()
+}
 
 func (r *AssetStateHistoryRepository) selectQuery() string {
 	return `
