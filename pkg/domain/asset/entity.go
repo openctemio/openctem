@@ -435,13 +435,21 @@ func (a *Asset) UpdateScope(scope Scope) error {
 	return nil
 }
 
-// UpdateExposure updates the asset exposure level.
+// UpdateExposure updates the asset exposure level. Like SetExposure it stamps
+// exposure_changed_at when the level actually changes: the create / update /
+// bulk-import paths go through here, and without the stamp an asset an
+// operator classified as public carried no record of WHEN it became known
+// internet-facing (the program-metrics MTTD clock stop).
 func (a *Asset) UpdateExposure(exposure Exposure) error {
 	if !exposure.IsValid() {
 		return fmt.Errorf("%w: invalid exposure", shared.ErrValidation)
 	}
+	now := time.Now().UTC()
+	if a.exposure != exposure {
+		a.exposureChangedAt = &now
+	}
 	a.exposure = exposure
-	a.updatedAt = time.Now().UTC()
+	a.updatedAt = now
 	return nil
 }
 

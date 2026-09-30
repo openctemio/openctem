@@ -67,6 +67,7 @@ func registerDashboardRoutes(
 		r.GET("/executive-summary/export", h.ExportExecutiveSummary, middleware.Require(permission.DashboardRead))
 		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead))
 		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead))
+		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead))
 	}, tenantMiddlewares...)
 }
 
