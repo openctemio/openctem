@@ -150,6 +150,26 @@ func (r *IntegrationClientResolver) ResolveMapping(ctx context.Context, tenantID
 	return appjira.MappingConfig{}, appjira.ErrNoTicketingIntegration
 }
 
+// TestTicketingConnection checks that a ticketing integration's own stored
+// credentials authenticate against its Jira site. It is the only way a Jira
+// integration reaches "connected" — which Resolve and ResolveMapping require —
+// so without it a Jira integration created from the UI stayed pending and was
+// skipped by every ticket operation.
+//
+// The client is built solely from intg (its base URL and decrypted
+// credentials); the caller loads intg tenant-scoped, so no other tenant's
+// credentials are involved.
+func (r *IntegrationClientResolver) TestTicketingConnection(ctx context.Context, intg *integration.Integration) error {
+	if intg.Provider() != integration.ProviderJira {
+		return fmt.Errorf("%w: %s", integration.ErrProviderNotSupported, intg.Provider())
+	}
+	client, err := r.buildClient(intg)
+	if err != nil {
+		return err
+	}
+	return client.TestConnection(ctx)
+}
+
 // buildClient assembles a Jira client from an integration's base URL and
 // decrypted credentials.
 func (r *IntegrationClientResolver) buildClient(intg *integration.Integration) (appjira.Client, error) {

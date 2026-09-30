@@ -146,6 +146,11 @@ type IntegrationResponse struct {
 	CreatedAt           time.Time                 `json:"created_at" example:"2024-01-01T00:00:00Z"`
 	UpdatedAt           time.Time                 `json:"updated_at" example:"2024-01-15T10:30:00Z"`
 	CreatedBy           string                    `json:"created_by,omitempty" example:"user-123"`
+	// Supported is false for a provider that is declared but has no client in
+	// this version (e.g. a Linear row created before creation was refused).
+	// Such an integration never runs; clients should show it as not supported
+	// rather than as pending or connected.
+	Supported bool `json:"supported" example:"true"`
 }
 
 // IntegrationStatsResponse represents integration statistics.
@@ -279,6 +284,7 @@ func toIntegrationResponse(i *integration.Integration) IntegrationResponse {
 		Description:         i.Description(),
 		Category:            string(i.Category()),
 		Provider:            string(i.Provider()),
+		Supported:           i.Provider().HasClient(),
 		Status:              string(i.Status()),
 		StatusMessage:       i.StatusMessage(),
 		AuthType:            string(i.AuthType()),

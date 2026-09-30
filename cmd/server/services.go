@@ -1155,6 +1155,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Integration.SetNotificationExtensionRepository(repos.IntegrationNotificationExt)
 	s.Integration.SetOutboxEventRepository(repos.OutboxEvent)
 	s.Integration.SetRepoImportRepos(repos.Asset, repos.RepoExt, repos.Branch)
+	// Test/sync of a ticketing integration checks its credentials against Jira.
+	// Without it a Jira integration never leaves "pending", and jiraResolver
+	// only uses connected integrations — ticket creation would stay inert.
+	s.Integration.SetTicketingConnectionTester(jiraResolver)
 
 	s.Outbox = outbox.NewService(
 		repos.Outbox,
