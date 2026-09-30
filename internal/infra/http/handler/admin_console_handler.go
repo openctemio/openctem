@@ -65,12 +65,17 @@ func clientInfo(r *http.Request) adminconsole.ClientInfo {
 }
 
 func (h *AdminConsoleHandler) setCookie(w http.ResponseWriter, name, value, path string, maxAge int, httpOnly bool) {
+	effectiveHTTPOnly := httpOnly
+	if name == middleware.AdminSessionCookie {
+		effectiveHTTPOnly = true
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     path,
 		MaxAge:   maxAge,
-		HttpOnly: httpOnly,
+		HttpOnly: effectiveHTTPOnly,
 		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteStrictMode,
 	})
