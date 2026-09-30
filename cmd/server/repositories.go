@@ -145,6 +145,7 @@ type Repositories struct {
 	// Admin (Platform Admin)
 	Admin         *postgres.AdminRepository
 	AdminAuditLog *postgres.AuditLogRepository
+	AdminConsole  *postgres.AdminConsoleRepository
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -343,6 +344,7 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		// Admin (Platform Admin)
 		Admin:         postgres.NewAdminRepository(db),
 		AdminAuditLog: postgres.NewAuditLogRepository(db),
+		AdminConsole:  postgres.NewAdminConsoleRepository(db),
 
 		// Target Mappings
 		TargetMapping: postgres.NewTargetMappingRepository(db),

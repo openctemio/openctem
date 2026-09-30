@@ -4,6 +4,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -14,10 +15,31 @@ import (
 
 // Admin auth context keys.
 const (
-	AdminUserKey logger.ContextKey = "admin_user"
-	AdminIDKey   logger.ContextKey = "admin_id"
-	AdminRoleKey logger.ContextKey = "admin_role"
+	AdminUserKey       logger.ContextKey = "admin_user"
+	AdminIDKey         logger.ContextKey = "admin_id"
+	AdminRoleKey       logger.ContextKey = "admin_role"
+	AdminAuthMethodKey logger.ContextKey = "admin_auth_method"
 )
+
+// How an admin request was authenticated.
+const (
+	AdminAuthMethodAPIKey  = "api_key"
+	AdminAuthMethodSession = "session"
+)
+
+// Console (RFC-022) cookie names. The session cookie is scoped to the admin API
+// path so it is never sent to tenant routes. The CSRF cookie is separate from
+// the tenant csrf_token so the two shells can be open in one browser.
+const (
+	AdminSessionCookie = "admin_session"
+	AdminMFACookie     = "admin_mfa"
+	AdminCSRFCookie    = "admin_csrf"
+)
+
+// AdminSessionAuthenticator resolves a console session token to its admin.
+type AdminSessionAuthenticator interface {
+	Authenticate(ctx context.Context, token string) (*admin.AdminUser, error)
+}
 
 // AdminAPIKeyHeader is the header name for admin API key authentication.
 const AdminAPIKeyHeader = "X-Admin-API-Key"
@@ -25,7 +47,44 @@ const AdminAPIKeyHeader = "X-Admin-API-Key"
 // AdminAuthMiddleware provides authentication for admin API endpoints.
 type AdminAuthMiddleware struct {
 	adminRepo admin.Repository
+	sessions  AdminSessionAuthenticator
 	logger    *logger.Logger
+}
+
+// WithSessions enables console session (cookie) authentication alongside API
+// keys. Without it only API keys are accepted.
+func (m *AdminAuthMiddleware) WithSessions(s AdminSessionAuthenticator) *AdminAuthMiddleware {
+	m.sessions = s
+	return m
+}
+
+// authenticateSession handles a request without an API key. It accepts a
+// verified console session cookie and, for state-changing methods, requires the
+// double-submit CSRF header to match the admin CSRF cookie.
+func (m *AdminAuthMiddleware) authenticateSession(r *http.Request) (*admin.AdminUser, bool) {
+	if m.sessions == nil {
+		return nil, false
+	}
+	c, err := r.Cookie(AdminSessionCookie)
+	if err != nil || c.Value == "" {
+		return nil, false
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+	default:
+		csrf, err := r.Cookie(AdminCSRFCookie)
+		header := r.Header.Get(CSRFHeaderName)
+		if err != nil || csrf.Value == "" || header == "" ||
+			subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(header)) != 1 {
+			m.logger.Debug("admin auth: session request failed CSRF check")
+			return nil, false
+		}
+	}
+	a, err := m.sessions.Authenticate(r.Context(), c.Value)
+	if err != nil {
+		return nil, false
+	}
+	return a, true
 }
 
 // NewAdminAuthMiddleware creates a new AdminAuthMiddleware.
@@ -51,8 +110,13 @@ func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 		}
 
 		if apiKey == "" {
-			m.logger.Debug("admin auth: missing API key")
-			apierror.Unauthorized("missing admin API key").WriteJSON(w)
+			// No key: try a console session (browser).
+			if adminUser, ok := m.authenticateSession(r); ok {
+				next.ServeHTTP(w, r.WithContext(withAdmin(r.Context(), adminUser, AdminAuthMethodSession)))
+				return
+			}
+			m.logger.Debug("admin auth: missing API key or session")
+			apierror.Unauthorized("admin authentication required").WriteJSON(w)
 			return
 		}
 
@@ -84,14 +148,7 @@ func (m *AdminAuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			}
 		}()
 
-		// Add admin info to context
-		ctx := r.Context()
-		ctx = context.WithValue(ctx, AdminUserKey, adminUser)
-		ctx = context.WithValue(ctx, AdminIDKey, adminUser.ID().String())
-		ctx = context.WithValue(ctx, AdminRoleKey, string(adminUser.Role()))
-
-		// Add to logger context for request tracing
-		ctx = context.WithValue(ctx, logger.ContextKeyUserID, adminUser.ID().String())
+		ctx := withAdmin(r.Context(), adminUser, AdminAuthMethodAPIKey)
 
 		m.logger.Debug("admin auth: authenticated",
 			"admin_id", adminUser.ID().String(),
@@ -239,3 +296,24 @@ func extractIP(r *http.Request) string {
 
 	return ip
 }
+
+// withAdmin stores the authenticated admin (and how it authenticated) on ctx.
+func withAdmin(ctx context.Context, a *admin.AdminUser, method string) context.Context {
+	ctx = context.WithValue(ctx, AdminUserKey, a)
+	ctx = context.WithValue(ctx, AdminIDKey, a.ID().String())
+	ctx = context.WithValue(ctx, AdminRoleKey, string(a.Role()))
+	ctx = context.WithValue(ctx, AdminAuthMethodKey, method)
+	// Logger context for request tracing.
+	return context.WithValue(ctx, logger.ContextKeyUserID, a.ID().String())
+}
+
+// GetAdminAuthMethod returns AdminAuthMethodAPIKey or AdminAuthMethodSession.
+func GetAdminAuthMethod(ctx context.Context) string {
+	if v, ok := ctx.Value(AdminAuthMethodKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// ClientIP returns the request's client IP the same way admin auth records it.
+func ClientIP(r *http.Request) string { return extractIP(r) }

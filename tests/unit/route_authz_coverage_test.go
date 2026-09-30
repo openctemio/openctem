@@ -51,7 +51,7 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/api/v1/invitations/", "invitation token IS the authorization"},
 	{"/api/v1/agent/", "agent API-key auth (AuthenticateSource); tenant from key"},
 	{"/api/v1/platform/", "platform agent API-key / self-scoped stats"},
-	{"/api/v1/admin", "platform-admin realm: AdminAuthMiddleware (X-Admin-API-Key) + RequireRole; not tenant-permission-gated"},
+	{"/api/v1/admin", "platform-admin realm: AdminAuthMiddleware (X-Admin-API-Key or console session cookie, RFC-022) + RequireRole; /admin/auth/login|mfa|logout are the public console login steps (rate-limited); not tenant-permission-gated"},
 	{"/scim/v2", "SCIM per-tenant bearer token auth (routes live at /scim/v2, not /api/v1)"},
 	{"/api/v1/scim", "SCIM per-tenant bearer token auth"},
 	{"/api/v1/mcp", "MCP oct_ API-key auth"},
