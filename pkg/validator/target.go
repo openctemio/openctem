@@ -167,8 +167,10 @@ func (v *TargetValidator) ValidateSingleTarget(target string) ValidatedTarget {
 		IsValid:  false,
 	}
 
-	// Sanitize input - remove dangerous characters
-	if containsDangerousChars(target) {
+	// Sanitize input - remove dangerous characters. The brackets of an IPv6
+	// literal ([2001:db8::1]:443, https://[2001:db8::1]/) are the one place a
+	// bracket is legitimate; every other bracket is still refused.
+	if containsDangerousChars(withoutIPv6Brackets(target)) {
 		result.Error = "contains invalid characters"
 		return result
 	}
@@ -265,11 +267,14 @@ func (v *TargetValidator) validateCIDR(target string) ValidatedTarget {
 		return result
 	}
 
-	// Limit CIDR size to prevent abuse
+	// Limit CIDR size to prevent abuse: at most 65536 addresses (/16 for
+	// IPv4, /112 for IPv6). Compared on the prefix length: the address count
+	// of an IPv6 range does not fit in an int (1<<64 is 0), which let ::/0
+	// through as "0 hosts".
 	ones, bits := ipNet.Mask.Size()
-	maxHosts := 1 << (bits - ones)
-	if maxHosts > 65536 { // /16 for IPv4
-		result.Error = fmt.Sprintf("CIDR range too large: %d hosts (max: 65536)", maxHosts)
+	if hostBits := bits - ones; hostBits > maxCIDRHostBits {
+		result.Error = fmt.Sprintf("CIDR range too large: /%d has 2^%d addresses (max: 65536, /%d)",
+			ones, hostBits, bits-maxCIDRHostBits)
 		return result
 	}
 
@@ -298,6 +303,17 @@ func (v *TargetValidator) validateHostPort(original, host, portStr string) Valid
 	if !v.allowLocalhost && isLocalhostHostname(host) {
 		result.Error = errLocalhostNotAllowed
 		return result
+	}
+
+	// An IPv6 host carries brackets ([2001:db8::1]:443); nothing else may.
+	bracketed := strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]")
+	if bracketed {
+		host = host[1 : len(host)-1]
+		result.Value = host
+		if ip := net.ParseIP(host); ip == nil || ip.To4() != nil {
+			result.Error = "invalid host format"
+			return result
+		}
 	}
 
 	// Validate host part (IP or domain)
@@ -452,6 +468,32 @@ func isLocalhostNetwork(ipNet *net.IPNet) bool {
 		}
 	}
 	return false
+}
+
+// maxCIDRHostBits bounds a CIDR target to 2^16 addresses.
+const maxCIDRHostBits = 16
+
+// withoutIPv6Brackets returns target with the brackets of one IPv6 literal
+// removed, when the target starts with one ("[addr]:port") or a URL's host is
+// one ("scheme://[addr]..."). Anything else is returned unchanged, so a
+// bracket anywhere else still counts as a dangerous character.
+func withoutIPv6Brackets(target string) string {
+	prefix, rest := "", target
+	if i := strings.Index(target, "://"); i >= 0 {
+		prefix, rest = target[:i+3], target[i+3:]
+	}
+	if !strings.HasPrefix(rest, "[") {
+		return target
+	}
+	end := strings.Index(rest, "]")
+	if end < 0 {
+		return target
+	}
+	inner := rest[1:end]
+	if ip := net.ParseIP(inner); ip == nil || !strings.Contains(inner, ":") {
+		return target
+	}
+	return prefix + inner + rest[end+1:]
 }
 
 // containsDangerousChars checks for characters that could cause injection.
