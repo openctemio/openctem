@@ -505,6 +505,25 @@ func toTemplateSourceResponse(s *ts.TemplateSource) *TemplateSourceResponse {
 	return resp
 }
 
+// writeSyncError maps a failed force sync to its status: 404 for an unknown
+// source, 400 for a refused request (domain error), 502 when the source
+// itself could not be fetched (it answered 500 before), 500 otherwise.
+func (h *TemplateSourceHandler) writeSyncError(w http.ResponseWriter, id string, err error) {
+	var domainErr *shared.DomainError
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("template source").WriteJSON(w)
+	case errors.As(err, &domainErr):
+		apierror.BadRequest(domainErr.Message).WriteJSON(w)
+	case errors.Is(err, template.ErrSourceFetchFailed):
+		h.logger.Warn("template source fetch failed", "error", err, "source_id", sanitizeLogField(id))
+		apierror.BadGateway("The template source could not be fetched. Check its URL, branch or path, and credentials.").WriteJSON(w)
+	default:
+		h.logger.Error("failed to sync template source", "error", err, "source_id", sanitizeLogField(id))
+		apierror.InternalServerError("failed to sync template source").WriteJSON(w)
+	}
+}
+
 // TemplateSyncResponse represents the response for a template source sync operation.
 type TemplateSyncResponse struct {
 	Success        bool   `json:"success"`
@@ -531,17 +550,7 @@ func (h *TemplateSourceHandler) Sync(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.ForceSync(r.Context(), tenantID, id)
 	if err != nil {
-		if errors.Is(err, shared.ErrNotFound) {
-			apierror.NotFound("template source").WriteJSON(w)
-			return
-		}
-		var domainErr *shared.DomainError
-		if errors.As(err, &domainErr) {
-			apierror.BadRequest(domainErr.Message).WriteJSON(w)
-			return
-		}
-		h.logger.Error("failed to sync template source", "error", err, "source_id", id)
-		apierror.InternalServerError("failed to sync template source").WriteJSON(w)
+		h.writeSyncError(w, id, err)
 		return
 	}
 

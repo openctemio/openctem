@@ -1096,7 +1096,7 @@ func TestHasFullDataAccess_False(t *testing.T) {
 func TestListRoleMembers_Success(t *testing.T) {
 	svc, repo, _ := newTestRoleService()
 	tenantID := role.NewID()
-	roleID := role.NewID()
+	roleID := seedCustomRole(repo, tenantID, "analyst", "Analyst", nil).ID()
 
 	repo.roleMembers = []*role.UserRole{
 		role.NewUserRole(role.NewID(), tenantID, roleID, nil),

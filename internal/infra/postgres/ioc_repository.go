@@ -76,7 +76,7 @@ func (r *IOCRepository) Create(ctx context.Context, ind *ioc.Indicator) error {
 
 // GetByID loads one indicator, tenant-scoped.
 func (r *IOCRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*ioc.Indicator, error) {
-	q := `SELECT ` + iocSelectColumns + ` FROM iocs WHERE tenant_id = $1 AND id = $2`
+	q := `SELECT ` + iocSelectColumns + ` FROM iocs WHERE tenant_id = $1 AND id = $2 AND active = TRUE`
 	row := r.db.QueryRowContext(ctx, q, tenantID.String(), id.String())
 	return scanIndicator(row)
 }
@@ -156,7 +156,8 @@ func (r *IOCRepository) RecordMatch(ctx context.Context, m ioc.Match) error {
 	return nil
 }
 
-// ListByTenant paginates active + inactive indicators for the UI.
+// ListByTenant paginates the tenant's indicators for the UI. A deleted
+// (deactivated) indicator is not listed; its match history is kept.
 func (r *IOCRepository) ListByTenant(ctx context.Context, tenantID shared.ID, limit, offset int) ([]*ioc.Indicator, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -165,7 +166,7 @@ func (r *IOCRepository) ListByTenant(ctx context.Context, tenantID shared.ID, li
 		offset = 0
 	}
 	q := `SELECT ` + iocSelectColumns + `
-		FROM iocs WHERE tenant_id = $1
+		FROM iocs WHERE tenant_id = $1 AND active = TRUE
 		ORDER BY last_seen_at DESC LIMIT $2 OFFSET $3`
 	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), limit, offset)
 	if err != nil {
@@ -367,9 +368,12 @@ func scanMatchDetail(sc iocRowScanner) (ioc.MatchDetail, error) {
 	return md, nil
 }
 
-// Deactivate flips active=false. Soft-delete preserves history.
+// Deactivate is the delete: it flips active=false so the match history
+// (ioc_matches, ON DELETE CASCADE) survives. A deactivated indicator is gone
+// for every read (GetByID, ListByTenant, correlation) and a second delete is
+// not found. Re-creating the same value reactivates it.
 func (r *IOCRepository) Deactivate(ctx context.Context, tenantID, id shared.ID) error {
-	const q = `UPDATE iocs SET active = FALSE, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`
+	const q = `UPDATE iocs SET active = FALSE, updated_at = NOW() WHERE tenant_id = $1 AND id = $2 AND active = TRUE`
 	res, err := r.db.ExecContext(ctx, q, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("deactivate ioc: %w", err)

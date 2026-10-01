@@ -300,7 +300,7 @@ func (e *ExposureEvent) MarkSeen() {
 // Resolve marks the exposure as resolved.
 func (e *ExposureEvent) Resolve(resolvedBy shared.ID, notes string) error {
 	if !e.state.CanTransitionTo(StateResolved) {
-		return fmt.Errorf("%w: cannot transition from %s to resolved", shared.ErrValidation, e.state)
+		return fmt.Errorf("%w: %w: cannot transition from %s to resolved", shared.ErrValidation, ErrInvalidStateTransition, e.state)
 	}
 	now := time.Now().UTC()
 	e.state = StateResolved
@@ -314,7 +314,7 @@ func (e *ExposureEvent) Resolve(resolvedBy shared.ID, notes string) error {
 // Accept marks the exposure as accepted risk.
 func (e *ExposureEvent) Accept(acceptedBy shared.ID, notes string) error {
 	if !e.state.CanTransitionTo(StateAccepted) {
-		return fmt.Errorf("%w: cannot transition from %s to accepted", shared.ErrValidation, e.state)
+		return fmt.Errorf("%w: %w: cannot transition from %s to accepted", shared.ErrValidation, ErrInvalidStateTransition, e.state)
 	}
 	now := time.Now().UTC()
 	e.state = StateAccepted
@@ -328,7 +328,7 @@ func (e *ExposureEvent) Accept(acceptedBy shared.ID, notes string) error {
 // MarkFalsePositive marks the exposure as a false positive.
 func (e *ExposureEvent) MarkFalsePositive(markedBy shared.ID, notes string) error {
 	if !e.state.CanTransitionTo(StateFalsePositive) {
-		return fmt.Errorf("%w: cannot transition from %s to false_positive", shared.ErrValidation, e.state)
+		return fmt.Errorf("%w: %w: cannot transition from %s to false_positive", shared.ErrValidation, ErrInvalidStateTransition, e.state)
 	}
 	now := time.Now().UTC()
 	e.state = StateFalsePositive
@@ -342,7 +342,7 @@ func (e *ExposureEvent) MarkFalsePositive(markedBy shared.ID, notes string) erro
 // Reactivate marks the exposure as active again.
 func (e *ExposureEvent) Reactivate() error {
 	if !e.state.CanTransitionTo(StateActive) {
-		return fmt.Errorf("%w: cannot transition from %s to active", shared.ErrValidation, e.state)
+		return fmt.Errorf("%w: %w: cannot transition from %s to active", shared.ErrValidation, ErrInvalidStateTransition, e.state)
 	}
 	e.state = StateActive
 	e.resolvedAt = nil

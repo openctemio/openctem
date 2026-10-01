@@ -701,6 +701,10 @@ func (h *LocalAuthHandler) AcceptInvitationWithRefresh(w http.ResponseWriter, r 
 		InvitationToken: invitationToken,
 	})
 	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			apierror.NotFound("Invitation").WriteJSON(w)
+			return
+		}
 		h.handleAuthError(w, err)
 		return
 	}
@@ -1245,6 +1249,10 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.SafeConflict(err).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.SafeBadRequest(err).WriteJSON(w)
+	case errors.Is(err, shared.ErrNotFound):
+		// A lookup miss (e.g. an unknown invitation token) is a client
+		// error, not a server one.
+		apierror.NotFound("").WriteJSON(w)
 	default:
 		h.logger.Error("auth error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

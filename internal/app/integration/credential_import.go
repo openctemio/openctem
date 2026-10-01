@@ -1248,7 +1248,7 @@ func (s *CredentialImportService) MarkCredentialFalsePositive(ctx context.Contex
 func (s *CredentialImportService) ReactivateCredential(ctx context.Context, tenantID, credentialID string) (*CredentialItem, error) {
 	parsedID, err := shared.IDFromString(credentialID)
 	if err != nil {
-		return nil, shared.ErrNotFound
+		return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
 	}
 
 	event, err := s.exposureRepo.GetByID(ctx, parsedID)
@@ -1296,7 +1296,7 @@ func (s *CredentialImportService) ReactivateCredential(ctx context.Context, tena
 func (s *CredentialImportService) changeCredentialState(ctx context.Context, tenantID, credentialID, userID string, newState exposure.State, notes string) (*CredentialItem, error) {
 	parsedID, err := shared.IDFromString(credentialID)
 	if err != nil {
-		return nil, shared.ErrNotFound
+		return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
 	}
 
 	event, err := s.exposureRepo.GetByID(ctx, parsedID)

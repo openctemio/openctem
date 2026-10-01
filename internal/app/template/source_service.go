@@ -2,6 +2,7 @@ package template
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -442,6 +443,11 @@ func (s *SourceService) UpdateSyncStatus(ctx context.Context, source *ts.Templat
 	return s.repo.UpdateSyncStatus(ctx, source)
 }
 
+// ErrSourceFetchFailed is returned by ForceSync when the template source
+// itself could not be fetched (the upstream server, repository or bucket
+// failed or refused the request). It is not a server error.
+var ErrSourceFetchFailed = errors.New("template source could not be fetched")
+
 // ForceSync triggers an immediate sync for a specific source.
 // This is used for manual "force sync" requests from the API.
 func (s *SourceService) ForceSync(ctx context.Context, tenantID, sourceID string) (*SyncResult, error) {
@@ -482,7 +488,7 @@ func (s *SourceService) ForceSync(ctx context.Context, tenantID, sourceID string
 	// Perform sync
 	result, err := s.templateSyncer.SyncSource(ctx, source)
 	if err != nil {
-		return nil, fmt.Errorf("sync failed: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrSourceFetchFailed, err)
 	}
 
 	// Record metrics

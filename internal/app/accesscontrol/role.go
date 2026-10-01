@@ -969,6 +969,11 @@ func (s *RoleService) ListRoleMembers(ctx context.Context, tenantID, roleID stri
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
+	// Another tenant's role is not found here (it used to list as empty).
+	if _, err := s.GetRole(ctx, tenantID, roleID); err != nil {
+		return nil, err
+	}
+
 	return s.roleRepo.ListRoleMembers(ctx, tid, rid)
 }
 
