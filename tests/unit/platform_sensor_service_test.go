@@ -1,0 +1,1209 @@
+package unit
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/pkg/domain/sensor"
+	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
+)
+
+// =============================================================================
+// Mock Sensor Repository
+// =============================================================================
+
+// mockSensorRepo implements sensor.Repository for testing.
+type mockSensorRepo struct {
+	sensors      map[shared.ID]*sensor.Sensor
+	apiKeyMap    map[string]*sensor.Sensor // hash -> sensor
+	createErr    error
+	getByIDErr   error
+	updateErr    error
+	deleteErr    error
+	listResult   pagination.Result[*sensor.Sensor]
+	listErr      error
+	findAvailErr error
+	findAvail    []*sensor.Sensor
+	claimJobErr  error
+
+	// Call tracking
+	createCalls     int
+	updateCalls     int
+	lastSeenCalls   int
+	claimJobCalls   int
+	releaseJobCalls int
+}
+
+func newMockSensorRepo() *mockSensorRepo {
+	return &mockSensorRepo{
+		sensors:   make(map[shared.ID]*sensor.Sensor),
+		apiKeyMap: make(map[string]*sensor.Sensor),
+	}
+}
+
+func (m *mockSensorRepo) Create(_ context.Context, a *sensor.Sensor) error {
+	m.createCalls++
+	if m.createErr != nil {
+		return m.createErr
+	}
+	m.sensors[a.ID] = a
+	if a.APIKeyHash != "" {
+		m.apiKeyMap[a.APIKeyHash] = a
+	}
+	return nil
+}
+
+func (m *mockSensorRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
+	return len(m.sensors), nil
+}
+
+func (m *mockSensorRepo) GetByID(_ context.Context, id shared.ID) (*sensor.Sensor, error) {
+	if m.getByIDErr != nil {
+		return nil, m.getByIDErr
+	}
+	a, ok := m.sensors[id]
+	if !ok {
+		return nil, sensor.ErrSensorNotFound
+	}
+	return a, nil
+}
+
+func (m *mockSensorRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*sensor.Sensor, error) {
+	a, ok := m.sensors[id]
+	if !ok {
+		return nil, sensor.ErrSensorNotFound
+	}
+	if a.TenantID == nil || *a.TenantID != tenantID {
+		return nil, sensor.ErrSensorNotFound
+	}
+	return a, nil
+}
+
+func (m *mockSensorRepo) GetByAPIKeyHash(_ context.Context, hash string) (*sensor.Sensor, error) {
+	a, ok := m.apiKeyMap[hash]
+	if !ok {
+		return nil, sensor.ErrInvalidAPIKey
+	}
+	return a, nil
+}
+
+func (m *mockSensorRepo) List(_ context.Context, _ sensor.Filter, _ pagination.Pagination) (pagination.Result[*sensor.Sensor], error) {
+	if m.listErr != nil {
+		return pagination.Result[*sensor.Sensor]{}, m.listErr
+	}
+	if m.listResult.Data != nil {
+		return m.listResult, nil
+	}
+	// Default: return all sensors
+	var items []*sensor.Sensor
+	for _, a := range m.sensors {
+		items = append(items, a)
+	}
+	return pagination.Result[*sensor.Sensor]{
+		Data:    items,
+		Total:   int64(len(items)),
+		Page:    1,
+		PerPage: 20,
+	}, nil
+}
+
+func (m *mockSensorRepo) Update(_ context.Context, a *sensor.Sensor) error {
+	m.updateCalls++
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	m.sensors[a.ID] = a
+	return nil
+}
+
+func (m *mockSensorRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
+	return nil
+}
+
+func (m *mockSensorRepo) UpdateHeartbeat(_ context.Context, id shared.ID, hb sensor.HeartbeatUpdate) (bool, error) {
+	m.updateCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	a, ok := m.sensors[id]
+	if !ok || a.Status != sensor.SensorStatusActive {
+		return false, nil
+	}
+	if hb.Version != "" {
+		a.Version = hb.Version
+	}
+	if hb.Hostname != "" {
+		a.Hostname = hb.Hostname
+	}
+	a.CPUPercent = hb.CPUPercent
+	a.MemoryPercent = hb.MemoryPercent
+	a.LoadScore = hb.LoadScore
+	a.UpdateLastSeen()
+	return true, nil
+}
+
+func (m *mockSensorRepo) UpdateAPIKey(_ context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
+	m.updateCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	a, ok := m.sensors[id]
+	if !ok || (requireActive && a.Status != sensor.SensorStatusActive) {
+		return false, nil
+	}
+	a.SetAPIKeyWithExpiry(hash, prefix, expiresAt)
+	return true, nil
+}
+
+func (m *mockSensorRepo) Delete(_ context.Context, id shared.ID) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	delete(m.sensors, id)
+	return nil
+}
+
+func (m *mockSensorRepo) UpdateLastSeen(_ context.Context, id shared.ID) error {
+	m.lastSeenCalls++
+	return nil
+}
+
+func (m *mockSensorRepo) IncrementStats(_ context.Context, _ shared.ID, _, _, _ int64) error {
+	return nil
+}
+
+func (m *mockSensorRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
+	return m.findAvail, m.findAvailErr
+}
+
+func (m *mockSensorRepo) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
+	return m.findAvail, m.findAvailErr
+}
+
+func (m *mockSensorRepo) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*sensor.Sensor, error) {
+	if len(m.findAvail) > 0 {
+		return m.findAvail[0], nil
+	}
+	return nil, sensor.ErrNoPlatformSensorAvailable
+}
+
+func (m *mockSensorRepo) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockSensorRepo) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
+	return m.findAvail, m.findAvailErr
+}
+
+func (m *mockSensorRepo) ClaimJob(_ context.Context, _ shared.ID) error {
+	m.claimJobCalls++
+	return m.claimJobErr
+}
+
+func (m *mockSensorRepo) ReleaseJob(_ context.Context, _ shared.ID) error {
+	m.releaseJobCalls++
+	return nil
+}
+
+func (m *mockSensorRepo) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
+	return nil
+}
+
+func (m *mockSensorRepo) MarkStaleSensorsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
+	return nil, nil
+}
+
+func (m *mockSensorRepo) GetSensorsOfflineSince(_ context.Context, _ time.Time) ([]*sensor.Sensor, error) {
+	return nil, nil
+}
+
+func (m *mockSensorRepo) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockSensorRepo) HasSensorForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
+	return false, nil
+}
+
+func (m *mockSensorRepo) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+	return []string{}, nil
+}
+
+func (m *mockSensorRepo) HasSensorForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
+	return false, nil
+}
+
+func (m *mockSensorRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
+	return &sensor.PlatformSensorStatsResult{
+		TierBreakdown: make(map[string]sensor.TierBreakdown),
+	}, nil
+}
+
+func (m *mockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
+	return &sensor.TenantSensorStats{
+		ByStatus: make(map[string]int),
+		ByHealth: make(map[string]int),
+		ByType:   make(map[string]int),
+		ByMode:   make(map[string]int),
+	}, nil
+}
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+func newTestSensorService(repo *mockSensorRepo) *app.SensorService {
+	log := logger.NewNop()
+	return app.NewSensorService(repo, nil, log)
+}
+
+func createTestSensor(t *testing.T, tenantID shared.ID, name string) *sensor.Sensor {
+	t.Helper()
+	a, err := sensor.NewSensor(tenantID, name, sensor.SensorTypeWorker, "test agent", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeDaemon)
+	if err != nil {
+		t.Fatalf("failed to create test agent: %v", err)
+	}
+	return a
+}
+
+// =============================================================================
+// Tests for CreateSensor (RegisterSensor equivalent)
+// =============================================================================
+
+func TestCreateSensor_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	input := app.CreateSensorInput{
+		TenantID:      tenantID.String(),
+		Name:          "Test Worker Agent",
+		Type:          "worker",
+		Description:   "A test worker agent",
+		Capabilities:  []string{"sast", "sca"},
+		Tools:         []string{"semgrep", "trivy"},
+		ExecutionMode: "daemon",
+	}
+
+	output, err := svc.CreateSensor(context.Background(), input)
+	if err != nil {
+		t.Fatalf("CreateAgent failed: %v", err)
+	}
+
+	if output == nil {
+		t.Fatal("Expected non-nil output")
+	}
+	if output.Sensor == nil {
+		t.Fatal("Expected non-nil agent")
+	}
+	if output.APIKey == "" {
+		t.Error("Expected non-empty API key")
+	}
+	if output.Sensor.Name != "Test Worker Agent" {
+		t.Errorf("Expected name 'Test Worker Agent', got '%s'", output.Sensor.Name)
+	}
+	if output.Sensor.Type != sensor.SensorTypeWorker {
+		t.Errorf("Expected type worker, got %s", output.Sensor.Type)
+	}
+	if output.Sensor.Status != sensor.SensorStatusActive {
+		t.Errorf("Expected status active, got %s", output.Sensor.Status)
+	}
+	if output.Sensor.Health != sensor.SensorHealthUnknown {
+		t.Errorf("Expected health unknown, got %s", output.Sensor.Health)
+	}
+
+	// Verify repo was called
+	if repo.createCalls != 1 {
+		t.Errorf("Expected 1 create call, got %d", repo.createCalls)
+	}
+}
+
+func TestCreateSensor_InvalidTenantID(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+
+	input := app.CreateSensorInput{
+		TenantID: "not-a-uuid",
+		Name:     "Bad Agent",
+		Type:     "worker",
+	}
+
+	_, err := svc.CreateSensor(context.Background(), input)
+	if err == nil {
+		t.Fatal("Expected error for invalid tenant ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("Expected validation error, got: %v", err)
+	}
+}
+
+func TestCreateSensor_EmptyName(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	input := app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "",
+		Type:     "worker",
+	}
+
+	_, err := svc.CreateSensor(context.Background(), input)
+	if err == nil {
+		t.Fatal("Expected error for empty name")
+	}
+}
+
+func TestCreateSensor_RepoError(t *testing.T) {
+	repo := newMockSensorRepo()
+	repo.createErr = errors.New("database error")
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	input := app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "Failing Agent",
+		Type:     "worker",
+	}
+
+	_, err := svc.CreateSensor(context.Background(), input)
+	if err == nil {
+		t.Fatal("Expected error when repo fails")
+	}
+}
+
+func TestCreateSensor_WithMaxConcurrentJobs(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	input := app.CreateSensorInput{
+		TenantID:          tenantID.String(),
+		Name:              "Capacity Agent",
+		Type:              "worker",
+		MaxConcurrentJobs: 10,
+	}
+
+	output, err := svc.CreateSensor(context.Background(), input)
+	if err != nil {
+		t.Fatalf("CreateAgent failed: %v", err)
+	}
+
+	if output.Sensor.MaxConcurrentJobs != 10 {
+		t.Errorf("Expected max concurrent jobs 10, got %d", output.Sensor.MaxConcurrentJobs)
+	}
+}
+
+func TestCreateSensor_DefaultExecutionMode(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	// Worker should default to daemon mode
+	input := app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "Default Mode Agent",
+		Type:     "worker",
+		// ExecutionMode not set
+	}
+
+	output, err := svc.CreateSensor(context.Background(), input)
+	if err != nil {
+		t.Fatalf("CreateAgent failed: %v", err)
+	}
+
+	if output.Sensor.ExecutionMode != sensor.ExecutionModeDaemon {
+		t.Errorf("Expected default execution mode 'daemon' for worker, got '%s'", output.Sensor.ExecutionMode)
+	}
+}
+
+// =============================================================================
+// Tests for GetSensor
+// =============================================================================
+
+func TestGetSensor_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Get Me Agent")
+	repo.sensors[a.ID] = a
+
+	result, err := svc.GetSensor(context.Background(), tenantID.String(), a.ID.String())
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+
+	if result.Name != "Get Me Agent" {
+		t.Errorf("Expected name 'Get Me Agent', got '%s'", result.Name)
+	}
+}
+
+func TestGetSensor_NotFound(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	_, err := svc.GetSensor(context.Background(), tenantID.String(), shared.NewID().String())
+	if err == nil {
+		t.Fatal("Expected error for non-existent agent")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got: %v", err)
+	}
+}
+
+func TestGetSensor_InvalidTenantID(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+
+	_, err := svc.GetSensor(context.Background(), "not-a-uuid", shared.NewID().String())
+	if err == nil {
+		t.Fatal("Expected error for invalid tenant ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("Expected validation error, got: %v", err)
+	}
+}
+
+func TestGetSensor_InvalidSensorID(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	_, err := svc.GetSensor(context.Background(), tenantID.String(), "not-a-uuid")
+	if err == nil {
+		t.Fatal("Expected error for invalid agent ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("Expected validation error, got: %v", err)
+	}
+}
+
+func TestGetSensor_WrongTenant(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+	otherTenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Wrong Tenant Agent")
+	repo.sensors[a.ID] = a
+
+	_, err := svc.GetSensor(context.Background(), otherTenantID.String(), a.ID.String())
+	if err == nil {
+		t.Fatal("Expected error for wrong tenant")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got: %v", err)
+	}
+}
+
+// =============================================================================
+// Tests for ListSensors
+// =============================================================================
+
+func TestListSensors_WithFilters(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	// Add sensors
+	for _, name := range []string{"Agent Alpha", "Agent Beta", "Agent Gamma"} {
+		a := createTestSensor(t, tenantID, name)
+		repo.sensors[a.ID] = a
+	}
+
+	result, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID: tenantID.String(),
+		Page:     1,
+		PerPage:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListAgents failed: %v", err)
+	}
+
+	if len(result.Data) != 3 {
+		t.Errorf("Expected 3 agents, got %d", len(result.Data))
+	}
+}
+
+func TestListSensors_InvalidTenantID(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+
+	_, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID: "not-a-uuid",
+	})
+	if err == nil {
+		t.Fatal("Expected error for invalid tenant ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("Expected validation error, got: %v", err)
+	}
+}
+
+func TestListSensors_EmptyResult(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	result, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID: tenantID.String(),
+		Page:     1,
+		PerPage:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListAgents failed: %v", err)
+	}
+
+	if len(result.Data) != 0 {
+		t.Errorf("Expected 0 agents, got %d", len(result.Data))
+	}
+}
+
+// =============================================================================
+// Tests for UpdateSensor (UpdateSensorStatus equivalent)
+// =============================================================================
+
+func TestUpdateSensor_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Update Me")
+	repo.sensors[a.ID] = a
+
+	input := app.UpdateSensorInput{
+		TenantID:    tenantID.String(),
+		SensorID:    a.ID.String(),
+		Name:        "Updated Name",
+		Description: "Updated description",
+	}
+
+	result, err := svc.UpdateSensor(context.Background(), input)
+	if err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+
+	if result.Name != "Updated Name" {
+		t.Errorf("Expected name 'Updated Name', got '%s'", result.Name)
+	}
+	if result.Description != "Updated description" {
+		t.Errorf("Expected description 'Updated description', got '%s'", result.Description)
+	}
+}
+
+func TestUpdateSensor_NotFound(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	input := app.UpdateSensorInput{
+		TenantID: tenantID.String(),
+		SensorID: shared.NewID().String(),
+		Name:     "Updated",
+	}
+
+	_, err := svc.UpdateSensor(context.Background(), input)
+	if err == nil {
+		t.Fatal("Expected error for non-existent agent")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got: %v", err)
+	}
+}
+
+func TestUpdateSensor_ChangeStatus(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Status Agent")
+	repo.sensors[a.ID] = a
+
+	// Disable sensor
+	input := app.UpdateSensorInput{
+		TenantID: tenantID.String(),
+		SensorID: a.ID.String(),
+		Status:   "disabled",
+	}
+
+	result, err := svc.UpdateSensor(context.Background(), input)
+	if err != nil {
+		t.Fatalf("UpdateAgent (disable) failed: %v", err)
+	}
+
+	if result.Status != sensor.SensorStatusDisabled {
+		t.Errorf("Expected status disabled, got %s", result.Status)
+	}
+}
+
+func TestUpdateSensor_ChangeMaxConcurrentJobs(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Capacity Agent")
+	repo.sensors[a.ID] = a
+
+	maxJobs := 20
+	input := app.UpdateSensorInput{
+		TenantID:          tenantID.String(),
+		SensorID:          a.ID.String(),
+		MaxConcurrentJobs: &maxJobs,
+	}
+
+	result, err := svc.UpdateSensor(context.Background(), input)
+	if err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+
+	if result.MaxConcurrentJobs != 20 {
+		t.Errorf("Expected max concurrent jobs 20, got %d", result.MaxConcurrentJobs)
+	}
+}
+
+// =============================================================================
+// Tests for DeleteSensor
+// =============================================================================
+
+func TestDeleteSensor_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Delete Me")
+	repo.sensors[a.ID] = a
+
+	err := svc.DeleteSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err != nil {
+		t.Fatalf("DeleteAgent failed: %v", err)
+	}
+
+	// Verify sensor was deleted
+	if _, exists := repo.sensors[a.ID]; exists {
+		t.Error("Expected agent to be deleted")
+	}
+}
+
+func TestDeleteSensor_NotFound(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	err := svc.DeleteSensor(context.Background(), tenantID.String(), shared.NewID().String(), nil)
+	if err == nil {
+		t.Fatal("Expected error for non-existent agent")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("Expected ErrNotFound, got: %v", err)
+	}
+}
+
+func TestDeleteSensor_InvalidTenantID(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+
+	err := svc.DeleteSensor(context.Background(), "not-a-uuid", shared.NewID().String(), nil)
+	if err == nil {
+		t.Fatal("Expected error for invalid tenant ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("Expected validation error, got: %v", err)
+	}
+}
+
+// =============================================================================
+// Tests for ActivateSensor
+// =============================================================================
+
+func TestActivateSensor_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Disabled Agent")
+	a.Disable("maintenance")
+	repo.sensors[a.ID] = a
+
+	result, err := svc.ActivateSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err != nil {
+		t.Fatalf("ActivateAgent failed: %v", err)
+	}
+
+	if result.Status != sensor.SensorStatusActive {
+		t.Errorf("Expected status active, got %s", result.Status)
+	}
+}
+
+func TestActivateSensor_RevokedSensor(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Revoked Agent")
+	a.Revoke("compromised")
+	repo.sensors[a.ID] = a
+
+	_, err := svc.ActivateSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err == nil {
+		t.Fatal("Expected error when activating revoked agent")
+	}
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("Expected ErrForbidden, got: %v", err)
+	}
+}
+
+func TestActivateSensor_NotFound(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	_, err := svc.ActivateSensor(context.Background(), tenantID.String(), shared.NewID().String(), nil)
+	if err == nil {
+		t.Fatal("Expected error for non-existent agent")
+	}
+}
+
+// =============================================================================
+// Tests for DisableSensor
+// =============================================================================
+
+func TestDisableSensor_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Active Agent")
+	repo.sensors[a.ID] = a
+
+	result, err := svc.DisableSensor(context.Background(), tenantID.String(), a.ID.String(), "maintenance window", nil)
+	if err != nil {
+		t.Fatalf("DisableAgent failed: %v", err)
+	}
+
+	if result.Status != sensor.SensorStatusDisabled {
+		t.Errorf("Expected status disabled, got %s", result.Status)
+	}
+	if result.StatusMessage != "maintenance window" {
+		t.Errorf("Expected message 'maintenance window', got '%s'", result.StatusMessage)
+	}
+}
+
+func TestDisableSensor_DefaultReason(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Default Reason Agent")
+	repo.sensors[a.ID] = a
+
+	result, err := svc.DisableSensor(context.Background(), tenantID.String(), a.ID.String(), "", nil)
+	if err != nil {
+		t.Fatalf("DisableAgent failed: %v", err)
+	}
+
+	if result.StatusMessage != "Disabled by administrator" {
+		t.Errorf("Expected default reason, got '%s'", result.StatusMessage)
+	}
+}
+
+// =============================================================================
+// Tests for RevokeSensor
+// =============================================================================
+
+func TestRevokeSensor_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Revoke Me")
+	repo.sensors[a.ID] = a
+
+	result, err := svc.RevokeSensor(context.Background(), tenantID.String(), a.ID.String(), "compromised", nil)
+	if err != nil {
+		t.Fatalf("RevokeAgent failed: %v", err)
+	}
+
+	if result.Status != sensor.SensorStatusRevoked {
+		t.Errorf("Expected status revoked, got %s", result.Status)
+	}
+}
+
+// =============================================================================
+// Tests for AuthenticateByAPIKey
+// =============================================================================
+
+func TestAuthenticateByAPIKey_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Auth Agent")
+	a.SetAPIKey("testhash123", "rda_test")
+	repo.sensors[a.ID] = a
+	repo.apiKeyMap["testhash123"] = a
+
+	// We can't test the actual API key flow since hash computation
+	// is internal, but we can test the repo interaction
+	_, err := svc.AuthenticateByAPIKey(context.Background(), "some-key")
+	if err == nil {
+		// If the hash doesn't match, it's expected to fail
+		// This test verifies the authentication flow handles the error properly
+		t.Log("Authentication succeeded (unexpected, but not necessarily wrong)")
+	}
+}
+
+func TestAuthenticateByAPIKey_DisabledSensor(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Disabled Auth Agent")
+	a.Disable("disabled")
+	// We need to set the hash for a known key so the lookup succeeds
+	a.SetAPIKey("knownhash", "rda_test")
+	repo.sensors[a.ID] = a
+	repo.apiKeyMap["knownhash"] = a
+
+	// The API key hash won't match, but we test that disabled sensors
+	// would be rejected. The actual test requires matching the hash.
+	_, err := svc.AuthenticateByAPIKey(context.Background(), "wrong-key")
+	if err == nil {
+		t.Fatal("Expected error for wrong API key")
+	}
+}
+
+// =============================================================================
+// Tests for Heartbeat
+// =============================================================================
+
+func TestHeartbeat_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Heartbeat Agent")
+	repo.sensors[a.ID] = a
+
+	input := app.SensorHeartbeatInput{
+		SensorID: a.ID,
+		Version:  "1.0.0",
+		Hostname: "test-host",
+	}
+
+	err := svc.Heartbeat(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Heartbeat failed: %v", err)
+	}
+
+	// Verify sensor was updated
+	updated := repo.sensors[a.ID]
+	if updated.Version != "1.0.0" {
+		t.Errorf("Expected version '1.0.0', got '%s'", updated.Version)
+	}
+	if updated.Hostname != "test-host" {
+		t.Errorf("Expected hostname 'test-host', got '%s'", updated.Hostname)
+	}
+	if updated.Health != sensor.SensorHealthOnline {
+		t.Errorf("Expected health 'online', got '%s'", updated.Health)
+	}
+}
+
+func TestHeartbeat_SensorNotFound(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+
+	input := app.SensorHeartbeatInput{
+		SensorID: shared.NewID(),
+	}
+
+	err := svc.Heartbeat(context.Background(), input)
+	if err == nil {
+		t.Fatal("Expected error for non-existent agent")
+	}
+}
+
+// =============================================================================
+// Tests for FindAvailableSensors
+// =============================================================================
+
+func TestFindAvailableSensors_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a1 := createTestSensor(t, tenantID, "Available Agent 1")
+	a2 := createTestSensor(t, tenantID, "Available Agent 2")
+	repo.findAvail = []*sensor.Sensor{a1, a2}
+
+	sensors, err := svc.FindAvailableSensors(context.Background(), tenantID, []string{"sast"}, "semgrep")
+	if err != nil {
+		t.Fatalf("FindAvailableAgents failed: %v", err)
+	}
+
+	if len(sensors) != 2 {
+		t.Errorf("Expected 2 available agents, got %d", len(sensors))
+	}
+}
+
+func TestFindAvailableSensors_NoSensors(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	repo.findAvail = []*sensor.Sensor{}
+
+	sensors, err := svc.FindAvailableSensors(context.Background(), tenantID, []string{"sast"}, "nuclei")
+	if err != nil {
+		t.Fatalf("FindAvailableAgents failed: %v", err)
+	}
+
+	if len(sensors) != 0 {
+		t.Errorf("Expected 0 agents, got %d", len(sensors))
+	}
+}
+
+// =============================================================================
+// Tests for ClaimJob / ReleaseJob
+// =============================================================================
+
+func TestClaimJob_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	sensorID := shared.NewID()
+
+	err := svc.ClaimJob(context.Background(), sensorID)
+	if err != nil {
+		t.Fatalf("ClaimJob failed: %v", err)
+	}
+
+	if repo.claimJobCalls != 1 {
+		t.Errorf("Expected 1 claim job call, got %d", repo.claimJobCalls)
+	}
+}
+
+func TestClaimJob_Error(t *testing.T) {
+	repo := newMockSensorRepo()
+	repo.claimJobErr = sensor.ErrSensorNoCapacity
+	svc := newTestSensorService(repo)
+	sensorID := shared.NewID()
+
+	err := svc.ClaimJob(context.Background(), sensorID)
+	if err == nil {
+		t.Fatal("Expected error when agent has no capacity")
+	}
+	if !errors.Is(err, sensor.ErrSensorNoCapacity) {
+		t.Errorf("Expected ErrAgentNoCapacity, got: %v", err)
+	}
+}
+
+func TestReleaseJob_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	sensorID := shared.NewID()
+
+	err := svc.ReleaseJob(context.Background(), sensorID)
+	if err != nil {
+		t.Fatalf("ReleaseJob failed: %v", err)
+	}
+
+	if repo.releaseJobCalls != 1 {
+		t.Errorf("Expected 1 release job call, got %d", repo.releaseJobCalls)
+	}
+}
+
+// =============================================================================
+// Tests for RegenerateAPIKey
+// =============================================================================
+
+func TestRegenerateAPIKey_Success(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	a := createTestSensor(t, tenantID, "Regen Key Agent")
+	a.SetAPIKey("oldhash", "rda_old")
+	repo.sensors[a.ID] = a
+
+	newKey, err := svc.RegenerateAPIKey(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err != nil {
+		t.Fatalf("RegenerateAPIKey failed: %v", err)
+	}
+
+	if newKey == "" {
+		t.Error("Expected non-empty new API key")
+	}
+
+	// Verify sensor was updated with new key hash
+	updated := repo.sensors[a.ID]
+	if updated.APIKeyHash == "oldhash" {
+		t.Error("Expected API key hash to be different from old hash")
+	}
+}
+
+func TestRegenerateAPIKey_SensorNotFound(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+
+	_, err := svc.RegenerateAPIKey(context.Background(), tenantID.String(), shared.NewID().String(), nil)
+	if err == nil {
+		t.Fatal("Expected error for non-existent agent")
+	}
+}
+
+// =============================================================================
+// Tests for RegistrationToken Entity
+// =============================================================================
+
+func TestRegistrationToken_CanRegister_Active(t *testing.T) {
+	tenantID := shared.NewID()
+	token, err := sensor.NewRegistrationToken(tenantID, "Test Token", sensor.SensorTypeWorker, nil, nil)
+	if err != nil {
+		t.Fatalf("NewRegistrationToken failed: %v", err)
+	}
+
+	if !token.IsValid() {
+		t.Error("New token should be valid")
+	}
+
+	if err := token.CanRegister(); err != nil {
+		t.Errorf("Active token should be registerable: %v", err)
+	}
+}
+
+func TestRegistrationToken_CanRegister_Expired(t *testing.T) {
+	tenantID := shared.NewID()
+	past := time.Now().Add(-time.Hour)
+	token, err := sensor.NewRegistrationToken(tenantID, "Expired Token", sensor.SensorTypeWorker, nil, &past)
+	if err != nil {
+		t.Fatalf("NewRegistrationToken failed: %v", err)
+	}
+
+	if token.IsValid() {
+		t.Error("Expired token should not be valid")
+	}
+
+	if !token.IsExpired() {
+		t.Error("Token should be expired")
+	}
+
+	err = token.CanRegister()
+	if err == nil {
+		t.Fatal("Expected error for expired token")
+	}
+}
+
+func TestRegistrationToken_CanRegister_Exhausted(t *testing.T) {
+	tenantID := shared.NewID()
+	maxUses := 2
+	token, err := sensor.NewRegistrationToken(tenantID, "Limited Token", sensor.SensorTypeWorker, &maxUses, nil)
+	if err != nil {
+		t.Fatalf("NewRegistrationToken failed: %v", err)
+	}
+
+	// Use up the token
+	token.IncrementUsage()
+	token.IncrementUsage()
+
+	if token.IsValid() {
+		t.Error("Exhausted token should not be valid")
+	}
+
+	if !token.IsExhausted() {
+		t.Error("Token should be exhausted")
+	}
+
+	err = token.CanRegister()
+	if err == nil {
+		t.Fatal("Expected error for exhausted token")
+	}
+}
+
+func TestRegistrationToken_CanRegister_Inactive(t *testing.T) {
+	tenantID := shared.NewID()
+	token, err := sensor.NewRegistrationToken(tenantID, "Inactive Token", sensor.SensorTypeWorker, nil, nil)
+	if err != nil {
+		t.Fatalf("NewRegistrationToken failed: %v", err)
+	}
+
+	token.Deactivate()
+
+	if token.IsValid() {
+		t.Error("Deactivated token should not be valid")
+	}
+
+	err = token.CanRegister()
+	if err == nil {
+		t.Fatal("Expected error for inactive token")
+	}
+}
+
+// =============================================================================
+// Tests for Sensor Entity
+// =============================================================================
+
+func TestSensor_HasCapacity(t *testing.T) {
+	tenantID := shared.NewID()
+	a := createTestSensor(t, tenantID, "Capacity Test")
+	a.SetMaxConcurrentJobs(5)
+	a.CurrentJobs = 3
+
+	if !a.HasCapacity() {
+		t.Error("Agent with 3/5 jobs should have capacity")
+	}
+
+	a.CurrentJobs = 5
+	if a.HasCapacity() {
+		t.Error("Agent with 5/5 jobs should not have capacity")
+	}
+}
+
+func TestSensor_AvailableSlots(t *testing.T) {
+	tenantID := shared.NewID()
+	a := createTestSensor(t, tenantID, "Slots Test")
+	a.SetMaxConcurrentJobs(5)
+	a.CurrentJobs = 2
+
+	if a.AvailableSlots() != 3 {
+		t.Errorf("Expected 3 available slots, got %d", a.AvailableSlots())
+	}
+}
+
+func TestSensor_MatchesRequirements(t *testing.T) {
+	tenantID := shared.NewID()
+	a := createTestSensor(t, tenantID, "Requirements Test")
+	// Has capabilities: ["sast"], tools: ["semgrep"]
+
+	if !a.MatchesRequirements([]string{"sast"}, "semgrep") {
+		t.Error("Agent should match sast + semgrep requirements")
+	}
+
+	if a.MatchesRequirements([]string{"dast"}, "nuclei") {
+		t.Error("Agent should not match dast + nuclei requirements")
+	}
+
+	if a.MatchesRequirements([]string{"sast"}, "trivy") {
+		t.Error("Agent should not match sast + trivy (wrong tool)")
+	}
+}
+
+func TestSensor_IsAvailable(t *testing.T) {
+	tenantID := shared.NewID()
+	a := createTestSensor(t, tenantID, "Available Test")
+
+	if !a.IsAvailable() {
+		t.Error("Active agent should be available")
+	}
+
+	a.Disable("test")
+	if a.IsAvailable() {
+		t.Error("Disabled agent should not be available")
+	}
+}

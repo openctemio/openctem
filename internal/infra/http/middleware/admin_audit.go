@@ -43,9 +43,9 @@ func NewAuditMiddleware(auditRepo admin.AuditLogRepository, log *logger.Logger) 
 // Should be used after AdminAuthMiddleware.Authenticate().
 //
 // Parameters:
-//   - action: The action being performed (e.g., "agent.create", "token.revoke")
-//   - resourceType: The type of resource (e.g., "agent", "token")
-//   - resourceIDParam: The chi URL param name for resource ID (e.g., "id", "agentID")
+//   - action: The action being performed (e.g., "sensor.create", "token.revoke")
+//   - resourceType: The type of resource (e.g., "sensor", "token")
+//   - resourceIDParam: The chi URL param name for resource ID (e.g., "id", "sensorID")
 func (m *AuditMiddleware) AuditLog(action, resourceType, resourceIDParam string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -219,29 +219,29 @@ func (m *AuditMiddleware) AuditAdminDelete() func(http.Handler) http.Handler {
 	return m.AuditLog(admin.AuditActionAdminDelete, admin.ResourceTypeAdmin, "id")
 }
 
-// AuditAgentCreate returns middleware for platform agent creation.
-func (m *AuditMiddleware) AuditAgentCreate() func(http.Handler) http.Handler {
-	return m.AuditLog(admin.AuditActionAgentCreate, admin.ResourceTypeAgent, "")
+// AuditSensorCreate returns middleware for platform sensor creation.
+func (m *AuditMiddleware) AuditSensorCreate() func(http.Handler) http.Handler {
+	return m.AuditLog(admin.AuditActionSensorCreate, admin.ResourceTypeSensor, "")
 }
 
-// AuditAgentUpdate returns middleware for platform agent updates.
-func (m *AuditMiddleware) AuditAgentUpdate() func(http.Handler) http.Handler {
-	return m.AuditLog(admin.AuditActionAgentUpdate, admin.ResourceTypeAgent, "id")
+// AuditSensorUpdate returns middleware for platform sensor updates.
+func (m *AuditMiddleware) AuditSensorUpdate() func(http.Handler) http.Handler {
+	return m.AuditLog(admin.AuditActionSensorUpdate, admin.ResourceTypeSensor, "id")
 }
 
-// AuditAgentDelete returns middleware for platform agent deletion.
-func (m *AuditMiddleware) AuditAgentDelete() func(http.Handler) http.Handler {
-	return m.AuditLog(admin.AuditActionAgentDelete, admin.ResourceTypeAgent, "id")
+// AuditSensorDelete returns middleware for platform sensor deletion.
+func (m *AuditMiddleware) AuditSensorDelete() func(http.Handler) http.Handler {
+	return m.AuditLog(admin.AuditActionSensorDelete, admin.ResourceTypeSensor, "id")
 }
 
-// AuditAgentEnable returns middleware for enabling platform agents.
-func (m *AuditMiddleware) AuditAgentEnable() func(http.Handler) http.Handler {
-	return m.AuditLog(admin.AuditActionAgentEnable, admin.ResourceTypeAgent, "id")
+// AuditSensorEnable returns middleware for enabling platform sensors.
+func (m *AuditMiddleware) AuditSensorEnable() func(http.Handler) http.Handler {
+	return m.AuditLog(admin.AuditActionSensorEnable, admin.ResourceTypeSensor, "id")
 }
 
-// AuditAgentDisable returns middleware for disabling platform agents.
-func (m *AuditMiddleware) AuditAgentDisable() func(http.Handler) http.Handler {
-	return m.AuditLog(admin.AuditActionAgentDisable, admin.ResourceTypeAgent, "id")
+// AuditSensorDisable returns middleware for disabling platform sensors.
+func (m *AuditMiddleware) AuditSensorDisable() func(http.Handler) http.Handler {
+	return m.AuditLog(admin.AuditActionSensorDisable, admin.ResourceTypeSensor, "id")
 }
 
 // AuditTokenCreate returns middleware for bootstrap token creation.

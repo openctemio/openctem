@@ -472,7 +472,7 @@ func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.
 // JSONB column (non-empty array = evidence present). When the
 // dedicated simulation_evidence table lands (see
 // internal/app/validation/evidence_store.go), this query should be
-// extended with a UNION to include scripted/agent evidence.
+// extended with a UNION to include scripted/sensor evidence.
 //
 // An empty cycle window (NULL start/end) means "everything to date" —
 // the query uses IS NULL guards so the cycle's intent survives even

@@ -57,7 +57,7 @@ func (r *AuditRepository) Create(ctx context.Context, log *audit.AuditLog) error
 		nullableID(log.ActorID()),
 		nullString(log.ActorEmail()),
 		nullString(log.ActorIP()),
-		nullString(log.ActorAgent()),
+		nullString(log.ActorUserAgent()),
 		log.Action().String(),
 		log.ResourceType().String(),
 		nullString(log.ResourceID()),
@@ -117,7 +117,7 @@ func (r *AuditRepository) CreateBatch(ctx context.Context, logs []*audit.AuditLo
 			nullableID(log.ActorID()),
 			nullString(log.ActorEmail()),
 			nullString(log.ActorIP()),
-			nullString(log.ActorAgent()),
+			nullString(log.ActorUserAgent()),
 			log.Action().String(),
 			log.ResourceType().String(),
 			nullString(log.ResourceID()),
@@ -391,28 +391,28 @@ func (r *AuditRepository) scanAuditLogFromRows(rows *sql.Rows) (*audit.AuditLog,
 
 func (r *AuditRepository) doScan(scan func(dest ...any) error) (*audit.AuditLog, error) {
 	var (
-		idStr        string
-		tenantIDStr  sql.NullString
-		actorIDStr   sql.NullString
-		actorEmail   sql.NullString
-		actorIP      sql.NullString
-		actorAgent   sql.NullString
-		actionStr    string
-		resourceType string
-		resourceID   sql.NullString
-		resourceName sql.NullString
-		changesJSON  []byte
-		resultStr    string
-		severityStr  string
-		message      sql.NullString
-		metadataJSON []byte
-		requestID    sql.NullString
-		sessionID    sql.NullString
-		logged_at    time.Time
+		idStr          string
+		tenantIDStr    sql.NullString
+		actorIDStr     sql.NullString
+		actorEmail     sql.NullString
+		actorIP        sql.NullString
+		actorUserAgent sql.NullString
+		actionStr      string
+		resourceType   string
+		resourceID     sql.NullString
+		resourceName   sql.NullString
+		changesJSON    []byte
+		resultStr      string
+		severityStr    string
+		message        sql.NullString
+		metadataJSON   []byte
+		requestID      sql.NullString
+		sessionID      sql.NullString
+		logged_at      time.Time
 	)
 
 	err := scan(
-		&idStr, &tenantIDStr, &actorIDStr, &actorEmail, &actorIP, &actorAgent,
+		&idStr, &tenantIDStr, &actorIDStr, &actorEmail, &actorIP, &actorUserAgent,
 		&actionStr, &resourceType, &resourceID, &resourceName,
 		&changesJSON, &resultStr, &severityStr, &message, &metadataJSON,
 		&requestID, &sessionID, &logged_at,
@@ -465,7 +465,7 @@ func (r *AuditRepository) doScan(scan func(dest ...any) error) (*audit.AuditLog,
 		actorID,
 		nullStringValue(actorEmail),
 		nullStringValue(actorIP),
-		nullStringValue(actorAgent),
+		nullStringValue(actorUserAgent),
 		audit.Action(actionStr),
 		audit.ResourceType(resourceType),
 		nullStringValue(resourceID),

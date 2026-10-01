@@ -1563,7 +1563,7 @@ func TestAITriage_GetAIConfig_BYOKMode_DefaultModels(t *testing.T) {
 	}
 }
 
-func TestAITriage_GetAIConfig_AgentMode(t *testing.T) {
+func TestAITriage_GetAIConfig_SensorMode(t *testing.T) {
 	t.Parallel()
 
 	tenantID := shared.NewID()

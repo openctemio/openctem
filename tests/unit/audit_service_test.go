@@ -333,8 +333,8 @@ func TestAuditService_LogEvent_SuccessFullContext(t *testing.T) {
 	if created.ActorIP() != "192.168.1.100" {
 		t.Errorf("expected actor IP 192.168.1.100, got %s", created.ActorIP())
 	}
-	if created.ActorAgent() != "TestAgent/1.0" {
-		t.Errorf("expected user agent TestAgent/1.0, got %s", created.ActorAgent())
+	if created.ActorUserAgent() != "TestAgent/1.0" {
+		t.Errorf("expected user agent TestAgent/1.0, got %s", created.ActorUserAgent())
 	}
 	if created.RequestID() != "req-12345" {
 		t.Errorf("expected request id req-12345, got %s", created.RequestID())
@@ -384,8 +384,8 @@ func TestAuditService_LogEvent_SuccessMinimalContext(t *testing.T) {
 	if created.ActorIP() != "" {
 		t.Errorf("expected empty actor IP, got %s", created.ActorIP())
 	}
-	if created.ActorAgent() != "" {
-		t.Errorf("expected empty user agent, got %s", created.ActorAgent())
+	if created.ActorUserAgent() != "" {
+		t.Errorf("expected empty user agent, got %s", created.ActorUserAgent())
 	}
 	if created.RequestID() != "" {
 		t.Errorf("expected empty request id, got %s", created.RequestID())

@@ -105,10 +105,10 @@ var (
 	)
 )
 
-// Agent metrics
+// Sensor metrics
 var (
-	// AgentsOnline tracks online agents
-	AgentsOnline = promauto.NewGaugeVec(
+	// SensorsOnline tracks online sensors
+	SensorsOnline = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "agents_online",
 			Help: "Number of online agents",
@@ -116,8 +116,8 @@ var (
 		[]string{"tenant_id"},
 	)
 
-	// AgentCommandsExecuted tracks commands executed by agents
-	AgentCommandsExecuted = promauto.NewCounterVec(
+	// SensorCommandsExecuted tracks commands executed by sensors
+	SensorCommandsExecuted = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "agent_commands_executed_total",
 			Help: "Total commands executed by agents",
@@ -125,8 +125,8 @@ var (
 		[]string{"tenant_id", "agent_id", "status"},
 	)
 
-	// AgentHeartbeatLatency tracks agent heartbeat latency
-	AgentHeartbeatLatency = promauto.NewHistogramVec(
+	// SensorHeartbeatLatency tracks sensor heartbeat latency
+	SensorHeartbeatLatency = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "agent_heartbeat_latency_seconds",
 			Help:    "Agent heartbeat latency in seconds",

@@ -65,10 +65,10 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		assetGroupIDStrings[i] = id.String()
 	}
 
-	// Default agent preference and timeout
-	agentPref := string(s.AgentPreference)
-	if agentPref == "" {
-		agentPref = string(scan.AgentPreferenceAuto)
+	// Default sensor preference and timeout
+	sensorPref := string(s.SensorPreference)
+	if sensorPref == "" {
+		sensorPref = string(scan.SensorPreferenceAuto)
 	}
 	timeoutSecs := s.TimeoutSeconds
 	if timeoutSecs <= 0 {
@@ -115,7 +115,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		s.NextRunAt,
 		pq.Array(s.Tags),
 		s.RunOnTenantRunner,
-		agentPref,
+		sensorPref,
 		profileID,
 		timeoutSecs,
 		s.MaxRetries,
@@ -238,10 +238,10 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		profileID = &pid
 	}
 
-	// Default agent preference and timeout
-	agentPref := string(s.AgentPreference)
-	if agentPref == "" {
-		agentPref = string(scan.AgentPreferenceAuto)
+	// Default sensor preference and timeout
+	sensorPref := string(s.SensorPreference)
+	if sensorPref == "" {
+		sensorPref = string(scan.SensorPreferenceAuto)
 	}
 	timeoutSecs := s.TimeoutSeconds
 	if timeoutSecs <= 0 {
@@ -284,7 +284,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		s.NextRunAt,
 		pq.Array(s.Tags),
 		s.RunOnTenantRunner,
-		agentPref,
+		sensorPref,
 		profileID,
 		timeoutSecs,
 		s.MaxRetries,
@@ -686,7 +686,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		scannerConfig       []byte
 		pipelineID          sql.NullString
 		profileID           sql.NullString
-		agentPreference     sql.NullString
+		sensorPreference    sql.NullString
 		timeoutSeconds      sql.NullInt64
 		maxRetries          sql.NullInt64
 		retryBackoffSeconds sql.NullInt64
@@ -720,7 +720,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.NextRunAt,
 		&tags,
 		&s.RunOnTenantRunner,
-		&agentPreference,
+		&sensorPreference,
 		&profileID,
 		&timeoutSeconds,
 		&maxRetries,
@@ -766,10 +766,10 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		s.ScheduleTimezone = "UTC"
 	}
 
-	if agentPreference.Valid {
-		s.AgentPreference = scan.AgentPreference(agentPreference.String)
+	if sensorPreference.Valid {
+		s.SensorPreference = scan.SensorPreference(sensorPreference.String)
 	} else {
-		s.AgentPreference = scan.AgentPreferenceAuto
+		s.SensorPreference = scan.SensorPreferenceAuto
 	}
 
 	if timeoutSeconds.Valid && timeoutSeconds.Int64 > 0 {

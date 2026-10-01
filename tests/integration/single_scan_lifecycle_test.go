@@ -38,20 +38,20 @@ import (
 
 const quickScanStepKey = "quick_scan"
 
-// availableAgents is the minimum AgentSelector that lets a trigger proceed.
-// TriggerScan calls CheckAgentAvailability without a nil guard, and refusing
+// availableSensors is the minimum SensorSelector that lets a trigger proceed.
+// TriggerScan calls CheckSensorAvailability without a nil guard, and refusing
 // here would abort before the code under test runs.
-type availableAgents struct{}
+type availableSensors struct{}
 
-func (availableAgents) CheckAgentAvailability(context.Context, shared.ID, string, bool) *scansvc.AgentAvailability {
-	return &scansvc.AgentAvailability{HasTenantAgent: true, Available: true}
+func (availableSensors) CheckSensorAvailability(context.Context, shared.ID, string, bool) *scansvc.SensorAvailability {
+	return &scansvc.SensorAvailability{HasTenantSensor: true, Available: true}
 }
 
-func (availableAgents) CanUsePlatformAgents(context.Context, shared.ID) (bool, string) {
+func (availableSensors) CanUsePlatformSensors(context.Context, shared.ID) (bool, string) {
 	return false, "test"
 }
 
-func (availableAgents) SelectAgent(context.Context, scansvc.SelectAgentRequest) (*scansvc.SelectAgentResult, error) {
+func (availableSensors) SelectSensor(context.Context, scansvc.SelectSensorRequest) (*scansvc.SelectSensorResult, error) {
 	return nil, nil
 }
 
@@ -92,7 +92,7 @@ func newTriggerService(db *sql.DB) *scansvc.Service {
 		nil, // templateSourceRepo
 		postgres.NewToolRepository(pg),
 		nil, // templateSyncer
-		availableAgents{},
+		availableSensors{},
 		nil, // securityValidator
 		logger.New(logger.Config{Level: "error"}),
 	)
@@ -227,7 +227,7 @@ func TestTriggerSingleScan_ProducesAReportableRun(t *testing.T) {
 	if routed.StepRunID == "" {
 		t.Error("payload step_run_id is empty")
 	}
-	// The legacy key must survive: the agent SDK reads it.
+	// The legacy key must survive: the sensor SDK reads it.
 	if routed.RunID != run.ID.String() {
 		t.Errorf("payload run_id = %q, want %q — the agent SDK still reads this key",
 			routed.RunID, run.ID.String())

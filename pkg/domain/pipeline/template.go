@@ -27,28 +27,28 @@ type Trigger struct {
 	Filters  map[string]any `json:"filters,omitempty"`  // Asset filters
 }
 
-// AgentPreference determines which agents can execute the pipeline.
-type AgentPreference string
+// SensorPreference determines which sensors can execute the pipeline.
+type SensorPreference string
 
 const (
-	// AgentPreferenceAuto tries tenant agents first, falls back to platform.
-	AgentPreferenceAuto AgentPreference = "auto"
-	// AgentPreferenceTenant only uses tenant's own agents.
-	AgentPreferenceTenant AgentPreference = "tenant"
-	// AgentPreferencePlatform only uses platform agents.
-	AgentPreferencePlatform AgentPreference = "platform"
+	// SensorPreferenceAuto tries tenant sensors first, falls back to platform.
+	SensorPreferenceAuto SensorPreference = "auto"
+	// SensorPreferenceTenant only uses tenant's own sensors.
+	SensorPreferenceTenant SensorPreference = "tenant"
+	// SensorPreferencePlatform only uses platform sensors.
+	SensorPreferencePlatform SensorPreference = "platform"
 )
 
 // Settings represents pipeline execution settings.
 type Settings struct {
-	MaxParallelSteps     int             `json:"max_parallel_steps,omitempty"`
-	FailFast             bool            `json:"fail_fast,omitempty"`
-	RetryFailedSteps     int             `json:"retry_failed_steps,omitempty"`
-	TimeoutSeconds       int             `json:"timeout_seconds,omitempty"`
-	NotifyOnComplete     bool            `json:"notify_on_complete,omitempty"`
-	NotifyOnFailure      bool            `json:"notify_on_failure,omitempty"`
-	NotificationChannels []string        `json:"notification_channels,omitempty"`
-	AgentPreference      AgentPreference `json:"agent_preference,omitempty"` // Agent selection mode: auto, tenant, platform
+	MaxParallelSteps     int              `json:"max_parallel_steps,omitempty"`
+	FailFast             bool             `json:"fail_fast,omitempty"`
+	RetryFailedSteps     int              `json:"retry_failed_steps,omitempty"`
+	TimeoutSeconds       int              `json:"timeout_seconds,omitempty"`
+	NotifyOnComplete     bool             `json:"notify_on_complete,omitempty"`
+	NotifyOnFailure      bool             `json:"notify_on_failure,omitempty"`
+	NotificationChannels []string         `json:"notification_channels,omitempty"`
+	SensorPreference     SensorPreference `json:"agent_preference,omitempty"` // Sensor selection mode: auto, tenant, platform
 }
 
 // DefaultSettings returns default pipeline settings.
@@ -60,7 +60,7 @@ func DefaultSettings() Settings {
 		TimeoutSeconds:   7200, // 2 hours
 		NotifyOnComplete: false,
 		NotifyOnFailure:  true,
-		AgentPreference:  AgentPreferenceAuto,
+		SensorPreference: SensorPreferenceAuto,
 	}
 }
 

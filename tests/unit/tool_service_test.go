@@ -9,7 +9,7 @@ import (
 
 	"github.com/openctemio/api/internal/app/tool"
 
-	"github.com/openctemio/api/pkg/domain/agent"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/api/pkg/domain/toolcategory"
@@ -510,90 +510,90 @@ func (m *toolSvcMockExecutionRepo) GetTenantStats(_ context.Context, tenantID sh
 	return &tooldom.TenantToolStats{TenantID: tenantID}, nil
 }
 
-// toolSvcMockAgentRepo is a minimal mock for agent.Repository.
-type toolSvcMockAgentRepo struct {
+// toolSvcMockSensorRepo is a minimal mock for sensor.Repository.
+type toolSvcMockSensorRepo struct {
 	availableTools []string
 }
 
-func newToolSvcMockAgentRepo() *toolSvcMockAgentRepo {
-	return &toolSvcMockAgentRepo{}
+func newToolSvcMockSensorRepo() *toolSvcMockSensorRepo {
+	return &toolSvcMockSensorRepo{}
 }
 
-func (m *toolSvcMockAgentRepo) Create(_ context.Context, _ *agent.Agent) error { return nil }
-func (m *toolSvcMockAgentRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
+func (m *toolSvcMockSensorRepo) Create(_ context.Context, _ *sensor.Sensor) error { return nil }
+func (m *toolSvcMockSensorRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
 	return 0, nil
 }
-func (m *toolSvcMockAgentRepo) GetByID(_ context.Context, _ shared.ID) (*agent.Agent, error) {
+func (m *toolSvcMockSensorRepo) GetByID(_ context.Context, _ shared.ID) (*sensor.Sensor, error) {
 	return nil, shared.ErrNotFound
 }
-func (m *toolSvcMockAgentRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*agent.Agent, error) {
+func (m *toolSvcMockSensorRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*sensor.Sensor, error) {
 	return nil, shared.ErrNotFound
 }
-func (m *toolSvcMockAgentRepo) GetByAPIKeyHash(_ context.Context, _ string) (*agent.Agent, error) {
+func (m *toolSvcMockSensorRepo) GetByAPIKeyHash(_ context.Context, _ string) (*sensor.Sensor, error) {
 	return nil, shared.ErrNotFound
 }
-func (m *toolSvcMockAgentRepo) List(_ context.Context, _ agent.Filter, _ pagination.Pagination) (pagination.Result[*agent.Agent], error) {
-	return pagination.Result[*agent.Agent]{}, nil
+func (m *toolSvcMockSensorRepo) List(_ context.Context, _ sensor.Filter, _ pagination.Pagination) (pagination.Result[*sensor.Sensor], error) {
+	return pagination.Result[*sensor.Sensor]{}, nil
 }
-func (m *toolSvcMockAgentRepo) Update(_ context.Context, _ *agent.Agent) error { return nil }
-func (m *toolSvcMockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
+func (m *toolSvcMockSensorRepo) Update(_ context.Context, _ *sensor.Sensor) error { return nil }
+func (m *toolSvcMockSensorRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
 	return nil
 }
-func (m *toolSvcMockAgentRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ agent.HeartbeatUpdate) (bool, error) {
+func (m *toolSvcMockSensorRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ sensor.HeartbeatUpdate) (bool, error) {
 	return true, nil
 }
-func (m *toolSvcMockAgentRepo) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
+func (m *toolSvcMockSensorRepo) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
 	return true, nil
 }
-func (m *toolSvcMockAgentRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
-func (m *toolSvcMockAgentRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
+func (m *toolSvcMockSensorRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
+func (m *toolSvcMockSensorRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
 	return nil
 }
-func (m *toolSvcMockAgentRepo) IncrementStats(_ context.Context, _ shared.ID, _, _, _ int64) error {
+func (m *toolSvcMockSensorRepo) IncrementStats(_ context.Context, _ shared.ID, _, _, _ int64) error {
 	return nil
 }
-func (m *toolSvcMockAgentRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*agent.Agent, error) {
+func (m *toolSvcMockSensorRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *toolSvcMockAgentRepo) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*agent.Agent, error) {
+func (m *toolSvcMockSensorRepo) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *toolSvcMockAgentRepo) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*agent.Agent, error) {
+func (m *toolSvcMockSensorRepo) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*sensor.Sensor, error) {
 	return nil, shared.ErrNotFound
 }
-func (m *toolSvcMockAgentRepo) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
+func (m *toolSvcMockSensorRepo) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
 	return 0, nil
 }
-func (m *toolSvcMockAgentRepo) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*agent.Agent, error) {
+func (m *toolSvcMockSensorRepo) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *toolSvcMockAgentRepo) ClaimJob(_ context.Context, _ shared.ID) error   { return nil }
-func (m *toolSvcMockAgentRepo) ReleaseJob(_ context.Context, _ shared.ID) error { return nil }
-func (m *toolSvcMockAgentRepo) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
+func (m *toolSvcMockSensorRepo) ClaimJob(_ context.Context, _ shared.ID) error   { return nil }
+func (m *toolSvcMockSensorRepo) ReleaseJob(_ context.Context, _ shared.ID) error { return nil }
+func (m *toolSvcMockSensorRepo) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
 	return nil
 }
-func (m *toolSvcMockAgentRepo) MarkStaleAgentsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
+func (m *toolSvcMockSensorRepo) MarkStaleSensorsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
 	return nil, nil
 }
-func (m *toolSvcMockAgentRepo) GetAgentsOfflineSince(_ context.Context, _ time.Time) ([]*agent.Agent, error) {
+func (m *toolSvcMockSensorRepo) GetSensorsOfflineSince(_ context.Context, _ time.Time) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *toolSvcMockAgentRepo) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+func (m *toolSvcMockSensorRepo) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
 	return m.availableTools, nil
 }
-func (m *toolSvcMockAgentRepo) HasAgentForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
+func (m *toolSvcMockSensorRepo) HasSensorForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
-func (m *toolSvcMockAgentRepo) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+func (m *toolSvcMockSensorRepo) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
 	return nil, nil
 }
-func (m *toolSvcMockAgentRepo) HasAgentForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
+func (m *toolSvcMockSensorRepo) HasSensorForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
-func (m *toolSvcMockAgentRepo) GetPlatformAgentStats(_ context.Context, _ shared.ID) (*agent.PlatformAgentStatsResult, error) {
+func (m *toolSvcMockSensorRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
 	return nil, nil
 }
-func (m *toolSvcMockAgentRepo) GetTenantAgentStats(_ context.Context, _ shared.ID) (*agent.TenantAgentStats, error) {
+func (m *toolSvcMockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
 	return nil, nil
 }
 
@@ -2332,10 +2332,10 @@ func TestToolService_RecordToolExecution_Success(t *testing.T) {
 	}
 }
 
-func TestToolService_RecordToolExecution_WithAgent(t *testing.T) {
+func TestToolService_RecordToolExecution_WithSensor(t *testing.T) {
 	svc, repo, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
-	agentID := shared.NewID()
+	sensorID := shared.NewID()
 
 	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
 	repo.AddTool(platformTool)
@@ -2343,7 +2343,7 @@ func TestToolService_RecordToolExecution_WithAgent(t *testing.T) {
 	input := tool.RecordToolExecutionInput{
 		TenantID:     tenantID.String(),
 		ToolID:       platformTool.ID.String(),
-		AgentID:      agentID.String(),
+		SensorID:     sensorID.String(),
 		TargetsCount: 5,
 	}
 
@@ -2351,7 +2351,7 @@ func TestToolService_RecordToolExecution_WithAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if result.AgentID == nil || *result.AgentID != agentID {
+	if result.SensorID == nil || *result.SensorID != sensorID {
 		t.Error("expected agent ID to be set")
 	}
 }
@@ -2598,14 +2598,14 @@ func TestToolService_ListToolExecutions_InvalidTenantID(t *testing.T) {
 }
 
 // ============================================================================
-// Tests: SetAgentRepo / SetCategoryRepo / SetPipelineDeactivator
+// Tests: SetSensorRepo / SetCategoryRepo / SetPipelineDeactivator
 // ============================================================================
 
-func TestToolService_SetAgentRepo(t *testing.T) {
+func TestToolService_SetSensorRepo(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
-	agentRepo := newToolSvcMockAgentRepo()
+	sensorRepo := newToolSvcMockSensorRepo()
 	// Should not panic
-	svc.SetAgentRepo(agentRepo)
+	svc.SetSensorRepo(sensorRepo)
 }
 
 func TestToolService_SetCategoryRepo(t *testing.T) {
@@ -2811,14 +2811,14 @@ func TestToolService_RecordToolExecution_WithPipelineContext(t *testing.T) {
 	}
 }
 
-func TestToolService_RecordToolExecution_InvalidAgentID(t *testing.T) {
+func TestToolService_RecordToolExecution_InvalidSensorID(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.RecordToolExecutionInput{
 		TenantID: tenantID.String(),
 		ToolID:   shared.NewID().String(),
-		AgentID:  "bad-uuid",
+		SensorID: "bad-uuid",
 	}
 
 	_, err := svc.RecordToolExecution(context.Background(), input)

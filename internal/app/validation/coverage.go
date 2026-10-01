@@ -10,7 +10,7 @@ import (
 // Scope note to avoid confusion with the validation/ package:
 //
 //   - internal/app/validation/  answers "EXECUTE this technique via an
-//     agent and capture Evidence". That package owns the orchestration
+//     sensor and capture Evidence". That package owns the orchestration
 //     contract (TechniqueExecutor, ValidationJob, Dispatcher,
 //     EvidenceStore).
 //

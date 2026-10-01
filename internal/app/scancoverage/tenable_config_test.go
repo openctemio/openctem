@@ -7,7 +7,7 @@ func TestParseTenableConfig_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("nil config should default cleanly: %v", err)
 	}
-	if c.ExecutionMode != ExecutionModeAgent || c.Engine != EngineNessusPro {
+	if c.ExecutionMode != ExecutionModeSensor || c.Engine != EngineNessusPro {
 		t.Fatalf("defaults should be agent + nessus_pro, got %+v", c)
 	}
 }
@@ -31,8 +31,8 @@ func TestParseTenableConfig_Invalid(t *testing.T) {
 	}
 }
 
-func TestValidate_AgentModeRejectsCredentials(t *testing.T) {
-	cfg := TenableConfig{ExecutionMode: ExecutionModeAgent, Engine: EngineTenableSC}
+func TestValidate_SensorModeRejectsCredentials(t *testing.T) {
+	cfg := TenableConfig{ExecutionMode: ExecutionModeSensor, Engine: EngineTenableSC}
 	if err := ValidateTenableIntegration(cfg, true, ""); err == nil {
 		t.Fatal("agent mode must reject control-plane credentials (R3/R4)")
 	}
@@ -73,7 +73,7 @@ func TestParseTenableConfig_CoverageFields(t *testing.T) {
 	if c.BatchSize != 500 || c.LicenseCap != 500 || c.SafetyMargin != 10 {
 		t.Fatalf("numeric fields wrong: %+v", c)
 	}
-	if c.AgentID != "agent-123" || c.TemplateUUID != "tmpl-xyz" {
+	if c.SensorID != "agent-123" || c.TemplateUUID != "tmpl-xyz" {
 		t.Fatalf("string fields should be trimmed: %+v", c)
 	}
 }

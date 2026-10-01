@@ -7,8 +7,8 @@ import (
 
 	"github.com/openctemio/api/internal/app/ingest"
 	ddimport "github.com/openctemio/api/internal/infra/importer/defectdojo"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/integration"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -24,14 +24,14 @@ func (r *fakeIntegRepo) ListByProvider(_ context.Context, _ integration.ID, _ in
 }
 
 type fakeIngester struct {
-	gotAgent *agent.Agent
-	gotInput ingest.Input
-	out      *ingest.Output
-	err      error
+	gotSensor *sensor.Sensor
+	gotInput  ingest.Input
+	out       *ingest.Output
+	err       error
 }
 
-func (i *fakeIngester) Ingest(_ context.Context, agt *agent.Agent, in ingest.Input) (*ingest.Output, error) {
-	i.gotAgent = agt
+func (i *fakeIngester) Ingest(_ context.Context, agt *sensor.Sensor, in ingest.Input) (*ingest.Output, error) {
+	i.gotSensor = agt
 	i.gotInput = in
 	return i.out, i.err
 }
@@ -84,10 +84,10 @@ func TestSyncTenant_PullsConvertsIngests_TenantIsolated(t *testing.T) {
 	if res.FindingsPulled != 2 || res.FindingsCreated != 2 || res.FindingsUpdated != 1 {
 		t.Errorf("result = %+v", res)
 	}
-	// Tenant isolation: ingest ran under a synthetic agent scoped to the
+	// Tenant isolation: ingest ran under a synthetic sensor scoped to the
 	// AUTHENTICATED tenant.
-	if ing.gotAgent == nil || ing.gotAgent.TenantID == nil || *ing.gotAgent.TenantID != tenantID {
-		t.Errorf("ingest agent tenant = %v, want %s", ing.gotAgent, tenantID)
+	if ing.gotSensor == nil || ing.gotSensor.TenantID == nil || *ing.gotSensor.TenantID != tenantID {
+		t.Errorf("ingest agent tenant = %v, want %s", ing.gotSensor, tenantID)
 	}
 	// Auto-resolve safety: import is partial.
 	if ing.gotInput.CoverageType != ingest.CoverageTypePartial {

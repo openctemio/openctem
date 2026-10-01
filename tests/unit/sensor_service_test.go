@@ -1,0 +1,2539 @@
+package unit
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/openctemio/api/internal/app"
+	"github.com/openctemio/api/pkg/domain/sensor"
+	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/pagination"
+)
+
+// ============================================================================
+// Mock Repository
+// ============================================================================
+
+// sensorSvcMockRepo implements sensor.Repository for testing.
+type sensorSvcMockRepo struct {
+	mu      sync.Mutex
+	sensors map[string]*sensor.Sensor // keyed by sensor ID string
+
+	// Error injection
+	createErr                   error
+	getByIDErr                  error
+	getByTenantAndIDErr         error
+	getByAPIKeyHashErr          error
+	listErr                     error
+	updateErr                   error
+	deleteErr                   error
+	updateLastSeenErr           error
+	incrementStatsErr           error
+	findAvailableErr            error
+	findAvailableWithCapErr     error
+	claimJobErr                 error
+	releaseJobErr               error
+	getAvailableCapabilitiesErr error
+	hasSensorForCapabilityErr   error
+	getPlatformSensorStatsErr   error
+
+	// Return overrides
+	availableSensors    []*sensor.Sensor
+	availableCapSensors []*sensor.Sensor
+	capabilities        []string
+	hasCapability       bool
+	platformStats       *sensor.PlatformSensorStatsResult
+	staleOfflineIDs     []shared.ID // returned by MarkStaleSensorsOffline
+
+	// Call tracking
+	createCalls           int
+	getByIDCalls          int
+	getByTenantAndIDCalls int
+	getByAPIKeyHashCalls  int
+	listCalls             int
+	updateCalls           int
+	updateKeyExpiryCalls  int
+	updateHeartbeatCalls  int
+	updateAPIKeyCalls     int
+	deleteCalls           int
+	updateLastSeenCalls   int
+	incrementStatsCalls   int
+	findAvailableCalls    int
+	findAvailableCapCalls int
+	claimJobCalls         int
+	releaseJobCalls       int
+	getAvailCapCalls      int
+	hasSensorCapCalls     int
+	getPlatformStatsCalls int
+
+	// Last args
+	lastFilter     sensor.Filter
+	lastPagination pagination.Pagination
+	lastAPIKeyHash string
+	lastStatsArgs  struct {
+		findings, scans, errors int64
+	}
+}
+
+func newSensorSvcMockRepo() *sensorSvcMockRepo {
+	return &sensorSvcMockRepo{
+		sensors: make(map[string]*sensor.Sensor),
+	}
+}
+
+func (m *sensorSvcMockRepo) Create(_ context.Context, a *sensor.Sensor) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.createCalls++
+	if m.createErr != nil {
+		return m.createErr
+	}
+	m.sensors[a.ID.String()] = a
+	return nil
+}
+
+func (m *sensorSvcMockRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for _, a := range m.sensors {
+		count++
+		_ = a
+	}
+	return count, nil
+}
+
+func (m *sensorSvcMockRepo) GetByID(_ context.Context, id shared.ID) (*sensor.Sensor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getByIDCalls++
+	if m.getByIDErr != nil {
+		return nil, m.getByIDErr
+	}
+	a, ok := m.sensors[id.String()]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	return a, nil
+}
+
+func (m *sensorSvcMockRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*sensor.Sensor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getByTenantAndIDCalls++
+	if m.getByTenantAndIDErr != nil {
+		return nil, m.getByTenantAndIDErr
+	}
+	a, ok := m.sensors[id.String()]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	// IDOR check
+	if a.TenantID == nil || *a.TenantID != tenantID {
+		return nil, shared.ErrNotFound
+	}
+	return a, nil
+}
+
+func (m *sensorSvcMockRepo) GetByAPIKeyHash(_ context.Context, hash string) (*sensor.Sensor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getByAPIKeyHashCalls++
+	m.lastAPIKeyHash = hash
+	if m.getByAPIKeyHashErr != nil {
+		return nil, m.getByAPIKeyHashErr
+	}
+	for _, a := range m.sensors {
+		if a.APIKeyHash == hash {
+			return a, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (m *sensorSvcMockRepo) List(_ context.Context, filter sensor.Filter, page pagination.Pagination) (pagination.Result[*sensor.Sensor], error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.listCalls++
+	m.lastFilter = filter
+	m.lastPagination = page
+	if m.listErr != nil {
+		return pagination.Result[*sensor.Sensor]{}, m.listErr
+	}
+	var results []*sensor.Sensor
+	for _, a := range m.sensors {
+		if filter.TenantID != nil && (a.TenantID == nil || *a.TenantID != *filter.TenantID) {
+			continue
+		}
+		results = append(results, a)
+	}
+	total := int64(len(results))
+	return pagination.Result[*sensor.Sensor]{
+		Data:       results,
+		Total:      total,
+		Page:       page.Page,
+		PerPage:    page.PerPage,
+		TotalPages: 1,
+	}, nil
+}
+
+func (m *sensorSvcMockRepo) Update(_ context.Context, a *sensor.Sensor) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateCalls++
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	m.sensors[a.ID.String()] = a
+	return nil
+}
+
+func (m *sensorSvcMockRepo) UpdateKeyExpiry(_ context.Context, id shared.ID, expiresAt *time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateKeyExpiryCalls++
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	a, ok := m.sensors[id.String()]
+	if !ok || !a.Status.CanAuthenticate() { // status='active' guard
+		return nil
+	}
+	a.KeyExpiresAt = expiresAt
+	return nil
+}
+
+func (m *sensorSvcMockRepo) UpdateHeartbeat(_ context.Context, id shared.ID, hb sensor.HeartbeatUpdate) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateHeartbeatCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	a, ok := m.sensors[id.String()]
+	if !ok || a.Status != sensor.SensorStatusActive { // status='active' guard
+		return false, nil
+	}
+	if hb.TenantID != nil && (a.TenantID == nil || *a.TenantID != *hb.TenantID) {
+		return false, nil // tenant guard
+	}
+	if hb.Version != "" {
+		a.Version = hb.Version
+	}
+	if hb.Hostname != "" {
+		a.Hostname = hb.Hostname
+	}
+	if hb.Region != "" {
+		a.Region = hb.Region
+	}
+	a.CPUPercent = hb.CPUPercent
+	a.MemoryPercent = hb.MemoryPercent
+	a.DiskReadMBPS = hb.DiskReadMBPS
+	a.DiskWriteMBPS = hb.DiskWriteMBPS
+	a.NetworkRxMBPS = hb.NetworkRxMBPS
+	a.NetworkTxMBPS = hb.NetworkTxMBPS
+	a.LoadScore = hb.LoadScore
+	now := time.Now()
+	a.MetricsUpdatedAt = &now
+	a.LastSeenAt = &now
+	a.Health = sensor.SensorHealthOnline
+	return true, nil
+}
+
+func (m *sensorSvcMockRepo) UpdateAPIKey(_ context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateAPIKeyCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	a, ok := m.sensors[id.String()]
+	if !ok || (requireActive && a.Status != sensor.SensorStatusActive) {
+		return false, nil
+	}
+	a.SetAPIKeyWithExpiry(hash, prefix, expiresAt)
+	return true, nil
+}
+
+func (m *sensorSvcMockRepo) Delete(_ context.Context, id shared.ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deleteCalls++
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	delete(m.sensors, id.String())
+	return nil
+}
+
+func (m *sensorSvcMockRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateLastSeenCalls++
+	return m.updateLastSeenErr
+}
+
+func (m *sensorSvcMockRepo) IncrementStats(_ context.Context, _ shared.ID, findings, scans, errs int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.incrementStatsCalls++
+	m.lastStatsArgs.findings = findings
+	m.lastStatsArgs.scans = scans
+	m.lastStatsArgs.errors = errs
+	return m.incrementStatsErr
+}
+
+func (m *sensorSvcMockRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
+	return nil, nil
+}
+
+func (m *sensorSvcMockRepo) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.findAvailableCalls++
+	if m.findAvailableErr != nil {
+		return nil, m.findAvailableErr
+	}
+	return m.availableSensors, nil
+}
+
+func (m *sensorSvcMockRepo) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*sensor.Sensor, error) {
+	return nil, nil
+}
+
+func (m *sensorSvcMockRepo) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
+	return 0, nil
+}
+
+func (m *sensorSvcMockRepo) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.findAvailableCapCalls++
+	if m.findAvailableWithCapErr != nil {
+		return nil, m.findAvailableWithCapErr
+	}
+	return m.availableCapSensors, nil
+}
+
+func (m *sensorSvcMockRepo) ClaimJob(_ context.Context, _ shared.ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.claimJobCalls++
+	return m.claimJobErr
+}
+
+func (m *sensorSvcMockRepo) ReleaseJob(_ context.Context, _ shared.ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.releaseJobCalls++
+	return m.releaseJobErr
+}
+
+func (m *sensorSvcMockRepo) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
+	return nil
+}
+
+func (m *sensorSvcMockRepo) MarkStaleSensorsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.staleOfflineIDs, nil
+}
+
+func (m *sensorSvcMockRepo) GetSensorsOfflineSince(_ context.Context, _ time.Time) ([]*sensor.Sensor, error) {
+	return nil, nil
+}
+
+func (m *sensorSvcMockRepo) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+	return nil, nil
+}
+
+func (m *sensorSvcMockRepo) HasSensorForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
+	return false, nil
+}
+
+func (m *sensorSvcMockRepo) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getAvailCapCalls++
+	if m.getAvailableCapabilitiesErr != nil {
+		return nil, m.getAvailableCapabilitiesErr
+	}
+	return m.capabilities, nil
+}
+
+func (m *sensorSvcMockRepo) HasSensorForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.hasSensorCapCalls++
+	if m.hasSensorForCapabilityErr != nil {
+		return false, m.hasSensorForCapabilityErr
+	}
+	return m.hasCapability, nil
+}
+
+func (m *sensorSvcMockRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getPlatformStatsCalls++
+	if m.getPlatformSensorStatsErr != nil {
+		return nil, m.getPlatformSensorStatsErr
+	}
+	if m.platformStats != nil {
+		return m.platformStats, nil
+	}
+	return &sensor.PlatformSensorStatsResult{
+		TierBreakdown: make(map[string]sensor.TierBreakdown),
+	}, nil
+}
+
+func (m *sensorSvcMockRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
+	return &sensor.TenantSensorStats{
+		ByStatus: make(map[string]int),
+		ByHealth: make(map[string]int),
+		ByType:   make(map[string]int),
+		ByMode:   make(map[string]int),
+	}, nil
+}
+
+// seedSensor creates and stores a sensor in the mock repo.
+func (m *sensorSvcMockRepo) seedSensor(tenantID shared.ID, name string, sensorType sensor.SensorType) *sensor.Sensor {
+	a, _ := sensor.NewSensor(tenantID, name, sensorType, "test agent", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeStandalone)
+	m.sensors[a.ID.String()] = a
+	return a
+}
+
+// ============================================================================
+// Helper functions
+// ============================================================================
+
+func newSensorSvcTestService(repo *sensorSvcMockRepo) *app.SensorService {
+	log := logger.NewNop()
+	return app.NewSensorService(repo, nil, log)
+}
+
+func sensorSvcValidTenantID() string {
+	return shared.NewID().String()
+}
+
+// ============================================================================
+// Tests: CreateSensor
+// ============================================================================
+
+func TestSensorService_CreateSensor_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	input := app.CreateSensorInput{
+		TenantID:     sensorSvcValidTenantID(),
+		Name:         "test-runner",
+		Type:         "runner",
+		Description:  "A test runner agent",
+		Capabilities: []string{"sast", "sca"},
+		Tools:        []string{"semgrep", "trivy"},
+	}
+
+	out, err := svc.CreateSensor(context.Background(), input)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if out.Sensor == nil {
+		t.Fatal("expected agent to be non-nil")
+	}
+
+	if out.Sensor.Name != "test-runner" {
+		t.Errorf("expected name 'test-runner', got %q", out.Sensor.Name)
+	}
+
+	if out.Sensor.Type != sensor.SensorTypeRunner {
+		t.Errorf("expected type 'runner', got %q", out.Sensor.Type)
+	}
+
+	if out.Sensor.Status != sensor.SensorStatusActive {
+		t.Errorf("expected status 'active', got %q", out.Sensor.Status)
+	}
+
+	if out.Sensor.Health != sensor.SensorHealthUnknown {
+		t.Errorf("expected health 'unknown', got %q", out.Sensor.Health)
+	}
+
+	// API key must start with "rda_"
+	if !strings.HasPrefix(out.APIKey, "rda_") {
+		t.Errorf("expected API key to start with 'rda_', got %q", out.APIKey)
+	}
+
+	// API key length: "rda_" + 64 hex chars = 68
+	if len(out.APIKey) != 68 {
+		t.Errorf("expected API key length 68, got %d", len(out.APIKey))
+	}
+
+	if out.Sensor.APIKeyHash == "" {
+		t.Error("expected API key hash to be set")
+	}
+
+	if out.Sensor.APIKeyPrefix == "" {
+		t.Error("expected API key prefix to be set")
+	}
+
+	if repo.createCalls != 1 {
+		t.Errorf("expected 1 Create call, got %d", repo.createCalls)
+	}
+}
+
+func TestSensorService_CreateSensor_DefaultExecutionMode(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	tests := []struct {
+		sensorType   string
+		expectedMode sensor.ExecutionMode
+	}{
+		{"runner", sensor.ExecutionModeStandalone},
+		{"worker", sensor.ExecutionModeDaemon},
+		{"collector", sensor.ExecutionModeDaemon},
+		{"sensor", sensor.ExecutionModeDaemon},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.sensorType, func(t *testing.T) {
+			input := app.CreateSensorInput{
+				TenantID: sensorSvcValidTenantID(),
+				Name:     "test-" + tc.sensorType,
+				Type:     tc.sensorType,
+			}
+			out, err := svc.CreateSensor(context.Background(), input)
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if out.Sensor.ExecutionMode != tc.expectedMode {
+				t.Errorf("expected execution mode %q for type %q, got %q", tc.expectedMode, tc.sensorType, out.Sensor.ExecutionMode)
+			}
+		})
+	}
+}
+
+func TestSensorService_CreateSensor_MaxConcurrentJobs(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	input := app.CreateSensorInput{
+		TenantID:          sensorSvcValidTenantID(),
+		Name:              "worker-1",
+		Type:              "worker",
+		MaxConcurrentJobs: 10,
+	}
+
+	out, err := svc.CreateSensor(context.Background(), input)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if out.Sensor.MaxConcurrentJobs != 10 {
+		t.Errorf("expected max concurrent jobs 10, got %d", out.Sensor.MaxConcurrentJobs)
+	}
+}
+
+func TestSensorService_CreateSensor_InvalidTenantID(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	input := app.CreateSensorInput{
+		TenantID: "not-a-uuid",
+		Name:     "test-agent",
+		Type:     "runner",
+	}
+
+	_, err := svc.CreateSensor(context.Background(), input)
+	if err == nil {
+		t.Fatal("expected error for invalid tenant ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestSensorService_CreateSensor_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.createErr = errors.New("db connection failed")
+	svc := newSensorSvcTestService(repo)
+
+	input := app.CreateSensorInput{
+		TenantID: sensorSvcValidTenantID(),
+		Name:     "test-agent",
+		Type:     "runner",
+	}
+
+	_, err := svc.CreateSensor(context.Background(), input)
+	if err == nil {
+		t.Fatal("expected error when repo.Create fails")
+	}
+}
+
+func TestSensorService_CreateSensor_EmptyName(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	input := app.CreateSensorInput{
+		TenantID: sensorSvcValidTenantID(),
+		Name:     "",
+		Type:     "runner",
+	}
+
+	_, err := svc.CreateSensor(context.Background(), input)
+	if err == nil {
+		t.Fatal("expected error for empty name")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestSensorService_CreateSensor_InvalidType(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	input := app.CreateSensorInput{
+		TenantID: sensorSvcValidTenantID(),
+		Name:     "test-agent",
+		Type:     "invalid-type",
+	}
+
+	_, err := svc.CreateSensor(context.Background(), input)
+	if err == nil {
+		t.Fatal("expected error for invalid agent type")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+// ============================================================================
+// Tests: GetSensor
+// ============================================================================
+
+func TestSensorService_GetSensor_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "my-runner", sensor.SensorTypeRunner)
+
+	got, err := svc.GetSensor(context.Background(), tenantID.String(), a.ID.String())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got.ID != a.ID {
+		t.Errorf("expected agent ID %s, got %s", a.ID, got.ID)
+	}
+}
+
+func TestSensorService_GetSensor_InvalidTenantID(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.GetSensor(context.Background(), "bad-id", shared.NewID().String())
+	if err == nil {
+		t.Fatal("expected error for invalid tenant ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestSensorService_GetSensor_InvalidSensorID(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.GetSensor(context.Background(), sensorSvcValidTenantID(), "bad-id")
+	if err == nil {
+		t.Fatal("expected error for invalid agent ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestSensorService_GetSensor_NotFound(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.GetSensor(context.Background(), sensorSvcValidTenantID(), shared.NewID().String())
+	if err == nil {
+		t.Fatal("expected error for non-existent agent")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestSensorService_GetSensor_IDORPrevention(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	tenantA := shared.NewID()
+	tenantB := shared.NewID()
+	a := repo.seedSensor(tenantA, "agent-a", sensor.SensorTypeRunner)
+
+	// Try to access tenant A's sensor using tenant B's ID
+	_, err := svc.GetSensor(context.Background(), tenantB.String(), a.ID.String())
+	if err == nil {
+		t.Fatal("expected error when accessing another tenant's agent (IDOR)")
+	}
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for IDOR prevention, got %v", err)
+	}
+}
+
+// ============================================================================
+// Tests: ListSensors
+// ============================================================================
+
+func TestSensorService_ListSensors_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	repo.seedSensor(tenantID, "runner-1", sensor.SensorTypeRunner)
+	repo.seedSensor(tenantID, "worker-1", sensor.SensorTypeWorker)
+
+	result, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID: tenantID.String(),
+		Page:     1,
+		PerPage:  10,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if result.Total != 2 {
+		t.Errorf("expected 2 agents, got %d", result.Total)
+	}
+}
+
+func TestSensorService_ListSensors_WithTypeFilter(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	repo.seedSensor(tenantID, "runner-1", sensor.SensorTypeRunner)
+
+	_, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID: tenantID.String(),
+		Type:     "runner",
+		Page:     1,
+		PerPage:  10,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if repo.lastFilter.Type == nil || *repo.lastFilter.Type != sensor.SensorTypeRunner {
+		t.Error("expected type filter to be set to runner")
+	}
+}
+
+func TestSensorService_ListSensors_WithStatusFilter(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID: sensorSvcValidTenantID(),
+		Status:   "active",
+		Page:     1,
+		PerPage:  10,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if repo.lastFilter.Status == nil || *repo.lastFilter.Status != sensor.SensorStatusActive {
+		t.Error("expected status filter to be set to active")
+	}
+}
+
+func TestSensorService_ListSensors_WithHealthFilter(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID: sensorSvcValidTenantID(),
+		Health:   "online",
+		Page:     1,
+		PerPage:  10,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if repo.lastFilter.Health == nil || *repo.lastFilter.Health != sensor.SensorHealthOnline {
+		t.Error("expected health filter to be set to online")
+	}
+}
+
+func TestSensorService_ListSensors_WithExecutionModeFilter(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID:      sensorSvcValidTenantID(),
+		ExecutionMode: "daemon",
+		Page:          1,
+		PerPage:       10,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if repo.lastFilter.ExecutionMode == nil || *repo.lastFilter.ExecutionMode != sensor.ExecutionModeDaemon {
+		t.Error("expected execution mode filter to be set to daemon")
+	}
+}
+
+func TestSensorService_ListSensors_InvalidTenantID(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID: "not-a-uuid",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid tenant ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestSensorService_ListSensors_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.listErr = errors.New("db error")
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+		TenantID: sensorSvcValidTenantID(),
+		Page:     1,
+		PerPage:  10,
+	})
+	if err == nil {
+		t.Fatal("expected error when repo.List fails")
+	}
+}
+
+// ============================================================================
+// Tests: UpdateSensor
+// ============================================================================
+
+func TestSensorService_UpdateSensor_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "old-name", sensor.SensorTypeRunner)
+
+	updated, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID:    tenantID.String(),
+		SensorID:    a.ID.String(),
+		Name:        "new-name",
+		Description: "updated description",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if updated.Name != "new-name" {
+		t.Errorf("expected name 'new-name', got %q", updated.Name)
+	}
+	if updated.Description != "updated description" {
+		t.Errorf("expected description 'updated description', got %q", updated.Description)
+	}
+}
+
+func TestSensorService_UpdateSensor_Capabilities(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	updated, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID:     tenantID.String(),
+		SensorID:     a.ID.String(),
+		Capabilities: []string{"dast", "api"},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(updated.Capabilities) != 2 || updated.Capabilities[0] != "dast" {
+		t.Errorf("expected capabilities [dast, api], got %v", updated.Capabilities)
+	}
+}
+
+func TestSensorService_UpdateSensor_Tools(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	updated, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID: tenantID.String(),
+		SensorID: a.ID.String(),
+		Tools:    []string{"nuclei", "nmap"},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(updated.Tools) != 2 || updated.Tools[0] != "nuclei" {
+		t.Errorf("expected tools [nuclei, nmap], got %v", updated.Tools)
+	}
+}
+
+func TestSensorService_UpdateSensor_Status(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	updated, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID: tenantID.String(),
+		SensorID: a.ID.String(),
+		Status:   "disabled",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if updated.Status != sensor.SensorStatusDisabled {
+		t.Errorf("expected status 'disabled', got %q", updated.Status)
+	}
+}
+
+func TestSensorService_UpdateSensor_MaxConcurrentJobs(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+
+	maxJobs := 20
+	updated, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID:          tenantID.String(),
+		SensorID:          a.ID.String(),
+		MaxConcurrentJobs: &maxJobs,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if updated.MaxConcurrentJobs != 20 {
+		t.Errorf("expected max concurrent jobs 20, got %d", updated.MaxConcurrentJobs)
+	}
+}
+
+func TestSensorService_UpdateSensor_NotFound(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID: sensorSvcValidTenantID(),
+		SensorID: shared.NewID().String(),
+		Name:     "new-name",
+	})
+	if err == nil {
+		t.Fatal("expected error for non-existent agent")
+	}
+}
+
+func TestSensorService_UpdateSensor_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	repo.updateErr = errors.New("update failed")
+
+	_, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID: tenantID.String(),
+		SensorID: a.ID.String(),
+		Name:     "new-name",
+	})
+	if err == nil {
+		t.Fatal("expected error when repo.Update fails")
+	}
+}
+
+func TestSensorService_UpdateSensor_NoChanges(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	// Update with same name and empty fields
+	updated, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID: tenantID.String(),
+		SensorID: a.ID.String(),
+		Name:     "agent-1", // same name
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if updated.Name != "agent-1" {
+		t.Errorf("expected name unchanged")
+	}
+}
+
+// ============================================================================
+// Tests: UpdateHeartbeat
+// ============================================================================
+
+func TestSensorService_UpdateHeartbeat_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+
+	err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{
+		Version:       "1.2.0",
+		Hostname:      "worker-node-1",
+		CPUPercent:    45.5,
+		MemoryPercent: 62.3,
+		CurrentJobs:   3,
+		Region:        "us-east-1",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	updated := repo.sensors[a.ID.String()]
+	if updated.Version != "1.2.0" {
+		t.Errorf("expected version '1.2.0', got %q", updated.Version)
+	}
+	if updated.Hostname != "worker-node-1" {
+		t.Errorf("expected hostname 'worker-node-1', got %q", updated.Hostname)
+	}
+	if updated.Health != sensor.SensorHealthOnline {
+		t.Errorf("expected health 'online' after heartbeat, got %q", updated.Health)
+	}
+	if updated.LastSeenAt == nil {
+		t.Error("expected LastSeenAt to be set after heartbeat")
+	}
+}
+
+func TestSensorService_UpdateHeartbeat_NotFound(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.UpdateHeartbeat(context.Background(), shared.NewID(), app.SensorHeartbeatData{})
+	if err == nil {
+		t.Fatal("expected error for non-existent agent")
+	}
+}
+
+func TestSensorService_UpdateHeartbeat_UpdateError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+	repo.updateErr = errors.New("update failed")
+
+	err := svc.UpdateHeartbeat(context.Background(), a.ID, app.SensorHeartbeatData{
+		Version: "1.0.0",
+	})
+	if err == nil {
+		t.Fatal("expected error when repo.Update fails")
+	}
+}
+
+// ============================================================================
+// Tests: DeleteSensor
+// ============================================================================
+
+func TestSensorService_DeleteSensor_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-to-delete", sensor.SensorTypeRunner)
+
+	err := svc.DeleteSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if repo.deleteCalls != 1 {
+		t.Errorf("expected 1 Delete call, got %d", repo.deleteCalls)
+	}
+
+	// Sensor should be gone
+	if _, exists := repo.sensors[a.ID.String()]; exists {
+		t.Error("expected agent to be removed from repo")
+	}
+}
+
+func TestSensorService_DeleteSensor_InvalidTenantID(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.DeleteSensor(context.Background(), "bad-id", shared.NewID().String(), nil)
+	if err == nil {
+		t.Fatal("expected error for invalid tenant ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestSensorService_DeleteSensor_InvalidSensorID(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.DeleteSensor(context.Background(), sensorSvcValidTenantID(), "bad-id", nil)
+	if err == nil {
+		t.Fatal("expected error for invalid agent ID")
+	}
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestSensorService_DeleteSensor_NotFound(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.DeleteSensor(context.Background(), sensorSvcValidTenantID(), shared.NewID().String(), nil)
+	if err == nil {
+		t.Fatal("expected error for non-existent agent")
+	}
+}
+
+func TestSensorService_DeleteSensor_IDORPrevention(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantA := shared.NewID()
+	tenantB := shared.NewID()
+	a := repo.seedSensor(tenantA, "agent-a", sensor.SensorTypeRunner)
+
+	err := svc.DeleteSensor(context.Background(), tenantB.String(), a.ID.String(), nil)
+	if err == nil {
+		t.Fatal("expected error when deleting another tenant's agent (IDOR)")
+	}
+}
+
+func TestSensorService_DeleteSensor_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	repo.deleteErr = errors.New("delete failed")
+
+	err := svc.DeleteSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err == nil {
+		t.Fatal("expected error when repo.Delete fails")
+	}
+}
+
+// ============================================================================
+// Tests: RegenerateAPIKey
+// ============================================================================
+
+func TestSensorService_RegenerateAPIKey_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	oldHash := a.APIKeyHash
+
+	newKey, err := svc.RegenerateAPIKey(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if !strings.HasPrefix(newKey, "rda_") {
+		t.Errorf("expected regenerated key to start with 'rda_', got %q", newKey)
+	}
+
+	updated := repo.sensors[a.ID.String()]
+	if updated.APIKeyHash == oldHash {
+		t.Error("expected API key hash to change after regeneration")
+	}
+}
+
+func TestSensorService_RegenerateAPIKey_NotFound(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.RegenerateAPIKey(context.Background(), sensorSvcValidTenantID(), shared.NewID().String(), nil)
+	if err == nil {
+		t.Fatal("expected error for non-existent agent")
+	}
+}
+
+func TestSensorService_RegenerateAPIKey_UpdateError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	repo.updateErr = errors.New("update failed")
+
+	_, err := svc.RegenerateAPIKey(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err == nil {
+		t.Fatal("expected error when repo.Update fails")
+	}
+}
+
+// ============================================================================
+// Tests: RenewAPIKey (self-service credential rotation)
+// ============================================================================
+
+func TestSensorService_RenewAPIKey_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	oldHash := a.APIKeyHash
+
+	newKey, _, err := svc.RenewAPIKey(context.Background(), a)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !strings.HasPrefix(newKey, "rda_") {
+		t.Errorf("expected renewed key to start with 'rda_', got %q", newKey)
+	}
+	if repo.sensors[a.ID.String()].APIKeyHash == oldHash {
+		t.Error("expected API key hash to change after renewal")
+	}
+}
+
+// Renewal works for a platform (nil-tenant) sensor — the self-renew path must not
+// be tenant-scoped, unlike the admin RegenerateAPIKey.
+func TestSensorService_RenewAPIKey_PlatformSensor(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	a := repo.seedSensor(shared.NewID(), "platform-1", sensor.SensorTypeRunner)
+	a.TenantID = nil
+	a.IsPlatformSensor = true
+
+	newKey, _, err := svc.RenewAPIKey(context.Background(), a)
+	if err != nil {
+		t.Fatalf("expected no error for platform agent renewal, got %v", err)
+	}
+	if !strings.HasPrefix(newKey, "rda_") {
+		t.Errorf("expected renewed key to start with 'rda_', got %q", newKey)
+	}
+}
+
+func TestSensorService_RenewAPIKey_NilSensor(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, _, err := svc.RenewAPIKey(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected error for nil agent")
+	}
+	if !errors.Is(err, shared.ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+// A revoked/disabled sensor cannot renew, even if it still holds a working key
+// (defends the auth→renew TOCTOU window: status is re-read from the repo).
+func TestSensorService_RenewAPIKey_RevokedSensor(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "revoked-1", sensor.SensorTypeRunner)
+	a.Revoke("compromised")
+	repo.sensors[a.ID.String()] = a
+
+	_, _, err := svc.RenewAPIKey(context.Background(), a)
+	if err == nil {
+		t.Fatal("expected error for revoked agent")
+	}
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("expected ErrForbidden, got %v", err)
+	}
+}
+
+// End-to-end: after renewal the old key stops authenticating and the new key works.
+func TestSensorService_RenewAPIKey_OldKeyStopsWorking(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "renew-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	oldKey := out.APIKey
+
+	newKey, _, err := svc.RenewAPIKey(context.Background(), out.Sensor)
+	if err != nil {
+		t.Fatalf("renew failed: %v", err)
+	}
+	if newKey == oldKey {
+		t.Fatal("expected renewed key to differ from the old key")
+	}
+
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), oldKey); err == nil {
+		t.Error("expected the old key to stop authenticating after renewal")
+	}
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), newKey); err != nil {
+		t.Errorf("expected the new key to authenticate, got %v", err)
+	}
+}
+
+func TestSensorService_RenewAPIKey_UpdateError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	repo.updateErr = errors.New("update failed")
+
+	_, _, err := svc.RenewAPIKey(context.Background(), a)
+	if err == nil {
+		t.Fatal("expected error when repo.Update fails")
+	}
+}
+
+func TestSensor_IsKeyExpired(t *testing.T) {
+	past := time.Now().Add(-time.Minute)
+	future := time.Now().Add(time.Minute)
+	cases := []struct {
+		name    string
+		expires *time.Time
+		want    bool
+	}{
+		{"nil never expires", nil, false},
+		{"future not expired", &future, false},
+		{"past expired", &past, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &sensor.Sensor{KeyExpiresAt: tc.expires}
+			if got := a.IsKeyExpired(); got != tc.want {
+				t.Errorf("IsKeyExpired() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Default service (no key TTL configured): a renewed key never expires — the
+// returned expiry and the stored KeyExpiresAt are both nil (today's behavior).
+func TestSensorService_RenewAPIKey_NoTTL_NeverExpires(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	_, expiresAt, err := svc.RenewAPIKey(context.Background(), a)
+	if err != nil {
+		t.Fatalf("renew failed: %v", err)
+	}
+	if expiresAt != nil {
+		t.Errorf("expected nil expiry with no TTL configured, got %v", expiresAt)
+	}
+	if repo.sensors[a.ID.String()].KeyExpiresAt != nil {
+		t.Error("expected stored KeyExpiresAt to be nil with no TTL")
+	}
+}
+
+// With a key TTL configured, a renewed key carries a fresh future expiry, both
+// returned to the caller and persisted on the sensor.
+func TestSensorService_RenewAPIKey_WithTTL_SetsExpiry(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	svc.SetKeyTTL(1 * time.Hour)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	before := time.Now()
+	_, expiresAt, err := svc.RenewAPIKey(context.Background(), a)
+	if err != nil {
+		t.Fatalf("renew failed: %v", err)
+	}
+	if expiresAt == nil {
+		t.Fatal("expected a non-nil expiry when TTL is configured")
+	}
+	if !expiresAt.After(before.Add(59 * time.Minute)) {
+		t.Errorf("expected expiry ~1h out, got %v (before=%v)", expiresAt, before)
+	}
+	stored := repo.sensors[a.ID.String()].KeyExpiresAt
+	if stored == nil || !stored.Equal(*expiresAt) {
+		t.Errorf("expected persisted KeyExpiresAt %v to match returned %v", stored, expiresAt)
+	}
+}
+
+// An expired key is rejected at authentication even though the sensor is active.
+func TestSensorService_AuthenticateByAPIKey_ExpiredKey(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "expired-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	past := time.Now().Add(-1 * time.Hour)
+	out.Sensor.KeyExpiresAt = &past
+	repo.sensors[out.Sensor.ID.String()] = out.Sensor
+
+	_, err = svc.AuthenticateByAPIKey(context.Background(), out.APIKey)
+	if err == nil {
+		t.Fatal("expected error for expired key")
+	}
+	if !errors.Is(err, shared.ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized for expired key, got %v", err)
+	}
+}
+
+// A key with a future expiry (or NULL, the back-compat default) still authenticates.
+func TestSensorService_AuthenticateByAPIKey_UnexpiredKey(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "unexpired-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	future := time.Now().Add(1 * time.Hour)
+	out.Sensor.KeyExpiresAt = &future
+	repo.sensors[out.Sensor.ID.String()] = out.Sensor
+
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), out.APIKey); err != nil {
+		t.Errorf("expected a future-expiry key to authenticate, got %v", err)
+	}
+}
+
+// ============================================================================
+// Tests: AuthenticateByAPIKey
+// ============================================================================
+
+func TestSensorService_AuthenticateByAPIKey_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	// Create a sensor via service to get a valid API key
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "auth-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Authenticate with the key
+	authenticated, err := svc.AuthenticateByAPIKey(context.Background(), out.APIKey)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if authenticated.ID != out.Sensor.ID {
+		t.Errorf("expected agent ID %s, got %s", out.Sensor.ID, authenticated.ID)
+	}
+}
+
+func TestSensorService_AuthenticateByAPIKey_InvalidKey(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.AuthenticateByAPIKey(context.Background(), "rda_invalid_key_here")
+	if err == nil {
+		t.Fatal("expected error for invalid API key")
+	}
+	if !errors.Is(err, shared.ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestSensorService_AuthenticateByAPIKey_DisabledSensor(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "disabled-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Disable the sensor
+	out.Sensor.Disable("test disable")
+	repo.sensors[out.Sensor.ID.String()] = out.Sensor
+
+	_, err = svc.AuthenticateByAPIKey(context.Background(), out.APIKey)
+	if err == nil {
+		t.Fatal("expected error for disabled agent")
+	}
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestSensorService_AuthenticateByAPIKey_RevokedSensor(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "revoked-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Revoke the sensor
+	out.Sensor.Revoke("compromised")
+	repo.sensors[out.Sensor.ID.String()] = out.Sensor
+
+	_, err = svc.AuthenticateByAPIKey(context.Background(), out.APIKey)
+	if err == nil {
+		t.Fatal("expected error for revoked agent")
+	}
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("expected ErrForbidden, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "revoked") {
+		t.Errorf("expected error message to mention 'revoked', got %q", err.Error())
+	}
+}
+
+// ============================================================================
+// Tests: ActivateSensor
+// ============================================================================
+
+func TestSensorService_ActivateSensor_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	a.Disable("maintenance")
+
+	activated, err := svc.ActivateSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if activated.Status != sensor.SensorStatusActive {
+		t.Errorf("expected status 'active', got %q", activated.Status)
+	}
+}
+
+func TestSensorService_ActivateSensor_RevokedCannotReactivate(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	a.Revoke("compromised")
+
+	_, err := svc.ActivateSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err == nil {
+		t.Fatal("expected error when activating revoked agent")
+	}
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("expected ErrForbidden, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "revoked") {
+		t.Errorf("expected error message to mention 'revoked', got %q", err.Error())
+	}
+}
+
+func TestSensorService_ActivateSensor_NotFound(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.ActivateSensor(context.Background(), sensorSvcValidTenantID(), shared.NewID().String(), nil)
+	if err == nil {
+		t.Fatal("expected error for non-existent agent")
+	}
+}
+
+func TestSensorService_ActivateSensor_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	a.Disable("test")
+	repo.updateErr = errors.New("update failed")
+
+	_, err := svc.ActivateSensor(context.Background(), tenantID.String(), a.ID.String(), nil)
+	if err == nil {
+		t.Fatal("expected error when repo.Update fails")
+	}
+}
+
+// ============================================================================
+// Tests: DisableSensor
+// ============================================================================
+
+func TestSensorService_DisableSensor_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	disabled, err := svc.DisableSensor(context.Background(), tenantID.String(), a.ID.String(), "maintenance window", nil)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if disabled.Status != sensor.SensorStatusDisabled {
+		t.Errorf("expected status 'disabled', got %q", disabled.Status)
+	}
+	if disabled.StatusMessage != "maintenance window" {
+		t.Errorf("expected status message 'maintenance window', got %q", disabled.StatusMessage)
+	}
+}
+
+func TestSensorService_DisableSensor_DefaultReason(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	disabled, err := svc.DisableSensor(context.Background(), tenantID.String(), a.ID.String(), "", nil)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if disabled.StatusMessage != "Disabled by administrator" {
+		t.Errorf("expected default reason 'Disabled by administrator', got %q", disabled.StatusMessage)
+	}
+}
+
+func TestSensorService_DisableSensor_NotFound(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.DisableSensor(context.Background(), sensorSvcValidTenantID(), shared.NewID().String(), "test", nil)
+	if err == nil {
+		t.Fatal("expected error for non-existent agent")
+	}
+}
+
+// ============================================================================
+// Tests: RevokeSensor
+// ============================================================================
+
+func TestSensorService_RevokeSensor_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	revoked, err := svc.RevokeSensor(context.Background(), tenantID.String(), a.ID.String(), "compromised key", nil)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if revoked.Status != sensor.SensorStatusRevoked {
+		t.Errorf("expected status 'revoked', got %q", revoked.Status)
+	}
+	if revoked.StatusMessage != "compromised key" {
+		t.Errorf("expected status message 'compromised key', got %q", revoked.StatusMessage)
+	}
+}
+
+func TestSensorService_RevokeSensor_DefaultReason(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	revoked, err := svc.RevokeSensor(context.Background(), tenantID.String(), a.ID.String(), "", nil)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if revoked.StatusMessage != "Revoked by administrator" {
+		t.Errorf("expected default reason 'Revoked by administrator', got %q", revoked.StatusMessage)
+	}
+}
+
+func TestSensorService_RevokeSensor_NotFound(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.RevokeSensor(context.Background(), sensorSvcValidTenantID(), shared.NewID().String(), "test", nil)
+	if err == nil {
+		t.Fatal("expected error for non-existent agent")
+	}
+}
+
+func TestSensorService_RevokeSensor_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	repo.updateErr = errors.New("update failed")
+
+	_, err := svc.RevokeSensor(context.Background(), tenantID.String(), a.ID.String(), "test", nil)
+	if err == nil {
+		t.Fatal("expected error when repo.Update fails")
+	}
+}
+
+// ============================================================================
+// Tests: Heartbeat
+// ============================================================================
+
+func TestSensorService_Heartbeat_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+
+	err := svc.Heartbeat(context.Background(), app.SensorHeartbeatInput{
+		SensorID:  a.ID,
+		Status:    "online",
+		Message:   "all good",
+		Version:   "2.0.0",
+		Hostname:  "node-42",
+		IPAddress: "192.168.1.100",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	updated := repo.sensors[a.ID.String()]
+	if updated.Health != sensor.SensorHealthOnline {
+		t.Errorf("expected health 'online', got %q", updated.Health)
+	}
+	if updated.Version != "2.0.0" {
+		t.Errorf("expected version '2.0.0', got %q", updated.Version)
+	}
+	if updated.Hostname != "node-42" {
+		t.Errorf("expected hostname 'node-42', got %q", updated.Hostname)
+	}
+	if updated.IPAddress.String() != "192.168.1.100" {
+		t.Errorf("expected IP '192.168.1.100', got %q", updated.IPAddress)
+	}
+	if updated.StatusMessage != "all good" {
+		t.Errorf("expected status message 'all good', got %q", updated.StatusMessage)
+	}
+	if updated.LastSeenAt == nil {
+		t.Error("expected LastSeenAt to be set")
+	}
+}
+
+func TestSensorService_Heartbeat_MinimalInput(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+
+	err := svc.Heartbeat(context.Background(), app.SensorHeartbeatInput{
+		SensorID: a.ID,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	updated := repo.sensors[a.ID.String()]
+	if updated.Health != sensor.SensorHealthOnline {
+		t.Errorf("expected health 'online' after heartbeat, got %q", updated.Health)
+	}
+}
+
+func TestSensorService_Heartbeat_NotFound(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.Heartbeat(context.Background(), app.SensorHeartbeatInput{
+		SensorID: shared.NewID(),
+	})
+	if err == nil {
+		t.Fatal("expected error for non-existent agent")
+	}
+}
+
+func TestSensorService_Heartbeat_UpdateError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+	repo.updateErr = errors.New("update failed")
+
+	err := svc.Heartbeat(context.Background(), app.SensorHeartbeatInput{
+		SensorID: a.ID,
+		Version:  "1.0.0",
+	})
+	if err == nil {
+		t.Fatal("expected error when repo.Update fails")
+	}
+}
+
+// ============================================================================
+// Tests: FindAvailableSensors
+// ============================================================================
+
+func TestSensorService_FindAvailableSensors_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+	repo.availableSensors = []*sensor.Sensor{a}
+
+	sensors, err := svc.FindAvailableSensors(context.Background(), tenantID, []string{"sast"}, "semgrep")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(sensors) != 1 {
+		t.Errorf("expected 1 available agent, got %d", len(sensors))
+	}
+}
+
+func TestSensorService_FindAvailableSensors_Empty(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	repo.availableSensors = []*sensor.Sensor{}
+
+	sensors, err := svc.FindAvailableSensors(context.Background(), shared.NewID(), []string{"sast"}, "semgrep")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(sensors) != 0 {
+		t.Errorf("expected 0 available agents, got %d", len(sensors))
+	}
+}
+
+func TestSensorService_FindAvailableSensors_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.findAvailableErr = errors.New("db error")
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.FindAvailableSensors(context.Background(), shared.NewID(), []string{"sast"}, "semgrep")
+	if err == nil {
+		t.Fatal("expected error when repo.FindAvailable fails")
+	}
+}
+
+// ============================================================================
+// Tests: FindAvailableWithCapacity
+// ============================================================================
+
+func TestSensorService_FindAvailableWithCapacity_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeWorker)
+	repo.availableCapSensors = []*sensor.Sensor{a}
+
+	sensors, err := svc.FindAvailableWithCapacity(context.Background(), tenantID, []string{"sast"}, "semgrep")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(sensors) != 1 {
+		t.Errorf("expected 1 agent with capacity, got %d", len(sensors))
+	}
+}
+
+func TestSensorService_FindAvailableWithCapacity_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.findAvailableWithCapErr = errors.New("db error")
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.FindAvailableWithCapacity(context.Background(), shared.NewID(), []string{"sast"}, "semgrep")
+	if err == nil {
+		t.Fatal("expected error when repo.FindAvailableWithCapacity fails")
+	}
+}
+
+// ============================================================================
+// Tests: ClaimJob
+// ============================================================================
+
+func TestSensorService_ClaimJob_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.ClaimJob(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if repo.claimJobCalls != 1 {
+		t.Errorf("expected 1 ClaimJob call, got %d", repo.claimJobCalls)
+	}
+}
+
+func TestSensorService_ClaimJob_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.claimJobErr = errors.New("no capacity")
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.ClaimJob(context.Background(), shared.NewID())
+	if err == nil {
+		t.Fatal("expected error when repo.ClaimJob fails")
+	}
+}
+
+// ============================================================================
+// Tests: ReleaseJob
+// ============================================================================
+
+func TestSensorService_ReleaseJob_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.ReleaseJob(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if repo.releaseJobCalls != 1 {
+		t.Errorf("expected 1 ReleaseJob call, got %d", repo.releaseJobCalls)
+	}
+}
+
+func TestSensorService_ReleaseJob_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.releaseJobErr = errors.New("not claimed")
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.ReleaseJob(context.Background(), shared.NewID())
+	if err == nil {
+		t.Fatal("expected error when repo.ReleaseJob fails")
+	}
+}
+
+// ============================================================================
+// Tests: IncrementStats
+// ============================================================================
+
+func TestSensorService_IncrementStats_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.IncrementStats(context.Background(), shared.NewID(), 10, 5, 2)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if repo.incrementStatsCalls != 1 {
+		t.Errorf("expected 1 IncrementStats call, got %d", repo.incrementStatsCalls)
+	}
+	if repo.lastStatsArgs.findings != 10 {
+		t.Errorf("expected findings=10, got %d", repo.lastStatsArgs.findings)
+	}
+	if repo.lastStatsArgs.scans != 5 {
+		t.Errorf("expected scans=5, got %d", repo.lastStatsArgs.scans)
+	}
+	if repo.lastStatsArgs.errors != 2 {
+		t.Errorf("expected errors=2, got %d", repo.lastStatsArgs.errors)
+	}
+}
+
+func TestSensorService_IncrementStats_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.incrementStatsErr = errors.New("db error")
+	svc := newSensorSvcTestService(repo)
+
+	err := svc.IncrementStats(context.Background(), shared.NewID(), 1, 1, 0)
+	if err == nil {
+		t.Fatal("expected error when repo.IncrementStats fails")
+	}
+}
+
+// ============================================================================
+// Tests: GetAvailableCapabilitiesForTenant
+// ============================================================================
+
+func TestSensorService_GetAvailableCapabilitiesForTenant_Success(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.capabilities = []string{"sast", "sca", "dast"}
+	svc := newSensorSvcTestService(repo)
+
+	out, err := svc.GetAvailableCapabilitiesForTenant(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(out.Capabilities) != 3 {
+		t.Errorf("expected 3 capabilities, got %d", len(out.Capabilities))
+	}
+	if out.TotalSensors != 3 {
+		t.Errorf("expected TotalAgents=3 (len of capabilities), got %d", out.TotalSensors)
+	}
+}
+
+func TestSensorService_GetAvailableCapabilitiesForTenant_Empty(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.capabilities = nil // nil from repo
+	svc := newSensorSvcTestService(repo)
+
+	out, err := svc.GetAvailableCapabilitiesForTenant(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	// Should return empty array, not nil
+	if out.Capabilities == nil {
+		t.Error("expected non-nil capabilities slice (empty array)")
+	}
+	if len(out.Capabilities) != 0 {
+		t.Errorf("expected 0 capabilities, got %d", len(out.Capabilities))
+	}
+}
+
+func TestSensorService_GetAvailableCapabilitiesForTenant_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.getAvailableCapabilitiesErr = errors.New("db error")
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.GetAvailableCapabilitiesForTenant(context.Background(), shared.NewID())
+	if err == nil {
+		t.Fatal("expected error when repo fails")
+	}
+}
+
+// ============================================================================
+// Tests: HasCapability
+// ============================================================================
+
+func TestSensorService_HasCapability_True(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.hasCapability = true
+	svc := newSensorSvcTestService(repo)
+
+	has, err := svc.HasCapability(context.Background(), shared.NewID(), "sast")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !has {
+		t.Error("expected HasCapability to return true")
+	}
+}
+
+func TestSensorService_HasCapability_False(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.hasCapability = false
+	svc := newSensorSvcTestService(repo)
+
+	has, err := svc.HasCapability(context.Background(), shared.NewID(), "sast")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if has {
+		t.Error("expected HasCapability to return false")
+	}
+}
+
+func TestSensorService_HasCapability_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.hasSensorForCapabilityErr = errors.New("db error")
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.HasCapability(context.Background(), shared.NewID(), "sast")
+	if err == nil {
+		t.Fatal("expected error when repo fails")
+	}
+}
+
+// ============================================================================
+// Tests: GetPlatformStats
+// ============================================================================
+
+func TestSensorService_GetPlatformStats_NoPlatformSensors(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.platformStats = &sensor.PlatformSensorStatsResult{
+		TotalSensors:  0,
+		TierBreakdown: make(map[string]sensor.TierBreakdown),
+	}
+	svc := newSensorSvcTestService(repo)
+
+	out, err := svc.GetPlatformStats(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if out.Enabled {
+		t.Error("expected Enabled=false when no platform agents")
+	}
+	if out.MaxTier != "shared" {
+		t.Errorf("expected MaxTier='shared', got %q", out.MaxTier)
+	}
+	if len(out.AccessibleTiers) != 1 || out.AccessibleTiers[0] != "shared" {
+		t.Errorf("expected AccessibleTiers=[shared], got %v", out.AccessibleTiers)
+	}
+}
+
+func TestSensorService_GetPlatformStats_WithSensors(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.platformStats = &sensor.PlatformSensorStatsResult{
+		TotalSensors:      5,
+		OnlineSensors:     3,
+		TotalCapacity:     25,
+		CurrentActiveJobs: 10,
+		CurrentQueuedJobs: 2,
+		TierBreakdown: map[string]sensor.TierBreakdown{
+			"shared": {
+				TotalSensors:  3,
+				OnlineSensors: 2,
+				TotalCapacity: 15,
+				CurrentLoad:   6,
+			},
+			"dedicated": {
+				TotalSensors:  2,
+				OnlineSensors: 1,
+				TotalCapacity: 10,
+				CurrentLoad:   4,
+			},
+		},
+	}
+	svc := newSensorSvcTestService(repo)
+
+	out, err := svc.GetPlatformStats(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !out.Enabled {
+		t.Error("expected Enabled=true when platform agents exist")
+	}
+	if out.MaxTier != "dedicated" {
+		t.Errorf("expected MaxTier='dedicated', got %q", out.MaxTier)
+	}
+	if out.MaxConcurrent != 25 {
+		t.Errorf("expected MaxConcurrent=25, got %d", out.MaxConcurrent)
+	}
+	if out.MaxQueued != 75 {
+		t.Errorf("expected MaxQueued=75 (3x capacity), got %d", out.MaxQueued)
+	}
+	if out.CurrentActive != 10 {
+		t.Errorf("expected CurrentActive=10, got %d", out.CurrentActive)
+	}
+	if out.CurrentQueued != 2 {
+		t.Errorf("expected CurrentQueued=2, got %d", out.CurrentQueued)
+	}
+	if out.AvailableSlots != 15 {
+		t.Errorf("expected AvailableSlots=15, got %d", out.AvailableSlots)
+	}
+
+	// Check tier stats
+	sharedTier, ok := out.TierStats["shared"]
+	if !ok {
+		t.Fatal("expected 'shared' tier in TierStats")
+	}
+	if sharedTier.TotalSensors != 3 {
+		t.Errorf("expected shared TotalAgents=3, got %d", sharedTier.TotalSensors)
+	}
+	if sharedTier.OnlineSensors != 2 {
+		t.Errorf("expected shared OnlineAgents=2, got %d", sharedTier.OnlineSensors)
+	}
+	if sharedTier.OfflineSensors != 1 {
+		t.Errorf("expected shared OfflineAgents=1, got %d", sharedTier.OfflineSensors)
+	}
+	if sharedTier.AvailableSlots != 9 {
+		t.Errorf("expected shared AvailableSlots=9, got %d", sharedTier.AvailableSlots)
+	}
+}
+
+func TestSensorService_GetPlatformStats_WithPremiumTier(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.platformStats = &sensor.PlatformSensorStatsResult{
+		TotalSensors:  2,
+		TotalCapacity: 10,
+		TierBreakdown: map[string]sensor.TierBreakdown{
+			"shared":  {TotalSensors: 1, TotalCapacity: 5},
+			"premium": {TotalSensors: 1, TotalCapacity: 5},
+		},
+	}
+	svc := newSensorSvcTestService(repo)
+
+	out, err := svc.GetPlatformStats(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if out.MaxTier != "premium" {
+		t.Errorf("expected MaxTier='premium', got %q", out.MaxTier)
+	}
+	// Should have shared + premium
+	foundShared := false
+	foundPremium := false
+	for _, tier := range out.AccessibleTiers {
+		if tier == "shared" {
+			foundShared = true
+		}
+		if tier == "premium" {
+			foundPremium = true
+		}
+	}
+	if !foundShared || !foundPremium {
+		t.Errorf("expected AccessibleTiers to contain shared and premium, got %v", out.AccessibleTiers)
+	}
+}
+
+func TestSensorService_GetPlatformStats_RepoError(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	repo.getPlatformSensorStatsErr = errors.New("db error")
+	svc := newSensorSvcTestService(repo)
+
+	_, err := svc.GetPlatformStats(context.Background(), shared.NewID())
+	if err == nil {
+		t.Fatal("expected error when repo fails")
+	}
+}
+
+// ============================================================================
+// Tests: API Key Format
+// ============================================================================
+
+func TestSensorService_APIKeyFormat(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: sensorSvcValidTenantID(),
+		Name:     "format-test",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+
+	// Verify prefix format: "rda_" + first 8 hex chars
+	expectedPrefix := out.APIKey[:12]
+	if out.Sensor.APIKeyPrefix != expectedPrefix {
+		t.Errorf("expected prefix %q, got %q", expectedPrefix, out.Sensor.APIKeyPrefix)
+	}
+}
+
+func TestSensorService_APIKeyUniqueness(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+
+	keys := make(map[string]bool)
+	for i := 0; i < 10; i++ {
+		out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+			TenantID: sensorSvcValidTenantID(),
+			Name:     "agent-" + strings.Repeat("x", i+1),
+			Type:     "runner",
+		})
+		if err != nil {
+			t.Fatalf("failed to create agent %d: %v", i, err)
+		}
+		if keys[out.APIKey] {
+			t.Fatalf("duplicate API key generated at iteration %d", i)
+		}
+		keys[out.APIKey] = true
+	}
+}
+
+// ============================================================================
+// Tests: Status Transitions
+// ============================================================================
+
+func TestSensorService_StatusTransitions(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+
+	// Create sensor (active by default)
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "transition-agent",
+		Type:     "runner",
+	})
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if out.Sensor.Status != sensor.SensorStatusActive {
+		t.Fatalf("expected initial status 'active', got %q", out.Sensor.Status)
+	}
+
+	sensorID := out.Sensor.ID.String()
+
+	// Active -> Disabled
+	disabled, err := svc.DisableSensor(context.Background(), tenantID.String(), sensorID, "test", nil)
+	if err != nil {
+		t.Fatalf("failed to disable: %v", err)
+	}
+	if disabled.Status != sensor.SensorStatusDisabled {
+		t.Errorf("expected 'disabled', got %q", disabled.Status)
+	}
+
+	// Disabled -> Active
+	activated, err := svc.ActivateSensor(context.Background(), tenantID.String(), sensorID, nil)
+	if err != nil {
+		t.Fatalf("failed to activate: %v", err)
+	}
+	if activated.Status != sensor.SensorStatusActive {
+		t.Errorf("expected 'active', got %q", activated.Status)
+	}
+
+	// Active -> Revoked
+	revoked, err := svc.RevokeSensor(context.Background(), tenantID.String(), sensorID, "bye", nil)
+	if err != nil {
+		t.Fatalf("failed to revoke: %v", err)
+	}
+	if revoked.Status != sensor.SensorStatusRevoked {
+		t.Errorf("expected 'revoked', got %q", revoked.Status)
+	}
+
+	// Revoked -> Active (should fail)
+	_, err = svc.ActivateSensor(context.Background(), tenantID.String(), sensorID, nil)
+	if err == nil {
+		t.Fatal("expected error when activating revoked agent")
+	}
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Errorf("expected ErrForbidden, got %v", err)
+	}
+}
+
+// ============================================================================
+// Tests: Nil AuditService (optional dependency)
+// ============================================================================
+
+func TestSensorService_NilAuditService_DoesNotPanic(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	// Pass nil audit service
+	log := logger.NewNop()
+	svc := app.NewSensorService(repo, nil, log)
+	tenantID := shared.NewID()
+
+	// CreateSensor with audit context should not panic
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(),
+		Name:     "no-panic-agent",
+		Type:     "runner",
+		AuditContext: &app.AuditContext{
+			TenantID: tenantID.String(),
+			ActorID:  shared.NewID().String(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	sensorID := out.Sensor.ID.String()
+
+	// UpdateSensor with audit context
+	_, err = svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+		TenantID:     tenantID.String(),
+		SensorID:     sensorID,
+		Name:         "updated",
+		AuditContext: &app.AuditContext{TenantID: tenantID.String()},
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgent should not panic with nil audit service: %v", err)
+	}
+
+	// DeleteSensor with audit context
+	auditCtx := &app.AuditContext{TenantID: tenantID.String()}
+	err = svc.DeleteSensor(context.Background(), tenantID.String(), sensorID, auditCtx)
+	if err != nil {
+		t.Fatalf("DeleteAgent should not panic with nil audit service: %v", err)
+	}
+}
+
+// ============================================================================
+// Tests: multi-key store (RFC-014 Phase 3 rotation overlap)
+// ============================================================================
+
+// mockSensorAPIKeyRepo is an in-memory sensor.APIKeyRepository for the overlap tests.
+type mockSensorAPIKeyRepo struct {
+	mu        sync.Mutex
+	byID      map[string]*sensor.APIKey
+	createErr error
+}
+
+func newMockSensorAPIKeyRepo() *mockSensorAPIKeyRepo {
+	return &mockSensorAPIKeyRepo{byID: make(map[string]*sensor.APIKey)}
+}
+
+func (m *mockSensorAPIKeyRepo) Create(_ context.Context, k *sensor.APIKey) error {
+	if m.createErr != nil {
+		return m.createErr
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := *k
+	m.byID[k.ID.String()] = &cp
+	return nil
+}
+func (m *mockSensorAPIKeyRepo) GetByID(_ context.Context, id shared.ID) (*sensor.APIKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if k, ok := m.byID[id.String()]; ok {
+		cp := *k
+		return &cp, nil
+	}
+	return nil, sensor.ErrSensorNotFound
+}
+func (m *mockSensorAPIKeyRepo) GetByHash(_ context.Context, hash string) (*sensor.APIKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range m.byID {
+		if k.KeyHash == hash && k.IsActive {
+			cp := *k
+			return &cp, nil
+		}
+	}
+	return nil, sensor.ErrSensorNotFound
+}
+func (m *mockSensorAPIKeyRepo) GetBySensorID(_ context.Context, sensorID shared.ID) ([]*sensor.APIKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*sensor.APIKey
+	for _, k := range m.byID {
+		if k.SensorID == sensorID {
+			cp := *k
+			out = append(out, &cp)
+		}
+	}
+	return out, nil
+}
+func (m *mockSensorAPIKeyRepo) List(_ context.Context, _ sensor.APIKeyFilter) ([]*sensor.APIKey, error) {
+	return nil, nil
+}
+func (m *mockSensorAPIKeyRepo) Update(_ context.Context, k *sensor.APIKey) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := *k
+	m.byID[k.ID.String()] = &cp
+	return nil
+}
+func (m *mockSensorAPIKeyRepo) Delete(_ context.Context, id shared.ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.byID, id.String())
+	return nil
+}
+func (m *mockSensorAPIKeyRepo) RecordUsage(_ context.Context, id shared.ID, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if k, ok := m.byID[id.String()]; ok {
+		k.UseCount++
+	}
+	return nil
+}
+func (m *mockSensorAPIKeyRepo) Revoke(_ context.Context, id shared.ID, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if k, ok := m.byID[id.String()]; ok {
+		k.Revoke(reason)
+	}
+	return nil
+}
+func (m *mockSensorAPIKeyRepo) CountActiveBySensorID(_ context.Context, sensorID shared.ID) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, k := range m.byID {
+		if k.SensorID == sensorID && k.IsActive {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// Renew under a TTL with the multi-key store issues a NEW key row that
+// authenticates, while the old inline key keeps working during the overlap.
+func TestSensorService_RenewAPIKey_Overlap(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	keyRepo := newMockSensorAPIKeyRepo()
+	svc := newSensorSvcTestService(repo)
+	svc.SetKeyTTL(1 * time.Hour)
+	svc.SetAPIKeyRepository(keyRepo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(), Name: "overlap-agent", Type: "runner",
+	})
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	oldKey := out.APIKey
+
+	newKey, exp, err := svc.RenewAPIKey(context.Background(), out.Sensor)
+	if err != nil {
+		t.Fatalf("renew: %v", err)
+	}
+	if exp == nil {
+		t.Fatal("expected an expiry under TTL")
+	}
+	// The new key was issued as a key row (not an inline-hash replacement).
+	if n, _ := keyRepo.CountActiveBySensorID(context.Background(), out.Sensor.ID); n != 1 {
+		t.Errorf("expected 1 key row after overlap renewal, got %d", n)
+	}
+	// New key authenticates via the key row.
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), newKey); err != nil {
+		t.Errorf("expected the new key to authenticate via the key row, got %v", err)
+	}
+	// Old inline key still works during the overlap grace window.
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), oldKey); err != nil {
+		t.Errorf("expected the old inline key to still work during overlap, got %v", err)
+	}
+}
+
+// Regression (RFC-014 defect): the inline bootstrap key must be retired exactly
+// ONCE, on the first overlap renewal. A prior guard (!IsKeyExpired) re-ran the
+// retirement on every renewal that landed before the grace lapsed, pushing the
+// grace forward and keeping the original static key alive forever under short
+// TTLs. The fix guards on KeyExpiresAt == nil.
+func TestSensorService_RenewAPIKey_Overlap_RetiresInlineKeyOnce(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	keyRepo := newMockSensorAPIKeyRepo()
+	svc := newSensorSvcTestService(repo)
+	svc.SetKeyTTL(1 * time.Hour)
+	svc.SetAPIKeyRepository(keyRepo)
+	tenantID := shared.NewID()
+
+	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
+		TenantID: tenantID.String(), Name: "retire-agent", Type: "runner",
+	})
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	// Renew several times, each before the grace would lapse.
+	for i := 0; i < 3; i++ {
+		if _, _, err := svc.RenewAPIKey(context.Background(), out.Sensor); err != nil {
+			t.Fatalf("renew %d: %v", i, err)
+		}
+	}
+
+	// The inline key must have been retired exactly once (not re-extended).
+	if repo.updateKeyExpiryCalls != 1 {
+		t.Errorf("expected inline key retired exactly once, got %d UpdateKeyExpiry calls", repo.updateKeyExpiryCalls)
+	}
+	stored := repo.sensors[out.Sensor.ID.String()]
+	if stored.KeyExpiresAt == nil {
+		t.Fatal("expected inline key to have an expiry after overlap renewal")
+	}
+	// And the retirement grace is bounded (≤ ~15m out), not pushed to a full TTL.
+	if time.Until(*stored.KeyExpiresAt) > 20*time.Minute {
+		t.Errorf("inline expiry pushed too far out (%v) — retirement re-extended?", time.Until(*stored.KeyExpiresAt))
+	}
+}
+
+// An expired key row does not authenticate.
+func TestSensorService_AuthenticateByAPIKey_ExpiredKeyRow(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	keyRepo := newMockSensorAPIKeyRepo()
+	svc := newSensorSvcTestService(repo)
+	svc.SetAPIKeyRepository(keyRepo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "agent-1", sensor.SensorTypeRunner)
+
+	// Seed an expired, active key row whose hash matches a known plaintext.
+	plaintext := "rda_rowkey_expired_000000000000"
+	k, _ := sensor.NewAPIKey(a.ID, "expired", sensor.RunnerScopes())
+	k.SetKeyHash(hashForTest(svc, plaintext), "rda_expired0")
+	past := time.Now().Add(-time.Hour)
+	k.SetExpiration(past)
+	_ = keyRepo.Create(context.Background(), k)
+
+	if _, err := svc.AuthenticateByAPIKey(context.Background(), plaintext); err == nil {
+		t.Fatal("expected expired key row to be rejected")
+	}
+}
+
+// hashForTest reproduces the service's key-hash (no pepper configured in tests).
+func hashForTest(_ *app.SensorService, plaintext string) string {
+	sum := sha256.Sum256([]byte(plaintext))
+	return hex.EncodeToString(sum[:])
+}

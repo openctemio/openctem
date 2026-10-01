@@ -58,7 +58,7 @@ type Tool struct {
 	ConfigSchema   map[string]any // JSON Schema for validating tool config
 	DefaultConfig  map[string]any // Default configuration
 
-	// Capabilities this tool provides (maps to agent capabilities)
+	// Capabilities this tool provides (maps to sensor capabilities)
 	Capabilities []string
 
 	// Supported input/output
@@ -437,7 +437,7 @@ type ToolExecution struct {
 	ID       shared.ID
 	TenantID shared.ID
 	ToolID   shared.ID
-	AgentID  *shared.ID
+	SensorID *shared.ID
 
 	// Execution context
 	PipelineRunID *shared.ID
@@ -484,7 +484,7 @@ func (s ExecutionStatus) IsValid() bool {
 func NewToolExecution(
 	tenantID shared.ID,
 	toolID shared.ID,
-	agentID *shared.ID,
+	sensorID *shared.ID,
 	inputConfig map[string]any,
 	targetsCount int,
 ) *ToolExecution {
@@ -493,7 +493,7 @@ func NewToolExecution(
 		ID:           shared.NewID(),
 		TenantID:     tenantID,
 		ToolID:       toolID,
-		AgentID:      agentID,
+		SensorID:     sensorID,
 		Status:       ExecutionStatusRunning,
 		InputConfig:  inputConfig,
 		TargetsCount: targetsCount,

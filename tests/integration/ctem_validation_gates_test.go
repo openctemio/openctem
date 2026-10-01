@@ -35,8 +35,8 @@ import (
 // -----------------------------------------------------------------------------
 
 // stubDispatcher returns canned evidence for the validation job. This
-// stands in for the agent fleet — in production the API pushes the
-// job onto the platform-agent queue and an agent reports back.
+// stands in for the sensor fleet — in production the API pushes the
+// job onto the platform-sensor queue and a sensor reports back.
 type stubDispatcher struct {
 	outcome       validation.Outcome
 	recordedJobID string
@@ -115,7 +115,7 @@ func findingAtFixApplied(t *testing.T) *vulnerability.Finding {
 
 // newProofSvc wires the real ProofOfFixService with an in-memory
 // evidence store (so Record doesn't need postgres).
-func newProofSvc(disp validation.ValidationDispatcher, cap validation.AgentCapability, notif validation.RetestNotifier, repo validation.FindingMutator) *validation.ProofOfFixService {
+func newProofSvc(disp validation.ValidationDispatcher, cap validation.SensorCapability, notif validation.RetestNotifier, repo validation.FindingMutator) *validation.ProofOfFixService {
 	evStore := validation.NewEvidenceStore(memoryEvidenceRepo{})
 	return validation.NewProofOfFixService(disp, cap, evStore, repo, notif)
 }
@@ -127,7 +127,7 @@ func (memoryEvidenceRepo) ListByFinding(_ context.Context, _, _ shared.ID) ([]va
 	return nil, nil
 }
 
-// TestCTEM_F4_OutcomeNotDetectedResolves — the happy path: agent says
+// TestCTEM_F4_OutcomeNotDetectedResolves — the happy path: sensor says
 // the exposure is gone, finding goes to resolved, notifier stays
 // quiet.
 func TestCTEM_F4_OutcomeNotDetectedResolves(t *testing.T) {
@@ -158,7 +158,7 @@ func TestCTEM_F4_OutcomeNotDetectedResolves(t *testing.T) {
 }
 
 // TestCTEM_F4_OutcomeDetectedRevertsAndNotifies — the failure path:
-// agent still detects the exposure after the fix, finding reverts to
+// sensor still detects the exposure after the fix, finding reverts to
 // in_progress and the assignee is notified.
 func TestCTEM_F4_OutcomeDetectedRevertsAndNotifies(t *testing.T) {
 	f := findingAtFixApplied(t)
@@ -216,7 +216,7 @@ func TestCTEM_F4_OutcomeInconclusiveLeavesStatusUntouched(t *testing.T) {
 }
 
 // TestCTEM_F4_MissingTechniqueRejectedUpfront — proof-of-fix refuses
-// to dispatch without a technique. Otherwise the agent would receive
+// to dispatch without a technique. Otherwise the sensor would receive
 // a job with an empty Technique field and would fail opaquely.
 func TestCTEM_F4_MissingTechniqueRejectedUpfront(t *testing.T) {
 	f := findingAtFixApplied(t)

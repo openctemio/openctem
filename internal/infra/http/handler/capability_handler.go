@@ -74,10 +74,10 @@ type CapabilityResponse struct {
 
 // CapabilityUsageStatsResponse represents usage statistics for a capability.
 type CapabilityUsageStatsResponse struct {
-	ToolCount  int      `json:"tool_count"`
-	AgentCount int      `json:"agent_count"`
-	ToolNames  []string `json:"tool_names,omitempty"`
-	AgentNames []string `json:"agent_names,omitempty"`
+	ToolCount   int      `json:"tool_count"`
+	SensorCount int      `json:"agent_count"`
+	ToolNames   []string `json:"tool_names,omitempty"`
+	SensorNames []string `json:"agent_names,omitempty"`
 }
 
 // toCapabilityResponse converts a domain capability to a response.
@@ -259,10 +259,10 @@ func (h *CapabilityHandler) GetCapabilityUsageStats(w http.ResponseWriter, r *ht
 	}
 
 	resp := CapabilityUsageStatsResponse{
-		ToolCount:  stats.ToolCount,
-		AgentCount: stats.AgentCount,
-		ToolNames:  stats.ToolNames,
-		AgentNames: stats.AgentNames,
+		ToolCount:   stats.ToolCount,
+		SensorCount: stats.SensorCount,
+		ToolNames:   stats.ToolNames,
+		SensorNames: stats.SensorNames,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -299,10 +299,10 @@ func (h *CapabilityHandler) GetCapabilitiesUsageStatsBatch(w http.ResponseWriter
 	resp := make(map[string]CapabilityUsageStatsResponse, len(stats))
 	for id, stat := range stats {
 		resp[id] = CapabilityUsageStatsResponse{
-			ToolCount:  stat.ToolCount,
-			AgentCount: stat.AgentCount,
-			ToolNames:  stat.ToolNames,
-			AgentNames: stat.AgentNames,
+			ToolCount:   stat.ToolCount,
+			SensorCount: stat.SensorCount,
+			ToolNames:   stat.ToolNames,
+			SensorNames: stat.SensorNames,
 		}
 	}
 

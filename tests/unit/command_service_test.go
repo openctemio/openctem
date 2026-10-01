@@ -23,32 +23,32 @@ type cmdMockRepo struct {
 	commands map[string]*commanddom.Command
 
 	// Error overrides
-	createErr             error
-	getByTenantAndIDErr   error
-	updateErr             error
-	claimErr              error
-	deleteErr             error
-	listErr               error
-	getPendingErr         error
-	findExpiredResult     []*commanddom.Command
-	findExpiredErr        error
-	getByAuthTokenHashErr error
-	countActiveErr        error
-	countQueuedTenantErr  error
-	countQueuedAllErr     error
-	getQueuedErr          error
-	getNextErr            error
-	updatePrioritiesErr   error
-	recoverStuckErr       error
-	expirePlatformErr     error
-	queueExpiredResult    []*commanddom.Command
-	getQueuePositionErr   error
-	listPlatformTenantErr error
-	listPlatformAdminErr  error
-	getPlatformByAgentErr error
-	recoverTenantErr      error
-	failExhaustedErr      error
-	getStatsByTenantErr   error
+	createErr              error
+	getByTenantAndIDErr    error
+	updateErr              error
+	claimErr               error
+	deleteErr              error
+	listErr                error
+	getPendingErr          error
+	findExpiredResult      []*commanddom.Command
+	findExpiredErr         error
+	getByAuthTokenHashErr  error
+	countActiveErr         error
+	countQueuedTenantErr   error
+	countQueuedAllErr      error
+	getQueuedErr           error
+	getNextErr             error
+	updatePrioritiesErr    error
+	recoverStuckErr        error
+	expirePlatformErr      error
+	queueExpiredResult     []*commanddom.Command
+	getQueuePositionErr    error
+	listPlatformTenantErr  error
+	listPlatformAdminErr   error
+	getPlatformBySensorErr error
+	recoverTenantErr       error
+	failExhaustedErr       error
+	getStatsByTenantErr    error
 }
 
 func newCmdMockRepo() *cmdMockRepo {
@@ -85,7 +85,7 @@ func (m *cmdMockRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID
 	return c, nil
 }
 
-func (m *cmdMockRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, _ []string, limit int) ([]*commanddom.Command, error) {
+func (m *cmdMockRepo) GetPendingForSensor(_ context.Context, _ shared.ID, _ *shared.ID, _ []string, limit int) ([]*commanddom.Command, error) {
 	if m.getPendingErr != nil {
 		return nil, m.getPendingErr
 	}
@@ -101,7 +101,7 @@ func (m *cmdMockRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shar
 	return result, nil
 }
 
-func (m *cmdMockRepo) ClaimForAgent(_ context.Context, tenantID, commandID shared.ID, agentID string) (bool, error) {
+func (m *cmdMockRepo) ClaimForSensor(_ context.Context, tenantID, commandID shared.ID, sensorID string) (bool, error) {
 	if m.claimErr != nil {
 		return false, m.claimErr
 	}
@@ -112,7 +112,7 @@ func (m *cmdMockRepo) ClaimForAgent(_ context.Context, tenantID, commandID share
 	if c.Status != commanddom.CommandStatusPending {
 		return false, nil
 	}
-	if c.AgentID != nil && c.AgentID.String() != agentID {
+	if c.SensorID != nil && c.SensorID.String() != sensorID {
 		return false, nil
 	}
 	c.Acknowledge()
@@ -244,9 +244,9 @@ func (m *cmdMockRepo) ListPlatformJobsAdmin(_ context.Context, _ *shared.ID, _ *
 	return pagination.Result[*commanddom.Command]{Page: page.Page, PerPage: page.PerPage}, nil
 }
 
-func (m *cmdMockRepo) GetPlatformJobsByAgent(_ context.Context, _ shared.ID, _ *commanddom.CommandStatus) ([]*commanddom.Command, error) {
-	if m.getPlatformByAgentErr != nil {
-		return nil, m.getPlatformByAgentErr
+func (m *cmdMockRepo) GetPlatformJobsBySensor(_ context.Context, _ shared.ID, _ *commanddom.CommandStatus) ([]*commanddom.Command, error) {
+	if m.getPlatformBySensorErr != nil {
+		return nil, m.getPlatformBySensorErr
 	}
 	return nil, nil
 }
@@ -410,26 +410,26 @@ func TestCommandService_CreateCommand_DefaultPriority(t *testing.T) {
 	}
 }
 
-func TestCommandService_CreateCommand_WithAgentID(t *testing.T) {
+func TestCommandService_CreateCommand_WithSensorID(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
-	agentID := shared.NewID().String()
+	sensorID := shared.NewID().String()
 
 	input := command.CreateInput{
 		TenantID: tenantID,
-		AgentID:  agentID,
+		SensorID: sensorID,
 		Type:     "scan",
 	}
 	cmd, err := svc.Create(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if cmd.AgentID == nil {
+	if cmd.SensorID == nil {
 		t.Fatal("expected agent ID to be set")
 	}
-	if cmd.AgentID.String() != agentID {
-		t.Errorf("expected agent ID %s, got %s", agentID, cmd.AgentID.String())
+	if cmd.SensorID.String() != sensorID {
+		t.Errorf("expected agent ID %s, got %s", sensorID, cmd.SensorID.String())
 	}
 }
 
@@ -505,14 +505,14 @@ func TestCommandService_CreateCommand_InvalidTenantID(t *testing.T) {
 	}
 }
 
-func TestCommandService_CreateCommand_InvalidAgentID(t *testing.T) {
+func TestCommandService_CreateCommand_InvalidSensorID(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
 	input := command.CreateInput{
 		TenantID: tenantID,
-		AgentID:  "not-a-uuid",
+		SensorID: "not-a-uuid",
 		Type:     "scan",
 	}
 	_, err := svc.Create(context.Background(), input)
@@ -661,11 +661,11 @@ func TestCommandService_ListCommands_WithFilters(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
-	agentID := shared.NewID().String()
+	sensorID := shared.NewID().String()
 
 	input := command.ListInput{
 		TenantID: tenantID,
-		AgentID:  agentID,
+		SensorID: sensorID,
 		Type:     "scan",
 		Status:   "pending",
 		Priority: "high",
@@ -696,14 +696,14 @@ func TestCommandService_ListCommands_InvalidTenantID(t *testing.T) {
 	}
 }
 
-func TestCommandService_ListCommands_InvalidAgentID(t *testing.T) {
+func TestCommandService_ListCommands_InvalidSensorID(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
 	input := command.ListInput{
 		TenantID: tenantID,
-		AgentID:  "not-uuid",
+		SensorID: "not-uuid",
 		Page:     1,
 		PerPage:  10,
 	}
@@ -757,15 +757,15 @@ func TestCommandService_PollCommands_Success(t *testing.T) {
 	}
 }
 
-func TestCommandService_PollCommands_WithAgentID(t *testing.T) {
+func TestCommandService_PollCommands_WithSensorID(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
-	agentID := shared.NewID().String()
+	sensorID := shared.NewID().String()
 
 	input := command.PollInput{
 		TenantID: tenantID,
-		AgentID:  agentID,
+		SensorID: sensorID,
 		Limit:    10,
 	}
 	_, err := svc.Poll(context.Background(), input)
@@ -822,14 +822,14 @@ func TestCommandService_PollCommands_InvalidTenantID(t *testing.T) {
 	}
 }
 
-func TestCommandService_PollCommands_InvalidAgentID(t *testing.T) {
+func TestCommandService_PollCommands_InvalidSensorID(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
 
 	input := command.PollInput{
 		TenantID: tenantID,
-		AgentID:  "not-valid",
+		SensorID: "not-valid",
 		Limit:    10,
 	}
 	_, err := svc.Poll(context.Background(), input)
@@ -1831,43 +1831,43 @@ func TestCommandService_GetCommand_RepoError(t *testing.T) {
 	}
 }
 
-// A command assigned to a specific agent must not be operable by a different
-// agent in the same tenant (anti-tampering / forged-result injection).
-func TestCommandService_AgentBinding_BlocksOtherAgent(t *testing.T) {
+// A command assigned to a specific sensor must not be operable by a different
+// sensor in the same tenant (anti-tampering / forged-result injection).
+func TestCommandService_SensorBinding_BlocksOtherSensor(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
-	agentA := shared.NewID().String()
-	agentB := shared.NewID().String()
+	sensorA := shared.NewID().String()
+	sensorB := shared.NewID().String()
 
 	created, err := svc.Create(context.Background(), command.CreateInput{
 		TenantID: tenantID,
 		Type:     "scan",
 		Priority: "normal",
-		AgentID:  agentA,
+		SensorID: sensorA,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	id := created.ID.String()
 
-	// Agent B must not acknowledge/complete/fail agent A's command.
-	if _, err := svc.Acknowledge(context.Background(), tenantID, agentB, id); err == nil {
+	// Sensor B must not acknowledge/complete/fail sensor A's command.
+	if _, err := svc.Acknowledge(context.Background(), tenantID, sensorB, id); err == nil {
 		t.Fatal("agent B must not acknowledge agent A's command")
 	}
 	if _, err := svc.Complete(context.Background(), command.CompleteInput{
-		TenantID: tenantID, AgentID: agentB, CommandID: id,
+		TenantID: tenantID, SensorID: sensorB, CommandID: id,
 	}); err == nil {
 		t.Fatal("agent B must not complete agent A's command")
 	}
 	if _, err := svc.Fail(context.Background(), command.FailInput{
-		TenantID: tenantID, AgentID: agentB, CommandID: id, ErrorMessage: "x",
+		TenantID: tenantID, SensorID: sensorB, CommandID: id, ErrorMessage: "x",
 	}); err == nil {
 		t.Fatal("agent B must not fail agent A's command")
 	}
 
-	// Agent A (the assignee) can operate it.
-	if _, err := svc.Acknowledge(context.Background(), tenantID, agentA, id); err != nil {
+	// Sensor A (the assignee) can operate it.
+	if _, err := svc.Acknowledge(context.Background(), tenantID, sensorA, id); err != nil {
 		t.Fatalf("assignee agent A should acknowledge: %v", err)
 	}
 }

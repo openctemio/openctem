@@ -12,8 +12,8 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// ATTACK: any tenant agent failing an unclaimed broadcast command (a cheap way
-// to kill other agents' work) is rejected.
+// ATTACK: any tenant sensor failing an unclaimed broadcast command (a cheap way
+// to kill other sensors' work) is rejected.
 func TestCommandFail_PendingUnassignedRejected(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
@@ -21,7 +21,7 @@ func TestCommandFail_PendingUnassignedRejected(t *testing.T) {
 	cmd := createTestCommand(t, svc, tenantID, "scan", "normal")
 
 	_, err := svc.Fail(context.Background(), command.FailInput{
-		TenantID: tenantID, AgentID: shared.NewID().String(), CommandID: cmd.ID.String(), ErrorMessage: "x",
+		TenantID: tenantID, SensorID: shared.NewID().String(), CommandID: cmd.ID.String(), ErrorMessage: "x",
 	})
 	if err == nil || !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("expected validation error for failing an unclaimed command, got %v", err)
@@ -31,21 +31,21 @@ func TestCommandFail_PendingUnassignedRejected(t *testing.T) {
 	}
 }
 
-// A pending command explicitly assigned to the calling agent may be failed
-// (the agent rejecting a job it was handed).
+// A pending command explicitly assigned to the calling sensor may be failed
+// (the sensor rejecting a job it was handed).
 func TestCommandFail_PendingAssignedToCallerAllowed(t *testing.T) {
 	repo := newCmdMockRepo()
 	svc := newCmdTestService(repo)
 	tenantID := newCmdTestTenantID()
-	agentID := shared.NewID()
+	sensorID := shared.NewID()
 	cmd, err := svc.Create(context.Background(), command.CreateInput{
-		TenantID: tenantID, AgentID: agentID.String(), Type: "scan", Priority: "normal",
+		TenantID: tenantID, SensorID: sensorID.String(), Type: "scan", Priority: "normal",
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	failed, err := svc.Fail(context.Background(), command.FailInput{
-		TenantID: tenantID, AgentID: agentID.String(), CommandID: cmd.ID.String(), ErrorMessage: "unsupported",
+		TenantID: tenantID, SensorID: sensorID.String(), CommandID: cmd.ID.String(), ErrorMessage: "unsupported",
 	})
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)

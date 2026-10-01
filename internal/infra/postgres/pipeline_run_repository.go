@@ -953,7 +953,7 @@ func (r *StepRunRepository) Create(ctx context.Context, sr *pipeline.StepRun) er
 		sr.StepKey,
 		sr.StepOrder,
 		string(sr.Status),
-		nullID(sr.AgentID),
+		nullID(sr.SensorID),
 		nullID(sr.CommandID),
 		sr.ConditionEvaluated,
 		sr.ConditionResult,
@@ -1028,7 +1028,7 @@ func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*
 			sr.StepKey,
 			sr.StepOrder,
 			string(sr.Status),
-			nullID(sr.AgentID),
+			nullID(sr.SensorID),
 			nullID(sr.CommandID),
 			sr.ConditionEvaluated,
 			sr.ConditionResult,
@@ -1185,7 +1185,7 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 	result, err := r.db.ExecContext(ctx, query,
 		sr.ID.String(),
 		string(sr.Status),
-		nullID(sr.AgentID),
+		nullID(sr.SensorID),
 		nullID(sr.CommandID),
 		sr.ConditionEvaluated,
 		sr.ConditionResult,
@@ -1240,14 +1240,14 @@ func (r *StepRunRepository) UpdateStatus(ctx context.Context, id shared.ID, stat
 	return err
 }
 
-// AssignAgent assigns an agent and command to a step run.
-func (r *StepRunRepository) AssignAgent(ctx context.Context, id shared.ID, agentID, commandID shared.ID) error {
+// AssignSensor assigns a sensor and command to a step run.
+func (r *StepRunRepository) AssignSensor(ctx context.Context, id shared.ID, sensorID, commandID shared.ID) error {
 	query := `
 		UPDATE step_runs
 		SET agent_id = $2, command_id = $3, status = 'running', started_at = NOW()
 		WHERE id = $1
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), agentID.String(), commandID.String())
+	_, err := r.db.ExecContext(ctx, query, id.String(), sensorID.String(), commandID.String())
 	return err
 }
 
@@ -1343,7 +1343,7 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		pipelineRunID   string
 		stepID          string
 		status          string
-		agentID         sql.NullString
+		sensorID        sql.NullString
 		commandID       sql.NullString
 		conditionResult sql.NullBool
 		output          []byte
@@ -1361,7 +1361,7 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		&sr.StepKey,
 		&sr.StepOrder,
 		&status,
-		&agentID,
+		&sensorID,
 		&commandID,
 		&sr.ConditionEvaluated,
 		&conditionResult,
@@ -1390,9 +1390,9 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 	sr.ErrorMessage = errorMessage.String
 	sr.ErrorCode = errorCode.String
 
-	if agentID.Valid {
-		wid, _ := shared.IDFromString(agentID.String)
-		sr.AgentID = &wid
+	if sensorID.Valid {
+		wid, _ := shared.IDFromString(sensorID.String)
+		sr.SensorID = &wid
 	}
 	if commandID.Valid {
 		cid, _ := shared.IDFromString(commandID.String)

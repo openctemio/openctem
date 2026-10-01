@@ -193,7 +193,7 @@ const (
 
 	// Settings
 	ModuleIntegrations         = "integrations"
-	ModuleAgents               = "agents"
+	ModuleSensors              = "agents"
 	ModuleTeam                 = "team"
 	ModuleGroups               = "groups"
 	ModuleRoles                = "roles"
@@ -301,7 +301,7 @@ func IsCoreModule(moduleID string) bool {
 
 // UserFacingModuleIDs defines modules shown on the Module Management page.
 // Only modules that directly map to sidebar navigation sections are included.
-// Modules like agents, tools, pipelines are bundled under "scans" in sidebar,
+// Modules like sensors, tools, pipelines are bundled under "scans" in sidebar,
 // so toggling them individually has no sidebar effect — they are excluded.
 var UserFacingModuleIDs = map[string]bool{
 	// Core (always enabled, shown as locked)
@@ -412,7 +412,7 @@ var ModulePermissionMapping = map[string]string{
 
 	// Settings modules
 	ModuleIntegrations:         "integrations:read",
-	ModuleAgents:               "agents:read",
+	ModuleSensors:              "agents:read",
 	ModuleTeam:                 "team:read",
 	ModuleGroups:               "team:groups:read",
 	ModuleRoles:                "team:roles:read",

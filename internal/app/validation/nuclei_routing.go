@@ -11,11 +11,11 @@ import (
 // RFC-011.2 Phase 2b — routing a finding to the `nuclei` re-verify executor.
 //
 // The API stays an orchestrator: it never runs nuclei. It only decides whether
-// a finding's own detection signature can be re-run by a nuclei-capable agent
+// a finding's own detection signature can be re-run by a nuclei-capable sensor
 // (capability-gated, exactly like safe-check), builds the detection signature
-// the agent needs, and refuses signatures that map to a non-detection
+// the sensor needs, and refuses signatures that map to a non-detection
 // (destructive) template class. The authoritative, tag-accurate safety gate is
-// enforced agent-side (`-exclude-tags dos,fuzz,intrusive` + template must have a
+// enforced sensor-side (`-exclude-tags dos,fuzz,intrusive` + template must have a
 // safe matcher); this file is the API-side half of that defense.
 
 // nucleiTechnique is the ATT&CK technique recorded for a nuclei re-verify. It is
@@ -29,7 +29,7 @@ const nucleiTechnique TechniqueID = "T1190"
 // excludedValidationTags are nuclei template classes that are never run for
 // re-verification because they are destructive or noisy rather than a
 // non-intrusive detection: denial-of-service, fuzzing, brute-force, and
-// anything explicitly flagged intrusive. Mirrors the agent-side allowlist so the
+// anything explicitly flagged intrusive. Mirrors the sensor-side allowlist so the
 // two ends of the contract cannot drift. Kept lowercase for case-insensitive
 // substring matching against a template signature.
 var excludedValidationTags = []string{"dos", "fuzz", "intrusive", "brute-force", "bruteforce"}
@@ -39,8 +39,8 @@ var excludedValidationTags = []string{"dos", "fuzz", "intrusive", "brute-force",
 // token embeds an excluded-tag marker (a template such as `apache-dos` or
 // `http-fuzz`), which is the API's best-effort, defense-in-depth check: the API
 // does not carry the nuclei template corpus, so the tag-accurate gate lives on
-// the agent. It also rejects a path-traversal-shaped id so a signature can never
-// be turned into a `-t ../../etc/...` file selector on the agent.
+// the sensor. It also rejects a path-traversal-shaped id so a signature can never
+// be turned into a `-t ../../etc/...` file selector on the sensor.
 func templateSignatureAllowed(sig string) bool {
 	sig = strings.TrimSpace(strings.ToLower(sig))
 	if sig == "" {
@@ -66,7 +66,7 @@ func templateSignatureAllowed(sig string) bool {
 //   - cveID: the finding's CVE, used as a CVE→template candidate when the
 //     finding's original scanner was NOT nuclei (Tenable/Trivy/…). nuclei ships
 //     CVE-named templates, so `-id CVE-YYYY-NNNN` re-runs the matching template
-//     where one exists; the agent verifies existence and returns inconclusive
+//     where one exists; the sensor verifies existence and returns inconclusive
 //     (never a false downgrade) when no such template is installed.
 //
 // ok is false when the finding has no re-runnable signature (→ caller falls back
@@ -92,13 +92,13 @@ func nucleiSignature(f *vulnerability.Finding) (templateID, cveID string, ok boo
 	return "", "", false
 }
 
-// NucleiAvailability reports whether a nuclei-validation-capable agent is
+// NucleiAvailability reports whether a nuclei-validation-capable sensor is
 // currently online for a tenant. It is the deeper-rung sibling of
-// AgentAvailability: a `validate:nuclei`-advertising agent implies a
+// SensorAvailability: a `validate:nuclei`-advertising sensor implies a
 // `validate`-advertising one, but not vice-versa, so the two gates are distinct.
 // Optional on RunService — a nil gate means the fleet advertises no nuclei
 // executor, so routing stays safe-check-only (Phase 2a behavior). This keeps 2b
-// inert-safe: with no nuclei agent, dispatch is byte-for-byte what it is today.
+// inert-safe: with no nuclei sensor, dispatch is byte-for-byte what it is today.
 type NucleiAvailability interface {
-	HasNucleiValidationAgent(ctx context.Context, tenantID shared.ID) (bool, error)
+	HasNucleiValidationSensor(ctx context.Context, tenantID shared.ID) (bool, error)
 }

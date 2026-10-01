@@ -120,7 +120,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
 	// (sync) leaves the handler processing reports in-request as before.
-	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Agent, log)
+	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Sensor, log)
 	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
 		ingestHandler.SetAsyncIngest(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
 		log.Info("async ingest enabled", "max_pending_per_tenant", cfg.Ingest.MaxPendingPerTenant)
@@ -168,7 +168,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
 	validationHandler.SetCoverageReader(repos.ValidationEvidence)
 	// Direct evidence submissions change a finding only when they cite the
-	// validate command assigned to the submitting agent; otherwise advisory.
+	// validate command assigned to the submitting sensor; otherwise advisory.
 	validationHandler.SetCommandLookup(repos.Command)
 
 	// Per-tenant module route gating (module-coupling plan Phase 1). Fail-open:
@@ -258,9 +258,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),
 		DefectDojo:  handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
-		// Agents & Commands
+		// Sensors & Commands
 		Command:          commandHandler,
-		Agent:            newAgentHandlerWithTemplates(svc.Agent, cfg, v, log),
+		Sensor:           newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log),
 		Ingest:           ingestHandler,
 		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
 		IOC:              newIOCHandlerWithFindingCheck(deps, log),
@@ -388,8 +388,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
 
-		// Platform Stats (tenant-scoped platform agent statistics)
-		PlatformStats: handler.NewPlatformStatsHandler(svc.Agent, log),
+		// Platform Stats (tenant-scoped platform sensor statistics)
+		PlatformStats: handler.NewPlatformStatsHandler(svc.Sensor, log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
@@ -476,26 +476,26 @@ func InitLocalAuthHandler(
 	}
 }
 
-// newAgentHandlerWithTemplates creates an AgentHandler wired with the
+// newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
-// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/agent-templates) and can be
+// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
 // edited without rebuilding the frontend.
-func newAgentHandlerWithTemplates(
-	agentSvc *app.AgentService,
+func newSensorHandlerWithTemplates(
+	sensorSvc *app.SensorService,
 	cfg *config.Config,
 	v *validator.Validator,
 	log *logger.Logger,
-) *handler.AgentHandler {
-	h := handler.NewAgentHandler(agentSvc, v, log)
+) *handler.SensorHandler {
+	h := handler.NewSensorHandler(sensorSvc, v, log)
 
-	templatesDir := cfg.AgentConfig.TemplatesDir
+	templatesDir := cfg.SensorConfig.TemplatesDir
 	if templatesDir == "" {
 		templatesDir = "configs/agent-templates"
 	}
-	tmplSvc := app.NewAgentConfigTemplateService(templatesDir, log)
+	tmplSvc := app.NewSensorConfigTemplateService(templatesDir, log)
 	h.SetTemplateService(tmplSvc)
 
-	publicAPIURL := cfg.AgentConfig.PublicAPIURL
+	publicAPIURL := cfg.SensorConfig.PublicAPIURL
 	if publicAPIURL == "" {
 		publicAPIURL = cfg.App.URL
 	}

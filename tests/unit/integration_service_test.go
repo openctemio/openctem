@@ -1243,7 +1243,7 @@ func TestListIntegrations_Pagination(t *testing.T) {
 		input.Name = p.name
 		input.Provider = p.provider
 		if p.provider == "tenable" {
-			// Tenable defaults to agent mode (no creds in control plane); the
+			// Tenable defaults to sensor mode (no creds in control plane); the
 			// shared helper supplies creds, so use direct mode here.
 			input.Config = map[string]any{"execution_mode": "direct"}
 		}
@@ -1307,22 +1307,22 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 	}
 }
 
-// TestCreateIntegration_Tenable_AgentModeRejectsCredentials locks in the
-// RFC-007 §8 security rule: an agent-mode Tenable integration must never store
+// TestCreateIntegration_Tenable_SensorModeRejectsCredentials locks in the
+// RFC-007 §8 security rule: a sensor-mode Tenable integration must never store
 // credentials in the control plane (they belong on the runner).
-func TestCreateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
+func TestCreateIntegration_Tenable_SensorModeRejectsCredentials(t *testing.T) {
 	repo := newMockIntegrationRepo()
 	scmRepo := newMockSCMExtRepo()
 	svc := newTestIntegrationService(repo, scmRepo, nil)
 
 	input := validCreateInput(shared.NewID().String())
 	input.Name = "Agent Tenable"
-	input.Provider = "tenable" // no Config → defaults to agent mode; creds present
+	input.Provider = "tenable" // no Config → defaults to sensor mode; creds present
 	if _, err := svc.CreateIntegration(context.Background(), input); err == nil {
 		t.Fatal("agent-mode Tenable with credentials must be rejected")
 	}
 
-	// Same integration with no credentials is accepted in agent mode.
+	// Same integration with no credentials is accepted in sensor mode.
 	input2 := validCreateInput(shared.NewID().String())
 	input2.Name = "Agent Tenable OK"
 	input2.Provider = "tenable"
@@ -1332,20 +1332,20 @@ func TestCreateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
 	}
 }
 
-// TestUpdateIntegration_Tenable_AgentModeRejectsCredentials ensures the
-// agent-mode no-credentials rule cannot be bypassed via update (RFC-007 §8).
-func TestUpdateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
+// TestUpdateIntegration_Tenable_SensorModeRejectsCredentials ensures the
+// sensor-mode no-credentials rule cannot be bypassed via update (RFC-007 §8).
+func TestUpdateIntegration_Tenable_SensorModeRejectsCredentials(t *testing.T) {
 	repo := newMockIntegrationRepo()
 	scmRepo := newMockSCMExtRepo()
 	svc := newTestIntegrationService(repo, scmRepo, nil)
 	tenantID := shared.NewID().String()
 
-	// Create an agent-mode Tenable integration (no creds).
-	agentIn := validCreateInput(tenantID)
-	agentIn.Name = "Agent Tenable"
-	agentIn.Provider = "tenable"
-	agentIn.Credentials = ""
-	created, err := svc.CreateIntegration(context.Background(), agentIn)
+	// Create a sensor-mode Tenable integration (no creds).
+	sensorIn := validCreateInput(tenantID)
+	sensorIn.Name = "Agent Tenable"
+	sensorIn.Provider = "tenable"
+	sensorIn.Credentials = ""
+	created, err := svc.CreateIntegration(context.Background(), sensorIn)
 	if err != nil {
 		t.Fatalf("create agent tenable: %v", err)
 	}
@@ -1371,7 +1371,7 @@ func TestUpdateIntegration_Tenable_AgentModeRejectsCredentials(t *testing.T) {
 }
 
 // TestUpdateIntegration_Tenable_ConfigModeSwitch covers updating execution_mode
-// via config, incl. the security-sensitive direct→agent switch.
+// via config, incl. the security-sensitive direct→sensor switch.
 func TestUpdateIntegration_Tenable_ConfigModeSwitch(t *testing.T) {
 	repo := newMockIntegrationRepo()
 	scmRepo := newMockSCMExtRepo()
@@ -1389,14 +1389,14 @@ func TestUpdateIntegration_Tenable_ConfigModeSwitch(t *testing.T) {
 	}
 	id := created.ID().String()
 
-	// Switching to agent while credentials remain must be rejected.
+	// Switching to sensor while credentials remain must be rejected.
 	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
 		Config: map[string]any{"execution_mode": "agent"},
 	}); err == nil {
 		t.Fatal("direct→agent must be rejected while credentials are still stored")
 	}
 
-	// Switching to agent AND clearing credentials is allowed.
+	// Switching to sensor AND clearing credentials is allowed.
 	empty := ""
 	if _, err := svc.UpdateIntegration(context.Background(), id, tenantID, app.UpdateIntegrationInput{
 		Config:      map[string]any{"execution_mode": "agent"},

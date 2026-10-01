@@ -5,11 +5,11 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/pipeline"
 	"github.com/openctemio/api/pkg/domain/scanprofile"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
@@ -141,14 +141,14 @@ func (e AuditEvent) WithMetadata(key string, value any) AuditEvent {
 	return e
 }
 
-// AgentSelector interface for agent selection.
-type AgentSelector interface {
-	SelectAgent(ctx context.Context, req SelectAgentRequest) (*SelectAgentResult, error)
-	CanUsePlatformAgents(ctx context.Context, tenantID shared.ID) (bool, string)
+// SensorSelector interface for sensor selection.
+type SensorSelector interface {
+	SelectSensor(ctx context.Context, req SelectSensorRequest) (*SelectSensorResult, error)
+	CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string)
 }
 
-// SelectAgentRequest represents a request to select an agent.
-type SelectAgentRequest struct {
+// SelectSensorRequest represents a request to select a sensor.
+type SelectSensorRequest struct {
 	TenantID     shared.ID
 	Capabilities []string
 	Tool         string
@@ -156,17 +156,17 @@ type SelectAgentRequest struct {
 	AllowQueue   bool
 }
 
-// SelectMode represents the agent selection mode.
+// SelectMode represents the sensor selection mode.
 type SelectMode int
 
 const (
-	// SelectTenantFirst tries tenant agents first, then platform.
+	// SelectTenantFirst tries tenant sensors first, then platform.
 	SelectTenantFirst SelectMode = iota
 )
 
-// SelectAgentResult represents the result of agent selection.
-type SelectAgentResult struct {
-	Agent      *agent.Agent
+// SelectSensorResult represents the result of sensor selection.
+type SelectSensorResult struct {
+	Sensor     *sensor.Sensor
 	IsPlatform bool
 }
 
@@ -176,11 +176,11 @@ type Service struct {
 	stepRepo          pipeline.StepRepository
 	runRepo           pipeline.RunRepository
 	stepRunRepo       pipeline.StepRunRepository
-	agentRepo         agent.Repository
+	sensorRepo        sensor.Repository
 	commandRepo       command.Repository
 	toolRepo          tool.Repository // For deriving capabilities from tools
 	securityValidator SecurityValidator
-	agentSelector     AgentSelector // Optional: for platform agent support
+	sensorSelector    SensorSelector // Optional: for platform sensor support
 	auditService      AuditService
 	scanDeactivator   ScanDeactivator      // Optional: for cascade scan deactivation
 	scanRunRecorder   ScanRunRecorder      // Optional: records run outcome back onto the scan
@@ -210,10 +210,10 @@ func WithDB(db TransactionDB) Option {
 	}
 }
 
-// WithAgentSelector sets the agent selector for platform agent support.
-func WithAgentSelector(selector AgentSelector) Option {
+// WithSensorSelector sets the sensor selector for platform sensor support.
+func WithSensorSelector(selector SensorSelector) Option {
 	return func(s *Service) {
-		s.agentSelector = selector
+		s.sensorSelector = selector
 	}
 }
 
@@ -264,7 +264,7 @@ func NewService(
 	stepRepo pipeline.StepRepository,
 	runRepo pipeline.RunRepository,
 	stepRunRepo pipeline.StepRunRepository,
-	agentRepo agent.Repository,
+	sensorRepo sensor.Repository,
 	commandRepo command.Repository,
 	securityValidator SecurityValidator,
 	log *logger.Logger,
@@ -275,7 +275,7 @@ func NewService(
 		stepRepo:          stepRepo,
 		runRepo:           runRepo,
 		stepRunRepo:       stepRunRepo,
-		agentRepo:         agentRepo,
+		sensorRepo:        sensorRepo,
 		commandRepo:       commandRepo,
 		securityValidator: securityValidator,
 		logger:            log.With("service", "pipeline"),

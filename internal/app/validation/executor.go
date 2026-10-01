@@ -2,22 +2,22 @@
 // WHAT counts as evidence, WHO gates it — but NOT HOW a technique
 // runs.
 //
-// Architectural note: OpenCTEM is agent-based. The API is an
+// Architectural note: OpenCTEM is sensor-based. The API is an
 // ORCHESTRATOR, not an executor. Actual exploit execution, cloud
-// probes, and adversary emulation run on the agent that lives in the
+// probes, and adversary emulation run on the sensor that lives in the
 // tenant's network, has tenant-local credentials, and can legally
 // reach the target.
 //
 // This package therefore holds:
 //   - Data shapes (TechniqueID, Target, Evidence, Outcome)
 //   - The attacker-profile gate (API-side policy)
-//   - The Dispatcher contract (API submits a job → agent executes →
-//     agent posts Evidence back via the ingest API)
+//   - The Dispatcher contract (API submits a job → sensor executes →
+//     sensor posts Evidence back via the ingest API)
 //   - EvidenceStore + Redactor (API persists, redacts secrets)
 //
 // What this package does NOT hold:
 //   - Any direct call to AWS / Atomic Red Team / Caldera / Nuclei.
-//     Those belong to the agent repo.
+//     Those belong to the sensor repo.
 package validation
 
 import (
@@ -29,7 +29,7 @@ import (
 )
 
 // TechniqueID is the MITRE ATT&CK technique identifier. The API does
-// not interpret it — it is passed to the agent unchanged.
+// not interpret it — it is passed to the sensor unchanged.
 type TechniqueID string
 
 // Target identifies what we are validating against. The executor kind
@@ -42,10 +42,10 @@ type Target struct {
 }
 
 // Evidence is everything a reviewer needs to judge whether the
-// technique was executed and what it produced. Produced by the agent
+// technique was executed and what it produced. Produced by the sensor
 // and POSTed back through the validation-ingest endpoint.
 type Evidence struct {
-	// ExecutorKind identifies which agent-side tool produced this
+	// ExecutorKind identifies which sensor-side tool produced this
 	// evidence. Enforced by the ingest handler against the
 	// ExecutorKind declared on the job.
 	ExecutorKind string
@@ -84,7 +84,7 @@ const (
 )
 
 // ExecutorKind enumerates the validation tool the AGENT will run.
-// The API uses this string to route jobs to agents that declare they
+// The API uses this string to route jobs to sensors that declare they
 // support it. The API does not import or call the tool itself.
 type ExecutorKind string
 
@@ -97,7 +97,7 @@ const (
 
 // AttackerProfile is the narrow subset of the full profile that the
 // API-side selection / gating logic needs. It never travels to the
-// agent — the agent receives the already-approved executor kind and
+// sensor — the sensor receives the already-approved executor kind and
 // technique.
 type AttackerProfile struct {
 	ID           shared.ID
@@ -105,7 +105,7 @@ type AttackerProfile struct {
 	Capabilities []string // "external-unauth" | "credentialed" | "network-pivot" | ...
 }
 
-// ValidationJob is the payload the API queues for an agent. Agents
+// ValidationJob is the payload the API queues for a sensor. Sensors
 // long-poll for jobs that match their advertised ExecutorKinds.
 // Result is delivered via POST /api/v1/validation/evidence.
 type ValidationJob struct {
@@ -129,11 +129,11 @@ type ValidationJob struct {
 	CVEID      string
 }
 
-// ValidationDispatcher submits a job for an agent and returns the
-// resulting Evidence when the agent has reported back. Concrete
+// ValidationDispatcher submits a job for a sensor and returns the
+// resulting Evidence when the sensor has reported back. Concrete
 // implementations plug into the platform-job queue (Redis / Postgres).
 //
-// Submit is expected to BLOCK until the agent finishes OR the context
+// Submit is expected to BLOCK until the sensor finishes OR the context
 // deadline fires — callers choose the deadline. In practice the
 // implementation is queue + subscribe, not a synchronous call.
 type ValidationDispatcher interface {
@@ -141,7 +141,7 @@ type ValidationDispatcher interface {
 }
 
 // Selector owns the API-side policy: given a technique + attacker
-// profile + a list of executor kinds the agent fleet supports, pick
+// profile + a list of executor kinds the sensor fleet supports, pick
 // the appropriate kind.
 type Selector interface {
 	Select(tid TechniqueID, profile *AttackerProfile, available []ExecutorKind) (ExecutorKind, error)
@@ -181,7 +181,7 @@ func (DefaultSelector) Select(
 }
 
 // kindAllowedByProfile enforces the attacker-profile gate. Policy
-// lives on the API side — the agent never decides whether to run.
+// lives on the API side — the sensor never decides whether to run.
 func kindAllowedByProfile(k ExecutorKind, profile *AttackerProfile) bool {
 	switch k {
 	case KindSafeCheck, KindNuclei:
@@ -196,7 +196,7 @@ func kindAllowedByProfile(k ExecutorKind, profile *AttackerProfile) bool {
 }
 
 // kindSupportsTechnique is a rough technique compatibility check.
-// The ground truth lives at the agent (which templates/atomics are
+// The ground truth lives at the sensor (which templates/atomics are
 // installed), but we short-circuit the obvious mismatches here.
 func kindSupportsTechnique(k ExecutorKind, tid TechniqueID) bool {
 	if tid == "" {

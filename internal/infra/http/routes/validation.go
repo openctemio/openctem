@@ -10,9 +10,9 @@ import (
 // manual (operator-added) evidence endpoints. Both share the single
 // /api/v1/findings/{id}/evidence chi mount — chi forbids a second mount on the
 // same path, so all evidence routes for a finding are registered here:
-//   - agents POST proof-of-fix / technique-execution evidence for a finding,
-//     authenticated with the same agent API-key chain as the other ingest
-//     endpoints (tenant taken from the agent, never the body).
+//   - sensors POST proof-of-fix / technique-execution evidence for a finding,
+//     authenticated with the same sensor API-key chain as the other ingest
+//     endpoints (tenant taken from the sensor, never the body).
 //   - users GET the validation evidence recorded for a finding (JWT, findings:read).
 //   - users POST a manual evidence note and GET the manual evidence notes
 //     (JWT; findings:write / findings:read) — served by the vulnerability
@@ -27,7 +27,7 @@ func registerValidationRoutes(
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Agent ingest — API-key auth. A single evidence record is small; it keeps
+	// Sensor ingest — API-key auth. A single evidence record is small; it keeps
 	// the global default body limit (10MB). It used to declare the 50MB ingest
 	// limit, which was inert while route limits nested under the global one;
 	// now that a route-level BodyLimit really overrides the global limit, the

@@ -14,12 +14,12 @@ import (
 // The platform-job side of the command lifecycle had two reapers that could
 // never reap and one that reaped silently.
 //
-//   - recover_stuck_platform_jobs required `platform_agent_id IS NOT NULL`.
+//   - recover_stuck_platform_jobs required `platform_sensor_id IS NOT NULL`.
 //     Nothing sets that column: get_next_platform_job is the only writer and it
 //     has no Go caller. In practice a platform job is claimed by an ordinary
-//     tenant agent through GET /api/v1/agent/commands — GetPendingForAgent and
-//     ClaimForAgent do not filter on is_platform_job, and platform jobs are
-//     created with agent_id NULL — so ClaimForAgent sets agent_id instead. The
+//     tenant sensor through GET /api/v1/agent/commands — GetPendingForSensor and
+//     ClaimForSensor do not filter on is_platform_job, and platform jobs are
+//     created with sensor_id NULL — so ClaimForSensor sets sensor_id instead. The
 //     function matched nothing, and the controller logged "recovered stuck
 //     platform jobs: 0" forever, reading as healthy.
 //
@@ -62,18 +62,18 @@ type platformJobSeed struct {
 	ackedMinutesAgo int
 	// queuedMinutesAgo sets queued_at; 0 leaves it NULL.
 	queuedMinutesAgo int
-	// withTenantAgent sets agent_id (the column ClaimForAgent actually writes).
-	withTenantAgent bool
-	// withPlatformAgent sets platform_agent_id (what get_next_platform_job would
+	// withTenantSensor sets sensor_id (the column ClaimForSensor actually writes).
+	withTenantSensor bool
+	// withPlatformSensor sets platform_sensor_id (what get_next_platform_job would
 	// write, if it had a caller).
-	withPlatformAgent bool
-	dispatchAttempts  int
+	withPlatformSensor bool
+	dispatchAttempts   int
 }
 
-// seedJobAgent creates a throwaway agent. commands.agent_id and
-// commands.platform_agent_id are both foreign keys, so a random shared.NewID()
+// seedJobSensor creates a throwaway sensor. commands.sensor_id and
+// commands.platform_sensor_id are both foreign keys, so a random shared.NewID()
 // fails the insert.
-func seedJobAgent(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.ID) shared.ID {
+func seedJobSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.ID) shared.ID {
 	t.Helper()
 
 	id := shared.NewID()
@@ -96,12 +96,12 @@ func seedPlatformJob(ctx context.Context, t *testing.T, db *sql.DB, tenantID sha
 
 	id := shared.NewID()
 
-	var agentID, platformAgentID any
-	if s.withTenantAgent {
-		agentID = seedJobAgent(ctx, t, db, tenantID).String()
+	var sensorID, platformSensorID any
+	if s.withTenantSensor {
+		sensorID = seedJobSensor(ctx, t, db, tenantID).String()
 	}
-	if s.withPlatformAgent {
-		platformAgentID = seedJobAgent(ctx, t, db, tenantID).String()
+	if s.withPlatformSensor {
+		platformSensorID = seedJobSensor(ctx, t, db, tenantID).String()
 	}
 
 	// A pipeline payload: this is what makes silent expiry damaging, because the
@@ -119,7 +119,7 @@ func seedPlatformJob(ctx context.Context, t *testing.T, db *sql.DB, tenantID sha
 			CASE WHEN $9::INTEGER = 0 THEN NULL ELSE NOW() - ($9 || ' minutes')::INTERVAL END,
 			CASE WHEN $10::INTEGER = 0 THEN NULL ELSE NOW() - ($10 || ' minutes')::INTERVAL END
 		)`,
-		id.String(), tenantID.String(), agentID, platformAgentID, payload, s.status,
+		id.String(), tenantID.String(), sensorID, platformSensorID, payload, s.status,
 		s.isPlatformJob, s.dispatchAttempts,
 		s.ackedMinutesAgo, s.queuedMinutesAgo)
 	if err != nil {
@@ -133,17 +133,17 @@ func seedPlatformJob(ctx context.Context, t *testing.T, db *sql.DB, tenantID sha
 }
 
 // commandState reads back the columns the reapers write.
-func commandState(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) (status string, attempts int, agentSet, platformAgentSet bool) {
+func commandState(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) (status string, attempts int, sensorSet, platformSensorSet bool) {
 	t.Helper()
 
-	var agentID, platformAgentID sql.NullString
+	var sensorID, platformSensorID sql.NullString
 	err := db.QueryRowContext(ctx,
 		`SELECT status, dispatch_attempts, agent_id, platform_agent_id FROM commands WHERE id = $1`,
-		id.String()).Scan(&status, &attempts, &agentID, &platformAgentID)
+		id.String()).Scan(&status, &attempts, &sensorID, &platformSensorID)
 	if err != nil {
 		t.Fatalf("read command state: %v", err)
 	}
-	return status, attempts, agentID.Valid, platformAgentID.Valid
+	return status, attempts, sensorID.Valid, platformSensorID.Valid
 }
 
 // =============================================================================
@@ -151,15 +151,15 @@ func commandState(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) (
 // =============================================================================
 
 // The state that actually occurs in production: a platform job claimed by a
-// *tenant* agent (agent_id set, platform_agent_id NULL) whose agent then died.
+// *tenant* sensor (sensor_id set, platform_sensor_id NULL) whose sensor then died.
 //
 // Before the fix nothing could reach this row. recover_stuck_platform_jobs
-// skipped it (platform_agent_id IS NULL), recover_stuck_tenant_commands skips it
+// skipped it (platform_sensor_id IS NULL), recover_stuck_tenant_commands skips it
 // by design (is_platform_job = FALSE, migration 000172), ExpireOldPlatformJobs
 // only looked at 'pending', and fail_exhausted_commands needs
 // dispatch_attempts >= max — which only the recovery functions ever increment.
 // The job sat in 'acknowledged' forever and its pipeline run waited on it.
-func TestRecoverStuckJobs_RecoversJobClaimedByTenantAgent(t *testing.T) {
+func TestRecoverStuckJobs_RecoversJobClaimedByTenantSensor(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
 	defer lockGlobalSweep(ctx, t, db)()
@@ -167,23 +167,23 @@ func TestRecoverStuckJobs_RecoversJobClaimedByTenantAgent(t *testing.T) {
 
 	tenantID := seedTestTenant(ctx, t, db)
 	id := seedPlatformJob(ctx, t, db, tenantID, platformJobSeed{
-		isPlatformJob:   true,
-		status:          "acknowledged",
-		ackedMinutesAgo: 120,
-		withTenantAgent: true,
+		isPlatformJob:    true,
+		status:           "acknowledged",
+		ackedMinutesAgo:  120,
+		withTenantSensor: true,
 	})
 
 	if _, err := repo.RecoverStuckJobs(ctx, 30, 3); err != nil {
 		t.Fatalf("RecoverStuckJobs: %v", err)
 	}
 
-	status, attempts, agentSet, _ := commandState(ctx, t, db, id)
+	status, attempts, sensorSet, _ := commandState(ctx, t, db, id)
 	if status != "pending" {
 		t.Errorf("status = %q, want \"pending\": a platform job claimed by a tenant agent that "+
 			"went offline is unreachable by every other reaper, so if recovery skips it the job "+
 			"is stuck forever and its pipeline run never ends", status)
 	}
-	if agentSet {
+	if sensorSet {
 		t.Error("agent_id still set after recovery: the job is back in the queue but still " +
 			"looks claimed, so no other agent will take it")
 	}
@@ -194,7 +194,7 @@ func TestRecoverStuckJobs_RecoversJobClaimedByTenantAgent(t *testing.T) {
 }
 
 // The state the original query was written for must keep working.
-func TestRecoverStuckJobs_RecoversJobClaimedByPlatformAgent(t *testing.T) {
+func TestRecoverStuckJobs_RecoversJobClaimedByPlatformSensor(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
 	defer lockGlobalSweep(ctx, t, db)()
@@ -202,21 +202,21 @@ func TestRecoverStuckJobs_RecoversJobClaimedByPlatformAgent(t *testing.T) {
 
 	tenantID := seedTestTenant(ctx, t, db)
 	id := seedPlatformJob(ctx, t, db, tenantID, platformJobSeed{
-		isPlatformJob:     true,
-		status:            "acknowledged",
-		ackedMinutesAgo:   120,
-		withPlatformAgent: true,
+		isPlatformJob:      true,
+		status:             "acknowledged",
+		ackedMinutesAgo:    120,
+		withPlatformSensor: true,
 	})
 
 	if _, err := repo.RecoverStuckJobs(ctx, 30, 3); err != nil {
 		t.Fatalf("RecoverStuckJobs: %v", err)
 	}
 
-	status, _, _, platformAgentSet := commandState(ctx, t, db, id)
+	status, _, _, platformSensorSet := commandState(ctx, t, db, id)
 	if status != "pending" {
 		t.Errorf("status = %q, want \"pending\"", status)
 	}
-	if platformAgentSet {
+	if platformSensorSet {
 		t.Error("platform_agent_id still set after recovery")
 	}
 }
@@ -231,18 +231,18 @@ func TestRecoverStuckJobs_HonoursMaxRetries(t *testing.T) {
 	repo := NewCommandRepository(&DB{DB: db})
 
 	tenantID := seedTestTenant(ctx, t, db)
-	// platform_agent_id deliberately, so this case isolates the maxRetries bug
+	// platform_sensor_id deliberately, so this case isolates the maxRetries bug
 	// from the "can never match" one: the old query reached this row fine and
 	// still recovered it, because `dispatch_attempts < 3` was hardcoded.
 	//
 	// 1 attempt already used. With maxRetries=1 the job is exhausted and must be
 	// left for fail_exhausted_commands.
 	id := seedPlatformJob(ctx, t, db, tenantID, platformJobSeed{
-		isPlatformJob:     true,
-		status:            "acknowledged",
-		ackedMinutesAgo:   120,
-		withPlatformAgent: true,
-		dispatchAttempts:  1,
+		isPlatformJob:      true,
+		status:             "acknowledged",
+		ackedMinutesAgo:    120,
+		withPlatformSensor: true,
+		dispatchAttempts:   1,
 	})
 
 	if _, err := repo.RecoverStuckJobs(ctx, 30, 1); err != nil {
@@ -258,7 +258,7 @@ func TestRecoverStuckJobs_HonoursMaxRetries(t *testing.T) {
 }
 
 // A job under the stuck threshold is simply still running. Recovering it would
-// yank work away from a healthy agent.
+// yank work away from a healthy sensor.
 func TestRecoverStuckJobs_IgnoresFreshlyAcknowledgedJob(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
@@ -267,10 +267,10 @@ func TestRecoverStuckJobs_IgnoresFreshlyAcknowledgedJob(t *testing.T) {
 
 	tenantID := seedTestTenant(ctx, t, db)
 	id := seedPlatformJob(ctx, t, db, tenantID, platformJobSeed{
-		isPlatformJob:   true,
-		status:          "acknowledged",
-		ackedMinutesAgo: 5,
-		withTenantAgent: true,
+		isPlatformJob:    true,
+		status:           "acknowledged",
+		ackedMinutesAgo:  5,
+		withTenantSensor: true,
 	})
 
 	if _, err := repo.RecoverStuckJobs(ctx, 30, 3); err != nil {
@@ -294,10 +294,10 @@ func TestRecoverStuckJobs_IgnoresTenantCommands(t *testing.T) {
 
 	tenantID := seedTestTenant(ctx, t, db)
 	id := seedPlatformJob(ctx, t, db, tenantID, platformJobSeed{
-		isPlatformJob:   false,
-		status:          "acknowledged",
-		ackedMinutesAgo: 120,
-		withTenantAgent: true,
+		isPlatformJob:    false,
+		status:           "acknowledged",
+		ackedMinutesAgo:  120,
+		withTenantSensor: true,
 	})
 
 	if _, err := repo.RecoverStuckJobs(ctx, 30, 3); err != nil {
@@ -391,7 +391,7 @@ func TestFindQueueExpiredPlatformJobs_IgnoresAcknowledgedJob(t *testing.T) {
 		status:           "acknowledged",
 		ackedMinutesAgo:  120,
 		queuedMinutesAgo: 120,
-		withTenantAgent:  true,
+		withTenantSensor: true,
 	})
 
 	jobs, err := repo.FindQueueExpiredPlatformJobs(ctx, 60)

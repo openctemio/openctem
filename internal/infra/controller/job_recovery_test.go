@@ -47,11 +47,11 @@ func (r *recordingCommandRepo) GetByTenantAndID(context.Context, shared.ID, shar
 	return nil, nil
 }
 
-func (r *recordingCommandRepo) GetPendingForAgent(context.Context, shared.ID, *shared.ID, []string, int) ([]*command.Command, error) {
+func (r *recordingCommandRepo) GetPendingForSensor(context.Context, shared.ID, *shared.ID, []string, int) ([]*command.Command, error) {
 	return nil, nil
 }
 
-func (r *recordingCommandRepo) ClaimForAgent(context.Context, shared.ID, shared.ID, string) (bool, error) {
+func (r *recordingCommandRepo) ClaimForSensor(context.Context, shared.ID, shared.ID, string) (bool, error) {
 	return false, nil
 }
 
@@ -96,7 +96,7 @@ func (r *recordingCommandRepo) ListPlatformJobsAdmin(context.Context, *shared.ID
 	return pagination.Result[*command.Command]{}, nil
 }
 
-func (r *recordingCommandRepo) GetPlatformJobsByAgent(context.Context, shared.ID, *command.CommandStatus) ([]*command.Command, error) {
+func (r *recordingCommandRepo) GetPlatformJobsBySensor(context.Context, shared.ID, *command.CommandStatus) ([]*command.Command, error) {
 	return nil, nil
 }
 

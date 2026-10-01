@@ -160,7 +160,7 @@ func (w *AssetLifecycleWorker) Run(ctx context.Context, tenantID shared.ID, dryR
 		return report, nil
 	}
 
-	// Integration/agent health heuristic: if the tenant has had no
+	// Integration/sensor health heuristic: if the tenant has had no
 	// recent ingest activity at all, something upstream is broken
 	// and we would create a storm of false positives by transitioning
 	// everything to stale. Skip with a reason operators can search

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/scansession"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -15,19 +15,19 @@ import (
 // ScanSessionService handles scan session lifecycle management.
 type ScanSessionService struct {
 	sessionRepo scansession.Repository
-	agentRepo   agent.Repository
+	sensorRepo  sensor.Repository
 	logger      *logger.Logger
 }
 
 // NewScanSessionService creates a new ScanSessionService.
 func NewScanSessionService(
 	sessionRepo scansession.Repository,
-	agentRepo agent.Repository,
+	sensorRepo sensor.Repository,
 	log *logger.Logger,
 ) *ScanSessionService {
 	return &ScanSessionService{
 		sessionRepo: sessionRepo,
-		agentRepo:   agentRepo,
+		sensorRepo:  sensorRepo,
 		logger:      log.With("service", "scan_session"),
 	}
 }
@@ -51,8 +51,8 @@ type RegisterScanOutput struct {
 }
 
 // RegisterScan registers a new scan session and returns baseline info.
-func (s *ScanSessionService) RegisterScan(ctx context.Context, agt *agent.Agent, input RegisterScanInput) (*RegisterScanOutput, error) {
-	// Platform agents must have tenant context from job assignment
+func (s *ScanSessionService) RegisterScan(ctx context.Context, agt *sensor.Sensor, input RegisterScanInput) (*RegisterScanOutput, error) {
+	// Platform sensors must have tenant context from job assignment
 	if agt.TenantID == nil {
 		return nil, fmt.Errorf("agent has no tenant context: platform agents require job assignment")
 	}
@@ -64,7 +64,7 @@ func (s *ScanSessionService) RegisterScan(ctx context.Context, agt *agent.Agent,
 		return nil, err
 	}
 
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	session.SetScannerInfo(input.ScannerVersion, input.ScannerType)
 	session.SetGitContext(input.CommitSha, input.Branch, "")
 
@@ -115,8 +115,8 @@ type UpdateScanSessionInput struct {
 }
 
 // UpdateScanSession updates a scan session status.
-func (s *ScanSessionService) UpdateScanSession(ctx context.Context, agt *agent.Agent, scanID string, input UpdateScanSessionInput) error {
-	// Platform agents must have tenant context from job assignment
+func (s *ScanSessionService) UpdateScanSession(ctx context.Context, agt *sensor.Sensor, scanID string, input UpdateScanSessionInput) error {
+	// Platform sensors must have tenant context from job assignment
 	if agt.TenantID == nil {
 		return fmt.Errorf("agent has no tenant context: platform agents require job assignment")
 	}
@@ -132,8 +132,8 @@ func (s *ScanSessionService) UpdateScanSession(ctx context.Context, agt *agent.A
 		return err
 	}
 
-	// Verify agent owns this session
-	if session.AgentID != nil && !session.AgentID.Equals(agt.ID) {
+	// Verify sensor owns this session
+	if session.SensorID != nil && !session.SensorID.Equals(agt.ID) {
 		return shared.NewDomainError("FORBIDDEN", "scan session belongs to different agent", shared.ErrForbidden)
 	}
 

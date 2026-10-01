@@ -36,9 +36,9 @@ type Scan struct {
 	NextRunAt        *time.Time // Pre-computed next run time
 
 	// Routing
-	Tags              []string        // Route to agents with matching tags
-	RunOnTenantRunner bool            // Restrict to tenant's own runners
-	AgentPreference   AgentPreference // Agent selection mode: auto, tenant, platform
+	Tags              []string         // Route to sensors with matching tags
+	RunOnTenantRunner bool             // Restrict to tenant's own runners
+	SensorPreference  SensorPreference // Sensor selection mode: auto, tenant, platform
 
 	// Profile - links to ScanProfile for tool configs, intensity, quality gates
 	ProfileID *shared.ID
@@ -95,7 +95,7 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
-		AgentPreference:     AgentPreferenceAuto,
+		SensorPreference:    SensorPreferenceAuto,
 		TimeoutSeconds:      DefaultScanTimeoutSeconds,
 		MaxRetries:          0,
 		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
@@ -137,7 +137,7 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
-		AgentPreference:     AgentPreferenceAuto,
+		SensorPreference:    SensorPreferenceAuto,
 		TimeoutSeconds:      DefaultScanTimeoutSeconds,
 		MaxRetries:          0,
 		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
@@ -404,12 +404,12 @@ func (s *Scan) SetRunOnTenantRunner(value bool) {
 	s.UpdatedAt = time.Now()
 }
 
-// SetAgentPreference sets the agent selection preference.
-func (s *Scan) SetAgentPreference(pref AgentPreference) {
+// SetSensorPreference sets the sensor selection preference.
+func (s *Scan) SetSensorPreference(pref SensorPreference) {
 	if pref == "" {
-		pref = AgentPreferenceAuto
+		pref = SensorPreferenceAuto
 	}
-	s.AgentPreference = pref
+	s.SensorPreference = pref
 	s.UpdatedAt = time.Now()
 }
 
@@ -650,7 +650,7 @@ func (s *Scan) Clone(newName string) *Scan {
 		ScheduleTimezone:    s.ScheduleTimezone,
 		Tags:                make([]string, len(s.Tags)),
 		RunOnTenantRunner:   s.RunOnTenantRunner,
-		AgentPreference:     s.AgentPreference,
+		SensorPreference:    s.SensorPreference,
 		ProfileID:           s.ProfileID,
 		TimeoutSeconds:      s.TimeoutSeconds,
 		MaxRetries:          s.MaxRetries,

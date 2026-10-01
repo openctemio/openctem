@@ -193,8 +193,8 @@ func (m *MockCapabilityRepository) GetUsageStats(ctx context.Context, capability
 	stats, ok := m.usageStats[c.Name]
 	if !ok {
 		return &capability.CapabilityUsageStats{
-			ToolCount:  0,
-			AgentCount: 0,
+			ToolCount:   0,
+			SensorCount: 0,
 		}, nil
 	}
 	return stats, nil
@@ -209,7 +209,7 @@ func (m *MockCapabilityRepository) GetUsageStatsBatch(ctx context.Context, capab
 		}
 		stats, ok := m.usageStats[c.Name]
 		if !ok {
-			result[id] = &capability.CapabilityUsageStats{ToolCount: 0, AgentCount: 0}
+			result[id] = &capability.CapabilityUsageStats{ToolCount: 0, SensorCount: 0}
 		} else {
 			result[id] = stats
 		}
@@ -263,10 +263,10 @@ func TestCapabilityService_GetUsageStats_Success(t *testing.T) {
 
 	// Set usage stats
 	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{
-		ToolCount:  3,
-		AgentCount: 2,
-		ToolNames:  []string{"Tool1", "Tool2", "Tool3"},
-		AgentNames: []string{"Agent1", "Agent2"},
+		ToolCount:   3,
+		SensorCount: 2,
+		ToolNames:   []string{"Tool1", "Tool2", "Tool3"},
+		SensorNames: []string{"Agent1", "Agent2"},
 	})
 
 	// Get usage stats
@@ -278,8 +278,8 @@ func TestCapabilityService_GetUsageStats_Success(t *testing.T) {
 	if stats.ToolCount != 3 {
 		t.Errorf("expected ToolCount 3, got %d", stats.ToolCount)
 	}
-	if stats.AgentCount != 2 {
-		t.Errorf("expected AgentCount 2, got %d", stats.AgentCount)
+	if stats.SensorCount != 2 {
+		t.Errorf("expected AgentCount 2, got %d", stats.SensorCount)
 	}
 	if len(stats.ToolNames) != 3 {
 		t.Errorf("expected 3 tool names, got %d", len(stats.ToolNames))
@@ -303,8 +303,8 @@ func TestCapabilityService_GetUsageStats_ZeroUsage(t *testing.T) {
 	if stats.ToolCount != 0 {
 		t.Errorf("expected ToolCount 0, got %d", stats.ToolCount)
 	}
-	if stats.AgentCount != 0 {
-		t.Errorf("expected AgentCount 0, got %d", stats.AgentCount)
+	if stats.SensorCount != 0 {
+		t.Errorf("expected AgentCount 0, got %d", stats.SensorCount)
 	}
 }
 
@@ -353,8 +353,8 @@ func TestCapabilityService_GetUsageStats_TenantIsolation(t *testing.T) {
 	repo.AddCapability(cap)
 
 	repo.SetUsageStats("custom-scan", &capability.CapabilityUsageStats{
-		ToolCount:  5,
-		AgentCount: 3,
+		ToolCount:   5,
+		SensorCount: 3,
 	})
 
 	// Tenant2 tries to access tenant1's capability
@@ -385,8 +385,8 @@ func TestCapabilityService_GetUsageStats_PlatformCapabilityAccessible(t *testing
 	repo.AddCapability(cap)
 
 	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{
-		ToolCount:  10,
-		AgentCount: 5,
+		ToolCount:   10,
+		SensorCount: 5,
 	})
 
 	// Both tenants should be able to access platform capability
@@ -424,9 +424,9 @@ func TestCapabilityService_GetUsageStatsBatch_Success(t *testing.T) {
 	repo.AddCapability(cap3)
 
 	// Set different usage stats
-	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{ToolCount: 5, AgentCount: 2})
-	repo.SetUsageStats("sca", &capability.CapabilityUsageStats{ToolCount: 3, AgentCount: 1})
-	repo.SetUsageStats("dast", &capability.CapabilityUsageStats{ToolCount: 0, AgentCount: 0})
+	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{ToolCount: 5, SensorCount: 2})
+	repo.SetUsageStats("sca", &capability.CapabilityUsageStats{ToolCount: 3, SensorCount: 1})
+	repo.SetUsageStats("dast", &capability.CapabilityUsageStats{ToolCount: 0, SensorCount: 0})
 
 	// Get batch stats
 	ids := []string{cap1.ID.String(), cap2.ID.String(), cap3.ID.String()}
@@ -481,7 +481,7 @@ func TestCapabilityService_GetUsageStatsBatch_PartialNotFound(t *testing.T) {
 	// Create only one capability
 	cap1 := createPlatformCapability("sast", "SAST", "security")
 	repo.AddCapability(cap1)
-	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{ToolCount: 5, AgentCount: 2})
+	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{ToolCount: 5, SensorCount: 2})
 
 	// Request stats for existing + non-existing capabilities
 	nonExistentID := shared.NewID()
@@ -511,17 +511,17 @@ func TestCapabilityService_GetUsageStatsBatch_TenantIsolation(t *testing.T) {
 	// Create platform capability (accessible to all)
 	platformCap := createPlatformCapability("sast", "SAST", "security")
 	repo.AddCapability(platformCap)
-	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{ToolCount: 10, AgentCount: 5})
+	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{ToolCount: 10, SensorCount: 5})
 
 	// Create tenant1's custom capability
 	tenant1Cap := createTenantCapability(tenant1, "custom-scan", "Custom Scan")
 	repo.AddCapability(tenant1Cap)
-	repo.SetUsageStats("custom-scan", &capability.CapabilityUsageStats{ToolCount: 3, AgentCount: 1})
+	repo.SetUsageStats("custom-scan", &capability.CapabilityUsageStats{ToolCount: 3, SensorCount: 1})
 
 	// Create tenant2's custom capability
 	tenant2Cap := createTenantCapability(tenant2, "other-scan", "Other Scan")
 	repo.AddCapability(tenant2Cap)
-	repo.SetUsageStats("other-scan", &capability.CapabilityUsageStats{ToolCount: 7, AgentCount: 4})
+	repo.SetUsageStats("other-scan", &capability.CapabilityUsageStats{ToolCount: 7, SensorCount: 4})
 
 	// Tenant1 requests all three
 	ids := []string{platformCap.ID.String(), tenant1Cap.ID.String(), tenant2Cap.ID.String()}
@@ -807,8 +807,8 @@ func TestCapabilityService_DeleteCapability_InUse(t *testing.T) {
 	cap := createTenantCapability(tenantID, "my-scan", "My Scan")
 	repo.AddCapability(cap)
 	repo.SetUsageStats("my-scan", &capability.CapabilityUsageStats{
-		ToolCount:  2,
-		AgentCount: 1,
+		ToolCount:   2,
+		SensorCount: 1,
 	})
 
 	input := app.DeleteCapabilityInput{
@@ -831,8 +831,8 @@ func TestCapabilityService_DeleteCapability_ForceDelete(t *testing.T) {
 	cap := createTenantCapability(tenantID, "my-scan", "My Scan")
 	repo.AddCapability(cap)
 	repo.SetUsageStats("my-scan", &capability.CapabilityUsageStats{
-		ToolCount:  2,
-		AgentCount: 1,
+		ToolCount:   2,
+		SensorCount: 1,
 	})
 
 	input := app.DeleteCapabilityInput{

@@ -31,14 +31,14 @@ type JobNotification struct {
 }
 
 // JobNotifier handles pub/sub notifications for platform jobs.
-// It uses Redis pub/sub to notify waiting agents when new jobs are available.
+// It uses Redis pub/sub to notify waiting sensors when new jobs are available.
 type JobNotifier struct {
 	client *Client
 	logger *logger.Logger
 
 	// Subscribers waiting for jobs
 	mu          sync.RWMutex
-	subscribers map[string]chan *JobNotification // agentID -> channel
+	subscribers map[string]chan *JobNotification // sensorID -> channel
 }
 
 // NewJobNotifier creates a new JobNotifier.
@@ -82,41 +82,41 @@ func (n *JobNotifier) NotifyNewJob(ctx context.Context, notification *JobNotific
 	return nil
 }
 
-// Subscribe creates a subscription for an agent to receive job notifications.
+// Subscribe creates a subscription for a sensor to receive job notifications.
 // Returns a channel that will receive notifications when jobs are available.
 // The caller should call Unsubscribe when done.
-func (n *JobNotifier) Subscribe(agentID string, capabilities []string) <-chan *JobNotification {
+func (n *JobNotifier) Subscribe(sensorID string, capabilities []string) <-chan *JobNotification {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
 	// Create buffered channel to avoid blocking publisher
 	ch := make(chan *JobNotification, 10)
-	n.subscribers[agentID] = ch
+	n.subscribers[sensorID] = ch
 
 	n.logger.Debug("agent subscribed for job notifications",
-		"agent_id", agentID,
+		"agent_id", sensorID,
 		"capabilities", capabilities,
 	)
 
 	return ch
 }
 
-// Unsubscribe removes an agent's subscription.
-func (n *JobNotifier) Unsubscribe(agentID string) {
+// Unsubscribe removes a sensor's subscription.
+func (n *JobNotifier) Unsubscribe(sensorID string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	if ch, ok := n.subscribers[agentID]; ok {
+	if ch, ok := n.subscribers[sensorID]; ok {
 		close(ch)
-		delete(n.subscribers, agentID)
+		delete(n.subscribers, sensorID)
 		n.logger.Debug("agent unsubscribed from job notifications",
-			"agent_id", agentID,
+			"agent_id", sensorID,
 		)
 	}
 }
 
 // StartListener starts listening for Redis pub/sub messages and
-// dispatches them to subscribed agents. This should be called once
+// dispatches them to subscribed sensors. This should be called once
 // when the application starts.
 func (n *JobNotifier) StartListener(ctx context.Context) error {
 	pubsub := n.client.Client().Subscribe(ctx, JobNotifyChannel)
@@ -173,14 +173,14 @@ func (n *JobNotifier) dispatchNotification(notification *JobNotification) {
 	defer n.mu.RUnlock()
 
 	dispatched := 0
-	for agentID, ch := range n.subscribers {
+	for sensorID, ch := range n.subscribers {
 		select {
 		case ch <- notification:
 			dispatched++
 		default:
-			// Channel full, agent is busy
+			// Channel full, sensor is busy
 			n.logger.Debug("agent channel full, skipping notification",
-				"agent_id", agentID,
+				"agent_id", sensorID,
 				"job_id", notification.JobID,
 			)
 		}
@@ -196,9 +196,9 @@ func (n *JobNotifier) dispatchNotification(notification *JobNotification) {
 // WaitForJob waits for a job notification or timeout.
 // This is the main method used by the long-polling handler.
 // Returns true if a notification was received, false on timeout.
-func (n *JobNotifier) WaitForJob(ctx context.Context, agentID string, capabilities []string, timeout time.Duration) bool {
-	ch := n.Subscribe(agentID, capabilities)
-	defer n.Unsubscribe(agentID)
+func (n *JobNotifier) WaitForJob(ctx context.Context, sensorID string, capabilities []string, timeout time.Duration) bool {
+	ch := n.Subscribe(sensorID, capabilities)
+	defer n.Unsubscribe(sensorID)
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()

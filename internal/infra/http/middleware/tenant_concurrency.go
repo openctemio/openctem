@@ -13,7 +13,7 @@ import (
 // MB of decompressed JSON in memory and keep a DB connection busy for seconds;
 // a tenant that fires its whole burst in parallel could still pin a large slice
 // of the process. This bounds the parallelism per tenant (a 429 is returned
-// beyond it, which agents already retry) without affecting other tenants.
+// beyond it, which sensors already retry) without affecting other tenants.
 //
 // Keyed on the tenant the authenticated principal is bound to, so it MUST run
 // after authentication. A request without tenant context passes through

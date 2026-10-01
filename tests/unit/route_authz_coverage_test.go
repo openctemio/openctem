@@ -41,7 +41,7 @@ var gateFuncs = map[string]bool{
 var routeAuthzAllowlist = map[string]string{}
 
 // allowlistPrefixes: groups of routes authenticated by a non-permission gate
-// (public auth flow, agent API-key, SCIM/MCP bearer, webhooks HMAC, or
+// (public auth flow, sensor API-key, SCIM/MCP bearer, webhooks HMAC, or
 // self-scoped /me + /users/me where the handler scopes to the caller).
 var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/api/v1/auth", "public auth flow / self-scoped (login, register, oauth, sso, saml, logout, ws-token)"},

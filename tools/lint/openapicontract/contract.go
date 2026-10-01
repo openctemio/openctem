@@ -17,7 +17,7 @@
 // motivated this was structural:
 //
 //   - 30 documented paths had no handler and no route anywhere in the repo
-//     (/admin/platform-agents, /plans, /tenants/{id}/subscription, ...), which
+//     (/admin/platform-sensors, /plans, /tenants/{id}/subscription, ...), which
 //     is how the UI came to call GET /api/v1/me/event-types against a server
 //     that never had it, and to render OAuth buttons that 404'd.
 //   - 40 real endpoints were undocumented, the whole /notifications API among

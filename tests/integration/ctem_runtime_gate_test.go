@@ -12,7 +12,7 @@ package integration
 //
 //   1. The correlator was actually wired into the telemetry path
 //      (not just built in isolation).
-//   2. A batched ingest — the realistic agent shape — produces
+//   2. A batched ingest — the realistic sensor shape — produces
 //      deterministic match output.
 //   3. Soft-deleting an IOC immediately stops new runtime hits
 //      without needing a DB restart or cache clear.
@@ -240,7 +240,7 @@ func TestCTEM_Q3_SoftDeleteStopsMatchesImmediately(t *testing.T) {
 	}
 }
 
-// TestCTEM_Q3_ConcurrentIngestStaysConsistent — two concurrent agents
+// TestCTEM_Q3_ConcurrentIngestStaysConsistent — two concurrent sensors
 // push telemetry for the same tenant. Each match must land in the
 // ioc_matches stream without dropping or duplicating beyond the
 // concurrent batch shape.
@@ -260,15 +260,15 @@ func TestCTEM_Q3_ConcurrentIngestStaysConsistent(t *testing.T) {
 	repo := newLockingIOCRepo(ind)
 	c := iocapp.NewCorrelator(repo, &reopenerSpy{}, logger.NewNop())
 
-	const perAgent = 20
-	const agents = 4
-	done := make(chan struct{}, agents)
+	const perSensor = 20
+	const sensors = 4
+	done := make(chan struct{}, sensors)
 	var errs int32
 
-	for a := 0; a < agents; a++ {
+	for a := 0; a < sensors; a++ {
 		go func() {
 			defer func() { done <- struct{}{} }()
-			for i := 0; i < perAgent; i++ {
+			for i := 0; i < perSensor; i++ {
 				_, err := c.Correlate(context.Background(), tenantID, iocapp.TelemetryEvent{
 					ID:         shared.NewID(),
 					Properties: map[string]any{telemetry.PropRemoteIP: "1.2.3.4"},
@@ -283,7 +283,7 @@ func TestCTEM_Q3_ConcurrentIngestStaysConsistent(t *testing.T) {
 	// Wait with a generous timeout so the test fails loudly instead of
 	// hanging forever if a deadlock lurks.
 	deadline := time.After(5 * time.Second)
-	for i := 0; i < agents; i++ {
+	for i := 0; i < sensors; i++ {
 		select {
 		case <-done:
 		case <-deadline:
@@ -294,8 +294,8 @@ func TestCTEM_Q3_ConcurrentIngestStaysConsistent(t *testing.T) {
 	if atomic.LoadInt32(&errs) != 0 {
 		t.Fatalf("concurrent ingest produced %d errors", errs)
 	}
-	if got := repo.matchCount(); got != perAgent*agents {
-		t.Fatalf("concurrent match count = %d, want %d", got, perAgent*agents)
+	if got := repo.matchCount(); got != perSensor*sensors {
+		t.Fatalf("concurrent match count = %d, want %d", got, perSensor*sensors)
 	}
 }
 

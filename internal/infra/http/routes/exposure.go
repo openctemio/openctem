@@ -98,7 +98,7 @@ func registerThreatIntelRoutes(
 // Credentials are tenant-scoped (tenant from JWT token).
 // Two sets of routes:
 // 1. Admin routes (JWT auth): /api/v1/credentials - import, stats, management
-// 2. Agent routes (API key auth): /api/v1/agent/credentials - ingest from agents
+// 2. Sensor routes (API key auth): /api/v1/agent/credentials - ingest from sensors
 func registerCredentialRoutes(
 	router Router,
 	h *handler.CredentialImportHandler,
@@ -108,7 +108,7 @@ func registerCredentialRoutes(
 	moduleGate Middleware,
 ) {
 	// Build tenant middleware chain from JWT token. The module gate applies only
-	// to the JWT admin group below; the agent ingest group keeps its own
+	// to the JWT admin group below; the sensor ingest group keeps its own
 	// API-key chain so data ingestion is never blocked by a bundle subset.
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
@@ -147,14 +147,14 @@ func registerCredentialRoutes(
 		r.POST("/{id}/reactivate", h.Reactivate, middleware.Require(permission.CredentialsWrite))
 	}, tenantMiddlewares...)
 
-	// Agent routes for credential ingest (API key auth) - only if ingest handler exists
+	// Sensor routes for credential ingest (API key auth) - only if ingest handler exists
 	if ingestHandler != nil {
-		agentMiddlewares := []Middleware{ingestHandler.AuthenticateSource}
+		sensorMiddlewares := []Middleware{ingestHandler.AuthenticateSource}
 
 		router.Group("/api/v1/agent/credentials", func(r Router) {
-			// Ingest credentials from agents
+			// Ingest credentials from sensors
 			r.POST("/ingest", h.Import)
-		}, agentMiddlewares...)
+		}, sensorMiddlewares...)
 	}
 }
 

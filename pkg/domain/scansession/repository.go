@@ -42,7 +42,7 @@ type Repository interface {
 // Filter defines the filter options for listing scan sessions.
 type Filter struct {
 	TenantID    *shared.ID
-	AgentID     *shared.ID
+	SensorID    *shared.ID
 	AssetID     *shared.ID
 	ScannerName string
 	AssetType   string

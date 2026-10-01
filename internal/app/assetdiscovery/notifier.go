@@ -167,7 +167,7 @@ func (n *Notifier) publish(_ context.Context, tenantID shared.ID, assets []*asse
 			continue
 		}
 		// Never trust a mismatched tenant on the entity: the callback's tenant
-		// comes from the authenticated agent, and it alone decides where the
+		// comes from the authenticated sensor, and it alone decides where the
 		// notification goes.
 		if !a.TenantID().IsZero() && a.TenantID() != tenantID {
 			continue

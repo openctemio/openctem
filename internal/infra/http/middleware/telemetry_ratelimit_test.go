@@ -30,7 +30,7 @@ func countAllowed(mw func(http.Handler) http.Handler, ctxValue func(*http.Reques
 }
 
 // When the authenticated tenant IS present in context (as AuthenticateSource
-// now sets it for agent routes), the limiter must actually enforce: only
+// now sets it for sensor routes), the limiter must actually enforce: only
 // burst requests succeed, the rest get 429.
 func TestTelemetryRateLimiter_EnforcesWhenTenantPresent(t *testing.T) {
 	rl := NewTelemetryRateLimiter(1, 5, time.Minute, logger.NewNop())
@@ -48,8 +48,8 @@ func TestTelemetryRateLimiter_EnforcesWhenTenantPresent(t *testing.T) {
 }
 
 // Regression guard for the bug this fixes: with NO tenant in context the
-// limiter passes through everything. This is precisely why agent routes were
-// unprotected before AuthenticateSource began setting TenantIDKey — the agent
+// limiter passes through everything. This is precisely why sensor routes were
+// unprotected before AuthenticateSource began setting TenantIDKey — the sensor
 // auth never populated the tenant, so every request fell through here.
 func TestTelemetryRateLimiter_PassesThroughWhenTenantAbsent(t *testing.T) {
 	rl := NewTelemetryRateLimiter(1, 5, time.Minute, logger.NewNop())

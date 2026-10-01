@@ -47,7 +47,7 @@ var (
 	)
 
 	// ==========================================================================
-	// Security Metrics for Platform Agents
+	// Security Metrics for Platform Sensors
 	// ==========================================================================
 
 	// SecurityEventsTotal counts security events by type
@@ -85,8 +85,8 @@ var (
 		[]string{"type", "status"},
 	)
 
-	// PlatformAgentsActive tracks active platform agents
-	PlatformAgentsActive = promauto.NewGauge(
+	// PlatformSensorsActive tracks active platform sensors
+	PlatformSensorsActive = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "platform_agents_active",
 			Help: "Current number of active platform agents",

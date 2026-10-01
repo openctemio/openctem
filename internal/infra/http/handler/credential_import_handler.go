@@ -166,8 +166,8 @@ type ImportMetadataRequest struct {
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/import [post]
 func (h *CredentialImportHandler) Import(w http.ResponseWriter, r *http.Request) {
-	// This handler also serves the agent route /agent/credentials/ingest. A
-	// platform agent (no tenant) carries no tenant in context; MustGetTenantID
+	// This handler also serves the sensor route /agent/credentials/ingest. A
+	// platform sensor (no tenant) carries no tenant in context; MustGetTenantID
 	// panicked on it (recovered as a 500). Reject it cleanly instead.
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == "" {

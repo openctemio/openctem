@@ -238,7 +238,7 @@ func (s *AssetStateChange) IsAutomatedChange() bool {
 	return s.source == ChangeSourceScan ||
 		s.source == ChangeSourceIntegration ||
 		s.source == ChangeSourceSystem ||
-		s.source == ChangeSourceAgent
+		s.source == ChangeSourceSensor
 }
 
 // =============================================================================
@@ -321,7 +321,7 @@ const (
 	ChangeSourceManual      ChangeSource = "manual"      // Manual user action
 	ChangeSourceIntegration ChangeSource = "integration" // From external integration (GitHub, AWS, etc.)
 	ChangeSourceSystem      ChangeSource = "system"      // System-generated (e.g., auto-archive)
-	ChangeSourceAgent       ChangeSource = "agent"       // From platform agent
+	ChangeSourceSensor      ChangeSource = "agent"       // From platform sensor
 	ChangeSourceAPI         ChangeSource = "api"         // From API call
 )
 
@@ -332,7 +332,7 @@ func AllChangeSources() []ChangeSource {
 		ChangeSourceManual,
 		ChangeSourceIntegration,
 		ChangeSourceSystem,
-		ChangeSourceAgent,
+		ChangeSourceSensor,
 		ChangeSourceAPI,
 	}
 }

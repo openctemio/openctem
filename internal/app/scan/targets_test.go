@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/openctemio/api/internal/app/scope"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/assetgroup"
 	"github.com/openctemio/api/pkg/domain/scan"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -175,25 +175,25 @@ func TestIsInternalTarget(t *testing.T) {
 }
 
 type stubSelector struct {
-	tenantAgent bool
-	canUse      bool
+	tenantSensor bool
+	canUse       bool
 }
 
-func (s stubSelector) CheckAgentAvailability(context.Context, shared.ID, string, bool) *AgentAvailability {
-	return &AgentAvailability{}
+func (s stubSelector) CheckSensorAvailability(context.Context, shared.ID, string, bool) *SensorAvailability {
+	return &SensorAvailability{}
 }
-func (s stubSelector) CanUsePlatformAgents(context.Context, shared.ID) (bool, string) {
+func (s stubSelector) CanUsePlatformSensors(context.Context, shared.ID) (bool, string) {
 	return s.canUse, "not enabled"
 }
-func (s stubSelector) SelectAgent(context.Context, SelectAgentRequest) (*SelectAgentResult, error) {
-	if s.tenantAgent {
-		return &SelectAgentResult{Agent: &agent.Agent{}}, nil
+func (s stubSelector) SelectSensor(context.Context, SelectSensorRequest) (*SelectSensorResult, error) {
+	if s.tenantSensor {
+		return &SelectSensorResult{Sensor: &sensor.Sensor{}}, nil
 	}
-	return &SelectAgentResult{}, nil
+	return &SelectSensorResult{}, nil
 }
 
-// No silent fallback to shared agents, and never for internal targets.
-func TestShouldUsePlatformAgent(t *testing.T) {
+// No silent fallback to shared sensors, and never for internal targets.
+func TestShouldUsePlatformSensor(t *testing.T) {
 	ctx := context.Background()
 	public := []string{"app.example.com"}
 	internal := []string{"10.0.0.5"}
@@ -201,29 +201,29 @@ func TestShouldUsePlatformAgent(t *testing.T) {
 	cases := []struct {
 		name    string
 		sel     stubSelector
-		pref    scan.AgentPreference
+		pref    scan.SensorPreference
 		group   bool
 		targets []string
 		want    bool
 		wantErr bool
 	}{
-		{"auto, tenant agent busy, platform not allowed: wait for tenant", stubSelector{false, false}, scan.AgentPreferenceAuto, false, public, false, false},
-		{"auto, tenant agent busy, platform allowed, public: platform", stubSelector{false, true}, scan.AgentPreferenceAuto, false, public, true, false},
-		{"auto, internal target never goes to platform", stubSelector{false, true}, scan.AgentPreferenceAuto, false, internal, false, false},
-		{"auto, asset group never goes to platform", stubSelector{false, true}, scan.AgentPreferenceAuto, true, public, false, false},
-		{"auto, tenant agent available: tenant", stubSelector{true, true}, scan.AgentPreferenceAuto, false, public, false, false},
-		{"explicit platform with internal target: refused", stubSelector{false, true}, scan.AgentPreferencePlatform, false, internal, false, true},
-		{"explicit platform, not allowed: refused", stubSelector{false, false}, scan.AgentPreferencePlatform, false, public, false, true},
-		{"explicit platform, allowed, public: platform", stubSelector{false, true}, scan.AgentPreferencePlatform, false, public, true, false},
+		{"auto, tenant agent busy, platform not allowed: wait for tenant", stubSelector{false, false}, scan.SensorPreferenceAuto, false, public, false, false},
+		{"auto, tenant agent busy, platform allowed, public: platform", stubSelector{false, true}, scan.SensorPreferenceAuto, false, public, true, false},
+		{"auto, internal target never goes to platform", stubSelector{false, true}, scan.SensorPreferenceAuto, false, internal, false, false},
+		{"auto, asset group never goes to platform", stubSelector{false, true}, scan.SensorPreferenceAuto, true, public, false, false},
+		{"auto, tenant agent available: tenant", stubSelector{true, true}, scan.SensorPreferenceAuto, false, public, false, false},
+		{"explicit platform with internal target: refused", stubSelector{false, true}, scan.SensorPreferencePlatform, false, internal, false, true},
+		{"explicit platform, not allowed: refused", stubSelector{false, false}, scan.SensorPreferencePlatform, false, public, false, true},
+		{"explicit platform, allowed, public: platform", stubSelector{false, true}, scan.SensorPreferencePlatform, false, public, true, false},
 	}
 	for _, tc := range cases {
-		svc := &Service{agentSelector: tc.sel, logger: logger.NewNop()}
+		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop()}
 		sc := testScan("nuclei")
-		sc.AgentPreference = tc.pref
+		sc.SensorPreference = tc.pref
 		if tc.group {
 			sc.AssetGroupID = shared.NewID()
 		}
-		got, err := svc.shouldUsePlatformAgent(ctx, sc, tc.targets)
+		got, err := svc.shouldUsePlatformSensor(ctx, sc, tc.targets)
 		if (err != nil) != tc.wantErr || got != tc.want {
 			t.Errorf("%s: got %v, err %v", tc.name, got, err)
 		}

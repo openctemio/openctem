@@ -10,37 +10,37 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// GetPendingForAgent must not hand a capability-scoped command to an agent that
+// GetPendingForSensor must not hand a capability-scoped command to a sensor that
 // does not advertise the required capability. This is the claim-time mirror of
 // the dispatch-time required_capabilities the validation dispatcher stamps onto
 // a validate command: without it, during the live deploy a plain (non-nuclei)
-// agent could race-claim a `validate:nuclei` validate command it cannot run,
+// sensor could race-claim a `validate:nuclei` validate command it cannot run,
 // producing a wrong/failed validation outcome.
 //
-// A command with no required_capabilities must still be returned to any agent
+// A command with no required_capabilities must still be returned to any sensor
 // (the unchanged behavior for every scan/collect command).
-func TestGetPendingForAgent_CapabilityFilter(t *testing.T) {
+func TestGetPendingForSensor_CapabilityFilter(t *testing.T) {
 	ctx := context.Background()
 	db := openCommandDB(t)
 	repo := postgres.NewCommandRepository(db)
 	tenantID := seedExpiryTenant(ctx, t, db)
 
-	// A capability-scoped validate command: only an agent advertising
+	// A capability-scoped validate command: only a sensor advertising
 	// "validate:nuclei" may claim it.
 	nucleiCmd := mustCreateCommand(ctx, t, repo, tenantID,
 		commanddom.CommandTypeValidate,
 		map[string]any{"required_capabilities": []string{"validate:nuclei"}})
 
-	// An unscoped command: any agent may claim it.
+	// An unscoped command: any sensor may claim it.
 	plainCmd := mustCreateCommand(ctx, t, repo, tenantID,
 		commanddom.CommandTypeScan,
 		map[string]any{"pipeline_run_id": shared.NewID().String()})
 
-	agentID := shared.NewID()
+	sensorID := shared.NewID()
 
-	// 1. A plain agent (only "validate") must see the unscoped command but NOT
+	// 1. A plain sensor (only "validate") must see the unscoped command but NOT
 	//    the nuclei-scoped one.
-	got := pendingIDs(ctx, t, repo, tenantID, &agentID, []string{"validate"})
+	got := pendingIDs(ctx, t, repo, tenantID, &sensorID, []string{"validate"})
 	if got[nucleiCmd.String()] {
 		t.Error("plain 'validate' agent was offered a 'validate:nuclei'-scoped command it cannot run")
 	}
@@ -48,8 +48,8 @@ func TestGetPendingForAgent_CapabilityFilter(t *testing.T) {
 		t.Error("unscoped command was withheld from an agent (should go to any agent)")
 	}
 
-	// 2. A nuclei-capable agent must see BOTH.
-	got = pendingIDs(ctx, t, repo, tenantID, &agentID, []string{"validate", "validate:nuclei"})
+	// 2. A nuclei-capable sensor must see BOTH.
+	got = pendingIDs(ctx, t, repo, tenantID, &sensorID, []string{"validate", "validate:nuclei"})
 	if !got[nucleiCmd.String()] {
 		t.Error("nuclei-capable agent was NOT offered the 'validate:nuclei' command it can run")
 	}
@@ -57,9 +57,9 @@ func TestGetPendingForAgent_CapabilityFilter(t *testing.T) {
 		t.Error("nuclei-capable agent was withheld the unscoped command")
 	}
 
-	// 3. An agent with no capabilities may still claim the unscoped command, but
+	// 3. A sensor with no capabilities may still claim the unscoped command, but
 	//    never the scoped one.
-	got = pendingIDs(ctx, t, repo, tenantID, &agentID, nil)
+	got = pendingIDs(ctx, t, repo, tenantID, &sensorID, nil)
 	if got[nucleiCmd.String()] {
 		t.Error("agent with no capabilities was offered a capability-scoped command")
 	}
@@ -89,10 +89,10 @@ func mustCreateCommand(
 
 func pendingIDs(
 	ctx context.Context, t *testing.T, repo *postgres.CommandRepository,
-	tenantID shared.ID, agentID *shared.ID, capabilities []string,
+	tenantID shared.ID, sensorID *shared.ID, capabilities []string,
 ) map[string]bool {
 	t.Helper()
-	cmds, err := repo.GetPendingForAgent(ctx, tenantID, agentID, capabilities, 50)
+	cmds, err := repo.GetPendingForSensor(ctx, tenantID, sensorID, capabilities, 50)
 	if err != nil {
 		t.Fatalf("GetPendingForAgent: %v", err)
 	}

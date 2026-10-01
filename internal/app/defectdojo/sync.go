@@ -13,8 +13,8 @@ import (
 	"github.com/openctemio/api/internal/app/ingest"
 	ddimport "github.com/openctemio/api/internal/infra/importer/defectdojo"
 	"github.com/openctemio/api/pkg/crypto"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/integration"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -25,7 +25,7 @@ var ErrNoDefectDojoIntegration = fmt.Errorf("%w: no connected DefectDojo integra
 
 // Ingester is the narrow slice of the ingest service the sync needs.
 type Ingester interface {
-	Ingest(ctx context.Context, agt *agent.Agent, input ingest.Input) (*ingest.Output, error)
+	Ingest(ctx context.Context, agt *sensor.Sensor, input ingest.Input) (*ingest.Output, error)
 }
 
 // findingsClient is the read-only DefectDojo surface the sync needs (injectable
@@ -74,7 +74,7 @@ type SyncResult struct {
 //
 // Tenant isolation (standing rule): the tenant is the AUTHENTICATED tenantID —
 // credentials are loaded via ListByProvider(tenantID) and the ingest runs under
-// a synthetic agent scoped to that same tenant. Nothing in the DefectDojo
+// a synthetic sensor scoped to that same tenant. Nothing in the DefectDojo
 // payload can redirect the tenant.
 func (s *SyncService) SyncTenant(ctx context.Context, tenantID shared.ID) (*SyncResult, error) {
 	if tenantID.IsZero() {
@@ -108,10 +108,10 @@ func (s *SyncService) SyncTenant(ctx context.Context, tenantID shared.ID) (*Sync
 		Now:         time.Now().UTC(),
 	})
 
-	// Ingest under a synthetic agent bound to the authenticated tenant. Coverage
+	// Ingest under a synthetic sensor bound to the authenticated tenant. Coverage
 	// is partial (report already marks it) so the import never auto-resolves
 	// native findings.
-	agt := &agent.Agent{TenantID: &tenantID, Status: agent.AgentStatusActive}
+	agt := &sensor.Sensor{TenantID: &tenantID, Status: sensor.SensorStatusActive}
 	out, err := s.ingester.Ingest(ctx, agt, ingest.Input{
 		Report:       report,
 		CoverageType: ingest.CoverageTypePartial,

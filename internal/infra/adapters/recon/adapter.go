@@ -164,7 +164,7 @@ func (a *Adapter) Convert(ctx context.Context, input []byte, opts *core.AdapterO
 		// SourceName on AdapterOptions names the data source (e.g.
 		// "subfinder-scan-2026-04-20"). Recon converter's own
 		// DiscoverySource field is what shows up on the asset;
-		// default to "agent" but allow the caller to override via
+		// default to "sensor" but allow the caller to override via
 		// opts.SourceType so manual uploads can say "manual".
 		if opts.SourceType != "" {
 			converterOpts.DiscoverySource = opts.SourceType

@@ -4,7 +4,7 @@ package integration
 // a known IOC auto-reopens the source finding.
 //
 // The wire is:
-//   agent POST /telemetry-events
+//   sensor POST /telemetry-events
 //     → runtime_telemetry_events row inserted
 //       → Correlator.Correlate(tenantID, event)
 //         → FindActiveByValues(tenantID, candidates)
@@ -208,7 +208,7 @@ func TestCTEM_B6_RuntimeMatchReopensClosedFinding(t *testing.T) {
 // TestCTEM_B6_NoReopenWhenFindingAlreadyOpen — a second runtime match
 // on the same IOC while the finding is already in_progress MUST NOT
 // transition the finding again (idempotent). The match row is still
-// recorded because the agent observed the activity.
+// recorded because the sensor observed the activity.
 func TestCTEM_B6_NoReopenWhenFindingAlreadyOpen(t *testing.T) {
 	tenantID := shared.NewID()
 	// Build a finding that is NOT closed.

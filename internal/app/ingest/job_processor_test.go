@@ -8,8 +8,8 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/ingestjob"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
@@ -20,7 +20,7 @@ type stubIngester struct {
 	err       error
 }
 
-func (s *stubIngester) Ingest(_ context.Context, agt *agent.Agent, input Input) (*Output, error) {
+func (s *stubIngester) Ingest(_ context.Context, agt *sensor.Sensor, input Input) (*Output, error) {
 	if agt.TenantID != nil {
 		s.gotTenant = *agt.TenantID
 	}
@@ -44,7 +44,7 @@ func TestParseReport_FlatAndWrapped(t *testing.T) {
 
 func TestJobProcessor_Process_IngestsAndReturnsCounts(t *testing.T) {
 	tenantID := shared.NewID()
-	agentID := shared.NewID()
+	sensorID := shared.NewID()
 	ing := &stubIngester{out: &Output{
 		ReportID:        "scan-9",
 		AssetsCreated:   2,
@@ -53,7 +53,7 @@ func TestJobProcessor_Process_IngestsAndReturnsCounts(t *testing.T) {
 	}}
 	p := &JobProcessor{service: ing}
 
-	job := ingestjob.NewJob(tenantID, &agentID, "scan-9", "trivy", []byte(`{"version":"1.0"}`))
+	job := ingestjob.NewJob(tenantID, &sensorID, "scan-9", "trivy", []byte(`{"version":"1.0"}`))
 	out, err := p.Process(context.Background(), job)
 	if err != nil {
 		t.Fatalf("Process: %v", err)

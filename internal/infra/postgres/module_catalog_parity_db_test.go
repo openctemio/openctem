@@ -43,7 +43,7 @@ import (
 //
 // Direction matters: the database legitimately holds MORE rows than the Go
 // maps. UserFacingModuleIDs is deliberately sidebar-visible-only — its own
-// comment excludes agents/tools/pipelines because toggling them has no sidebar
+// comment excludes sensors/tools/pipelines because toggling them has no sidebar
 // effect. So DB ⊋ code is expected and never asserted; only code ⊆ DB is.
 
 // catalogRow is one row of the `modules` table. Column names verified

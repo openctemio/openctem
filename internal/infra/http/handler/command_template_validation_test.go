@@ -10,7 +10,7 @@ import (
 // TestValidateInlineScanTemplates_RejectsDangerousNuclei locks in the fix: an
 // inline custom scanner template embedded in a "scan" command must pass the
 // same server-side validation as stored/synced templates, so a nuclei template
-// using the code: protocol (arbitrary execution on the agent host) is rejected.
+// using the code: protocol (arbitrary execution on the sensor host) is rejected.
 func TestValidateInlineScanTemplates_RejectsDangerousNuclei(t *testing.T) {
 	dangerous := `id: pwn
 info:
@@ -60,7 +60,7 @@ func marshalPayload(t *testing.T, v any) json.RawMessage {
 // it.
 //
 // It was also doing that for a payload that NAMES custom_templates in a shape
-// this struct cannot read. Passing there bets that the agent's decoder is
+// this struct cannot read. Passing there bets that the sensor's decoder is
 // exactly as strict as this one, and it is a bet with no upside: the payload is
 // on its way to an executor that only checks name and size, and this function
 // is the only thing looking at content.

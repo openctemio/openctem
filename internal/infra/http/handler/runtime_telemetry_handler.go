@@ -14,12 +14,12 @@ import (
 )
 
 // RuntimeTelemetryHandler receives EDR/XDR-style runtime events from
-// agents running on endpoint assets (see migration 000155).
+// sensors running on endpoint assets (see migration 000155).
 //
-// Authentication reuses the agent API-key chain already wired on the
-// ingest routes (AgentFromContext). Telemetry is tenant-scoped via the
-// agent's tenant_id — handler does NOT accept a tenant override from
-// the body so a compromised agent cannot write into another tenant.
+// Authentication reuses the sensor API-key chain already wired on the
+// ingest routes (SensorFromContext). Telemetry is tenant-scoped via the
+// sensor's tenant_id — handler does NOT accept a tenant override from
+// the body so a compromised sensor cannot write into another tenant.
 type RuntimeTelemetryHandler struct {
 	db         *sql.DB
 	correlator *iocapp.Correlator // optional — nil disables B6
@@ -41,7 +41,7 @@ func (h *RuntimeTelemetryHandler) SetCorrelator(c *iocapp.Correlator) {
 	h.correlator = c
 }
 
-// runtimeEventIn is the wire format an agent emits. Keep fields
+// runtimeEventIn is the wire format a sensor emits. Keep fields
 // aligned with the DB schema — the constraint lists live in the
 // migration, not in Go, so new event types land as a migration-only
 // change.
@@ -63,7 +63,7 @@ type runtimeEventIn struct {
 
 // ingestRequest supports both single-event and batched submissions. A
 // single POST with up to 100 events keeps network chatter low while
-// agent queues are draining after a disconnect.
+// sensor queues are draining after a disconnect.
 type ingestRequest struct {
 	Events []runtimeEventIn `json:"events"`
 }
@@ -79,8 +79,8 @@ type ingestResponse struct {
 	// and the per-asset Stage-6 dashboards.
 	//
 	// This is permanent, not a pending state. There is no server-side way to
-	// fill it in later — `agents` has no asset column and `assets` has no
-	// agent column, and only the producer knows which endpoint an event
+	// fill it in later — `sensors` has no asset column and `assets` has no
+	// sensor column, and only the producer knows which endpoint an event
 	// describes anyway (a forwarder reports on many hosts). Migration 000155
 	// once promised a nightly reconciler; it was never written and could not
 	// have been.
@@ -96,14 +96,14 @@ type ingestResponse struct {
 //
 // The body is always a batch (array wrapped in {"events": [...]}) so
 // the contract does not branch between single/multi. Size cap is 100
-// events per request — agents that need more must paginate.
+// events per request — sensors that need more must paginate.
 func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("agent authentication required").WriteJSON(w)
 		return
 	}
-	if !requireAgentTenant(w, agt) {
+	if !requireSensorTenant(w, agt) {
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 
 	// Cache of validated (tenant, asset) pairs within this request so a
 	// 100-event batch that targets 3 distinct assets only hits the DB 3
-	// times instead of 100. Value: true = belongs to agent's tenant,
+	// times instead of 100. Value: true = belongs to sensor's tenant,
 	// false = does NOT → reject.
 	assetOK := make(map[string]bool)
 
@@ -156,7 +156,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 			resp.Errors = append(resp.Errors, eventErr(i, "observed_at required"))
 			continue
 		}
-		// Cross-tenant asset-id guard. Without this, a compromised agent
+		// Cross-tenant asset-id guard. Without this, a compromised sensor
 		// in tenant A could submit telemetry with endpoint_asset_id
 		// belonging to tenant B — the FK check passes (asset exists)
 		// but the row ends up linking tenant A's telemetry to tenant B's
@@ -269,7 +269,7 @@ func (h *RuntimeTelemetryHandler) Ingest(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	if resp.Accepted == 0 && resp.Rejected > 0 {
-		// Whole batch was bad → 400 so agents can retry with fixed payload.
+		// Whole batch was bad → 400 so sensors can retry with fixed payload.
 		w.WriteHeader(http.StatusBadRequest)
 	} else {
 		w.WriteHeader(http.StatusAccepted)

@@ -371,7 +371,7 @@ func registerNotificationRoutes(
 }
 
 // registerPlatformStatsRoutes registers platform stats endpoints.
-// These are tenant-scoped routes for viewing platform agent statistics.
+// These are tenant-scoped routes for viewing platform sensor statistics.
 func registerPlatformStatsRoutes(
 	router Router,
 	h *handler.PlatformStatsHandler,

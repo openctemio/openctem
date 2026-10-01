@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/openctemio/api/internal/app"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/scansession"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -146,126 +146,126 @@ func (m *scanSessionMockRepo) addSession(s *scansession.ScanSession) {
 }
 
 // =============================================================================
-// Mock: agent.Repository (scanSessionMockAgentRepo)
+// Mock: sensor.Repository (scanSessionMockSensorRepo)
 // =============================================================================
 
-type scanSessionMockAgentRepo struct {
-	agents map[string]*agent.Agent
+type scanSessionMockSensorRepo struct {
+	sensors map[string]*sensor.Sensor
 }
 
-func newScanSessionMockAgentRepo() *scanSessionMockAgentRepo {
-	return &scanSessionMockAgentRepo{
-		agents: make(map[string]*agent.Agent),
+func newScanSessionMockSensorRepo() *scanSessionMockSensorRepo {
+	return &scanSessionMockSensorRepo{
+		sensors: make(map[string]*sensor.Sensor),
 	}
 }
 
-func (m *scanSessionMockAgentRepo) Create(_ context.Context, a *agent.Agent) error {
-	m.agents[a.ID.String()] = a
+func (m *scanSessionMockSensorRepo) Create(_ context.Context, a *sensor.Sensor) error {
+	m.sensors[a.ID.String()] = a
 	return nil
 }
 
-func (m *scanSessionMockAgentRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
-	return len(m.agents), nil
+func (m *scanSessionMockSensorRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
+	return len(m.sensors), nil
 }
 
-func (m *scanSessionMockAgentRepo) GetByID(_ context.Context, id shared.ID) (*agent.Agent, error) {
-	a, ok := m.agents[id.String()]
+func (m *scanSessionMockSensorRepo) GetByID(_ context.Context, id shared.ID) (*sensor.Sensor, error) {
+	a, ok := m.sensors[id.String()]
 	if !ok {
 		return nil, shared.ErrNotFound
 	}
 	return a, nil
 }
 
-func (m *scanSessionMockAgentRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*agent.Agent, error) {
-	a, ok := m.agents[id.String()]
+func (m *scanSessionMockSensorRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*sensor.Sensor, error) {
+	a, ok := m.sensors[id.String()]
 	if !ok {
 		return nil, shared.ErrNotFound
 	}
 	return a, nil
 }
 
-func (m *scanSessionMockAgentRepo) GetByAPIKeyHash(_ context.Context, _ string) (*agent.Agent, error) {
+func (m *scanSessionMockSensorRepo) GetByAPIKeyHash(_ context.Context, _ string) (*sensor.Sensor, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *scanSessionMockAgentRepo) List(_ context.Context, _ agent.Filter, _ pagination.Pagination) (pagination.Result[*agent.Agent], error) {
-	return pagination.Result[*agent.Agent]{}, nil
+func (m *scanSessionMockSensorRepo) List(_ context.Context, _ sensor.Filter, _ pagination.Pagination) (pagination.Result[*sensor.Sensor], error) {
+	return pagination.Result[*sensor.Sensor]{}, nil
 }
 
-func (m *scanSessionMockAgentRepo) Update(_ context.Context, _ *agent.Agent) error { return nil }
-func (m *scanSessionMockAgentRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
+func (m *scanSessionMockSensorRepo) Update(_ context.Context, _ *sensor.Sensor) error { return nil }
+func (m *scanSessionMockSensorRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
 	return nil
 }
-func (m *scanSessionMockAgentRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ agent.HeartbeatUpdate) (bool, error) {
+func (m *scanSessionMockSensorRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ sensor.HeartbeatUpdate) (bool, error) {
 	return true, nil
 }
-func (m *scanSessionMockAgentRepo) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
+func (m *scanSessionMockSensorRepo) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
 	return true, nil
 }
-func (m *scanSessionMockAgentRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
-func (m *scanSessionMockAgentRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
+func (m *scanSessionMockSensorRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
+func (m *scanSessionMockSensorRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
 	return nil
 }
 
-func (m *scanSessionMockAgentRepo) IncrementStats(_ context.Context, _ shared.ID, _, _, _ int64) error {
+func (m *scanSessionMockSensorRepo) IncrementStats(_ context.Context, _ shared.ID, _, _, _ int64) error {
 	return nil
 }
 
-func (m *scanSessionMockAgentRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*agent.Agent, error) {
+func (m *scanSessionMockSensorRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
 
-func (m *scanSessionMockAgentRepo) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*agent.Agent, error) {
+func (m *scanSessionMockSensorRepo) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
 
-func (m *scanSessionMockAgentRepo) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*agent.Agent, error) {
+func (m *scanSessionMockSensorRepo) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*sensor.Sensor, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *scanSessionMockAgentRepo) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
+func (m *scanSessionMockSensorRepo) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
 	return 0, nil
 }
 
-func (m *scanSessionMockAgentRepo) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*agent.Agent, error) {
+func (m *scanSessionMockSensorRepo) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
 
-func (m *scanSessionMockAgentRepo) ClaimJob(_ context.Context, _ shared.ID) error   { return nil }
-func (m *scanSessionMockAgentRepo) ReleaseJob(_ context.Context, _ shared.ID) error { return nil }
-func (m *scanSessionMockAgentRepo) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
+func (m *scanSessionMockSensorRepo) ClaimJob(_ context.Context, _ shared.ID) error   { return nil }
+func (m *scanSessionMockSensorRepo) ReleaseJob(_ context.Context, _ shared.ID) error { return nil }
+func (m *scanSessionMockSensorRepo) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
 	return nil
 }
 
-func (m *scanSessionMockAgentRepo) MarkStaleAgentsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
+func (m *scanSessionMockSensorRepo) MarkStaleSensorsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
 	return nil, nil
 }
 
-func (m *scanSessionMockAgentRepo) GetAgentsOfflineSince(_ context.Context, _ time.Time) ([]*agent.Agent, error) {
+func (m *scanSessionMockSensorRepo) GetSensorsOfflineSince(_ context.Context, _ time.Time) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
 
-func (m *scanSessionMockAgentRepo) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+func (m *scanSessionMockSensorRepo) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
 	return nil, nil
 }
 
-func (m *scanSessionMockAgentRepo) HasAgentForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
+func (m *scanSessionMockSensorRepo) HasSensorForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
 
-func (m *scanSessionMockAgentRepo) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+func (m *scanSessionMockSensorRepo) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
 	return nil, nil
 }
 
-func (m *scanSessionMockAgentRepo) HasAgentForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
+func (m *scanSessionMockSensorRepo) HasSensorForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
 
-func (m *scanSessionMockAgentRepo) GetPlatformAgentStats(_ context.Context, _ shared.ID) (*agent.PlatformAgentStatsResult, error) {
+func (m *scanSessionMockSensorRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
 	return nil, nil
 }
 
-func (m *scanSessionMockAgentRepo) GetTenantAgentStats(_ context.Context, _ shared.ID) (*agent.TenantAgentStats, error) {
+func (m *scanSessionMockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
 	return nil, nil
 }
 
@@ -273,23 +273,23 @@ func (m *scanSessionMockAgentRepo) GetTenantAgentStats(_ context.Context, _ shar
 // Helpers
 // =============================================================================
 
-func newTestScanSessionService() (*app.ScanSessionService, *scanSessionMockRepo, *scanSessionMockAgentRepo) {
+func newTestScanSessionService() (*app.ScanSessionService, *scanSessionMockRepo, *scanSessionMockSensorRepo) {
 	sessionRepo := newScanSessionMockRepo()
-	agentRepo := newScanSessionMockAgentRepo()
+	sensorRepo := newScanSessionMockSensorRepo()
 	log := logger.New(logger.Config{Level: "error", Format: "text"})
-	svc := app.NewScanSessionService(sessionRepo, agentRepo, log)
-	return svc, sessionRepo, agentRepo
+	svc := app.NewScanSessionService(sessionRepo, sensorRepo, log)
+	return svc, sessionRepo, sensorRepo
 }
 
-func newTestAgentWithTenant(tenantID shared.ID) *agent.Agent {
-	agt, _ := agent.NewAgent(tenantID, "test-agent", agent.AgentTypeRunner, "test", []string{"sast"}, []string{"semgrep"}, agent.ExecutionModeStandalone)
+func newTestSensorWithTenant(tenantID shared.ID) *sensor.Sensor {
+	agt, _ := sensor.NewSensor(tenantID, "test-agent", sensor.SensorTypeRunner, "test", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeStandalone)
 	return agt
 }
 
-func newTestAgentWithoutTenant() *agent.Agent {
-	agt, _ := agent.NewAgent(shared.NewID(), "platform-agent", agent.AgentTypeWorker, "platform", []string{"sast"}, []string{"semgrep"}, agent.ExecutionModeDaemon)
-	agt.TenantID = nil // Platform agent has no tenant
-	agt.IsPlatformAgent = true
+func newTestSensorWithoutTenant() *sensor.Sensor {
+	agt, _ := sensor.NewSensor(shared.NewID(), "platform-agent", sensor.SensorTypeWorker, "platform", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeDaemon)
+	agt.TenantID = nil // Platform sensor has no tenant
+	agt.IsPlatformSensor = true
 	return agt
 }
 
@@ -312,7 +312,7 @@ func defaultRegisterScanInput() app.RegisterScanInput {
 func TestScanSessionService_RegisterScan_Success(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 	input := defaultRegisterScanInput()
 
 	output, err := svc.RegisterScan(context.Background(), agt, input)
@@ -355,7 +355,7 @@ func TestScanSessionService_RegisterScan_Success(t *testing.T) {
 		if s.Branch != "main" {
 			t.Errorf("expected branch main, got %s", s.Branch)
 		}
-		if s.AgentID == nil || !s.AgentID.Equals(agt.ID) {
+		if s.SensorID == nil || !s.SensorID.Equals(agt.ID) {
 			t.Error("expected agent_id to match")
 		}
 	}
@@ -363,7 +363,7 @@ func TestScanSessionService_RegisterScan_Success(t *testing.T) {
 
 func TestScanSessionService_RegisterScan_NoTenantContext(t *testing.T) {
 	svc, _, _ := newTestScanSessionService()
-	agt := newTestAgentWithoutTenant()
+	agt := newTestSensorWithoutTenant()
 	input := defaultRegisterScanInput()
 
 	_, err := svc.RegisterScan(context.Background(), agt, input)
@@ -379,7 +379,7 @@ func TestScanSessionService_RegisterScan_NoTenantContext(t *testing.T) {
 func TestScanSessionService_RegisterScan_WithBaseline(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 	input := defaultRegisterScanInput()
 
 	sessionRepo.baselineCommitSha = "baseline-sha-456"
@@ -404,7 +404,7 @@ func TestScanSessionService_RegisterScan_WithBaseline(t *testing.T) {
 func TestScanSessionService_RegisterScan_BaselineError_Continues(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 	input := defaultRegisterScanInput()
 
 	sessionRepo.findBaselineErr = errors.New("db connection failed")
@@ -426,7 +426,7 @@ func TestScanSessionService_RegisterScan_BaselineError_Continues(t *testing.T) {
 func TestScanSessionService_RegisterScan_CreateError(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 	input := defaultRegisterScanInput()
 
 	sessionRepo.createErr = errors.New("db write failed")
@@ -440,7 +440,7 @@ func TestScanSessionService_RegisterScan_CreateError(t *testing.T) {
 func TestScanSessionService_RegisterScan_EmptyRequiredFields(t *testing.T) {
 	svc, _, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	tests := []struct {
 		name  string
@@ -473,7 +473,7 @@ func TestScanSessionService_RegisterScan_EmptyRequiredFields(t *testing.T) {
 func TestScanSessionService_RegisterScan_NoBaseline(t *testing.T) {
 	svc, _, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 	input := defaultRegisterScanInput()
 
 	output, err := svc.RegisterScan(context.Background(), agt, input)
@@ -493,11 +493,11 @@ func TestScanSessionService_RegisterScan_NoBaseline(t *testing.T) {
 func TestScanSessionService_UpdateScanSession_Complete(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	// Create a running session
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
@@ -536,10 +536,10 @@ func TestScanSessionService_UpdateScanSession_Complete(t *testing.T) {
 func TestScanSessionService_UpdateScanSession_Failed(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
@@ -565,10 +565,10 @@ func TestScanSessionService_UpdateScanSession_Failed(t *testing.T) {
 func TestScanSessionService_UpdateScanSession_Canceled(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
@@ -589,7 +589,7 @@ func TestScanSessionService_UpdateScanSession_Canceled(t *testing.T) {
 
 func TestScanSessionService_UpdateScanSession_NoTenantContext(t *testing.T) {
 	svc, _, _ := newTestScanSessionService()
-	agt := newTestAgentWithoutTenant()
+	agt := newTestSensorWithoutTenant()
 
 	input := app.UpdateScanSessionInput{Status: "completed"}
 
@@ -602,7 +602,7 @@ func TestScanSessionService_UpdateScanSession_NoTenantContext(t *testing.T) {
 func TestScanSessionService_UpdateScanSession_InvalidScanID(t *testing.T) {
 	svc, _, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	input := app.UpdateScanSessionInput{Status: "completed"}
 
@@ -618,7 +618,7 @@ func TestScanSessionService_UpdateScanSession_InvalidScanID(t *testing.T) {
 func TestScanSessionService_UpdateScanSession_NotFound(t *testing.T) {
 	svc, _, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	input := app.UpdateScanSessionInput{Status: "completed"}
 
@@ -628,20 +628,20 @@ func TestScanSessionService_UpdateScanSession_NotFound(t *testing.T) {
 	}
 }
 
-func TestScanSessionService_UpdateScanSession_WrongAgent(t *testing.T) {
+func TestScanSessionService_UpdateScanSession_WrongSensor(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	ownerAgent := newTestAgentWithTenant(tenantID)
-	otherAgent := newTestAgentWithTenant(tenantID)
+	ownerSensor := newTestSensorWithTenant(tenantID)
+	otherSensor := newTestSensorWithTenant(tenantID)
 
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(ownerAgent.ID)
+	session.SetSensor(ownerSensor.ID)
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
 	input := app.UpdateScanSessionInput{Status: "completed"}
 
-	err := svc.UpdateScanSession(context.Background(), otherAgent, session.ID.String(), input)
+	err := svc.UpdateScanSession(context.Background(), otherSensor, session.ID.String(), input)
 	if err == nil {
 		t.Fatal("expected forbidden error when agent does not own session")
 	}
@@ -653,10 +653,10 @@ func TestScanSessionService_UpdateScanSession_WrongAgent(t *testing.T) {
 func TestScanSessionService_UpdateScanSession_UpdateRepoError(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	_ = session.Start()
 	sessionRepo.addSession(session)
 	sessionRepo.updateErr = errors.New("db update failed")
@@ -672,11 +672,11 @@ func TestScanSessionService_UpdateScanSession_UpdateRepoError(t *testing.T) {
 func TestScanSessionService_UpdateScanSession_InvalidStateTransition(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	// Create a session that is already completed (terminal state)
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	_ = session.Start()
 	_ = session.Complete(5, 2, 1, nil)
 	sessionRepo.addSession(session)
@@ -693,11 +693,11 @@ func TestScanSessionService_UpdateScanSession_InvalidStateTransition(t *testing.
 func TestScanSessionService_UpdateScanSession_CancelTerminalState(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	// Create a session that is already failed (terminal)
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	_ = session.Start()
 	_ = session.Fail("some error")
 	sessionRepo.addSession(session)
@@ -1030,11 +1030,11 @@ func TestScanSessionService_DeleteScan_RepoDeleteError(t *testing.T) {
 func TestScanSessionService_UpdateScanSession_CompleteFromPending(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	// Create a pending session (not started yet) - Complete should work on pending too
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	// Do NOT call Start() - leave in pending state
 	sessionRepo.addSession(session)
 
@@ -1057,10 +1057,10 @@ func TestScanSessionService_UpdateScanSession_CompleteFromPending(t *testing.T) 
 func TestScanSessionService_UpdateScanSession_FailFromPending(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	sessionRepo.addSession(session)
 
 	input := app.UpdateScanSessionInput{
@@ -1080,36 +1080,36 @@ func TestScanSessionService_UpdateScanSession_FailFromPending(t *testing.T) {
 }
 
 // =============================================================================
-// Tests: Agent ownership edge cases
+// Tests: Sensor ownership edge cases
 // =============================================================================
 
-func TestScanSessionService_UpdateScanSession_NilAgentID_OnSession(t *testing.T) {
+func TestScanSessionService_UpdateScanSession_NilSensorID_OnSession(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
-	// Session without an agent assigned (AgentID is nil)
+	// Session without a sensor assigned (SensorID is nil)
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	// Do NOT call session.SetAgent - leave AgentID nil
+	// Do NOT call session.SetSensor - leave SensorID nil
 	_ = session.Start()
 	sessionRepo.addSession(session)
 
 	input := app.UpdateScanSessionInput{Status: "completed"}
 
-	// When session has no AgentID, ownership check should pass (no owner to verify against)
+	// When session has no SensorID, ownership check should pass (no owner to verify against)
 	err := svc.UpdateScanSession(context.Background(), agt, session.ID.String(), input)
 	if err != nil {
 		t.Fatalf("expected no error when session has nil AgentID, got %v", err)
 	}
 }
 
-func TestScanSessionService_UpdateScanSession_SameAgent_Succeeds(t *testing.T) {
+func TestScanSessionService_UpdateScanSession_SameSensor_Succeeds(t *testing.T) {
 	svc, sessionRepo, _ := newTestScanSessionService()
 	tenantID := shared.NewID()
-	agt := newTestAgentWithTenant(tenantID)
+	agt := newTestSensorWithTenant(tenantID)
 
 	session, _ := scansession.NewScanSession(tenantID, "semgrep", "repository", "repo-url")
-	session.SetAgent(agt.ID)
+	session.SetSensor(agt.ID)
 	_ = session.Start()
 	sessionRepo.addSession(session)
 

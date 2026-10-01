@@ -9,13 +9,13 @@ import (
 
 // Filter represents filter options for listing commands.
 type Filter struct {
-	TenantID        *shared.ID
-	AgentID         *shared.ID
-	Type            *CommandType
-	Status          *CommandStatus
-	Priority        *CommandPriority
-	IsPlatformJob   *bool      // Filter by platform job status (v3.2)
-	PlatformAgentID *shared.ID // Filter by assigned platform agent (v3.2)
+	TenantID         *shared.ID
+	SensorID         *shared.ID
+	Type             *CommandType
+	Status           *CommandStatus
+	Priority         *CommandPriority
+	IsPlatformJob    *bool      // Filter by platform job status (v3.2)
+	PlatformSensorID *shared.ID // Filter by assigned platform sensor (v3.2)
 }
 
 // Repository defines the interface for command persistence.
@@ -29,23 +29,23 @@ type Repository interface {
 	// GetByTenantAndID retrieves a command by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Command, error)
 
-	// GetPendingForAgent retrieves pending commands for an agent.
+	// GetPendingForSensor retrieves pending commands for a sensor.
 	//
-	// capabilities is the polling agent's advertised capability set. A command
+	// capabilities is the polling sensor's advertised capability set. A command
 	// whose payload carries a non-empty required_capabilities array is only
 	// returned when every required capability is present in capabilities, so a
 	// capability-scoped command (e.g. a "validate:nuclei" validate job) is never
-	// handed to an agent that cannot execute it. A command with no
-	// required_capabilities is returned to any agent (unchanged behavior). Pass
+	// handed to a sensor that cannot execute it. A command with no
+	// required_capabilities is returned to any sensor (unchanged behavior). Pass
 	// nil/empty capabilities to only receive unscoped commands.
-	GetPendingForAgent(ctx context.Context, tenantID shared.ID, agentID *shared.ID, capabilities []string, limit int) ([]*Command, error)
+	GetPendingForSensor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, capabilities []string, limit int) ([]*Command, error)
 
-	// ClaimForAgent atomically transitions a still-pending command to
-	// acknowledged for the given agent, only if it is still pending and
-	// either unassigned or already assigned to this agent. Returns false if
+	// ClaimForSensor atomically transitions a still-pending command to
+	// acknowledged for the given sensor, only if it is still pending and
+	// either unassigned or already assigned to this sensor. Returns false if
 	// another concurrent poller already claimed it — this is what prevents
-	// the same unassigned command being double-dispatched to two agents.
-	ClaimForAgent(ctx context.Context, tenantID, commandID shared.ID, agentID string) (bool, error)
+	// the same unassigned command being double-dispatched to two sensors.
+	ClaimForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID string) (bool, error)
 
 	// List lists commands with filters and pagination.
 	List(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*Command], error)
@@ -84,20 +84,20 @@ type Repository interface {
 	CountQueuedPlatformJobs(ctx context.Context) (int, error)
 
 	// GetQueuedPlatformJobs retrieves queued platform jobs ordered by priority.
-	// Returns jobs that are pending and not yet assigned to an agent.
+	// Returns jobs that are pending and not yet assigned to a sensor.
 	GetQueuedPlatformJobs(ctx context.Context, limit int) ([]*Command, error)
 
-	// GetNextPlatformJob atomically claims the next job from the queue for an agent.
+	// GetNextPlatformJob atomically claims the next job from the queue for a sensor.
 	// Uses FOR UPDATE SKIP LOCKED for concurrent safety.
 	// Returns nil if no suitable job is available.
-	GetNextPlatformJob(ctx context.Context, agentID shared.ID, capabilities []string, tools []string) (*Command, error)
+	GetNextPlatformJob(ctx context.Context, sensorID shared.ID, capabilities []string, tools []string) (*Command, error)
 
 	// UpdateQueuePriorities recalculates queue priorities for all pending platform jobs.
 	// Returns the number of jobs updated.
 	UpdateQueuePriorities(ctx context.Context) (int64, error)
 
 	// RecoverStuckJobs returns stuck jobs to the queue.
-	// A job is stuck if it's assigned but the agent is offline or hasn't progressed.
+	// A job is stuck if it's assigned but the sensor is offline or hasn't progressed.
 	// Returns the number of jobs recovered.
 	RecoverStuckJobs(ctx context.Context, stuckThresholdMinutes int, maxRetries int) (int64, error)
 
@@ -117,18 +117,18 @@ type Repository interface {
 	ListPlatformJobsByTenant(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[*Command], error)
 
 	// ListPlatformJobsAdmin lists platform jobs across all tenants (admin only).
-	// Optional filters: agentID, tenantID, status.
-	ListPlatformJobsAdmin(ctx context.Context, agentID, tenantID *shared.ID, status *CommandStatus, page pagination.Pagination) (pagination.Result[*Command], error)
+	// Optional filters: sensorID, tenantID, status.
+	ListPlatformJobsAdmin(ctx context.Context, sensorID, tenantID *shared.ID, status *CommandStatus, page pagination.Pagination) (pagination.Result[*Command], error)
 
-	// GetPlatformJobsByAgent lists platform jobs assigned to an agent.
-	GetPlatformJobsByAgent(ctx context.Context, agentID shared.ID, status *CommandStatus) ([]*Command, error)
+	// GetPlatformJobsBySensor lists platform jobs assigned to a sensor.
+	GetPlatformJobsBySensor(ctx context.Context, sensorID shared.ID, status *CommandStatus) ([]*Command, error)
 
 	// ==========================================================================
 	// Tenant Command Recovery Methods
 	// ==========================================================================
 
 	// RecoverStuckTenantCommands returns stuck tenant commands to the pool.
-	// A command is stuck if it's assigned to an offline agent or hasn't been picked up.
+	// A command is stuck if it's assigned to an offline sensor or hasn't been picked up.
 	// Returns the number of commands recovered.
 	RecoverStuckTenantCommands(ctx context.Context, stuckThresholdMinutes int, maxRetries int) (int64, error)
 

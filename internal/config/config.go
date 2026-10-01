@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	agentdom "github.com/openctemio/api/pkg/domain/agent"
+	sensordom "github.com/openctemio/api/pkg/domain/sensor"
 )
 
 // Environment constants
@@ -20,26 +20,26 @@ const (
 
 // Config holds all application configuration.
 type Config struct {
-	App         AppConfig
-	Server      ServerConfig
-	GRPC        GRPCConfig
-	Database    DatabaseConfig
-	Redis       RedisConfig
-	Log         LogConfig
-	Auth        AuthConfig
-	OAuth       OAuthConfig
-	Keycloak    KeycloakConfig
-	CORS        CORSConfig
-	RateLimit   RateLimitConfig
-	SMTP        SMTPConfig
-	Worker      WorkerConfig
-	Encryption  EncryptionConfig
-	AITriage    AITriageConfig
-	AgentConfig AgentConfigConfig
-	Storage     StorageConfig
-	Webhooks    WebhooksConfig
-	Ingest      IngestConfig
-	Metrics     MetricsConfig
+	App          AppConfig
+	Server       ServerConfig
+	GRPC         GRPCConfig
+	Database     DatabaseConfig
+	Redis        RedisConfig
+	Log          LogConfig
+	Auth         AuthConfig
+	OAuth        OAuthConfig
+	Keycloak     KeycloakConfig
+	CORS         CORSConfig
+	RateLimit    RateLimitConfig
+	SMTP         SMTPConfig
+	Worker       WorkerConfig
+	Encryption   EncryptionConfig
+	AITriage     AITriageConfig
+	SensorConfig SensorConfigConfig
+	Storage      StorageConfig
+	Webhooks     WebhooksConfig
+	Ingest       IngestConfig
+	Metrics      MetricsConfig
 
 	// AdminAuditRetention controls pruning of the platform-level
 	// admin_audit_logs table.
@@ -147,23 +147,23 @@ type AppConfig struct {
 	Name  string
 	Env   string
 	Debug bool
-	URL   string // Public app URL (used as fallback for agent config base URL)
+	URL   string // Public app URL (used as fallback for sensor config base URL)
 }
 
-// AgentConfigConfig holds the agent config template service settings.
-type AgentConfigConfig struct {
-	// TemplatesDir is the filesystem path containing agent config templates
+// SensorConfigConfig holds the sensor config template service settings.
+type SensorConfigConfig struct {
+	// TemplatesDir is the filesystem path containing sensor config templates
 	// (yaml.tmpl, env.tmpl, docker.tmpl, cli.tmpl). Operators can edit these
 	// without rebuilding the API or UI.
-	// Default: configs/agent-templates
+	// Default: configs/sensor-templates
 	TemplatesDir string
-	// PublicAPIURL is the URL agents will connect to (embedded in templates).
+	// PublicAPIURL is the URL sensors will connect to (embedded in templates).
 	// If empty, falls back to App.URL.
 	PublicAPIURL string
-	// KeyTTL is how long a self-renewed agent API key stays valid before it
+	// KeyTTL is how long a self-renewed sensor API key stays valid before it
 	// must be renewed again (RFC-014 Phase 1b). Zero (the default) disables
 	// expiry: renewed keys never expire. Set AGENT_KEY_TTL (e.g. "24h") to opt
-	// into short-lived, auto-rotating agent credentials.
+	// into short-lived, auto-rotating sensor credentials.
 	KeyTTL time.Duration
 }
 
@@ -492,21 +492,21 @@ type RateLimitConfig struct {
 	ReadRequestsPerMin int
 }
 
-// WorkerConfig holds worker/agent management configuration.
-// Deprecated: Use AgentConfig instead. This alias is kept for backward compatibility.
-type WorkerConfig = AgentConfig
+// WorkerConfig holds worker/sensor management configuration.
+// Deprecated: Use SensorConfig instead. This alias is kept for backward compatibility.
+type WorkerConfig = SensorConfig
 
-// AgentConfig holds agent management configuration.
-type AgentConfig struct {
-	// HeartbeatTimeout is the duration after which an agent is marked as inactive
+// SensorConfig holds sensor management configuration.
+type SensorConfig struct {
+	// HeartbeatTimeout is the duration after which a sensor is marked as inactive
 	// if no heartbeat is received. Default: 5 minutes.
 	HeartbeatTimeout time.Duration
 
-	// HealthCheckInterval is how often to check for stale agents.
+	// HealthCheckInterval is how often to check for stale sensors.
 	// Default: 1 minute.
 	HealthCheckInterval time.Duration
 
-	// Enabled controls whether agent health checking is enabled.
+	// Enabled controls whether sensor health checking is enabled.
 	// Default: true.
 	Enabled bool
 
@@ -537,11 +537,11 @@ type AgentConfig struct {
 	// Defaults to 24h (daily), matching the threat-intel / CTEM-ID refreshes.
 	CertMonitorInterval time.Duration
 
-	// LoadBalancing holds configuration for agent load balancing weights.
+	// LoadBalancing holds configuration for sensor load balancing weights.
 	LoadBalancing LoadBalancingConfig
 }
 
-// LoadBalancingConfig holds weights for agent load balancing score computation.
+// LoadBalancingConfig holds weights for sensor load balancing score computation.
 // The load score formula: score = (JobWeight * job_load) + (CPUWeight * cpu) +
 //
 //	(MemoryWeight * memory) + (DiskIOWeight * disk_io) + (NetworkWeight * network)
@@ -581,11 +581,11 @@ type LoadBalancingConfig struct {
 }
 
 // Weights converts the operator-facing AGENT_LB_* settings into the domain
-// weight set consumed by Agent.ComputeLoadScoreWithWeights and the agent
+// weight set consumed by Sensor.ComputeLoadScoreWithWeights and the sensor
 // selector. This is the seam that makes those environment variables
 // observable in scheduling behavior.
-func (c LoadBalancingConfig) Weights() agentdom.LoadBalancingWeights {
-	return agentdom.LoadBalancingWeights{
+func (c LoadBalancingConfig) Weights() sensordom.LoadBalancingWeights {
+	return sensordom.LoadBalancingWeights{
 		JobLoad:                  c.JobWeight,
 		CPU:                      c.CPUWeight,
 		Memory:                   c.MemoryWeight,
@@ -697,7 +697,7 @@ func Load() (*Config, error) {
 			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
 			URL:   getEnv("APP_URL", ""),
 		},
-		AgentConfig: AgentConfigConfig{
+		SensorConfig: SensorConfigConfig{
 			TemplatesDir: getEnv("AGENT_CONFIG_TEMPLATES_DIR", "configs/agent-templates"),
 			PublicAPIURL: getEnv("AGENT_PUBLIC_API_URL", ""),
 			KeyTTL:       getEnvDuration("AGENT_KEY_TTL", 0),
@@ -877,13 +877,13 @@ func Load() (*Config, error) {
 			CertMonitorFeedBaseURL: getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:    getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
 			LoadBalancing: LoadBalancingConfig{
-				JobWeight:                getEnvFloat("AGENT_LB_JOB_WEIGHT", agentdom.DefaultJobLoadWeight),
-				CPUWeight:                getEnvFloat("AGENT_LB_CPU_WEIGHT", agentdom.DefaultCPUWeight),
-				MemoryWeight:             getEnvFloat("AGENT_LB_MEMORY_WEIGHT", agentdom.DefaultMemoryWeight),
-				DiskIOWeight:             getEnvFloat("AGENT_LB_DISK_IO_WEIGHT", agentdom.DefaultDiskIOWeight),
-				NetworkWeight:            getEnvFloat("AGENT_LB_NETWORK_WEIGHT", agentdom.DefaultNetworkWeight),
-				MaxDiskThroughputMBPS:    getEnvFloat("AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", agentdom.DefaultMaxDiskThroughputMBPS),
-				MaxNetworkThroughputMBPS: getEnvFloat("AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", agentdom.DefaultMaxNetworkThroughputMBPS),
+				JobWeight:                getEnvFloat("AGENT_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
+				CPUWeight:                getEnvFloat("AGENT_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
+				MemoryWeight:             getEnvFloat("AGENT_LB_MEMORY_WEIGHT", sensordom.DefaultMemoryWeight),
+				DiskIOWeight:             getEnvFloat("AGENT_LB_DISK_IO_WEIGHT", sensordom.DefaultDiskIOWeight),
+				NetworkWeight:            getEnvFloat("AGENT_LB_NETWORK_WEIGHT", sensordom.DefaultNetworkWeight),
+				MaxDiskThroughputMBPS:    getEnvFloat("AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", sensordom.DefaultMaxDiskThroughputMBPS),
+				MaxNetworkThroughputMBPS: getEnvFloat("AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", sensordom.DefaultMaxNetworkThroughputMBPS),
 			},
 		},
 		Encryption: EncryptionConfig{

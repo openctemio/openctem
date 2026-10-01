@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/agent"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -32,14 +32,14 @@ func TestCommandHandler_ConflictMapsTo409(t *testing.T) {
 func TestIngestScan_AdapterErrorIsGeneric(t *testing.T) {
 	h := NewIngestHandler(nil, nil, logger.NewNop())
 	tid := shared.NewID()
-	agt := &agent.Agent{ID: shared.NewID(), TenantID: &tid, Status: agent.AgentStatusActive}
+	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
 
 	body, _ := json.Marshal(map[string]any{
 		"scanner_type": "no-such-scanner-SECRET-MARKER",
 		"data":         json.RawMessage(`{"x":1}`),
 	})
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/agent/ingest/scan", bytes.NewReader(body))
-	r = r.WithContext(context.WithValue(r.Context(), agentContextKey, agt))
+	r = r.WithContext(context.WithValue(r.Context(), sensorContextKey, agt))
 	rec := httptest.NewRecorder()
 	h.IngestScan(rec, r)
 
@@ -51,7 +51,7 @@ func TestIngestScan_AdapterErrorIsGeneric(t *testing.T) {
 	}
 }
 
-// A platform agent (no tenant) calling /agent/credentials/ingest gets a clean
+// A platform sensor (no tenant) calling /agent/credentials/ingest gets a clean
 // 403 instead of a MustGetTenantID panic (recovered as a 500).
 func TestCredentialImport_NoTenantIs403NotPanic(t *testing.T) {
 	h := &CredentialImportHandler{logger: logger.NewNop()}

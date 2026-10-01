@@ -39,8 +39,8 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
-		// Agents
-		AgentsRead, AgentsWrite, AgentsDelete,
+		// Sensors
+		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
 		// Team
 		TeamRead, TeamUpdate, TeamDelete,
@@ -117,8 +117,8 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
-		// Agents
-		AgentsRead, AgentsWrite, AgentsDelete,
+		// Sensors
+		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
 		// Team (no team:delete)
 		TeamRead, TeamUpdate,
@@ -199,8 +199,8 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite,
 		SecretStoreRead, SecretStoreWrite,
-		// Agents (read + write, no delete)
-		AgentsRead, AgentsWrite,
+		// Sensors (read + write, no delete)
+		SensorsRead, SensorsWrite,
 		CommandsRead, CommandsWrite,
 		// Team (read only)
 		TeamRead,
@@ -273,8 +273,8 @@ var RolePermissions = map[tenant.Role][]Permission{
 		TenantToolsRead,
 		ScannerTemplatesRead,
 		SecretStoreRead,
-		// Agents (read only)
-		AgentsRead,
+		// Sensors (read only)
+		SensorsRead,
 		CommandsRead,
 		// Team (read only)
 		TeamRead,

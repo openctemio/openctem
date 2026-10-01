@@ -6,7 +6,7 @@ import "testing"
 // panic: the offset was found in strings.ToLower(path) but indexed into path.
 // "Ⱥ" (U+023A) is 2 bytes and lowercases to "ⱥ" (U+2C65) at 3 bytes, so two of
 // them shift every later offset by 2 — enough to index past the end. Any
-// authenticated agent could send this in a CTIS finding and kill the process.
+// authenticated sensor could send this in a CTIS finding and kill the process.
 func TestSanitizePathForProperty_NonLengthPreservingLowercase(t *testing.T) {
 	cases := []string{
 		"ȺȺ/home/x/a.go",

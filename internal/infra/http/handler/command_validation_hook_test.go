@@ -66,7 +66,7 @@ func validateCommand(t *testing.T, tenantID, findingID shared.ID, outcome string
 
 // validateCommandMetadataResult builds a validate command whose result nests the
 // verdict under `metadata` — the shape the SDK command poller produces from an
-// agent's CommandExecutionResult.Metadata.
+// sensor's CommandExecutionResult.Metadata.
 func validateCommandMetadataResult(t *testing.T, tenantID, findingID shared.ID, outcome string) *commanddom.Command {
 	t.Helper()
 	payload, _ := json.Marshal(validation.ValidateCommandPayload{

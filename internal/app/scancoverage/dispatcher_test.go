@@ -49,7 +49,7 @@ func TestDispatchTenableScan_BuildsRoutableCommand(t *testing.T) {
 	if fc.created.TenantID != tenant {
 		t.Fatal("tenant not set on command")
 	}
-	if fc.created.AgentID != nil {
+	if fc.created.SensorID != nil {
 		t.Fatal("agent should be unpinned (capability-routed) by default")
 	}
 
@@ -57,7 +57,7 @@ func TestDispatchTenableScan_BuildsRoutableCommand(t *testing.T) {
 	if err := json.Unmarshal(fc.created.Payload, &p); err != nil {
 		t.Fatalf("payload not JSON: %v", err)
 	}
-	// scanner=tenable is what the agent routes on (must reach the tenable executor).
+	// scanner=tenable is what the sensor routes on (must reach the tenable executor).
 	if p["scanner"] != "tenable" {
 		t.Fatalf("scanner must be tenable, got %v", p["scanner"])
 	}
@@ -74,15 +74,15 @@ func TestDispatchTenableScan_BuildsRoutableCommand(t *testing.T) {
 	}
 }
 
-func TestDispatchTenableScan_GeneratesSessionAndPinsAgent(t *testing.T) {
+func TestDispatchTenableScan_GeneratesSessionAndPinsSensor(t *testing.T) {
 	fc := &fakeCommandCreator{}
 	d := NewDispatcher(fc)
-	agent := shared.NewID()
+	sensor := shared.NewID()
 
 	_, session, err := d.DispatchTenableScan(context.Background(), DispatchTenableInput{
 		TenantID: shared.NewID(),
 		Targets:  []string{"10.0.0.1"},
-		AgentID:  &agent,
+		SensorID: &sensor,
 	})
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
@@ -90,7 +90,7 @@ func TestDispatchTenableScan_GeneratesSessionAndPinsAgent(t *testing.T) {
 	if session == "" {
 		t.Fatal("session id should be generated when empty")
 	}
-	if fc.created.AgentID == nil || *fc.created.AgentID != agent {
+	if fc.created.SensorID == nil || *fc.created.SensorID != sensor {
 		t.Fatal("agent id should be pinned when provided (C3)")
 	}
 }

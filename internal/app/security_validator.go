@@ -234,7 +234,7 @@ func (v *SecurityValidator) ValidateScannerConfig(ctx context.Context, tenantID 
 	return result
 }
 
-// ValidateCommandPayload validates a command payload before sending to an agent.
+// ValidateCommandPayload validates a command payload before sending to a sensor.
 // This is the last line of defense before a command is executed.
 func (v *SecurityValidator) ValidateCommandPayload(ctx context.Context, tenantID shared.ID, payload map[string]any) *ValidationResult {
 	result := &ValidationResult{Valid: true}
@@ -524,7 +524,7 @@ func (v *SecurityValidator) ValidateCronExpression(expr string) error {
 // TIER VALIDATION (v3.3 - Security Hardening)
 // =============================================================================
 
-// ValidTiers contains all valid platform agent tiers.
+// ValidTiers contains all valid platform sensor tiers.
 var ValidTiers = []string{"shared", "dedicated", "premium"}
 
 // ValidateTier validates a tier value against the allowed tier list.

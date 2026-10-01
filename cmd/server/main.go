@@ -104,7 +104,7 @@ func run() int {
 	defer closeWithLog(redisClient, "redis", log)
 	log.Info("redis connected")
 
-	agentStateStore := redis.NewAgentStateStore(redisClient, log)
+	sensorStateStore := redis.NewSensorStateStore(redisClient, log)
 	log.Info("agent state store initialized")
 
 	jobNotifier := redis.NewJobNotifier(redisClient, log)
@@ -137,12 +137,12 @@ func run() int {
 	// Services
 	// ==========================================================================
 	services, err := NewServices(&ServiceDeps{
-		Config:          cfg,
-		Log:             log,
-		DB:              db.DB,
-		Repos:           repos,
-		RedisClient:     redisClient,
-		AgentStateStore: agentStateStore,
+		Config:           cfg,
+		Log:              log,
+		DB:               db.DB,
+		Repos:            repos,
+		RedisClient:      redisClient,
+		SensorStateStore: sensorStateStore,
 	})
 	if err != nil {
 		log.Error("failed to initialize services", "error", err)

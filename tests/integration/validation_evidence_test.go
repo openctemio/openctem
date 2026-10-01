@@ -105,7 +105,7 @@ func TestValidationEvidence_Repository_RoundTrip(t *testing.T) {
 }
 
 // TestValidationEvidence_Ingest_TenantGuard verifies the security guard against
-// real SQL: an agent in tenant B cannot record evidence against tenant A's
+// real SQL: a sensor in tenant B cannot record evidence against tenant A's
 // finding (the cross-tenant id the FK alone would not catch), and no row is
 // written.
 func TestValidationEvidence_Ingest_TenantGuard(t *testing.T) {

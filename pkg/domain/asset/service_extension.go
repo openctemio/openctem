@@ -41,7 +41,7 @@ type AssetService struct {
 	tlsVersion string // TLS 1.2, TLS 1.3
 
 	// Discovery
-	discoverySource string     // nmap, shodan, censys, httpx, agent
+	discoverySource string     // nmap, shodan, censys, httpx, sensor
 	discoveredAt    *time.Time // When first discovered
 	lastSeenAt      *time.Time // When last seen active
 

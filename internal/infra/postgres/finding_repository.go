@@ -187,7 +187,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		nullID(finding.ResolvedBy()),
 		nullString(finding.ScanID()),
 		finding.Fingerprint(),
-		nullID(finding.AgentID()),
+		nullID(finding.SensorID()),
 		metadata,
 		finding.CreatedAt(),
 		finding.UpdatedAt(),
@@ -349,7 +349,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		nullID(finding.ResolvedBy()),
 		nullString(finding.ScanID()),
 		finding.Fingerprint(),
-		nullID(finding.AgentID()),
+		nullID(finding.SensorID()),
 		metadata,
 		finding.CreatedAt(),
 		finding.UpdatedAt(),
@@ -794,7 +794,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		nullID(finding.ResolvedBy()),
 		nullString(finding.ScanID()),
 		finding.Fingerprint(),
-		nullID(finding.AgentID()),
+		nullID(finding.SensorID()),
 		metadata,
 		finding.CreatedAt(),
 		finding.UpdatedAt(),
@@ -2057,7 +2057,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		acceptanceExpiresAt sql.NullTime
 		scanID              sql.NullString
 		fingerprint         string
-		agentID             sql.NullString
+		sensorID            sql.NullString
 		metadata            []byte
 		pentestCampaignID   sql.NullString
 		createdAt           time.Time
@@ -2127,7 +2127,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&relatedIssue, &relatedPR,
 		&duplicateOf, &duplicateCount, &commentsCount,
 		&acceptanceExpiresAt,
-		&scanID, &fingerprint, &agentID, &metadata, &pentestCampaignID, &createdAt, &updatedAt,
+		&scanID, &fingerprint, &sensorID, &metadata, &pentestCampaignID, &createdAt, &updatedAt,
 		&confidence, &impact, &likelihood, pq.Array(&vulnerabilityClass), pq.Array(&subcategory),
 		&baselineState, &kind, &rank, &occurrenceCount, &correlationID,
 		&partialFingerprints, &relatedLocations, &stacks, &attachments, pq.Array(&workItemURIs), &hostedViewerURI,
@@ -2159,7 +2159,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		relatedIssue, relatedPR,
 		duplicateOf, duplicateCount, commentsCount,
 		acceptanceExpiresAt,
-		scanID, fingerprint, agentID, metadata, pentestCampaignID, createdAt, updatedAt,
+		scanID, fingerprint, sensorID, metadata, pentestCampaignID, createdAt, updatedAt,
 		// SARIF fields
 		confidence, impact, likelihood, vulnerabilityClass, subcategory,
 		baselineState, kind, rank, occurrenceCount, correlationID,
@@ -2240,7 +2240,7 @@ type findingRow struct {
 	acceptanceExpiresAt sql.NullTime
 	scanID              sql.NullString
 	fingerprint         string
-	agentID             sql.NullString
+	sensorID            sql.NullString
 	metadata            []byte
 	pentestCampaignID   sql.NullString
 	createdAt           time.Time
@@ -2512,7 +2512,7 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		AcceptanceExpiresAt: nullTimeValue(row.acceptanceExpiresAt),
 		ScanID:              nullStringValue(row.scanID),
 		Fingerprint:         row.fingerprint,
-		AgentID:             parseNullID(row.agentID),
+		SensorID:            parseNullID(row.sensorID),
 		IngestChannel:       vulnerability.IngestChannel(nullStringValue(row.ingestChannel)),
 		Metadata:            meta,
 		// For pentest findings, source_metadata keys live inside the same

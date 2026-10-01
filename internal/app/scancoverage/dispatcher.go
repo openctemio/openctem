@@ -9,14 +9,14 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// CommandCreator persists agent commands. It is the subset of
+// CommandCreator persists sensor commands. It is the subset of
 // command.Repository the dispatcher needs (kept narrow for testability).
 type CommandCreator interface {
 	Create(ctx context.Context, cmd *command.Command) error
 }
 
 // DispatchTenableInput describes one Tenable coverage batch to dispatch to a
-// runner. The runner is an OpenCTEM agent with capability `infra` + tool
+// runner. The runner is an OpenCTEM sensor with capability `infra` + tool
 // `tenable` (RFC-007 §3.10); it holds the appliance credentials locally and the
 // control plane never does.
 type DispatchTenableInput struct {
@@ -26,9 +26,9 @@ type DispatchTenableInput struct {
 	// SessionID scopes auto-resolve to this batch (tool + session + assets).
 	// Generated if empty.
 	SessionID string
-	// AgentID optionally pins a specific runner (C3). Nil → any tenable-capable
-	// agent picks it up via capability routing.
-	AgentID *shared.ID
+	// SensorID optionally pins a specific runner (C3). Nil → any tenable-capable
+	// sensor picks it up via capability routing.
+	SensorID *shared.ID
 	// Engine is informational ("nessus_pro" | "tenable_sc"); the runner uses its
 	// local engine config.
 	Engine string
@@ -50,7 +50,7 @@ func NewDispatcher(commands CommandCreator) *Dispatcher {
 // the command ID and the (possibly generated) scan session id.
 //
 // The command is a generic scan command whose payload carries scanner="tenable"
-// (the discriminator the agent routes on), the target batch, the coverage
+// (the discriminator the sensor routes on), the target batch, the coverage
 // session id, and the required capability. The runner picks it up via poll,
 // scans its LOCAL appliance, and pushes CTIS back.
 func (d *Dispatcher) DispatchTenableScan(ctx context.Context, in DispatchTenableInput) (cmdID shared.ID, sessionID string, err error) {
@@ -83,8 +83,8 @@ func (d *Dispatcher) DispatchTenableScan(ctx context.Context, in DispatchTenable
 	if err != nil {
 		return shared.ID{}, "", err
 	}
-	if in.AgentID != nil && !in.AgentID.IsZero() {
-		cmd.AgentID = in.AgentID // C3: pin a specific runner
+	if in.SensorID != nil && !in.SensorID.IsZero() {
+		cmd.SensorID = in.SensorID // C3: pin a specific runner
 	}
 
 	if err := d.commands.Create(ctx, cmd); err != nil {

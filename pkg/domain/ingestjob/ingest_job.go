@@ -1,5 +1,5 @@
 // Package ingestjob provides the domain entities for the asynchronous ingest
-// queue (RFC-005). An ingest job is a persisted, raw agent payload waiting to
+// queue (RFC-005). An ingest job is a persisted, raw sensor payload waiting to
 // be processed by a bounded worker pool, decoupling accept (fast, in the HTTP
 // request) from process (async).
 package ingestjob
@@ -43,7 +43,7 @@ func (s Status) IsTerminal() bool {
 type Job struct {
 	id          ID
 	tenantID    shared.ID
-	agentID     *shared.ID
+	sensorID    *shared.ID
 	reportID    string
 	sourceType  string
 	payload     []byte
@@ -62,14 +62,14 @@ type Job struct {
 }
 
 // NewJob builds a pending job for the given decompressed payload, computing its
-// content hash for idempotency. agentID may be nil for non-agent sources.
-func NewJob(tenantID shared.ID, agentID *shared.ID, reportID, sourceType string, payload []byte) *Job {
+// content hash for idempotency. sensorID may be nil for non-sensor sources.
+func NewJob(tenantID shared.ID, sensorID *shared.ID, reportID, sourceType string, payload []byte) *Job {
 	now := time.Now()
 	sum := sha256.Sum256(payload)
 	return &Job{
 		id:          shared.NewID(),
 		tenantID:    tenantID,
-		agentID:     agentID,
+		sensorID:    sensorID,
 		reportID:    reportID,
 		sourceType:  sourceType,
 		payload:     payload,
@@ -90,7 +90,7 @@ const DefaultMaxAttempts = 5
 // Accessors.
 func (j *Job) ID() ID                 { return j.id }
 func (j *Job) TenantID() shared.ID    { return j.tenantID }
-func (j *Job) AgentID() *shared.ID    { return j.agentID }
+func (j *Job) SensorID() *shared.ID   { return j.sensorID }
 func (j *Job) ReportID() string       { return j.reportID }
 func (j *Job) SourceType() string     { return j.sourceType }
 func (j *Job) Payload() []byte        { return j.payload }
@@ -125,7 +125,7 @@ func Backoff(attempts int) time.Duration {
 // FromRow rehydrates a Job from persisted columns. Used by the repository.
 func FromRow(
 	id, tenantID ID,
-	agentID *shared.ID,
+	sensorID *shared.ID,
 	reportID, sourceType string,
 	payload, payloadSHA []byte,
 	status Status,
@@ -136,7 +136,7 @@ func FromRow(
 	availableAt, createdAt, updatedAt time.Time,
 ) *Job {
 	return &Job{
-		id: id, tenantID: tenantID, agentID: agentID,
+		id: id, tenantID: tenantID, sensorID: sensorID,
 		reportID: reportID, sourceType: sourceType,
 		payload: payload, payloadSHA: payloadSHA,
 		status: status, attempts: attempts, maxAttempts: maxAttempts, priority: priority,

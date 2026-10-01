@@ -88,7 +88,7 @@ func TestCommandDispatcher_Dispatch_BuildsValidateCommand(t *testing.T) {
 
 // RFC-011.2 Phase 2b: a KindNuclei job carries the finding's detection signature
 // and requires the deeper `validate:nuclei` capability, so it is only ever
-// routed to an agent that can run a single template.
+// routed to a sensor that can run a single template.
 func TestCommandDispatcher_Dispatch_NucleiJobRequiresNucleiCapability(t *testing.T) {
 	cc := &fakeCommandCreator{}
 	d := NewCommandDispatcher(cc, logger.NewNop())
@@ -124,17 +124,17 @@ func TestCommandDispatcher_Dispatch_NucleiJobRequiresNucleiCapability(t *testing
 	hasNuclei, hasBase := false, false
 	for _, c := range p.RequiredCapabilities {
 		switch c {
-		case AgentCapabilityValidateNuclei:
+		case SensorCapabilityValidateNuclei:
 			hasNuclei = true
-		case AgentCapabilityValidate:
+		case SensorCapabilityValidate:
 			hasBase = true
 		}
 	}
 	if !hasNuclei {
-		t.Errorf("required_capabilities %v missing %q", p.RequiredCapabilities, AgentCapabilityValidateNuclei)
+		t.Errorf("required_capabilities %v missing %q", p.RequiredCapabilities, SensorCapabilityValidateNuclei)
 	}
 	if hasBase {
-		t.Errorf("nuclei job must not require the base %q capability (would route to safe-check-only agents)", AgentCapabilityValidate)
+		t.Errorf("nuclei job must not require the base %q capability (would route to safe-check-only agents)", SensorCapabilityValidate)
 	}
 }
 

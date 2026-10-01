@@ -17,7 +17,7 @@ import (
 // sets must be split (zone routing with TargetsPerJob batching, RFC-023).
 const maxResolvedTargets = 10000
 
-// listTargetScanners are the scanners whose executors on deployed agents read
+// listTargetScanners are the scanners whose executors on deployed sensors read
 // the full `targets` list from the payload (nuclei via the vulnscan executor,
 // the Tenable bridge). Every other scanner reads only the single `target`
 // field, so a multi-target scan sent to it can only ever cover the first
@@ -40,7 +40,7 @@ type resolvedTargets struct {
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
-// targets plus the members of its asset group (agents do not resolve asset
+// targets plus the members of its asset group (sensors do not resolve asset
 // groups themselves, so a group-only scan used to dispatch nothing), minus
 // every target matching an active scope exclusion. Exclusions are enforced
 // here, on the server, for every scan, and a failed exclusion lookup stops the
@@ -105,7 +105,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 }
 
 // applyTargetsToPayload writes the dispatch targets in the protocol-v1 shape
-// every deployed agent and SDK understands: `targets` always carries the full
+// every deployed sensor and SDK understands: `targets` always carries the full
 // list; `target` is set only when it is the whole job (one target, or a
 // scanner that reads nothing else). Sending `target` alongside a list would
 // make nuclei scan just that one, because it prefers `target`.
@@ -121,7 +121,7 @@ func applyTargetsToPayload(payload map[string]any, scanner string, targets []str
 
 // hasInternalTarget reports whether any target is (or names) a private,
 // loopback, link-local or unspecified address. Such targets must never be
-// routed to shared platform agents.
+// routed to shared platform sensors.
 func hasInternalTarget(targets []string) bool {
 	for _, t := range targets {
 		if isInternalTarget(t) {

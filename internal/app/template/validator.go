@@ -304,7 +304,7 @@ func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
 	// backtracking). A template can declare multiple protocol blocks
 	// (http, dns, network, ...), each with its own matchers[*]. A
 	// single unsafe regex can burn a scanner-worker CPU for minutes,
-	// starving other tenants on the same agent pool.
+	// starving other tenants on the same sensor pool.
 	v.validateMatcherRegexes(tpl, result)
 
 	result.RuleCount = 1 // Nuclei templates are typically single templates

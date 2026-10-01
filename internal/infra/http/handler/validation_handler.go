@@ -27,12 +27,12 @@ type CoverageReader interface {
 }
 
 // ValidationHandler exposes CTEM Stage-4 validation evidence:
-//   - agents POST validation/proof-of-fix evidence for a finding (API-key auth)
+//   - sensors POST validation/proof-of-fix evidence for a finding (API-key auth)
 //   - users GET the evidence recorded for a finding (JWT auth, findings:read)
 //   - users GET tenant validation coverage by severity (the Validation KPI)
 //
-// The agent path is tenant-scoped via the authenticated agent's tenant — the
-// handler NEVER accepts a tenant override from the body, so a compromised agent
+// The sensor path is tenant-scoped via the authenticated sensor's tenant — the
+// handler NEVER accepts a tenant override from the body, so a compromised sensor
 // cannot write into another tenant.
 type ValidationHandler struct {
 	ingest   *validation.EvidenceIngestService
@@ -41,7 +41,7 @@ type ValidationHandler struct {
 	logger   *logger.Logger
 }
 
-// ValidationCommandLookup resolves the validate command an agent cites as its
+// ValidationCommandLookup resolves the validate command a sensor cites as its
 // authority to submit evidence. Implemented by *postgres.CommandRepository.
 type ValidationCommandLookup interface {
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*commanddom.Command, error)
@@ -71,10 +71,10 @@ type evidenceTargetIn struct {
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
-// evidenceRequest is the agent-submitted validation result.
+// evidenceRequest is the sensor-submitted validation result.
 type evidenceRequest struct {
 	FindingID string `json:"finding_id"`
-	// CommandID is the validate command (assigned to the submitting agent, not
+	// CommandID is the validate command (assigned to the submitting sensor, not
 	// yet finished, for this finding) that authorizes the evidence to change
 	// the finding's status. Optional: without it the evidence is recorded as
 	// advisory only (no status change).
@@ -101,15 +101,15 @@ type evidenceResponse struct {
 	Downgraded bool `json:"downgraded"`
 }
 
-// IngestEvidence handles POST /api/v1/validation/evidence (agent API-key auth).
+// IngestEvidence handles POST /api/v1/validation/evidence (sensor API-key auth).
 func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
 		apierror.Unauthorized("agent authentication required").WriteJSON(w)
 		return
 	}
 	if agt.TenantID == nil {
-		// Platform agents are not tenant-scoped — validation evidence is.
+		// Platform sensors are not tenant-scoped — validation evidence is.
 		apierror.Forbidden("a tenant-scoped agent is required").WriteJSON(w)
 		return
 	}
@@ -172,8 +172,8 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Authorization: only evidence backed by the validate command assigned to
-	// THIS agent for THIS finding may move the finding's status. Previously any
-	// agent key in the tenant could resolve / downgrade / reopen any finding by
+	// THIS sensor for THIS finding may move the finding's status. Previously any
+	// sensor key in the tenant could resolve / downgrade / reopen any finding by
 	// posting an outcome for its id.
 	authorized := false
 	if req.CommandID != "" {
@@ -210,12 +210,12 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 }
 
 // authorizeEvidenceCommand checks that commandID names a validate command in
-// the agent's tenant, assigned to this agent, still in flight, whose payload
+// the sensor's tenant, assigned to this sensor, still in flight, whose payload
 // targets findingID. Writes the error response and returns false otherwise.
 // Every rejection is the same generic 403 (no command-state enumeration).
 func (h *ValidationHandler) authorizeEvidenceCommand(
 	ctx context.Context, w http.ResponseWriter,
-	agentID, tenantID, findingID shared.ID, commandID string,
+	sensorID, tenantID, findingID shared.ID, commandID string,
 ) (*commanddom.Command, bool) {
 	cid, err := shared.IDFromString(commandID)
 	if err != nil {
@@ -224,7 +224,7 @@ func (h *ValidationHandler) authorizeEvidenceCommand(
 	}
 	deny := func(reason string) (*commanddom.Command, bool) {
 		h.logger.Warn("validation evidence rejected: command does not authorize it",
-			"agent_id", agentID.String(), "command_id", sanitizeLogField(commandID),
+			"agent_id", sensorID.String(), "command_id", sanitizeLogField(commandID),
 			"finding_id", findingID.String(), "reason", reason)
 		apierror.Forbidden("command does not authorize evidence for this finding").WriteJSON(w)
 		return nil, false
@@ -244,7 +244,7 @@ func (h *ValidationHandler) authorizeEvidenceCommand(
 	if cmd.Type != commanddom.CommandTypeValidate {
 		return deny("not a validate command")
 	}
-	if cmd.AgentID == nil || *cmd.AgentID != agentID {
+	if cmd.SensorID == nil || *cmd.SensorID != sensorID {
 		return deny("not assigned to this agent")
 	}
 	switch cmd.Status {

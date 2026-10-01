@@ -15,22 +15,22 @@ import (
 //
 // The built-in RateLimiter in ratelimit.go keys on IP — fine for
 // anonymous public endpoints, but not for /telemetry-events: many
-// endpoint agents deploy behind the same corporate NAT and would
-// share one bucket, so a single noisy agent would block the whole
+// endpoint sensors deploy behind the same corporate NAT and would
+// share one bucket, so a single noisy sensor would block the whole
 // fleet. This limiter keys on the authenticated tenant instead.
 //
 // Defaults: 200 requests / second per tenant, burst 400. Each request
 // carries up to 100 events (handler-enforced), so at steady state a
 // tenant can push 20k events/s before being throttled — well above
-// any realistic EDR fleet, but low enough that a compromised agent
+// any realistic EDR fleet, but low enough that a compromised sensor
 // key can't flood the table or the correlator.
 //
 // NOT YET WIRED INTO ROUTES. This file ships the type so a future
 // PR can wire it without signature churn. Bootstrap path:
 //   1. cmd/server/handlers.go — construct TelemetryRateLimiter
-//   2. routes/scanning.go registerAgentRoutes — thread it in and
+//   2. routes/scanning.go registerSensorRoutes — thread it in and
 //      apply .Middleware() on the /telemetry-events route.
-// Left unwired here to keep the agent-route signature stable for
+// Left unwired here to keep the sensor-route signature stable for
 // this PR; the P0 work (correlator, IOC, validation) can land
 // without the route-registration change.
 
@@ -119,7 +119,7 @@ func (rl *TelemetryRateLimiter) bucket(tenantID string) *rate.Limiter {
 }
 
 // MiddlewareKeyed is Middleware with a caller-supplied bucket key (e.g. the
-// authenticated agent ID instead of the tenant), for endpoints whose budget is
+// authenticated sensor ID instead of the tenant), for endpoints whose budget is
 // per-principal rather than per-tenant. An empty key passes through; a zero
 // rate disables the limiter, as with Middleware.
 func (rl *TelemetryRateLimiter) MiddlewareKeyed(keyFn func(*http.Request) string, message string) func(http.Handler) http.Handler {
@@ -147,7 +147,7 @@ func (rl *TelemetryRateLimiter) MiddlewareKeyed(keyFn func(*http.Request) string
 // Middleware returns an http middleware that rejects a request with
 // 429 when the calling tenant is over budget.
 //
-// The caller MUST place this AFTER agent-key auth so the
+// The caller MUST place this AFTER sensor-key auth so the
 // tenant-from-context lookup succeeds. If tenant is absent the
 // middleware passes through (rely on the auth middleware to 401).
 func (rl *TelemetryRateLimiter) Middleware() func(http.Handler) http.Handler {

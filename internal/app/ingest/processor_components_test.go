@@ -294,7 +294,7 @@ func TestComponentProcessor_ProcessBatch_EmptyDependencies(t *testing.T) {
 // =============================================================================
 
 func TestComponentProcessor_ProcessBatch_ComponentAlreadyExists(t *testing.T) {
-	// Scenario: Agent sends lodash@4.17.21 for Asset B
+	// Scenario: Sensor sends lodash@4.17.21 for Asset B
 	//           Component lodash@4.17.21 already exists from Asset A
 	//           Expected: Use existing component ID, create new asset_components link
 

@@ -32,7 +32,7 @@ const (
 	TokenTypeAccess TokenType = "access"
 	// TokenTypeRefresh is a long-lived refresh token.
 	TokenTypeRefresh TokenType = "refresh"
-	// TokenTypeJob is a job-specific token for platform agents.
+	// TokenTypeJob is a job-specific token for platform sensors.
 	TokenTypeJob TokenType = "job"
 )
 
@@ -715,7 +715,7 @@ func (g *Generator) ValidateRefreshToken(tokenString string) (*Claims, error) {
 // =============================================================================
 // Job Token Types (SEC-C03: JWT-based job authentication)
 // =============================================================================
-// Job tokens are short-lived, scoped tokens for platform agent job operations.
+// Job tokens are short-lived, scoped tokens for platform sensor job operations.
 // They provide defense-in-depth with API key authentication.
 
 // JobTokenScope represents allowed operations for a job token.
@@ -740,10 +740,10 @@ func AllJobScopes() []JobTokenScope {
 }
 
 // JobTokenClaims represents claims specific to job tokens.
-// These are more restrictive than user tokens - tied to a specific job and agent.
+// These are more restrictive than user tokens - tied to a specific job and sensor.
 type JobTokenClaims struct {
 	TokenType TokenType       `json:"token_type"`
-	AgentID   string          `json:"agent_id"`           // Platform agent ID
+	SensorID  string          `json:"agent_id"`           // Platform sensor ID
 	JobID     string          `json:"job_id"`             // Command/Job ID
 	TenantID  string          `json:"tenant_id"`          // Tenant owning the job
 	Scopes    []JobTokenScope `json:"scopes"`             // Allowed operations
@@ -775,27 +775,27 @@ func (c *JobTokenClaims) HasAnyScope(scopes ...JobTokenScope) bool {
 // JobToken represents a generated job token with metadata.
 type JobToken struct {
 	Token     string
-	AgentID   string
+	SensorID  string
 	JobID     string
 	TenantID  string
 	Scopes    []JobTokenScope
 	ExpiresAt time.Time
 }
 
-// GenerateJobToken creates a new job token for platform agent job operations.
+// GenerateJobToken creates a new job token for platform sensor job operations.
 // This implements SEC-C03: JWT job auth tokens with scopes.
 //
 // Security properties:
 // - Short TTL (job timeout + buffer) to minimize exposure window
-// - Scoped to specific job, agent, and tenant
+// - Scoped to specific job, sensor, and tenant
 // - Cannot be used for any other purpose than job operations
 // - Verified in addition to API key (defense-in-depth)
 func (g *Generator) GenerateJobToken(
-	agentID, jobID, tenantID, jobType string,
+	sensorID, jobID, tenantID, jobType string,
 	ttl time.Duration,
 	scopes []JobTokenScope,
 ) (*JobToken, error) {
-	if agentID == "" {
+	if sensorID == "" {
 		return nil, errors.New("agent_id is required")
 	}
 	if jobID == "" {
@@ -813,7 +813,7 @@ func (g *Generator) GenerateJobToken(
 
 	claims := JobTokenClaims{
 		TokenType: TokenTypeJob,
-		AgentID:   agentID,
+		SensorID:  sensorID,
 		JobID:     jobID,
 		TenantID:  tenantID,
 		Scopes:    scopes,
@@ -821,8 +821,8 @@ func (g *Generator) GenerateJobToken(
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.New().String(), // Unique jti for token tracking
 			Issuer:    g.config.Issuer,
-			Subject:   jobID,                     // Job is the subject
-			Audience:  jwt.ClaimStrings{agentID}, // Agent is the audience
+			Subject:   jobID,                      // Job is the subject
+			Audience:  jwt.ClaimStrings{sensorID}, // Sensor is the audience
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
@@ -837,7 +837,7 @@ func (g *Generator) GenerateJobToken(
 
 	return &JobToken{
 		Token:     signedToken,
-		AgentID:   agentID,
+		SensorID:  sensorID,
 		JobID:     jobID,
 		TenantID:  tenantID,
 		Scopes:    scopes,
@@ -874,16 +874,16 @@ func (g *Generator) ValidateJobToken(tokenString string) (*JobTokenClaims, error
 	return claims, nil
 }
 
-// ValidateJobTokenForJob validates a job token for a specific job and agent.
+// ValidateJobTokenForJob validates a job token for a specific job and sensor.
 // This is the recommended validation method as it ensures the token is for the right context.
-func (g *Generator) ValidateJobTokenForJob(tokenString, expectedAgentID, expectedJobID string) (*JobTokenClaims, error) {
+func (g *Generator) ValidateJobTokenForJob(tokenString, expectedSensorID, expectedJobID string) (*JobTokenClaims, error) {
 	claims, err := g.ValidateJobToken(tokenString)
 	if err != nil {
 		return nil, err
 	}
 
-	// Verify agent matches
-	if claims.AgentID != expectedAgentID {
+	// Verify sensor matches
+	if claims.SensorID != expectedSensorID {
 		return nil, fmt.Errorf("%w: agent mismatch", ErrInvalidToken)
 	}
 

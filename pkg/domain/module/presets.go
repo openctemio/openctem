@@ -76,9 +76,9 @@ const DefaultPresetID = "ctem_full"
 // Why each one (cross-checked against the actual ingestion pipeline,
 // not just the module name):
 //
-//   - agents → DATA INGESTION GATEWAY. Every collector / scanner /
+//   - sensors → DATA INGESTION GATEWAY. Every collector / scanner /
 //     SBOM tool POSTs data through /api/v1/agent/ingest, authenticated
-//     by an agent API key. Without `agents` enabled, the tenant cannot
+//     by a sensor API key. Without `sensors` enabled, the tenant cannot
 //     register collectors, cannot receive scanner output, cannot
 //     ingest cloud asset data via push collectors. Architecturally
 //     this is more important than most "feature" modules because
@@ -97,7 +97,7 @@ const DefaultPresetID = "ctem_full"
 //   - groups → RBAC team scoping for any non-trivial permission grant
 //
 //   - api_keys → programmatic access (CI/CD pipelines, scripts,
-//     out-of-band agent registration)
+//     out-of-band sensor registration)
 //
 // Auto-included by ResolvePresetModules so individual presets don't
 // have to enumerate them. Adding a module here = retroactive opt-in

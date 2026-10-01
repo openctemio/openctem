@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/api/pkg/domain/agent"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -22,106 +22,106 @@ import (
 )
 
 // =============================================================================
-// Mock: Agent Repository for PlatformStats tests
+// Mock: Sensor Repository for PlatformStats tests
 // =============================================================================
 
-// mockAgentRepository implements agent.Repository for platform stats handler tests.
-type mockAgentRepository struct {
-	statsResult *agent.PlatformAgentStatsResult
+// mockSensorRepository implements sensor.Repository for platform stats handler tests.
+type mockSensorRepository struct {
+	statsResult *sensor.PlatformSensorStatsResult
 	statsErr    error
 }
 
-func (m *mockAgentRepository) Create(_ context.Context, _ *agent.Agent) error {
+func (m *mockSensorRepository) Create(_ context.Context, _ *sensor.Sensor) error {
 	return nil
 }
-func (m *mockAgentRepository) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
+func (m *mockSensorRepository) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
 	return 0, nil
 }
-func (m *mockAgentRepository) GetByID(_ context.Context, _ shared.ID) (*agent.Agent, error) {
+func (m *mockSensorRepository) GetByID(_ context.Context, _ shared.ID) (*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*agent.Agent, error) {
+func (m *mockSensorRepository) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) GetByAPIKeyHash(_ context.Context, _ string) (*agent.Agent, error) {
+func (m *mockSensorRepository) GetByAPIKeyHash(_ context.Context, _ string) (*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) List(_ context.Context, _ agent.Filter, _ pagination.Pagination) (pagination.Result[*agent.Agent], error) {
-	return pagination.Result[*agent.Agent]{}, nil
+func (m *mockSensorRepository) List(_ context.Context, _ sensor.Filter, _ pagination.Pagination) (pagination.Result[*sensor.Sensor], error) {
+	return pagination.Result[*sensor.Sensor]{}, nil
 }
-func (m *mockAgentRepository) Update(_ context.Context, _ *agent.Agent) error {
+func (m *mockSensorRepository) Update(_ context.Context, _ *sensor.Sensor) error {
 	return nil
 }
-func (m *mockAgentRepository) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
+func (m *mockSensorRepository) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
 	return nil
 }
-func (m *mockAgentRepository) UpdateHeartbeat(_ context.Context, _ shared.ID, _ agent.HeartbeatUpdate) (bool, error) {
+func (m *mockSensorRepository) UpdateHeartbeat(_ context.Context, _ shared.ID, _ sensor.HeartbeatUpdate) (bool, error) {
 	return true, nil
 }
-func (m *mockAgentRepository) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
+func (m *mockSensorRepository) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
 	return true, nil
 }
-func (m *mockAgentRepository) Delete(_ context.Context, _ shared.ID) error {
+func (m *mockSensorRepository) Delete(_ context.Context, _ shared.ID) error {
 	return nil
 }
-func (m *mockAgentRepository) UpdateLastSeen(_ context.Context, _ shared.ID) error {
+func (m *mockSensorRepository) UpdateLastSeen(_ context.Context, _ shared.ID) error {
 	return nil
 }
-func (m *mockAgentRepository) IncrementStats(_ context.Context, _ shared.ID, _, _, _ int64) error {
+func (m *mockSensorRepository) IncrementStats(_ context.Context, _ shared.ID, _, _, _ int64) error {
 	return nil
 }
-func (m *mockAgentRepository) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*agent.Agent, error) {
+func (m *mockSensorRepository) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*agent.Agent, error) {
+func (m *mockSensorRepository) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*agent.Agent, error) {
+func (m *mockSensorRepository) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
+func (m *mockSensorRepository) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
 	return 0, nil
 }
-func (m *mockAgentRepository) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*agent.Agent, error) {
+func (m *mockSensorRepository) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) ClaimJob(_ context.Context, _ shared.ID) error {
+func (m *mockSensorRepository) ClaimJob(_ context.Context, _ shared.ID) error {
 	return nil
 }
-func (m *mockAgentRepository) ReleaseJob(_ context.Context, _ shared.ID) error {
+func (m *mockSensorRepository) ReleaseJob(_ context.Context, _ shared.ID) error {
 	return nil
 }
-func (m *mockAgentRepository) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
+func (m *mockSensorRepository) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
 	return nil
 }
-func (m *mockAgentRepository) MarkStaleAgentsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
+func (m *mockSensorRepository) MarkStaleSensorsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) GetAgentsOfflineSince(_ context.Context, _ time.Time) ([]*agent.Agent, error) {
+func (m *mockSensorRepository) GetSensorsOfflineSince(_ context.Context, _ time.Time) ([]*sensor.Sensor, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+func (m *mockSensorRepository) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) HasAgentForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
+func (m *mockSensorRepository) HasSensorForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
-func (m *mockAgentRepository) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
+func (m *mockSensorRepository) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
 	return nil, nil
 }
-func (m *mockAgentRepository) HasAgentForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
+func (m *mockSensorRepository) HasSensorForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
 
-func (m *mockAgentRepository) GetPlatformAgentStats(_ context.Context, _ shared.ID) (*agent.PlatformAgentStatsResult, error) {
+func (m *mockSensorRepository) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
 	if m.statsErr != nil {
 		return nil, m.statsErr
 	}
 	return m.statsResult, nil
 }
 
-func (m *mockAgentRepository) GetTenantAgentStats(_ context.Context, _ shared.ID) (*agent.TenantAgentStats, error) {
-	return &agent.TenantAgentStats{
+func (m *mockSensorRepository) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
+	return &sensor.TenantSensorStats{
 		ByStatus: make(map[string]int),
 		ByHealth: make(map[string]int),
 		ByType:   make(map[string]int),
@@ -133,9 +133,9 @@ func (m *mockAgentRepository) GetTenantAgentStats(_ context.Context, _ shared.ID
 // Helper: create handler with mock repository
 // =============================================================================
 
-func newPlatformStatsHandler(repo *mockAgentRepository) *handler.PlatformStatsHandler {
+func newPlatformStatsHandler(repo *mockSensorRepository) *handler.PlatformStatsHandler {
 	log := logger.NewNop()
-	svc := app.NewAgentService(repo, nil, log)
+	svc := app.NewSensorService(repo, nil, log)
 	return handler.NewPlatformStatsHandler(svc, log)
 }
 
@@ -152,23 +152,23 @@ func withPlatformTenantContext(req *http.Request, tenantID shared.ID) *http.Requ
 // =============================================================================
 
 func TestPlatformStatsHandler_GetStats_Success(t *testing.T) {
-	repo := &mockAgentRepository{
-		statsResult: &agent.PlatformAgentStatsResult{
-			TotalAgents:       5,
-			OnlineAgents:      3,
+	repo := &mockSensorRepository{
+		statsResult: &sensor.PlatformSensorStatsResult{
+			TotalSensors:      5,
+			OnlineSensors:     3,
 			TotalCapacity:     25,
 			CurrentActiveJobs: 8,
 			CurrentQueuedJobs: 2,
-			TierBreakdown: map[string]agent.TierBreakdown{
+			TierBreakdown: map[string]sensor.TierBreakdown{
 				"shared": {
-					TotalAgents:   3,
-					OnlineAgents:  2,
+					TotalSensors:  3,
+					OnlineSensors: 2,
 					TotalCapacity: 15,
 					CurrentLoad:   5,
 				},
 				"dedicated": {
-					TotalAgents:   2,
-					OnlineAgents:  1,
+					TotalSensors:  2,
+					OnlineSensors: 1,
 					TotalCapacity: 10,
 					CurrentLoad:   3,
 				},
@@ -203,25 +203,25 @@ func TestPlatformStatsHandler_GetStats_Success(t *testing.T) {
 	// Verify tier stats
 	require.Contains(t, resp.TierStats, "shared")
 	sharedTier := resp.TierStats["shared"]
-	assert.Equal(t, 3, sharedTier.TotalAgents)
-	assert.Equal(t, 2, sharedTier.OnlineAgents)
-	assert.Equal(t, 1, sharedTier.OfflineAgents, "offline = total - online = 3 - 2")
+	assert.Equal(t, 3, sharedTier.TotalSensors)
+	assert.Equal(t, 2, sharedTier.OnlineSensors)
+	assert.Equal(t, 1, sharedTier.OfflineSensors, "offline = total - online = 3 - 2")
 	assert.Equal(t, 15, sharedTier.TotalCapacity)
 	assert.Equal(t, 5, sharedTier.CurrentLoad)
 	assert.Equal(t, 10, sharedTier.AvailableSlots, "available = capacity - load = 15 - 5")
 
 	require.Contains(t, resp.TierStats, "dedicated")
 	dedicatedTier := resp.TierStats["dedicated"]
-	assert.Equal(t, 2, dedicatedTier.TotalAgents)
-	assert.Equal(t, 1, dedicatedTier.OnlineAgents)
-	assert.Equal(t, 1, dedicatedTier.OfflineAgents)
+	assert.Equal(t, 2, dedicatedTier.TotalSensors)
+	assert.Equal(t, 1, dedicatedTier.OnlineSensors)
+	assert.Equal(t, 1, dedicatedTier.OfflineSensors)
 	assert.Equal(t, 10, dedicatedTier.TotalCapacity)
 	assert.Equal(t, 3, dedicatedTier.CurrentLoad)
 	assert.Equal(t, 7, dedicatedTier.AvailableSlots)
 }
 
 func TestPlatformStatsHandler_GetStats_NoTenantInContext(t *testing.T) {
-	repo := &mockAgentRepository{}
+	repo := &mockSensorRepository{}
 	h := newPlatformStatsHandler(repo)
 
 	// No tenant context set on the request
@@ -239,7 +239,7 @@ func TestPlatformStatsHandler_GetStats_NoTenantInContext(t *testing.T) {
 }
 
 func TestPlatformStatsHandler_GetStats_ServiceError(t *testing.T) {
-	repo := &mockAgentRepository{
+	repo := &mockSensorRepository{
 		statsErr: errors.New("database connection lost"),
 	}
 	h := newPlatformStatsHandler(repo)
@@ -254,12 +254,12 @@ func TestPlatformStatsHandler_GetStats_ServiceError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rr.Code, "should return 500 on service error")
 }
 
-func TestPlatformStatsHandler_GetStats_NoPlatformAgents(t *testing.T) {
-	// When no platform agents exist, the service returns Enabled=false
-	repo := &mockAgentRepository{
-		statsResult: &agent.PlatformAgentStatsResult{
-			TotalAgents:   0,
-			TierBreakdown: make(map[string]agent.TierBreakdown),
+func TestPlatformStatsHandler_GetStats_NoPlatformSensors(t *testing.T) {
+	// When no platform sensors exist, the service returns Enabled=false
+	repo := &mockSensorRepository{
+		statsResult: &sensor.PlatformSensorStatsResult{
+			TotalSensors:  0,
+			TierBreakdown: make(map[string]sensor.TierBreakdown),
 		},
 	}
 	h := newPlatformStatsHandler(repo)

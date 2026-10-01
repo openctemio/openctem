@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
-// post-refactor: Retest dispatches a job to an agent via the
+// post-refactor: Retest dispatches a job to a sensor via the
 // ValidationDispatcher interface. The fake dispatcher returns canned
 // Evidence so we can pin the finding-status reconciliation.
 
@@ -116,7 +116,7 @@ func atFixApplied(t *testing.T) *vulnerability.Finding {
 	return f
 }
 
-func newProofSvc(disp ValidationDispatcher, cap AgentCapability) (*ProofOfFixService, *fakeFindingRepo, *captureNotifier) {
+func newProofSvc(disp ValidationDispatcher, cap SensorCapability) (*ProofOfFixService, *fakeFindingRepo, *captureNotifier) {
 	repo := &fakeFindingRepo{}
 	notif := &captureNotifier{}
 	evStore := NewEvidenceStore(&memEvidenceRepo{})

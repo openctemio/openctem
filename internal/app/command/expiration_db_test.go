@@ -22,7 +22,7 @@ import (
 //
 //	FindExpired:        WHERE status IN ('pending','acknowledged')
 //	                    AND expires_at IS NOT NULL AND expires_at < NOW()
-//	GetPendingForAgent: AND (expires_at IS NULL OR expires_at > NOW())
+//	GetPendingForSensor: AND (expires_at IS NULL OR expires_at > NOW())
 //
 // and nothing ever wrote the column: the only setter was
 // command.Service.Create's `if input.ExpiresIn > 0`, and no caller passes

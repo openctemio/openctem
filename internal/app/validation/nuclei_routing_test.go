@@ -15,7 +15,7 @@ type fakeNucleiAvailability struct {
 	err error
 }
 
-func (f fakeNucleiAvailability) HasNucleiValidationAgent(_ context.Context, _ shared.ID) (bool, error) {
+func (f fakeNucleiAvailability) HasNucleiValidationSensor(_ context.Context, _ shared.ID) (bool, error) {
 	return f.has, f.err
 }
 
@@ -95,7 +95,7 @@ func TestNucleiSignature(t *testing.T) {
 	}
 }
 
-// A nuclei-native finding + an online nuclei agent → route KindNuclei carrying
+// A nuclei-native finding + an online nuclei sensor → route KindNuclei carrying
 // the finding's own template id under the nuclei technique.
 func TestRunService_ValidateFinding_RoutesNucleiWhenCapable(t *testing.T) {
 	assetID := shared.NewID()
@@ -121,9 +121,9 @@ func TestRunService_ValidateFinding_RoutesNucleiWhenCapable(t *testing.T) {
 	}
 }
 
-// Signature present but NO nuclei agent → fall back to safe-check (reachability
+// Signature present but NO nuclei sensor → fall back to safe-check (reachability
 // only), and never leak a nuclei signature onto a safe-check job.
-func TestRunService_ValidateFinding_FallsBackToSafeCheckWithoutNucleiAgent(t *testing.T) {
+func TestRunService_ValidateFinding_FallsBackToSafeCheckWithoutNucleiSensor(t *testing.T) {
 	assetID := shared.NewID()
 	f := newNucleiFinding(t, assetID, "apache-struts-rce")
 	a := newTestAsset(t, "example.com")
@@ -148,7 +148,7 @@ func TestRunService_ValidateFinding_FallsBackToSafeCheckWithoutNucleiAgent(t *te
 	}
 }
 
-// Nuclei agent online but the finding has no re-runnable signature → safe-check.
+// Nuclei sensor online but the finding has no re-runnable signature → safe-check.
 func TestRunService_ValidateFinding_SafeCheckWhenNoSignature(t *testing.T) {
 	assetID := shared.NewID()
 	f := newTestFinding(t, assetID) // tool "tool", no rule id, no CVE

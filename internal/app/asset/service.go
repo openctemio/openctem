@@ -5,10 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/openctemio/api/internal/app/scope"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/openctemio/api/internal/app/scope"
 
 	"github.com/openctemio/api/internal/infra/redis"
 	"github.com/openctemio/api/pkg/domain/accesscontrol"
@@ -1640,7 +1641,7 @@ func (s *AssetService) CreateRepositoryAsset(ctx context.Context, input CreateRe
 	}
 
 	// Try to find existing asset that matches this repository
-	// This handles the case where an agent created the asset first
+	// This handles the case where a sensor created the asset first
 	existingAsset := s.findMatchingRepositoryAsset(ctx, tenantID, input)
 	if existingAsset != nil {
 		s.logger.Info("found existing asset, updating with SCM data",
@@ -2117,7 +2118,7 @@ func (s *AssetService) RecordRepositoryScan(ctx context.Context, assetID string)
 }
 
 // findMatchingRepositoryAsset tries to find an existing asset that matches the repository.
-// This handles cases where an agent created an asset before SCM sync.
+// This handles cases where a sensor created an asset before SCM sync.
 func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID shared.ID, input CreateRepositoryAssetInput) *assetdom.Asset {
 	// Extract repo name from FullName (e.g., "sdk" from "openctemio/sdk")
 	repoName := input.Name
@@ -2141,7 +2142,7 @@ func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID
 	}
 
 	// 2. Try to find by name matching the repo name
-	// This handles agent-created assets with names like "github.com/openctemio/sdk-go"
+	// This handles sensor-created assets with names like "github.com/openctemio/sdk-go"
 	if !tenantID.IsZero() {
 		existing, err := s.repo.GetByName(ctx, tenantID, repoName)
 		if err == nil && existing != nil && existing.Type() == assetdom.AssetTypeRepository {
@@ -2158,7 +2159,7 @@ func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID
 	}
 
 	// 4. Try to find by external_id containing the repo name
-	// This handles agent-created assets with external_id like "openctemio/openctemio/sdk"
+	// This handles sensor-created assets with external_id like "openctemio/openctemio/sdk"
 	if input.FullName != "" && !tenantID.IsZero() {
 		existing, err := s.repo.GetByExternalID(ctx, tenantID, provider, repoName)
 		if err == nil && existing != nil {
@@ -2167,7 +2168,7 @@ func (s *AssetService) findMatchingRepositoryAsset(ctx context.Context, tenantID
 	}
 
 	// 5. Try to find repository asset by full name (org/repo pattern) - MORE PRECISE
-	// This handles agent-created assets like "github.com-xxx/openctemio/sdk"
+	// This handles sensor-created assets like "github.com-xxx/openctemio/sdk"
 	// matching FullName "openctemio/sdk"
 	if input.FullName != "" && !tenantID.IsZero() {
 		existing, err := s.repo.FindRepositoryByFullName(ctx, tenantID, input.FullName)
@@ -2208,7 +2209,7 @@ func (s *AssetService) updateExistingRepositoryAsset(
 	criticality assetdom.Criticality,
 ) (*assetdom.Asset, *assetdom.RepositoryExtension, error) {
 	// Update asset fields with SCM data
-	// Only update name if the existing name looks like an agent-generated name
+	// Only update name if the existing name looks like a sensor-generated name
 	existingName := existingAsset.Name()
 	if strings.Contains(existingName, "github.com-") ||
 		strings.Contains(existingName, "gitlab.com-") ||

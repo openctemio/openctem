@@ -173,12 +173,12 @@ const (
 // =============================================================================
 
 const (
-	// Agent permissions (agents:*)
-	AgentsRead   Permission = "agents:read"
-	AgentsWrite  Permission = "agents:write"
-	AgentsDelete Permission = "agents:delete"
+	// Sensor permissions (sensors:*)
+	SensorsRead   Permission = "agents:read"
+	SensorsWrite  Permission = "agents:write"
+	SensorsDelete Permission = "agents:delete"
 
-	// Command permissions (agents:commands:*)
+	// Command permissions (sensors:commands:*)
 	CommandsRead   Permission = "agents:commands:read"
 	CommandsWrite  Permission = "agents:commands:write"
 	CommandsDelete Permission = "agents:commands:delete"
@@ -313,8 +313,8 @@ const (
 // =============================================================================
 
 const (
-	ComplianceFrameworksRead  Permission = "compliance:frameworks:read"
-	ComplianceFrameworksWrite Permission = "compliance:frameworks:write"
+	ComplianceFrameworksRead   Permission = "compliance:frameworks:read"
+	ComplianceFrameworksWrite  Permission = "compliance:frameworks:write"
 	ComplianceAssessmentsRead  Permission = "compliance:assessments:read"
 	ComplianceAssessmentsWrite Permission = "compliance:assessments:write"
 	ComplianceMappingsRead     Permission = "compliance:mappings:read"
@@ -443,8 +443,8 @@ func AllPermissions() []Permission {
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 
-		// Agents module
-		AgentsRead, AgentsWrite, AgentsDelete,
+		// Sensors module
+		SensorsRead, SensorsWrite, SensorsDelete,
 		CommandsRead, CommandsWrite, CommandsDelete,
 
 		// Team module

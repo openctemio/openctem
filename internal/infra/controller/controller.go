@@ -3,7 +3,7 @@
 //
 // Controllers periodically reconcile the desired state of the system with its actual state.
 // Each controller runs in its own goroutine and handles a specific aspect of the system:
-// - AgentHealthController: Marks stale agents as offline, cleans up expired leases
+// - SensorHealthController: Marks stale sensors as offline, cleans up expired leases
 // - JobRecoveryController: Recovers stuck jobs and re-queues them
 // - QueuePriorityController: Recalculates queue priorities for fair scheduling
 // - TokenCleanupController: Cleans up expired bootstrap tokens

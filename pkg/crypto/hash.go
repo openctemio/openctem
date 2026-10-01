@@ -22,7 +22,7 @@ import (
 // ever sees:
 //
 //   - API keys: 32 bytes from crypto/rand (256 bits of entropy)
-//   - Agent bootstrap tokens: similar high-entropy random
+//   - Sensor bootstrap tokens: similar high-entropy random
 //   - Session tokens: 32 bytes crypto/rand
 //
 // At 256 bits of entropy, an attacker with a leaked hash would need
@@ -34,7 +34,7 @@ import (
 // with pre-existing rows in the DB. NEW writes should use
 // HashTokenPeppered (HMAC-SHA256 with a server-side pepper) so that a
 // DB-only leak cannot be brute-forced via rainbow table — see
-// agent/service.go hashAgentAPIKey for the canonical caller.
+// sensor/service.go hashSensorAPIKey for the canonical caller.
 //
 // Action for reviewers: dismiss the CodeQL alert as
 // "Won't fix — false positive; input is cryptographically random,

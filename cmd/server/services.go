@@ -82,37 +82,37 @@ func (a findingMutatorAdapter) RecordVerdict(ctx context.Context, tenantID, find
 	return a.repo.StampValidationVerdict(ctx, tenantID, findingID, string(verdict), downgradedAt)
 }
 
-// validationAgentAvailability answers "is a validation-capable agent online for
+// validationSensorAvailability answers "is a validation-capable sensor online for
 // this tenant?" by reusing the exact capability query scan dispatch uses
-// (AgentRepository.FindAvailableWithCapacity). It gates validation.RunService so
-// a validate command is only ever queued when a real agent can consume it —
+// (SensorRepository.FindAvailableWithCapacity). It gates validation.RunService so
+// a validate command is only ever queued when a real sensor can consume it —
 // otherwise the command would sit in the queue forever and a live simulation run
 // would be stranded in "running". The gate is self-arming: it opens the moment a
-// tenant registers an agent advertising the "validate" capability.
-type validationAgentAvailability struct {
-	agents *postgres.AgentRepository
+// tenant registers a sensor advertising the "validate" capability.
+type validationSensorAvailability struct {
+	sensors *postgres.SensorRepository
 }
 
-func (v validationAgentAvailability) HasValidationAgent(ctx context.Context, tenantID shared.ID) (bool, error) {
-	agents, err := v.agents.FindAvailableWithCapacity(ctx, tenantID, []string{validation.AgentCapabilityValidate}, "")
+func (v validationSensorAvailability) HasValidationSensor(ctx context.Context, tenantID shared.ID) (bool, error) {
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, []string{validation.SensorCapabilityValidate}, "")
 	if err != nil {
 		return false, err
 	}
-	return len(agents) > 0, nil
+	return len(sensors) > 0, nil
 }
 
-// HasNucleiValidationAgent gates the deeper KindNuclei re-verify rung (RFC-011.2
-// Phase 2b) on a live per-tenant check for an agent advertising the
+// HasNucleiValidationSensor gates the deeper KindNuclei re-verify rung (RFC-011.2
+// Phase 2b) on a live per-tenant check for a sensor advertising the
 // `validate:nuclei` capability. Self-arming exactly like the base gate: routing
 // upgrades from safe-check to a real single-template re-run the moment a tenant
-// deploys a nuclei-capable validation agent, and degrades back with no code
+// deploys a nuclei-capable validation sensor, and degrades back with no code
 // change if it goes offline.
-func (v validationAgentAvailability) HasNucleiValidationAgent(ctx context.Context, tenantID shared.ID) (bool, error) {
-	agents, err := v.agents.FindAvailableWithCapacity(ctx, tenantID, []string{validation.AgentCapabilityValidateNuclei}, "")
+func (v validationSensorAvailability) HasNucleiValidationSensor(ctx context.Context, tenantID shared.ID) (bool, error) {
+	sensors, err := v.sensors.FindAvailableWithCapacity(ctx, tenantID, []string{validation.SensorCapabilityValidateNuclei}, "")
 	if err != nil {
 		return false, err
 	}
-	return len(agents) > 0, nil
+	return len(sensors) > 0, nil
 }
 
 // assetOwnerMatcher resolves an asset's owner_ref email to a user id for
@@ -519,8 +519,8 @@ type Services struct {
 	Outbox         *outbox.Service
 	Notification   *app.NotificationService
 
-	// Agents & Commands
-	Agent   *app.AgentService
+	// Sensors & Commands
+	Sensor  *app.SensorService
 	Command *command.Service
 	Ingest  *ingest.Service
 
@@ -548,8 +548,8 @@ type Services struct {
 	// Suppressions
 	Suppression *suppression.Service
 
-	// Agent Selection
-	AgentSelector *app.AgentSelector
+	// Sensor Selection
+	SensorSelector *app.SensorSelector
 
 	// Access Control
 	Group          *app.GroupService
@@ -606,7 +606,7 @@ type Services struct {
 	Simulation *app.SimulationService
 
 	// Validation (CTEM Stage-4): proof-of-fix / technique-execution evidence
-	// recorded by agents, reconciling finding status from the outcome.
+	// recorded by sensors, reconciling finding status from the outcome.
 	ValidationEvidence *validation.EvidenceIngestService
 
 	// ValidationRun dispatches validation (safe-check) jobs for findings.
@@ -704,12 +704,12 @@ func (a scimMembershipAdapter) UpdateMemberRole(ctx context.Context, tenantID, m
 
 // ServiceDeps contains dependencies needed to create services.
 type ServiceDeps struct {
-	Config          *config.Config
-	Log             *logger.Logger
-	DB              *sql.DB
-	Repos           *Repositories
-	RedisClient     *redis.Client
-	AgentStateStore *redis.AgentStateStore
+	Config           *config.Config
+	Log              *logger.Logger
+	DB               *sql.DB
+	Repos            *Repositories
+	RedisClient      *redis.Client
+	SensorStateStore *redis.SensorStateStore
 }
 
 // NewServices initializes all services.
@@ -1002,7 +1002,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Persist simulation runs (previously the run repo was never wired, so every
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
-	// Validation (CTEM Stage-4): agents POST proof-of-fix / technique evidence,
+	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
 	// Stage-4's second question: "did our controls react?". Correlates
@@ -1021,7 +1021,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 	)
 	// Producer side: dispatch a safe-check validation job for a finding. The
-	// agent runs the probe and reports back; the command-completion hook maps
+	// sensor runs the probe and reports back; the command-completion hook maps
 	// the result into evidence via ValidationEvidence above.
 	s.ValidationRun = validation.NewRunService(
 		repos.Finding,
@@ -1032,18 +1032,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 	)
 	// Capability-gate the dispatch on a live per-tenant check for an online
-	// validation-capable agent, mirroring scan dispatch. Without this the API
+	// validation-capable sensor, mirroring scan dispatch. Without this the API
 	// would enqueue validate commands (on fix_applied auto-retest and live
-	// simulation runs) even when no agent can execute them — the command would
+	// simulation runs) even when no sensor can execute them — the command would
 	// sit unconsumed and the simulation run would strand in "running". With it,
-	// dispatch is observably skipped until a validation agent is deployed, then
-	// self-activates. See validation.ErrNoValidationAgent.
-	s.ValidationRun.SetAgentAvailability(validationAgentAvailability{agents: repos.Agent})
+	// dispatch is observably skipped until a validation sensor is deployed, then
+	// self-activates. See validation.ErrNoValidationSensor.
+	s.ValidationRun.SetSensorAvailability(validationSensorAvailability{sensors: repos.Sensor})
 	// RFC-011.2 Phase 2b: route the deeper `nuclei` re-verify rung when — and only
-	// when — a `validate:nuclei`-capable agent is online. Inert-safe: with no such
-	// agent this gate returns false and routing is byte-for-byte Phase 2a
-	// (safe-check only). Reuses the same agent-registry capability query.
-	s.ValidationRun.SetNucleiAvailability(validationAgentAvailability{agents: repos.Agent})
+	// when — a `validate:nuclei`-capable sensor is online. Inert-safe: with no such
+	// sensor this gate returns false and routing is byte-for-byte Phase 2a
+	// (safe-check only). Reuses the same sensor-registry capability query.
+	s.ValidationRun.SetNucleiAvailability(validationSensorAvailability{sensors: repos.Sensor})
 	// RFC-012 Phase 1b: real safe-check dispatch. An eligible simulation
 	// (network-addressable target + safe-checkable technique) runs for real via
 	// the validation dispatcher; the command-completion hook finalizes the run.
@@ -1200,27 +1200,27 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Note: NotificationService is wired later after WebSocketHub is initialized
 
-	// Initialize agent & command services
-	s.Agent = app.NewAgentService(repos.Agent, s.Audit, log)
-	// Pepper the agent API-key hash with the platform encryption key
+	// Initialize sensor & command services
+	s.Sensor = app.NewSensorService(repos.Sensor, s.Audit, log)
+	// Pepper the sensor API-key hash with the platform encryption key
 	// (or its absence in dev). HMAC-SHA256(pepper, key) stops a DB-only
 	// leak from being brute-forced offline. New keys hash with pepper;
 	// AuthenticateByAPIKey falls back to the legacy plain-SHA256 lookup
 	// for rows written before the pepper was deployed.
-	s.Agent.SetPepper(cfg.Encryption.Key)
-	// Optional short-lived agent credentials (RFC-014 Phase 1b). Zero =
+	s.Sensor.SetPepper(cfg.Encryption.Key)
+	// Optional short-lived sensor credentials (RFC-014 Phase 1b). Zero =
 	// disabled (renewed keys never expire), preserving today's behavior.
-	s.Agent.SetKeyTTL(cfg.AgentConfig.KeyTTL)
+	s.Sensor.SetKeyTTL(cfg.SensorConfig.KeyTTL)
 	// Multi-key store for rotation overlap (RFC-014 Phase 3). Additive: auth
 	// still accepts the inline key; renewal under a TTL issues overlapping keys.
-	s.Agent.SetAPIKeyRepository(repos.AgentAPIKey)
+	s.Sensor.SetAPIKeyRepository(repos.SensorAPIKey)
 	// Operator-tunable load-balancing weights (AGENT_LB_*). Applied to the
 	// load_score recomputed on every heartbeat.
-	s.Agent.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
+	s.Sensor.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 	s.Command = command.NewService(repos.Command, log)
 
 	// Initialize ingest service (unified ingestion engine)
-	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Agent, repos.Branch, repos.Tenant, repos.Audit, log)
+	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Sensor, repos.Branch, repos.Tenant, repos.Audit, log)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -1248,7 +1248,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize scanning services
 	s.ScanProfile = app.NewScanProfileService(repos.ScanProfile, log)
-	s.ScanSession = app.NewScanSessionService(repos.ScanSession, repos.Agent, log)
+	s.ScanSession = app.NewScanSessionService(repos.ScanSession, repos.Sensor, log)
 	s.ScannerTemplate = app.NewScannerTemplateService(repos.ScannerTemplate, cfg.Encryption.Key, log)
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
 
@@ -1284,23 +1284,23 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.TemplateSource.SetTemplateSyncer(s.TemplateSyncer)
 
 	s.Tool = tool.NewService(repos.Tool, repos.TenantToolConfig, repos.ToolExecution, log)
-	s.Tool.SetAgentRepo(repos.Agent)           // Enable tool availability checking
+	s.Tool.SetSensorRepo(repos.Sensor)         // Enable tool availability checking
 	s.Tool.SetCategoryRepo(repos.ToolCategory) // Enable category info in responses
 	s.ToolCategory = tool.NewCategoryService(repos.ToolCategory, repos.Tool, log)
 	s.Capability = app.NewCapabilityService(repos.Capability, s.Audit, log)
 
-	// Initialize agent selector for load balancing
-	s.AgentSelector = app.NewAgentSelector(repos.Agent, repos.Command, deps.AgentStateStore, log)
+	// Initialize sensor selector for load balancing
+	s.SensorSelector = app.NewSensorSelector(repos.Sensor, repos.Command, deps.SensorStateStore, log)
 	// Same AGENT_LB_* weights drive job placement, so tuning them changes
 	// scheduling and not just the reported score.
-	s.AgentSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
+	s.SensorSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 
 	// Initialize security validator for pipeline/scan operations
 	securityValidator := app.NewSecurityValidator(repos.Tool, log)
 
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
-	scanAgentSelectorAdapter := app.NewScanAgentSelectorAdapter(s.AgentSelector)
+	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector)
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
@@ -1317,7 +1317,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.TemplateSource,
 		repos.Tool,
 		templateScanAdapter,
-		scanAgentSelectorAdapter,
+		scanSensorSelectorAdapter,
 		scanSecurityValidatorAdapter,
 		log,
 		scan.WithAuditService(scanAuditAdapter),
@@ -1348,7 +1348,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Create adapters for pipeline sub-package
 	pipelineAuditAdapter := app.NewPipelineAuditServiceAdapter(s.Audit)
-	pipelineAgentSelectorAdapter := app.NewPipelineAgentSelectorAdapter(s.AgentSelector)
+	pipelineSensorSelectorAdapter := app.NewPipelineSensorSelectorAdapter(s.SensorSelector)
 	pipelineSecurityValidatorAdapter := app.NewPipelineSecurityValidatorAdapter(securityValidator)
 
 	// Initialize pipeline service with security validator, audit service, transaction support, and tool repo
@@ -1357,13 +1357,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.PipelineStep,
 		repos.PipelineRun,
 		repos.StepRun,
-		repos.Agent,
+		repos.Sensor,
 		repos.Command,
 		pipelineSecurityValidatorAdapter,
 		log,
 		pipeline.WithAuditService(pipelineAuditAdapter),
 		pipeline.WithDB(deps.DB),
-		pipeline.WithAgentSelector(pipelineAgentSelectorAdapter),
+		pipeline.WithSensorSelector(pipelineSensorSelectorAdapter),
 		pipeline.WithToolRepo(repos.Tool),
 		pipeline.WithQualityGate(repos.ScanProfile, repos.Finding),
 		pipeline.WithScanDeactivator(s.Scan),     // Cascade pause scans when pipeline is deactivated

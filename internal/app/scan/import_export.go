@@ -43,7 +43,7 @@ type ScanConfigExport struct {
 	// Routing
 	Tags              []string `json:"tags,omitempty"`
 	RunOnTenantRunner bool     `json:"run_on_tenant_runner"`
-	AgentPreference   string   `json:"agent_preference,omitempty"`
+	SensorPreference  string   `json:"agent_preference,omitempty"`
 
 	// Profile and timeout
 	ProfileID      string `json:"profile_id,omitempty"`
@@ -84,7 +84,7 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 		ScheduleDay:         sc.ScheduleDay,
 		ScheduleTimezone:    sc.ScheduleTimezone,
 		RunOnTenantRunner:   sc.RunOnTenantRunner,
-		AgentPreference:     string(sc.AgentPreference),
+		SensorPreference:    string(sc.SensorPreference),
 		TimeoutSeconds:      sc.TimeoutSeconds,
 		MaxRetries:          sc.MaxRetries,
 		RetryBackoffSeconds: sc.RetryBackoffSeconds,
@@ -192,7 +192,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		Timezone:            export.ScheduleTimezone,
 		Tags:                export.Tags,
 		TenantRunner:        export.RunOnTenantRunner,
-		AgentPreference:     export.AgentPreference,
+		SensorPreference:    export.SensorPreference,
 		ProfileID:           export.ProfileID,
 		TimeoutSeconds:      export.TimeoutSeconds,
 		MaxRetries:          export.MaxRetries,

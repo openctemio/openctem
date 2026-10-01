@@ -237,7 +237,7 @@ func sanitizePathForProperty(path string) string {
 	// strings.ToLower is NOT length-preserving ("Ⱥ" is 2 bytes, "ⱥ" is 3), so an offset
 	// found in the lowered string can point past the end of the original. The previous
 	// code indexed `path` with exactly that offset (`path[idx+len(prefix)-1]`) and so
-	// panicked on attacker-supplied input — any authenticated agent could kill the
+	// panicked on attacker-supplied input — any authenticated sensor could kill the
 	// process with a single finding location. Use a lowered offset only when the two
 	// lengths match; otherwise fall back to an exact search, whose offsets are valid by
 	// construction. The separator now comes from the prefix, never from an index.

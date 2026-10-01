@@ -4,8 +4,8 @@
 // first-class ExposureEvents.
 //
 // This is CTEM Discovery breadth ("exposure != vulnerability") that needs no
-// credentials, no agent, and no customer consent — it reads only public CT-log
-// data. It complements the agent-side subfinder recon (which enumerates
+// credentials, no sensor, and no customer consent — it reads only public CT-log
+// data. It complements the sensor-side subfinder recon (which enumerates
 // subdomains on demand during a scan job): CT monitoring runs continuously
 // server-side and, crucially, surfaces cert-expiry exposures and certs issued
 // for domains the tenant never scanned. See docs/rfcs/RFC-019.

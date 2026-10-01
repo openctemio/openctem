@@ -108,15 +108,15 @@ type ComponentAssetUsage struct {
 // with affected_assets_count rolled up.
 type ComponentVulnerability struct {
 	// Vulnerability identity (from global vulnerabilities table)
-	VulnerabilityID  string  `json:"vulnerability_id"`
-	CVEID            string  `json:"cve_id"`
-	Title            string  `json:"title"`
-	Severity         string  `json:"severity"`
+	VulnerabilityID  string   `json:"vulnerability_id"`
+	CVEID            string   `json:"cve_id"`
+	Title            string   `json:"title"`
+	Severity         string   `json:"severity"`
 	CVSSScore        *float64 `json:"cvss_score,omitempty"`
 	EPSSScore        *float64 `json:"epss_score,omitempty"`
-	InCISAKEV        bool    `json:"in_cisa_kev"`
-	ExploitMaturity  string  `json:"exploit_maturity,omitempty"`
-	ExploitAvailable bool    `json:"exploit_available"`
+	InCISAKEV        bool     `json:"in_cisa_kev"`
+	ExploitMaturity  string   `json:"exploit_maturity,omitempty"`
+	ExploitAvailable bool     `json:"exploit_available"`
 	FixedVersions    []string `json:"fixed_versions"`
 
 	// Aggregated finding context for THIS component within THIS tenant
@@ -336,7 +336,7 @@ func (c *Component) UpdateHomepage(url string) {
 }
 
 // SetPURL overrides the generated PURL with a custom one.
-// Use this when the agent provides a more accurate PURL.
+// Use this when the sensor provides a more accurate PURL.
 func (c *Component) SetPURL(purl string) {
 	if purl != "" {
 		c.purl = purl

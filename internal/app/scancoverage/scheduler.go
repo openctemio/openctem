@@ -22,8 +22,8 @@ import (
 // CoverageConfig is one tenant's active rolling-coverage configuration.
 type CoverageConfig struct {
 	TenantID shared.ID
-	// AgentID optionally pins a specific runner (C3); nil → capability routing.
-	AgentID *shared.ID
+	// SensorID optionally pins a specific runner (C3); nil → capability routing.
+	SensorID *shared.ID
 	// Engine is "nessus_pro" (unlimited) or "tenable_sc" (active-IP cap).
 	Engine string
 	// Policy is the license rule used to size the batch.
@@ -210,7 +210,7 @@ func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (boo
 	cmdID, sessionID, err := s.dispatcher.DispatchTenableScan(ctx, DispatchTenableInput{
 		TenantID:     cfg.TenantID,
 		Targets:      targets,
-		AgentID:      cfg.AgentID,
+		SensorID:     cfg.SensorID,
 		Engine:       cfg.Engine,
 		TemplateUUID: cfg.TemplateUUID,
 	})
