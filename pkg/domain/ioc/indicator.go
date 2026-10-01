@@ -2,7 +2,7 @@
 //
 // An IOC is a tenant-scoped artefact (IP, domain, hash, URL, process
 // name, user-agent) that has been observed in connection with a
-// vulnerability/finding. At runtime, agents emit telemetry events;
+// vulnerability/finding. At runtime, sensors emit telemetry events;
 // the correlator matches those events against the IOC catalogue and
 // auto-reopens the originating finding when a hit occurs — the loop
 // closure named "invariant B6" in the CTEM model.
@@ -80,7 +80,7 @@ var ErrInvalidValueFormat = errors.New("ioc: value format doesn't match type")
 const maxValueBytes = 2048
 
 // fileHashRegex matches hex strings of the lengths produced by the
-// hash algorithms the correlator sees in agent telemetry:
+// hash algorithms the correlator sees in sensor telemetry:
 //   - MD5    : 32 hex chars
 //   - SHA-1  : 40 hex chars
 //   - SHA-256: 64 hex chars

@@ -130,7 +130,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message, severity, status,
 			resolution, resolved_at, resolved_by, scan_id, fingerprint,
-			agent_id, metadata, created_at, updated_at,
+			sensor_id, metadata, created_at, updated_at,
 			first_detected_branch, first_detected_commit, last_seen_branch, last_seen_commit,
 			confidence, impact, likelihood, vulnerability_class, subcategory,
 			baseline_state, kind, rank, occurrence_count, correlation_id,
@@ -187,7 +187,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 		nullID(finding.ResolvedBy()),
 		nullString(finding.ScanID()),
 		finding.Fingerprint(),
-		nullID(finding.AgentID()),
+		nullID(finding.SensorID()),
 		metadata,
 		finding.CreatedAt(),
 		finding.UpdatedAt(),
@@ -292,7 +292,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message, severity, status,
 			resolution, resolved_at, resolved_by, scan_id, fingerprint,
-			agent_id, metadata, created_at, updated_at,
+			sensor_id, metadata, created_at, updated_at,
 			first_detected_branch, first_detected_commit, last_seen_branch, last_seen_commit,
 			confidence, impact, likelihood, vulnerability_class, subcategory,
 			baseline_state, kind, rank, occurrence_count, correlation_id,
@@ -349,7 +349,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		nullID(finding.ResolvedBy()),
 		nullString(finding.ScanID()),
 		finding.Fingerprint(),
-		nullID(finding.AgentID()),
+		nullID(finding.SensorID()),
 		metadata,
 		finding.CreatedAt(),
 		finding.UpdatedAt(),
@@ -615,7 +615,7 @@ func findingInsertColumnsSQL() string {
 			start_column, end_column, snippet, context_snippet, context_start_line,
 			title, description, message, severity, status,
 			resolution, resolved_at, resolved_by, scan_id, fingerprint,
-			agent_id, metadata, created_at, updated_at,
+			sensor_id, metadata, created_at, updated_at,
 			first_detected_branch, first_detected_commit, last_seen_branch, last_seen_commit,
 			confidence, impact, likelihood, vulnerability_class, subcategory,
 			baseline_state, kind, rank, occurrence_count, correlation_id,
@@ -643,10 +643,10 @@ func findingUpsertConflictSQL() string {
 			component_id = EXCLUDED.component_id,
 			branch_id = COALESCE(EXCLUDED.branch_id, findings.branch_id),
 			tool_id = COALESCE(EXCLUDED.tool_id, findings.tool_id),
-			-- COALESCE, not overwrite. The upsert already writes agent_id and
+			-- COALESCE, not overwrite. The upsert already writes sensor_id and
 			-- scan_id last-writer-wins while leaving source and tool_name at
 			-- the first writer's values, so a merged finding reports one
-			-- scan's technique beside another scan's agent. Adding a third
+			-- scan's technique beside another scan's sensor. Adding a third
 			-- rule to that mix makes it worse. Keeping the first recorded
 			-- channel while still filling a NULL means the column answers one
 			-- question consistently — "which channel first told us" — until
@@ -662,7 +662,7 @@ func findingUpsertConflictSQL() string {
 			message = EXCLUDED.message,
 			severity = EXCLUDED.severity,
 			scan_id = EXCLUDED.scan_id,
-			agent_id = EXCLUDED.agent_id,
+			sensor_id = EXCLUDED.sensor_id,
 			metadata = EXCLUDED.metadata,
 			updated_at = EXCLUDED.updated_at,
 			last_seen_branch = EXCLUDED.last_seen_branch,
@@ -794,7 +794,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		nullID(finding.ResolvedBy()),
 		nullString(finding.ScanID()),
 		finding.Fingerprint(),
-		nullID(finding.AgentID()),
+		nullID(finding.SensorID()),
 		metadata,
 		finding.CreatedAt(),
 		finding.UpdatedAt(),
@@ -1968,7 +1968,7 @@ func (r *FindingRepository) selectQuery() string {
 			related_issue_url, related_pr_url,
 			duplicate_of, duplicate_count, comments_count,
 			acceptance_expires_at,
-			scan_id, fingerprint, agent_id, metadata, pentest_campaign_id, created_at, updated_at,
+			scan_id, fingerprint, sensor_id, metadata, pentest_campaign_id, created_at, updated_at,
 			confidence, impact, likelihood, vulnerability_class, subcategory,
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,
@@ -2057,7 +2057,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		acceptanceExpiresAt sql.NullTime
 		scanID              sql.NullString
 		fingerprint         string
-		agentID             sql.NullString
+		sensorID            sql.NullString
 		metadata            []byte
 		pentestCampaignID   sql.NullString
 		createdAt           time.Time
@@ -2127,7 +2127,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		&relatedIssue, &relatedPR,
 		&duplicateOf, &duplicateCount, &commentsCount,
 		&acceptanceExpiresAt,
-		&scanID, &fingerprint, &agentID, &metadata, &pentestCampaignID, &createdAt, &updatedAt,
+		&scanID, &fingerprint, &sensorID, &metadata, &pentestCampaignID, &createdAt, &updatedAt,
 		&confidence, &impact, &likelihood, pq.Array(&vulnerabilityClass), pq.Array(&subcategory),
 		&baselineState, &kind, &rank, &occurrenceCount, &correlationID,
 		&partialFingerprints, &relatedLocations, &stacks, &attachments, pq.Array(&workItemURIs), &hostedViewerURI,
@@ -2159,7 +2159,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		relatedIssue, relatedPR,
 		duplicateOf, duplicateCount, commentsCount,
 		acceptanceExpiresAt,
-		scanID, fingerprint, agentID, metadata, pentestCampaignID, createdAt, updatedAt,
+		scanID, fingerprint, sensorID, metadata, pentestCampaignID, createdAt, updatedAt,
 		// SARIF fields
 		confidence, impact, likelihood, vulnerabilityClass, subcategory,
 		baselineState, kind, rank, occurrenceCount, correlationID,
@@ -2240,7 +2240,7 @@ type findingRow struct {
 	acceptanceExpiresAt sql.NullTime
 	scanID              sql.NullString
 	fingerprint         string
-	agentID             sql.NullString
+	sensorID            sql.NullString
 	metadata            []byte
 	pentestCampaignID   sql.NullString
 	createdAt           time.Time
@@ -2512,7 +2512,7 @@ func (r *FindingRepository) reconstruct(row findingRow) (*vulnerability.Finding,
 		AcceptanceExpiresAt: nullTimeValue(row.acceptanceExpiresAt),
 		ScanID:              nullStringValue(row.scanID),
 		Fingerprint:         row.fingerprint,
-		AgentID:             parseNullID(row.agentID),
+		SensorID:            parseNullID(row.sensorID),
 		IngestChannel:       vulnerability.IngestChannel(nullStringValue(row.ingestChannel)),
 		Metadata:            meta,
 		// For pentest findings, source_metadata keys live inside the same
@@ -3684,7 +3684,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			related_issue_url, related_pr_url,
 			duplicate_of, duplicate_count, comments_count,
 			acceptance_expires_at,
-			scan_id, fingerprint, agent_id, metadata, pentest_campaign_id, created_at, updated_at,
+			scan_id, fingerprint, sensor_id, metadata, pentest_campaign_id, created_at, updated_at,
 			confidence, impact, likelihood, vulnerability_class, subcategory,
 			baseline_state, kind, rank, occurrence_count, correlation_id,
 			partial_fingerprints, related_locations, stacks, attachments, work_item_uris, hosted_viewer_uri,

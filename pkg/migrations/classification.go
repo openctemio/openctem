@@ -30,7 +30,7 @@ var MigrationClassification = map[string]Edition{
 	"000011": EditionCore, // tools
 	"000012": EditionCore, // capabilities
 	"000013": EditionCore, // commands
-	"000014": EditionCore, // agents
+	"000014": EditionCore, // sensors
 	"000015": EditionCore, // scans
 	"000016": EditionCore, // scan_sessions
 	"000017": EditionCore, // scopes
@@ -139,12 +139,12 @@ var MigrationClassification = map[string]Edition{
 	// SaaS Migrations - 000080 to 000099
 	// ========================================
 
-	// Platform Agents
-	"000080": EditionSaaS, // platform_agents
-	"000081": EditionSaaS, // agent_leases
+	// Platform Sensors
+	"000080": EditionSaaS, // platform_sensors
+	"000081": EditionSaaS, // sensor_leases
 	"000082": EditionSaaS, // platform_jobs
 	"000083": EditionSaaS, // bootstrap_tokens
-	"000084": EditionSaaS, // agent_registrations
+	"000084": EditionSaaS, // sensor_registrations
 
 	// Multi-tenancy
 	"000085": EditionSaaS, // plans

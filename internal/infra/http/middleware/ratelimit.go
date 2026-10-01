@@ -18,13 +18,13 @@ import (
 
 // Security event constants for logging and metrics.
 const (
-	SecurityEventAuthFailure       = "security.auth.failure"
-	SecurityEventAgentNotFound     = "security.agent.not_found"
-	SecurityEventAPIKeyInvalid     = "security.apikey.invalid"
-	SecurityEventAgentInactive     = "security.agent.inactive"
-	SecurityEventAgentTypeMismatch = "security.agent.type_mismatch"
-	SecurityEventJobAccessDenied   = "security.job.access_denied"
-	SecurityEventTokenInvalid      = "security.token.invalid"
+	SecurityEventAuthFailure        = "security.auth.failure"
+	SecurityEventSensorNotFound     = "security.sensor.not_found"
+	SecurityEventAPIKeyInvalid      = "security.apikey.invalid"
+	SecurityEventSensorInactive     = "security.sensor.inactive"
+	SecurityEventSensorTypeMismatch = "security.sensor.type_mismatch"
+	SecurityEventJobAccessDenied    = "security.job.access_denied"
+	SecurityEventTokenInvalid       = "security.token.invalid"
 )
 
 // RateLimiter implements a per-IP rate limiter.
@@ -433,10 +433,10 @@ func (a *AuthRateLimiter) PasswordMiddleware() func(http.Handler) http.Handler {
 }
 
 // =============================================================================
-// Platform Agent Registration Rate Limiting
+// Platform Sensor Registration Rate Limiting
 // =============================================================================
 
-// PlatformRegistrationRateLimiter provides strict rate limiting for platform agent registration.
+// PlatformRegistrationRateLimiter provides strict rate limiting for platform sensor registration.
 // This prevents brute-force attacks on bootstrap tokens.
 type PlatformRegistrationRateLimiter struct {
 	limiter *RateLimiter
@@ -461,7 +461,7 @@ func DefaultPlatformRegistrationRateLimitConfig() PlatformRegistrationRateLimitC
 	}
 }
 
-// NewPlatformRegistrationRateLimiter creates a rate limiter for platform agent registration.
+// NewPlatformRegistrationRateLimiter creates a rate limiter for platform sensor registration.
 func NewPlatformRegistrationRateLimiter(cfg PlatformRegistrationRateLimitConfig, log *logger.Logger) *PlatformRegistrationRateLimiter {
 	if cfg.RegistrationRatePerMin == 0 {
 		cfg.RegistrationRatePerMin = 5
@@ -495,11 +495,11 @@ func (p *PlatformRegistrationRateLimiter) Middleware() func(http.Handler) http.H
 }
 
 // =============================================================================
-// Platform Agent Auth Failure Rate Limiting
+// Platform Sensor Auth Failure Rate Limiting
 // =============================================================================
 
 // AuthFailureLimiter tracks auth failures and blocks IPs after too many failures.
-// This provides protection against brute-force attacks on platform agent credentials.
+// This provides protection against brute-force attacks on platform sensor credentials.
 type AuthFailureLimiter struct {
 	mu              sync.RWMutex
 	failures        map[string]*authFailureEntry // IP -> failure info
@@ -917,7 +917,7 @@ func (f *FindingActivityRateLimiter) ListMiddleware() func(http.Handler) http.Ha
 // Analytics Rate Limiting
 // =============================================================================
 
-// AnalyticsRateLimiter provides rate limiting for agent analytics endpoints.
+// AnalyticsRateLimiter provides rate limiting for sensor analytics endpoints.
 // This prevents abuse and ensures fair resource usage for analytics queries.
 type AnalyticsRateLimiter struct {
 	listLimiter       *RateLimiter // Per-tenant list requests (sessions, daily stats)

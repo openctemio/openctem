@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/infra/scanner/nessus"
 	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/agent"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -119,9 +119,9 @@ func (h *AssetImportHandler) IngestNessusFindings(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Tenant-initiated upload (not an agent push): build a synthetic agent for
+	// Tenant-initiated upload (not a sensor push): build a synthetic sensor for
 	// the tenant, mirroring the ingest job processor.
-	agt := &agent.Agent{TenantID: &tid, Status: agent.AgentStatusActive}
+	agt := &sensor.Sensor{TenantID: &tid, Status: sensor.SensorStatusActive}
 
 	output, err := h.ingest.Ingest(r.Context(), agt, ingest.Input{Report: report})
 	if err != nil {

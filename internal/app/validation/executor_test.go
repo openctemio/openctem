@@ -7,7 +7,7 @@ import (
 
 // (post-refactor): tests the API-side selection policy.
 // No in-process executor runs here — Select picks the ExecutorKind
-// string that the dispatcher will queue for the agent.
+// string that the dispatcher will queue for the sensor.
 
 func TestDefaultSelector_PrefersSafeCheck(t *testing.T) {
 	s := DefaultSelector{}

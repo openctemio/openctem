@@ -8,13 +8,13 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
-// ScanSession represents an individual scan execution from an agent.
+// ScanSession represents an individual scan execution from a sensor.
 // Unlike Scan (which is a configuration/definition), ScanSession tracks
 // the actual execution lifecycle of a scan.
 type ScanSession struct {
 	ID       shared.ID
 	TenantID shared.ID
-	AgentID  *shared.ID
+	SensorID *shared.ID
 
 	// Scanner info
 	ScannerName    string
@@ -62,8 +62,8 @@ type ScanSession struct {
 type Status string
 
 const (
-	StatusQueued    Status = "queued"    // Scan is queued, waiting for agent assignment
-	StatusPending   Status = "pending"   // Scan is assigned to agent, waiting to start
+	StatusQueued    Status = "queued"    // Scan is queued, waiting for sensor assignment
+	StatusPending   Status = "pending"   // Scan is assigned to sensor, waiting to start
 	StatusRunning   Status = "running"   // Scan is actively running
 	StatusCompleted Status = "completed" // Scan completed successfully
 	StatusFailed    Status = "failed"    // Scan failed with error
@@ -139,9 +139,9 @@ func NewScanSession(tenantID shared.ID, scannerName, assetType, assetValue strin
 	}, nil
 }
 
-// SetAgent sets the agent executing this scan.
-func (s *ScanSession) SetAgent(agentID shared.ID) {
-	s.AgentID = &agentID
+// SetSensor sets the sensor executing this scan.
+func (s *ScanSession) SetSensor(sensorID shared.ID) {
+	s.SensorID = &sensorID
 	s.UpdatedAt = time.Now()
 }
 
@@ -266,7 +266,7 @@ func (s *ScanSession) Timeout(errorMessage string) error {
 	return nil
 }
 
-// Queue sets the scan to queued status (waiting for agent assignment).
+// Queue sets the scan to queued status (waiting for sensor assignment).
 func (s *ScanSession) Queue() error {
 	if s.Status != StatusPending {
 		return shared.NewDomainError("INVALID_STATE", "can only queue a pending scan", shared.ErrValidation)

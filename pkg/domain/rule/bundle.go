@@ -16,7 +16,7 @@ const (
 	BundleStatusExpired  BundleStatus = "expired"
 )
 
-// Bundle represents a pre-compiled rule package for agents.
+// Bundle represents a pre-compiled rule package for sensors.
 // Bundles contain actual YAML files (platform + custom rules) as a tar.gz archive
 // stored in object storage (S3/MinIO/local).
 //

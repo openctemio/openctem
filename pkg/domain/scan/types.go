@@ -32,16 +32,16 @@ const (
 	StatusDisabled Status = "disabled"
 )
 
-// AgentPreference determines which agents can execute the scan.
-type AgentPreference string
+// SensorPreference determines which sensors can execute the scan.
+type SensorPreference string
 
 const (
-	// AgentPreferenceAuto tries tenant agents first, falls back to platform.
-	AgentPreferenceAuto AgentPreference = "auto"
-	// AgentPreferenceTenant only uses tenant's own agents.
-	AgentPreferenceTenant AgentPreference = "tenant"
-	// AgentPreferencePlatform only uses platform agents.
-	AgentPreferencePlatform AgentPreference = "platform"
+	// SensorPreferenceAuto tries tenant sensors first, falls back to platform.
+	SensorPreferenceAuto SensorPreference = "auto"
+	// SensorPreferenceTenant only uses tenant's own sensors.
+	SensorPreferenceTenant SensorPreference = "tenant"
+	// SensorPreferencePlatform only uses platform sensors.
+	SensorPreferencePlatform SensorPreference = "platform"
 )
 
 // Timeout constants for scan execution.

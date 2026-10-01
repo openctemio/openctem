@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/ingestjob"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -60,19 +60,19 @@ func newAsyncHandler(repo ingestjob.Repository, maxPending int) *IngestHandler {
 	return h
 }
 
-func reqWithAgent(t *testing.T, body string) (*http.Request, *agent.Agent) {
+func reqWithSensor(t *testing.T, body string) (*http.Request, *sensor.Sensor) {
 	t.Helper()
 	tid := shared.NewID()
-	agt := &agent.Agent{ID: shared.NewID(), TenantID: &tid, Status: agent.AgentStatusActive}
+	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/agent/ingest", strings.NewReader(body))
-	r = r.WithContext(context.WithValue(r.Context(), agentContextKey, agt))
+	r = r.WithContext(context.WithValue(r.Context(), sensorContextKey, agt))
 	return r, agt
 }
 
 func TestIngestCTIS_Async_Enqueues202(t *testing.T) {
 	repo := &stubIngestJobRepo{}
 	h := newAsyncHandler(repo, 100)
-	r, _ := reqWithAgent(t, `{"version":"1.0","metadata":{"id":"scan-async-1"}}`)
+	r, _ := reqWithSensor(t, `{"version":"1.0","metadata":{"id":"scan-async-1"}}`)
 	w := httptest.NewRecorder()
 
 	h.IngestCTIS(w, r)
@@ -98,7 +98,7 @@ func TestIngestCTIS_Async_Enqueues202(t *testing.T) {
 func TestIngestCTIS_Async_QueueFull429(t *testing.T) {
 	repo := &stubIngestJobRepo{pending: 100}
 	h := newAsyncHandler(repo, 100)
-	r, _ := reqWithAgent(t, `{"version":"1.0"}`)
+	r, _ := reqWithSensor(t, `{"version":"1.0"}`)
 	w := httptest.NewRecorder()
 
 	h.IngestCTIS(w, r)
@@ -117,7 +117,7 @@ func TestIngestCTIS_Async_QueueFull429(t *testing.T) {
 func TestIngestCTIS_Async_InvalidPayload400(t *testing.T) {
 	repo := &stubIngestJobRepo{}
 	h := newAsyncHandler(repo, 0) // 0 disables the depth check
-	r, _ := reqWithAgent(t, `not json`)
+	r, _ := reqWithSensor(t, `not json`)
 	w := httptest.NewRecorder()
 
 	h.IngestCTIS(w, r)
@@ -139,13 +139,13 @@ func TestGetIngestJob_ReturnsStatus(t *testing.T) {
 	h := newAsyncHandler(repo, 100)
 
 	tid := shared.NewID()
-	agt := &agent.Agent{ID: shared.NewID(), TenantID: &tid, Status: agent.AgentStatusActive}
+	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
 	jobID := shared.NewID().String()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/agent/ingest/jobs/"+jobID, nil)
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", jobID)
 	ctx := context.WithValue(r.Context(), chi.RouteCtxKey, rctx)
-	ctx = context.WithValue(ctx, agentContextKey, agt)
+	ctx = context.WithValue(ctx, sensorContextKey, agt)
 	r = r.WithContext(ctx)
 	w := httptest.NewRecorder()
 

@@ -98,7 +98,7 @@ func TestSpecMatchesAnnotations(t *testing.T) {
 
 // TestEveryDocumentedPathIsRouted is the phantom-endpoint check. 30 paths in
 // the pre-generation spec had no handler and no route anywhere in the
-// repository — /admin/platform-agents, /plans, /tenants/{id}/subscription and
+// repository — /admin/platform-sensors, /plans, /tenants/{id}/subscription and
 // friends, left over from a closed-source era. A client written against those
 // gets a 404.
 func TestEveryDocumentedPathIsRouted(t *testing.T) {

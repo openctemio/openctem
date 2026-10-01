@@ -525,7 +525,7 @@ func (r *CapabilityRepository) GetCategories(ctx context.Context) ([]string, err
 
 // GetUsageStats returns usage statistics for a capability.
 // Checks both the tool_capabilities junction table AND tools.capabilities array
-// Also checks agents.capabilities array for agent counts.
+// Also checks sensors.capabilities array for sensor counts.
 func (r *CapabilityRepository) GetUsageStats(ctx context.Context, capabilityID shared.ID) (*capability.CapabilityUsageStats, error) {
 	// First get the capability name (needed for array lookups)
 	var capName string
@@ -568,37 +568,37 @@ func (r *CapabilityRepository) GetUsageStats(ctx context.Context, capabilityID s
 	}
 	stats.ToolCount = len(stats.ToolNames)
 
-	// Count agents with this capability (via array)
-	agentQuery := `
-		SELECT name FROM agents
+	// Count sensors with this capability (via array)
+	sensorQuery := `
+		SELECT name FROM sensors
 		WHERE $1 = ANY(capabilities)
 		ORDER BY name
 		LIMIT 10
 	`
-	agentRows, err := r.db.QueryContext(ctx, agentQuery, capName)
+	sensorRows, err := r.db.QueryContext(ctx, sensorQuery, capName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count agents: %w", err)
+		return nil, fmt.Errorf("failed to count sensors: %w", err)
 	}
-	defer agentRows.Close()
+	defer sensorRows.Close()
 
-	for agentRows.Next() {
-		var agentName string
-		if err := agentRows.Scan(&agentName); err != nil {
-			return nil, fmt.Errorf("failed to scan agent name: %w", err)
+	for sensorRows.Next() {
+		var sensorName string
+		if err := sensorRows.Scan(&sensorName); err != nil {
+			return nil, fmt.Errorf("failed to scan sensor name: %w", err)
 		}
-		stats.AgentNames = append(stats.AgentNames, agentName)
+		stats.SensorNames = append(stats.SensorNames, sensorName)
 	}
-	if err := agentRows.Err(); err != nil {
+	if err := sensorRows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
-	stats.AgentCount = len(stats.AgentNames)
+	stats.SensorCount = len(stats.SensorNames)
 
 	return stats, nil
 }
 
 // GetUsageStatsBatch returns usage statistics for multiple capabilities.
 // Performance: Uses single queries with UNNEST to avoid N+1 problem.
-// Total queries: 3 (names, tools, agents) regardless of batch size.
+// Total queries: 3 (names, tools, sensors) regardless of batch size.
 func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilityIDs []shared.ID) (map[shared.ID]*capability.CapabilityUsageStats, error) {
 	if len(capabilityIDs) == 0 {
 		return map[shared.ID]*capability.CapabilityUsageStats{}, nil
@@ -673,7 +673,7 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 
-	// Query 3: Count agents for ALL capability names in SINGLE query using UNNEST
+	// Query 3: Count sensors for ALL capability names in SINGLE query using UNNEST
 	// This fixes the N+1 query problem - O(1) queries instead of O(n)
 	if len(capNames) > 0 {
 		// Build name placeholders
@@ -684,31 +684,31 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilit
 			nameArgs[i] = name
 		}
 
-		agentQuery := `
-			SELECT cap_name, COUNT(DISTINCT a.id) as agent_count
+		sensorQuery := `
+			SELECT cap_name, COUNT(DISTINCT a.id) as sensor_count
 			FROM UNNEST(ARRAY[` + strings.Join(namePlaceholders, ", ") + `]::text[]) AS cap_name
-			LEFT JOIN agents a ON cap_name = ANY(a.capabilities)
+			LEFT JOIN sensors a ON cap_name = ANY(a.capabilities)
 			GROUP BY cap_name
 		`
-		agentRows, err := r.db.QueryContext(ctx, agentQuery, nameArgs...)
+		sensorRows, err := r.db.QueryContext(ctx, sensorQuery, nameArgs...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to count agents: %w", err)
+			return nil, fmt.Errorf("failed to count sensors: %w", err)
 		}
-		defer agentRows.Close()
+		defer sensorRows.Close()
 
-		for agentRows.Next() {
+		for sensorRows.Next() {
 			var capName string
 			var count int
-			if err := agentRows.Scan(&capName, &count); err != nil {
-				return nil, fmt.Errorf("failed to scan agent count: %w", err)
+			if err := sensorRows.Scan(&capName, &count); err != nil {
+				return nil, fmt.Errorf("failed to scan sensor count: %w", err)
 			}
 			if id, ok := nameToID[capName]; ok {
 				if stats, ok := result[id]; ok {
-					stats.AgentCount = count
+					stats.SensorCount = count
 				}
 			}
 		}
-		if err := agentRows.Err(); err != nil {
+		if err := sensorRows.Err(); err != nil {
 			return nil, fmt.Errorf("iterate rows: %w", err)
 		}
 	}

@@ -17,10 +17,10 @@ import (
 //
 // The collision is mechanically certain but has NOT been observed failing.
 // platform_job_lifecycle_db_test seeds a non-platform command, acknowledged, 120
-// minutes old, with a tenant agent, and asserts the PLATFORM sweep leaves it
+// minutes old, with a tenant sensor, and asserts the PLATFORM sweep leaves it
 // alone. `recover_stuck_tenant_commands(10, 3)`, called from
 // tests/integration/command_recovery_test, selects on exactly those columns:
-// is_platform_job = FALSE, status = 'acknowledged', agent_id IS NOT NULL,
+// is_platform_job = FALSE, status = 'acknowledged', sensor_id IS NOT NULL,
 // acknowledged_at older than the threshold, dispatch_attempts under the cap. Run
 // against that row by hand it returns 1 and rewrites it to pending/1 — precisely
 // what the assertion forbids.

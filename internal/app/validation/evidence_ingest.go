@@ -9,11 +9,11 @@ import (
 )
 
 // EvidenceIngestService records validation evidence submitted out-of-band — an
-// agent that finished an async validation job, or a pentest retest reporting a
+// sensor that finished an async validation job, or a pentest retest reporting a
 // result — and reconciles the finding status from the evidence outcome.
 //
 // This is the activation seam that makes CTEM Stage-4 (Validation) functional
-// without a synchronous in-process dispatcher: agent executes the technique →
+// without a synchronous in-process dispatcher: sensor executes the technique →
 // POSTs Evidence to the ingest endpoint → this service persists it (redacted)
 // and applies the outcome to the finding.
 type EvidenceIngestService struct {
@@ -62,7 +62,7 @@ func validOutcome(o Outcome) bool {
 // closed) that is logged but NOT fatal — the recorded evidence still surfaces.
 //
 // Callers must only use Ingest for evidence that is AUTHORIZED to move the
-// finding (a server-issued validate command, or an agent proving it holds the
+// finding (a server-issued validate command, or a sensor proving it holds the
 // validate command assigned to it for this finding). Unsolicited evidence goes
 // through IngestAdvisory.
 func (s *EvidenceIngestService) Ingest(
@@ -88,8 +88,8 @@ func (s *EvidenceIngestService) Ingest(
 
 // IngestAdvisory records the evidence (same validation, tenant guard and
 // redaction as Ingest) WITHOUT applying its outcome to the finding. Used for
-// evidence an agent submits outside an assigned validate command: it stays
-// visible on the finding for a human to weigh, but an arbitrary agent key in
+// evidence a sensor submits outside an assigned validate command: it stays
+// visible on the finding for a human to weigh, but an arbitrary sensor key in
 // the tenant can no longer resolve / downgrade / reopen any finding by id.
 func (s *EvidenceIngestService) IngestAdvisory(
 	ctx context.Context,
@@ -118,8 +118,8 @@ func (s *EvidenceIngestService) record(
 		return StoredEvidence{}, fmt.Errorf("%w: %q", ErrInvalidOutcome, ev.Outcome)
 	}
 
-	// Tenant guard: the finding must exist within the submitting agent's tenant.
-	// Without this, a compromised agent could record evidence against another
+	// Tenant guard: the finding must exist within the submitting sensor's tenant.
+	// Without this, a compromised sensor could record evidence against another
 	// tenant's finding id (the FK to findings(id) alone would not catch it).
 	if _, err := s.finding.Get(ctx, tenantID, findingID); err != nil {
 		return StoredEvidence{}, fmt.Errorf("finding lookup: %w", err)

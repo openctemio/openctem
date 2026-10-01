@@ -19,27 +19,27 @@ import (
 // CreateScanInput represents the input for creating a scan.
 // Either AssetGroupID/AssetGroupIDs OR Targets must be provided (can have all).
 type CreateScanInput struct {
-	TenantID        string         `json:"tenant_id" validate:"required,uuid"`
-	Name            string         `json:"name" validate:"required,min=1,max=200"`
-	Description     string         `json:"description" validate:"max=1000"`
-	AssetGroupID    string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Primary asset group (legacy)
-	AssetGroupIDs   []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets         []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
-	ScanType        string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	PipelineID      string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName     string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig   map[string]any `json:"scanner_config"`
-	TargetsPerJob   int            `json:"targets_per_job"`
-	ScheduleType    string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron    string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay     *int           `json:"schedule_day"`
-	ScheduleTime    *time.Time     `json:"schedule_time"`
-	Timezone        string         `json:"timezone" validate:"max=50"`
-	Tags            []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner    bool           `json:"run_on_tenant_runner"`
-	AgentPreference string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"` // Agent selection mode: auto (default), tenant, platform
-	ProfileID       string         `json:"profile_id" validate:"omitempty,uuid"`                             // Optional scan profile (tool configs, quality gates)
-	TimeoutSeconds  int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`            // Max execution time (default 3600, min 30, max 86400)
+	TenantID         string         `json:"tenant_id" validate:"required,uuid"`
+	Name             string         `json:"name" validate:"required,min=1,max=200"`
+	Description      string         `json:"description" validate:"max=1000"`
+	AssetGroupID     string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Primary asset group (legacy)
+	AssetGroupIDs    []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets          []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	ScanType         string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName      string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig    map[string]any `json:"scanner_config"`
+	TargetsPerJob    int            `json:"targets_per_job"`
+	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
+	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
+	ScheduleDay      *int           `json:"schedule_day"`
+	ScheduleTime     *time.Time     `json:"schedule_time"`
+	Timezone         string         `json:"timezone" validate:"max=50"`
+	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     bool           `json:"run_on_tenant_runner"`
+	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
+	ProfileID        string         `json:"profile_id" validate:"omitempty,uuid"`                              // Optional scan profile (tool configs, quality gates)
+	TimeoutSeconds   int            `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max execution time (default 3600, min 30, max 86400)
 	// Retry config: max_retries=0 disables retry; backoff is initial delay (exponential per attempt)
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
@@ -115,12 +115,12 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 	sc.SetRunOnTenantRunner(input.TenantRunner)
 
-	// Check agent availability (non-blocking warning)
-	s.checkScanAgentAvailability(ctx, tenantID, scanType, input)
+	// Check sensor availability (non-blocking warning)
+	s.checkScanSensorAvailability(ctx, tenantID, scanType, input)
 
-	// Set agent preference
-	if input.AgentPreference != "" {
-		sc.SetAgentPreference(scan.AgentPreference(input.AgentPreference))
+	// Set sensor preference
+	if input.SensorPreference != "" {
+		sc.SetSensorPreference(scan.SensorPreference(input.SensorPreference))
 	}
 
 	// Set timeout (defaults to DefaultScanTimeoutSeconds if 0)
@@ -417,18 +417,18 @@ func (s *Service) configureScanSchedule(sc *scan.Scan, input CreateScanInput) er
 	return sc.SetSchedule(scheduleType, input.ScheduleCron, input.ScheduleDay, input.ScheduleTime, timezone)
 }
 
-// checkScanAgentAvailability logs a warning if no agents are available for the scan.
-func (s *Service) checkScanAgentAvailability(ctx context.Context, tenantID shared.ID, scanType scan.ScanType, input CreateScanInput) {
+// checkScanSensorAvailability logs a warning if no sensors are available for the scan.
+func (s *Service) checkScanSensorAvailability(ctx context.Context, tenantID shared.ID, scanType scan.ScanType, input CreateScanInput) {
 	toolToCheck := input.ScannerName
 	if scanType == scan.ScanTypeWorkflow {
 		toolToCheck = ""
 	}
-	agentAvail := s.agentSelector.CheckAgentAvailability(ctx, tenantID, toolToCheck, input.TenantRunner)
-	if !agentAvail.Available {
-		s.logger.Warn("no agent available for scan",
+	sensorAvail := s.sensorSelector.CheckSensorAvailability(ctx, tenantID, toolToCheck, input.TenantRunner)
+	if !sensorAvail.Available {
+		s.logger.Warn("no sensor available for scan",
 			"tenant_id", tenantID.String(),
 			"tool", toolToCheck,
-			"message", agentAvail.Message,
+			"message", sensorAvail.Message,
 		)
 	}
 }
@@ -575,22 +575,22 @@ func (s *Service) GetStats(ctx context.Context, tenantID string) (*scan.Stats, e
 
 // UpdateScanInput represents the input for updating a scan.
 type UpdateScanInput struct {
-	TenantID        string         `json:"tenant_id" validate:"required,uuid"`
-	ScanID          string         `json:"scan_id" validate:"required,uuid"`
-	Name            string         `json:"name" validate:"omitempty,min=1,max=200"`
-	Description     string         `json:"description" validate:"max=1000"`
-	PipelineID      string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName     string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig   map[string]any `json:"scanner_config"`
-	TargetsPerJob   *int           `json:"targets_per_job"`
-	ScheduleType    string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
-	ScheduleCron    string         `json:"schedule_cron" validate:"max=100"`
-	ScheduleDay     *int           `json:"schedule_day"`
-	ScheduleTime    *time.Time     `json:"schedule_time"`
-	Timezone        string         `json:"timezone" validate:"max=50"`
-	Tags            []string       `json:"tags" validate:"max=20,dive,max=50"`
-	TenantRunner    *bool          `json:"run_on_tenant_runner"`
-	AgentPreference string         `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	TenantID         string         `json:"tenant_id" validate:"required,uuid"`
+	ScanID           string         `json:"scan_id" validate:"required,uuid"`
+	Name             string         `json:"name" validate:"omitempty,min=1,max=200"`
+	Description      string         `json:"description" validate:"max=1000"`
+	PipelineID       string         `json:"pipeline_id" validate:"omitempty,uuid"`
+	ScannerName      string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig    map[string]any `json:"scanner_config"`
+	TargetsPerJob    *int           `json:"targets_per_job"`
+	ScheduleType     string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab"`
+	ScheduleCron     string         `json:"schedule_cron" validate:"max=100"`
+	ScheduleDay      *int           `json:"schedule_day"`
+	ScheduleTime     *time.Time     `json:"schedule_time"`
+	Timezone         string         `json:"timezone" validate:"max=50"`
+	Tags             []string       `json:"tags" validate:"max=20,dive,max=50"`
+	TenantRunner     *bool          `json:"run_on_tenant_runner"`
+	SensorPreference string         `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	// ProfileID: pointer with sentinel:
 	//   nil           = leave unchanged
 	//   pointer to "" = unlink profile
@@ -672,9 +672,9 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		sc.SetRunOnTenantRunner(*input.TenantRunner)
 	}
 
-	// Update agent preference if provided
-	if input.AgentPreference != "" {
-		sc.SetAgentPreference(scan.AgentPreference(input.AgentPreference))
+	// Update sensor preference if provided
+	if input.SensorPreference != "" {
+		sc.SetSensorPreference(scan.SensorPreference(input.SensorPreference))
 	}
 
 	// Update timeout if provided (validation enforces min=30, max=86400)

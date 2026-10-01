@@ -14,7 +14,7 @@ import (
 // SafeCheckDispatcher dispatches a real, non-intrusive safe-check probe for a
 // simulation run against a target asset (RFC-012 Phase 1b). Implemented by
 // *validation.RunService. When wired, a network-addressable, safe-checkable
-// simulation runs for real on an agent; the completion hook finalizes the run.
+// simulation runs for real on a sensor; the completion hook finalizes the run.
 type SafeCheckDispatcher interface {
 	DispatchSimulationCheck(ctx context.Context, tenantID, simRunID, assetID shared.ID, technique string) (shared.ID, error)
 }
@@ -400,7 +400,7 @@ func (s *SimulationService) tryDispatchLive(ctx context.Context, tenantID shared
 		"command_id":     cmdID.String(),
 		"technique_id":   sim.MitreTechniqueID(),
 		"target_asset":   assetID.String(),
-		"status":         "dispatched — awaiting agent safe-check result",
+		"status":         "dispatched — awaiting sensor safe-check result",
 	})
 	if err := s.runRepo.Create(ctx, run); err != nil {
 		s.logger.Warn("failed to persist running simulation run; falling back to synthetic",
@@ -412,7 +412,7 @@ func (s *SimulationService) tryDispatchLive(ctx context.Context, tenantID shared
 	return true
 }
 
-// FinalizeRun completes a running simulation run from a real agent safe-check
+// FinalizeRun completes a running simulation run from a real sensor safe-check
 // outcome (RFC-012 Phase 1b — called by the command-completion hook). It maps
 // the reachability outcome to a run result, updates the run + the simulation's
 // rolling stats. Idempotent-friendly: a run that is no longer running is left
@@ -519,7 +519,7 @@ func (s *SimulationService) executeSimulationTechnique(sim *simulation.Simulatio
 	// outcome below is derived from configuration, not from exercising a
 	// control. Flag every run as an unverified *simulation* so operators are
 	// never told a control was validated when nothing ran. Phase 1 replaces
-	// this with a real agent-dispatched safe-check (see RFC-012).
+	// this with a real sensor-dispatched safe-check (see RFC-012).
 	output["verified"] = false
 	output["execution_mode"] = "simulated"
 	output["disclaimer"] = "No live technique execution — this is a configuration-based simulation of the expected posture, not a validated control test (RFC-012 Phase 0)."

@@ -59,21 +59,21 @@ func ReconstituteRun(
 }
 
 // Getters
-func (r *SimulationRun) ID() shared.ID           { return r.id }
+func (r *SimulationRun) ID() shared.ID            { return r.id }
 func (r *SimulationRun) TenantID() shared.ID      { return r.tenantID }
-func (r *SimulationRun) SimulationID() shared.ID   { return r.simulationID }
-func (r *SimulationRun) Status() RunStatus         { return r.status }
-func (r *SimulationRun) Result() RunResult         { return r.result }
-func (r *SimulationRun) DetectionResult() string   { return r.detectionResult }
-func (r *SimulationRun) PreventionResult() string  { return r.preventionResult }
-func (r *SimulationRun) Steps() []map[string]any   { return r.steps }
-func (r *SimulationRun) Output() map[string]any    { return r.output }
-func (r *SimulationRun) ErrorMessage() string      { return r.errorMessage }
-func (r *SimulationRun) StartedAt() *time.Time     { return r.startedAt }
-func (r *SimulationRun) CompletedAt() *time.Time   { return r.completedAt }
-func (r *SimulationRun) DurationMs() int           { return r.durationMs }
-func (r *SimulationRun) TriggeredBy() *shared.ID   { return r.triggeredBy }
-func (r *SimulationRun) CreatedAt() time.Time      { return r.createdAt }
+func (r *SimulationRun) SimulationID() shared.ID  { return r.simulationID }
+func (r *SimulationRun) Status() RunStatus        { return r.status }
+func (r *SimulationRun) Result() RunResult        { return r.result }
+func (r *SimulationRun) DetectionResult() string  { return r.detectionResult }
+func (r *SimulationRun) PreventionResult() string { return r.preventionResult }
+func (r *SimulationRun) Steps() []map[string]any  { return r.steps }
+func (r *SimulationRun) Output() map[string]any   { return r.output }
+func (r *SimulationRun) ErrorMessage() string     { return r.errorMessage }
+func (r *SimulationRun) StartedAt() *time.Time    { return r.startedAt }
+func (r *SimulationRun) CompletedAt() *time.Time  { return r.completedAt }
+func (r *SimulationRun) DurationMs() int          { return r.durationMs }
+func (r *SimulationRun) TriggeredBy() *shared.ID  { return r.triggeredBy }
+func (r *SimulationRun) CreatedAt() time.Time     { return r.createdAt }
 
 // Start marks the run as started.
 func (r *SimulationRun) Start() {
@@ -114,7 +114,7 @@ func (r *SimulationRun) SetTriggeredBy(userID shared.ID) {
 }
 
 // SetOutput attaches output metadata without changing the run's status. Used to
-// annotate a still-running run that has been dispatched to an agent (RFC-012),
+// annotate a still-running run that has been dispatched to a sensor (RFC-012),
 // before the async completion hook finalizes it.
 func (r *SimulationRun) SetOutput(output map[string]any) {
 	r.output = output

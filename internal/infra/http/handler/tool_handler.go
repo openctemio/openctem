@@ -168,7 +168,7 @@ type ToolWithConfigResponse struct {
 	TenantConfig    *TenantToolConfigResponse `json:"tenant_config,omitempty"`
 	EffectiveConfig map[string]any            `json:"effective_config"`
 	IsEnabled       bool                      `json:"is_enabled"`
-	IsAvailable     bool                      `json:"is_available"` // True if at least one agent supports this tool
+	IsAvailable     bool                      `json:"is_available"` // True if at least one sensor supports this tool
 }
 
 // ToolStatsResponse represents tool statistics.

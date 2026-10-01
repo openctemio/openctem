@@ -25,11 +25,11 @@ var (
 	CommandQueueSize = metrics.CommandQueueSize
 )
 
-// Agent metrics
+// Sensor metrics
 var (
-	AgentsOnline          = metrics.AgentsOnline
-	AgentCommandsExecuted = metrics.AgentCommandsExecuted
-	AgentHeartbeatLatency = metrics.AgentHeartbeatLatency
+	SensorsOnline          = metrics.SensorsOnline
+	SensorCommandsExecuted = metrics.SensorCommandsExecuted
+	SensorHeartbeatLatency = metrics.SensorHeartbeatLatency
 )
 
 // Scan metrics

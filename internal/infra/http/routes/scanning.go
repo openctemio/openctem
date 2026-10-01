@@ -8,20 +8,21 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/permission"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // IngestMaxConcurrentPerTenant caps in-flight report-ingest requests per
 // tenant (see middleware.TenantConcurrencyLimiter).
 const IngestMaxConcurrentPerTenant = 8
 
-// Agent self-renewal budget, per agent: a burst of 5, then one every 2 minutes.
+// Sensor self-renewal budget, per sensor: a burst of 5, then one every 2 minutes.
 const (
 	renewRatePerSecond = 1.0 / 120.0
 	renewBurst         = 5
 )
 
 // registerCommandRoutes registers command management endpoints.
-// Commands are server-side instructions sent to agents.
+// Commands are server-side instructions sent to sensors.
 func registerCommandRoutes(
 	router Router,
 	h *handler.CommandHandler,
@@ -66,15 +67,15 @@ func ingestMiddlewareChain(
 	return append(chain, bodyLimit, decompress)
 }
 
-// registerAgentRoutes registers agent API endpoints.
+// registerSensorRoutes registers sensor API endpoints.
 // These endpoints are authenticated using source API keys (not JWT).
 //
 // telemetryRateLimiter may be nil; when non-nil it is applied ONLY to
 // the /telemetry-events route. The per-tenant token-bucket keeps one
-// noisy EDR/XDR agent from saturating the ingest worker for the whole
-// cluster — a single compromised agent API key could otherwise replay
+// noisy EDR/XDR sensor from saturating the ingest worker for the whole
+// cluster — a single compromised sensor API key could otherwise replay
 // cached batches at line rate.
-func registerAgentRoutes(
+func registerSensorRoutes(
 	router Router,
 	ingestHandler *handler.IngestHandler,
 	commandHandler *handler.CommandHandler,
@@ -97,7 +98,7 @@ func registerAgentRoutes(
 
 	// Per-tenant rate limit for the heavy report-ingest endpoints. Each request
 	// can carry up to 100k findings / 100MB decompressed, so an unbounded loop
-	// (or a compromised agent key) could exhaust DB/CPU. Pass-through when the
+	// (or a compromised sensor key) could exhaust DB/CPU. Pass-through when the
 	// limiter is nil (dev / opt-out). Applied AFTER AuthenticateSource so the
 	// tenant is in context.
 	//
@@ -113,21 +114,22 @@ func registerAgentRoutes(
 	// TTL, a new key row) each time, so it is throttled per AGENT — a stolen
 	// key must not be able to mint an unbounded set of fresh credentials.
 	// Always on (independent of the global rate-limit toggle): legitimate
-	// agents renew once per key lifetime.
+	// sensors renew once per key lifetime.
 	renewLimiter := middleware.NewTelemetryRateLimiter(renewRatePerSecond, renewBurst, time.Hour, log)
 	renewMW := renewLimiter.MiddlewareKeyed(func(r *http.Request) string {
-		if agt := handler.AgentFromContext(r.Context()); agt != nil {
+		if agt := handler.SensorFromContext(r.Context()); agt != nil {
 			return agt.ID.String()
 		}
 		return ""
 	}, "key renewal rate limit exceeded")
 
-	// Agent routes - authenticated via API key
-	router.Group("/api/v1/agent", func(r Router) {
-		// Heartbeat - essential for agent health monitoring
+	// Sensor protocol v1 — authenticated via sensor API key. The mount keeps
+	// its pre-sensor name: deployed sensors and SDKs call it (RFC-023 §9.2 C1).
+	router.Group(legacyv1.PathPrefix, func(r Router) {
+		// Heartbeat - essential for sensor health monitoring
 		r.POST("/heartbeat", ingestHandler.Heartbeat)
 
-		// Self-service credential renewal: the agent rotates its own key by
+		// Self-service credential renewal: the sensor rotates its own key by
 		// presenting the current one. Authenticated by AuthenticateSource like
 		// every other endpoint in this group; the building block for
 		// auto-rotating credentials (RFC-014).
@@ -166,8 +168,8 @@ func registerAgentRoutes(
 		}
 
 		// Runtime telemetry — batched EDR/XDR events from endpoint
-		// agents. Feeds the IOC correlator and CTEM maturity dashboards.
-		// Same agent API-key auth as the other ingest endpoints; 50 MB
+		// sensors. Feeds the IOC correlator and CTEM maturity dashboards.
+		// Same sensor API-key auth as the other ingest endpoints; 50 MB
 		// body limit for backlogged batches.
 		if runtimeTelemetryHandler != nil {
 			// Optional per-tenant rate limit. Pass-through when the
@@ -181,11 +183,14 @@ func registerAgentRoutes(
 	}, baseMiddleware)
 }
 
-// registerAgentManagementRoutes registers agent management endpoints.
-// Agents are distributed runners, workers, collectors, sensors that execute tasks.
-func registerAgentManagementRoutes(
+// registerSensorManagementRoutes registers sensor management endpoints.
+// Sensors are the scanners, agents and collectors that run on the customer
+// side and authenticate to the platform with their own key (RFC-023 D18).
+//
+//sensorrename:keep ("agents" here is the endpoint role)
+func registerSensorManagementRoutes(
 	router Router,
-	h *handler.AgentHandler,
+	h *handler.SensorHandler,
 	_ interface{}, // analyticsHandler removed in OSS
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
@@ -193,32 +198,51 @@ func registerAgentManagementRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Agent management routes - tenant from JWT token
-	router.Group("/api/v1/agents", func(r Router) {
+	// Sensor management routes - tenant from JWT token
+	router.Group("/api/v1/sensors", func(r Router) {
 		// Read operations
-		r.GET("/", h.List, middleware.Require(permission.AgentsRead))
+		r.GET("/", h.List, middleware.Require(permission.SensorsRead))
 		// Tenant-wide aggregated stats — must be registered BEFORE /{id} so
 		// chi doesn't treat "stats" as a path param.
-		r.GET("/stats", h.GetStats, middleware.Require(permission.AgentsRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.AgentsRead))
-		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.AgentsRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.SensorsRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead))
+		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead))
 
-		// Available capabilities for tenant (aggregated from all accessible agents)
-		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.AgentsRead))
+		// Available capabilities for tenant (aggregated from all accessible sensors)
+		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.SensorsRead))
 
 		// Write operations
-		r.POST("/", h.Create, middleware.Require(permission.AgentsWrite))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.AgentsWrite))
-		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.AgentsWrite))
+		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.SensorsWrite))
+		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite))
 
 		// Status operations (admin-controlled)
-		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AgentsWrite))
-		r.POST("/{id}/deactivate", h.Disable, middleware.Require(permission.AgentsWrite))
-		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.AgentsWrite))
+		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.SensorsWrite))
+		r.POST("/{id}/deactivate", h.Disable, middleware.Require(permission.SensorsWrite))
+		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.SensorsWrite))
 
 		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AgentsDelete))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete))
 	}, tenantMiddlewares...)
+
+	// The management API used to live at /api/v1/agents. Every one of its
+	// routes now answers 308 to the same resource under /api/v1/sensors, with
+	// Deprecation/Sunset headers, until legacyv1.SunsetAt. No auth here: the
+	// client re-sends its credentials to the target, which is gated as above.
+	router.Group(legacyv1.ManagementPathPrefix, func(r Router) {
+		r.GET("/", h.RedirectDeprecatedPath)
+		r.GET("/stats", h.RedirectDeprecatedPath)
+		r.GET("/{id}", h.RedirectDeprecatedPath)
+		r.GET("/{id}/config-templates", h.RedirectDeprecatedPath)
+		r.GET("/available-capabilities", h.RedirectDeprecatedPath)
+		r.POST("/", h.RedirectDeprecatedPath)
+		r.PUT("/{id}", h.RedirectDeprecatedPath)
+		r.POST("/{id}/regenerate-key", h.RedirectDeprecatedPath)
+		r.POST("/{id}/activate", h.RedirectDeprecatedPath)
+		r.POST("/{id}/deactivate", h.RedirectDeprecatedPath)
+		r.POST("/{id}/revoke", h.RedirectDeprecatedPath)
+		r.DELETE("/{id}", h.RedirectDeprecatedPath)
+	})
 }
 
 // registerPipelineRoutes registers pipeline management endpoints.
@@ -540,9 +564,9 @@ func registerScanRoutes(
 }
 
 // registerScanSessionRoutes registers scan session endpoints.
-// Scan sessions track individual scan executions from agents.
+// Scan sessions track individual scan executions from sensors.
 // Two sets of routes:
-// 1. Agent routes (API key auth): /api/v1/agent/scans - register, update, get scans
+// 1. Sensor routes (API key auth): /api/v1/agent/scans - register, update, get scans
 // 2. Admin routes (JWT auth): /api/v1/scan-sessions - list, view, manage sessions
 func registerScanSessionRoutes(
 	router Router,
@@ -681,7 +705,7 @@ func registerSuppressionRoutes(
 
 	// Suppression rules routes - tenant from JWT token
 	router.Group("/api/v1/suppressions", func(r Router) {
-		// Active rules for agents (must be before /{id} to avoid route conflicts)
+		// Active rules for sensors (must be before /{id} to avoid route conflicts)
 		r.GET("/active", h.ListActiveRules, middleware.Require(permission.SuppressionsRead))
 
 		// Read operations

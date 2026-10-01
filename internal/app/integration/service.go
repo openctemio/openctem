@@ -232,7 +232,7 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	}
 
 	// Tenable integrations: validate execution mode/engine and enforce the
-	// security rule that agent-mode integrations never store credentials in the
+	// security rule that sensor-mode integrations never store credentials in the
 	// control plane (RFC-007 §8). Normalize config so it carries explicit
 	// execution_mode + engine.
 	if provider == integrationdom.ProviderTenable {
@@ -480,10 +480,10 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 	}
 
 	// Tenable: validate the effective post-update state (mode/engine + whether
-	// credentials will be present + base URL) and re-enforce the agent-mode
+	// credentials will be present + base URL) and re-enforce the sensor-mode
 	// no-creds rule (RFC-007 §8 R3/R4), then normalize + persist config. This
-	// covers mode switches (e.g. direct→agent must clear creds; →direct needs
-	// creds + base_url) and adding creds to an agent integration.
+	// covers mode switches (e.g. direct→sensor must clear creds; →direct needs
+	// creds + base_url) and adding creds to a sensor integration.
 	if intg.Provider() == integrationdom.ProviderTenable {
 		merged := map[string]any{}
 		for k, v := range intg.Config() {

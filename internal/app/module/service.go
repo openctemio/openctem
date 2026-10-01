@@ -429,7 +429,7 @@ func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string
 		if !u.IsEnabled && m.IsCore() {
 			return nil, fmt.Errorf("%w: '%s' is a core module and cannot be disabled", moduledom.ErrCoreModuleCannotBeDisabled, m.Name())
 		}
-		// Mandatory modules (operational essentials like `agents` for
+		// Mandatory modules (operational essentials like `sensors` for
 		// data ingestion) — disabling them silently breaks the platform.
 		// Reject so an admin doesn't accidentally DoS the tenant via
 		// the toggle UI. Distinct error from core so UI can render a

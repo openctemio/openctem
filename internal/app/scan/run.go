@@ -200,7 +200,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		}
 	} else {
 		// SECURITY: single-scanner QuickScan bypasses CreateScan, so apply the
-		// same scanner-config validation here before targets reach an agent.
+		// same scanner-config validation here before targets reach a sensor.
 		if err := s.validateScanSecurityInputs(ctx, tenantID, CreateScanInput{
 			TenantID:      input.TenantID,
 			Tags:          input.Tags,
@@ -239,10 +239,10 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	sc.Description = fmt.Sprintf("Quick scan of %d targets", len(input.Targets))
 
 	// Persist the direct targets on the scan for BOTH paths. The single-scanner
-	// path also mirrors them into scanner_config below (the agent scanner reads
+	// path also mirrors them into scanner_config below (the sensor scanner reads
 	// config), while the workflow path relies on sc.Targets being propagated
 	// into the workflow run context (see triggerWorkflow) so the step commands
-	// actually carry the targets to the agent.
+	// actually carry the targets to the sensor.
 	sc.SetTargets(input.Targets)
 
 	if scanType == scan.ScanTypeWorkflow {

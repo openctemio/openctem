@@ -9,10 +9,10 @@ import (
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 )
 
-// (invariant F4): proof-of-fix retest, agent-dispatch model.
+// (invariant F4): proof-of-fix retest, sensor-dispatch model.
 //
 // When a finding transitions to `fix_applied`, the API queues a
-// validation job for the agent that most recently produced its
+// validation job for the sensor that most recently produced its
 // original validation evidence. Outcomes:
 //
 //   - OutcomeNotDetected → exposure gone → transition finding to
@@ -23,7 +23,7 @@ import (
 //     manual review.
 //
 // The API does NOT execute the technique in-process. It calls the
-// ValidationDispatcher which queues the job for an agent that
+// ValidationDispatcher which queues the job for a sensor that
 // declares support for the required ExecutorKind.
 
 // ProofOfFixService orchestrates the retest.
@@ -37,16 +37,16 @@ type ProofOfFixService struct {
 	// (state transitions still happen, the downgrade % metric is just not fed).
 	recorder VerdictRecorder
 	// capability is how the API learns which ExecutorKinds the
-	// current agent fleet advertises. Injected so integration
+	// current sensor fleet advertises. Injected so integration
 	// testing can stub it.
-	capability AgentCapability
+	capability SensorCapability
 }
 
-// AgentCapability lets the service ask "which ExecutorKinds are
+// SensorCapability lets the service ask "which ExecutorKinds are
 // currently available for this tenant?" before selecting. A real
-// implementation looks at agent registrations; the test stub returns
+// implementation looks at sensor registrations; the test stub returns
 // a static slice.
-type AgentCapability interface {
+type SensorCapability interface {
 	AvailableExecutorKinds(ctx context.Context, tenantID shared.ID) ([]ExecutorKind, error)
 }
 
@@ -67,7 +67,7 @@ type RetestNotifier interface {
 // NewProofOfFixService wires dependencies.
 func NewProofOfFixService(
 	dispatcher ValidationDispatcher,
-	capability AgentCapability,
+	capability SensorCapability,
 	evStore *EvidenceStore,
 	findingRepo FindingMutator,
 	notifier RetestNotifier,
@@ -83,7 +83,7 @@ func NewProofOfFixService(
 }
 
 // Retest dispatches a validation job and reconciles the finding.
-// Returns the Evidence the agent produced, a boolean indicating
+// Returns the Evidence the sensor produced, a boolean indicating
 // whether the fix stood (true = finding moved to resolved), and
 // any error.
 //

@@ -99,39 +99,39 @@ func (a *pipelineAuditServiceAdapter) LogEvent(ctx context.Context, actx pipelin
 }
 
 // =============================================================================
-// Agent Selector Adapter
+// Sensor Selector Adapter
 // =============================================================================
 
-// scanAgentSelectorAdapter adapts AgentSelector to scan.AgentSelector interface.
-type scanAgentSelectorAdapter struct {
-	selector *AgentSelector
+// scanSensorSelectorAdapter adapts SensorSelector to scan.SensorSelector interface.
+type scanSensorSelectorAdapter struct {
+	selector *SensorSelector
 }
 
-// NewScanAgentSelectorAdapter creates an adapter for the scan package's AgentSelector interface.
-func NewScanAgentSelectorAdapter(selector *AgentSelector) scan.AgentSelector {
-	return &scanAgentSelectorAdapter{selector: selector}
+// NewScanSensorSelectorAdapter creates an adapter for the scan package's SensorSelector interface.
+func NewScanSensorSelectorAdapter(selector *SensorSelector) scan.SensorSelector {
+	return &scanSensorSelectorAdapter{selector: selector}
 }
 
-// CheckAgentAvailability implements scan.AgentSelector.
-func (a *scanAgentSelectorAdapter) CheckAgentAvailability(ctx context.Context, tenantID shared.ID, tool string, tenantOnly bool) *scan.AgentAvailability {
-	result := a.selector.CheckAgentAvailability(ctx, tenantID, tool, tenantOnly)
-	return &scan.AgentAvailability{
-		HasTenantAgent: result.HasTenantAgent,
-		Available:      result.Available,
-		Message:        result.Message,
+// CheckSensorAvailability implements scan.SensorSelector.
+func (a *scanSensorSelectorAdapter) CheckSensorAvailability(ctx context.Context, tenantID shared.ID, tool string, tenantOnly bool) *scan.SensorAvailability {
+	result := a.selector.CheckSensorAvailability(ctx, tenantID, tool, tenantOnly)
+	return &scan.SensorAvailability{
+		HasTenantSensor: result.HasTenantSensor,
+		Available:       result.Available,
+		Message:         result.Message,
 	}
 }
 
-// CanUsePlatformAgents implements scan.AgentSelector.
-// In OSS edition, platform agents are not available.
-func (a *scanAgentSelectorAdapter) CanUsePlatformAgents(ctx context.Context, tenantID shared.ID) (bool, string) {
-	return false, "Platform agents not available in OSS edition"
+// CanUsePlatformSensors implements scan.SensorSelector.
+// In OSS edition, platform sensors are not available.
+func (a *scanSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
+	return false, "Platform sensors not available in OSS edition"
 }
 
-// SelectAgent implements scan.AgentSelector.
-func (a *scanAgentSelectorAdapter) SelectAgent(ctx context.Context, req scan.SelectAgentRequest) (*scan.SelectAgentResult, error) {
+// SelectSensor implements scan.SensorSelector.
+func (a *scanSensorSelectorAdapter) SelectSensor(ctx context.Context, req scan.SelectSensorRequest) (*scan.SelectSensorResult, error) {
 	// Make the call with app types
-	appReq := SelectAgentRequest{
+	appReq := SelectSensorRequest{
 		TenantID:     req.TenantID,
 		Capabilities: req.Capabilities,
 		Tool:         req.Tool,
@@ -139,30 +139,30 @@ func (a *scanAgentSelectorAdapter) SelectAgent(ctx context.Context, req scan.Sel
 		AllowQueue:   req.AllowQueue,
 	}
 
-	result, err := a.selector.SelectAgent(ctx, appReq)
+	result, err := a.selector.SelectSensor(ctx, appReq)
 	if err != nil {
 		return nil, err
 	}
 
-	return &scan.SelectAgentResult{
-		Agent: result.Agent,
+	return &scan.SelectSensorResult{
+		Sensor: result.Sensor,
 	}, nil
 }
 
-// pipelineAgentSelectorAdapter adapts AgentSelector to pipeline.AgentSelector interface.
-type pipelineAgentSelectorAdapter struct {
-	selector *AgentSelector
+// pipelineSensorSelectorAdapter adapts SensorSelector to pipeline.SensorSelector interface.
+type pipelineSensorSelectorAdapter struct {
+	selector *SensorSelector
 }
 
-// NewPipelineAgentSelectorAdapter creates an adapter for the pipeline package's AgentSelector interface.
-func NewPipelineAgentSelectorAdapter(selector *AgentSelector) pipeline.AgentSelector {
-	return &pipelineAgentSelectorAdapter{selector: selector}
+// NewPipelineSensorSelectorAdapter creates an adapter for the pipeline package's SensorSelector interface.
+func NewPipelineSensorSelectorAdapter(selector *SensorSelector) pipeline.SensorSelector {
+	return &pipelineSensorSelectorAdapter{selector: selector}
 }
 
-// SelectAgent implements pipeline.AgentSelector.
-func (a *pipelineAgentSelectorAdapter) SelectAgent(ctx context.Context, req pipeline.SelectAgentRequest) (*pipeline.SelectAgentResult, error) {
+// SelectSensor implements pipeline.SensorSelector.
+func (a *pipelineSensorSelectorAdapter) SelectSensor(ctx context.Context, req pipeline.SelectSensorRequest) (*pipeline.SelectSensorResult, error) {
 	// Make the call with app types
-	appReq := SelectAgentRequest{
+	appReq := SelectSensorRequest{
 		TenantID:     req.TenantID,
 		Capabilities: req.Capabilities,
 		Tool:         req.Tool,
@@ -170,20 +170,20 @@ func (a *pipelineAgentSelectorAdapter) SelectAgent(ctx context.Context, req pipe
 		AllowQueue:   req.AllowQueue,
 	}
 
-	result, err := a.selector.SelectAgent(ctx, appReq)
+	result, err := a.selector.SelectSensor(ctx, appReq)
 	if err != nil {
 		return nil, err
 	}
 
-	return &pipeline.SelectAgentResult{
-		Agent: result.Agent,
+	return &pipeline.SelectSensorResult{
+		Sensor: result.Sensor,
 	}, nil
 }
 
-// CanUsePlatformAgents implements pipeline.AgentSelector.
-// In OSS edition, platform agents are not available.
-func (a *pipelineAgentSelectorAdapter) CanUsePlatformAgents(ctx context.Context, tenantID shared.ID) (bool, string) {
-	return false, "Platform agents not available in OSS edition"
+// CanUsePlatformSensors implements pipeline.SensorSelector.
+// In OSS edition, platform sensors are not available.
+func (a *pipelineSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
+	return false, "Platform sensors not available in OSS edition"
 }
 
 // Template Syncer adapter lives in internal/app/template/scan_adapter.go

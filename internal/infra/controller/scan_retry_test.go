@@ -65,7 +65,7 @@ func newCandidate(t *testing.T) pipeline.RetryCandidate {
 func TestScanRetry_DispatchFailure_ResetsClaim(t *testing.T) {
 	repo := &fakeRetryRepo{cand: newCandidate(t)}
 	failing := dispatcherFunc(func(context.Context, shared.ID, shared.ID, int) error {
-		return errors.New("transient: no agent available")
+		return errors.New("transient: no sensor available")
 	})
 	c := NewScanRetryController(repo, failing, &ScanRetryControllerConfig{Logger: logger.NewNop()})
 

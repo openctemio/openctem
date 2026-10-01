@@ -14,7 +14,7 @@ package unit
 //     api/internal/infra/http/handler/security_test.go
 //
 //   ExtraArgs Validation (validateExtraArgs):
-//     agent/internal/executor/security_test.go
+//     sensor/internal/executor/security_test.go
 //
 //   OAuth Redirect (isRedirectAllowed):
 //     api/internal/infra/http/handler/oauth_security_test.go
@@ -22,4 +22,4 @@ package unit
 // Run all security tests:
 //   go test ./pkg/validator/ -run TestValidateWebhookURL -v
 //   go test ./internal/infra/http/handler/ -run "TestIsValidHostHeader|TestOAuthRedirect" -v
-//   cd ../agent && go test ./internal/executor/ -run TestValidateExtraArgs -v
+//   cd ../sensor && go test ./internal/executor/ -run TestValidateExtraArgs -v

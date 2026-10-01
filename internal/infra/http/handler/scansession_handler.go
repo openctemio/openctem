@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/api/pkg/validator"
 )
 
@@ -56,7 +57,7 @@ func (h *ScanSessionHandler) handleServiceError(w http.ResponseWriter, err error
 type ScanSessionResponse struct {
 	ID             string         `json:"id"`
 	TenantID       string         `json:"tenant_id,omitempty"`
-	AgentID        string         `json:"agent_id,omitempty"`
+	SensorID       string         `json:"sensor_id,omitempty"`
 	ScannerName    string         `json:"scanner_name"`
 	ScannerVersion string         `json:"scanner_version,omitempty"`
 	ScannerType    string         `json:"scanner_type,omitempty"`
@@ -102,8 +103,8 @@ func toScanSessionResponse(s *scansession.ScanSession) ScanSessionResponse {
 		CreatedAt:      s.CreatedAt,
 	}
 
-	if s.AgentID != nil {
-		resp.AgentID = s.AgentID.String()
+	if s.SensorID != nil {
+		resp.SensorID = s.SensorID.String()
 	}
 	if s.AssetID != nil {
 		resp.AssetID = s.AssetID.String()
@@ -132,8 +133,8 @@ type RegisterScanResponse struct {
 
 // RegisterScan handles POST /api/v1/agent/scans
 // @Summary      Register scan session
-// @Description  Agent registers a new scan session before starting a scan
-// @Tags         Agent
+// @Description  Sensor registers a new scan session before starting a scan
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        request  body      RegisterScanRequest  true  "Scan registration data"
@@ -144,9 +145,9 @@ type RegisterScanResponse struct {
 // @Security     ApiKeyAuth
 // @Router       /agent/scans [post]
 func (h *ScanSessionHandler) RegisterScan(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -198,8 +199,8 @@ type UpdateScanSessionRequest struct {
 
 // UpdateScan handles PATCH /api/v1/agent/scans/{id}
 // @Summary      Update scan session
-// @Description  Agent updates scan status after completion
-// @Tags         Agent
+// @Description  Sensor updates scan status after completion
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                    true  "Scan session ID"
@@ -211,9 +212,9 @@ type UpdateScanSessionRequest struct {
 // @Security     ApiKeyAuth
 // @Router       /agent/scans/{id} [patch]
 func (h *ScanSessionHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -253,13 +254,13 @@ func (h *ScanSessionHandler) UpdateScan(w http.ResponseWriter, r *http.Request) 
 }
 
 // GetScan handles GET /api/v1/agent/scans/{id}
-// @Summary      Get scan session (agent)
-// @Description  Agent retrieves scan session details
-// @Tags         Agent
+// @Summary      Get scan session (sensor)
+// @Description  Sensor retrieves scan session details
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "Scan session ID"
-// @Success      200  {object}  ScanSessionResponse
+// @Success      200  {object}  legacyv1.ScanSession
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
@@ -267,15 +268,15 @@ func (h *ScanSessionHandler) UpdateScan(w http.ResponseWriter, r *http.Request) 
 // @Security     ApiKeyAuth
 // @Router       /agent/scans/{id} [get]
 func (h *ScanSessionHandler) GetScan(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
-	// Platform agents must have tenant context
+	// Platform sensors must have tenant context
 	if agt.TenantID == nil {
-		apierror.Forbidden("Platform agents require job context for this operation").WriteJSON(w)
+		apierror.Forbidden(legacyv1.MsgJobContextRequired).WriteJSON(w)
 		return
 	}
 	tenantID := *agt.TenantID
@@ -293,7 +294,7 @@ func (h *ScanSessionHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toScanSessionResponse(session))
+	json.NewEncoder(w).Encode(legacyv1.NewScanSession(session))
 }
 
 // List handles GET /api/v1/scan-sessions (admin interface)

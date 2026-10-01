@@ -1,5 +1,5 @@
 // Package ioc wires Indicators of Compromise to the runtime
-// telemetry stream. When an agent reports an event whose properties
+// telemetry stream. When a sensor reports an event whose properties
 // match a known IOC, the source finding is auto-reopened — the loop
 // edge named "invariant B6" in the CTEM model.
 //
@@ -103,7 +103,7 @@ func (c *Correlator) Correlate(
 }
 
 // CorrelateBatch correlates N events in ONE IOC lookup instead of N.
-// The handler should use this for agent batches (up to 100 events) so
+// The handler should use this for sensor batches (up to 100 events) so
 // the ingest path is not N DB roundtrips.
 //
 // Per-event error isolation preserved: a hit on event A that fails
@@ -234,7 +234,7 @@ func (c *Correlator) handleHit(
 // postgres ingest path + tests can reuse the exact same extraction
 // logic without instantiating a Correlator.
 //
-// Property keys come from pkg/domain/telemetry — the agent wire
+// Property keys come from pkg/domain/telemetry — the sensor wire
 // contract. Unknown properties are ignored (whitelist) so a garbage
 // field in properties can't generate false candidate IOCs.
 func ExtractCandidates(event TelemetryEvent) []iocdom.Candidate {

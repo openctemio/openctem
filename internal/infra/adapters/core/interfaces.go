@@ -1,5 +1,5 @@
 // Package core provides the core interfaces and base implementations for the OpenCTEM Scanner SDK.
-// Tenants can implement these interfaces to create custom scanners, collectors, and agents.
+// Tenants can implement these interfaces to create custom scanners, collectors, and sensors.
 package core
 
 import (
@@ -371,28 +371,28 @@ type CollectResult struct {
 }
 
 // =============================================================================
-// Agent Interface - For running as a daemon/service
+// Sensor Interface - For running as a daemon/service
 // =============================================================================
 
-// Agent is a long-running service that manages scanners and collectors.
-// Implement this interface to create a custom agent.
-type Agent interface {
-	// Name returns the agent name
+// Sensor is a long-running service that manages scanners and collectors.
+// Implement this interface to create a custom sensor.
+type Sensor interface {
+	// Name returns the sensor name
 	Name() string
 
-	// Start starts the agent
+	// Start starts the sensor
 	Start(ctx context.Context) error
 
-	// Stop gracefully stops the agent
+	// Stop gracefully stops the sensor
 	Stop(ctx context.Context) error
 
-	// Status returns the current agent status
-	Status() *AgentStatus
+	// Status returns the current sensor status
+	Status() *SensorStatus
 
-	// AddScanner adds a scanner to the agent
+	// AddScanner adds a scanner to the sensor
 	AddScanner(scanner Scanner) error
 
-	// AddCollector adds a collector to the agent
+	// AddCollector adds a collector to the sensor
 	AddCollector(collector Collector) error
 
 	// RemoveScanner removes a scanner by name
@@ -402,32 +402,32 @@ type Agent interface {
 	RemoveCollector(name string) error
 }
 
-// AgentState represents the state of an agent.
-type AgentState string
+// SensorState represents the state of a sensor.
+type SensorState string
 
 const (
-	AgentStateRunning  AgentState = "running"
-	AgentStateStopped  AgentState = "stopped"
-	AgentStateStopping AgentState = "stopping"
-	AgentStateError    AgentState = "error"
+	SensorStateRunning  SensorState = "running"
+	SensorStateStopped  SensorState = "stopped"
+	SensorStateStopping SensorState = "stopping"
+	SensorStateError    SensorState = "error"
 )
 
-// AgentStatus represents the agent's current state.
-type AgentStatus struct {
-	Name          string     `json:"name"`
-	Status        AgentState `json:"status"`
-	StartedAt     int64      `json:"started_at,omitempty"`
-	Uptime        int64      `json:"uptime_seconds,omitempty"`
-	Scanners      []string   `json:"scanners"`
-	Collectors    []string   `json:"collectors"`
-	LastScan      int64      `json:"last_scan,omitempty"`
-	LastCollect   int64      `json:"last_collect,omitempty"`
-	TotalScans    int64      `json:"total_scans"`
-	TotalFindings int64      `json:"total_findings"`
-	Errors        int64      `json:"errors"`
-	Message       string     `json:"message,omitempty"`
+// SensorStatus represents the sensor's current state.
+type SensorStatus struct {
+	Name          string      `json:"name"`
+	Status        SensorState `json:"status"`
+	StartedAt     int64       `json:"started_at,omitempty"`
+	Uptime        int64       `json:"uptime_seconds,omitempty"`
+	Scanners      []string    `json:"scanners"`
+	Collectors    []string    `json:"collectors"`
+	LastScan      int64       `json:"last_scan,omitempty"`
+	LastCollect   int64       `json:"last_collect,omitempty"`
+	TotalScans    int64       `json:"total_scans"`
+	TotalFindings int64       `json:"total_findings"`
+	Errors        int64       `json:"errors"`
+	Message       string      `json:"message,omitempty"`
 
-	// System Metrics (collected from agent)
+	// System Metrics (collected from sensor)
 	CPUPercent    float64 `json:"cpu_percent,omitempty"`
 	MemoryPercent float64 `json:"memory_percent,omitempty"`
 	ActiveJobs    int     `json:"active_jobs,omitempty"`
@@ -447,7 +447,7 @@ type Pusher interface {
 	PushAssets(ctx context.Context, report *ctis.Report) (*PushResult, error)
 
 	// SendHeartbeat sends a heartbeat to OpenCTEM
-	SendHeartbeat(ctx context.Context, status *AgentStatus) error
+	SendHeartbeat(ctx context.Context, status *SensorStatus) error
 
 	// TestConnection tests the API connection
 	TestConnection(ctx context.Context) error

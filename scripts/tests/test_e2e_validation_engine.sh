@@ -56,7 +56,7 @@ COMMAND_ID="$(extract_json "$BODY" '.command_id')"
 print_info "command_id=$COMMAND_ID"
 
 # --- Agent side: create agent + drive the command lifecycle -----------------
-do_request POST /api/v1/agents \
+do_request POST /api/v1/sensors \
   "{\"name\":\"validate-runner-${TS}\",\"type\":\"runner\",\"capabilities\":[\"validate\"],\"execution_mode\":\"standalone\",\"max_concurrent_jobs\":1}" \
   "$(auth_hdr)"
 assert_status "200|201" "create validation agent"

@@ -46,7 +46,7 @@ var controllerMetrics = sync.OnceValue(func() controller.Metrics {
 // Workers holds all background worker instances.
 type Workers struct {
 	JobWorker                 *jobs.Worker
-	AgentHealthChecker        *jobs.AgentHealthChecker
+	SensorHealthChecker       *jobs.SensorHealthChecker
 	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
 	ScanScheduler             *app.ScanScheduler
 	CommandExpirationChecker  *command.ExpirationChecker
@@ -127,10 +127,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		return nil, err
 	}
 
-	// Initialize agent health checker if worker is enabled
+	// Initialize sensor health checker if worker is enabled
 	if cfg.Worker.Enabled {
-		w.AgentHealthChecker = jobs.NewAgentHealthChecker(repos.Agent, &cfg.Worker, log)
-		log.Info("agent health checker initialized",
+		w.SensorHealthChecker = jobs.NewSensorHealthChecker(repos.Sensor, &cfg.Worker, log)
+		log.Info("sensor health checker initialized",
 			"heartbeat_timeout", cfg.Worker.HeartbeatTimeout,
 			"check_interval", cfg.Worker.HealthCheckInterval,
 		)
@@ -212,13 +212,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	})
 
 	// Register controllers
-	w.ControllerManager.Register(controller.NewAgentHealthController(
-		repos.Agent,
+	w.ControllerManager.Register(controller.NewSensorHealthController(
+		repos.Sensor,
 		svc.Audit,
-		&controller.AgentHealthControllerConfig{
+		&controller.SensorHealthControllerConfig{
 			Interval:     30 * time.Second,
 			StaleTimeout: 90 * time.Second,
-			Logger:       log.With("controller", "agent-health"),
+			Logger:       log.With("controller", "sensor-health"),
 		},
 	))
 
@@ -622,9 +622,9 @@ func (w *Workers) Start(ctx context.Context, log *logger.Logger) error {
 		}()
 	}
 
-	// Start agent health checker
-	if w.AgentHealthChecker != nil {
-		w.AgentHealthChecker.Start()
+	// Start sensor health checker
+	if w.SensorHealthChecker != nil {
+		w.SensorHealthChecker.Start()
 	}
 
 	// Start AI triage recovery job
@@ -740,9 +740,9 @@ func (w *Workers) Stop(log *logger.Logger) {
 		log.Info("job worker stopped")
 	}
 
-	// Stop agent health checker
-	if w.AgentHealthChecker != nil {
-		w.AgentHealthChecker.Stop()
+	// Stop sensor health checker
+	if w.SensorHealthChecker != nil {
+		w.SensorHealthChecker.Stop()
 	}
 
 	// Stop AI triage recovery job

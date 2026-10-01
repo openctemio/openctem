@@ -244,13 +244,13 @@ func TestScheduler_OversizedTargetAllowedForUnlimited(t *testing.T) {
 	}
 }
 
-func TestScheduler_PinnedAgentForwarded(t *testing.T) {
+func TestScheduler_PinnedSensorForwarded(t *testing.T) {
 	tenant := shared.NewID()
-	agent := shared.NewID()
+	sensor := shared.NewID()
 	src := &fakeSource{
 		configs: []CoverageConfig{{
 			TenantID:     tenant,
-			AgentID:      &agent,
+			SensorID:     &sensor,
 			Engine:       "nessus_pro",
 			Policy:       LicensePolicy{Mode: LicenseUnlimited},
 			DefaultBatch: 1,
@@ -265,8 +265,8 @@ func TestScheduler_PinnedAgentForwarded(t *testing.T) {
 	if _, err := s.RunOnce(context.Background()); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if disp.calls[0].AgentID == nil || *disp.calls[0].AgentID != agent {
-		t.Fatal("pinned agent id must be forwarded to the dispatcher (C3)")
+	if disp.calls[0].SensorID == nil || *disp.calls[0].SensorID != sensor {
+		t.Fatal("pinned sensor id must be forwarded to the dispatcher (C3)")
 	}
 }
 

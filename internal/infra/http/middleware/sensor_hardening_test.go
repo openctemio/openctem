@@ -135,13 +135,13 @@ func TestTenantConcurrencyLimiter_CapsPerTenant(t *testing.T) {
 func TestTelemetryRateLimiter_MiddlewareKeyed(t *testing.T) {
 	rl := NewTelemetryRateLimiter(0.001, 2, time.Minute, logger.NewNop())
 	defer rl.Stop()
-	key := "agent-a"
+	key := "sensor-a"
 	mw := rl.MiddlewareKeyed(func(*http.Request) string { return key }, "slow down")
 	allowed := countAllowed(mw, func(r *http.Request) *http.Request { return r }, 5)
 	if allowed != 2 {
 		t.Fatalf("expected burst of 2 per key, got %d", allowed)
 	}
-	key = "agent-b" // separate bucket
+	key = "sensor-b" // separate bucket
 	if got := countAllowed(mw, func(r *http.Request) *http.Request { return r }, 1); got != 1 {
 		t.Fatalf("other key throttled")
 	}

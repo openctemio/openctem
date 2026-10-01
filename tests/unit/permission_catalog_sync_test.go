@@ -33,6 +33,15 @@ var permSeedMigrations = []string{
 	"000153_ctem_permissions.up.sql",
 }
 
+// permRenameMigrations rename permission ids in place (old id → new id) with
+// a mapping table whose rows are ('old', 'new', ...). The renames are applied,
+// in order, on top of the seeded ids.
+var permRenameMigrations = []string{
+	"000230_rename_agent_to_sensor.up.sql", // agents:* → sensors:* (RFC-023 §9.5)
+}
+
+var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
+
 // tupleID captures the FIRST single-quoted string of a VALUES tuple row, i.e.
 // the permission id (id is always column 1 across every seed format:
 // 3-col, 4-col, and with-is_active). Anchored to the row start so it never
@@ -61,6 +70,30 @@ func seededPermissionIDs(t *testing.T) map[string]string {
 	}
 	if len(out) == 0 {
 		t.Fatal("parsed zero permissions from seed migrations — the parser or file list is broken")
+	}
+	for _, m := range permRenameMigrations {
+		data, err := os.ReadFile(filepath.Join(root, "migrations", m))
+		if err != nil {
+			t.Fatalf("read rename migration %s: %v", m, err)
+		}
+		renamed := 0
+		for _, line := range strings.Split(string(data), "\n") {
+			mm := renameRow.FindStringSubmatch(line)
+			if mm == nil {
+				continue
+			}
+			loc, ok := out[mm[1]]
+			if !ok {
+				t.Errorf("%s renames %q, which no seed migration creates", m, mm[1])
+				continue
+			}
+			delete(out, mm[1])
+			out[mm[2]] = loc + " (renamed by " + m + ")"
+			renamed++
+		}
+		if renamed == 0 {
+			t.Errorf("%s is listed as renaming permissions but no rename row was parsed", m)
+		}
 	}
 	return out
 }

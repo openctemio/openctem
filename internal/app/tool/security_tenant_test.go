@@ -43,7 +43,7 @@ func TestListTools_RequiresTenant(t *testing.T) {
 }
 
 // A tenant must not be able to (de)activate a platform tool — those are shared
-// across all tenants and agents run them.
+// across all tenants and sensors run them.
 func TestActivateTool_RejectsPlatformTool(t *testing.T) {
 	platform, err := tooldom.NewTool("nmap", "Nmap", nil, tooldom.InstallBinary)
 	if err != nil {

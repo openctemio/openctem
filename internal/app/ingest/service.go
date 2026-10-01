@@ -11,15 +11,16 @@ import (
 
 	"github.com/openctemio/api/internal/app"
 	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/component"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/ctis"
 )
 
@@ -37,7 +38,7 @@ type Service struct {
 	findingRepo vulnerability.FindingRepository
 	vulnRepo    vulnerability.VulnerabilityRepository
 	compRepo    component.Repository
-	agentRepo   agent.Repository
+	sensorRepo  sensor.Repository
 	branchRepo  branch.Repository
 	tenantRepo  tenant.Repository
 	auditRepo   audit.Repository
@@ -81,7 +82,7 @@ func NewService(
 	findingRepo vulnerability.FindingRepository,
 	vulnRepo vulnerability.VulnerabilityRepository,
 	compRepo component.Repository,
-	agentRepo agent.Repository,
+	sensorRepo sensor.Repository,
 	branchRepo branch.Repository,
 	tenantRepo tenant.Repository,
 	auditRepo audit.Repository,
@@ -100,7 +101,7 @@ func NewService(
 		findingRepo: findingRepo,
 		vulnRepo:    vulnRepo,
 		compRepo:    compRepo,
-		agentRepo:   agentRepo,
+		sensorRepo:  sensorRepo,
 		branchRepo:  branchRepo,
 		tenantRepo:  tenantRepo,
 		auditRepo:   auditRepo,
@@ -236,13 +237,13 @@ func (s *Service) SetAssetExposureProjector(p AssetExposureProjector) {
 // Main Ingestion Methods
 // =============================================================================
 
-// Ingest processes a CTIS report from an agent.
+// Ingest processes a CTIS report from a sensor.
 // This is the main entry point for all ingestion.
 //
-//nolint:cyclop // Ingestion dispatches to multiple processors with validation
-func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*Output, error) {
-	// Validate agent context
-	if err := s.validateAgent(agt); err != nil {
+//nolint:cyclop,gocognit // Ingestion dispatches to multiple processors with validation
+func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (*Output, error) {
+	// Validate sensor context
+	if err := s.validateSensor(agt); err != nil {
 		return nil, err
 	}
 	tenantID := *agt.TenantID
@@ -258,11 +259,11 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 	}
 
 	// report.Metadata.ID and SourceType come from the CTIS payload
-	// submitted by the agent. A compromised/malicious agent can
+	// submitted by the sensor. A compromised/malicious sensor can
 	// embed CR/LF in those fields to forge log lines downstream
 	// (CodeQL go/log-injection). Strip control chars before logging.
 	s.logger.Info("ingesting report",
-		"agent_id", agt.ID.String(),
+		"sensor_id", agt.ID.String(),
 		"tenant_id", tenantID.String(),
 		"report_id", sanitizeIngestLogField(report.Metadata.ID),
 		"source_type", sanitizeIngestLogField(report.Metadata.SourceType),
@@ -352,7 +353,7 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 	//
 	// This follows GitHub/GitLab best practices where default branch is source of truth.
 	if input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != "" &&
-		s.agentMayAutoResolveTool(ctx, agt, report.Tool.Name) {
+		s.sensorMayAutoResolveTool(ctx, agt, report.Tool.Name) {
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
 
@@ -461,8 +462,8 @@ func (s *Service) Ingest(ctx context.Context, agt *agent.Agent, input Input) (*O
 		}
 	}
 
-	// Step 5: Update agent statistics (with proper error handling)
-	s.updateAgentStatsAsync(agt.ID, output)
+	// Step 5: Update sensor statistics (with proper error handling)
+	s.updateSensorStatsAsync(agt.ID, output)
 
 	s.logger.Info("ingestion complete",
 		"report_id", output.ReportID,
@@ -532,9 +533,9 @@ func (s *Service) projectAssetExposures(ctx context.Context, tenantID shared.ID,
 }
 
 // IngestSARIF processes a SARIF log and ingests it as findings.
-func (s *Service) IngestSARIF(ctx context.Context, agt *agent.Agent, sarifData []byte) (*Output, error) {
+func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData []byte) (*Output, error) {
 	s.logger.Info("ingesting SARIF data",
-		"agent_id", agt.ID.String(),
+		"sensor_id", agt.ID.String(),
 	)
 
 	// Convert SARIF to CTIS using SDK
@@ -548,14 +549,14 @@ func (s *Service) IngestSARIF(ctx context.Context, agt *agent.Agent, sarifData [
 }
 
 // IngestRecon processes recon data and ingests it.
-func (s *Service) IngestRecon(ctx context.Context, agt *agent.Agent, reconInput *ctis.ReconToCTISInput) (*Output, error) {
+func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInput *ctis.ReconToCTISInput) (*Output, error) {
 	s.logger.Info("ingesting recon data",
-		"agent_id", agt.ID.String(),
+		"sensor_id", agt.ID.String(),
 	)
 
 	// Convert Recon to CTIS using SDK
 	opts := ctis.DefaultReconConverterOptions()
-	opts.DiscoverySource = "agent"
+	opts.DiscoverySource = legacyv1.DiscoverySourceSensor
 	report, err := ctis.ConvertReconToCTIS(reconInput, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert recon data: %w", err)
@@ -566,10 +567,10 @@ func (s *Service) IngestRecon(ctx context.Context, agt *agent.Agent, reconInput 
 }
 
 // CheckFingerprints checks which fingerprints already exist in the database.
-func (s *Service) CheckFingerprints(ctx context.Context, agt *agent.Agent, input CheckFingerprintsInput) (*CheckFingerprintsOutput, error) {
-	// Platform agents must have tenant context from job assignment
+func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, input CheckFingerprintsInput) (*CheckFingerprintsOutput, error) {
+	// Platform sensors must have tenant context from job assignment
 	if agt.TenantID == nil {
-		return nil, fmt.Errorf("agent has no tenant context: platform agents require job assignment")
+		return nil, fmt.Errorf("sensor has no tenant context: platform sensors require job assignment")
 	}
 	tenantID := *agt.TenantID
 
@@ -588,11 +589,11 @@ func (s *Service) CheckFingerprints(ctx context.Context, agt *agent.Agent, input
 // base/target branch (RFC-008 Phase 3). A finding already open on the base
 // branch is pre-existing tech debt — not introduced by the PR — so a PR gate /
 // inline comments should focus on the genuinely-new set. Tenant-scoped via the
-// authenticated agent. If the repository or base branch is unknown (no history),
+// authenticated sensor. If the repository or base branch is unknown (no history),
 // every fingerprint is treated as new.
-func (s *Service) BaselineDiff(ctx context.Context, agt *agent.Agent, input BaselineDiffInput) (*BaselineDiffOutput, error) {
+func (s *Service) BaselineDiff(ctx context.Context, agt *sensor.Sensor, input BaselineDiffInput) (*BaselineDiffOutput, error) {
 	if agt == nil || agt.TenantID == nil {
-		return nil, fmt.Errorf("agent has no tenant context: platform agents require job assignment")
+		return nil, fmt.Errorf("sensor has no tenant context: platform sensors require job assignment")
 	}
 	tenantID := *agt.TenantID
 
@@ -649,8 +650,8 @@ func partitionByBaseline(fingerprints, openOnBase []string) (newFps, preExisting
 // =============================================================================
 
 // reservedAutoResolveTools are tool names stamped on findings that do NOT come
-// from an agent-run scanner (platform imports, pentest / manual entry). An
-// agent-pushed report claiming one of these names must never drive
+// from a sensor-run scanner (platform imports, pentest / manual entry). An
+// sensor-pushed report claiming one of these names must never drive
 // auto-resolve: the "not seen in this scan" sweep would close another source's
 // findings. Compared case-insensitively.
 var reservedAutoResolveTools = map[string]struct{}{
@@ -662,40 +663,40 @@ var reservedAutoResolveTools = map[string]struct{}{
 	"csv_import":     {}, // CSV finding import (pentest)
 }
 
-// agentMayAutoResolveTool decides whether a report attributed to toolName may
+// sensorMayAutoResolveTool decides whether a report attributed to toolName may
 // auto-resolve stale findings of that tool. Auto-resolve is keyed on the
-// agent-SUPPLIED tool name, so without this any agent key in the tenant could
+// sensor-SUPPLIED tool name, so without this any sensor key in the tenant could
 // close another tool's findings by claiming its name in a "full" scan.
 //
-//   - Server-side ingests (synthetic agent, zero ID: tenant uploads, platform
+//   - Server-side ingests (synthetic sensor, zero ID: tenant uploads, platform
 //     imports) are trusted — the server chose the tool name.
-//   - Reserved non-scanner tool names are never auto-resolved by an agent.
-//   - An agent that declares its tools may only auto-resolve those tools.
-//   - A legacy agent that declares no tools keeps the previous behavior
-//     (backward compatibility with old SDKs / unconfigured agents), with a
-//     warning so operators can see which agents should declare their tools.
-func (s *Service) agentMayAutoResolveTool(ctx context.Context, agt *agent.Agent, toolName string) bool {
+//   - Reserved non-scanner tool names are never auto-resolved by a sensor.
+//   - A sensor that declares its tools may only auto-resolve those tools.
+//   - A legacy sensor that declares no tools keeps the previous behavior
+//     (backward compatibility with old SDKs / unconfigured sensors), with a
+//     warning so operators can see which sensors should declare their tools.
+func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sensor, toolName string) bool {
 	if agt == nil || agt.ID.IsZero() {
 		return true
 	}
 	if _, reserved := reservedAutoResolveTools[strings.ToLower(strings.TrimSpace(toolName))]; reserved {
-		s.logger.Warn("auto-resolve skipped: tool name is reserved for non-agent sources",
-			"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
+		s.logger.Warn("auto-resolve skipped: tool name is reserved for non-sensor sources",
+			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
 		return false
 	}
 
 	tools := agt.Tools
-	// The async ingest worker rebuilds a minimal agent from the job (ID +
-	// tenant only); load the declared tools from the agent row in that case.
-	if len(tools) == 0 && s.agentRepo != nil {
-		if stored, err := s.agentRepo.GetByID(ctx, agt.ID); err == nil && stored != nil {
+	// The async ingest worker rebuilds a minimal sensor from the job (ID +
+	// tenant only); load the declared tools from the sensor row in that case.
+	if len(tools) == 0 && s.sensorRepo != nil {
+		if stored, err := s.sensorRepo.GetByID(ctx, agt.ID); err == nil && stored != nil {
 			tools = stored.Tools
 		}
 	}
 
 	if len(tools) == 0 {
-		s.logger.Warn("auto-resolve allowed for legacy agent with no declared tools; declare the agent's tools to scope auto-resolve",
-			"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
+		s.logger.Warn("auto-resolve allowed for legacy sensor with no declared tools; declare the sensor's tools to scope auto-resolve",
+			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
 		return true
 	}
 	for _, t := range tools {
@@ -703,25 +704,25 @@ func (s *Service) agentMayAutoResolveTool(ctx context.Context, agt *agent.Agent,
 			return true
 		}
 	}
-	s.logger.Warn("auto-resolve skipped: reported tool is not among the agent's declared tools",
-		"agent_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName),
+	s.logger.Warn("auto-resolve skipped: reported tool is not among the sensor's declared tools",
+		"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName),
 		"declared_tools", sanitizeIngestLogField(strings.Join(tools, ",")))
 	return false
 }
 
-// validateAgent checks if the agent is valid for ingestion.
-func (s *Service) validateAgent(agt *agent.Agent) error {
+// validateSensor checks if the sensor is valid for ingestion.
+func (s *Service) validateSensor(agt *sensor.Sensor) error {
 	if agt == nil {
-		return shared.NewDomainError("UNAUTHORIZED", "agent authentication required", shared.ErrUnauthorized)
+		return shared.NewDomainError("UNAUTHORIZED", "sensor authentication required", shared.ErrUnauthorized)
 	}
 
 	if agt.TenantID == nil {
-		return shared.NewDomainError("INVALID_AGENT", "agent has no tenant context: platform agents require job assignment", nil)
+		return shared.NewDomainError(legacyv1.CodeNoTenantContext, "sensor has no tenant context: platform sensors require job assignment", nil)
 	}
 
-	// Check agent status
+	// Check sensor status
 	if !agt.Status.CanAuthenticate() {
-		return shared.NewDomainError("FORBIDDEN", "agent is not active", shared.ErrForbidden)
+		return shared.NewDomainError("FORBIDDEN", "sensor is not active", shared.ErrForbidden)
 	}
 
 	return nil
@@ -731,12 +732,12 @@ func (s *Service) validateAgent(agt *agent.Agent) error {
 // Helper Methods
 // =============================================================================
 
-// updateAgentStatsAsync updates agent statistics asynchronously with proper error handling.
-func (s *Service) updateAgentStatsAsync(agentID shared.ID, output *Output) {
-	// Skip for synthetic ingests with no real agent (e.g. tenant-initiated
-	// .nessus upload via the synthetic-agent path) — there is no agent row to
+// updateSensorStatsAsync updates sensor statistics asynchronously with proper error handling.
+func (s *Service) updateSensorStatsAsync(sensorID shared.ID, output *Output) {
+	// Skip for synthetic ingests with no real sensor (e.g. tenant-initiated
+	// .nessus upload via the synthetic-sensor path) — there is no sensor row to
 	// update, and a zero ID would just produce a no-op write + a noisy warning.
-	if agentID.IsZero() {
+	if sensorID.IsZero() {
 		return
 	}
 	go func() {
@@ -746,21 +747,21 @@ func (s *Service) updateAgentStatsAsync(agentID shared.ID, output *Output) {
 		s.statsUpdateMu.Lock()
 		defer s.statsUpdateMu.Unlock()
 
-		if err := s.agentRepo.IncrementStats(
+		if err := s.sensorRepo.IncrementStats(
 			ctx,
-			agentID,
+			sensorID,
 			int64(output.FindingsCreated),
 			1, // scans
 			int64(len(output.Errors)),
 		); err != nil {
-			s.logger.Warn("failed to update agent stats", "agent_id", agentID.String(), "error", err)
+			s.logger.Warn("failed to update sensor stats", "sensor_id", sensorID.String(), "error", err)
 		}
 	}()
 }
 
 // createIngestAuditLog creates an audit log entry for the ingestion result.
 // This provides visibility for debugging when ingestion has issues.
-func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, tenantID shared.ID, report *ctis.Report, output *Output) {
+func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, report *ctis.Report, output *Output) {
 	if s.auditSvc == nil && s.auditRepo == nil {
 		return
 	}
@@ -801,8 +802,8 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *agent.Agent, te
 	}
 
 	metadata := map[string]any{
-		"agent_id":               agt.ID.String(),
-		"agent_name":             agt.Name,
+		"sensor_id":              agt.ID.String(),
+		"sensor_name":            agt.Name,
 		"report_id":              output.ReportID,
 		"source_type":            report.Metadata.SourceType,
 		"findings_count":         len(report.Findings),

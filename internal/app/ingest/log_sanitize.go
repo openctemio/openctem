@@ -5,7 +5,7 @@ import "strings"
 // sanitizeIngestLogField strips CR/LF from an attacker-influenceable
 // string value before it hits the structured logger. Scanner-authored
 // report metadata (IDs, source types, etc.) is the primary taint
-// source — a compromised agent could submit a report whose ID is
+// source — a compromised sensor could submit a report whose ID is
 //
 //	"run-42\nWARN: admin force-logout"
 //

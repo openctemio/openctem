@@ -11,24 +11,24 @@ import (
 
 // AuditLog represents an audit log entry.
 type AuditLog struct {
-	id           shared.ID
-	tenantID     *shared.ID // nil for global/system events
-	actorID      *shared.ID // User who performed the action (nil for system)
-	actorEmail   string     // Email of actor (for display when user deleted)
-	actorIP      string     // IP address of actor
-	actorAgent   string     // User agent string
-	action       Action
-	resourceType ResourceType
-	resourceID   string // ID of the affected resource
-	resourceName string // Name/title for display (e.g., repository name)
-	changes      *Changes
-	result       Result
-	severity     Severity
-	message      string         // Human-readable description
-	metadata     map[string]any // Additional context
-	requestID    string         // Request tracing ID
-	sessionID    string         // Session ID if applicable
-	timestamp    time.Time
+	id             shared.ID
+	tenantID       *shared.ID // nil for global/system events
+	actorID        *shared.ID // User who performed the action (nil for system)
+	actorEmail     string     // Email of actor (for display when user deleted)
+	actorIP        string     // IP address of actor
+	actorUserAgent string     // User agent string
+	action         Action
+	resourceType   ResourceType
+	resourceID     string // ID of the affected resource
+	resourceName   string // Name/title for display (e.g., repository name)
+	changes        *Changes
+	result         Result
+	severity       Severity
+	message        string         // Human-readable description
+	metadata       map[string]any // Additional context
+	requestID      string         // Request tracing ID
+	sessionID      string         // Session ID if applicable
+	timestamp      time.Time
 }
 
 // NewAuditLog creates a new audit log entry.
@@ -70,7 +70,7 @@ func Reconstitute(
 	actorID *shared.ID,
 	actorEmail string,
 	actorIP string,
-	actorAgent string,
+	actorUserAgent string,
 	action Action,
 	resourceType ResourceType,
 	resourceID string,
@@ -88,24 +88,24 @@ func Reconstitute(
 		metadata = make(map[string]any)
 	}
 	return &AuditLog{
-		id:           id,
-		tenantID:     tenantID,
-		actorID:      actorID,
-		actorEmail:   actorEmail,
-		actorIP:      actorIP,
-		actorAgent:   actorAgent,
-		action:       action,
-		resourceType: resourceType,
-		resourceID:   resourceID,
-		resourceName: resourceName,
-		changes:      changes,
-		result:       result,
-		severity:     severity,
-		message:      message,
-		metadata:     metadata,
-		requestID:    requestID,
-		sessionID:    sessionID,
-		timestamp:    timestamp,
+		id:             id,
+		tenantID:       tenantID,
+		actorID:        actorID,
+		actorEmail:     actorEmail,
+		actorIP:        actorIP,
+		actorUserAgent: actorUserAgent,
+		action:         action,
+		resourceType:   resourceType,
+		resourceID:     resourceID,
+		resourceName:   resourceName,
+		changes:        changes,
+		result:         result,
+		severity:       severity,
+		message:        message,
+		metadata:       metadata,
+		requestID:      requestID,
+		sessionID:      sessionID,
+		timestamp:      timestamp,
 	}
 }
 
@@ -136,9 +136,9 @@ func (a *AuditLog) ActorIP() string {
 	return a.actorIP
 }
 
-// ActorAgent returns the actor user agent.
-func (a *AuditLog) ActorAgent() string {
-	return a.actorAgent
+// ActorUserAgent returns the actor user agent.
+func (a *AuditLog) ActorUserAgent() string {
+	return a.actorUserAgent
 }
 
 // Action returns the action.
@@ -237,9 +237,9 @@ func (a *AuditLog) WithActorIP(ip string) *AuditLog {
 	return a
 }
 
-// WithActorAgent sets the actor user agent.
-func (a *AuditLog) WithActorAgent(agent string) *AuditLog {
-	a.actorAgent = agent
+// WithActorUserAgent sets the actor user agent.
+func (a *AuditLog) WithActorUserAgent(sensor string) *AuditLog {
+	a.actorUserAgent = sensor
 	return a
 }
 

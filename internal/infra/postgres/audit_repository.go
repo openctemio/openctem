@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
@@ -57,7 +59,7 @@ func (r *AuditRepository) Create(ctx context.Context, log *audit.AuditLog) error
 		nullableID(log.ActorID()),
 		nullString(log.ActorEmail()),
 		nullString(log.ActorIP()),
-		nullString(log.ActorAgent()),
+		nullString(log.ActorUserAgent()),
 		log.Action().String(),
 		log.ResourceType().String(),
 		nullString(log.ResourceID()),
@@ -117,7 +119,7 @@ func (r *AuditRepository) CreateBatch(ctx context.Context, logs []*audit.AuditLo
 			nullableID(log.ActorID()),
 			nullString(log.ActorEmail()),
 			nullString(log.ActorIP()),
-			nullString(log.ActorAgent()),
+			nullString(log.ActorUserAgent()),
 			log.Action().String(),
 			log.ResourceType().String(),
 			nullString(log.ResourceID()),
@@ -301,8 +303,13 @@ func (r *AuditRepository) DeleteOlderThanForTenant(ctx context.Context, tenantID
 // GetLatestByResource retrieves the latest audit log for a resource within a tenant.
 // tenantID is required to prevent cross-tenant reads (F-2).
 func (r *AuditRepository) GetLatestByResource(ctx context.Context, tenantID shared.ID, resourceType audit.ResourceType, resourceID string) (*audit.AuditLog, error) {
-	query := r.selectQuery() + ` WHERE tenant_id = $1 AND resource_type = $2 AND resource_id = $3 ORDER BY logged_at DESC LIMIT 1`
-	row := r.db.QueryRowContext(ctx, query, tenantID.String(), resourceType.String(), resourceID)
+	types := audit.WithHistoricalResourceTypes([]audit.ResourceType{resourceType})
+	typeNames := make([]string, len(types))
+	for i, t := range types {
+		typeNames[i] = t.String()
+	}
+	query := r.selectQuery() + ` WHERE tenant_id = $1 AND resource_type = ANY($2) AND resource_id = $3 ORDER BY logged_at DESC LIMIT 1`
+	row := r.db.QueryRowContext(ctx, query, tenantID.String(), pq.Array(typeNames), resourceID)
 
 	log, err := r.scanAuditLog(row, nil)
 	if err != nil {
@@ -342,12 +349,17 @@ func (r *AuditRepository) CountByAction(ctx context.Context, tenantID *shared.ID
 	var query string
 	var args []any
 
+	actions := audit.WithHistoricalActions([]audit.Action{action})
+	names := make([]string, len(actions))
+	for i, a := range actions {
+		names[i] = a.String()
+	}
 	if tenantID != nil {
-		query = `SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = $2 AND logged_at >= $3`
-		args = []any{tenantID.String(), action.String(), since}
+		query = `SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = ANY($2) AND logged_at >= $3`
+		args = []any{tenantID.String(), pq.Array(names), since}
 	} else {
-		query = `SELECT COUNT(*) FROM audit_logs WHERE action = $1 AND logged_at >= $2`
-		args = []any{action.String(), since}
+		query = `SELECT COUNT(*) FROM audit_logs WHERE action = ANY($1) AND logged_at >= $2`
+		args = []any{pq.Array(names), since}
 	}
 
 	var count int64
@@ -391,28 +403,28 @@ func (r *AuditRepository) scanAuditLogFromRows(rows *sql.Rows) (*audit.AuditLog,
 
 func (r *AuditRepository) doScan(scan func(dest ...any) error) (*audit.AuditLog, error) {
 	var (
-		idStr        string
-		tenantIDStr  sql.NullString
-		actorIDStr   sql.NullString
-		actorEmail   sql.NullString
-		actorIP      sql.NullString
-		actorAgent   sql.NullString
-		actionStr    string
-		resourceType string
-		resourceID   sql.NullString
-		resourceName sql.NullString
-		changesJSON  []byte
-		resultStr    string
-		severityStr  string
-		message      sql.NullString
-		metadataJSON []byte
-		requestID    sql.NullString
-		sessionID    sql.NullString
-		logged_at    time.Time
+		idStr          string
+		tenantIDStr    sql.NullString
+		actorIDStr     sql.NullString
+		actorEmail     sql.NullString
+		actorIP        sql.NullString
+		actorUserAgent sql.NullString
+		actionStr      string
+		resourceType   string
+		resourceID     sql.NullString
+		resourceName   sql.NullString
+		changesJSON    []byte
+		resultStr      string
+		severityStr    string
+		message        sql.NullString
+		metadataJSON   []byte
+		requestID      sql.NullString
+		sessionID      sql.NullString
+		logged_at      time.Time
 	)
 
 	err := scan(
-		&idStr, &tenantIDStr, &actorIDStr, &actorEmail, &actorIP, &actorAgent,
+		&idStr, &tenantIDStr, &actorIDStr, &actorEmail, &actorIP, &actorUserAgent,
 		&actionStr, &resourceType, &resourceID, &resourceName,
 		&changesJSON, &resultStr, &severityStr, &message, &metadataJSON,
 		&requestID, &sessionID, &logged_at,
@@ -465,7 +477,7 @@ func (r *AuditRepository) doScan(scan func(dest ...any) error) (*audit.AuditLog,
 		actorID,
 		nullStringValue(actorEmail),
 		nullStringValue(actorIP),
-		nullStringValue(actorAgent),
+		nullStringValue(actorUserAgent),
 		audit.Action(actionStr),
 		audit.ResourceType(resourceType),
 		nullStringValue(resourceID),
@@ -498,9 +510,11 @@ func (r *AuditRepository) buildWhereClause(filter audit.Filter) (string, []any) 
 		argIndex++
 	}
 
-	if len(filter.Actions) > 0 {
-		placeholders := make([]string, len(filter.Actions))
-		for i, action := range filter.Actions {
+	// A sensor action or resource type also matches the rows written before
+	// the agent → sensor rename (audit.WithHistoricalActions).
+	if actions := audit.WithHistoricalActions(filter.Actions); len(actions) > 0 {
+		placeholders := make([]string, len(actions))
+		for i, action := range actions {
 			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, action.String())
 			argIndex++
@@ -508,9 +522,9 @@ func (r *AuditRepository) buildWhereClause(filter audit.Filter) (string, []any) 
 		conditions = append(conditions, fmt.Sprintf("action IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
-	if len(filter.ResourceTypes) > 0 {
-		placeholders := make([]string, len(filter.ResourceTypes))
-		for i, rt := range filter.ResourceTypes {
+	if types := audit.WithHistoricalResourceTypes(filter.ResourceTypes); len(types) > 0 {
+		placeholders := make([]string, len(types))
+		for i, rt := range types {
 			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, rt.String())
 			argIndex++

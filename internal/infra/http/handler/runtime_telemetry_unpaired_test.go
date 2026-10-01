@@ -13,7 +13,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/api/pkg/domain/agent"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 )
@@ -21,8 +21,8 @@ import (
 // endpoint_asset_id is nullable, and nothing will ever fill it in later.
 //
 // Migration 000155 promised "a nightly reconciler job pairs events with assets
-// by agent_id". That job was never written and could not be: `agents` has no
-// asset column, `assets` has no agent column, and there is no join table — so
+// by sensor_id". That job was never written and could not be: `sensors` has no
+// asset column, `assets` has no sensor column, and there is no join table — so
 // there is no key to pair BY. It is also the wrong idea, because only the
 // producer knows which endpoint an event describes; an EDR/XDR forwarder
 // reports on many hosts.
@@ -80,7 +80,7 @@ func seedTelemetryAsset(t *testing.T, db *sql.DB, tenantID shared.ID) shared.ID 
 	return id
 }
 
-// ingestEvents posts a batch as an authenticated tenant agent and returns the
+// ingestEvents posts a batch as an authenticated tenant sensor and returns the
 // decoded response.
 func ingestEvents(t *testing.T, db *sql.DB, tenantID shared.ID, events []map[string]any) ingestResponse {
 	t.Helper()
@@ -94,8 +94,8 @@ func ingestEvents(t *testing.T, db *sql.DB, tenantID shared.ID, events []map[str
 
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/telemetry-events", bytes.NewReader(body))
 	tid := tenantID
-	agt := &agent.Agent{ID: shared.NewID(), TenantID: &tid, Status: agent.AgentStatusActive}
-	r = r.WithContext(context.WithValue(r.Context(), agentContextKey, agt))
+	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
+	r = r.WithContext(context.WithValue(r.Context(), sensorContextKey, agt))
 
 	w := httptest.NewRecorder()
 	h.Ingest(w, r)

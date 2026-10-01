@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/api/pkg/domain/agent"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	tooldomcat "github.com/openctemio/api/pkg/domain/toolcategory"
@@ -29,7 +29,7 @@ type Service struct {
 	toolRepo            tooldom.Repository
 	configRepo          tooldom.TenantToolConfigRepository
 	executionRepo       tooldom.ToolExecutionRepository
-	agentRepo           agent.Repository      // For checking tool availability
+	sensorRepo          sensor.Repository     // For checking tool availability
 	categoryRepo        tooldomcat.Repository // For fetching category info
 	pipelineDeactivator PipelineDeactivator   // For cascade deactivation when tool is disabled/deleted
 	logger              *logger.Logger
@@ -50,10 +50,10 @@ func NewService(
 	}
 }
 
-// SetAgentRepo sets the agent repository for tool availability checks.
+// SetSensorRepo sets the sensor repository for tool availability checks.
 // This is optional - if not set, IsAvailable will always be true.
-func (s *Service) SetAgentRepo(repo agent.Repository) {
-	s.agentRepo = repo
+func (s *Service) SetSensorRepo(repo sensor.Repository) {
+	s.sensorRepo = repo
 }
 
 // SetCategoryRepo sets the category repository for fetching category info.
@@ -268,7 +268,7 @@ func (s *Service) UpdateTool(ctx context.Context, input UpdateInput) (*tooldom.T
 
 	// Tenant scoping: a tenant may only manage its OWN custom tools. Platform/
 	// builtin tools are not tenant-editable — without this a tenant admin could
-	// rewrite a shared scanner's install/version command (executed by agents
+	// rewrite a shared scanner's install/version command (executed by sensors
 	// across all tenants) or tamper with another tenant's custom tool.
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -1191,10 +1191,10 @@ func (s *Service) ListToolsWithConfig(ctx context.Context, input ListToolsWithCo
 		return result, err
 	}
 
-	// Enrich with tool availability info if agentRepo is available
-	if s.agentRepo != nil {
-		// Get all tools that have at least one agent available
-		availableTools, err := s.agentRepo.GetAvailableToolsForTenant(ctx, tenantID)
+	// Enrich with tool availability info if sensorRepo is available
+	if s.sensorRepo != nil {
+		// Get all tools that have at least one sensor available
+		availableTools, err := s.sensorRepo.GetAvailableToolsForTenant(ctx, tenantID)
 		if err != nil {
 			s.logger.Warn("Failed to get available tools, defaulting to all available",
 				"error", err, "tenant_id", tenantID)
@@ -1215,7 +1215,7 @@ func (s *Service) ListToolsWithConfig(ctx context.Context, input ListToolsWithCo
 			}
 		}
 	} else {
-		// No agent repo, default to all available
+		// No sensor repo, default to all available
 		for _, twc := range result.Data {
 			twc.IsAvailable = true
 		}
@@ -1289,7 +1289,7 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 type RecordToolExecutionInput struct {
 	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
 	ToolID        string         `json:"tool_id" validate:"required,uuid"`
-	AgentID       string         `json:"agent_id" validate:"omitempty,uuid"`
+	SensorID      string         `json:"sensor_id" validate:"omitempty,uuid"`
 	PipelineRunID string         `json:"pipeline_run_id" validate:"omitempty,uuid"`
 	StepRunID     string         `json:"step_run_id" validate:"omitempty,uuid"`
 	InputConfig   map[string]any `json:"input_config"`
@@ -1308,16 +1308,16 @@ func (s *Service) RecordToolExecution(ctx context.Context, input RecordToolExecu
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	var agentID *shared.ID
-	if input.AgentID != "" {
-		aid, err := shared.IDFromString(input.AgentID)
+	var sensorID *shared.ID
+	if input.SensorID != "" {
+		aid, err := shared.IDFromString(input.SensorID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid agent id", shared.ErrValidation)
+			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 		}
-		agentID = &aid
+		sensorID = &aid
 	}
 
-	execution := tooldom.NewToolExecution(tenantID, toolID, agentID, input.InputConfig, input.TargetsCount)
+	execution := tooldom.NewToolExecution(tenantID, toolID, sensorID, input.InputConfig, input.TargetsCount)
 
 	// Set optional pipeline/step run IDs
 	if input.PipelineRunID != "" {
@@ -1462,7 +1462,7 @@ func (s *Service) GetTenantToolStats(ctx context.Context, tenantID string, days 
 type ListToolExecutionsInput struct {
 	TenantID      string `json:"tenant_id" validate:"required,uuid"`
 	ToolID        string `json:"tool_id" validate:"omitempty,uuid"`
-	AgentID       string `json:"agent_id" validate:"omitempty,uuid"`
+	SensorID      string `json:"sensor_id" validate:"omitempty,uuid"`
 	PipelineRunID string `json:"pipeline_run_id" validate:"omitempty,uuid"`
 	Status        string `json:"status" validate:"omitempty,oneof=running completed failed timeout"`
 	Page          int    `json:"page"`
@@ -1488,12 +1488,12 @@ func (s *Service) ListToolExecutions(ctx context.Context, input ListToolExecutio
 		filter.ToolID = &toolID
 	}
 
-	if input.AgentID != "" {
-		agentID, err := shared.IDFromString(input.AgentID)
+	if input.SensorID != "" {
+		sensorID, err := shared.IDFromString(input.SensorID)
 		if err != nil {
-			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid agent id", shared.ErrValidation)
+			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 		}
-		filter.AgentID = &agentID
+		filter.SensorID = &sensorID
 	}
 
 	if input.PipelineRunID != "" {

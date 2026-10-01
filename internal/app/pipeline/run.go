@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/scanprofile"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // ========== Run Operations (Orchestration) ==========
@@ -179,7 +180,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 	metrics.PipelineRunsInProgress.WithLabelValues(tenantID.String()).Inc()
 
 	// Schedule initial runnable steps (no dependencies)
-	// This creates commands that agents will poll and execute
+	// This creates commands that sensors will poll and execute
 	if err := s.scheduleRunnableSteps(ctx, run, template); err != nil {
 		s.logger.Error("failed to schedule initial steps", "error", err)
 	}
@@ -196,7 +197,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 }
 
 // scheduleRunnableSteps creates commands for steps that are ready to run.
-// Agents will poll these commands and execute them.
+// Sensors will poll these commands and execute them.
 // Respects MaxParallelSteps setting to limit concurrent step execution.
 func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, template *pipeline.Template) error {
 	s.logger.Info("scheduling runnable steps", "run_id", run.ID.String())
@@ -262,7 +263,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 			continue
 		}
 
-		// Queue the step - create a command that agents can poll
+		// Queue the step - create a command that sensors can poll
 		if err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings); err != nil {
 			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
 			stepRun.Fail("Failed to queue: "+err.Error(), "QUEUE_ERROR")
@@ -281,9 +282,9 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *pipeline.Run, 
 
 // queueStepForExecutionWithSettings creates a command with specific settings.
 func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, settings pipeline.Settings) error {
-	s.logger.Info("queueing step for execution", "step_key", step.StepKey, "tool", step.Tool, "agent_preference", settings.AgentPreference)
+	s.logger.Info("queueing step for execution", "step_key", step.StepKey, "tool", step.Tool, "sensor_preference", settings.SensorPreference)
 
-	// Security validation: Last line of defense before sending to agent
+	// Security validation: Last line of defense before sending to sensor
 	if s.securityValidator != nil {
 		result := s.securityValidator.ValidateStepConfig(ctx, run.TenantID, step.Tool, step.Capabilities, step.Config)
 		if !result.Valid {
@@ -297,23 +298,23 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 
 	// Create command payload with step info
 	payload := map[string]any{
-		"pipeline_run_id":       run.ID.String(),
-		"step_run_id":           stepRun.ID.String(),
-		"step_id":               step.ID.String(),
-		"step_key":              step.StepKey,
-		"step_config":           step.Config,
-		"required_capabilities": step.Capabilities,
-		"preferred_tool":        step.Tool,
-		"timeout_seconds":       step.TimeoutSeconds,
-		"context":               run.Context,
-		"agent_preference":      string(settings.AgentPreference),
+		"pipeline_run_id":                   run.ID.String(),
+		"step_run_id":                       stepRun.ID.String(),
+		"step_id":                           step.ID.String(),
+		"step_key":                          step.StepKey,
+		"step_config":                       step.Config,
+		"required_capabilities":             step.Capabilities,
+		"preferred_tool":                    step.Tool,
+		"timeout_seconds":                   step.TimeoutSeconds,
+		"context":                           run.Context,
+		legacyv1.PayloadKeySensorPreference: string(settings.SensorPreference),
 	}
 
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
 	}
 
-	// Final payload validation before sending to agent
+	// Final payload validation before sending to sensor
 	if s.securityValidator != nil {
 		result := s.securityValidator.ValidateCommandPayload(ctx, run.TenantID, payload)
 		if !result.Valid {
@@ -336,22 +337,22 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		return err
 	}
 
-	// Determine agent routing based on preference
-	usePlatform, agentID := s.determineAgentRouting(ctx, run.TenantID, step.Tool, settings.AgentPreference)
+	// Determine sensor routing based on preference
+	usePlatform, sensorID := s.determineSensorRouting(ctx, run.TenantID, step.Tool, settings.SensorPreference)
 
 	//nolint:gocritic // if-else chain is clearer than switch for bool+pointer conditions
 	if usePlatform {
-		// Route to platform agents
+		// Route to platform sensors
 		initialPriority := s.calculatePipelineInitialPriority(cmd.Priority)
 		cmd.SetPlatformJob(initialPriority)
-		s.logger.Info("routing step to platform agents", "step_key", step.StepKey)
-	} else if agentID != nil {
-		// Route to specific tenant agent
-		cmd.SetAgentID(*agentID)
-		s.logger.Info("routing step to tenant agent", "step_key", step.StepKey, "agent_id", agentID.String())
+		s.logger.Info("routing step to platform sensors", "step_key", step.StepKey)
+	} else if sensorID != nil {
+		// Route to specific tenant sensor
+		cmd.SetSensorID(*sensorID)
+		s.logger.Info("routing step to tenant sensor", "step_key", step.StepKey, "sensor_id", sensorID.String())
 	} else {
-		// No specific agent, command available to any tenant agent
-		s.logger.Info("no specific agent assigned, command available to all tenant agents", "step_key", step.StepKey)
+		// No specific sensor, command available to any tenant sensor
+		s.logger.Info("no specific sensor assigned, command available to all tenant sensors", "step_key", step.StepKey)
 	}
 
 	if err := s.commandRepo.Create(ctx, cmd); err != nil {
@@ -364,35 +365,35 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	return s.stepRunRepo.Update(ctx, stepRun)
 }
 
-// determineAgentRouting determines whether to use platform agents and which specific agent to use.
-func (s *Service) determineAgentRouting(ctx context.Context, tenantID shared.ID, tool string, pref pipeline.AgentPreference) (usePlatform bool, agentID *shared.ID) {
+// determineSensorRouting determines whether to use platform sensors and which specific sensor to use.
+func (s *Service) determineSensorRouting(ctx context.Context, tenantID shared.ID, tool string, pref pipeline.SensorPreference) (usePlatform bool, sensorID *shared.ID) {
 	// If explicitly set to tenant only, never use platform
-	if pref == pipeline.AgentPreferenceTenant {
-		// Try to find a tenant agent with the required tool
+	if pref == pipeline.SensorPreferenceTenant {
+		// Try to find a tenant sensor with the required tool
 		if tool != "" {
-			foundAgent, err := s.agentRepo.FindAvailableWithTool(ctx, tenantID, tool)
-			if err == nil && foundAgent != nil {
-				return false, &foundAgent.ID
+			foundSensor, err := s.sensorRepo.FindAvailableWithTool(ctx, tenantID, tool)
+			if err == nil && foundSensor != nil {
+				return false, &foundSensor.ID
 			}
 		}
 		return false, nil
 	}
 
 	// If explicitly set to platform only, always use platform
-	if pref == pipeline.AgentPreferencePlatform {
-		// Check if tenant can use platform agents
-		if s.agentSelector != nil {
-			canUse, _ := s.agentSelector.CanUsePlatformAgents(ctx, tenantID)
+	if pref == pipeline.SensorPreferencePlatform {
+		// Check if tenant can use platform sensors
+		if s.sensorSelector != nil {
+			canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, tenantID)
 			if canUse {
 				return true, nil
 			}
 		}
-		// Fall through to try tenant agents if platform not available
+		// Fall through to try tenant sensors if platform not available
 	}
 
-	// For "auto" mode (or platform fallback), use AgentSelector if available
-	if s.agentSelector != nil {
-		result, err := s.agentSelector.SelectAgent(ctx, SelectAgentRequest{
+	// For "auto" mode (or platform fallback), use SensorSelector if available
+	if s.sensorSelector != nil {
+		result, err := s.sensorSelector.SelectSensor(ctx, SelectSensorRequest{
 			TenantID:     tenantID,
 			Capabilities: []string{tool},
 			Tool:         tool,
@@ -403,17 +404,17 @@ func (s *Service) determineAgentRouting(ctx context.Context, tenantID shared.ID,
 			if result.IsPlatform {
 				return true, nil
 			}
-			if result.Agent != nil {
-				return false, &result.Agent.ID
+			if result.Sensor != nil {
+				return false, &result.Sensor.ID
 			}
 		}
 	}
 
-	// Fallback: try to find tenant agent
+	// Fallback: try to find tenant sensor
 	if tool != "" {
-		foundAgent, err := s.agentRepo.FindAvailableWithTool(ctx, tenantID, tool)
-		if err == nil && foundAgent != nil {
-			return false, &foundAgent.ID
+		foundSensor, err := s.sensorRepo.FindAvailableWithTool(ctx, tenantID, tool)
+		if err == nil && foundSensor != nil {
+			return false, &foundSensor.ID
 		}
 	}
 
@@ -451,7 +452,7 @@ func (s *Service) recordScanRun(ctx context.Context, run *pipeline.Run, status s
 	}
 }
 
-// OnStepCompleted is called when an agent reports step completion.
+// OnStepCompleted is called when a sensor reports step completion.
 // This triggers scheduling of dependent steps.
 func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any) error {
 	s.logger.Info("step completed", "run_id", runID, "step_key", stepKey, "findings", findingsCount)
@@ -556,7 +557,7 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 	return s.scheduleRunnableSteps(ctx, run, template)
 }
 
-// OnStepFailed is called when an agent reports step failure.
+// OnStepFailed is called when a sensor reports step failure.
 func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error {
 	s.logger.Info("step failed", "run_id", runID, "step_key", stepKey, "error", errorMessage)
 
@@ -858,7 +859,7 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 		return err
 	}
 
-	// Cancel all in-flight commands belonging to this run so agents stop work.
+	// Cancel all in-flight commands belonging to this run so sensors stop work.
 	if s.commandRepo != nil {
 		canceled, cancelErr := s.commandRepo.CancelByPipelineRunID(ctx, run.TenantID, run.ID)
 		if cancelErr != nil {
@@ -879,7 +880,7 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	return nil
 }
 
-// CompleteStepRun marks a step run as completed (called by agent).
+// CompleteStepRun marks a step run as completed (called by sensor).
 func (s *Service) CompleteStepRun(ctx context.Context, stepRunID string, findingsCount int, output map[string]any) error {
 	srid, err := shared.IDFromString(stepRunID)
 	if err != nil {
@@ -889,7 +890,7 @@ func (s *Service) CompleteStepRun(ctx context.Context, stepRunID string, finding
 	return s.stepRunRepo.Complete(ctx, srid, findingsCount, output)
 }
 
-// FailStepRun marks a step run as failed (called by agent).
+// FailStepRun marks a step run as failed (called by sensor).
 func (s *Service) FailStepRun(ctx context.Context, stepRunID, errorMessage, errorCode string) error {
 	srid, err := shared.IDFromString(stepRunID)
 	if err != nil {

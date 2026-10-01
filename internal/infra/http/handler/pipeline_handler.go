@@ -63,7 +63,7 @@ type PipelineSettingsRequest struct {
 	NotifyOnComplete     bool     `json:"notify_on_complete"`
 	NotifyOnFailure      bool     `json:"notify_on_failure"`
 	NotificationChannels []string `json:"notification_channels"`
-	AgentPreference      string   `json:"agent_preference" validate:"omitempty,oneof=auto tenant platform"`
+	SensorPreference     string   `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 }
 
 // UIPositionRequest represents a visual position in the workflow builder.
@@ -132,7 +132,7 @@ type PipelineSettingsResponse struct {
 	NotifyOnComplete     bool     `json:"notify_on_complete"`
 	NotifyOnFailure      bool     `json:"notify_on_failure"`
 	NotificationChannels []string `json:"notification_channels,omitempty"`
-	AgentPreference      string   `json:"agent_preference"`
+	SensorPreference     string   `json:"sensor_preference"`
 }
 
 // UIPositionResponse represents a visual position in the workflow builder response.
@@ -875,8 +875,8 @@ func toSettings(settings *PipelineSettingsRequest) *pipeline.Settings {
 		NotifyOnFailure:      settings.NotifyOnFailure,
 		NotificationChannels: settings.NotificationChannels,
 	}
-	if settings.AgentPreference != "" {
-		s.AgentPreference = pipeline.AgentPreference(settings.AgentPreference)
+	if settings.SensorPreference != "" {
+		s.SensorPreference = pipeline.SensorPreference(settings.SensorPreference)
 	}
 	return s
 }
@@ -934,7 +934,7 @@ func toTemplateResponse(t *pipeline.Template) *TemplateResponse {
 			NotifyOnComplete:     t.Settings.NotifyOnComplete,
 			NotifyOnFailure:      t.Settings.NotifyOnFailure,
 			NotificationChannels: t.Settings.NotificationChannels,
-			AgentPreference:      string(t.Settings.AgentPreference),
+			SensorPreference:     string(t.Settings.SensorPreference),
 		},
 		Tags:      t.Tags,
 		Steps:     steps,

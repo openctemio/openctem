@@ -22,10 +22,11 @@ import (
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/internal/metrics"
 	"github.com/openctemio/api/pkg/apierror"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/ingestjob"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/ctis"
 )
 
@@ -45,13 +46,13 @@ type ChunkData struct {
 // contextKey is a custom type for context keys.
 type contextKey string
 
-const agentContextKey contextKey = "agent"
+const sensorContextKey contextKey = "sensor"
 
 // IngestHandler handles ingestion-related HTTP requests.
 // It supports CTIS, SARIF, Recon, and raw scanner output formats.
 type IngestHandler struct {
 	ingestService   *ingest.Service
-	agentService    *app.AgentService
+	sensorService   *app.SensorService
 	adapterRegistry *adapters.Registry
 	logger          *logger.Logger
 
@@ -74,12 +75,12 @@ func (h *IngestHandler) SetAsyncIngest(repo ingestjob.Repository, maxPendingPerT
 // NewIngestHandler creates a new ingest handler.
 func NewIngestHandler(
 	ingestSvc *ingest.Service,
-	agentSvc *app.AgentService,
+	sensorSvc *app.SensorService,
 	log *logger.Logger,
 ) *IngestHandler {
 	return &IngestHandler{
 		ingestService:   ingestSvc,
-		agentService:    agentSvc,
+		sensorService:   sensorSvc,
 		adapterRegistry: adapters.NewRegistry(),
 		logger:          log,
 	}
@@ -190,7 +191,7 @@ type DiscoveredURLResult struct {
 	Extension  string `json:"extension,omitempty"`
 }
 
-// HeartbeatRequest represents the heartbeat payload from agents.
+// HeartbeatRequest represents the heartbeat payload from sensors.
 type HeartbeatRequest struct {
 	Name          string   `json:"name,omitempty"`
 	Status        string   `json:"status"`
@@ -207,7 +208,7 @@ type HeartbeatRequest struct {
 	ActiveJobs    int      `json:"active_jobs,omitempty"`
 	Region        string   `json:"region,omitempty"`
 
-	// Disk/network throughput in MB/s. Optional — agents that omit them leave
+	// Disk/network throughput in MB/s. Optional — sensors that omit them leave
 	// the corresponding load-balancing terms at zero. Accepted here so the
 	// AGENT_LB_DISK_IO_WEIGHT / AGENT_LB_NETWORK_WEIGHT knobs have real inputs.
 	DiskReadMBPS  float64 `json:"disk_read_mbps,omitempty"`
@@ -255,7 +256,7 @@ type ChunkIngestResponse struct {
 // Authentication Middleware
 // =============================================================================
 
-// AuthenticateSource is middleware that authenticates the agent by API key.
+// AuthenticateSource is middleware that authenticates the sensor by API key.
 func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiKey := extractAPIKey(r)
@@ -264,22 +265,22 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 			return
 		}
 
-		agt, err := h.agentService.AuthenticateByAPIKey(r.Context(), apiKey)
+		agt, err := h.sensorService.AuthenticateByAPIKey(r.Context(), apiKey)
 		if err != nil {
 			h.logger.Debug("authentication failed", "error", err)
 			apierror.Unauthorized("Invalid API key").WriteJSON(w)
 			return
 		}
 
-		// Add agent to context
-		ctx := context.WithValue(r.Context(), agentContextKey, agt)
-		// Expose the authenticated agent's tenant to tenant-keyed
+		// Add sensor to context
+		ctx := context.WithValue(r.Context(), sensorContextKey, agt)
+		// Expose the authenticated sensor's tenant to tenant-keyed
 		// middleware that runs later in the chain (ingest/telemetry
-		// rate limiters). Agent API-key auth is the tenant-binding
+		// rate limiters). Sensor API-key auth is the tenant-binding
 		// authority on these routes; without this the per-tenant rate
 		// limiters key on an empty string and pass through every
 		// request — the "compromised key replays at line rate" abuse
-		// the limiters exist to stop. Platform agents (nil tenant)
+		// the limiters exist to stop. Platform sensors (nil tenant)
 		// are rejected by the per-handler nil-tenant guards before
 		// they act, so we only need the common tenant-bound case here.
 		if agt.TenantID != nil {
@@ -289,46 +290,46 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 	})
 }
 
-// AgentFromContext retrieves the authenticated agent from context.
-func AgentFromContext(ctx context.Context) *agent.Agent {
-	agt, _ := ctx.Value(agentContextKey).(*agent.Agent)
+// SensorFromContext retrieves the authenticated sensor from context.
+func SensorFromContext(ctx context.Context) *sensor.Sensor {
+	agt, _ := ctx.Value(sensorContextKey).(*sensor.Sensor)
 	return agt
 }
 
-// requireAgentTenant verifies the authenticated agent carries tenant context,
-// writing a 403 and returning false for platform agents (tenant_id NULL) that
+// requireSensorTenant verifies the authenticated sensor carries tenant context,
+// writing a 403 and returning false for platform sensors (tenant_id NULL) that
 // have no business performing these tenant-scoped operations. Mirrors the
 // scansession handler's guard and prevents a nil-pointer deref of
 // agt.TenantID (recovered as a 500) on the command / telemetry / chunk-ingest
 // paths. Callers must return immediately when it returns false.
-func requireAgentTenant(w http.ResponseWriter, agt *agent.Agent) bool {
+func requireSensorTenant(w http.ResponseWriter, agt *sensor.Sensor) bool {
 	if agt.TenantID == nil {
-		apierror.Forbidden("Platform agents require tenant context for this operation").WriteJSON(w)
+		apierror.Forbidden(legacyv1.MsgTenantContextRequired).WriteJSON(w)
 		return false
 	}
 	return true
 }
 
-// agentTenantString returns the agent's tenant ID as a string, or "" when the
-// agent has no tenant (platform agent). For informational log/response fields
+// sensorTenantString returns the sensor's tenant ID as a string, or "" when the
+// sensor has no tenant (platform sensor). For informational log/response fields
 // where a missing tenant must not panic.
-func agentTenantString(agt *agent.Agent) string {
+func sensorTenantString(agt *sensor.Sensor) string {
 	if agt == nil || agt.TenantID == nil {
 		return ""
 	}
 	return agt.TenantID.String()
 }
 
-// WorkerFromContext is an alias for AgentFromContext for backward compatibility.
-// Deprecated: Use AgentFromContext instead.
-func WorkerFromContext(ctx context.Context) *agent.Agent {
-	return AgentFromContext(ctx)
+// WorkerFromContext is an alias for SensorFromContext for backward compatibility.
+// Deprecated: Use SensorFromContext instead.
+func WorkerFromContext(ctx context.Context) *sensor.Sensor {
+	return SensorFromContext(ctx)
 }
 
-// SourceFromContext is an alias for AgentFromContext for backward compatibility.
-// Deprecated: Use AgentFromContext instead.
-func SourceFromContext(ctx context.Context) *agent.Agent {
-	return AgentFromContext(ctx)
+// SourceFromContext is an alias for SensorFromContext for backward compatibility.
+// Deprecated: Use SensorFromContext instead.
+func SourceFromContext(ctx context.Context) *sensor.Sensor {
+	return SensorFromContext(ctx)
 }
 
 // =============================================================================
@@ -338,7 +339,7 @@ func SourceFromContext(ctx context.Context) *agent.Agent {
 // IngestCTIS handles POST /api/v1/agent/ingest/ctis
 // @Summary      Ingest CTIS report
 // @Description  Ingest a full CTIS (CTEM Ingest Schema) report containing assets and findings
-// @Tags         Agent
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        request  body      CTISIngestRequest  true  "CTIS report"
@@ -349,9 +350,9 @@ func SourceFromContext(ctx context.Context) *agent.Agent {
 // @Security     ApiKeyAuth
 // @Router       /agent/ingest/ctis [post]
 func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -364,13 +365,13 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Async mode (RFC-005): persist the raw payload + enqueue, return 202.
-	// Falls through to the synchronous path when async is off or the agent has
-	// no tenant context (platform agents are validated by the sync path).
+	// Falls through to the synchronous path when async is off or the sensor has
+	// no tenant context (platform sensors are validated by the sync path).
 	//
-	// Escape hatch (Phase 2): an agent that can't yet handle 202 + polling can
+	// Escape hatch (Phase 2): a sensor that can't yet handle 202 + polling can
 	// force the legacy synchronous response even on an async-mode deployment via
 	// ?sync=true or the `Prefer: respond-sync` header. This lets operators flip
-	// INGEST_MODE=async globally while older agents opt back to sync until the
+	// INGEST_MODE=async globally while older sensors opt back to sync until the
 	// fleet is updated.
 	if h.asyncMode && h.ingestJobRepo != nil && agt.TenantID != nil && !clientWantsSync(r) {
 		h.enqueueAsync(w, r, agt, bodyBytes)
@@ -381,7 +382,7 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 
 	// Try wrapped format first: { "report": { ... } }.
 	// DisallowUnknownFields rejects fields outside the contract so an
-	// agent cannot smuggle auxiliary keys into the ingest payload.
+	// sensor cannot smuggle auxiliary keys into the ingest payload.
 	var req CTISIngestRequest
 	wrappedDec := json.NewDecoder(bytes.NewReader(bodyBytes))
 	wrappedDec.DisallowUnknownFields()
@@ -438,7 +439,7 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 // IngestSARIF handles POST /api/v1/agent/ingest/sarif
 // @Summary      Ingest SARIF results
 // @Description  Ingest scan results in SARIF 2.1.0 format
-// @Tags         Agent
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        request  body      object  true  "SARIF data"
@@ -449,9 +450,9 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 // @Security     ApiKeyAuth
 // @Router       /agent/ingest/sarif [post]
 func (h *IngestHandler) IngestSARIF(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -498,7 +499,7 @@ func (h *IngestHandler) IngestSARIF(w http.ResponseWriter, r *http.Request) {
 // IngestReconReport handles POST /api/v1/agent/ingest/recon
 // @Summary      Ingest recon results
 // @Description  Ingest reconnaissance scan results (subdomains, DNS, ports, etc.)
-// @Tags         Agent
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        request  body      ReconIngestRequest  true  "Recon results"
@@ -509,9 +510,9 @@ func (h *IngestHandler) IngestSARIF(w http.ResponseWriter, r *http.Request) {
 // @Security     ApiKeyAuth
 // @Router       /agent/ingest/recon [post]
 func (h *IngestHandler) IngestReconReport(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -564,20 +565,20 @@ func (h *IngestHandler) IngestReconReport(w http.ResponseWriter, r *http.Request
 // =============================================================================
 
 // Heartbeat handles POST /api/v1/agent/heartbeat
-// @Summary      Agent heartbeat
-// @Description  Send a heartbeat to indicate agent is alive
-// @Tags         Agent
+// @Summary      Sensor heartbeat
+// @Description  Send a heartbeat to indicate sensor is alive
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        request  body      HeartbeatRequest  false  "Heartbeat data"
-// @Success      200  {object}  map[string]interface{}
+// @Success      200  {object}  legacyv1.Heartbeat
 // @Failure      401  {object}  apierror.Error
 // @Security     ApiKeyAuth
 // @Router       /agent/heartbeat [post]
 func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -590,8 +591,8 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Update agent metrics via service
-	if err := h.agentService.UpdateHeartbeat(r.Context(), agt.ID, app.AgentHeartbeatData{
+	// Update sensor metrics via service
+	if err := h.sensorService.UpdateHeartbeat(r.Context(), agt.ID, app.SensorHeartbeatData{
 		Version:       req.Version,
 		Hostname:      req.Hostname,
 		CPUPercent:    req.CPUPercent,
@@ -603,33 +604,33 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		NetworkRxMBPS: req.NetworkRxMBPS,
 		NetworkTxMBPS: req.NetworkTxMBPS,
 	}); err != nil {
-		h.logger.Error("failed to update agent heartbeat", "error", err, "agent_id", agt.ID)
+		h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", agt.ID)
 		// Don't fail the request - heartbeat should be resilient
 	}
 
-	resp := map[string]interface{}{
-		"status":    "ok",
-		"agent_id":  agt.ID.String(),
-		"tenant_id": agentTenantString(agt), // "" for tenant-less platform agents
+	resp := legacyv1.Heartbeat{
+		SensorID: agt.ID.String(),
+		Status:   "ok",
+		TenantID: sensorTenantString(agt), // "" for tenant-less platform sensors
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
-// RenewKeyResponse is returned by the agent self-renew endpoint. The new key is
+// RenewKeyResponse is returned by the sensor self-renew endpoint. The new key is
 // shown once, exactly like creation/regeneration — the server stores only its hash.
 // ExpiresAt is when the new key stops authenticating (nil/omitted = never
-// expires); the agent uses it to schedule its next renewal.
+// expires); the sensor uses it to schedule its next renewal.
 type RenewKeyResponse struct {
 	APIKey    string     `json:"api_key"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // RenewKey handles POST /api/v1/agent/renew
-// @Summary      Renew agent API key (self-service)
-// @Description  Rotate the calling agent's own API key. Authenticated by the current key; returns a fresh key shown once. The building block for auto-rotating credentials (kubelet-style).
-// @Tags         Agent
+// @Summary      Renew sensor API key (self-service)
+// @Description  Rotate the calling sensor's own API key. Authenticated by the current key; returns a fresh key shown once. The building block for auto-rotating credentials (kubelet-style).
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  RenewKeyResponse
@@ -639,21 +640,21 @@ type RenewKeyResponse struct {
 // @Security     ApiKeyAuth
 // @Router       /agent/renew [post]
 func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
-	newKey, expiresAt, err := h.agentService.RenewAPIKey(r.Context(), agt)
+	newKey, expiresAt, err := h.sensorService.RenewAPIKey(r.Context(), agt)
 	if err != nil {
 		if errors.Is(err, shared.ErrForbidden) {
 			// Disabled/revoked in the auth→renew window. Generic message; log specifics.
-			h.logger.Debug("agent key renewal refused", "agent_id", agt.ID.String(), "error", err)
-			apierror.Forbidden("Agent cannot renew").WriteJSON(w)
+			h.logger.Debug("sensor key renewal refused", "sensor_id", agt.ID.String(), "error", err)
+			apierror.Forbidden(legacyv1.MsgCannotRenew).WriteJSON(w)
 			return
 		}
-		h.logger.Error("agent key renewal failed", "agent_id", agt.ID.String(), "error", err)
+		h.logger.Error("sensor key renewal failed", "sensor_id", agt.ID.String(), "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
@@ -669,7 +670,7 @@ func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
 // CheckFingerprints handles POST /api/v1/ingest/check
 // @Summary      Check fingerprints
 // @Description  Check if fingerprints already exist for deduplication
-// @Tags         Agent
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        request  body      CheckFingerprintsRequest  true  "Fingerprints to check"
@@ -680,9 +681,9 @@ func (h *IngestHandler) RenewKey(w http.ResponseWriter, r *http.Request) {
 // @Security     ApiKeyAuth
 // @Router       /agent/ingest/check [post]
 func (h *IngestHandler) CheckFingerprints(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -733,16 +734,16 @@ type BaselineDiffRequest struct {
 // @Description  Given the current scan's fingerprints + a PR base/target branch,
 // @Description  returns which are NEW (not already open on the base branch) so a
 // @Description  PR gate / inline comments focus only on findings the PR introduces.
-// @Tags         Agent
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        request  body      BaselineDiffRequest  true  "Repository, base branch, fingerprints"
 // @Success      200  {object}  ingest.BaselineDiffOutput
 // @Router       /agent/ingest/baseline-diff [post]
 func (h *IngestHandler) BaselineDiff(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -774,7 +775,7 @@ func (h *IngestHandler) BaselineDiff(w http.ResponseWriter, r *http.Request) {
 // IngestChunk handles POST /api/v1/agent/ingest/chunk
 // @Summary      Ingest CTIS report chunk
 // @Description  Ingest a single chunk of a large CTIS report. Used for reports that exceed single upload limits.
-// @Tags         Agent
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        request  body      ChunkIngestRequest  true  "Chunk data"
@@ -787,12 +788,12 @@ func (h *IngestHandler) BaselineDiff(w http.ResponseWriter, r *http.Request) {
 //
 //nolint:cyclop // Chunk ingestion requires handling many result types
 func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
-	if !requireAgentTenant(w, agt) {
+	if !requireSensorTenant(w, agt) {
 		return
 	}
 
@@ -928,7 +929,7 @@ func (h *IngestHandler) IngestChunk(w http.ResponseWriter, r *http.Request) {
 		"is_final", req.IsFinal,
 		"assets_created", output.AssetsCreated,
 		"findings_created", output.FindingsCreated,
-		"agent_id", agt.ID.String(),
+		"sensor_id", agt.ID.String(),
 		"tenant_id", agt.TenantID.String(),
 		"compressed_size", len(compressedData),
 		"decompressed_size", len(decompressedData),
@@ -1087,9 +1088,9 @@ type ScannerListResponse struct {
 // IngestScan handles POST /api/v1/agent/ingest/scan
 // It accepts raw scanner output and uses the appropriate adapter to convert to CTIS.
 func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 
@@ -1178,7 +1179,7 @@ func (h *IngestHandler) ListScanners(w http.ResponseWriter, r *http.Request) {
 // clientWantsSync reports whether the caller explicitly opted out of async
 // processing (RFC-005 Phase 2 escape hatch) via ?sync=true or
 // `Prefer: respond-sync`. Used so an async-mode deployment can still serve
-// agents that haven't learned to poll for job status yet.
+// sensors that haven't learned to poll for job status yet.
 func clientWantsSync(r *http.Request) bool {
 	if v := strings.TrimSpace(r.URL.Query().Get("sync")); v == "true" || v == "1" {
 		return true
@@ -1197,7 +1198,7 @@ type AsyncIngestResponse struct {
 // enqueueAsync validates the envelope, persists the raw payload, enqueues an
 // ingest job, and returns 202. The worker (controller.IngestWorkerController)
 // processes it. agt.TenantID is guaranteed non-nil by the caller.
-func (h *IngestHandler) enqueueAsync(w http.ResponseWriter, r *http.Request, agt *agent.Agent, bodyBytes []byte) {
+func (h *IngestHandler) enqueueAsync(w http.ResponseWriter, r *http.Request, agt *sensor.Sensor, bodyBytes []byte) {
 	ctx := r.Context()
 	tenantID := *agt.TenantID
 
@@ -1234,7 +1235,7 @@ func (h *IngestHandler) enqueueAsync(w http.ResponseWriter, r *http.Request, agt
 	metrics.IngestJobsEnqueuedTotal.WithLabelValues(dupLabel).Inc()
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Location", "/api/v1/agent/ingest/jobs/"+stored.ID().String())
+	w.Header().Set("Location", legacyv1.IngestJobLocation(stored.ID().String()))
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(AsyncIngestResponse{
 		JobID:     stored.ID().String(),
@@ -1257,9 +1258,9 @@ type IngestJobStatusResponse struct {
 // GetIngestJob returns the status of an async ingest job (RFC-005 status poll).
 // GET /api/v1/agent/ingest/jobs/{id} — API-key auth, tenant-scoped.
 func (h *IngestHandler) GetIngestJob(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil || agt.TenantID == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
 	if h.ingestJobRepo == nil {

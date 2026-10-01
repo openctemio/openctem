@@ -59,8 +59,8 @@ type StepRun struct {
 	// Execution
 	Status StepRunStatus
 
-	// Agent assignment
-	AgentID   *shared.ID
+	// Sensor assignment
+	SensorID  *shared.ID
 	CommandID *shared.ID
 
 	// Condition evaluation
@@ -119,11 +119,11 @@ func (sr *StepRun) Queue() {
 }
 
 // Start marks the step as started.
-func (sr *StepRun) Start(agentID, commandID shared.ID) {
+func (sr *StepRun) Start(sensorID, commandID shared.ID) {
 	now := time.Now()
 	sr.StartedAt = &now
 	sr.Status = StepRunStatusRunning
-	sr.AgentID = &agentID
+	sr.SensorID = &sensorID
 	sr.CommandID = &commandID
 }
 
@@ -197,7 +197,7 @@ func (sr *StepRun) PrepareRetry() {
 	sr.QueuedAt = nil
 	sr.StartedAt = nil
 	sr.CompletedAt = nil
-	sr.AgentID = nil
+	sr.SensorID = nil
 	sr.CommandID = nil
 	sr.ErrorMessage = ""
 	sr.ErrorCode = ""

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/branch"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
@@ -1415,10 +1415,10 @@ func buildMinimalReportNoVuln() *ctis.Report {
 	}
 }
 
-// newTestAgent returns a minimal *agent.Agent for use in ProcessBatch tests.
-func newTestAgent(t *testing.T, tenantID shared.ID) *agent.Agent {
+// newTestSensor returns a minimal *sensor.Sensor for use in ProcessBatch tests.
+func newTestSensor(t *testing.T, tenantID shared.ID) *sensor.Sensor {
 	t.Helper()
-	agt, err := agent.NewAgent(tenantID, "test-agent", agent.AgentTypeRunner, "", nil, nil, agent.ExecutionModeStandalone)
+	agt, err := sensor.NewSensor(tenantID, "test-sensor", sensor.SensorTypeRunner, "", nil, nil, sensor.ExecutionModeStandalone)
 	require.NoError(t, err)
 	return agt
 }
@@ -1431,7 +1431,7 @@ func TestFindingProcessor_StampsVulnerabilityIDFromMap(t *testing.T) {
 	p, repo := newTestFindingProcessor(t)
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
-	agt := newTestAgent(t, tenantID)
+	agt := newTestSensor(t, tenantID)
 
 	cveID := "CVE-2099-3001"
 	vulnID := shared.NewID()
@@ -1454,7 +1454,7 @@ func TestFindingProcessor_NoStampWhenCVENotInMap(t *testing.T) {
 	p, repo := newTestFindingProcessor(t)
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
-	agt := newTestAgent(t, tenantID)
+	agt := newTestSensor(t, tenantID)
 
 	report := buildMinimalReport("CVE-2099-3002")
 	assetMap := map[string]shared.ID{"asset-ref": assetID}
@@ -1471,7 +1471,7 @@ func TestFindingProcessor_NoStampWhenVulnerabilityAbsent(t *testing.T) {
 	p, repo := newTestFindingProcessor(t)
 	tenantID := shared.NewID()
 	assetID := shared.NewID()
-	agt := newTestAgent(t, tenantID)
+	agt := newTestSensor(t, tenantID)
 
 	report := buildMinimalReportNoVuln()
 	assetMap := map[string]shared.ID{"asset-ref": assetID}

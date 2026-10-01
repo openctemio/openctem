@@ -143,10 +143,10 @@ func TestAuthFailureLimiter_Stats(t *testing.T) {
 func TestSecurityEventTypes_Defined(t *testing.T) {
 	events := []string{
 		middleware.SecurityEventAuthFailure,
-		middleware.SecurityEventAgentNotFound,
+		middleware.SecurityEventSensorNotFound,
 		middleware.SecurityEventAPIKeyInvalid,
-		middleware.SecurityEventAgentInactive,
-		middleware.SecurityEventAgentTypeMismatch,
+		middleware.SecurityEventSensorInactive,
+		middleware.SecurityEventSensorTypeMismatch,
 		middleware.SecurityEventJobAccessDenied,
 		middleware.SecurityEventTokenInvalid,
 	}

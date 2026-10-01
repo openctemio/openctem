@@ -21,8 +21,8 @@ type AuditLog struct {
 	AdminEmail string     // Preserved even if admin is deleted
 
 	// What action was performed
-	Action       string     // e.g., "agent.create", "token.revoke"
-	ResourceType string     // e.g., "agent", "token", "admin"
+	Action       string     // e.g., "sensor.create", "token.revoke"
+	ResourceType string     // e.g., "sensor", "token", "admin"
 	ResourceID   *shared.ID // ID of affected resource
 	ResourceName string     // Name for display (preserved if resource deleted)
 
@@ -185,12 +185,12 @@ const (
 	AuditActionAdminDeactivate = "admin.deactivate"
 	AuditActionAdminRotateKey  = "admin.rotate_key" // historical: admin API keys were removed
 
-	// Platform agent actions
-	AuditActionAgentCreate  = "agent.create"
-	AuditActionAgentUpdate  = "agent.update"
-	AuditActionAgentDelete  = "agent.delete"
-	AuditActionAgentEnable  = "agent.enable"
-	AuditActionAgentDisable = "agent.disable"
+	// Platform sensor actions
+	AuditActionSensorCreate  = "sensor.create"
+	AuditActionSensorUpdate  = "sensor.update"
+	AuditActionSensorDelete  = "sensor.delete"
+	AuditActionSensorEnable  = "sensor.enable"
+	AuditActionSensorDisable = "sensor.disable"
 
 	// Bootstrap token actions
 	AuditActionTokenCreate = "token.create"
@@ -213,7 +213,7 @@ const (
 // Resource type constants.
 const (
 	ResourceTypeAdmin         = "admin"
-	ResourceTypeAgent         = "agent"
+	ResourceTypeSensor        = "sensor"
 	ResourceTypeToken         = "token"
 	ResourceTypeJob           = "job"
 	ResourceTypeTargetMapping = "target_mapping"

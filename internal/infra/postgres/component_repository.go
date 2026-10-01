@@ -53,9 +53,9 @@ func (r *ComponentRepository) Upsert(ctx context.Context, comp *component.Compon
 		ON CONFLICT (purl) DO UPDATE SET
 			description = EXCLUDED.description,
 			homepage = EXCLUDED.homepage,
-			-- Note: vulnerability_count is NOT updated from agent data.
+			-- Note: vulnerability_count is NOT updated from sensor data.
 			-- It should only be updated by background jobs that count findings.
-			-- This prevents agents from accidentally resetting the count to 0.
+			-- This prevents sensors from accidentally resetting the count to 0.
 			metadata = components.metadata || EXCLUDED.metadata,
 			updated_at = NOW()
 		RETURNING id, created_at, updated_at

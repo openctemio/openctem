@@ -20,8 +20,8 @@ type JobRecoveryControllerConfig struct {
 	StuckThresholdMinutes int
 
 	// TenantStuckThresholdMinutes is how long a tenant command can be assigned
-	// to an agent without being picked up before being reassigned.
-	// Default: 10 minutes (shorter than platform jobs as tenant agents poll more frequently).
+	// to a sensor without being picked up before being reassigned.
+	// Default: 10 minutes (shorter than platform jobs as tenant sensors poll more frequently).
 	TenantStuckThresholdMinutes int
 
 	// MaxRetries is the maximum number of retry attempts for a job.
@@ -34,12 +34,12 @@ type JobRecoveryControllerConfig struct {
 }
 
 // JobRecoveryController recovers stuck jobs and re-queues them.
-// This is a K8s-style controller that ensures jobs don't get lost if an agent
+// This is a K8s-style controller that ensures jobs don't get lost if a sensor
 // goes offline or fails to complete them.
 //
 // The controller performs two main tasks:
 //  1. Recover stuck jobs: Return jobs to the queue if they've been assigned
-//     but haven't progressed (agent went offline or crashed) — both platform
+//     but haven't progressed (sensor went offline or crashed) — both platform
 //     jobs and tenant commands
 //  2. Clean up: Mark orphaned jobs as failed if they exceed retry limit
 //
@@ -67,7 +67,7 @@ func NewJobRecoveryController(
 		config.StuckThresholdMinutes = 30
 	}
 	if config.TenantStuckThresholdMinutes == 0 {
-		config.TenantStuckThresholdMinutes = 10 // Shorter for tenant agents
+		config.TenantStuckThresholdMinutes = 10 // Shorter for tenant sensors
 	}
 	if config.MaxRetries == 0 {
 		config.MaxRetries = 3
@@ -118,8 +118,8 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 	}
 	totalProcessed += int(recovered)
 
-	// Step 2: Recover stuck tenant commands (assigned to offline agents)
-	// This handles the race condition where an agent is selected but goes offline
+	// Step 2: Recover stuck tenant commands (assigned to offline sensors)
+	// This handles the race condition where a sensor is selected but goes offline
 	// before picking up the command.
 	recoveredTenant, err := c.commandRepo.RecoverStuckTenantCommands(
 		ctx,

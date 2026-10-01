@@ -92,11 +92,11 @@ type Repositories struct {
 	OutboxEvent                *postgres.OutboxEventRepository
 	Notification               *postgres.NotificationRepository
 
-	// Agents & Commands
-	Agent       *postgres.AgentRepository
-	AgentAPIKey *postgres.AgentAPIKeyRepository
-	Command     *postgres.CommandRepository
-	IngestJob   *postgres.IngestJobRepository
+	// Sensors & Commands
+	Sensor       *postgres.SensorRepository
+	SensorAPIKey *postgres.SensorAPIKeyRepository
+	Command      *postgres.CommandRepository
+	IngestJob    *postgres.IngestJobRepository
 
 	// Scan coverage rotation (RFC-007)
 	ScanCoverage *postgres.ScanCoverageRepository
@@ -296,11 +296,11 @@ func NewRepositories(db *postgres.DB) *Repositories {
 		OutboxEvent:  postgres.NewOutboxEventRepository(db),
 		Notification: postgres.NewNotificationRepository(db),
 
-		// Agents & Commands
-		Agent:       postgres.NewAgentRepository(db),
-		AgentAPIKey: postgres.NewAgentAPIKeyRepository(db),
-		Command:     postgres.NewCommandRepository(db),
-		IngestJob:   postgres.NewIngestJobRepository(db),
+		// Sensors & Commands
+		Sensor:       postgres.NewSensorRepository(db),
+		SensorAPIKey: postgres.NewSensorAPIKeyRepository(db),
+		Command:      postgres.NewCommandRepository(db),
+		IngestJob:    postgres.NewIngestJobRepository(db),
 
 		// Scan coverage rotation (RFC-007)
 		ScanCoverage: postgres.NewScanCoverageRepository(db),

@@ -126,20 +126,20 @@ const (
 	ActionDataExported Action = "data.exported"
 	ActionDataImported Action = "data.imported"
 
-	// Agent actions
-	ActionAgentCreated        Action = "agent.created"
-	ActionAgentUpdated        Action = "agent.updated"
-	ActionAgentDeleted        Action = "agent.deleted"
-	ActionAgentActivated      Action = "agent.activated"
-	ActionAgentDeactivated    Action = "agent.deactivated"
-	ActionAgentRevoked        Action = "agent.revoked"
-	ActionAgentKeyRegenerated Action = "agent.key_regenerated"
-	ActionAgentConnected      Action = "agent.connected"
-	ActionAgentDisconnected   Action = "agent.disconnected"
-	// ActionAgentKeyRenewed records an agent rotating its OWN credential via
+	// Sensor actions
+	ActionSensorCreated        Action = "sensor.created"
+	ActionSensorUpdated        Action = "sensor.updated"
+	ActionSensorDeleted        Action = "sensor.deleted"
+	ActionSensorActivated      Action = "sensor.activated"
+	ActionSensorDeactivated    Action = "sensor.deactivated"
+	ActionSensorRevoked        Action = "sensor.revoked"
+	ActionSensorKeyRegenerated Action = "sensor.key_regenerated"
+	ActionSensorConnected      Action = "sensor.connected"
+	ActionSensorDisconnected   Action = "sensor.disconnected"
+	// ActionSensorKeyRenewed records a sensor rotating its OWN credential via
 	// POST /agent/renew (self-service, kubelet-style), as opposed to the admin
-	// hard rotation recorded by ActionAgentKeyRegenerated.
-	ActionAgentKeyRenewed Action = "agent.key_renewed"
+	// hard rotation recorded by ActionSensorKeyRegenerated.
+	ActionSensorKeyRenewed Action = "sensor.key_renewed"
 
 	// API key (oct_) actions — tenant-scoped programmatic credentials.
 	ActionAPIKeyCreated Action = "api_key.created"
@@ -249,7 +249,7 @@ const (
 	ActionRuleOverrideUpdated Action = "rule_override.updated"
 	ActionRuleOverrideDeleted Action = "rule_override.deleted"
 
-	// Ingest actions (agent upload)
+	// Ingest actions (sensor upload)
 	ActionIngestStarted        Action = "ingest.started"
 	ActionIngestCompleted      Action = "ingest.completed"
 	ActionIngestFailed         Action = "ingest.failed"
@@ -307,9 +307,9 @@ func (a Action) IsValid() bool {
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
-		ActionAgentCreated, ActionAgentUpdated, ActionAgentDeleted,
-		ActionAgentActivated, ActionAgentDeactivated, ActionAgentRevoked,
-		ActionAgentKeyRegenerated, ActionAgentConnected, ActionAgentDisconnected, ActionAgentKeyRenewed,
+		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
+		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
+		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
 		ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
@@ -348,7 +348,7 @@ func (a Action) IsValid() bool {
 
 // Category returns the category of the action (e.g., "user", "tenant").
 func (a Action) Category() string {
-	switch a {
+	switch a.Canonical() {
 	case ActionUserCreated, ActionUserUpdated, ActionUserDeleted,
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout:
@@ -385,10 +385,10 @@ func (a Action) Category() string {
 		return "settings"
 	case ActionDataExported, ActionDataImported:
 		return "data"
-	case ActionAgentCreated, ActionAgentUpdated, ActionAgentDeleted,
-		ActionAgentActivated, ActionAgentDeactivated, ActionAgentRevoked,
-		ActionAgentKeyRegenerated, ActionAgentConnected, ActionAgentDisconnected, ActionAgentKeyRenewed:
-		return "agent"
+	case ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
+		ActionSensorActivated, ActionSensorDeactivated, ActionSensorRevoked,
+		ActionSensorKeyRegenerated, ActionSensorConnected, ActionSensorDisconnected, ActionSensorKeyRenewed:
+		return "sensor"
 	case ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted:
 		return "api_key"
 	case ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted:
@@ -433,7 +433,7 @@ const (
 	ResourceTypeAsset            ResourceType = "asset"
 	ResourceTypeSettings         ResourceType = "settings"
 	ResourceTypeToken            ResourceType = "token"
-	ResourceTypeAgent            ResourceType = "agent"
+	ResourceTypeSensor           ResourceType = "sensor"
 	ResourceTypeGroup            ResourceType = "group"
 	ResourceTypePermissionSet    ResourceType = "permission_set"
 	ResourceTypeRole             ResourceType = "role"
@@ -467,7 +467,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeAgent,
+		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
@@ -531,7 +531,7 @@ func SeverityForAction(a Action) Severity {
 	// Critical - security-related actions
 	case ActionUserDeleted, ActionTenantDeleted, ActionTokenRevoked,
 		ActionAuthFailed, ActionPermissionDenied,
-		ActionAgentRevoked, ActionAgentDeleted,
+		ActionSensorRevoked, ActionSensorDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess:
 		return SeverityCritical
 
@@ -540,7 +540,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthMFADisabled, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
 		ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
-		ActionAgentDeactivated, ActionAgentKeyRegenerated,
+		ActionSensorDeactivated, ActionSensorKeyRegenerated,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
 		ActionCredentialDeleted,
@@ -559,7 +559,7 @@ func SeverityForAction(a Action) Severity {
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,
 		ActionRepositoryDeleted, ActionDataExported,
-		ActionAgentCreated, ActionAgentActivated, ActionAgentKeyRenewed,
+		ActionSensorCreated, ActionSensorActivated, ActionSensorKeyRenewed,
 		ActionAPIKeyCreated,
 		ActionRoleCreated, ActionRoleUpdated,
 		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted,
@@ -572,7 +572,7 @@ func SeverityForAction(a Action) Severity {
 		ActionIngestFailed, ActionIngestPartialSuccess:
 		return SeverityMedium
 
-	// Low - regular operations (including agent.updated, agent.connected, agent.disconnected)
+	// Low - regular operations (including sensor.updated, sensor.connected, sensor.disconnected)
 	default:
 		return SeverityLow
 	}

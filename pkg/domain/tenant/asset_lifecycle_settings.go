@@ -61,7 +61,7 @@ type AssetLifecycleSettings struct {
 	ExcludedSourceTypes []string `json:"excluded_source_types,omitempty"`
 
 	// PauseOnIntegrationFailure — when true (default), the worker
-	// checks the tenant's agents and integrations before each run.
+	// checks the tenant's sensors and integrations before each run.
 	// If any are unhealthy, the whole tenant is skipped so a
 	// temporarily-offline scanner does not generate a false
 	// deactivation storm.

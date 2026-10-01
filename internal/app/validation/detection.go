@@ -95,7 +95,7 @@ func ValidDetectionStatus(d DetectionStatus) bool {
 // Correlation window.
 //
 // postWindow — how long AFTER the probe ends we keep accepting
-// telemetry as caused by it. 5 minutes: EDR/XDR agents batch and
+// telemetry as caused by it. 5 minutes: EDR/XDR sensors batch and
 // forward on a timer (CrowdStrike/Defender/osquery forwarders are
 // typically seconds to ~2 min; SIEM relay adds more), so anything
 // shorter turns normal pipeline latency into fabricated detection
@@ -103,7 +103,7 @@ func ValidDetectionStatus(d DetectionStatus) bool {
 // providing actionable detection anyway.
 //
 // preGrace — how long BEFORE the recorded start we accept. Small (30s)
-// and exists only to absorb clock skew between the agent host and the
+// and exists only to absorb clock skew between the sensor host and the
 // API, plus the gap between the command being issued and the probe
 // firing.
 //

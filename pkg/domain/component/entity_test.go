@@ -355,11 +355,11 @@ func TestSetPURL_OverridesGeneratedPURL(t *testing.T) {
 	generatedPURL := comp.PURL()
 	assert.Contains(t, generatedPURL, "pkg:npm/lodash@4.17.21")
 
-	// Override with agent's PURL (may include namespace, qualifiers)
-	agentPURL := "pkg:npm/@types/lodash@4.17.21"
-	comp.SetPURL(agentPURL)
+	// Override with sensor's PURL (may include namespace, qualifiers)
+	sensorPURL := "pkg:npm/@types/lodash@4.17.21"
+	comp.SetPURL(sensorPURL)
 
-	assert.Equal(t, agentPURL, comp.PURL())
+	assert.Equal(t, sensorPURL, comp.PURL())
 	assert.NotEqual(t, generatedPURL, comp.PURL())
 }
 

@@ -79,7 +79,7 @@ type Repository interface {
 	GetByName(ctx context.Context, tenantID shared.ID, name string) (*Asset, error)
 
 	// FindRepositoryByRepoName finds a repository asset whose name ends with the given repo name.
-	// This is useful for matching agent-created assets (e.g., "github.com-org/repo") with SCM imports (e.g., "repo").
+	// This is useful for matching sensor-created assets (e.g., "github.com-org/repo") with SCM imports (e.g., "repo").
 	FindRepositoryByRepoName(ctx context.Context, tenantID shared.ID, repoName string) (*Asset, error)
 
 	// FindRepositoryByFullName finds a repository asset that matches the given full name (org/repo format).

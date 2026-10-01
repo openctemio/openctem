@@ -1,6 +1,6 @@
 // Package admin defines the AdminUser domain entity for platform administration.
 // Admin users are platform operators (NOT tenant users) with API key authentication
-// and role-based access control for managing platform agents, bootstrap tokens, and other
+// and role-based access control for managing platform sensors, bootstrap tokens, and other
 // platform-level resources.
 package admin
 
@@ -24,7 +24,7 @@ const (
 	// Can manage other admin users.
 	AdminRoleSuperAdmin AdminRole = "super_admin"
 
-	// AdminRoleOpsAdmin can manage agents, tokens, and view audit logs.
+	// AdminRoleOpsAdmin can manage sensors, tokens, and view audit logs.
 	// Cannot manage other admin users.
 	AdminRoleOpsAdmin AdminRole = "ops_admin"
 
@@ -66,8 +66,8 @@ func (r AdminRole) CanManageAdmins() bool {
 	return r == AdminRoleSuperAdmin
 }
 
-// CanManageAgents checks if this role can manage platform agents.
-func (r AdminRole) CanManageAgents() bool {
+// CanManageSensors checks if this role can manage platform sensors.
+func (r AdminRole) CanManageSensors() bool {
 	return r == AdminRoleSuperAdmin || r == AdminRoleOpsAdmin
 }
 
@@ -398,10 +398,10 @@ func (a *AdminUser) HasPermission(action string) bool {
 	case "admin:create", "admin:update", "admin:delete", "admin:list":
 		return a.role.CanManageAdmins()
 
-	// Agent management
-	case "agent:create", "agent:update", "agent:delete", "agent:disable", "agent:enable":
-		return a.role.CanManageAgents()
-	case "agent:list", "agent:get", "agent:stats":
+	// Sensor management
+	case "sensor:create", "sensor:update", "sensor:delete", "sensor:disable", "sensor:enable":
+		return a.role.CanManageSensors()
+	case "sensor:list", "sensor:get", "sensor:stats":
 		return true // All roles can view
 
 	// Token management

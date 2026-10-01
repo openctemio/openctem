@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // Fail-closed by construction: every HTTP route must EITHER carry a permission
@@ -41,7 +43,7 @@ var gateFuncs = map[string]bool{
 var routeAuthzAllowlist = map[string]string{}
 
 // allowlistPrefixes: groups of routes authenticated by a non-permission gate
-// (public auth flow, agent API-key, SCIM/MCP bearer, webhooks HMAC, or
+// (public auth flow, sensor API-key, SCIM/MCP bearer, webhooks HMAC, or
 // self-scoped /me + /users/me where the handler scopes to the caller).
 var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/api/v1/auth", "public auth flow / self-scoped (login, register, oauth, sso, saml, logout, ws-token)"},
@@ -49,8 +51,9 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/api/v1/me/", "self-scoped: /me/* reads the caller's own perms/modules/roles"},
 	{"/api/v1/notifications", "tenant+user-scoped in handler"},
 	{"/api/v1/invitations/", "invitation token IS the authorization"},
-	{"/api/v1/agent/", "agent API-key auth (AuthenticateSource); tenant from key"},
-	{"/api/v1/platform/", "platform agent API-key / self-scoped stats"},
+	{"/api/v1/agent/", "sensor protocol v1: sensor API-key auth (AuthenticateSource); tenant from key"},
+	{"/api/v1/agents", "deprecated management path: 308 redirect to /api/v1/sensors, whose routes are permission-gated"},
+	{"/api/v1/platform/", "platform sensor API-key / self-scoped stats"},
 	{"/api/v1/admin", "platform-admin realm: AdminAuthMiddleware (X-Admin-API-Key or console session cookie, RFC-022) + RequireRole; /admin/auth/login|mfa|logout are the public console login steps (rate-limited); not tenant-permission-gated"},
 	{"/scim/v2", "SCIM per-tenant bearer token auth (routes live at /scim/v2, not /api/v1)"},
 	{"/api/v1/scim", "SCIM per-tenant bearer token auth"},
@@ -58,13 +61,32 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/api/v1/webhooks/incoming", "inbound webhook HMAC per-tenant"},
 	{"/api/v1/tenants", "base-auth + RequireMembership/RequireTeam* (role-gated, not permission-gated)"},
 	{"/api/v1/module-presets", "auth-only catalog read (public preset list)"},
-	{"/api/v1/validation/evidence", "agent API-key auth"},
+	{"/api/v1/validation/evidence", "sensor API-key auth"},
 	{"/health", "public liveness"},
 	{"/ready", "public readiness"},
 	{"/metrics", "MetricsAuth bearer (fail-closed 404)"},
 	{"/openapi.yaml", "public API spec"},
 	{"/docs", "public API docs"},
 	{"/api/v1/ws", "WS ticket / JWT auth"},
+}
+
+// routePathArg resolves a route path argument: a string literal, or one of the
+// legacyv1 path constants the frozen sensor protocol v1 mounts are named by.
+func routePathArg(e ast.Expr) (string, bool) {
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		if v.Kind != token.STRING {
+			return "", false
+		}
+		p, err := strconv.Unquote(v.Value)
+		return p, err == nil
+	case *ast.SelectorExpr:
+		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "legacyv1" {
+			p, ok := legacyv1.Paths[v.Sel.Name]
+			return p, ok
+		}
+	}
+	return "", false
 }
 
 type routeRec struct {
@@ -169,11 +191,10 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 
 				// Nested group: X.Group("/prefix", func(r Router){...}, mws...)
 				if sel.Sel.Name == "Group" && len(ce.Args) >= 2 {
-					plit, ok := ce.Args[0].(*ast.BasicLit)
-					if !ok || plit.Kind != token.STRING {
+					gp, ok := routePathArg(ce.Args[0])
+					if !ok {
 						return true
 					}
-					gp, _ := strconv.Unquote(plit.Value)
 					var body *ast.BlockStmt
 					for _, a := range ce.Args[1:] {
 						if fl, ok := a.(*ast.FuncLit); ok {
@@ -196,11 +217,10 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 				if len(ce.Args) == 0 {
 					return true
 				}
-				lit, ok := ce.Args[0].(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
+				p, ok := routePathArg(ce.Args[0])
+				if !ok {
 					return true
 				}
-				p, _ := strconv.Unquote(lit.Value)
 				routes = append(routes, routeRec{
 					method: sel.Sel.Name,
 					path:   prefix + p,

@@ -3,7 +3,7 @@
 // license, and which assets to scan next.
 //
 // It is deliberately decoupled from any scanner/transport so it can be unit
-// tested in isolation and reused by both execution modes (direct + agent) and by
+// tested in isolation and reused by both execution modes (direct + sensor) and by
 // the coverage scheduler. See docs/rfcs/RFC-007-license-aware-scan-coverage.md.
 package scancoverage
 

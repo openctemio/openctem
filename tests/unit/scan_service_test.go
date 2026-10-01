@@ -9,12 +9,12 @@ import (
 	"time"
 
 	scanservice "github.com/openctemio/api/internal/app/scan"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/assetgroup"
 	commanddom "github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/pipeline"
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/templatesource"
 	"github.com/openctemio/api/pkg/domain/tool"
@@ -479,7 +479,7 @@ func (m *mockStepRunRepo) Delete(_ context.Context, _ shared.ID) error         {
 func (m *mockStepRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ pipeline.StepRunStatus, _, _ string) error {
 	return nil
 }
-func (m *mockStepRunRepo) AssignAgent(_ context.Context, _, _, _ shared.ID) error {
+func (m *mockStepRunRepo) AssignSensor(_ context.Context, _, _, _ shared.ID) error {
 	return nil
 }
 func (m *mockStepRunRepo) Complete(_ context.Context, _ shared.ID, _ int, _ map[string]any) error {
@@ -514,10 +514,10 @@ func (m *mockCommandRepo) GetByID(_ context.Context, _ shared.ID) (*commanddom.C
 func (m *mockCommandRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) GetPendingForAgent(_ context.Context, _ shared.ID, _ *shared.ID, _ []string, _ int) ([]*commanddom.Command, error) {
+func (m *mockCommandRepo) GetPendingForSensor(_ context.Context, _ shared.ID, _ *shared.ID, _ []string, _ int) ([]*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) ClaimForAgent(_ context.Context, _, _ shared.ID, _ string) (bool, error) {
+func (m *mockCommandRepo) ClaimForSensor(_ context.Context, _, _ shared.ID, _ string) (bool, error) {
 	return true, nil
 }
 func (m *mockCommandRepo) List(_ context.Context, _ commanddom.Filter, _ pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
@@ -560,7 +560,7 @@ func (m *mockCommandRepo) ListPlatformJobsByTenant(_ context.Context, _ shared.I
 func (m *mockCommandRepo) ListPlatformJobsAdmin(_ context.Context, _, _ *shared.ID, _ *commanddom.CommandStatus, _ pagination.Pagination) (pagination.Result[*commanddom.Command], error) {
 	return pagination.Result[*commanddom.Command]{}, nil
 }
-func (m *mockCommandRepo) GetPlatformJobsByAgent(_ context.Context, _ shared.ID, _ *commanddom.CommandStatus) ([]*commanddom.Command, error) {
+func (m *mockCommandRepo) GetPlatformJobsBySensor(_ context.Context, _ shared.ID, _ *commanddom.CommandStatus) ([]*commanddom.Command, error) {
 	return nil, nil
 }
 func (m *mockCommandRepo) RecoverStuckTenantCommands(_ context.Context, _, _ int) (int64, error) {
@@ -752,38 +752,38 @@ func (m *mockTemplateSyncer) SyncSource(_ context.Context, _ *templatesource.Tem
 }
 
 // =============================================================================
-// Mock: AgentSelector
+// Mock: SensorSelector
 // =============================================================================
 
-type mockAgentSelector struct {
+type mockSensorSelector struct {
 	available      bool
 	message        string
 	canUsePlatform bool
 	platformReason string
-	selectResult   *scanservice.SelectAgentResult
+	selectResult   *scanservice.SelectSensorResult
 	selectErr      error
 }
 
-func (m *mockAgentSelector) CheckAgentAvailability(_ context.Context, _ shared.ID, _ string, _ bool) *scanservice.AgentAvailability {
-	return &scanservice.AgentAvailability{
+func (m *mockSensorSelector) CheckSensorAvailability(_ context.Context, _ shared.ID, _ string, _ bool) *scanservice.SensorAvailability {
+	return &scanservice.SensorAvailability{
 		Available: m.available,
 		Message:   m.message,
 	}
 }
 
-func (m *mockAgentSelector) CanUsePlatformAgents(_ context.Context, _ shared.ID) (bool, string) {
+func (m *mockSensorSelector) CanUsePlatformSensors(_ context.Context, _ shared.ID) (bool, string) {
 	return m.canUsePlatform, m.platformReason
 }
 
-func (m *mockAgentSelector) SelectAgent(_ context.Context, _ scanservice.SelectAgentRequest) (*scanservice.SelectAgentResult, error) {
+func (m *mockSensorSelector) SelectSensor(_ context.Context, _ scanservice.SelectSensorRequest) (*scanservice.SelectSensorResult, error) {
 	if m.selectErr != nil {
 		return nil, m.selectErr
 	}
 	if m.selectResult != nil {
 		return m.selectResult, nil
 	}
-	return &scanservice.SelectAgentResult{
-		Agent:      &agent.Agent{},
+	return &scanservice.SelectSensorResult{
+		Sensor:     &sensor.Sensor{},
 		IsPlatform: false,
 	}, nil
 }
@@ -837,7 +837,7 @@ type testScanServiceDeps struct {
 	stepRepo       *mockStepRepo
 	commandRepo    *mockCommandRepo
 	toolRepo       *mockToolRepo
-	agentSelector  *mockAgentSelector
+	sensorSelector *mockSensorSelector
 	secValidator   *mockSecurityValidator
 	auditSvc       *mockAuditService
 }
@@ -851,7 +851,7 @@ func newTestScanService() (*scanservice.Service, *testScanServiceDeps) {
 		stepRepo:       newMockStepRepo(),
 		commandRepo:    newMockCommandRepo(),
 		toolRepo:       newMockToolRepo(),
-		agentSelector: &mockAgentSelector{
+		sensorSelector: &mockSensorSelector{
 			available: true,
 		},
 		secValidator: &mockSecurityValidator{},
@@ -872,7 +872,7 @@ func newTestScanService() (*scanservice.Service, *testScanServiceDeps) {
 		&mockTemplateSourceRepo{},
 		deps.toolRepo,
 		&mockTemplateSyncer{},
-		deps.agentSelector,
+		deps.sensorSelector,
 		deps.secValidator,
 		log,
 		scanservice.WithAuditService(deps.auditSvc),
@@ -1011,7 +1011,7 @@ func TestScanService_QuickScan_WorkflowRejectsInternalTarget(t *testing.T) {
 
 // TestScanService_QuickScan_WorkflowAppliesTargets asserts workflow-path targets
 // are applied to the run rather than silently dropped: they must be persisted on
-// the scan and surfaced in the dispatched step command payload (agents read
+// the scan and surfaced in the dispatched step command payload (sensors read
 // job.Payload["targets"]).
 func TestScanService_QuickScan_WorkflowAppliesTargets(t *testing.T) {
 	svc, deps := newTestScanService()
@@ -1651,15 +1651,15 @@ func TestScanService_TriggerScan_ScanNotActive(t *testing.T) {
 	}
 }
 
-func TestScanService_TriggerScan_NoAgentAvailable(t *testing.T) {
+func TestScanService_TriggerScan_NoSensorAvailable(t *testing.T) {
 	svc, deps := newTestScanService()
 	tenantID := shared.NewID()
 
 	deps.toolRepo.addTool("nuclei", true)
-	deps.agentSelector.available = false
-	deps.agentSelector.message = "no agents online"
+	deps.sensorSelector.available = false
+	deps.sensorSelector.message = "no sensors online"
 
-	s := createTestScanInRepo(deps, tenantID, "No Agent Scan", scan.ScanTypeSingle)
+	s := createTestScanInRepo(deps, tenantID, "No Sensor Scan", scan.ScanTypeSingle)
 
 	input := scanservice.TriggerScanExecInput{
 		TenantID: tenantID.String(),
@@ -1668,7 +1668,7 @@ func TestScanService_TriggerScan_NoAgentAvailable(t *testing.T) {
 
 	_, err := svc.TriggerScan(context.Background(), input)
 	if err == nil {
-		t.Fatal("expected error when no agent available")
+		t.Fatal("expected error when no sensor available")
 	}
 }
 
@@ -2136,10 +2136,10 @@ func TestScanService_CreateScan_InvalidTimezone(t *testing.T) {
 }
 
 // =============================================================================
-// Tests: CreateScan with agent preference
+// Tests: CreateScan with sensor preference
 // =============================================================================
 
-func TestScanService_CreateScan_AgentPreference(t *testing.T) {
+func TestScanService_CreateScan_SensorPreference(t *testing.T) {
 	svc, deps := newTestScanService()
 	tenantID := shared.NewID()
 
@@ -2148,20 +2148,20 @@ func TestScanService_CreateScan_AgentPreference(t *testing.T) {
 	deps.toolRepo.addTool("nuclei", true)
 
 	input := scanservice.CreateScanInput{
-		TenantID:        tenantID.String(),
-		Name:            "Tenant Agent Scan",
-		AssetGroupID:    ag.ID().String(),
-		ScanType:        "single",
-		ScannerName:     "nuclei",
-		AgentPreference: "tenant",
+		TenantID:         tenantID.String(),
+		Name:             "Tenant Sensor Scan",
+		AssetGroupID:     ag.ID().String(),
+		ScanType:         "single",
+		ScannerName:      "nuclei",
+		SensorPreference: "tenant",
 	}
 
 	result, err := svc.CreateScan(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if result.AgentPreference != scan.AgentPreferenceTenant {
-		t.Errorf("expected agent preference 'tenant', got %s", result.AgentPreference)
+	if result.SensorPreference != scan.SensorPreferenceTenant {
+		t.Errorf("expected sensor preference 'tenant', got %s", result.SensorPreference)
 	}
 }
 

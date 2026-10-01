@@ -134,7 +134,7 @@ func (rl *snoozeRateLimiter) cleanup() {
 }
 
 // buildAuditContext extracts audit context from the authenticated
-// request. Mirrors AgentHandler's helper — kept local so the audit
+// request. Mirrors SensorHandler's helper — kept local so the audit
 // dependency is opt-in per handler.
 func (h *AssetHandler) buildAuditContext(r *http.Request) auditapp.AuditContext {
 	clientIP := r.RemoteAddr

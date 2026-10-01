@@ -450,8 +450,8 @@ func (p *ComponentProcessor) createOrUpdateComponent(
 		return shared.ID{}, err
 	}
 
-	// Prefer agent's PURL over generated PURL
-	// Agent's PURL may be more accurate (e.g., includes namespace, qualifiers)
+	// Prefer sensor's PURL over generated PURL
+	// Sensor's PURL may be more accurate (e.g., includes namespace, qualifiers)
 	if dep.PURL != "" {
 		comp.SetPURL(dep.PURL)
 	}

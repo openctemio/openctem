@@ -48,7 +48,7 @@ type Asset struct {
 	syncError    string
 
 	// Discovery tracking (for recon-discovered assets)
-	discoverySource string     // How discovered: agent, integration, manual, import
+	discoverySource string     // How discovered: sensor, integration, manual, import
 	discoveryTool   string     // Tool that discovered: subfinder, dnsx, naabu, httpx, katana
 	discoveredAt    *time.Time // When first discovered by recon tools
 
@@ -498,7 +498,7 @@ func (a *Asset) DecrementFindingCount() {
 //
 // Always uses server-side time — callers cannot spoof last-seen by
 // sending a future timestamp. This defends against clock-skewed
-// agents that would otherwise make an asset "never stale".
+// sensors that would otherwise make an asset "never stale".
 func (a *Asset) MarkSeen() {
 	now := time.Now().UTC()
 	a.lastSeen = now

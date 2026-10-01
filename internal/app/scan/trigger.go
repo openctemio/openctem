@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/pagination"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // =============================================================================
@@ -60,16 +61,16 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 		return nil, err
 	}
 
-	// Check agent availability before triggering - must have an online agent
+	// Check sensor availability before triggering - must have an online sensor
 	toolToCheck := ""
 	if sc.ScanType == scan.ScanTypeSingle && sc.ScannerName != "" {
 		toolToCheck = sc.ScannerName
 	}
-	agentAvail := s.agentSelector.CheckAgentAvailability(ctx, sc.TenantID, toolToCheck, sc.RunOnTenantRunner)
-	if !agentAvail.Available {
+	sensorAvail := s.sensorSelector.CheckSensorAvailability(ctx, sc.TenantID, toolToCheck, sc.RunOnTenantRunner)
+	if !sensorAvail.Available {
 		return nil, shared.NewDomainError(
-			"NO_AGENT_AVAILABLE",
-			agentAvail.Message,
+			"NO_SENSOR_AVAILABLE",
+			sensorAvail.Message,
 			shared.ErrValidation,
 		)
 	}
@@ -154,7 +155,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggeredB
 	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
 	// Resolve the targets server-side (direct targets + asset-group members,
-	// minus scope exclusions) and carry them to the step commands; agents do
+	// minus scope exclusions) and carry them to the step commands; sensors do
 	// not resolve asset groups, so without this a group scan scans nothing.
 	resolved, err := s.resolveScanTargets(ctx, sc)
 	if err != nil {
@@ -349,12 +350,12 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 		pipeline.PayloadKeyStepKey:       step.StepKey,
 		"step_id":                        step.ID.String(),
 		"step_config":                    step.Config,
-		"required_capabilities": step.Capabilities,
-		"preferred_tool":        step.Tool,
-		"timeout_seconds":       step.TimeoutSeconds,
-		"context":               run.Context,
+		"required_capabilities":          step.Capabilities,
+		"preferred_tool":                 step.Tool,
+		"timeout_seconds":                step.TimeoutSeconds,
+		"context":                        run.Context,
 	}
-	// Surface direct targets at the top level of the payload — agent executors
+	// Surface direct targets at the top level of the payload — sensor executors
 	// read job.Payload["targets"], not the nested run context. Without this a
 	// workflow driven by ad-hoc targets (QuickScan) would receive none.
 	if targets, ok := run.Context["targets"]; ok {
@@ -387,7 +388,7 @@ func (s *Service) queueWorkflowStep(ctx context.Context, run *pipeline.Run, step
 }
 
 // EmbeddedTemplate represents a template embedded in scan command payload.
-// This is the format sent to agents for custom templates.
+// This is the format sent to sensors for custom templates.
 type EmbeddedTemplate struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
@@ -397,28 +398,28 @@ type EmbeddedTemplate struct {
 }
 
 // createScannerCommand creates a command for a single scanner execution.
-// Uses AgentSelector to determine whether to use tenant or platform agents.
+// Uses SensorSelector to determine whether to use tenant or platform sensors.
 //
 // stepRun may be nil — see createSingleScanStepRun. When it is present the
 // payload carries the keys the command handler needs to report the step back
 // (`pipeline_run_id`, `step_key`, `step_run_id`); `run_id` is kept because the
-// agent SDK reads it.
+// sensor SDK reads it.
 func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, targets []string) error {
 	payloadMap := map[string]any{
-		"run_id":             run.ID.String(),
-		"scan_id":            sc.ID.String(),
-		"scanner_name":       sc.ScannerName,
-		"scanner_config":     sc.ScannerConfig,
-		"asset_group_id":     sc.AssetGroupID.String(),
-		"targets_per_job":    sc.TargetsPerJob,
-		"routing_tags":       sc.Tags,
-		"tenant_runner_only": sc.RunOnTenantRunner,
-		"agent_preference":   string(sc.AgentPreference),
-		"context":            run.Context,
-		// The agent SDK (ScanCommandPayload) reads `scanner`, `config` and a
+		"run_id":                            run.ID.String(),
+		"scan_id":                           sc.ID.String(),
+		"scanner_name":                      sc.ScannerName,
+		"scanner_config":                    sc.ScannerConfig,
+		"asset_group_id":                    sc.AssetGroupID.String(),
+		"targets_per_job":                   sc.TargetsPerJob,
+		"routing_tags":                      sc.Tags,
+		"tenant_runner_only":                sc.RunOnTenantRunner,
+		legacyv1.PayloadKeySensorPreference: string(sc.SensorPreference),
+		"context":                           run.Context,
+		// The sensor SDK (ScanCommandPayload) reads `scanner`, `config` and a
 		// single `target`, not `scanner_name`/`scanner_config` — send both sets
 		// so the command dispatches correctly (contract drift previously left
-		// the agent with an empty scanner: "scanner not found").
+		// the sensor with an empty scanner: "scanner not found").
 		"scanner": sc.ScannerName,
 		"config":  sc.ScannerConfig,
 	}
@@ -451,10 +452,10 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		return err
 	}
 
-	// Determine whether to use platform agents based on AgentSelector
-	usePlatform, err := s.shouldUsePlatformAgent(ctx, sc, targets)
+	// Determine whether to use platform sensors based on SensorSelector
+	usePlatform, err := s.shouldUsePlatformSensor(ctx, sc, targets)
 	if err != nil {
-		s.logger.Warn("failed to determine agent selection, falling back to tenant only",
+		s.logger.Warn("failed to determine sensor selection, falling back to tenant only",
 			"error", err, "scan_id", sc.ID.String())
 		usePlatform = false
 	}
@@ -630,40 +631,40 @@ func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared
 	return nil
 }
 
-// shouldUsePlatformAgent determines whether to route this scan to shared
-// platform agents. Shared infrastructure must never receive a tenant's
+// shouldUsePlatformSensor determines whether to route this scan to shared
+// platform sensors. Shared infrastructure must never receive a tenant's
 // internal targets or asset groups, and is only used when the tenant may use
-// it: in auto mode a busy tenant fleet means the job waits for a tenant agent,
-// it is not silently moved to shared agents (RFC-023 D14).
-func (s *Service) shouldUsePlatformAgent(ctx context.Context, sc *scan.Scan, targets []string) (bool, error) {
+// it: in auto mode a busy tenant fleet means the job waits for a tenant sensor,
+// it is not silently moved to shared sensors (RFC-023 D14).
+func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, targets []string) (bool, error) {
 	// If explicitly set to tenant only, never use platform
-	if sc.RunOnTenantRunner || sc.AgentPreference == scan.AgentPreferenceTenant {
+	if sc.RunOnTenantRunner || sc.SensorPreference == scan.SensorPreferenceTenant {
 		return false, nil
 	}
 	internal := !sc.AssetGroupID.IsZero() || hasInternalTarget(targets)
 
 	// If explicitly set to platform only, the tenant must be allowed and the
 	// targets must be public.
-	if sc.AgentPreference == scan.AgentPreferencePlatform {
+	if sc.SensorPreference == scan.SensorPreferencePlatform {
 		if internal {
-			return false, fmt.Errorf("%w: platform agents cannot scan internal targets or asset groups; use a tenant agent",
+			return false, fmt.Errorf("%w: platform sensors cannot scan internal targets or asset groups; use a tenant sensor",
 				shared.ErrValidation)
 		}
-		if s.agentSelector != nil {
-			canUse, reason := s.agentSelector.CanUsePlatformAgents(ctx, sc.TenantID)
+		if s.sensorSelector != nil {
+			canUse, reason := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID)
 			if !canUse {
-				return false, fmt.Errorf("platform agents not available: %s", reason)
+				return false, fmt.Errorf("platform sensors not available: %s", reason)
 			}
 		}
 		return true, nil
 	}
 
-	// Auto: tenant agents first. Shared agents only if the tenant may use them
+	// Auto: tenant sensors first. Shared sensors only if the tenant may use them
 	// and nothing in the scan is internal; otherwise the job waits.
-	if s.agentSelector == nil || internal {
+	if s.sensorSelector == nil || internal {
 		return false, nil
 	}
-	result, err := s.agentSelector.SelectAgent(ctx, SelectAgentRequest{
+	result, err := s.sensorSelector.SelectSensor(ctx, SelectSensorRequest{
 		TenantID:     sc.TenantID,
 		Capabilities: []string{sc.ScannerName},
 		Tool:         sc.ScannerName,
@@ -673,10 +674,10 @@ func (s *Service) shouldUsePlatformAgent(ctx context.Context, sc *scan.Scan, tar
 	if err != nil {
 		return false, err
 	}
-	if result.Agent != nil && !result.IsPlatform {
+	if result.Sensor != nil && !result.IsPlatform {
 		return false, nil
 	}
-	canUse, _ := s.agentSelector.CanUsePlatformAgents(ctx, sc.TenantID)
+	canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID)
 	return canUse, nil
 }
 

@@ -171,13 +171,13 @@ func (c *CoverageScheduler) toCoverageConfig(intg *integration.Integration) (sca
 		DefaultBatch: tc.EffectiveBatchSize(),
 		TemplateUUID: tc.TemplateUUID,
 	}
-	if tc.AgentID != "" {
-		if id, err := shared.IDFromString(tc.AgentID); err == nil {
-			cfg.AgentID = &id
+	if tc.SensorID != "" {
+		if id, err := shared.IDFromString(tc.SensorID); err == nil {
+			cfg.SensorID = &id
 		} else {
-			c.logger.Warn("ignoring invalid pinned agent_id on tenable integration",
+			c.logger.Warn("ignoring invalid pinned sensor_id on tenable integration",
 				"integration_id", intg.ID().String(),
-				"agent_id", tc.AgentID)
+				"sensor_id", tc.SensorID)
 		}
 	}
 	return cfg, true

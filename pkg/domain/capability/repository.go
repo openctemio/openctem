@@ -62,7 +62,7 @@ type Repository interface {
 	// GetCategories returns all unique categories.
 	GetCategories(ctx context.Context) ([]string, error)
 
-	// GetUsageStats returns usage statistics for a capability (tool count, agent count).
+	// GetUsageStats returns usage statistics for a capability (tool count, sensor count).
 	GetUsageStats(ctx context.Context, capabilityID shared.ID) (*CapabilityUsageStats, error)
 
 	// GetUsageStatsBatch returns usage statistics for multiple capabilities.
@@ -71,10 +71,10 @@ type Repository interface {
 
 // CapabilityUsageStats contains usage statistics for a capability.
 type CapabilityUsageStats struct {
-	ToolCount  int      `json:"tool_count"`
-	AgentCount int      `json:"agent_count"`
-	ToolNames  []string `json:"tool_names,omitempty"`  // Names of tools using this capability
-	AgentNames []string `json:"agent_names,omitempty"` // Names of agents with this capability
+	ToolCount   int      `json:"tool_count"`
+	SensorCount int      `json:"sensor_count"`
+	ToolNames   []string `json:"tool_names,omitempty"`   // Names of tools using this capability
+	SensorNames []string `json:"sensor_names,omitempty"` // Names of sensors with this capability
 }
 
 // ToolCapabilityRepository defines the interface for tool-capability junction table.

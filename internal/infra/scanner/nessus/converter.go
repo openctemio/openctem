@@ -34,7 +34,7 @@ type ConvertOptions struct {
 
 	// ToolName is the CTIS tool.name. Defaults to "tenable". Auto-resolve is
 	// also scoped by tool name, so this keeps Tenable scans from resolving
-	// agent-scanner (nuclei/trivy/...) findings and vice versa.
+	// sensor-scanner (nuclei/trivy/...) findings and vice versa.
 	ToolName string
 
 	// Now overrides the report timestamp (tests pass a fixed value). Zero →

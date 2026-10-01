@@ -8,7 +8,6 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/openctemio/api/internal/app/scope"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/assetgroup"
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/command"
@@ -16,6 +15,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/scanprofile"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/templatesource"
 	"github.com/openctemio/api/pkg/domain/tool"
@@ -121,23 +121,23 @@ func (e AuditEvent) WithMetadata(key string, value any) AuditEvent {
 	return e
 }
 
-// AgentSelector interface for agent selection.
-type AgentSelector interface {
-	CheckAgentAvailability(ctx context.Context, tenantID shared.ID, tool string, tenantOnly bool) *AgentAvailability
-	CanUsePlatformAgents(ctx context.Context, tenantID shared.ID) (bool, string)
-	SelectAgent(ctx context.Context, req SelectAgentRequest) (*SelectAgentResult, error)
+// SensorSelector interface for sensor selection.
+type SensorSelector interface {
+	CheckSensorAvailability(ctx context.Context, tenantID shared.ID, tool string, tenantOnly bool) *SensorAvailability
+	CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string)
+	SelectSensor(ctx context.Context, req SelectSensorRequest) (*SelectSensorResult, error)
 }
 
-// AgentAvailability represents agent availability status.
-type AgentAvailability struct {
-	HasTenantAgent   bool
-	HasPlatformAgent bool
-	Available        bool
-	Message          string
+// SensorAvailability represents sensor availability status.
+type SensorAvailability struct {
+	HasTenantSensor   bool
+	HasPlatformSensor bool
+	Available         bool
+	Message           string
 }
 
-// SelectAgentRequest represents a request to select an agent.
-type SelectAgentRequest struct {
+// SelectSensorRequest represents a request to select a sensor.
+type SelectSensorRequest struct {
 	TenantID     shared.ID
 	Capabilities []string
 	Tool         string
@@ -145,17 +145,17 @@ type SelectAgentRequest struct {
 	AllowQueue   bool
 }
 
-// SelectMode represents the agent selection mode.
+// SelectMode represents the sensor selection mode.
 type SelectMode int
 
 const (
-	// SelectTenantFirst tries tenant agents first, then platform.
+	// SelectTenantFirst tries tenant sensors first, then platform.
 	SelectTenantFirst SelectMode = iota
 )
 
-// SelectAgentResult represents the result of agent selection.
-type SelectAgentResult struct {
-	Agent      *agent.Agent
+// SelectSensorResult represents the result of sensor selection.
+type SelectSensorResult struct {
+	Sensor     *sensor.Sensor
 	IsPlatform bool
 }
 
@@ -188,7 +188,7 @@ type Service struct {
 	targetMappingRepo   tool.TargetMappingRepository // For asset-scanner compatibility
 	profileRepo         scanprofile.Repository       // For ScanProfile linking and quality gates
 	templateSyncer      TemplateSyncer
-	agentSelector       AgentSelector
+	sensorSelector      SensorSelector
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
@@ -250,7 +250,7 @@ func NewService(
 	templateSourceRepo templatesource.Repository,
 	toolRepo tool.Repository,
 	templateSyncer TemplateSyncer,
-	agentSelector AgentSelector,
+	sensorSelector SensorSelector,
 	securityValidator SecurityValidator,
 	log *logger.Logger,
 	opts ...ServiceOption,
@@ -267,7 +267,7 @@ func NewService(
 		templateSourceRepo:  templateSourceRepo,
 		toolRepo:            toolRepo,
 		templateSyncer:      templateSyncer,
-		agentSelector:       agentSelector,
+		sensorSelector:      sensorSelector,
 		securityValidator:   securityValidator,
 		logger:              log.With("service", "scan"),
 	}

@@ -386,7 +386,7 @@ func TestExportConfig_ReturnsValidJSON(t *testing.T) {
 // =============================================================================
 
 // For ImportConfig, the Service.CreateScan method requires many dependencies
-// (toolRepo, assetGroupRepo, securityValidator, agentSelector, etc.).
+// (toolRepo, assetGroupRepo, securityValidator, sensorSelector, etc.).
 // We test ImportConfig by verifying the JSON parsing and validation logic
 // directly, since the full CreateScan path is tested elsewhere.
 
@@ -584,7 +584,7 @@ func TestImportConfig_ParsedFieldsMapping(t *testing.T) {
 		ScheduleTimezone:  "America/New_York",
 		Tags:              []string{"imported", "ci"},
 		RunOnTenantRunner: true,
-		AgentPreference:   "tenant",
+		SensorPreference:  "tenant",
 		PipelineID:        &pipelineID,
 		AssetGroupIDs:     []string{shared.NewID().String()},
 		Targets:           []string{"target.example.com"},
@@ -610,7 +610,7 @@ func TestImportConfig_ParsedFieldsMapping(t *testing.T) {
 	assert.Equal(t, original.ScheduleTimezone, parsed.ScheduleTimezone)
 	assert.Equal(t, original.Tags, parsed.Tags)
 	assert.True(t, parsed.RunOnTenantRunner)
-	assert.Equal(t, original.AgentPreference, parsed.AgentPreference)
+	assert.Equal(t, original.SensorPreference, parsed.SensorPreference)
 	assert.NotNil(t, parsed.PipelineID)
 	assert.Equal(t, pipelineID, *parsed.PipelineID)
 	assert.NotNil(t, parsed.ScheduleDay)
@@ -645,7 +645,7 @@ func TestExportImport_JSONRoundTrip(t *testing.T) {
 	sc.ScannerConfig = map[string]any{"template": "cves"}
 	sc.ScheduleType = scan.ScheduleManual
 	sc.RunOnTenantRunner = true
-	sc.AgentPreference = scan.AgentPreferenceTenant
+	sc.SensorPreference = scan.SensorPreferenceTenant
 	repo.addScan(sc)
 
 	// Export
@@ -666,11 +666,22 @@ func TestExportImport_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, sc.Targets, exported.Targets)
 	assert.Equal(t, sc.Tags, exported.Tags)
 	assert.Equal(t, sc.RunOnTenantRunner, exported.RunOnTenantRunner)
-	assert.Equal(t, string(sc.AgentPreference), exported.AgentPreference)
+	assert.Equal(t, string(sc.SensorPreference), exported.SensorPreference)
 	assert.Equal(t, string(sc.ScheduleType), exported.ScheduleType)
 	assert.Equal(t, sc.ScheduleTimezone, exported.ScheduleTimezone)
 
 	// Verify metadata is present in the exported config
 	assert.NotEmpty(t, exported.ExportedAt)
 	assert.Equal(t, "1.0", exported.Version)
+}
+
+// An export written before the agent → sensor rename keeps its selection mode.
+func TestDecodeScanConfigExport_ReadsPreRenameKey(t *testing.T) {
+	old, err := decodeScanConfigExport([]byte(`{"name":"n","scan_type":"single","agent_preference":"tenant"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "tenant", old.SensorPreference)
+
+	cur, err := decodeScanConfigExport([]byte(`{"name":"n","scan_type":"single","sensor_preference":"platform","agent_preference":"tenant"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "platform", cur.SensorPreference, "the current key wins when both are present")
 }

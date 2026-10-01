@@ -10,21 +10,21 @@ import (
 	"github.com/openctemio/api/pkg/logger"
 )
 
-// AgentCapabilityValidate is the capability string a validate-capable agent
+// SensorCapabilityValidate is the capability string a validate-capable sensor
 // advertises and the one a validate command requires for routing. It is the
 // single source of truth shared by the dispatch payload (RequiredCapabilities)
-// and the pre-flight availability gate (RunService.ensureAgentAvailable) so the
+// and the pre-flight availability gate (RunService.ensureSensorAvailable) so the
 // two never drift: the gate opens exactly when a queued command can be routed.
-const AgentCapabilityValidate = "validate"
+const SensorCapabilityValidate = "validate"
 
-// AgentCapabilityValidateNuclei is the capability a nuclei-re-verify-capable
-// agent advertises (RFC-011.2 Phase 2b). It is strictly deeper than
-// AgentCapabilityValidate: an agent that can run a single detection template
+// SensorCapabilityValidateNuclei is the capability a nuclei-re-verify-capable
+// sensor advertises (RFC-011.2 Phase 2b). It is strictly deeper than
+// SensorCapabilityValidate: a sensor that can run a single detection template
 // advertises BOTH, and a KindNuclei command requires this one so it is only ever
-// routed to an agent that can execute it — never a safe-check-only agent. The
+// routed to a sensor that can execute it — never a safe-check-only sensor. The
 // gate that decides whether to route KindNuclei (NucleiAvailability) queries for
 // exactly this capability, so the two never drift.
-const AgentCapabilityValidateNuclei = "validate:nuclei"
+const SensorCapabilityValidateNuclei = "validate:nuclei"
 
 // CommandCreator is the narrow seam over the command repository used to enqueue
 // a validation job. Implemented by *postgres.CommandRepository.
@@ -32,8 +32,8 @@ type CommandCreator interface {
 	Create(ctx context.Context, cmd *commanddom.Command) error
 }
 
-// JobDispatcher enqueues a validation job for an agent to execute and returns
-// the command ID it was queued under. It is fire-and-forget: the agent reports
+// JobDispatcher enqueues a validation job for a sensor to execute and returns
+// the command ID it was queued under. It is fire-and-forget: the sensor reports
 // the result later and the command-completion hook maps that result back into
 // Evidence via EvidenceIngestService. (This is the async counterpart to the
 // synchronous ValidationDispatcher.Submit contract, which does not fit the
@@ -50,13 +50,13 @@ type ValidateTargetPayload struct {
 }
 
 // ValidateCommandPayload is the JSON payload embedded in a CommandTypeValidate
-// command. It is the wire contract between the API (producer) and the agent
-// executor (consumer); the agent replies with a ValidateResultPayload.
+// command. It is the wire contract between the API (producer) and the sensor
+// executor (consumer); the sensor replies with a ValidateResultPayload.
 type ValidateCommandPayload struct {
 	JobID     string `json:"job_id"`
 	FindingID string `json:"finding_id"`
 	// SimulationRunID is set when the job backs an attack-simulation run
-	// (RFC-012). The agent ignores it; the server completion hook uses it to
+	// (RFC-012). The sensor ignores it; the server completion hook uses it to
 	// finalize the run. Empty for plain finding proof-of-fix jobs.
 	SimulationRunID string                `json:"simulation_run_id,omitempty"`
 	ExecutorKind    string                `json:"executor_kind"`
@@ -64,17 +64,17 @@ type ValidateCommandPayload struct {
 	Target          ValidateTargetPayload `json:"target"`
 	TimeoutSeconds  int                   `json:"timeout_seconds"`
 	// TemplateID / CVEID carry the finding's own detection signature for a
-	// KindNuclei job (RFC-011.2 Phase 2b): the agent re-runs this single template
+	// KindNuclei job (RFC-011.2 Phase 2b): the sensor re-runs this single template
 	// (`nuclei -id <template_id|cve_id>`), never a full scan. Both empty for a
-	// safe-check job, which the agent then handles as today.
+	// safe-check job, which the sensor then handles as today.
 	TemplateID string `json:"template_id,omitempty"`
 	CVEID      string `json:"cve_id,omitempty"`
-	// RequiredCapabilities lets the platform route the job only to agents that
+	// RequiredCapabilities lets the platform route the job only to sensors that
 	// advertise the validation capability (mirrors the scan command payload).
 	RequiredCapabilities []string `json:"required_capabilities"`
 }
 
-// ValidateResultPayload is what an agent reports back in the command result for
+// ValidateResultPayload is what a sensor reports back in the command result for
 // a validate command. Kept small and stable; RawMeta carries probe detail.
 type ValidateResultPayload struct {
 	Outcome  string         `json:"outcome"`
@@ -83,7 +83,7 @@ type ValidateResultPayload struct {
 }
 
 // CommandDispatcher implements JobDispatcher by creating a CommandTypeValidate
-// command that a validate-capable agent polls and executes.
+// command that a validate-capable sensor polls and executes.
 type CommandDispatcher struct {
 	commands CommandCreator
 	logger   *logger.Logger
@@ -114,14 +114,14 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 		simRunID = job.SimulationRunID.String()
 	}
 
-	// Route a KindNuclei job only to agents advertising the deeper
+	// Route a KindNuclei job only to sensors advertising the deeper
 	// `validate:nuclei` capability; everything else rides the base `validate`
 	// capability. The kind is already capability-gated upstream (RunService only
-	// selects KindNuclei when a nuclei agent is online), so this required
-	// capability can never enqueue a command no agent can consume.
-	requiredCap := AgentCapabilityValidate
+	// selects KindNuclei when a nuclei sensor is online), so this required
+	// capability can never enqueue a command no sensor can consume.
+	requiredCap := SensorCapabilityValidate
 	if job.ExecutorKind == KindNuclei {
-		requiredCap = AgentCapabilityValidateNuclei
+		requiredCap = SensorCapabilityValidateNuclei
 	}
 
 	payload := ValidateCommandPayload{

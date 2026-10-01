@@ -128,7 +128,7 @@ print_header "Section 3: Create Agent"
 if ! check_critical "Create Agent"; then :; else
 
 print_test "Create scanner agent"
-do_request "POST" "/api/v1/agents" "{
+do_request "POST" "/api/v1/sensors" "{
     \"name\": \"e2e-adv-runner-${TIMESTAMP}\",
     \"type\": \"runner\",
     \"description\": \"E2E advanced scanning test agent\",
@@ -139,7 +139,7 @@ do_request "POST" "/api/v1/agents" "{
 print_info "Status: $HTTP_CODE"
 
 if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
-    AGENT_ID=$(extract_json "$BODY" '.agent.id // .id')
+    AGENT_ID=$(extract_json "$BODY" '.sensor.id // .id')
     AGENT_API_KEY=$(extract_json "$BODY" '.api_key')
     print_info "Agent ID: $AGENT_ID"
     print_success "Agent created"
@@ -158,12 +158,12 @@ print_header "Section 4: List & Get Agents"
 if ! check_critical "Agents"; then :; else
 
 print_test "List agents"
-do_request "GET" "/api/v1/agents" "" "Authorization: Bearer $ACCESS_TOKEN"
+do_request "GET" "/api/v1/sensors" "" "Authorization: Bearer $ACCESS_TOKEN"
 [ "$HTTP_CODE" = "200" ] && print_success "Agents listed" || print_failure "List agents" "Got $HTTP_CODE"
 
 print_test "Get agent"
 if [ -n "$AGENT_ID" ] && [ "$AGENT_ID" != "null" ]; then
-    do_request "GET" "/api/v1/agents/$AGENT_ID" "" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "GET" "/api/v1/sensors/$AGENT_ID" "" "Authorization: Bearer $ACCESS_TOKEN"
     [ "$HTTP_CODE" = "200" ] && print_success "Get agent" || print_failure "Get agent" "Got $HTTP_CODE"
 else
     print_skip "Get agent (no ID)"
@@ -180,7 +180,7 @@ if ! check_critical "Agent Lifecycle"; then :; else
 
 print_test "Update agent"
 if [ -n "$AGENT_ID" ] && [ "$AGENT_ID" != "null" ]; then
-    do_request "PUT" "/api/v1/agents/$AGENT_ID" "{\"description\": \"Updated by E2E test\"}" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "PUT" "/api/v1/sensors/$AGENT_ID" "{\"description\": \"Updated by E2E test\"}" "Authorization: Bearer $ACCESS_TOKEN"
     [ "$HTTP_CODE" = "200" ] && print_success "Agent updated" || print_failure "Update agent" "Got $HTTP_CODE"
 else
     print_skip "Update agent (no ID)"
@@ -188,7 +188,7 @@ fi
 
 print_test "Deactivate agent"
 if [ -n "$AGENT_ID" ] && [ "$AGENT_ID" != "null" ]; then
-    do_request "POST" "/api/v1/agents/$AGENT_ID/deactivate" "" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "POST" "/api/v1/sensors/$AGENT_ID/deactivate" "" "Authorization: Bearer $ACCESS_TOKEN"
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
         print_success "Agent deactivated"
     elif [ "$HTTP_CODE" = "500" ]; then
@@ -202,7 +202,7 @@ fi
 
 print_test "Activate agent"
 if [ -n "$AGENT_ID" ] && [ "$AGENT_ID" != "null" ]; then
-    do_request "POST" "/api/v1/agents/$AGENT_ID/activate" "" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "POST" "/api/v1/sensors/$AGENT_ID/activate" "" "Authorization: Bearer $ACCESS_TOKEN"
     [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ] && print_success "Agent activated" || print_failure "Activate" "Got $HTTP_CODE"
 else
     print_skip "Activate (no ID)"
@@ -210,7 +210,7 @@ fi
 
 print_test "Regenerate agent key"
 if [ -n "$AGENT_ID" ] && [ "$AGENT_ID" != "null" ]; then
-    do_request "POST" "/api/v1/agents/$AGENT_ID/regenerate-key" "" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "POST" "/api/v1/sensors/$AGENT_ID/regenerate-key" "" "Authorization: Bearer $ACCESS_TOKEN"
     if [ "$HTTP_CODE" = "200" ]; then
         NEW_KEY=$(extract_json "$BODY" '.api_key')
         [ -n "$NEW_KEY" ] && [ "$NEW_KEY" != "null" ] && AGENT_API_KEY="$NEW_KEY"
@@ -223,7 +223,7 @@ else
 fi
 
 print_test "Get available capabilities"
-do_request "GET" "/api/v1/agents/available-capabilities" "" "Authorization: Bearer $ACCESS_TOKEN"
+do_request "GET" "/api/v1/sensors/available-capabilities" "" "Authorization: Bearer $ACCESS_TOKEN"
 [ "$HTTP_CODE" = "200" ] && print_success "Available capabilities retrieved" || print_failure "Capabilities" "Got $HTTP_CODE"
 
 fi
@@ -353,7 +353,7 @@ if ! check_critical "Delete Agent"; then :; else
 
 print_test "Delete agent"
 if [ -n "$AGENT_ID" ] && [ "$AGENT_ID" != "null" ]; then
-    do_request "DELETE" "/api/v1/agents/$AGENT_ID" "" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "DELETE" "/api/v1/sensors/$AGENT_ID" "" "Authorization: Bearer $ACCESS_TOKEN"
     [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ] && print_success "Agent deleted" || print_failure "Delete agent" "Got $HTTP_CODE"
 else
     print_skip "Delete agent (no ID)"

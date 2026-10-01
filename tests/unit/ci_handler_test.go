@@ -135,18 +135,18 @@ func (m *ciMockScanRepository) addScan(s *scan.Scan) {
 	m.scans[s.ID.String()] = s
 }
 
-// ciMockAgentSelector implements scansvc.AgentSelector.
-type ciMockAgentSelector struct{}
+// ciMockSensorSelector implements scansvc.SensorSelector.
+type ciMockSensorSelector struct{}
 
-func (m *ciMockAgentSelector) CheckAgentAvailability(_ context.Context, _ shared.ID, _ string, _ bool) *scansvc.AgentAvailability {
-	return &scansvc.AgentAvailability{Available: true}
+func (m *ciMockSensorSelector) CheckSensorAvailability(_ context.Context, _ shared.ID, _ string, _ bool) *scansvc.SensorAvailability {
+	return &scansvc.SensorAvailability{Available: true}
 }
 
-func (m *ciMockAgentSelector) CanUsePlatformAgents(_ context.Context, _ shared.ID) (bool, string) {
+func (m *ciMockSensorSelector) CanUsePlatformSensors(_ context.Context, _ shared.ID) (bool, string) {
 	return true, ""
 }
 
-func (m *ciMockAgentSelector) SelectAgent(_ context.Context, _ scansvc.SelectAgentRequest) (*scansvc.SelectAgentResult, error) {
+func (m *ciMockSensorSelector) SelectSensor(_ context.Context, _ scansvc.SelectSensorRequest) (*scansvc.SelectSensorResult, error) {
 	return nil, nil
 }
 
@@ -188,7 +188,7 @@ func newTestCIHandler(repo *ciMockScanRepository) *handler.CIHandler {
 		nil, // templateSourceRepo
 		nil, // toolRepo
 		nil, // templateSyncer
-		&ciMockAgentSelector{},
+		&ciMockSensorSelector{},
 		&ciMockSecurityValidator{},
 		log,
 	)

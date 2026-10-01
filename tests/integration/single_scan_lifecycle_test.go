@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/internal/infra/postgres"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // A single-scanner scan is the shape essentially every real scan takes, and
@@ -38,20 +39,20 @@ import (
 
 const quickScanStepKey = "quick_scan"
 
-// availableAgents is the minimum AgentSelector that lets a trigger proceed.
-// TriggerScan calls CheckAgentAvailability without a nil guard, and refusing
+// availableSensors is the minimum SensorSelector that lets a trigger proceed.
+// TriggerScan calls CheckSensorAvailability without a nil guard, and refusing
 // here would abort before the code under test runs.
-type availableAgents struct{}
+type availableSensors struct{}
 
-func (availableAgents) CheckAgentAvailability(context.Context, shared.ID, string, bool) *scansvc.AgentAvailability {
-	return &scansvc.AgentAvailability{HasTenantAgent: true, Available: true}
+func (availableSensors) CheckSensorAvailability(context.Context, shared.ID, string, bool) *scansvc.SensorAvailability {
+	return &scansvc.SensorAvailability{HasTenantSensor: true, Available: true}
 }
 
-func (availableAgents) CanUsePlatformAgents(context.Context, shared.ID) (bool, string) {
+func (availableSensors) CanUsePlatformSensors(context.Context, shared.ID) (bool, string) {
 	return false, "test"
 }
 
-func (availableAgents) SelectAgent(context.Context, scansvc.SelectAgentRequest) (*scansvc.SelectAgentResult, error) {
+func (availableSensors) SelectSensor(context.Context, scansvc.SelectSensorRequest) (*scansvc.SelectSensorResult, error) {
 	return nil, nil
 }
 
@@ -92,7 +93,7 @@ func newTriggerService(db *sql.DB) *scansvc.Service {
 		nil, // templateSourceRepo
 		postgres.NewToolRepository(pg),
 		nil, // templateSyncer
-		availableAgents{},
+		availableSensors{},
 		nil, // securityValidator
 		logger.New(logger.Config{Level: "error"}),
 	)
@@ -131,7 +132,7 @@ func seedLifecycleScan(ctx context.Context, t *testing.T, db *sql.DB, tenantID s
 	scanID := shared.NewID()
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO scans (id, tenant_id, name, scan_type, scanner_name, targets,
-		                    status, schedule_type, agent_preference, timeout_seconds)
+		                    status, schedule_type, sensor_preference, timeout_seconds)
 		 VALUES ($1, $2, $3, 'single', $4, ARRAY['example.test'],
 		         'active', 'manual', 'tenant', 3600)`,
 		scanID.String(), tenantID.String(), "probe scan "+scanID.String(), toolName); err != nil {
@@ -227,10 +228,17 @@ func TestTriggerSingleScan_ProducesAReportableRun(t *testing.T) {
 	if routed.StepRunID == "" {
 		t.Error("payload step_run_id is empty")
 	}
-	// The legacy key must survive: the agent SDK reads it.
+	// The legacy key must survive: the sensor SDK reads it.
 	if routed.RunID != run.ID.String() {
-		t.Errorf("payload run_id = %q, want %q — the agent SDK still reads this key",
+		t.Errorf("payload run_id = %q, want %q — the sensor SDK still reads this key",
 			routed.RunID, run.ID.String())
+	}
+	// Protocol v1: deployed sensors read the selection mode under its
+	// pre-rename key (pkg/sensorproto/legacyv1).
+	var keys map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &keys)
+	if _, ok := keys[legacyv1.PayloadKeySensorPreference]; !ok {
+		t.Errorf("payload lacks %q — v1 sensors read the selection mode from it", legacyv1.PayloadKeySensorPreference)
 	}
 	// And the command the step points at must be the one we just read.
 	var payloadCommandID string

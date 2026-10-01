@@ -12,10 +12,10 @@ import (
 	"github.com/openctemio/ctis/fingerprint"
 	"github.com/openctemio/ctis/severity"
 
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/asset"
 	"github.com/openctemio/api/pkg/domain/branch"
 	"github.com/openctemio/api/pkg/domain/component"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
@@ -181,7 +181,7 @@ func (p *FindingProcessor) SetExposureBridge(bridge ExposureBridge) {
 //nolint:gocognit,nestif,cyclop // Batch ingestion inherently requires complex control flow
 func (p *FindingProcessor) ProcessBatch(
 	ctx context.Context,
-	agt *agent.Agent,
+	agt *sensor.Sensor,
 	tenantID shared.ID,
 	report *ctis.Report,
 	assetMap map[string]shared.ID,
@@ -779,7 +779,7 @@ func (p *FindingProcessor) buildFinding(
 	tenantID shared.ID,
 	assetID shared.ID,
 	branchID *shared.ID,
-	agentID shared.ID,
+	sensorID shared.ID,
 	report *ctis.Report,
 	ctisFinding *ctis.Finding,
 	fp string,
@@ -833,11 +833,11 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set core identifiers
 	f.SetFingerprint(fp)
-	f.SetAgentID(agentID)
+	f.SetSensorID(sensorID)
 	f.SetScanID(report.Metadata.ID)
 
 	// Provenance. ctis.ReportMetadata.SourceType has always carried this — the
-	// Nessus converter sets "integration", the agent's reports say "scanner" —
+	// Nessus converter sets "integration", the sensor's reports say "scanner" —
 	// and the processor read it and threw it away. An unrecognized value leaves
 	// the column NULL rather than guessing, so "unrecorded" stays honest.
 	if channel, ok := vulnerability.IngestChannelFromCTIS(report.Metadata.SourceType); ok {

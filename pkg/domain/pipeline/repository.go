@@ -207,7 +207,7 @@ type RunStats struct {
 type StepRunFilter struct {
 	PipelineRunID *shared.ID
 	StepID        *shared.ID
-	AgentID       *shared.ID
+	SensorID      *shared.ID
 	Status        *StepRunStatus
 }
 
@@ -240,8 +240,8 @@ type StepRunRepository interface {
 	// UpdateStatus updates step run status.
 	UpdateStatus(ctx context.Context, id shared.ID, status StepRunStatus, errorMessage, errorCode string) error
 
-	// AssignAgent assigns an agent and command to a step run.
-	AssignAgent(ctx context.Context, id shared.ID, agentID, commandID shared.ID) error
+	// AssignSensor assigns a sensor and command to a step run.
+	AssignSensor(ctx context.Context, id shared.ID, sensorID, commandID shared.ID) error
 
 	// Complete marks a step run as completed.
 	Complete(ctx context.Context, id shared.ID, findingsCount int, output map[string]any) error

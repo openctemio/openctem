@@ -8,8 +8,8 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/ingestjob"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 )
 
@@ -20,7 +20,7 @@ type ctisIngestEnvelope struct {
 
 // ParseReport decodes a raw ingest body into a CTIS report. It accepts both the
 // wrapped form ({"report": {...}}) and the flat SDK form ({"version": ...}),
-// rejecting unknown fields so an agent cannot smuggle extra keys. This is the
+// rejecting unknown fields so a sensor cannot smuggle extra keys. This is the
 // single parser shared by the synchronous accept handler and the async worker.
 func ParseReport(body []byte) (*ctis.Report, error) {
 	// Wrapped form first.
@@ -57,7 +57,7 @@ type JobResult struct {
 // ingester is the slice of *Service the job processor needs (kept small so the
 // processor is unit-testable with a stub).
 type ingester interface {
-	Ingest(ctx context.Context, agt *agent.Agent, input Input) (*Output, error)
+	Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (*Output, error)
 }
 
 // JobProcessor turns a queued raw payload back into a CTIS report and runs it
@@ -71,8 +71,8 @@ func NewJobProcessor(service *Service) *JobProcessor {
 	return &JobProcessor{service: service}
 }
 
-// Process parses the job payload and ingests it under a synthetic agent built
-// from the job's stored identity (the agent was already authenticated when the
+// Process parses the job payload and ingests it under a synthetic sensor built
+// from the job's stored identity (the sensor was already authenticated when the
 // job was accepted, so no re-auth/DB fetch is needed). Returns the marshaled
 // counts to store on the completed job.
 func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte, error) {
@@ -85,14 +85,14 @@ func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte,
 	}
 
 	tenantID := job.TenantID()
-	agentID := shared.ID{}
-	if job.AgentID() != nil {
-		agentID = *job.AgentID()
+	sensorID := shared.ID{}
+	if job.SensorID() != nil {
+		sensorID = *job.SensorID()
 	}
-	agt := &agent.Agent{
-		ID:       agentID,
+	agt := &sensor.Sensor{
+		ID:       sensorID,
 		TenantID: &tenantID,
-		Status:   agent.AgentStatusActive,
+		Status:   sensor.SensorStatusActive,
 	}
 
 	output, err := p.service.Ingest(ctx, agt, Input{Report: report})

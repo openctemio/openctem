@@ -12,8 +12,8 @@ import (
 
 	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/infra/http/middleware"
-	"github.com/openctemio/api/pkg/domain/agent"
 	commanddom "github.com/openctemio/api/pkg/domain/command"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
@@ -85,7 +85,7 @@ func newValidationHandler(repo *fakeEvidenceRepo, fm *fakeFindingMutator) *Valid
 	return NewValidationHandler(svc, logger.NewNop())
 }
 
-func agentCtxReq(t *testing.T, method, target string, body []byte, tenantID shared.ID) *http.Request {
+func sensorCtxReq(t *testing.T, method, target string, body []byte, tenantID shared.ID) *http.Request {
 	t.Helper()
 	var r *http.Request
 	if body != nil {
@@ -94,11 +94,11 @@ func agentCtxReq(t *testing.T, method, target string, body []byte, tenantID shar
 		r = httptest.NewRequest(method, target, nil)
 	}
 	tid := tenantID
-	agt := &agent.Agent{ID: shared.NewID(), TenantID: &tid, Status: agent.AgentStatusActive}
-	return r.WithContext(context.WithValue(r.Context(), agentContextKey, agt))
+	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
+	return r.WithContext(context.WithValue(r.Context(), sensorContextKey, agt))
 }
 
-// With the validate command assigned to the submitting agent for this finding
+// With the validate command assigned to the submitting sensor for this finding
 // cited, the evidence is authoritative and moves the finding.
 func TestValidationHandler_IngestEvidence_Resolves(t *testing.T) {
 	repo := &fakeEvidenceRepo{}
@@ -107,9 +107,9 @@ func TestValidationHandler_IngestEvidence_Resolves(t *testing.T) {
 
 	tenantID := shared.NewID()
 	findingID := shared.NewID()
-	r0 := agentCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", nil, tenantID)
-	agentID := AgentFromContext(r0.Context()).ID
-	cmd := validateCmd(t, tenantID, &agentID, findingID, commanddom.CommandStatusRunning)
+	r0 := sensorCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", nil, tenantID)
+	sensorID := SensorFromContext(r0.Context()).ID
+	cmd := validateCmd(t, tenantID, &sensorID, findingID, commanddom.CommandStatusRunning)
 	h.SetCommandLookup(&fakeCommandLookup{cmds: []*commanddom.Command{cmd}})
 
 	body, _ := json.Marshal(evidenceRequest{
@@ -139,14 +139,14 @@ func TestValidationHandler_IngestEvidence_Resolves(t *testing.T) {
 		t.Fatalf("evidence rows = %d, want 1", len(repo.rows))
 	}
 	if repo.rows[0].TenantID != tenantID {
-		t.Error("evidence tenant must come from the agent context, not the body")
+		t.Error("evidence tenant must come from the sensor context, not the body")
 	}
 	if fm.current.Status() != vulnerability.FindingStatusResolved {
 		t.Errorf("finding status = %s, want resolved", fm.current.Status())
 	}
 }
 
-func TestValidationHandler_IngestEvidence_NoAgent_Unauthorized(t *testing.T) {
+func TestValidationHandler_IngestEvidence_NoSensor_Unauthorized(t *testing.T) {
 	h := newValidationHandler(&fakeEvidenceRepo{}, &fakeFindingMutator{current: fixAppliedFinding(t)})
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/validation/evidence", bytes.NewReader([]byte(`{}`)))
 	w := httptest.NewRecorder()
@@ -164,7 +164,7 @@ func TestValidationHandler_IngestEvidence_BadOutcome(t *testing.T) {
 		ExecutorKind: "safe-check",
 		Outcome:      "bogus-outcome",
 	})
-	r := agentCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", body, shared.NewID())
+	r := sensorCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", body, shared.NewID())
 	w := httptest.NewRecorder()
 
 	h.IngestEvidence(w, r)
@@ -176,7 +176,7 @@ func TestValidationHandler_IngestEvidence_BadOutcome(t *testing.T) {
 func TestValidationHandler_IngestEvidence_MissingFindingID(t *testing.T) {
 	h := newValidationHandler(&fakeEvidenceRepo{}, &fakeFindingMutator{current: fixAppliedFinding(t)})
 	body, _ := json.Marshal(evidenceRequest{ExecutorKind: "safe-check", Outcome: "not_detected"})
-	r := agentCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", body, shared.NewID())
+	r := sensorCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", body, shared.NewID())
 	w := httptest.NewRecorder()
 
 	h.IngestEvidence(w, r)
@@ -192,7 +192,7 @@ func TestValidationHandler_IngestEvidence_FindingNotFound(t *testing.T) {
 		ExecutorKind: "safe-check",
 		Outcome:      "not_detected",
 	})
-	r := agentCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", body, shared.NewID())
+	r := sensorCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", body, shared.NewID())
 	w := httptest.NewRecorder()
 
 	h.IngestEvidence(w, r)
@@ -213,7 +213,7 @@ func TestValidationHandler_ListFindingEvidence(t *testing.T) {
 		ExecutorKind: "safe-check",
 		Outcome:      "inconclusive",
 	})
-	ingestReq := agentCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", body, tenantID)
+	ingestReq := sensorCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", body, tenantID)
 	h.IngestEvidence(httptest.NewRecorder(), ingestReq)
 
 	// Now GET the list with JWT tenant context + chi url param.
@@ -256,22 +256,22 @@ func (f *fakeCommandLookup) GetByTenantAndID(_ context.Context, tenantID, id sha
 	return nil, shared.ErrNotFound
 }
 
-func validateCmd(t *testing.T, tenantID shared.ID, agentID *shared.ID, findingID shared.ID, status commanddom.CommandStatus) *commanddom.Command {
+func validateCmd(t *testing.T, tenantID shared.ID, sensorID *shared.ID, findingID shared.ID, status commanddom.CommandStatus) *commanddom.Command {
 	t.Helper()
 	payload, _ := json.Marshal(validation.ValidateCommandPayload{FindingID: findingID.String(), ExecutorKind: "safe-check"})
 	cmd, err := commanddom.NewCommand(tenantID, commanddom.CommandTypeValidate, commanddom.CommandPriorityNormal, payload)
 	if err != nil {
 		t.Fatalf("new command: %v", err)
 	}
-	if agentID != nil {
-		cmd.SetAgentID(*agentID)
+	if sensorID != nil {
+		cmd.SetSensorID(*sensorID)
 	}
 	cmd.Status = status
 	return cmd
 }
 
-// postEvidence submits an outcome for findingID as the given agent.
-func postEvidence(t *testing.T, h *ValidationHandler, tenantID, agentID, findingID shared.ID, commandID string) *httptest.ResponseRecorder {
+// postEvidence submits an outcome for findingID as the given sensor.
+func postEvidence(t *testing.T, h *ValidationHandler, tenantID, sensorID, findingID shared.ID, commandID string) *httptest.ResponseRecorder {
 	t.Helper()
 	body, _ := json.Marshal(evidenceRequest{
 		FindingID: findingID.String(), CommandID: commandID,
@@ -279,14 +279,14 @@ func postEvidence(t *testing.T, h *ValidationHandler, tenantID, agentID, finding
 	})
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/validation/evidence", bytes.NewReader(body))
 	tid := tenantID
-	agt := &agent.Agent{ID: agentID, TenantID: &tid, Status: agent.AgentStatusActive}
-	r = r.WithContext(context.WithValue(r.Context(), agentContextKey, agt))
+	agt := &sensor.Sensor{ID: sensorID, TenantID: &tid, Status: sensor.SensorStatusActive}
+	r = r.WithContext(context.WithValue(r.Context(), sensorContextKey, agt))
 	w := httptest.NewRecorder()
 	h.IngestEvidence(w, r)
 	return w
 }
 
-// ATTACK: any agent key in the tenant posting an outcome for an arbitrary
+// ATTACK: any sensor key in the tenant posting an outcome for an arbitrary
 // finding id (no command) must not change the finding — evidence is stored as
 // advisory only and the response shape is unchanged.
 func TestValidationHandler_IngestEvidence_NoCommand_AdvisoryOnly(t *testing.T) {
@@ -312,7 +312,7 @@ func TestValidationHandler_IngestEvidence_NoCommand_AdvisoryOnly(t *testing.T) {
 	}
 }
 
-// ATTACK: citing a command that is not this agent's / not a validate command /
+// ATTACK: citing a command that is not this sensor's / not a validate command /
 // already finished / for another finding is rejected with 403 and changes
 // nothing.
 func TestValidationHandler_IngestEvidence_ForeignOrStaleCommandRejected(t *testing.T) {
@@ -322,11 +322,11 @@ func TestValidationHandler_IngestEvidence_ForeignOrStaleCommandRejected(t *testi
 	findingID := shared.NewID()
 
 	scanCmd, _ := commanddom.NewCommand(tenantID, commanddom.CommandTypeScan, commanddom.CommandPriorityNormal, json.RawMessage(`{"finding_id":"`+findingID.String()+`"}`))
-	scanCmd.SetAgentID(me)
+	scanCmd.SetSensorID(me)
 	scanCmd.Status = commanddom.CommandStatusRunning
 
 	cases := map[string]*commanddom.Command{
-		"other agent":        validateCmd(t, tenantID, &other, findingID, commanddom.CommandStatusRunning),
+		"other sensor":       validateCmd(t, tenantID, &other, findingID, commanddom.CommandStatusRunning),
 		"unassigned":         validateCmd(t, tenantID, nil, findingID, commanddom.CommandStatusPending),
 		"completed":          validateCmd(t, tenantID, &me, findingID, commanddom.CommandStatusCompleted),
 		"failed":             validateCmd(t, tenantID, &me, findingID, commanddom.CommandStatusFailed),

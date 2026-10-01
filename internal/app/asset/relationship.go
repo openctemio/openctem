@@ -295,7 +295,7 @@ func (s *AssetRelationshipService) CreateRelationship(ctx context.Context, input
 	// Placement mutex: `runs_on` and `deployed_to` describe overlapping
 	// concepts ("where this thing lives") so we forbid both existing for
 	// the same source/target pair. The UI constraint table also enforces
-	// this client-side, but agents and ingest pipelines bypass that path
+	// this client-side, but sensors and ingest pipelines bypass that path
 	// — this is the authoritative check.
 	//
 	// We only run this check when the requested type is one half of the

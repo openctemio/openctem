@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/audit"
 	"github.com/openctemio/api/pkg/domain/scan"
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // =============================================================================
@@ -43,7 +44,7 @@ type ScanConfigExport struct {
 	// Routing
 	Tags              []string `json:"tags,omitempty"`
 	RunOnTenantRunner bool     `json:"run_on_tenant_runner"`
-	AgentPreference   string   `json:"agent_preference,omitempty"`
+	SensorPreference  string   `json:"sensor_preference,omitempty"`
 
 	// Profile and timeout
 	ProfileID      string `json:"profile_id,omitempty"`
@@ -84,7 +85,7 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 		ScheduleDay:         sc.ScheduleDay,
 		ScheduleTimezone:    sc.ScheduleTimezone,
 		RunOnTenantRunner:   sc.RunOnTenantRunner,
-		AgentPreference:     string(sc.AgentPreference),
+		SensorPreference:    string(sc.SensorPreference),
 		TimeoutSeconds:      sc.TimeoutSeconds,
 		MaxRetries:          sc.MaxRetries,
 		RetryBackoffSeconds: sc.RetryBackoffSeconds,
@@ -146,13 +147,33 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 	return data, nil
 }
 
+// decodeScanConfigExport parses an exported scan configuration. Files
+// exported before the agent → sensor rename carry the selection mode under
+// its old key; it is read so such a file does not silently fall back to
+// "auto".
+func decodeScanConfigExport(data []byte) (ScanConfigExport, error) {
+	var export ScanConfigExport
+	if err := json.Unmarshal(data, &export); err != nil {
+		return export, err
+	}
+	if export.SensorPreference == "" {
+		var raw map[string]json.RawMessage
+		if json.Unmarshal(data, &raw) == nil {
+			if v, ok := raw[legacyv1.ScanExportKeySensorPreference]; ok {
+				_ = json.Unmarshal(v, &export.SensorPreference)
+			}
+		}
+	}
+	return export, nil
+}
+
 // ImportConfig creates a new scan from imported JSON configuration.
 // The imported config is validated and a new scan entity is created.
 func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []byte) (*scan.Scan, error) {
 	s.logger.Info("importing scan config", "tenant_id", tenantID.String())
 
-	var export ScanConfigExport
-	if err := json.Unmarshal(data, &export); err != nil {
+	export, err := decodeScanConfigExport(data)
+	if err != nil {
 		return nil, fmt.Errorf("%w: invalid scan config JSON: %s", shared.ErrValidation, err.Error())
 	}
 
@@ -192,7 +213,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		Timezone:            export.ScheduleTimezone,
 		Tags:                export.Tags,
 		TenantRunner:        export.RunOnTenantRunner,
-		AgentPreference:     export.AgentPreference,
+		SensorPreference:    export.SensorPreference,
 		ProfileID:           export.ProfileID,
 		TimeoutSeconds:      export.TimeoutSeconds,
 		MaxRetries:          export.MaxRetries,

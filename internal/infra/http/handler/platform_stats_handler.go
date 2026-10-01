@@ -12,23 +12,23 @@ import (
 
 // PlatformStatsHandler handles platform stats API requests.
 type PlatformStatsHandler struct {
-	agentService *app.AgentService
-	logger       *logger.Logger
+	sensorService *app.SensorService
+	logger        *logger.Logger
 }
 
 // NewPlatformStatsHandler creates a new PlatformStatsHandler.
-func NewPlatformStatsHandler(agentService *app.AgentService, log *logger.Logger) *PlatformStatsHandler {
+func NewPlatformStatsHandler(sensorService *app.SensorService, log *logger.Logger) *PlatformStatsHandler {
 	return &PlatformStatsHandler{
-		agentService: agentService,
-		logger:       log.With("handler", "platform_stats"),
+		sensorService: sensorService,
+		logger:        log.With("handler", "platform_stats"),
 	}
 }
 
-// TierStatsResponse represents statistics for a single platform agent tier.
+// TierStatsResponse represents statistics for a single platform sensor tier.
 type TierStatsResponse struct {
-	TotalAgents    int `json:"total_agents"`
-	OnlineAgents   int `json:"online_agents"`
-	OfflineAgents  int `json:"offline_agents"`
+	TotalSensors   int `json:"total_sensors"`
+	OnlineSensors  int `json:"online_sensors"`
+	OfflineSensors int `json:"offline_sensors"`
 	TotalCapacity  int `json:"total_capacity"`
 	CurrentLoad    int `json:"current_load"`
 	AvailableSlots int `json:"available_slots"`
@@ -36,18 +36,18 @@ type TierStatsResponse struct {
 
 // PlatformStatsResponse represents the platform stats API response.
 type PlatformStatsResponse struct {
-	Enabled         bool                        `json:"enabled"`
-	MaxTier         string                      `json:"max_tier"`
-	AccessibleTiers []string                    `json:"accessible_tiers"`
-	MaxConcurrent   int                         `json:"max_concurrent"`
-	MaxQueued       int                         `json:"max_queued"`
-	CurrentActive   int                         `json:"current_active"`
-	CurrentQueued   int                         `json:"current_queued"`
-	AvailableSlots  int                         `json:"available_slots"`
+	Enabled         bool                         `json:"enabled"`
+	MaxTier         string                       `json:"max_tier"`
+	AccessibleTiers []string                     `json:"accessible_tiers"`
+	MaxConcurrent   int                          `json:"max_concurrent"`
+	MaxQueued       int                          `json:"max_queued"`
+	CurrentActive   int                          `json:"current_active"`
+	CurrentQueued   int                          `json:"current_queued"`
+	AvailableSlots  int                          `json:"available_slots"`
 	TierStats       map[string]TierStatsResponse `json:"tier_stats"`
 }
 
-// GetStats returns platform agent statistics for the current tenant.
+// GetStats returns platform sensor statistics for the current tenant.
 func (h *PlatformStatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -57,7 +57,7 @@ func (h *PlatformStatsHandler) GetStats(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	stats, err := h.agentService.GetPlatformStats(ctx, tenantID)
+	stats, err := h.sensorService.GetPlatformStats(ctx, tenantID)
 	if err != nil {
 		h.logger.Error("failed to get platform stats", "error", err, "tenant_id", tenantID)
 		apierror.InternalServerError("failed to retrieve platform stats").WriteJSON(w)
@@ -68,9 +68,9 @@ func (h *PlatformStatsHandler) GetStats(w http.ResponseWriter, r *http.Request) 
 	tierStats := make(map[string]TierStatsResponse)
 	for tier, ts := range stats.TierStats {
 		tierStats[tier] = TierStatsResponse{
-			TotalAgents:    ts.TotalAgents,
-			OnlineAgents:   ts.OnlineAgents,
-			OfflineAgents:  ts.OfflineAgents,
+			TotalSensors:   ts.TotalSensors,
+			OnlineSensors:  ts.OnlineSensors,
+			OfflineSensors: ts.OfflineSensors,
 			TotalCapacity:  ts.TotalCapacity,
 			CurrentLoad:    ts.CurrentLoad,
 			AvailableSlots: ts.AvailableSlots,

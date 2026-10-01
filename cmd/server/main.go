@@ -53,6 +53,9 @@ var (
 	routeMethod = flag.String("route-method", "", "Filter routes by HTTP method")
 	routePath   = flag.String("route-path", "", "Filter routes containing this path")
 	routeSort   = flag.String("route-sort", "path", "Sort routes by: path, method, handler")
+
+	sensorUpgradeCheck = flag.Bool("sensor-upgrade-check", false,
+		"Report data and schema still carrying the pre-sensor 'agent' vocabulary after migration 000230, then exit (0 = clean, 1 = leftovers)")
 )
 
 func main() {
@@ -75,6 +78,9 @@ func run() int {
 
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
+	for _, d := range cfg.Deprecations {
+		log.Warn("deprecated configuration", "detail", d)
+	}
 
 	// ==========================================================================
 	// Infrastructure
@@ -96,6 +102,11 @@ func run() int {
 		return 1
 	}
 
+	if *sensorUpgradeCheck {
+		return runSensorUpgradeCheck(ctx, db.DB, os.Stdout)
+	}
+	logSensorUpgradeLeftovers(ctx, db.DB, log)
+
 	redisClient, err := redis.New(&cfg.Redis, log)
 	if err != nil {
 		log.Error("failed to connect to redis", "error", err)
@@ -104,8 +115,8 @@ func run() int {
 	defer closeWithLog(redisClient, "redis", log)
 	log.Info("redis connected")
 
-	agentStateStore := redis.NewAgentStateStore(redisClient, log)
-	log.Info("agent state store initialized")
+	sensorStateStore := redis.NewSensorStateStore(redisClient, log)
+	log.Info("sensor state store initialized")
 
 	jobNotifier := redis.NewJobNotifier(redisClient, log)
 	if err := jobNotifier.StartListener(ctx); err != nil {
@@ -137,12 +148,12 @@ func run() int {
 	// Services
 	// ==========================================================================
 	services, err := NewServices(&ServiceDeps{
-		Config:          cfg,
-		Log:             log,
-		DB:              db.DB,
-		Repos:           repos,
-		RedisClient:     redisClient,
-		AgentStateStore: agentStateStore,
+		Config:           cfg,
+		Log:              log,
+		DB:               db.DB,
+		Repos:            repos,
+		RedisClient:      redisClient,
+		SensorStateStore: sensorStateStore,
 	})
 	if err != nil {
 		log.Error("failed to initialize services", "error", err)

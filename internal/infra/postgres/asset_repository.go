@@ -362,7 +362,7 @@ func assetMatchesIP(a *asset.Asset, ip string) bool {
 }
 
 // FindRepositoryByRepoName finds a repository asset whose name ends with the given repo name.
-// This handles matching agent-created assets like "github.com-org/suborg/repo" with repo name "repo".
+// This handles matching sensor-created assets like "github.com-org/suborg/repo" with repo name "repo".
 // NOTE: This only matches by repo name, use FindRepositoryByFullName for more precise matching.
 func (r *AssetRepository) FindRepositoryByRepoName(ctx context.Context, tenantID shared.ID, repoName string) (*asset.Asset, error) {
 	// Search for repository assets where:

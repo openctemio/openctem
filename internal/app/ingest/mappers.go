@@ -169,7 +169,7 @@ func mapSDKSeverity(sev severity.Level) vulnerability.Severity {
 // one. Capabilities are a free-form array supplied by whoever pushes the report,
 // so this is reachable by any third-party producer, not only by ours.
 var capabilityToSource = map[string]vulnerability.FindingSource{
-	// Emitted by the agent's executors.
+	// Emitted by the sensor's executors.
 	"sast":      vulnerability.FindingSourceSAST,
 	"sca":       vulnerability.FindingSourceSCA,
 	"dast":      vulnerability.FindingSourceDAST,
@@ -181,7 +181,7 @@ var capabilityToSource = map[string]vulnerability.FindingSource{
 	"misconfiguration": vulnerability.FindingSourceIaC,
 	"web3":             vulnerability.FindingSourceSAST,
 
-	// Recon capabilities from the agent's discovery executor.
+	// Recon capabilities from the sensor's discovery executor.
 	"subdomain":   vulnerability.FindingSourceEASM,
 	"dns":         vulnerability.FindingSourceEASM,
 	"portscan":    vulnerability.FindingSourceEASM,

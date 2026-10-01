@@ -16,18 +16,18 @@ type fakeAvailability struct {
 	called bool
 }
 
-func (f *fakeAvailability) HasValidationAgent(_ context.Context, _ shared.ID) (bool, error) {
+func (f *fakeAvailability) HasValidationSensor(_ context.Context, _ shared.ID) (bool, error) {
 	f.called = true
 	return f.has, f.err
 }
 
-func newGatedRunService(disp *fakeJobDispatcher, avail AgentAvailability, f *fakeFindingLookup, a *fakeAssetLookup) *RunService {
+func newGatedRunService(disp *fakeJobDispatcher, avail SensorAvailability, f *fakeFindingLookup, a *fakeAssetLookup) *RunService {
 	svc := NewRunService(f, a, disp, DefaultSelector{}, []ExecutorKind{KindSafeCheck}, logger.NewNop())
-	svc.SetAgentAvailability(avail)
+	svc.SetSensorAvailability(avail)
 	return svc
 }
 
-// When a validation-capable agent is online, ValidateFinding dispatches.
+// When a validation-capable sensor is online, ValidateFinding dispatches.
 func TestRunService_ValidateFinding_GateOpen_Dispatches(t *testing.T) {
 	assetID := shared.NewID()
 	f := newTestFinding(t, assetID)
@@ -52,8 +52,8 @@ func TestRunService_ValidateFinding_GateOpen_Dispatches(t *testing.T) {
 	}
 }
 
-// When no validation-capable agent is online, ValidateFinding skips with
-// ErrNoValidationAgent and NEVER enqueues a command (non-inert: nothing is left
+// When no validation-capable sensor is online, ValidateFinding skips with
+// ErrNoValidationSensor and NEVER enqueues a command (non-inert: nothing is left
 // for an absent consumer).
 func TestRunService_ValidateFinding_GateClosed_SkipsAndDoesNotDispatch(t *testing.T) {
 	assetID := shared.NewID()
@@ -65,15 +65,15 @@ func TestRunService_ValidateFinding_GateClosed_SkipsAndDoesNotDispatch(t *testin
 	svc := newGatedRunService(disp, avail, &fakeFindingLookup{f: f}, &fakeAssetLookup{a: a})
 
 	_, err := svc.ValidateFinding(context.Background(), shared.NewID(), f.ID())
-	if !errors.Is(err, ErrNoValidationAgent) {
-		t.Fatalf("error = %v, want ErrNoValidationAgent", err)
+	if !errors.Is(err, ErrNoValidationSensor) {
+		t.Fatalf("error = %v, want ErrNoValidationSensor", err)
 	}
 	// Wraps ErrValidation so the HTTP layer returns 400, not 500.
 	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("ErrNoValidationAgent should wrap ErrValidation")
+		t.Errorf("ErrNoValidationSensor should wrap ErrValidation")
 	}
 	if !disp.got.JobID.IsZero() {
-		t.Error("dispatcher must NOT be called when no agent is available")
+		t.Error("dispatcher must NOT be called when no sensor is available")
 	}
 }
 
@@ -116,7 +116,7 @@ func TestRunService_ValidateFinding_NilGate_DispatchesUnconditionally(t *testing
 	}
 }
 
-// The simulation-run path is gated identically: no agent → ErrNoValidationAgent
+// The simulation-run path is gated identically: no sensor → ErrNoValidationSensor
 // and no dispatch, so the caller (tryDispatchLive) falls back to the synthetic
 // path instead of stranding the run in "running".
 func TestRunService_DispatchSimulationCheck_GateClosed_SkipsAndDoesNotDispatch(t *testing.T) {
@@ -128,11 +128,11 @@ func TestRunService_DispatchSimulationCheck_GateClosed_SkipsAndDoesNotDispatch(t
 	svc := newGatedRunService(disp, avail, &fakeFindingLookup{}, &fakeAssetLookup{a: a})
 
 	_, err := svc.DispatchSimulationCheck(context.Background(), shared.NewID(), shared.NewID(), assetID, "T1046")
-	if !errors.Is(err, ErrNoValidationAgent) {
-		t.Fatalf("error = %v, want ErrNoValidationAgent", err)
+	if !errors.Is(err, ErrNoValidationSensor) {
+		t.Fatalf("error = %v, want ErrNoValidationSensor", err)
 	}
 	if !disp.got.JobID.IsZero() {
-		t.Error("dispatcher must NOT be called when no agent is available")
+		t.Error("dispatcher must NOT be called when no sensor is available")
 	}
 }
 

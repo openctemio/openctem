@@ -24,7 +24,7 @@ func NewIngestJobRepository(db *DB) *IngestJobRepository {
 }
 
 const ingestJobColumns = `
-	id, tenant_id, agent_id, report_id, source_type, payload, payload_sha,
+	id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
 	status, attempts, max_attempts, priority, result, error, locked_by, locked_at,
 	available_at, created_at, updated_at`
 
@@ -33,7 +33,7 @@ const ingestJobColumns = `
 func (r *IngestJobRepository) Enqueue(ctx context.Context, job *ingestjob.Job) (*ingestjob.Job, bool, error) {
 	query := `
 		INSERT INTO ingest_jobs (
-			id, tenant_id, agent_id, report_id, source_type, payload, payload_sha,
+			id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
 			status, attempts, max_attempts, priority, available_at, created_at, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
@@ -43,7 +43,7 @@ func (r *IngestJobRepository) Enqueue(ctx context.Context, job *ingestjob.Job) (
 	row := r.db.QueryRowContext(ctx, query,
 		job.ID().String(),
 		job.TenantID().String(),
-		nullIDPtr(job.AgentID()),
+		nullIDPtr(job.SensorID()),
 		job.ReportID(),
 		job.SourceType(),
 		job.Payload(),
@@ -268,7 +268,7 @@ type rowScanner interface {
 func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 	var (
 		idStr, tenantStr           string
-		agentStr                   sql.NullString
+		sensorStr                  sql.NullString
 		reportID, sourceType       string
 		payload, payloadSHA        []byte
 		statusStr                  string
@@ -280,7 +280,7 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 		createdAt, updatedAt       time.Time
 	)
 	if err := s.Scan(
-		&idStr, &tenantStr, &agentStr, &reportID, &sourceType, &payload, &payloadSHA,
+		&idStr, &tenantStr, &sensorStr, &reportID, &sourceType, &payload, &payloadSHA,
 		&statusStr, &attempts, &maxAttempts, &pri, &result, &lastError, &lockedBy, &lockedAt,
 		&availableAt, &createdAt, &updatedAt,
 	); err != nil {
@@ -295,11 +295,11 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse ingest job tenant id: %w", err)
 	}
-	var agentID *shared.ID
-	if agentStr.Valid {
-		a, parseErr := shared.IDFromString(agentStr.String)
+	var sensorID *shared.ID
+	if sensorStr.Valid {
+		a, parseErr := shared.IDFromString(sensorStr.String)
 		if parseErr == nil {
-			agentID = &a
+			sensorID = &a
 		}
 	}
 	var lockedAtPtr *time.Time
@@ -309,7 +309,7 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 	}
 
 	return ingestjob.FromRow(
-		id, tenantID, agentID, reportID, sourceType, payload, payloadSHA,
+		id, tenantID, sensorID, reportID, sourceType, payload, payloadSHA,
 		ingestjob.Status(statusStr), attempts, maxAttempts, pri, result,
 		lastError.String, lockedBy.String, lockedAtPtr,
 		availableAt, createdAt, updatedAt,

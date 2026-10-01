@@ -39,7 +39,7 @@ import (
 // up a server.
 
 // newPipelineService builds the pipeline service with the real repositories.
-// agentRepo and securityValidator are unused on the completion path.
+// sensorRepo and securityValidator are unused on the completion path.
 func newPipelineService(db *sql.DB) *pipelinesvc.Service {
 	pg := &postgres.DB{DB: db}
 	return pipelinesvc.NewService(
@@ -47,7 +47,7 @@ func newPipelineService(db *sql.DB) *pipelinesvc.Service {
 		postgres.NewPipelineStepRepository(pg),
 		postgres.NewPipelineRunRepository(pg),
 		postgres.NewStepRunRepository(pg),
-		nil, // agentRepo
+		nil, // sensorRepo
 		postgres.NewCommandRepository(pg),
 		nil, // securityValidator
 		logger.New(logger.Config{Level: "error"}),
@@ -108,7 +108,7 @@ func TestScanLoop_CompletedCommandCompletesTheRun(t *testing.T) {
 		t.Fatalf("TriggerScan: %v", err)
 	}
 
-	// Before the agent reports, the run must NOT be terminal — otherwise the
+	// Before the sensor reports, the run must NOT be terminal — otherwise the
 	// assertion afterwards proves nothing.
 	if status, _, _ := runState(ctx, t, db, run.ID.String()); status == "completed" {
 		t.Fatal("precondition failed: the run was already completed before anything reported back")

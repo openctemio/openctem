@@ -45,10 +45,10 @@ func (r *ScanSessionRepository) Create(ctx context.Context, s *scansession.ScanS
 		}
 	}
 
-	var agentID, assetID, scanProfileID *string
-	if s.AgentID != nil {
-		wid := s.AgentID.String()
-		agentID = &wid
+	var sensorID, assetID, scanProfileID *string
+	if s.SensorID != nil {
+		wid := s.SensorID.String()
+		sensorID = &wid
 	}
 	if s.AssetID != nil {
 		aid := s.AssetID.String()
@@ -61,7 +61,7 @@ func (r *ScanSessionRepository) Create(ctx context.Context, s *scansession.ScanS
 
 	query := `
 		INSERT INTO scan_sessions (
-			id, tenant_id, agent_id,
+			id, tenant_id, sensor_id,
 			scanner_name, scanner_version, scanner_type,
 			asset_type, asset_value, asset_id,
 			commit_sha, branch, base_commit_sha,
@@ -77,7 +77,7 @@ func (r *ScanSessionRepository) Create(ctx context.Context, s *scansession.ScanS
 	_, err = r.db.ExecContext(ctx, query,
 		s.ID.String(),
 		s.TenantID.String(),
-		agentID,
+		sensorID,
 		s.ScannerName,
 		s.ScannerVersion,
 		s.ScannerType,
@@ -411,7 +411,7 @@ func (r *ScanSessionRepository) ListRunning(ctx context.Context, tenantID shared
 func (r *ScanSessionRepository) selectQuery() string {
 	return `
 		SELECT
-			id, tenant_id, agent_id,
+			id, tenant_id, sensor_id,
 			scanner_name, scanner_version, scanner_type,
 			asset_type, asset_value, asset_id,
 			commit_sha, branch, base_commit_sha,
@@ -435,9 +435,9 @@ func (r *ScanSessionRepository) buildWhereClause(filter scansession.Filter) (str
 		argIndex++
 	}
 
-	if filter.AgentID != nil {
-		conditions = append(conditions, fmt.Sprintf("agent_id = $%d", argIndex))
-		args = append(args, filter.AgentID.String())
+	if filter.SensorID != nil {
+		conditions = append(conditions, fmt.Sprintf("sensor_id = $%d", argIndex))
+		args = append(args, filter.SensorID.String())
 		argIndex++
 	}
 
@@ -497,7 +497,7 @@ func (r *ScanSessionRepository) scanFromRow(row *sql.Row) (*scansession.ScanSess
 	var (
 		id                               string
 		tenantID                         string
-		agentID, assetID                 sql.NullString
+		sensorID, assetID                sql.NullString
 		scannerVersion, scannerType      sql.NullString
 		commitSha, branch, baseCommitSha sql.NullString
 		errorMessage                     sql.NullString
@@ -509,7 +509,7 @@ func (r *ScanSessionRepository) scanFromRow(row *sql.Row) (*scansession.ScanSess
 	)
 
 	err := row.Scan(
-		&id, &tenantID, &agentID,
+		&id, &tenantID, &sensorID,
 		&s.ScannerName, &scannerVersion, &scannerType,
 		&s.AssetType, &s.AssetValue, &assetID,
 		&commitSha, &branch, &baseCommitSha,
@@ -530,9 +530,9 @@ func (r *ScanSessionRepository) scanFromRow(row *sql.Row) (*scansession.ScanSess
 	s.ID = shared.MustIDFromString(id)
 	s.TenantID = shared.MustIDFromString(tenantID)
 
-	if agentID.Valid {
-		wid := shared.MustIDFromString(agentID.String)
-		s.AgentID = &wid
+	if sensorID.Valid {
+		wid := shared.MustIDFromString(sensorID.String)
+		s.SensorID = &wid
 	}
 	if assetID.Valid {
 		aid := shared.MustIDFromString(assetID.String)
@@ -590,7 +590,7 @@ func (r *ScanSessionRepository) scanFromRows(rows *sql.Rows) (*scansession.ScanS
 	s := &scansession.ScanSession{}
 	var (
 		id, tenantID                     string
-		agentID, assetID                 sql.NullString
+		sensorID, assetID                sql.NullString
 		scannerVersion, scannerType      sql.NullString
 		commitSha, branch, baseCommitSha sql.NullString
 		errorMessage                     sql.NullString
@@ -602,7 +602,7 @@ func (r *ScanSessionRepository) scanFromRows(rows *sql.Rows) (*scansession.ScanS
 	)
 
 	err := rows.Scan(
-		&id, &tenantID, &agentID,
+		&id, &tenantID, &sensorID,
 		&s.ScannerName, &scannerVersion, &scannerType,
 		&s.AssetType, &s.AssetValue, &assetID,
 		&commitSha, &branch, &baseCommitSha,
@@ -620,9 +620,9 @@ func (r *ScanSessionRepository) scanFromRows(rows *sql.Rows) (*scansession.ScanS
 	s.ID = shared.MustIDFromString(id)
 	s.TenantID = shared.MustIDFromString(tenantID)
 
-	if agentID.Valid {
-		wid := shared.MustIDFromString(agentID.String)
-		s.AgentID = &wid
+	if sensorID.Valid {
+		wid := shared.MustIDFromString(sensorID.String)
+		s.SensorID = &wid
 	}
 	if assetID.Valid {
 		aid := shared.MustIDFromString(assetID.String)

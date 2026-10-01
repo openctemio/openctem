@@ -72,18 +72,18 @@ func TestAutoQueueValidations_SkipsNonNetworkAndCountsRest(t *testing.T) {
 	}
 }
 
-// When the tenant has no validation-capable agent, the first attempt returns
-// ErrNoValidationAgent. The batch must stop immediately (same tenant → same
+// When the tenant has no validation-capable sensor, the first attempt returns
+// ErrNoValidationSensor. The batch must stop immediately (same tenant → same
 // answer) rather than re-querying per finding, and queue nothing.
-func TestAutoQueueValidations_NoAgent_StopsBatch(t *testing.T) {
+func TestAutoQueueValidations_NoSensor_StopsBatch(t *testing.T) {
 	av := &recordingAutoValidator{errAt: map[int]error{
-		0: validation.ErrNoValidationAgent,
+		0: validation.ErrNoValidationSensor,
 	}}
 	s := &FindingActionsService{logger: logger.NewNop(), autoValidator: av}
 
 	got := s.autoQueueValidations(context.Background(), shared.NewID(), newFindingIDs(10))
 	if got != 0 {
-		t.Fatalf("queued = %d, want 0 when no validation agent is online", got)
+		t.Fatalf("queued = %d, want 0 when no validation sensor is online", got)
 	}
 	if len(av.calls) != 1 {
 		t.Fatalf("validator attempted %d times, want 1 (must short-circuit the batch)", len(av.calls))

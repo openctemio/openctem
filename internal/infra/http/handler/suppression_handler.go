@@ -479,7 +479,7 @@ func (h *SuppressionHandler) DeleteRule(w http.ResponseWriter, r *http.Request) 
 }
 
 // ListActiveRules handles GET /api/v1/suppressions/active
-// This endpoint is used by agents to fetch active suppression rules.
+// This endpoint is used by sensors to fetch active suppression rules.
 func (h *SuppressionHandler) ListActiveRules(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	tenantUUID, err := shared.IDFromString(tenantID)
@@ -494,7 +494,7 @@ func (h *SuppressionHandler) ListActiveRules(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Return simplified format for agent consumption
+	// Return simplified format for sensor consumption
 	type ActiveRuleResponse struct {
 		RuleID      string  `json:"rule_id,omitempty"`
 		ToolName    string  `json:"tool_name,omitempty"`

@@ -374,10 +374,10 @@ type DeleteCapabilityInput struct {
 
 // CapabilityUsageStatsOutput represents usage statistics for a capability.
 type CapabilityUsageStatsOutput struct {
-	ToolCount  int      `json:"tool_count"`
-	AgentCount int      `json:"agent_count"`
-	ToolNames  []string `json:"tool_names,omitempty"`
-	AgentNames []string `json:"agent_names,omitempty"`
+	ToolCount   int      `json:"tool_count"`
+	SensorCount int      `json:"sensor_count"`
+	ToolNames   []string `json:"tool_names,omitempty"`
+	SensorNames []string `json:"sensor_names,omitempty"`
 }
 
 // DeleteCapability deletes a tenant custom capability.
@@ -408,15 +408,15 @@ func (s *CapabilityService) DeleteCapability(ctx context.Context, input DeleteCa
 	capabilityName := c.Name
 	capabilityDisplayName := c.DisplayName
 
-	// Check if capability is in use by any tools or agents
+	// Check if capability is in use by any tools or sensors
 	if !input.Force {
 		stats, err := s.repo.GetUsageStats(ctx, cid)
 		if err != nil {
 			s.logger.Warn("failed to check capability usage", "error", err)
 			// Continue with delete if usage check fails (non-critical)
-		} else if stats.ToolCount > 0 || stats.AgentCount > 0 {
-			return fmt.Errorf("%w: capability is in use by %d tool(s) and %d agent(s). Use force=true to delete anyway",
-				shared.ErrConflict, stats.ToolCount, stats.AgentCount)
+		} else if stats.ToolCount > 0 || stats.SensorCount > 0 {
+			return fmt.Errorf("%w: capability is in use by %d tool(s) and %d sensor(s). Use force=true to delete anyway",
+				shared.ErrConflict, stats.ToolCount, stats.SensorCount)
 		}
 	}
 
@@ -481,10 +481,10 @@ func (s *CapabilityService) GetCapabilityUsageStats(ctx context.Context, tenantI
 	}
 
 	return &CapabilityUsageStatsOutput{
-		ToolCount:  stats.ToolCount,
-		AgentCount: stats.AgentCount,
-		ToolNames:  stats.ToolNames,
-		AgentNames: stats.AgentNames,
+		ToolCount:   stats.ToolCount,
+		SensorCount: stats.SensorCount,
+		ToolNames:   stats.ToolNames,
+		SensorNames: stats.SensorNames,
 	}, nil
 }
 
@@ -546,10 +546,10 @@ func (s *CapabilityService) GetCapabilitiesUsageStatsBatch(ctx context.Context, 
 	result := make(map[string]*CapabilityUsageStatsOutput, len(stats))
 	for id, stat := range stats {
 		result[id.String()] = &CapabilityUsageStatsOutput{
-			ToolCount:  stat.ToolCount,
-			AgentCount: stat.AgentCount,
-			ToolNames:  stat.ToolNames,
-			AgentNames: stat.AgentNames,
+			ToolCount:   stat.ToolCount,
+			SensorCount: stat.SensorCount,
+			ToolNames:   stat.ToolNames,
+			SensorNames: stat.SensorNames,
 		}
 	}
 

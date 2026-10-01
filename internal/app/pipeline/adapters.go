@@ -52,18 +52,18 @@ func (a *AuditServiceAdapter) LogEvent(ctx context.Context, actx AuditContext, e
 	return a.LogEventFunc(ctx, actx.TenantID, actx.ActorID, event.Action, event.ResourceType, event.ResourceID, event.ResourceName, event.Message, event.Success, event.Error, event.Metadata)
 }
 
-// ========== Agent Selector Adapter ==========
+// ========== Sensor Selector Adapter ==========
 
-// AgentSelectorAdapter adapts app.AgentSelector to pipeline.AgentSelector.
-type AgentSelectorAdapter struct {
-	SelectAgentFunc          func(ctx context.Context, req SelectAgentRequest) (*SelectAgentResult, error)
-	CanUsePlatformAgentsFunc func(ctx context.Context, tenantID shared.ID) (bool, string)
+// SensorSelectorAdapter adapts app.SensorSelector to pipeline.SensorSelector.
+type SensorSelectorAdapter struct {
+	SelectSensorFunc          func(ctx context.Context, req SelectSensorRequest) (*SelectSensorResult, error)
+	CanUsePlatformSensorsFunc func(ctx context.Context, tenantID shared.ID) (bool, string)
 }
 
-func (a *AgentSelectorAdapter) SelectAgent(ctx context.Context, req SelectAgentRequest) (*SelectAgentResult, error) {
-	return a.SelectAgentFunc(ctx, req)
+func (a *SensorSelectorAdapter) SelectSensor(ctx context.Context, req SelectSensorRequest) (*SelectSensorResult, error) {
+	return a.SelectSensorFunc(ctx, req)
 }
 
-func (a *AgentSelectorAdapter) CanUsePlatformAgents(ctx context.Context, tenantID shared.ID) (bool, string) {
-	return a.CanUsePlatformAgentsFunc(ctx, tenantID)
+func (a *SensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
+	return a.CanUsePlatformSensorsFunc(ctx, tenantID)
 }

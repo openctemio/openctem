@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/api/pkg/validator"
 )
 
@@ -80,7 +81,7 @@ func (h *CommandHandler) SetSimulationFinalizer(svc simulationRunFinalizer) {
 type CommandResponse struct {
 	ID             string          `json:"id"`
 	TenantID       string          `json:"tenant_id,omitempty"`
-	AgentID        string          `json:"agent_id,omitempty"`
+	SensorID       string          `json:"sensor_id,omitempty"`
 	Type           string          `json:"type"`
 	Priority       string          `json:"priority"`
 	Payload        json.RawMessage `json:"payload,omitempty"`
@@ -112,8 +113,8 @@ func toCommandResponse(c *commanddom.Command) CommandResponse {
 		Result:         c.Result,
 	}
 
-	if c.AgentID != nil {
-		resp.AgentID = c.AgentID.String()
+	if c.SensorID != nil {
+		resp.SensorID = c.SensorID.String()
 	}
 
 	return resp
@@ -121,7 +122,7 @@ func toCommandResponse(c *commanddom.Command) CommandResponse {
 
 // CreateCommandRequest represents the request to create a command.
 type CreateCommandRequest struct {
-	AgentID   string          `json:"agent_id" validate:"omitempty,uuid"`
+	SensorID  string          `json:"sensor_id" validate:"omitempty,uuid"`
 	Type      string          `json:"type" validate:"required,oneof=scan collect health_check config_update cancel"`
 	Priority  string          `json:"priority" validate:"omitempty,oneof=low normal high critical"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
@@ -136,7 +137,7 @@ type UpdateCommandStatusRequest struct {
 
 // Create handles POST /api/v1/commands
 // @Summary      Create command
-// @Description  Create a new command to be executed by an agent
+// @Description  Create a new command to be executed by a sensor
 // @Tags         Commands
 // @Accept       json
 // @Produce      json
@@ -158,8 +159,8 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A "scan" command may embed custom scanner-template content that the agent
-	// writes to disk and executes. The agent only validates template name/size,
+	// A "scan" command may embed custom scanner-template content that the sensor
+	// writes to disk and executes. The sensor only validates template name/size,
 	// NOT content, so a CommandsWrite user could smuggle a malicious template
 	// (nuclei code:/javascript:/exec, ReDoS matchers) that bypasses the
 	// validator applied when templates are stored/synced. Enforce the same
@@ -175,7 +176,7 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	cmd, err := h.service.Create(r.Context(), command.CreateInput{
 		TenantID:  tenantID,
-		AgentID:   req.AgentID,
+		SensorID:  req.SensorID,
 		Type:      req.Type,
 		Priority:  req.Priority,
 		Payload:   req.Payload,
@@ -194,7 +195,7 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 // validateInlineScanTemplates rejects a scan command that embeds custom scanner
 // templates with dangerous content. Inline templates travel in the command
 // payload as `custom_templates: [{name, template_type, content(base64)}]`; the
-// agent decodes and executes them but only checks name/size, so the content
+// sensor decodes and executes them but only checks name/size, so the content
 // must pass the same authoritative validator (NucleiValidator etc.) applied at
 // template store/sync time.
 func validateInlineScanTemplates(payload json.RawMessage) error {
@@ -215,10 +216,10 @@ func validateInlineScanTemplates(payload json.RawMessage) error {
 		// non-template command.
 		//
 		// If it DOES mention them, refusing is the only safe answer: we cannot
-		// see what we would be approving, and the agent decodes and executes
-		// whatever it can parse. Passing here on the assumption that the agent's
+		// see what we would be approving, and the sensor decodes and executes
+		// whatever it can parse. Passing here on the assumption that the sensor's
 		// parser is exactly as strict as this one is a parser-differential bet,
-		// and this function exists precisely to stop templates reaching an agent
+		// and this function exists precisely to stop templates reaching a sensor
 		// unvalidated.
 		if bytes.Contains(payload, []byte(`"custom_templates"`)) {
 			return fmt.Errorf("payload embeds custom_templates but could not be parsed for validation")
@@ -230,7 +231,7 @@ func validateInlineScanTemplates(payload json.RawMessage) error {
 		if name == "" {
 			name = fmt.Sprintf("#%d", i)
 		}
-		// Content is base64 (matches how the server embeds and the agent decodes
+		// Content is base64 (matches how the server embeds and the sensor decodes
 		// templates). Validate the decoded bytes; if it isn't valid base64, fall
 		// back to validating the raw bytes so nothing slips past.
 		content := []byte(t.Content)
@@ -282,7 +283,7 @@ func (h *CommandHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Tags         Commands
 // @Accept       json
 // @Produce      json
-// @Param        agent_id   query     string  false  "Filter by agent ID"
+// @Param        sensor_id   query     string  false  "Filter by sensor ID"
 // @Param        type       query     string  false  "Filter by type (scan, collect, health_check, config_update, cancel)"
 // @Param        status     query     string  false  "Filter by status (pending, running, completed, failed, canceled)"
 // @Param        priority   query     string  false  "Filter by priority (low, normal, high, critical)"
@@ -298,7 +299,7 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	input := command.ListInput{
 		TenantID: tenantID,
-		AgentID:  r.URL.Query().Get("agent_id"),
+		SensorID: r.URL.Query().Get("sensor_id"),
 		Type:     r.URL.Query().Get("type"),
 		Status:   r.URL.Query().Get("status"),
 		Priority: r.URL.Query().Get("priority"),
@@ -329,25 +330,25 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// Poll handles GET /api/v1/agent/commands - agent polling endpoint
+// Poll handles GET /api/v1/agent/commands - sensor polling endpoint
 // @Summary      Poll commands
-// @Description  Agent polls for pending commands to execute
-// @Tags         Agent
+// @Description  Sensor polls for pending commands to execute
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        limit  query     int  false  "Max commands to return" default(10)
-// @Success      200  {array}   CommandResponse
+// @Success      200  {array}   legacyv1.Command
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     ApiKeyAuth
 // @Router       /agent/commands [get]
 func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
-	if !requireAgentTenant(w, agt) {
+	if !requireSensorTenant(w, agt) {
 		return
 	}
 
@@ -355,9 +356,9 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 
 	commands, err := h.service.Poll(r.Context(), command.PollInput{
 		TenantID: agt.TenantID.String(),
-		AgentID:  agt.ID.String(),
-		// Pass the agent's advertised capabilities so the poll only returns
-		// capability-scoped commands (e.g. a validate:nuclei job) to an agent
+		SensorID: agt.ID.String(),
+		// Pass the sensor's advertised capabilities so the poll only returns
+		// capability-scoped commands (e.g. a validate:nuclei job) to a sensor
 		// that can actually execute them.
 		Capabilities: agt.Capabilities,
 		Limit:        limit,
@@ -367,10 +368,7 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := make([]CommandResponse, len(commands))
-	for i, c := range commands {
-		resp[i] = toCommandResponse(c)
-	}
+	resp := legacyv1.NewCommands(commands)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -378,24 +376,24 @@ func (h *CommandHandler) Poll(w http.ResponseWriter, r *http.Request) {
 
 // Acknowledge handles POST /api/v1/agent/commands/{id}/acknowledge
 // @Summary      Acknowledge command
-// @Description  Agent acknowledges receipt of a command
-// @Tags         Agent
+// @Description  Sensor acknowledges receipt of a command
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "Command ID"
-// @Success      200  {object}  CommandResponse
+// @Success      200  {object}  legacyv1.Command
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     ApiKeyAuth
 // @Router       /agent/commands/{id}/acknowledge [post]
 func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
-	if !requireAgentTenant(w, agt) {
+	if !requireSensorTenant(w, agt) {
 		return
 	}
 
@@ -408,29 +406,29 @@ func (h *CommandHandler) Acknowledge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
 
 // Start handles POST /api/v1/agent/commands/{id}/start
 // @Summary      Start command
-// @Description  Agent reports that command execution has started
-// @Tags         Agent
+// @Description  Sensor reports that command execution has started
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        id   path      string  true  "Command ID"
-// @Success      200  {object}  CommandResponse
+// @Success      200  {object}  legacyv1.Command
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     ApiKeyAuth
 // @Router       /agent/commands/{id}/start [post]
 func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
-	if !requireAgentTenant(w, agt) {
+	if !requireSensorTenant(w, agt) {
 		return
 	}
 
@@ -443,30 +441,30 @@ func (h *CommandHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
 
 // Complete handles POST /api/v1/agent/commands/{id}/complete
 // @Summary      Complete command
-// @Description  Agent reports successful command completion with optional result
-// @Tags         Agent
+// @Description  Sensor reports successful command completion with optional result
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        id    path      string                      true  "Command ID"
 // @Param        body  body      UpdateCommandStatusRequest  false "Completion result"
-// @Success      200   {object}  CommandResponse
+// @Success      200   {object}  legacyv1.Command
 // @Failure      400   {object}  apierror.Error
 // @Failure      401   {object}  apierror.Error
 // @Failure      404   {object}  apierror.Error
 // @Security     ApiKeyAuth
 // @Router       /agent/commands/{id}/complete [post]
 func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
-	if !requireAgentTenant(w, agt) {
+	if !requireSensorTenant(w, agt) {
 		return
 	}
 
@@ -480,7 +478,7 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 
 	cmd, err := h.service.Complete(r.Context(), command.CompleteInput{
 		TenantID:  agt.TenantID.String(),
-		AgentID:   agt.ID.String(),
+		SensorID:  agt.ID.String(),
 		CommandID: commandID,
 		Result:    req.Result,
 	})
@@ -499,7 +497,7 @@ func (h *CommandHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	h.triggerSimulationFinalize(cmd)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
 
 // triggerSimulationFinalize finalizes a running attack-simulation run when the
@@ -553,8 +551,8 @@ func (h *CommandHandler) triggerSimulationFinalize(cmd *commanddom.Command) {
 
 // triggerValidationEvidence maps a completed CommandTypeValidate command's
 // result into finding evidence via the ingest service. The tenant is taken
-// from the command itself (authoritative), never from the reporting agent.
-// Best-effort and asynchronous — a mapping failure never blocks the agent's
+// from the command itself (authoritative), never from the reporting sensor.
+// Best-effort and asynchronous — a mapping failure never blocks the sensor's
 // completion response.
 func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 	if h.validationIngest == nil || cmd == nil || cmd.Type != commanddom.CommandTypeValidate {
@@ -573,7 +571,7 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 	// The result may carry the verdict at the top level (a client completing the
 	// command directly) OR nested under `metadata` — which is where the SDK
 	// command poller places an executor's CommandExecutionResult.Metadata (the
-	// real agent path). Accept both.
+	// real sensor path). Accept both.
 	var result struct {
 		validation.ValidateResultPayload
 		Metadata validation.ValidateResultPayload `json:"metadata"`
@@ -624,10 +622,10 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 	// simulation and none traceable back to one. The API exposes the field, so
 	// "which evidence did this run produce?" answered empty.
 	//
-	// The value comes from the command payload, not from the agent: it is the
+	// The value comes from the command payload, not from the sensor: it is the
 	// same field the sibling triggerSimulationFinalize already reads to decide
 	// which run to finalize, so the two paths now agree by construction instead
-	// of by an agent remembering to echo it back.
+	// of by a sensor remembering to echo it back.
 	var simRunID *shared.ID
 	if payload.SimulationRunID != "" {
 		if id, sErr := shared.IDFromString(payload.SimulationRunID); sErr == nil {
@@ -723,25 +721,25 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 
 // Fail handles POST /api/v1/agent/commands/{id}/fail
 // @Summary      Fail command
-// @Description  Agent reports command execution failure with error message
-// @Tags         Agent
+// @Description  Sensor reports command execution failure with error message
+// @Tags         Sensor
 // @Accept       json
 // @Produce      json
 // @Param        id    path      string                      true  "Command ID"
 // @Param        body  body      UpdateCommandStatusRequest  false "Error details"
-// @Success      200   {object}  CommandResponse
+// @Success      200   {object}  legacyv1.Command
 // @Failure      400   {object}  apierror.Error
 // @Failure      401   {object}  apierror.Error
 // @Failure      404   {object}  apierror.Error
 // @Security     ApiKeyAuth
 // @Router       /agent/commands/{id}/fail [post]
 func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
-	agt := AgentFromContext(r.Context())
+	agt := SensorFromContext(r.Context())
 	if agt == nil {
-		apierror.Unauthorized("Agent not authenticated").WriteJSON(w)
+		apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
 		return
 	}
-	if !requireAgentTenant(w, agt) {
+	if !requireSensorTenant(w, agt) {
 		return
 	}
 
@@ -754,7 +752,7 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 
 	cmd, err := h.service.Fail(r.Context(), command.FailInput{
 		TenantID:     agt.TenantID.String(),
-		AgentID:      agt.ID.String(),
+		SensorID:     agt.ID.String(),
 		CommandID:    commandID,
 		ErrorMessage: req.ErrorMessage,
 	})
@@ -767,7 +765,7 @@ func (h *CommandHandler) Fail(w http.ResponseWriter, r *http.Request) {
 	h.triggerPipelineFailed(r.Context(), cmd, req.ErrorMessage)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toCommandResponse(cmd))
+	json.NewEncoder(w).Encode(legacyv1.NewCommand(cmd))
 }
 
 // triggerPipelineFailed triggers pipeline failure when a command fails.
@@ -885,7 +883,7 @@ func (h *CommandHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrConflict):
 		// Lost claim race / command already finished: a state conflict the
-		// agent should treat as "not mine any more", not a server fault.
+		// sensor should treat as "not mine any more", not a server fault.
 		apierror.Conflict(conflictMessage(err)).WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)

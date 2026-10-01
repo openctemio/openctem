@@ -377,7 +377,7 @@ touching any gate. In short:
   `permission_catalog_sync_test.go` fails if Go and DB disagree.
 - **Object-level authz is separate from route gating:** every mutating query must
   carry `AND tenant_id = $n`; derive the principal's tenant from the authenticated
-  context (agents: from the agent key), never from the request body.
+  context (sensors: from the sensor key), never from the request body.
 - **Gate granularly** — use the precise permission for an action (`findings:status`,
   not `findings:write`) so the role matrix is honest.
 
@@ -516,49 +516,49 @@ POST /api/v1/invitations/{token}/accept-with-refresh
 
 ---
 
-## Platform Agents Architecture (v3.2)
+## Sensors (formerly "agents") — RFC-023
 
-Platform Agents are OpenCTEM-managed agents running on shared infrastructure across all tenants.
+### Glossary
 
-### Key Components
+| Term | Meaning in this code base |
+|---|---|
+| **Sensor** | Customer-side software that authenticates *to* the platform with its own key (`rda_…`) and heartbeat. Umbrella term; one row in `sensors`. |
+| Scanner / Agent / Collector | Sensor **roles** (RFC-023 D18). *Agent* now means only the endpoint role. |
+| `type` | Legacy v1 value (`worker`, `scanner`, `sensor`, `collector`, `runner`), kept as input and storage. |
+| Platform sensor | `is_platform_sensor = true`: shared infrastructure, no tenant. |
+| AI agent | AI-triage mode `agent` (`AIModeAgent`, module `ai_triage.agent`) — an LLM agent, not a sensor. |
+| Protocol v1 | What deployed sensors speak: `/api/v1/agent/*`, `agent_id` in responses. Frozen; lives only in `pkg/sensorproto/legacyv1`. |
 
-1. **Platform Agent Entity** — `IsPlatformAgent bool`, stats, selection
-2. **Bootstrap Token** — Kubeadm-style tokens for self-registration (usage limits, expiration)
-3. **Queue Management** — Weighted Fair Queuing with age bonus, `FOR UPDATE SKIP LOCKED`
+The rename is complete (RFC-023 §9.5, migration 000230): packages, types,
+tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`
+(`/api/v1/agents` → 308), audit ids `sensor.*`, log field `sensor_id`, env
+`SENSOR_*` (old `AGENT_*` still read with a warning).
+
+**Rules**
+- Never add an identifier containing "agent" for a sensor concept —
+  `tools/lint/sensorvocab` fails CI. Wire vocabulary that deployed sensors need
+  goes in `pkg/sensorproto/legacyv1`; the v1 wire is pinned by
+  `internal/infra/http/handler/protocol_v1_golden_db_test.go`.
+- A branch written before the rename catches up with `scripts/rename/sensor-rename.sh`.
+- Historical audit rows (`agent.*`) and asset state history (`source='agent'`)
+  are never rewritten; reads use `audit.WithHistoricalActions` /
+  `asset.WithHistoricalSources`.
+- After a migration run, `./server -sensor-upgrade-check` confirms no
+  pre-rename data is left.
 
 ### Key Files
 
 ```
-internal/
-├── domain/
-│   ├── agent/           # entity.go, bootstrap_token.go, errors.go, repository.go
-│   ├── lease/           # K8s-style lease entity
-│   └── admin/           # AdminUser entity (super_admin, ops_admin, readonly)
-├── infra/
-│   ├── postgres/        # agent_repository, bootstrap_token_repository, lease_repository
-│   ├── controller/      # agent_health, job_recovery, queue_priority, token_cleanup
-│   └── http/
-│       ├── handler/     # platform_handler, platform_register_handler, platform_agent_handler, platform_job_handler
-│       ├── middleware/   # platform_auth, admin_auth, ratelimit
-│       └── routes/      # platform.go
-└── app/                 # platform_agent_service, lease_service
+pkg/domain/sensor/                 # entity, API keys, errors, repository interfaces
+pkg/sensorproto/legacyv1/          # protocol v1 + /api/v1/agents redirect + renamed env vars
+internal/app/sensor/               # service, selector, config templates
+internal/infra/postgres/           # sensor_repository, sensor_apikey_repository, sensor_upgrade_check
+internal/infra/controller/         # sensor_health
+internal/infra/http/handler/       # sensor_handler (management), ingest/command/scansession (v1)
+internal/infra/http/routes/        # scanning.go: /api/v1/sensors + v1 mounts
 ```
 
-### API Endpoints
-
-**Registration (Public, Rate Limited):**
-- `POST /api/v1/platform/register` — Self-registration with bootstrap token
-- `POST /api/v1/platform-agents/register` — Alternative endpoint
-
-**Agent Communication (API Key Auth):**
-- `PUT/DELETE /api/v1/platform/lease` — Renew/release lease
-- `POST /api/v1/platform/poll` — Long-poll for jobs
-- `POST /api/v1/platform/jobs/{id}/ack|result|progress` — Job lifecycle
-
-**Tenant Job Submission (JWT Auth):**
-- `POST /api/v1/platform-jobs/` — Submit job
-- `GET /api/v1/platform-jobs/` — List/get jobs
-- `POST /api/v1/platform-jobs/{id}/cancel` — Cancel job
+See `docs/architecture/sensors.md` and `docs/rfcs/RFC-023-sensor-rename-contract.md`.
 
 ---
 
@@ -663,13 +663,13 @@ if input.MaxJobs <= 0 { input.MaxJobs = DefaultMaxJobs }
 
 ```go
 // BAD — Separate operations
-agentRepo.Create(ctx, agent)
-leaseRepo.Create(ctx, lease) // If this fails, orphan agent
+sensorRepo.Create(ctx, sensor)
+leaseRepo.Create(ctx, lease) // If this fails, orphan sensor
 
 // GOOD — Atomic
 tx, _ := db.BeginTx(ctx, nil)
 defer func() { _ = tx.Rollback() }()
-agentRepo.CreateTx(ctx, tx, agent)
+sensorRepo.CreateTx(ctx, tx, sensor)
 leaseRepo.CreateTx(ctx, tx, lease)
 tx.Commit()
 ```
@@ -678,12 +678,12 @@ tx.Commit()
 
 ```go
 // BAD — Copy-paste in every handler
-agt := middleware.GetPlatformAgentFromContext(r.Context())
+agt := middleware.GetPlatformSensorFromContext(r.Context())
 if agt == nil { apierror.Unauthorized("...").WriteJSON(w); return }
 
 // GOOD — Helper method
-func (h *Handler) requireAgent(r *http.Request) (*agent.Agent, error) {
-    agt := middleware.GetPlatformAgentFromContext(r.Context())
+func (h *Handler) requireSensor(r *http.Request) (*sensor.Sensor, error) {
+    agt := middleware.GetPlatformSensorFromContext(r.Context())
     if agt == nil { return nil, ErrNotAuthenticated }
     return agt, nil
 }
@@ -721,11 +721,11 @@ if err != nil {
 
 ```go
 // BAD — different errors reveal internal state
-if !agt.IsPlatformAgent { apierror.Forbidden("Not a platform agent") }
-if agt.Status != Active  { apierror.Forbidden("Agent is not active") }
+if !agt.IsPlatformSensor { apierror.Forbidden("Not a platform sensor") }
+if agt.Status != Active   { apierror.Forbidden("Sensor is not active") }
 
 // GOOD — generic error, log specifics server-side
-h.logger.Debug("auth failed", "reason", "not platform agent")
+h.logger.Debug("auth failed", "reason", "not platform sensor")
 apierror.Unauthorized("Invalid credentials").WriteJSON(w)
 ```
 
@@ -734,7 +734,7 @@ apierror.Unauthorized("Invalid credentials").WriteJSON(w)
 ```go
 // Both registration endpoints MUST share the same rate limiter:
 platformRegRateLimiter := middleware.NewPlatformRegistrationRateLimiter(cfg, log)
-registerPlatformAgentRoutes(router, h, auth, userSync, platformRegRateLimiter.Middleware())
+registerPlatformSensorRoutes(router, h, auth, userSync, platformRegRateLimiter.Middleware())
 registerPlatformCommunicationRoutes(router, platformH, registerH, platformRegRateLimiter.Middleware())
 ```
 
@@ -742,15 +742,15 @@ registerPlatformCommunicationRoutes(router, platformH, registerH, platformRegRat
 
 ```go
 // BAD — repetitive cases with same response
-case errors.Is(err, agent.ErrBootstrapTokenInvalid):
+case errors.Is(err, sensor.ErrBootstrapTokenInvalid):
     apierror.Unauthorized("Invalid token").WriteJSON(w)
-case errors.Is(err, agent.ErrBootstrapTokenExpired):
+case errors.Is(err, sensor.ErrBootstrapTokenExpired):
     apierror.Unauthorized("Invalid token").WriteJSON(w)
 
 // GOOD — consolidate
-case errors.Is(err, agent.ErrBootstrapTokenInvalid),
-    errors.Is(err, agent.ErrBootstrapTokenExpired),
-    errors.Is(err, agent.ErrBootstrapTokenExhausted):
+case errors.Is(err, sensor.ErrBootstrapTokenInvalid),
+    errors.Is(err, sensor.ErrBootstrapTokenExpired),
+    errors.Is(err, sensor.ErrBootstrapTokenExhausted):
     apierror.Unauthorized("Invalid or expired bootstrap token").WriteJSON(w)
 ```
 
@@ -760,7 +760,7 @@ case errors.Is(err, agent.ErrBootstrapTokenInvalid),
 
 - SDK validates jobs client-side, but **the API is the authoritative validator**
 - SDK uses `credentials.SecureCompare()` — the API should also use constant-time comparison
-- The server must validate templates before sending to agents (path traversal protection)
+- The server must validate templates before sending to sensors (path traversal protection)
 
 ---
 
@@ -836,9 +836,9 @@ git commit -m "fix(security): add input validation
 
 ### CTEM loop closures (2026-04-20)
 - Migration 000154 — audit log hash-chain (tamper-evident trail)
-- Migration 000155 — runtime telemetry events (EDR/XDR ingest from agents)
+- Migration 000155 — runtime telemetry events (EDR/XDR ingest from endpoint sensors)
 - Migration 000156 — IOC catalogue + match log (runtime auto-reopen, B6)
-- Agent API-key endpoint: `POST /api/v1/telemetry-events` (NOT `/runtime-telemetry/events`)
+- Sensor API-key endpoint (protocol v1): `POST /api/v1/agent/telemetry-events` (NOT `/runtime-telemetry/events`)
 - Admin endpoint: `GET /api/v1/audit-logs/verify` returns 409 when chain broken
 - Package `pkg/domain/ioc/`, `pkg/domain/telemetry/`, `internal/app/ioc/` added
 - Priority-flood guard renamed: `P0FloodGuard` → `PriorityFloodGuard` with configurable `ProtectedClass`

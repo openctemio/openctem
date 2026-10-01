@@ -12,10 +12,10 @@ import (
 type ExecutionMode string
 
 const (
-	// ExecutionModeAgent (default) — a runner on the customer network reaches
+	// ExecutionModeSensor (default) — a runner on the customer network reaches
 	// Nessus/Tenable and pushes results back via polling. The control plane
 	// holds NO scanner credentials. This is the recommended, secure default.
-	ExecutionModeAgent ExecutionMode = "agent"
+	ExecutionModeSensor ExecutionMode = "sensor"
 
 	// ExecutionModeDirect — the backend calls Tenable REST itself. Only for
 	// Tenable cloud / a reachable .sc where the operator accepts the control
@@ -52,23 +52,23 @@ type TenableConfig struct {
 	LicenseCap int
 	// SafetyMargin keeps the scheduler a few IPs below the cap (.sc only).
 	SafetyMargin int
-	// AgentID optionally pins a specific runner (C3); empty → capability routing.
-	AgentID string
+	// SensorID optionally pins a specific runner (C3); empty → capability routing.
+	SensorID string
 	// TemplateUUID optionally overrides the runner's default Nessus template.
 	TemplateUUID string
 }
 
 // ParseTenableConfig reads + normalizes a Tenable integration config map,
-// applying secure defaults (agent + nessus_pro) and rejecting unknown values.
+// applying secure defaults (sensor + nessus_pro) and rejecting unknown values.
 func ParseTenableConfig(config map[string]any) (TenableConfig, error) {
-	c := TenableConfig{ExecutionMode: ExecutionModeAgent, Engine: EngineNessusPro}
+	c := TenableConfig{ExecutionMode: ExecutionModeSensor, Engine: EngineNessusPro}
 
 	if v := strings.ToLower(strings.TrimSpace(stringFromConfig(config, "execution_mode"))); v != "" {
 		switch ExecutionMode(v) {
-		case ExecutionModeAgent, ExecutionModeDirect:
+		case ExecutionModeSensor, ExecutionModeDirect:
 			c.ExecutionMode = ExecutionMode(v)
 		default:
-			return c, fmt.Errorf("invalid execution_mode %q (want agent|direct)", v)
+			return c, fmt.Errorf("invalid execution_mode %q (want sensor|direct)", v)
 		}
 	}
 
@@ -85,7 +85,7 @@ func ParseTenableConfig(config map[string]any) (TenableConfig, error) {
 	c.BatchSize = intFromConfig(config, "batch_size")
 	c.LicenseCap = intFromConfig(config, "license_cap")
 	c.SafetyMargin = intFromConfig(config, "safety_margin")
-	c.AgentID = strings.TrimSpace(stringFromConfig(config, "agent_id"))
+	c.SensorID = strings.TrimSpace(stringFromConfig(config, "sensor_id"))
 	c.TemplateUUID = strings.TrimSpace(stringFromConfig(config, "template_uuid"))
 
 	if c.BatchSize < 0 || c.LicenseCap < 0 || c.SafetyMargin < 0 {
@@ -115,15 +115,15 @@ func (c TenableConfig) EffectiveBatchSize() int {
 // ValidateTenableIntegration enforces the correctness + security rules for a
 // Tenable integration at create/update time.
 //
-//   - agent mode MUST NOT store credentials in the control plane — they belong
+//   - sensor mode MUST NOT store credentials in the control plane — they belong
 //     on the runner (RFC-007 §8 R3/R4: the control plane holds minimal authority
 //     over the scanner).
 //   - direct mode requires credentials + a base URL (the api calls Tenable).
 func ValidateTenableIntegration(cfg TenableConfig, hasCredentials bool, baseURL string) error {
 	switch cfg.ExecutionMode {
-	case ExecutionModeAgent:
+	case ExecutionModeSensor:
 		if hasCredentials {
-			return fmt.Errorf("agent-mode Tenable integration must not store credentials in the control plane; configure them on the runner")
+			return fmt.Errorf("sensor-mode Tenable integration must not store credentials in the control plane; configure them on the runner")
 		}
 	case ExecutionModeDirect:
 		if !hasCredentials {

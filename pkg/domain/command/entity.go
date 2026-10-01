@@ -1,4 +1,4 @@
-// Package command defines the Command domain entity for server-controlled agents.
+// Package command defines the Command domain entity for server-controlled sensors.
 package command
 
 import (
@@ -40,7 +40,7 @@ const (
 	//    1h  scan.DefaultScanTimeoutSeconds -> ScanTimeoutController
 	//   24h  scan.MaxScanTimeoutSeconds (the longest a scan may legitimately run)
 	//   24h  DefaultAuthTokenTTL (past this a platform job cannot authenticate,
-	//        so it can no longer be executed even if an agent picked it up)
+	//        so it can no longer be executed even if a sensor picked it up)
 	//
 	// A shorter TTL would start expiring healthy in-flight work, which is worse
 	// than the inertness this replaces. Note also that FindExpired only matches
@@ -58,7 +58,7 @@ const (
 	CommandTypeHealthCheck  CommandType = "health_check"
 	CommandTypeConfigUpdate CommandType = "config_update"
 	CommandTypeCancel       CommandType = "cancel"
-	// CommandTypeValidate is a CTEM Stage-4 validation job: an agent re-checks a
+	// CommandTypeValidate is a CTEM Stage-4 validation job: a sensor re-checks a
 	// finding (safe-check / nuclei / adversary emulation) and reports an outcome
 	// that is mapped back into validation evidence on completion.
 	CommandTypeValidate CommandType = "validate"
@@ -87,11 +87,11 @@ const (
 	CommandPriorityCritical CommandPriority = "critical"
 )
 
-// Command represents a command to be executed by an agent.
+// Command represents a command to be executed by a sensor.
 type Command struct {
 	ID       shared.ID
 	TenantID shared.ID
-	AgentID  *shared.ID // Target agent (nil = any agent can pick up)
+	SensorID *shared.ID // Target sensor (nil = any sensor can pick up)
 
 	Type     CommandType
 	Priority CommandPriority
@@ -121,15 +121,15 @@ type Command struct {
 	// Platform Job Fields (v3.2)
 	// ==========================================================================
 
-	// IsPlatformJob indicates this job runs on a platform agent (not tenant's own agent)
+	// IsPlatformJob indicates this job runs on a platform sensor (not tenant's own sensor)
 	IsPlatformJob bool
 
-	// PlatformAgentID is the platform agent assigned to execute this job (auto-selected)
-	PlatformAgentID *shared.ID
+	// PlatformSensorID is the platform sensor assigned to execute this job (auto-selected)
+	PlatformSensorID *shared.ID
 
 	// ==========================================================================
-	// Authentication Token Fields (for platform agents)
-	// Platform agents use these tokens to verify they're authorized to execute
+	// Authentication Token Fields (for platform sensors)
+	// Platform sensors use these tokens to verify they're authorized to execute
 	// this specific command. Provides defense-in-depth with API key.
 	// ==========================================================================
 
@@ -193,9 +193,9 @@ func NewCommand(tenantID shared.ID, cmdType CommandType, priority CommandPriorit
 	}, nil
 }
 
-// SetAgentID sets the target agent ID.
-func (c *Command) SetAgentID(agentID shared.ID) {
-	c.AgentID = &agentID
+// SetSensorID sets the target sensor ID.
+func (c *Command) SetSensorID(sensorID shared.ID) {
+	c.SensorID = &sensorID
 }
 
 // SetStepRunID sets the pipeline step run ID for tracking.
@@ -280,17 +280,17 @@ func (c *Command) SetPlatformJob(queuePriority int) {
 	c.QueuedAt = &now
 }
 
-// AssignToPlatformAgent assigns this job to a specific platform agent.
-func (c *Command) AssignToPlatformAgent(agentID shared.ID) {
-	c.PlatformAgentID = &agentID
+// AssignToPlatformSensor assigns this job to a specific platform sensor.
+func (c *Command) AssignToPlatformSensor(sensorID shared.ID) {
+	c.PlatformSensorID = &sensorID
 	c.DispatchAttempts++
 	now := time.Now()
 	c.LastDispatchAt = &now
 }
 
-// ReturnToQueue returns the job to the queue (e.g., if agent went offline).
+// ReturnToQueue returns the job to the queue (e.g., if sensor went offline).
 func (c *Command) ReturnToQueue() {
-	c.PlatformAgentID = nil
+	c.PlatformSensorID = nil
 	c.Status = CommandStatusPending
 	c.AcknowledgedAt = nil
 }
@@ -302,12 +302,12 @@ func (c *Command) UpdateQueuePriority(newPriority int) {
 
 // IsQueued checks if this job is in the queue waiting for dispatch.
 func (c *Command) IsQueued() bool {
-	return c.IsPlatformJob && c.Status == CommandStatusPending && c.PlatformAgentID == nil
+	return c.IsPlatformJob && c.Status == CommandStatusPending && c.PlatformSensorID == nil
 }
 
-// IsDispatchedToPlatformAgent checks if this job has been dispatched to a platform agent.
-func (c *Command) IsDispatchedToPlatformAgent() bool {
-	return c.IsPlatformJob && c.PlatformAgentID != nil
+// IsDispatchedToPlatformSensor checks if this job has been dispatched to a platform sensor.
+func (c *Command) IsDispatchedToPlatformSensor() bool {
+	return c.IsPlatformJob && c.PlatformSensorID != nil
 }
 
 // CanRetry checks if this job can be retried after failure.
@@ -316,11 +316,11 @@ func (c *Command) CanRetry(maxRetries int) bool {
 }
 
 // =============================================================================
-// Auth Token Methods (for platform agent authentication)
+// Auth Token Methods (for platform sensor authentication)
 // =============================================================================
 
 // GenerateAuthToken generates a new auth token for this command.
-// Returns the raw token (to be sent to agent) and sets the hash on the command.
+// Returns the raw token (to be sent to sensor) and sets the hash on the command.
 // The raw token should only be transmitted once and never stored.
 func (c *Command) GenerateAuthToken(ttl time.Duration) (string, error) {
 	// Generate random bytes
@@ -380,9 +380,9 @@ func (c *Command) IsAuthTokenValid() bool {
 	return time.Now().Before(*c.AuthTokenExpiresAt)
 }
 
-// CanAcceptIngest checks if this command can accept ingest data from a platform agent.
-// The command must be running, have a valid token, and match the agent.
-func (c *Command) CanAcceptIngest(agentID shared.ID, token string) bool {
+// CanAcceptIngest checks if this command can accept ingest data from a platform sensor.
+// The command must be running, have a valid token, and match the sensor.
+func (c *Command) CanAcceptIngest(sensorID shared.ID, token string) bool {
 	// Must be a platform job
 	if !c.IsPlatformJob {
 		return false
@@ -393,8 +393,8 @@ func (c *Command) CanAcceptIngest(agentID shared.ID, token string) bool {
 		return false
 	}
 
-	// Agent must match
-	if c.PlatformAgentID == nil || *c.PlatformAgentID != agentID {
+	// Sensor must match
+	if c.PlatformSensorID == nil || *c.PlatformSensorID != sensorID {
 		return false
 	}
 
@@ -426,11 +426,11 @@ type QueuePosition struct {
 }
 
 // EstimateWaitTime estimates the wait time based on position and historical data.
-func (q *QueuePosition) EstimateWaitTime(avgJobDuration time.Duration, availableAgents int) time.Duration {
-	if availableAgents <= 0 {
-		availableAgents = 1
+func (q *QueuePosition) EstimateWaitTime(avgJobDuration time.Duration, availableSensors int) time.Duration {
+	if availableSensors <= 0 {
+		availableSensors = 1
 	}
-	// Rough estimate: (position / agents) * avg_duration
-	waves := (q.Position + availableAgents - 1) / availableAgents
+	// Rough estimate: (position / sensors) * avg_duration
+	waves := (q.Position + availableSensors - 1) / availableSensors
 	return time.Duration(waves) * avgJobDuration
 }

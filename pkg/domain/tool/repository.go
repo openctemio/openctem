@@ -35,7 +35,7 @@ type TenantToolConfigFilter struct {
 type ToolExecutionFilter struct {
 	TenantID      shared.ID
 	ToolID        *shared.ID
-	AgentID       *shared.ID
+	SensorID      *shared.ID
 	PipelineRunID *shared.ID
 	Status        *ExecutionStatus
 }
@@ -123,7 +123,7 @@ type ToolExecutionRepository interface {
 	// an IDOR because the tool_executions row contains cross-tenant
 	// sensitive data (error_message, output_summary, targets). Callers from
 	// HTTP handlers MUST use GetByIDInTenant instead. Safe uses are limited
-	// to agent/platform-authenticated internal lifecycle flows where tenant
+	// to sensor/platform-authenticated internal lifecycle flows where tenant
 	// identity is validated elsewhere, and audits / retention controllers
 	// that iterate the whole table.
 	GetByID(ctx context.Context, id shared.ID) (*ToolExecution, error)
@@ -177,5 +177,5 @@ type ToolWithConfig struct {
 	TenantConfig    *TenantToolConfig
 	EffectiveConfig map[string]any
 	IsEnabled       bool
-	IsAvailable     bool // True if at least one agent (tenant or platform) supports this tool
+	IsAvailable     bool // True if at least one sensor (tenant or platform) supports this tool
 }

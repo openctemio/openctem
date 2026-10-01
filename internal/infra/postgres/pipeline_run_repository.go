@@ -479,7 +479,7 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 		UPDATE pipeline_runs pr
 		SET status = 'timeout',
 		    completed_at = NOW(),
-		    error_message = 'no result reported before timeout — the agent may be offline, or never picked up the command'
+		    error_message = 'no result reported before timeout — the sensor may be offline, or never picked up the command'
 		WHERE pr.status IN ('pending', 'running')
 		  AND pr.started_at IS NOT NULL
 		  AND EXTRACT(EPOCH FROM (NOW() - pr.started_at)) > LEAST(
@@ -939,7 +939,7 @@ func (r *StepRunRepository) Create(ctx context.Context, sr *pipeline.StepRun) er
 	query := `
 		INSERT INTO step_runs (
 			id, pipeline_run_id, step_id, step_key, step_order, status,
-			agent_id, command_id, condition_evaluated, condition_result, skip_reason,
+			sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 			findings_count, output, attempt, max_attempts,
 			queued_at, started_at, completed_at, error_message, error_code, created_at
 		)
@@ -953,7 +953,7 @@ func (r *StepRunRepository) Create(ctx context.Context, sr *pipeline.StepRun) er
 		sr.StepKey,
 		sr.StepOrder,
 		string(sr.Status),
-		nullID(sr.AgentID),
+		nullID(sr.SensorID),
 		nullID(sr.CommandID),
 		sr.ConditionEvaluated,
 		sr.ConditionResult,
@@ -1028,7 +1028,7 @@ func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*
 			sr.StepKey,
 			sr.StepOrder,
 			string(sr.Status),
-			nullID(sr.AgentID),
+			nullID(sr.SensorID),
 			nullID(sr.CommandID),
 			sr.ConditionEvaluated,
 			sr.ConditionResult,
@@ -1049,7 +1049,7 @@ func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*
 	query := fmt.Sprintf(`
 		INSERT INTO step_runs (
 			id, pipeline_run_id, step_id, step_key, step_order, status,
-			agent_id, command_id, condition_evaluated, condition_result, skip_reason,
+			sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 			findings_count, output, attempt, max_attempts,
 			queued_at, started_at, completed_at, error_message, error_code, created_at
 		)
@@ -1174,7 +1174,7 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 
 	query := `
 		UPDATE step_runs
-		SET status = $2, agent_id = $3, command_id = $4,
+		SET status = $2, sensor_id = $3, command_id = $4,
 		    condition_evaluated = $5, condition_result = $6, skip_reason = $7,
 		    findings_count = $8, output = $9, attempt = $10,
 		    queued_at = $11, started_at = $12, completed_at = $13,
@@ -1185,7 +1185,7 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 	result, err := r.db.ExecContext(ctx, query,
 		sr.ID.String(),
 		string(sr.Status),
-		nullID(sr.AgentID),
+		nullID(sr.SensorID),
 		nullID(sr.CommandID),
 		sr.ConditionEvaluated,
 		sr.ConditionResult,
@@ -1240,14 +1240,14 @@ func (r *StepRunRepository) UpdateStatus(ctx context.Context, id shared.ID, stat
 	return err
 }
 
-// AssignAgent assigns an agent and command to a step run.
-func (r *StepRunRepository) AssignAgent(ctx context.Context, id shared.ID, agentID, commandID shared.ID) error {
+// AssignSensor assigns a sensor and command to a step run.
+func (r *StepRunRepository) AssignSensor(ctx context.Context, id shared.ID, sensorID, commandID shared.ID) error {
 	query := `
 		UPDATE step_runs
-		SET agent_id = $2, command_id = $3, status = 'running', started_at = NOW()
+		SET sensor_id = $2, command_id = $3, status = 'running', started_at = NOW()
 		WHERE id = $1
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), agentID.String(), commandID.String())
+	_, err := r.db.ExecContext(ctx, query, id.String(), sensorID.String(), commandID.String())
 	return err
 }
 
@@ -1329,7 +1329,7 @@ func (r *StepRunRepository) GetStatsByTenant(ctx context.Context, tenantID share
 func (r *StepRunRepository) selectQuery() string {
 	return `
 		SELECT id, pipeline_run_id, step_id, step_key, step_order, status,
-		       agent_id, command_id, condition_evaluated, condition_result, skip_reason,
+		       sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 		       findings_count, output, attempt, max_attempts,
 		       queued_at, started_at, completed_at, error_message, error_code, created_at
 		FROM step_runs
@@ -1343,7 +1343,7 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		pipelineRunID   string
 		stepID          string
 		status          string
-		agentID         sql.NullString
+		sensorID        sql.NullString
 		commandID       sql.NullString
 		conditionResult sql.NullBool
 		output          []byte
@@ -1361,7 +1361,7 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		&sr.StepKey,
 		&sr.StepOrder,
 		&status,
-		&agentID,
+		&sensorID,
 		&commandID,
 		&sr.ConditionEvaluated,
 		&conditionResult,
@@ -1390,9 +1390,9 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 	sr.ErrorMessage = errorMessage.String
 	sr.ErrorCode = errorCode.String
 
-	if agentID.Valid {
-		wid, _ := shared.IDFromString(agentID.String)
-		sr.AgentID = &wid
+	if sensorID.Valid {
+		wid, _ := shared.IDFromString(sensorID.String)
+		sr.SensorID = &wid
 	}
 	if commandID.Valid {
 		cid, _ := shared.IDFromString(commandID.String)

@@ -79,10 +79,10 @@ func TestDetectFindingSource_CapabilitiesOutrankToolName(t *testing.T) {
 	}{
 		{"nessus converter", "trivy", []string{"va"}, vulnerability.FindingSourceVA},
 		{"defectdojo converter", "trivy", []string{"external"}, vulnerability.FindingSourceExternal},
-		// "recon" was an invented capability. The agent's discovery executor
+		// "recon" was an invented capability. The sensor's discovery executor
 		// emits subdomain/dns/portscan/crawler/tech-detect, so those are what
 		// the map carries; asserting a token nobody produces tested nothing.
-		{"recon token the agent actually emits", "semgrep", []string{"portscan"}, vulnerability.FindingSourceEASM},
+		{"recon token the sensor actually emits", "semgrep", []string{"portscan"}, vulnerability.FindingSourceEASM},
 		{"cloud", "semgrep", []string{"cspm"}, vulnerability.FindingSourceCSPM},
 		{"sast still works", "tenable", []string{"sast"}, vulnerability.FindingSourceSAST},
 	}
@@ -130,7 +130,7 @@ func TestIngestChannelFromCTIS(t *testing.T) {
 		{"INTEGRATION", vulnerability.IngestChannelIntegration, true},
 
 		{"", "", false},
-		{"agent", "", false},
+		{"sensor", "", false},
 		{"unknown", "", false},
 		{"scanner-ish", "", false},
 	}

@@ -396,8 +396,8 @@ func (h *FindingActionsHandler) RequestVerificationScan(w http.ResponseWriter, r
 
 // RequestValidation handles POST /api/v1/findings/{id}/validate
 // It dispatches a CTEM Stage-4 validation job (safe-check re-check) for the
-// finding. The job runs on an agent; the outcome is applied to the finding
-// asynchronously when the agent completes the command.
+// finding. The job runs on a sensor; the outcome is applied to the finding
+// asynchronously when the sensor completes the command.
 func (h *FindingActionsHandler) RequestValidation(w http.ResponseWriter, r *http.Request) {
 	if h.validationRunner == nil {
 		apierror.InternalServerError("validation is not configured").WriteJSON(w)

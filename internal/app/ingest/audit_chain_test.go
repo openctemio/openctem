@@ -8,8 +8,8 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/api/internal/app/audit"
-	"github.com/openctemio/api/pkg/domain/agent"
 	"github.com/openctemio/api/pkg/domain/audit"
+	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
@@ -220,11 +220,11 @@ func TestIngestAuditLogIsChained(t *testing.T) {
 
 	// A prior tenant-scoped event so the ingest entry has something to link onto.
 	if err := auditSvc.LogEvent(ctx, auditapp.AuditContext{TenantID: tenantID.String()},
-		auditapp.NewSuccessEvent(audit.ActionAgentActivated, audit.ResourceTypeAgent, shared.NewID().String())); err != nil {
+		auditapp.NewSuccessEvent(audit.ActionSensorActivated, audit.ResourceTypeSensor, shared.NewID().String())); err != nil {
 		t.Fatalf("seed LogEvent: %v", err)
 	}
 
-	agt := &agent.Agent{ID: shared.NewID(), Name: "scanner-01"}
+	agt := &sensor.Sensor{ID: shared.NewID(), Name: "scanner-01"}
 	svc.createIngestAuditLog(ctx, agt, tenantID, ingestReport(), &Output{
 		ReportID:        "report-abc",
 		FindingsCreated: 3,
@@ -261,7 +261,7 @@ func TestIngestPartialSuccessAuditLogIsChained(t *testing.T) {
 	tenantID := shared.NewID()
 	ctx := context.Background()
 
-	agt := &agent.Agent{ID: shared.NewID(), Name: "scanner-01"}
+	agt := &sensor.Sensor{ID: shared.NewID(), Name: "scanner-01"}
 	svc.createIngestAuditLog(ctx, agt, tenantID, ingestReport(), &Output{
 		ReportID:        "report-partial",
 		FindingsCreated: 2,
@@ -297,7 +297,7 @@ func TestIngestAuditChainLinksSequentially(t *testing.T) {
 	svc, auditSvc, repo := newIngestAuditFixture(t)
 	tenantID := shared.NewID()
 	ctx := context.Background()
-	agt := &agent.Agent{ID: shared.NewID(), Name: "scanner-01"}
+	agt := &sensor.Sensor{ID: shared.NewID(), Name: "scanner-01"}
 
 	const ingests = 5
 	for i := 0; i < ingests; i++ {

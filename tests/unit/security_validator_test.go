@@ -1378,7 +1378,7 @@ func TestSecValValidateTierWithResult_FieldNameInError(t *testing.T) {
 	repo := newSecValMockToolRepo()
 	sv := newSecValValidator(repo)
 
-	result := sv.ValidateTierWithResult("bad-tier", "agent_tier")
+	result := sv.ValidateTierWithResult("bad-tier", "sensor_tier")
 
 	if result.Valid {
 		t.Fatal("expected invalid")
@@ -1386,8 +1386,8 @@ func TestSecValValidateTierWithResult_FieldNameInError(t *testing.T) {
 	if len(result.Errors) == 0 {
 		t.Fatal("expected at least one error")
 	}
-	if result.Errors[0].Field != "agent_tier" {
-		t.Errorf("expected field 'agent_tier', got %q", result.Errors[0].Field)
+	if result.Errors[0].Field != "sensor_tier" {
+		t.Errorf("expected field 'sensor_tier', got %q", result.Errors[0].Field)
 	}
 }
 

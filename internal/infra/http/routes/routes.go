@@ -61,14 +61,14 @@ type Handlers struct {
 	Docs             *handler.DocsHandler             // API documentation handler
 	Command          *handler.CommandHandler          // nil if not initialized (no database)
 	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
-	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint agents
+	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint sensors
 	IOC              *handler.IOCHandler              // nil if not initialized - IOC catalogue (feeds B6 correlator)
 	Validation       *handler.ValidationHandler       // nil if not initialized - CTEM Stage-4 validation evidence
 	SCIM             *handler.SCIMHandler             // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
 	SCIMToken        *handler.SCIMTokenHandler        // nil if not initialized - SCIM token admin
 	SCIMAuth         Middleware                       // SCIM bearer-token auth middleware (nil if SCIM disabled)
 	ModuleGate       *middleware.ModuleGate           // per-tenant module route gating (nil-safe: fail-open)
-	Agent            *handler.AgentHandler            // nil if not initialized (no database)
+	Sensor           *handler.SensorHandler           // nil if not initialized (no database)
 	Pipeline         *handler.PipelineHandler         // nil if not initialized (no database)
 	ScanProfile      *handler.ScanProfileHandler      // nil if not initialized (no database)
 	Tool             *handler.ToolHandler             // nil if not initialized (no database)
@@ -193,7 +193,7 @@ type Handlers struct {
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
 
-	// Platform Stats handler (tenant-scoped platform agent stats)
+	// Platform Stats handler (tenant-scoped platform sensor stats)
 	PlatformStats *handler.PlatformStatsHandler
 
 	// WebSocket handler for real-time communication
@@ -221,10 +221,10 @@ type AuthConfig struct {
 //   - auth.go: Authentication (login, register, OAuth)
 //   - tenant.go: Tenant management
 //   - assets.go: Assets, components, asset groups, scope
-//   - scanning.go: Agents, commands, scans, pipelines, tools
+//   - scanning.go: Sensors, commands, scans, pipelines, tools
 //   - exposure.go: Exposures, threat intel, credentials
 //   - access_control.go: Groups, roles, permissions
-//   - platform.go: Platform agents and jobs
+//   - platform.go: Platform sensors and jobs
 //   - misc.go: Health, docs, dashboard, audit, SLA, integrations
 //
 //nolint:cyclop,gocognit // Route registration naturally has many branches
@@ -399,7 +399,7 @@ func Register(
 		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, h.RemediationGroup, authMiddleware, userSync)
 	}
 
-	// CTEM Stage-4 validation evidence (agent ingest + finding evidence list)
+	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
 		registerValidationRoutes(router, h.Validation, h.Vulnerability, h.Ingest, authMiddleware, userSync)
 	}
@@ -586,8 +586,8 @@ func Register(
 
 	// Per-tenant rate limiter for the telemetry-events ingest endpoint.
 	// Not generic rate limiting — only this route needs it because an
-	// EDR agent can legitimately batch thousands of events, but we
-	// still need to prevent a single compromised agent key from
+	// EDR sensor can legitimately batch thousands of events, but we
+	// still need to prevent a single compromised sensor key from
 	// drowning the correlator. Conservative defaults: 200 rps burst
 	// 400, buckets evicted after 10 m idle.
 	var telemetryRateLimiter *middleware.TelemetryRateLimiter
@@ -598,20 +598,20 @@ func Register(
 	// Per-tenant limiter for the heavy report-ingest endpoints. Report ingest
 	// is far heavier per request than telemetry (up to 100k findings / 100MB),
 	// so it gets a much lower budget — enough for legitimate CI bursts, low
-	// enough to bound a runaway loop or compromised agent key.
+	// enough to bound a runaway loop or compromised sensor key.
 	var ingestRateLimiter *middleware.TelemetryRateLimiter
 	if cfg.RateLimit.Enabled {
 		ingestRateLimiter = middleware.NewTelemetryRateLimiter(20, 40, 10*time.Minute, log)
 	}
 
-	// Ingest/Agent routes (API key authenticated)
+	// Ingest/Sensor routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
-		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter, ingestRateLimiter, log)
+		registerSensorRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter, ingestRateLimiter, log)
 	}
 
-	// Agent management routes (tenant from JWT token)
-	if h.Agent != nil {
-		registerAgentManagementRoutes(router, h.Agent, nil, authMiddleware, userSync)
+	// Sensor management routes (tenant from JWT token)
+	if h.Sensor != nil {
+		registerSensorManagementRoutes(router, h.Sensor, nil, authMiddleware, userSync)
 	}
 
 	// Initialize trigger rate limiter for pipeline/scan trigger endpoints
@@ -655,7 +655,7 @@ func Register(
 		registerScanRoutes(router, h.Scan, h.CI, authMiddleware, userSync, triggerRateLimiter)
 	}
 
-	// Scan Session routes (tenant from JWT token for admin, API key for agent)
+	// Scan Session routes (tenant from JWT token for admin, API key for sensor)
 	if h.ScanSession != nil {
 		registerScanSessionRoutes(router, h.ScanSession, authMiddleware, userSync)
 	}
@@ -765,7 +765,7 @@ func Register(
 		registerBootstrapRoutes(router, h.Bootstrap, authMiddleware, userSync)
 	}
 
-	// Platform Stats routes (tenant-scoped platform agent statistics)
+	// Platform Stats routes (tenant-scoped platform sensor statistics)
 	if h.PlatformStats != nil {
 		registerPlatformStatsRoutes(router, h.PlatformStats, authMiddleware, userSync)
 	}
