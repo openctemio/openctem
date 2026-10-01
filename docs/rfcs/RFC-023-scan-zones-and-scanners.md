@@ -258,6 +258,35 @@ every legacy `type` value from old clients and maps it.
 | R2 | SDK minor release: aliases, role/feature/manifest reporting when the server advertises v2, signature verification when present. Our agent bumps to it. | No (opt-in) |
 | R3 | Security switches: per-sensor "signature required", tenant "require guarded scanners for private targets", platform minimum protocol. Defaults keep v1 working; operators raise them when their fleet is upgraded. | Only when an operator raises the minimum |
 
+### 9.4 What gets renamed: inventory, risks and handling
+
+Principle: **rename what people read; keep what machines depend on.** Inventory
+taken 2026-10-01 on develop and live.
+
+| Layer | Today | Decision | Risk if renamed outright | Handling |
+|---|---|---|---|---|
+| UI labels, menus, docs, glossary | "Agents" pages (24 UI files, ~1,400 mentions) | **Rename** to Sensors / Scanners / Agents / Collectors | Users lose their bearings; bookmarks to `/agents` break; screenshots in docs go stale | `/agents` redirects; "Sensors (formerly Agents)" for two releases; glossary page; release notes |
+| Management REST API | `/api/v1/agents` (UI + customer automation) | **Add `/api/v1/sensors`** (same handlers); `/agents` kept, marked deprecated | Customer scripts and integrations break | Alias for at least two major versions; `Deprecation` / `Sunset` headers (RFC 9745 / 8594); OpenAPI documents both |
+| Sensor protocol (SDK ↔ API) | `/api/v1/agent/*`, `/api/v1/agent/credentials` | **Keep** (protocol v1 frozen, C1); v2 introduces `/api/v2/sensor/*` together with request signing | Every deployed sensor and SDK stops working | Rename only at the v2 boundary, where sensors opt in anyway |
+| Permissions | `agents:read/write/delete`, `agents:commands:*` (18 role grants live; also stored in `oct_` API-key scopes and custom roles) | **Add `sensors:*`**, migrate grants and key scopes, accept both during the transition, drop `agents:*` later (contract migration) | Custom roles and API keys silently lose access; Go↔DB permission catalog test fails | Additive seed migration copies every grant and key scope; permission check resolves the old id to the new one; catalog test updated in the same PR; removal only after a release with zero `agents:*` use |
+| Database tables and columns | `agents`, `agent_api_keys`; `agent_id` in 9 tables (`commands`, `findings`, `scan_sessions`, `ingest_jobs`, `pipeline_runs`, `step_runs`, `tool_executions`, `runtime_telemetry_events`) + `commands.platform_agent_id`, `scans.agent_preference` | **Keep.** Documented as "the sensor registry" | Rolling deploy breaks (old pods query old names); ~5,400 Go references and raw SQL; FK/index/trigger names; schema-drift checks; customer BI queries | Add `role`, `deployment` columns only (§9.1). If a rename is ever wanted, do it with expand-contract (rename + compatibility view) in its own release |
+| API Go code | ~5,400 mentions | **Keep**; new code (zones, policy, health) uses sensor terms; type alias `Sensor = Agent` where it helps readability | Huge diff, merge conflicts with every open branch, regressions for no user value | Glossary in the architecture doc and CLAUDE.md so the mixed vocabulary is explained |
+| SDK exported identifiers | 19 types/functions with "Agent" | **Aliases only** (C5); deprecate in a later minor; remove only in a major | Third-party code stops compiling | `type SensorRuntime = Agent` etc.; `// Deprecated:` with the replacement; changelog |
+| Agent binary, repo, images | `openctemio/agent`, `ghcr.io/openctemio/agent:{ci,full,slim,nuclei,trivy,semgrep,gitleaks,platform}` — **`:ci` is referenced from customer CI pipelines** via our GitHub/GitLab templates | **Keep**; optionally also publish the same digest as `openctemio/sensor:*` | Customer pipelines fail on next run; Helm charts and install scripts break | Dual-publish identical digests if a new name is wanted; never remove the old tags |
+| Environment variables, CLI flags | `API_URL`, `API_KEY`, `AGENT_ID`, `AGENT_NAME`, `AGENT_ALLOW_PRIVATE_TARGETS`, `BOOTSTRAP_TOKEN` | **Keep**; accept `SENSOR_*` aliases later (old name wins on conflict, warning logged) | Sensors start with defaults (e.g. private targets suddenly blocked or allowed) | Alias table in one place in the SDK; startup log shows which name was used |
+| Helm values | `agent.*` (72 mentions) | **Keep**; add `sensor.*` alias later | Existing values files silently ignored | Chart maps both; `helm lint` test for each |
+| Audit action ids, event types | `agent.created`, `agent.key_regenerated`, … (14 ids) in the hash-chained audit log, SIEM rules, notifications | **Keep the ids**; show "Sensor …" labels in the UI | Customer SIEM rules stop matching; queries over history split in two | Ids are machine contracts; only labels change |
+| Log fields, metrics | `agent_id` in logs and dashboards | **Keep** | Dashboards and alerts break | — |
+| CTIS report schema | No agent fields | Nothing to do | — | — |
+| Legacy `type` value `sensor` ("EASM sensor") | Accepted by API | Mapped to role `scanner` (§9.1); never emitted again | Ambiguity between the umbrella term and a legacy value | Unit test: the literal `sensor` is only accepted as a legacy `type` input, never produced |
+| The word "agent" itself | Today means "our runtime" | From now on means the **endpoint role** | Old docs and conversations read wrongly | Glossary; docs updated in R0; "formerly" labels |
+
+**Process risks.** One big rename PR would collide with every open branch; it
+is split into the R0–R3 steps (§9.3), each small and reversible. The
+compatibility CI job (C8) runs the previous released agent and SDK against
+every API change, so an accidental break of the frozen surface fails the
+build instead of a customer deployment.
+
 ## 10. Sensor fleet security: use cases and controls
 
 The platform must always know what every sensor is doing, notice when one goes
