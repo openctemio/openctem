@@ -9,9 +9,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/apierror"
+	"github.com/openctemio/api/pkg/domain/attackerprofile"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/pagination"
 )
+
+// invalidProfileTypeMsg is returned for a profile_type outside the set the
+// attacker_profiles CHECK constraint accepts — sending it to the database
+// turned a bad request into a 500.
+const invalidProfileTypeMsg = "profile_type must be one of: external_unauth, external_stolen_creds, malicious_insider, supplier_compromise, custom"
 
 // AttackerProfileHandler handles attacker profile CRUD endpoints.
 // Uses direct SQL queries for pragmatic speed (no DDD repo layer yet).
@@ -146,6 +152,10 @@ func (h *AttackerProfileHandler) Create(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("name is required").WriteJSON(w)
 		return
 	}
+	if !attackerprofile.ProfileType(req.ProfileType).IsValid() {
+		apierror.BadRequest(invalidProfileTypeMsg).WriteJSON(w)
+		return
+	}
 
 	capJSON, err := json.Marshal(req.Capabilities)
 	if err != nil {
@@ -195,6 +205,10 @@ func (h *AttackerProfileHandler) Update(w http.ResponseWriter, r *http.Request) 
 	var req CreateAttackerProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if !attackerprofile.ProfileType(req.ProfileType).IsValid() {
+		apierror.BadRequest(invalidProfileTypeMsg).WriteJSON(w)
 		return
 	}
 

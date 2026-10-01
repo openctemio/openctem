@@ -19,6 +19,17 @@ const (
 	ProfileCustom              ProfileType = "custom"
 )
 
+// IsValid reports whether p is one of the profile types the
+// attacker_profiles.profile_type CHECK constraint accepts.
+func (p ProfileType) IsValid() bool {
+	switch p {
+	case ProfileExternalUnauth, ProfileExternalStolenCreds, ProfileMaliciousInsider,
+		ProfileSupplierCompromise, ProfileCustom:
+		return true
+	}
+	return false
+}
+
 // Capabilities describes what the attacker can do.
 type Capabilities struct {
 	NetworkAccess   string   `json:"network_access"`   // external, internal, physical

@@ -77,7 +77,7 @@ type ScanScheduleResponse struct {
 	Name                 string                 `json:"name"`
 	Description          string                 `json:"description,omitempty"`
 	ScanType             string                 `json:"scan_type"`
-	TargetScope          string                 `json:"target_scope"`
+	TargetScope          string                 `json:"target_scope" validate:"omitempty,oneof=all selected tag"`
 	TargetIDs            []string               `json:"target_ids,omitempty"`
 	TargetTags           []string               `json:"target_tags,omitempty"`
 	ScannerConfigs       map[string]interface{} `json:"scanner_configs,omitempty"`
@@ -176,7 +176,7 @@ type CreateScanScheduleRequest struct {
 type UpdateScanScheduleRequest struct {
 	Name                 *string                `json:"name" validate:"omitempty,min=1,max=200"`
 	Description          *string                `json:"description" validate:"omitempty,max=1000"`
-	TargetScope          *string                `json:"target_scope"`
+	TargetScope          *string                `json:"target_scope" validate:"omitempty,oneof=all selected tag"`
 	TargetIDs            []string               `json:"target_ids" validate:"omitempty,max=100"`
 	TargetTags           []string               `json:"target_tags" validate:"omitempty,max=20,dive,max=50"`
 	ScannerConfigs       map[string]interface{} `json:"scanner_configs"`

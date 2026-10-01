@@ -109,6 +109,9 @@ func (r *ToolRepository) Create(ctx context.Context, t *tool.Tool) error {
 		if isUniqueViolation(err) {
 			return shared.NewDomainError("ALREADY_EXISTS", "tool with this name already exists", shared.ErrAlreadyExists)
 		}
+		if verr := invalidInput(err); verr != nil {
+			return verr
+		}
 		return fmt.Errorf("failed to create tool: %w", err)
 	}
 
@@ -385,6 +388,9 @@ func (r *ToolRepository) Update(ctx context.Context, t *tool.Tool) error {
 	)
 
 	if err != nil {
+		if verr := invalidInput(err); verr != nil {
+			return verr
+		}
 		return fmt.Errorf("failed to update tool: %w", err)
 	}
 

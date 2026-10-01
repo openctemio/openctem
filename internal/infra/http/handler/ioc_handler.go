@@ -126,6 +126,8 @@ func (h *IOCHandler) Create(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ioc.ErrInvalidType):
 			apierror.BadRequest("invalid ioc type").WriteJSON(w)
+		case errors.Is(err, ioc.ErrInvalidSource):
+			apierror.BadRequest("source must be scan_finding, threat_feed or manual").WriteJSON(w)
 		case errors.Is(err, ioc.ErrEmptyValue):
 			apierror.BadRequest("value is required").WriteJSON(w)
 		case errors.Is(err, ioc.ErrInvalidValueFormat):

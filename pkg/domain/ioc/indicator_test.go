@@ -221,3 +221,17 @@ func itoa(n int) string {
 	}
 	return string(buf[i:])
 }
+
+// The iocs.source CHECK accepts only the three Source constants; anything
+// else used to reach the database and come back as a 500.
+func TestNewIndicatorRejectsUnknownSource(t *testing.T) {
+	_, err := NewIndicator(shared.NewID(), TypeIP, "203.0.113.7", Source("qa"))
+	if !errors.Is(err, ErrInvalidSource) {
+		t.Fatalf("got %v, want ErrInvalidSource", err)
+	}
+	for _, src := range []Source{SourceManual, SourceThreatFeed, SourceScanFinding} {
+		if _, err := NewIndicator(shared.NewID(), TypeIP, "203.0.113.7", src); err != nil {
+			t.Fatalf("source %q rejected: %v", src, err)
+		}
+	}
+}
