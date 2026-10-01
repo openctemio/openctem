@@ -603,18 +603,19 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 		extraWhere = "AND " + filterWhere
 	}
 
-	var resolvedClause string
-	if status.IsClosed() {
-		resolvedClause = ", resolved_at = NOW()"
-	} else {
-		resolvedClause = ", resolved_at = NULL, resolved_by = NULL"
+	// resolved_by is always assigned from $4 (a reopen passes NULL) — assigning
+	// it a second time in the SET list is a 42601 that failed every reopen.
+	resolvedAt := "NOW()"
+	if !status.IsClosed() {
+		resolvedAt = "NULL"
+		resolvedBy = nil
 	}
 
 	query := fmt.Sprintf(`
 		UPDATE findings f
-		SET status = $2, resolution = $3, resolved_by = $4%s, updated_at = NOW()
+		SET status = $2, resolution = $3, resolved_by = $4, resolved_at = %s, updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
-	`, resolvedClause, extraWhere)
+	`, resolvedAt, extraWhere)
 
 	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}, filterArgs...)
 
