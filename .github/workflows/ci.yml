@@ -274,6 +274,90 @@ jobs:
           files: ./coverage.out
           fail_ci_if_error: false
 
+  compat-v1:
+    # Sensors and SDKs already deployed in the field speak protocol v1, which is
+    # frozen (RFC-023 §9.2, C8). Run the last released sdk-go against this build
+    # over the real HTTP surface: a renamed route, a newly required field or a
+    # changed response shape fails here instead of at a customer.
+    name: Protocol v1 Compatibility
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: openctem
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: app_compat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://openctem:secret@localhost:5432/app_compat?sslmode=disable
+      APP_ENV: development
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: openctem
+      DB_PASSWORD: secret
+      DB_NAME: app_compat
+      DB_SSLMODE: disable
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      SERVER_PORT: 8080
+      AUTH_PROVIDER: local
+      AUTH_JWT_SECRET: compat-v1-ci-jwt-secret-not-used-anywhere-else-0123456789
+      AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
+      APP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install golang-migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Apply migrations
+        run: migrate -path migrations -database "$DATABASE_URL" up
+
+      - name: Build API and bootstrap-tenant
+        run: go build -o bin/ ./cmd/server ./cmd/bootstrap-tenant
+
+      - name: Start API
+        run: |
+          nohup ./bin/server > server.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8080/health >/dev/null && exit 0
+            sleep 1
+          done
+          echo "API did not become healthy"; cat server.log; exit 1
+
+      - name: Run the last released SDK against this build
+        run: bash scripts/compat-v1.sh
+        env:
+          COMPAT_API_URL: http://127.0.0.1:8080
+          BOOTSTRAP_TENANT_BIN: ./bin/bootstrap-tenant
+
+      - name: API log on failure
+        if: failure()
+        run: tail -200 server.log
+
   build:
     name: Build
     runs-on: ubuntu-latest
