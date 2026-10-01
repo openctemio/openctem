@@ -21,7 +21,7 @@ func TestNewRegistry_HasExpectedAdapters(t *testing.T) {
 	sort.Strings(got)
 
 	want := []string{
-		"gitleaks",
+		"betterleaks", // replaced gitleaks (migration 000241).
 		"nuclei",
 		"recon", // subdomain/DNS/port/http_probe/url_crawl adapter.
 		"sarif", // P0-1 — previously built but unregistered.
@@ -46,5 +46,15 @@ func TestNewRegistry_SARIFRegistered(t *testing.T) {
 	reg := NewRegistry()
 	if _, ok := reg.Get("sarif"); !ok {
 		t.Fatalf("sarif adapter not registered — P0-1 regression")
+	}
+}
+
+// An older client still uploads a raw report with scanner_type=gitleaks; it
+// converts with the betterleaks adapter and is stamped betterleaks.
+func TestRegistry_RetiredScannerTypeFindsReplacement(t *testing.T) {
+	reg := NewRegistry()
+	a, ok := reg.Get("gitleaks")
+	if !ok || a.Name() != "betterleaks" {
+		t.Fatalf("Get(gitleaks) = %v, %v; want the betterleaks adapter", a, ok)
 	}
 }

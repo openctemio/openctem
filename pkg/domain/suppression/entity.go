@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
+	"github.com/openctemio/api/pkg/domain/tool"
 )
 
 // SuppressionType represents the type of suppression.
@@ -56,7 +57,7 @@ type Rule struct {
 
 	// Matching criteria
 	ruleID      string     // Tool rule ID pattern (e.g., "semgrep.sql-injection")
-	toolName    string     // Tool name (e.g., "semgrep", "gitleaks")
+	toolName    string     // Tool name (e.g., "semgrep", "betterleaks")
 	pathPattern string     // File path pattern (glob: "tests/**")
 	assetID     *shared.ID // Optional: limit to specific asset
 
@@ -204,9 +205,10 @@ func (r *Rule) SetRuleIDPattern(pattern string) {
 	r.updatedAt = time.Now().UTC()
 }
 
-// SetToolName sets the tool name filter.
+// SetToolName sets the tool name filter. A retired tool name is stored as
+// its replacement ("gitleaks" -> "betterleaks"), the name findings carry.
 func (r *Rule) SetToolName(toolName string) {
-	r.toolName = toolName
+	r.toolName = tool.CanonicalName(toolName)
 	r.updatedAt = time.Now().UTC()
 }
 

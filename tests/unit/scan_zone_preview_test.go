@@ -192,8 +192,8 @@ func TestScanZonePreview_NotRouted(t *testing.T) {
 
 	a := zone(t, tenant, "a", false, []shared.ID{shared.NewID()}, "10.1.0.0/16")
 	svc, _ = newZonedScanService(&fakeZoneDir{zones: []*scanzone.Zone{a}}, nil, nil)
-	p = preview(t, svc, scanservice.ZoneRoutingPreviewInput{TenantID: tenant.String(), ScannerName: "gitleaks", Targets: []string{"github.com/acme/app"}})
-	if !p.ZonesEnabled || p.Routed || !strings.Contains(p.NotRoutedReason, "gitleaks") {
+	p = preview(t, svc, scanservice.ZoneRoutingPreviewInput{TenantID: tenant.String(), ScannerName: "betterleaks", Targets: []string{"github.com/acme/app"}})
+	if !p.ZonesEnabled || p.Routed || !strings.Contains(p.NotRoutedReason, "betterleaks") {
 		t.Errorf("non-network tool: %+v", p)
 	}
 }

@@ -184,8 +184,8 @@ if [ -n "$RULE_ID" ] && [ "$RULE_ID" != "null" ]; then
     REJECT_CREATE=$(api_call POST "/api/v1/suppressions" '{
         "name": "Rule to be Rejected",
         "description": "This rule will be rejected",
-        "rule_id": "gitleaks.secret*",
-        "tool_name": "gitleaks",
+        "rule_id": "betterleaks.secret*",
+        "tool_name": "betterleaks",
         "suppression_type": "accepted_risk"
     }')
     echo "$REJECT_CREATE" | pretty_json

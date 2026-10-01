@@ -27,7 +27,7 @@ func TestRecordRun_PersistsStatusAndMovesCounters(t *testing.T) {
 	scanID := shared.NewID()
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO scans (id, tenant_id, name, scan_type, scanner_name, total_runs, successful_runs, failed_runs)
-		 VALUES ($1, $2, 'completion probe', 'single', 'gitleaks', 0, 0, 0)`,
+		 VALUES ($1, $2, 'completion probe', 'single', 'betterleaks', 0, 0, 0)`,
 		scanID.String(), tenantID.String()); err != nil {
 		t.Fatalf("seed scan: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRecordRun_FailedStatusIncrementsFailedCounter(t *testing.T) {
 	scanID := shared.NewID()
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO scans (id, tenant_id, name, scan_type, scanner_name)
-		 VALUES ($1, $2, 'failed probe', 'single', 'gitleaks')`,
+		 VALUES ($1, $2, 'failed probe', 'single', 'betterleaks')`,
 		scanID.String(), tenantID.String()); err != nil {
 		t.Fatalf("seed scan: %v", err)
 	}

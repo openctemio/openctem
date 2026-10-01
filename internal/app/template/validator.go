@@ -201,8 +201,8 @@ func GetValidator(templateType scannertemplate.TemplateType) TemplateValidator {
 		return &NucleiValidator{}
 	case scannertemplate.TemplateTypeSemgrep:
 		return &SemgrepValidator{}
-	case scannertemplate.TemplateTypeGitleaks:
-		return &GitleaksValidator{}
+	case scannertemplate.TemplateTypeBetterleaks:
+		return &BetterleaksValidator{}
 	default:
 		return nil
 	}
@@ -585,14 +585,14 @@ func (v *SemgrepValidator) isValidSeverity(severity string) bool {
 }
 
 // =============================================================================
-// Gitleaks Validator
+// Betterleaks Validator
 // =============================================================================
 
-// GitleaksValidator validates Gitleaks config files (TOML).
-type GitleaksValidator struct{}
+// BetterleaksValidator validates Betterleaks config files (TOML; gitleaks configs are the same format).
+type BetterleaksValidator struct{}
 
-// Validate validates Gitleaks config content.
-func (v *GitleaksValidator) Validate(content []byte) *ValidationResult {
+// Validate validates Betterleaks config content.
+func (v *BetterleaksValidator) Validate(content []byte) *ValidationResult {
 	result := &ValidationResult{
 		Valid:    true,
 		Metadata: make(map[string]any),
@@ -646,19 +646,19 @@ func (v *GitleaksValidator) Validate(content []byte) *ValidationResult {
 	return result
 }
 
-// CountRules counts the number of rules in the Gitleaks config.
-func (v *GitleaksValidator) CountRules(content []byte) int {
+// CountRules counts the number of rules in the Betterleaks config.
+func (v *BetterleaksValidator) CountRules(content []byte) int {
 	return strings.Count(string(content), "[[rules]]")
 }
 
-// ExtractMetadata extracts metadata from Gitleaks config.
-func (v *GitleaksValidator) ExtractMetadata(content []byte) map[string]any {
+// ExtractMetadata extracts metadata from Betterleaks config.
+func (v *BetterleaksValidator) ExtractMetadata(content []byte) map[string]any {
 	result := v.Validate(content)
 	return result.Metadata
 }
 
 // extractRules extracts rules from TOML content (simplified parser).
-func (v *GitleaksValidator) extractRules(content string) []map[string]string {
+func (v *BetterleaksValidator) extractRules(content string) []map[string]string {
 	var rules []map[string]string
 
 	// Split by [[rules]]

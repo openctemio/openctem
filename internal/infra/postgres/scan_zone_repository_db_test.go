@@ -233,7 +233,7 @@ func TestCommandClaim_ZonePredicate(t *testing.T) {
 	s1 := seedZoneSensor(ctx, t, sqlDB, &tenant, "s1", zoneSensorOpts{tools: []string{"nuclei"}})
 	s1b := seedZoneSensor(ctx, t, sqlDB, &tenant, "s1b", zoneSensorOpts{tools: []string{"nuclei"}})
 	s2 := seedZoneSensor(ctx, t, sqlDB, &tenant, "s2", zoneSensorOpts{tools: []string{"nuclei"}})
-	s1noTool := seedZoneSensor(ctx, t, sqlDB, &tenant, "s1-no-nuclei", zoneSensorOpts{tools: []string{"gitleaks"}})
+	s1noTool := seedZoneSensor(ctx, t, sqlDB, &tenant, "s1-no-nuclei", zoneSensorOpts{tools: []string{"betterleaks"}})
 	outsider := seedZoneSensor(ctx, t, sqlDB, &tenant, "no-zone", zoneSensorOpts{tools: []string{"nuclei"}})
 	for _, a := range []struct{ z, s shared.ID }{{zoneA.ID, s1}, {zoneA.ID, s1b}, {zoneA.ID, s1noTool}, {zoneB.ID, s2}} {
 		if err := zones.AssignSensor(ctx, tenant, a.z, a.s, nil); err != nil {
@@ -324,7 +324,7 @@ func TestScanZoneRepository_RoutableSensors(t *testing.T) {
 	idle := seedZoneSensor(ctx, t, sqlDB, &tenant, "idle", zoneSensorOpts{tools: []string{"nuclei"}})
 	offline := seedZoneSensor(ctx, t, sqlDB, &tenant, "offline", zoneSensorOpts{tools: []string{"nuclei"}, health: "offline", lastSeen: &stale})
 	disabled := seedZoneSensor(ctx, t, sqlDB, &tenant, "disabled", zoneSensorOpts{tools: []string{"nuclei"}, status: "disabled"})
-	noTool := seedZoneSensor(ctx, t, sqlDB, &tenant, "no-tool", zoneSensorOpts{tools: []string{"gitleaks"}})
+	noTool := seedZoneSensor(ctx, t, sqlDB, &tenant, "no-tool", zoneSensorOpts{tools: []string{"betterleaks"}})
 	for _, s := range []shared.ID{busy, idle, offline, disabled, noTool} {
 		if err := zones.AssignSensor(ctx, tenant, z.ID, s, nil); err != nil {
 			t.Fatal(err)

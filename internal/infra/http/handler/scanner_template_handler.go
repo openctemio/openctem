@@ -46,7 +46,7 @@ func NewScannerTemplateHandler(service *app.ScannerTemplateService, v *validator
 // CreateScannerTemplateRequest represents the request body for creating a template.
 type CreateScannerTemplateRequest struct {
 	Name         string   `json:"name" validate:"required,min=1,max=255"`
-	TemplateType string   `json:"template_type" validate:"required,oneof=nuclei semgrep gitleaks"`
+	TemplateType string   `json:"template_type" validate:"required,oneof=nuclei semgrep betterleaks"`
 	Description  string   `json:"description" validate:"max=1000"`
 	Content      string   `json:"content" validate:"required"` // Base64 encoded
 	Tags         []string `json:"tags" validate:"max=20,dive,max=50"`
@@ -62,7 +62,7 @@ type UpdateScannerTemplateRequest struct {
 
 // ValidateScannerTemplateRequest represents the request body for validating template content.
 type ValidateScannerTemplateRequest struct {
-	TemplateType string `json:"template_type" validate:"required,oneof=nuclei semgrep gitleaks"`
+	TemplateType string `json:"template_type" validate:"required,oneof=nuclei semgrep betterleaks"`
 	Content      string `json:"content" validate:"required"` // Base64 encoded
 }
 
@@ -102,7 +102,7 @@ type ValidationErrorResponse struct {
 
 // Create handles POST /api/v1/scanner-templates
 // @Summary      Create scanner template
-// @Description  Create a new custom scanner template (Nuclei, Semgrep, or Gitleaks)
+// @Description  Create a new custom scanner template (Nuclei, Semgrep, or Betterleaks)
 // @Tags         Scanner Templates
 // @Accept       json
 // @Produce      json
@@ -191,7 +191,7 @@ func (h *ScannerTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Tags         Scanner Templates
 // @Accept       json
 // @Produce      json
-// @Param        template_type  query     string   false  "Filter by template type (nuclei, semgrep, gitleaks)"
+// @Param        template_type  query     string   false  "Filter by template type (nuclei, semgrep, betterleaks)"
 // @Param        status         query     string   false  "Filter by status (active, pending_review, deprecated, revoked)"
 // @Param        tags           query     string   false  "Filter by tags (comma-separated)"
 // @Param        search         query     string   false  "Search by name or description"
@@ -439,20 +439,20 @@ type TemplateUsageResponse struct {
 
 // TemplateUsageData represents current template usage.
 type TemplateUsageData struct {
-	TotalTemplates    int64 `json:"total_templates"`
-	NucleiTemplates   int64 `json:"nuclei_templates"`
-	SemgrepTemplates  int64 `json:"semgrep_templates"`
-	GitleaksTemplates int64 `json:"gitleaks_templates"`
-	TotalStorageBytes int64 `json:"total_storage_bytes"`
+	TotalTemplates       int64 `json:"total_templates"`
+	NucleiTemplates      int64 `json:"nuclei_templates"`
+	SemgrepTemplates     int64 `json:"semgrep_templates"`
+	BetterleaksTemplates int64 `json:"betterleaks_templates"`
+	TotalStorageBytes    int64 `json:"total_storage_bytes"`
 }
 
 // TemplateQuotaData represents quota limits.
 type TemplateQuotaData struct {
-	MaxTemplates         int   `json:"max_templates"`
-	MaxTemplatesNuclei   int   `json:"max_templates_nuclei"`
-	MaxTemplatesSemgrep  int   `json:"max_templates_semgrep"`
-	MaxTemplatesGitleaks int   `json:"max_templates_gitleaks"`
-	MaxTotalStorageBytes int64 `json:"max_total_storage_bytes"`
+	MaxTemplates            int   `json:"max_templates"`
+	MaxTemplatesNuclei      int   `json:"max_templates_nuclei"`
+	MaxTemplatesSemgrep     int   `json:"max_templates_semgrep"`
+	MaxTemplatesBetterleaks int   `json:"max_templates_betterleaks"`
+	MaxTotalStorageBytes    int64 `json:"max_total_storage_bytes"`
 }
 
 // GetUsage handles GET /api/v1/scanner-templates/usage
@@ -476,18 +476,18 @@ func (h *ScannerTemplateHandler) GetUsage(w http.ResponseWriter, r *http.Request
 
 	response := TemplateUsageResponse{
 		Usage: TemplateUsageData{
-			TotalTemplates:    result.Usage.TotalTemplates,
-			NucleiTemplates:   result.Usage.NucleiTemplates,
-			SemgrepTemplates:  result.Usage.SemgrepTemplates,
-			GitleaksTemplates: result.Usage.GitleaksTemplates,
-			TotalStorageBytes: result.Usage.TotalStorageBytes,
+			TotalTemplates:       result.Usage.TotalTemplates,
+			NucleiTemplates:      result.Usage.NucleiTemplates,
+			SemgrepTemplates:     result.Usage.SemgrepTemplates,
+			BetterleaksTemplates: result.Usage.BetterleaksTemplates,
+			TotalStorageBytes:    result.Usage.TotalStorageBytes,
 		},
 		Quota: TemplateQuotaData{
-			MaxTemplates:         result.Quota.MaxTemplates,
-			MaxTemplatesNuclei:   result.Quota.MaxTemplatesNuclei,
-			MaxTemplatesSemgrep:  result.Quota.MaxTemplatesSemgrep,
-			MaxTemplatesGitleaks: result.Quota.MaxTemplatesGitleaks,
-			MaxTotalStorageBytes: result.Quota.MaxTotalStorageBytes,
+			MaxTemplates:            result.Quota.MaxTemplates,
+			MaxTemplatesNuclei:      result.Quota.MaxTemplatesNuclei,
+			MaxTemplatesSemgrep:     result.Quota.MaxTemplatesSemgrep,
+			MaxTemplatesBetterleaks: result.Quota.MaxTemplatesBetterleaks,
+			MaxTotalStorageBytes:    result.Quota.MaxTotalStorageBytes,
 		},
 	}
 

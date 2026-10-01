@@ -301,8 +301,8 @@ func (m *MockScannerTemplateRepo) GetUsage(ctx context.Context, tenantID shared.
 				usage.NucleiTemplates++
 			case scannertemplate.TemplateTypeSemgrep:
 				usage.SemgrepTemplates++
-			case scannertemplate.TemplateTypeGitleaks:
-				usage.GitleaksTemplates++
+			case scannertemplate.TemplateTypeBetterleaks:
+				usage.BetterleaksTemplates++
 			}
 		}
 	}
@@ -579,11 +579,11 @@ func TestScannerTemplate_Create_Semgrep(t *testing.T) {
 	}
 }
 
-func TestScannerTemplate_Create_Gitleaks(t *testing.T) {
+func TestScannerTemplate_Create_Betterleaks(t *testing.T) {
 	th := setupTemplateTestHandlers(t)
 
-	// Valid Gitleaks config
-	gitleaksContent := `[[rules]]
+	// Valid Betterleaks config
+	betterleaksContent := `[[rules]]
 id = "custom-api-key"
 description = "Custom API Key Pattern"
 regex = '''(?i)custom[_-]?api[_-]?key["\s]*[:=]["\s]*([a-z0-9]{32})'''
@@ -597,10 +597,10 @@ tags = ["token", "custom"]
 `
 
 	body := map[string]interface{}{
-		"name":          "custom-gitleaks",
-		"template_type": "gitleaks",
-		"description":   "Custom Gitleaks patterns",
-		"content":       base64.StdEncoding.EncodeToString([]byte(gitleaksContent)),
+		"name":          "custom-betterleaks",
+		"template_type": "betterleaks",
+		"description":   "Custom Betterleaks patterns",
+		"content":       base64.StdEncoding.EncodeToString([]byte(betterleaksContent)),
 	}
 	bodyBytes, _ := json.Marshal(body)
 
@@ -619,8 +619,8 @@ tags = ["token", "custom"]
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	if resp["template_type"] != "gitleaks" {
-		t.Errorf("expected template_type 'gitleaks', got %v", resp["template_type"])
+	if resp["template_type"] != "betterleaks" {
+		t.Errorf("expected template_type 'betterleaks', got %v", resp["template_type"])
 	}
 	if resp["rule_count"].(float64) != 2 {
 		t.Errorf("expected rule_count 2, got %v", resp["rule_count"])

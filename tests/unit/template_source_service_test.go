@@ -275,10 +275,10 @@ func TestTemplateSourceService_CreateSource_HTTP(t *testing.T) {
 		TenantID:     tenantID.String(),
 		Name:         "HTTP Templates",
 		SourceType:   "http",
-		TemplateType: "gitleaks",
+		TemplateType: "betterleaks",
 		Enabled:      true,
 		HTTPConfig: &ts.HTTPSourceConfig{
-			URL: "https://templates.example.com/gitleaks.zip",
+			URL: "https://templates.example.com/betterleaks.zip",
 		},
 	}
 
@@ -289,7 +289,7 @@ func TestTemplateSourceService_CreateSource_HTTP(t *testing.T) {
 	if source.SourceType != ts.SourceTypeHTTP {
 		t.Errorf("expected source type http, got %v", source.SourceType)
 	}
-	if source.HTTPConfig == nil || source.HTTPConfig.URL != "https://templates.example.com/gitleaks.zip" {
+	if source.HTTPConfig == nil || source.HTTPConfig.URL != "https://templates.example.com/betterleaks.zip" {
 		t.Error("expected http config to be set")
 	}
 }

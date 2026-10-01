@@ -26,7 +26,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 - SLA policy enforcement with escalation
 
 ### Scanning
-- 30+ scanner integrations via Agent SDK (Nuclei, Trivy, Semgrep, Gitleaks, Nmap, etc.)
+- 30+ scanner integrations via Agent SDK (Nuclei, Trivy, Semgrep, Betterleaks, Nmap, etc.)
 - Pipeline-based scan orchestration with multi-step workflows
 - Platform agents with K8s-inspired lifecycle management
 - Bootstrap token authentication for agent self-registration
@@ -238,7 +238,7 @@ make lint            # Run golangci-lint (30 linters)
 make fmt             # Format code (goimports)
 make migrate-up      # Run database migrations
 make migrate-down    # Rollback last migration
-make security-scan   # Run security scan (semgrep + gitleaks + trivy)
+make security-scan   # Run security scan (semgrep + betterleaks + trivy)
 ```
 
 ## API Endpoints (200+)

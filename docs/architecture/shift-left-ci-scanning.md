@@ -21,7 +21,7 @@ graph TD
     subgraph SDK["sdk-go libraries"]
       GE["gitenv<br/>detect provider, branch, MR,<br/>TargetBranchSha (baseline)"]
       HD["handler.RemoteHandler<br/>OnStart / HandleFindings / OnCompleted"]
-      SC["scanners<br/>semgrep · gitleaks · trivy · codeql · nuclei"]
+      SC["scanners<br/>semgrep · betterleaks · trivy · codeql · nuclei"]
       GT["gate (risk-aware)<br/>severity + KEV/exploit + suppressions"]
     end
     AG --> GE & HD & SC & GT
@@ -169,7 +169,7 @@ errors, findings are treated as new so nothing is hidden from the gate/comments.
 ```
 sdk-go/pkg/gitenv/                          CI env detect + MR comment
 sdk-go/pkg/handler/{handler,remote}.go      scan lifecycle + push + comments
-sdk-go/pkg/scanners/{semgrep,gitleaks,...}  run + parse → CTIS
+sdk-go/pkg/scanners/{semgrep,betterleaks,...}  run + parse → CTIS
 agent/main.go runOnce                        CI one-shot flow + baselineNewSet (Phase 3)
 agent/internal/gate/security.go              risk-aware gate (Phase 1) + FilterNewFindings (Phase 3)
 sdk-go/pkg/client/client.go                  BaselineDiff (Phase 3)

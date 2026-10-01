@@ -53,7 +53,7 @@ func (r *stubFindingRepo) UpdateWorkItemURIs(_ context.Context, _, _ shared.ID, 
 func buildFinding(t *testing.T, existingTicketURLs ...string) *vulnerability.Finding {
 	t.Helper()
 	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(),
-		vulnerability.FindingSourceSecret, "gitleaks", vulnerability.SeverityHigh, "hardcoded secret")
+		vulnerability.FindingSourceSecret, "betterleaks", vulnerability.SeverityHigh, "hardcoded secret")
 	if err != nil {
 		t.Fatalf("NewFinding: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestRedactSecrets(t *testing.T) {
 
 func TestTicketDescription_SecretFinding_SuppressesRawSecret(t *testing.T) {
 	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(),
-		vulnerability.FindingSourceSecret, "gitleaks", vulnerability.SeverityHigh, "AWS key in config")
+		vulnerability.FindingSourceSecret, "betterleaks", vulnerability.SeverityHigh, "AWS key in config")
 	if err != nil {
 		t.Fatalf("NewFinding: %v", err)
 	}

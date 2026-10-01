@@ -451,7 +451,7 @@ print(f"Imported: {result['imported']}, Updated: {result['updated']}")
 | SpyCloud | JSON | Enterprise API |
 | GitGuardian | JSON | Secrets detection |
 | TruffleHog | JSON | CLI output |
-| Gitleaks | JSON/SARIF | CLI output |
+| Betterleaks | JSON/SARIF | CLI output |
 | AWS Macie | JSON | S3 findings |
 | Manual | CSV/JSON | File upload |
 

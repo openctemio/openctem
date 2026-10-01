@@ -304,7 +304,7 @@ func (r *ScannerTemplateRepository) GetUsage(ctx context.Context, tenantID share
 			COUNT(*) as total_templates,
 			COUNT(*) FILTER (WHERE template_type = 'nuclei') as nuclei_templates,
 			COUNT(*) FILTER (WHERE template_type = 'semgrep') as semgrep_templates,
-			COUNT(*) FILTER (WHERE template_type = 'gitleaks') as gitleaks_templates,
+			COUNT(*) FILTER (WHERE template_type = 'betterleaks') as betterleaks_templates,
 			COALESCE(SUM(LENGTH(content)), 0) as total_storage_bytes
 		FROM scanner_templates
 		WHERE tenant_id = $1
@@ -315,7 +315,7 @@ func (r *ScannerTemplateRepository) GetUsage(ctx context.Context, tenantID share
 		&usage.TotalTemplates,
 		&usage.NucleiTemplates,
 		&usage.SemgrepTemplates,
-		&usage.GitleaksTemplates,
+		&usage.BetterleaksTemplates,
 		&usage.TotalStorageBytes,
 	)
 	if err != nil {

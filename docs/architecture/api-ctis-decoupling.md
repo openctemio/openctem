@@ -66,7 +66,7 @@ AFTER:  "github.com/openctemio/ctis/fingerprint"
 
 ### Adapters copied into API
 
-Scanner output adapters (SARIF, Trivy, Nuclei, Semgrep, Gitleaks, Vuls) moved from SDK-Go into `internal/infra/adapters/`. Only API uses these — Agent does not.
+Scanner output adapters (SARIF, Trivy, Nuclei, Semgrep, Betterleaks, Vuls) moved from SDK-Go into `internal/infra/adapters/`. Only API uses these — Agent does not.
 
 ### ChunkData inlined
 

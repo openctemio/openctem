@@ -179,7 +179,7 @@ Admin creates agent via UI/API
 │     "sast", "sca", "secrets"        │
 │   ],                                │
 │   "declared_tools": [               │
-│     "semgrep", "trivy", "gitleaks"  │
+│     "semgrep", "trivy", "betterleaks"  │
 │   ]                                 │
 │ }                                   │
 └─────────────────────────────────────┘
@@ -211,7 +211,7 @@ Agent starts and detects installed tools
 │ Agent scans for tools:              │
 │ • semgrep --version ✓               │
 │ • trivy --version ✗ (not found)     │
-│ • gitleaks --version ✓              │
+│ • betterleaks --version ✓              │
 └─────────────────────────────────────┘
          │
          ▼
@@ -222,11 +222,11 @@ Agent starts and detects installed tools
 │     "sast", "secrets"               │
 │   ],                                │
 │   "reported_tools": [               │
-│     "semgrep", "gitleaks"           │
+│     "semgrep", "betterleaks"           │
 │   ],                                │
 │   "tool_versions": {                │
 │     "semgrep": "1.45.0",            │
-│     "gitleaks": "8.18.0"            │
+│     "betterleaks": "1.9.0"            │
 │   },                                │
 │   "cpu_percent": 25.0,              │
 │   "memory_percent": 40.0            │
@@ -323,7 +323,7 @@ Admin installs trivy on agent machine
 │                                     │
 │ • semgrep --version ✓               │
 │ • trivy --version ✓ (NEW!)          │
-│ • gitleaks --version ✓              │
+│ • betterleaks --version ✓              │
 └─────────────────────────────────────┘
          │
          ▼
@@ -334,7 +334,7 @@ Admin installs trivy on agent machine
 │     "sast", "sca", "secrets"        │
 │   ],                                │
 │   "reported_tools": [               │
-│     "semgrep", "trivy", "gitleaks"  │
+│     "semgrep", "trivy", "betterleaks"  │
 │   ]                                 │
 │ }                                   │
 └─────────────────────────────────────┘
@@ -549,7 +549,7 @@ func (f *CapabilityFilter) deriveCapabilityFromTool(tool string) string {
     toolCapabilityMap := map[string]string{
         "semgrep":    "sast",
         "trivy":      "sca",      // Primary capability
-        "gitleaks":   "secrets",
+        "betterleaks":   "secrets",
         "trufflehog": "secrets",
         "nuclei":     "dast",
         "nmap":       "infra",
@@ -922,7 +922,7 @@ Hot reload allows agents to detect newly installed tools without requiring a res
 ┌─────────────────────────────────────────────────────────────┐
 │                    Capability Cache                          │
 │                                                              │
-│  detected_tools: [semgrep, trivy, gitleaks]                 │
+│  detected_tools: [semgrep, trivy, betterleaks]                 │
 │  detected_caps:  [sast, sca, secrets, container, iac]       │
 │  last_scan:      2024-01-30T10:15:00Z                       │
 │  changed:        true                                        │
@@ -961,8 +961,8 @@ var KnownTools = []ToolDefinition{
         Capabilities: []string{"sca", "container", "iac"},
     },
     {
-        Name:         "gitleaks",
-        Binary:       "gitleaks",
+        Name:         "betterleaks",
+        Binary:       "betterleaks",
         VersionCmd:   []string{"version"},
         VersionRegex: regexp.MustCompile(`(\d+\.\d+\.\d+)`),
         Capabilities: []string{"secrets"},
@@ -1534,7 +1534,7 @@ T=15m+ Agent can now receive SCA jobs!
 ```
 Timeline:
 ─────────────────────────────────────────────────────────────────────────
-T=0    Agent has:     [semgrep, trivy, gitleaks]
+T=0    Agent has:     [semgrep, trivy, betterleaks]
        Effective:     [sast, sca, secrets]
 ─────────────────────────────────────────────────────────────────────────
 T=5m   Admin removes trivy (apt remove trivy)
@@ -2074,7 +2074,7 @@ agent_capability:
   tool_capabilities:
     semgrep: [sast]
     trivy: [sca, container, iac]
-    gitleaks: [secrets]
+    betterleaks: [secrets]
     nuclei: [dast, infra]
     nmap: [infra]
     nikto: [dast]
@@ -2538,7 +2538,7 @@ var (
     allowedBinaries = map[string]bool{
         "semgrep":  true,
         "trivy":    true,
-        "gitleaks": true,
+        "betterleaks": true,
         "nuclei":   true,
         "nmap":     true,
         "nikto":    true,
@@ -3194,7 +3194,7 @@ agent_capability:
   tool_capabilities:
     semgrep: [sast]
     trivy: [sca, container, iac]
-    gitleaks: [secrets]
+    betterleaks: [secrets]
     trufflehog: [secrets]
     nuclei: [dast, infra]
     nmap: [infra, recon]

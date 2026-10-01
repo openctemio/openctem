@@ -648,7 +648,7 @@ func registerScanSessionRoutes(
 }
 
 // registerScannerTemplateRoutes registers scanner template management endpoints.
-// Scanner templates are custom templates for security tools (Nuclei, Semgrep, Gitleaks).
+// Scanner templates are custom templates for security tools (Nuclei, Semgrep, Betterleaks).
 func registerScannerTemplateRoutes(
 	router Router,
 	h *handler.ScannerTemplateHandler,
@@ -743,7 +743,7 @@ func registerSecretStoreRoutes(
 
 // registerSuppressionRoutes registers suppression rule management endpoints.
 // Suppression rules are platform-controlled rules to suppress false positives.
-// Unlike in-code ignore files (.semgrepignore, .gitleaksignore), these rules:
+// Unlike in-code ignore files (.semgrepignore, .betterleaksignore), these rules:
 // - Are managed centrally from the platform
 // - Require approval workflow (pending -> approved/rejected)
 // - Have audit trail for compliance

@@ -408,7 +408,7 @@ def test_agent_crud():
         "name": f"Test Agent {uuid.uuid4().hex[:8]}",
         "type": "runner",
         "executionMode": "daemon",
-        "tools": ["semgrep", "trivy", "gitleaks"],
+        "tools": ["semgrep", "trivy", "betterleaks"],
         "capabilities": ["sast", "sca", "secrets"]
     }
 
@@ -458,7 +458,7 @@ def test_agent_heartbeat():
 
     data = {
         "status": "online",
-        "tools": ["semgrep", "trivy", "gitleaks"],
+        "tools": ["semgrep", "trivy", "betterleaks"],
         "capabilities": ["sast", "sca", "secrets"],
         "agentVersion": "1.0.0",
         "osInfo": "Linux 5.4.0",

@@ -39,7 +39,7 @@ func newScannerTemplateMockRepository() *scannerTemplateMockRepository {
 			TotalTemplates:    0,
 			NucleiTemplates:   0,
 			SemgrepTemplates:  0,
-			GitleaksTemplates: 0,
+			BetterleaksTemplates: 0,
 			TotalStorageBytes: 0,
 		},
 	}
@@ -199,8 +199,8 @@ func validSemgrepYAML() string {
 	return base64.StdEncoding.EncodeToString([]byte(content))
 }
 
-// validGitleaksTOML returns a valid gitleaks config in base64 format.
-func validGitleaksTOML() string {
+// validBetterleaksTOML returns a valid betterleaks config in base64 format.
+func validBetterleaksTOML() string {
 	content := `[[rules]]
 id = "test-secret"
 regex = '''[A-Za-z0-9]{32}'''
@@ -291,7 +291,7 @@ func TestScannerTemplateService_CreateTemplate_SemgrepSuccess(t *testing.T) {
 	}
 }
 
-func TestScannerTemplateService_CreateTemplate_GitleaksSuccess(t *testing.T) {
+func TestScannerTemplateService_CreateTemplate_BetterleaksSuccess(t *testing.T) {
 	repo := newScannerTemplateMockRepository()
 	svc := newTestScannerTemplateService(repo)
 
@@ -299,9 +299,9 @@ func TestScannerTemplateService_CreateTemplate_GitleaksSuccess(t *testing.T) {
 
 	input := app.CreateScannerTemplateInput{
 		TenantID:     tenantID.String(),
-		Name:         "My Gitleaks Config",
-		TemplateType: "gitleaks",
-		Content:      validGitleaksTOML(),
+		Name:         "My Betterleaks Config",
+		TemplateType: "betterleaks",
+		Content:      validBetterleaksTOML(),
 	}
 
 	tmpl, err := svc.CreateTemplate(context.Background(), input)
@@ -309,8 +309,8 @@ func TestScannerTemplateService_CreateTemplate_GitleaksSuccess(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if tmpl.TemplateType != scannertemplate.TemplateTypeGitleaks {
-		t.Errorf("expected type gitleaks, got %v", tmpl.TemplateType)
+	if tmpl.TemplateType != scannertemplate.TemplateTypeBetterleaks {
+		t.Errorf("expected type betterleaks, got %v", tmpl.TemplateType)
 	}
 }
 
@@ -407,7 +407,7 @@ func TestScannerTemplateService_CreateTemplate_ContentExceedsMaxSize(t *testing.
 
 	tenantID := shared.NewID()
 
-	// Gitleaks max size is 256KB; create content larger than that.
+	// Betterleaks max size is 256KB; create content larger than that.
 	largeContent := make([]byte, 256*1024+1)
 	for i := range largeContent {
 		largeContent[i] = 'x'
@@ -416,7 +416,7 @@ func TestScannerTemplateService_CreateTemplate_ContentExceedsMaxSize(t *testing.
 	input := app.CreateScannerTemplateInput{
 		TenantID:     tenantID.String(),
 		Name:         "Test",
-		TemplateType: "gitleaks",
+		TemplateType: "betterleaks",
 		Content:      base64.StdEncoding.EncodeToString(largeContent),
 	}
 
@@ -491,7 +491,7 @@ func TestScannerTemplateService_CreateTemplate_QuotaTotalTemplatesExceeded(t *te
 		TotalTemplates:    100,
 		NucleiTemplates:   10,
 		SemgrepTemplates:  0,
-		GitleaksTemplates: 0,
+		BetterleaksTemplates: 0,
 		TotalStorageBytes: 0,
 	}
 
@@ -521,7 +521,7 @@ func TestScannerTemplateService_CreateTemplate_QuotaPerTypeExceeded(t *testing.T
 		TotalTemplates:    10,
 		NucleiTemplates:   50, // At per-type limit
 		SemgrepTemplates:  0,
-		GitleaksTemplates: 0,
+		BetterleaksTemplates: 0,
 		TotalStorageBytes: 0,
 	}
 
@@ -551,7 +551,7 @@ func TestScannerTemplateService_CreateTemplate_QuotaStorageExceeded(t *testing.T
 		TotalTemplates:    1,
 		NucleiTemplates:   1,
 		SemgrepTemplates:  0,
-		GitleaksTemplates: 0,
+		BetterleaksTemplates: 0,
 		TotalStorageBytes: 50 * 1024 * 1024, // At storage limit
 	}
 
@@ -646,7 +646,7 @@ func TestScannerTemplateService_CreateTemplate_CustomQuota(t *testing.T) {
 		MaxTemplates:         1,
 		MaxTemplatesNuclei:   1,
 		MaxTemplatesSemgrep:  1,
-		MaxTemplatesGitleaks: 1,
+		MaxTemplatesBetterleaks: 1,
 		MaxTotalStorageBytes: 100,
 	})
 
@@ -1196,13 +1196,13 @@ func TestScannerTemplateService_ValidateTemplate_ValidSemgrep(t *testing.T) {
 	}
 }
 
-func TestScannerTemplateService_ValidateTemplate_ValidGitleaks(t *testing.T) {
+func TestScannerTemplateService_ValidateTemplate_ValidBetterleaks(t *testing.T) {
 	repo := newScannerTemplateMockRepository()
 	svc := newTestScannerTemplateService(repo)
 
 	input := app.ValidateTemplateInput{
-		TemplateType: "gitleaks",
-		Content:      validGitleaksTOML(),
+		TemplateType: "betterleaks",
+		Content:      validBetterleaksTOML(),
 	}
 
 	result, err := svc.ValidateTemplate(context.Background(), input)
@@ -1260,7 +1260,7 @@ func TestScannerTemplateService_ValidateTemplate_ContentExceedsSize(t *testing.T
 	}
 
 	input := app.ValidateTemplateInput{
-		TemplateType: "gitleaks",
+		TemplateType: "betterleaks",
 		Content:      base64.StdEncoding.EncodeToString(largeContent),
 	}
 
@@ -1306,7 +1306,7 @@ func TestScannerTemplateService_DownloadTemplate_NucleiSuccess(t *testing.T) {
 	}
 }
 
-func TestScannerTemplateService_DownloadTemplate_GitleaksExtension(t *testing.T) {
+func TestScannerTemplateService_DownloadTemplate_BetterleaksExtension(t *testing.T) {
 	repo := newScannerTemplateMockRepository()
 	svc := newTestScannerTemplateService(repo)
 
@@ -1314,9 +1314,9 @@ func TestScannerTemplateService_DownloadTemplate_GitleaksExtension(t *testing.T)
 
 	createInput := app.CreateScannerTemplateInput{
 		TenantID:     tenantID.String(),
-		Name:         "gitleaks-download",
-		TemplateType: "gitleaks",
-		Content:      validGitleaksTOML(),
+		Name:         "betterleaks-download",
+		TemplateType: "betterleaks",
+		Content:      validBetterleaksTOML(),
 	}
 	created, err := svc.CreateTemplate(context.Background(), createInput)
 	if err != nil {
@@ -1327,8 +1327,8 @@ func TestScannerTemplateService_DownloadTemplate_GitleaksExtension(t *testing.T)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if filename != "gitleaks-download.toml" {
-		t.Errorf("expected filename 'gitleaks-download.toml', got %q", filename)
+	if filename != "betterleaks-download.toml" {
+		t.Errorf("expected filename 'betterleaks-download.toml', got %q", filename)
 	}
 }
 
@@ -1612,7 +1612,7 @@ func TestScannerTemplateService_GetUsage_Success(t *testing.T) {
 		TotalTemplates:    5,
 		NucleiTemplates:   2,
 		SemgrepTemplates:  2,
-		GitleaksTemplates: 1,
+		BetterleaksTemplates: 1,
 		TotalStorageBytes: 12345,
 	}
 
@@ -1676,8 +1676,8 @@ func TestScannerTemplateService_GetQuota_Default(t *testing.T) {
 	if quota.MaxTemplatesSemgrep != scannertemplate.DefaultMaxTemplatesPerType {
 		t.Errorf("expected max semgrep %d, got %d", scannertemplate.DefaultMaxTemplatesPerType, quota.MaxTemplatesSemgrep)
 	}
-	if quota.MaxTemplatesGitleaks != scannertemplate.DefaultMaxTemplatesPerType {
-		t.Errorf("expected max gitleaks %d, got %d", scannertemplate.DefaultMaxTemplatesPerType, quota.MaxTemplatesGitleaks)
+	if quota.MaxTemplatesBetterleaks != scannertemplate.DefaultMaxTemplatesPerType {
+		t.Errorf("expected max betterleaks %d, got %d", scannertemplate.DefaultMaxTemplatesPerType, quota.MaxTemplatesBetterleaks)
 	}
 	if quota.MaxTotalStorageBytes != scannertemplate.DefaultMaxTotalStorageBytes {
 		t.Errorf("expected max storage %d, got %d", scannertemplate.DefaultMaxTotalStorageBytes, quota.MaxTotalStorageBytes)
@@ -1692,7 +1692,7 @@ func TestScannerTemplateService_GetQuota_Custom(t *testing.T) {
 		MaxTemplates:         200,
 		MaxTemplatesNuclei:   100,
 		MaxTemplatesSemgrep:  80,
-		MaxTemplatesGitleaks: 60,
+		MaxTemplatesBetterleaks: 60,
 		MaxTotalStorageBytes: 100 * 1024 * 1024,
 	}
 	svc.SetQuota(customQuota)
@@ -1718,7 +1718,7 @@ func TestScannerTemplateService_CreateTemplate_SemgrepQuotaExceeded(t *testing.T
 		TotalTemplates:    10,
 		NucleiTemplates:   0,
 		SemgrepTemplates:  50, // At per-type limit
-		GitleaksTemplates: 0,
+		BetterleaksTemplates: 0,
 		TotalStorageBytes: 0,
 	}
 
@@ -1740,7 +1740,7 @@ func TestScannerTemplateService_CreateTemplate_SemgrepQuotaExceeded(t *testing.T
 	}
 }
 
-func TestScannerTemplateService_CreateTemplate_GitleaksQuotaExceeded(t *testing.T) {
+func TestScannerTemplateService_CreateTemplate_BetterleaksQuotaExceeded(t *testing.T) {
 	repo := newScannerTemplateMockRepository()
 	svc := newTestScannerTemplateService(repo)
 
@@ -1748,7 +1748,7 @@ func TestScannerTemplateService_CreateTemplate_GitleaksQuotaExceeded(t *testing.
 		TotalTemplates:    10,
 		NucleiTemplates:   0,
 		SemgrepTemplates:  0,
-		GitleaksTemplates: 50, // At per-type limit
+		BetterleaksTemplates: 50, // At per-type limit
 		TotalStorageBytes: 0,
 	}
 
@@ -1756,14 +1756,14 @@ func TestScannerTemplateService_CreateTemplate_GitleaksQuotaExceeded(t *testing.
 
 	input := app.CreateScannerTemplateInput{
 		TenantID:     tenantID.String(),
-		Name:         "Gitleaks Quota Test",
-		TemplateType: "gitleaks",
-		Content:      validGitleaksTOML(),
+		Name:         "Betterleaks Quota Test",
+		TemplateType: "betterleaks",
+		Content:      validBetterleaksTOML(),
 	}
 
 	_, err := svc.CreateTemplate(context.Background(), input)
 	if err == nil {
-		t.Fatal("expected error for gitleaks per-type quota exceeded")
+		t.Fatal("expected error for betterleaks per-type quota exceeded")
 	}
 	if !errors.Is(err, shared.ErrForbidden) {
 		t.Errorf("expected ErrForbidden, got %v", err)

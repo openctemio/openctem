@@ -424,9 +424,9 @@ pre-commit-install:
 			brew install go; \
 		fi; \
 	fi
-	@if ! command -v gitleaks >/dev/null 2>&1; then \
-		echo "Installing gitleaks..."; \
-		go install github.com/zricethezav/gitleaks/v8@latest; \
+	@if ! command -v betterleaks >/dev/null 2>&1; then \
+		echo "Installing betterleaks..."; \
+		go install github.com/betterleaks/betterleaks@v1.9.0; \
 	fi
 	@if ! command -v trivy >/dev/null 2>&1; then \
 		echo "Installing trivy..."; \
@@ -461,11 +461,11 @@ pre-commit-update:
 	@echo "Updating pre-commit hooks..."
 	pre-commit autoupdate
 
-## security-scan: Run full security scan (gitleaks + gosec + trivy)
+## security-scan: Run full security scan (betterleaks + gosec + trivy)
 security-scan:
 	@echo "Running full security scan..."
-	@echo "=== Gitleaks (Secret Detection) ==="
-	@gitleaks detect --config .gitleaks.toml --verbose || true
+	@echo "=== Betterleaks (Secret Detection) ==="
+	@betterleaks git . --config .betterleaks.toml --redact --verbose || true
 	@echo ""
 	@echo "=== Golangci-lint with Gosec (Code Security) ==="
 	@GOWORK=off $(GOLANGCI_LINT) run --config .golangci.yml ./... || true
@@ -475,10 +475,10 @@ security-scan:
 	@echo ""
 	@echo "Security scan complete!"
 
-## gitleaks: Run gitleaks secret detection
-gitleaks:
-	@echo "Running gitleaks..."
-	gitleaks detect --config .gitleaks.toml --verbose
+## secrets: Run betterleaks secret detection over the git history
+secrets:
+	@echo "Running betterleaks..."
+	betterleaks git . --config .betterleaks.toml --redact --verbose
 
 # =============================================================================
 # TENANT MANAGEMENT

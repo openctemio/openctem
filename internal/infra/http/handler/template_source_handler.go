@@ -37,7 +37,7 @@ func NewTemplateSourceHandler(service *template.SourceService, v *validator.Vali
 type CreateTemplateSourceRequest struct {
 	Name            string               `json:"name" validate:"required,min=1,max=255"`
 	SourceType      string               `json:"source_type" validate:"required,oneof=git s3 http"`
-	TemplateType    string               `json:"template_type" validate:"required,oneof=nuclei semgrep gitleaks"`
+	TemplateType    string               `json:"template_type" validate:"required,oneof=nuclei semgrep betterleaks"`
 	Description     string               `json:"description" validate:"max=1000"`
 	Enabled         bool                 `json:"enabled"`
 	AutoSyncOnScan  bool                 `json:"auto_sync_on_scan"`
@@ -203,7 +203,7 @@ func (h *TemplateSourceHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Accept       json
 // @Produce      json
 // @Param        source_type    query     string  false  "Filter by source type (git, s3, http)"
-// @Param        template_type  query     string  false  "Filter by template type (nuclei, semgrep, gitleaks)"
+// @Param        template_type  query     string  false  "Filter by template type (nuclei, semgrep, betterleaks)"
 // @Param        enabled        query     bool    false  "Filter by enabled status"
 // @Param        page           query     int     false  "Page number"
 // @Param        page_size      query     int     false  "Page size"

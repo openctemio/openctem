@@ -43,7 +43,7 @@ type CreateSourceInput struct {
 	UserID          string               `json:"user_id" validate:"omitempty,uuid"`
 	Name            string               `json:"name" validate:"required,min=1,max=255"`
 	SourceType      string               `json:"source_type" validate:"required,oneof=git s3 http"`
-	TemplateType    string               `json:"template_type" validate:"required,oneof=nuclei semgrep gitleaks"`
+	TemplateType    string               `json:"template_type" validate:"required,oneof=nuclei semgrep betterleaks"`
 	Description     string               `json:"description" validate:"max=1000"`
 	Enabled         bool                 `json:"enabled"`
 	AutoSyncOnScan  bool                 `json:"auto_sync_on_scan"`
@@ -187,7 +187,7 @@ func (s *SourceService) GetSource(ctx context.Context, tenantID, sourceID string
 type ListSourcesInput struct {
 	TenantID     string  `json:"tenant_id" validate:"required,uuid"`
 	SourceType   *string `json:"source_type" validate:"omitempty,oneof=git s3 http"`
-	TemplateType *string `json:"template_type" validate:"omitempty,oneof=nuclei semgrep gitleaks"`
+	TemplateType *string `json:"template_type" validate:"omitempty,oneof=nuclei semgrep betterleaks"`
 	Enabled      *bool   `json:"enabled"`
 	Page         int     `json:"page"`
 	PageSize     int     `json:"page_size"`

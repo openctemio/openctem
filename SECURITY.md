@@ -46,7 +46,7 @@ This repository uses:
 - **Gosec** - Go security checker
 - **Govulncheck** - Go vulnerability database scanning
 - **Trivy** - Container and dependency vulnerability scanning
-- **Gitleaks** - Secret detection
+- **Betterleaks** - Secret detection
 - **Dependabot** - Automated dependency updates
 
 ## Security Best Practices for Contributors

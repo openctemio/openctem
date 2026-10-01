@@ -53,7 +53,7 @@ func TestDetectFindingSource_ByToolName(t *testing.T) {
 		{"codeql", vulnerability.FindingSourceSAST},
 		{"snyk", vulnerability.FindingSourceSCA},
 		{"nuclei", vulnerability.FindingSourceDAST},
-		{"gitleaks", vulnerability.FindingSourceSecret},
+		{"betterleaks", vulnerability.FindingSourceSecret},
 		{"burp", vulnerability.FindingSourceDAST},
 		{"trivy", vulnerability.FindingSourceContainer},
 		{"checkov", vulnerability.FindingSourceIaC},

@@ -13,7 +13,7 @@ make pre-commit-install
 
 | Hook | Purpose |
 |------|---------|
-| **Gitleaks** | Detect secrets (API keys, passwords, tokens) |
+| **Betterleaks** | Detect secrets (API keys, passwords, tokens) |
 | **Golangci-lint** | Static analysis with gosec (security vulnerabilities) |
 | **Trivy** | Scan vulnerabilities in dependencies |
 | **Checkov** | IaC security scan for Dockerfile |
@@ -28,15 +28,15 @@ make pre-commit-run
 # Run full security scan
 make security-scan
 
-# Run only gitleaks
-make gitleaks
+# Run only betterleaks
+make secrets
 ```
 
 ## Configuring False Positives & Ignores
 
-### 1. Gitleaks - Ignore Secrets
+### 1. Betterleaks - Ignore Secrets
 
-**Configuration file:** `.gitleaks.toml`
+**Configuration file:** `.betterleaks.toml`
 
 #### Ignore files or paths
 
@@ -70,7 +70,7 @@ regexes = [
 #### Ignore inline in code
 
 ```go
-// gitleaks:allow
+// betterleaks:allow   (gitleaks:allow is honoured too)
 const TestToken = "fake-token-for-testing"
 ```
 
@@ -200,5 +200,5 @@ trustedRegistries:
 git commit --no-verify -m "Your message"
 
 # Run hooks except specific ones
-SKIP=gitleaks,trivy-fs git commit -m "Your message"
+SKIP=betterleaks,trivy-fs git commit -m "Your message"
 ```

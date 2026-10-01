@@ -1247,7 +1247,7 @@ func (h *IngestHandler) buildReconToCTISInput(req *ReconIngestRequest) *ctis.Rec
 
 // ScanIngestRequest represents the request body for raw scanner output ingestion.
 type ScanIngestRequest struct {
-	// Scanner type: vuls, trivy, nuclei, semgrep, gitleaks (required if auto-detect fails)
+	// Scanner type: vuls, trivy, nuclei, semgrep, betterleaks (required if auto-detect fails)
 	ScannerType string `json:"scanner_type,omitempty"`
 
 	// Raw scanner output data

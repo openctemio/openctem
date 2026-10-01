@@ -216,7 +216,7 @@ CREATE_PROFILE_RESPONSE=$(curl -s -X POST "${API_URL}/api/v1/scan-profiles" \
     -d "{
         \"name\": \"test-profile-${TIMESTAMP}\",
         \"description\": \"Test scan profile\",
-        \"tools\": [\"semgrep\", \"gitleaks\"]
+        \"tools\": [\"semgrep\", \"betterleaks\"]
     }")
 
 log_info "Create profile response: $(echo "$CREATE_PROFILE_RESPONSE" | jq -c '. | {id, name} // .error // .')"

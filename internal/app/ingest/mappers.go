@@ -227,7 +227,7 @@ var toolNameToSource = []struct {
 	{"zap", vulnerability.FindingSourceDAST},
 	{"burp", vulnerability.FindingSourceDAST},
 
-	{"gitleaks", vulnerability.FindingSourceSecret},
+	{"betterleaks", vulnerability.FindingSourceSecret},
 	{"trufflehog", vulnerability.FindingSourceSecret},
 
 	{"trivy", vulnerability.FindingSourceContainer},

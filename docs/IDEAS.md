@@ -81,7 +81,7 @@ queue, control-test schema, agent executor router.
 ### 2.3 Backend-complete features with no UI (M total, several S each)
 Each has a full API and zero UI — operators must use curl:
 - **Scanner templates** (`/api/v1/scanner-templates`) — upload/manage custom
-  Nuclei/Semgrep/Gitleaks rules.
+  Nuclei/Semgrep/Betterleaks rules.
 - **Template sources** (`/api/v1/template-sources`) — Git/S3/HTTP rule repos.
 - **Secret store** (`/api/v1/secret-store`) — tokens used by template sources.
 - **Asset dedup review** (`/api/v1/assets/dedup/reviews`) — RFC-001 admin merge
@@ -190,10 +190,10 @@ existing seam.
     reset per-branch baseline, mute rules. Builds on: `finding_branch_occurrences`.
 28. **Monorepo workspace scoping** (M) — scan + comment only the touched
     package/workspace in a PR. Builds on: changed-file scoping.
-29. **IDE plugins (VS Code/JetBrains)** (L) — inline Semgrep/Gitleaks while
+29. **IDE plugins (VS Code/JetBrains)** (L) — inline Semgrep/Betterleaks while
     editing with suppression quick-fixes. Builds on: scan engine / agent API.
 30. **Secret entropy scoring** (S) — gate only high-entropy secrets to cut
-    false positives on fake keys. Builds on: gitleaks integration + gate rules.
+    false positives on fake keys. Builds on: betterleaks integration + gate rules.
 
 ### 3.5 Platform / Enterprise
 31. **SAML 2.0** ✅ *(shipped, RFC-009)* — SAML SP-initiated login + ACS
