@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -220,7 +221,7 @@ func (h *LocalAuthHandler) GetMFAStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	st, err := h.authService.GetMFAStatus(r.Context(), userID)
 	if err != nil {
-		h.handleAuthError(w, err)
+		h.handleSelfServiceMFAError(w, err)
 		return
 	}
 	writeNoStoreJSON(w, http.StatusOK, st)
@@ -244,7 +245,7 @@ func (h *LocalAuthHandler) SetupMFA(w http.ResponseWriter, r *http.Request) {
 	}
 	setup, err := h.authService.BeginMFASetup(r.Context(), userID)
 	if err != nil {
-		h.handleAuthError(w, err)
+		h.handleSelfServiceMFAError(w, err)
 		return
 	}
 	writeNoStoreJSON(w, http.StatusOK, MFASetupResponse{Secret: setup.Secret, OTPAuthURI: setup.OTPAuthURI})
@@ -279,7 +280,7 @@ func (h *LocalAuthHandler) EnableMFA(w http.ResponseWriter, r *http.Request) {
 	}
 	codes, err := h.authService.EnableMFA(r.Context(), selfAuditContext(r), userID, req.Code)
 	if err != nil {
-		h.handleAuthError(w, err)
+		h.handleSelfServiceMFAError(w, err)
 		return
 	}
 	writeNoStoreJSON(w, http.StatusOK, MFARecoveryCodesResponse{RecoveryCodes: codes})
@@ -313,7 +314,7 @@ func (h *LocalAuthHandler) DisableMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.authService.DisableMFA(r.Context(), selfAuditContext(r), userID, req.Password, req.Code); err != nil {
-		h.handleAuthError(w, err)
+		h.handleSelfServiceMFAError(w, err)
 		return
 	}
 	writeNoStoreJSON(w, http.StatusOK, map[string]string{"message": "Two-factor authentication disabled"})
@@ -348,10 +349,22 @@ func (h *LocalAuthHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *htt
 	}
 	codes, err := h.authService.RegenerateRecoveryCodes(r.Context(), selfAuditContext(r), userID, req.Code)
 	if err != nil {
-		h.handleAuthError(w, err)
+		h.handleSelfServiceMFAError(w, err)
 		return
 	}
 	writeNoStoreJSON(w, http.StatusOK, MFARecoveryCodesResponse{RecoveryCodes: codes})
+}
+
+// handleSelfServiceMFAError maps errors of the signed-in /users/me/2fa calls.
+// A wrong code there is a 400: the caller is authenticated, and clients treat
+// a 401 as an expired session (they sign the user out). The public login step
+// keeps 401 for a wrong code (handleAuthError).
+func (h *LocalAuthHandler) handleSelfServiceMFAError(w http.ResponseWriter, err error) {
+	if errors.Is(err, app.ErrMFACodeInvalid) {
+		apierror.BadRequest("Invalid verification code").WriteJSON(w)
+		return
+	}
+	h.handleAuthError(w, err)
 }
 
 // writeNoStoreJSON writes a JSON body that must never be cached (secrets,
