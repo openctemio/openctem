@@ -157,10 +157,7 @@ func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
 	addr := net.JoinHostPort(safeIP.String(), strconv.Itoa(c.config.SMTPPort))
 
 	// Create TLS config
-	tlsConfig := &tls.Config{
-		ServerName:         c.config.SMTPHost,
-		InsecureSkipVerify: c.config.SkipVerify, //nolint:gosec // Configurable for dev environments
-	}
+	tlsConfig := emailpkg.TLSConfig(c.config.SMTPHost, c.config.SkipVerify)
 
 	var conn net.Conn
 
