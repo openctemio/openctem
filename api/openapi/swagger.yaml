@@ -10176,6 +10176,20 @@ definitions:
           type: string
         type: array
     type: object
+  internal_infra_http_handler.TargetMappingTypesResponse:
+    properties:
+      asset_types:
+        description: AssetTypes are the asset types a target type can map to.
+        items:
+          type: string
+        type: array
+      target_types:
+        description: TargetTypes are the scanner target types (tool supported_targets
+          values).
+        items:
+          type: string
+        type: array
+    type: object
   internal_infra_http_handler.TemplateQuotaData:
     properties:
       max_templates:
@@ -12045,6 +12059,22 @@ paths:
       summary: Configure the administrators' identity provider
       tags:
       - Admin Platform IdP
+  /admin/target-mappings/types:
+    get:
+      description: The target types and asset types that POST /admin/target-mappings
+        accepts. Any admin role.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.TargetMappingTypesResponse'
+      security:
+      - BearerAuth: []
+      summary: List accepted target-mapping types (platform admin)
+      tags:
+      - Admin Target Mappings
   /admin/tenants:
     get:
       description: Cross-tenant list of organizations with size and SSO posture. Newest

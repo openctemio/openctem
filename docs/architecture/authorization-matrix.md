@@ -311,7 +311,7 @@ Authorization is enforced at the **route layer** in
 | `PATCH /api/v1/admin/users/{id}` | **super_admin** (audited) |
 | `DELETE /api/v1/admin/users/{id}` | **super_admin** (audited) |
 | `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok) |
-| `GET /api/v1/admin/target-mappings` (+ `/stats`, `/{id}`) | any admin |
+| `GET /api/v1/admin/target-mappings` (+ `/stats`, `/types`, `/{id}`) | any admin |
 | `POST/PATCH/DELETE /api/v1/admin/target-mappings` | **ops_admin+** (rate-limited, audited) |
 
 > The admin roster (`/admin/users`) is super_admin-only for reads as well as

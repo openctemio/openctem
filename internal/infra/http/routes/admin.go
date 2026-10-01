@@ -217,6 +217,7 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/target-mappings", func(r Router) {
 			// Read operations — any authenticated admin.
 			r.GET("/stats", h.AdminTargetMapping.GetStats)
+			r.GET("/types", h.AdminTargetMapping.Types)
 			r.GET("/", h.AdminTargetMapping.List)
 			r.GET("/{id}", h.AdminTargetMapping.Get)
 
