@@ -121,6 +121,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Ingest handler — opt into async mode (RFC-005) when configured. Default
 	// (sync) leaves the handler processing reports in-request as before.
 	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Sensor, log)
+	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
+	// work is waiting and when to ring again. One cheap query per heartbeat.
+	ingestHandler.SetDoorbell(app.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log))
 	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
 		ingestHandler.SetAsyncIngest(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
 		log.Info("async ingest enabled", "max_pending_per_tenant", cfg.Ingest.MaxPendingPerTenant)
@@ -544,4 +547,26 @@ func newIOCHandlerWithFindingCheck(deps *HandlerDeps, log *logger.Logger) *handl
 	h.SetFindingChecker(deps.Repos.Finding)
 	h.SetMatchLister(deps.Repos.IOC)
 	return h
+}
+
+// heartbeatDoorbellConfig maps the SENSOR_HEARTBEAT_* settings onto the
+// doorbell, bounded so no advised interval reaches half of the offline
+// timeout (WORKER_HEARTBEAT_TIMEOUT).
+func heartbeatDoorbellConfig(cfg *config.Config) app.DoorbellConfig {
+	sc := cfg.SensorConfig
+	c := app.DefaultDoorbellConfig()
+	c.IdleInterval = sc.HeartbeatInterval
+	c.BusyInterval = sc.HeartbeatBusyInterval
+	c.LoadedInterval = sc.HeartbeatLoadedInterval
+	c.MinInterval = sc.HeartbeatMinInterval
+	c.MaxInterval = sc.HeartbeatMaxInterval
+	c.SlowQuery = sc.HeartbeatSlowQuery
+	switch {
+	case sc.KeyRenewBefore > 0:
+		c.KeyRenewBefore = sc.KeyRenewBefore
+	case sc.KeyTTL > 0:
+		// Kubelet-style: renew at half-life.
+		c.KeyRenewBefore = sc.KeyTTL / 2
+	}
+	return c.Normalized(cfg.Worker.HeartbeatTimeout)
 }

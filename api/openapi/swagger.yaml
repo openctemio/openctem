@@ -3361,8 +3361,31 @@ definitions:
     type: object
   github_com_openctemio_api_pkg_sensorproto_legacyv1.Heartbeat:
     properties:
+      actions:
+        description: |-
+          Actions are typed control directives from a closed set: pause,
+          resume, drain, rotate_key, update. Never free-form text.
+        items:
+          type: string
+        type: array
       agent_id:
         type: string
+      config_version:
+        description: |-
+          ConfigVersion is an opaque digest of what the platform governs about
+          the sensor; it changes when that changes. Sent to doorbell-aware
+          sensors only.
+        type: string
+      next_heartbeat_seconds:
+        description: |-
+          NextHeartbeatSeconds is the server-advised interval to the next
+          heartbeat, already bounded by the server.
+        type: integer
+      pending_jobs:
+        description: |-
+          PendingJobs is how many commands this sensor could claim right now
+          (capped at 100): poll GET /api/v1/agent/commands when it is > 0.
+        type: integer
       status:
         type: string
       tenant_id:
@@ -12783,8 +12806,17 @@ paths:
     post:
       consumes:
       - application/json
-      description: Send a heartbeat to indicate sensor is alive
+      description: 'Send a heartbeat to indicate sensor is alive. The response is
+        also a doorbell (RFC-023 §9.2a): pending_jobs > 0 means poll GET /agent/commands
+        now; next_heartbeat_seconds is the advised interval; actions are typed directives
+        (pause, resume, drain, rotate_key, update). A sensor that sends X-OpenCTEM-Sensor-Features:
+        doorbell also gets config_version and, while disabled, a 200 with the pause
+        action instead of a 401.'
       parameters:
+      - description: Optional protocol features, comma-separated (doorbell)
+        in: header
+        name: X-OpenCTEM-Sensor-Features
+        type: string
       - description: Heartbeat data
         in: body
         name: request

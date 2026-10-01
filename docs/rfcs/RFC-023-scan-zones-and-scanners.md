@@ -277,6 +277,63 @@ every legacy `type` value from old clients and maps it.
 | C7 | Security features ride on top of v1: the job signature is an additive envelope a v1 SDK ignores; a sensor is switched to "signature required" only after it reports `signed_jobs`. A **minimum sensor protocol** setting (platform-wide, overridable per tenant; default v1) is the operator's upgrade lever: raising it stops new *jobs* to older scanners (collectors keep pushing, D24). The Sensors page shows the fleet by SDK/protocol version so upgrades can be planned. |
 | C8 | Proven in CI: a compatibility job runs the **previous released** agent/SDK against the new API (register, heartbeat, poll, claim, push CTIS, renew key), plus golden fixtures of recorded v1 payloads. |
 
+### 9.2a Heartbeat doorbell (protocol v1 additive extension)
+
+**Requirement.** The heartbeat must also tell a sensor whether the platform
+has something new for it, so the sensor pulls it, and stay as light as
+possible.
+
+**Decision.** The heartbeat is a *doorbell*: it signals that something is
+waiting and when to ring again, and never carries a payload. Work is still
+fetched and claimed through `GET /api/v1/agent/commands` and
+`.../acknowledge`, so authorization, the zone claim predicate (layer 2) and
+claim semantics stay in one place. Additive under C1: four optional,
+`omitempty` response fields; no request field becomes required.
+
+| Field | Contract |
+|---|---|
+| `pending_jobs` | int, 1–100 (capped). Commands the sensor could claim now, by the poll's own predicate (pinned or unpinned, ready, `zoneClaimPredicate` incl. tool match, capability gate). Omitted when 0 and for platform sensors. |
+| `next_heartbeat_seconds` | int. Busy 5 s (work waiting) · idle 30 s · loaded 120 s (doorbell query ≥ 250 ms). Clamped to [min 5 s, max 300 s] and to half the offline timeout (`WORKER_HEARTBEAT_TIMEOUT`, default 5 m ⇒ 150 s): a 300 s ceiling with a 300 s offline timeout would flap a compliant sensor offline. Env: `SENSOR_HEARTBEAT_*`. |
+| `actions` | []string from the closed K1 subset `pause · resume · drain · rotate_key · update`. Wired: `pause` ⇐ sensor disabled; `rotate_key` ⇐ presented key inside its renewal window (`SENSOR_KEY_RENEW_BEFORE`, default ½ `SENSOR_KEY_TTL`). `resume` is implicit (first heartbeat without `pause`), `drain`/`update` are reserved. No shell or free-form verb (R-4). |
+| `config_version` | 16-hex opaque digest of capabilities, tools, concurrency, execution mode, operator config, presented-key expiry and assigned zones (+ each zone's `updated_at`). Not `sensors.updated_at`: every heartbeat and every authentication rewrites it. Foundation for V6 (config drift). |
+
+**Opt-in where v1 bytes or codes would change.** An idle v1 sensor's
+response stays byte-identical (`flow.golden`). Two hints cannot meet that and
+are sent only to a sensor that sends `X-OpenCTEM-Sensor-Features: doorbell`:
+`config_version` (present on every heartbeat) and the disabled-sensor answer.
+A disabled sensor cannot authenticate, so `pause` would never be reachable;
+the doorbell-aware sensor gets `200 {"actions":["pause"]}` on exactly
+`POST /api/v1/agent/heartbeat`, every other route still answers 401, and a v1
+sensor still gets 401 — the agent's start-up connection test is a heartbeat
+and exits on 401, which must not turn into a start against a disabled
+identity. Revoked sensors and expired keys get 401 everywhere.
+
+**Light.** One statement per heartbeat, `LIMIT 100`, 1 s timeout; a failure
+or timeout is logged and the heartbeat answers 200 without query hints. On
+100k commands (worst case: idle sensor, 15k pending jobs for others) it costs
+2.4 ms / 194 buffers versus 4.6 ms / 4 190 buffers for one poll; the existing
+partial indexes `idx_commands_pending_poll` / `idx_commands_pending_unassigned`
+serve it, no new index (details and plans: `docs/architecture/sensors.md`).
+
+**SDK side (next).** React to `pending_jobs > 0` by polling at once; adopt
+`next_heartbeat_seconds`; act on `actions`; with hints present, drop the
+fixed 30 s poll; with hints absent (older server), keep today's behaviour.
+
+**v2 follow-up: long-poll.** The doorbell still has up to one interval of
+latency (5–30 s). Protocol v2 (§4b P10, "HTTPS long-poll kept") replaces it
+with `GET /api/v2/sensor/wait?since=<cursor>`: the server holds the request
+(≤ 55 s, under common proxy idle timeouts) and returns as soon as a command is
+pinned to or claimable by the sensor, an action is raised, or the
+config version changes; a timeout returns the same body as an idle heartbeat.
+Wake-ups come from a per-tenant Postgres `LISTEN/NOTIFY` (or Redis pub/sub)
+channel published on command insert/unpin, zone assignment change and
+sensor status change, with a per-sensor in-process waiter so one notification
+wakes only the sensors whose doorbell count could have changed; the
+`pending_jobs` query from v1 runs only on wake-up. It is signed like every v2
+request (P2), the response carries signed actions (K1), and `GET
+/api/v2/sensor/config` serves the configuration `config_version` points at.
+v1 sensors keep the doorbell; nothing in v1 changes.
+
 ### 9.3 Rollout
 
 | Step | Change | Breaks anything? |
@@ -392,7 +449,7 @@ platform → sensor). Each use case below names the control that answers it.
 
 | # | Use case | Control |
 |---|---|---|
-| V1 | A sensor stops connecting (crash, network cut, host powered off) | Heartbeat at poll cadence; states **online → late → offline → lost** after N missed intervals; per-tenant alert (in-app + notification channels) at *offline*, escalation at *lost*; fleet health on the Sensors page. |
+| V1 | A sensor stops connecting (crash, network cut, host powered off) | Heartbeat at poll cadence (the server advises the cadence, §9.2a); states **online → late → offline → lost** after N missed intervals; per-tenant alert (in-app + notification channels) at *offline*, escalation at *lost*; fleet health on the Sensors page. |
 | V2 | A sensor is connected but does no work ("silent") | Per-job lease + progress watchdog: no progress before lease expiry ⇒ job re-queued to another scanner in the zone, sensor marked *degraded*; job success-rate per sensor tracked. |
 | V3 | A zone has no healthy scanner | Coverage alert per zone; New-scan preview shows which targets would be skipped. |
 | V4 | Assets stop being scanned | Freshness SLO per zone (assets not scanned in N days) with alert (extends RFC-007 coverage stats). |
@@ -405,7 +462,7 @@ platform → sensor). Each use case below names the control that answers it.
 
 | # | Use case | Control |
 |---|---|---|
-| K1 | Stop a sensor now | Typed, signed remote actions: **pause / resume / drain / quarantine / revoke / rotate key / force re-enroll / apply config / update**. No shell or free-form command exists. |
+| K1 | Stop a sensor now | Typed, signed remote actions: **pause / resume / drain / quarantine / revoke / rotate key / force re-enroll / apply config / update**. No shell or free-form command exists. v1 rings the unsigned subset `pause / resume / drain / rotate_key / update` on the heartbeat (§9.2a). |
 | K2 | Stop all scanning during an incident | **Kill switch** per tenant and platform-wide: no new jobs, running jobs cancelled at next poll. |
 | K3 | Limit how hard a sensor scans | Policy per sensor/zone: allowed tools, max concurrency, packets-per-second / intensity, **scan windows and blackout windows**; enforced by the SDK locally and by dispatch. |
 | K4 | A job must not run late or forever | Job `exp` in the signed envelope, max runtime, cancel propagation; expired jobs are never executed after a reconnect. |
