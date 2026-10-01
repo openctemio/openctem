@@ -66,22 +66,26 @@ func NewPaginationLinks(r *http.Request, page, perPage, totalPages int) *Paginat
 }
 
 // buildBaseURL constructs the base URL from the request.
+//
+// X-Forwarded-Proto / X-Forwarded-Host are honored only when the TCP peer is a
+// configured trusted proxy (SERVER_TRUSTED_PROXIES) — the same rule as
+// samlBaseURL and client-IP attribution. Taking them from any client let a
+// request choose the host its own pagination links point at.
 func buildBaseURL(r *http.Request) string {
 	scheme := schemeHTTPS
 	if r.TLS == nil {
-		// Check X-Forwarded-Proto header for reverse proxy scenarios.
-		// Security: Only accept "http" or "https" to prevent injection (CWE-644).
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto == "http" || proto == "https" {
-			scheme = proto
-		} else {
-			scheme = schemeHTTP
-		}
+		scheme = schemeHTTP
 	}
-
 	host := r.Host
-	if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" {
-		// Security: Validate host format to prevent header injection (CWE-644).
-		if isValidHostHeader(fwdHost) {
+
+	if fromTrustedProxy(r, trustedProxiesForAuth) {
+		// Security: Only accept "http" or "https" to prevent injection (CWE-644).
+		if r.TLS == nil {
+			if proto := r.Header.Get("X-Forwarded-Proto"); proto == schemeHTTP || proto == schemeHTTPS {
+				scheme = proto
+			}
+		}
+		if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" && isValidHostHeader(fwdHost) {
 			host = fwdHost
 		}
 	}
