@@ -240,6 +240,9 @@ func (m *sensorSvcMockRepo) UpdateHeartbeat(_ context.Context, id shared.ID, hb 
 	a.NetworkRxMBPS = hb.NetworkRxMBPS
 	a.NetworkTxMBPS = hb.NetworkTxMBPS
 	a.LoadScore = hb.LoadScore
+	if hb.IPAddress != nil {
+		a.IPAddress = hb.IPAddress
+	}
 	now := time.Now()
 	a.MetricsUpdatedAt = &now
 	a.LastSeenAt = &now

@@ -339,8 +339,13 @@ func (s *Service) shouldSendToIntegration(intg *integration.IntegrationWithNotif
 		return true // No extension = send all
 	}
 
-	// Check severity filter
-	if !ext.ShouldNotify(entry.Severity().String()) {
+	// Check severity filter — only for events whose severity describes a
+	// finding. Approval, new-asset and sensor events carry a constant picked
+	// by the enqueue site; filtering those on it silently dropped them (an
+	// approval request at "medium" never reached a default critical+high
+	// channel), the drop integration.SeverityFilterApplies exists to prevent.
+	if integration.SeverityFilterApplies(integration.EventType(entry.EventType())) &&
+		!ext.ShouldNotify(entry.Severity().String()) {
 		return false
 	}
 

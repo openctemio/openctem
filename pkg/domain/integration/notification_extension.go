@@ -58,6 +58,7 @@ const (
 	EventCategoryExposure EventCategory = "exposure"
 	EventCategoryApproval EventCategory = "approval"
 	EventCategoryWorkflow EventCategory = "workflow"
+	EventCategorySensor   EventCategory = "sensor"
 )
 
 // EventCategoryInfo pairs an event category with its display label.
@@ -83,6 +84,7 @@ func AllEventCategories() []EventCategoryInfo {
 		{Category: EventCategoryApproval, Label: "Approval Events"},
 		{Category: EventCategoryWorkflow, Label: "Workflow Events"},
 		{Category: EventCategoryExposure, Label: "Exposure Events"},
+		{Category: EventCategorySensor, Label: "Sensor Events"},
 	}
 }
 
@@ -147,6 +149,13 @@ const (
 	EventTypeNewExposure      EventType = "new_exposure"
 	EventTypeExposureResolved EventType = "exposure_resolved"
 
+	// EventTypeSensorOffline fires when the sensor-health controller sees a
+	// sensor stop heartbeating (online -> offline). The id keeps the dotted
+	// form of the event_types catalog row it has always had, which is also
+	// what existing subscriptions store (migration 000230 rewrote
+	// agent.offline to it). Emitted once per offline transition, not per tick.
+	EventTypeSensorOffline EventType = "sensor.offline"
+
 	// Legacy event types (for backward compatibility)
 	EventTypeFindings  EventType = "findings"  // Maps to new_finding
 	EventTypeExposures EventType = "exposures" // Maps to new_exposure
@@ -169,6 +178,7 @@ const (
 	ModuleAssets   = "assets"
 	ModuleScans    = "scans"
 	ModuleFindings = "findings"
+	ModuleSensors  = "sensors"
 )
 
 // AllEventTypes returns all event types with metadata for UI.
@@ -217,6 +227,9 @@ func AllEventTypes() []EventTypeInfo {
 		// Exposure events - require 'findings' module (part of findings feature)
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
 		{Type: EventTypeExposureResolved, Category: EventCategoryExposure, Label: "Exposure Resolved", Description: "Exposure has been resolved", RequiredModule: ModuleFindings},
+
+		// Sensor events - require 'sensors' module
+		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
 	}
 }
 
@@ -295,6 +308,11 @@ func SeverityFilterApplies(eventType EventType) bool {
 	// discovery notifier, not a finding severity, so the default
 	// critical+high filter would silently drop every one of them.
 	case EventTypeNewAsset:
+		return false
+	// sensor.offline is about the platform's own scanners, not a finding: its
+	// severity is a constant chosen by the sensor-health controller. The
+	// operator opts in through the event-type list.
+	case EventTypeSensorOffline:
 		return false
 	default:
 		return true

@@ -2,6 +2,7 @@ package sensor
 
 import (
 	"context"
+	"net"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/shared"
@@ -26,9 +27,12 @@ type Filter struct {
 // Empty Version/Hostname/Region leave the stored value unchanged.
 type HeartbeatUpdate struct {
 	// TenantID scopes the write; nil for platform sensors (tenant_id IS NULL).
-	TenantID      *shared.ID
-	Version       string
-	Hostname      string
+	TenantID *shared.ID
+	Version  string
+	Hostname string
+	// IPAddress is the client address of the heartbeat request; nil keeps the
+	// stored value.
+	IPAddress     net.IP
 	Region        string
 	CPUPercent    float64
 	MemoryPercent float64

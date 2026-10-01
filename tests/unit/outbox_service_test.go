@@ -718,10 +718,31 @@ func TestProcessOutboxBatch_IntegrationListError(t *testing.T) {
 func TestShouldSendToIntegration_SeverityFiltering(t *testing.T) {
 	tests := []struct {
 		name               string
+		eventType          string // default new_finding
+		enabledEventTypes  []integration.EventType
 		entrySeverity      string
 		enabledSeverities  []integration.Severity
 		expectedShouldSend bool
 	}{
+		// Events whose severity is a constant picked by the enqueue site are
+		// exempt from the severity filter (integration.SeverityFilterApplies).
+		// The outbox ignored that and filtered them anyway, so an approval
+		// request ("medium") never reached a default critical+high channel.
+		{
+			name:               "approval_requested at medium is not severity-filtered",
+			eventType:          string(integration.EventTypeApprovalRequested),
+			entrySeverity:      "medium",
+			enabledSeverities:  []integration.Severity{integration.SeverityCritical, integration.SeverityHigh},
+			expectedShouldSend: true,
+		},
+		{
+			name:               "sensor.offline reaches a critical-only channel that opted into it",
+			eventType:          string(integration.EventTypeSensorOffline),
+			enabledEventTypes:  []integration.EventType{integration.EventTypeSensorOffline},
+			entrySeverity:      "high",
+			enabledSeverities:  []integration.Severity{integration.SeverityCritical},
+			expectedShouldSend: true,
+		},
 		{
 			name:               "critical severity matches critical filter",
 			entrySeverity:      "critical",
@@ -763,14 +784,18 @@ func TestShouldSendToIntegration_SeverityFiltering(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tenantID := shared.NewID()
-			entry := makeTestOutboxEntry(tenantID, "new_finding", tt.entrySeverity)
+			eventType := tt.eventType
+			if eventType == "" {
+				eventType = "new_finding"
+			}
+			entry := makeTestOutboxEntry(tenantID, eventType, tt.entrySeverity)
 
 			intgID := shared.NewID()
 			ext := integration.ReconstructNotificationExtension(
 				intgID,
 				"", "",
 				tt.enabledSeverities,
-				nil, // all event types
+				tt.enabledEventTypes, // nil = the defaults
 				"", true, 5,
 			)
 
@@ -2445,7 +2470,7 @@ func TestGetEventTypesByModules(t *testing.T) {
 	}
 
 	// With all modules
-	types = integration.GetEventTypesByModules([]string{"assets", "scans", "findings"})
+	types = integration.GetEventTypesByModules([]string{"assets", "scans", "findings", "sensors"})
 	allTypes := integration.AllEventTypes()
 	if len(types) != len(allTypes) {
 		t.Errorf("expected %d types with all modules, got %d", len(allTypes), len(types))

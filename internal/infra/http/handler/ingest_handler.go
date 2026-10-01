@@ -604,8 +604,11 @@ func (h *IngestHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 
 	// Update sensor metrics via service
 	if err := h.sensorService.UpdateHeartbeat(r.Context(), agt.ID, app.SensorHeartbeatData{
-		Version:       req.Version,
-		Hostname:      req.Hostname,
+		Version:  req.Version,
+		Hostname: req.Hostname,
+		// The connection's address under the trusted-proxy rule, so a
+		// sensor cannot claim someone else's address.
+		IPAddress:     getClientIP(r),
 		CPUPercent:    req.CPUPercent,
 		MemoryPercent: req.MemoryPercent,
 		CurrentJobs:   req.ActiveJobs,
