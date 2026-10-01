@@ -303,18 +303,10 @@ func (h *PipelineHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 		CreatedBy:   userID,
 	}
 
-	template, err := h.service.CreateTemplate(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	// Add steps to template
-	steps := make([]*pipeline.Step, 0, len(req.Steps))
+	stepInputs := make([]pipelinesvc.AddStepInput, 0, len(req.Steps))
 	for i, stepReq := range req.Steps {
 		stepInput := pipelinesvc.AddStepInput{
 			TenantID:          tenantID,
-			TemplateID:        template.ID.String(),
 			StepKey:           stepReq.StepKey,
 			Name:              stepReq.Name,
 			Description:       stepReq.Description,
@@ -335,8 +327,35 @@ func (h *PipelineHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 		if stepInput.Order == 0 {
 			stepInput.Order = i + 1
 		}
+		stepInputs = append(stepInputs, stepInput)
+	}
+
+	// Validate every step before anything is written: the template and its
+	// steps are separate inserts, so a step rejected after the template was
+	// created used to leave an empty pipeline behind — and a retry then hit
+	// "Pipeline already exists".
+	if err := h.service.ValidateSteps(r.Context(), stepInputs); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	template, err := h.service.CreateTemplate(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	steps := make([]*pipeline.Step, 0, len(stepInputs))
+	for _, stepInput := range stepInputs {
+		stepInput.TemplateID = template.ID.String()
 		step, err := h.service.AddStep(r.Context(), stepInput)
 		if err != nil {
+			// A step can still fail past validation (e.g. a duplicate step_key).
+			// Remove the half-built template rather than leave it behind.
+			if delErr := h.service.DeleteTemplate(r.Context(), tenantID, template.ID.String()); delErr != nil {
+				h.logger.Error("failed to remove pipeline template after a step was rejected",
+					"template_id", template.ID.String(), "error", delErr)
+			}
 			h.handleServiceError(w, err)
 			return
 		}
