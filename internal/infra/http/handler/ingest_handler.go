@@ -441,7 +441,10 @@ func (h *IngestHandler) IngestCTIS(w http.ResponseWriter, r *http.Request) {
 // @Tags         Sensor
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object  true  "SARIF data"
+// @Param        request         body      object  true   "SARIF data"
+// @Param        repository_url  query     string  false  "Repository the log was produced from, when the log has no runs[].versionControlProvenance. Required in that case unless the artifact URIs name a github.com/gitlab.com/bitbucket.org repository."
+// @Param        branch          query     string  false  "Branch that was scanned"
+// @Param        commit_sha      query     string  false  "Commit that was scanned"
 // @Success      201  {object}  IngestResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
@@ -467,7 +470,18 @@ func (h *IngestHandler) IngestSARIF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	output, err := h.ingestService.IngestSARIF(r.Context(), agt, body)
+	q := r.URL.Query()
+	output, err := h.ingestService.IngestSARIF(r.Context(), agt, body, ingest.SARIFRepository{
+		URL:       q.Get("repository_url"),
+		Branch:    q.Get("branch"),
+		CommitSHA: q.Get("commit_sha"),
+	})
+	if errors.Is(err, shared.ErrValidation) {
+		// The log or its repository parameters are unusable (see
+		// ingest.ErrSARIFNoRepository): a 4xx the sensor can act on, not a 500.
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
 	if err != nil {
 		h.writeIngestError(w, "SARIF ingestion failed", err)
 		return
@@ -1145,6 +1159,14 @@ func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
 		scannerType = r.URL.Query().Get("scanner_type")
 	}
 
+	// Pick the adapter once, so the SARIF check below and the conversion
+	// agree on what the payload is.
+	if scannerType == "" {
+		if a, ok := h.adapterRegistry.AutoDetect(scanData); ok {
+			scannerType = a.Name()
+		}
+	}
+
 	// Convert using adapter registry
 	report, err := h.adapterRegistry.Convert(r.Context(), scannerType, scanData, &core.AdapterOptions{})
 	if err != nil {
@@ -1154,6 +1176,21 @@ func (h *IngestHandler) IngestScan(w http.ResponseWriter, r *http.Request) {
 			"error", sanitizeLogField(err.Error()), "scanner_type", sanitizeLogField(scannerType))
 		apierror.BadRequest("Failed to convert scanner output").WriteJSON(w)
 		return
+	}
+
+	// SARIF carries no asset of its own: file it under the repository it was
+	// produced from (same rules as /ingest/sarif) rather than the shared
+	// per-tool fallback asset, where unrelated repositories would merge.
+	if strings.EqualFold(scannerType, "sarif") {
+		q := r.URL.Query()
+		if err := ingest.AttachSARIFRepository(report, scanData, ingest.SARIFRepository{
+			URL:       q.Get("repository_url"),
+			Branch:    q.Get("branch"),
+			CommitSHA: q.Get("commit_sha"),
+		}); err != nil {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return
+		}
 	}
 
 	// Ingest the converted CTIS report
