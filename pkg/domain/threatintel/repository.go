@@ -120,4 +120,10 @@ type ThreatIntelRepository interface {
 
 	// EnrichCVE enriches a single CVE with threat intel data.
 	EnrichCVE(ctx context.Context, cveID string) (*ThreatIntelEnrichment, error)
+
+	// PropagateToVulnerabilityCatalog copies the EPSS and KEV feeds onto the
+	// shared vulnerabilities catalog (epss_*, cisa_kev_*, exploit_available).
+	// The feeds are the only writers of those columns; tenant ingest never
+	// sets them. Returns the number of catalog rows changed.
+	PropagateToVulnerabilityCatalog(ctx context.Context) (int64, error)
 }

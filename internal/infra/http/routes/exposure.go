@@ -201,16 +201,15 @@ func registerVulnerabilityRoutes(
 		r.GET("/{id}/affected-assets", h.ListAffectedAssets, tenantScopedMW...)
 		r.GET("/cve/{cveId}/affected-assets", h.ListAffectedAssetsByCVE, tenantScopedMW...)
 
-		// Write operations (admin only). Apply the tenant overlay
-		// (RequireTenant + active-membership + CSRF + rate-limit) so a
-		// suspended/removed admin can't keep mutating the global catalog with a
-		// still-valid JWT — matching the active CVE read routes above and every
-		// tenant-scoped write route.
+		// Writes to the shared CVE catalog are refused for every tenant role
+		// (403): one organization must not decide what every other one sees.
+		// The routes stay registered so a client gets an explanation, not a
+		// 404. See docs/architecture/global-catalog-trust.md.
 		vulnWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
 		vulnDeleteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesDelete))
-		r.POST("/", h.CreateVulnerability, vulnWriteMW...)
-		r.PUT("/{id}", h.UpdateVulnerability, vulnWriteMW...)
-		r.DELETE("/{id}", h.DeleteVulnerability, vulnDeleteMW...)
+		r.POST("/", h.RefuseSharedCatalogWrite, vulnWriteMW...)
+		r.PUT("/{id}", h.RefuseSharedCatalogWrite, vulnWriteMW...)
+		r.DELETE("/{id}", h.RefuseSharedCatalogWrite, vulnDeleteMW...)
 	}, baseMiddlewares...)
 
 	// Build tenant middleware chain from JWT token (used by /findings group below)

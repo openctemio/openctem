@@ -378,6 +378,10 @@ func (m *threatIntelMockRepo) EPSS() threatintel.EPSSRepository             { re
 func (m *threatIntelMockRepo) KEV() threatintel.KEVRepository               { return m.kev }
 func (m *threatIntelMockRepo) SyncStatus() threatintel.SyncStatusRepository { return m.syncStatus }
 
+func (m *threatIntelMockRepo) PropagateToVulnerabilityCatalog(_ context.Context) (int64, error) {
+	return 0, nil
+}
+
 func (m *threatIntelMockRepo) EnrichCVEs(_ context.Context, cveIDs []string) (map[string]*threatintel.ThreatIntelEnrichment, error) {
 	if m.enrichErr != nil {
 		return nil, m.enrichErr

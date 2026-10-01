@@ -43,9 +43,12 @@ func (m *MockComponentRepository) GetByID(ctx context.Context, id shared.ID) (*c
 	return args.Get(0).(*component.Component), args.Error(1)
 }
 
-func (m *MockComponentRepository) LinkLicenses(ctx context.Context, componentID shared.ID, licenses []string) (int, error) {
-	args := m.Called(ctx, componentID, licenses)
-	return args.Int(0), args.Error(1)
+func (m *MockComponentRepository) EnsureLicenses(ctx context.Context, licenses []string) ([]string, error) {
+	args := m.Called(ctx, licenses)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
 }
 
 func (m *MockComponentRepository) LinkAsset(ctx context.Context, dep *component.AssetDependency) error {
@@ -169,9 +172,16 @@ func TestComponentProcessor_ProcessBatch_WithLicenses(t *testing.T) {
 
 	// Mock expectations
 	mockRepo.On("Upsert", mock.Anything, mock.Anything).Return(componentID, nil).Times(2)
-	mockRepo.On("LinkLicenses", mock.Anything, componentID, []string{"MIT"}).Return(1, nil).Once()
-	mockRepo.On("LinkLicenses", mock.Anything, componentID, []string{"MIT", "Apache-2.0"}).Return(2, nil).Once()
-	mockRepo.On("LinkAsset", mock.Anything, mock.Anything).Return(nil).Times(2)
+	mockRepo.On("EnsureLicenses", mock.Anything, []string{"MIT"}).Return([]string{"MIT"}, nil).Once()
+	mockRepo.On("EnsureLicenses", mock.Anything, []string{"MIT", "Apache-2.0"}).Return([]string{"MIT", "Apache-2.0"}, nil).Once()
+	// Licenses are the tenant's observation: they ride on its own asset
+	// dependency, not on the shared component.
+	mockRepo.On("LinkAsset", mock.Anything, mock.MatchedBy(func(d *component.AssetDependency) bool {
+		return d.License() == "MIT"
+	})).Return(nil).Once()
+	mockRepo.On("LinkAsset", mock.Anything, mock.MatchedBy(func(d *component.AssetDependency) bool {
+		return d.License() == "MIT, Apache-2.0"
+	})).Return(nil).Once()
 
 	// Execute
 	err := processor.ProcessBatch(context.Background(), tenantID, report, assetMap, output)
@@ -247,7 +257,7 @@ func TestComponentProcessor_ProcessBatch_LicenseLinkingError(t *testing.T) {
 
 	// Mock expectations - license linking fails but should not stop processing
 	mockRepo.On("Upsert", mock.Anything, mock.Anything).Return(componentID, nil)
-	mockRepo.On("LinkLicenses", mock.Anything, componentID, []string{"MIT"}).Return(0, assert.AnError)
+	mockRepo.On("EnsureLicenses", mock.Anything, []string{"MIT"}).Return(nil, assert.AnError)
 	mockRepo.On("LinkAsset", mock.Anything, mock.Anything).Return(nil)
 
 	// Execute
@@ -260,7 +270,7 @@ func TestComponentProcessor_ProcessBatch_LicenseLinkingError(t *testing.T) {
 	assert.Equal(t, 1, output.DependenciesLinked)
 	assert.Equal(t, 0, output.LicensesLinked)
 	assert.Len(t, output.Warnings, 1)
-	assert.Contains(t, output.Warnings[0], "license linking failed")
+	assert.Contains(t, output.Warnings[0], "license recording failed")
 
 	mockRepo.AssertExpectations(t)
 }

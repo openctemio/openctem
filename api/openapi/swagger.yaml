@@ -6273,52 +6273,6 @@ definitions:
     - install_method
     - name
     type: object
-  internal_infra_http_handler.CreateVulnerabilityRequest:
-    properties:
-      cve_id:
-        type: string
-      cvss_score:
-        maximum: 10
-        minimum: 0
-        type: number
-      cvss_vector:
-        maxLength: 100
-        type: string
-      description:
-        maxLength: 10000
-        type: string
-      epss_percentile:
-        description: 0-100 percentile; a 0-1 fraction is rescaled
-        maximum: 100
-        minimum: 0
-        type: number
-      epss_score:
-        maximum: 1
-        minimum: 0
-        type: number
-      exploit_available:
-        type: boolean
-      exploit_maturity:
-        type: string
-      fixed_versions:
-        items:
-          type: string
-        maxItems: 50
-        type: array
-      remediation:
-        maxLength: 5000
-        type: string
-      severity:
-        type: string
-      title:
-        maxLength: 500
-        minLength: 1
-        type: string
-    required:
-    - cve_id
-    - severity
-    - title
-    type: object
   internal_infra_http_handler.CredentialContextReq:
     properties:
       domain:
@@ -11442,48 +11396,6 @@ definitions:
         type: string
       version_regex:
         maxLength: 200
-        type: string
-    type: object
-  internal_infra_http_handler.UpdateVulnerabilityRequest:
-    properties:
-      cvss_score:
-        maximum: 10
-        minimum: 0
-        type: number
-      cvss_vector:
-        maxLength: 100
-        type: string
-      description:
-        maxLength: 10000
-        type: string
-      epss_percentile:
-        description: 0-100 percentile; a 0-1 fraction is rescaled
-        maximum: 100
-        minimum: 0
-        type: number
-      epss_score:
-        maximum: 1
-        minimum: 0
-        type: number
-      exploit_available:
-        type: boolean
-      exploit_maturity:
-        type: string
-      fixed_versions:
-        items:
-          type: string
-        maxItems: 50
-        type: array
-      remediation:
-        maxLength: 5000
-        type: string
-      severity:
-        type: string
-      status:
-        type: string
-      title:
-        maxLength: 500
-        minLength: 1
         type: string
     type: object
   internal_infra_http_handler.UserInfo:
@@ -27605,63 +27517,37 @@ paths:
       tags:
       - Vulnerabilities
     post:
-      consumes:
-      - application/json
-      description: Creates a new CVE vulnerability record
-      parameters:
-      - description: Vulnerability data
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.CreateVulnerabilityRequest'
+      description: Always 403. The CVE catalog is shared by every organization and
+        is maintained from sensor reports and the threat-intelligence feeds; an organization
+        cannot create, edit or delete its entries.
       produces:
       - application/json
       responses:
-        "201":
-          description: Created
+        "403":
+          description: Forbidden
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.VulnerabilityResponse'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: Conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Create vulnerability
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Write the shared CVE catalog (not allowed)
       tags:
       - Vulnerabilities
   /vulnerabilities/{id}:
     delete:
-      description: Deletes a vulnerability
+      description: Always 403. The CVE catalog is shared by every organization and
+        is maintained from sensor reports and the threat-intelligence feeds; an organization
+        cannot create, edit or delete its entries.
       parameters:
       - description: Vulnerability ID
         in: path
         name: id
-        required: true
         type: string
+      produces:
+      - application/json
       responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
+        "403":
+          description: Forbidden
           schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Delete vulnerability
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Write the shared CVE catalog (not allowed)
       tags:
       - Vulnerabilities
     get:
@@ -27695,41 +27581,22 @@ paths:
       tags:
       - Vulnerabilities
     put:
-      consumes:
-      - application/json
-      description: Updates a vulnerability
+      description: Always 403. The CVE catalog is shared by every organization and
+        is maintained from sensor reports and the threat-intelligence feeds; an organization
+        cannot create, edit or delete its entries.
       parameters:
       - description: Vulnerability ID
         in: path
         name: id
-        required: true
         type: string
-      - description: Vulnerability data
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.UpdateVulnerabilityRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "403":
+          description: Forbidden
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.VulnerabilityResponse'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Update vulnerability
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      summary: Write the shared CVE catalog (not allowed)
       tags:
       - Vulnerabilities
   /vulnerabilities/{id}/affected-assets:

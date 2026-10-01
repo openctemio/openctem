@@ -294,6 +294,7 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	}
 
 	s.invalidateCatalogCounts()
+	s.propagateToCatalog(ctx, "epss")
 
 	s.logger.Info("EPSS sync completed",
 		"records", len(scores),
@@ -301,6 +302,18 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 	)
 
 	return result
+}
+
+// propagateToCatalog makes the shared vulnerabilities catalog agree with the
+// feeds just synced. A failure is logged, not returned: the feed itself was
+// stored, and the next sync propagates again.
+func (s *IntelService) propagateToCatalog(ctx context.Context, source string) {
+	n, err := s.repo.PropagateToVulnerabilityCatalog(ctx)
+	if err != nil {
+		s.logger.Error("failed to propagate threat intel to the vulnerability catalog", "source", source, "error", err)
+		return
+	}
+	s.logger.Info("vulnerability catalog updated from threat intel", "source", source, "rows", n)
 }
 
 // SyncKEV syncs KEV catalog from CISA.
@@ -368,6 +381,7 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	}
 
 	s.invalidateCatalogCounts()
+	s.propagateToCatalog(ctx, "kev")
 
 	s.logger.Info("KEV sync completed",
 		"records", len(entries),

@@ -36,14 +36,14 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 	// hidden from the CTEM dashboard until reviewer approves).
 	query := `
 		WITH base AS (
-			SELECT id, severity, status, vulnerability_id FROM findings
+			SELECT id, severity, status, vulnerability_id, cvss_score FROM findings
 			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review')
 		),
 		total AS (SELECT COUNT(*) AS cnt FROM base),
 		by_sev AS (SELECT severity, COUNT(*) AS cnt FROM base GROUP BY severity),
 		by_stat AS (SELECT status, COUNT(*) AS cnt FROM base GROUP BY status),
 		avg_cvss AS (
-			SELECT COALESCE(AVG(v.cvss_score), 0) AS val
+			SELECT COALESCE(AVG(COALESCE(b.cvss_score, v.cvss_score)), 0) AS val
 			FROM base b LEFT JOIN vulnerabilities v ON b.vulnerability_id = v.id
 		)
 		SELECT 'total' AS category, '' AS key, cnt::float8 FROM total
@@ -195,7 +195,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			GROUP BY GROUPING SETS ((asset_type), (status), (NULLIF(sub_type, '')), ())
 		),
 		avg_cvss AS (
-			SELECT COALESCE(AVG(v.cvss_score), 0) AS val
+			SELECT COALESCE(AVG(COALESCE(f.cvss_score, v.cvss_score)), 0) AS val
 			FROM findings f JOIN vulnerabilities v ON f.vulnerability_id = v.id
 			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review')
 		),
@@ -555,7 +555,7 @@ func (r *DashboardRepository) GetGlobalFindingStats(ctx context.Context) (app.Fi
 
 	// Get average CVSS (join with vulnerabilities to get cvss_score)
 	err = r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(v.cvss_score), 0) FROM findings f
+		`SELECT COALESCE(AVG(COALESCE(f.cvss_score, v.cvss_score)), 0) FROM findings f
 		 LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id`).Scan(&stats.AverageCVSS)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		stats.AverageCVSS = 0
@@ -785,7 +785,7 @@ func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenan
 	// Get average CVSS (join with vulnerabilities to get cvss_score)
 	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
 	err = r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(v.cvss_score), 0) FROM findings f
+		`SELECT COALESCE(AVG(COALESCE(f.cvss_score, v.cvss_score)), 0) FROM findings f
 		 LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
 		 WHERE f.tenant_id IN (`+placeholders+`) AND f.status NOT IN ('draft', 'in_review')`,
 		args...,

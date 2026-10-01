@@ -311,17 +311,19 @@ func (s *SBOMImportService) upsertComponent(
 	if err != nil {
 		return fmt.Errorf("dependency: %w", err)
 	}
+	// The license is this tenant's observation and goes on its own
+	// dependency row, never on the shared component.
+	if license != "" {
+		if valid, err := s.repo.EnsureLicenses(ctx, []string{license}); err == nil && len(valid) > 0 {
+			dep.SetLicense(strings.Join(valid, ", "))
+		}
+	}
 
 	if err := s.repo.LinkAsset(ctx, dep); err != nil {
 		// Duplicate link is OK — skip silently
 		if !strings.Contains(err.Error(), "already exists") && !strings.Contains(err.Error(), "duplicate") {
 			return fmt.Errorf("link: %w", err)
 		}
-	}
-
-	// Link license if available
-	if license != "" {
-		_, _ = s.repo.LinkLicenses(ctx, compID, []string{license})
 	}
 
 	return nil
