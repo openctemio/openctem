@@ -206,6 +206,13 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants` | Any authenticated |
 | `GET /api/v1/tenants/{tenant}` | Any authenticated |
 
+> These responses carry the tenant's `settings` map, which every member can
+> read. Secrets stored in settings (`api.webhook_secret`, `ai.api_key`, and any
+> key whose name marks it as a secret) are **write-only**:
+> `tenant.RedactSettings` removes them and adds `<key>_configured: true|false`.
+> The webhook signing secret is set with the owner-only
+> `PATCH /api/v1/tenants/{tenant}/settings/api`.
+
 #### Team Management (`/api/v1/tenants/{tenant}`)
 
 | Endpoint | Required Role |

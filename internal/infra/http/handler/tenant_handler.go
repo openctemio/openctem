@@ -232,6 +232,8 @@ type CreateInvitationRequest struct {
 // =============================================================================
 
 func toTenantResponse(t *tenant.Tenant) TenantResponse {
+	// Any member can read this response; secrets in the settings
+	// (api.webhook_secret, ai.api_key, ...) are write-only.
 	return TenantResponse{
 		ID:          t.ID().String(),
 		Name:        t.Name(),
@@ -239,7 +241,7 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 		Description: t.Description(),
 		LogoURL:     t.LogoURL(),
 		Plan:        t.Plan().String(),
-		Settings:    t.Settings(),
+		Settings:    tenant.RedactSettings(t.Settings()),
 		CreatedAt:   t.CreatedAt(),
 		UpdatedAt:   t.UpdatedAt(),
 	}
@@ -1386,6 +1388,9 @@ type APISettingsResponse struct {
 	APIKeyEnabled bool     `json:"api_key_enabled"`
 	WebhookURL    string   `json:"webhook_url,omitempty"`
 	WebhookEvents []string `json:"webhook_events"`
+	// WebhookSecretConfigured says whether a signing secret is set; the
+	// secret itself is write-only (PATCH /settings/api).
+	WebhookSecretConfigured bool `json:"webhook_secret_configured"`
 }
 
 // BrandingSettingsResponse represents branding settings.
@@ -1417,9 +1422,10 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			EmailVerificationMode: string(s.Security.EmailVerificationMode),
 		},
 		API: APISettingsResponse{
-			APIKeyEnabled: s.API.APIKeyEnabled,
-			WebhookURL:    s.API.WebhookURL,
-			WebhookEvents: webhookEvents,
+			APIKeyEnabled:           s.API.APIKeyEnabled,
+			WebhookURL:              s.API.WebhookURL,
+			WebhookSecretConfigured: s.API.WebhookSecret != "",
+			WebhookEvents:           webhookEvents,
 		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
