@@ -41,11 +41,11 @@ type Settings struct {
 // AssetIdentitySettings controls asset dedup behavior per tenant.
 // RFC-001: Asset Identity Resolution & Deduplication.
 type AssetIdentitySettings struct {
-	// StaleAssetDays is the number of days after which an asset is considered stale
-	// for IP correlation. If an existing asset hasn't been seen in this many days
-	// and the incoming asset has a different name, they won't be auto-merged.
-	// This prevents false merges due to IP reuse (DHCP).
-	// 0 = use system default (30 days).
+	// StaleAssetDays is the IP trust window: an IP match with an existing asset
+	// counts only when that asset was seen within this many days. Outside it,
+	// an incoming asset with a different name is not merged or renamed. This
+	// prevents false merges due to IP reuse (DHCP).
+	// 0 = use system default (7 days).
 	StaleAssetDays int `json:"stale_asset_days,omitempty"`
 
 	// MaxIPsPerAsset limits the number of IPs stored per asset.

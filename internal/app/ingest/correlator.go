@@ -31,11 +31,24 @@ type CorrelationRepo interface {
 	GetByName(ctx context.Context, tenantID shared.ID, name string) (*asset.Asset, error)
 }
 
+// DefaultIPTrustWindowDays is how recently an existing asset must have been
+// seen for an IP match to count. An IP is the weakest host identifier: DHCP
+// hands the same address to another machine, and a match outside this window
+// would merge (and rename) the wrong host. Owner decision 2026-10-01: 7 days,
+// down from 30.
+const DefaultIPTrustWindowDays = 7
+
+// DefaultMaxIPsPerAsset is the system default for CorrelationConfig.MaxIPsPerAsset.
+const DefaultMaxIPsPerAsset = 20
+
 // CorrelationConfig controls correlation behavior.
 // System defaults are set at startup; per-tenant overrides can be passed
 // via WithTenantOverrides() before calling CorrelateHost().
 type CorrelationConfig struct {
-	StaleAssetDays int // Don't merge if existing asset stale > N days (default: 30)
+	// StaleAssetDays is the IP trust window: an IP match counts only when the
+	// existing asset was seen within this many days
+	// (default: DefaultIPTrustWindowDays).
+	StaleAssetDays int
 	MaxIPsPerAsset int // Skip correlation if asset has > N IPs (default: 20)
 }
 
@@ -72,10 +85,10 @@ type CorrelationResult struct {
 // NewAssetCorrelator creates a new correlator.
 func NewAssetCorrelator(repo CorrelationRepo, log *logger.Logger, cfg CorrelationConfig) *AssetCorrelator {
 	if cfg.StaleAssetDays <= 0 {
-		cfg.StaleAssetDays = 30
+		cfg.StaleAssetDays = DefaultIPTrustWindowDays
 	}
 	if cfg.MaxIPsPerAsset <= 0 {
-		cfg.MaxIPsPerAsset = 20
+		cfg.MaxIPsPerAsset = DefaultMaxIPsPerAsset
 	}
 	return &AssetCorrelator{
 		repo:   repo,
@@ -226,7 +239,9 @@ func (c *AssetCorrelator) shouldCorrelateByIP(existing *asset.Asset, incomingNam
 		return false
 	}
 
-	// Staleness check
+	// IP trust window: the asset must have been seen recently. Its IPs are
+	// the ones it reported when last seen, so an asset outside the window may
+	// have handed its address to another machine (DHCP).
 	staleThreshold := time.Duration(staleDays) * 24 * time.Hour
 	if time.Since(existing.LastSeen()) > staleThreshold {
 		c.logger.Debug("skipping stale asset for IP correlation",

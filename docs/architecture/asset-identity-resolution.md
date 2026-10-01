@@ -70,7 +70,7 @@ When name match fails, correlator checks alternative identifiers:
 | certificate | fingerprint property | `FindByPropertyValue("fingerprint", ...)` |
 
 **Safeguards**:
-- **Staleness**: Don't merge if existing asset `last_seen` > N days (configurable per-tenant, default 30)
+- **IP trust window**: an IP match counts only if the existing asset was seen within the last N days (configurable per tenant, default 7). Outside the window the incoming host is not merged or renamed.
 - **DoS protection**: Skip correlation if asset has > N IPs (configurable, default 20)
 - **Type guard**: Only correlate same asset type (host ↔ host, not host ↔ domain)
 
@@ -100,7 +100,8 @@ with `address`), `ip_addresses`, and from the CTIS `value` when the asset is
 named by hostname and its value is an IP address (the Vuls adapter does this).
 
 Renames rely on an IP match, so a host whose IP is reused by another machine
-within the staleness window can be renamed wrongly. Hosts with stable
+within the IP trust window (7 days by default; it was 30 before 2026-10-01)
+can be renamed wrongly. Hosts with stable
 identifiers (MAC address, sensor host ID, cloud instance ID) are not matched
 on those identifiers yet.
 
@@ -115,11 +116,14 @@ Settings stored in `tenant.Settings.AssetIdentity`:
 ```json
 {
   "asset_identity": {
-    "stale_asset_days": 30,
+    "stale_asset_days": 7,
     "max_ips_per_asset": 20
   }
 }
 ```
+
+`stale_asset_days` is the IP trust window. `0` (or unset) means the system
+default of 7 days; a tenant can set 1-365.
 
 **API**: `GET/PATCH /api/v1/tenants/{id}/settings/asset-identity` (admin+)
 
@@ -173,7 +177,7 @@ Shared normalization library: `sdk-go/pkg/ctis/normalize.go`
 See `docs/rfcs/RFC-001-appendix-edge-cases.md` for the full list covering all 16 asset types.
 
 Key edge cases:
-- **IP reuse (DHCP)**: Staleness check prevents merging old assets with new hosts
+- **IP reuse (DHCP)**: the 7-day IP trust window prevents merging old assets with new hosts
 - **NAT/shared IP**: Correlate on private IPs only, skip public behind NAT
 - **Race condition**: Accept eventual consistency, next ingest cycle catches duplicates
 - **IPv4-mapped IPv6**: `::ffff:192.168.1.1` normalized to `192.168.1.1`

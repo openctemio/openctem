@@ -233,7 +233,7 @@ func (p *AssetProcessor) defaultCorrelationConfig() CorrelationConfig {
 	if p.correlator != nil {
 		return p.correlator.config
 	}
-	return CorrelationConfig{StaleAssetDays: 30, MaxIPsPerAsset: 20}
+	return CorrelationConfig{StaleAssetDays: DefaultIPTrustWindowDays, MaxIPsPerAsset: DefaultMaxIPsPerAsset}
 }
 
 // ProcessBatch processes all assets using batch operations.
