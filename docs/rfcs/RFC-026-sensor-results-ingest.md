@@ -1,7 +1,8 @@
 # RFC-026 — Sensor results ingest (protocol v2)
 
-> Status: **Proposed** (2026-10-01). Research, design and implementation plan;
-> nothing is implemented yet.
+> Status: **Accepted; api iteration 1 in progress** (2026-10-01). The open
+> questions of §10 are decided in §10.1. The api work packages WP-A1…A7 land
+> as separate PRs; sdk-go (WP-S1…S3) and sensor (WP-G1) follow.
 > Scope: api + sdk-go + sensor (the `agent` repo), with a later import API
 > in api + ui.
 > Builds on: [RFC-023](RFC-023-scan-zones-and-scanners.md) (sensors, protocol
@@ -720,6 +721,49 @@ proven by `compat-v1`. v2 shares the ingest core but not the wire.
    it per tenant?
 5. **Minimum ingest protocol.** Agree to a separate lever from C7 (§8.3),
    with a deprecation window: proposal 6 months after v2 ships.
+
+### 10.1 Decisions taken (2026-10-01)
+
+The product owner asked for the best option to be researched and
+implemented. Each question takes the answer this RFC already recommends;
+where it recommends none, the safest default is chosen.
+
+| # | Decision | Basis |
+|---|---|---|
+| 1 | **The import API (WP-A8) ships after v2 results**, not in iteration 1. The v1 per-format routes therefore do not start retiring with this release. | §7.1 WP-A8 ("after the sensor path ships") and §7.5. |
+| 2 | **WASM (wazero) is the target sandbox** for the import converters' iteration 2. Until then no server-side conversion runs on v2 at all, because the import API is not built. | No recommendation in the RFC; WASM is the stronger isolation (no syscalls, no network, no file system by construction) and is portable. Revisit if a converter cannot be built for `wasip1`. |
+| 3 | **Yes, v1 gets the catalog gate (§5.3)**, as its own follow-up PR after v2 results, so the visible data change is reviewed alone. v2 never writes the global catalog from the first commit. | §5.3 ("v1 gets the same gate as a separate fix"). |
+| 4 | **50 % and more than 100 findings** is the blinding threshold, platform-wide, configurable with `SENSOR_V2_BLINDING_RATIO` and `SENSOR_V2_BLINDING_MIN_FINDINGS`. Not per tenant yet: a per-tenant override needs a settings surface that does not exist, and a tenant admin lowering their own guard is not the safe default. | §5.4. |
+| 5 | **A separate minimum-ingest-protocol lever**, default 1, with `Deprecation` / `Sunset` on v1 ingest 6 months after v2 ships. Not built in iteration 1 (§7.5 keeps every v1 route). | §8.3, proposal in §10 Q5. |
+
+Clarifications made while implementing (the RFC was silent or
+inconsistent):
+
+- **Two protocol headers.** v2 responses carry `OpenCTEM-Protocol: 2`
+  (§3.4). A v1 response advertises v2 with `X-OpenCTEM-Protocol: 2`
+  (RFC-023 C3), and only to a sensor that sent
+  `X-OpenCTEM-Sensor-Features: results-v2`, so no deployed sensor sees a new
+  header.
+- **Extra problem types.** `invalid-encoding` (400: the body does not decode
+  with the declared `Content-Encoding`), `invalid-request` (400: a malformed
+  commit body), `report-not-found` (404: status of an unknown report) and
+  `report-expired` (409: a segment or commit for an expired report). All are
+  in the closed table of `pkg/sensorproto/v2`.
+- **Key scopes (D21) do not exist yet.** Every sensor key implicitly holds
+  `results`; the `scope-denied` answer is used for a platform sensor on the
+  unsolicited form. Sensor role and trust tier are not modelled either; the
+  provenance stamps the legacy sensor `type` until RFC-023 adds them.
+- **Commit digests are sha-256.** The server stores the sha-256 of every
+  segment's received bytes whatever algorithm the sensor declared, and a
+  commit lists those canonical sha-256 members.
+- **No command-target fallback asset.** §5.2 allows a finding to fall back to
+  the command's target asset. A command's targets are free-form payload today,
+  not asset ids, so iteration 1 accepts only assets in the same document. A
+  finding without `asset_ref` is bound to the segment's single asset when it
+  has exactly one, and rejected otherwise.
+- **Zone quarantine** applies to command-bound reports only and is deferred
+  with §7.5's "zone quarantine for unsolicited reports"; iteration 1 counts
+  `quarantined` as 0.
 
 ## 11. Appendix: survey of ingest APIs
 

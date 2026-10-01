@@ -1,0 +1,130 @@
+## binding-mismatch
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/binding-mismatch","title":"Binding mismatch","status":409,"detail":"All segments and the commit of a report must use the same form and command.","retryable":false}
+## command-not-found
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/command-not-found","title":"Command not found","status":404,"detail":"No open command with this id is assigned to this sensor.","retryable":false}
+## content-too-large
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/content-too-large","title":"Content too large","status":413,"detail":"The content exceeds the request limit; split the report into more segments.","retryable":false}
+## decompressed-too-large
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/decompressed-too-large","title":"Decompressed content too large","status":413,"detail":"The decoded content exceeds the size or ratio limit; split the report into more segments.","retryable":false}
+## digest-mismatch
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/digest-mismatch","title":"Content digest mismatch","status":400,"detail":"The Content-Digest does not match the received content.","retryable":false}
+## digest-required
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/digest-required","title":"Content digest required","status":400,"detail":"Send a Content-Digest header with a sha-256 or sha-512 digest of the content as sent.","retryable":false}
+## internal
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/internal","title":"Internal error","status":500,"detail":"The server failed to handle the request.","retryable":true}
+## invalid-encoding
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/invalid-encoding","title":"Invalid content encoding","status":400,"detail":"The content could not be decoded with the declared Content-Encoding.","retryable":false}
+## invalid-id
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/invalid-id","title":"Invalid identifier","status":400,"detail":"A path identifier is not a lower-case UUID or a segment number in range.","retryable":false}
+## invalid-json
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/invalid-json","title":"Invalid JSON","status":422,"detail":"The content is not I-JSON: duplicate member names, invalid UTF-8, trailing data, excessive depth or a syntax error.","retryable":false}
+## invalid-request
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/invalid-request","title":"Invalid request","status":400,"detail":"The request body does not match the documented shape.","retryable":false}
+## length-required
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/length-required","title":"Length required","status":411,"detail":"Send a Content-Length; chunked transfer coding is not accepted.","retryable":false}
+## queue-full
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+Retry-After: 30
+{"type":"https://openctem.io/problems/ingest/queue-full","title":"Queue full","status":429,"detail":"The tenant's ingest queue is full; retry after the advised delay.","retryable":true}
+## rate-limited
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+Retry-After: 30
+{"type":"https://openctem.io/problems/ingest/rate-limited","title":"Rate limited","status":429,"detail":"Too many requests; retry after the advised delay.","retryable":true}
+## report-committed
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/report-committed","title":"Report committed","status":409,"detail":"The report is committed; it accepts no more segments.","retryable":false}
+## report-conflict
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/report-conflict","title":"Report conflict","status":409,"detail":"A different content was already received under this report id or segment.","retryable":false}
+## report-expired
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/report-expired","title":"Report expired","status":409,"detail":"The report expired before it was committed; send it again under a new report id.","retryable":false}
+## report-not-found
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/report-not-found","title":"Report not found","status":404,"detail":"No report with this id exists for this sensor.","retryable":false}
+## report-too-large
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/report-too-large","title":"Report too large","status":413,"detail":"The segment or report exceeds an item or segment limit; split the report into more segments.","retryable":false}
+## schema-invalid
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/schema-invalid","title":"Schema invalid","status":422,"detail":"The report does not satisfy the CTIS schema or the v2 rules; see errors.","retryable":false}
+## scope-denied
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/scope-denied","title":"Scope denied","status":403,"detail":"This sensor may not send results on this resource.","retryable":false}
+## segment-header-mismatch
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/segment-header-mismatch","title":"Segment header mismatch","status":409,"detail":"Every segment of a report must carry the same tool and metadata.","retryable":false}
+## segment-set-mismatch
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/segment-set-mismatch","title":"Segment set mismatch","status":409,"detail":"The committed segment count or digests do not match the received segments.","retryable":false}
+## too-many-open-reports
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+Retry-After: 30
+{"type":"https://openctem.io/problems/ingest/too-many-open-reports","title":"Too many open reports","status":429,"detail":"This sensor has too many uncommitted reports; commit or delete one first.","retryable":true}
+## tool-not-permitted
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/tool-not-permitted","title":"Tool not permitted","status":422,"detail":"The report's tool is not declared by this sensor, or is not the tool of the bound command.","retryable":false}
+## unauthenticated
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/unauthenticated","title":"Unauthenticated","status":401,"detail":"Invalid credentials.","retryable":false}
+## unavailable
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+Retry-After: 30
+{"type":"https://openctem.io/problems/ingest/unavailable","title":"Unavailable","status":503,"detail":"The service is temporarily unavailable; retry after the advised delay.","retryable":true}
+## unsupported-encoding
+Accept-Encoding: gzip, zstd
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/unsupported-encoding","title":"Unsupported content encoding","status":415,"detail":"The accepted Content-Encoding values are gzip and zstd, one coding at most.","retryable":false}
+## unsupported-media-type
+Accept: application/vnd.openctem.ctis.v1+json
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/unsupported-media-type","title":"Unsupported media type","status":415,"detail":"The only accepted Content-Type is application/vnd.openctem.ctis.v1+json.","retryable":false}
+## version-mismatch
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/version-mismatch","title":"Version mismatch","status":422,"detail":"The body's CTIS major version does not match the media type.","retryable":false}
+## schema-invalid with errors
+{"type":"https://openctem.io/problems/ingest/schema-invalid","title":"Schema invalid","status":422,"detail":"The report does not satisfy the CTIS schema or the v2 rules; see errors.","errors":[{"segment":1,"pointer":"/findings/17/severity","code":"invalid_value","detail":"the value is not allowed here"}],"retryable":false}
+## content-too-large with limit
+{"type":"https://openctem.io/problems/ingest/content-too-large","title":"Content too large","status":413,"detail":"The content exceeds the request limit; split the report into more segments.","limit":16777216,"retryable":false}
