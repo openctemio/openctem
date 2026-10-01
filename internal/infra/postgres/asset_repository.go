@@ -1686,9 +1686,28 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 	return created, updated, persistedIDs, nil
 }
 
+// isRowDataError reports whether Postgres refused a row because of the row's
+// own values: SQLSTATE class 22 (data exception) or 23 (integrity constraint
+// violation). Retrying such a row cannot succeed; skipping it loses only it.
+func isRowDataError(err error) bool {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) {
+		return false
+	}
+	class := pqErr.Code.Class()
+	return class == "22" || class == "23"
+}
+
 // upsertBatchPerRow is the fallback: upsert each asset individually so a chunk
-// with intra-batch duplicate names (or one bad row) still makes progress and
-// surfaces a precise error.
+// with intra-batch duplicate names (or one bad row) still makes progress.
+//
+// Each row runs under a savepoint. A row the database refuses for its own
+// data (SQLSTATE class 22 data exception, e.g. a value too long for its
+// column, or class 23 constraint violation) is rolled back alone and left out
+// of persistedIDs; the caller reports it as that asset's error. Before, the
+// first such row aborted the transaction and the whole report lost its
+// assets. Any other error (connection, cancellation, ...) still fails the
+// batch so the report is retried.
 func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset.Asset) (created int, updated int, persistedIDs map[string]shared.ID, err error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1711,17 +1730,32 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 	defer stmt.Close()
 
 	persistedIDs = make(map[string]shared.ID, len(assets))
+	stored := make([]*asset.Asset, 0, len(assets))
 	for _, a := range assets {
 		rowArgs, argErr := assetUpsertArgs(a)
 		if argErr != nil {
 			return created, updated, nil, argErr
 		}
 
+		if _, err = tx.ExecContext(ctx, "SAVEPOINT asset_row"); err != nil {
+			return created, updated, nil, fmt.Errorf("failed to set savepoint: %w", err)
+		}
 		var idStr, name string
 		var inserted bool
-		if err = stmt.QueryRowContext(ctx, rowArgs...).Scan(&idStr, &name, &inserted); err != nil {
-			return created, updated, nil, fmt.Errorf("failed to upsert asset %s: %w", a.Name(), err)
+		if rowErr := stmt.QueryRowContext(ctx, rowArgs...).Scan(&idStr, &name, &inserted); rowErr != nil {
+			if !isRowDataError(rowErr) {
+				err = fmt.Errorf("failed to upsert asset %s: %w", a.Name(), rowErr)
+				return created, updated, nil, err
+			}
+			if _, err = tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT asset_row"); err != nil {
+				return created, updated, nil, fmt.Errorf("failed to roll back refused asset: %w", err)
+			}
+			continue
 		}
+		if _, err = tx.ExecContext(ctx, "RELEASE SAVEPOINT asset_row"); err != nil {
+			return created, updated, nil, fmt.Errorf("failed to release savepoint: %w", err)
+		}
+		stored = append(stored, a)
 		if id, idErr := shared.IDFromString(idStr); idErr == nil {
 			persistedIDs[name] = id
 		}
@@ -1732,7 +1766,7 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 		}
 	}
 
-	if err = r.ensureRepositoryExtensions(ctx, tx, assets); err != nil {
+	if err := r.ensureRepositoryExtensions(ctx, tx, stored); err != nil {
 		return created, updated, nil, err
 	}
 
