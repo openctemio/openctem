@@ -229,3 +229,161 @@ func TestShouldUsePlatformSensor(t *testing.T) {
 		}
 	}
 }
+
+// stubGroupsRepo serves members per group id.
+type stubGroupsRepo struct {
+	assetgroup.Repository
+	byGroup map[shared.ID][]*assetgroup.GroupAsset
+	calls   map[shared.ID]int
+}
+
+func (s *stubGroupsRepo) GetGroupAssets(_ context.Context, id shared.ID, page pagination.Pagination) (pagination.Result[*assetgroup.GroupAsset], error) {
+	if s.calls == nil {
+		s.calls = map[shared.ID]int{}
+	}
+	s.calls[id]++
+	a := s.byGroup[id]
+	return pagination.NewResult(a, int64(len(a)), page), nil
+}
+
+func groupAsset(name string) *assetgroup.GroupAsset {
+	return &assetgroup.GroupAsset{ID: shared.NewID(), Name: name}
+}
+
+// Every asset group of a scan is resolved, not only the first: members are
+// merged and deduplicated, exclusions apply to all of them, and an empty
+// group is reported.
+func TestResolveScanTargets_AllAssetGroups(t *testing.T) {
+	g1, g2, g3 := shared.NewID(), shared.NewID(), shared.NewID()
+	shared1 := groupAsset("shared.example.com")
+	repo := &stubGroupsRepo{byGroup: map[shared.ID][]*assetgroup.GroupAsset{
+		g1: {groupAsset("a.example.com"), shared1},
+		g2: {groupAsset("b.example.com"), {ID: shared1.ID, Name: shared1.Name}, groupAsset("excluded.example.com")},
+		g3: {},
+	}}
+	svc := &Service{
+		assetGroupRepo:  repo,
+		scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}},
+		logger:          logger.NewNop(),
+	}
+	sc := testScan("nuclei")
+	sc.SetAssetGroupIDs([]shared.ID{g1, g2, g3, g2})
+
+	got, err := svc.resolveScanTargets(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"a.example.com", "shared.example.com", "b.example.com"}
+	if !reflect.DeepEqual(got.Targets, want) {
+		t.Fatalf("targets = %v, want %v", got.Targets, want)
+	}
+	if got.Excluded != 1 {
+		t.Fatalf("excluded = %d, want 1", got.Excluded)
+	}
+	for _, g := range []shared.ID{g1, g2, g3} {
+		if repo.calls[g] != 1 {
+			t.Fatalf("group %s listed %d times, want once", g, repo.calls[g])
+		}
+	}
+	if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], g3.String()) || !strings.Contains(got.Warnings[0], "no assets") {
+		t.Fatalf("want one warning naming the empty group, got %v", got.Warnings)
+	}
+}
+
+// The per-run cap counts the targets of every group together.
+func TestResolveScanTargets_CapAcrossGroups(t *testing.T) {
+	g1, g2 := shared.NewID(), shared.NewID()
+	mk := func(prefix string, n int) []*assetgroup.GroupAsset {
+		out := make([]*assetgroup.GroupAsset, n)
+		for i := range out {
+			out[i] = groupAsset(prefix + "-" + shared.NewID().String() + ".example.com")
+		}
+		return out
+	}
+	half := maxResolvedTargets/2 + 1
+	svc := &Service{
+		assetGroupRepo: &stubGroupsRepo{byGroup: map[shared.ID][]*assetgroup.GroupAsset{g1: mk("a", half), g2: mk("b", half)}},
+		logger:         logger.NewNop(),
+	}
+	sc := testScan("nuclei")
+	sc.SetAssetGroupIDs([]shared.ID{g1, g2})
+	if _, err := svc.resolveScanTargets(context.Background(), sc); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("want the target cap to apply across groups, got %v", err)
+	}
+}
+
+// A scan that resolves to nothing (an empty group, no direct targets) must not
+// dispatch a command with no targets.
+func TestRecordResolvedTargets_NoTargetsRefused(t *testing.T) {
+	ctx := map[string]any{}
+	err := recordResolvedTargets(testScan("nuclei"), &resolvedTargets{}, ctx)
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("got %v, want validation error", err)
+	}
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code != "NO_TARGETS" {
+		t.Fatalf("want domain error NO_TARGETS, got %#v", err)
+	}
+}
+
+// sensor_preference=platform must never silently become a tenant job: the
+// trigger is refused before any run or command exists.
+func TestDecideSensorRouting(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name     string
+		sel      SensorSelector
+		pref     scan.SensorPreference
+		group    bool
+		targets  []string
+		want     string
+		wantErr  bool
+		wantWarn bool
+	}{
+		{"platform + asset group refused", stubSelector{false, true}, scan.SensorPreferencePlatform, true, []string{"a.example.com"}, "", true, false},
+		{"platform + internal target refused", stubSelector{false, true}, scan.SensorPreferencePlatform, false, []string{"10.0.0.5"}, "", true, false},
+		{"platform not allowed refused", stubSelector{false, false}, scan.SensorPreferencePlatform, false, []string{"a.example.com"}, "", true, false},
+		{"platform public allowed", stubSelector{false, true}, scan.SensorPreferencePlatform, false, []string{"a.example.com"}, sensorRoutingPlatform, false, false},
+		{"auto selector error: tenant, recorded", errSelector{}, scan.SensorPreferenceAuto, false, []string{"a.example.com"}, sensorRoutingTenant, false, true},
+		{"tenant", stubSelector{false, true}, scan.SensorPreferenceTenant, false, []string{"a.example.com"}, sensorRoutingTenant, false, false},
+	}
+	for _, tc := range cases {
+		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop()}
+		sc := testScan("nuclei")
+		sc.SensorPreference = tc.pref
+		if tc.group {
+			sc.SetAssetGroupIDs([]shared.ID{shared.NewID()})
+		}
+		got, err := svc.decideSensorRouting(ctx, sc, tc.targets, nil)
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("%s: err = %v", tc.name, err)
+		}
+		if err != nil {
+			if !errors.Is(err, shared.ErrValidation) {
+				t.Fatalf("%s: refusal must be a validation error, got %v", tc.name, err)
+			}
+			continue
+		}
+		if got.Routing != tc.want || (got.Warning != "") != tc.wantWarn {
+			t.Fatalf("%s: got %+v", tc.name, got)
+		}
+	}
+}
+
+// Only the multi-group field set (no legacy AssetGroupID) still counts as an
+// asset group for platform routing.
+func TestShouldUsePlatformSensor_AssetGroupIDsOnly(t *testing.T) {
+	svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop()}
+	sc := testScan("nuclei")
+	sc.AssetGroupIDs = []shared.ID{shared.NewID()}
+	got, err := svc.shouldUsePlatformSensor(context.Background(), sc, []string{"a.example.com"})
+	if err != nil || got {
+		t.Fatalf("asset groups must never go to platform sensors: got %v, %v", got, err)
+	}
+}
+
+type errSelector struct{ stubSelector }
+
+func (errSelector) SelectSensor(context.Context, SelectSensorRequest) (*SelectSensorResult, error) {
+	return nil, errors.New("selector down")
+}

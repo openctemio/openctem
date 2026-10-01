@@ -9160,6 +9160,11 @@ definitions:
         type: integer
       resolved_targets:
         type: integer
+      sensor_routing:
+        description: |-
+          SensorRouting is where the run's commands were queued: "tenant" or
+          "platform" (shared platform sensors), decided at trigger time.
+        type: string
       uncovered_targets:
         items:
           $ref: '#/definitions/internal_infra_http_handler.RunUncoveredTarget'

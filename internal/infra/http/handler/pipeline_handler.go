@@ -210,6 +210,9 @@ type RunDispatchResponse struct {
 	Warnings         []string             `json:"warnings,omitempty"`
 	UncoveredTargets []RunUncoveredTarget `json:"uncovered_targets,omitempty"`
 	ZoneRouting      *RunZoneRouting      `json:"zone_routing,omitempty"`
+	// SensorRouting is where the run's commands were queued: "tenant" or
+	// "platform" (shared platform sensors), decided at trigger time.
+	SensorRouting string `json:"sensor_routing,omitempty"`
 }
 
 // RunUncoveredTarget is a target the run did not scan.
@@ -1108,7 +1111,7 @@ func toRunResponse(r *pipeline.Run) *RunResponse {
 // the run context. Values round-trip through JSON so the same code reads a
 // freshly built context and one loaded from the database.
 func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
-	keys := []string{"resolved_target_count", "excluded_target_count", "dispatch_warnings", "uncovered_targets", "zone_routing"}
+	keys := []string{"resolved_target_count", "excluded_target_count", "dispatch_warnings", "uncovered_targets", "zone_routing", "sensor_routing"}
 	present := map[string]any{}
 	for _, k := range keys {
 		if v, ok := runContext[k]; ok && v != nil {
@@ -1128,6 +1131,7 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 		Warnings  []string             `json:"dispatch_warnings"`
 		Uncovered []RunUncoveredTarget `json:"uncovered_targets"`
 		Routing   *RunZoneRouting      `json:"zone_routing"`
+		Sensor    string               `json:"sensor_routing"`
 	}
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil
@@ -1138,6 +1142,7 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 		Warnings:         in.Warnings,
 		UncoveredTargets: in.Uncovered,
 		ZoneRouting:      in.Routing,
+		SensorRouting:    in.Sensor,
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -256,6 +257,7 @@ func (m *mockTemplateRepo) ListWithSystemTemplates(_ context.Context, _ shared.I
 type mockAssetGroupRepo struct {
 	groups          map[string]*assetgroup.AssetGroup
 	assetTypeCounts map[string]int64 // for CountAssetsByType
+	members         map[shared.ID][]*assetgroup.GroupAsset
 }
 
 func newMockAssetGroupRepo() *mockAssetGroupRepo {
@@ -304,8 +306,9 @@ func (m *mockAssetGroupRepo) AddAssets(_ context.Context, _ shared.ID, _ []share
 func (m *mockAssetGroupRepo) RemoveAssets(_ context.Context, _ shared.ID, _ []shared.ID) error {
 	return nil
 }
-func (m *mockAssetGroupRepo) GetGroupAssets(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*assetgroup.GroupAsset], error) {
-	return pagination.Result[*assetgroup.GroupAsset]{}, nil
+func (m *mockAssetGroupRepo) GetGroupAssets(_ context.Context, id shared.ID, page pagination.Pagination) (pagination.Result[*assetgroup.GroupAsset], error) {
+	a := m.members[id]
+	return pagination.NewResult(a, int64(len(a)), page), nil
 }
 func (m *mockAssetGroupRepo) GetGroupFindings(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*assetgroup.GroupFinding], error) {
 	return pagination.Result[*assetgroup.GroupFinding]{}, nil
@@ -886,6 +889,10 @@ func createTestScanInRepo(deps *testScanServiceDeps, tenantID shared.ID, name st
 	agID := shared.NewID()
 	ag, _ := assetgroup.NewAssetGroupWithTenant(tenantID, "test-group-"+name, assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 	deps.assetGroupRepo.groups[ag.ID().String()] = ag
+	if deps.assetGroupRepo.members == nil {
+		deps.assetGroupRepo.members = map[shared.ID][]*assetgroup.GroupAsset{}
+	}
+	deps.assetGroupRepo.members[ag.ID()] = []*assetgroup.GroupAsset{{ID: shared.NewID(), Name: "app.example.com"}}
 
 	s, _ := scan.NewScan(tenantID, name, ag.ID(), scanType)
 	if scanType == scan.ScanTypeSingle {
@@ -1590,6 +1597,28 @@ func TestScanService_ListScans_EmptyResult(t *testing.T) {
 // =============================================================================
 // Tests: TriggerScan
 // =============================================================================
+
+// A scan whose asset group is empty resolves to nothing: the trigger is
+// refused, and no run or command is created.
+func TestScanService_TriggerScan_EmptyAssetGroupRefused(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+
+	deps.toolRepo.addTool("nuclei", true)
+	s := createTestScanInRepo(deps, tenantID, "Empty Group Scan", scan.ScanTypeSingle)
+	deps.assetGroupRepo.members[s.AssetGroupID] = nil
+
+	run, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(),
+		ScanID:   s.ID.String(),
+	})
+	if err == nil || run != nil {
+		t.Fatalf("want the trigger refused, got run %v, err %v", run, err)
+	}
+	if !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), "NO_TARGETS") {
+		t.Fatalf("want NO_TARGETS validation error, got %v", err)
+	}
+}
 
 func TestScanService_TriggerScan_SingleScanner_Success(t *testing.T) {
 	svc, deps := newTestScanService()
