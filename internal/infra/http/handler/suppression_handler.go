@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/suppression"
 	"github.com/openctemio/api/pkg/logger"
+	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
 )
 
 // SuppressionHandler handles suppression rule HTTP requests.
@@ -478,8 +480,9 @@ func (h *SuppressionHandler) DeleteRule(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ListActiveRules handles GET /api/v1/suppressions/active
-// This endpoint is used by sensors to fetch active suppression rules.
+// ListActiveRules handles GET /api/v1/suppressions/active, the user-facing
+// view of a tenant's active rules (tenant from the JWT). Sensors read the same
+// rules from GET /api/v1/agent/suppressions (SensorActiveRules).
 func (h *SuppressionHandler) ListActiveRules(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	tenantUUID, err := shared.IDFromString(tenantID)
@@ -487,25 +490,79 @@ func (h *SuppressionHandler) ListActiveRules(w http.ResponseWriter, r *http.Requ
 		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
 		return
 	}
+	h.writeActiveRules(w, r, tenantUUID)
+}
 
-	rules, err := h.service.ListActiveRules(r.Context(), tenantUUID)
+// SensorActiveRules returns the handler for GET /api/v1/agent/suppressions:
+// the active suppression rules of the authenticated sensor's tenant, in the
+// {rules, count} shape the SDK's security gate parses. It must be mounted
+// behind IngestHandler.AuthenticateSource. The tenant comes only from the
+// sensor's identity, never from the request; a platform sensor (no tenant) is
+// refused with 403. When the suppressions module is disabled for the tenant
+// (moduleEnabled returns false) the answer is an empty list rather than an
+// error, so a CI gate degrades to "nothing suppressed" instead of failing.
+// moduleEnabled may be nil (no module gating).
+//
+// Additive to sensor protocol v1 (RFC-023 §9.2): before it existed the SDK
+// called /api/v1/suppressions/active with the sensor key, which is a user
+// route, so every call was a 401 and the CI security gate never applied
+// suppressions.
+//
+// @Summary      Active suppression rules for the sensor's tenant
+// @Description  Approved, unexpired suppression rules of the authenticated sensor's tenant, for the sensor-side security gate. Empty when the suppressions module is disabled. Platform sensors (no tenant) get 403.
+// @Tags         Sensor
+// @Produce      json
+// @Success      200  {object}  SensorSuppressionsResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     ApiKeyAuth
+// @Router       /agent/suppressions [get]
+func (h *SuppressionHandler) SensorActiveRules(moduleEnabled func(ctx context.Context, tenantID string) bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		agt := SensorFromContext(r.Context())
+		if agt == nil {
+			apierror.Unauthorized(legacyv1.MsgNotAuthenticated).WriteJSON(w)
+			return
+		}
+		if !requireSensorTenant(w, agt) {
+			return
+		}
+		if moduleEnabled != nil && !moduleEnabled(r.Context(), agt.TenantID.String()) {
+			writeActiveRulesResponse(w, nil)
+			return
+		}
+		h.writeActiveRules(w, r, *agt.TenantID)
+	}
+}
+
+// SensorSuppressionRule is one rule in the active-rules list sensors read.
+type SensorSuppressionRule struct {
+	RuleID      string  `json:"rule_id,omitempty"`
+	ToolName    string  `json:"tool_name,omitempty"`
+	PathPattern string  `json:"path_pattern,omitempty"`
+	AssetID     *string `json:"asset_id,omitempty"`
+	ExpiresAt   *string `json:"expires_at,omitempty"`
+}
+
+// SensorSuppressionsResponse is the active-rules list: {"count": n, "rules": [...]}.
+type SensorSuppressionsResponse struct {
+	Count int                     `json:"count"`
+	Rules []SensorSuppressionRule `json:"rules"`
+}
+
+func (h *SuppressionHandler) writeActiveRules(w http.ResponseWriter, r *http.Request, tenantID shared.ID) {
+	rules, err := h.service.ListActiveRules(r.Context(), tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	writeActiveRulesResponse(w, rules)
+}
 
-	// Return simplified format for sensor consumption
-	type ActiveRuleResponse struct {
-		RuleID      string  `json:"rule_id,omitempty"`
-		ToolName    string  `json:"tool_name,omitempty"`
-		PathPattern string  `json:"path_pattern,omitempty"`
-		AssetID     *string `json:"asset_id,omitempty"`
-		ExpiresAt   *string `json:"expires_at,omitempty"`
-	}
-
-	response := make([]ActiveRuleResponse, len(rules))
+func writeActiveRulesResponse(w http.ResponseWriter, rules []*suppression.Rule) {
+	response := make([]SensorSuppressionRule, len(rules))
 	for i, rule := range rules {
-		resp := ActiveRuleResponse{
+		resp := SensorSuppressionRule{
 			RuleID:      rule.RuleID(),
 			ToolName:    rule.ToolName(),
 			PathPattern: rule.PathPattern(),
@@ -522,10 +579,7 @@ func (h *SuppressionHandler) ListActiveRules(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"rules": response,
-		"count": len(response),
-	})
+	_ = json.NewEncoder(w).Encode(SensorSuppressionsResponse{Count: len(response), Rules: response})
 }
 
 // handleServiceError converts service errors to HTTP responses.

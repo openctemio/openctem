@@ -2834,6 +2834,7 @@ definitions:
     - SERVICE_UNAVAILABLE
     - VALIDATION_FAILED
     - RATE_LIMIT_EXCEEDED
+    - UPSTREAM_ERROR
     - MFA_ENROLLMENT_REQUIRED
     type: string
     x-enum-varnames:
@@ -2848,6 +2849,7 @@ definitions:
     - CodeServiceUnavailable
     - CodeValidationFailed
     - CodeRateLimitExceeded
+    - CodeUpstreamError
     - CodeMFAEnrollmentRequired
   github_com_openctemio_api_pkg_apierror.Error:
     properties:
@@ -10183,6 +10185,28 @@ definitions:
       total:
         type: integer
     type: object
+  internal_infra_http_handler.SensorSuppressionRule:
+    properties:
+      asset_id:
+        type: string
+      expires_at:
+        type: string
+      path_pattern:
+        type: string
+      rule_id:
+        type: string
+      tool_name:
+        type: string
+    type: object
+  internal_infra_http_handler.SensorSuppressionsResponse:
+    properties:
+      count:
+        type: integer
+      rules:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.SensorSuppressionRule'
+        type: array
+    type: object
   internal_infra_http_handler.SessionsResponse:
     properties:
       sessions:
@@ -13434,6 +13458,31 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Update scan session
+      tags:
+      - Sensor
+  /agent/suppressions:
+    get:
+      description: Approved, unexpired suppression rules of the authenticated sensor's
+        tenant, for the sensor-side security gate. Empty when the suppressions module
+        is disabled. Platform sensors (no tenant) get 403.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.SensorSuppressionsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_api_pkg_apierror.Error'
+      security:
+      - ApiKeyAuth: []
+      summary: Active suppression rules for the sensor's tenant
       tags:
       - Sensor
   /agents:

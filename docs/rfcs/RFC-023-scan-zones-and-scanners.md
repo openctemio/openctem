@@ -341,6 +341,29 @@ Results pushed over v2 follow [RFC-026](RFC-026-sensor-results-ingest.md);
 a v2 report reaching a final state is one more wake-up reason for `wait`, so
 the sensor does not have to poll the report's status resource.
 
+
+### 9.2b Active suppression rules for the sensor (protocol v1 additive route)
+
+`GET /api/v1/agent/suppressions` (sensor API-key auth, `legacyv1.SuppressionsPath`)
+returns the approved, unexpired suppression rules of the sensor's tenant as
+`{"count": n, "rules": [{rule_id, tool_name, path_pattern, asset_id, expires_at}]}`,
+for the sensor-side security gate (`-fail-on`). Additive under C1: a new route,
+no existing route or shape changes.
+
+**Why.** sdk-go called the user route `GET /api/v1/suppressions/active` with the
+sensor key. That route sits behind JWT auth and `suppressions:read`, so every
+sensor got 401, the SDK swallowed it, and the CI gate never applied a
+suppression (found by the 2026-10 sensor connection matrix). Ingest applies
+suppressions server-side regardless; this route only lets the gate agree with
+the platform. Making the user route accept sensor keys was rejected: sensor
+keys work only under `/api/v1/agent/*` (C-2).
+
+**Contract.** Tenant from the sensor identity only; a platform sensor (no
+tenant) gets 403. When the suppressions module is disabled for the tenant the
+list is empty (200), so a gate degrades to "nothing suppressed". A server
+without the route answers 404; the SDK treats any failure as "no rules", as
+it always has.
+
 ### 9.3 Rollout
 
 | Step | Change | Breaks anything? |

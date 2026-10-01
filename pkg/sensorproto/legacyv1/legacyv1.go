@@ -38,6 +38,13 @@ const (
 	// HeartbeatPath is the v1 heartbeat. A disabled sensor that announced the
 	// doorbell feature may reach this one path, to be told to pause.
 	HeartbeatPath = "/api/v1/agent/heartbeat"
+	// SuppressionsPath lists the active suppression rules of the sensor's
+	// tenant for the sensor-side security gate. An ADDITIVE v1 route (RFC-023
+	// §9.2): the SDK used to call the user route /api/v1/suppressions/active
+	// with its sensor key, which always answered 401, so suppressions never
+	// reached the gate. A server without it answers 404; a sensor treats that
+	// like "no rules".
+	SuppressionsPath = "/api/v1/agent/suppressions"
 	// ingestJobsPath is where an async ingest job is polled (RFC-005).
 	ingestJobsPath = "/api/v1/agent/ingest/jobs/"
 )
