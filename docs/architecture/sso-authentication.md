@@ -38,6 +38,18 @@ Flow (`SSOService`):
    finds/creates the user, auto-provisions tenant membership (if enabled), and
    issues an OpenCTEM session.
 
+**Who SSO admits (RFC-025).** For an organization, SSO decides whether a person
+is admitted. Someone who is not yet a member is provisioned just-in-time only
+when the provider is active and auto-provisions, the email domain is a
+DNS-verified domain of the organization (no verifier or a lookup error
+refuses), the provider's allowed domains (if any) contain it, and the
+organization's `Security.AllowedDomains` (if any) contains it. This is checked
+before an account is created; a refused login gets a generic 403 and leaves no
+account behind. It does not depend on `AUTH_ALLOW_REGISTRATION` (which still
+governs the global social sign-in buttons). JIT members get the provider's
+`default_role` (`admin|member|viewer`, default **viewer**, set by the platform
+administrator); only the display name is re-synced on later logins.
+
 Security: outbound calls use `httpsec.SafeHTTPClient` (refuses loopback/RFC1918/
 link-local), Entra/Graph hosts are fixed strings, an email is required, and the
 email domain is checked against the provider's allow-list.
@@ -97,7 +109,7 @@ tenant's own `entra_id` provider suppresses the fallback entry.
 | `SSO_ENTRA_CLIENT_SECRET` | — | Client secret (plaintext; env is the trust boundary — no DB encryption). |
 | `SSO_ENTRA_TENANT_ID` | `common` | Entra **directory** id. `common` = multi-tenant Microsoft sign-in. |
 | `SSO_ENTRA_ALLOWED_DOMAINS` | _(empty = any)_ | CSV email-domain allow-list — important when `TENANT_ID=common`. |
-| `SSO_ENTRA_DEFAULT_ROLE` | `member` | Role granted to auto-provisioned users. |
+| `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | Role granted to auto-provisioned users (least privilege). |
 | `SSO_ENTRA_AUTO_PROVISION` | `true` | Create tenant membership on first login. |
 | `SSO_ENTRA_DISPLAY_NAME` | `Microsoft Entra ID` | Button label. |
 

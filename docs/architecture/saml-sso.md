@@ -46,10 +46,17 @@ is the shared tail for any externally-authenticated identity:
   invite / SCIM-provisioned user, so it can later set a password or be claimed);
 - **account-takeover guard** — a password-backed local account is **rejected**
   (a federated assertion must not log into someone's password account);
-- auto-provision tenant membership (when enabled; `owner` is coerced away);
+- a brand-new email is admitted only through just-in-time provisioning:
+  `auto_provision` on, the email domain DNS-verified for the organization, and
+  inside the organization's `Security.AllowedDomains` (RFC-025). Otherwise the
+  login is refused before any account is created; the membership gets
+  `default_role` (default `viewer`; `owner` is coerced to `viewer`);
 - issue the OpenCTEM session (reuses the SSO `createSession`).
 
-The SAML ACS (9e) calls this after validating the assertion. The crypto
+The SAML ACS (9e) calls this after validating the assertion. The ACS parses the
+posted form itself (`r.ParseForm`, body capped at 1 MB): crewjam reads
+`SAMLResponse` from `r.PostForm`, and before RFC-025 the form was never parsed,
+so no SAML sign-in could succeed. The crypto
 (XML-dsig signature verification) is handled by `github.com/crewjam/saml`, not
 hand-rolled.
 
