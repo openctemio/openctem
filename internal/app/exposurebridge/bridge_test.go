@@ -113,7 +113,7 @@ func newSecretFinding(t *testing.T, tenantID, assetID shared.ID) *vulnerability.
 		tenantID,
 		assetID,
 		vulnerability.FindingSourceSecret,
-		"gitleaks",
+		"betterleaks",
 		vulnerability.SeverityHigh,
 		"hardcoded AWS key",
 	)

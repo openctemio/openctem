@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/tenant"
+	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
 	"github.com/openctemio/api/pkg/sensorproto/legacyv1"
@@ -251,6 +252,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	report := input.Report
 	if report == nil {
 		return nil, shared.NewDomainError("INVALID_INPUT", "report is required", nil)
+	}
+	// One name per tool from here on: a sensor released before a tool was
+	// replaced still reports the old name (gitleaks -> betterleaks).
+	if report.Tool != nil {
+		report.Tool.Name = tooldom.CanonicalName(report.Tool.Name)
 	}
 
 	// Validate report limits
@@ -754,7 +760,7 @@ func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sens
 		return true
 	}
 	for _, t := range tools {
-		if strings.EqualFold(strings.TrimSpace(t), strings.TrimSpace(toolName)) {
+		if tooldom.SameTool(t, toolName) {
 			return true
 		}
 	}

@@ -27,7 +27,7 @@ import (
 
 func newTestSensor(t *testing.T) *Sensor {
 	t.Helper()
-	a, err := NewSensor(shared.NewID(), "probe", SensorTypeRunner, "", nil, []string{"gitleaks"}, ExecutionModeDaemon)
+	a, err := NewSensor(shared.NewID(), "probe", SensorTypeRunner, "", nil, []string{"betterleaks"}, ExecutionModeDaemon)
 	if err != nil {
 		t.Fatalf("NewSensor: %v", err)
 	}

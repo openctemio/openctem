@@ -114,7 +114,7 @@ func newZonedScanService(dir *fakeZoneDir, res tableResolver, excl valueExclusio
 		deps.stepRepo, &mockStepRunRepo{}, deps.commandRepo, &mockScannerTemplateRepo{}, &mockTemplateSourceRepo{},
 		deps.toolRepo, &mockTemplateSyncer{}, deps.sensorSelector, deps.secValidator, logger.NewNop(), opts...)
 	deps.toolRepo.tools["nuclei"] = &tool.Tool{ID: shared.NewID(), Name: "nuclei", IsActive: true, SupportedTargets: []string{"url", "domain", "ip"}}
-	deps.toolRepo.tools["gitleaks"] = &tool.Tool{ID: shared.NewID(), Name: "gitleaks", IsActive: true, SupportedTargets: []string{"file", "repository"}}
+	deps.toolRepo.tools["betterleaks"] = &tool.Tool{ID: shared.NewID(), Name: "betterleaks", IsActive: true, SupportedTargets: []string{"file", "repository"}}
 	return svc, deps
 }
 
@@ -437,9 +437,9 @@ func TestScanZones_NonNetworkToolNotRouted(t *testing.T) {
 	tenant := shared.NewID()
 	dc := zone(t, tenant, "dc", false, []shared.ID{shared.NewID()}, "10.1.0.0/16")
 	svc, deps := newZonedScanService(&fakeZoneDir{zones: []*scanzone.Zone{dc}}, nil, nil)
-	sc := singleScan(t, deps, tenant, "gitleaks", 1, nil, "proofrepo")
+	sc := singleScan(t, deps, tenant, "betterleaks", 1, nil, "proofrepo")
 	if _, err := trigger(t, svc, sc); err != nil {
-		t.Fatalf("gitleaks in a zoned tenant: %v", err)
+		t.Fatalf("betterleaks in a zoned tenant: %v", err)
 	}
 	for _, c := range deps.commandRepo.commands {
 		if c.ScanZoneID != nil {

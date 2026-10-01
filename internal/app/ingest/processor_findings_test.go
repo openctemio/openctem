@@ -1489,7 +1489,7 @@ func TestFindingProcessor_NoStampWhenVulnerabilityAbsent(t *testing.T) {
 
 func newSecretFindingForTest(t *testing.T) *vulnerability.Finding {
 	t.Helper()
-	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceSecret, "gitleaks", vulnerability.SeverityHigh, "hardcoded secret")
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceSecret, "betterleaks", vulnerability.SeverityHigh, "hardcoded secret")
 	require.NoError(t, err)
 	return f
 }

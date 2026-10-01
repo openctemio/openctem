@@ -1,5 +1,4 @@
-// Package gitleaks provides an adapter to convert Gitleaks JSON output to CTIS.
-package gitleaks
+package betterleaks
 
 import (
 	"context"
@@ -8,25 +7,28 @@ import (
 	"strings"
 
 	"github.com/openctemio/api/internal/infra/adapters/core"
+	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/ctis"
 )
 
-// Adapter converts Gitleaks JSON output to CTIS.
+// Adapter converts Betterleaks JSON reports to CTIS.
 type Adapter struct{}
 
-// NewAdapter creates a new Gitleaks adapter.
+// NewAdapter creates a new Betterleaks adapter.
 func NewAdapter() *Adapter {
 	return &Adapter{}
 }
 
 // Name returns the adapter name.
 func (a *Adapter) Name() string {
-	return "gitleaks"
+	return tooldom.NameBetterleaks
 }
 
 // InputFormats returns supported input formats.
 func (a *Adapter) InputFormats() []string {
-	return []string{"gitleaks", "json"}
+	// "gitleaks" is the report format betterleaks v1 kept, so reports
+	// named with the old format still convert.
+	return []string{"betterleaks", "gitleaks", "json"}
 }
 
 // OutputFormat returns the output format.
@@ -36,31 +38,31 @@ func (a *Adapter) OutputFormat() string {
 
 // CanConvert checks if the input can be converted.
 func (a *Adapter) CanConvert(input []byte) bool {
-	var findings []GitleaksFinding
+	var findings []Finding
 	if err := json.Unmarshal(input, &findings); err != nil {
 		return false
 	}
-	// Gitleaks output is a JSON array with RuleID and File fields
+	// The report is a JSON array with RuleID and File fields
 	if len(findings) == 0 {
 		return false
 	}
 	return findings[0].RuleID != "" && findings[0].File != ""
 }
 
-// Convert transforms Gitleaks JSON input to CTIS Report.
+// Convert transforms a Betterleaks JSON report to a CTIS Report.
 func (a *Adapter) Convert(ctx context.Context, input []byte, opts *core.AdapterOptions) (*ctis.Report, error) {
-	var findings []GitleaksFinding
+	var findings []Finding
 	if err := json.Unmarshal(input, &findings); err != nil {
-		return nil, fmt.Errorf("parse gitleaks: %w", err)
+		return nil, fmt.Errorf("parse betterleaks: %w", err)
 	}
 
 	report := ctis.NewReport()
 	report.Metadata.SourceType = "scanner"
 	report.Tool = &ctis.Tool{
-		Name:         "gitleaks",
-		Vendor:       "Gitleaks",
+		Name:         tooldom.NameBetterleaks,
+		Vendor:       "Betterleaks",
 		Capabilities: []string{"secret"},
-		InfoURL:      "https://github.com/gitleaks/gitleaks",
+		InfoURL:      "https://github.com/betterleaks/betterleaks",
 	}
 
 	if opts != nil && opts.Repository != "" {
@@ -79,13 +81,13 @@ func (a *Adapter) Convert(ctx context.Context, input []byte, opts *core.AdapterO
 	return report, nil
 }
 
-// convertFinding converts a Gitleaks finding to a CTIS finding.
-func (a *Adapter) convertFinding(gf GitleaksFinding, opts *core.AdapterOptions, idx int) *ctis.Finding {
+// convertFinding converts a report finding to a CTIS finding.
+func (a *Adapter) convertFinding(gf Finding, opts *core.AdapterOptions, idx int) *ctis.Finding {
 	finding := &ctis.Finding{
 		ID:       fmt.Sprintf("finding-%d", idx+1),
 		Type:     ctis.FindingTypeSecret,
 		Title:    gf.Description,
-		Severity: mapGitleaksSeverity(gf.RuleID),
+		Severity: mapSeverity(gf.RuleID),
 		RuleID:   gf.RuleID,
 	}
 
@@ -138,12 +140,12 @@ func (a *Adapter) convertFinding(gf GitleaksFinding, opts *core.AdapterOptions, 
 	}
 
 	// Tags
-	finding.Tags = []string{"gitleaks", "secret"}
+	finding.Tags = []string{tooldom.NameBetterleaks, "secret"}
 	if len(gf.Tags) > 0 {
 		finding.Tags = append(finding.Tags, gf.Tags...)
 	}
 
-	// Confidence is high for gitleaks (pattern-based detection)
+	// Confidence is high (pattern-based detection)
 	finding.Confidence = 85
 
 	// Filter by min severity
@@ -156,9 +158,9 @@ func (a *Adapter) convertFinding(gf GitleaksFinding, opts *core.AdapterOptions, 
 	return finding
 }
 
-// mapGitleaksSeverity maps Gitleaks rule IDs to severity.
-// Gitleaks does not provide severity in output, so we infer from rule type.
-func mapGitleaksSeverity(ruleID string) ctis.Severity {
+// mapSeverity maps rule IDs to severity.
+// The report carries no severity, so we infer it from the rule type.
+func mapSeverity(ruleID string) ctis.Severity {
 	id := strings.ToLower(ruleID)
 
 	// Critical: cloud provider credentials, private keys
@@ -272,7 +274,7 @@ func meetsMinSeverity(s, min ctis.Severity) bool {
 // Ensure Adapter implements core.Adapter
 var _ core.Adapter = (*Adapter)(nil)
 
-// ParseToCTIS is a convenience function to parse Gitleaks JSON to CTIS format.
+// ParseToCTIS is a convenience function to parse a Betterleaks JSON report to CTIS format.
 func ParseToCTIS(data []byte, opts *core.ParseOptions) (*ctis.Report, error) {
 	adapter := NewAdapter()
 

@@ -6,7 +6,7 @@ This document describes the API endpoints for managing platform-controlled suppr
 
 The Suppression API provides platform-controlled false positive management:
 
-- **Platform-controlled**: Rules are managed centrally, not via in-code ignore files (`.semgrepignore`, `.gitleaksignore`)
+- **Platform-controlled**: Rules are managed centrally, not via in-code ignore files (`.semgrepignore`, `.betterleaksignore`)
 - **Approval workflow**: New rules require approval before becoming active
 - **Audit trail**: All actions are logged for compliance
 - **Time-limited**: Rules can have expiration dates
@@ -97,7 +97,7 @@ Authorization: Bearer <access_token>
 | `description` | string | No | Detailed explanation |
 | `suppression_type` | string | Yes | Type: `false_positive`, `accepted_risk`, `wont_fix` |
 | `rule_id` | string | No* | Tool rule ID pattern (supports `*` wildcard suffix) |
-| `tool_name` | string | No | Tool name filter (e.g., `semgrep`, `gitleaks`) |
+| `tool_name` | string | No | Tool name filter (e.g., `semgrep`, `betterleaks`) |
 | `path_pattern` | string | No* | File path pattern (glob with `**` support) |
 | `asset_id` | string | No | Limit to specific asset UUID |
 | `expires_at` | string | No | ISO8601 expiration date |
@@ -287,8 +287,8 @@ Authorization: Bearer <access_token>
       "expires_at": "2025-06-01T00:00:00Z"
     },
     {
-      "rule_id": "gitleaks.generic-api-key",
-      "tool_name": "gitleaks",
+      "rule_id": "betterleaks.generic-api-key",
+      "tool_name": "betterleaks",
       "path_pattern": "**/*.example",
       "asset_id": "550e8400-e29b-41d4-a716-446655440000"
     }

@@ -414,7 +414,7 @@ func (s *Syncer) getExtensionsForTemplateType(templateType scannertemplate.Templ
 		return []string{".yaml", ".yml"}
 	case scannertemplate.TemplateTypeSemgrep:
 		return []string{".yaml", ".yml"}
-	case scannertemplate.TemplateTypeGitleaks:
+	case scannertemplate.TemplateTypeBetterleaks:
 		return []string{".toml"}
 	default:
 		return nil
@@ -427,8 +427,8 @@ func (s *Syncer) getValidator(templateType scannertemplate.TemplateType) Templat
 		return &NucleiValidator{}
 	case scannertemplate.TemplateTypeSemgrep:
 		return &SemgrepValidator{}
-	case scannertemplate.TemplateTypeGitleaks:
-		return &GitleaksValidator{}
+	case scannertemplate.TemplateTypeBetterleaks:
+		return &BetterleaksValidator{}
 	default:
 		return nil
 	}

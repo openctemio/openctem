@@ -109,7 +109,7 @@ This command automatically:
 - Installs `pip` (if on Ubuntu/Debian)
 - Installs `pre-commit` tool
 - Installs `Go` (if not present)
-- Installs `gitleaks` for secret detection
+- Installs `betterleaks` for secret detection
 - Installs `trivy` for vulnerability scanning
 - Installs `hadolint` for Dockerfile linting
 
@@ -119,8 +119,8 @@ This command automatically:
 |---------|-------------|
 | `make pre-commit-run` | Run all hooks on all files |
 | `make pre-commit-update` | Update hooks to latest versions |
-| `make security-scan` | Full security scan (gitleaks + gosec + trivy) |
-| `make gitleaks` | Run gitleaks only |
+| `make security-scan` | Full security scan (betterleaks + gosec + trivy) |
+| `make secrets` | Run betterleaks only |
 
 ## Tool Installation
 

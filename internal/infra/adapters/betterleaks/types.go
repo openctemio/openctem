@@ -1,8 +1,9 @@
-// Package gitleaks provides an adapter to convert Gitleaks JSON output to CTIS.
-package gitleaks
+// Package betterleaks provides an adapter to convert Betterleaks (v1) JSON
+// reports to CTIS. gitleaks reports have the same format and convert too.
+package betterleaks
 
-// GitleaksFinding represents a single Gitleaks finding.
-type GitleaksFinding struct {
+// Finding represents a single finding of a betterleaks/gitleaks JSON report.
+type Finding struct {
 	Description string   `json:"Description"`
 	StartLine   int      `json:"StartLine"`
 	EndLine     int      `json:"EndLine"`

@@ -182,13 +182,13 @@ func TestEnrichment_SecretDetectionPipeline(t *testing.T) {
 	assetID := shared.NewID()
 
 	// ==========================================================================
-	// Phase 1: Gitleaks detects AWS credential
+	// Phase 1: Betterleaks detects AWS credential
 	// ==========================================================================
 	finding, err := vulnerability.NewFinding(
 		tenantID,
 		assetID,
 		vulnerability.FindingSourceSecret,
-		"gitleaks",
+		"betterleaks",
 		vulnerability.SeverityCritical,
 		"AWS Access Key detected",
 	)
@@ -230,7 +230,7 @@ func TestEnrichment_SecretDetectionPipeline(t *testing.T) {
 		t.Error("SecretType should be preserved (FirstWins)")
 	}
 	if finding.SecretEntropy() == nil || *finding.SecretEntropy() != 4.5 {
-		t.Error("SecretEntropy should be preserved from Gitleaks (FirstWins)")
+		t.Error("SecretEntropy should be preserved from Betterleaks (FirstWins)")
 	}
 
 	// ==========================================================================

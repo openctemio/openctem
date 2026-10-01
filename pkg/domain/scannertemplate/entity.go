@@ -18,14 +18,14 @@ const (
 	TemplateTypeNuclei TemplateType = "nuclei"
 	// TemplateTypeSemgrep is for Semgrep SAST rules (YAML).
 	TemplateTypeSemgrep TemplateType = "semgrep"
-	// TemplateTypeGitleaks is for Gitleaks secret patterns (TOML).
-	TemplateTypeGitleaks TemplateType = "gitleaks"
+	// TemplateTypeBetterleaks is for Betterleaks secret rules (TOML, the gitleaks config format).
+	TemplateTypeBetterleaks TemplateType = "betterleaks"
 )
 
 // IsValid checks if the template type is valid.
 func (t TemplateType) IsValid() bool {
 	switch t {
-	case TemplateTypeNuclei, TemplateTypeSemgrep, TemplateTypeGitleaks:
+	case TemplateTypeNuclei, TemplateTypeSemgrep, TemplateTypeBetterleaks:
 		return true
 	}
 	return false
@@ -36,7 +36,7 @@ func (t TemplateType) FileExtension() string {
 	switch t {
 	case TemplateTypeNuclei, TemplateTypeSemgrep:
 		return ".yaml"
-	case TemplateTypeGitleaks:
+	case TemplateTypeBetterleaks:
 		return ".toml"
 	default:
 		return ""
@@ -48,7 +48,7 @@ func (t TemplateType) ContentType() string {
 	switch t {
 	case TemplateTypeNuclei, TemplateTypeSemgrep:
 		return "application/x-yaml"
-	case TemplateTypeGitleaks:
+	case TemplateTypeBetterleaks:
 		return "application/toml"
 	default:
 		return "application/octet-stream"
@@ -62,7 +62,7 @@ func (t TemplateType) MaxSize() int64 {
 		return 1 * 1024 * 1024 // 1MB
 	case TemplateTypeSemgrep:
 		return 512 * 1024 // 512KB
-	case TemplateTypeGitleaks:
+	case TemplateTypeBetterleaks:
 		return 256 * 1024 // 256KB
 	default:
 		return 256 * 1024
@@ -76,7 +76,7 @@ func (t TemplateType) MaxRules() int {
 		return 100
 	case TemplateTypeSemgrep:
 		return 500
-	case TemplateTypeGitleaks:
+	case TemplateTypeBetterleaks:
 		return 1000
 	default:
 		return 100
@@ -97,21 +97,21 @@ const (
 
 // TemplateQuota represents per-tenant template storage quotas.
 type TemplateQuota struct {
-	MaxTemplates         int   `json:"max_templates"`           // Max total templates
-	MaxTemplatesNuclei   int   `json:"max_templates_nuclei"`    // Max Nuclei templates
-	MaxTemplatesSemgrep  int   `json:"max_templates_semgrep"`   // Max Semgrep templates
-	MaxTemplatesGitleaks int   `json:"max_templates_gitleaks"`  // Max Gitleaks templates
-	MaxTotalStorageBytes int64 `json:"max_total_storage_bytes"` // Max total storage
+	MaxTemplates            int   `json:"max_templates"`             // Max total templates
+	MaxTemplatesNuclei      int   `json:"max_templates_nuclei"`      // Max Nuclei templates
+	MaxTemplatesSemgrep     int   `json:"max_templates_semgrep"`     // Max Semgrep templates
+	MaxTemplatesBetterleaks int   `json:"max_templates_betterleaks"` // Max Betterleaks templates
+	MaxTotalStorageBytes    int64 `json:"max_total_storage_bytes"`   // Max total storage
 }
 
 // DefaultQuota returns the default template quota.
 func DefaultQuota() TemplateQuota {
 	return TemplateQuota{
-		MaxTemplates:         DefaultMaxTemplatesPerTenant,
-		MaxTemplatesNuclei:   DefaultMaxTemplatesPerType,
-		MaxTemplatesSemgrep:  DefaultMaxTemplatesPerType,
-		MaxTemplatesGitleaks: DefaultMaxTemplatesPerType,
-		MaxTotalStorageBytes: DefaultMaxTotalStorageBytes,
+		MaxTemplates:            DefaultMaxTemplatesPerTenant,
+		MaxTemplatesNuclei:      DefaultMaxTemplatesPerType,
+		MaxTemplatesSemgrep:     DefaultMaxTemplatesPerType,
+		MaxTemplatesBetterleaks: DefaultMaxTemplatesPerType,
+		MaxTotalStorageBytes:    DefaultMaxTotalStorageBytes,
 	}
 }
 
@@ -122,8 +122,8 @@ func (q TemplateQuota) GetMaxForType(templateType TemplateType) int {
 		return q.MaxTemplatesNuclei
 	case TemplateTypeSemgrep:
 		return q.MaxTemplatesSemgrep
-	case TemplateTypeGitleaks:
-		return q.MaxTemplatesGitleaks
+	case TemplateTypeBetterleaks:
+		return q.MaxTemplatesBetterleaks
 	default:
 		return 0
 	}
@@ -131,11 +131,11 @@ func (q TemplateQuota) GetMaxForType(templateType TemplateType) int {
 
 // TemplateUsage represents current template usage for a tenant.
 type TemplateUsage struct {
-	TotalTemplates    int64 `json:"total_templates"`
-	NucleiTemplates   int64 `json:"nuclei_templates"`
-	SemgrepTemplates  int64 `json:"semgrep_templates"`
-	GitleaksTemplates int64 `json:"gitleaks_templates"`
-	TotalStorageBytes int64 `json:"total_storage_bytes"`
+	TotalTemplates       int64 `json:"total_templates"`
+	NucleiTemplates      int64 `json:"nuclei_templates"`
+	SemgrepTemplates     int64 `json:"semgrep_templates"`
+	BetterleaksTemplates int64 `json:"betterleaks_templates"`
+	TotalStorageBytes    int64 `json:"total_storage_bytes"`
 }
 
 // TemplateStatus represents the status of a template.
@@ -189,7 +189,7 @@ func (s SyncSource) IsValid() bool {
 	return false
 }
 
-// ScannerTemplate represents a custom scanner template (Nuclei, Semgrep, or Gitleaks).
+// ScannerTemplate represents a custom scanner template (Nuclei, Semgrep, or Betterleaks).
 type ScannerTemplate struct {
 	ID           shared.ID
 	TenantID     shared.ID

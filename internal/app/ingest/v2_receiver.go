@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/openctemio/api/pkg/domain/command"
@@ -20,6 +19,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/ingestreport"
 	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/api/pkg/logger"
 	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
@@ -207,10 +207,13 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	if err != nil {
 		return nil, err
 	}
+	// Canonical before the checks and the header digest, so every segment
+	// of a report, and ingest_reports.tool_name, carry one name.
+	report.Tool.Name = tooldom.CanonicalName(report.Tool.Name)
 	if !SensorDeclaresTool(t.Sensor.Tools, report.Tool.Name) {
 		return nil, problem(protov2.ProblemToolNotPermitted)
 	}
-	if ct := commandTool(cmd); ct != "" && !strings.EqualFold(ct, strings.TrimSpace(report.Tool.Name)) {
+	if ct := commandTool(cmd); ct != "" && !tooldom.SameTool(ct, report.Tool.Name) {
 		return nil, problem(protov2.ProblemToolNotPermitted)
 	}
 	header, headerDigest, err := V2HeaderOf(report)

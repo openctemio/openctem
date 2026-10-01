@@ -6163,7 +6163,7 @@ definitions:
         enum:
         - nuclei
         - semgrep
-        - gitleaks
+        - betterleaks
         type: string
     required:
     - content
@@ -6291,7 +6291,7 @@ definitions:
         enum:
         - nuclei
         - semgrep
-        - gitleaks
+        - betterleaks
         type: string
     required:
     - name
@@ -10385,7 +10385,7 @@ definitions:
     properties:
       max_templates:
         type: integer
-      max_templates_gitleaks:
+      max_templates_betterleaks:
         type: integer
       max_templates_nuclei:
         type: integer
@@ -10443,7 +10443,7 @@ definitions:
     type: object
   internal_infra_http_handler.TemplateUsageData:
     properties:
-      gitleaks_templates:
+      betterleaks_templates:
         type: integer
       nuclei_templates:
         type: integer
@@ -11733,7 +11733,7 @@ definitions:
         enum:
         - nuclei
         - semgrep
-        - gitleaks
+        - betterleaks
         type: string
     required:
     - content
@@ -22510,7 +22510,7 @@ paths:
       - application/json
       description: Get a paginated list of scanner templates for the current tenant
       parameters:
-      - description: Filter by template type (nuclei, semgrep, gitleaks)
+      - description: Filter by template type (nuclei, semgrep, betterleaks)
         in: query
         name: template_type
         type: string
@@ -22559,7 +22559,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new custom scanner template (Nuclei, Semgrep, or Gitleaks)
+      description: Create a new custom scanner template (Nuclei, Semgrep, or Betterleaks)
       parameters:
       - description: Template data
         in: body
@@ -26366,7 +26366,7 @@ paths:
         in: query
         name: source_type
         type: string
-      - description: Filter by template type (nuclei, semgrep, gitleaks)
+      - description: Filter by template type (nuclei, semgrep, betterleaks)
         in: query
         name: template_type
         type: string

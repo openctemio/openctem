@@ -3,7 +3,7 @@
 // event store), so they show up in the Exposures view continuously — realizing
 // the CTEM Discovery "exposure ≠ vulnerability" principle. Two projections:
 //
-//   - secret-scan findings (gitleaks, trufflehog, ...) → credential_leaked
+//   - secret-scan findings (betterleaks, trufflehog, ...) → credential_leaked
 //     events, so a hardcoded secret is tracked continuously, not only when a
 //     breach dump is manually imported;
 //   - misconfiguration findings (IaC/CSPM: Checkov, Tfsec, cloud posture) →
@@ -128,7 +128,7 @@ func (b *Bridge) ApplyBatch(ctx context.Context, tenantID shared.ID, findings []
 }
 
 // isSecretFinding reports whether a finding originates from a hardcoded/secret
-// scan. It matches on either the source enum (gitleaks/trufflehog map to
+// scan. It matches on either the source enum (betterleaks/trufflehog map to
 // FindingSourceSecret) or the finding-type discriminator, so a secret finding
 // is caught even if only one of the two is set.
 func isSecretFinding(f *vulnerability.Finding) bool {

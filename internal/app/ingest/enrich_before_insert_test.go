@@ -43,7 +43,7 @@ func makeEnrichFindings(t *testing.T, n int) []*vulnerability.Finding {
 	for i := 0; i < n; i++ {
 		f, err := vulnerability.NewFinding(
 			shared.NewID(), shared.NewID(),
-			vulnerability.FindingSourceSecret, "gitleaks",
+			vulnerability.FindingSourceSecret, "betterleaks",
 			vulnerability.SeverityHigh, "test finding",
 		)
 		if err != nil {

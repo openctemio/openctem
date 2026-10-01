@@ -40,7 +40,7 @@ type CreateScannerTemplateInput struct {
 	TenantID     string   `json:"tenant_id" validate:"required,uuid"`
 	UserID       string   `json:"user_id" validate:"omitempty,uuid"`
 	Name         string   `json:"name" validate:"required,min=1,max=255"`
-	TemplateType string   `json:"template_type" validate:"required,oneof=nuclei semgrep gitleaks"`
+	TemplateType string   `json:"template_type" validate:"required,oneof=nuclei semgrep betterleaks"`
 	Description  string   `json:"description" validate:"max=1000"`
 	Content      string   `json:"content" validate:"required"` // Base64 encoded
 	Tags         []string `json:"tags" validate:"max=20,dive,max=50"`
@@ -147,7 +147,7 @@ func (s *ScannerTemplateService) GetTemplate(ctx context.Context, tenantID, temp
 // ListScannerTemplatesInput represents the input for listing scanner templates.
 type ListScannerTemplatesInput struct {
 	TenantID     string   `json:"tenant_id" validate:"required,uuid"`
-	TemplateType *string  `json:"template_type" validate:"omitempty,oneof=nuclei semgrep gitleaks"`
+	TemplateType *string  `json:"template_type" validate:"omitempty,oneof=nuclei semgrep betterleaks"`
 	Status       *string  `json:"status" validate:"omitempty,oneof=active pending_review deprecated revoked"`
 	Tags         []string `json:"tags"`
 	Search       string   `json:"search" validate:"max=255"`
@@ -274,7 +274,7 @@ func (s *ScannerTemplateService) DeleteTemplate(ctx context.Context, tenantID, t
 
 // ValidateTemplateInput represents the input for validating template content.
 type ValidateTemplateInput struct {
-	TemplateType string `json:"template_type" validate:"required,oneof=nuclei semgrep gitleaks"`
+	TemplateType string `json:"template_type" validate:"required,oneof=nuclei semgrep betterleaks"`
 	Content      string `json:"content" validate:"required"` // Base64 encoded
 }
 
@@ -413,8 +413,8 @@ func (s *ScannerTemplateService) checkQuota(ctx context.Context, tenantID shared
 		currentCount = usage.NucleiTemplates
 	case scannertemplate.TemplateTypeSemgrep:
 		currentCount = usage.SemgrepTemplates
-	case scannertemplate.TemplateTypeGitleaks:
-		currentCount = usage.GitleaksTemplates
+	case scannertemplate.TemplateTypeBetterleaks:
+		currentCount = usage.BetterleaksTemplates
 	}
 
 	if currentCount >= int64(maxForType) {

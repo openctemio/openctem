@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/api/pkg/domain/ingestreport"
 	"github.com/openctemio/api/pkg/domain/sensor"
 	"github.com/openctemio/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
 )
 
@@ -253,7 +254,7 @@ func SensorDeclaresTool(tools []string, toolName string) bool {
 		return false
 	}
 	for _, t := range tools {
-		if strings.EqualFold(strings.TrimSpace(t), name) {
+		if tooldom.SameTool(t, name) {
 			return true
 		}
 	}

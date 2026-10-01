@@ -161,13 +161,13 @@ func TestMatchesConditions(t *testing.T) {
 	})
 
 	t.Run("FindingType_Match", func(t *testing.T) {
-		finding := newTestFinding(t, vulnerability.SeverityHigh, "gitleaks", vulnerability.FindingSourceSecret, vulnerability.FindingTypeSecret)
+		finding := newTestFinding(t, vulnerability.SeverityHigh, "betterleaks", vulnerability.FindingSourceSecret, vulnerability.FindingTypeSecret)
 		conds := accesscontrol.AssignmentConditions{FindingType: []string{"secret"}}
 		assert.True(t, engine.MatchesConditions(conds, finding))
 	})
 
 	t.Run("FindingType_NoMatch", func(t *testing.T) {
-		finding := newTestFinding(t, vulnerability.SeverityHigh, "gitleaks", vulnerability.FindingSourceSecret, vulnerability.FindingTypeSecret)
+		finding := newTestFinding(t, vulnerability.SeverityHigh, "betterleaks", vulnerability.FindingSourceSecret, vulnerability.FindingTypeSecret)
 		conds := accesscontrol.AssignmentConditions{FindingType: []string{"vulnerability", "misconfiguration"}}
 		assert.False(t, engine.MatchesConditions(conds, finding))
 	})

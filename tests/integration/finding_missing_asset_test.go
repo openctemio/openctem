@@ -383,7 +383,7 @@ func TestFindingProcessing_AutoAssetCreation(t *testing.T) {
 				Timestamp: time.Now(),
 				// No Scope
 			},
-			Tool:   &ctis.Tool{Name: "gitleaks"},
+			Tool:   &ctis.Tool{Name: "betterleaks"},
 			Assets: []ctis.Asset{},
 			Findings: []ctis.Finding{
 				{
@@ -395,7 +395,7 @@ func TestFindingProcessing_AutoAssetCreation(t *testing.T) {
 		}
 
 		// Verify report fields
-		if report.Version != "1.0.0" || report.Tool.Name != "gitleaks" {
+		if report.Version != "1.0.0" || report.Tool.Name != "betterleaks" {
 			t.Error("Test setup incorrect")
 		}
 

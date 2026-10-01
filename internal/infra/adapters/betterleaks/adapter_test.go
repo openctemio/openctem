@@ -1,4 +1,4 @@
-package gitleaks
+package betterleaks
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/openctemio/ctis"
 )
 
-var sampleGitleaksJSON = []byte(`[
+var sampleReportJSON = []byte(`[
   {
     "Description": "AWS Access Key",
     "StartLine": 10,
@@ -75,15 +75,15 @@ var sampleGitleaksJSON = []byte(`[
 
 func TestAdapterName(t *testing.T) {
 	a := NewAdapter()
-	if a.Name() != "gitleaks" {
-		t.Errorf("expected name 'gitleaks', got %q", a.Name())
+	if a.Name() != "betterleaks" {
+		t.Errorf("expected name 'betterleaks', got %q", a.Name())
 	}
 }
 
 func TestAdapterInputFormats(t *testing.T) {
 	a := NewAdapter()
 	formats := a.InputFormats()
-	if len(formats) != 2 || formats[0] != "gitleaks" || formats[1] != "json" {
+	if len(formats) != 3 || formats[0] != "betterleaks" || formats[1] != "gitleaks" || formats[2] != "json" {
 		t.Errorf("unexpected input formats: %v", formats)
 	}
 }
@@ -98,8 +98,8 @@ func TestAdapterOutputFormat(t *testing.T) {
 func TestCanConvert(t *testing.T) {
 	a := NewAdapter()
 
-	if !a.CanConvert(sampleGitleaksJSON) {
-		t.Error("expected CanConvert to return true for valid Gitleaks JSON")
+	if !a.CanConvert(sampleReportJSON) {
+		t.Error("expected CanConvert to return true for a valid report")
 	}
 
 	if a.CanConvert([]byte(`[]`)) {
@@ -117,7 +117,7 @@ func TestCanConvert(t *testing.T) {
 
 func TestConvert(t *testing.T) {
 	a := NewAdapter()
-	report, err := a.Convert(context.Background(), sampleGitleaksJSON, nil)
+	report, err := a.Convert(context.Background(), sampleReportJSON, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,8 +130,8 @@ func TestConvert(t *testing.T) {
 		t.Fatal("expected non-nil tool")
 	}
 
-	if report.Tool.Name != "gitleaks" {
-		t.Errorf("expected tool name 'gitleaks', got %q", report.Tool.Name)
+	if report.Tool.Name != "betterleaks" {
+		t.Errorf("expected tool name 'betterleaks', got %q", report.Tool.Name)
 	}
 
 	if len(report.Findings) != 4 {
@@ -141,7 +141,7 @@ func TestConvert(t *testing.T) {
 
 func TestConvertAWSKey(t *testing.T) {
 	a := NewAdapter()
-	report, err := a.Convert(context.Background(), sampleGitleaksJSON, nil)
+	report, err := a.Convert(context.Background(), sampleReportJSON, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestConvertAWSKey(t *testing.T) {
 		t.Error("expected non-empty masked value")
 	}
 	if f.Fingerprint != "config.yml:aws-access-key-id:10" {
-		t.Errorf("expected fingerprint from gitleaks, got %q", f.Fingerprint)
+		t.Errorf("expected fingerprint from the report, got %q", f.Fingerprint)
 	}
 	if f.Author != "dev@example.com" {
 		t.Errorf("expected author 'dev@example.com', got %q", f.Author)
@@ -199,7 +199,7 @@ func TestConvertAWSKey(t *testing.T) {
 
 func TestConvertGitHubPAT(t *testing.T) {
 	a := NewAdapter()
-	report, err := a.Convert(context.Background(), sampleGitleaksJSON, nil)
+	report, err := a.Convert(context.Background(), sampleReportJSON, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestConvertGitHubPAT(t *testing.T) {
 	if f.Secret.Service != "github" {
 		t.Errorf("expected service 'github', got %q", f.Secret.Service)
 	}
-	// Tags from gitleaks
+	// Tags from the report
 	foundGithubTag := false
 	for _, tag := range f.Tags {
 		if tag == "github" {
@@ -223,13 +223,13 @@ func TestConvertGitHubPAT(t *testing.T) {
 		}
 	}
 	if !foundGithubTag {
-		t.Errorf("expected 'github' tag from gitleaks Tags field, got %v", f.Tags)
+		t.Errorf("expected 'github' tag from the report's Tags field, got %v", f.Tags)
 	}
 }
 
 func TestConvertStripeKey(t *testing.T) {
 	a := NewAdapter()
-	report, err := a.Convert(context.Background(), sampleGitleaksJSON, nil)
+	report, err := a.Convert(context.Background(), sampleReportJSON, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestConvertWithMinSeverity(t *testing.T) {
 	opts := &core.AdapterOptions{
 		MinSeverity: "critical",
 	}
-	report, err := a.Convert(context.Background(), sampleGitleaksJSON, opts)
+	report, err := a.Convert(context.Background(), sampleReportJSON, opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestConvertWithRepository(t *testing.T) {
 	opts := &core.AdapterOptions{
 		Repository: "github.com/org/repo",
 	}
-	report, err := a.Convert(context.Background(), sampleGitleaksJSON, opts)
+	report, err := a.Convert(context.Background(), sampleReportJSON, opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestMaskSecret(t *testing.T) {
 	}
 }
 
-func TestMapGitleaksSeverity(t *testing.T) {
+func TestMapSeverity(t *testing.T) {
 	tests := []struct {
 		ruleID   string
 		expected ctis.Severity
@@ -321,9 +321,9 @@ func TestMapGitleaksSeverity(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := mapGitleaksSeverity(tt.ruleID)
+		result := mapSeverity(tt.ruleID)
 		if result != tt.expected {
-			t.Errorf("mapGitleaksSeverity(%q) = %q, want %q", tt.ruleID, result, tt.expected)
+			t.Errorf("mapSeverity(%q) = %q, want %q", tt.ruleID, result, tt.expected)
 		}
 	}
 }
@@ -348,7 +348,7 @@ func TestRuleIDToService(t *testing.T) {
 }
 
 func TestParseToCTIS(t *testing.T) {
-	report, err := ParseToCTIS(sampleGitleaksJSON, &core.ParseOptions{
+	report, err := ParseToCTIS(sampleReportJSON, &core.ParseOptions{
 		AssetValue: "github.com/org/repo",
 	})
 	if err != nil {

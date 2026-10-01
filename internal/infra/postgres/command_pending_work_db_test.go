@@ -74,7 +74,7 @@ func TestPendingWorkForSensor_MatchesThePoll(t *testing.T) {
 	}
 	s1 := seedZoneSensor(ctx, t, sqlDB, &tenant, "s1", zoneSensorOpts{tools: []string{"nuclei"}})
 	s2 := seedZoneSensor(ctx, t, sqlDB, &tenant, "s2", zoneSensorOpts{tools: []string{"nuclei"}})
-	s1noTool := seedZoneSensor(ctx, t, sqlDB, &tenant, "s1-no-nuclei", zoneSensorOpts{tools: []string{"gitleaks"}})
+	s1noTool := seedZoneSensor(ctx, t, sqlDB, &tenant, "s1-no-nuclei", zoneSensorOpts{tools: []string{"betterleaks"}})
 	outsider := seedZoneSensor(ctx, t, sqlDB, &tenant, "no-zone", zoneSensorOpts{tools: []string{"nuclei"}})
 	for _, a := range []struct{ z, s shared.ID }{{zoneA.ID, s1}, {zoneA.ID, s1noTool}, {zoneB.ID, s2}} {
 		if err := zones.AssignSensor(ctx, tenant, a.z, a.s, nil); err != nil {

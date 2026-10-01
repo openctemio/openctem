@@ -7,14 +7,15 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/openctemio/api/internal/infra/adapters/betterleaks"
 	"github.com/openctemio/api/internal/infra/adapters/core"
-	"github.com/openctemio/api/internal/infra/adapters/gitleaks"
 	"github.com/openctemio/api/internal/infra/adapters/nuclei"
 	"github.com/openctemio/api/internal/infra/adapters/recon"
 	"github.com/openctemio/api/internal/infra/adapters/sarif"
 	"github.com/openctemio/api/internal/infra/adapters/semgrep"
 	"github.com/openctemio/api/internal/infra/adapters/trivy"
 	"github.com/openctemio/api/internal/infra/adapters/vuls"
+	tooldom "github.com/openctemio/api/pkg/domain/tool"
 	"github.com/openctemio/ctis"
 )
 
@@ -38,7 +39,7 @@ func NewRegistry() *Registry {
 	r.Register(trivy.NewAdapter())
 	r.Register(nuclei.NewAdapter())
 	r.Register(semgrep.NewAdapter())
-	r.Register(gitleaks.NewAdapter())
+	r.Register(betterleaks.NewAdapter())
 	r.Register(vuls.NewAdapter())
 	r.Register(sarif.NewAdapter())
 	// Recon adapter — subdomain/DNS/port/http_probe/url_crawl outputs
@@ -55,11 +56,12 @@ func (r *Registry) Register(adapter core.Adapter) {
 	r.adapters[adapter.Name()] = adapter
 }
 
-// Get returns an adapter by name.
+// Get returns an adapter by name. A retired scanner name (scanner_type
+// "gitleaks" from an older client) finds its replacement's adapter.
 func (r *Registry) Get(name string) (core.Adapter, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	a, ok := r.adapters[name]
+	a, ok := r.adapters[tooldom.CanonicalName(name)]
 	return a, ok
 }
 

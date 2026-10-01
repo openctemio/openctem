@@ -44,7 +44,7 @@ type ScanOptions struct {
 	Env        map[string]string `yaml:"env" json:"env"`
 
 	// Custom templates directory (written from embedded templates)
-	// Used by Nuclei (-t), Semgrep (--config), Gitleaks (--config)
+	// Used by Nuclei (-t), Semgrep (--config), Betterleaks (--config)
 	CustomTemplateDir string `yaml:"custom_template_dir" json:"custom_template_dir"`
 
 	// Asset information for linking findings
@@ -197,7 +197,7 @@ type VulnerabilityMetadata struct {
 
 // SecretScanner detects secrets and credentials in code.
 type SecretScanner interface {
-	// Name returns the scanner name (e.g., "gitleaks", "trufflehog")
+	// Name returns the scanner name (e.g., "betterleaks", "trufflehog")
 	Name() string
 
 	// Type returns the scanner type

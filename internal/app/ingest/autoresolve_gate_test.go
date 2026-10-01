@@ -70,14 +70,32 @@ func TestSensorMayAutoResolveTool(t *testing.T) {
 // treating it as a legacy (unrestricted) sensor.
 func TestSensorMayAutoResolveTool_AsyncJobSensorLoadsDeclaredTools(t *testing.T) {
 	tid := shared.NewID()
-	stored := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Tools: []string{"gitleaks"}}
+	stored := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Tools: []string{"betterleaks"}}
 	svc := gateService(stored)
 	jobSensor := &sensor.Sensor{ID: stored.ID, TenantID: &tid, Status: sensor.SensorStatusActive}
 
 	if svc.sensorMayAutoResolveTool(context.Background(), jobSensor, "semgrep") {
 		t.Fatal("async-ingested report for an undeclared tool must not auto-resolve")
 	}
-	if !svc.sensorMayAutoResolveTool(context.Background(), jobSensor, "gitleaks") {
+	if !svc.sensorMayAutoResolveTool(context.Background(), jobSensor, "betterleaks") {
 		t.Fatal("async-ingested report for a declared tool must auto-resolve")
+	}
+}
+
+// A sensor whose admin-assigned tools still say "gitleaks" (or an old sensor
+// reporting "gitleaks") and a report Ingest has mapped to "betterleaks" name
+// the same tool: auto-resolve and the v2 tool check must not reject it.
+func TestSensorToolChecksMatchAcrossTheGitleaksRename(t *testing.T) {
+	tid := shared.NewID()
+	old := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Tools: []string{"gitleaks"}}
+	svc := gateService(old)
+	if !svc.sensorMayAutoResolveTool(context.Background(), old, "betterleaks") {
+		t.Fatal("sensor declaring gitleaks must auto-resolve its betterleaks-mapped report")
+	}
+	if !SensorDeclaresTool([]string{"gitleaks"}, "betterleaks") || !SensorDeclaresTool([]string{"betterleaks"}, "gitleaks") {
+		t.Fatal("SensorDeclaresTool must treat gitleaks and betterleaks as one tool")
+	}
+	if SensorDeclaresTool([]string{"gitleaks"}, "semgrep") {
+		t.Fatal("the rename must not widen what a sensor may report")
 	}
 }

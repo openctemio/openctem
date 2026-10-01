@@ -272,7 +272,7 @@ func TestRule_Matches(t *testing.T) {
 		{
 			name:   "wildcard rule ID no match",
 			ruleID: "semgrep.*",
-			match:  FindingMatch{RuleID: "gitleaks.secret"},
+			match:  FindingMatch{RuleID: "betterleaks.secret"},
 			want:   false,
 		},
 		{
@@ -310,7 +310,7 @@ func TestRule_Matches(t *testing.T) {
 			name:     "combined criteria - partial match fails",
 			ruleID:   "sql-*",
 			toolName: "semgrep",
-			match:    FindingMatch{RuleID: "sql-injection", ToolName: "gitleaks"},
+			match:    FindingMatch{RuleID: "sql-injection", ToolName: "betterleaks"},
 			want:     false,
 		},
 	}
@@ -378,5 +378,19 @@ func TestRuleStatus_IsValid(t *testing.T) {
 				t.Errorf("IsValid() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// A rule written for the retired tool name is stored under the name findings
+// carry, so it keeps matching after the gitleaks -> betterleaks switch.
+func TestRule_SetToolNameStoresCanonicalName(t *testing.T) {
+	r := &Rule{}
+	r.SetToolName("gitleaks")
+	if r.ToolName() != "betterleaks" {
+		t.Fatalf("tool name = %q, want betterleaks", r.ToolName())
+	}
+	r.SetToolName("semgrep")
+	if r.ToolName() != "semgrep" {
+		t.Fatalf("tool name = %q, want semgrep", r.ToolName())
 	}
 }

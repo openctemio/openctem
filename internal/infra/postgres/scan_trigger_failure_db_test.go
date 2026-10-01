@@ -65,7 +65,7 @@ func TestRecordTriggerFailure_RecordsFailureWithoutTouchingCounters(t *testing.T
 	// don't move.
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO scans (id, tenant_id, name, scan_type, scanner_name, total_runs, successful_runs, failed_runs)
-		 VALUES ($1, $2, 'nightly probe', 'single', 'gitleaks', 5, 4, 1)`,
+		 VALUES ($1, $2, 'nightly probe', 'single', 'betterleaks', 5, 4, 1)`,
 		scanID.String(), tenantID.String()); err != nil {
 		t.Fatalf("seed scan: %v", err)
 	}

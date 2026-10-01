@@ -1,8 +1,8 @@
-# Gitleaks configuration for OpenCTEM API
-# https://github.com/gitleaks/gitleaks
+# Betterleaks configuration for OpenCTEM API (gitleaks-compatible format)
+# https://github.com/betterleaks/betterleaks/blob/main/docs/config.md
 
 [extend]
-# Use the default gitleaks config as a base
+# Use the default rules as a base
 useDefault = true
 
 [allowlist]

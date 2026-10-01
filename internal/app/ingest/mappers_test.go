@@ -166,7 +166,7 @@ func TestDetectFindingSource_FromToolName(t *testing.T) {
 		{"dependabot", vulnerability.FindingSourceSCA},
 		{"nuclei", vulnerability.FindingSourceDAST},
 		{"zap", vulnerability.FindingSourceDAST},
-		{"gitleaks", vulnerability.FindingSourceSecret},
+		{"betterleaks", vulnerability.FindingSourceSecret},
 		{"trufflehog", vulnerability.FindingSourceSecret},
 		{"trivy", vulnerability.FindingSourceContainer},
 		{"grype", vulnerability.FindingSourceContainer},

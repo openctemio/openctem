@@ -101,7 +101,7 @@ func TestIngestFinding_PartialData_SecretFields(t *testing.T) {
 	// Verification tool can enrich later with valid/revoked status
 
 	t.Run("BasicSecretDetection", func(t *testing.T) {
-		// Gitleaks-style detection: type and masked value only
+		// Betterleaks-style detection: type and masked value only
 		ctisFinding := &ctis.Finding{
 			Type:     ctis.FindingTypeSecret,
 			Title:    "AWS Access Key Detected",
@@ -190,7 +190,7 @@ func TestIngestFinding_PartialData_SecretFields(t *testing.T) {
 			tenantID,
 			assetID,
 			vulnerability.FindingSourceSecret,
-			"gitleaks",
+			"betterleaks",
 			vulnerability.SeverityHigh,
 			"AWS Access Key Detected",
 		)

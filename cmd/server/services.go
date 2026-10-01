@@ -1519,7 +1519,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetRemediationKeyApplier(remediation.NewKeyApplier(repos.FindingRemediationKey, log))
 
 	// Continuous leaked-credential discovery: promote secret-scan findings
-	// (gitleaks/trufflehog → FindingSourceSecret) into the exposure store so a
+	// (betterleaks/trufflehog → FindingSourceSecret) into the exposure store so a
 	// hardcoded secret shows up in the Credentials/Exposures view without a
 	// manual import. Labeled discovery_source=secret_scan so it stays distinct
 	// from an external breach import. Reuses the same exposure repo + state

@@ -99,7 +99,7 @@ func connectedGitHubIntegration(t *testing.T, tenantID shared.ID) *integration.I
 func newTestFinding(t *testing.T, src vulnerability.FindingSource) *vulnerability.Finding {
 	t.Helper()
 	f, err := vulnerability.NewFinding(
-		shared.NewID(), shared.NewID(), src, "gitleaks",
+		shared.NewID(), shared.NewID(), src, "betterleaks",
 		vulnerability.SeverityHigh, "msg",
 	)
 	if err != nil {

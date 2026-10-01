@@ -391,7 +391,7 @@ do_request "POST" "/api/v1/agent/heartbeat" "{
     \"version\": \"1.0.0-e2e-test\",
     \"hostname\": \"e2e-test-host\",
     \"message\": \"E2E test heartbeat\",
-    \"scanners\": [\"semgrep\", \"nuclei\", \"gitleaks\"],
+    \"scanners\": [\"semgrep\", \"nuclei\", \"betterleaks\"],
     \"uptime_seconds\": 3600,
     \"cpu_percent\": 25.5,
     \"memory_percent\": 45.2,
@@ -478,7 +478,7 @@ CTIS_REPORT=$(cat <<EOF
             "description": "Hardcoded AWS access key found in configuration file",
             "severity": "high",
             "confidence": 90,
-            "rule_id": "gitleaks.aws-access-key",
+            "rule_id": "betterleaks.aws-access-key",
             "asset_ref": "asset-repo-1",
             "location": {
                 "path": "config/aws.yaml",
