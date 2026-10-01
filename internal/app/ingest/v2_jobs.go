@@ -1,0 +1,162 @@
+package ingest
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/openctemio/api/pkg/domain/ingestjob"
+	"github.com/openctemio/api/pkg/domain/ingestreport"
+	"github.com/openctemio/api/pkg/logger"
+	protov2 "github.com/openctemio/api/pkg/sensorproto/v2"
+)
+
+// V2JobProcessor processes the protocol v2 jobs of the RFC-005 queue: one job
+// per segment and one per commit. A segment job ingests its segment and
+// records the outcome under its segment number; whichever job sees the
+// committed report complete (the last segment or the commit itself) claims
+// the finalization, which runs exactly once.
+type V2JobProcessor struct {
+	service *Service
+	reports ingestreport.Repository
+	jobs    ingestjob.V2Repository
+	limits  protov2.Limits
+	guard   BlindingGuard
+	logger  *logger.Logger
+	now     func() time.Time
+}
+
+// NewV2JobProcessor wires the v2 job processor.
+func NewV2JobProcessor(svc *Service, reports ingestreport.Repository, jobs ingestjob.V2Repository, limits protov2.Limits, guard BlindingGuard, log *logger.Logger) *V2JobProcessor {
+	if log == nil {
+		log = logger.NewNop()
+	}
+	return &V2JobProcessor{service: svc, reports: reports, jobs: jobs, limits: limits, guard: guard,
+		logger: log.With("component", "ingest-v2"), now: time.Now}
+}
+
+// v2JobResult is stored on a completed v2 job.
+type v2JobResult struct {
+	ReportID string `json:"report_id"`
+	Segment  *int   `json:"segment,omitempty"`
+	Accepted int    `json:"accepted_findings"`
+	Rejected int    `json:"rejected_findings"`
+}
+
+// Process runs one v2 job. A returned error is retried by the worker; on the
+// last attempt the report is marked failed so the sensor sees it and may
+// re-send.
+func (p *V2JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte, error) {
+	seg := job.V2()
+	if seg == nil {
+		return nil, errors.New("v2 processor: job has no v2 binding")
+	}
+	rep, err := p.reports.GetByID(ctx, seg.ReportRef)
+	if err != nil {
+		return nil, fmt.Errorf("v2 processor: load report: %w", err)
+	}
+	result := v2JobResult{ReportID: rep.ReportID, Segment: seg.Seq}
+	if rep.State == protov2.StateCompleted {
+		// Finalized already (its payloads may be gone): a late retry of one
+		// of its jobs has nothing left to do.
+		return json.Marshal(result)
+	}
+
+	if !seg.IsCommit() {
+		r, err := p.processSegment(ctx, rep, job, *seg.Seq)
+		if err != nil {
+			p.failOnLastAttempt(ctx, job, rep)
+			return nil, err
+		}
+		result.Accepted, result.Rejected = r.AcceptedFindings, r.RejectedFindings
+	}
+	if err := p.finalize(ctx, rep); err != nil {
+		p.failOnLastAttempt(ctx, job, rep)
+		return nil, err
+	}
+	return json.Marshal(result)
+}
+
+func (p *V2JobProcessor) failOnLastAttempt(ctx context.Context, job *ingestjob.Job, rep *ingestreport.Report) {
+	if job.Attempts() < job.MaxAttempts() {
+		return
+	}
+	if err := p.reports.MarkFailed(ctx, rep.ID); err != nil {
+		p.logger.Error("v2: failed to mark report failed", "report_ref", rep.ID.String(), "error", err)
+	}
+}
+
+func (p *V2JobProcessor) provenance(rep *ingestreport.Report, seq int, job *ingestjob.Job) Provenance {
+	prov := Provenance{
+		TenantID: rep.TenantID, SensorID: rep.SensorID, SensorType: rep.SensorType,
+		CommandID: rep.CommandID, ScanZoneID: rep.ScanZoneID,
+		ReportRef: rep.ID, ReportID: rep.ReportID, SegmentSeq: seq, MediaType: rep.MediaType,
+	}
+	if job != nil && job.V2() != nil {
+		prov.ContentDigest = job.V2().ContentDigest
+	}
+	return prov
+}
+
+func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.Report, job *ingestjob.Job, seq int) (ingestreport.SegmentOutcome, error) {
+	report, err := ParseV2Report(job.Payload(), rep.ReportID, p.limits)
+	if err != nil {
+		// The payload was validated before it was accepted; failing now
+		// means it is unusable, and retrying will not change that. Record it
+		// as a rejected segment instead of failing the report.
+		p.logger.Error("v2: stored segment no longer parses", "report_ref", rep.ID.String(), "segment", seq)
+		o := ingestreport.SegmentOutcome{Errors: []protov2.ItemError{{
+			Pointer: "", Code: protov2.CodeProcessingFailed, Detail: protov2.DetailProcessingFailed}}}
+		return o, p.reports.RecordSegmentOutcome(ctx, rep.ID, seq, o, nil)
+	}
+	res, err := p.service.IngestV2Segment(ctx, p.provenance(rep, seq, job), report)
+	if err != nil {
+		return ingestreport.SegmentOutcome{}, fmt.Errorf("v2: ingest segment: %w", err)
+	}
+	if err := p.reports.RecordSegmentOutcome(ctx, rep.ID, seq, res.Outcome, res.Touched); err != nil {
+		return ingestreport.SegmentOutcome{}, err
+	}
+	return res.Outcome, nil
+}
+
+// finalize claims and runs the commit-time steps when the report is committed
+// and every segment has an outcome. Losing the claim is not an error: another
+// job, or a later one, finalizes.
+func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report) error {
+	claimed, ok, err := p.reports.ClaimFinalize(ctx, rep.ID)
+	if err != nil {
+		return fmt.Errorf("v2: claim finalize: %w", err)
+	}
+	if !ok {
+		return nil
+	}
+	var header V2Header
+	if err := json.Unmarshal(claimed.Header, &header); err != nil {
+		p.logger.Error("v2: stored header does not parse", "report_ref", claimed.ID.String())
+	}
+	res := p.service.CommitV2Report(ctx, p.provenance(claimed, -1, nil), header, claimed.TouchedAssetIDs, p.guard)
+	if err := p.reports.Finish(ctx, claimed.ID, protov2.StateCompleted, res.AutoResolved, res.AutoResolve); err != nil {
+		return fmt.Errorf("v2: finish report: %w", err)
+	}
+	if err := p.jobs.ClearV2Payloads(ctx, claimed.ID); err != nil {
+		p.logger.Warn("v2: could not clear segment payloads", "report_ref", claimed.ID.String(), "error", err)
+	}
+	p.logger.Info("v2 report completed", "report_ref", claimed.ID.String(), "report_id", claimed.ReportID,
+		"segments", claimed.SegmentsReceived, "auto_resolve", res.AutoResolve, "auto_resolved", res.AutoResolved)
+	return nil
+}
+
+// Housekeep expires uncommitted reports past their window. The worker calls
+// it on every drain cycle.
+func (p *V2JobProcessor) Housekeep(ctx context.Context) {
+	n, err := p.reports.ExpireStale(ctx, p.now())
+	if err != nil {
+		p.logger.Warn("v2: expiry sweep failed", "error", err)
+		return
+	}
+	if n > 0 {
+		p.logger.Info("v2: expired uncommitted reports", "count", n)
+	}
+}

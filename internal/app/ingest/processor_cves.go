@@ -109,6 +109,54 @@ func (p *CVEProcessor) ProcessBatch(
 	return result, nil
 }
 
+// cveIDLookup is the read-only batch lookup the catalog repository offers.
+// Kept optional so repository fakes without it fall back to GetByCVE.
+type cveIDLookup interface {
+	IDsByCVE(ctx context.Context, cveIDs []string) (map[string]shared.ID, error)
+}
+
+// LookupBatch links findings to catalog entries that already exist and
+// writes nothing (protocol v2, RFC-026 §5.3: a sensor never writes the global
+// vulnerability catalog). It returns CVE ID -> catalog id for the CVEs found.
+func (p *CVEProcessor) LookupBatch(ctx context.Context, report *ctis.Report) (map[string]shared.ID, error) {
+	if report == nil || len(report.Findings) == 0 {
+		return map[string]shared.ID{}, nil
+	}
+	seen := map[string]bool{}
+	ids := make([]string, 0)
+	for i := range report.Findings {
+		f := &report.Findings[i]
+		if f.Vulnerability == nil {
+			continue
+		}
+		cveID := strings.TrimSpace(f.Vulnerability.CVEID)
+		if cveID == "" || seen[cveID] || !vulnerability.IsValidCVE(cveID) {
+			continue
+		}
+		seen[cveID] = true
+		ids = append(ids, cveID)
+	}
+	if len(ids) == 0 {
+		return map[string]shared.ID{}, nil
+	}
+	if l, ok := p.repo.(cveIDLookup); ok {
+		m, err := l.IDsByCVE(ctx, ids)
+		if err != nil {
+			return map[string]shared.ID{}, fmt.Errorf("look up CVE batch: %w", err)
+		}
+		return m, nil
+	}
+	out := make(map[string]shared.ID, len(ids))
+	for _, id := range ids {
+		v, err := p.repo.GetByCVE(ctx, id)
+		if err != nil || v == nil {
+			continue // not in the catalog: the finding keeps its reported text
+		}
+		out[id] = v.ID()
+	}
+	return out, nil
+}
+
 // fillFromCTIS copies non-empty scanner-reported fields from a CTIS finding
 // onto an in-memory domain Vulnerability. The database's ON CONFLICT clause
 // is the authoritative fill-blanks layer; this function only ensures that

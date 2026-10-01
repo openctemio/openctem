@@ -3,6 +3,8 @@ package ingest
 
 import (
 	"github.com/openctemio/ctis"
+
+	"github.com/openctemio/api/pkg/domain/shared"
 )
 
 // =============================================================================
@@ -70,6 +72,28 @@ type Input struct {
 	// Auto-resolve only applies when IsDefaultBranch=true and CoverageType=full.
 	// If nil, branch info is read from Report.Metadata.Branch.
 	BranchInfo *ctis.BranchInfo
+
+	// Options are the protocol v2 ingest rules (RFC-026 §5). The zero value
+	// is protocol v1 behavior.
+	Options Options
+}
+
+// Options are the protocol v2 ingest rules (RFC-026 §5,
+// docs/rfcs/RFC-026-sensor-results-ingest.md). Each is off in the zero value,
+// so v1 ingest is unchanged.
+type Options struct {
+	// RequireAssetForFindings: no fallback asset. A report with findings but
+	// no assets gets no asset made up from its metadata, and a finding is
+	// attached only to the asset its asset_ref names, never to "the only
+	// asset in the report" when that reference did not resolve.
+	RequireAssetForFindings bool
+	// NoCatalogWrites: the global vulnerability catalog is read, never
+	// written. Findings link to catalog entries that exist; the sensor's CVE
+	// text stays on the tenant's finding.
+	NoCatalogWrites bool
+	// DeferAutoResolve: no auto-resolve during ingest. A v2 report resolves
+	// stale findings once, when it is committed (Service.CommitV2Report).
+	DeferAutoResolve bool
 }
 
 // GetBranchInfo returns branch info from Input or Report metadata.
@@ -136,6 +160,10 @@ type Output struct {
 	// FailedFindings contains detailed info about findings that failed to save.
 	// This is used for audit logging and debugging purposes.
 	FailedFindings []FailedFinding `json:"-"` // Not exposed in API response
+
+	// AssetMap maps each CTIS asset id of the report to the persisted asset
+	// it was merged into. Not exposed; v2 derives per-item outcomes from it.
+	AssetMap map[string]shared.ID `json:"-"`
 }
 
 // FailedFinding contains details about a finding that failed during ingestion.

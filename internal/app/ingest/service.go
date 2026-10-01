@@ -292,11 +292,14 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 
 	// Step 1: Process assets using batch operations
-	assetMap, err := s.assetProcessor.ProcessBatch(ctx, tenantID, report, output, assetIdentityCfg)
+	opts := input.Options
+	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings)
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", err)
 		// Continue with partial results
 	}
+
+	output.AssetMap = assetMap
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,
@@ -321,8 +324,18 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		}
 	}
 
-	// Step 2b: Upsert CVE catalog entries from findings
-	cveMap, cveErr := s.cveProcessor.ProcessBatch(ctx, report, output)
+	// Step 2b: Upsert CVE catalog entries from findings. Protocol v2 only
+	// reads the catalog: a sensor never writes the global vulnerability
+	// catalog (RFC-026 §5.3); it is written by trusted feeds.
+	var (
+		cveMap map[string]shared.ID
+		cveErr error
+	)
+	if opts.NoCatalogWrites {
+		cveMap, cveErr = s.cveProcessor.LookupBatch(ctx, report)
+	} else {
+		cveMap, cveErr = s.cveProcessor.ProcessBatch(ctx, report, output)
+	}
 	if cveErr != nil {
 		s.logger.Warn("CVE upsert failed; findings will not be linked to vulnerability catalog",
 			"error", cveErr)
@@ -336,7 +349,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)
 	if s.findingRepo != nil && len(report.Findings) > 0 {
-		if err := s.findingProcessor.ProcessBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap); err != nil {
+		if err := s.findingProcessor.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, opts.RequireAssetForFindings); err != nil {
 			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
 		}
@@ -352,8 +365,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// 3. Tool name available for scoping
 	//
 	// This follows GitHub/GitLab best practices where default branch is source of truth.
-	autoResolveEligible := input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != ""
-	if autoResolveEligible && s.sensorMayAutoResolveTool(ctx, agt, report.Tool.Name) {
+	// Protocol v2 defers both auto-resolve steps to the report's commit.
+	autoResolveEligible := !opts.DeferAutoResolve && input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != ""
+	switch {
+	case opts.DeferAutoResolve:
+		s.logger.Debug("auto-resolve deferred to the report commit")
+	case autoResolveEligible && s.sensorMayAutoResolveTool(ctx, agt, report.Tool.Name):
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
 
@@ -395,7 +412,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 				s.logger.Warn("failed to record auto-resolve activities", "error", err)
 			}
 		}
-	} else if s.findingRepo != nil && report.Tool != nil {
+	case s.findingRepo != nil && report.Tool != nil:
 		s.logAutoResolveSkipped(input, report, autoResolveEligible)
 	}
 
@@ -405,7 +422,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// the scan no longer reports as auto_fixed — so per-branch state reflects what
 	// is actually present on that branch. Additive: it only touches occurrence
 	// rows, never the finding's headline status. Best-effort.
-	if input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
+	if !opts.DeferAutoResolve && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil && report.Metadata.ID != "" &&
 		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
 		toolName := report.Tool.Name

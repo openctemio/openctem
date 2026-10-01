@@ -253,6 +253,22 @@ func (p *AssetProcessor) ProcessBatch(
 	output *Output,
 	tenantCfg *CorrelationConfig, // nil = use system defaults
 ) (map[string]shared.ID, error) {
+	return p.processBatch(ctx, tenantID, report, output, tenantCfg, false)
+}
+
+// processBatch is ProcessBatch; noAutoAsset (protocol v2,
+// Options.RequireAssetForFindings) skips the metadata-derived asset a report
+// with findings but no assets would otherwise get.
+//
+//nolint:gocognit,cyclop // the existing batch pipeline, unchanged apart from the gate
+func (p *AssetProcessor) processBatch(
+	ctx context.Context,
+	tenantID shared.ID,
+	report *ctis.Report,
+	output *Output,
+	tenantCfg *CorrelationConfig,
+	noAutoAsset bool,
+) (map[string]shared.ID, error) {
 	assetMap := make(map[string]shared.ID)
 
 	p.logger.Debug("starting asset processing",
@@ -262,7 +278,7 @@ func (p *AssetProcessor) ProcessBatch(
 
 	// If no explicit assets but there are findings, try to auto-create from metadata
 	if len(report.Assets) == 0 {
-		if len(report.Findings) > 0 {
+		if len(report.Findings) > 0 && !noAutoAsset {
 			// Try to create asset from report metadata (BranchInfo)
 			autoAsset := p.createAssetFromMetadata(report)
 			if autoAsset != nil {
