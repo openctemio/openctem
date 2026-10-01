@@ -541,6 +541,11 @@ func (h *SuppressionHandler) handleServiceError(w http.ResponseWriter, err error
 		apierror.BadRequest("Invalid suppression criteria").WriteJSON(w)
 	case shared.IsValidation(err):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("Suppression rule not found").WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		// e.g. approving or rejecting a rule that is no longer pending
+		apierror.Conflict(err.Error()).WriteJSON(w)
 	default:
 		h.logger.Error("suppression service error", "error", err)
 		apierror.InternalServerError("Internal server error").WriteJSON(w)

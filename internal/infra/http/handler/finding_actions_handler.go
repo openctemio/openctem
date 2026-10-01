@@ -557,8 +557,15 @@ func (h *FindingActionsHandler) buildPagination(r *http.Request, defaultPerPage 
 }
 
 func (h *FindingActionsHandler) handleError(w http.ResponseWriter, err error) {
-	if errors.Is(err, shared.ErrValidation) {
+	switch {
+	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("Finding").WriteJSON(w)
+		return
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict(err.Error()).WriteJSON(w)
 		return
 	}
 	h.logger.Error("finding lifecycle error", "error", err)

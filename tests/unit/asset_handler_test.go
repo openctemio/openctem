@@ -585,3 +585,29 @@ func TestAssetHandler_List_WithFilters(t *testing.T) {
 		t.Errorf("expected status 200, got %d", listRec.Code)
 	}
 }
+
+// POST /assets/{id}/sync only works for repository assets. Any other type used
+// to fail with a bare error the handler could not classify → 500.
+func TestAssetHandler_Sync_NonRepositoryIs400(t *testing.T) {
+	h := newTestHandler()
+	h.SetIntegrationService(&app.IntegrationService{})
+
+	body, _ := json.Marshal(map[string]any{"name": "sync-host", "type": "host", "criticality": "high"})
+	req := withTenantContext(httptest.NewRequest(http.MethodPost, "/api/v1/assets", bytes.NewReader(body)))
+	rec := httptest.NewRecorder()
+	h.Create(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var created map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	id, _ := created["id"].(string)
+
+	req = withTenantContext(httptest.NewRequest(http.MethodPost, "/api/v1/assets/"+id+"/sync", nil))
+	req.SetPathValue("id", id)
+	rec = httptest.NewRecorder()
+	h.Sync(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("sync of a host asset: got %d, want 400 (%s)", rec.Code, rec.Body.String())
+	}
+}

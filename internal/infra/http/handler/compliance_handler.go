@@ -483,6 +483,10 @@ func (h *ComplianceHandler) handleError(w http.ResponseWriter, err error) {
 		apierror.Conflict(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict(err.Error()).WriteJSON(w)
 	default:
 		h.logger.Error("compliance handler error", "error", err)
 		apierror.InternalServerError("internal server error").WriteJSON(w)
