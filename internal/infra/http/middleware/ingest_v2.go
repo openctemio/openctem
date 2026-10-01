@@ -358,7 +358,9 @@ func V2Observe(routeName func(*http.Request) string) func(http.Handler) http.Han
 	}
 }
 
-// v2Recorder captures the status and the problem type of a v2 response.
+// v2Recorder captures the status and the problem type of a v2 response. It
+// does not wrap Write: a body written without WriteHeader is a 200, which is
+// the recorder's default, and net/http ignores a later WriteHeader anyway.
 type v2Recorder struct {
 	http.ResponseWriter
 	status  int
@@ -371,11 +373,6 @@ func (r *v2Recorder) WriteHeader(code int) {
 		r.status, r.wrote = code, true
 	}
 	r.ResponseWriter.WriteHeader(code)
-}
-
-func (r *v2Recorder) Write(b []byte) (int, error) {
-	r.wrote = true
-	return r.ResponseWriter.Write(b)
 }
 
 // RecordProblem implements protov2.ProblemRecorder.
