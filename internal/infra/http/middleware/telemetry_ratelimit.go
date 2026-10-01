@@ -117,6 +117,31 @@ func (rl *TelemetryRateLimiter) bucket(tenantID string) *rate.Limiter {
 	return b.limiter
 }
 
+// MiddlewareKeyed is Middleware with a caller-supplied bucket key (e.g. the
+// authenticated agent ID instead of the tenant), for endpoints whose budget is
+// per-principal rather than per-tenant. An empty key passes through; a zero
+// rate disables the limiter, as with Middleware.
+func (rl *TelemetryRateLimiter) MiddlewareKeyed(keyFn func(*http.Request) string, message string) func(http.Handler) http.Handler {
+	if rl.rate <= 0 {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key := keyFn(r)
+			if key == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if !rl.bucket(key).Allow() {
+				rl.log.Warn("keyed rate limit exceeded", "key", key, "path", r.URL.Path)
+				apierror.TooManyRequests(message).WriteJSON(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Middleware returns an http middleware that rejects a request with
 // 429 when the calling tenant is over budget.
 //

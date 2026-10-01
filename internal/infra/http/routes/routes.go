@@ -602,7 +602,7 @@ func Register(
 
 	// Ingest/Agent routes (API key authenticated)
 	if h.Ingest != nil && h.Command != nil {
-		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter, ingestRateLimiter)
+		registerAgentRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, telemetryRateLimiter, ingestRateLimiter, log)
 	}
 
 	// Agent management routes (tenant from JWT token)

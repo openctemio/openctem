@@ -1,9 +1,23 @@
 package routes
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/openctemio/api/internal/infra/http/handler"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/permission"
+	"github.com/openctemio/api/pkg/logger"
+)
+
+// IngestMaxConcurrentPerTenant caps in-flight report-ingest requests per
+// tenant (see middleware.TenantConcurrencyLimiter).
+const IngestMaxConcurrentPerTenant = 8
+
+// Agent self-renewal budget, per agent: a burst of 5, then one every 2 minutes.
+const (
+	renewRatePerSecond = 1.0 / 120.0
+	renewBurst         = 5
 )
 
 // registerCommandRoutes registers command management endpoints.
@@ -32,6 +46,26 @@ func registerCommandRoutes(
 	}, tenantMiddlewares...)
 }
 
+// ingestMiddlewareChain orders the ingest middlewares so the cheap rejections
+// (per-tenant rate limit, per-tenant concurrency cap) run BEFORE the body is
+// decompressed. Decompression buffers up to 100MB per request; when the limiter
+// ran after it, a throttled tenant still made the server inflate every rejected
+// body. nil limiters are skipped.
+func ingestMiddlewareChain(
+	rateLimiter *middleware.TelemetryRateLimiter,
+	concurrency *middleware.TenantConcurrencyLimiter,
+	bodyLimit, decompress Middleware,
+) []Middleware {
+	chain := make([]Middleware, 0, 4)
+	if rateLimiter != nil {
+		chain = append(chain, rateLimiter.Middleware())
+	}
+	if concurrency != nil {
+		chain = append(chain, concurrency.Middleware())
+	}
+	return append(chain, bodyLimit, decompress)
+}
+
 // registerAgentRoutes registers agent API endpoints.
 // These endpoints are authenticated using source API keys (not JWT).
 //
@@ -48,6 +82,7 @@ func registerAgentRoutes(
 	runtimeTelemetryHandler *handler.RuntimeTelemetryHandler,
 	telemetryRateLimiter *middleware.TelemetryRateLimiter,
 	ingestRateLimiter *middleware.TelemetryRateLimiter,
+	log *logger.Logger,
 ) {
 	// Build middleware chain: API key auth
 	baseMiddleware := ingestHandler.AuthenticateSource
@@ -55,7 +90,9 @@ func registerAgentRoutes(
 	// Decompression middleware for ingest endpoints (supports gzip and zstd)
 	decompressMiddleware := middleware.DecompressForIngest()
 
-	// Ingest body limit: 50MB for large scan reports (overrides global 10MB limit)
+	// Ingest body limit: 50MB for large scan reports. BodyLimit REPLACES the
+	// global 10MB limit for these routes (see middleware.BodyLimit); before it
+	// nested under it, so the 50MB limit never applied.
 	ingestBodyLimit := middleware.BodyLimit(middleware.IngestMaxBodySize)
 
 	// Per-tenant rate limit for the heavy report-ingest endpoints. Each request
@@ -63,10 +100,27 @@ func registerAgentRoutes(
 	// (or a compromised agent key) could exhaust DB/CPU. Pass-through when the
 	// limiter is nil (dev / opt-out). Applied AFTER AuthenticateSource so the
 	// tenant is in context.
-	ingestMW := []Middleware{ingestBodyLimit, decompressMiddleware}
-	if ingestRateLimiter != nil {
-		ingestMW = append(ingestMW, ingestRateLimiter.Middleware())
-	}
+	//
+	// ORDER MATTERS: the rate limiter and the per-tenant concurrency cap run
+	// BEFORE decompression. Decompression buffers up to 100MB per request; when
+	// the limiter ran after it, a throttled tenant still made the server
+	// inflate every rejected body first.
+	ingestMW := ingestMiddlewareChain(ingestRateLimiter,
+		middleware.NewTenantConcurrencyLimiter(IngestMaxConcurrentPerTenant),
+		ingestBodyLimit, decompressMiddleware)
+
+	// Self-renewal is cheap per call but mints a credential (and, under a key
+	// TTL, a new key row) each time, so it is throttled per AGENT — a stolen
+	// key must not be able to mint an unbounded set of fresh credentials.
+	// Always on (independent of the global rate-limit toggle): legitimate
+	// agents renew once per key lifetime.
+	renewLimiter := middleware.NewTelemetryRateLimiter(renewRatePerSecond, renewBurst, time.Hour, log)
+	renewMW := renewLimiter.MiddlewareKeyed(func(r *http.Request) string {
+		if agt := handler.AgentFromContext(r.Context()); agt != nil {
+			return agt.ID.String()
+		}
+		return ""
+	}, "key renewal rate limit exceeded")
 
 	// Agent routes - authenticated via API key
 	router.Group("/api/v1/agent", func(r Router) {
@@ -77,7 +131,7 @@ func registerAgentRoutes(
 		// presenting the current one. Authenticated by AuthenticateSource like
 		// every other endpoint in this group; the building block for
 		// auto-rotating credentials (RFC-014).
-		r.POST("/renew", ingestHandler.RenewKey)
+		r.POST("/renew", ingestHandler.RenewKey, renewMW)
 
 		// Ingest findings/assets
 		// Supported formats: CTIS (native), SARIF (industry standard), Recon (discovery data), Chunk (for large reports)
@@ -120,10 +174,8 @@ func registerAgentRoutes(
 			// limiter is not configured (development, or operators who
 			// opt out via config) so the wiring change is backward
 			// compatible.
-			telemetryMW := []Middleware{ingestBodyLimit, decompressMiddleware}
-			if telemetryRateLimiter != nil {
-				telemetryMW = append(telemetryMW, telemetryRateLimiter.Middleware())
-			}
+			// Rate limiter first, for the same reason as ingestMW above.
+			telemetryMW := ingestMiddlewareChain(telemetryRateLimiter, nil, ingestBodyLimit, decompressMiddleware)
 			r.POST("/telemetry-events", runtimeTelemetryHandler.Ingest, telemetryMW...)
 		}
 	}, baseMiddleware)

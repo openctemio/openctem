@@ -166,7 +166,14 @@ type ImportMetadataRequest struct {
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/import [post]
 func (h *CredentialImportHandler) Import(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
+	// This handler also serves the agent route /agent/credentials/ingest. A
+	// platform agent (no tenant) carries no tenant in context; MustGetTenantID
+	// panicked on it (recovered as a 500). Reject it cleanly instead.
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		apierror.Forbidden("a tenant-scoped principal is required").WriteJSON(w)
+		return
+	}
 
 	var req CredentialImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
