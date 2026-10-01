@@ -40,18 +40,10 @@ func registerTenantRoutes(
 		// Create a new tenant
 		r.POST("/", h.Create)
 
-		// Get tenant by ID or slug — MUST be scoped to the caller's
-		// membership. Without TenantContext + RequireMembership any
-		// authenticated user could read any tenant's record + settings
-		// by guessing its id/slug (cross-tenant IDOR).
-		getMiddlewares := []Middleware{
-			middleware.TenantContext(tenantRepo),
-			middleware.RequireMembership(membershipReader),
-		}
-		if ipAllowlistMiddleware != nil {
-			getMiddlewares = append(getMiddlewares, ipAllowlistMiddleware)
-		}
-		r.GET("/{tenant}", h.Get, getMiddlewares...)
+		// GET /api/v1/tenants/{tenant} is registered in the
+		// /api/v1/tenants/{tenant} group below: that group mounts a
+		// sub-router on the exact path, so a route for it here is never
+		// reached (it answered 405).
 	}, baseMiddlewares...)
 
 	// Tenantless module-preset catalog — used by the team-creation
@@ -75,7 +67,10 @@ func registerTenantRoutes(
 	}
 
 	router.Group("/api/v1/tenants/{tenant}", func(r Router) {
-		// Read operations - any member (viewer+)
+		// Read operations - any member (viewer+). The group chain scopes
+		// the tenant to the caller's membership (and IP allowlist), so a
+		// non-member cannot read another tenant's record.
+		r.GET("/", h.Get)
 		r.GET("/members", h.ListMembers)
 		r.GET("/members/stats", h.GetMemberStats)
 		r.GET("/invitations", h.ListInvitations)
