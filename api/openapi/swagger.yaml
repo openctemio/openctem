@@ -10956,12 +10956,20 @@ definitions:
     type: object
   internal_infra_http_handler.UserResponse:
     properties:
+      auth_provider:
+        description: |-
+          AuthProvider is how the account signs in ("local" = password; others
+          are identity providers). The account page uses it to decide whether to
+          offer password change and 2FA.
+        type: string
       avatar_url:
         type: string
       created_at:
         type: string
       email:
         type: string
+      email_verified:
+        type: boolean
       id:
         type: string
       is_platform_admin:

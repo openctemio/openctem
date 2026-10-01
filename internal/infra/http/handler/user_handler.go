@@ -36,16 +36,21 @@ func NewUserHandler(svc *app.UserService, tenantSvc *app.TenantService, platform
 
 // UserResponse represents a user in API responses.
 type UserResponse struct {
-	ID          string         `json:"id"`
-	Email       string         `json:"email"`
-	Name        string         `json:"name"`
-	AvatarURL   string         `json:"avatar_url,omitempty"`
-	Phone       string         `json:"phone,omitempty"`
-	Status      string         `json:"status"`
-	Preferences PreferencesDTO `json:"preferences"`
-	LastLoginAt *time.Time     `json:"last_login_at,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatar_url,omitempty"`
+	Phone     string `json:"phone,omitempty"`
+	Status    string `json:"status"`
+	// AuthProvider is how the account signs in ("local" = password; others
+	// are identity providers). The account page uses it to decide whether to
+	// offer password change and 2FA.
+	AuthProvider  string         `json:"auth_provider"`
+	EmailVerified bool           `json:"email_verified"`
+	Preferences   PreferencesDTO `json:"preferences"`
+	LastLoginAt   *time.Time     `json:"last_login_at,omitempty"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 	// IsPlatformAdmin marks an account linked to an active platform
 	// administrator (RFC-022). The UI uses it to offer the admin console. Set
 	// on the /users/me response only, not in every toUserResponse.
@@ -76,12 +81,14 @@ type UpdatePreferencesRequest struct {
 // toUserResponse converts a domain user to API response.
 func toUserResponse(u *user.User) UserResponse {
 	return UserResponse{
-		ID:        u.ID().String(),
-		Email:     u.Email(),
-		Name:      u.Name(),
-		AvatarURL: u.AvatarURL(),
-		Phone:     u.Phone(),
-		Status:    u.Status().String(),
+		ID:            u.ID().String(),
+		Email:         u.Email(),
+		Name:          u.Name(),
+		AvatarURL:     u.AvatarURL(),
+		Phone:         u.Phone(),
+		Status:        u.Status().String(),
+		AuthProvider:  string(u.AuthProvider()),
+		EmailVerified: u.EmailVerified(),
 		Preferences: PreferencesDTO{
 			Theme:         u.Preferences().Theme,
 			Language:      u.Preferences().Language,
