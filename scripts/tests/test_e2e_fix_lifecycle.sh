@@ -56,6 +56,9 @@ api_call() {
     args+=(-H "Content-Type: application/json")
     [ -n "$ACCESS_TOKEN" ] && args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
     if [ "$method" = "POST" ] || [ "$method" = "PATCH" ] || [ "$method" = "PUT" ]; then
+        # CSRF double-submit: echo the csrf_token cookie on state-changing requests.
+        local csrf; csrf=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$COOKIE_JAR" 2>/dev/null)
+        [ -n "$csrf" ] && args+=(-H "X-CSRF-Token: $csrf")
         args+=(-X "$method" -d "$data")
     elif [ "$method" = "GET" ]; then
         args+=(-X GET)

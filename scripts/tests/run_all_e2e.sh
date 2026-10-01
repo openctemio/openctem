@@ -16,6 +16,10 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 API_URL="${1:-${API_URL:-http://localhost:8080}}"
+# Export it: scripts built on _e2e_common.sh read API_URL from the environment
+# and ignore the positional argument, so without this they silently ran
+# against the default http://localhost:8080 instead of the target given here.
+export API_URL
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo -e "${BLUE}=============================================================================="

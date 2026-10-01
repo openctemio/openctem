@@ -32,6 +32,11 @@ req() {
   local m="$1" e="$2" d="$3"; shift 3
   local a=(-s -w "\n%{http_code}" -X "$m" "${API_URL}${e}" -H "Content-Type: application/json" -c $CJ -b $CJ)
   for x in "$@"; do a+=(-H "$x"); done
+  # CSRF double-submit: echo the csrf_token cookie on state-changing requests.
+  case "$m" in POST|PUT|PATCH|DELETE)
+    local csrf; csrf=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$CJ" 2>/dev/null)
+    [ -n "$csrf" ] && a+=(-H "X-CSRF-Token: $csrf") ;;
+  esac
   [ -n "$d" ] && a+=(-d "$d")
   curl "${a[@]}" > /tmp/edge_r 2>/dev/null
   HTTP=$(tail -1 /tmp/edge_r); BODY=$(sed '$d' /tmp/edge_r)

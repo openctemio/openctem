@@ -131,6 +131,11 @@ do_request() {
     local curl_args=(-s -w "\n%{http_code}" -X "$method" "${API_URL}${endpoint}"
         -H "Content-Type: application/json" -c "$cookie" -b "$cookie")
     for header in "$@"; do curl_args+=(-H "$header"); done
+    # CSRF double-submit: echo the csrf_token cookie on state-changing requests.
+    case "$method" in POST|PUT|PATCH|DELETE)
+        local csrf; csrf=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$cookie" 2>/dev/null)
+        [ -n "$csrf" ] && curl_args+=(-H "X-CSRF-Token: $csrf") ;;
+    esac
     [ -n "$data" ] && curl_args+=(-d "$data")
     curl "${curl_args[@]}" > "$RESPONSE_FILE" 2>/dev/null
     HTTP_CODE=$(tail -n1 "$RESPONSE_FILE")
