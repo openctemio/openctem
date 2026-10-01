@@ -329,7 +329,7 @@ func (h *AttachmentHandler) GetMeta(w http.ResponseWriter, r *http.Request) {
 		"size":         att.Size(),
 		"url":          att.URL(),
 		"markdown":     att.MarkdownLink(),
-		"uploaded_by":  att.UploadedBy().String(),
+		"uploaded_by":  att.UploadedBy().StringOrEmpty(),
 		"context_type": att.ContextType(),
 		"context_id":   att.ContextID(),
 		"created_at":   att.CreatedAt(),

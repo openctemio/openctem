@@ -341,7 +341,7 @@ func (s *VulnerabilityService) attachmentToEvidence(ctx context.Context, tenantI
 				Type:        note.Type,
 				URL:         note.URL,
 				CreatedAt:   att.CreatedAt(),
-				UploadedBy:  att.UploadedBy().String(),
+				UploadedBy:  att.UploadedBy().StringOrEmpty(),
 			}
 		}
 		s.logger.Warn("failed to decode evidence note; returning metadata only",
@@ -355,7 +355,7 @@ func (s *VulnerabilityService) attachmentToEvidence(ctx context.Context, tenantI
 		Size:        att.Size(),
 		DownloadURL: att.URL(),
 		CreatedAt:   att.CreatedAt(),
-		UploadedBy:  att.UploadedBy().String(),
+		UploadedBy:  att.UploadedBy().StringOrEmpty(),
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 
 // Exercises the full ingest_jobs lifecycle against a real Postgres
 // (enqueue/idempotency, claim, complete, fail/backoff, release-stale, count).
-// Self-contained: uses a random tenant (the table has no FKs) and cleans up.
+// Self-contained: creates its own tenant and deletes it (cascading to its jobs).
 // Skipped unless DATABASE_URL is set.
 func TestIngestJobRepository_Lifecycle(t *testing.T) {
 	dbURL := testdb.URL()
@@ -33,10 +33,7 @@ func TestIngestJobRepository_Lifecycle(t *testing.T) {
 	}
 
 	repo := NewIngestJobRepository(&DB{DB: db})
-	tenantID := shared.NewID()
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), "DELETE FROM ingest_jobs WHERE tenant_id = $1", tenantID.String())
-	})
+	tenantID := newIngestJobTestTenant(t, db)
 
 	payload := []byte(`{"version":"1.0","findings":[]}`)
 
@@ -154,13 +151,8 @@ func TestIngestJobRepository_FairClaim(t *testing.T) {
 	}
 
 	repo := NewIngestJobRepository(&DB{DB: db})
-	tenantA := shared.NewID()
-	tenantB := shared.NewID()
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(),
-			"DELETE FROM ingest_jobs WHERE tenant_id = ANY($1)",
-			"{"+tenantA.String()+","+tenantB.String()+"}")
-	})
+	tenantA := newIngestJobTestTenant(t, db)
+	tenantB := newIngestJobTestTenant(t, db)
 
 	// Tenant A floods with 3 jobs; tenant B has 1.
 	for i := 0; i < 3; i++ {
@@ -188,4 +180,20 @@ func TestIngestJobRepository_FairClaim(t *testing.T) {
 	if byTenant[tenantA.String()] != 1 || byTenant[tenantB.String()] != 1 {
 		t.Fatalf("unfair claim: A=%d B=%d (want 1/1)", byTenant[tenantA.String()], byTenant[tenantB.String()])
 	}
+}
+
+// newIngestJobTestTenant creates a tenant for ingest_jobs (tenant_id is a FK
+// since migration 000242) and deletes it, with its jobs, after the test.
+func newIngestJobTestTenant(t *testing.T, db *sql.DB) shared.ID {
+	t.Helper()
+	id := shared.NewID()
+	if _, err := db.ExecContext(context.Background(),
+		"INSERT INTO tenants (id, name, slug) VALUES ($1, 'ingest-job-test', $2)",
+		id.String(), "ingestjob-"+id.String()); err != nil {
+		t.Fatalf("insert tenant: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), "DELETE FROM tenants WHERE id = $1", id.String())
+	})
+	return id
 }

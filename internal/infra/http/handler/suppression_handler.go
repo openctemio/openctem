@@ -65,7 +65,7 @@ func toSuppressionRuleResponse(r *suppression.Rule) SuppressionRuleResponse {
 		ToolName:        r.ToolName(),
 		PathPattern:     r.PathPattern(),
 		Status:          string(r.Status()),
-		RequestedBy:     r.RequestedBy().String(),
+		RequestedBy:     r.RequestedBy().StringOrEmpty(),
 		RequestedAt:     r.RequestedAt().Format(time.RFC3339),
 		RejectionReason: r.RejectionReason(),
 		CreatedAt:       r.CreatedAt().Format(time.RFC3339),

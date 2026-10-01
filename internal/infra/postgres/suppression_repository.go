@@ -394,7 +394,7 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 		description     sql.NullString
 		suppressionType string
 		status          string
-		requestedBy     string
+		requestedBy     sql.NullString // NULL once the requester is deleted
 		requestedAt     time.Time
 		approvedBy      sql.NullString
 		approvedAt      sql.NullTime
@@ -424,7 +424,7 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 	return r.buildRule(
 		id, tenantID, ruleID, toolName, pathPattern, assetID,
 		name, description, suppressionType, status,
-		requestedBy, requestedAt, approvedBy, approvedAt,
+		requestedBy.String, requestedAt, approvedBy, approvedAt,
 		rejectedBy, rejectedAt, rejectionReason, expiresAt,
 		createdAt, updatedAt,
 	), nil
@@ -446,7 +446,7 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 			description     sql.NullString
 			suppressionType string
 			status          string
-			requestedBy     string
+			requestedBy     sql.NullString // NULL once the requester is deleted
 			requestedAt     time.Time
 			approvedBy      sql.NullString
 			approvedAt      sql.NullTime
@@ -472,7 +472,7 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 		rules = append(rules, r.buildRule(
 			id, tenantID, ruleID, toolName, pathPattern, assetID,
 			name, description, suppressionType, status,
-			requestedBy, requestedAt, approvedBy, approvedAt,
+			requestedBy.String, requestedAt, approvedBy, approvedAt,
 			rejectedBy, rejectedAt, rejectionReason, expiresAt,
 			createdAt, updatedAt,
 		))
