@@ -15,3 +15,40 @@ const (
 	// asset when the source was a tool run (subfinder, amass, ...).
 	PropKeyDiscoveryTool = "discovery_tool"
 )
+
+// Property keys the platform owns. They record decisions made by people or by
+// the platform itself, and the platform reads them as such:
+//
+//   - is_crown_jewel drives the P0 priority rules (priority classification,
+//     the crown-jewel filter, dashboards);
+//   - business_impact_score / business_impact_notes are set on the asset's
+//     business-impact form and feed risk scoring;
+//   - aliases holds the asset's former names, written by asset identity
+//     resolution when an asset is renamed, and used to match reports to it.
+//
+// A sensor report's free-form properties must never set them: a sensor could
+// otherwise promote or demote a crown jewel, or attach another asset's name.
+const (
+	PropKeyIsCrownJewel        = "is_crown_jewel"
+	PropKeyBusinessImpactScore = "business_impact_score"
+	PropKeyBusinessImpactNotes = "business_impact_notes"
+	PropKeyAliases             = "aliases"
+)
+
+// reservedPropertyKeys are the keys ingest drops from sensor-supplied
+// properties: the platform-owned keys above plus the discovery fields, which
+// ingest sets from the report's own discovery data.
+var reservedPropertyKeys = map[string]bool{
+	PropKeyIsCrownJewel:        true,
+	PropKeyBusinessImpactScore: true,
+	PropKeyBusinessImpactNotes: true,
+	PropKeyAliases:             true,
+	PropKeyDiscoverySource:     true,
+	PropKeyDiscoveryTool:       true,
+}
+
+// IsReservedPropertyKey reports whether a top-level property key is owned by
+// the platform and must not be taken from a sensor report.
+func IsReservedPropertyKey(key string) bool {
+	return reservedPropertyKeys[key]
+}

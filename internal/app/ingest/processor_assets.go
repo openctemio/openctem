@@ -1725,8 +1725,10 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 			break
 		}
 
-		// Skip discovery fields (handled separately)
-		if k == asset.PropKeyDiscoverySource || k == asset.PropKeyDiscoveryTool {
+		// Skip platform-owned keys: the discovery fields (handled separately)
+		// and the decisions people make (crown jewel, business impact) or the
+		// platform records (aliases). A sensor must not set them.
+		if asset.IsReservedPropertyKey(k) {
 			continue
 		}
 
