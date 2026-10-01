@@ -163,6 +163,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Validation handler + coverage KPI reader.
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
 	validationHandler.SetCoverageReader(repos.ValidationEvidence)
+	// Direct evidence submissions change a finding only when they cite the
+	// validate command assigned to the submitting agent; otherwise advisory.
+	validationHandler.SetCommandLookup(repos.Command)
 
 	// Per-tenant module route gating (module-coupling plan Phase 1). Fail-open:
 	// only an explicitly-disabled non-core module is blocked. Wired back into the

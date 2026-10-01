@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/api/internal/app/validation"
 	"github.com/openctemio/api/internal/infra/http/middleware"
 	"github.com/openctemio/api/pkg/domain/agent"
+	commanddom "github.com/openctemio/api/pkg/domain/command"
 	"github.com/openctemio/api/pkg/domain/shared"
 	"github.com/openctemio/api/pkg/domain/vulnerability"
 	"github.com/openctemio/api/pkg/logger"
@@ -97,20 +98,29 @@ func agentCtxReq(t *testing.T, method, target string, body []byte, tenantID shar
 	return r.WithContext(context.WithValue(r.Context(), agentContextKey, agt))
 }
 
+// With the validate command assigned to the submitting agent for this finding
+// cited, the evidence is authoritative and moves the finding.
 func TestValidationHandler_IngestEvidence_Resolves(t *testing.T) {
 	repo := &fakeEvidenceRepo{}
 	fm := &fakeFindingMutator{current: fixAppliedFinding(t)}
 	h := newValidationHandler(repo, fm)
 
 	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	r0 := agentCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", nil, tenantID)
+	agentID := AgentFromContext(r0.Context()).ID
+	cmd := validateCmd(t, tenantID, &agentID, findingID, commanddom.CommandStatusRunning)
+	h.SetCommandLookup(&fakeCommandLookup{cmds: []*commanddom.Command{cmd}})
+
 	body, _ := json.Marshal(evidenceRequest{
-		FindingID:    shared.NewID().String(),
+		FindingID:    findingID.String(),
+		CommandID:    cmd.ID.String(),
 		ExecutorKind: "safe-check",
 		Technique:    "T1046",
 		Outcome:      "not_detected",
 		Summary:      "exposure gone",
 	})
-	r := agentCtxReq(t, http.MethodPost, "/api/v1/validation/evidence", body, tenantID)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/validation/evidence", bytes.NewReader(body)).WithContext(r0.Context())
 	w := httptest.NewRecorder()
 
 	h.IngestEvidence(w, r)
@@ -230,5 +240,123 @@ func TestValidationHandler_ListFindingEvidence(t *testing.T) {
 	}
 	if resp.Evidence[0].Outcome != "inconclusive" {
 		t.Errorf("outcome = %q, want inconclusive", resp.Evidence[0].Outcome)
+	}
+}
+
+// --- command-authorization of direct evidence submissions -----------------
+
+type fakeCommandLookup struct{ cmds []*commanddom.Command }
+
+func (f *fakeCommandLookup) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*commanddom.Command, error) {
+	for _, c := range f.cmds {
+		if c.ID == id && c.TenantID == tenantID {
+			return c, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
+func validateCmd(t *testing.T, tenantID shared.ID, agentID *shared.ID, findingID shared.ID, status commanddom.CommandStatus) *commanddom.Command {
+	t.Helper()
+	payload, _ := json.Marshal(validation.ValidateCommandPayload{FindingID: findingID.String(), ExecutorKind: "safe-check"})
+	cmd, err := commanddom.NewCommand(tenantID, commanddom.CommandTypeValidate, commanddom.CommandPriorityNormal, payload)
+	if err != nil {
+		t.Fatalf("new command: %v", err)
+	}
+	if agentID != nil {
+		cmd.SetAgentID(*agentID)
+	}
+	cmd.Status = status
+	return cmd
+}
+
+// postEvidence submits an outcome for findingID as the given agent.
+func postEvidence(t *testing.T, h *ValidationHandler, tenantID, agentID, findingID shared.ID, commandID string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, _ := json.Marshal(evidenceRequest{
+		FindingID: findingID.String(), CommandID: commandID,
+		ExecutorKind: "safe-check", Outcome: "not_detected",
+	})
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/validation/evidence", bytes.NewReader(body))
+	tid := tenantID
+	agt := &agent.Agent{ID: agentID, TenantID: &tid, Status: agent.AgentStatusActive}
+	r = r.WithContext(context.WithValue(r.Context(), agentContextKey, agt))
+	w := httptest.NewRecorder()
+	h.IngestEvidence(w, r)
+	return w
+}
+
+// ATTACK: any agent key in the tenant posting an outcome for an arbitrary
+// finding id (no command) must not change the finding — evidence is stored as
+// advisory only and the response shape is unchanged.
+func TestValidationHandler_IngestEvidence_NoCommand_AdvisoryOnly(t *testing.T) {
+	repo := &fakeEvidenceRepo{}
+	fm := &fakeFindingMutator{current: fixAppliedFinding(t)}
+	h := newValidationHandler(repo, fm)
+	h.SetCommandLookup(&fakeCommandLookup{})
+
+	w := postEvidence(t, h, shared.NewID(), shared.NewID(), shared.NewID(), "")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body=%s", w.Code, w.Body.String())
+	}
+	var resp evidenceResponse
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.StatusChanged || resp.Downgraded {
+		t.Error("advisory evidence must not report a status change")
+	}
+	if fm.current.Status() != vulnerability.FindingStatusFixApplied {
+		t.Fatalf("unsolicited evidence moved the finding to %s", fm.current.Status())
+	}
+	if len(repo.rows) != 1 {
+		t.Fatalf("advisory evidence must still be stored, rows=%d", len(repo.rows))
+	}
+}
+
+// ATTACK: citing a command that is not this agent's / not a validate command /
+// already finished / for another finding is rejected with 403 and changes
+// nothing.
+func TestValidationHandler_IngestEvidence_ForeignOrStaleCommandRejected(t *testing.T) {
+	tenantID := shared.NewID()
+	me := shared.NewID()
+	other := shared.NewID()
+	findingID := shared.NewID()
+
+	scanCmd, _ := commanddom.NewCommand(tenantID, commanddom.CommandTypeScan, commanddom.CommandPriorityNormal, json.RawMessage(`{"finding_id":"`+findingID.String()+`"}`))
+	scanCmd.SetAgentID(me)
+	scanCmd.Status = commanddom.CommandStatusRunning
+
+	cases := map[string]*commanddom.Command{
+		"other agent":        validateCmd(t, tenantID, &other, findingID, commanddom.CommandStatusRunning),
+		"unassigned":         validateCmd(t, tenantID, nil, findingID, commanddom.CommandStatusPending),
+		"completed":          validateCmd(t, tenantID, &me, findingID, commanddom.CommandStatusCompleted),
+		"failed":             validateCmd(t, tenantID, &me, findingID, commanddom.CommandStatusFailed),
+		"other finding":      validateCmd(t, tenantID, &me, shared.NewID(), commanddom.CommandStatusRunning),
+		"not validate":       scanCmd,
+		"other tenant (404)": validateCmd(t, shared.NewID(), &me, findingID, commanddom.CommandStatusRunning),
+	}
+	for name, cmd := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := &fakeEvidenceRepo{}
+			fm := &fakeFindingMutator{current: fixAppliedFinding(t)}
+			h := newValidationHandler(repo, fm)
+			h.SetCommandLookup(&fakeCommandLookup{cmds: []*commanddom.Command{cmd}})
+
+			w := postEvidence(t, h, tenantID, me, findingID, cmd.ID.String())
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403", w.Code)
+			}
+			if len(repo.rows) != 0 || fm.current.Status() != vulnerability.FindingStatusFixApplied {
+				t.Fatal("rejected evidence must not be stored or applied")
+			}
+		})
+	}
+}
+
+func TestValidationHandler_IngestEvidence_MalformedCommandID(t *testing.T) {
+	h := newValidationHandler(&fakeEvidenceRepo{}, &fakeFindingMutator{current: fixAppliedFinding(t)})
+	h.SetCommandLookup(&fakeCommandLookup{})
+	w := postEvidence(t, h, shared.NewID(), shared.NewID(), shared.NewID(), "not-an-id")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
 	}
 }
