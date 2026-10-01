@@ -78,7 +78,10 @@ jobs:
       - name: Checkout agent
         uses: actions/checkout@v7
         with:
-          repository: openctemio/agent
+          # The sensor repository (renamed from openctemio/agent). Checked out
+          # as agent/ because security-lint.sh and the workspace submodule
+          # still use that directory name.
+          repository: openctemio/sensor
           path: agent
 
       - name: Checkout sdk-go
