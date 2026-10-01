@@ -574,7 +574,9 @@ func (h *GroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 // @Tags groups
 // @Produce json
 // @Param groupId path string true "Group ID"
-// @Success 200 {array} GroupMemberWithUserResponse
+// @Param limit query int false "Page size" default(20)
+// @Param offset query int false "Offset" default(0)
+// @Success 200 {object} PaginatedResponse{items=[]GroupMemberWithUserResponse}
 // @Failure 404 {object} apierror.Error
 // @Router /groups/{groupId}/members [get]
 func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
@@ -1127,7 +1129,9 @@ func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Reque
 // @Tags groups
 // @Produce json
 // @Param groupId path string true "Group ID"
-// @Success 200 {array} GroupOwnershipResponse
+// @Param limit query int false "Page size" default(20)
+// @Param offset query int false "Offset" default(0)
+// @Success 200 {object} PaginatedResponse{items=[]GroupOwnershipResponse}
 // @Failure 404 {object} apierror.Error
 // @Router /groups/{groupId}/assets [get]
 func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {

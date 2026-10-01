@@ -7953,6 +7953,23 @@ definitions:
       total_count:
         type: integer
     type: object
+  internal_infra_http_handler.ListResponse-github_com_openctemio_api_pkg_domain_component_VulnerableComponent:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_openctemio_api_pkg_domain_component.VulnerableComponent'
+        type: array
+      links:
+        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
   internal_infra_http_handler.ListResponse-internal_infra_http_handler_AssetGroupResponse:
     properties:
       data:
@@ -8601,6 +8618,16 @@ definitions:
         type: string
       type:
         type: string
+    type: object
+  internal_infra_http_handler.PaginatedResponse:
+    properties:
+      items: {}
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total_count:
+        type: integer
     type: object
   internal_infra_http_handler.PaginationLinks:
     properties:
@@ -16469,10 +16496,15 @@ paths:
     get:
       description: Retrieves components with vulnerability details for the tenant
       parameters:
-      - default: 10
-        description: Limit results
+      - default: 1
+        description: Page number
         in: query
-        name: limit
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: per_page
         type: integer
       produces:
       - application/json
@@ -16480,9 +16512,7 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/github_com_openctemio_api_pkg_domain_component.VulnerableComponent'
-            type: array
+            $ref: '#/definitions/internal_infra_http_handler.ListResponse-github_com_openctemio_api_pkg_domain_component_VulnerableComponent'
         "400":
           description: Bad Request
           schema:
@@ -18872,15 +18902,30 @@ paths:
         name: groupId
         required: true
         type: string
+      - default: 20
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/internal_infra_http_handler.GroupOwnershipResponse'
-            type: array
+            allOf:
+            - $ref: '#/definitions/internal_infra_http_handler.PaginatedResponse'
+            - properties:
+                items:
+                  items:
+                    $ref: '#/definitions/internal_infra_http_handler.GroupOwnershipResponse'
+                  type: array
+              type: object
         "404":
           description: Not Found
           schema:
@@ -18990,15 +19035,30 @@ paths:
         name: groupId
         required: true
         type: string
+      - default: 20
+        description: Page size
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/internal_infra_http_handler.GroupMemberWithUserResponse'
-            type: array
+            allOf:
+            - $ref: '#/definitions/internal_infra_http_handler.PaginatedResponse'
+            - properties:
+                items:
+                  items:
+                    $ref: '#/definitions/internal_infra_http_handler.GroupMemberWithUserResponse'
+                  type: array
+              type: object
         "404":
           description: Not Found
           schema:
